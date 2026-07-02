@@ -156,6 +156,11 @@ import {
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
 import { GeneratableField } from '../enum/generatable-field.enum';
+import { AgentBuilderV2Field } from '../enum/agent-builder-v2-field.enum';
+import {
+  GenerateAgentBuilderV2FieldDto,
+  GenerateAgentBuilderV2FieldResponseDto,
+} from '../dto/generate-agent-builder-v2-field.dto';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
@@ -3221,6 +3226,170 @@ export class ScenarioService {
     this.logger.info(`Generation completed for ${fieldName}`);
 
     return { fieldName, content };
+  }
+
+  /**
+   * Agent Builder Copilot V2: generate ONE Basic Settings field from the
+   * wizard's three inputs (actor brief + competency + optimisation goals). Each
+   * field has its own editable prompt template (src/prompts/agent_builder_v2/)
+   * and is fired independently in parallel by the frontend, so the results
+   * paint into the form as each returns. Provider routing mirrors generateField.
+   */
+  async generateAgentBuilderV2Field(
+    dto: GenerateAgentBuilderV2FieldDto,
+  ): Promise<GenerateAgentBuilderV2FieldResponseDto> {
+    const { field, actorDescription, competency, optimisationGoals, model } =
+      dto;
+
+    const autofillServiceRegistry = new Map<
+      string,
+      OpenAIAutofillService | AnthropicAutofillService
+    >([
+      ['openai', this.openAIAutofillService],
+      ['anthropic', this.anthropicAutofillService],
+    ]);
+    const resolvedProvider = dto.provider ?? 'openai';
+    if (dto.provider && !autofillServiceRegistry.has(dto.provider)) {
+      this.logger.warn(
+        `Unrecognized agent-builder-v2 provider "${dto.provider}", falling back to openai`,
+      );
+    }
+    const autofillService =
+      autofillServiceRegistry.get(resolvedProvider) ??
+      this.openAIAutofillService;
+
+    const numKnowledgeSources = dto.numKnowledgeSources ?? 3;
+    const variables: Record<string, string> = {
+      actorDescription: actorDescription ?? '',
+      competency: competency ?? '',
+      optimisationGoals: optimisationGoals ?? '',
+      numKnowledgeSources: String(numKnowledgeSources),
+    };
+
+    // The prompt-file basename equals the enum value; toPromptCode maps it to
+    // src/prompts/agent_builder_v2/<field>.txt (editable in Prompt Management).
+    const promptCode = toPromptCode('agent_builder_v2', field);
+    // Prose/HTML fields come back as plain text; structured fields as JSON.
+    const expectJson =
+      field === AgentBuilderV2Field.TITLE ||
+      field === AgentBuilderV2Field.PERSONA ||
+      field === AgentBuilderV2Field.KNOWLEDGE_SOURCES;
+
+    const raw = await autofillService.generateContentFromPrompt(
+      promptCode,
+      variables,
+      expectJson,
+      model,
+    );
+
+    return { field, value: this.parseAgentBuilderV2Field(field, raw) };
+  }
+
+  /**
+   * Best-effort JSON parse of a model response. Tries a direct parse first (the
+   * common case — expectJson responses are clean single objects/arrays), then
+   * falls back to slicing the outermost `{ … }` when the model wraps the object
+   * in prose. Returns the parsed value (object or array) or null.
+   */
+  private parseFirstJsonObject(raw: string): any {
+    const attempt = (candidate: string): any => {
+      try {
+        const parsed = JSON.parse(candidate);
+        return parsed && typeof parsed === 'object' ? parsed : null;
+      } catch {
+        return null;
+      }
+    };
+    const direct = attempt(raw.trim());
+    if (direct) return direct;
+    const start = raw.indexOf('{');
+    const end = raw.lastIndexOf('}');
+    if (start === -1 || end <= start) return null;
+    return attempt(raw.slice(start, end + 1));
+  }
+
+  /** Coerce a V2 field's raw model output into the shape the studio form expects. */
+  private parseAgentBuilderV2Field(
+    field: AgentBuilderV2Field,
+    raw: string,
+  ): unknown {
+    switch (field) {
+      case AgentBuilderV2Field.ROLE_INSTRUCTION:
+      case AgentBuilderV2Field.CHALLENGE_DESCRIPTION:
+        return raw.trim();
+
+      case AgentBuilderV2Field.TITLE: {
+        const parsed = this.parseFirstJsonObject(raw);
+        if (parsed && typeof parsed.title === 'string' && parsed.title.trim()) {
+          return parsed.title.trim();
+        }
+        // Fallback if the model ignored the JSON contract: take the first
+        // non-empty line and strip wrapping quotes, so a stray prose response
+        // still yields a usable title rather than a wall of text.
+        const firstLine = raw
+          .split('\n')
+          .map((l) => l.trim())
+          .find((l) => l.length > 0);
+        return (firstLine ?? raw.trim()).replace(/^["']|["']$/g, '').trim();
+      }
+
+      case AgentBuilderV2Field.PERSONA: {
+        const p = this.parseFirstJsonObject(raw) ?? {};
+        const allowedGenders = new Set(['male', 'female', 'non-binary']);
+        const genderRaw =
+          typeof p.gender === 'string' ? p.gender.trim().toLowerCase() : '';
+        const ageNum =
+          typeof p.age === 'number'
+            ? p.age
+            : typeof p.age === 'string' && p.age.trim() !== ''
+              ? Number(p.age)
+              : NaN;
+        // Clamp to the documented 5–100 range the persona prompt asks for;
+        // out-of-range / non-numeric values are dropped rather than written.
+        const age = Number.isFinite(ageNum) ? Math.round(ageNum) : NaN;
+        return {
+          name: typeof p.name === 'string' ? p.name.trim() : undefined,
+          age: age >= 5 && age <= 100 ? age : undefined,
+          gender: allowedGenders.has(genderRaw) ? genderRaw : undefined,
+          profession:
+            typeof p.profession === 'string' ? p.profession.trim() : undefined,
+          currentLocation:
+            typeof p.currentLocation === 'string'
+              ? p.currentLocation.trim()
+              : undefined,
+        };
+      }
+
+      case AgentBuilderV2Field.KNOWLEDGE_SOURCES: {
+        const parsed = this.parseFirstJsonObject(raw);
+        // Prefer the documented `{ sources: [...] }`, but tolerate the model
+        // returning a bare array or wrapping under a different key, so a minor
+        // structural deviation doesn't silently drop all knowledge sources.
+        let sources: any[] = [];
+        if (Array.isArray(parsed)) {
+          sources = parsed;
+        } else if (Array.isArray(parsed?.sources)) {
+          sources = parsed.sources;
+        } else if (parsed && typeof parsed === 'object') {
+          const arrayValue = Object.values(parsed).find((v) =>
+            Array.isArray(v),
+          );
+          if (Array.isArray(arrayValue)) sources = arrayValue;
+        }
+        return sources
+          .map((s: any) => ({
+            title: typeof s?.title === 'string' ? s.title.trim() : '',
+            content: typeof s?.content === 'string' ? s.content.trim() : '',
+          }))
+          .filter(
+            (s: { title: string; content: string }) =>
+              s.title.length > 0 && s.content.length > 0,
+          );
+      }
+
+      default:
+        return raw.trim();
+    }
   }
 
   /**

@@ -1,0 +1,27 @@
+You are configuring the PERSONA demographics for an AI roleplay actor (the CLIENT) in a counsellor-training simulation. Produce a coherent, believable set of demographic details for the person described in the brief.
+
+Inputs (authoritative):
+- Actor brief: {{actorDescription}}
+- Competency being practised: {{competency}}
+- Optimisation goals to emphasise: {{optimisationGoals}}
+
+Rules — every rule must be satisfied:
+1) Derive details from the brief where stated; where the brief is silent, invent plausible values that fit the person and the counselling context. Keep everything internally consistent.
+2) Fields:
+   - "name": a realistic first name (or first + last) fitting the persona. 1–3 words, no titles.
+   - "age": an integer between 5 and 100 that fits the brief.
+   - "gender": EXACTLY one of "male", "female", "non-binary". Choose the best fit; if unclear, pick the most contextually likely.
+   - "profession": a short role/occupation (1–4 words). Use "Student" for minors in education, "Retired" where apt.
+   - "currentLocation": a short place description (e.g. "Mumbai, India", "a small town in Kerala", "suburban UK"). 1–6 words.
+3) Do not add commentary, backstory, or extra keys. Values must be plain strings/number, no markdown.
+4) Output strict JSON only — no code fences, no explanation — matching exactly:
+
+{
+  "name": "<name>",
+  "age": <integer>,
+  "gender": "male | female | non-binary",
+  "profession": "<profession>",
+  "currentLocation": "<location>"
+}
+
+Only output valid JSON.

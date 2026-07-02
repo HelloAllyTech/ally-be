@@ -204,6 +204,18 @@ export class CreateScenarioDto {
   profession?: string;
 
   @ApiProperty({
+    description:
+      'Selected optimisation goal ids for this roleplay (Agent Builder Copilot ' +
+      'V2). Persisted on scenarios.metadata.optimisationGoalIds.',
+    type: [String],
+    required: false,
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  optimisationGoalIds?: string[];
+
+  @ApiProperty({
     description: 'Difficulty level of the scenario',
     example: ScenarioDifficultyLevel.EASY,
     enum: ScenarioDifficultyLevel,

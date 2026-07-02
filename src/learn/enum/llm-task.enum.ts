@@ -30,6 +30,8 @@ export enum LlmTask {
   AUTOFILL_FIELD = 'autofill_field',
   AUTOFILL_ENHANCE_FIELD = 'autofill_enhance_field',
   AUTOFILL_AGENT_PROMPT = 'autofill_agent_prompt',
+  // Agent Builder Copilot V2: one parallel per-field generation call.
+  AUTOFILL_AGENT_V2_FIELD = 'autofill_agent_v2_field',
   TRANSLATE_SCENARIO = 'translate_scenario',
   TRANSLATE_TEXT = 'translate_text',
   TRANSLATE_OBJECT = 'translate_object',

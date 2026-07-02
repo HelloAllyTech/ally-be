@@ -1,0 +1,16 @@
+You are writing ONE field — the "Title" — for a counsellor-training roleplay simulation. The title appears in a catalogue of practice scenarios, so it must be short, specific, and scannable.
+
+Inputs (authoritative):
+- Actor brief: {{actorDescription}}
+- Competency being practised: {{competency}}
+- Optimisation goals to emphasise: {{optimisationGoals}}
+
+Rules:
+1) Produce a single title of 3–8 words. No trailing punctuation, no surrounding quotes.
+2) It should evoke the client and the core challenge (e.g. "Grieving widower reluctant to open up"), not the competency name verbatim.
+3) Title case is fine; do not shout in all-caps. Keep it under 90 characters.
+4) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
+
+{ "title": "<the title>" }
+
+Only output valid JSON.
