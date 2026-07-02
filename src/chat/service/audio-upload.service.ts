@@ -15,7 +15,10 @@ import {
   CancelUploadRequestDto,
 } from '../dto/audio-upload.dto';
 import { generateAudioStorageKey } from 'src/common/util/audio.util';
-import { AudioChatProvider } from 'src/common/constants/chat.constants';
+import {
+  AudioChatProvider,
+  AUDIO_CHECKPOINT_SUFFIX,
+} from 'src/common/constants/chat.constants';
 import { UserService } from 'src/user/service/user.service';
 import { addDurationToDate } from 'src/common/util/date.util';
 import {
@@ -515,7 +518,9 @@ export class AudioUploadService {
         bucket,
         key,
       });
-      if (!uploadId) return false;
+      // No in-progress upload (already aborted / lifecycle-expired). Fall back
+      // to a durability checkpoint if the session wrote one before dying.
+      if (!uploadId) return this.tryPromoteCheckpoint(bucket, key, chatId);
 
       const parts = await this.s3Service.listMultipartParts({
         bucket,
@@ -523,8 +528,9 @@ export class AudioUploadService {
         uploadId,
       });
       if (parts.length === 0) {
-        // Nothing was ever flushed as a part — unrecoverable. Abort to release
-        // the in-progress upload (best-effort).
+        // Nothing was ever flushed as a part. Abort to release the in-progress
+        // upload (best-effort), then fall back to the durability checkpoint —
+        // a short session that never reached 6 MB still has its audio there.
         await this.s3Service
           .abortMultipartUpload({
             Bucket: bucket,
@@ -532,7 +538,7 @@ export class AudioUploadService {
             UploadId: uploadId,
           })
           .catch(() => undefined);
-        return false;
+        return this.tryPromoteCheckpoint(bucket, key, chatId);
       }
 
       await this.s3Service.completeMultipartUploadWithParts({
@@ -554,6 +560,52 @@ export class AudioUploadService {
     } catch (err) {
       this.logger.error(
         `Failed to finalize incomplete upload for chat ${chatId}: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Fallback recovery when the multipart upload can't be finalized (no parts /
+   * no in-progress upload): a live session that died before flushing a 6 MB
+   * part still has its audio in the durability checkpoint object written by the
+   * stream processor. Promote it to the canonical key so transcription can run.
+   * Returns true if a checkpoint existed and was promoted. Best-effort.
+   */
+  private async tryPromoteCheckpoint(
+    bucket: string,
+    key: string,
+    chatId: number,
+  ): Promise<boolean> {
+    const checkpointKey = `${key}${AUDIO_CHECKPOINT_SUFFIX}`;
+    try {
+      await this.s3Service.getHeadObject({ bucket, key: checkpointKey });
+    } catch {
+      // No checkpoint object — genuinely unrecoverable.
+      return false;
+    }
+    try {
+      await this.s3Service.copyObject({
+        bucket,
+        sourceKey: checkpointKey,
+        destKey: key,
+      });
+      await this.chatAudioUploadsService.updateAudioUpload(chatId, {
+        status: ChatAudioUploadStatus.SUCCESS,
+      });
+      // Tidy up the checkpoint now that the canonical object exists.
+      await this.s3Service
+        .deleteObject({ bucket, key: checkpointKey })
+        .catch(() => undefined);
+      this.logger.info(
+        `Recovered chat ${chatId} from durability checkpoint ${checkpointKey}`,
+      );
+      return true;
+    } catch (err) {
+      this.logger.error(
+        `Failed to promote durability checkpoint for chat ${chatId}: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );

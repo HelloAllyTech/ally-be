@@ -3,6 +3,14 @@ export enum QueueStatus {
   MATCHED = 'MATCHED',
 }
 
+/**
+ * Suffix for the durability-checkpoint object of an in-progress live recording.
+ * Written to `<storageKey><suffix>` (a DIFFERENT key from the final object) so a
+ * checkpoint upload can never race with / clobber the final object written on a
+ * clean endCallStream. Promoted to the canonical key only during recovery.
+ */
+export const AUDIO_CHECKPOINT_SUFFIX = '.checkpoint';
+
 export enum CloudTelephonyProvider {
   OZONETEL = 'OZONETEL',
 }

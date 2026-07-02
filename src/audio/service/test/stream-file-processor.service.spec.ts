@@ -228,6 +228,7 @@ describe('StreamFileProcessorService', () => {
             abortMultipartUpload: jest.fn(),
             uploadStream: jest.fn(),
             generatePresignedUrl: jest.fn(),
+            deleteObject: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
@@ -431,10 +432,108 @@ describe('StreamFileProcessorService', () => {
         ],
         callId: mockSession.id,
         chatId: chatId,
+        checkpointChunks: [],
+        checkpointBytes: 0,
+        lastCheckpointBytes: 0,
       };
 
       service.saveAudio(mockSession, { chatId, audioBase64 });
       expect(cipher.write).toHaveBeenCalled();
+      // Raw audio is accumulated for the durability checkpoint while no part
+      // has flushed yet.
+      expect(
+        service['activeCallStreams'][chatId].checkpointBytes,
+      ).toBeGreaterThan(0);
+      expect(service['activeCallStreams'][chatId].checkpointChunks.length).toBe(
+        1,
+      );
+    });
+
+    it('does not accumulate a checkpoint once a part has flushed', () => {
+      const cipher = { write: jest.fn() } as any;
+      const chatId = mockChat.id;
+      service['activeCallStreams'][chatId] = {
+        parts: [{ ETag: 'E', PartNumber: 1 }], // already has a durable part
+        uploadId: 'up-3',
+        key: 'key-3',
+        partNumber: 2,
+        currentFileIndex: 0,
+        files: [
+          {
+            cipher,
+            writeStream: new MockWriteStream() as any,
+            encryptionKey: Buffer.from('k'),
+            iv: Buffer.from('iv'),
+            tempFilePath: '/tmp/a',
+            bufferSize: 0,
+          },
+          {
+            cipher,
+            writeStream: new MockWriteStream() as any,
+            encryptionKey: Buffer.from('k2'),
+            iv: Buffer.from('iv2'),
+            tempFilePath: '/tmp/b',
+            bufferSize: 0,
+          },
+        ],
+        callId: mockSession.id,
+        chatId: chatId,
+        checkpointChunks: [],
+        checkpointBytes: 0,
+        lastCheckpointBytes: 0,
+      };
+
+      service.saveAudio(mockSession, { chatId, audioBase64 });
+
+      expect(service['activeCallStreams'][chatId].checkpointBytes).toBe(0);
+      expect(
+        service['activeCallStreams'][chatId].checkpointChunks,
+      ).toHaveLength(0);
+    });
+  });
+
+  describe('flushCheckpoints (short-session durability)', () => {
+    const makeStream = (over: Record<string, any>) => ({
+      parts: [],
+      uploadId: 'up',
+      key: 'audio/chk.raw',
+      partNumber: 1,
+      currentFileIndex: 0,
+      files: [],
+      callId: mockSession.id,
+      chatId: mockChat.id,
+      checkpointChunks: [Buffer.from('abc')],
+      checkpointBytes: 3,
+      lastCheckpointBytes: 0,
+      ...over,
+    });
+
+    it('uploads the audio-so-far to the final key for a not-yet-durable session', async () => {
+      service['activeCallStreams'][1] = makeStream({}) as any;
+      s3Service.uploadStream.mockResolvedValue(undefined as any);
+
+      await service['flushCheckpoints']();
+
+      // Written to a SEPARATE key so it can't clobber the final object.
+      expect(s3Service.uploadStream).toHaveBeenCalledWith(
+        expect.objectContaining({ Key: 'audio/chk.raw.checkpoint' }),
+      );
+      // Records the watermark so it won't re-upload unchanged audio.
+      expect(service['activeCallStreams'][1].lastCheckpointBytes).toBe(3);
+    });
+
+    it('skips sessions that already flushed a part (salvageable) or are unchanged', async () => {
+      service['activeCallStreams'][1] = makeStream({
+        parts: [{ ETag: 'E', PartNumber: 1 }],
+      }) as any;
+      service['activeCallStreams'][2] = makeStream({
+        checkpointBytes: 3,
+        lastCheckpointBytes: 3, // no new audio since last checkpoint
+      }) as any;
+
+      await service['flushCheckpoints']();
+
+      expect(s3Service.uploadStream).not.toHaveBeenCalled();
     });
   });
 
@@ -471,6 +570,9 @@ describe('StreamFileProcessorService', () => {
         ],
         callId: mockSession.id,
         chatId: chatId,
+        checkpointChunks: [],
+        checkpointBytes: 0,
+        lastCheckpointBytes: 0,
       };
 
       jest
@@ -521,6 +623,9 @@ describe('StreamFileProcessorService', () => {
         ],
         callId: mockSession.id,
         chatId: chatId,
+        checkpointChunks: [],
+        checkpointBytes: 0,
+        lastCheckpointBytes: 0,
       };
 
       s3Service.abortMultipartUpload.mockResolvedValue(undefined as any);

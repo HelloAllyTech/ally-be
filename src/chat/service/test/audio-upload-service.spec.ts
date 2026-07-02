@@ -85,6 +85,8 @@ describe('AudioUploadService', () => {
             listMultipartParts: jest.fn(),
             completeMultipartUploadWithParts: jest.fn(),
             abortMultipartUpload: jest.fn(),
+            copyObject: jest.fn(),
+            deleteObject: jest.fn(),
           },
         },
         {
@@ -691,6 +693,47 @@ describe('AudioUploadService', () => {
           status: ChatAudioUploadStatus.FAILED,
         },
       );
+    });
+
+    it('promotes a durability checkpoint when the multipart has no parts, then re-dispatches', async () => {
+      chatService.findReprocessableStuckChats.mockResolvedValue([
+        { id: 11, metadata: {} },
+      ] as any);
+      chatAudioUploadsService.getAudioUpload.mockResolvedValue({
+        storageKey: 'audio/11.raw',
+      } as any);
+      // Final object missing; checkpoint object present.
+      s3Service.getHeadObject.mockImplementation((p: any) =>
+        p.key.endsWith('.checkpoint')
+          ? Promise.resolve({} as any)
+          : Promise.reject(new Error('NoSuchKey')),
+      );
+      // No in-progress multipart → straight to checkpoint promotion.
+      s3Service.findInProgressMultipartUploadId.mockResolvedValue(null as any);
+      s3Service.copyObject.mockResolvedValue({} as any);
+      s3Service.deleteObject.mockResolvedValue({} as any);
+      s3Service.generatePresignedUrl.mockResolvedValue('https://signed');
+      aiEventService.publishTranscribeAudioEvent.mockResolvedValue(
+        undefined as any,
+      );
+
+      const result = await service.reprocessStuckChats();
+
+      // Checkpoint copied to the canonical key and audio marked recovered.
+      expect(s3Service.copyObject).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceKey: 'audio/11.raw.checkpoint',
+          destKey: 'audio/11.raw',
+        }),
+      );
+      expect(chatAudioUploadsService.updateAudioUpload).toHaveBeenCalledWith(
+        11,
+        { status: ChatAudioUploadStatus.SUCCESS },
+      );
+      // Recovered → re-dispatched, not reported unrecoverable.
+      expect(aiEventService.publishTranscribeAudioEvent).toHaveBeenCalled();
+      expect(result.reprocessed).toContain(11);
+      expect(result.unrecoverable).not.toContain(11);
     });
 
     it('increments an existing reprocessAttempts counter on repeated failure', async () => {

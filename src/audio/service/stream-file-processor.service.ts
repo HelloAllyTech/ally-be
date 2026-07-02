@@ -1,4 +1,10 @@
-import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import {
+  forwardRef,
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import * as fs from 'fs';
 import { WriteStream } from 'fs';
 import * as path from 'path';
@@ -13,6 +19,7 @@ import {
   AudioChatProvider,
   AudioChatPlatform,
   ScribeSessionMode,
+  AUDIO_CHECKPOINT_SUFFIX,
 } from '../../common/constants/chat.constants';
 import { S3Service } from '../../aws/service/s3.service';
 import { ChatService } from '../../chat/service/chat.service';
@@ -32,7 +39,9 @@ import { Chat } from '../../chat/entity/chat.entity';
 import { ChatAudioUploadsService } from './chat-audio-uploads.service';
 
 @Injectable()
-export class StreamFileProcessorService {
+export class StreamFileProcessorService
+  implements OnModuleInit, OnModuleDestroy
+{
   constructor(
     private s3Service: S3Service,
     private chatAudioUploadsService: ChatAudioUploadsService,
@@ -54,6 +63,19 @@ export class StreamFileProcessorService {
 
   private MIN_PART_SIZE = 6 * 1024 * 1024; // 6 MB
 
+  // Live audio is only durable in S3 once a 6 MB part flushes or the session
+  // ends cleanly (endCallStream). A short session (< MIN_PART_SIZE) whose pod
+  // dies hard — OOM / SIGKILL / spot reclaim, i.e. no graceful shutdown drain —
+  // loses everything, since its audio only ever lived in this pod's memory.
+  // To bound that loss we periodically PutObject the audio-so-far (plaintext,
+  // exactly what endCallStream uploads for a short session) to the final key.
+  // Then a hard kill leaves a readable object and the reprocess backfill picks
+  // it up automatically (its HEAD succeeds → re-dispatch). We only checkpoint
+  // BEFORE the first part flushes: once parts exist the session is already
+  // salvageable from the multipart upload, so we stop and free the buffer.
+  private static readonly CHECKPOINT_INTERVAL_MS = 30_000;
+  private checkpointTimer?: NodeJS.Timeout;
+
   private activeCallStreams: {
     [key: string]: {
       parts: Array<{
@@ -74,8 +96,73 @@ export class StreamFileProcessorService {
       }[];
       callId: string;
       chatId: number;
+      // Raw audio accumulated for the durability checkpoint (only while no part
+      // has flushed yet; cleared once the session becomes multipart-salvageable).
+      checkpointChunks: Buffer[];
+      checkpointBytes: number;
+      // Bytes at the last successful checkpoint upload — skip re-uploading when
+      // nothing new arrived.
+      lastCheckpointBytes: number;
     };
   } = {};
+
+  onModuleInit(): void {
+    this.checkpointTimer = setInterval(() => {
+      void this.flushCheckpoints();
+    }, StreamFileProcessorService.CHECKPOINT_INTERVAL_MS);
+    if (typeof this.checkpointTimer.unref === 'function') {
+      this.checkpointTimer.unref();
+    }
+  }
+
+  onModuleDestroy(): void {
+    if (this.checkpointTimer) clearInterval(this.checkpointTimer);
+  }
+
+  /**
+   * Periodically persist the audio-so-far for short, not-yet-durable sessions
+   * so a hard pod kill loses at most CHECKPOINT_INTERVAL_MS of audio instead of
+   * the whole recording. Best-effort: never throws, and is superseded by the
+   * final object on a clean endCallStream.
+   */
+  private async flushCheckpoints(): Promise<void> {
+    for (const chatId of Object.keys(this.activeCallStreams)) {
+      const stream = this.activeCallStreams[chatId];
+      // Skip sessions that already have a flushed part (salvageable) or have no
+      // new audio since the last checkpoint.
+      if (
+        !stream ||
+        stream.parts.length > 0 ||
+        stream.checkpointBytes === 0 ||
+        stream.checkpointBytes === stream.lastCheckpointBytes
+      ) {
+        continue;
+      }
+
+      const bytesAtSnapshot = stream.checkpointBytes;
+      try {
+        const buffer = Buffer.concat(stream.checkpointChunks);
+        await this.s3Service.uploadStream({
+          Bucket: this.config.s3.audioBucket!,
+          // Separate key from the final object so this can never race with the
+          // final write done on a clean endCallStream. Recovery promotes it.
+          Key: `${stream.key}${AUDIO_CHECKPOINT_SUFFIX}`,
+          Body: buffer,
+          ContentType: 'audio/raw',
+        });
+        stream.lastCheckpointBytes = bytesAtSnapshot;
+        this.logger.debug(
+          `Checkpointed ${bytesAtSnapshot} byte(s) of in-progress audio | ChatId: ${stream.chatId}`,
+        );
+      } catch (error) {
+        this.logger.error(
+          `Failed to checkpoint in-progress audio for chat ${stream.chatId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
 
   addToPendingAudioQueue(clientId: string, audioBuffer: Buffer) {
     if (!this.pendingAudioQueue[clientId]) {
@@ -263,6 +350,9 @@ export class StreamFileProcessorService {
         ],
         chatId,
         callId,
+        checkpointChunks: [],
+        checkpointBytes: 0,
+        lastCheckpointBytes: 0,
       };
 
       this.logger.debug(
@@ -473,6 +563,14 @@ export class StreamFileProcessorService {
     currentFile.cipher.write(audioBuffer);
     currentFile.bufferSize += audioBuffer.length;
 
+    // Accumulate the raw audio for the durability checkpoint, but only until a
+    // part flushes (after which the session is salvageable from the multipart
+    // upload). Bounded by MIN_PART_SIZE, so this holds < 6 MB per short session.
+    if (activeCallStream.parts.length === 0) {
+      activeCallStream.checkpointChunks.push(audioBuffer);
+      activeCallStream.checkpointBytes += audioBuffer.length;
+    }
+
     // Check if we need to flush the current file
     if (currentFile.bufferSize >= this.MIN_PART_SIZE) {
       activeCallStream.currentFileIndex = currentFileIndex === 0 ? 1 : 0;
@@ -482,6 +580,11 @@ export class StreamFileProcessorService {
         fileToFlushIndex: currentFileIndex,
         provider: session.provider!,
       });
+      // The session now has a durable part; stop checkpointing and free the
+      // accumulated buffer.
+      activeCallStream.checkpointChunks = [];
+      activeCallStream.checkpointBytes = 0;
+      activeCallStream.lastCheckpointBytes = 0;
     }
 
     if (shouldBroadcastAudioMessage) {
@@ -652,6 +755,16 @@ export class StreamFileProcessorService {
           ContentType: 'audio/raw',
         });
       }
+
+      // The final object is now written; drop any durability checkpoint so it
+      // doesn't linger in storage (best-effort — a stray checkpoint is harmless
+      // and would otherwise be cleaned by the bucket lifecycle).
+      await this.s3Service
+        .deleteObject({
+          bucket: this.config.s3.audioBucket!,
+          key: `${activeCallStream.key}${AUDIO_CHECKPOINT_SUFFIX}`,
+        })
+        .catch(() => undefined);
 
       this.logger.debug(
         `Call stream upload completed | ChatId: ${chatId} | Provider: ${provider}`,

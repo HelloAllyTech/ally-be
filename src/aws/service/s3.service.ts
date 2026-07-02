@@ -25,6 +25,8 @@ import {
   HeadObjectCommandOutput,
   ListMultipartUploadsCommand,
   ListPartsCommand,
+  CopyObjectCommand,
+  CopyObjectCommandOutput,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { AppConfigService } from '../../config/config.service';
@@ -303,6 +305,28 @@ export class S3Service {
     } catch (error) {
       throw new Error(
         `Failed to delete object ${key} from bucket ${bucket}: ${error.message}`,
+      );
+    }
+  }
+
+  /** Server-side copy an object within the same bucket. */
+  async copyObject(params: {
+    bucket: string;
+    sourceKey: string;
+    destKey: string;
+  }): Promise<CopyObjectCommandOutput> {
+    const { bucket, sourceKey, destKey } = params;
+    try {
+      return await this.s3.send(
+        new CopyObjectCommand({
+          Bucket: bucket,
+          CopySource: `${bucket}/${encodeURIComponent(sourceKey)}`,
+          Key: destKey,
+        }),
+      );
+    } catch (error) {
+      throw new Error(
+        `Failed to copy object ${sourceKey} -> ${destKey} in bucket ${bucket}: ${error.message}`,
       );
     }
   }
