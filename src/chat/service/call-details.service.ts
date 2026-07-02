@@ -77,9 +77,14 @@ export class CallDetailsService {
       provider === AudioChatProvider.EXOTEL_CONFERENCE_CALL
     ) {
       participants = [chat.counselorId!];
+      // Pass auth context so that, if this replica doesn't hold the recording
+      // (the end was load-balanced here), the replica that DOES can finalize
+      // it with the right scope. See MICROPHONE_STREAM_END.
       await this.streamFileProcessorService.endCallStream({
         chatId: chat.id,
         provider,
+        userId: chat.createdBy ?? chat.counselorId,
+        tenantId: chat.tenantId,
       });
     } else if (provider === AudioChatProvider.OZONETEL) {
       participants = [chat.counselorId!];

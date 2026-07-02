@@ -32,6 +32,8 @@ import { AppConfigService } from '../../config/config.service';
 import { generateAudioStorageKey } from '../../common/util/audio.util';
 import { PLACEHOLDER_CHAT_ID } from '../../common/constants/user.constants';
 import { findMessageBrokerChannelUsingProvider } from '../../common/util/chat-types.util';
+import { MessageBrokerService } from '../../message-broker/service/message-broker.service';
+import { MessageBrokerChannel } from '../../message-broker/constants/message-broker.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { AudioEncryptionUtil } from '../utils/audio-encryption.util';
 import { CipherGCM } from 'crypto';
@@ -51,6 +53,7 @@ export class StreamFileProcessorService
     private chatService: ChatService,
     private config: AppConfigService,
     private aiEventService: AiEventService,
+    private messageBroker: MessageBrokerService,
   ) {}
 
   private readonly logger = LoggerService.getInstance(
@@ -112,6 +115,59 @@ export class StreamFileProcessorService
     }, StreamFileProcessorService.CHECKPOINT_INTERVAL_MS);
     if (typeof this.checkpointTimer.unref === 'function') {
       this.checkpointTimer.unref();
+    }
+
+    // Finalize recordings whose end-session landed on a different replica. The
+    // ending replica (which doesn't hold the in-memory stream) broadcasts on
+    // this channel; whichever replica actually owns the stream finalizes it.
+    void this.messageBroker.subscribe(
+      MessageBrokerChannel.MICROPHONE_STREAM_END,
+      (message: {
+        chatId?: number;
+        provider?: AudioChatProvider;
+        userId?: number | string;
+        tenantId?: string;
+      }) => {
+        void this.handleRemoteStreamEnd(message);
+      },
+    );
+  }
+
+  /**
+   * Broker handler for a cross-replica finalize request. No-op unless THIS
+   * replica holds the recording (so only the owner finalizes). Re-invokes
+   * endCallStream with allowRemoteFinalize=false so a miss here can't
+   * re-broadcast and loop.
+   */
+  private async handleRemoteStreamEnd(message: {
+    chatId?: number;
+    provider?: AudioChatProvider;
+    userId?: number | string;
+    tenantId?: string;
+  }): Promise<void> {
+    const { chatId, provider, userId, tenantId } = message || {};
+    if (chatId == null || !this.activeCallStreams[chatId]) return;
+    try {
+      // Broker callback runs outside a request scope — set the auth context
+      // (as the janitor does) so the downstream chat/audio writes are scoped.
+      ExecutionManager.setAuthContext(
+        userId != null ? String(userId) : '',
+        tenantId as string,
+      );
+      this.logger.warn(
+        `Finalizing recording for chat ${chatId} on request from another replica`,
+      );
+      await this.endCallStream({
+        chatId,
+        provider,
+        allowRemoteFinalize: false,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to finalize recording for chat ${chatId} from broker request: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -645,15 +701,39 @@ export class StreamFileProcessorService
   async endCallStream({
     chatId,
     provider,
+    userId,
+    tenantId,
+    allowRemoteFinalize = true,
   }: {
     chatId: number;
     provider?: AudioChatProvider;
+    // Auth context to carry to the replica that finalizes (broker callbacks run
+    // outside a request scope). Sourced from the chat on the ending replica.
+    userId?: number | string;
+    tenantId?: string;
+    // When true and the stream isn't held here, broadcast so the owning replica
+    // finalizes it. Set false for broadcast-triggered calls to prevent loops.
+    allowRemoteFinalize?: boolean;
   }) {
     const activeCallStream = this.activeCallStreams[chatId];
     if (!activeCallStream) {
-      this.logger.error(
-        `End call stream failed: No active stream for chatId: ${chatId} | Provider: ${provider}`,
-      );
+      if (allowRemoteFinalize) {
+        // The recording lives on the replica that owns the WebSocket, not this
+        // one (the end-session request was load-balanced here). Broadcast so
+        // that replica finalizes it — otherwise the audio is never persisted
+        // and the session fails with "no transcript".
+        this.logger.warn(
+          `No active stream for chatId ${chatId} on this replica; broadcasting finalize to peers | Provider: ${provider}`,
+        );
+        await this.messageBroker.publish(
+          MessageBrokerChannel.MICROPHONE_STREAM_END,
+          { chatId, provider, userId, tenantId },
+        );
+      } else {
+        this.logger.debug(
+          `No active stream for chatId ${chatId} here (broadcast finalize; not owned by this replica)`,
+        );
+      }
       return;
     }
 

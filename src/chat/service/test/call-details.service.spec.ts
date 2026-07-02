@@ -310,10 +310,12 @@ describe('CallDetailsService', () => {
 
       await service.handleChatEnded(mockChat);
 
-      expect(streamFileProcessorService.endCallStream).toHaveBeenCalledWith({
-        chatId: 1,
-        provider: AudioChatProvider.MICROPHONE,
-      });
+      expect(streamFileProcessorService.endCallStream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatId: 1,
+          provider: AudioChatProvider.MICROPHONE,
+        }),
+      );
       expect(
         broadcastMessageService.broadcastChatEndedEvent,
       ).toHaveBeenCalled();
@@ -331,10 +333,12 @@ describe('CallDetailsService', () => {
 
       await service.handleChatEnded(mockChat);
 
-      expect(streamFileProcessorService.endCallStream).toHaveBeenCalledWith({
-        chatId: 1,
-        provider: AudioChatProvider.EXOTEL_CONFERENCE_CALL,
-      });
+      expect(streamFileProcessorService.endCallStream).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatId: 1,
+          provider: AudioChatProvider.EXOTEL_CONFERENCE_CALL,
+        }),
+      );
     });
 
     it('should handle OZONETEL provider', async () => {

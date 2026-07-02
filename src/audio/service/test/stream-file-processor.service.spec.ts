@@ -155,6 +155,7 @@ import { S3Service } from '../../../aws/service/s3.service';
 import { ChatAudioUploadsService } from '../chat-audio-uploads.service';
 import { DataSource, EntityManager } from 'typeorm';
 import { BroadcastMessageService } from '../broadcast-message.service';
+import { MessageBrokerService } from '../../../message-broker/service/message-broker.service';
 import { ChatService } from '../../../chat/service/chat.service';
 import { AppConfigService } from '../../../config/config.service';
 import { AiEventService } from '../../../ai/service/ai-event.service';
@@ -193,6 +194,7 @@ describe('StreamFileProcessorService', () => {
   let dataSource: jest.Mocked<DataSource>;
   let chatService: jest.Mocked<ChatService>;
   let aiEventService: jest.Mocked<AiEventService>;
+  let messageBroker: jest.Mocked<MessageBrokerService>;
 
   const mockSession: UserChatSessionData = {
     id: 'session-123',
@@ -271,6 +273,13 @@ describe('StreamFileProcessorService', () => {
           provide: AiEventService,
           useValue: { publishTranscribeAudioEvent: jest.fn() },
         },
+        {
+          provide: MessageBrokerService,
+          useValue: {
+            publish: jest.fn().mockResolvedValue(undefined),
+            subscribe: jest.fn().mockResolvedValue(undefined),
+          },
+        },
       ],
     }).compile();
 
@@ -280,6 +289,7 @@ describe('StreamFileProcessorService', () => {
     dataSource = module.get(DataSource);
     chatService = module.get(ChatService);
     aiEventService = module.get(AiEventService);
+    messageBroker = module.get(MessageBrokerService);
     chatService.getChatWithCallDetails.mockResolvedValue({} as any);
 
     jest.clearAllMocks();
@@ -540,6 +550,50 @@ describe('StreamFileProcessorService', () => {
   describe('endCallStream', () => {
     it('should handle missing stream gracefully', async () => {
       await service.endCallStream({ chatId: 999 });
+    });
+
+    it('broadcasts a finalize request when the stream is not held on this replica', async () => {
+      // No active stream here → the recording lives on another replica.
+      await service.endCallStream({
+        chatId: 4242,
+        provider: 'MICROPHONE' as any,
+        userId: 7,
+        tenantId: 't1',
+      });
+
+      expect(messageBroker.publish).toHaveBeenCalledWith(
+        'microphone-stream-end',
+        expect.objectContaining({ chatId: 4242, userId: 7, tenantId: 't1' }),
+      );
+    });
+
+    it('does NOT re-broadcast for a broadcast-triggered finalize (no loop)', async () => {
+      await service.endCallStream({
+        chatId: 4243,
+        allowRemoteFinalize: false,
+      });
+
+      expect(messageBroker.publish).not.toHaveBeenCalled();
+    });
+
+    it('handleRemoteStreamEnd finalizes only when this replica owns the stream', async () => {
+      const spy = jest
+        .spyOn(service, 'endCallStream')
+        .mockResolvedValue(undefined);
+
+      // Not held here → no-op.
+      await service['handleRemoteStreamEnd']({ chatId: 5000 });
+      expect(spy).not.toHaveBeenCalled();
+
+      // Held here → finalize locally (allowRemoteFinalize false to avoid loop).
+      service['activeCallStreams'][5000] = { chatId: 5000 } as any;
+      await service['handleRemoteStreamEnd']({
+        chatId: 5000,
+        provider: 'MICROPHONE' as any,
+      });
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({ chatId: 5000, allowRemoteFinalize: false }),
+      );
     });
 
     it('should complete multipart upload when parts exist', async () => {
