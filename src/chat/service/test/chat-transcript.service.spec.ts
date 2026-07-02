@@ -168,10 +168,11 @@ describe('ChatTranscriptService', () => {
     it('should process transcription and summary successfully', async () => {
       chatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
 
+      const summary = { session_summary: 'a real session summary' };
       mockedAxios.get.mockResolvedValueOnce({
         data: {
           transcription: 'hello world',
-          summary: 'short summary',
+          summary,
         },
       } as any);
 
@@ -188,10 +189,7 @@ describe('ChatTranscriptService', () => {
         'hello world',
       );
 
-      expect(chatAiService.addSummary).toHaveBeenCalledWith(
-        chatId,
-        'short summary',
-      );
+      expect(chatAiService.addSummary).toHaveBeenCalledWith(chatId, summary);
 
       expect(chatService.updateChat).toHaveBeenCalledWith(chatId, {
         summaryStatus: ChatSummaryStatus.SUCCESS,
@@ -281,6 +279,66 @@ describe('ChatTranscriptService', () => {
       );
       expect(notify).toHaveBeenCalledWith(
         expect.objectContaining({ chatId, mode: 'explicit-failure' }),
+      );
+    });
+
+    it('does NOT mark SUCCESS when the summary is an empty object (no meaningful content)', async () => {
+      chatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+
+      const transcription = [
+        { role: 'client', content: 'uh', start_time: 0, end_time: 1 },
+      ];
+
+      // ally-ai returns EXACTLY {} for a transcript with no meaningful content.
+      await service.processTranscribeResult({
+        chatId,
+        transcription,
+        summary: {} as any,
+        correlationId: 'corr-empty',
+      });
+
+      // Transcript saved, but the empty summary is NOT stored and NOT SUCCESS.
+      expect(chatAiService.addTranscript).toHaveBeenCalled();
+      expect(chatAiService.addSummary).not.toHaveBeenCalled();
+      expect(chatService.updateChat).not.toHaveBeenCalledWith(
+        chatId,
+        expect.objectContaining({ summaryStatus: ChatSummaryStatus.SUCCESS }),
+      );
+      expect(chatService.updateChat).toHaveBeenCalledWith(
+        chatId,
+        expect.objectContaining({
+          summaryStatus: ChatSummaryStatus.FAILED,
+          metadata: expect.objectContaining({ summaryRetryable: true }),
+        }),
+      );
+    });
+
+    it('does NOT mark SUCCESS when the summary has no session_summary content', async () => {
+      chatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+
+      const transcription = [
+        { role: 'client', content: 'hello', start_time: 0, end_time: 1 },
+      ];
+
+      await service.processTranscribeResult({
+        chatId,
+        transcription,
+        // Has keys but the core deliverable (session_summary) is blank.
+        summary: { session_summary: '   ', languages: [] } as any,
+        correlationId: 'corr-hollow',
+      });
+
+      expect(chatAiService.addSummary).not.toHaveBeenCalled();
+      expect(chatService.updateChat).not.toHaveBeenCalledWith(
+        chatId,
+        expect.objectContaining({ summaryStatus: ChatSummaryStatus.SUCCESS }),
+      );
+      expect(chatService.updateChat).toHaveBeenCalledWith(
+        chatId,
+        expect.objectContaining({
+          summaryStatus: ChatSummaryStatus.FAILED,
+          metadata: expect.objectContaining({ summaryRetryable: true }),
+        }),
       );
     });
 
