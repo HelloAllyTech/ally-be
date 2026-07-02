@@ -20,6 +20,10 @@ jest.mock('../../../auth/decorators/auth-permissions.decorator', () => ({
   AuthPermissions: () => () => {},
 }));
 
+jest.mock('../../../auth/decorators/own-tenant-scope.decorator', () => ({
+  TenantScopedPermissions: () => () => {},
+}));
+
 describe('ScenarioPathController', () => {
   let controller: ScenarioPathController;
   let service: jest.Mocked<ScenarioPathService>;
