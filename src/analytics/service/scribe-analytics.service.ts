@@ -156,14 +156,19 @@ export class ScribeAnalyticsService {
       count(ChatSummaryStatus.PENDING) + count(ChatSummaryStatus.IN_PROGRESS);
     const noAudio = count(ChatSummaryStatus.NO_AUDIO);
     const totalSessions = outcomeRows.reduce((a, r) => a + r.count, 0);
-    const terminal = success + failed;
 
     return {
       range,
       bucket,
       summary: {
         totalSessions,
-        successRatePct: terminal > 0 ? round1((success / terminal) * 100) : 0,
+        // Share of ALL sessions that produced a summary, so this KPI equals the
+        // "Summarised" slice of the outcome donut (both over totalSessions). We
+        // intentionally do NOT exclude No-audio from the denominator: it keeps
+        // every dashboard % on one base and No-audio stays visible as its own
+        // tile.
+        successRatePct:
+          totalSessions > 0 ? round1((success / totalSessions) * 100) : 0,
         processing,
         noAudio,
         failed,

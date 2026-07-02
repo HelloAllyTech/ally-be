@@ -58,7 +58,7 @@ describe('ScribeAnalyticsService', () => {
   afterEach(() => jest.useRealTimers());
 
   describe('getOverview', () => {
-    it('gap-fills the daily trend and computes the success rate (terminal-only)', async () => {
+    it('gap-fills the daily trend and computes the success rate (share of all sessions)', async () => {
       repo.getSessionsByBucket.mockResolvedValue([
         { bucket: '2024-06-12', count: 5 },
         { bucket: '2024-06-10', count: 3 },
@@ -89,9 +89,9 @@ describe('ScribeAnalyticsService', () => {
         res.sessionsTrend.find((p) => p.bucket === '2024-06-10')?.count,
       ).toBe(3);
 
-      // success / (success + failed) = 80 / 100 = 80%. NO_AUDIO + in-flight
-      // are excluded from the denominator.
-      expect(res.summary.successRatePct).toBe(80);
+      // success / total = 80 / 115 = 69.6% — share of ALL sessions, so it
+      // matches the "Summarised" slice of the outcome donut.
+      expect(res.summary.successRatePct).toBe(69.6);
       expect(res.summary.failed).toBe(20);
       expect(res.summary.processing).toBe(5);
       expect(res.summary.noAudio).toBe(10);
@@ -126,11 +126,12 @@ describe('ScribeAnalyticsService', () => {
       ]);
     });
 
-    it('returns a 0% success rate when there are no terminal sessions', async () => {
+    it('returns a 0% success rate when nothing has been summarised', async () => {
       repo.getOutcomeCounts.mockResolvedValue([
         { key: ChatSummaryStatus.IN_PROGRESS, count: 3 },
       ]);
       const res = await service.getOverview('30d');
+      // 0 summarised / 3 total = 0%.
       expect(res.summary.successRatePct).toBe(0);
       expect(res.summary.totalSessions).toBe(3);
     });
