@@ -9,6 +9,7 @@ import { Chat, ChatStatus, ChatSummaryStatus } from '../../entity/chat.entity';
 import { CallDetailsService } from '../call-details.service';
 import { NotificationService } from '../../../notification/service/notification.service';
 import { ChatAudioUploadsService } from '../../../audio/service/chat-audio-uploads.service';
+import { ChatSummaryAttemptService } from '../chat-summary-attempt.service';
 
 jest.mock('axios');
 const mockedAxios = axios as jest.Mocked<typeof axios>;
@@ -79,6 +80,10 @@ describe('ChatTranscriptService', () => {
           useValue: {
             cleanupStoredAudio: jest.fn().mockResolvedValue(true),
           },
+        },
+        {
+          provide: ChatSummaryAttemptService,
+          useValue: { recordAttempt: jest.fn().mockResolvedValue(undefined) },
         },
       ],
     }).compile();

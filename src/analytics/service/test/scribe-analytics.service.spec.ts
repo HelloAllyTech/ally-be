@@ -42,6 +42,10 @@ describe('ScribeAnalyticsService', () => {
         { key: 'timeout', count: 0 },
         { key: 'other', count: 0 },
       ]),
+      getFirstAttemptFailureRateByBucket: jest.fn().mockResolvedValue([]),
+      getPhaseDropoff: jest.fn().mockResolvedValue([]),
+      getSttProviderStats: jest.fn().mockResolvedValue([]),
+      getSummaryModelStats: jest.fn().mockResolvedValue([]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -165,6 +169,9 @@ describe('ScribeAnalyticsService', () => {
         failed: 2,
         terminal: 10,
         failureRate: 0.2,
+        firstAttemptFailed: 0,
+        firstAttemptTerminal: 0,
+        firstAttemptFailureRate: 0,
       });
       // window totals: failed 2, terminal 14 -> 14.3%
       expect(res.summary.totalFailed).toBe(2);
@@ -174,6 +181,81 @@ describe('ScribeAnalyticsService', () => {
       expect(res.summary.retryableSharePct).toBe(50);
       expect(res.summary.timeoutSharePct).toBe(50);
       expect(res.failureBreakdown).toHaveLength(2);
+    });
+
+    it('merges the first-attempt series alongside the final failure rate', async () => {
+      // Final (post-backfill) rate is low, but the FIRST-attempt rate is high —
+      // exactly the gap backfill hides.
+      repo.getFailureRateByBucket.mockResolvedValue([
+        { bucket: '2024-06-12', failed: 1, terminal: 10 },
+      ]);
+      repo.getFirstAttemptFailureRateByBucket.mockResolvedValue([
+        { bucket: '2024-06-12', failed: 6, terminal: 10 },
+      ]);
+
+      const res = await service.getSummaryFailures('30d');
+      const last = res.failureRateTrend[res.failureRateTrend.length - 1];
+
+      expect(last.failureRate).toBeCloseTo(0.1, 4); // final: 1/10
+      expect(last.firstAttemptFailed).toBe(6);
+      expect(last.firstAttemptTerminal).toBe(10);
+      expect(last.firstAttemptFailureRate).toBeCloseTo(0.6, 4); // first: 6/10
+    });
+
+    it('builds a cumulative phase funnel from the drop-off distribution', async () => {
+      repo.getPhaseDropoff.mockResolvedValue([
+        { key: 'audio-uploaded', count: 3 }, // stuck at upload (cross-replica)
+        { key: 'diarized', count: 2 }, // summarize failed
+        { key: 'delivered', count: 5 }, // succeeded
+      ]);
+
+      const res = await service.getSummaryFailures('30d');
+      const funnel = res.phaseFunnel;
+
+      // ladder order preserved
+      expect(funnel.map((p) => p.phase)).toEqual([
+        'created',
+        'audio-uploaded',
+        'transcribed',
+        'diarized',
+        'summarized',
+        'delivered',
+      ]);
+      const reached = Object.fromEntries(
+        funnel.map((p) => [p.phase, p.reached]),
+      );
+      // reached is cumulative from the end: 10 total reached audio-uploaded,
+      // 7 reached diarized, 5 reached delivered.
+      expect(reached['created']).toBe(10);
+      expect(reached['audio-uploaded']).toBe(10);
+      expect(reached['transcribed']).toBe(7);
+      expect(reached['diarized']).toBe(7);
+      expect(reached['summarized']).toBe(5);
+      expect(reached['delivered']).toBe(5);
+      expect(
+        funnel.find((p) => p.phase === 'audio-uploaded')?.stoppedHere,
+      ).toBe(3);
+    });
+
+    it('passes through STT provider + summary model stats', async () => {
+      repo.getSttProviderStats.mockResolvedValue([
+        { provider: 'deepgram', tried: 10, ok: 3, failed: 7 },
+        { provider: 'openai', tried: 7, ok: 7, failed: 0 },
+      ]);
+      repo.getSummaryModelStats.mockResolvedValue([
+        { key: 'gpt-4o-mini', count: 9 },
+      ]);
+
+      const res = await service.getSummaryFailures('30d');
+      expect(res.sttProviderStats).toHaveLength(2);
+      expect(res.sttProviderStats[0]).toMatchObject({
+        provider: 'deepgram',
+        failed: 7,
+      });
+      expect(res.summaryModelStats[0]).toMatchObject({
+        key: 'gpt-4o-mini',
+        count: 9,
+      });
     });
 
     it('keeps sub-10% ratio precision in the trend (no 10% quantization)', async () => {

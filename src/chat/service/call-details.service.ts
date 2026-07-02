@@ -33,6 +33,12 @@ import { CallInfo } from '../dto/call-log.response.dto';
 import { CallDetails } from '../entity/call.details.entity';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { CustomFieldsService } from '../../custom-fields/service/custom-fields.service';
+import { ChatSummaryAttemptService } from './chat-summary-attempt.service';
+import {
+  ScribeAttemptOutcome,
+  ScribeAttemptTrigger,
+  ScribePhaseReached,
+} from '../entity/chat-summary-attempt.entity';
 
 @Injectable()
 export class CallDetailsService {
@@ -50,6 +56,7 @@ export class CallDetailsService {
     private streamFileProcessorService: StreamFileProcessorService,
     private customFieldsService: CustomFieldsService,
     private chatAudioUploadsService: ChatAudioUploadsService,
+    private summaryAttemptService: ChatSummaryAttemptService,
   ) {}
 
   async handleChatEnded(chat: Chat) {
@@ -167,9 +174,11 @@ export class CallDetailsService {
    */
   private async runSummaryRetry(
     chat: Chat,
+    trigger: ScribeAttemptTrigger = ScribeAttemptTrigger.CRON_RETRY,
   ): Promise<{ success: boolean; message: string }> {
     const chatId = chat.id;
     const metadata = (chat.metadata as Record<string, any>) ?? {};
+    const startedAt = new Date();
 
     await this.chatRepository.update(chatId, {
       summaryStatus: ChatSummaryStatus.IN_PROGRESS,
@@ -183,6 +192,18 @@ export class CallDetailsService {
           string,
           any
         >,
+      });
+      // A summary retry regenerates from the stored transcript → the session
+      // reached delivery.
+      await this.summaryAttemptService.recordAttempt({
+        chatId,
+        tenantId: chat.tenantId,
+        trigger,
+        outcome: ScribeAttemptOutcome.SUCCESS,
+        phaseReached: ScribePhaseReached.DELIVERED,
+        startedAt,
+        elapsedMs: Date.now() - startedAt.getTime(),
+        correlationId: metadata.correlationId ?? null,
       });
       this.logger.info(`Summary retry succeeded for chat ${chatId}`);
       // Summary is final — drop the recording now that recovery is no longer
@@ -210,6 +231,19 @@ export class CallDetailsService {
           summaryRetryAttempts: attempts,
           error: reason,
         } as Record<string, any>,
+      });
+      // Transcript exists (we retried from it) but summarization failed again.
+      await this.summaryAttemptService.recordAttempt({
+        chatId,
+        tenantId: chat.tenantId,
+        trigger,
+        outcome: ScribeAttemptOutcome.FAILED,
+        phaseReached: ScribePhaseReached.DIARIZED,
+        failureStage: 'summarize',
+        failureReason: reason,
+        startedAt,
+        elapsedMs: Date.now() - startedAt.getTime(),
+        correlationId: metadata.correlationId ?? null,
       });
       this.logger.error(
         `Summary retry failed for chat ${chatId} (attempt ${attempts}): ${reason}`,
@@ -253,7 +287,7 @@ export class CallDetailsService {
       };
     }
 
-    return this.runSummaryRetry(chat);
+    return this.runSummaryRetry(chat, ScribeAttemptTrigger.MANUAL_RETRY);
   }
 
   /**

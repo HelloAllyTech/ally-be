@@ -195,21 +195,36 @@ export class ScribeAnalyticsService {
 
     const [
       rateRows,
+      firstAttemptRateRows,
       breakdownRows,
       modeRows,
       captureRows,
       retryableRows,
       timeoutRows,
+      phaseDropoffRows,
+      sttProviderStats,
+      summaryModelStats,
     ] = await Promise.all([
       this.repo.getFailureRateByBucket(windowStart, endExclusive, bucket),
+      this.repo.getFirstAttemptFailureRateByBucket(
+        windowStart,
+        endExclusive,
+        bucket,
+      ),
       this.repo.getFailureBreakdown(windowStart, endExclusive),
       this.repo.getFailuresByMode(windowStart, endExclusive),
       this.repo.getFailuresByCaptureMethod(windowStart, endExclusive),
       this.repo.getFailureRetryableCounts(windowStart, endExclusive),
       this.repo.getFailureTimeoutCounts(windowStart, endExclusive),
+      this.repo.getPhaseDropoff(windowStart, endExclusive),
+      this.repo.getSttProviderStats(windowStart, endExclusive),
+      this.repo.getSummaryModelStats(windowStart, endExclusive),
     ]);
 
     const byBucket = new Map(rateRows.map((r) => [r.bucket, r]));
+    const firstByBucket = new Map(
+      firstAttemptRateRows.map((r) => [r.bucket, r]),
+    );
     const failureRateTrend = this.axisKeys(
       windowStart,
       endExclusive,
@@ -218,6 +233,9 @@ export class ScribeAnalyticsService {
       const row = byBucket.get(key);
       const failed = row?.failed ?? 0;
       const terminal = row?.terminal ?? 0;
+      const firstRow = firstByBucket.get(key);
+      const firstAttemptFailed = firstRow?.failed ?? 0;
+      const firstAttemptTerminal = firstRow?.terminal ?? 0;
       return {
         bucket: key,
         failed,
@@ -226,8 +244,33 @@ export class ScribeAnalyticsService {
         // nearest 0.1 — i.e. 10% steps once the client multiplies by 100 — so
         // 14.3% would render as 10%. The client rounds to a 1-decimal percent.
         failureRate: terminal > 0 ? round4(failed / terminal) : 0,
+        firstAttemptFailed,
+        firstAttemptTerminal,
+        firstAttemptFailureRate:
+          firstAttemptTerminal > 0
+            ? round4(firstAttemptFailed / firstAttemptTerminal)
+            : 0,
       };
     });
+
+    // Turn the per-phase drop-off distribution into a cumulative "reached"
+    // funnel: reached(phase) = sessions that stopped at this phase or any later
+    // one, walking the ladder from the end.
+    const stoppedByPhase = new Map(
+      phaseDropoffRows.map((r) => [r.key, r.count]),
+    );
+    const ladder = ScribeAnalyticsRepository.PHASE_LADDER;
+    let cumulative = 0;
+    const reachedByIndex: number[] = new Array(ladder.length).fill(0);
+    for (let i = ladder.length - 1; i >= 0; i--) {
+      cumulative += stoppedByPhase.get(ladder[i]) ?? 0;
+      reachedByIndex[i] = cumulative;
+    }
+    const phaseFunnel = ladder.map((phase, i) => ({
+      phase,
+      reached: reachedByIndex[i],
+      stoppedHere: stoppedByPhase.get(phase) ?? 0,
+    }));
 
     const totalTerminal = rateRows.reduce((a, r) => a + r.terminal, 0);
     const totalFailed = rateRows.reduce((a, r) => a + r.failed, 0);
@@ -252,6 +295,9 @@ export class ScribeAnalyticsService {
       failureBreakdown: breakdownRows,
       failuresByMode: modeRows,
       failuresByCaptureMethod: captureRows,
+      phaseFunnel,
+      sttProviderStats,
+      summaryModelStats,
     };
   }
 }

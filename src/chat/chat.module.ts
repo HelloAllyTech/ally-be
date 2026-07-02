@@ -1,6 +1,7 @@
 import { forwardRef, Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Chat } from './entity/chat.entity';
+import { ChatSummaryAttempt } from './entity/chat-summary-attempt.entity';
 import { Message } from './entity/message.entity';
 import { ChatService } from './service/chat.service';
 import { ChatSummaryService } from './service/chat-summary.service';
@@ -36,6 +37,7 @@ import { CallLogService } from './service/call-log.service';
 import { AiChatIntegrationService } from './service/ai-chat-integration.service';
 import { ChatFeedbackService } from './service/chat-feedback.service';
 import { ChatTranscriptService } from './service/chat-transcript.service';
+import { ChatSummaryAttemptService } from './service/chat-summary-attempt.service';
 import { ChatSharedService } from './service/chat-shared.service';
 import { ChatSchedulerRegistrationService } from './service/chat-scheduler-registration.service';
 import { ScribeSessionReviewModule } from 'src/scribe-session-review/scribe-session-review.module';
@@ -44,7 +46,7 @@ import { CustomFieldsModule } from '../custom-fields/custom-fields.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([Message, Feedback, CallDetails, SummaryFeedback]),
-    TypeOrmModule.forFeature([Chat, ChatRepository]),
+    TypeOrmModule.forFeature([Chat, ChatRepository, ChatSummaryAttempt]),
     UserModule,
     forwardRef(() => AiModule),
     SettingsModule,
@@ -78,6 +80,7 @@ import { CustomFieldsModule } from '../custom-fields/custom-fields.module';
     AudioUploadConsumer,
     AudioUploadDlqConsumer,
     ChatTranscriptService,
+    ChatSummaryAttemptService,
     ChatSharedService,
     ChatSchedulerRegistrationService,
   ],

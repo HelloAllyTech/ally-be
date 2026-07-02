@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ChatSummaryStatus } from '../../chat/entity/chat.entity';
+import { ScribePhaseReached } from '../../chat/entity/chat-summary-attempt.entity';
 import { CHAT_SUMMARY_TIMEOUT_ERROR } from '../../chat/constants/chat.constants';
 import {
   AudioChatProvider,
@@ -23,6 +24,13 @@ export interface ScribeFailureRateRow {
   bucket: string;
   failed: number;
   terminal: number;
+}
+
+export interface ScribeProviderStatRow {
+  provider: string;
+  tried: number;
+  ok: number;
+  failed: number;
 }
 
 /**
@@ -386,4 +394,162 @@ export class ScribeAnalyticsRepository {
       { key: 'other', count: Number(row?.other) || 0 },
     ];
   }
+
+  /**
+   * Per-bucket FIRST-ATTEMPT failed + terminal counts within [start, end), read
+   * from the write-once `chats.firstAttemptStatus`. Unlike getFailureRateByBucket
+   * (which reads the mutable `summaryStatus` and so drops to the post-backfill
+   * residual), this is the true initial-run failure rate — the health signal
+   * that survives a retry healing the session. Only sessions instrumented after
+   * the attempt-tracking rollout have a non-null firstAttemptStatus, so the
+   * denominator is naturally limited to those.
+   */
+  async getFirstAttemptFailureRateByBucket(
+    start: Date,
+    end: Date,
+    bucket: AnalyticsBucket,
+  ): Promise<ScribeFailureRateRow[]> {
+    const trunc = this.resolveBucket(bucket);
+    const rows = await this.dataSource
+      .createQueryBuilder()
+      .select(
+        `to_char(date_trunc('${trunc}', c."createdAt"), 'YYYY-MM-DD')`,
+        'bucket',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE c."firstAttemptStatus" = :failed)::int`,
+        'failed',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE c."firstAttemptStatus" IN (:...terminal))::int`,
+        'terminal',
+      )
+      .from('chats', 'c')
+      .where('c."createdAt" >= :start', { start })
+      .andWhere('c."createdAt" < :end', { end })
+      .setParameter('failed', ChatSummaryStatus.FAILED)
+      .setParameter('terminal', [
+        ChatSummaryStatus.SUCCESS,
+        ChatSummaryStatus.FAILED,
+      ])
+      .groupBy('bucket')
+      .orderBy('bucket', 'ASC')
+      .getRawMany<{ bucket: string; failed: number; terminal: number }>();
+
+    return rows.map((r) => ({
+      bucket: r.bucket,
+      failed: Number(r.failed) || 0,
+      terminal: Number(r.terminal) || 0,
+    }));
+  }
+
+  /**
+   * Per-session drop-off across the pipeline phase ladder, for sessions created
+   * in [start, end). For each chat we take the FURTHEST phase any of its
+   * attempts reached (a session that eventually succeeded via retry counts as
+   * `delivered`), then count how many sessions ended at each phase. Replaces the
+   * flat failure breakdown with a "where sessions stop" funnel. Keyed by phase;
+   * the service turns the drop-off distribution into cumulative reached counts.
+   */
+  async getPhaseDropoff(start: Date, end: Date): Promise<ScribeKeyCountRow[]> {
+    // Raw SQL: TypeORM's query builder mangles the ARRAY[...] indexing and the
+    // derived-table subquery (emitting invalid quoted identifiers), so use a
+    // parameterized raw query. `count` comes back ::int -> JS number.
+    const ladder =
+      `ARRAY['created','audio-uploaded','transcribed','diarized',` +
+      `'summarized','delivered']`;
+    const rows = await this.dataSource.query<{ key: string; count: number }[]>(
+      `SELECT per_chat.phase AS key, COUNT(*)::int AS count
+       FROM (
+         SELECT a."chatId",
+           (${ladder})[
+             MAX(COALESCE(array_position(${ladder}, a."phaseReached"), 1))
+           ] AS phase
+         FROM chat_summary_attempts a
+         INNER JOIN chats c ON c.id = a."chatId"
+         WHERE c."createdAt" >= $1 AND c."createdAt" < $2
+         GROUP BY a."chatId"
+       ) per_chat
+       GROUP BY per_chat.phase`,
+      [start, end],
+    );
+
+    return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
+  }
+
+  /**
+   * Per-STT-provider try/success/fail counts over the per-attempt provider trail
+   * (`chat_summary_attempts.sttAttempts`, a jsonb array of {provider, ok}),
+   * for sessions created in [start, end). Expands the array with
+   * jsonb_array_elements so each provider attempt is one row. This is the panel
+   * that shows which STT engine actually fails (only populated once ally-ai
+   * emits the trail).
+   */
+  async getSttProviderStats(
+    start: Date,
+    end: Date,
+  ): Promise<ScribeProviderStatRow[]> {
+    // Raw SQL: the query builder can't express the LATERAL jsonb_array_elements
+    // expansion (it emits a zero-length quoted identifier and the query fails),
+    // so use a parameterized raw query.
+    const rows = await this.dataSource.query<
+      { provider: string; tried: number; ok: number; failed: number }[]
+    >(
+      `SELECT elem->>'provider' AS provider,
+              COUNT(*)::int AS tried,
+              COUNT(*) FILTER (WHERE (elem->>'ok')::boolean)::int AS ok,
+              COUNT(*) FILTER (WHERE NOT (elem->>'ok')::boolean)::int AS failed
+       FROM chat_summary_attempts a
+       INNER JOIN chats c ON c.id = a."chatId"
+       CROSS JOIN LATERAL jsonb_array_elements(a."sttAttempts") elem
+       WHERE c."createdAt" >= $1 AND c."createdAt" < $2
+         AND a."sttAttempts" IS NOT NULL
+       GROUP BY elem->>'provider'
+       ORDER BY tried DESC`,
+      [start, end],
+    );
+
+    return rows.map((r) => ({
+      provider: r.provider,
+      tried: Number(r.tried) || 0,
+      ok: Number(r.ok) || 0,
+      failed: Number(r.failed) || 0,
+    }));
+  }
+
+  /**
+   * Per-LLM-model summary counts (successful summaries) for sessions created in
+   * [start, end), from `chat_summary_attempts.summaryModel`. Only populated once
+   * ally-ai emits the model name.
+   */
+  async getSummaryModelStats(
+    start: Date,
+    end: Date,
+  ): Promise<ScribeKeyCountRow[]> {
+    const rows = await this.dataSource
+      .createQueryBuilder()
+      .select(`a."summaryModel"`, 'key')
+      .addSelect('COUNT(*)::int', 'count')
+      .from('chat_summary_attempts', 'a')
+      .innerJoin('chats', 'c', 'c.id = a."chatId"')
+      .where('c."createdAt" >= :start', { start })
+      .andWhere('c."createdAt" < :end', { end })
+      .andWhere(`NULLIF(a."summaryModel", '') IS NOT NULL`)
+      .andWhere('a.outcome = :success', { success: 'success' })
+      .groupBy(`a."summaryModel"`)
+      .orderBy('count', 'DESC')
+      .getRawMany<{ key: string; count: number }>();
+
+    return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
+  }
+
+  /** Ordered phase ladder used by the drop-off funnel. */
+  static readonly PHASE_LADDER: ScribePhaseReached[] = [
+    ScribePhaseReached.CREATED,
+    ScribePhaseReached.AUDIO_UPLOADED,
+    ScribePhaseReached.TRANSCRIBED,
+    ScribePhaseReached.DIARIZED,
+    ScribePhaseReached.SUMMARIZED,
+    ScribePhaseReached.DELIVERED,
+  ];
 }

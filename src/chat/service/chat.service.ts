@@ -69,6 +69,11 @@ import { ToggleArchiveStatusDto } from '../dto/toggle-archive-status.dto';
 import { ScribeSessionReviewSharedService } from 'src/scribe-session-review/service/review-shared.service';
 import { ReviewStatus } from 'src/review/type/review.type';
 import { SettingsService } from '../../settings/service/settings.service';
+import { ChatSummaryAttemptService } from './chat-summary-attempt.service';
+import {
+  ScribeAttemptOutcome,
+  ScribeAttemptTrigger,
+} from '../entity/chat-summary-attempt.entity';
 
 @Injectable()
 export class ChatService {
@@ -94,6 +99,7 @@ export class ChatService {
     private readonly scribeSessionReviewSharedService: ScribeSessionReviewSharedService,
     private readonly notificationService: NotificationService,
     private readonly settingsService: SettingsService,
+    private readonly summaryAttemptService: ChatSummaryAttemptService,
   ) {}
 
   async getChat(id: number) {
@@ -837,6 +843,24 @@ export class ChatService {
 
         if (result.affected && result.affected > 0) {
           (hasTranscript ? retryableIds : deadIds).push(chat.id);
+          // Record the timed-out attempt. A saved transcript means the session
+          // reached diarization; otherwise it never got past the audio upload.
+          await this.summaryAttemptService.recordAttempt({
+            chatId: chat.id,
+            tenantId: chat.tenantId,
+            trigger:
+              Number(existingMetadata.reprocessAttempts) > 0
+                ? ScribeAttemptTrigger.REPROCESS
+                : ScribeAttemptTrigger.INITIAL,
+            outcome: ScribeAttemptOutcome.FAILED,
+            phaseReached: ChatSummaryAttemptService.phaseForFailureStage(
+              'summary-timeout',
+              hasTranscript,
+            ),
+            failureStage: 'summary-timeout',
+            failureReason: CHAT_SUMMARY_TIMEOUT_ERROR,
+            correlationId: existingMetadata.correlationId ?? null,
+          });
         }
       } catch (error) {
         this.logger.error(

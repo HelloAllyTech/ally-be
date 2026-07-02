@@ -79,4 +79,42 @@ export class TranscriptRequestDto {
   @IsOptional()
   @IsString()
   correlationId?: string;
+
+  @ApiProperty({
+    required: false,
+    description: 'STT provider that actually produced the transcript',
+    example: 'openai',
+  })
+  @IsOptional()
+  @IsString()
+  sttProviderSucceeded?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Per-provider STT trail for this attempt: [{provider, ok, error?}]',
+  })
+  @IsArray()
+  @IsOptional()
+  sttAttempts?: { provider: string; ok: boolean; error?: string }[];
+
+  @ApiProperty({
+    required: false,
+    description: 'LLM model used to generate the summary',
+    example: 'gpt-4o-mini-2024-07-18',
+  })
+  @IsOptional()
+  @IsString()
+  summaryModel?: string;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Furthest pipeline phase reached (created/audio-uploaded/transcribed/' +
+      'diarized/summarized/delivered)',
+    example: 'delivered',
+  })
+  @IsOptional()
+  @IsString()
+  phaseReached?: string;
 }

@@ -54,4 +54,14 @@ export class Chat extends BaseEntity {
 
   @Column({ nullable: true })
   createdBy?: number;
+
+  // First-attempt outcome, written ONCE and never overwritten by a retry — the
+  // health signal that the mutable `summaryStatus` loses once backfill heals a
+  // session. Denormalised from chat_summary_attempts so the common dashboard
+  // queries don't have to join. See ChatSummaryAttempt.
+  @Column({ nullable: true })
+  firstAttemptStatus?: ChatSummaryStatus;
+
+  @Column({ nullable: true })
+  firstFailureStage?: string;
 }

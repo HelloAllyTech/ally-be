@@ -11,6 +11,13 @@ import { FlattenedSummaryNotePayload } from '../type/call.details.type';
 import { CallDetailsService } from './call-details.service';
 import { NotificationService } from '../../notification/service/notification.service';
 import { ChatAudioUploadsService } from '../../audio/service/chat-audio-uploads.service';
+import { ChatSummaryAttemptService } from './chat-summary-attempt.service';
+import {
+  ScribeAttemptOutcome,
+  ScribeAttemptTrigger,
+  ScribePhaseReached,
+  ScribeSttAttempt,
+} from '../entity/chat-summary-attempt.entity';
 
 @Injectable()
 export class ChatTranscriptService {
@@ -24,6 +31,7 @@ export class ChatTranscriptService {
     private readonly callDetailsService: CallDetailsService,
     private readonly notificationService: NotificationService,
     private readonly chatAudioUploadsService: ChatAudioUploadsService,
+    private readonly summaryAttemptService: ChatSummaryAttemptService,
   ) {}
 
   async processTranscribeResult(params: {
@@ -35,6 +43,10 @@ export class ChatTranscriptService {
     error?: string;
     stage?: string;
     correlationId?: string;
+    sttProviderSucceeded?: string;
+    sttAttempts?: ScribeSttAttempt[];
+    summaryModel?: string;
+    phaseReached?: string;
   }): Promise<void> {
     const {
       chatId,
@@ -45,6 +57,10 @@ export class ChatTranscriptService {
       error,
       stage,
       correlationId,
+      sttProviderSucceeded,
+      sttAttempts,
+      summaryModel,
+      phaseReached,
     } = params;
 
     const startedAt = Date.now();
@@ -78,6 +94,42 @@ export class ChatTranscriptService {
       return;
     }
 
+    // A callback for a chat that has already been through a reprocess
+    // re-dispatch is a reprocess result; otherwise it's the original run.
+    const attemptTrigger =
+      Number(
+        (chat.metadata as Record<string, any> | undefined)?.reprocessAttempts,
+      ) > 0
+        ? ScribeAttemptTrigger.REPROCESS
+        : ScribeAttemptTrigger.INITIAL;
+
+    // Append one attempt row per terminal outcome. Best-effort inside the
+    // service; prefer an explicit phase from ally-ai (Phase B), else the
+    // branch's derived phase.
+    const recordAttempt = (
+      outcome: ScribeAttemptOutcome,
+      opts: {
+        phase: ScribePhaseReached;
+        failureStage?: string;
+        failureReason?: string;
+      },
+    ): Promise<void> =>
+      this.summaryAttemptService.recordAttempt({
+        chatId,
+        tenantId: chat.tenantId,
+        trigger: attemptTrigger,
+        outcome,
+        phaseReached: (phaseReached as ScribePhaseReached) ?? opts.phase,
+        failureStage: opts.failureStage ?? null,
+        failureReason: opts.failureReason ?? null,
+        sttProviderSucceeded: sttProviderSucceeded ?? null,
+        sttAttempts: sttAttempts ?? null,
+        summaryModel: summaryModel ?? null,
+        startedAt: new Date(startedAt),
+        elapsedMs: Date.now() - startedAt,
+        correlationId: effectiveCorrelationId,
+      });
+
     try {
       // Resolve transcript + summary (inline, or from the legacy S3 result
       // file). A download failure is caught below and recorded as FAILED.
@@ -108,6 +160,11 @@ export class ChatTranscriptService {
             mode: 'explicit-failure',
             elapsedMs: Date.now() - startedAt,
           });
+          await recordAttempt(ScribeAttemptOutcome.FAILED, {
+            phase: ChatSummaryAttemptService.phaseForFailureStage(stage, false),
+            failureStage: stage ?? 'transcribe-result',
+            failureReason: error,
+          });
         }
         return;
       }
@@ -131,6 +188,9 @@ export class ChatTranscriptService {
         this.logger.info(
           `process-transcript acked SUCCESS for chat ${chatId} correlationId=${effectiveCorrelationId} elapsedMs=${Date.now() - startedAt}`,
         );
+        await recordAttempt(ScribeAttemptOutcome.SUCCESS, {
+          phase: ScribePhaseReached.DELIVERED,
+        });
         void this.runPostSummaryTasks(chat, chatId, effectiveCorrelationId);
       } else if (error || sm) {
         // Either the summary failed upstream (error), OR a summary payload came
@@ -146,6 +206,13 @@ export class ChatTranscriptService {
           reason,
           stage: stage ?? 'summarize',
           correlationId: effectiveCorrelationId,
+        });
+        // Transcript was saved → transcription + diarization completed; this is
+        // a summarize-stage failure.
+        await recordAttempt(ScribeAttemptOutcome.FAILED, {
+          phase: ChatSummaryAttemptService.phaseForFailureStage(stage, true),
+          failureStage: stage ?? 'summarize',
+          failureReason: reason,
         });
         this.logger.info(
           `process-transcript saved transcript; summary FAILED (retryable) for chat ${chatId} correlationId=${effectiveCorrelationId} reason="${reason}"`,
@@ -197,6 +264,11 @@ export class ChatTranscriptService {
         correlationId: effectiveCorrelationId,
         mode: 'delivery-failure',
         elapsedMs: Date.now() - startedAt,
+      });
+      await recordAttempt(ScribeAttemptOutcome.FAILED, {
+        phase: ChatSummaryAttemptService.phaseForFailureStage(stage, false),
+        failureStage: stage ?? 'transcribe-result',
+        failureReason: `Failed to persist result on ally-core: ${reason}`,
       });
       // Rethrow so the AI side treats it as a delivery failure and retries the
       // (idempotent) result — a transient DB blip then self-heals.

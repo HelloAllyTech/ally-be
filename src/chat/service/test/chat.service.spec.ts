@@ -20,6 +20,7 @@ import { AiService } from '../../../ai/service/ai.service';
 import { RedisService } from '../../../redis/service/redis.service';
 import { MessageBrokerService } from '../../../message-broker/service/message-broker.service';
 import { SettingsService } from '../../../settings/service/settings.service';
+import { ChatSummaryAttemptService } from '../chat-summary-attempt.service';
 import { BroadcastMessageService } from '../../../audio/service/broadcast-message.service';
 import { StreamFileProcessorService } from '../../../audio/service/stream-file-processor.service';
 import { CryptoService } from '../../../common/service/crypto.service';
@@ -409,6 +410,10 @@ describe('ChatService', () => {
             notifyTranscriptionFailure: jest.fn(),
             notifyReprocessSummary: jest.fn(),
           },
+        },
+        {
+          provide: ChatSummaryAttemptService,
+          useValue: { recordAttempt: jest.fn().mockResolvedValue(undefined) },
         },
       ],
     }).compile();

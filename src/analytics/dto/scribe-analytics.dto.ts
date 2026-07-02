@@ -84,8 +84,44 @@ export class ScribeFailureRatePointDto {
   failed!: number;
   @ApiProperty({ description: 'Terminal sessions (SUCCESS + FAILED)' })
   terminal!: number;
-  @ApiProperty({ description: 'failed / terminal, 0..1' })
+  @ApiProperty({
+    description: 'failed / terminal (final, post-backfill), 0..1',
+  })
   failureRate!: number;
+  @ApiProperty({
+    description:
+      'Sessions whose FIRST attempt failed in this bucket (write-once; only ' +
+      'sessions created after attempt-tracking rollout).',
+  })
+  firstAttemptFailed!: number;
+  @ApiProperty({
+    description: 'First-attempt terminal sessions (SUCCESS+FAILED)',
+  })
+  firstAttemptTerminal!: number;
+  @ApiProperty({
+    description: 'first-attempt failed / first-attempt terminal, 0..1',
+  })
+  firstAttemptFailureRate!: number;
+}
+
+/** One phase on the drop-off funnel. */
+export class ScribePhaseFunnelPointDto {
+  @ApiProperty({ description: 'Phase key in ladder order' }) phase!: string;
+  @ApiProperty({ description: 'Sessions that reached AT LEAST this phase' })
+  reached!: number;
+  @ApiProperty({
+    description: 'Sessions whose furthest phase was exactly this',
+  })
+  stoppedHere!: number;
+}
+
+/** Per-STT-provider try/success/fail over the per-attempt provider trail. */
+export class ScribeProviderStatDto {
+  @ApiProperty() provider!: string;
+  @ApiProperty({ description: 'Times this provider was tried' }) tried!: number;
+  @ApiProperty({ description: 'Times it produced a transcript' }) ok!: number;
+  @ApiProperty({ description: 'Times it failed / returned empty' })
+  failed!: number;
 }
 
 export class ScribeFailureSummaryDto {
@@ -133,4 +169,25 @@ export class ScribeSummaryFailureResponseDto {
       'bug tracks.',
   })
   failuresByCaptureMethod!: ScribeCountDto[];
+  @ApiProperty({
+    type: [ScribePhaseFunnelPointDto],
+    description:
+      'Pipeline drop-off funnel: how many sessions reached each phase and ' +
+      'where they stopped. Replaces the flat failure breakdown. Only covers ' +
+      'sessions instrumented after the attempt-tracking rollout.',
+  })
+  phaseFunnel!: ScribePhaseFunnelPointDto[];
+  @ApiProperty({
+    type: [ScribeProviderStatDto],
+    description:
+      'Per-STT-provider try/success/fail over the per-attempt provider trail ' +
+      '(populated once ally-ai emits it).',
+  })
+  sttProviderStats!: ScribeProviderStatDto[];
+  @ApiProperty({
+    type: [ScribeCountDto],
+    description:
+      'Successful summaries by LLM model (populated once ally-ai emits it).',
+  })
+  summaryModelStats!: ScribeCountDto[];
 }

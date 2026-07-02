@@ -28,6 +28,7 @@ import { FlattenedSummaryNotePayloadCamelCase } from 'src/chat/type/call.details
 import { CallDetails } from 'src/chat/entity/call.details.entity';
 import { CustomFieldsService } from '../../../custom-fields/service/custom-fields.service';
 import { ChatAudioUploadsService } from '../../../audio/service/chat-audio-uploads.service';
+import { ChatSummaryAttemptService } from '../chat-summary-attempt.service';
 
 describe('CallDetailsService', () => {
   let service: CallDetailsService;
@@ -238,6 +239,10 @@ describe('CallDetailsService', () => {
           useValue: {
             cleanupStoredAudio: jest.fn().mockResolvedValue(true),
           },
+        },
+        {
+          provide: ChatSummaryAttemptService,
+          useValue: { recordAttempt: jest.fn().mockResolvedValue(undefined) },
         },
       ],
     }).compile();
