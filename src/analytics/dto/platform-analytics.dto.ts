@@ -259,6 +259,101 @@ export class VoiceLatencyResponseDto {
   points!: VoiceLatencyPointDto[];
 }
 
+export class StartLatencyQueryDto {
+  @ApiProperty({
+    description: 'Time window for the simulation start-latency trend',
+    enum: ANALYTICS_RANGES,
+    default: '90d',
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(ANALYTICS_RANGES)
+  range?: AnalyticsRange;
+
+  @ApiProperty({
+    description:
+      'Bucket granularity. Defaults to the range default ' +
+      '(30d -> day, 90d -> week, 12m -> month) when omitted.',
+    enum: ANALYTICS_BUCKETS,
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(ANALYTICS_BUCKETS)
+  bucket?: AnalyticsBucketParam;
+
+  @ApiProperty({
+    description: "Filter by the session's language value (e.g. en-IN, hi-IN)",
+    required: false,
+  })
+  @IsOptional()
+  language?: string;
+}
+
+export class StartLatencyPointDto {
+  @ApiProperty({ description: 'Bucket start date (ISO yyyy-mm-dd)' })
+  bucket!: string;
+
+  @ApiProperty({
+    description:
+      "How the metric was produced: 'pipeline' (live agent, full segment " +
+      "breakdown) or 'transcript' (historical, total only — excludes the " +
+      'pre-join configure/initialize time)',
+  })
+  source!: string;
+
+  @ApiProperty({ description: 'Sessions aggregated into this bucket' })
+  sessions!: number;
+
+  @ApiProperty({ description: 'Mean total start latency / time-to-first-word (ms)' })
+  avgMs!: number;
+
+  @ApiProperty({ description: 'Median (p50) total start latency (ms)' })
+  p50Ms!: number;
+
+  @ApiProperty({ description: 'p95 total start latency (ms)' })
+  p95Ms!: number;
+
+  @ApiProperty({ description: 'Mean configure() segment (ms); 0 for transcript' })
+  configureMs!: number;
+
+  @ApiProperty({ description: 'Mean initialize() segment (ms); 0 for transcript' })
+  initializeMs!: number;
+
+  @ApiProperty({ description: 'Mean connect (session.start + join) segment (ms)' })
+  connectMs!: number;
+
+  @ApiProperty({
+    description: 'Mean prep (orchestrator + background audio) segment (ms)',
+  })
+  prepMs!: number;
+}
+
+export class StartLatencyResponseDto {
+  @ApiProperty({
+    description: 'Time window the trend was computed over',
+    enum: ANALYTICS_RANGES,
+  })
+  range!: AnalyticsRange;
+
+  @ApiProperty({
+    description: 'Bucket granularity (day / week / month) for this range',
+  })
+  bucket!: string;
+
+  @ApiProperty({ description: 'Start-latency target line for reference (ms)' })
+  targetMs!: number;
+
+  @ApiProperty({
+    description:
+      'Per-bucket, per-source start-latency points (sorted by bucket then ' +
+      'source). Buckets with no sessions are omitted. For pipeline rows the ' +
+      'four segment means sum to avgMs; transcript rows carry avgMs only ' +
+      '(segments 0).',
+    type: [StartLatencyPointDto],
+  })
+  points!: StartLatencyPointDto[];
+}
+
 export class TokenConsumptionQueryDto {
   @ApiProperty({
     description: 'Time window for the token-consumption breakdown',

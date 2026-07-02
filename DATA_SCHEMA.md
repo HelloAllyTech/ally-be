@@ -136,6 +136,7 @@ This is where most **analytics** about training performance live.
 | `scenario_session_recording` | BaseEntity | `scenario_session_id` (uniq), `storage_key` (S3), `egress_id` (LiveKit) | Recording pointer |
 | `scenario_session_events` | BaseEntity | `scenario_session_id` (idx), `event_id`, `occurred_at`, `score`, `emoji`, `message`, `auto_termination_status`, `metadata` | Events that fired during a run |
 | `scenario_session_turn_metrics` | BaseEntity | `scenario_session_id`/`room_id`, `turn_index`, **`response_latency_ms`**, `eou_delay_ms`, `llm_ttft_ms`, `tts_ttfb_ms`, `orchestration_ms`, `llm_response_ms`, `prosody_ms` _(deprecated — no longer populated)_, `branching_ms`, `knowledge_retrieval_ms`, `process_events_ms`, `behaviors_ms`, `llm_model`, `language`, `env`, `events_detected`, `prosody_skipped` _(deprecated — no longer populated)_, `interrupted`, `llm_timed_out`, `occurred_at` | **Per-turn latency telemetry** — wide table built for Metabase percentile dashboards. Indexed on `scenario_session_id`, `occurred_at`, `scenario_id`. `prosody_ms`/`prosody_skipped` are retained for backward-compat but no longer written (speech prosody was removed). |
+| `scenario_session_start_metrics` | BaseEntity | `scenario_session_id`/`room_id`, **`start_latency_ms`**, `configure_ms`, `initialize_ms`, `connect_ms`, `prep_ms`, `opening_playout_ms`, `scenario_id`, `language`, `env`, `occurred_at`, `source` (`pipeline` \| `transcript`) | **Per-session start latency ("time to first word")** — one row per simulation for the start-latency analytics chart. `start_latency_ms` = agent job start → the agent begins its opening dialogue = sum of the four segment columns (live `pipeline` rows). Backfilled `transcript` rows carry the total only (segments NULL; first agent message's `startSeconds`, excludes pre-join configure/initialize). Populated from the ally-ai-learn `start_metrics` SQS message (`StartMetricsProcessor`). Indexed on `scenario_session_id`, `occurred_at`, `scenario_id`. |
 | `scenario_session_tags` | BaseWithoutTenant | `id` (uuid), `label` (uniq) | Tag catalog |
 | `scenario_session_message_tags` | BaseEntity | `scenario_session_id`, `message_id`, `tag_id`, `category` (`ScenarioSessionTagCategory`) | Message↔tag join |
 | `scenario_session_reflection_prompt_response` | BaseEntity | `scenario_session_id`, `prompt_id`, `response` | Reflection answers |
@@ -256,6 +257,7 @@ Each "collection" stores objects + their embeddings for semantic search / RAG.
 | Who can do/see what | `groups`, `permissions`, `group_permissions`, `user_groups`, `*_tenants`, `*_groups` join tables |
 | A training simulation run + its score | `scenario_sessions` (+ `_details`, `_messages`, `_events`, `_feedbacks`) |
 | Per-turn AI latency / performance | `scenario_session_turn_metrics` |
+| Simulation start latency (time to first word) | `scenario_session_start_metrics` |
 | Learner progress through curriculum | `scenario_path_sessions` / `_items`, `case_sessions` / `_items` |
 | A real client chat/call + transcript | `chats`, `messages`, `call_details` |
 | Daily activity / engagement for analytics | `user_daily_scores`, `badge_users` |

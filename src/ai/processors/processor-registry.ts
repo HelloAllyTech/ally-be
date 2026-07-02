@@ -7,6 +7,7 @@ import { LearnMessageProcessor } from '../../learn/processor/learn-message.proce
 import { LearnEventProcessor } from '../../learn/processor/learn-event.processor';
 import { BehaviorInstructionProcessor } from 'src/learn/processor/behavior-instruction.processor';
 import { TurnMetricsProcessor } from 'src/learn/processor/turn-metrics.processor';
+import { StartMetricsProcessor } from 'src/learn/processor/start-metrics.processor';
 import { LlmUsageProcessor } from 'src/learn/processor/llm-usage.processor';
 
 @Injectable()
@@ -21,6 +22,7 @@ export class ProcessorRegistry {
     private readonly unknownEventProcessor: UnknownEventProcessor,
     private readonly behaviorInstructionProcessor: BehaviorInstructionProcessor,
     private readonly turnMetricsProcessor: TurnMetricsProcessor,
+    private readonly startMetricsProcessor: StartMetricsProcessor,
     private readonly llmUsageProcessor: LlmUsageProcessor,
   ) {
     this.registerProcessors();
@@ -32,6 +34,7 @@ export class ProcessorRegistry {
     this.registerProcessor(this.learnEventProcessor);
     this.registerProcessor(this.behaviorInstructionProcessor);
     this.registerProcessor(this.turnMetricsProcessor);
+    this.registerProcessor(this.startMetricsProcessor);
     this.registerProcessor(this.llmUsageProcessor);
 
     this.logger.info(`Registered ${this.processors.size} event processors`);

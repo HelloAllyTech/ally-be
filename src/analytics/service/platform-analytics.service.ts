@@ -10,6 +10,7 @@ import {
   DriftBackfillJobDto,
   RetentionPointDto,
   SimulationsCompletedPointDto,
+  StartLatencyResponseDto,
   TokenConsumptionResponseDto,
   UserGrowthPointDto,
   VoiceLatencyResponseDto,
@@ -33,6 +34,9 @@ const MS_PER_DAY = 86_400_000;
 
 /** Voice-to-voice latency target (ms) — the reference line on the trend. */
 const VOICE_LATENCY_TARGET_MS = 1500;
+
+/** Simulation start-latency target (ms) — the reference line on the trend. */
+const START_LATENCY_TARGET_MS = 4000;
 
 /**
  * All bucketing/axis math is done in UTC. `date_trunc` on the tz-naive
@@ -497,6 +501,51 @@ export class PlatformAnalyticsService {
       range,
       bucket,
       targetMs: VOICE_LATENCY_TARGET_MS,
+      points,
+    };
+  }
+
+  async getStartLatency(
+    range: AnalyticsRange,
+    bucketParam?: AnalyticsBucketParam,
+    language?: string,
+  ): Promise<StartLatencyResponseDto> {
+    const now = new Date();
+    const todayStart = startOfUtcDay(now);
+    const endExclusive = addDays(todayStart, 1);
+
+    let defaultBucket: AnalyticsBucket;
+    let windowStart: Date;
+    if (range === '30d') {
+      defaultBucket = 'day';
+      windowStart = addDays(todayStart, -29);
+    } else if (range === '90d') {
+      defaultBucket = 'week';
+      windowStart = addDays(todayStart, -89);
+    } else {
+      defaultBucket = 'month';
+      windowStart = startOfUtcMonth(addMonths(todayStart, -11));
+    }
+
+    const bucket: AnalyticsBucket = bucketParam ?? defaultBucket;
+
+    this.logger.info(
+      `Building start-latency trend range=${range} window=[${isoDate(
+        windowStart,
+      )},${isoDate(endExclusive)}) bucket=${bucket}`,
+    );
+
+    const points = await this.repo.getStartLatencyByBucket(
+      windowStart,
+      endExclusive,
+      bucket,
+      language,
+    );
+
+    return {
+      range,
+      bucket,
+      targetMs: START_LATENCY_TARGET_MS,
       points,
     };
   }

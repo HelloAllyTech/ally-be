@@ -4,6 +4,7 @@ export const PROCESSOR_EVENT_TYPES = {
   EVENT: 'event',
   BEHAVIOR_INSTRUCTION: 'behavior_instruction',
   TURN_METRICS: 'turn_metrics',
+  START_METRICS: 'start_metrics',
   LLM_USAGE: 'llm_usage',
   UNKNOWN_EVENT: 'UNKNOWN_EVENT',
 } as const;

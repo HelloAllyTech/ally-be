@@ -80,6 +80,7 @@ import { ScenarioSessionChatService } from './service/scenario-session-chat.serv
 import { ScenarioSessionChatController } from './controller/scenario-session-chat.controller';
 import { BehaviorInstructionProcessor } from './processor/behavior-instruction.processor';
 import { TurnMetricsProcessor } from './processor/turn-metrics.processor';
+import { StartMetricsProcessor } from './processor/start-metrics.processor';
 import { LlmUsageProcessor } from './processor/llm-usage.processor';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { ScenarioSessionBehaviorInstructions } from './entity/scenario-session-behavior-instructions.entity';
@@ -187,6 +188,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     LearnEventProcessor,
     BehaviorInstructionProcessor,
     TurnMetricsProcessor,
+    StartMetricsProcessor,
     LlmUsageProcessor,
     ScenarioVoicesRepository,
     SimulationCreditsService,
@@ -241,6 +243,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     LearnEventProcessor,
     BehaviorInstructionProcessor,
     TurnMetricsProcessor,
+    StartMetricsProcessor,
     LlmUsageProcessor,
     ScenarioSessionService,
     SimulationCreditsService,

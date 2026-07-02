@@ -30,6 +30,8 @@ import {
   ConversationDriftResponseDto,
   DriftBackfillJobDto,
   StartDriftBackfillDto,
+  StartLatencyQueryDto,
+  StartLatencyResponseDto,
   TokenConsumptionQueryDto,
   TokenConsumptionResponseDto,
   VoiceLatencyQueryDto,
@@ -104,6 +106,33 @@ export class AnalyticsController {
     @Query() query: VoiceLatencyQueryDto,
   ): Promise<VoiceLatencyResponseDto> {
     return this.platformAnalyticsService.getVoiceLatency(
+      query.range ?? '90d',
+      query.bucket,
+      query.language,
+    );
+  }
+
+  @Get('start-latency')
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Simulation start-latency trend (super-admin)',
+    description:
+      'Per-bucket avg / p50 / p95 simulation start latency ("time to first ' +
+      'word": agent job start -> the agent begins its opening dialogue) from ' +
+      'scenario_session_start_metrics, with the mean of each startup segment ' +
+      '(configure / initialize / connect / prep) for a stacked breakdown. Split ' +
+      'by `source` (live pipeline vs historical transcript). Bucket granularity ' +
+      'follows the `range` param (30d -> day, 90d -> week, 12m -> month).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Simulation start-latency trend retrieved successfully',
+    type: StartLatencyResponseDto,
+  })
+  async getStartLatency(
+    @Query() query: StartLatencyQueryDto,
+  ): Promise<StartLatencyResponseDto> {
+    return this.platformAnalyticsService.getStartLatency(
       query.range ?? '90d',
       query.bucket,
       query.language,
