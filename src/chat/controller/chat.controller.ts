@@ -10,7 +10,10 @@ import {
   Put,
   Delete,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { CurrentUser } from '../../auth/decorators/user.decorator';
 import { TokenUser } from '../../auth/type/auth.types';
 import { ChatService } from '../service/chat.service';
@@ -26,6 +29,7 @@ import {
   ApiParam,
   ApiBearerAuth,
   ApiSecurity,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import {
   CallLogResponse,
@@ -53,6 +57,8 @@ import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator'
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ChatTranscriptService } from '../service/chat-transcript.service';
 import { AudioUploadService } from '../service/audio-upload.service';
+import { VoiceNoteService } from '../service/voice-note.service';
+import { GenerateNoteFromAudioResponseDto } from '../dto/voice-note.dto';
 import { TranscriptRequestDto } from '../dto/transcript.dto';
 import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { ToggleArchiveStatusDto } from '../dto/toggle-archive-status.dto';
@@ -68,6 +74,7 @@ export class ChatController {
     private readonly chatSummaryService: ChatSummaryService,
     private readonly chatTranscriptService: ChatTranscriptService,
     private readonly audioUploadService: AudioUploadService,
+    private readonly voiceNoteService: VoiceNoteService,
   ) {}
 
   @Post('note')
@@ -82,6 +89,31 @@ export class ChatController {
     @CurrentUser() tokenUser: TokenUser,
   ): Promise<CreateNoteResponseDto> {
     return this.service.createNote(tokenUser.id);
+  }
+
+  @Post('note/generate-from-audio')
+  @AuthPermissions([PERMISSIONS.COUNSELOR_ACCESS])
+  @UseInterceptors(
+    // Memory storage (default) keeps the audio as an in-memory buffer only;
+    // it is transcribed and discarded, never persisted. 25MB is the STT cap.
+    FileInterceptor('audio', { limits: { fileSize: 25 * 1024 * 1024 } }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary:
+      'Transcribe dictated audio and extract scribe-note field values. Audio is processed in memory and never stored.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Transcript and extracted field values.',
+    type: GenerateNoteFromAudioResponseDto,
+  })
+  async generateNoteFromAudio(
+    @UploadedFile() audio: Express.Multer.File,
+    @Body('fields') fields?: string,
+    @Body('languageHint') languageHint?: string,
+  ): Promise<GenerateNoteFromAudioResponseDto> {
+    return this.voiceNoteService.generateFromAudio(audio, fields, languageHint);
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_CHAT])
