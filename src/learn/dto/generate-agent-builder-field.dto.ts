@@ -8,23 +8,23 @@ import {
   Max,
   Min,
 } from 'class-validator';
-import { AgentBuilderV2Field } from '../enum/agent-builder-v2-field.enum';
+import { AgentBuilderField } from '../enum/agent-builder-field.enum';
 
 /**
- * One parallel field-generation call for Agent Builder Copilot V2. The frontend
+ * One parallel field-generation call for Agent Builder Copilot. The frontend
  * fires one of these per target field (role instruction, title, challenge
  * description, knowledge sources, persona) concurrently, each rendering its own
  * editable prompt template with the shared runtime variables below.
  */
-export class GenerateAgentBuilderV2FieldDto {
+export class GenerateAgentBuilderFieldDto {
   @ApiProperty({
     description: 'Which Basic Settings field to generate',
-    enum: AgentBuilderV2Field,
-    example: AgentBuilderV2Field.TITLE,
+    enum: AgentBuilderField,
+    example: AgentBuilderField.TITLE,
   })
-  @IsEnum(AgentBuilderV2Field)
+  @IsEnum(AgentBuilderField)
   @IsNotEmpty()
-  field!: AgentBuilderV2Field;
+  field!: AgentBuilderField;
 
   @ApiProperty({
     description: 'Free-text "Describe roleplay actor" brief from the wizard',
@@ -81,9 +81,9 @@ export class GenerateAgentBuilderV2FieldDto {
   provider?: 'openai' | 'anthropic';
 }
 
-export class GenerateAgentBuilderV2FieldResponseDto {
-  @ApiProperty({ enum: AgentBuilderV2Field })
-  field!: AgentBuilderV2Field;
+export class GenerateAgentBuilderFieldResponseDto {
+  @ApiProperty({ enum: AgentBuilderField })
+  field!: AgentBuilderField;
 
   @ApiProperty({
     description:
