@@ -28,6 +28,7 @@ import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { UserService } from 'src/user/service/user.service';
 import { NotificationService } from 'src/notification/service/notification.service';
 import { ScribeSessionMode } from '../../common/constants/chat.constants';
+import { CustomFieldsService } from '../../custom-fields/service/custom-fields.service';
 
 @Injectable()
 export class ChatAiService {
@@ -43,6 +44,7 @@ export class ChatAiService {
     private readonly cryptoService: CryptoService,
     private readonly notificationService: NotificationService,
     private readonly userService: UserService,
+    private readonly customFieldsService: CustomFieldsService,
   ) {}
 
   private readonly logger = LoggerService.getInstance(ChatAiService.name);
@@ -80,10 +82,17 @@ export class ChatAiService {
         );
       }
 
+      const gatedSummary =
+        await this.customFieldsService.applyMigratedFieldsGate(
+          chatId,
+          chat.tenantId,
+          convertedResponse,
+        );
+
       await this.callDetailsRepository.update(
         { chatId },
         {
-          summary: convertedResponse,
+          summary: gatedSummary,
         },
       );
 

@@ -1,14 +1,17 @@
 import {
   BadRequestException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, IsNull, Not, Repository } from 'typeorm';
 import { Chat } from '../../chat/entity/chat.entity';
 import { CallDetails } from '../../chat/entity/call.details.entity';
+import { FlattenedSummaryNotePayloadCamelCase } from '../../chat/type/call.details.type';
 import {
   CustomFieldDefinition,
   CustomFieldEditPermission,
@@ -36,6 +39,7 @@ import {
   computeSystemFieldValue,
   SystemFieldContext,
 } from './system-field-computer';
+import { formatExtractedAiFieldValue } from './extracted-ai-field-formatter';
 
 const SESSION_LOG_COLUMN_LABELS = [
   'Call ID',
@@ -71,6 +75,7 @@ export class CustomFieldsService {
     @InjectRepository(ChatCustomFieldValue)
     private readonly valueRepo: Repository<ChatCustomFieldValue>,
     private readonly permissionValidator: PermissionValidator,
+    @Inject(forwardRef(() => UserService))
     private readonly userService: UserService,
   ) {}
 
@@ -360,6 +365,8 @@ export class CustomFieldsService {
         editPermission: def.editPermission,
         fillMode: def.fillMode,
         displayOrder: def.displayOrder,
+        enhanceable: def.enhanceable,
+        seedKey: def.seedKey ?? null,
         value,
       };
     });
@@ -598,5 +605,95 @@ export class CustomFieldsService {
     if (toCreate.length === 0) return;
 
     await definitionRepo.save(toCreate);
+  }
+
+  /**
+   * A tenant is "migrated" once seedDefaultDefinitionsForTenant has run for
+   * it — every migrated field is seeded together, so the presence of any one
+   * seeded definition is a reliable signal for all of them.
+   */
+  async isTenantMigrated(tenantId: string): Promise<boolean> {
+    const seededCount = await this.definitionRepo.count({
+      where: { tenantId, seedKey: Not(IsNull()) },
+    });
+    return seededCount > 0;
+  }
+
+  /**
+   * Seed keys of currently-active migrated fields for a tenant. Once
+   * migrated, a field's visibility (e.g. in the export, or the live
+   * summary view) is governed by this `isActive` flag rather than the
+   * legacy hidden-fields preference, which the narrowed ScribeSettings UI
+   * can no longer edit for these fields.
+   */
+  async getActiveSeedKeys(tenantId: string): Promise<Set<string>> {
+    const definitions = await this.definitionRepo.find({
+      where: { tenantId, isActive: true, seedKey: Not(IsNull()) },
+      select: ['seedKey'],
+    });
+    return new Set(definitions.map((d) => d.seedKey as string));
+  }
+
+  /**
+   * Rollout-consistency gate for the fixed-schema AI summary response.
+   * Called from every place that response gets persisted (the WebRTC path,
+   * the retry/cron path, and the async ally-ai callback) before it's saved
+   * to CallDetails.summary. For a tenant that has been migrated (has any
+   * seeded custom field definition):
+   *  - extracts and writes the "extracted from AI response" fields (e.g.
+   *    callQuality, callType) via the same insert-only upsertValuesInternal
+   *    used by the dynamic AI-fill path, so a summary retry can't clobber a
+   *    human's correction any more than it can for any other AI field
+   *  - strips every AI-sourced key (both the dynamic per-tenant AI-fill
+   *    fields and the extracted ones) from the object being written to
+   *    CallDetails.summary, so the old and new systems never both hold a
+   *    (possibly divergent) copy of the same field
+   * For an unmigrated tenant, returns the summary completely unchanged and
+   * writes nothing — this is a no-op until a tenant's definitions exist.
+   */
+  async applyMigratedFieldsGate(
+    chatId: number,
+    tenantId: string,
+    summary: FlattenedSummaryNotePayloadCamelCase,
+  ): Promise<FlattenedSummaryNotePayloadCamelCase> {
+    if (!(await this.isTenantMigrated(tenantId))) return summary;
+
+    const extractedTemplates = DEFAULT_FIELD_TEMPLATES.filter(
+      (t) => t.extractFromAiResponseKey,
+    );
+    if (extractedTemplates.length > 0) {
+      const definitions = await this.definitionRepo.find({
+        where: { tenantId, isActive: true, fillMode: CustomFieldFillMode.AI },
+      });
+      const definitionBySeedKey = new Map(
+        definitions
+          .filter((d) => d.seedKey)
+          .map((d) => [d.seedKey as string, d]),
+      );
+
+      const values = extractedTemplates
+        .map((template) => {
+          const definition = definitionBySeedKey.get(template.seedKey);
+          if (!definition) return null;
+          const value = formatExtractedAiFieldValue(
+            template.extractFromAiResponseKey!,
+            summary,
+          );
+          return value != null
+            ? { fieldDefinitionId: definition.id, value }
+            : null;
+        })
+        .filter((v): v is { fieldDefinitionId: string; value: string } => !!v);
+
+      await this.upsertValuesInternal(chatId, tenantId, values);
+    }
+
+    const stripped = { ...summary } as Record<string, unknown>;
+    for (const template of DEFAULT_FIELD_TEMPLATES) {
+      if (template.fillMode === CustomFieldFillMode.AI) {
+        delete stripped[template.seedKey];
+      }
+    }
+    return stripped as FlattenedSummaryNotePayloadCamelCase;
   }
 }

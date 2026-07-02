@@ -86,6 +86,7 @@ describe('CustomFieldsService', () => {
       findOne: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
+      count: jest.fn(),
       createQueryBuilder: jest.fn().mockReturnValue(mockQb),
     } as any;
 
@@ -292,6 +293,24 @@ describe('CustomFieldsService', () => {
       );
     });
 
+    it('should persist enhanceable=true when explicitly set', async () => {
+      const dto = { ...baseDto, enhanceable: true };
+      definitionRepo.create.mockReturnValue({
+        ...mockDefinition,
+        enhanceable: true,
+      });
+      definitionRepo.save.mockResolvedValue({
+        ...mockDefinition,
+        enhanceable: true,
+      });
+
+      await service.createDefinition(dto);
+
+      expect(definitionRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ enhanceable: true }),
+      );
+    });
+
     it('should throw BadRequestException when name matches a session log column (Status)', async () => {
       await expect(
         service.createDefinition({ ...baseDto, name: 'Status' }),
@@ -393,6 +412,19 @@ describe('CustomFieldsService', () => {
 
       expect(definitionRepo.save).toHaveBeenCalled();
       expect(result).toMatchObject({ showInTable: false });
+    });
+
+    it('should persist enhanceable=true when updated', async () => {
+      const updatedDef = { ...mockDefinition, enhanceable: true };
+      definitionRepo.findOne.mockResolvedValue(mockDefinition);
+      definitionRepo.save.mockResolvedValue(updatedDef);
+
+      const result = await service.updateDefinition(mockDefinitionId, {
+        enhanceable: true,
+      });
+
+      expect(definitionRepo.save).toHaveBeenCalled();
+      expect(result).toMatchObject({ enhanceable: true });
     });
 
     it('should throw BadRequestException when renaming to a built-in field name', async () => {
@@ -505,6 +537,29 @@ describe('CustomFieldsService', () => {
       });
     });
 
+    it('should include enhanceable and seedKey in the response', async () => {
+      definitionRepo.find.mockResolvedValue([
+        { ...mockDefinition, enhanceable: true, seedKey: 'keyConcerns' },
+      ]);
+      valueRepo.find.mockResolvedValue([]);
+
+      const result = await service.getValues(mockChatId);
+
+      expect(result[0].enhanceable).toBe(true);
+      expect(result[0].seedKey).toBe('keyConcerns');
+    });
+
+    it('should default seedKey to null when the definition has none', async () => {
+      definitionRepo.find.mockResolvedValue([
+        { ...mockDefinition, enhanceable: false, seedKey: undefined },
+      ]);
+      valueRepo.find.mockResolvedValue([]);
+
+      const result = await service.getValues(mockChatId);
+
+      expect(result[0].seedKey).toBeNull();
+    });
+
     it('should return null value for definitions with no saved value', async () => {
       definitionRepo.find.mockResolvedValue([
         mockDefinition,
@@ -609,9 +664,9 @@ describe('CustomFieldsService', () => {
         expect(userService.get).not.toHaveBeenCalled();
       });
 
-      it('computes counsellorName from the counselor user record', async () => {
+      it('computes counselorName from the counselor user record', async () => {
         definitionRepo.find.mockResolvedValue([
-          { ...systemDefinition, seedKey: 'counsellorName' },
+          { ...systemDefinition, seedKey: 'counselorName' },
         ]);
         valueRepo.find.mockResolvedValue([]);
         chatRepo.findOne.mockResolvedValue(mockChat);
@@ -624,9 +679,9 @@ describe('CustomFieldsService', () => {
         expect(result[0].value).toBe('Jane Counselor');
       });
 
-      it('returns null counsellorName when the chat has no assigned counselor', async () => {
+      it('returns null counselorName when the chat has no assigned counselor', async () => {
         definitionRepo.find.mockResolvedValue([
-          { ...systemDefinition, seedKey: 'counsellorName' },
+          { ...systemDefinition, seedKey: 'counselorName' },
         ]);
         valueRepo.find.mockResolvedValue([]);
         chatRepo.findOne.mockResolvedValue({
@@ -1312,6 +1367,180 @@ describe('CustomFieldsService', () => {
       expect(txDefinitionRepo.save).toHaveBeenCalled();
       expect(definitionRepo.find).not.toHaveBeenCalled();
       expect(definitionRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── applyMigratedFieldsGate ─────────────────────────────────────────────
+  // The rollout-consistency gate: for a migrated tenant, extracts+writes the
+  // "extracted from AI response" fields and strips every AI-sourced key from
+  // the object being persisted to CallDetails.summary. No-op otherwise.
+
+  describe('isTenantMigrated', () => {
+    it('returns false when no definition has a seedKey', async () => {
+      definitionRepo.count.mockResolvedValue(0);
+
+      const result = await service.isTenantMigrated(mockTenantId);
+
+      expect(result).toBe(false);
+      expect(definitionRepo.count).toHaveBeenCalledWith({
+        where: { tenantId: mockTenantId, seedKey: expect.anything() },
+      });
+    });
+
+    it('returns true when at least one definition has a seedKey', async () => {
+      definitionRepo.count.mockResolvedValue(62);
+
+      const result = await service.isTenantMigrated(mockTenantId);
+
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('getActiveSeedKeys', () => {
+    it('returns the seedKeys of active seeded definitions only', async () => {
+      definitionRepo.find.mockResolvedValue([
+        { seedKey: 'age' } as CustomFieldDefinition,
+        { seedKey: 'gender' } as CustomFieldDefinition,
+      ]);
+
+      const result = await service.getActiveSeedKeys(mockTenantId);
+
+      expect(definitionRepo.find).toHaveBeenCalledWith({
+        where: {
+          tenantId: mockTenantId,
+          isActive: true,
+          seedKey: expect.anything(),
+        },
+        select: ['seedKey'],
+      });
+      expect(result).toEqual(new Set(['age', 'gender']));
+    });
+
+    it('returns an empty set when no active definitions are seeded', async () => {
+      definitionRepo.find.mockResolvedValue([]);
+
+      const result = await service.getActiveSeedKeys(mockTenantId);
+
+      expect(result).toEqual(new Set());
+    });
+  });
+
+  describe('applyMigratedFieldsGate', () => {
+    const rawSummary = {
+      keyConcerns: 'raw key concerns', // dynamic-AI field (fillMode: AI, no extractFromAiResponseKey)
+      callQuality: 87, // extracted-AI field (fillMode: AI, extractFromAiResponseKey set)
+      callType: 'Regular', // extracted-AI field
+      intakeNotes: 'manual notes', // fillMode: MANUAL — must survive the gate untouched
+      mode: 'SCRIBE', // fillMode: SYSTEM — must survive the gate untouched
+    } as any;
+
+    it('returns the summary unchanged when the tenant has no seeded definitions', async () => {
+      definitionRepo.count.mockResolvedValue(0);
+
+      const result = await service.applyMigratedFieldsGate(
+        mockChatId,
+        mockTenantId,
+        rawSummary,
+      );
+
+      expect(result).toBe(rawSummary);
+      expect(definitionRepo.find).not.toHaveBeenCalled();
+      expect(valueRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('strips every fillMode:AI seedKey (dynamic and extracted) but leaves MANUAL/SYSTEM fields untouched', async () => {
+      definitionRepo.count.mockResolvedValue(1);
+      definitionRepo.find.mockResolvedValue([]); // no matching extracted-field definitions this tenant
+      valueRepo.find.mockResolvedValue([]);
+
+      const result = await service.applyMigratedFieldsGate(
+        mockChatId,
+        mockTenantId,
+        rawSummary,
+      );
+
+      expect(result).not.toHaveProperty('keyConcerns');
+      expect(result).not.toHaveProperty('callQuality');
+      expect(result).not.toHaveProperty('callType');
+      expect(result).toMatchObject({
+        intakeNotes: 'manual notes',
+        mode: 'SCRIBE',
+      });
+    });
+
+    it('extracts and writes the extracted-AI fields via upsertValuesInternal, formatted per field', async () => {
+      const callQualityDef = {
+        ...mockDefinition,
+        id: 'def-callquality',
+        seedKey: 'callQuality',
+        fillMode: CustomFieldFillMode.AI,
+      } as any;
+      const callTypeDef = {
+        ...mockDefinition,
+        id: 'def-calltype',
+        seedKey: 'callType',
+        fillMode: CustomFieldFillMode.AI,
+      } as any;
+      definitionRepo.count.mockResolvedValue(1);
+      definitionRepo.find.mockResolvedValue([callQualityDef, callTypeDef]);
+      mockQb.getMany.mockResolvedValue([callQualityDef, callTypeDef]);
+      valueRepo.find.mockResolvedValue([]);
+      valueRepo.create.mockImplementation((data) => data as any);
+      valueRepo.save.mockResolvedValue([] as any);
+
+      await service.applyMigratedFieldsGate(
+        mockChatId,
+        mockTenantId,
+        rawSummary,
+      );
+
+      expect(valueRepo.save).toHaveBeenCalledWith(
+        expect.arrayContaining([
+          expect.objectContaining({
+            fieldDefinitionId: 'def-callquality',
+            value: '87',
+          }),
+          expect.objectContaining({
+            fieldDefinitionId: 'def-calltype',
+            value: 'Regular',
+          }),
+        ]),
+      );
+    });
+
+    it('skips writing an extracted field when the tenant has no matching definition for its seedKey', async () => {
+      definitionRepo.count.mockResolvedValue(1);
+      definitionRepo.find.mockResolvedValue([]); // no extracted-field definitions exist yet
+      mockQb.getMany.mockResolvedValue([]);
+      valueRepo.find.mockResolvedValue([]);
+
+      await service.applyMigratedFieldsGate(
+        mockChatId,
+        mockTenantId,
+        rawSummary,
+      );
+
+      expect(valueRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('skips writing a value the formatter returns null for (e.g. an empty/absent raw field)', async () => {
+      const callQualityDef = {
+        ...mockDefinition,
+        id: 'def-callquality',
+        seedKey: 'callQuality',
+        fillMode: CustomFieldFillMode.AI,
+      } as any;
+      definitionRepo.count.mockResolvedValue(1);
+      definitionRepo.find.mockResolvedValue([callQualityDef]);
+      mockQb.getMany.mockResolvedValue([callQualityDef]);
+      valueRepo.find.mockResolvedValue([]);
+
+      await service.applyMigratedFieldsGate(mockChatId, mockTenantId, {
+        ...rawSummary,
+        callQuality: null,
+      } as any);
+
+      expect(valueRepo.save).not.toHaveBeenCalled();
     });
   });
 });

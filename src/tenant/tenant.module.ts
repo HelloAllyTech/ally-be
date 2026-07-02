@@ -13,6 +13,7 @@ import { TenantDashboardSharedService } from './service/tenant-dashboard-shared'
 import { SettingsModule } from 'src/settings/settings.module';
 import { TenantCaseSharedService } from './service/tenant-case-shared';
 import { AuditModule } from 'src/audit/audit.module';
+import { CustomFieldsModule } from 'src/custom-fields/custom-fields.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { AuditModule } from 'src/audit/audit.module';
     AwsModule,
     SettingsModule,
     AuditModule,
+    forwardRef(() => CustomFieldsModule),
   ],
   providers: [
     TenantService,

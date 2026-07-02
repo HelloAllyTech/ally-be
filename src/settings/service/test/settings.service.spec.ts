@@ -41,6 +41,7 @@ import {
   AUDIT_EVENTS,
 } from '../../../audit/constants/audit-event.constants';
 import { DataSource } from 'typeorm';
+import { CustomFieldsService } from '../../../custom-fields/service/custom-fields.service';
 
 describe('SettingsService', () => {
   let service: SettingsService;
@@ -50,6 +51,10 @@ describe('SettingsService', () => {
   let permissionsService: jest.Mocked<PermissionsService>;
   let adminTenantService: jest.Mocked<AdminTenantService>;
   let globalSettingsRepository: jest.Mocked<GlobalSettingsRepository>;
+  let customFieldsService: {
+    isTenantMigrated: jest.Mock;
+    getActiveSeedKeys: jest.Mock;
+  };
 
   const mockTenantId = 'test-tenant-id';
   const mockUserId = 'test-user-id';
@@ -143,6 +148,15 @@ describe('SettingsService', () => {
             save: jest.fn(),
           },
         },
+        {
+          provide: CustomFieldsService,
+          // Unmigrated by default, matching every pre-existing test in this
+          // file, which asserts on the full (unnarrowed) field list.
+          useValue: {
+            isTenantMigrated: jest.fn().mockResolvedValue(false),
+            getActiveSeedKeys: jest.fn().mockResolvedValue(new Set()),
+          },
+        },
       ],
     }).compile();
 
@@ -153,6 +167,7 @@ describe('SettingsService', () => {
     permissionsService = module.get(PermissionsService) as any;
     adminTenantService = module.get(AdminTenantService) as any;
     globalSettingsRepository = module.get(GlobalSettingsRepository);
+    customFieldsService = module.get(CustomFieldsService);
 
     // Mock ExecutionManager static methods
     jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(mockTenantId);
@@ -411,6 +426,35 @@ describe('SettingsService', () => {
         service.getSummaryFieldsConfig(getSummaryFieldsDto),
       ).rejects.toThrow(new BadRequestException('Tenant ID is required'));
     });
+
+    it('for a migrated tenant, gates the 62 migrated fields by isActive instead of the legacy preference', async () => {
+      customFieldsService.isTenantMigrated.mockResolvedValue(true);
+      customFieldsService.getActiveSeedKeys.mockResolvedValue(
+        new Set(['age', 'gender']),
+      );
+      preferenceService.getPreference
+        .mockResolvedValueOnce(mockOrgPreference) // hides callId, callDuration
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockCounselorPreference); // hides clientId
+
+      const result = await service.getSummaryFieldsConfig({});
+
+      // Permanent fields still respect the legacy preference.
+      expect(result).toContain('location');
+      expect(result).toContain('sessionSummary');
+      expect(result).toContain('tags');
+      // Migrated fields follow isActive, regardless of the legacy preference
+      // (age/gender were never in the legacy hidden list either way).
+      expect(result).toContain('age');
+      expect(result).toContain('gender');
+      // A migrated field with no active definition is excluded even though
+      // it was never in the legacy hidden-fields list.
+      expect(result).not.toContain('profession');
+      // The legacy preference has no bearing on migrated fields at all —
+      // 'callId' is SYSTEM-migrated and inactive here, so it's excluded
+      // regardless of whether the legacy preference also hid it.
+      expect(result).not.toContain('callId');
+    });
   });
 
   describe('getSummarySectionsConfig', () => {
@@ -457,6 +501,44 @@ describe('SettingsService', () => {
       const metricsSection = result.sections.find((s) => s.id === 'metrics');
       expect(metricsSection?.enabled).toBe(false);
       metricsSection?.fields.forEach((f) => expect(f.visible).toBe(false));
+    });
+
+    it('narrows to only the 3 permanently-hardcoded fields for a migrated tenant', async () => {
+      customFieldsService.isTenantMigrated.mockResolvedValue(true);
+      preferenceService.getPreference
+        .mockResolvedValueOnce(mockOrgPreference)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+
+      const result = await service.getSummarySectionsConfig({});
+
+      const allFieldIds = result.sections.flatMap((s) =>
+        s.fields.map((f) => f.id),
+      );
+      expect(allFieldIds.sort()).toEqual(
+        ['location', 'sessionSummary', 'tags'].sort(),
+      );
+      // Sections that had only migrated fields (e.g. 'other', 'metrics')
+      // drop out entirely rather than rendering with an empty toggle list.
+      expect(result.sections.find((s) => s.id === 'other')).toBeUndefined();
+      expect(result.sections.find((s) => s.id === 'metrics')).toBeUndefined();
+    });
+
+    it('leaves the full field list untouched for an unmigrated tenant', async () => {
+      customFieldsService.isTenantMigrated.mockResolvedValue(false);
+      preferenceService.getPreference
+        .mockResolvedValueOnce(mockOrgPreference)
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null);
+
+      const result = await service.getSummarySectionsConfig({});
+
+      const allFieldIds = result.sections.flatMap((s) =>
+        s.fields.map((f) => f.id),
+      );
+      expect(allFieldIds.length).toBe(
+        SUMMARY_SECTIONS.flatMap((s) => s.fields).length,
+      );
     });
   });
 

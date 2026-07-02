@@ -34,7 +34,10 @@ import { CreateTenantDto } from '../dto/create-tenant.dto';
 import { SettingsService } from 'src/settings/service/settings.service';
 import { ChatTypes } from 'src/common/constants/chat.constants';
 import { TenantResponseDto } from '../dto/tenant-response.dto';
-import { PreferenceRelatedEntity } from 'src/common/constants/user.constants';
+import {
+  PreferenceName,
+  PreferenceRelatedEntity,
+} from 'src/common/constants/user.constants';
 import { PreferenceService } from 'src/settings/service/preference.service';
 import { TenantCaseSharedService } from './tenant-case-shared';
 import { PermissionsService } from '../../authorization/service/permissions.service';
@@ -44,6 +47,7 @@ import {
   AUDIT_ACTIONS,
   AUDIT_EVENTS,
 } from 'src/audit/constants/audit-event.constants';
+import { CustomFieldsService } from 'src/custom-fields/service/custom-fields.service';
 
 @Injectable()
 export class TenantService {
@@ -70,6 +74,8 @@ export class TenantService {
     @Inject(forwardRef(() => AdminTenantService))
     private adminTenantService: AdminTenantService,
     private readonly auditLogService: AuditLogService,
+    @Inject(forwardRef(() => CustomFieldsService))
+    private readonly customFieldsService: CustomFieldsService,
   ) {}
 
   async findAll(): Promise<Tenant[]> {
@@ -145,6 +151,37 @@ export class TenantService {
 
           await this.badgeTenantSharedService.addPublicBadgesToTenant(
             savedTenant.id,
+            entityManager,
+          );
+
+          await this.customFieldsService.seedDefaultDefinitionsForTenant(
+            savedTenant.id,
+            entityManager,
+          );
+
+          // The counselor-facing summary view only reads custom field values
+          // when this tenant-level preference is on (`customFieldsActive` in
+          // CallSummary.tsx defaults true, but flips false the moment this
+          // preference resolves to an explicit `false` — which is exactly
+          // what happens for a brand-new tenant with no preference row yet).
+          // Without this, applyMigratedFieldsGate would still strip the
+          // 24 AI-sourced fields from CallDetails.summary (it only checks
+          // seeded definitions, not this flag), while nothing would be able
+          // to read their replacement values from ChatCustomFieldValue —
+          // every migrated field would show blank from day one.
+          //
+          // `relatedId` must be the tenant's `code`, not its `id`: reads
+          // (getCustomFieldsEnabled) resolve an incoming UUID tenantId to
+          // its code (SettingsService.resolveTenantCode) before the lookup,
+          // so a row keyed by UUID here would silently never be found.
+          await this.preferenceService.createPreference(
+            {
+              name: PreferenceName.CUSTOM_FIELDS_ENABLED,
+              relatedId: savedTenant.code,
+              relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+              value: { enabled: true },
+              tenantId: savedTenant.id,
+            },
             entityManager,
           );
 

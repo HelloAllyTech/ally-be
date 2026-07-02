@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Chat } from '../chat/entity/chat.entity';
 import { CallDetails } from '../chat/entity/call.details.entity';
@@ -18,7 +18,7 @@ import { UserModule } from '../user/user.module';
       ChatCustomFieldValue,
     ]),
     AuthorizationModule,
-    UserModule,
+    forwardRef(() => UserModule),
   ],
   providers: [CustomFieldsService],
   controllers: [CustomFieldsController],

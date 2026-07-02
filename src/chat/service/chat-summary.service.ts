@@ -18,6 +18,45 @@ import { AUDIT_EVENTS } from '../../audit/constants/audit-event.constants';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { CustomFieldsService } from '../../custom-fields/service/custom-fields.service';
+import { CustomFieldValueResponseDto } from '../../custom-fields/dto/custom-field-value.dto';
+
+/**
+ * Maps a migrated field's `seedKey` to the (differently-named) key this
+ * export has always used internally. `null` means "no export slot exists
+ * for this seedKey" — preserve that gap rather than inventing new output.
+ *
+ * `counselorName` (SYSTEM, the real assigned counselor via the
+ * `chat.counselorId` join) is what this export has always exposed as
+ * `counsellor` (`counselor?.name` below) — NOT the AI-extracted `counsellor`
+ * field (name merely mentioned in the transcript), which this export has
+ * never had a slot for and still won't after migration.
+ */
+const SEED_KEY_TO_EXPORT_KEY: Record<string, string | null> = {
+  counselorName: 'counsellor',
+  counsellor: null,
+};
+
+/**
+ * SYSTEM fields are computed live as raw values (ISO timestamps, a raw
+ * ratio) — unlike the old blob-based values they replace, which this export
+ * already formatted for display. Without these overrides, a migrated
+ * tenant's export would show e.g. a raw ISO string instead of a date.
+ * `callTime`'s SYSTEM source is a `start|end` range (see
+ * system-field-computer.ts), not the single point-in-time the old blob path
+ * used — matches the plan's explicit call to align this with the live
+ * in-app display rather than the export's old chat.createdAt-only source.
+ */
+const SYSTEM_FIELD_EXPORT_FORMATTERS: Record<string, (raw: string) => string> =
+  {
+    callDate: (raw) => new Date(raw).toLocaleDateString(),
+    callTime: (raw) =>
+      raw
+        .split('|')
+        .map((iso) => new Date(iso).toLocaleTimeString())
+        .join(' - '),
+    listeningShare: (raw) => `${(parseFloat(raw) * 100).toFixed(1)}%`,
+  };
 
 @Injectable()
 export class ChatSummaryService {
@@ -29,6 +68,7 @@ export class ChatSummaryService {
     private readonly settingsService: SettingsService,
     private readonly userService: UserService,
     private readonly permissionValidator: PermissionValidator,
+    private readonly customFieldsService: CustomFieldsService,
   ) {}
 
   async exportSummary(
@@ -66,11 +106,17 @@ export class ChatSummaryService {
     const summaryName =
       callDetails?.callInfo?.summaryName || ChatUtil.getSummaryName(chat);
 
+    // Empty for tenants not yet migrated to custom fields — a no-op below,
+    // so this export continues reading `summaryInfo` exactly as it does
+    // today for them.
+    const customFieldValues = await this.customFieldsService.getValues(chatId);
+
     const valueMap = this.buildFieldValueMap(
       chat,
       callDetails,
       summaryInfo,
       counselor!,
+      customFieldValues,
     );
 
     let summary = `Chat Summary\n============\n\nSummary Name: ${summaryName}\n\n`;
@@ -126,9 +172,10 @@ export class ChatSummaryService {
     callDetails: any | undefined,
     summaryInfo: FlattenedSummaryNotePayloadCamelCase,
     counselor: User | undefined,
+    customFieldValues: CustomFieldValueResponseDto[],
   ): Record<string, string | (() => string)> {
     const defaultVal = 'N/A';
-    return {
+    const map: Record<string, string | (() => string)> = {
       callId: chat.id.toString(),
       callDuration: callDetails?.callDuration?.toString() ?? defaultVal,
       callDate: new Date(chat.createdAt).toLocaleDateString(),
@@ -216,6 +263,28 @@ export class ChatSummaryService {
       ongoingRiskSuicidalThoughtsNotes:
         summaryInfo.ongoingRiskSuicidalThoughtsNotes ?? defaultVal,
     };
+
+    // A tenant is "migrated" once seedDefaultDefinitionsForTenant has run for
+    // it — every migrated field is seeded together, so the presence of any
+    // one seeded value is a reliable signal for all of them. Existing
+    // tenants (not yet migrated) have none, so this loop is a no-op and
+    // `map` is returned exactly as built above from the old blob.
+    for (const field of customFieldValues) {
+      if (!field.seedKey) continue;
+      const exportKey =
+        field.seedKey in SEED_KEY_TO_EXPORT_KEY
+          ? SEED_KEY_TO_EXPORT_KEY[field.seedKey]
+          : field.seedKey;
+      if (exportKey === null || !(exportKey in map)) continue;
+
+      const option = field.options?.find((o) => o.id === field.value);
+      const resolved = option?.label ?? field.value;
+      const formatter = SYSTEM_FIELD_EXPORT_FORMATTERS[field.seedKey];
+      map[exportKey] =
+        resolved != null ? (formatter?.(resolved) ?? resolved) : defaultVal;
+    }
+
+    return map;
   }
 
   private renderField(

@@ -64,7 +64,7 @@ describe('system-field-computer', () => {
           'callDate',
           'callTime',
           'clientId',
-          'counsellorName',
+          'counselorName',
           'listeningShare',
           'mode',
         ]),
@@ -162,9 +162,9 @@ describe('system-field-computer', () => {
     });
   });
 
-  describe('counsellorName', () => {
+  describe('counselorName', () => {
     it('returns the resolved counselor name', () => {
-      expect(computeSystemFieldValue('counsellorName', baseContext())).toBe(
+      expect(computeSystemFieldValue('counselorName', baseContext())).toBe(
         'Jane Counselor',
       );
     });
@@ -172,7 +172,7 @@ describe('system-field-computer', () => {
     it('returns null when no counselor name was resolved', () => {
       expect(
         computeSystemFieldValue(
-          'counsellorName',
+          'counselorName',
           baseContext({ counselorName: null }),
         ),
       ).toBeNull();

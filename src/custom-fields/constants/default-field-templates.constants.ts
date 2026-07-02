@@ -683,7 +683,13 @@ export const DEFAULT_FIELD_TEMPLATES: DefaultFieldTemplate[] = [
     displayOrder: 58,
   },
   {
-    seedKey: 'counsellorName',
+    // Matches ally-web's SummaryFieldKey.CounsellorName enum VALUE
+    // ("counselorName", single L, US spelling) — a pre-existing spelling
+    // inconsistency in that codebase (every other field there uses British
+    // "counsellor"). seedKey must match the frontend value exactly, since
+    // the frontend infers per-tenant migration status by matching a
+    // hardcoded field's key against seeded custom fields' seedKeys.
+    seedKey: 'counselorName',
     name: 'User Name',
     fieldType: CustomFieldType.TEXT,
     sectionKey: 'featuresAndDemographics',

@@ -10,6 +10,7 @@ import { GlobalSettingsRepository } from './repository/global-settings.repositor
 import { SettingsShared } from './service/settings.shared';
 import { AuditModule } from 'src/audit/audit.module';
 import { UserModule } from 'src/user/user.module';
+import { CustomFieldsModule } from 'src/custom-fields/custom-fields.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { UserModule } from 'src/user/user.module';
     RedisModule,
     AuditModule,
     forwardRef(() => UserModule),
+    forwardRef(() => CustomFieldsModule),
   ],
   providers: [
     SettingsService,

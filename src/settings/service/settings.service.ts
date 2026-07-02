@@ -50,6 +50,21 @@ import {
   AUDIT_ACTIONS,
   AUDIT_EVENTS,
 } from 'src/audit/constants/audit-event.constants';
+import { forwardRef, Inject } from '@nestjs/common';
+import { CustomFieldsService } from '../../custom-fields/service/custom-fields.service';
+
+/**
+ * The only 3 built-in fields never migrated into the custom-fields system
+ * (see default-field-templates.constants.ts's header comment for why each
+ * one had to stay hardcoded). For a migrated tenant, only these still need a
+ * show/hide toggle here — the other 62 now have their own, richer
+ * visibility control (`isActive`) in the Custom Fields admin panel.
+ */
+const PERMANENTLY_HARDCODED_FIELD_IDS = new Set([
+  'sessionSummary',
+  'location',
+  'tags',
+]);
 
 @Injectable()
 export class SettingsService {
@@ -61,6 +76,8 @@ export class SettingsService {
     private readonly adminTenantService: AdminTenantService,
     private readonly dataSource: DataSource,
     private readonly globalSettingsRepository: GlobalSettingsRepository,
+    @Inject(forwardRef(() => CustomFieldsService))
+    private readonly customFieldsService: CustomFieldsService,
   ) {}
 
   /**
@@ -189,10 +206,26 @@ export class SettingsService {
       ...((counselorPreference?.value as SummaryPreferenceValue)?.fields || []),
     ];
     const hiddenFieldsSet = new Set(hiddenFields);
-    const visibleFields = DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
-      (field) => !hiddenFieldsSet.has(field),
+
+    const isMigrated =
+      await this.customFieldsService.isTenantMigrated(tenantId);
+    if (!isMigrated) {
+      return DEFAULT_SUMMARY_FIELDS_ARRAY.filter(
+        (field) => !hiddenFieldsSet.has(field),
+      );
+    }
+
+    // Migrated: the 3 permanent fields still respect this legacy preference
+    // (still editable via ScribeSettings); the other 62 are no longer
+    // toggleable here at all, so their visibility now tracks the custom
+    // field definition's own `isActive` flag instead.
+    const activeMigratedFieldIds =
+      await this.customFieldsService.getActiveSeedKeys(tenantId);
+    return DEFAULT_SUMMARY_FIELDS_ARRAY.filter((field) =>
+      PERMANENTLY_HARDCODED_FIELD_IDS.has(field)
+        ? !hiddenFieldsSet.has(field)
+        : activeMigratedFieldIds.has(field),
     );
-    return visibleFields;
   }
 
   async getSummarySectionsConfig(
@@ -270,18 +303,30 @@ export class SettingsService {
     ];
     const hiddenFieldsSet = new Set(hiddenFields);
 
+    // For a migrated tenant, the other 62 built-in fields are now managed as
+    // custom field definitions (with their own isActive toggle) — showing
+    // them again here would be redundant and confusing, so this list narrows
+    // to just the 3 fields that stay permanently hardcoded. Unmigrated
+    // tenants are completely unaffected (still see and can toggle all
+    // fields exactly as today).
+    const isMigrated =
+      await this.customFieldsService.isTenantMigrated(tenantId);
+
     const sections = SUMMARY_SECTIONS.map((section) => ({
       id: section.id,
       label: section.label,
       defaultVisibility: section.defaultVisibility,
       enabled: !hiddenSectionIds.includes(section.id),
-      fields: section.fields.map((f) => ({
-        id: f.id,
-        label: f.label,
-        visible:
-          !hiddenSectionIds.includes(section.id) && !hiddenFieldsSet.has(f.id),
-      })),
-    }));
+      fields: section.fields
+        .filter((f) => !isMigrated || PERMANENTLY_HARDCODED_FIELD_IDS.has(f.id))
+        .map((f) => ({
+          id: f.id,
+          label: f.label,
+          visible:
+            !hiddenSectionIds.includes(section.id) &&
+            !hiddenFieldsSet.has(f.id),
+        })),
+    })).filter((section) => section.fields.length > 0);
 
     return { sections };
   }

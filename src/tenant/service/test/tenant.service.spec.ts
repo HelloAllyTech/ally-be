@@ -23,6 +23,10 @@ import { SettingsService } from 'src/settings/service/settings.service';
 import { ChatTypes } from 'src/common/constants/chat.constants';
 import { TenantResponseDto } from 'src/tenant/dto/tenant-response.dto';
 import { PreferenceService } from 'src/settings/service/preference.service';
+import {
+  PreferenceName,
+  PreferenceRelatedEntity,
+} from 'src/common/constants/user.constants';
 import { TenantCaseSharedService } from '../tenant-case-shared';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { AdminTenantService } from 'src/user/service/admin-tenant.service';
@@ -31,6 +35,7 @@ import {
   AUDIT_ACTIONS,
   AUDIT_EVENTS,
 } from 'src/audit/constants/audit-event.constants';
+import { CustomFieldsService } from 'src/custom-fields/service/custom-fields.service';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -62,10 +67,12 @@ describe('TenantService', () => {
   let configService: jest.Mocked<AppConfigService>;
   let s3Service: jest.Mocked<S3Service>;
   let settingsService: jest.Mocked<SettingsService>;
+  let preferenceService: jest.Mocked<PreferenceService>;
   let tenantDashboardSharedService: jest.Mocked<TenantDashboardSharedService>;
   let mockPermissionsService: any;
   let mockAdminTenantService: any;
   let mockAuditLogService: any;
+  let mockCustomFieldsService: any;
 
   const mockTenant: Tenant = {
     id: 'test-tenant-id',
@@ -145,6 +152,7 @@ describe('TenantService', () => {
 
     const mockPreferenceService = {
       getHiddenChatTypesForTenants: jest.fn().mockResolvedValue([]),
+      createPreference: jest.fn().mockResolvedValue(undefined),
     };
 
     const mockDashboardTenantRepository = {
@@ -187,6 +195,10 @@ describe('TenantService', () => {
 
     mockAuditLogService = {
       log: jest.fn(),
+    };
+
+    mockCustomFieldsService = {
+      seedDefaultDefinitionsForTenant: jest.fn().mockResolvedValue(undefined),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -256,6 +268,10 @@ describe('TenantService', () => {
           provide: AuditLogService,
           useValue: mockAuditLogService,
         },
+        {
+          provide: CustomFieldsService,
+          useValue: mockCustomFieldsService,
+        },
       ],
     }).compile();
 
@@ -270,6 +286,7 @@ describe('TenantService', () => {
     configService = module.get(AppConfigService);
     s3Service = module.get(S3Service);
     settingsService = module.get(SettingsService);
+    preferenceService = module.get(PreferenceService);
     tenantDashboardSharedService = module.get(TenantDashboardSharedService);
   });
 
@@ -347,6 +364,19 @@ describe('TenantService', () => {
       expect(
         tenantScenarioPathSharedService.assignGlobalScenarioPathsToTenant,
       ).toHaveBeenCalledWith(createdTenant.id, mockEntityManager);
+      expect(
+        mockCustomFieldsService.seedDefaultDefinitionsForTenant,
+      ).toHaveBeenCalledWith(createdTenant.id, mockEntityManager);
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        {
+          name: PreferenceName.CUSTOM_FIELDS_ENABLED,
+          relatedId: createdTenant.code,
+          relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+          value: { enabled: true },
+          tenantId: createdTenant.id,
+        },
+        mockEntityManager,
+      );
       expect(result).toEqual(createdTenant);
     });
 

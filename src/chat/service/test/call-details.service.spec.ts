@@ -40,6 +40,7 @@ describe('CallDetailsService', () => {
   let broadcastMessageService: BroadcastMessageService;
   let streamFileProcessorService: StreamFileProcessorService;
   let audioUploadsService: jest.Mocked<ChatAudioUploadsService>;
+  let customFieldsService: jest.Mocked<CustomFieldsService>;
 
   const mockChat: Chat = {
     id: 1,
@@ -231,6 +232,11 @@ describe('CallDetailsService', () => {
           useValue: {
             getAiDefinitions: jest.fn().mockResolvedValue([]),
             upsertValuesInternal: jest.fn(),
+            applyMigratedFieldsGate: jest
+              .fn()
+              .mockImplementation((_chatId, _tenantId, summary) =>
+                Promise.resolve(summary),
+              ),
           },
         },
         {
@@ -260,6 +266,9 @@ describe('CallDetailsService', () => {
     audioUploadsService = module.get(
       ChatAudioUploadsService,
     ) as jest.Mocked<ChatAudioUploadsService>;
+    customFieldsService = module.get(
+      CustomFieldsService,
+    ) as jest.Mocked<CustomFieldsService>;
   });
 
   afterEach(() => {
@@ -430,6 +439,34 @@ describe('CallDetailsService', () => {
       expect(callDetailsRepository.update).toHaveBeenCalledWith(
         { chatId: 1 },
         { summary: { mode: ScribeSessionMode.SCRIBE } },
+      );
+    });
+
+    it('persists the gated summary (post-consistency-gate), not the raw one, for a migrated tenant', async () => {
+      jest
+        .spyOn(service, 'generateSummary')
+        .mockResolvedValue({ keyConcerns: 'raw' } as any);
+      jest
+        .spyOn(callDetailsRepository, 'findOne')
+        .mockResolvedValue(mockCallDetails as any);
+      jest.spyOn(callDetailsRepository, 'update').mockResolvedValue({} as any);
+      (
+        customFieldsService.applyMigratedFieldsGate as jest.Mock
+      ).mockResolvedValue({ stripped: true });
+
+      await service.updateSummaryAndTags(mockChat);
+
+      expect(customFieldsService.applyMigratedFieldsGate).toHaveBeenCalledWith(
+        mockChat.id,
+        mockChat.tenantId,
+        expect.objectContaining({
+          keyConcerns: 'raw',
+          mode: ScribeSessionMode.SCRIBE,
+        }),
+      );
+      expect(callDetailsRepository.update).toHaveBeenCalledWith(
+        { chatId: 1 },
+        { summary: { stripped: true } },
       );
     });
   });

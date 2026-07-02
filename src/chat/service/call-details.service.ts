@@ -106,10 +106,16 @@ export class CallDetailsService {
       );
     }
 
+    const gatedSummary = await this.customFieldsService.applyMigratedFieldsGate(
+      chat.id,
+      chat.tenantId,
+      summary,
+    );
+
     await this.callDetailsRepository.update(
       { chatId: chat.id },
       {
-        summary,
+        summary: gatedSummary,
       },
     );
 
@@ -152,7 +158,16 @@ export class CallDetailsService {
       );
     }
 
-    await this.callDetailsRepository.update({ chatId: chat.id }, { summary });
+    const gatedSummary = await this.customFieldsService.applyMigratedFieldsGate(
+      chat.id,
+      tenantId,
+      summary,
+    );
+
+    await this.callDetailsRepository.update(
+      { chatId: chat.id },
+      { summary: gatedSummary },
+    );
     await this.fillAiCustomFields(chat, tenantId);
   }
 

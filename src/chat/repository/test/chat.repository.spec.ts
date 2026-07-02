@@ -28,6 +28,7 @@ describe('ChatRepository', () => {
       andWhere: jest.fn().mockReturnThis(),
       execute: jest.fn(),
       innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
       leftJoinAndMapOne: jest.fn().mockReturnThis(),
       leftJoinAndMapMany: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
@@ -496,6 +497,43 @@ describe('ChatRepository', () => {
       expect(result).toEqual({ data: mockChats, count: 2 });
     });
 
+    it('joins the callQuality custom field definition/value', async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+
+      await repository.getCallLogsQuery({
+        counselorId: mockUserId,
+        tenantId: mockTenantId,
+      });
+
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
+        'custom_field_definitions',
+        'cfd_quality',
+        'cfd_quality.tenant_id = chat.tenantId AND cfd_quality."seedKey" = :qualitySeedKey AND cfd_quality."isActive" = true',
+        { qualitySeedKey: 'callQuality' },
+      );
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
+        'chat_custom_field_values',
+        'cfv_quality',
+        'cfv_quality."chatId" = chat.id AND cfv_quality."fieldDefinitionId" = cfd_quality.id',
+      );
+    });
+
+    it('sorts by QUALITY_SCORE using the COALESCE expression covering both storage locations', async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+
+      await repository.getCallLogsQuery({
+        counselorId: mockUserId,
+        tenantId: mockTenantId,
+        sortBy: CallLogSortBy.QUALITY_SCORE,
+        order: 'DESC',
+      });
+
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        "COALESCE(CAST(cfv_quality.value AS NUMERIC), CAST(details.summary->>'callQuality' AS NUMERIC))",
+        'DESC',
+      );
+    });
+
     it('should apply sorting when sortBy is provided', async () => {
       mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
 
@@ -697,12 +735,30 @@ describe('ChatRepository', () => {
       });
 
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        "CAST(details.summary->>'callQuality' AS NUMERIC) >= :minQualityScore",
+        "COALESCE(CAST(cfv_quality.value AS NUMERIC), CAST(details.summary->>'callQuality' AS NUMERIC)) >= :minQualityScore",
         { minQualityScore: 3 },
       );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        "CAST(details.summary->>'callQuality' AS NUMERIC) <= :maxQualityScore",
+        "COALESCE(CAST(cfv_quality.value AS NUMERIC), CAST(details.summary->>'callQuality' AS NUMERIC)) <= :maxQualityScore",
         { maxQualityScore: 5 },
+      );
+    });
+
+    it("joins the callQuality custom field definition/value so a migrated tenant's value is included", async () => {
+      mockQueryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+
+      await repository.getAdminCallLogsQuery(mockTenantId, {});
+
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
+        'custom_field_definitions',
+        'cfd_quality',
+        'cfd_quality.tenant_id = chat.tenantId AND cfd_quality."seedKey" = :qualitySeedKey AND cfd_quality."isActive" = true',
+        { qualitySeedKey: 'callQuality' },
+      );
+      expect(mockQueryBuilder.leftJoin).toHaveBeenCalledWith(
+        'chat_custom_field_values',
+        'cfv_quality',
+        'cfv_quality."chatId" = chat.id AND cfv_quality."fieldDefinitionId" = cfd_quality.id',
       );
     });
 

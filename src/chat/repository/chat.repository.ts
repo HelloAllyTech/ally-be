@@ -19,6 +19,11 @@ import { CallLogsParams } from '../type/call.details.type';
 
 @Injectable()
 export class ChatRepository extends Repository<Chat> {
+  // See joinCallQualityCustomFieldValue for why this COALESCEs between the
+  // two possible storage locations.
+  private static readonly QUALITY_SCORE_EXPRESSION =
+    "COALESCE(CAST(cfv_quality.value AS NUMERIC), CAST(details.summary->>'callQuality' AS NUMERIC))";
+
   constructor(private dataSource: DataSource) {
     super(Chat, dataSource.createEntityManager());
   }
@@ -45,6 +50,7 @@ export class ChatRepository extends Repository<Chat> {
         'cfv',
         'cfv.chatId = chat.id',
       );
+    this.joinCallQualityCustomFieldValue(query);
 
     query.where('chat.counselorId = :counselorId', {
       counselorId: params.counselorId,
@@ -116,6 +122,7 @@ export class ChatRepository extends Repository<Chat> {
         'cfv',
         'cfv.chatId = chat.id',
       );
+    this.joinCallQualityCustomFieldValue(query);
 
     // Only show ENDED calls for admin call logs
     query.andWhere('chat.status = :status', { status: ChatStatus.ENDED });
@@ -216,13 +223,36 @@ export class ChatRepository extends Repository<Chat> {
     }
   }
 
+  /**
+   * callQuality now lives in `chat_custom_field_values` for a migrated
+   * tenant (seedKey: 'callQuality') and in `details.summary` for a
+   * not-yet-migrated one — never both, per the rollout consistency gate in
+   * CustomFieldsService.applyMigratedFieldsGate. Joining the custom field
+   * value (if any) lets every consumer read via QUALITY_SCORE_EXPRESSION's
+   * COALESCE without needing to know which state a tenant is in.
+   */
+  private joinCallQualityCustomFieldValue(query: SelectQueryBuilder<Chat>) {
+    query
+      .leftJoin(
+        'custom_field_definitions',
+        'cfd_quality',
+        'cfd_quality.tenant_id = chat.tenantId AND cfd_quality."seedKey" = :qualitySeedKey AND cfd_quality."isActive" = true',
+        { qualitySeedKey: 'callQuality' },
+      )
+      .leftJoin(
+        'chat_custom_field_values',
+        'cfv_quality',
+        'cfv_quality."chatId" = chat.id AND cfv_quality."fieldDefinitionId" = cfd_quality.id',
+      );
+  }
+
   private applyQualityFilters(
     query: SelectQueryBuilder<Chat>,
     filters: CallLogFilters,
   ) {
     if (filters.minQualityScore !== undefined) {
       query.andWhere(
-        "CAST(details.summary->>'callQuality' AS NUMERIC) >= :minQualityScore",
+        `${ChatRepository.QUALITY_SCORE_EXPRESSION} >= :minQualityScore`,
         {
           minQualityScore: filters.minQualityScore,
         },
@@ -230,7 +260,7 @@ export class ChatRepository extends Repository<Chat> {
     }
     if (filters.maxQualityScore !== undefined) {
       query.andWhere(
-        "CAST(details.summary->>'callQuality' AS NUMERIC) <= :maxQualityScore",
+        `${ChatRepository.QUALITY_SCORE_EXPRESSION} <= :maxQualityScore`,
         {
           maxQualityScore: filters.maxQualityScore,
         },
@@ -279,10 +309,7 @@ export class ChatRepository extends Repository<Chat> {
         query.orderBy('chat.startedAt', sortOrder);
         break;
       case CallLogSortBy.QUALITY_SCORE:
-        query.orderBy(
-          "CAST(details.summary->>'callQuality' AS NUMERIC)",
-          sortOrder,
-        );
+        query.orderBy(ChatRepository.QUALITY_SCORE_EXPRESSION, sortOrder);
         break;
       case CallLogSortBy.TAGS:
         query.orderBy("details.summary->'tags'->0->>'tag'", sortOrder);

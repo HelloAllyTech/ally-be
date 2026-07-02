@@ -12,6 +12,13 @@ import {
 import { SettingsService } from 'src/settings/service/settings.service';
 import { UserService } from 'src/user/service/user.service';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { CustomFieldsService } from 'src/custom-fields/service/custom-fields.service';
+import {
+  CustomFieldEditPermission,
+  CustomFieldFillMode,
+  CustomFieldType,
+} from 'src/custom-fields/entity/custom-field-definition.entity';
+import { CustomFieldValueResponseDto } from 'src/custom-fields/dto/custom-field-value.dto';
 
 describe('ChatSummaryService', () => {
   let service: ChatSummaryService;
@@ -26,6 +33,9 @@ describe('ChatSummaryService', () => {
   };
   let mockPermissionValidator: {
     validatePermissions: jest.Mock;
+  };
+  let mockCustomFieldsService: {
+    getValues: jest.Mock;
   };
 
   const mockTokenUser: TokenUser = {
@@ -166,6 +176,12 @@ describe('ChatSummaryService', () => {
       validatePermissions: jest.fn().mockResolvedValue(true),
     };
 
+    // Empty by default = unmigrated tenant, matching every pre-existing test
+    // in this file, which asserts on the old blob-only behavior.
+    mockCustomFieldsService = {
+      getValues: jest.fn().mockResolvedValue([]),
+    };
+
     const module = await Test.createTestingModule({
       providers: [
         ChatSummaryService,
@@ -184,6 +200,10 @@ describe('ChatSummaryService', () => {
         {
           provide: PermissionValidator,
           useValue: mockPermissionValidator,
+        },
+        {
+          provide: CustomFieldsService,
+          useValue: mockCustomFieldsService,
         },
       ],
     }).compile();
@@ -487,6 +507,148 @@ describe('ChatSummaryService', () => {
       expect(summary).toContain('Call Quality:');
       expect(summary).toContain('Tags:');
       expect(summary).toContain('Session Summary:');
+    });
+  });
+
+  describe('exportSummary — migrated tenant', () => {
+    const buildValue = (
+      overrides: Partial<CustomFieldValueResponseDto>,
+    ): CustomFieldValueResponseDto => ({
+      fieldDefinitionId: 'def-1',
+      name: 'Field',
+      fieldType: CustomFieldType.TEXT,
+      options: undefined,
+      sectionKey: 'featuresAndDemographics',
+      sectionLabel: 'Features and Demographics',
+      editPermission: CustomFieldEditPermission.BOTH,
+      fillMode: CustomFieldFillMode.MANUAL,
+      displayOrder: 0,
+      enhanceable: false,
+      seedKey: null,
+      value: null,
+      ...overrides,
+    });
+
+    it('overrides a plain field with the migrated custom field value', async () => {
+      mockCustomFieldsService.getValues.mockResolvedValue([
+        buildValue({ seedKey: 'codeOfConcern', value: 'self-harm risk' }),
+      ]);
+      mockChatService.getChatWithCallDetails.mockResolvedValue({
+        chat: mockChat,
+        callDetails: mockCallDetails,
+      });
+
+      const result = await service.exportSummary(mockTokenUser, 1);
+
+      expect(result.summary).toContain('Code of Concern: self-harm risk');
+    });
+
+    it('resolves a SINGLE_SELECT option id to its current label', async () => {
+      mockCustomFieldsService.getValues.mockResolvedValue([
+        buildValue({
+          seedKey: 'age',
+          fieldType: CustomFieldType.SINGLE_SELECT,
+          value: '18-24',
+          options: [{ id: '18-24', label: '18 to 24 years', order: 0 }],
+        }),
+      ]);
+      mockChatService.getChatWithCallDetails.mockResolvedValue({
+        chat: mockChat,
+        callDetails: mockCallDetails,
+      });
+
+      const result = await service.exportSummary(mockTokenUser, 1);
+
+      expect(result.summary).toContain('Age: 18 to 24 years');
+    });
+
+    it('maps the counselorName SYSTEM field onto the export\'s "counsellor" key and formats it', async () => {
+      mockCustomFieldsService.getValues.mockResolvedValue([
+        buildValue({
+          seedKey: 'counselorName',
+          fillMode: CustomFieldFillMode.SYSTEM,
+          value: 'Alex Rivera',
+        }),
+      ]);
+      mockChatService.getChatWithCallDetails.mockResolvedValue({
+        chat: mockChat,
+        callDetails: mockCallDetails,
+      });
+
+      const result = await service.exportSummary(mockTokenUser, 1);
+
+      expect(result.summary).toContain('Counselor: Alex Rivera');
+    });
+
+    it('does not export the AI-extracted "counsellor" seedKey (no export slot exists for it)', async () => {
+      mockCustomFieldsService.getValues.mockResolvedValue([
+        buildValue({ seedKey: 'counsellor', value: 'Mentioned Name' }),
+      ]);
+      mockChatService.getChatWithCallDetails.mockResolvedValue({
+        chat: mockChat,
+        callDetails: mockCallDetails,
+      });
+
+      const result = await service.exportSummary(mockTokenUser, 1);
+
+      // Falls back to the joined counselor's real name, unaffected by the
+      // AI-extracted seedKey with the same name but no export slot.
+      expect(result.summary).toContain('Counselor: Jane Smith');
+      expect(result.summary).not.toContain('Mentioned Name');
+    });
+
+    it('formats callDate/callTime/listeningShare from raw SYSTEM values', async () => {
+      mockCustomFieldsService.getValues.mockResolvedValue([
+        buildValue({
+          seedKey: 'callDate',
+          fillMode: CustomFieldFillMode.SYSTEM,
+          value: '2024-03-05T00:00:00.000Z',
+        }),
+        buildValue({
+          seedKey: 'callTime',
+          fillMode: CustomFieldFillMode.SYSTEM,
+          value: '2024-03-05T10:00:00.000Z|2024-03-05T11:00:00.000Z',
+        }),
+        buildValue({
+          seedKey: 'listeningShare',
+          fillMode: CustomFieldFillMode.SYSTEM,
+          value: '0.453',
+        }),
+      ]);
+      mockChatService.getChatWithCallDetails.mockResolvedValue({
+        chat: mockChat,
+        callDetails: mockCallDetails,
+      });
+
+      const result = await service.exportSummary(mockTokenUser, 1);
+
+      expect(result.summary).toContain(
+        `Call Date: ${new Date('2024-03-05T00:00:00.000Z').toLocaleDateString()}`,
+      );
+      expect(result.summary).toContain(
+        `Call Time: ${new Date('2024-03-05T10:00:00.000Z').toLocaleTimeString()} - ${new Date('2024-03-05T11:00:00.000Z').toLocaleTimeString()}`,
+      );
+      expect(result.summary).toContain('Listening Share: 45.3%');
+    });
+
+    it('keeps the 3 permanently-hardcoded fields sourced from the blob even when migrated', async () => {
+      mockCustomFieldsService.getValues.mockResolvedValue([
+        buildValue({ seedKey: 'codeOfConcern', value: 'anything' }),
+      ]);
+      mockChatService.getChatWithCallDetails.mockResolvedValue({
+        chat: mockChat,
+        callDetails: mockCallDetails,
+      });
+
+      const result = await service.exportSummary(mockTokenUser, 1);
+
+      expect(result.summary).toContain(
+        'Session Summary: Client discussed anxiety issues and coping strategies were provided.',
+      );
+      expect(result.summary).toContain('Location: New York');
+      expect(result.summary).toContain(
+        'Tags: urgent (Positivity: 0.2), follow-up (Positivity: 0.8)',
+      );
     });
   });
 });

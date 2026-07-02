@@ -90,6 +90,11 @@ export class CreateCustomFieldDefinitionDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsBoolean()
+  enhanceable?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsUUID()
   tenantId?: string;
 }
@@ -155,6 +160,11 @@ export class UpdateCustomFieldDefinitionDto {
   @IsString()
   @MaxLength(500)
   aiInstruction?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  enhanceable?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()

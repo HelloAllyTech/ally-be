@@ -40,7 +40,9 @@ const SYSTEM_FIELD_COMPUTERS: Record<
     ctx.chat.clientId != null && ctx.chat.clientId !== -1
       ? ctx.chat.clientId.toString()
       : null,
-  counsellorName: (ctx) => ctx.counselorName,
+  // seedKey matches ally-web's SummaryFieldKey.CounsellorName VALUE
+  // ("counselorName", single L) — see default-field-templates.constants.ts.
+  counselorName: (ctx) => ctx.counselorName,
   listeningShare: (ctx) =>
     ctx.callDetails?.callInfo?.clientTalkingPercentage != null
       ? ctx.callDetails.callInfo.clientTalkingPercentage.toString()

@@ -18,6 +18,7 @@ import { MessageRequest } from 'src/ai/dto/ai.request.dto';
 import { NotificationService } from 'src/notification/service/notification.service';
 import { UserService } from 'src/user/service/user.service';
 import { ScribeSessionMode } from 'src/common/constants/chat.constants';
+import { CustomFieldsService } from 'src/custom-fields/service/custom-fields.service';
 
 // Mock ExecutionManager
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -77,6 +78,9 @@ describe('ChatAiService', () => {
   };
   let mockUserService: {
     get: jest.Mock;
+  };
+  let mockCustomFieldsService: {
+    applyMigratedFieldsGate: jest.Mock;
   };
 
   const mockChat: Chat = {
@@ -215,6 +219,14 @@ describe('ChatAiService', () => {
       get: jest.fn(),
     };
 
+    mockCustomFieldsService = {
+      applyMigratedFieldsGate: jest
+        .fn()
+        .mockImplementation((_chatId, _tenantId, summary) =>
+          Promise.resolve(summary),
+        ),
+    };
+
     const module = await Test.createTestingModule({
       providers: [
         ChatAiService,
@@ -253,6 +265,10 @@ describe('ChatAiService', () => {
         {
           provide: UserService,
           useValue: mockUserService,
+        },
+        {
+          provide: CustomFieldsService,
+          useValue: mockCustomFieldsService,
         },
       ],
     }).compile();
@@ -304,6 +320,31 @@ describe('ChatAiService', () => {
       expect(
         mockNotificationService.sendEmailSummaryNotification,
       ).not.toHaveBeenCalled();
+    });
+
+    it('persists the gated summary (post-consistency-gate), not the raw one, for a migrated tenant', async () => {
+      mockCallDetailsRepository.update.mockResolvedValue({});
+      mockChatService.getChatByIdForServiceCall.mockResolvedValue(mockChat);
+      mockChatService.getChatWithCallDetails.mockResolvedValue({
+        callDetails: mockCallDetails,
+      });
+      mockCustomFieldsService.applyMigratedFieldsGate.mockResolvedValue({
+        stripped: true,
+      });
+
+      await service.addSummary(1, mockSummary);
+
+      expect(
+        mockCustomFieldsService.applyMigratedFieldsGate,
+      ).toHaveBeenCalledWith(
+        1,
+        mockChat.tenantId,
+        expect.objectContaining({ callQuality: 5 }),
+      );
+      expect(mockCallDetailsRepository.update).toHaveBeenCalledWith(
+        { chatId: 1 },
+        { summary: { stripped: true } },
+      );
     });
 
     it('should throw ValidationException when chat not found', async () => {

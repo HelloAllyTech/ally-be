@@ -62,6 +62,12 @@ export class CustomFieldValueResponseDto {
   @ApiProperty()
   displayOrder!: number;
 
+  @ApiProperty()
+  enhanceable!: boolean;
+
+  @ApiPropertyOptional({ nullable: true })
+  seedKey!: string | null;
+
   @ApiPropertyOptional({ nullable: true })
   value!: string | null;
 }
