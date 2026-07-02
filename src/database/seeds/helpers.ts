@@ -40,6 +40,12 @@ import { ScenarioCoverImageLibrary } from '../../scenario-cover-image-library/en
 import { Competency } from '../../learn/entity/competency.entity';
 import { Behavior } from '../../learn/entity/behavior.entity';
 import { ScenarioBehaviorInstruction } from '../../learn/entity/scenario-behavior-instruction.entity';
+import { Chat } from '../../chat/entity/chat.entity';
+import { CallDetails } from '../../chat/entity/call.details.entity';
+import { Message } from '../../chat/entity/message.entity';
+import { CustomFieldDefinition } from '../../custom-fields/entity/custom-field-definition.entity';
+import { ChatCustomFieldValue } from '../../custom-fields/entity/chat-custom-field-value.entity';
+import { Preference } from '../../settings/entity/preference.entity';
 
 export const SEED_ENTITIES = [
   Tenant,
@@ -75,6 +81,12 @@ export const SEED_ENTITIES = [
   Competency,
   Behavior,
   ScenarioBehaviorInstruction,
+  Chat,
+  CallDetails,
+  Message,
+  CustomFieldDefinition,
+  ChatCustomFieldValue,
+  Preference,
 ];
 
 export function createSeedDataSource(): DataSource {

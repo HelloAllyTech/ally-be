@@ -11,6 +11,7 @@ import { seedBadges } from './seeders/badge.seeder';
 import { seedScenarioCoverImageLibrary } from './seeders/scenario-cover-image-library.seeder';
 import { seedSimulationCredits } from './seeders/simulation-credits.seeder';
 import { seedReviews } from './seeders/review.seeder';
+import { seedScribeData } from './seeders/scribe.seeder';
 import { User } from '../../user/entity/user.entity';
 import { ADMIN_EMAIL, DEFAULT_OTP, DEFAULT_PASSWORD } from './config';
 
@@ -34,6 +35,7 @@ async function main(): Promise<void> {
     await seedBadges(ds, admin.id);
     await seedScenarioCoverImageLibrary(ds, admin.id);
     await seedSimulationCredits(ds);
+    await seedScribeData(ds, admin.id, tenant.id);
   });
 
   log(`done in ${Math.round((Date.now() - started) / 1000)}s`);
