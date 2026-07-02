@@ -24,6 +24,7 @@ import {
 import { GetScenarioPathsResponseDto } from '../dto/scenario-paths-response.dto';
 import { ScenarioPathService } from '../service/scenario-path.service';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ScenarioPathSortBy, SortOrder } from '../type/scenario-paths.type';
 import {
@@ -186,7 +187,7 @@ export class ScenarioPathController {
   @ApiResponse({
     description: 'Scenario-path assigned to tenant successfully',
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_PATH_TENANT])
+  @TenantScopedPermissions([PERMISSIONS.EDIT_SCENARIO_PATH_TENANT])
   @Post('scenario-paths/tenant/:tenantId')
   async assignScenarioPathsToTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
@@ -202,7 +203,7 @@ export class ScenarioPathController {
   @ApiResponse({
     description: 'Scenario path access removed from tenants successfully',
   })
-  @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_PATH_TENANT])
+  @TenantScopedPermissions([PERMISSIONS.DELETE_SCENARIO_PATH_TENANT])
   @Delete('scenario-paths/tenant/:tenantId')
   async removeScenarioPathsFromTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,

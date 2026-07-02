@@ -10,6 +10,7 @@ import {
 import { CreateTenantDto } from '../dto/create-tenant.dto';
 import { UpdateTenantStatusDto } from '../dto/update-tenant-status.dto';
 import { UpdateTenantSettingsDto } from '../dto/update-tenant-settings.dto';
+import { UpdateOwnTenantSettingsDto } from '../dto/update-own-tenant-settings.dto';
 import { UpdateTenantMetadataDto } from '../dto/update-tenant-metadata.dto';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -49,6 +50,31 @@ export class TenantController {
   @AuthPermissions([PERMISSIONS.EDIT_TENANT])
   async create(@Body() createTenantDto: CreateTenantDto): Promise<Tenant> {
     return this.tenantService.create(createTenantDto, TenantStatus.ACTIVE);
+  }
+
+  // --- Own-tenant (tenant admin) endpoints -------------------------------
+  // Declared before the ':id' routes so 'self' is matched literally. These
+  // always operate on the caller's JWT tenant — they never accept a tenantId
+  // from the client, so a tenant admin can only ever read/edit their own org.
+
+  @ApiOperation({
+    summary: "Get the caller's own tenant (including settings/toggles)",
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_OWN_TENANT_SETTINGS])
+  @Get('self')
+  async getOwnTenant(): Promise<TenantResponseDto | null> {
+    return this.tenantService.getOwnTenant();
+  }
+
+  @ApiOperation({
+    summary: "Update the caller's own tenant settings (feature toggles only)",
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_OWN_TENANT_SETTINGS])
+  @Patch('self/settings')
+  async updateOwnTenantSettings(
+    @Body() dto: UpdateOwnTenantSettingsDto,
+  ): Promise<TenantResponseDto | null> {
+    return this.tenantService.updateOwnTenantSettings(dto);
   }
 
   @ApiQuery({

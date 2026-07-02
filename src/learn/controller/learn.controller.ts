@@ -41,6 +41,7 @@ import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioSortBy } from '../type/scenario.type';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
 import { UpdateScenarioVoiceDto } from '../dto/update-scenario-voice.dto';
@@ -1068,7 +1069,7 @@ export class LearnController {
   @ApiResponse({
     description: 'Scenarios assigned to tenant successfully',
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_TENANT])
+  @TenantScopedPermissions([PERMISSIONS.EDIT_SCENARIO_TENANT])
   @Post('scenario/tenant/:tenantId')
   async assignScenariosToTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
@@ -1084,7 +1085,7 @@ export class LearnController {
   @ApiResponse({
     description: 'Scenario access removed from tenants successfully',
   })
-  @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_TENANT])
+  @TenantScopedPermissions([PERMISSIONS.DELETE_SCENARIO_TENANT])
   @Delete('scenario/tenant/:tenantId')
   async removeScenariosFromTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,

@@ -18,6 +18,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { CreateCaseDto, CreateCaseResponseDto } from '../dto/create-case.dto';
 import { CaseService } from '../service/case.service';
@@ -171,7 +172,7 @@ export class CaseController {
   @ApiResponse({
     description: 'Case assigned to tenant successfully',
   })
-  @AuthPermissions([PERMISSIONS.EDIT_CASE_TENANT])
+  @TenantScopedPermissions([PERMISSIONS.EDIT_CASE_TENANT])
   @Post('cases/tenant/:tenantId')
   async assignCasesToTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
@@ -187,7 +188,7 @@ export class CaseController {
   @ApiResponse({
     description: 'Case access removed from tenants successfully',
   })
-  @AuthPermissions([PERMISSIONS.DELETE_CASE_TENANT])
+  @TenantScopedPermissions([PERMISSIONS.DELETE_CASE_TENANT])
   @Delete('cases/tenant/:tenantId')
   async removeCasesFromTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
