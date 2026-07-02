@@ -15,11 +15,19 @@ export enum CustomFieldEditPermission {
   ADMIN_ONLY = 'ADMIN_ONLY',
   COUNSELLOR_ONLY = 'COUNSELLOR_ONLY',
   BOTH = 'BOTH',
+  /** Nobody can edit this field via upsertValues, regardless of role. */
+  READ_ONLY = 'READ_ONLY',
 }
 
 export enum CustomFieldFillMode {
   MANUAL = 'MANUAL',
   AI = 'AI',
+  /**
+   * Computed live from other Chat/CallDetails/User columns — never written
+   * to ChatCustomFieldValue. upsertValues/upsertValuesInternal reject any
+   * write attempt against a SYSTEM-fillMode definition.
+   */
+  SYSTEM = 'SYSTEM',
 }
 
 /**

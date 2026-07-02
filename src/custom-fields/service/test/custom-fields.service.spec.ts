@@ -16,16 +16,21 @@ import {
 } from '../../entity/custom-field-definition.entity';
 import { ChatCustomFieldValue } from '../../entity/chat-custom-field-value.entity';
 import { Chat } from '../../../chat/entity/chat.entity';
+import { CallDetails } from '../../../chat/entity/call.details.entity';
+import { ScribeSessionMode } from '../../../common/constants/chat.constants';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
+import { UserService } from '../../../user/service/user.service';
 import { DEFAULT_FIELD_TEMPLATES } from '../../constants/default-field-templates.constants';
 
 describe('CustomFieldsService', () => {
   let service: CustomFieldsService;
   let chatRepo: jest.Mocked<Repository<Chat>>;
+  let callDetailsRepo: jest.Mocked<Repository<CallDetails>>;
   let definitionRepo: jest.Mocked<Repository<CustomFieldDefinition>>;
   let valueRepo: jest.Mocked<Repository<ChatCustomFieldValue>>;
   let permissionValidator: jest.Mocked<PermissionValidator>;
+  let userService: jest.Mocked<UserService>;
 
   const mockTenantId = 'tenant-uuid';
   const mockUserId = '42';
@@ -72,6 +77,10 @@ describe('CustomFieldsService', () => {
       findOne: jest.fn(),
     } as any;
 
+    callDetailsRepo = {
+      findOne: jest.fn(),
+    } as any;
+
     definitionRepo = {
       find: jest.fn(),
       findOne: jest.fn(),
@@ -94,6 +103,10 @@ describe('CustomFieldsService', () => {
           useValue: chatRepo,
         },
         {
+          provide: getRepositoryToken(CallDetails),
+          useValue: callDetailsRepo,
+        },
+        {
           provide: getRepositoryToken(CustomFieldDefinition),
           useValue: definitionRepo,
         },
@@ -105,11 +118,16 @@ describe('CustomFieldsService', () => {
           provide: PermissionValidator,
           useValue: { validatePermissions: jest.fn() },
         },
+        {
+          provide: UserService,
+          useValue: { get: jest.fn() },
+        },
       ],
     }).compile();
 
     service = module.get<CustomFieldsService>(CustomFieldsService);
     permissionValidator = module.get(PermissionValidator);
+    userService = module.get(UserService);
 
     jest.spyOn(ExecutionManager, 'getTenantId').mockReturnValue(mockTenantId);
     jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(mockUserId);
@@ -173,6 +191,16 @@ describe('CustomFieldsService', () => {
       editPermission: CustomFieldEditPermission.BOTH,
       displayOrder: 1,
     };
+
+    it('should throw BadRequestException when fillMode is SYSTEM', async () => {
+      await expect(
+        service.createDefinition({
+          ...baseDto,
+          fillMode: CustomFieldFillMode.SYSTEM,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(definitionRepo.save).not.toHaveBeenCalled();
+    });
 
     it('should create and save a single-select definition', async () => {
       definitionRepo.create.mockReturnValue(mockDefinition);
@@ -311,6 +339,17 @@ describe('CustomFieldsService', () => {
   // ─── updateDefinition ────────────────────────────────────────────────────
 
   describe('updateDefinition', () => {
+    it('should throw BadRequestException when fillMode is set to SYSTEM', async () => {
+      definitionRepo.findOne.mockResolvedValue(mockDefinition);
+
+      await expect(
+        service.updateDefinition(mockDefinitionId, {
+          fillMode: CustomFieldFillMode.SYSTEM,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(definitionRepo.save).not.toHaveBeenCalled();
+    });
+
     it('should update and save an existing definition', async () => {
       const updatedDef = { ...mockDefinition, name: 'Updated Name' };
       definitionRepo.findOne.mockResolvedValue(mockDefinition);
@@ -512,6 +551,152 @@ describe('CustomFieldsService', () => {
         BadRequestException,
       );
     });
+
+    describe('SYSTEM fillMode fields', () => {
+      const mockChat: Chat = {
+        id: mockChatId,
+        clientId: 55,
+        counselorId: 7,
+        startedAt: new Date('2026-01-01T10:00:00.000Z'),
+        endedAt: new Date('2026-01-01T10:30:00.000Z'),
+        tenantId: mockTenantId,
+      } as any;
+
+      const mockCallDetails: CallDetails = {
+        chatId: mockChatId,
+        callDuration: 1800,
+        startTime: new Date('2026-01-01T10:00:00.000Z'),
+        callInfo: {
+          clientTalkingPercentage: 0.42,
+          mode: ScribeSessionMode.SCRIBE,
+        },
+        tenantId: mockTenantId,
+      } as any;
+
+      const systemDefinition: CustomFieldDefinition = {
+        ...mockDefinition,
+        id: 'def-system-callid',
+        fillMode: CustomFieldFillMode.SYSTEM,
+        seedKey: 'callId',
+      } as any;
+
+      it('computes a SYSTEM field value instead of reading ChatCustomFieldValue', async () => {
+        definitionRepo.find.mockResolvedValue([systemDefinition]);
+        valueRepo.find.mockResolvedValue([]);
+        chatRepo.findOne.mockResolvedValue(mockChat);
+        callDetailsRepo.findOne.mockResolvedValue(mockCallDetails);
+        userService.get.mockResolvedValue({ name: 'Jane Counselor' } as any);
+
+        const result = await service.getValues(mockChatId);
+
+        expect(result[0].value).toBe(mockChatId.toString());
+        expect(chatRepo.findOne).toHaveBeenCalledWith({
+          where: { id: mockChatId, tenantId: mockTenantId },
+        });
+        expect(callDetailsRepo.findOne).toHaveBeenCalledWith({
+          where: { chatId: mockChatId, tenantId: mockTenantId },
+        });
+      });
+
+      it('does not query Chat/CallDetails/UserService when no SYSTEM definition exists', async () => {
+        definitionRepo.find.mockResolvedValue([mockDefinition]);
+        valueRepo.find.mockResolvedValue([]);
+
+        await service.getValues(mockChatId);
+
+        expect(chatRepo.findOne).not.toHaveBeenCalled();
+        expect(callDetailsRepo.findOne).not.toHaveBeenCalled();
+        expect(userService.get).not.toHaveBeenCalled();
+      });
+
+      it('computes counsellorName from the counselor user record', async () => {
+        definitionRepo.find.mockResolvedValue([
+          { ...systemDefinition, seedKey: 'counsellorName' },
+        ]);
+        valueRepo.find.mockResolvedValue([]);
+        chatRepo.findOne.mockResolvedValue(mockChat);
+        callDetailsRepo.findOne.mockResolvedValue(mockCallDetails);
+        userService.get.mockResolvedValue({ name: 'Jane Counselor' } as any);
+
+        const result = await service.getValues(mockChatId);
+
+        expect(userService.get).toHaveBeenCalledWith(7);
+        expect(result[0].value).toBe('Jane Counselor');
+      });
+
+      it('returns null counsellorName when the chat has no assigned counselor', async () => {
+        definitionRepo.find.mockResolvedValue([
+          { ...systemDefinition, seedKey: 'counsellorName' },
+        ]);
+        valueRepo.find.mockResolvedValue([]);
+        chatRepo.findOne.mockResolvedValue({
+          ...mockChat,
+          counselorId: undefined,
+        });
+        callDetailsRepo.findOne.mockResolvedValue(mockCallDetails);
+
+        const result = await service.getValues(mockChatId);
+
+        expect(userService.get).not.toHaveBeenCalled();
+        expect(result[0].value).toBeNull();
+      });
+
+      it('maps mode to "Dictation" or "Scribe", defaulting to "Scribe" when callInfo is missing', async () => {
+        definitionRepo.find.mockResolvedValue([
+          { ...systemDefinition, seedKey: 'mode' },
+        ]);
+        valueRepo.find.mockResolvedValue([]);
+        chatRepo.findOne.mockResolvedValue(mockChat);
+        callDetailsRepo.findOne.mockResolvedValue({
+          ...mockCallDetails,
+          callInfo: { mode: ScribeSessionMode.DICTATION },
+        } as any);
+
+        const result = await service.getValues(mockChatId);
+        expect(result[0].value).toBe('Dictation');
+
+        callDetailsRepo.findOne.mockResolvedValue(null);
+        const resultNoCallDetails = await service.getValues(mockChatId);
+        expect(resultNoCallDetails[0].value).toBe('Scribe');
+      });
+
+      it('returns null clientId when clientId is the -1 sentinel', async () => {
+        definitionRepo.find.mockResolvedValue([
+          { ...systemDefinition, seedKey: 'clientId' },
+        ]);
+        valueRepo.find.mockResolvedValue([]);
+        chatRepo.findOne.mockResolvedValue({ ...mockChat, clientId: -1 });
+        callDetailsRepo.findOne.mockResolvedValue(mockCallDetails);
+
+        const result = await service.getValues(mockChatId);
+
+        expect(result[0].value).toBeNull();
+      });
+
+      it('returns null when the chat itself cannot be found', async () => {
+        definitionRepo.find.mockResolvedValue([systemDefinition]);
+        valueRepo.find.mockResolvedValue([]);
+        chatRepo.findOne.mockResolvedValue(null);
+
+        const result = await service.getValues(mockChatId);
+
+        expect(result[0].value).toBeNull();
+        expect(callDetailsRepo.findOne).not.toHaveBeenCalled();
+      });
+
+      it('returns null for an unrecognized seedKey', async () => {
+        definitionRepo.find.mockResolvedValue([
+          { ...systemDefinition, seedKey: 'notARealSeedKey' },
+        ]);
+        valueRepo.find.mockResolvedValue([]);
+        chatRepo.findOne.mockResolvedValue(mockChat);
+        callDetailsRepo.findOne.mockResolvedValue(mockCallDetails);
+
+        const result = await service.getValues(mockChatId);
+
+        expect(result[0].value).toBeNull();
+      });
+    });
   });
 
   // ─── reorderDefinitions ──────────────────────────────────────────────────
@@ -637,6 +822,22 @@ describe('CustomFieldsService', () => {
 
       expect(valueRepo.save).toHaveBeenCalled();
       expect(result).toEqual({ success: true });
+    });
+
+    it('should reject editing a SYSTEM-fillMode field, even for an admin', async () => {
+      const systemDef = {
+        ...mockDefinition,
+        fillMode: CustomFieldFillMode.SYSTEM,
+      };
+      mockQb.getMany.mockResolvedValue([systemDef]);
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+
+      await expect(service.upsertValues(mockChatId, upsertDto)).rejects.toThrow(
+        ForbiddenException,
+      );
+      expect(valueRepo.save).not.toHaveBeenCalled();
     });
 
     it('should allow admin to edit ADMIN_ONLY field', async () => {
@@ -816,6 +1017,27 @@ describe('CustomFieldsService', () => {
       valueRepo.save.mockResolvedValue([] as any);
     });
 
+    it('excludes SYSTEM-fillMode definitions from the valid-definitions query', async () => {
+      valueRepo.find.mockResolvedValue([]);
+
+      await service.upsertValuesInternal(mockChatId, mockTenantId, aiValues);
+
+      expect(mockQb.andWhere).toHaveBeenCalledWith(
+        'd.fillMode != :systemFillMode',
+        { systemFillMode: CustomFieldFillMode.SYSTEM },
+      );
+    });
+
+    it('never writes a value for a SYSTEM-fillMode definition (query excludes it)', async () => {
+      // Simulates the real query's `fillMode != SYSTEM` filter excluding it.
+      mockQb.getMany.mockResolvedValue([]);
+      valueRepo.find.mockResolvedValue([]);
+
+      await service.upsertValuesInternal(mockChatId, mockTenantId, aiValues);
+
+      expect(valueRepo.save).not.toHaveBeenCalled();
+    });
+
     it('creates a new value when none exists yet', async () => {
       valueRepo.find.mockResolvedValue([]);
 
@@ -949,6 +1171,39 @@ describe('CustomFieldsService', () => {
           showInTable: false,
           isActive: true,
           tenantId: mockTenantId,
+        }),
+      );
+    });
+
+    it('defaults editPermission to BOTH for templates that omit it', async () => {
+      definitionRepo.find.mockResolvedValue([]);
+      const templateWithoutPermission = DEFAULT_FIELD_TEMPLATES.find(
+        (t) => !t.editPermission,
+      )!;
+
+      await service.seedDefaultDefinitionsForTenant(mockTenantId);
+
+      expect(definitionRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          seedKey: templateWithoutPermission.seedKey,
+          editPermission: CustomFieldEditPermission.BOTH,
+        }),
+      );
+    });
+
+    it('uses the template-specified editPermission (READ_ONLY) when provided', async () => {
+      definitionRepo.find.mockResolvedValue([]);
+      const readOnlyTemplate = DEFAULT_FIELD_TEMPLATES.find(
+        (t) => t.editPermission === CustomFieldEditPermission.READ_ONLY,
+      )!;
+      expect(readOnlyTemplate).toBeDefined();
+
+      await service.seedDefaultDefinitionsForTenant(mockTenantId);
+
+      expect(definitionRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          seedKey: readOnlyTemplate.seedKey,
+          editPermission: CustomFieldEditPermission.READ_ONLY,
         }),
       );
     });

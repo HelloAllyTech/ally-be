@@ -8,6 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 import { Chat } from '../../chat/entity/chat.entity';
+import { CallDetails } from '../../chat/entity/call.details.entity';
 import {
   CustomFieldDefinition,
   CustomFieldEditPermission,
@@ -30,6 +31,11 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { PermissionValidator } from '../../authorization/service/permission-validator.service';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 import { DEFAULT_FIELD_TEMPLATES } from '../constants/default-field-templates.constants';
+import { UserService } from '../../user/service/user.service';
+import {
+  computeSystemFieldValue,
+  SystemFieldContext,
+} from './system-field-computer';
 
 const SESSION_LOG_COLUMN_LABELS = [
   'Call ID',
@@ -58,11 +64,14 @@ export class CustomFieldsService {
   constructor(
     @InjectRepository(Chat)
     private readonly chatRepo: Repository<Chat>,
+    @InjectRepository(CallDetails)
+    private readonly callDetailsRepo: Repository<CallDetails>,
     @InjectRepository(CustomFieldDefinition)
     private readonly definitionRepo: Repository<CustomFieldDefinition>,
     @InjectRepository(ChatCustomFieldValue)
     private readonly valueRepo: Repository<ChatCustomFieldValue>,
     private readonly permissionValidator: PermissionValidator,
+    private readonly userService: UserService,
   ) {}
 
   private resolveTenantId(override?: string): string {
@@ -129,6 +138,12 @@ export class CustomFieldsService {
     if (BUILT_IN_FIELD_LABELS_LOWER.has(fieldDto.name.toLowerCase())) {
       throw new BadRequestException(
         `"${fieldDto.name}" is a built-in field name and cannot be used for a custom field`,
+      );
+    }
+
+    if (fieldDto.fillMode === CustomFieldFillMode.SYSTEM) {
+      throw new BadRequestException(
+        'fillMode "SYSTEM" is reserved for internally-seeded fields and cannot be set directly',
       );
     }
 
@@ -216,6 +231,12 @@ export class CustomFieldsService {
     if (!definition) throw new NotFoundException('Custom field not found');
 
     this.assertScopeMatchesPath(definition, dtoTenantId);
+
+    if (fieldDto.fillMode === CustomFieldFillMode.SYSTEM) {
+      throw new BadRequestException(
+        'fillMode "SYSTEM" is reserved for internally-seeded fields and cannot be set directly',
+      );
+    }
 
     if (
       fieldDto.name &&
@@ -309,8 +330,27 @@ export class CustomFieldsService {
 
     const valueMap = new Map(values.map((v) => [v.fieldDefinitionId, v.value]));
 
-    return definitions.map(
-      (def): CustomFieldValueResponseDto => ({
+    // SYSTEM-fillMode fields are never persisted — their value is computed
+    // live from Chat/CallDetails/User data. Only fetch that data if this
+    // tenant actually has a SYSTEM definition, since most calls today (for
+    // tenants not yet migrated) have none.
+    const hasSystemDefinition = definitions.some(
+      (def) => def.fillMode === CustomFieldFillMode.SYSTEM,
+    );
+    const systemContext = hasSystemDefinition
+      ? await this.buildSystemFieldContext(chatId, tenantId)
+      : null;
+
+    return definitions.map((def): CustomFieldValueResponseDto => {
+      const value =
+        def.fillMode === CustomFieldFillMode.SYSTEM
+          ? ((systemContext &&
+              def.seedKey &&
+              computeSystemFieldValue(def.seedKey, systemContext)) ??
+            null)
+          : (valueMap.get(def.id) ?? null);
+
+      return {
         fieldDefinitionId: def.id,
         name: def.name,
         fieldType: def.fieldType,
@@ -320,9 +360,38 @@ export class CustomFieldsService {
         editPermission: def.editPermission,
         fillMode: def.fillMode,
         displayOrder: def.displayOrder,
-        value: valueMap.get(def.id) ?? null,
-      }),
-    );
+        value,
+      };
+    });
+  }
+
+  /**
+   * Loads the Chat/CallDetails/counselor data needed to compute every
+   * SYSTEM-fillMode field's value for one chat — fetched once per
+   * getValues() call and reused across every SYSTEM definition, not
+   * refetched per field.
+   */
+  private async buildSystemFieldContext(
+    chatId: number,
+    tenantId: string,
+  ): Promise<SystemFieldContext | null> {
+    const chat = await this.chatRepo.findOne({
+      where: { id: chatId, tenantId },
+    });
+    if (!chat) return null;
+
+    const [callDetails, counselor] = await Promise.all([
+      this.callDetailsRepo.findOne({ where: { chatId, tenantId } }),
+      chat.counselorId
+        ? this.userService.get(chat.counselorId)
+        : Promise.resolve(null),
+    ]);
+
+    return {
+      chat,
+      callDetails: callDetails ?? null,
+      counselorName: counselor?.name ?? null,
+    };
   }
 
   async upsertValues(chatId: number, dto: UpsertCustomFieldValuesDto) {
@@ -367,6 +436,12 @@ export class CustomFieldsService {
       if (!def) {
         throw new BadRequestException(
           `Custom field ${entry.fieldDefinitionId} not found`,
+        );
+      }
+
+      if (def.fillMode === CustomFieldFillMode.SYSTEM) {
+        throw new ForbiddenException(
+          `"${def.name}" is computed automatically and cannot be edited`,
         );
       }
 
@@ -419,6 +494,9 @@ export class CustomFieldsService {
       .where('d.id IN (:...ids)', { ids: definitionIds })
       .andWhere('d.tenantId = :tenantId', { tenantId })
       .andWhere('d.isActive = true')
+      .andWhere('d.fillMode != :systemFillMode', {
+        systemFillMode: CustomFieldFillMode.SYSTEM,
+      })
       .getMany();
 
     const validIds = new Set(validDefinitions.map((d) => d.id));
@@ -500,7 +578,8 @@ export class CustomFieldsService {
           fieldType: template.fieldType,
           options: template.options,
           sectionKey: template.sectionKey,
-          editPermission: CustomFieldEditPermission.BOTH,
+          editPermission:
+            template.editPermission ?? CustomFieldEditPermission.BOTH,
           fillMode: template.fillMode,
           aiInstruction: template.aiInstruction,
           scope: CustomFieldScope.SUPER_ADMIN,

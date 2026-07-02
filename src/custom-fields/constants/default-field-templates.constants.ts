@@ -1,4 +1,5 @@
 import {
+  CustomFieldEditPermission,
   CustomFieldFillMode,
   CustomFieldType,
   SingleSelectOption,
@@ -23,8 +24,21 @@ export interface DefaultFieldTemplate {
   enhanceable: boolean;
   displayOrder: number;
   options?: SingleSelectOption[];
-  /** Passed as this field's key_descriptions entry when fillMode is AI. */
+  /** Passed as this field's key_descriptions entry when fillMode is AI
+   * (dynamic per-tenant fill via fillAiCustomFields). Mutually exclusive
+   * with `extractFromAiResponseKey`. */
   aiInstruction?: string;
+  /**
+   * For fillMode: AI fields NOT populated via the dynamic fillAiCustomFields
+   * mechanism — instead their value is extracted from the existing
+   * fixed-schema `generateSummaryAndTags` AI response (the same call that
+   * produces `sessionSummary`/`tags`) at the key named here. Wired up in
+   * Phase 2c; this field is just metadata until then. Mutually exclusive
+   * with `aiInstruction`.
+   */
+  extractFromAiResponseKey?: string;
+  /** Defaults to BOTH (see seedDefaultDefinitionsForTenant) if omitted. */
+  editPermission?: CustomFieldEditPermission;
 }
 
 const YES_NO_OPTIONS: SingleSelectOption[] = [
@@ -539,5 +553,163 @@ export const DEFAULT_FIELD_TEMPLATES: DefaultFieldTemplate[] = [
     fillMode: CustomFieldFillMode.MANUAL,
     enhanceable: false,
     displayOrder: 47,
+  },
+
+  // ─── Extracted from the existing fixed-schema AI response, read-only ────
+  // These are already generated today by the same generateSummaryAndTags
+  // call that produces sessionSummary/tags (which stay hardcoded) — no new
+  // AI call is needed. editPermission: READ_ONLY blocks edits from every
+  // role; fillMode: AI alone would not.
+  {
+    seedKey: 'callType',
+    name: 'Call Type',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'featuresAndDemographics',
+    fillMode: CustomFieldFillMode.AI,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 48,
+    extractFromAiResponseKey: 'callType',
+  },
+  {
+    seedKey: 'languages',
+    name: 'Languages',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'featuresAndDemographics',
+    fillMode: CustomFieldFillMode.AI,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 49,
+    extractFromAiResponseKey: 'languages',
+  },
+  {
+    seedKey: 'callQuality',
+    name: 'Call Quality',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'featuresAndDemographics',
+    fillMode: CustomFieldFillMode.AI,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 50,
+    extractFromAiResponseKey: 'callQuality',
+  },
+  {
+    seedKey: 'reflectiveQuestionsAsked',
+    name: 'Reflective Questions Asked',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'metrics',
+    fillMode: CustomFieldFillMode.AI,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 51,
+    extractFromAiResponseKey: 'reflectiveQuestionsAsked',
+  },
+  {
+    seedKey: 'openEndedQuestionsAsked',
+    name: 'Open Ended Questions Asked',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'metrics',
+    fillMode: CustomFieldFillMode.AI,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 52,
+    extractFromAiResponseKey: 'openEndedQuestionsAsked',
+  },
+  {
+    seedKey: 'emotionalLift',
+    name: 'Emotional Lift',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'metrics',
+    fillMode: CustomFieldFillMode.AI,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 53,
+    extractFromAiResponseKey: 'emotionalLift',
+  },
+
+  // ─── System-computed, never persisted ────────────────────────────────────
+  // Computed live from Chat/CallDetails/User data by system-field-computer.ts
+  // every time getValues() runs — never written to ChatCustomFieldValue.
+  // A persisted snapshot would go stale the moment the underlying data
+  // changes (e.g. a corrected call duration).
+  {
+    seedKey: 'callId',
+    name: 'Call ID',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'featuresAndDemographics',
+    fillMode: CustomFieldFillMode.SYSTEM,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 54,
+  },
+  {
+    seedKey: 'callDuration',
+    name: 'Call Duration',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'featuresAndDemographics',
+    fillMode: CustomFieldFillMode.SYSTEM,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 55,
+  },
+  {
+    seedKey: 'callDate',
+    name: 'Call Date',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'featuresAndDemographics',
+    fillMode: CustomFieldFillMode.SYSTEM,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 56,
+  },
+  {
+    seedKey: 'callTime',
+    name: 'Call Time',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'featuresAndDemographics',
+    fillMode: CustomFieldFillMode.SYSTEM,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 57,
+  },
+  {
+    seedKey: 'clientId',
+    name: 'Client ID',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'featuresAndDemographics',
+    fillMode: CustomFieldFillMode.SYSTEM,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 58,
+  },
+  {
+    seedKey: 'counsellorName',
+    name: 'User Name',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'featuresAndDemographics',
+    fillMode: CustomFieldFillMode.SYSTEM,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 59,
+  },
+  {
+    seedKey: 'mode',
+    name: 'Mode',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'featuresAndDemographics',
+    fillMode: CustomFieldFillMode.SYSTEM,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 60,
+  },
+  {
+    seedKey: 'listeningShare',
+    name: 'Listening Share',
+    fieldType: CustomFieldType.TEXT,
+    sectionKey: 'metrics',
+    fillMode: CustomFieldFillMode.SYSTEM,
+    editPermission: CustomFieldEditPermission.READ_ONLY,
+    enhanceable: false,
+    displayOrder: 61,
   },
 ];
