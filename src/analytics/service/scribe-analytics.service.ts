@@ -45,6 +45,10 @@ function isoDate(d: Date): string {
 function round1(n: number): number {
   return parseFloat(n.toFixed(1));
 }
+/** For 0..1 ratios the client scales to a percentage, so keep 4 decimals. */
+function round4(n: number): number {
+  return parseFloat(n.toFixed(4));
+}
 
 /** Fixed display order for the outcome donut. */
 const OUTCOME_ORDER: ChatSummaryStatus[] = [
@@ -209,7 +213,10 @@ export class ScribeAnalyticsService {
         bucket: key,
         failed,
         terminal,
-        failureRate: terminal > 0 ? round1(failed / terminal) : 0,
+        // Keep full ratio precision here (0..1). round1 would snap this to the
+        // nearest 0.1 — i.e. 10% steps once the client multiplies by 100 — so
+        // 14.3% would render as 10%. The client rounds to a 1-decimal percent.
+        failureRate: terminal > 0 ? round4(failed / terminal) : 0,
       };
     });
 

@@ -162,6 +162,19 @@ describe('ScribeAnalyticsService', () => {
       expect(res.failureBreakdown).toHaveLength(2);
     });
 
+    it('keeps sub-10% ratio precision in the trend (no 10% quantization)', async () => {
+      // 1 of 7 = 14.29% — must NOT collapse to 0.1 (10%).
+      repo.getFailureRateByBucket.mockResolvedValue([
+        { bucket: '2024-06-12', failed: 1, terminal: 7 },
+      ]);
+
+      const res = await service.getSummaryFailures('30d');
+      const last = res.failureRateTrend[res.failureRateTrend.length - 1];
+
+      expect(last.failureRate).toBeCloseTo(0.1429, 4);
+      expect(last.failureRate).not.toBe(0.1);
+    });
+
     it('handles zero failures without dividing by zero', async () => {
       const res = await service.getSummaryFailures('30d');
       expect(res.summary.failureRatePct).toBe(0);
