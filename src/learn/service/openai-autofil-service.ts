@@ -256,6 +256,74 @@ export class OpenAIAutofillService {
   }
 
   /**
+   * Generic "render a managed prompt with runtime variables, call the model,
+   * return the raw text" primitive. Used by Agent Builder Copilot V2 to generate
+   * one Basic Settings field from its own editable prompt code — the caller
+   * parses the result per field. `expectJson` switches on json_object mode.
+   */
+  async generateContentFromPrompt(
+    promptCode: string,
+    variables: Record<string, string>,
+    expectJson: boolean,
+    modelOverride?: string,
+  ): Promise<string> {
+    const template = await this.promptSharedService.getPromptByCode(promptCode);
+    if (!template) {
+      throw new NotFoundException(
+        `Prompt template not found for code: ${promptCode}`,
+      );
+    }
+    const prompt = renderTemplate(template, variables);
+
+    const effectiveModel = modelOverride ?? this.model;
+    this.logger.info(
+      `[AGENT_V2] start provider=openai model=${effectiveModel} promptCode=${promptCode} expectJson=${expectJson}`,
+    );
+    const startedAt = Date.now();
+
+    try {
+      const response = await this.client.chat.completions.create({
+        model: effectiveModel,
+        messages: [{ role: 'user', content: prompt }],
+        ...(expectJson && {
+          response_format: { type: 'json_object' as const },
+        }),
+      });
+
+      void this.llmUsage.record({
+        provider: 'openai',
+        model: effectiveModel,
+        task: LlmTask.AUTOFILL_AGENT_V2_FIELD,
+        promptTokens: response.usage?.prompt_tokens,
+        completionTokens: response.usage?.completion_tokens,
+        totalTokens: response.usage?.total_tokens,
+        metadata: { promptCode },
+      });
+
+      const content = stripMarkdownFences(
+        response.choices?.[0]?.message?.content ?? '',
+      ).trim();
+      if (!content) {
+        throw new InternalServerErrorException(
+          `Empty response from OpenAI for prompt code: ${promptCode}`,
+        );
+      }
+      this.logger.info(
+        `[AGENT_V2] done  provider=openai model=${effectiveModel} promptCode=${promptCode} ` +
+          `resultLength=${content.length} elapsedMs=${Date.now() - startedAt}`,
+      );
+      return content;
+    } catch (error) {
+      this.logger.error(
+        `[AGENT_V2] failed provider=openai model=${effectiveModel} promptCode=${promptCode} ` +
+          `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
+        error as any,
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Generate a comprehensive roleplay-actor system prompt from a free-text
    * description. Unlike generateFieldContent this returns plain prose (no JSON
    * schema / extraction) using the agent-builder meta prompt as the system

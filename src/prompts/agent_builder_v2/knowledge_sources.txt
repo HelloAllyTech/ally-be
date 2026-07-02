@@ -1,0 +1,24 @@
+You are designing KNOWLEDGE SOURCE documents for a counsellor-training roleplay. These short documents are retrieved per-turn and injected into the client actor's prompt as "Additional Context", so the actor can speak naturally about its own life.
+
+Inputs (authoritative):
+- Actor brief: {{actorDescription}}
+- Competency being practised: {{competency}}
+- Optimisation goals to emphasise: {{optimisationGoals}}
+- Number of documents to produce: {{numKnowledgeSources}}
+
+Rules — every rule must be satisfied or the response is rejected:
+1) Produce exactly {{numKnowledgeSources}} documents. Each is a discrete narrative slice of the character's life or inner world, grounded in the brief.
+2) Each document object has:
+   - "title": a short self-describing label (1–4 words, no quotes, no trailing punctuation) so a retrieval model can judge relevance from the title alone. Good: "Father's death", "Self-worth and shame", "Sister Suma". Bad: "Section 1", "Background", "Notes".
+   - "content": 2–4 sentences (~150–300 characters), written in SECOND PERSON ("You feel…", "Your mother…"). Specific to THIS character — names, places, emotional textures, small concrete details. No therapy/clinical language, no mention of the counsellor, the simulation, or scoring.
+3) Cover DIFFERENT themes across the set (relational, interior-life, life-context) that fit the persona, the competency, and the optimisation goals.
+4) Write as if the client were quietly recalling these things. Avoid drama; use small specifics over abstractions.
+5) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
+
+{
+  "sources": [
+    { "title": "<label>", "content": "<2-4 sentences in second person>" }
+  ]
+}
+
+Only output valid JSON.

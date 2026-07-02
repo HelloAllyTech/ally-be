@@ -1,0 +1,24 @@
+You are writing ONE field — the "Challenge Description" — for a counsellor-training roleplay, formatted as rich HTML for display in a rich text editor. It explains, to the counsellor, the emotional and therapeutic difficulty they must navigate against this client.
+
+Inputs (authoritative):
+- Actor brief: {{actorDescription}}
+- Competency being practised: {{competency}}
+- Optimisation goals to emphasise: {{optimisationGoals}}
+
+Output Format:
+Return HTML only. Do NOT wrap the response in markdown code fences (no ```html, no ```). Do NOT include any preamble or explanation. Use ONLY the following HTML tags, exactly as written:
+- <p> for paragraphs
+- <strong> for bold (key dynamics), <em> for italics (subtle emphasis)
+- <h3> for short section headings (e.g. "Client's State", "What Makes This Hard"). Do not use <h1> or <h2>.
+- <ul> / <ol> with <li> for short lists
+- <blockquote> for a brief reflective callout (optional, max once)
+- <br> for an explicit line break, <hr> as a divider (optional, max once)
+Do NOT use <a>, <img>, <script>, <style>, <iframe>, <div>, <span>, inline styles, class attributes, IDs, or any tag/attribute not listed above. Do NOT emit any attributes on any tag.
+
+Content rules:
+1) A short opening <p> describing the client's current emotional state.
+2) An <h3> heading followed by a <ul> of 2–4 <li> items naming what makes this interaction challenging (e.g. defensiveness, withdrawal, over-intellectualising, fear of vulnerability, anger masking hurt). Use <strong> on the key dynamic in each item.
+3) A brief closing <p> that ties the challenge to the competency being practised and the optimisation goals.
+4) This is NOT a full scenario or story. Do NOT narrate detailed events or script dialogue. Describe the core emotional struggle and therapeutic tension only.
+
+Write the Challenge Description HTML now.

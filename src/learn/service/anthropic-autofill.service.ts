@@ -258,6 +258,82 @@ export class AnthropicAutofillService {
   }
 
   /**
+   * Generic "render a managed prompt with runtime variables, call the model,
+   * return the raw text" primitive. Used by Agent Builder Copilot V2 to generate
+   * one Basic Settings field from its own editable prompt code — the caller
+   * parses the result per field. When `expectJson` is set the assistant turn is
+   * prefilled with `{` so the model is forced to emit a JSON object (Anthropic
+   * has no json mode).
+   */
+  async generateContentFromPrompt(
+    promptCode: string,
+    variables: Record<string, string>,
+    expectJson: boolean,
+    modelOverride?: string,
+  ): Promise<string> {
+    const template = await this.promptSharedService.getPromptByCode(promptCode);
+    if (!template) {
+      throw new NotFoundException(
+        `Prompt template not found for code: ${promptCode}`,
+      );
+    }
+    const prompt = renderTemplate(template, variables);
+
+    const effectiveModel = modelOverride ?? this.model;
+    this.logger.info(
+      `[AGENT_V2] start provider=anthropic model=${effectiveModel} promptCode=${promptCode} expectJson=${expectJson}`,
+    );
+    const startedAt = Date.now();
+
+    try {
+      const response = await this.client.messages.create({
+        model: effectiveModel,
+        max_tokens: ANTHROPIC_MAX_TOKENS,
+        messages: expectJson
+          ? [
+              { role: 'user', content: prompt },
+              { role: 'assistant', content: '{' },
+            ]
+          : [{ role: 'user', content: prompt }],
+      });
+
+      this.recordUsage(
+        response.usage,
+        effectiveModel,
+        LlmTask.AUTOFILL_AGENT_V2_FIELD,
+        { promptCode },
+      );
+
+      const block = response.content[0];
+      const raw = block?.type === 'text' ? block.text : '';
+      // Re-prepend the prefilled brace for JSON responses — but only if the
+      // model didn't already echo it, to avoid `{{`.
+      const reconstructed =
+        expectJson && raw.trim() && !raw.trimStart().startsWith('{')
+          ? `{${raw}`
+          : raw;
+      const content = stripMarkdownFences(reconstructed).trim();
+      if (!content) {
+        throw new InternalServerErrorException(
+          `Empty response from Anthropic for prompt code: ${promptCode}`,
+        );
+      }
+      this.logger.info(
+        `[AGENT_V2] done  provider=anthropic model=${effectiveModel} promptCode=${promptCode} ` +
+          `resultLength=${content.length} elapsedMs=${Date.now() - startedAt}`,
+      );
+      return content;
+    } catch (error) {
+      this.logger.error(
+        `[AGENT_V2] failed provider=anthropic model=${effectiveModel} promptCode=${promptCode} ` +
+          `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
+        error as any,
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Generate a comprehensive roleplay-actor system prompt from a free-text
    * description. Unlike generateFieldContent this returns plain prose (no JSON
    * schema / extraction) using the agent-builder meta prompt as the system
