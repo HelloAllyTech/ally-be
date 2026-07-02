@@ -6,6 +6,7 @@ export enum CustomFieldType {
   MULTI_SELECT = 'MULTI_SELECT',
   DATE = 'DATE',
   TEXT = 'TEXT',
+  MULTILINE_TEXT = 'MULTILINE_TEXT',
   NUMBER = 'NUMBER',
   BOOLEAN = 'BOOLEAN',
 }
@@ -101,4 +102,18 @@ export class CustomFieldDefinition extends BaseEntity {
 
   @Column()
   updatedBy!: number;
+
+  /**
+   * Which built-in-field template this definition was seeded from (e.g.
+   * 'keyConcerns'), if any. Set once at creation for idempotent re-seeding
+   * and historical-value migration matching — has no effect on runtime
+   * behavior. Definitions created directly by an admin (not seeded) leave
+   * this null.
+   */
+  @Column({ type: 'text', nullable: true })
+  seedKey?: string;
+
+  /** Shows the AI "Enhance" rewrite-assist button on this field's input. */
+  @Column({ default: false })
+  enhanceable!: boolean;
 }

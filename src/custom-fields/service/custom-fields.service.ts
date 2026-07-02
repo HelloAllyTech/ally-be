@@ -2,10 +2,11 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { Chat } from '../../chat/entity/chat.entity';
 import {
   CustomFieldDefinition,
@@ -28,6 +29,7 @@ import { SUMMARY_SECTIONS } from '../../settings/constants/summary-sections.cons
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { PermissionValidator } from '../../authorization/service/permission-validator.service';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { DEFAULT_FIELD_TEMPLATES } from '../constants/default-field-templates.constants';
 
 const SESSION_LOG_COLUMN_LABELS = [
   'Call ID',
@@ -51,6 +53,8 @@ const BUILT_IN_FIELD_LABELS_LOWER = new Set([
 
 @Injectable()
 export class CustomFieldsService {
+  private readonly logger = new Logger(CustomFieldsService.name);
+
   constructor(
     @InjectRepository(Chat)
     private readonly chatRepo: Repository<Chat>,
@@ -447,5 +451,73 @@ export class CustomFieldsService {
     if (toCreate.length === 0) return;
 
     await this.valueRepo.save(toCreate);
+  }
+
+  /**
+   * Creates one CustomFieldDefinition per DEFAULT_FIELD_TEMPLATES entry for a
+   * tenant that doesn't already have it. Idempotent — matches on `seedKey`,
+   * so re-running (e.g. a retried migration) never duplicates rows. Pass an
+   * `entityManager` to run inside an existing transaction (e.g.
+   * TenantService.create()'s provisioning transaction); otherwise runs
+   * standalone.
+   */
+  async seedDefaultDefinitionsForTenant(
+    tenantId: string,
+    entityManager?: EntityManager,
+  ): Promise<void> {
+    const definitionRepo = entityManager
+      ? entityManager.getRepository(CustomFieldDefinition)
+      : this.definitionRepo;
+
+    const existingDefinitions = await definitionRepo.find({
+      where: { tenantId },
+    });
+    const existingSeedKeys = new Set(
+      existingDefinitions
+        .map((d) => d.seedKey)
+        .filter((key): key is string => !!key),
+    );
+    const existingActiveNamesLower = new Set(
+      existingDefinitions
+        .filter((d) => d.isActive)
+        .map((d) => d.name.toLowerCase()),
+    );
+
+    const toCreate: CustomFieldDefinition[] = [];
+    for (const template of DEFAULT_FIELD_TEMPLATES) {
+      if (existingSeedKeys.has(template.seedKey)) continue;
+
+      if (existingActiveNamesLower.has(template.name.toLowerCase())) {
+        this.logger.warn(
+          `Skipping seed of default field "${template.name}" (seedKey: ${template.seedKey}) for tenant ${tenantId}: a custom field with this name already exists`,
+        );
+        continue;
+      }
+
+      toCreate.push(
+        definitionRepo.create({
+          name: template.name,
+          fieldType: template.fieldType,
+          options: template.options,
+          sectionKey: template.sectionKey,
+          editPermission: CustomFieldEditPermission.BOTH,
+          fillMode: template.fillMode,
+          aiInstruction: template.aiInstruction,
+          scope: CustomFieldScope.SUPER_ADMIN,
+          displayOrder: template.displayOrder,
+          showInTable: false,
+          isActive: true,
+          seedKey: template.seedKey,
+          enhanceable: template.enhanceable,
+          tenantId,
+          createdBy: 0,
+          updatedBy: 0,
+        }),
+      );
+    }
+
+    if (toCreate.length === 0) return;
+
+    await definitionRepo.save(toCreate);
   }
 }

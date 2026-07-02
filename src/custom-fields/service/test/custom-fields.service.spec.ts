@@ -18,6 +18,7 @@ import { ChatCustomFieldValue } from '../../entity/chat-custom-field-value.entit
 import { Chat } from '../../../chat/entity/chat.entity';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
+import { DEFAULT_FIELD_TEMPLATES } from '../../constants/default-field-templates.constants';
 
 describe('CustomFieldsService', () => {
   let service: CustomFieldsService;
@@ -909,6 +910,153 @@ describe('CustomFieldsService', () => {
 
       expect(valueRepo.find).not.toHaveBeenCalled();
       expect(valueRepo.save).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── seedDefaultDefinitionsForTenant ────────────────────────────────────
+  // Idempotent seeding of the built-in-field-derived custom field definitions
+  // for a tenant (new-tenant provisioning, and later the existing-tenant
+  // backfill script). Must never duplicate on re-run and must never clobber
+  // a tenant's own custom field that happens to share a template's name.
+
+  describe('seedDefaultDefinitionsForTenant', () => {
+    beforeEach(() => {
+      definitionRepo.create.mockImplementation((data) => data as any);
+      definitionRepo.save.mockResolvedValue([] as any);
+    });
+
+    it('creates one definition per template when the tenant has none yet', async () => {
+      definitionRepo.find.mockResolvedValue([]);
+
+      await service.seedDefaultDefinitionsForTenant(mockTenantId);
+
+      expect(definitionRepo.create).toHaveBeenCalledTimes(
+        DEFAULT_FIELD_TEMPLATES.length,
+      );
+      const saved = (definitionRepo.save as jest.Mock).mock.calls[0][0];
+      expect(saved).toHaveLength(DEFAULT_FIELD_TEMPLATES.length);
+    });
+
+    it('sets scope, showInTable, seedKey and tenantId correctly on created rows', async () => {
+      definitionRepo.find.mockResolvedValue([]);
+
+      await service.seedDefaultDefinitionsForTenant(mockTenantId);
+
+      expect(definitionRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          seedKey: DEFAULT_FIELD_TEMPLATES[0].seedKey,
+          scope: CustomFieldScope.SUPER_ADMIN,
+          showInTable: false,
+          isActive: true,
+          tenantId: mockTenantId,
+        }),
+      );
+    });
+
+    it('is idempotent: does not recreate a definition whose seedKey already exists', async () => {
+      const alreadySeeded = {
+        ...mockDefinition,
+        seedKey: DEFAULT_FIELD_TEMPLATES[0].seedKey,
+      } as any;
+      definitionRepo.find.mockResolvedValue([alreadySeeded]);
+
+      await service.seedDefaultDefinitionsForTenant(mockTenantId);
+
+      expect(definitionRepo.create).toHaveBeenCalledTimes(
+        DEFAULT_FIELD_TEMPLATES.length - 1,
+      );
+      expect(definitionRepo.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          seedKey: DEFAULT_FIELD_TEMPLATES[0].seedKey,
+        }),
+      );
+    });
+
+    it('running it twice does not duplicate any rows', async () => {
+      definitionRepo.find.mockResolvedValueOnce([]);
+      await service.seedDefaultDefinitionsForTenant(mockTenantId);
+      const firstRunSaved = (definitionRepo.save as jest.Mock).mock
+        .calls[0][0] as CustomFieldDefinition[];
+
+      definitionRepo.create.mockClear();
+      definitionRepo.save.mockClear();
+      definitionRepo.find.mockResolvedValueOnce(firstRunSaved);
+
+      await service.seedDefaultDefinitionsForTenant(mockTenantId);
+
+      expect(definitionRepo.create).not.toHaveBeenCalled();
+      expect(definitionRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('skips (and does not create) a template whose name collides with an existing active custom field', async () => {
+      const collidingField = {
+        ...mockDefinition,
+        seedKey: undefined,
+        name: DEFAULT_FIELD_TEMPLATES[0].name,
+        isActive: true,
+      } as any;
+      definitionRepo.find.mockResolvedValue([collidingField]);
+
+      await service.seedDefaultDefinitionsForTenant(mockTenantId);
+
+      expect(definitionRepo.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({ name: DEFAULT_FIELD_TEMPLATES[0].name }),
+      );
+      expect(definitionRepo.create).toHaveBeenCalledTimes(
+        DEFAULT_FIELD_TEMPLATES.length - 1,
+      );
+    });
+
+    it('does not skip on a name collision with an inactive (soft-deleted) custom field', async () => {
+      const inactiveCollidingField = {
+        ...mockDefinition,
+        seedKey: undefined,
+        name: DEFAULT_FIELD_TEMPLATES[0].name,
+        isActive: false,
+      } as any;
+      definitionRepo.find.mockResolvedValue([inactiveCollidingField]);
+
+      await service.seedDefaultDefinitionsForTenant(mockTenantId);
+
+      expect(definitionRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ name: DEFAULT_FIELD_TEMPLATES[0].name }),
+      );
+    });
+
+    it('does nothing when every template is already seeded', async () => {
+      const allSeeded = DEFAULT_FIELD_TEMPLATES.map((t) => ({
+        ...mockDefinition,
+        seedKey: t.seedKey,
+      })) as any;
+      definitionRepo.find.mockResolvedValue(allSeeded);
+
+      await service.seedDefaultDefinitionsForTenant(mockTenantId);
+
+      expect(definitionRepo.create).not.toHaveBeenCalled();
+      expect(definitionRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('uses the repository from a provided EntityManager instead of the injected one', async () => {
+      const txDefinitionRepo = {
+        find: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockImplementation((data) => data),
+        save: jest.fn().mockResolvedValue([]),
+      };
+      const entityManager = {
+        getRepository: jest.fn().mockReturnValue(txDefinitionRepo),
+      } as any;
+
+      await service.seedDefaultDefinitionsForTenant(
+        mockTenantId,
+        entityManager,
+      );
+
+      expect(entityManager.getRepository).toHaveBeenCalledWith(
+        CustomFieldDefinition,
+      );
+      expect(txDefinitionRepo.save).toHaveBeenCalled();
+      expect(definitionRepo.find).not.toHaveBeenCalled();
+      expect(definitionRepo.save).not.toHaveBeenCalled();
     });
   });
 });
