@@ -112,9 +112,7 @@ async function revokeFromGroup(
   }
 }
 
-export class TenantAdminAccessMgmtPermissions1807000000000
-  implements MigrationInterface
-{
+export class TenantAdminAccessMgmtPermissions1807000000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // 1. Ensure every referenced permission row exists (idempotent).
     for (const name of ALL_PERMISSIONS) {

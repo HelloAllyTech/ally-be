@@ -17,9 +17,11 @@ describe('OwnTenantScopeGuard', () => {
   const OWN_TENANT = 'tenant-own';
   const OTHER_TENANT = 'tenant-other';
 
-  const makeContext = (
-    { user, params, body }: { user?: any; params?: any; body?: any } = {},
-  ): ExecutionContext =>
+  const makeContext = ({
+    user,
+    params,
+    body,
+  }: { user?: any; params?: any; body?: any } = {}): ExecutionContext =>
     ({
       getHandler: jest.fn(),
       getClass: jest.fn(),

@@ -33,9 +33,7 @@ const ADMIN_GRANTS = [
   'edit:own-tenant:settings',
 ];
 
-export class TenantAdminSettingsPermissions1806000000000
-  implements MigrationInterface
-{
+export class TenantAdminSettingsPermissions1806000000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // 1. Ensure the new permission rows exist.
     for (const name of NEW_PERMISSIONS) {

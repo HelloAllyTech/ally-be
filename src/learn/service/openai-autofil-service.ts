@@ -321,5 +321,4 @@ export class OpenAIAutofillService {
       throw error;
     }
   }
-
 }
