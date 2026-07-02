@@ -16,9 +16,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * month-by-month so each statement only window-sorts one month of messages.
  * Re-runnable via down() (deletes all source='transcript').
  */
-export class BackfillTranscriptStartMetrics1809000000001
-  implements MigrationInterface
-{
+export class BackfillTranscriptStartMetrics1809000000001 implements MigrationInterface {
   name = 'BackfillTranscriptStartMetrics1809000000001';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

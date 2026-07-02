@@ -304,7 +304,9 @@ export class StartLatencyPointDto {
   @ApiProperty({ description: 'Sessions aggregated into this bucket' })
   sessions!: number;
 
-  @ApiProperty({ description: 'Mean total start latency / time-to-first-word (ms)' })
+  @ApiProperty({
+    description: 'Mean total start latency / time-to-first-word (ms)',
+  })
   avgMs!: number;
 
   @ApiProperty({ description: 'Median (p50) total start latency (ms)' })
@@ -313,13 +315,19 @@ export class StartLatencyPointDto {
   @ApiProperty({ description: 'p95 total start latency (ms)' })
   p95Ms!: number;
 
-  @ApiProperty({ description: 'Mean configure() segment (ms); 0 for transcript' })
+  @ApiProperty({
+    description: 'Mean configure() segment (ms); 0 for transcript',
+  })
   configureMs!: number;
 
-  @ApiProperty({ description: 'Mean initialize() segment (ms); 0 for transcript' })
+  @ApiProperty({
+    description: 'Mean initialize() segment (ms); 0 for transcript',
+  })
   initializeMs!: number;
 
-  @ApiProperty({ description: 'Mean connect (session.start + join) segment (ms)' })
+  @ApiProperty({
+    description: 'Mean connect (session.start + join) segment (ms)',
+  })
   connectMs!: number;
 
   @ApiProperty({

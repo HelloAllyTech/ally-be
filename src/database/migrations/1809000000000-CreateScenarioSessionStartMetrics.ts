@@ -7,9 +7,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * scenario_session_turn_metrics conventions (BaseEntity columns + occurredAt +
  * source + metadata jsonb; wide segment columns for a stacked breakdown chart).
  */
-export class CreateScenarioSessionStartMetrics1809000000000
-  implements MigrationInterface
-{
+export class CreateScenarioSessionStartMetrics1809000000000 implements MigrationInterface {
   name = 'CreateScenarioSessionStartMetrics1809000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -37,8 +35,6 @@ export class CreateScenarioSessionStartMetrics1809000000000
     await queryRunner.query(
       `DROP INDEX "public"."scenario_session_start_metrics_scenario_id_idx"`,
     );
-    await queryRunner.query(
-      `DROP TABLE "scenario_session_start_metrics"`,
-    );
+    await queryRunner.query(`DROP TABLE "scenario_session_start_metrics"`);
   }
 }
