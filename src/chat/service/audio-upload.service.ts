@@ -325,7 +325,8 @@ export class AudioUploadService {
    */
   async reprocessStuckChats(): Promise<{
     reprocessed: number[];
-    failed: number[];
+    unrecoverable: number[];
+    errored: number[];
   }> {
     const stuckChats = await this.chatService.findReprocessableStuckChats();
     this.logger.info(
@@ -333,7 +334,14 @@ export class AudioUploadService {
     );
 
     const reprocessed: number[] = [];
-    const failed: number[] = [];
+    // Confirmed dead: audio flipped to 'failed', so these leave the selection.
+    const unrecoverable: number[] = [];
+    // Threw mid-reprocess (transient/unexpected). These are NOT confirmed
+    // unrecoverable — their audio is untouched, so they'd be retried. Tracked
+    // and reported separately so a recurring error is visible instead of
+    // masquerading as "unrecoverable", and attempt-capped so it can't loop
+    // forever.
+    const errored: number[] = [];
 
     for (const chat of stuckChats) {
       try {
@@ -375,7 +383,7 @@ export class AudioUploadService {
               reprocessAttempts: nextAttempts,
             },
           });
-          failed.push(chat.id);
+          unrecoverable.push(chat.id);
           continue;
         }
 
@@ -415,7 +423,7 @@ export class AudioUploadService {
                 reprocessAttempts: nextAttempts,
               },
             });
-            failed.push(chat.id);
+            unrecoverable.push(chat.id);
             continue;
           }
           // Salvaged: the object now exists — fall through to re-dispatch.
@@ -447,21 +455,42 @@ export class AudioUploadService {
           `Re-dispatched stuck chat ${chat.id} for transcription`,
         );
       } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
         this.logger.error(
-          `Failed to reprocess stuck chat ${chat.id}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          `Failed to reprocess stuck chat ${chat.id}: ${message}`,
         );
-        failed.push(chat.id);
+        errored.push(chat.id);
+        // The chat's audio was NOT marked failed, so it stays selectable. Bump
+        // the attempt counter (best-effort, separate write) so a chat that
+        // errors on every run is eventually dropped by the attempt cap instead
+        // of recurring forever and masquerading as "unrecoverable".
+        try {
+          const meta = (chat.metadata as Record<string, any> | undefined) ?? {};
+          await this.chatService.updateChat(chat.id, {
+            metadata: {
+              ...meta,
+              reprocessAttempts: Number(meta.reprocessAttempts ?? 0) + 1,
+              lastReprocessError: message,
+              reprocessedAt: new Date().toISOString(),
+            },
+          });
+        } catch (bumpError) {
+          this.logger.error(
+            `Failed to record reprocess attempt for chat ${chat.id}: ${
+              bumpError instanceof Error ? bumpError.message : String(bumpError)
+            }`,
+          );
+        }
       }
     }
 
     await this.notificationService.notifyReprocessSummary({
       reprocessed,
-      failed,
+      unrecoverable,
+      errored,
     });
 
-    return { reprocessed, failed };
+    return { reprocessed, unrecoverable, errored };
   }
 
   /**

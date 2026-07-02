@@ -671,7 +671,9 @@ describe('AudioUploadService', () => {
 
       expect(s3Service.completeMultipartUploadWithParts).not.toHaveBeenCalled();
       expect(aiEventService.publishTranscribeAudioEvent).not.toHaveBeenCalled();
-      expect(result.failed).toContain(8);
+      // Confirmed unrecoverable (marked), NOT a mid-reprocess error.
+      expect(result.unrecoverable).toContain(8);
+      expect(result.errored).not.toContain(8);
       // Original attribution preserved; reprocess outcome recorded separately.
       const updateArgs = chatService.updateChat.mock.calls.find(
         (c) => c[0] === 8,
@@ -709,6 +711,37 @@ describe('AudioUploadService', () => {
         (c) => c[0] === 9,
       )?.[1] as any;
       expect(updateArgs.metadata.reprocessAttempts).toBe(3);
+    });
+
+    it('reports a chat that THROWS mid-reprocess as errored (not unrecoverable), leaves audio untouched, and bumps the attempt counter', async () => {
+      chatService.findReprocessableStuckChats.mockResolvedValue([
+        { id: 10, metadata: { reprocessAttempts: 1 } },
+      ] as any);
+      chatAudioUploadsService.getAudioUpload.mockResolvedValue({
+        storageKey: 'audio/10.raw',
+      } as any);
+      // Object exists → re-dispatch path; the dispatch itself fails.
+      s3Service.getHeadObject.mockResolvedValue({} as any);
+      s3Service.generatePresignedUrl.mockResolvedValue('https://signed');
+      aiEventService.publishTranscribeAudioEvent.mockRejectedValue(
+        new Error('SQS unavailable'),
+      );
+
+      const result = await service.reprocessStuckChats();
+
+      // Errored, NOT unrecoverable — and audio was never flipped to failed.
+      expect(result.errored).toContain(10);
+      expect(result.unrecoverable).not.toContain(10);
+      expect(
+        chatAudioUploadsService.updateAudioUpload,
+      ).not.toHaveBeenCalledWith(10, { status: ChatAudioUploadStatus.FAILED });
+      // Attempt counter still advances so a chat that errors every run is
+      // eventually dropped by the cap rather than recurring forever.
+      const bumpArgs = chatService.updateChat.mock.calls.find(
+        (c) => c[0] === 10,
+      )?.[1] as any;
+      expect(bumpArgs.metadata.reprocessAttempts).toBe(2);
+      expect(bumpArgs.metadata.lastReprocessError).toMatch(/SQS unavailable/);
     });
   });
 });

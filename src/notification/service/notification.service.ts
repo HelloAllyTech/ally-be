@@ -114,14 +114,24 @@ export class NotificationService {
    */
   async notifyReprocessSummary(params: {
     reprocessed: number[];
-    failed: number[];
+    unrecoverable: number[];
+    // Chats that threw during reprocess — NOT confirmed unrecoverable; their
+    // audio is untouched so they may retry. Reported separately (and only when
+    // present) so a recurring error is visible instead of being counted as
+    // "unrecoverable". Optional for backward compatibility with older callers.
+    errored?: number[];
   }) {
-    const { reprocessed, failed } = params;
+    const { reprocessed, unrecoverable, errored = [] } = params;
     const fmt = (ids: number[]) => (ids.length ? ` (${ids.join(', ')})` : '');
-    const message =
+    let message =
       `:arrows_counterclockwise: *Scribe stuck-chat backfill*\n` +
       `• Re-dispatched for transcription: ${reprocessed.length}${fmt(reprocessed)}\n` +
-      `• Unrecoverable → FAILED: ${failed.length}${fmt(failed)}`;
+      `• Unrecoverable → FAILED: ${unrecoverable.length}${fmt(unrecoverable)}`;
+    if (errored.length) {
+      message +=
+        `\n• :warning: Errored (audio untouched, will retry until attempt cap): ` +
+        `${errored.length}${fmt(errored)}`;
+    }
     await this.slackService.sendMessage(message);
   }
 
