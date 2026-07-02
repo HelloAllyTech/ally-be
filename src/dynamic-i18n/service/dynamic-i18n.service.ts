@@ -398,6 +398,54 @@ export class DynamicI18nService {
     }
   }
 
+  // Called by CI pipelines via x-api-key. Accepts the full repo locale files,
+  // finds keys missing from the current draft, adds them, and publishes once.
+  // Returns the new manifest if anything was published, or null if already in sync.
+  async ciSync(
+    locales: Record<string, Record<string, unknown>>,
+    note?: string,
+  ): Promise<I18nManifest | null> {
+    await this.ensureWorkspace();
+
+    const NAMESPACE = 'translation';
+    let anyUpdates = false;
+
+    for (const [language, localeContent] of Object.entries(locales)) {
+      if (!SAFE_SEGMENT.test(language)) continue;
+
+      const draftLanguage = await this.readDraftLanguageOrEmpty(language);
+      const draftNamespace = this.getNamespace(draftLanguage, NAMESPACE);
+      const draftKeys = new Set(
+        this.flattenStrings(draftNamespace).map((e) => e.key),
+      );
+
+      const newEntries = this.flattenStrings(
+        localeContent as TranslationTree,
+      ).filter((e) => !draftKeys.has(e.key));
+
+      if (newEntries.length === 0) continue;
+
+      this.logger.log(
+        `[ciSync] ${language}: adding ${newEntries.length} new key(s)`,
+      );
+
+      for (const { key, value } of newEntries) {
+        this.setDeepValue(draftNamespace, key, value);
+      }
+
+      draftLanguage[NAMESPACE] = draftNamespace;
+      await this.writeDraftLanguage(language, draftLanguage);
+      anyUpdates = true;
+    }
+
+    if (!anyUpdates) {
+      this.logger.log('[ciSync] Draft already in sync — skipping publish');
+      return null;
+    }
+
+    return this.publish(note ?? 'CI sync: auto-added new translation keys');
+  }
+
   async rollback(version: number, note?: string): Promise<I18nManifest> {
     await this.ensureWorkspace();
     const versionName = `v${version}`;

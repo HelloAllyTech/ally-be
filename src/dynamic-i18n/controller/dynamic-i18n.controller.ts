@@ -1,4 +1,12 @@
-import { Body, Controller, Get, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Post,
+  Put,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -6,9 +14,11 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { I18nAuditLogQueryDto } from '../dto/audit-log-query.dto';
 import { AutoTranslateDto } from '../dto/auto-translate.dto';
+import { CiSyncDto } from '../dto/ci-sync.dto';
 import { ListTranslationsQueryDto } from '../dto/list-translations-query.dto';
 import { PublishI18nDto } from '../dto/publish-i18n.dto';
 import { RollbackI18nDto } from '../dto/rollback-i18n.dto';
@@ -74,6 +84,16 @@ export class DynamicI18nController {
   @Post('publish')
   async publish(@Body() publishI18nDto: PublishI18nDto) {
     return this.dynamicI18nService.publish(publishI18nDto.note);
+  }
+
+  @ApiOperation({
+    summary:
+      'CI: sync new repo translation keys into draft and publish (authenticated via x-api-key)',
+  })
+  @UseGuards(ApiAuthGuard)
+  @Post('ci-sync')
+  async ciSync(@Body() dto: CiSyncDto) {
+    return this.dynamicI18nService.ciSync(dto.locales, dto.note);
   }
 
   @ApiOperation({ summary: 'Rollback current manifest to a retained version' })
