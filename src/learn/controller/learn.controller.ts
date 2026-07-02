@@ -81,13 +81,9 @@ import {
   EnhanceScenarioFieldResponseDto,
 } from '../dto/enhance-scenario-field.dto';
 import {
-  GenerateAgentPromptDto,
-  GenerateAgentPromptResponseDto,
-} from '../dto/generate-agent-prompt.dto';
-import {
-  GenerateAgentBuilderV2FieldDto,
-  GenerateAgentBuilderV2FieldResponseDto,
-} from '../dto/generate-agent-builder-v2-field.dto';
+  GenerateAgentBuilderFieldDto,
+  GenerateAgentBuilderFieldResponseDto,
+} from '../dto/generate-agent-builder-field.dto';
 import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
 import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
@@ -334,39 +330,20 @@ export class LearnController {
 
   @ApiOperation({
     summary:
-      'Agent Builder Copilot: generate a comprehensive roleplay-actor system prompt from a free-text description',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Generated system prompt',
-    type: GenerateAgentPromptResponseDto,
-  })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
-  @Post('agent-builder/generate-system-prompt')
-  async generateAgentSystemPrompt(
-    @Body() generateAgentPromptDto: GenerateAgentPromptDto,
-  ): Promise<GenerateAgentPromptResponseDto> {
-    return this.scenarioService.generateAgentSystemPrompt(
-      generateAgentPromptDto,
-    );
-  }
-
-  @ApiOperation({
-    summary:
-      'Agent Builder Copilot V2: generate one Basic Settings field from the ' +
+      'Agent Builder Copilot: generate one Basic Settings field from the ' +
       'actor brief + competency + optimisation goals (fired in parallel per field)',
   })
   @ApiResponse({
     status: 200,
     description: 'Generated field value',
-    type: GenerateAgentBuilderV2FieldResponseDto,
+    type: GenerateAgentBuilderFieldResponseDto,
   })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
-  @Post('agent-builder/v2/generate-field')
-  async generateAgentBuilderV2Field(
-    @Body() dto: GenerateAgentBuilderV2FieldDto,
-  ): Promise<GenerateAgentBuilderV2FieldResponseDto> {
-    return this.scenarioService.generateAgentBuilderV2Field(dto);
+  @Post('agent-builder/generate-field')
+  async generateAgentBuilderField(
+    @Body() dto: GenerateAgentBuilderFieldDto,
+  ): Promise<GenerateAgentBuilderFieldResponseDto> {
+    return this.scenarioService.generateAgentBuilderField(dto);
   }
 
   @ApiOperation({ summary: 'Create multiple scenarios' })

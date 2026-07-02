@@ -17,7 +17,6 @@ import {
   GeneratedContent,
 } from '../type/generatable-fields.type';
 import { PREFERRED_AUTOFILL_MODELS } from '../constants/autofill-models.constants';
-import { AGENT_BUILDER_PROMPT_CODE } from '../constants/agent-builder.constants';
 import {
   AUTOFILL_CACHE_TTL_MS,
   buildBehaviorIdMapping,
@@ -257,7 +256,7 @@ export class OpenAIAutofillService {
 
   /**
    * Generic "render a managed prompt with runtime variables, call the model,
-   * return the raw text" primitive. Used by Agent Builder Copilot V2 to generate
+   * return the raw text" primitive. Used by Agent Builder Copilot to generate
    * one Basic Settings field from its own editable prompt code — the caller
    * parses the result per field. `expectJson` switches on json_object mode.
    */
@@ -293,7 +292,7 @@ export class OpenAIAutofillService {
       void this.llmUsage.record({
         provider: 'openai',
         model: effectiveModel,
-        task: LlmTask.AUTOFILL_AGENT_V2_FIELD,
+        task: LlmTask.AUTOFILL_AGENT_FIELD,
         promptTokens: response.usage?.prompt_tokens,
         completionTokens: response.usage?.completion_tokens,
         totalTokens: response.usage?.total_tokens,
@@ -323,128 +322,4 @@ export class OpenAIAutofillService {
     }
   }
 
-  /**
-   * Generate a comprehensive roleplay-actor system prompt from a free-text
-   * description. Unlike generateFieldContent this returns plain prose (no JSON
-   * schema / extraction) using the agent-builder meta prompt as the system
-   * message and the author's description as the user message.
-   */
-  async generateAgentSystemPrompt(
-    description: string,
-    modelOverride?: string,
-  ): Promise<string> {
-    const metaPrompt = await this.promptSharedService.getPromptByCode(
-      AGENT_BUILDER_PROMPT_CODE,
-    );
-
-    if (!metaPrompt) {
-      throw new NotFoundException(
-        `Prompt template not found for code: ${AGENT_BUILDER_PROMPT_CODE}`,
-      );
-    }
-
-    const effectiveModel = modelOverride ?? this.model;
-    this.logger.info(
-      `[AGENT_BUILDER] start provider=openai model=${effectiveModel} descriptionLength=${description.length}`,
-    );
-    const startedAt = Date.now();
-
-    try {
-      const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: metaPrompt },
-        { role: 'user', content: description },
-      ];
-
-      const response = await this.client.chat.completions.create({
-        model: effectiveModel,
-        messages,
-        // The agent-builder meta prompt now returns a single JSON object
-        // configuring the scenario (parsed client-side to auto-fill Basic
-        // Settings). json_object mode guarantees syntactically valid JSON.
-        response_format: { type: 'json_object' },
-      });
-
-      void this.llmUsage.record({
-        provider: 'openai',
-        model: effectiveModel,
-        task: LlmTask.AUTOFILL_AGENT_PROMPT,
-        promptTokens: response.usage?.prompt_tokens,
-        completionTokens: response.usage?.completion_tokens,
-        totalTokens: response.usage?.total_tokens,
-      });
-
-      const content = response.choices?.[0]?.message?.content ?? '';
-
-      if (!content.trim()) {
-        throw new InternalServerErrorException(
-          'Empty response from OpenAI for agent-builder generation',
-        );
-      }
-
-      this.logger.info(
-        `[AGENT_BUILDER] done provider=openai model=${effectiveModel} elapsedMs=${Date.now() - startedAt}`,
-      );
-      return stripMarkdownFences(content).trim();
-    } catch (error) {
-      this.logger.error(
-        `[AGENT_BUILDER] failed provider=openai model=${effectiveModel} ` +
-          `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
-        error as any,
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Pick the single best-fit competency from a catalog for a free-text actor
-   * brief. Used by the Copilot orchestrator to auto-select a competency when
-   * the superadmin only supplies a brief. Returns the chosen competency id, or
-   * null when the model can't decide / the response is unparseable (caller
-   * falls back to the first competency).
-   *
-   * Always runs on a small OpenAI model regardless of the builder model — this
-   * is a cheap classification, decoupled from actor generation.
-   */
-  async selectCompetency(
-    brief: string,
-    competencies: { id: string; name: string }[],
-    modelOverride?: string,
-  ): Promise<string | null> {
-    if (!competencies.length) return null;
-
-    const catalog = competencies
-      .map((c, i) => `${i + 1}. id=${c.id} | name=${c.name}`)
-      .join('\n');
-    const system =
-      'You match a roleplay-actor training brief to the single most relevant ' +
-      'counseling competency from a catalog. Respond ONLY with JSON: ' +
-      '{"competencyId": "<the id of the best-fit competency>"}. The id MUST be ' +
-      'one of the ids in the catalog.';
-    const user = `Brief:\n${brief}\n\nCompetency catalog:\n${catalog}`;
-    const effectiveModel = modelOverride ?? this.model;
-
-    try {
-      const response = await this.client.chat.completions.create({
-        model: effectiveModel,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-        response_format: { type: 'json_object' },
-      });
-      const content = response.choices?.[0]?.message?.content ?? '';
-      const parsed = JSON.parse(stripMarkdownFences(content)) as {
-        competencyId?: string;
-      };
-      const chosen = competencies.find((c) => c.id === parsed.competencyId);
-      return chosen?.id ?? null;
-    } catch (error) {
-      this.logger.warn(
-        `[COPILOT_COMPETENCY] selection failed on model=${effectiveModel}: ${
-          (error as any)?.message ?? error
-        }`,
-      );
-      return null;
-    }
-  }
 }

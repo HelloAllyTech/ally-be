@@ -40,8 +40,6 @@ import {
 import { TIME } from 'src/common/constants/time.constants';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
-import { EventEmitter2 } from '@nestjs/event-emitter';
-import { COPILOT_REPORT_COMPLETED_EVENT } from 'src/copilot/enum/copilot-run.enum';
 
 @Injectable()
 export class ScenarioReportService {
@@ -59,7 +57,6 @@ export class ScenarioReportService {
     private readonly openAITranslationsService: OpenAITranslationsService,
     private readonly redisService: RedisService,
     private readonly permissionsService: PermissionsService,
-    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async createScenarioReport(
@@ -519,14 +516,6 @@ export class ScenarioReportService {
           await this.redisService.del(
             `${SCENARIO_REPORT_REDIS_KEY_PREFIX}:${reportId}`,
           );
-
-          // Resume seam for the Copilot orchestrator: when a report reaches a
-          // terminal status, signal any Copilot run whose current round is
-          // bound to this report so it can score the round and continue/stop.
-          // Fired for every terminal report; the Copilot listener is a no-op
-          // for reports that don't belong to a run (looser coupling than a
-          // direct service call, and avoids a module dependency cycle).
-          this.eventEmitter.emit(COPILOT_REPORT_COMPLETED_EVENT, { reportId });
         }
       }
 

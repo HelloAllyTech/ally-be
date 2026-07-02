@@ -16,10 +16,6 @@ import {
 } from '../type/generatable-fields.type';
 import { PREFERRED_ANTHROPIC_AUTOFILL_MODELS } from '../constants/autofill-models.constants';
 import {
-  AGENT_BUILDER_MAX_TOKENS,
-  AGENT_BUILDER_PROMPT_CODE,
-} from '../constants/agent-builder.constants';
-import {
   AUTOFILL_CACHE_TTL_MS,
   buildBehaviorIdMapping,
   buildJsonSchemaSuffix,
@@ -259,7 +255,7 @@ export class AnthropicAutofillService {
 
   /**
    * Generic "render a managed prompt with runtime variables, call the model,
-   * return the raw text" primitive. Used by Agent Builder Copilot V2 to generate
+   * return the raw text" primitive. Used by Agent Builder Copilot to generate
    * one Basic Settings field from its own editable prompt code — the caller
    * parses the result per field. When `expectJson` is set the assistant turn is
    * prefilled with `{` so the model is forced to emit a JSON object (Anthropic
@@ -300,7 +296,7 @@ export class AnthropicAutofillService {
       this.recordUsage(
         response.usage,
         effectiveModel,
-        LlmTask.AUTOFILL_AGENT_V2_FIELD,
+        LlmTask.AUTOFILL_AGENT_FIELD,
         { promptCode },
       );
 
@@ -326,77 +322,6 @@ export class AnthropicAutofillService {
     } catch (error) {
       this.logger.error(
         `[AGENT_V2] failed provider=anthropic model=${effectiveModel} promptCode=${promptCode} ` +
-          `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
-        error as any,
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Generate a comprehensive roleplay-actor system prompt from a free-text
-   * description. Unlike generateFieldContent this returns plain prose (no JSON
-   * schema / extraction) using the agent-builder meta prompt as the system
-   * message and the author's description as the user message.
-   */
-  async generateAgentSystemPrompt(
-    description: string,
-    modelOverride?: string,
-  ): Promise<string> {
-    const metaPrompt = await this.promptSharedService.getPromptByCode(
-      AGENT_BUILDER_PROMPT_CODE,
-    );
-
-    if (!metaPrompt) {
-      throw new NotFoundException(
-        `Prompt template not found for code: ${AGENT_BUILDER_PROMPT_CODE}`,
-      );
-    }
-
-    const effectiveModel = modelOverride ?? this.model;
-    this.logger.info(
-      `[AGENT_BUILDER] start provider=anthropic model=${effectiveModel} descriptionLength=${description.length}`,
-    );
-    const startedAt = Date.now();
-
-    try {
-      const response = await this.client.messages.create({
-        model: effectiveModel,
-        max_tokens: AGENT_BUILDER_MAX_TOKENS,
-        system: metaPrompt,
-        messages: [
-          { role: 'user', content: description },
-          // Anthropic has no json_object response_format; prefill the
-          // assistant turn with an opening brace so the model is forced to
-          // continue a JSON object. The brace is re-prepended below since
-          // the API returns only the generated continuation.
-          { role: 'assistant', content: '{' },
-        ],
-      });
-
-      this.recordUsage(
-        response.usage,
-        effectiveModel,
-        LlmTask.AUTOFILL_AGENT_PROMPT,
-      );
-
-      const block = response.content[0];
-      const continuation = block?.type === 'text' ? block.text : '';
-      const content = continuation.trim() ? `{${continuation}` : '';
-
-      if (!content.trim()) {
-        throw new InternalServerErrorException(
-          'Empty response from Anthropic for agent-builder generation',
-        );
-      }
-
-      this.logger.info(
-        `[AGENT_BUILDER] done provider=anthropic model=${effectiveModel} elapsedMs=${Date.now() - startedAt}`,
-      );
-      return stripMarkdownFences(content).trim();
-    } catch (error) {
-      this.logger.error(
-        `[AGENT_BUILDER] failed provider=anthropic model=${effectiveModel} ` +
           `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
         error as any,
       );

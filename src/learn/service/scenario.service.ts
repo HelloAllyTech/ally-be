@@ -149,18 +149,14 @@ import {
   ENHANCE_FIELD_PROMPT_CODE,
   ENHANCE_STATE_PROMPT_CODE,
 } from '../enum/enhanceable-field.enum';
-import {
-  GenerateAgentPromptDto,
-  GenerateAgentPromptResponseDto,
-} from '../dto/generate-agent-prompt.dto';
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
 import { GeneratableField } from '../enum/generatable-field.enum';
-import { AgentBuilderV2Field } from '../enum/agent-builder-v2-field.enum';
+import { AgentBuilderField } from '../enum/agent-builder-field.enum';
 import {
-  GenerateAgentBuilderV2FieldDto,
-  GenerateAgentBuilderV2FieldResponseDto,
-} from '../dto/generate-agent-builder-v2-field.dto';
+  GenerateAgentBuilderFieldDto,
+  GenerateAgentBuilderFieldResponseDto,
+} from '../dto/generate-agent-builder-field.dto';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
@@ -3229,15 +3225,15 @@ export class ScenarioService {
   }
 
   /**
-   * Agent Builder Copilot V2: generate ONE Basic Settings field from the
+   * Agent Builder Copilot: generate ONE Basic Settings field from the
    * wizard's three inputs (actor brief + competency + optimisation goals). Each
-   * field has its own editable prompt template (src/prompts/agent_builder_v2/)
+   * field has its own editable prompt template (src/prompts/agent_builder/)
    * and is fired independently in parallel by the frontend, so the results
    * paint into the form as each returns. Provider routing mirrors generateField.
    */
-  async generateAgentBuilderV2Field(
-    dto: GenerateAgentBuilderV2FieldDto,
-  ): Promise<GenerateAgentBuilderV2FieldResponseDto> {
+  async generateAgentBuilderField(
+    dto: GenerateAgentBuilderFieldDto,
+  ): Promise<GenerateAgentBuilderFieldResponseDto> {
     const { field, actorDescription, competency, optimisationGoals, model } =
       dto;
 
@@ -3251,7 +3247,7 @@ export class ScenarioService {
     const resolvedProvider = dto.provider ?? 'openai';
     if (dto.provider && !autofillServiceRegistry.has(dto.provider)) {
       this.logger.warn(
-        `Unrecognized agent-builder-v2 provider "${dto.provider}", falling back to openai`,
+        `Unrecognized agent-builder provider "${dto.provider}", falling back to openai`,
       );
     }
     const autofillService =
@@ -3267,13 +3263,13 @@ export class ScenarioService {
     };
 
     // The prompt-file basename equals the enum value; toPromptCode maps it to
-    // src/prompts/agent_builder_v2/<field>.txt (editable in Prompt Management).
-    const promptCode = toPromptCode('agent_builder_v2', field);
+    // src/prompts/agent_builder/<field>.txt (editable in Prompt Management).
+    const promptCode = toPromptCode('agent_builder', field);
     // Prose/HTML fields come back as plain text; structured fields as JSON.
     const expectJson =
-      field === AgentBuilderV2Field.TITLE ||
-      field === AgentBuilderV2Field.PERSONA ||
-      field === AgentBuilderV2Field.KNOWLEDGE_SOURCES;
+      field === AgentBuilderField.TITLE ||
+      field === AgentBuilderField.PERSONA ||
+      field === AgentBuilderField.KNOWLEDGE_SOURCES;
 
     const raw = await autofillService.generateContentFromPrompt(
       promptCode,
@@ -3282,7 +3278,7 @@ export class ScenarioService {
       model,
     );
 
-    return { field, value: this.parseAgentBuilderV2Field(field, raw) };
+    return { field, value: this.parseAgentBuilderField(field, raw) };
   }
 
   /**
@@ -3309,16 +3305,16 @@ export class ScenarioService {
   }
 
   /** Coerce a V2 field's raw model output into the shape the studio form expects. */
-  private parseAgentBuilderV2Field(
-    field: AgentBuilderV2Field,
+  private parseAgentBuilderField(
+    field: AgentBuilderField,
     raw: string,
   ): unknown {
     switch (field) {
-      case AgentBuilderV2Field.ROLE_INSTRUCTION:
-      case AgentBuilderV2Field.CHALLENGE_DESCRIPTION:
+      case AgentBuilderField.ROLE_INSTRUCTION:
+      case AgentBuilderField.CHALLENGE_DESCRIPTION:
         return raw.trim();
 
-      case AgentBuilderV2Field.TITLE: {
+      case AgentBuilderField.TITLE: {
         const parsed = this.parseFirstJsonObject(raw);
         if (parsed && typeof parsed.title === 'string' && parsed.title.trim()) {
           return parsed.title.trim();
@@ -3333,7 +3329,7 @@ export class ScenarioService {
         return (firstLine ?? raw.trim()).replace(/^["']|["']$/g, '').trim();
       }
 
-      case AgentBuilderV2Field.PERSONA: {
+      case AgentBuilderField.PERSONA: {
         const p = this.parseFirstJsonObject(raw) ?? {};
         const allowedGenders = new Set(['male', 'female', 'non-binary']);
         const genderRaw =
@@ -3360,7 +3356,7 @@ export class ScenarioService {
         };
       }
 
-      case AgentBuilderV2Field.KNOWLEDGE_SOURCES: {
+      case AgentBuilderField.KNOWLEDGE_SOURCES: {
         const parsed = this.parseFirstJsonObject(raw);
         // Prefer the documented `{ sources: [...] }`, but tolerate the model
         // returning a bare array or wrapping under a different key, so a minor
@@ -3390,48 +3386,6 @@ export class ScenarioService {
       default:
         return raw.trim();
     }
-  }
-
-  /**
-   * Agent Builder Copilot: turn a free-text actor description into a
-   * comprehensive roleplay-actor system prompt. Routes to the OpenAI or
-   * Anthropic autofill service based on the requested provider (mirrors the
-   * provider registry used by generateField).
-   */
-  async generateAgentSystemPrompt(
-    generateAgentPromptDto: GenerateAgentPromptDto,
-  ): Promise<GenerateAgentPromptResponseDto> {
-    const { description, model, provider } = generateAgentPromptDto;
-
-    const autofillServiceRegistry = new Map<
-      string,
-      OpenAIAutofillService | AnthropicAutofillService
-    >([
-      ['openai', this.openAIAutofillService],
-      ['anthropic', this.anthropicAutofillService],
-    ]);
-    const resolvedProvider = provider ?? 'openai';
-    if (provider && !autofillServiceRegistry.has(provider)) {
-      this.logger.warn(
-        `Unrecognized agent-builder provider "${provider}", falling back to openai`,
-      );
-    }
-    const autofillService =
-      autofillServiceRegistry.get(resolvedProvider) ??
-      this.openAIAutofillService;
-
-    const systemPrompt = await autofillService.generateAgentSystemPrompt(
-      description,
-      model,
-    );
-
-    return {
-      systemPrompt,
-      provider: autofillServiceRegistry.has(resolvedProvider)
-        ? resolvedProvider
-        : 'openai',
-      model: model ?? '',
-    };
   }
 
   private getLanguageNameFromCode(code: string): string {
