@@ -365,6 +365,12 @@ export class AppConfigService {
         'OPENAI_AUTOFILL_MODEL',
         'gpt-5-mini',
       ),
+      // Speech-to-text model for the manual scribe-note voice dictation flow.
+      // whisper-1 accepts webm/mp4/mp3/wav (<=25MB) and auto-detects language.
+      transcriptionModel: this.configService.get<string>(
+        'OPENAI_TRANSCRIPTION_MODEL',
+        'whisper-1',
+      ),
     };
   }
 

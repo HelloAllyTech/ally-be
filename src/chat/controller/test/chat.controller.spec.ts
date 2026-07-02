@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ChatController } from '../chat.controller';
 import { ChatService } from '../../service/chat.service';
 import { AudioUploadService } from '../../service/audio-upload.service';
+import { VoiceNoteService } from '../../service/voice-note.service';
 import { FeedbackService } from '../../service/feedback.service';
 import { ChatSummaryService } from '../../service/chat-summary.service';
 import { TokenUser } from '../../../auth/type/auth.types';
@@ -145,6 +146,10 @@ describe('ChatController', () => {
         {
           provide: AudioUploadService,
           useValue: mockAudioUploadService,
+        },
+        {
+          provide: VoiceNoteService,
+          useValue: { generateFromAudio: jest.fn() },
         },
         {
           provide: PermissionsService,

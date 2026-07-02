@@ -5,6 +5,7 @@ import { Message } from './entity/message.entity';
 import { ChatService } from './service/chat.service';
 import { ChatSummaryService } from './service/chat-summary.service';
 import { AudioUploadService } from './service/audio-upload.service';
+import { VoiceNoteService } from './service/voice-note.service';
 import { ChatController } from './controller/chat.controller';
 import { AudioUploadController } from './controller/audio-upload.controller';
 import { UserModule } from '../user/user.module';
@@ -59,6 +60,7 @@ import { CustomFieldsModule } from '../custom-fields/custom-fields.module';
     ChatService,
     ChatSummaryService,
     AudioUploadService,
+    VoiceNoteService,
     MicrophoneChatGateway,
     FeedbackService,
     ChatEventConsumer,
