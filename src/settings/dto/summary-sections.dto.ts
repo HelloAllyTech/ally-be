@@ -1,18 +1,23 @@
-import { IsArray, IsString, IsUUID } from 'class-validator';
+import { IsArray, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class UpdateSummarySectionsDto {
   @ApiProperty({
-    description:
-      'Hidden section ids (sections hidden for this tenant; super admin only)',
+    description: 'Hidden section ids (sections hidden for this tenant)',
   })
   @IsArray()
   @IsString({ each: true })
   hiddenSections!: string[];
 
-  @ApiProperty({ description: 'Tenant ID' })
+  @ApiProperty({
+    description:
+      'Tenant ID (optional; super admin may pass to target a tenant, a ' +
+      'tenant admin is scoped server-side to their own tenant)',
+    required: false,
+  })
+  @IsOptional()
   @IsUUID()
-  tenantId!: string;
+  tenantId?: string;
 }
 
 export class SummarySectionFieldResponseDto {

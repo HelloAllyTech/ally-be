@@ -664,17 +664,29 @@ describe('SettingsService', () => {
       );
     });
 
-    it('should throw ForbiddenException when user does not have SYSTEM_ACCESS', async () => {
+    it('scopes to the caller own tenant when user lacks SYSTEM_ACCESS (tenant admin)', async () => {
       jest
         .spyOn(permissionValidator, 'validatePermissions')
         .mockResolvedValue(false);
+      preferenceService.getPreference.mockResolvedValue(null);
+      preferenceService.createPreference.mockResolvedValue({} as any);
 
-      await expect(service.updateSummarySections(updateDto)).rejects.toThrow(
-        ForbiddenException,
+      // A tenant admin may pass a different tenantId, but the write is locked
+      // server-side to their own tenant (ExecutionManager.getTenantId()).
+      const result = await service.updateSummarySections({
+        hiddenSections: ['intake', 'ongoingRisks'],
+        tenantId: 'some-other-tenant-id',
+      });
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: PreferenceName.SUMMARY_HIDDEN_SECTIONS,
+          relatedId: mockTenantId,
+          relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+          value: { sections: ['intake', 'ongoingRisks'] },
+        }),
       );
-      await expect(service.updateSummarySections(updateDto)).rejects.toThrow(
-        'Only super admin can update summary sections',
-      );
+      expect(result).toEqual({ success: true });
     });
 
     it('should throw ForbiddenException if multi-tenant admin does not manage the tenant', async () => {
@@ -1183,14 +1195,28 @@ describe('SettingsService', () => {
         .mockResolvedValue(true);
     });
 
-    it('should throw ForbiddenException without system access', async () => {
+    it('scopes to the caller own tenant without system access (tenant admin)', async () => {
       jest
         .spyOn(permissionValidator, 'validatePermissions')
         .mockResolvedValue(false);
+      preferenceService.getPreference.mockResolvedValue(null);
+      preferenceService.createPreference.mockResolvedValue({} as any);
 
-      await expect(
-        service.updateScribeNoteCreationEnabled(mockTenantId, true),
-      ).rejects.toThrow(ForbiddenException);
+      // Passing a different tenantId must not escape the caller's own tenant.
+      const result = await service.updateScribeNoteCreationEnabled(
+        'some-other-tenant-id',
+        true,
+      );
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
+          relatedId: mockTenantId,
+          relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+          value: { enabled: true },
+        }),
+      );
+      expect(result).toEqual({ success: true });
     });
 
     it('should update an existing preference', async () => {

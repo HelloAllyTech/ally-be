@@ -368,10 +368,12 @@ export class SettingsService {
       parseInt(userId),
       [PERMISSIONS.SYSTEM_ACCESS],
     );
-    if (!hasSystemAccess) {
-      throw new ForbiddenException(
-        'Only super admin can update summary sections',
-      );
+    // Super admins may target any tenant; a tenant admin is locked to their own.
+    const scopedTenantId = hasSystemAccess
+      ? dto.tenantId
+      : ExecutionManager.getTenantId();
+    if (!scopedTenantId) {
+      throw new BadRequestException('Tenant ID is required');
     }
 
     const isMultiTenantAdmin = userId
@@ -385,14 +387,14 @@ export class SettingsService {
 
       const adminTenantIds = adminTenants.data.map((t: any) => t.id);
 
-      if (!adminTenantIds.includes(dto.tenantId)) {
+      if (!adminTenantIds.includes(scopedTenantId)) {
         throw new ForbiddenException(
           'You are not authorized to update summary sections for this tenant',
         );
       }
     }
 
-    const { hiddenSections, tenantId } = dto;
+    const { hiddenSections } = dto;
 
     const invalidSectionIds = hiddenSections.filter(
       (id) => !SUMMARY_SECTION_IDS.includes(id),
@@ -404,7 +406,7 @@ export class SettingsService {
     }
 
     const relatedEntity = PreferenceRelatedEntity.ORGANIZATION;
-    const relatedId = tenantId;
+    const relatedId = scopedTenantId;
     const tenantIdForCreate = ExecutionManager.getTenantId();
 
     const existing = await this.preferenceService.getPreference(
@@ -432,7 +434,7 @@ export class SettingsService {
           AUDIT_EVENTS.MULTI_TENANT_ADMIN_EDITED_SETTINGS_SUMMARY_FIELDS,
         details: {
           action: AUDIT_ACTIONS.UPDATE_SETTING_SUMMARY_FIELDS,
-          tenantId,
+          tenantId: scopedTenantId,
           userId,
           hiddenSections,
         },
@@ -613,12 +615,12 @@ export class SettingsService {
       parseInt(userId),
       [PERMISSIONS.SYSTEM_ACCESS],
     );
-    if (!hasSystemAccess) {
-      throw new ForbiddenException(
-        'Only system administrators can modify custom fields settings for a tenant',
-      );
-    }
-    const resolvedId = await this.resolveTenantCode(tenantId);
+    // Super admins may target any tenant; a tenant admin is locked to their own.
+    const scopedTenantId = hasSystemAccess
+      ? tenantId
+      : ExecutionManager.getTenantId();
+    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
+    const resolvedId = await this.resolveTenantCode(scopedTenantId);
     const existing = await this.preferenceService.getPreference(
       PreferenceName.CUSTOM_FIELDS_ENABLED,
       resolvedId,
@@ -674,12 +676,12 @@ export class SettingsService {
       parseInt(userId),
       [PERMISSIONS.SYSTEM_ACCESS],
     );
-    if (!hasSystemAccess) {
-      throw new ForbiddenException(
-        'Only system administrators can modify scribe note creation settings for a tenant',
-      );
-    }
-    const resolvedId = await this.resolveTenantCode(tenantId);
+    // Super admins may target any tenant; a tenant admin is locked to their own.
+    const scopedTenantId = hasSystemAccess
+      ? tenantId
+      : ExecutionManager.getTenantId();
+    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
+    const resolvedId = await this.resolveTenantCode(scopedTenantId);
     const existing = await this.preferenceService.getPreference(
       PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
       resolvedId,
@@ -709,11 +711,11 @@ export class SettingsService {
       parseInt(userId),
       [PERMISSIONS.SYSTEM_ACCESS],
     );
-    if (!hasSystemAccess) {
-      throw new ForbiddenException(
-        'Only system administrators can modify custom field types for a tenant',
-      );
-    }
+    // Super admins may target any tenant; a tenant admin is locked to their own.
+    const scopedTenantId = hasSystemAccess
+      ? tenantId
+      : ExecutionManager.getTenantId();
+    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
     const allTypes = Object.values(CustomFieldType);
     const invalid = enabledTypes.filter(
       (t) => !allTypes.includes(t as CustomFieldType),
@@ -724,7 +726,7 @@ export class SettingsService {
       );
     }
 
-    const resolvedId = await this.resolveTenantCode(tenantId);
+    const resolvedId = await this.resolveTenantCode(scopedTenantId);
 
     const existing = await this.preferenceService.getPreference(
       PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,
