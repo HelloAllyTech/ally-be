@@ -117,6 +117,41 @@ export class ScribeAnalyticsRepository {
   }
 
   /**
+   * ALL scribe sessions in [start, end) grouped by CAPTURE METHOD
+   * (call_details.callInfo->>'provider'): AUDIO_UPLOAD = uploaded file, anything
+   * else = live streaming, null/'' = unknown. This is how the audio was
+   * recorded — distinct from note mode (getModeCounts) — and is the same
+   * grouping as getFailuresByCaptureMethod but across every session, not only
+   * failures.
+   */
+  async getCaptureMethodCounts(
+    start: Date,
+    end: Date,
+  ): Promise<ScribeKeyCountRow[]> {
+    const rows = await this.dataSource
+      .createQueryBuilder()
+      .select(
+        `CASE
+          WHEN cd."callInfo"->>'provider' = :uploadProvider THEN 'upload'
+          WHEN NULLIF(cd."callInfo"->>'provider', '') IS NULL THEN 'unknown'
+          ELSE 'live'
+        END`,
+        'key',
+      )
+      .addSelect('COUNT(*)::int', 'count')
+      .from('chats', 'c')
+      .leftJoin('call_details', 'cd', 'cd."chatId" = c.id')
+      .where('c."createdAt" >= :start', { start })
+      .andWhere('c."createdAt" < :end', { end })
+      .setParameter('uploadProvider', AudioChatProvider.AUDIO_UPLOAD)
+      .groupBy('key')
+      .orderBy('count', 'DESC')
+      .getRawMany<{ key: string; count: number }>();
+
+    return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
+  }
+
+  /**
    * Per-bucket failed and terminal (SUCCESS + FAILED) counts within [start,
    * end). The failure rate is failed/terminal; NO_AUDIO and in-flight
    * (PENDING/IN_PROGRESS) sessions are excluded from the denominator because

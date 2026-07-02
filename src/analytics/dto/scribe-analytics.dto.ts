@@ -63,9 +63,18 @@ export class ScribeOverviewResponseDto {
   outcomeBreakdown!: ScribeCountDto[];
   @ApiProperty({
     type: [ScribeCountDto],
-    description: 'Sessions by mode (SCRIBE upload vs DICTATION live).',
+    description:
+      'Sessions by note mode (SCRIBE vs DICTATION) — the summary style, ' +
+      'independent of how the audio was captured.',
   })
   modeBreakdown!: ScribeCountDto[];
+  @ApiProperty({
+    type: [ScribeCountDto],
+    description:
+      'Sessions by capture method (upload = uploaded file, live = streamed ' +
+      'via mic/telephony, unknown = provider not recorded).',
+  })
+  captureBreakdown!: ScribeCountDto[];
 }
 
 /** A single point on the summary-failure-rate trend. */

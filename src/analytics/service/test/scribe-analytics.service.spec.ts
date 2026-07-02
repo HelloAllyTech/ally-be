@@ -29,6 +29,7 @@ describe('ScribeAnalyticsService', () => {
       getSessionsByBucket: jest.fn().mockResolvedValue([]),
       getOutcomeCounts: jest.fn().mockResolvedValue([]),
       getModeCounts: jest.fn().mockResolvedValue([]),
+      getCaptureMethodCounts: jest.fn().mockResolvedValue([]),
       getFailureRateByBucket: jest.fn().mockResolvedValue([]),
       getFailureBreakdown: jest.fn().mockResolvedValue([]),
       getFailuresByMode: jest.fn().mockResolvedValue([]),
@@ -110,6 +111,18 @@ describe('ScribeAnalyticsService', () => {
       expect(res.modeBreakdown).toEqual([
         { key: 'SCRIBE', count: 90 },
         { key: 'DICTATION', count: 25 },
+      ]);
+    });
+
+    it('returns the capture-method breakdown (all sessions) alongside note mode', async () => {
+      repo.getCaptureMethodCounts.mockResolvedValue([
+        { key: 'live', count: 70 },
+        { key: 'upload', count: 45 },
+      ]);
+      const res = await service.getOverview('30d');
+      expect(res.captureBreakdown).toEqual([
+        { key: 'live', count: 70 },
+        { key: 'upload', count: 45 },
       ]);
     });
 

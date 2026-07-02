@@ -134,11 +134,14 @@ export class ScribeAnalyticsService {
       )},${isoDate(endExclusive)}) bucket=${bucket}`,
     );
 
-    const [sessionRows, outcomeRows, modeRows] = await Promise.all([
-      this.repo.getSessionsByBucket(windowStart, endExclusive, bucket),
-      this.repo.getOutcomeCounts(windowStart, endExclusive),
-      this.repo.getModeCounts(windowStart, endExclusive),
-    ]);
+    const [sessionRows, outcomeRows, modeRows, captureRows] = await Promise.all(
+      [
+        this.repo.getSessionsByBucket(windowStart, endExclusive, bucket),
+        this.repo.getOutcomeCounts(windowStart, endExclusive),
+        this.repo.getModeCounts(windowStart, endExclusive),
+        this.repo.getCaptureMethodCounts(windowStart, endExclusive),
+      ],
+    );
 
     const byBucket = new Map(sessionRows.map((r) => [r.bucket, r.count]));
     const sessionsTrend = this.axisKeys(windowStart, endExclusive, bucket).map(
@@ -171,6 +174,7 @@ export class ScribeAnalyticsService {
         count: count(s),
       })),
       modeBreakdown: modeRows,
+      captureBreakdown: captureRows,
     };
   }
 
