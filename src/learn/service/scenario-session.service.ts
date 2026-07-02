@@ -35,7 +35,11 @@ import { ScenarioSessionEvaluationService } from './scenario-session-evaluation.
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { ScenarioSessionTurnMetrics } from '../entity/scenario-session-turn-metrics.entity';
-import { LearnTurnMetricsData } from '../interface/learn-message.interface';
+import { ScenarioSessionStartMetrics } from '../entity/scenario-session-start-metrics.entity';
+import {
+  LearnStartMetricsData,
+  LearnTurnMetricsData,
+} from '../interface/learn-message.interface';
 import { ScenarioSessionMessageTags } from '../entity/scenario-session-message-tags.entity';
 import { ScenarioSessionTags } from '../entity/scenario-session-tags.entity';
 import {
@@ -1871,6 +1875,38 @@ export class ScenarioSessionService {
         ...(metrics.top_p != null && { topP: metrics.top_p }),
         ...(metrics.max_tokens != null && { maxTokens: metrics.max_tokens }),
       },
+    });
+    await repo.save(row);
+  }
+
+  /**
+   * Persist the simulation's START latency ("time to first word") into
+   * scenario_session_start_metrics — one row per session, emitted live by the
+   * agent (source='pipeline'). `occurredAt` is the agent-side opening timestamp;
+   * falls back to now() if absent.
+   */
+  async addStartMetrics(
+    scenarioSession: ScenarioSessions,
+    metrics: LearnStartMetricsData,
+    occurredAt?: Date,
+  ): Promise<void> {
+    const repo = this.dataSource.getRepository(ScenarioSessionStartMetrics);
+    const row = repo.create({
+      scenarioSessionId: scenarioSession.id,
+      tenantId: scenarioSession.tenantId,
+      roomId: scenarioSession.roomId,
+      startLatencyMs: metrics.start_latency_ms,
+      configureMs: metrics.configure_ms,
+      initializeMs: metrics.initialize_ms,
+      connectMs: metrics.connect_ms,
+      prepMs: metrics.prep_ms,
+      openingPlayoutMs: metrics.opening_playout_ms,
+      scenarioId: metrics.scenario_id ?? scenarioSession.scenarioId,
+      language: metrics.language,
+      env: metrics.env,
+      occurredAt: occurredAt ?? new Date(),
+      source: 'pipeline',
+      metadata: metrics.metadata,
     });
     await repo.save(row);
   }

@@ -54,6 +54,29 @@ export interface VoiceLatencyBucketRow {
   p95Ms: number;
 }
 
+export interface StartLatencyBucketRow {
+  /** Bucket start as a calendar date string (yyyy-mm-dd). */
+  bucket: string;
+  /** How the metrics were produced: 'pipeline' (live agent) or 'transcript'. */
+  source: string;
+  /** Sessions aggregated into this bucket. */
+  sessions: number;
+  /** Mean total start latency / time-to-first-word (ms). */
+  avgMs: number;
+  /** Median (p50) total start latency (ms). */
+  p50Ms: number;
+  /** p95 total start latency (ms). */
+  p95Ms: number;
+  /** Mean configure() segment (ms); 0 for transcript rows (segment NULL). */
+  configureMs: number;
+  /** Mean initialize() segment (ms); 0 for transcript rows. */
+  initializeMs: number;
+  /** Mean connect (session.start + join) segment (ms); 0 for transcript rows. */
+  connectMs: number;
+  /** Mean prep (orchestrator + background audio) segment (ms); 0 for transcript. */
+  prepMs: number;
+}
+
 /**
  * Raw cross-table aggregation for the super-admin analytics overview.
  *
@@ -362,6 +385,99 @@ export class PlatformAnalyticsRepository {
       avgMs: Number(r.avgMs) || 0,
       p50Ms: Number(r.p50Ms) || 0,
       p95Ms: Number(r.p95Ms) || 0,
+    }));
+  }
+
+  /**
+   * Per-bucket, per-source simulation START latency ("time to first word") from
+   * scenario_session_start_metrics. Returns the total (avg / p50 / p95) plus the
+   * mean of each segment (configure / initialize / connect / prep) so the chart
+   * can stack the breakdown; for 'transcript' rows the segments are NULL and
+   * coalesce to 0 (total only). Split by `source` so live-pipeline and
+   * transcript-derived rows are never mixed. `occurredAt` is tz-naive, so
+   * `date_trunc` is pure calendar math (matches the service's UTC axis). Buckets
+   * with no sessions are absent (latency has no meaningful zero).
+   */
+  async getStartLatencyByBucket(
+    start: Date,
+    end: Date,
+    bucket: AnalyticsBucket,
+    language?: string,
+  ): Promise<StartLatencyBucketRow[]> {
+    const trunc = this.resolveBucket(bucket);
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select(
+        `to_char(date_trunc('${trunc}', m."occurredAt"), 'YYYY-MM-DD')`,
+        'bucket',
+      )
+      .addSelect('m."source"', 'source')
+      .addSelect('COUNT(*)::int', 'sessions')
+      .addSelect('round(avg(m."startLatencyMs"))::int', 'avgMs')
+      .addSelect(
+        `round(percentile_cont(0.5) WITHIN GROUP ` +
+          `(ORDER BY m."startLatencyMs"))::int`,
+        'p50Ms',
+      )
+      .addSelect(
+        `round(percentile_cont(0.95) WITHIN GROUP ` +
+          `(ORDER BY m."startLatencyMs"))::int`,
+        'p95Ms',
+      )
+      .addSelect('round(avg(m."configureMs"))::int', 'configureMs')
+      .addSelect('round(avg(m."initializeMs"))::int', 'initializeMs')
+      .addSelect('round(avg(m."connectMs"))::int', 'connectMs')
+      .addSelect('round(avg(m."prepMs"))::int', 'prepMs')
+      .from('scenario_session_start_metrics', 'm');
+    if (language) {
+      // start_metrics.language is largely unpopulated, so filter by the
+      // SESSION's configured language (join to scenario_sessions -> languages),
+      // matching how voice-latency / drift derive language.
+      qb.innerJoin(
+        'scenario_sessions',
+        's',
+        's.id = m."scenarioSessionId"',
+      ).leftJoin(
+        'languages',
+        'l',
+        `l.id = NULLIF(s.metadata->>'languageId', '')::int`,
+      );
+    }
+    qb.where('m."occurredAt" >= :start', { start })
+      .andWhere('m."occurredAt" < :end', { end })
+      .andWhere('m."startLatencyMs" IS NOT NULL');
+    if (language) {
+      qb.andWhere(`COALESCE(l.value, 'en') = :language`, { language });
+    }
+    const rows = await qb
+      .groupBy('bucket')
+      .addGroupBy('m."source"')
+      .orderBy('bucket', 'ASC')
+      .addOrderBy('m."source"', 'ASC')
+      .getRawMany<{
+        bucket: string;
+        source: string;
+        sessions: number;
+        avgMs: number;
+        p50Ms: number;
+        p95Ms: number;
+        configureMs: number;
+        initializeMs: number;
+        connectMs: number;
+        prepMs: number;
+      }>();
+
+    return rows.map((r) => ({
+      bucket: r.bucket,
+      source: r.source,
+      sessions: Number(r.sessions) || 0,
+      avgMs: Number(r.avgMs) || 0,
+      p50Ms: Number(r.p50Ms) || 0,
+      p95Ms: Number(r.p95Ms) || 0,
+      configureMs: Number(r.configureMs) || 0,
+      initializeMs: Number(r.initializeMs) || 0,
+      connectMs: Number(r.connectMs) || 0,
+      prepMs: Number(r.prepMs) || 0,
     }));
   }
 

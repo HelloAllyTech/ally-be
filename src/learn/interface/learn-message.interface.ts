@@ -13,6 +13,27 @@ export interface LearnData {
   event?: LearnEventData;
   behavior_instruction?: LearnBehaviorInstructionData;
   turn_metrics?: LearnTurnMetricsData;
+  start_metrics?: LearnStartMetricsData;
+}
+
+/**
+ * Simulation START latency emitted once per session by ally-ai-learn
+ * (message_type "start_metrics"). `start_latency_ms` is the headline metric
+ * (agent job start -> the agent begins its opening dialogue); the segment
+ * fields break it down. All *_ms fields are integer milliseconds.
+ */
+export interface LearnStartMetricsData {
+  start_latency_ms: number;
+  configure_ms?: number;
+  initialize_ms?: number;
+  connect_ms?: number;
+  prep_ms?: number;
+  /** Opening-statement TTS playout duration (informational; not in the total). */
+  opening_playout_ms?: number;
+  scenario_id?: number;
+  language?: string;
+  env?: string;
+  metadata?: Record<string, any>;
 }
 
 /**
