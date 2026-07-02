@@ -425,21 +425,27 @@ export class CustomFieldsService {
     const existing = await this.valueRepo.find({
       where: { tenantId, chatId },
     });
-    const existingMap = new Map(existing.map((v) => [v.fieldDefinitionId, v]));
+    const existingIds = new Set(existing.map((v) => v.fieldDefinitionId));
 
-    const toSave = safeValues.map((entry) => {
-      const record =
-        existingMap.get(entry.fieldDefinitionId) ??
+    // Insert-only: an AI-fill run (initial generation, retry, or a duplicate
+    // delivery race) must never overwrite a value that's already set —
+    // whether an earlier AI pass set it or a human edited it since. Once a
+    // field has a value, only an explicit human edit (upsertValues) changes
+    // it from here on.
+    const toCreate = safeValues
+      .filter((entry) => !existingIds.has(entry.fieldDefinitionId))
+      .map((entry) =>
         this.valueRepo.create({
           chatId,
           fieldDefinitionId: entry.fieldDefinitionId,
           tenantId,
-        });
-      record.value = entry.value;
-      record.updatedBy = 0;
-      return record;
-    });
+          value: entry.value,
+          updatedBy: 0,
+        }),
+      );
 
-    await this.valueRepo.save(toSave);
+    if (toCreate.length === 0) return;
+
+    await this.valueRepo.save(toCreate);
   }
 }

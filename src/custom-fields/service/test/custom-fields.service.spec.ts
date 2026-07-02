@@ -798,4 +798,117 @@ describe('CustomFieldsService', () => {
       );
     });
   });
+
+  // ─── upsertValuesInternal ──────────────────────────────────────────────────
+  // The AI-fill write path (fillAiCustomFields). Must be insert-only: a
+  // regeneration/retry that runs after a value already exists (whether set by
+  // an earlier AI pass or a human edit) must never overwrite it.
+
+  describe('upsertValuesInternal', () => {
+    const aiValues = [
+      { fieldDefinitionId: mockDefinitionId, value: 'ai-value' },
+    ];
+
+    beforeEach(() => {
+      mockQb.getMany.mockResolvedValue([mockDefinition]);
+      valueRepo.create.mockImplementation((data) => data as any);
+      valueRepo.save.mockResolvedValue([] as any);
+    });
+
+    it('creates a new value when none exists yet', async () => {
+      valueRepo.find.mockResolvedValue([]);
+
+      await service.upsertValuesInternal(mockChatId, mockTenantId, aiValues);
+
+      expect(valueRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatId: mockChatId,
+          fieldDefinitionId: mockDefinitionId,
+          tenantId: mockTenantId,
+          value: 'ai-value',
+          updatedBy: 0,
+        }),
+      );
+      expect(valueRepo.save).toHaveBeenCalledWith([
+        expect.objectContaining({ value: 'ai-value' }),
+      ]);
+    });
+
+    it('does not overwrite a value a human already edited', async () => {
+      const humanEditedValue: ChatCustomFieldValue = {
+        id: 'val-uuid-2',
+        chatId: mockChatId,
+        fieldDefinitionId: mockDefinitionId,
+        value: 'human-edited-value',
+        tenantId: mockTenantId,
+        updatedBy: 42,
+      } as any;
+      valueRepo.find.mockResolvedValue([humanEditedValue]);
+
+      await service.upsertValuesInternal(mockChatId, mockTenantId, aiValues);
+
+      expect(valueRepo.create).not.toHaveBeenCalled();
+      expect(valueRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('does not overwrite a value an earlier AI pass already set (retry/duplicate-delivery race)', async () => {
+      const priorAiValue: ChatCustomFieldValue = {
+        id: 'val-uuid-3',
+        chatId: mockChatId,
+        fieldDefinitionId: mockDefinitionId,
+        value: 'first-ai-value',
+        tenantId: mockTenantId,
+        updatedBy: 0,
+      } as any;
+      valueRepo.find.mockResolvedValue([priorAiValue]);
+
+      await service.upsertValuesInternal(mockChatId, mockTenantId, [
+        { fieldDefinitionId: mockDefinitionId, value: 'second-ai-value' },
+      ]);
+
+      expect(valueRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('creates only the fields that are missing when some already have values', async () => {
+      const secondDefinition = { ...mockDefinition, id: 'def-uuid-2' } as any;
+      mockQb.getMany.mockResolvedValue([mockDefinition, secondDefinition]);
+      const existingValue: ChatCustomFieldValue = {
+        id: 'val-uuid-4',
+        chatId: mockChatId,
+        fieldDefinitionId: mockDefinitionId,
+        value: 'already-set',
+        tenantId: mockTenantId,
+        updatedBy: 0,
+      } as any;
+      valueRepo.find.mockResolvedValue([existingValue]);
+
+      await service.upsertValuesInternal(mockChatId, mockTenantId, [
+        { fieldDefinitionId: mockDefinitionId, value: 'attempted-overwrite' },
+        { fieldDefinitionId: 'def-uuid-2', value: 'new-field-value' },
+      ]);
+
+      expect(valueRepo.save).toHaveBeenCalledWith([
+        expect.objectContaining({
+          fieldDefinitionId: 'def-uuid-2',
+          value: 'new-field-value',
+        }),
+      ]);
+    });
+
+    it('does nothing when values array is empty', async () => {
+      await service.upsertValuesInternal(mockChatId, mockTenantId, []);
+
+      expect(valueRepo.find).not.toHaveBeenCalled();
+      expect(valueRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('ignores fieldDefinitionIds that are not valid/active for the tenant', async () => {
+      mockQb.getMany.mockResolvedValue([]);
+
+      await service.upsertValuesInternal(mockChatId, mockTenantId, aiValues);
+
+      expect(valueRepo.find).not.toHaveBeenCalled();
+      expect(valueRepo.save).not.toHaveBeenCalled();
+    });
+  });
 });
