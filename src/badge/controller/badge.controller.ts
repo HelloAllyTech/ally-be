@@ -28,6 +28,7 @@ import { BadgeService } from '../service/badge.service';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import {
   CreateBadgeDto,
@@ -267,7 +268,11 @@ export class BadgeController {
     status: 200,
     description: 'Badge added to tenants successfully',
   })
-  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @TenantScopedPermissions(
+    [PERMISSIONS.EDIT_ADMIN_BADGES, PERMISSIONS.EDIT_BADGE_TENANT],
+    {},
+    'OR',
+  )
   @Post('/tenants')
   async addBadgeToTenants(
     @CurrentUser() tokenUser: TokenUser,
@@ -314,7 +319,7 @@ export class BadgeController {
     description: 'Returns all badges assigned to the tenant',
     type: TenantBadgeListResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_BADGES_FOR_SETTING])
+  @TenantScopedPermissions([PERMISSIONS.VIEW_ADMIN_BADGES_FOR_SETTING])
   @Get('/tenants/:tenantId')
   async getBadgesForTenant(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
@@ -339,7 +344,11 @@ export class BadgeController {
     status: 200,
     description: 'Badge removed from tenants successfully',
   })
-  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @TenantScopedPermissions(
+    [PERMISSIONS.EDIT_ADMIN_BADGES, PERMISSIONS.EDIT_BADGE_TENANT],
+    {},
+    'OR',
+  )
   @Delete('/tenants')
   async removeBadgeFromTenants(
     @CurrentUser() tokenUser: TokenUser,

@@ -90,7 +90,9 @@ export class SettingsController {
 
   @Put('summary-sections')
   @ApiOperation({
-    summary: 'Update hidden summary sections (super admin only)',
+    summary:
+      'Update hidden summary sections. Super admins may pass any tenantId; ' +
+      'a tenant admin is scoped server-side to their own tenant.',
   })
   @ApiBody({
     schema: {
@@ -105,11 +107,7 @@ export class SettingsController {
     status: 200,
     description: 'Summary sections updated successfully',
   })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden - only super admin can update',
-  })
-  @AuthPermissions([PERMISSIONS.SYSTEM_ACCESS])
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_SUMMARY_FIELDS])
   updateSummarySections(@Body() body: UpdateSummarySectionsDto) {
     return this.service.updateSummarySections(body);
   }

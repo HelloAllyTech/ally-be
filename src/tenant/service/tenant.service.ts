@@ -14,6 +14,7 @@ import { LoggerService } from '../../logger/logger.service';
 import { TenantsRepository } from '../repository/tenant.repository';
 import { Pagination } from 'src/common/type/common.type';
 import { UpdateTenantDto } from '../dto/update-tenant.dto';
+import { UpdateOwnTenantSettingsDto } from '../dto/update-own-tenant-settings.dto';
 import { GetAllTenantsResponseDto } from '../dto/get-tenants.dto';
 import { UserRepository } from '../../user/repository/user.repository';
 import { TenantScenarioSharedService } from './tenant-scenario-shared';
@@ -199,6 +200,42 @@ export class TenantService {
     const tenant = await this.findTenantEntityById(id);
     if (!tenant) return null;
     return this.buildTenantResponse(tenant, options);
+  }
+
+  /**
+   * Returns the caller's OWN tenant (resolved from the JWT), including the
+   * settings/toggle fields the Org. Settings screen renders. Never accepts a
+   * client-supplied tenant id, so a tenant admin can only read their own org.
+   */
+  async getOwnTenant(): Promise<TenantResponseDto | null> {
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
+    return this.findById(tenantId, { includeUserCount: false });
+  }
+
+  /**
+   * Updates ONLY the feature-toggle settings of the caller's own tenant. The
+   * target is always the caller's JWT tenant and only the settings subset is
+   * forwarded to updateTenant — name/code/description/logo are never touched
+   * via this path, so a tenant admin cannot rename or re-key their org.
+   */
+  async updateOwnTenantSettings(
+    dto: UpdateOwnTenantSettingsDto,
+  ): Promise<TenantResponseDto | null> {
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new BadRequestException('Tenant ID is required');
+    }
+    const settingsOnly: UpdateTenantDto = {
+      enabledDashboardIds: dto.enabledDashboardIds,
+      enableMicrophoneMode: dto.enableMicrophoneMode,
+      enableAudioUpload: dto.enableAudioUpload,
+      enableDictationMode: dto.enableDictationMode,
+      hideRankInCommunity: dto.hideRankInCommunity,
+    };
+    return this.updateTenant(tenantId, settingsOnly);
   }
 
   async findByCode(code: string): Promise<TenantResponseDto | null> {
