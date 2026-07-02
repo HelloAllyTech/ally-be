@@ -121,8 +121,8 @@ export class ChatTranscriptService {
         await this.deleteFromS3(deletePresignedUrl);
       }
 
-      if (sm) {
-        // Full success: transcript + summary. The slow post-summary work
+      if (sm && this.isSummaryMeaningful(sm)) {
+        // Full success: transcript + a real summary. The slow post-summary work
         // (custom-field fill + counselor email) runs off the request path.
         await this.chatAiService.addSummary(chatId, sm);
         await this.chatService.updateChat(chatId, {
@@ -132,17 +132,23 @@ export class ChatTranscriptService {
           `process-transcript acked SUCCESS for chat ${chatId} correlationId=${effectiveCorrelationId} elapsedMs=${Date.now() - startedAt}`,
         );
         void this.runPostSummaryTasks(chat, chatId, effectiveCorrelationId);
-      } else if (error) {
-        // Summary generation failed upstream (transcript was delivered). Keep
-        // the transcript viewable and mark the summary retryable (manual button
-        // + cron auto-retry) rather than failing the whole chat.
+      } else if (error || sm) {
+        // Either the summary failed upstream (error), OR a summary payload came
+        // back but it's empty / has no real content — ally-ai returns EXACTLY
+        // `{}` when the transcript has no meaningful content (e.g. a near-empty
+        // or far-field recording that transcribed to a few noise lines). Do NOT
+        // mark such a chat SUCCESS — that produced "Generated" sessions with a
+        // blank/garbage summary. Keep the transcript viewable, preserve the
+        // audio, and mark the summary retryable (manual button + cron) instead.
+        const reason =
+          error ?? 'Summary generation returned no meaningful content';
         await this.markSummaryRetryable(chatId, chat, {
-          reason: error,
+          reason,
           stage: stage ?? 'summarize',
           correlationId: effectiveCorrelationId,
         });
         this.logger.info(
-          `process-transcript saved transcript; summary FAILED (retryable) for chat ${chatId} correlationId=${effectiveCorrelationId}`,
+          `process-transcript saved transcript; summary FAILED (retryable) for chat ${chatId} correlationId=${effectiveCorrelationId} reason="${reason}"`,
         );
       } else {
         // Phase 1 of two-phase delivery: the transcript arrived on its own and
@@ -196,6 +202,23 @@ export class ChatTranscriptService {
       // (idempotent) result — a transient DB blip then self-heals.
       throw err;
     }
+  }
+
+  /**
+   * Whether a summary payload actually contains a usable summary. ally-ai
+   * returns EXACTLY `{}` when the transcript has no meaningful content, and a
+   * summary with no `session_summary` (the core deliverable) isn't a real
+   * summary either. Guards the SUCCESS path so a blank/hollow summary — e.g.
+   * from a near-empty or far-field recording — is treated as a summary failure
+   * (retryable) rather than a false "Generated" success.
+   */
+  private isSummaryMeaningful(summary: unknown): boolean {
+    if (!summary || typeof summary !== 'object') return false;
+    const obj = summary as Record<string, unknown>;
+    if (Object.keys(obj).length === 0) return false;
+    // ally-ai sends snake_case; be tolerant of a camelCase payload too.
+    const sessionSummary = obj.session_summary ?? obj.sessionSummary;
+    return typeof sessionSummary === 'string' && sessionSummary.trim() !== '';
   }
 
   /**
