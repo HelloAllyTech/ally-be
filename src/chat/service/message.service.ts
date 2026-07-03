@@ -125,6 +125,48 @@ export class MessageService {
     };
   }
 
+  /**
+   * Store a manual scribe note's dictated transcript as the note's transcript.
+   * The note's chat is DICTATION mode, so `getMessages` concatenates the TEXT
+   * message rows into a single plain-text block for the Transcript view. We
+   * keep the transcript as ONE encrypted TEXT message and REPLACE it on every
+   * save: a note session can dictate several times (the caller accumulates the
+   * full text and re-sends it), and replacing is idempotent under retries.
+   *
+   * Only TEXT rows are removed, so any non-transcript message types are left
+   * untouched. Delete + insert run in a single transaction so a reader never
+   * observes a note with no transcript mid-write.
+   */
+  async replaceDictationTranscript(
+    chat: { id: number; counselorId?: number | null },
+    transcript: string,
+  ): Promise<void> {
+    const tenantId = ExecutionManager.getTenantId()!;
+    const encryptedContent = await this.cryptoService.encrypt(
+      transcript,
+      this.config.phiData?.phiDataEncryptionKey,
+    );
+
+    await this.messageRepository.manager.transaction(async (em) => {
+      const repo = em.getRepository(Message);
+      await repo.delete({ chatId: chat.id, type: MessageType.TEXT, tenantId });
+      await repo.save(
+        repo.create({
+          chatId: chat.id,
+          senderId: chat.counselorId ?? undefined,
+          type: MessageType.TEXT,
+          content: encryptedContent,
+          startSeconds: 0,
+          tenantId,
+        }),
+      );
+    });
+
+    this.logger.info(
+      `Replaced dictation transcript for chatId: ${chat.id} (chars=${transcript.length})`,
+    );
+  }
+
   async getChatHistoryForAIService(
     chatId: number,
     pagination?: Pagination,
