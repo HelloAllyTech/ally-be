@@ -89,7 +89,7 @@ export class RoleplaySessionLogsService {
       latencyRow,
       recording,
       feedback,
-      optimisationGoals,
+      agentTestCases,
     ] = await Promise.all([
       this.roleplaySessionLogsRepository.findSummary(id),
       this.roleplaySessionLogsRepository.findEvents(id),
@@ -98,7 +98,7 @@ export class RoleplaySessionLogsService {
       this.roleplaySessionLogsRepository.getLatencyBySession(id),
       this.roleplaySessionLogsRepository.getRecordingBySession(id),
       this.roleplaySessionLogsRepository.getFeedbackBySession(id),
-      this.roleplaySessionLogsRepository.findOptimisationGoals(),
+      this.roleplaySessionLogsRepository.findAgentTestCases(),
     ]);
 
     const usage = this.buildUsage(usageRows);
@@ -129,7 +129,7 @@ export class RoleplaySessionLogsService {
           }
         : null,
       actorEvaluation: this.buildActorEvaluation(row),
-      optimisationGoals: optimisationGoals.map((g) => ({
+      agentTestCases: agentTestCases.map((g) => ({
         id: g.id,
         title: g.title,
         category: g.category,

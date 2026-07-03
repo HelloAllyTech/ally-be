@@ -6,7 +6,7 @@
  *
  * Distinct from {@link GeneratableField} (the studio's per-field regenerate set)
  * on purpose: the copilot is driven by the free-text actor brief + competency +
- * optimisation goals, not by an already-populated scenario, so it has its own
+ * agent test cases, not by an already-populated scenario, so it has its own
  * prompt codes, variables, and output parsing.
  */
 export enum AgentBuilderField {

@@ -3226,7 +3226,7 @@ export class ScenarioService {
 
   /**
    * Agent Builder Copilot: generate ONE Basic Settings field from the
-   * wizard's three inputs (actor brief + competency + optimisation goals). Each
+   * wizard's three inputs (actor brief + competency + agent test cases). Each
    * field has its own editable prompt template (src/prompts/agent_builder/)
    * and is fired independently in parallel by the frontend, so the results
    * paint into the form as each returns. Provider routing mirrors generateField.
@@ -3234,8 +3234,7 @@ export class ScenarioService {
   async generateAgentBuilderField(
     dto: GenerateAgentBuilderFieldDto,
   ): Promise<GenerateAgentBuilderFieldResponseDto> {
-    const { field, actorDescription, competency, optimisationGoals, model } =
-      dto;
+    const { field, actorDescription, competency, agentTestCases, model } = dto;
 
     const autofillServiceRegistry = new Map<
       string,
@@ -3258,7 +3257,7 @@ export class ScenarioService {
     const variables: Record<string, string> = {
       actorDescription: actorDescription ?? '',
       competency: competency ?? '',
-      optimisationGoals: optimisationGoals ?? '',
+      agentTestCases: agentTestCases ?? '',
       numKnowledgeSources: String(numKnowledgeSources),
     };
 

@@ -16,7 +16,7 @@ export const ENDPOINTS = {
   SCENARIO_REPORT_CANCEL: 'api/v1/scenario-report/cancel',
   SCENARIO_EVALUATION: 'api/v1/summary/scenario/evaluate',
   // ai-learn endpoint that scores the roleplay ACTOR agent of a REAL session
-  // against the superadmin-configured optimisation goals (LLM judge over the
+  // against the superadmin-configured agent test cases (LLM judge over the
   // session transcript). Fire-and-forget; ai-learn webhooks the result back.
   ACTOR_GOAL_EVALUATION: 'api/v1/scenario-session/actor-evaluation',
 } as const;

@@ -52,7 +52,7 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'selectedMainPromptCode',
   'selectedEvaluatorPromptCode',
   'states',
-  'optimisationGoalIds',
+  'agentTestCaseIds',
 ];
 
 /** Scenario fields persisted as dedicated `scenarios` columns. */
@@ -173,7 +173,7 @@ export const mapCreateScenarioRequestToEntity = (
       selectedMainPromptCode: scenario.selectedMainPromptCode,
       selectedEvaluatorPromptCode: scenario.selectedEvaluatorPromptCode,
       states: scenario.states,
-      optimisationGoalIds: scenario.optimisationGoalIds,
+      agentTestCaseIds: scenario.agentTestCaseIds,
     },
   };
 };

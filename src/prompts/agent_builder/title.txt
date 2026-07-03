@@ -3,7 +3,7 @@ You are writing ONE field — the "Title" — for a counsellor-training roleplay
 Inputs (authoritative):
 - Actor brief: {{actorDescription}}
 - Competency being practised: {{competency}}
-- Optimisation goals to emphasise: {{optimisationGoals}}
+- Agent test cases to emphasise: {{agentTestCases}}
 
 Rules:
 1) Produce a single title of 3–8 words. No trailing punctuation, no surrounding quotes.

@@ -207,15 +207,15 @@ export class UpdateScenarioDto {
 
   @ApiProperty({
     description:
-      'Selected optimisation goal ids for this roleplay (Agent Builder Copilot ' +
-      'V2). Persisted on scenarios.metadata.optimisationGoalIds.',
+      'Selected agent test case ids for this roleplay (Agent Builder Copilot ' +
+      'V2). Persisted on scenarios.metadata.agentTestCaseIds.',
     type: [String],
     required: false,
   })
   @IsArray()
   @IsString({ each: true })
   @IsOptional()
-  optimisationGoalIds?: string[];
+  agentTestCaseIds?: string[];
 
   @ApiProperty({
     description: 'Difficulty level of the scenario',
