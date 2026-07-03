@@ -484,6 +484,40 @@ export class ChatService {
     );
   }
 
+  /**
+   * Save a manual scribe note's dictated transcript. Stores the text as the
+   * note's transcript (a TEXT message on the note's DICTATION chat) so it shows
+   * in the Transcript view when the note is opened later, and rebuilds the flat
+   * `call_details.transcript`. Idempotent — re-sending replaces the transcript.
+   */
+  async setNoteTranscript(
+    chatId: number,
+    userId: number,
+    transcript: string,
+  ): Promise<{ success: boolean }> {
+    const chat = await this.chatRepository.findOne({
+      where: { id: chatId, tenantId: ExecutionManager.getTenantId() },
+    });
+    if (!chat) {
+      throw new HttpException('Chat not found', 404);
+    }
+
+    const trimmed = (transcript ?? '').trim();
+    if (!trimmed) {
+      throw new HttpException('Transcript is empty', 400);
+    }
+
+    await this.messageService.replaceDictationTranscript(chat, trimmed);
+    // Rebuild the flat, encrypted call_details.transcript from the messages so
+    // it stays in sync with the messages-backed Transcript view.
+    await this.callDetailsService.updateMessageStatistics(chat);
+
+    this.logger.info(
+      `setNoteTranscript - chatId:${chatId} by userId:${userId} (chars=${trimmed.length})`,
+    );
+    return { success: true };
+  }
+
   async handleChatEnded(chat: Chat) {
     return this.callDetailsService.handleChatEnded(chat);
   }

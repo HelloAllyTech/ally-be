@@ -59,6 +59,7 @@ import { ChatTranscriptService } from '../service/chat-transcript.service';
 import { AudioUploadService } from '../service/audio-upload.service';
 import { VoiceNoteService } from '../service/voice-note.service';
 import { GenerateNoteFromAudioResponseDto } from '../dto/voice-note.dto';
+import { SetNoteTranscriptDto } from '../dto/set-note-transcript.dto';
 import { TranscriptRequestDto } from '../dto/transcript.dto';
 import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { ToggleArchiveStatusDto } from '../dto/toggle-archive-status.dto';
@@ -114,6 +115,21 @@ export class ChatController {
     @Body('languageHint') languageHint?: string,
   ): Promise<GenerateNoteFromAudioResponseDto> {
     return this.voiceNoteService.generateFromAudio(audio, fields, languageHint);
+  }
+
+  @Put(':id/transcript')
+  @AuthPermissions([PERMISSIONS.EDIT_CALL_DETAILS])
+  @ApiOperation({
+    summary:
+      "Save a manual scribe note's dictated transcript so it appears in the Transcript view.",
+  })
+  @ApiResponse({ status: 200, description: 'Transcript saved.' })
+  async setNoteTranscript(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetNoteTranscriptDto,
+    @CurrentUser() tokenUser: TokenUser,
+  ): Promise<{ success: boolean }> {
+    return this.service.setNoteTranscript(id, tokenUser.id, dto.transcript);
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_CHAT])

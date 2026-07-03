@@ -518,4 +518,61 @@ describe('MessageService', () => {
       });
     });
   });
+
+  describe('replaceDictationTranscript', () => {
+    let emRepo: {
+      delete: jest.Mock;
+      create: jest.Mock;
+      save: jest.Mock;
+    };
+
+    beforeEach(() => {
+      emRepo = {
+        delete: jest.fn().mockResolvedValue({ affected: 1 }),
+        create: jest.fn((entity) => entity),
+        save: jest.fn().mockResolvedValue(undefined),
+      };
+      (messageRepository as any).manager = {
+        transaction: jest.fn(async (cb: (em: any) => Promise<void>) =>
+          cb({ getRepository: () => emRepo }),
+        ),
+      };
+    });
+
+    it('encrypts the transcript and stores it as a single TEXT message', async () => {
+      await service.replaceDictationTranscript(
+        { id: 7, counselorId: 200 },
+        'client mentioned anxiety',
+      );
+
+      expect(cryptoService.encrypt).toHaveBeenCalledWith(
+        'client mentioned anxiety',
+        'test-key',
+      );
+      expect(emRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatId: 7,
+          senderId: 200,
+          type: MessageType.TEXT,
+          content: 'encrypted_client mentioned anxiety',
+          startSeconds: 0,
+          tenantId: mockTenantId,
+        }),
+      );
+      expect(emRepo.save).toHaveBeenCalledTimes(1);
+    });
+
+    it('replaces any existing transcript (deletes prior TEXT rows first)', async () => {
+      await service.replaceDictationTranscript(
+        { id: 7, counselorId: 200 },
+        'v2',
+      );
+
+      expect(emRepo.delete).toHaveBeenCalledWith({
+        chatId: 7,
+        type: MessageType.TEXT,
+        tenantId: mockTenantId,
+      });
+    });
+  });
 });
