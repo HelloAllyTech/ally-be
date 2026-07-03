@@ -484,11 +484,11 @@ export class RoleplaySessionLogsRepository {
   }
 
   /**
-   * All superadmin-configured optimisation goals (global; not tenant-scoped).
+   * All superadmin-configured agent test cases (global; not tenant-scoped).
    * These are the rubric the roleplay actor is scored against, shown alongside
    * the per-session evaluation.
    */
-  async findOptimisationGoals(): Promise<
+  async findAgentTestCases(): Promise<
     Array<{
       id: string;
       title: string;
@@ -502,7 +502,7 @@ export class RoleplaySessionLogsRepository {
       .addSelect('g."title"', 'title')
       .addSelect('g."category"', 'category')
       .addSelect('g."description"', 'description')
-      .from('optimisation_goals', 'g')
+      .from('agent_test_cases', 'g')
       .orderBy('g."category"', 'ASC')
       .addOrderBy('g."title"', 'ASC')
       .getRawMany();

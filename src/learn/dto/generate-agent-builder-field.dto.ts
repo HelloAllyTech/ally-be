@@ -43,12 +43,12 @@ export class GenerateAgentBuilderFieldDto {
 
   @ApiProperty({
     description:
-      'Selected optimisation goals as a human-readable, comma-joined string',
+      'Selected agent test cases as a human-readable, comma-joined string',
     required: false,
   })
   @IsString()
   @IsOptional()
-  optimisationGoals?: string;
+  agentTestCases?: string;
 
   @ApiProperty({
     description:

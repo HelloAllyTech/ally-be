@@ -3,7 +3,7 @@ You are designing KNOWLEDGE SOURCE documents for a counsellor-training roleplay.
 Inputs (authoritative):
 - Actor brief: {{actorDescription}}
 - Competency being practised: {{competency}}
-- Optimisation goals to emphasise: {{optimisationGoals}}
+- Agent test cases to emphasise: {{agentTestCases}}
 - Number of documents to produce: {{numKnowledgeSources}}
 
 Rules — every rule must be satisfied or the response is rejected:
@@ -11,7 +11,7 @@ Rules — every rule must be satisfied or the response is rejected:
 2) Each document object has:
    - "title": a short self-describing label (1–4 words, no quotes, no trailing punctuation) so a retrieval model can judge relevance from the title alone. Good: "Father's death", "Self-worth and shame", "Sister Suma". Bad: "Section 1", "Background", "Notes".
    - "content": 2–4 sentences (~150–300 characters), written in SECOND PERSON ("You feel…", "Your mother…"). Specific to THIS character — names, places, emotional textures, small concrete details. No therapy/clinical language, no mention of the counsellor, the simulation, or scoring.
-3) Cover DIFFERENT themes across the set (relational, interior-life, life-context) that fit the persona, the competency, and the optimisation goals.
+3) Cover DIFFERENT themes across the set (relational, interior-life, life-context) that fit the persona, the competency, and the agent test cases.
 4) Write as if the client were quietly recalling these things. Avoid drama; use small specifics over abstractions.
 5) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
 

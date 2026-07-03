@@ -39,7 +39,7 @@ describe('RoleplaySessionLogsService', () => {
       getLatencyBySession: jest.fn().mockResolvedValue({ turnCount: 0 }),
       getRecordingBySession: jest.fn().mockResolvedValue(null),
       getFeedbackBySession: jest.fn().mockResolvedValue(null),
-      findOptimisationGoals: jest.fn().mockResolvedValue([]),
+      findAgentTestCases: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<RoleplaySessionLogsRepository>;
 
     service = new RoleplaySessionLogsService(repo);
