@@ -42,6 +42,7 @@ import { ChatSharedService } from './service/chat-shared.service';
 import { ChatSchedulerRegistrationService } from './service/chat-scheduler-registration.service';
 import { ScribeSessionReviewModule } from 'src/scribe-session-review/scribe-session-review.module';
 import { CustomFieldsModule } from '../custom-fields/custom-fields.module';
+import { PromptModule } from '../prompt/prompt.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { CustomFieldsModule } from '../custom-fields/custom-fields.module';
     NotificationModule,
     ScribeSessionReviewModule,
     forwardRef(() => CustomFieldsModule),
+    PromptModule,
   ],
   controllers: [ChatController, AudioUploadController],
   providers: [

@@ -8,6 +8,8 @@ import OpenAI, { toFile } from 'openai';
 
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
+import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import {
   GenerateNoteFromAudioResponseDto,
   VoiceNoteFieldSpec,
@@ -47,6 +49,60 @@ const VALID_FIELD_TYPES: ReadonlySet<VoiceNoteFieldType> = new Set([
   'boolean',
 ]);
 
+// Prompt codes for the (superadmin-editable) extraction templates. These map to
+// src/prompts/scribe_voice_note/*.txt and surface in Admin > Prompt Management.
+const SYSTEM_PROMPT_CODE = toPromptCode(
+  'scribe_voice_note',
+  'field_extraction_system',
+);
+const USER_PROMPT_CODE = toPromptCode(
+  'scribe_voice_note',
+  'field_extraction_user',
+);
+
+// Fallbacks used when the prompt hasn't been synced to the DB yet (e.g. a fresh
+// deploy before PromptsSyncService has run). These MUST stay in sync with the
+// .txt files under src/prompts/scribe_voice_note/ — those files are the editable
+// source of truth. The user template's {{transcript}} and {{fields}} runtime
+// variables are filled by renderTemplate before the call.
+const DEFAULT_SYSTEM_PROMPT = [
+  'You extract structured counselling session-note fields from a transcript',
+  "of a counsellor's spoken dictation about a session.",
+  '',
+  'You are given the transcript and a JSON list of target fields. Each field',
+  'has an "id", a human-readable "label", a "type", and optionally an',
+  '"options" list (allowed choices) and a "hint".',
+  '',
+  'Return ONLY a single JSON object mapping field id → value, containing an',
+  'entry for every field you can confidently fill from the transcript.',
+  '',
+  'Rules:',
+  '- Only include a field when the transcript clearly supports a value. Omit',
+  '  any field with no basis — never guess or invent information.',
+  '- Be especially careful with clinical fields (risk, self-harm, suicidal',
+  '  ideation, trauma, abuse, diagnosis, medication): fill them ONLY when the',
+  '  counsellor explicitly states them.',
+  '- For "select" and "boolean" fields, the value MUST be exactly one of the',
+  '  provided options (verbatim). For "multiselect", return a comma-separated',
+  '  list drawn only from the provided options.',
+  '- For "multiline" write clear, concise prose; short newline-separated',
+  '  points are fine. For "text" keep it short. For "number" return digits',
+  '  only. For "date" return the date in a clear form.',
+  '- Do not add commentary, markdown, or fields that were not requested.',
+  '',
+  'Output must be a single JSON object and nothing else.',
+].join('\n');
+
+const DEFAULT_USER_PROMPT_TEMPLATE = [
+  'TRANSCRIPT:',
+  '"""',
+  '{{transcript}}',
+  '"""',
+  '',
+  'FIELDS:',
+  '{{fields}}',
+].join('\n');
+
 /**
  * Turns a counsellor's spoken dictation into structured scribe-note field
  * values. Two steps, both in-process:
@@ -66,7 +122,10 @@ export class VoiceNoteService {
   private readonly transcriptionModel: string;
   private readonly extractionModel: string;
 
-  constructor(private readonly configService: AppConfigService) {
+  constructor(
+    private readonly configService: AppConfigService,
+    private readonly promptSharedService: PromptSharedService,
+  ) {
     this.openai = new OpenAI({ apiKey: this.configService.openai.apiKey });
     this.anthropic = new Anthropic({
       apiKey: this.configService.anthropic.apiKey,
@@ -147,8 +206,10 @@ export class VoiceNoteService {
     fields: VoiceNoteFieldSpec[],
   ): Promise<VoiceNoteFieldValueDto[]> {
     const truncated = transcript.slice(0, MAX_TRANSCRIPT_CHARS);
-    const system = this.buildSystemPrompt();
-    const user = this.buildUserPrompt(truncated, fields);
+    const [system, user] = await Promise.all([
+      this.buildSystemPrompt(),
+      this.buildUserPrompt(truncated, fields),
+    ]);
 
     const startedAt = Date.now();
     let raw: string;
@@ -183,39 +244,28 @@ export class VoiceNoteService {
     return values;
   }
 
-  private buildSystemPrompt(): string {
-    return [
-      'You extract structured counselling session-note fields from a transcript',
-      "of a counsellor's spoken dictation about a session.",
-      '',
-      'You are given the transcript and a JSON list of target fields. Each field',
-      'has an "id", a human-readable "label", a "type", and optionally an',
-      '"options" list (allowed choices) and a "hint".',
-      '',
-      'Return ONLY a single JSON object mapping field id → value, containing an',
-      'entry for every field you can confidently fill from the transcript.',
-      '',
-      'Rules:',
-      '- Only include a field when the transcript clearly supports a value. Omit',
-      '  any field with no basis — never guess or invent information.',
-      '- Be especially careful with clinical fields (risk, self-harm, suicidal',
-      '  ideation, trauma, abuse, diagnosis, medication): fill them ONLY when the',
-      '  counsellor explicitly states them.',
-      '- For "select" and "boolean" fields, the value MUST be exactly one of the',
-      '  provided options (verbatim). For "multiselect", return a comma-separated',
-      '  list drawn only from the provided options.',
-      '- For "multiline" write clear, concise prose; short newline-separated',
-      '  points are fine. For "text" keep it short. For "number" return digits',
-      '  only. For "date" return the date in a clear form.',
-      '- Do not add commentary, markdown, or fields that were not requested.',
-      'Output must be a single JSON object and nothing else.',
-    ].join('\n');
+  /**
+   * The system prompt is a superadmin-editable template
+   * (src/prompts/scribe_voice_note/field_extraction_system.txt, editable in
+   * Admin > Prompt Management). Falls back to the bundled default if the prompt
+   * hasn't been synced to the DB yet.
+   */
+  private async buildSystemPrompt(): Promise<string> {
+    const template =
+      await this.promptSharedService.getPromptByCode(SYSTEM_PROMPT_CODE);
+    return template?.trim() || DEFAULT_SYSTEM_PROMPT;
   }
 
-  private buildUserPrompt(
+  /**
+   * The user prompt is a superadmin-editable template
+   * (src/prompts/scribe_voice_note/field_extraction_user.txt) carrying two
+   * runtime variables — `{{transcript}}` (the dictation transcript) and
+   * `{{fields}}` (the JSON array of target fields) — which are substituted here.
+   */
+  private async buildUserPrompt(
     transcript: string,
     fields: VoiceNoteFieldSpec[],
-  ): string {
+  ): Promise<string> {
     const fieldsJson = JSON.stringify(
       fields.map((f) => ({
         id: f.id,
@@ -225,15 +275,32 @@ export class VoiceNoteService {
         ...(f.hint ? { hint: f.hint } : {}),
       })),
     );
-    return [
-      'TRANSCRIPT:',
-      '"""',
-      transcript,
-      '"""',
-      '',
-      'FIELDS:',
-      fieldsJson,
-    ].join('\n');
+    const template =
+      (
+        await this.promptSharedService.getPromptByCode(USER_PROMPT_CODE)
+      )?.trim() || DEFAULT_USER_PROMPT_TEMPLATE;
+    return this.renderTemplate(template, { transcript, fields: fieldsJson });
+  }
+
+  /**
+   * Substitute `{{var}}` / `<var>` placeholders in a prompt template with their
+   * runtime values in a single left-to-right pass, so injected content (which
+   * may itself contain braces or angle brackets, e.g. the fields JSON) is never
+   * re-scanned. Unknown `{{placeholders}}` collapse to empty; unknown `<tokens>`
+   * (which occur naturally in prose) are left untouched.
+   */
+  private renderTemplate(
+    template: string,
+    variables: Record<string, string>,
+  ): string {
+    return template.replace(
+      /\{\{\s*(\w+)\s*\}\}|<(\w+)>/g,
+      (match, braceKey?: string, angleKey?: string) => {
+        const key = braceKey ?? angleKey;
+        if (key && key in variables) return variables[key] ?? '';
+        return braceKey !== undefined ? '' : match;
+      },
+    );
   }
 
   // ── Parsing / validation helpers ──────────────────────────────────────────
