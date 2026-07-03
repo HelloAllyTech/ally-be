@@ -1,0 +1,5 @@
+{
+  "name": "Scribe Voice Note: Field Extraction (User)",
+  "description": "User message for the Scribe Create Note voice-dictation feature. The runtime variables {{transcript}} (the dictated speech-to-text transcript) and {{fields}} (a JSON array of the target note fields) are substituted before the extraction call.",
+  "category": "Scribe"
+}

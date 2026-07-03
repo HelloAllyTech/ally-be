@@ -1,0 +1,5 @@
+{
+  "name": "Scribe Voice Note: Field Extraction (System)",
+  "description": "System instructions for the Scribe Create Note voice-dictation feature. Governs which session-note fields the model may fill from a counsellor's spoken transcript, the clinical-safety rules, per-type value formatting, and the JSON-only output contract.",
+  "category": "Scribe"
+}
