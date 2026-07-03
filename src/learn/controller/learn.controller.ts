@@ -807,6 +807,13 @@ export class LearnController {
     type: Boolean,
     description: 'When true, include message tags in the response',
   })
+  @ApiQuery({
+    name: 'languageCode',
+    required: false,
+    type: String,
+    description:
+      'When provided (and not "en"), returns translated message content',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_SESSION_SCENARIO_MESSAGES])
   @Get('scenario-session/:scenarioSessionId/messages')
   async getMessagesByScenarioSessionId(
@@ -816,6 +823,7 @@ export class LearnController {
     @Query('sortBy') sortBy?: string,
     @Query('order') order: SortOrder = SortOrder.ASC,
     @Query('includeTags') includeTags?: boolean,
+    @Query('languageCode') languageCode?: string,
   ) {
     return this.scenarioSessionService.getMessagesByScenarioSessionId(
       scenarioSessionId,
@@ -826,6 +834,7 @@ export class LearnController {
         order,
       },
       { includeTags: !!includeTags },
+      languageCode,
     );
   }
 

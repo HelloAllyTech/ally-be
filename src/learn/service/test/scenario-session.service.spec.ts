@@ -57,6 +57,7 @@ import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
 import { SimulationCapacityException } from 'src/learn/exception/simulation-capacity.exception';
 import { ScenarioSessionRecordingService } from '../scenario-session-recording.service';
 import { ScenarioSessionEvaluationService } from '../scenario-session-evaluation.service';
+import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -98,6 +99,7 @@ describe('ScenarioSessionService', () => {
   let scenarioEventsRepository: jest.Mocked<ScenarioEventsRepository>;
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
+  let transcriptTranslationService: jest.Mocked<TranscriptTranslationService>;
 
   const mockTenantId = 'tenant-123';
   const mockUserId = 456;
@@ -347,6 +349,10 @@ describe('ScenarioSessionService', () => {
       stopScenarioSessionRecording: jest.fn(),
     };
 
+    const mockTranscriptTranslationService = {
+      translateMessages: jest.fn().mockResolvedValue(new Map()),
+    };
+
     mockConfigService = {
       simulationCredits: {
         lifespanSecondsPerCredit: 60,
@@ -508,6 +514,10 @@ describe('ScenarioSessionService', () => {
           provide: ScenarioSessionEvaluationService,
           useValue: { triggerForSession: jest.fn() },
         },
+        {
+          provide: TranscriptTranslationService,
+          useValue: mockTranscriptTranslationService,
+        },
       ],
     }).compile();
 
@@ -538,6 +548,7 @@ describe('ScenarioSessionService', () => {
     scenarioEventsRepository = module.get(ScenarioEventsRepository);
     scenariosRepository = module.get(ScenariosRepository) as any;
     sharedLanguageService = module.get(SharedLanguageService);
+    transcriptTranslationService = module.get(TranscriptTranslationService);
   });
 
   afterEach(() => {
@@ -565,6 +576,92 @@ describe('ScenarioSessionService', () => {
       expect(scenarioPathSharedService).toBeDefined();
       expect(sessionEventTranslationService).toBeDefined();
       expect(reviewSharedService).toBeDefined();
+    });
+  });
+
+  describe('getMessagesByScenarioSessionId', () => {
+    const mockScenarioSessionId = 'session-abc';
+    const mockMessages = [
+      { id: 1, content: 'Hello there' },
+      { id: 2, content: 'How are you?' },
+    ];
+
+    beforeEach(() => {
+      scenarioSharedService.getMessagesByScenarioSessionId.mockResolvedValue({
+        messages: mockMessages as any,
+        count: mockMessages.length,
+      });
+    });
+
+    it('should return original content when languageCode is en', async () => {
+      const result = await service.getMessagesByScenarioSessionId(
+        mockScenarioSessionId,
+        {},
+        undefined,
+        'en',
+      );
+
+      expect(
+        transcriptTranslationService.translateMessages,
+      ).not.toHaveBeenCalled();
+      expect(result.messages).toEqual(mockMessages);
+    });
+
+    it('should return original content when languageCode is omitted', async () => {
+      const result = await service.getMessagesByScenarioSessionId(
+        mockScenarioSessionId,
+        {},
+      );
+
+      expect(
+        transcriptTranslationService.translateMessages,
+      ).not.toHaveBeenCalled();
+      expect(result.messages).toEqual(mockMessages);
+    });
+
+    it('should return translated content when a non-original languageCode is provided', async () => {
+      transcriptTranslationService.translateMessages.mockResolvedValue(
+        new Map([
+          [1, 'नमस्ते'],
+          [2, 'आप कैसे हैं?'],
+        ]),
+      );
+
+      const result = await service.getMessagesByScenarioSessionId(
+        mockScenarioSessionId,
+        {},
+        undefined,
+        'hi',
+      );
+
+      expect(
+        transcriptTranslationService.translateMessages,
+      ).toHaveBeenCalledWith(
+        'scenario',
+        [
+          { id: 1, content: 'Hello there' },
+          { id: 2, content: 'How are you?' },
+        ],
+        'hi',
+      );
+      expect(result.messages[0].content).toBe('नमस्ते');
+      expect(result.messages[1].content).toBe('आप कैसे हैं?');
+    });
+
+    it('should fall back to original content for messages missing a translation', async () => {
+      transcriptTranslationService.translateMessages.mockResolvedValue(
+        new Map([[1, 'नमस्ते']]),
+      );
+
+      const result = await service.getMessagesByScenarioSessionId(
+        mockScenarioSessionId,
+        {},
+        undefined,
+        'hi',
+      );
+
+      expect(result.messages[0].content).toBe('नमस्ते');
+      expect(result.messages[1].content).toBe('How are you?');
     });
   });
 

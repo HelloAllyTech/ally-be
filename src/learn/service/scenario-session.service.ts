@@ -116,6 +116,7 @@ import { convertTimestampNsToDate } from 'src/common/util/date.util';
 import { EgressInfo } from 'livekit-server-sdk';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
+import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
 import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
@@ -158,6 +159,7 @@ export class ScenarioSessionService {
     private sharedLanguageService: SharedLanguageService,
     private sessionEventTranslationService: SessionEventTranslationService,
     private scenarioSessionEvaluationService: ScenarioSessionEvaluationService,
+    private transcriptTranslationService: TranscriptTranslationService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -166,12 +168,32 @@ export class ScenarioSessionService {
     scenarioSessionId: string,
     pagination: Pagination,
     options?: { includeTags?: boolean },
+    languageCode?: string,
   ) {
-    return this.scenarioSharedService.getMessagesByScenarioSessionId(
-      scenarioSessionId,
-      pagination,
-      options,
-    );
+    const result =
+      await this.scenarioSharedService.getMessagesByScenarioSessionId(
+        scenarioSessionId,
+        pagination,
+        options,
+      );
+
+    if (!languageCode || languageCode === 'en') {
+      return result;
+    }
+
+    const translations =
+      await this.transcriptTranslationService.translateMessages(
+        'scenario',
+        result.messages.map((m) => ({ id: m.id, content: m.content })),
+        languageCode,
+      );
+
+    const messages = result.messages.map((m) => {
+      const translatedContent = translations.get(m.id);
+      return translatedContent ? { ...m, content: translatedContent } : m;
+    });
+
+    return { ...result, messages };
   }
 
   async getScenarioSessionSkills(

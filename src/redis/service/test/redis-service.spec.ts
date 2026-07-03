@@ -181,4 +181,32 @@ describe('RedisService', () => {
       expect(result).toEqual({ a: '1', b: '2' });
     });
   });
+
+  describe('acquireLock', () => {
+    it('should return true when SET NX succeeds', async () => {
+      mockRedis.set.mockResolvedValue('OK');
+      const result = await service.acquireLock('lockkey', 30);
+      expect(mockRedis.set).toHaveBeenCalledWith(
+        'testprefix:lockkey',
+        '1',
+        'EX',
+        30,
+        'NX',
+      );
+      expect(result).toBe(true);
+    });
+
+    it('should return false when lock is already held', async () => {
+      mockRedis.set.mockResolvedValue(null);
+      const result = await service.acquireLock('lockkey', 30);
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('releaseLock', () => {
+    it('should delete the lock key', async () => {
+      await service.releaseLock('lockkey');
+      expect(mockRedis.del).toHaveBeenCalledWith('testprefix:lockkey');
+    });
+  });
 });

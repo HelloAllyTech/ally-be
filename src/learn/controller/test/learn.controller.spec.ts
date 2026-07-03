@@ -758,6 +758,7 @@ describe('LearnController', () => {
         scenarioSessionId,
         { limit: 10, offset: 0, sortBy: 'createdAt', order: SortOrder.ASC },
         { includeTags: true },
+        undefined,
       );
     });
 
@@ -788,6 +789,39 @@ describe('LearnController', () => {
           order: SortOrder.ASC,
         },
         { includeTags: false },
+        undefined,
+      );
+    });
+
+    it('should pass languageCode through to the service', async () => {
+      const scenarioSessionId = 'session-789';
+      scenarioSessionService.getMessagesByScenarioSessionId.mockResolvedValue({
+        messages: [],
+        count: 0,
+      } as any);
+
+      await controller.getMessagesByScenarioSessionId(
+        scenarioSessionId,
+        undefined,
+        undefined,
+        undefined,
+        SortOrder.ASC,
+        false,
+        'hi',
+      );
+
+      expect(
+        scenarioSessionService.getMessagesByScenarioSessionId,
+      ).toHaveBeenCalledWith(
+        scenarioSessionId,
+        {
+          limit: undefined,
+          offset: undefined,
+          sortBy: undefined,
+          order: SortOrder.ASC,
+        },
+        { includeTags: false },
+        'hi',
       );
     });
   });
