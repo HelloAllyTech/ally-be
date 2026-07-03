@@ -235,6 +235,42 @@ export class SettingsController {
     );
   }
 
+  @Get('scribe-voice-note-enabled')
+  @ApiOperation({
+    summary:
+      'Get whether scribe voice-note (mic dictation) is enabled for the org',
+  })
+  @ApiQuery({ name: 'tenantId', required: false, type: String })
+  @ApiResponse({ status: 200 })
+  @AuthPermissions([PERMISSIONS.VIEW_SETTINGS_CUSTOM_FIELD_TYPES])
+  getScribeVoiceNoteEnabled(@Query('tenantId') tenantId?: string) {
+    return this.service.getScribeVoiceNoteEnabled(tenantId);
+  }
+
+  @Put('scribe-voice-note-enabled')
+  @ApiOperation({
+    summary: 'Enable or disable scribe voice-note (mic dictation) for the org',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        tenantId: { type: 'string' },
+        enabled: { type: 'boolean' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200 })
+  @AuthPermissions([PERMISSIONS.EDIT_SETTINGS_CUSTOM_FIELD_TYPES])
+  updateScribeVoiceNoteEnabled(
+    @Body() body: { tenantId: string; enabled: boolean },
+  ) {
+    return this.service.updateScribeVoiceNoteEnabled(
+      body.tenantId,
+      body.enabled,
+    );
+  }
+
   @Put('custom-field-types')
   @ApiOperation({
     summary: 'Update enabled custom field types (superadmin only)',
