@@ -23,6 +23,12 @@ export type PromptResponse = {
   /** When true, this prompt declares a States section; studio renders the state editor. */
   hasStates?: boolean;
   usesBlocks?: string[];
+  /** Prompt-level LLM provider override ('openai' | 'gemini' | 'anthropic'). */
+  provider?: string;
+  /** Prompt-level LLM model override. */
+  model?: string;
+  /** Prompt-level LLM sampling temperature override (0–2). */
+  temperature?: number;
 };
 
 export type PromptDetailResponse = {
@@ -43,6 +49,12 @@ export type PromptDetailResponse = {
   promptType?: string;
   hasStates?: boolean;
   usesBlocks?: string[];
+  /** Prompt-level LLM provider override ('openai' | 'gemini' | 'anthropic'). */
+  provider?: string;
+  /** Prompt-level LLM model override. */
+  model?: string;
+  /** Prompt-level LLM sampling temperature override (0–2). */
+  temperature?: number;
 };
 
 export type PromptsWithPromptCode = {
@@ -50,6 +62,12 @@ export type PromptsWithPromptCode = {
   promptCode: string;
   availableVariables?: AvailableVariableEntry[];
   hasStates?: boolean;
+  /** Prompt-level LLM provider override; forwarded to the runtime. */
+  provider?: string;
+  /** Prompt-level LLM model override; forwarded to the runtime. */
+  model?: string;
+  /** Prompt-level LLM sampling temperature override (0–2); forwarded to the runtime. */
+  temperature?: number;
 };
 
 export type PromptSearchOptions = {

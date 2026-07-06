@@ -8,6 +8,12 @@ export type PromptOverride =
         | string
         | { name: string; label?: string; required?: boolean }
       )[];
+      /** Prompt-level LLM provider override, honored by ally-ai. */
+      provider?: string;
+      /** Prompt-level LLM model override (OpenAI/Gemini), honored by ally-ai. */
+      model?: string;
+      /** Prompt-level LLM sampling temperature override (0–2), honored by ally-ai. */
+      temperature?: number;
     };
 
 export type GenerateSummaryRequest = {

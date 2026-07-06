@@ -113,6 +113,24 @@ export class PromptSharedService {
    * example options: { promptCode: ['ally_ai_learn_default']}
    * @returns An array of prompts with prompt code.
    */
+  /**
+   * Prompt-level LLM override for a single prompt code: `{ model, temperature }`
+   * read from the prompts row. Both undefined when unset or the prompt has no
+   * row. Used by ally-be's own LLM call sites (coaching chat, tooltip
+   * translation, autofill, copilot) to honor a per-prompt model/temperature.
+   */
+  async getPromptLlmConfig(
+    promptCode: string,
+  ): Promise<{ provider?: string; model?: string; temperature?: number }> {
+    const rows = await this.getPromptsByOptions({ promptCode: [promptCode] });
+    const row = rows?.[0];
+    return {
+      provider: row?.provider || undefined,
+      model: row?.model || undefined,
+      temperature: typeof row?.temperature === 'number' ? row.temperature : undefined,
+    };
+  }
+
   async getPromptsByOptions(
     options: PromptSearchOptions,
   ): Promise<Array<PromptsWithPromptCode>> {
@@ -127,6 +145,9 @@ export class PromptSharedService {
       .addSelect('prompt.useDashboardOverride', 'useDashboardOverride')
       .addSelect('prompt.availableVariables', 'availableVariables')
       .addSelect('prompt.hasStates', 'hasStates')
+      .addSelect('prompt.provider', 'provider')
+      .addSelect('prompt.model', 'model')
+      .addSelect('prompt.temperature', 'temperature')
       .addSelect('prompt.defaultPrompt', 'defaultPrompt')
       .addSelect('prompt.currentVersion', 'currentVersion');
 
@@ -158,6 +179,13 @@ export class PromptSharedService {
     >();
 
     for (const row of rows) {
+      // Raw query returns the numeric `temperature` column as a string; coerce
+      // to a number so the runtime payload carries a real number (or undefined).
+      const rawTemp = row.temperature as unknown;
+      row.temperature =
+        rawTemp === null || rawTemp === undefined || rawTemp === ''
+          ? undefined
+          : parseFloat(rawTemp as string);
       if (!row.useDashboardOverride) {
         const fromFolder = await this.readFromFolder(row.promptCode);
         if (fromFolder !== null) {
