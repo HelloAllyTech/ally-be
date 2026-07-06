@@ -5,8 +5,6 @@ import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { Scenarios } from '../entity/scenarios.entity';
 import { ExperienceMode, ChecklistType } from '../type/scenario.type';
-import { toPromptCode } from 'src/prompt/util/prompt-code.util';
-import { GeneratableField } from '../enum/generatable-field.enum';
 import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
 
 /**
@@ -294,29 +292,6 @@ export const isEnglishLanguage = (
   }
 
   return false;
-};
-
-export const getPromptCodeForScenarioField = (scenarioField: string) => {
-  switch (scenarioField) {
-    case GeneratableField.STATE_INSTRUCTIONS:
-      return toPromptCode('openai_simulation', 'states_instructions');
-    case GeneratableField.OPENING_STATEMENTS:
-      return toPromptCode('openai_simulation', 'opening_dialogues');
-    case GeneratableField.DESCRIPTION:
-      return toPromptCode('openai_simulation', 'challenge_description');
-    case GeneratableField.CHARACTER_PROFILE_TEXT:
-      return toPromptCode('openai_simulation', 'character_profile_text');
-    case GeneratableField.BEHAVIOR_INSTRUCTIONS:
-      return toPromptCode('openai_simulation', 'behavior_instructions');
-    case GeneratableField.LINGUISTIC_STYLE_SAMPLES:
-      return toPromptCode('openai_simulation', 'linguistic_style_samples');
-    case GeneratableField.ALLOWED_FILLER_WORDS:
-      return toPromptCode('openai_simulation', 'allowed_filler_words');
-    case GeneratableField.STATES:
-      return toPromptCode('openai_simulation', 'states');
-    case GeneratableField.KNOWLEDGE_SOURCES:
-      return toPromptCode('openai_simulation', 'knowledge_sources');
-  }
 };
 
 export const applyScenarioTranslations = (

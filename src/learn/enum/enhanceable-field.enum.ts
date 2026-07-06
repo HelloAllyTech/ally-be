@@ -2,7 +2,7 @@
  * Scenario fields that support the studio "Enhance" action — a field-level
  * refinement that takes ONLY the field's *existing* content and improves it
  * (auto, or per a custom instruction). Deliberately separate from
- * {@link GeneratableField} (auto-generate from scratch): enhance never invents
+ * the removed generate/regenerate feature (auto-generate from scratch): enhance never invents
  * content, it only rewrites what the author already has.
  *
  * To add a new enhanceable field: add an entry here and a label below, then

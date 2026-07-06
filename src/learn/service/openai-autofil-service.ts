@@ -4,22 +4,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import OpenAI from 'openai';
-import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { ScenarioFieldContextDto } from '../dto/generate-scenario-field.dto';
-import { GeneratableField } from '../enum/generatable-field.enum';
-import { BehaviorResponseDto } from '../dto/behavior-response.dto';
-import { STRUCTURED_OUTPUT_SCHEMAS } from '../constants/autofill-structured-output.constants';
 import {
-  BehaviorIdMapping,
-  GeneratedContent,
-} from '../type/generatable-fields.type';
-import {
-  buildBehaviorIdMapping,
-  buildTemplateVariables,
-  extractContent,
   renderTemplate,
   stripMarkdownFences,
 } from '../util/autofill-shared.util';
@@ -43,106 +31,6 @@ export class OpenAIAutofillService {
   ) {
     this.client = new OpenAI({ apiKey: this.configService.openai.apiKey });
     this.model = this.configService.openai.autofillModel;
-  }
-
-  buildBehaviorIdMapping(
-    behaviors: BehaviorResponseDto[],
-  ): ReturnType<typeof buildBehaviorIdMapping> {
-    return buildBehaviorIdMapping(behaviors);
-  }
-
-  async generateFieldContent(
-    fieldName: GeneratableField,
-    promptCode: string,
-    scenarioContext: ScenarioFieldContextDto,
-    behaviorIdMapping?: BehaviorIdMapping,
-    modelOverride?: string,
-    temperatureOverride?: number,
-  ): Promise<GeneratedContent> {
-    const promptTemplate =
-      await this.promptSharedService.getPromptByCode(promptCode);
-
-    if (!promptTemplate) {
-      throw new NotFoundException(
-        `Prompt template not found for code: ${promptCode}`,
-      );
-    }
-
-    const templateVariables = buildTemplateVariables(scenarioContext);
-    const renderedPrompt = renderTemplate(promptTemplate, templateVariables);
-
-    const effectiveModel = modelOverride ?? this.model;
-    this.logger.info(
-      `[AUTOFILL] start field=${fieldName} promptCode=${promptCode} provider=openai model=${effectiveModel} ` +
-        `requestedCount=${(scenarioContext as any)?.numStates ?? (scenarioContext as any)?.numKnowledgeSources ?? 'n/a'} ` +
-        `existingFilled=${(scenarioContext as any)?.existingStates || (scenarioContext as any)?.existingKnowledgeSources ? 'yes' : 'no'}`,
-    );
-    const startedAt = Date.now();
-
-    try {
-      const messages: ChatCompletionMessageParam[] = [
-        { role: 'user', content: renderedPrompt },
-      ];
-
-      const jsonSchema = STRUCTURED_OUTPUT_SCHEMAS[fieldName];
-
-      const response = await this.client.chat.completions.create({
-        model: effectiveModel,
-        ...(temperatureOverride != null
-          ? { temperature: temperatureOverride }
-          : {}),
-        messages,
-        ...(jsonSchema && {
-          response_format: {
-            type: 'json_schema',
-            json_schema: jsonSchema,
-          },
-        }),
-      });
-
-      void this.llmUsage.record({
-        provider: 'openai',
-        model: effectiveModel,
-        task: LlmTask.AUTOFILL_FIELD,
-        promptTokens: response.usage?.prompt_tokens,
-        completionTokens: response.usage?.completion_tokens,
-        totalTokens: response.usage?.total_tokens,
-        metadata: { field: fieldName, promptCode },
-      });
-
-      const content = response.choices?.[0]?.message?.content ?? '';
-
-      if (!content || content.trim() === '') {
-        throw new InternalServerErrorException(
-          `Empty response from OpenAI for prompt code: ${promptCode}`,
-        );
-      }
-
-      const extracted = extractContent(
-        fieldName,
-        stripMarkdownFences(content),
-        behaviorIdMapping,
-      );
-      const itemCount = Array.isArray(extracted)
-        ? extracted.length
-        : typeof extracted === 'string'
-          ? 1
-          : extracted && typeof extracted === 'object'
-            ? Object.keys(extracted).length
-            : 0;
-      this.logger.info(
-        `[AUTOFILL] done  field=${fieldName} promptCode=${promptCode} model=${effectiveModel} ` +
-          `itemsReturned=${itemCount} elapsedMs=${Date.now() - startedAt}`,
-      );
-      return extracted;
-    } catch (error) {
-      this.logger.error(
-        `[AUTOFILL] failed field=${fieldName} promptCode=${promptCode} model=${effectiveModel} ` +
-          `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
-        error as any,
-      );
-      throw error;
-    }
   }
 
   /**

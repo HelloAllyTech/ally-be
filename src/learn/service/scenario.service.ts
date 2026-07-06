@@ -73,7 +73,6 @@ import {
   mapCreateScenarioRequestToEntity,
   mapUpdateScenarioRequestToEntity,
   formatAutoTerminationEventsList,
-  getPromptCodeForScenarioField,
   applyScenarioTranslations,
 } from '../util/scenario.util';
 import { sanitizeJsonbMetadata } from 'src/common/util/sanitize-jsonb.util';
@@ -135,12 +134,7 @@ import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-in
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { OpenAIAutofillService } from './openai-autofil-service';
 import { AnthropicAutofillService } from './anthropic-autofill.service';
-import {
-  buildBehaviorIdMapping,
-  ENHANCE_AUTO_IMPROVE_INSTRUCTION,
-} from '../util/autofill-shared.util';
-import { GenerateScenarioFieldDto } from '../dto/generate-scenario-field.dto';
-import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field-response.dto';
+import { ENHANCE_AUTO_IMPROVE_INSTRUCTION } from '../util/autofill-shared.util';
 import {
   EnhanceScenarioFieldDto,
   EnhanceScenarioFieldResponseDto,
@@ -153,7 +147,6 @@ import {
 } from '../enum/enhanceable-field.enum';
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
-import { GeneratableField } from '../enum/generatable-field.enum';
 import { AgentBuilderField } from '../enum/agent-builder-field.enum';
 import {
   GenerateAgentBuilderFieldDto,
@@ -176,8 +169,6 @@ import {
   isValidTimeFormatHHMMSS,
   parseTimeToSeconds,
 } from 'src/common/util/time.util';
-import { COMPETENCY_BEHAVIOR_INSTRUCTION_PRESETS } from '../constants/competency-behavior-instruction-templates.constants';
-import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
@@ -3113,212 +3104,6 @@ export class ScenarioService {
       name: pick(parsed.name, original.name),
       guidelines: pick(parsed.guidelines, original.guidelines),
     });
-  }
-
-  async generateField(
-    generateScenarioFieldDto: GenerateScenarioFieldDto,
-  ): Promise<GenerateScenarioFieldResponseDto> {
-    const { fieldName, scenarioContext, model, provider } =
-      generateScenarioFieldDto;
-
-    let promptCode = getPromptCodeForScenarioField(fieldName);
-
-    // Use English-specific prompt for linguistic style when language is English
-    if (
-      fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES &&
-      scenarioContext.languageCode?.toLowerCase().startsWith('en')
-    ) {
-      promptCode = toPromptCode(
-        'openai_simulation',
-        'linguistic_style_samples_english',
-      );
-    }
-
-    // Indic-skewed default filler prompt pushes Malayalam/Devanagari; use English prompt for en*
-    if (
-      fieldName === GeneratableField.ALLOWED_FILLER_WORDS &&
-      scenarioContext.languageCode?.toLowerCase().startsWith('en')
-    ) {
-      promptCode = toPromptCode(
-        'openai_simulation',
-        'allowed_filler_words_english',
-      );
-    }
-
-    if (!promptCode) {
-      throw new BadRequestException(
-        `Field "${fieldName}" is not supported for auto-generation`,
-      );
-    }
-
-    let behaviorIdMapping;
-    if (fieldName === GeneratableField.BEHAVIOR_INSTRUCTIONS) {
-      if (!scenarioContext.competency) {
-        throw new BadRequestException(
-          'Competency is required for behavior instruction generation',
-        );
-      }
-
-      const { data: behaviors } = await this.behaviorService.getBehaviors();
-      const result = buildBehaviorIdMapping(behaviors);
-      behaviorIdMapping = result.mapping;
-
-      this.logger.info(
-        `Loaded ${behaviors.length} behaviors, mapped ${result.mapping.size} IDs`,
-      );
-
-      let hasPredefined = false;
-
-      const predefinedBehaviors =
-        COMPETENCY_BEHAVIOR_INSTRUCTION_PRESETS[scenarioContext.competency];
-
-      if (predefinedBehaviors?.length) {
-        const nameToSeqId = new Map<string, number>();
-        for (const [seqId, behavior] of result.mapping.entries()) {
-          nameToSeqId.set(behavior.name, seqId);
-        }
-
-        const shouldDo: number[] = [];
-        const shouldNotDo: number[] = [];
-
-        for (const template of predefinedBehaviors) {
-          const seqId = nameToSeqId.get(template.behaviorName);
-          if (seqId === undefined) continue;
-          if (template.category === BehaviorInstructionCategory.SHOULD_DO) {
-            shouldDo.push(seqId);
-          } else {
-            shouldNotDo.push(seqId);
-          }
-        }
-
-        if (shouldDo.length > 0 || shouldNotDo.length > 0) {
-          hasPredefined = true;
-          const predefinedDoc: Record<string, number[]> = {};
-          if (shouldDo.length > 0) predefinedDoc.SHOULD_DO = shouldDo;
-          if (shouldNotDo.length > 0) predefinedDoc.SHOULD_NOT_DO = shouldNotDo;
-          scenarioContext.predefinedBehaviorInstructionsDoc =
-            JSON.stringify(predefinedDoc);
-
-          const usedSeqIds = new Set([...shouldDo, ...shouldNotDo]);
-          const relevantLines = [...usedSeqIds]
-            .map((seqId) => {
-              const b = result.mapping.get(seqId);
-              return b ? `${seqId}. ${b.name}` : null;
-            })
-            .filter(Boolean);
-          scenarioContext.allowedHelperBehaviorsList = relevantLines.join('\n');
-
-          this.logger.info(
-            `Using predefined presets: ${shouldDo.length} SHOULD_DO, ${shouldNotDo.length} SHOULD_NOT_DO behaviors`,
-          );
-        }
-      }
-
-      if (!hasPredefined) {
-        scenarioContext.allowedHelperBehaviorsList = result.formattedList;
-        this.logger.info(
-          `No presets found for "${scenarioContext.competency}", using full behavior list`,
-        );
-      }
-    }
-
-    let contextToUse = scenarioContext;
-    if (
-      fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES ||
-      fieldName === GeneratableField.ALLOWED_FILLER_WORDS
-    ) {
-      if (!scenarioContext.languageId || !scenarioContext.languageCode) {
-        throw new BadRequestException(
-          'languageId and languageCode are required for this field generation',
-        );
-      }
-      const languageName =
-        scenarioContext.languageName ||
-        this.getLanguageNameFromCode(scenarioContext.languageCode);
-      const baseLinguisticContext = {
-        ...scenarioContext,
-        language_name: languageName,
-        language_code: scenarioContext.languageCode,
-        location: scenarioContext.currentLocation ?? '',
-        name: scenarioContext.name ?? 'Client',
-        age: scenarioContext.age ?? '',
-        gender: scenarioContext.gender ?? '',
-      } as any;
-
-      if (fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES) {
-        const characterSummary = scenarioContext.characterProfileText ?? '';
-        const challengeSummary = scenarioContext.challengeDescription ?? '';
-        const emotionalState = [characterSummary, challengeSummary]
-          .filter(Boolean)
-          .join('. ');
-        contextToUse = {
-          ...baseLinguisticContext,
-          emotional_state: emotionalState,
-        };
-      } else {
-        // Allowed fillers: prompt Context uses only characterProfileText; avoid duplicating
-        // persona/challenge blobs (Task line already has language, location, gender).
-        contextToUse = baseLinguisticContext;
-      }
-    }
-
-    if (
-      (fieldName === GeneratableField.OPENING_STATEMENTS ||
-        fieldName === GeneratableField.DESCRIPTION) &&
-      scenarioContext.languageId
-    ) {
-      const id = Number(scenarioContext.languageId);
-      if (!Number.isFinite(id)) {
-        throw new BadRequestException('Invalid languageId');
-      }
-      const langs = await this.sharedLanguageService.getLanguagesByIds([id]);
-      const lang = langs[0];
-      if (!lang) {
-        throw new BadRequestException(`Language not found: ${id}`);
-      }
-      const code =
-        scenarioContext.languageCode?.trim() ||
-        lang.value?.trim() ||
-        lang.translationCode?.trim() ||
-        '';
-      const name =
-        scenarioContext.languageName?.trim() ||
-        lang.label?.trim() ||
-        this.getLanguageNameFromCode(code);
-      if (!code) {
-        throw new BadRequestException(
-          'Could not resolve language code for field generation',
-        );
-      }
-      contextToUse = {
-        ...scenarioContext,
-        languageCode: code,
-        languageName: name,
-      };
-    }
-
-    const {
-      service: autofillService,
-      model: effectiveModel,
-      temperature,
-    } = await this.resolveAutofillLlm(promptCode, {
-      provider,
-      model,
-      temperature: generateScenarioFieldDto.temperature,
-    });
-
-    const content = await autofillService.generateFieldContent(
-      fieldName,
-      promptCode,
-      contextToUse,
-      behaviorIdMapping,
-      effectiveModel,
-      temperature,
-    );
-
-    this.logger.info(`Generation completed for ${fieldName}`);
-
-    return { fieldName, content };
   }
 
   /**

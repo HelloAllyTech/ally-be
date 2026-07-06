@@ -7,18 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { ScenarioFieldContextDto } from '../dto/generate-scenario-field.dto';
-import { GeneratableField } from '../enum/generatable-field.enum';
-import { BehaviorResponseDto } from '../dto/behavior-response.dto';
 import {
-  BehaviorIdMapping,
-  GeneratedContent,
-} from '../type/generatable-fields.type';
-import {
-  buildBehaviorIdMapping,
-  buildJsonSchemaSuffix,
-  buildTemplateVariables,
-  extractContent,
   renderTemplate,
   stripMarkdownFences,
 } from '../util/autofill-shared.util';
@@ -46,93 +35,6 @@ export class AnthropicAutofillService {
       apiKey: this.configService.anthropic.apiKey,
     });
     this.model = this.configService.anthropic.autofillModel;
-  }
-
-  buildBehaviorIdMapping(
-    behaviors: BehaviorResponseDto[],
-  ): ReturnType<typeof buildBehaviorIdMapping> {
-    return buildBehaviorIdMapping(behaviors);
-  }
-
-  async generateFieldContent(
-    fieldName: GeneratableField,
-    promptCode: string,
-    scenarioContext: ScenarioFieldContextDto,
-    behaviorIdMapping?: BehaviorIdMapping,
-    modelOverride?: string,
-    temperatureOverride?: number,
-  ): Promise<GeneratedContent> {
-    const promptTemplate =
-      await this.promptSharedService.getPromptByCode(promptCode);
-
-    if (!promptTemplate) {
-      throw new NotFoundException(
-        `Prompt template not found for code: ${promptCode}`,
-      );
-    }
-
-    const templateVariables = buildTemplateVariables(scenarioContext);
-    const renderedPrompt = renderTemplate(promptTemplate, templateVariables);
-    const jsonSuffix = buildJsonSchemaSuffix(fieldName);
-    const fullPrompt = renderedPrompt + jsonSuffix;
-
-    const effectiveModel = modelOverride ?? this.model;
-    this.logger.info(
-      `[AUTOFILL] start field=${fieldName} promptCode=${promptCode} provider=anthropic model=${effectiveModel} ` +
-        `requestedCount=${(scenarioContext as any)?.numStates ?? (scenarioContext as any)?.numKnowledgeSources ?? 'n/a'} ` +
-        `existingFilled=${(scenarioContext as any)?.existingStates || (scenarioContext as any)?.existingKnowledgeSources ? 'yes' : 'no'}`,
-    );
-    const startedAt = Date.now();
-
-    try {
-      const response = await this.client.messages.create({
-        model: effectiveModel,
-        max_tokens: ANTHROPIC_MAX_TOKENS,
-        ...(temperatureOverride != null
-          ? { temperature: temperatureOverride }
-          : {}),
-        messages: [{ role: 'user', content: fullPrompt }],
-      });
-
-      this.recordUsage(response.usage, effectiveModel, LlmTask.AUTOFILL_FIELD, {
-        field: fieldName,
-        promptCode,
-      });
-
-      const block = response.content[0];
-      const content = block?.type === 'text' ? block.text.trim() : '';
-
-      if (!content) {
-        throw new InternalServerErrorException(
-          `Empty response from Anthropic for prompt code: ${promptCode}`,
-        );
-      }
-
-      const extracted = extractContent(
-        fieldName,
-        stripMarkdownFences(content),
-        behaviorIdMapping,
-      );
-      const itemCount = Array.isArray(extracted)
-        ? extracted.length
-        : typeof extracted === 'string'
-          ? 1
-          : extracted && typeof extracted === 'object'
-            ? Object.keys(extracted).length
-            : 0;
-      this.logger.info(
-        `[AUTOFILL] done  field=${fieldName} promptCode=${promptCode} model=${effectiveModel} ` +
-          `itemsReturned=${itemCount} elapsedMs=${Date.now() - startedAt}`,
-      );
-      return extracted;
-    } catch (error) {
-      this.logger.error(
-        `[AUTOFILL] failed field=${fieldName} promptCode=${promptCode} model=${effectiveModel} ` +
-          `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
-        error as any,
-      );
-      throw error;
-    }
   }
 
   /**
