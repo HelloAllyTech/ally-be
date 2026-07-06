@@ -14,9 +14,7 @@ import {
   BehaviorIdMapping,
   GeneratedContent,
 } from '../type/generatable-fields.type';
-import { PREFERRED_ANTHROPIC_AUTOFILL_MODELS } from '../constants/autofill-models.constants';
 import {
-  AUTOFILL_CACHE_TTL_MS,
   buildBehaviorIdMapping,
   buildJsonSchemaSuffix,
   buildTemplateVariables,
@@ -25,7 +23,6 @@ import {
   stripMarkdownFences,
 } from '../util/autofill-shared.util';
 import { EnhanceableField } from '../enum/enhanceable-field.enum';
-import { AutofillModelInfo } from './openai-autofil-service';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from '../enum/llm-task.enum';
 
@@ -39,9 +36,6 @@ export class AnthropicAutofillService {
 
   private readonly client: Anthropic;
   private readonly model: string;
-
-  private modelsCache: { models: AutofillModelInfo[] } | null = null;
-  private modelsCacheExpiry = 0;
 
   constructor(
     private readonly configService: AppConfigService,
@@ -58,44 +52,6 @@ export class AnthropicAutofillService {
     behaviors: BehaviorResponseDto[],
   ): ReturnType<typeof buildBehaviorIdMapping> {
     return buildBehaviorIdMapping(behaviors);
-  }
-
-  async getAvailableModels(): Promise<AutofillModelInfo[]> {
-    const now = Date.now();
-    if (this.modelsCache && now < this.modelsCacheExpiry) {
-      return this.modelsCache.models;
-    }
-
-    try {
-      const apiModelIds = new Set<string>();
-      for await (const model of this.client.models.list()) {
-        apiModelIds.add(model.id);
-      }
-
-      const apiModelIdList = [...apiModelIds].sort((a, b) =>
-        b.localeCompare(a),
-      );
-      const result: AutofillModelInfo[] =
-        PREFERRED_ANTHROPIC_AUTOFILL_MODELS.map((prefix) =>
-          apiModelIdList.find((id) => id.startsWith(prefix)),
-        )
-          .filter((id): id is string => id !== undefined)
-          .map((id) => ({ value: id, label: id, provider: 'anthropic' }));
-
-      this.modelsCache = { models: result };
-      this.modelsCacheExpiry = now + AUTOFILL_CACHE_TTL_MS;
-      return result;
-    } catch (error) {
-      this.logger.error(
-        'Failed to fetch available Anthropic models, falling back to preferred list',
-        error as any,
-      );
-      return PREFERRED_ANTHROPIC_AUTOFILL_MODELS.map((id) => ({
-        value: id,
-        label: id,
-        provider: 'anthropic',
-      }));
-    }
   }
 
   async generateFieldContent(

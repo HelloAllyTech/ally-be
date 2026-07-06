@@ -16,9 +16,7 @@ import {
   BehaviorIdMapping,
   GeneratedContent,
 } from '../type/generatable-fields.type';
-import { PREFERRED_AUTOFILL_MODELS } from '../constants/autofill-models.constants';
 import {
-  AUTOFILL_CACHE_TTL_MS,
   buildBehaviorIdMapping,
   buildTemplateVariables,
   extractContent,
@@ -29,12 +27,6 @@ import { EnhanceableField } from '../enum/enhanceable-field.enum';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from '../enum/llm-task.enum';
 
-export interface AutofillModelInfo {
-  value: string;
-  label: string;
-  provider: string;
-}
-
 @Injectable()
 export class OpenAIAutofillService {
   private readonly logger = LoggerService.getInstance(
@@ -43,9 +35,6 @@ export class OpenAIAutofillService {
 
   private readonly client: OpenAI;
   private readonly model: string;
-
-  private modelsCache: { models: AutofillModelInfo[] } | null = null;
-  private modelsCacheExpiry = 0;
 
   constructor(
     private readonly configService: AppConfigService,
@@ -60,37 +49,6 @@ export class OpenAIAutofillService {
     behaviors: BehaviorResponseDto[],
   ): ReturnType<typeof buildBehaviorIdMapping> {
     return buildBehaviorIdMapping(behaviors);
-  }
-
-  async getAvailableModels(): Promise<AutofillModelInfo[]> {
-    const now = Date.now();
-    if (this.modelsCache && now < this.modelsCacheExpiry) {
-      return this.modelsCache.models;
-    }
-
-    try {
-      const apiModelIds = new Set<string>();
-      for await (const model of this.client.models.list()) {
-        apiModelIds.add(model.id);
-      }
-
-      const result: AutofillModelInfo[] = [];
-      for (const modelId of PREFERRED_AUTOFILL_MODELS) {
-        if (apiModelIds.has(modelId)) {
-          result.push({ value: modelId, label: modelId, provider: 'openai' });
-        }
-      }
-
-      this.modelsCache = { models: result };
-      this.modelsCacheExpiry = now + AUTOFILL_CACHE_TTL_MS;
-      return result;
-    } catch (error) {
-      this.logger.error(
-        'Failed to fetch available OpenAI models',
-        error as any,
-      );
-      throw error;
-    }
   }
 
   async generateFieldContent(

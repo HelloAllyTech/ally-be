@@ -291,7 +291,12 @@ export class LearnController {
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
   @Get('models')
   async getAvailableModels(): Promise<
-    { value: string; label: string; provider: string }[]
+    {
+      value: string;
+      label: string;
+      provider: string;
+      supportsTemperature: boolean;
+    }[]
   > {
     return this.scenarioService.getAvailableModels();
   }
