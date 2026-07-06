@@ -249,6 +249,15 @@ const PERMISSIONS = {
   // === TOOLTIPS ===
   VIEW_TOOLTIPS: 'view:admin:tooltips',
   EDIT_TOOLTIPS: 'edit:admin:tooltips',
+
+  // === ROLEPLAY STUDIO V2 ===
+  VIEW_ROLEPLAY_SPECS: 'view:roleplay-specs',
+  EDIT_ROLEPLAY_SPEC: 'edit:roleplay-spec',
+  DELETE_ROLEPLAY_SPEC: 'delete:roleplay-spec',
+  EDIT_ROLEPLAY_COPILOT: 'edit:roleplay-copilot',
+  VIEW_ROLEPLAY_REHEARSALS: 'view:roleplay-rehearsals',
+  EDIT_ROLEPLAY_REHEARSALS: 'edit:roleplay-rehearsals',
+  EDIT_ROLEPLAY_SPEC_TENANT: 'edit:roleplay-spec-tenant',
 };
 
 const SUPER_ADMIN_PERMISSIONS = [
@@ -332,6 +341,13 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_I18N_TRANSLATIONS,
   PERMISSIONS.VIEW_TOOLTIPS,
   PERMISSIONS.EDIT_TOOLTIPS,
+  PERMISSIONS.VIEW_ROLEPLAY_SPECS,
+  PERMISSIONS.EDIT_ROLEPLAY_SPEC,
+  PERMISSIONS.DELETE_ROLEPLAY_SPEC,
+  PERMISSIONS.EDIT_ROLEPLAY_COPILOT,
+  PERMISSIONS.VIEW_ROLEPLAY_REHEARSALS,
+  PERMISSIONS.EDIT_ROLEPLAY_REHEARSALS,
+  PERMISSIONS.EDIT_ROLEPLAY_SPEC_TENANT,
   // start:microphone-chat / start:cloud-telephony-chat are intentionally NOT
   // granted here — initiating a recording (scribe/dictation/telephony) is a
   // counsellor capability. A SUPER_ADMIN who is also a counsellor inherits it
