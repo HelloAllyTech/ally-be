@@ -305,14 +305,12 @@ describe('ScenarioService', () => {
       generateFieldContent: jest.fn(),
       enhanceFieldContent: jest.fn(),
       buildBehaviorIdMapping: jest.fn(),
-      getAvailableModels: jest.fn().mockResolvedValue([]),
     };
 
     const mockAnthropicAutofillService = {
       generateFieldContent: jest.fn(),
       enhanceFieldContent: jest.fn(),
       buildBehaviorIdMapping: jest.fn(),
-      getAvailableModels: jest.fn().mockResolvedValue([]),
     };
 
     const mockBehaviorService = {
@@ -6456,59 +6454,26 @@ describe('ScenarioService', () => {
   });
 
   describe('getAvailableModels', () => {
-    it('should merge OpenAI and Anthropic models into a single list', async () => {
-      const openaiModels = [
-        { value: 'gpt-4o', label: 'gpt-4o', provider: 'openai' },
-        { value: 'gpt-4o-mini', label: 'gpt-4o-mini', provider: 'openai' },
-      ];
-      const anthropicModels = [
-        {
-          value: 'claude-sonnet-4-6',
-          label: 'claude-sonnet-4-6',
-          provider: 'anthropic',
-        },
-      ];
-
-      openAIAutofillService.getAvailableModels.mockResolvedValue(openaiModels);
-      anthropicAutofillService.getAvailableModels.mockResolvedValue(
-        anthropicModels,
-      );
-
+    it('sources from the universal registry, filtered to autofill providers (OpenAI + Anthropic, no Gemini)', async () => {
       const result = await service.getAvailableModels();
+      const providers = new Set(result.map((m) => m.provider));
 
-      expect(result).toEqual([...openaiModels, ...anthropicModels]);
+      expect(result.length).toBeGreaterThan(0);
+      expect(providers.has('openai')).toBe(true);
+      expect(providers.has('anthropic')).toBe(true);
+      // Gemini has no autofill client, so it must not appear here.
+      expect(providers.has('gemini')).toBe(false);
     });
 
-    it('should preserve provider tags from each service', async () => {
-      openAIAutofillService.getAvailableModels.mockResolvedValue([
-        { value: 'gpt-4o', label: 'gpt-4o', provider: 'openai' },
-      ]);
-      anthropicAutofillService.getAvailableModels.mockResolvedValue([
-        {
-          value: 'claude-sonnet-4-6',
-          label: 'claude-sonnet-4-6',
-          provider: 'anthropic',
-        },
-      ]);
-
+    it('each entry carries value/label/provider/supportsTemperature', async () => {
       const result = await service.getAvailableModels();
 
-      expect(result.find((m) => m.value === 'gpt-4o')?.provider).toBe('openai');
-      expect(
-        result.find((m) => m.value === 'claude-sonnet-4-6')?.provider,
-      ).toBe('anthropic');
-    });
-
-    it('should return only OpenAI models when Anthropic returns empty list', async () => {
-      const openaiModels = [
-        { value: 'gpt-4o', label: 'gpt-4o', provider: 'openai' },
-      ];
-      openAIAutofillService.getAvailableModels.mockResolvedValue(openaiModels);
-      anthropicAutofillService.getAvailableModels.mockResolvedValue([]);
-
-      const result = await service.getAvailableModels();
-
-      expect(result).toEqual(openaiModels);
+      for (const m of result) {
+        expect(typeof m.value).toBe('string');
+        expect(typeof m.label).toBe('string');
+        expect(['openai', 'anthropic']).toContain(m.provider);
+        expect(typeof m.supportsTemperature).toBe('boolean');
+      }
     });
   });
 

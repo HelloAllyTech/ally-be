@@ -162,6 +162,11 @@ import {
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
+  getLlmModels,
+  LlmRuntime,
+  LlmProviderName,
+} from 'src/llm/constants/llm-model-registry.constants';
+import {
   buildAvailableLanguagesMap,
   getDistinctScenarioLanguageIds,
   getLanguageVoiceIds,
@@ -2845,13 +2850,30 @@ export class ScenarioService {
   }
 
   async getAvailableModels(): Promise<
-    { value: string; label: string; provider: string }[]
+    {
+      value: string;
+      label: string;
+      provider: string;
+      supportsTemperature: boolean;
+    }[]
   > {
-    const [openaiModels, anthropicModels] = await Promise.all([
-      this.openAIAutofillService.getAvailableModels(),
-      this.anthropicAutofillService.getAvailableModels(),
+    // Sourced from the universal LLM registry (single source of truth),
+    // filtered to the providers the autofill/enhance/copilot path can actually
+    // execute (OpenAI + Anthropic — no Gemini autofill client exists). This
+    // replaces the old per-provider PREFERRED_* lists so a model added to the
+    // registry surfaces here automatically.
+    const AUTOFILL_PROVIDERS = new Set<LlmProviderName>([
+      'openai',
+      'anthropic',
     ]);
-    return [...openaiModels, ...anthropicModels];
+    return getLlmModels(LlmRuntime.ALLY_BE)
+      .filter((m) => AUTOFILL_PROVIDERS.has(m.provider))
+      .map((m) => ({
+        value: m.model,
+        label: m.label,
+        provider: m.provider,
+        supportsTemperature: m.supportsTemperature,
+      }));
   }
 
   /**

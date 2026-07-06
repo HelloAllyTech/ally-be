@@ -8,7 +8,6 @@ import { AppConfigService } from 'src/config/config.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { GeneratableField } from 'src/learn/enum/generatable-field.enum';
-import { PREFERRED_ANTHROPIC_AUTOFILL_MODELS } from 'src/learn/constants/autofill-models.constants';
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
 
 const mockCreate = jest.fn();
@@ -31,14 +30,6 @@ const mockBehaviorStateInstructions = [
 
 const makeAnthropicResponse = (text: string) => ({
   content: [{ type: 'text', text }],
-});
-
-const makeModelListIterable = (ids: string[]) => ({
-  [Symbol.asyncIterator]: async function* () {
-    for (const id of ids) {
-      yield { id };
-    }
-  },
 });
 
 describe('AnthropicAutofillService', () => {
@@ -85,101 +76,6 @@ describe('AnthropicAutofillService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
-  });
-
-  describe('getAvailableModels', () => {
-    it('should match API models by prefix and use the full versioned ID as value', async () => {
-      mockModelsList.mockReturnValue(
-        makeModelListIterable([
-          'claude-opus-4-7-20250514',
-          'claude-sonnet-4-6-20250514',
-          'claude-haiku-4-5-20251001',
-          'claude-2',
-        ]),
-      );
-
-      const models = await service.getAvailableModels();
-
-      expect(models.map((m) => m.value)).toEqual([
-        'claude-opus-4-7-20250514',
-        'claude-sonnet-4-6-20250514',
-        'claude-haiku-4-5-20251001',
-      ]);
-    });
-
-    it('should tag all returned models with provider anthropic', async () => {
-      mockModelsList.mockReturnValue(
-        makeModelListIterable([
-          'claude-opus-4-7-20250514',
-          'claude-sonnet-4-6-20250514',
-          'claude-haiku-4-5-20251001',
-        ]),
-      );
-
-      const models = await service.getAvailableModels();
-
-      expect(models.every((m) => m.provider === 'anthropic')).toBe(true);
-    });
-
-    it('should include label equal to value for each model', async () => {
-      mockModelsList.mockReturnValue(
-        makeModelListIterable([
-          'claude-opus-4-7-20250514',
-          'claude-sonnet-4-6-20250514',
-        ]),
-      );
-
-      const models = await service.getAvailableModels();
-
-      models.forEach((m) => expect(m.label).toBe(m.value));
-    });
-
-    it('should filter out models whose prefix does not match any preferred prefix', async () => {
-      mockModelsList.mockReturnValue(
-        makeModelListIterable([
-          'claude-opus-4-7-20250514',
-          'unknown-model-xyz',
-        ]),
-      );
-
-      const models = await service.getAvailableModels();
-
-      expect(models.map((m) => m.value)).toEqual(['claude-opus-4-7-20250514']);
-    });
-
-    it('should return empty list when no API models match any preferred prefix', async () => {
-      mockModelsList.mockReturnValue(makeModelListIterable(['old-model']));
-
-      const models = await service.getAvailableModels();
-
-      expect(models).toEqual([]);
-    });
-
-    it('should cache results and not call API again within TTL', async () => {
-      mockModelsList.mockReturnValue(
-        makeModelListIterable(['claude-opus-4-7-20250514']),
-      );
-
-      await service.getAvailableModels();
-      await service.getAvailableModels();
-
-      expect(mockModelsList).toHaveBeenCalledTimes(1);
-    });
-
-    it('should fall back to hardcoded preferred prefix list when API fails', async () => {
-      mockModelsList.mockReturnValue({
-        [Symbol.asyncIterator]: async function* () {
-          throw new Error('Network error');
-        },
-      });
-
-      const models = await service.getAvailableModels();
-
-      expect(models.map((m) => m.value)).toEqual([
-        ...PREFERRED_ANTHROPIC_AUTOFILL_MODELS,
-      ]);
-      expect(models.every((m) => m.provider === 'anthropic')).toBe(true);
-    });
   });
 
   describe('generateFieldContent', () => {
