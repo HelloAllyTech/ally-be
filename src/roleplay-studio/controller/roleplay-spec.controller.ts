@@ -64,9 +64,12 @@ export class RoleplaySpecController {
 
   @Get(':specId')
   @AuthPermissions([PERMISSIONS.VIEW_ROLEPLAY_SPECS])
-  @ApiOperation({ summary: 'Get a roleplay spec (incl. its draft document)' })
+  @ApiOperation({
+    summary:
+      'Get a roleplay spec detail (incl. activeVersion working-draft envelope)',
+  })
   getSpec(@Param('specId', ParseUUIDPipe) specId: string) {
-    return this.roleplaySpecService.getSpec(specId);
+    return this.roleplaySpecService.getSpecDetail(specId);
   }
 
   @Put(':specId')

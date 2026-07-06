@@ -155,6 +155,32 @@ export class RoleplaySpecService {
     return spec;
   }
 
+  /**
+   * Detail envelope for the studio workspace. `activeVersion` is the working
+   * draft the studio edits: its document is the spec row's `draftSpec`, its id
+   * is the latest immutable snapshot (null until the first draft save — the
+   * client tolerates that and picks the id up from its first save response).
+   */
+  async getSpecDetail(
+    specId: string,
+  ): Promise<RoleplaySpec & { activeVersion: Record<string, any> }> {
+    const spec = await this.getSpec(specId);
+    const [latestVersion] = await this.specVersionRepository.listBySpec(
+      specId,
+      1,
+    );
+    return {
+      ...spec,
+      activeVersion: {
+        id: latestVersion?.id ?? null,
+        versionNumber: latestVersion?.versionNumber ?? null,
+        status: spec.status,
+        spec: spec.draftSpec,
+        updatedAt: spec.updatedAt,
+      },
+    };
+  }
+
   async updateSpec(
     specId: string,
     dto: UpdateRoleplaySpecDto,
