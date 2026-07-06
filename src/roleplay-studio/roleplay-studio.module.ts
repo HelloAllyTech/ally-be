@@ -1,5 +1,10 @@
-import { Module } from '@nestjs/common';
+import { Module, OnModuleInit } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { AiModule } from 'src/ai/ai.module';
+import { LiveKitModule } from 'src/livekit/livekit.module';
+import { PromptModule } from 'src/prompt/prompt.module';
+import { LlmUsageModule } from 'src/analytics/llm-usage.module';
+import { ProcessorRegistry } from 'src/ai/processors/processor-registry';
 import { RoleplaySpec } from './entity/roleplay-spec.entity';
 import { RoleplaySpecVersion } from './entity/roleplay-spec-version.entity';
 import { RoleplaySpecTenant } from './entity/roleplay-spec-tenant.entity';
@@ -24,16 +29,27 @@ import { RoleplaySpecService } from './service/roleplay-spec.service';
 import { CopilotSessionService } from './service/copilot-session.service';
 import { CopilotToolsService } from './service/copilot-tools.service';
 import { CopilotOrchestratorService } from './service/copilot-orchestrator.service';
+import { RoleplaySessionService } from './service/roleplay-session.service';
+import { DirectorTelemetryService } from './service/director-telemetry.service';
+import { DirectorStateTransitionProcessor } from './processor/director-state-transition.processor';
+import { DirectorRubricScoreProcessor } from './processor/director-rubric-score.processor';
+import { DirectorDisclosureUnlockProcessor } from './processor/director-disclosure-unlock.processor';
+import { DirectorStageDirectionProcessor } from './processor/director-stage-direction.processor';
+import { RoleplaySessionSummaryProcessor } from './processor/roleplay-session-summary.processor';
 import { RoleplaySpecController } from './controller/roleplay-spec.controller';
 import { CopilotController } from './controller/copilot.controller';
-import { PromptModule } from 'src/prompt/prompt.module';
-import { LlmUsageModule } from 'src/analytics/llm-usage.module';
+import { RoleplaySessionController } from './controller/roleplay-session.controller';
+import { RoleplayStudioWebhookController } from './controller/roleplay-studio-webhook.controller';
 
 /**
  * Roleplay Studio v2 — spec authoring (copilot-driven), rehearsal, and the
  * ROLEPLAY_V2 session runtime. Deliberately self-contained: the v1 learn
  * module is never imported for its providers (entities are reached through
  * the shared DataSource), so v1 stays untouched.
+ *
+ * The director SQS processors are registered dynamically from onModuleInit
+ * via ProcessorRegistry.registerCustomProcessor — zero edits under
+ * src/ai/processors/.
  */
 @Module({
   imports: [
@@ -48,10 +64,17 @@ import { LlmUsageModule } from 'src/analytics/llm-usage.module';
       RoleplayDirectorEvent,
       RoleplayRubricScore,
     ]),
+    AiModule,
+    LiveKitModule,
     PromptModule,
     LlmUsageModule,
   ],
-  controllers: [RoleplaySpecController, CopilotController],
+  controllers: [
+    RoleplaySpecController,
+    CopilotController,
+    RoleplaySessionController,
+    RoleplayStudioWebhookController,
+  ],
   providers: [
     RoleplaySpecRepository,
     RoleplaySpecVersionRepository,
@@ -68,7 +91,44 @@ import { LlmUsageModule } from 'src/analytics/llm-usage.module';
     CopilotSessionService,
     CopilotToolsService,
     CopilotOrchestratorService,
+    RoleplaySessionService,
+    DirectorTelemetryService,
+    DirectorStateTransitionProcessor,
+    DirectorRubricScoreProcessor,
+    DirectorDisclosureUnlockProcessor,
+    DirectorStageDirectionProcessor,
+    RoleplaySessionSummaryProcessor,
   ],
-  exports: [RoleplaySpecService, SpecValidatorService, SpecCompilerService],
+  exports: [
+    RoleplaySpecService,
+    SpecValidatorService,
+    SpecCompilerService,
+    RoleplaySessionService,
+  ],
 })
-export class RoleplayStudioModule {}
+export class RoleplayStudioModule implements OnModuleInit {
+  constructor(
+    private readonly processorRegistry: ProcessorRegistry,
+    private readonly stateTransitionProcessor: DirectorStateTransitionProcessor,
+    private readonly rubricScoreProcessor: DirectorRubricScoreProcessor,
+    private readonly disclosureUnlockProcessor: DirectorDisclosureUnlockProcessor,
+    private readonly stageDirectionProcessor: DirectorStageDirectionProcessor,
+    private readonly sessionSummaryProcessor: RoleplaySessionSummaryProcessor,
+  ) {}
+
+  onModuleInit(): void {
+    this.processorRegistry.registerCustomProcessor(
+      this.stateTransitionProcessor,
+    );
+    this.processorRegistry.registerCustomProcessor(this.rubricScoreProcessor);
+    this.processorRegistry.registerCustomProcessor(
+      this.disclosureUnlockProcessor,
+    );
+    this.processorRegistry.registerCustomProcessor(
+      this.stageDirectionProcessor,
+    );
+    this.processorRegistry.registerCustomProcessor(
+      this.sessionSummaryProcessor,
+    );
+  }
+}
