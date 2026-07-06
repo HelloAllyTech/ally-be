@@ -60,6 +60,7 @@ export class AnthropicAutofillService {
     scenarioContext: ScenarioFieldContextDto,
     behaviorIdMapping?: BehaviorIdMapping,
     modelOverride?: string,
+    temperatureOverride?: number,
   ): Promise<GeneratedContent> {
     const promptTemplate =
       await this.promptSharedService.getPromptByCode(promptCode);
@@ -87,6 +88,9 @@ export class AnthropicAutofillService {
       const response = await this.client.messages.create({
         model: effectiveModel,
         max_tokens: ANTHROPIC_MAX_TOKENS,
+        ...(temperatureOverride != null
+          ? { temperature: temperatureOverride }
+          : {}),
         messages: [{ role: 'user', content: fullPrompt }],
       });
 
@@ -143,6 +147,7 @@ export class AnthropicAutofillService {
     variables: Record<string, string>,
     expectJson: boolean,
     modelOverride?: string,
+    temperatureOverride?: number,
   ): Promise<string> {
     const template = await this.promptSharedService.getPromptByCode(promptCode);
     if (!template) {
@@ -163,6 +168,9 @@ export class AnthropicAutofillService {
       const response = await this.client.messages.create({
         model: effectiveModel,
         max_tokens: ANTHROPIC_MAX_TOKENS,
+        ...(temperatureOverride != null
+          ? { temperature: temperatureOverride }
+          : {}),
         messages: expectJson
           ? [
               { role: 'user', content: prompt },
@@ -222,6 +230,7 @@ export class AnthropicAutofillService {
     variables: Record<string, string>,
     expectJson: boolean,
     modelOverride?: string,
+    temperatureOverride?: number,
   ): Promise<string> {
     const template = await this.promptSharedService.getPromptByCode(promptCode);
     if (!template) {
@@ -241,6 +250,9 @@ export class AnthropicAutofillService {
       const response = await this.client.messages.create({
         model: effectiveModel,
         max_tokens: ANTHROPIC_MAX_TOKENS,
+        ...(temperatureOverride != null
+          ? { temperature: temperatureOverride }
+          : {}),
         messages: expectJson
           ? [
               { role: 'user', content: prompt },

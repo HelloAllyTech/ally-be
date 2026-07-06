@@ -5,6 +5,8 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  Max,
+  Min,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
@@ -244,4 +246,15 @@ export class GenerateScenarioFieldDto {
   @IsEnum(['openai', 'anthropic'])
   @IsOptional()
   provider?: 'openai' | 'anthropic';
+
+  @ApiProperty({
+    description:
+      'LLM sampling temperature (0–2). Overrides the prompt-level default.',
+    required: false,
+  })
+  @IsNumber()
+  @Min(0)
+  @Max(2)
+  @IsOptional()
+  temperature?: number;
 }

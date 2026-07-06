@@ -85,6 +85,7 @@ describe('ScenarioService', () => {
   let triggerWarningsService: jest.Mocked<TriggerWarningsService>;
   let openAIAutofillService: jest.Mocked<OpenAIAutofillService>;
   let anthropicAutofillService: jest.Mocked<AnthropicAutofillService>;
+  let promptSharedService: jest.Mocked<PromptSharedService>;
   let openaiTranslationsService: jest.Mocked<OpenAITranslationsService>;
   let behaviorService: jest.Mocked<BehaviorService>;
   let scenarioBehaviorInstructionService: jest.Mocked<ScenarioBehaviorInstructionService>;
@@ -446,6 +447,9 @@ describe('ScenarioService', () => {
             // Individual tests can override via spy if they need a hasStates row.
             getPromptsByOptions: jest.fn().mockResolvedValue([]),
             getPromptByCode: jest.fn().mockResolvedValue(null),
+            // No prompt-level LLM override by default; autofill resolution falls
+            // back to the request/config model.
+            getPromptLlmConfig: jest.fn().mockResolvedValue({}),
           },
         },
       ],
@@ -466,6 +470,7 @@ describe('ScenarioService', () => {
     triggerWarningsService = module.get(TriggerWarningsService);
     openAIAutofillService = module.get(OpenAIAutofillService);
     anthropicAutofillService = module.get(AnthropicAutofillService);
+    promptSharedService = module.get(PromptSharedService);
     openaiTranslationsService = module.get(OpenAITranslationsService);
     behaviorService = module.get(BehaviorService);
     scenarioBehaviorInstructionService = module.get(
@@ -5311,6 +5316,7 @@ describe('ScenarioService', () => {
         scenarioContext,
         undefined,
         undefined,
+        undefined,
       );
     });
 
@@ -5330,6 +5336,7 @@ describe('ScenarioService', () => {
         scenarioContext,
         undefined,
         'gpt-4o',
+        undefined,
       );
     });
 
@@ -5396,6 +5403,7 @@ describe('ScenarioService', () => {
         }),
         undefined,
         undefined,
+        undefined,
       );
     });
 
@@ -5430,6 +5438,7 @@ describe('ScenarioService', () => {
         }),
         undefined,
         undefined,
+        undefined,
       );
     });
 
@@ -5462,6 +5471,7 @@ describe('ScenarioService', () => {
         }),
         undefined,
         undefined,
+        undefined,
       );
       const calls = openAIAutofillService.generateFieldContent.mock.calls;
       const passedContext = calls[calls.length - 1]?.[2];
@@ -5491,6 +5501,7 @@ describe('ScenarioService', () => {
         expect.objectContaining({
           language_code: 'ml-IN',
         }),
+        undefined,
         undefined,
         undefined,
       );
@@ -6546,6 +6557,57 @@ describe('ScenarioService', () => {
         scenarioContext,
         undefined,
         'claude-haiku-4-5',
+        undefined,
+      );
+    });
+
+    it('honors the prompt-level model/temperature when the request omits them (copilot case)', async () => {
+      // A per-prompt override configured in Prompt Management applies when the
+      // request sends no explicit model/temperature (e.g. Agent Builder Copilot).
+      promptSharedService.getPromptLlmConfig.mockResolvedValueOnce({
+        provider: 'openai',
+        model: 'gpt-4.1',
+        temperature: 0.3,
+      });
+      openAIAutofillService.generateFieldContent.mockResolvedValue('result');
+
+      await service.generateField({
+        fieldName: GeneratableField.DESCRIPTION,
+        scenarioContext,
+      });
+
+      expect(openAIAutofillService.generateFieldContent).toHaveBeenCalledWith(
+        GeneratableField.DESCRIPTION,
+        expect.any(String),
+        scenarioContext,
+        undefined,
+        'gpt-4.1',
+        0.3,
+      );
+    });
+
+    it('request model/temperature win over the prompt-level config', async () => {
+      promptSharedService.getPromptLlmConfig.mockResolvedValueOnce({
+        provider: 'openai',
+        model: 'gpt-4.1',
+        temperature: 0.3,
+      });
+      openAIAutofillService.generateFieldContent.mockResolvedValue('result');
+
+      await service.generateField({
+        fieldName: GeneratableField.DESCRIPTION,
+        scenarioContext,
+        model: 'gpt-4o',
+        temperature: 0.9,
+      });
+
+      expect(openAIAutofillService.generateFieldContent).toHaveBeenCalledWith(
+        GeneratableField.DESCRIPTION,
+        expect.any(String),
+        scenarioContext,
+        undefined,
+        'gpt-4o',
+        0.9,
       );
     });
   });

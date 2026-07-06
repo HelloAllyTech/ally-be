@@ -166,6 +166,7 @@ import {
   LlmRuntime,
   LlmProviderName,
 } from 'src/llm/constants/llm-model-registry.constants';
+import { modelSupportsTemperature } from 'src/common/util/llm-model.util';
 import {
   buildAvailableLanguagesMap,
   getDistinctScenarioLanguageIds,
@@ -2877,6 +2878,79 @@ export class ScenarioService {
   }
 
   /**
+   * Resolve which autofill service + model + temperature to use for a
+   * prompt-driven studio-AI call (generate / enhance / agent-builder copilot).
+   *
+   * Precedence (later wins): code default → prompt-level config (from Prompt
+   * Management) → the request's explicit override. This lets an author set a
+   * per-prompt model/temperature that applies whenever the UI doesn't send an
+   * explicit one (e.g. the Agent Builder Copilot, which sends none).
+   *
+   * Only OpenAI + Anthropic run autofill; a prompt-level Gemini provider is
+   * ignored here (no Gemini autofill executor) so the call never breaks.
+   * Temperature is dropped for models that reject a custom one (OpenAI
+   * reasoning models).
+   */
+  private async resolveAutofillLlm(
+    promptCode: string,
+    req: { provider?: string; model?: string; temperature?: number },
+  ): Promise<{
+    service: OpenAIAutofillService | AnthropicAutofillService;
+    provider: 'openai' | 'anthropic';
+    model?: string;
+    temperature?: number;
+  }> {
+    const registry = new Map<
+      'openai' | 'anthropic',
+      OpenAIAutofillService | AnthropicAutofillService
+    >([
+      ['openai', this.openAIAutofillService],
+      ['anthropic', this.anthropicAutofillService],
+    ]);
+    const isRunnable = (p?: string): p is 'openai' | 'anthropic' =>
+      p === 'openai' || p === 'anthropic';
+
+    const promptCfg =
+      await this.promptSharedService.getPromptLlmConfig(promptCode);
+
+    if (req.provider && !isRunnable(req.provider)) {
+      this.logger.warn(
+        `Unrecognized autofill provider "${req.provider}", falling back to openai`,
+      );
+    }
+
+    // Provider: request → prompt-level (if autofill-runnable) → openai.
+    let provider: 'openai' | 'anthropic' = 'openai';
+    if (isRunnable(req.provider)) provider = req.provider;
+    else if (isRunnable(promptCfg.provider)) provider = promptCfg.provider;
+
+    // Model: request → prompt-level (only when its provider matches the resolved
+    // provider — a Claude model can't run on OpenAI) → service default.
+    let model = req.model;
+    if (!model && promptCfg.model && promptCfg.provider === provider) {
+      model = promptCfg.model;
+    }
+
+    // Temperature: request → prompt-level; dropped for no-temperature models.
+    let temperature =
+      typeof req.temperature === 'number'
+        ? req.temperature
+        : promptCfg.temperature;
+    const providerDefault =
+      provider === 'anthropic'
+        ? this.configService.anthropic?.autofillModel
+        : this.configService.openai?.autofillModel;
+    if (
+      typeof temperature === 'number' &&
+      !modelSupportsTemperature(model ?? providerDefault)
+    ) {
+      temperature = undefined;
+    }
+
+    return { service: registry.get(provider)!, provider, model, temperature };
+  }
+
+  /**
    * Field-level Enhance: improve the existing content of a single scenario
    * field. Unlike {@link generateField} this never invents content — it takes
    * the field's current value plus the other field values as grounding context
@@ -2894,23 +2968,6 @@ export class ScenarioService {
         'currentValue is required to enhance a field — there is nothing to improve.',
       );
     }
-
-    const autofillServiceRegistry = new Map<
-      string,
-      OpenAIAutofillService | AnthropicAutofillService
-    >([
-      ['openai', this.openAIAutofillService],
-      ['anthropic', this.anthropicAutofillService],
-    ]);
-    const resolvedProvider = provider ?? 'openai';
-    if (provider && !autofillServiceRegistry.has(provider)) {
-      this.logger.warn(
-        `Unrecognized enhance provider "${provider}", falling back to openai`,
-      );
-    }
-    const autofillService =
-      autofillServiceRegistry.get(resolvedProvider) ??
-      this.openAIAutofillService;
 
     // Blank custom box ⇒ generic auto-improve directive.
     const effectiveGuidance =
@@ -2961,12 +3018,23 @@ export class ScenarioService {
       };
     }
 
+    const {
+      service: autofillService,
+      model: effectiveModel,
+      temperature,
+    } = await this.resolveAutofillLlm(promptCode, {
+      provider,
+      model,
+      temperature: enhanceScenarioFieldDto.temperature,
+    });
+
     const content = await autofillService.enhanceFieldContent(
       fieldName,
       promptCode,
       variables,
       expectJson,
-      model,
+      effectiveModel,
+      temperature,
     );
 
     this.logger.info(`Enhancement completed for ${fieldName}`);
@@ -3052,22 +3120,6 @@ export class ScenarioService {
   ): Promise<GenerateScenarioFieldResponseDto> {
     const { fieldName, scenarioContext, model, provider } =
       generateScenarioFieldDto;
-    const autofillServiceRegistry = new Map<
-      string,
-      OpenAIAutofillService | AnthropicAutofillService
-    >([
-      ['openai', this.openAIAutofillService],
-      ['anthropic', this.anthropicAutofillService],
-    ]);
-    const resolvedProvider = provider ?? 'openai';
-    if (provider && !autofillServiceRegistry.has(provider)) {
-      this.logger.warn(
-        `Unrecognized autofill provider "${provider}", falling back to openai`,
-      );
-    }
-    const autofillService =
-      autofillServiceRegistry.get(resolvedProvider) ??
-      this.openAIAutofillService;
 
     let promptCode = getPromptCodeForScenarioField(fieldName);
 
@@ -3245,12 +3297,23 @@ export class ScenarioService {
       };
     }
 
+    const {
+      service: autofillService,
+      model: effectiveModel,
+      temperature,
+    } = await this.resolveAutofillLlm(promptCode, {
+      provider,
+      model,
+      temperature: generateScenarioFieldDto.temperature,
+    });
+
     const content = await autofillService.generateFieldContent(
       fieldName,
       promptCode,
       contextToUse,
       behaviorIdMapping,
-      model,
+      effectiveModel,
+      temperature,
     );
 
     this.logger.info(`Generation completed for ${fieldName}`);
@@ -3270,23 +3333,6 @@ export class ScenarioService {
   ): Promise<GenerateAgentBuilderFieldResponseDto> {
     const { field, actorDescription, competency, agentTestCases, model } = dto;
 
-    const autofillServiceRegistry = new Map<
-      string,
-      OpenAIAutofillService | AnthropicAutofillService
-    >([
-      ['openai', this.openAIAutofillService],
-      ['anthropic', this.anthropicAutofillService],
-    ]);
-    const resolvedProvider = dto.provider ?? 'openai';
-    if (dto.provider && !autofillServiceRegistry.has(dto.provider)) {
-      this.logger.warn(
-        `Unrecognized agent-builder provider "${dto.provider}", falling back to openai`,
-      );
-    }
-    const autofillService =
-      autofillServiceRegistry.get(resolvedProvider) ??
-      this.openAIAutofillService;
-
     const numKnowledgeSources = dto.numKnowledgeSources ?? 3;
     const variables: Record<string, string> = {
       actorDescription: actorDescription ?? '',
@@ -3304,11 +3350,24 @@ export class ScenarioService {
       field === AgentBuilderField.PERSONA ||
       field === AgentBuilderField.KNOWLEDGE_SOURCES;
 
+    // Honor the prompt's per-prompt model/temperature (the wizard sends none),
+    // with any explicit request override winning.
+    const {
+      service: autofillService,
+      model: effectiveModel,
+      temperature,
+    } = await this.resolveAutofillLlm(promptCode, {
+      provider: dto.provider,
+      model,
+      temperature: dto.temperature,
+    });
+
     const raw = await autofillService.generateContentFromPrompt(
       promptCode,
       variables,
       expectJson,
-      model,
+      effectiveModel,
+      temperature,
     );
 
     return { field, value: this.parseAgentBuilderField(field, raw) };
