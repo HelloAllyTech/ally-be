@@ -57,6 +57,7 @@ export class OpenAIAutofillService {
     scenarioContext: ScenarioFieldContextDto,
     behaviorIdMapping?: BehaviorIdMapping,
     modelOverride?: string,
+    temperatureOverride?: number,
   ): Promise<GeneratedContent> {
     const promptTemplate =
       await this.promptSharedService.getPromptByCode(promptCode);
@@ -87,6 +88,9 @@ export class OpenAIAutofillService {
 
       const response = await this.client.chat.completions.create({
         model: effectiveModel,
+        ...(temperatureOverride != null
+          ? { temperature: temperatureOverride }
+          : {}),
         messages,
         ...(jsonSchema && {
           response_format: {
@@ -153,6 +157,7 @@ export class OpenAIAutofillService {
     variables: Record<string, string>,
     expectJson: boolean,
     modelOverride?: string,
+    temperatureOverride?: number,
   ): Promise<string> {
     const template = await this.promptSharedService.getPromptByCode(promptCode);
     if (!template) {
@@ -172,6 +177,9 @@ export class OpenAIAutofillService {
     try {
       const response = await this.client.chat.completions.create({
         model: effectiveModel,
+        ...(temperatureOverride != null
+          ? { temperature: temperatureOverride }
+          : {}),
         messages: [{ role: 'user', content: prompt }],
         ...(expectJson && {
           response_format: { type: 'json_object' as const },
@@ -223,6 +231,7 @@ export class OpenAIAutofillService {
     variables: Record<string, string>,
     expectJson: boolean,
     modelOverride?: string,
+    temperatureOverride?: number,
   ): Promise<string> {
     const template = await this.promptSharedService.getPromptByCode(promptCode);
     if (!template) {
@@ -241,6 +250,9 @@ export class OpenAIAutofillService {
     try {
       const response = await this.client.chat.completions.create({
         model: effectiveModel,
+        ...(temperatureOverride != null
+          ? { temperature: temperatureOverride }
+          : {}),
         messages: [{ role: 'user', content: prompt }],
         ...(expectJson && {
           response_format: { type: 'json_object' as const },
