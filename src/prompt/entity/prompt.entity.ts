@@ -96,7 +96,7 @@ export class Prompt extends BaseWithoutTenantEntity {
   provider?: string;
 
   /**
-   * Prompt-level LLM model override (e.g. 'gpt-4o', 'gemini-2.0-flash').
+   * Prompt-level LLM model override (e.g. 'gpt-4o', 'gemini-2.5-flash').
    * Sits between the code/language defaults and any simulation-level value
    * in the precedence chain. When null, the call site falls back to its
    * code/language default. Only OpenAI/Gemini models are offered in Studio

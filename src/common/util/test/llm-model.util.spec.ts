@@ -40,7 +40,7 @@ describe('llm-model.util', () => {
   describe('isGeminiModel', () => {
     it.each([
       ['gemini-2.5-pro', true],
-      ['gemini-2.0-flash', true],
+      ['gemini-2.5-flash', true],
       ['gpt-4o', false],
       ['claude-sonnet-4-6', false],
       [undefined, false],
@@ -59,8 +59,8 @@ describe('llm-model.util', () => {
     });
     it('explicit gemini provider + model', () => {
       expect(
-        resolveChatProviderModel('gemini', 'gemini-2.0-flash', DEFAULT),
-      ).toEqual({ providerType: 'gemini', model: 'gemini-2.0-flash' });
+        resolveChatProviderModel('gemini', 'gemini-2.5-flash', DEFAULT),
+      ).toEqual({ providerType: 'gemini', model: 'gemini-2.5-flash' });
     });
     it('infers gemini from model name when provider absent', () => {
       expect(

@@ -87,7 +87,7 @@ export class UpdatePromptDto {
 
   @ApiProperty({
     description:
-      'Prompt-level LLM model override (e.g. "gpt-4o", "gemini-2.0-flash"). ' +
+      'Prompt-level LLM model override (e.g. "gpt-4o", "gemini-2.5-flash"). ' +
       'Overrides the code/language default for the LLM call site this prompt ' +
       'drives. Only OpenAI/Gemini models are supported by the voice runtime. ' +
       'Null/omitted keeps the existing default.',

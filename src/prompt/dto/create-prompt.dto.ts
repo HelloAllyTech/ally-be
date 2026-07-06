@@ -46,7 +46,7 @@ export class CreateSinglePromptDto {
 
   @ApiProperty({
     description:
-      'Prompt-level LLM model override (e.g. "gpt-4o", "gemini-2.0-flash").',
+      'Prompt-level LLM model override (e.g. "gpt-4o", "gemini-2.5-flash").',
     required: false,
   })
   @IsOptional()

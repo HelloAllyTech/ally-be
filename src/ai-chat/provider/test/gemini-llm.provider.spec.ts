@@ -36,14 +36,14 @@ describe('GeminiLlmProvider', () => {
     const provider = makeProvider('key');
 
     const out = await provider.getCompletion(MESSAGES, {
-      model: 'gemini-2.0-flash',
+      model: 'gemini-2.5-flash',
       temperature: 0.5,
       maxTokens: 800,
     });
 
     expect(out).toBe('ok');
     const arg = mockGenerateContent.mock.calls[0][0];
-    expect(arg.model).toBe('gemini-2.0-flash');
+    expect(arg.model).toBe('gemini-2.5-flash');
     expect(arg.config.systemInstruction).toBe('You are a coach.');
     expect(arg.config.temperature).toBe(0.5);
     expect(arg.config.maxOutputTokens).toBe(800);
@@ -77,7 +77,7 @@ describe('GeminiLlmProvider', () => {
   it('throws a clear error when no API key is configured', async () => {
     const provider = makeProvider(undefined);
     await expect(
-      provider.getCompletion(MESSAGES, { model: 'gemini-2.0-flash' }),
+      provider.getCompletion(MESSAGES, { model: 'gemini-2.5-flash' }),
     ).rejects.toThrow(/GEMINI_API_KEY is not configured/);
   });
 
@@ -85,8 +85,8 @@ describe('GeminiLlmProvider', () => {
     mockGenerateContent.mockResolvedValue({ text: 'a' });
     const provider = makeProvider('key');
     expect(GoogleGenAI).not.toHaveBeenCalled();
-    await provider.getCompletion(MESSAGES, { model: 'gemini-2.0-flash' });
-    await provider.getCompletion(MESSAGES, { model: 'gemini-2.0-flash' });
+    await provider.getCompletion(MESSAGES, { model: 'gemini-2.5-flash' });
+    await provider.getCompletion(MESSAGES, { model: 'gemini-2.5-flash' });
     expect(GoogleGenAI).toHaveBeenCalledTimes(1);
   });
 });
