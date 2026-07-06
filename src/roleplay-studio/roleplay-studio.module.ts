@@ -21,7 +21,13 @@ import { RoleplayRubricScoreRepository } from './repository/roleplay-rubric-scor
 import { SpecValidatorService } from './service/spec-validator.service';
 import { SpecCompilerService } from './service/spec-compiler.service';
 import { RoleplaySpecService } from './service/roleplay-spec.service';
+import { CopilotSessionService } from './service/copilot-session.service';
+import { CopilotToolsService } from './service/copilot-tools.service';
+import { CopilotOrchestratorService } from './service/copilot-orchestrator.service';
 import { RoleplaySpecController } from './controller/roleplay-spec.controller';
+import { CopilotController } from './controller/copilot.controller';
+import { PromptModule } from 'src/prompt/prompt.module';
+import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 
 /**
  * Roleplay Studio v2 — spec authoring (copilot-driven), rehearsal, and the
@@ -42,8 +48,10 @@ import { RoleplaySpecController } from './controller/roleplay-spec.controller';
       RoleplayDirectorEvent,
       RoleplayRubricScore,
     ]),
+    PromptModule,
+    LlmUsageModule,
   ],
-  controllers: [RoleplaySpecController],
+  controllers: [RoleplaySpecController, CopilotController],
   providers: [
     RoleplaySpecRepository,
     RoleplaySpecVersionRepository,
@@ -57,6 +65,9 @@ import { RoleplaySpecController } from './controller/roleplay-spec.controller';
     SpecValidatorService,
     SpecCompilerService,
     RoleplaySpecService,
+    CopilotSessionService,
+    CopilotToolsService,
+    CopilotOrchestratorService,
   ],
   exports: [RoleplaySpecService, SpecValidatorService, SpecCompilerService],
 })
