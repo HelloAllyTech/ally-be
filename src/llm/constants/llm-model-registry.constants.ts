@@ -70,7 +70,6 @@ export const LLM_MODEL_REGISTRY: LlmModelInfo[] = [
   entry('openai', 'gpt-5-mini', 'GPT-5 mini', OPENAI_RUNTIMES),
   entry('gemini', 'gemini-2.5-pro', 'Gemini 2.5 Pro', GEMINI_RUNTIMES),
   entry('gemini', 'gemini-2.5-flash', 'Gemini 2.5 Flash', GEMINI_RUNTIMES),
-  entry('gemini', 'gemini-2.0-flash', 'Gemini 2.0 Flash', GEMINI_RUNTIMES),
   entry(
     'anthropic',
     'claude-sonnet-4-6',
