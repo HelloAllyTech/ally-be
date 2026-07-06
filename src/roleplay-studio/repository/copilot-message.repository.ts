@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { CopilotMessage } from '../entity/copilot-message.entity';
 import { CopilotSession } from '../entity/copilot-session.entity';
@@ -33,17 +33,25 @@ export class CopilotMessageRepository extends Repository<CopilotMessage> {
     },
   ): Promise<CopilotMessage> {
     return this.dataSource.transaction(async (em) => {
-      const rows: { lastMessageSeq: number }[] = await em.query(
-        `UPDATE "copilot_sessions"
-            SET "lastMessageSeq" = "lastMessageSeq" + 1, "updatedAt" = now()
-          WHERE id = $1
-          RETURNING "lastMessageSeq"`,
-        [sessionId],
-      );
-      const seq = rows?.[0]?.lastMessageSeq;
-      if (seq === undefined) {
-        throw new Error(`Copilot session not found: ${sessionId}`);
+      // Atomic seq allocation via UPDATE … RETURNING. Use the query builder,
+      // not em.query: in TypeORM 0.3 a raw UPDATE query resolves to the tuple
+      // [returnedRows, affectedCount], so `rows[0].lastMessageSeq` would be
+      // undefined and every first append would spuriously 404. UpdateResult
+      // exposes the returned rows cleanly on `.raw` and the match on `.affected`
+      // (which also refreshes updatedAt via the @UpdateDateColumn).
+      const result = await em
+        .createQueryBuilder()
+        .update(CopilotSession)
+        .set({ lastMessageSeq: () => '"lastMessageSeq" + 1' })
+        .where('id = :sessionId', { sessionId })
+        .returning('"lastMessageSeq"')
+        .execute();
+
+      if (!result.affected) {
+        throw new NotFoundException(`Copilot session not found: ${sessionId}`);
       }
+      const seq = (result.raw as { lastMessageSeq: number }[])[0]
+        .lastMessageSeq;
       const repo = em.getRepository(CopilotMessage);
       return repo.save(
         repo.create({ sessionId, seq: Number(seq), ...message }),
