@@ -30,6 +30,10 @@ import { CopilotSessionService } from './service/copilot-session.service';
 import { CopilotToolsService } from './service/copilot-tools.service';
 import { CopilotOrchestratorService } from './service/copilot-orchestrator.service';
 import { RoleplaySessionService } from './service/roleplay-session.service';
+import { RehearsalService } from './service/rehearsal.service';
+import { RehearsalTimerService } from './service/rehearsal-timer.service';
+import { RehearsalNotificationService } from './service/rehearsal-notification.service';
+import { RehearsalGateway } from './gateway/rehearsal.gateway';
 import { DirectorTelemetryService } from './service/director-telemetry.service';
 import { DirectorStateTransitionProcessor } from './processor/director-state-transition.processor';
 import { DirectorRubricScoreProcessor } from './processor/director-rubric-score.processor';
@@ -40,6 +44,8 @@ import { RoleplaySpecController } from './controller/roleplay-spec.controller';
 import { CopilotController } from './controller/copilot.controller';
 import { RoleplaySessionController } from './controller/roleplay-session.controller';
 import { RoleplayStudioWebhookController } from './controller/roleplay-studio-webhook.controller';
+import { RehearsalController } from './controller/rehearsal.controller';
+import { RehearsalWebhookController } from './controller/rehearsal-webhook.controller';
 
 /**
  * Roleplay Studio v2 — spec authoring (copilot-driven), rehearsal, and the
@@ -74,6 +80,8 @@ import { RoleplayStudioWebhookController } from './controller/roleplay-studio-we
     CopilotController,
     RoleplaySessionController,
     RoleplayStudioWebhookController,
+    RehearsalController,
+    RehearsalWebhookController,
   ],
   providers: [
     RoleplaySpecRepository,
@@ -92,6 +100,10 @@ import { RoleplayStudioWebhookController } from './controller/roleplay-studio-we
     CopilotToolsService,
     CopilotOrchestratorService,
     RoleplaySessionService,
+    RehearsalService,
+    RehearsalTimerService,
+    RehearsalNotificationService,
+    RehearsalGateway,
     DirectorTelemetryService,
     DirectorStateTransitionProcessor,
     DirectorRubricScoreProcessor,
