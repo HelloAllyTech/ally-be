@@ -982,7 +982,7 @@ export class ScenarioSessionService {
       `Updated scenario ${scenarioSessionId} eventStatus to COMPLETED`,
     );
 
-    // Score the roleplay actor against the configured optimisation goals
+    // Score the roleplay actor against the configured agent test cases
     // (async, best-effort — never blocks or fails session end).
     await this.scenarioSessionEvaluationService.triggerForSession(
       scenarioSession,

@@ -284,8 +284,8 @@ export class RoleplaySessionFeedbackDto {
   @ApiProperty({ type: [String] }) tags!: string[];
 }
 
-/** A superadmin-configured optimisation goal the actor is scored against. */
-export class RoleplaySessionOptimisationGoalDto {
+/** A superadmin-configured agent test case the actor is scored against. */
+export class RoleplaySessionAgentTestCaseDto {
   @ApiProperty() id!: string;
   @ApiProperty() title!: string;
   @ApiProperty() category!: string;
@@ -294,7 +294,7 @@ export class RoleplaySessionOptimisationGoalDto {
 
 /**
  * LLM-judge evaluation of the roleplay ACTOR agent for a real session, scored
- * against the configured optimisation goals. `metrics` maps each goal/metric
+ * against the configured agent test cases. `metrics` maps each goal/metric
  * name to a 0-100 score; `compositeScore` is round(mean(metrics)).
  */
 export class RoleplaySessionActorEvaluationDto {
@@ -383,10 +383,10 @@ export class RoleplaySessionLogDetailDto extends RoleplaySessionLogRowDto {
   actorEvaluation!: RoleplaySessionActorEvaluationDto | null;
 
   @ApiProperty({
-    type: [RoleplaySessionOptimisationGoalDto],
-    description: 'The optimisation goals the actor is scored against',
+    type: [RoleplaySessionAgentTestCaseDto],
+    description: 'The agent test cases the actor is scored against',
   })
-  optimisationGoals!: RoleplaySessionOptimisationGoalDto[];
+  agentTestCases!: RoleplaySessionAgentTestCaseDto[];
 
   @ApiProperty({ type: [RoleplaySessionLogEventDto] })
   events!: RoleplaySessionLogEventDto[];

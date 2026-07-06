@@ -19,7 +19,7 @@ export class ScenarioSessionDetails extends BaseEntity {
   summary?: Record<string, any>;
 
   // --- Actor-agent evaluation (LLM judge over the real-session transcript,
-  // scored against the superadmin-configured optimisation goals). Populated
+  // scored against the superadmin-configured agent test cases). Populated
   // asynchronously after the session ends via the evaluation webhook. ---
 
   /** Goal/metric name -> 0-100 score (e.g. {"Build rapport": 82}). */

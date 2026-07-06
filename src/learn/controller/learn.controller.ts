@@ -332,7 +332,7 @@ export class LearnController {
   @ApiOperation({
     summary:
       'Agent Builder Copilot: generate one Basic Settings field from the ' +
-      'actor brief + competency + optimisation goals (fired in parallel per field)',
+      'actor brief + competency + agent test cases (fired in parallel per field)',
   })
   @ApiResponse({
     status: 200,

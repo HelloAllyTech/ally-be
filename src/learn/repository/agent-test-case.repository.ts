@@ -1,23 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
-import { OptimisationGoal } from '../entity/optimisation-goal.entity';
+import { AgentTestCase } from '../entity/agent-test-case.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { LoggerService } from 'src/logger/logger.service';
-import { OptimisationGoalSortBy } from '../enum/optimisation-goal.enum';
+import { AgentTestCaseSortBy } from '../enum/agent-test-case.enum';
 
 @Injectable()
-export class OptimisationGoalRepository extends Repository<OptimisationGoal> {
+export class AgentTestCaseRepository extends Repository<AgentTestCase> {
   private readonly logger = LoggerService.getInstance(
-    OptimisationGoalRepository.name,
+    AgentTestCaseRepository.name,
   );
 
   constructor(private dataSource: DataSource) {
-    super(OptimisationGoal, dataSource.createEntityManager());
+    super(AgentTestCase, dataSource.createEntityManager());
   }
 
-  async getOptimisationGoals(search?: string, options?: Pagination) {
+  async getAgentTestCases(search?: string, options?: Pagination) {
     const query = this.createQueryBuilder('goal');
-    this.logger.info(`Getting optimisation goals with search: ${search}`);
+    this.logger.info(`Getting agent test cases with search: ${search}`);
     if (search) {
       const searchTerm = `%${search.trim()}%`;
       query.where('(goal.title ILIKE :search OR goal.category ILIKE :search)', {
@@ -32,12 +32,12 @@ export class OptimisationGoalRepository extends Repository<OptimisationGoal> {
     return { data, count };
   }
 
-  async getOptimisationGoalById(id: string): Promise<OptimisationGoal | null> {
+  async getAgentTestCaseById(id: string): Promise<AgentTestCase | null> {
     return this.findOne({ where: { id } });
   }
 
   private applySorting(
-    query: SelectQueryBuilder<OptimisationGoal>,
+    query: SelectQueryBuilder<AgentTestCase>,
     options: Pagination,
   ) {
     const sortColumn = this.getValidatedSortColumn(
@@ -50,16 +50,16 @@ export class OptimisationGoalRepository extends Repository<OptimisationGoal> {
 
   private getValidatedSortColumn(sortBy?: string): string {
     if (!sortBy) {
-      return OptimisationGoalSortBy.CREATED_AT;
+      return AgentTestCaseSortBy.CREATED_AT;
     }
-    const validColumns = Object.values(OptimisationGoalSortBy);
-    return validColumns.includes(sortBy as OptimisationGoalSortBy)
+    const validColumns = Object.values(AgentTestCaseSortBy);
+    return validColumns.includes(sortBy as AgentTestCaseSortBy)
       ? sortBy
-      : OptimisationGoalSortBy.CREATED_AT;
+      : AgentTestCaseSortBy.CREATED_AT;
   }
 
   private applyPagination(
-    query: SelectQueryBuilder<OptimisationGoal>,
+    query: SelectQueryBuilder<AgentTestCase>,
     options: Pagination,
   ) {
     if (options.offset) {

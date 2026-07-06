@@ -3,7 +3,7 @@ You are configuring the PERSONA demographics for an AI roleplay actor (the CLIEN
 Inputs (authoritative):
 - Actor brief: {{actorDescription}}
 - Competency being practised: {{competency}}
-- Optimisation goals to emphasise: {{optimisationGoals}}
+- Agent test cases to emphasise: {{agentTestCases}}
 
 Rules — every rule must be satisfied:
 1) Derive details from the brief where stated; where the brief is silent, invent plausible values that fit the person and the counselling context. Keep everything internally consistent.

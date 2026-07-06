@@ -5,7 +5,7 @@ import { ActorGoalEvaluationTurn } from 'src/ai/dto/ai.request.dto';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ScenarioSessionDetailsRepository } from '../repository/scenario-session-details.repository';
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
-import { OptimisationGoalService } from './optimisation-goal.service';
+import { AgentTestCaseService } from './agent-test-case.service';
 import { UpdateActorEvaluationDto } from '../dto/scenario-session-evaluation.dto';
 
 /** Lifecycle states stored in scenario_session_details.evaluationStatus. */
@@ -20,7 +20,7 @@ export enum ActorEvaluationStatus {
  *
  * On session end, {@link triggerForSession} fires an async ai-learn job that
  * runs an LLM judge over the transcript, scoring the actor against every
- * superadmin-configured optimisation goal. ai-learn then webhooks the result
+ * superadmin-configured agent test case. ai-learn then webhooks the result
  * back to {@link applyResult}, which persists per-goal scores + a composite +
  * markdown onto `scenario_session_details`.
  *
@@ -35,7 +35,7 @@ export class ScenarioSessionEvaluationService {
   constructor(
     private readonly scenarioSessionDetailsRepository: ScenarioSessionDetailsRepository,
     private readonly scenarioSessionMessagesRepository: ScenarioSessionMessagesRepository,
-    private readonly optimisationGoalService: OptimisationGoalService,
+    private readonly agentTestCaseService: AgentTestCaseService,
     private readonly aiService: AiService,
   ) {}
 
@@ -48,10 +48,10 @@ export class ScenarioSessionEvaluationService {
       const sessionId = scenarioSession.id;
 
       const { data: goals } =
-        await this.optimisationGoalService.getOptimisationGoals();
+        await this.agentTestCaseService.getAgentTestCases();
       if (!goals.length) {
         this.logger.info(
-          `Skipping actor evaluation for ${sessionId}: no optimisation goals configured.`,
+          `Skipping actor evaluation for ${sessionId}: no agent test cases configured.`,
         );
         return;
       }

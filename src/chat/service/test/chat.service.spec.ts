@@ -170,6 +170,7 @@ describe('ChatService', () => {
             }),
             persistAndBroadcastMessage: jest.fn(),
             getChatHistoryForAIService: jest.fn().mockResolvedValue([]),
+            replaceDictationTranscript: jest.fn().mockResolvedValue(undefined),
           },
         },
         {
@@ -461,6 +462,43 @@ describe('ChatService', () => {
 
       expect(service.createChatForAnonymousClient).toHaveBeenCalled();
       expect(result.chatId).toBe(42);
+    });
+  });
+
+  describe('setNoteTranscript', () => {
+    it('stores the transcript and rebuilds call-details stats', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
+
+      const result = await service.setNoteTranscript(1, 2, '  hello there  ');
+
+      // Trimmed transcript is handed to the message layer to store as a message.
+      expect(messageService.replaceDictationTranscript).toHaveBeenCalledWith(
+        mockChat,
+        'hello there',
+      );
+      // The flat call_details.transcript is rebuilt from the messages.
+      expect(
+        (service as any).callDetailsService.updateMessageStatistics,
+      ).toHaveBeenCalledWith(mockChat);
+      expect(result).toEqual({ success: true });
+    });
+
+    it('throws 404 when the chat is not found', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(null);
+
+      await expect(service.setNoteTranscript(999, 2, 'hi')).rejects.toThrow(
+        'Chat not found',
+      );
+      expect(messageService.replaceDictationTranscript).not.toHaveBeenCalled();
+    });
+
+    it('throws 400 when the transcript is blank', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
+
+      await expect(service.setNoteTranscript(1, 2, '   ')).rejects.toThrow(
+        'Transcript is empty',
+      );
+      expect(messageService.replaceDictationTranscript).not.toHaveBeenCalled();
     });
   });
 

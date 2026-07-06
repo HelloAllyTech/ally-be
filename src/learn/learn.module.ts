@@ -88,12 +88,12 @@ import { Competency } from './entity/competency.entity';
 import { CompetencyRepository } from './repository/competency.repository';
 import { CompetencyService } from './service/competency.service';
 import { CompetencyController } from './controller/competency.controller';
-import { OptimisationGoal } from './entity/optimisation-goal.entity';
-import { OptimisationGoalRepository } from './repository/optimisation-goal.repository';
-import { OptimisationGoalService } from './service/optimisation-goal.service';
+import { AgentTestCase } from './entity/agent-test-case.entity';
+import { AgentTestCaseRepository } from './repository/agent-test-case.repository';
+import { AgentTestCaseService } from './service/agent-test-case.service';
 import { ScenarioSessionEvaluationService } from './service/scenario-session-evaluation.service';
 import { ScenarioSessionEvaluationWebhookController } from './controller/scenario-session-evaluation-webhook.controller';
-import { OptimisationGoalController } from './controller/optimisation-goal.controller';
+import { AgentTestCaseController } from './controller/agent-test-case.controller';
 import { CompetencyBehavior } from './entity/competency-behavior.entity';
 import { CompetencyBehaviorRepository } from './repository/competency-behavior.repository';
 import { BehaviorTranslation } from './entity/behavior-translation.entity';
@@ -140,7 +140,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
       ScenarioSessionBehaviorInstructions,
       Competency,
       CompetencyBehavior,
-      OptimisationGoal,
+      AgentTestCase,
       BehaviorTranslation,
       ScenarioBehaviorInstructionTranslation,
       AuditModule,
@@ -173,7 +173,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     FillerTagController,
     ScenarioSessionChatController,
     CompetencyController,
-    OptimisationGoalController,
+    AgentTestCaseController,
     ScenarioSessionRecordingController,
     ScenarioSessionEvaluationWebhookController,
   ],
@@ -225,8 +225,8 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     CompetencyService,
     CompetencyRepository,
     CompetencyBehaviorRepository,
-    OptimisationGoalService,
-    OptimisationGoalRepository,
+    AgentTestCaseService,
+    AgentTestCaseRepository,
     ScenarioSessionEvaluationService,
     BehaviorTranslationRepository,
     ScenarioBehaviorInstructionTranslationRepository,
