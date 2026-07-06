@@ -4,6 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, DeepPartial, EntityManager, In } from 'typeorm';
 
@@ -21,6 +22,7 @@ async function executeInChunks<T, R>(
   return results;
 }
 import { Scenarios } from '../entity/scenarios.entity';
+import { ScenarioEngine } from '../enum/scenario-engine.enum';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { validateSimulationStates } from '../util/validate-simulation-states.util';
@@ -1258,6 +1260,16 @@ export class ScenarioService {
     await this.pruneStatesIfPromptNotStateful(updateScenarioDto);
 
     const scenario = await this.validateUpdateScenario(id, updateScenarioDto);
+
+    // Roleplay Studio v2 shells are materialised from a versioned spec — the
+    // v1 studio's fan-out must never touch them, or the next spec publish
+    // would silently clobber the edit. Author through the roleplay-studio
+    // endpoints instead.
+    if (scenario.engine === ScenarioEngine.ROLEPLAY_V2) {
+      throw new UnprocessableEntityException(
+        'This scenario is managed by Roleplay Studio v2; edit its roleplay spec instead.',
+      );
+    }
 
     const isMultiTenantAdmin =
       await this.permissionsService.isMultiTenantAdmin(userId);

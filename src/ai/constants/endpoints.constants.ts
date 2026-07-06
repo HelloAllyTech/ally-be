@@ -19,4 +19,11 @@ export const ENDPOINTS = {
   // against the superadmin-configured agent test cases (LLM judge over the
   // session transcript). Fire-and-forget; ai-learn webhooks the result back.
   ACTOR_GOAL_EVALUATION: 'api/v1/scenario-session/actor-evaluation',
+  // Roleplay Studio v2 rehearsal harness in ai-learn: plays SKILLED / POOR /
+  // ADVERSARIAL simulated trainees against a spec and judges the runs.
+  // Answers 202; progress/results come back via the rehearsal webhook
+  // (PATCH /v1/roleplay-studio/rehearsals/webhook/:rehearsalId).
+  ROLEPLAY_REHEARSAL_RUN: 'api/v1/roleplay-rehearsal/run',
+  // Per-rehearsal path — append the rehearsal id at call site.
+  ROLEPLAY_REHEARSAL_CANCEL: 'api/v1/roleplay-rehearsal/cancel',
 } as const;

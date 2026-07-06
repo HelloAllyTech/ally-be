@@ -1,0 +1,5 @@
+{
+  "name": "Roleplay Copilot — Rehearsal Critique",
+  "description": "Reviews rehearsal judge results + report and proposes evidence-grounded spec patches ({proposals: [{patch, rationale, targetSection, severity}]}).",
+  "category": "Roleplay Studio"
+}

@@ -1,0 +1,5 @@
+{
+  "name": "Roleplay Copilot — Interviewer System",
+  "description": "System prompt for the Roleplay Studio v2 copilot: runs the four-question trainer interview (skill, learner profile, client sketch, success criteria) and incrementally builds the spec via tools.",
+  "category": "Roleplay Studio"
+}

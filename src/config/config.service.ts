@@ -257,6 +257,12 @@ export class AppConfigService {
         'SIMULATED_USER_AGENT_NAME',
         'SimulatedUser',
       ),
+      // Roleplay Studio v2 runtime agent (actor + director). Dispatched for
+      // scenarios with engine=ROLEPLAY_V2; rooms are prefixed `roleplay-`.
+      roleplayAgentName: this.configService.get<string>(
+        'LIVEKIT_ROLEPLAY_AGENT_NAME',
+        'AgentV2',
+      ),
     };
   }
 
@@ -380,6 +386,27 @@ export class AppConfigService {
       autofillModel: this.configService.get<string>(
         'ANTHROPIC_AUTOFILL_MODEL',
         'claude-sonnet-4-6',
+      ),
+    };
+  }
+
+  get roleplayStudio() {
+    return {
+      // Copilot (spec-authoring interviewer) model. Same family as the
+      // anthropic autofill default.
+      copilotModel: this.configService.get<string>(
+        'ROLEPLAY_COPILOT_MODEL',
+        'claude-sonnet-4-6',
+      ),
+      // Hard cap on tool-use round-trips per copilot turn.
+      maxToolIterations: this.configService.get<number>(
+        'ROLEPLAY_COPILOT_MAX_TOOL_ITERATIONS',
+        8,
+      ),
+      // Rehearsal runs that outlive this are failed by the redis TTL timer.
+      rehearsalTimeoutMinutes: this.configService.get<number>(
+        'ROLEPLAY_REHEARSAL_TIMEOUT_MINUTES',
+        30,
       ),
     };
   }

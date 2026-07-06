@@ -6,6 +6,7 @@ import {
   DeleteDateColumn,
 } from 'typeorm';
 import { ScenarioDifficultyLevel, ScenarioStatus } from '../type/scenario.type';
+import { ScenarioEngine } from '../enum/scenario-engine.enum';
 
 @Entity('scenarios')
 export class Scenarios extends BaseWithoutTenantEntity {
@@ -69,4 +70,19 @@ export class Scenarios extends BaseWithoutTenantEntity {
   // versioning or have never been published from a version.
   @Column({ type: 'uuid', nullable: true })
   publishedVersionId?: string | null;
+
+  // Which runtime plays this scenario. ROLEPLAY_V2 rows are thin shells
+  // materialised by Roleplay Studio v2 (see src/roleplay-studio/): learner
+  // listing/launch reuses the scenarios pipeline, but the configuration lives
+  // in roleplay_specs/roleplay_spec_versions and the v1 studio must never
+  // edit them (updateScenario rejects with 422).
+  // Optional on the type (defaulted by the DB) so pre-existing structural
+  // uses of the entity shape — GetAdminScenarioDto extends it — stay valid.
+  @Column({ enum: ScenarioEngine, default: ScenarioEngine.SIMULATION })
+  engine?: ScenarioEngine;
+
+  // Loose FK to roleplay_specs.id for engine=ROLEPLAY_V2 rows (no DB
+  // constraint, matching repo convention). Null for v1 scenarios.
+  @Column({ type: 'uuid', nullable: true })
+  roleplaySpecId?: string | null;
 }
