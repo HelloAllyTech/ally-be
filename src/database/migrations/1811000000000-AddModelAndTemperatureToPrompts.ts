@@ -12,10 +12,10 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * simulation override) and are forwarded to ally-ai-learn inside
  * promptData.prompts[promptCode].
  */
-export class AddModelAndTemperatureToPrompts1801000000000
+export class AddModelAndTemperatureToPrompts1811000000000
   implements MigrationInterface
 {
-  name = 'AddModelAndTemperatureToPrompts1801000000000';
+  name = 'AddModelAndTemperatureToPrompts1811000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
