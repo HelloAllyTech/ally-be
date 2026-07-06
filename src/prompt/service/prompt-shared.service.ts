@@ -127,7 +127,8 @@ export class PromptSharedService {
     return {
       provider: row?.provider || undefined,
       model: row?.model || undefined,
-      temperature: typeof row?.temperature === 'number' ? row.temperature : undefined,
+      temperature:
+        typeof row?.temperature === 'number' ? row.temperature : undefined,
     };
   }
 

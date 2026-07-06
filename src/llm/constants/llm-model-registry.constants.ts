@@ -71,8 +71,18 @@ export const LLM_MODEL_REGISTRY: LlmModelInfo[] = [
   entry('gemini', 'gemini-2.5-pro', 'Gemini 2.5 Pro', GEMINI_RUNTIMES),
   entry('gemini', 'gemini-2.5-flash', 'Gemini 2.5 Flash', GEMINI_RUNTIMES),
   entry('gemini', 'gemini-2.0-flash', 'Gemini 2.0 Flash', GEMINI_RUNTIMES),
-  entry('anthropic', 'claude-sonnet-4-6', 'Claude Sonnet 4.6', ANTHROPIC_RUNTIMES),
-  entry('anthropic', 'claude-haiku-4-5', 'Claude Haiku 4.5', ANTHROPIC_RUNTIMES),
+  entry(
+    'anthropic',
+    'claude-sonnet-4-6',
+    'Claude Sonnet 4.6',
+    ANTHROPIC_RUNTIMES,
+  ),
+  entry(
+    'anthropic',
+    'claude-haiku-4-5',
+    'Claude Haiku 4.5',
+    ANTHROPIC_RUNTIMES,
+  ),
   entry('anthropic', 'claude-opus-4-7', 'Claude Opus 4.7', ANTHROPIC_RUNTIMES),
 ];
 

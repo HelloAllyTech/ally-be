@@ -31,7 +31,9 @@ describe('llm-model.util', () => {
       ['o4-mini', false],
       [undefined, true],
     ])('modelSupportsTemperature(%s) = %s', (model, expected) => {
-      expect(modelSupportsTemperature(model as string | undefined)).toBe(expected);
+      expect(modelSupportsTemperature(model as string | undefined)).toBe(
+        expected,
+      );
     });
   });
 

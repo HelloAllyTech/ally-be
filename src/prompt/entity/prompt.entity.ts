@@ -110,10 +110,14 @@ export class Prompt extends BaseWithoutTenantEntity {
    * code/language defaults and any simulation-level temperature. When null,
    * the call site falls back to its code/language default.
    */
-  @Column({ type: 'numeric', nullable: true, transformer: {
-    to: (value?: number | null) => value ?? null,
-    from: (value?: string | null) =>
-      value === null || value === undefined ? undefined : parseFloat(value),
-  } })
+  @Column({
+    type: 'numeric',
+    nullable: true,
+    transformer: {
+      to: (value?: number | null) => value ?? null,
+      from: (value?: string | null) =>
+        value === null || value === undefined ? undefined : parseFloat(value),
+    },
+  })
   temperature?: number;
 }

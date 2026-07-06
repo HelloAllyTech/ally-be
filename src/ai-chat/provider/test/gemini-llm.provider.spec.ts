@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const mockGenerateContent = jest.fn();
 const mockGenerateContentStream = jest.fn();
 
