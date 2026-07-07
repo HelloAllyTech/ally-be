@@ -131,6 +131,13 @@ export class ChatService {
     const decryptedCallDetails = await this.decryptCallDetails(chat.details);
     chat.details = decryptedCallDetails ?? ({} as CallDetails);
 
+    // Explicit, client-facing signal that this session's audio was cut short
+    // (socket dropped mid-recording), so the summary is from a partial
+    // recording. Derived from metadata written by the stream finalizer.
+    const incompleteRecording =
+      (chat.metadata as Record<string, any> | undefined)?.incompleteRecording ??
+      null;
+
     const review =
       await this.scribeSessionReviewSharedService.getReviewByScribeSessionId(
         id,
@@ -138,6 +145,7 @@ export class ChatService {
     if (review) {
       return {
         ...chat,
+        incompleteRecording,
         reviewId: review.id,
         reviewStatus: review.status,
         reviewNote: review.note,
@@ -145,7 +153,7 @@ export class ChatService {
         reviewUpdatedAt: review.updatedAt,
       };
     }
-    return chat;
+    return { ...chat, incompleteRecording };
   }
 
   async createChatWithClientAndCounselor(
