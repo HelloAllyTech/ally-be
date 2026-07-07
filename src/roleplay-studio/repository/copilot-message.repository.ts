@@ -33,20 +33,27 @@ export class CopilotMessageRepository extends Repository<CopilotMessage> {
     },
   ): Promise<CopilotMessage> {
     return this.dataSource.transaction(async (em) => {
-      const rows: { lastMessageSeq: number }[] = await em.query(
+      // EntityManager.query() returns a `[rows, affectedCount]` tuple for a
+      // RETURNING UPDATE on Postgres — NOT a bare rows array. Reading row 0 off
+      // the tuple yields the inner rows array (whose `.lastMessageSeq` is
+      // undefined), which made this throw session_not_found on every append even
+      // when the UPDATE matched. Unwrap the tuple (guarding the bare-array shape
+      // some driver/TypeORM versions return).
+      const result = await em.query(
         `UPDATE "copilot_sessions"
             SET "lastMessageSeq" = "lastMessageSeq" + 1, "updatedAt" = now()
           WHERE id = $1
           RETURNING "lastMessageSeq"`,
         [sessionId],
       );
+      const rows: { lastMessageSeq: number }[] = Array.isArray(result?.[0])
+        ? result[0]
+        : result;
       const seq = rows?.[0]?.lastMessageSeq;
       if (seq === undefined) {
-        // NotFoundException (not a bare Error) so the stream controller can tag
-        // the SSE error frame `session_not_found` and the client can recover by
-        // re-creating the session. Reachable if the session row disappears
-        // between the orchestrator's getSession check and this append (e.g. a
-        // local DB reset mid-turn).
+        // Genuinely no such session row (UPDATE matched 0 rows). NotFoundException
+        // (not a bare Error) so the stream controller tags the SSE error frame
+        // `session_not_found` and the client can recover by re-creating it.
         throw new NotFoundException(`Copilot session not found: ${sessionId}`);
       }
       const repo = em.getRepository(CopilotMessage);
