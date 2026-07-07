@@ -9,6 +9,10 @@ import * as fs from 'fs';
 import { WriteStream } from 'fs';
 import * as path from 'path';
 import { ChatSummaryStatus } from '../../chat/entity/chat.entity';
+import {
+  StreamEndReason,
+  ABNORMAL_STREAM_END_REASONS,
+} from '../../chat/constants/chat.constants';
 import { DataSource, EntityManager } from 'typeorm';
 import { AiEventService } from '../../ai/service/ai-event.service';
 import { LoggerService } from '../../logger/logger.service';
@@ -106,6 +110,15 @@ export class StreamFileProcessorService
       // Bytes at the last successful checkpoint upload — skip re-uploading when
       // nothing new arrived.
       lastCheckpointBytes: number;
+      // Serializes multipart part uploads. saveAudio flushes a full 6 MB file
+      // as a part without blocking the socket, but those flushes MUST run in
+      // order (parts are numbered) and their failures MUST be observed —
+      // previously the flush was fire-and-forget, so a failed part became an
+      // unhandled rejection and silently corrupted the multipart. Each flush is
+      // chained here; endCallStream awaits the chain before completing.
+      flushChain: Promise<void>;
+      // Set if any chained part flush failed — the multipart is now incomplete.
+      partUploadFailed: boolean;
     };
   } = {};
 
@@ -409,6 +422,8 @@ export class StreamFileProcessorService
         checkpointChunks: [],
         checkpointBytes: 0,
         lastCheckpointBytes: 0,
+        flushChain: Promise.resolve(),
+        partUploadFailed: false,
       };
 
       this.logger.debug(
@@ -630,12 +645,27 @@ export class StreamFileProcessorService
     // Check if we need to flush the current file
     if (currentFile.bufferSize >= this.MIN_PART_SIZE) {
       activeCallStream.currentFileIndex = currentFileIndex === 0 ? 1 : 0;
-      this.flushFileAsPart({
-        chatId,
-        activeCallStream,
-        fileToFlushIndex: currentFileIndex,
-        provider: session.provider!,
-      });
+      // Chain the part upload so flushes run strictly in order (parts are
+      // numbered) and a failure is OBSERVED rather than becoming an unhandled
+      // rejection that silently corrupts the multipart. endCallStream awaits
+      // this chain before completing the upload.
+      activeCallStream.flushChain = activeCallStream.flushChain
+        .then(() =>
+          this.flushFileAsPart({
+            chatId,
+            activeCallStream,
+            fileToFlushIndex: currentFileIndex,
+            provider: session.provider!,
+          }),
+        )
+        .catch((err) => {
+          activeCallStream.partUploadFailed = true;
+          this.logger.error(
+            `Part upload failed | ChatId: ${chatId} | Provider: ${session.provider} | Error: ${
+              err instanceof Error ? err.message : String(err)
+            }`,
+          );
+        });
       // The session now has a durable part; stop checkpointing and free the
       // accumulated buffer.
       activeCallStream.checkpointChunks = [];
@@ -744,6 +774,16 @@ export class StreamFileProcessorService
     this.chatService.updateCallMetadata(chatId);
 
     try {
+      // Wait for any in-flight chained part uploads to finish before we flush
+      // the tail and complete the multipart, so no part is still uploading (or
+      // silently failed) when we finalize.
+      await activeCallStream.flushChain;
+      if (activeCallStream.partUploadFailed) {
+        throw new Error(
+          'One or more multipart part uploads failed; recording is incomplete',
+        );
+      }
+
       // Check if we have any parts (multipart upload) or just small files
       if (activeCallStream.parts.length > 0) {
         if (currentFile.bufferSize > 0) {
@@ -888,8 +928,32 @@ export class StreamFileProcessorService
           provider,
         },
       });
-      const { callDetails } =
+      const { chat, callDetails } =
         await this.chatService.getChatWithCallDetails(chatId);
+
+      // If the stream was finalized because the socket died (not a clean user
+      // stop), the audio is almost certainly partial — flag the session so the
+      // summary can be shown as "from an incomplete recording" rather than a
+      // clean success. Merge to preserve correlationId/streamEndReason/etc.
+      const existingMeta =
+        (chat?.metadata as Record<string, any> | undefined) ?? {};
+      const streamEndReason = existingMeta.streamEndReason as
+        | StreamEndReason
+        | undefined;
+      if (
+        streamEndReason &&
+        ABNORMAL_STREAM_END_REASONS.includes(streamEndReason)
+      ) {
+        await this.chatService.updateChat(chatId, {
+          metadata: {
+            ...existingMeta,
+            incompleteRecording: { reason: streamEndReason },
+          } as Record<string, any>,
+        });
+        this.logger.warn(
+          `Flagged chat ${chatId} as incomplete recording (streamEndReason=${streamEndReason}) | Provider: ${provider}`,
+        );
+      }
 
       await this.aiEventService.publishTranscribeAudioEvent({
         message_type: 'transcribe_and_summarize_request',

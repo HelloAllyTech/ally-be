@@ -705,6 +705,7 @@ describe('ChatService', () => {
       expect(chatRepository.update).toHaveBeenCalledWith(1, {
         status: ChatStatus.ENDED,
         endedAt: expect.any(Date),
+        metadata: expect.objectContaining({ streamEndReason: 'completed' }),
       });
       expect(cache.del).toHaveBeenCalledWith('chat:1');
     });
