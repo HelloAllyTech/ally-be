@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { RoleplaySessionLogsController } from './controller/roleplay-session-logs.controller';
 import { RoleplaySessionLogsService } from './service/roleplay-session-logs.service';
 import { RoleplaySessionLogsRepository } from './repository/roleplay-session-logs.repository';
+import { AwsModule } from '../aws/aws.module';
 
 /**
  * Super-admin "Roleplay Session Logs" — a platform-wide (cross-tenant) read-only
@@ -9,9 +10,11 @@ import { RoleplaySessionLogsRepository } from './repository/roleplay-session-log
  * its deps (JWT strategy + PermissionsService) from the globally-scoped
  * AuthModule / AuthorizationModule, so no imports are required here. The
  * repository talks to the shared `DataSource` directly (cross-tenant), so no
- * TypeOrmModule.forFeature registration is needed either.
+ * TypeOrmModule.forFeature registration is needed either. AwsModule provides
+ * S3Service for presigning recording playback URLs.
  */
 @Module({
+  imports: [AwsModule],
   controllers: [RoleplaySessionLogsController],
   providers: [RoleplaySessionLogsService, RoleplaySessionLogsRepository],
 })

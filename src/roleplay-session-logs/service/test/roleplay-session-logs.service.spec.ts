@@ -2,10 +2,14 @@ import { NotFoundException } from '@nestjs/common';
 import { RoleplaySessionLogsService } from '../roleplay-session-logs.service';
 import { RoleplaySessionLogsRepository } from '../../repository/roleplay-session-logs.repository';
 import { ScenarioSessionStatus } from '../../../learn/enum/scenario-session-status.enum';
+import { S3Service } from '../../../aws/service/s3.service';
+import { AppConfigService } from '../../../config/config.service';
 
 describe('RoleplaySessionLogsService', () => {
   let service: RoleplaySessionLogsService;
   let repo: jest.Mocked<RoleplaySessionLogsRepository>;
+  let s3Service: jest.Mocked<S3Service>;
+  let configService: jest.Mocked<AppConfigService>;
 
   const baseRow = {
     id: 'sess-1',
@@ -42,7 +46,17 @@ describe('RoleplaySessionLogsService', () => {
       findAgentTestCases: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<RoleplaySessionLogsRepository>;
 
-    service = new RoleplaySessionLogsService(repo);
+    s3Service = {
+      generatePresignedUrl: jest
+        .fn()
+        .mockResolvedValue('https://s3.example.com/presigned'),
+    } as unknown as jest.Mocked<S3Service>;
+
+    configService = {
+      scenarioSessionAudioStorage: { bucket: 'recordings-bucket' },
+    } as unknown as jest.Mocked<AppConfigService>;
+
+    service = new RoleplaySessionLogsService(repo, s3Service, configService);
   });
 
   const usageRows = [
@@ -195,6 +209,45 @@ describe('RoleplaySessionLogsService', () => {
       expect(detail.events[0].eventName).toBe('Empathy shown');
       expect(detail.transcript).toHaveLength(1);
       expect(detail.transcript[0].content).toBe('Hello');
+    });
+
+    it('presigns a playback URL for the egress recording', async () => {
+      repo.findOne.mockResolvedValue(baseRow);
+      repo.getRecordingBySession.mockResolvedValue({
+        storageKey: 'recordings/room-1.ogg',
+        egressId: 'EG_123',
+      });
+
+      const detail = await service.getById('sess-1');
+
+      expect(detail.recording).toEqual({
+        storageKey: 'recordings/room-1.ogg',
+        egressId: 'EG_123',
+        url: 'https://s3.example.com/presigned',
+      });
+      expect(s3Service.generatePresignedUrl).toHaveBeenCalledWith({
+        bucket: 'recordings-bucket',
+        key: 'recordings/room-1.ogg',
+        operation: 'get',
+        expiresIn: 2400,
+      });
+    });
+
+    it('returns the recording pointer with a null url when presigning fails', async () => {
+      repo.findOne.mockResolvedValue(baseRow);
+      repo.getRecordingBySession.mockResolvedValue({
+        storageKey: 'recordings/room-1.ogg',
+        egressId: 'EG_123',
+      });
+      s3Service.generatePresignedUrl.mockRejectedValue(new Error('boom'));
+
+      const detail = await service.getById('sess-1');
+
+      expect(detail.recording).toEqual({
+        storageKey: 'recordings/room-1.ogg',
+        egressId: 'EG_123',
+        url: null,
+      });
     });
   });
 

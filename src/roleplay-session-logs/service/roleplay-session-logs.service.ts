@@ -7,8 +7,12 @@ import {
   RoleplaySessionLogDetailDto,
   RoleplaySessionLogRowDto,
   RoleplaySessionModelsDto,
+  RoleplaySessionRecordingDto,
   RoleplaySessionUsageDto,
 } from '../dto/roleplay-session-logs.dto';
+import { S3Service } from '../../aws/service/s3.service';
+import { AppConfigService } from '../../config/config.service';
+import { LoggerService } from '../../logger/logger.service';
 import { ScenarioSessionStatus } from '../../learn/enum/scenario-session-status.enum';
 import {
   RoleplaySessionLatencyRow,
@@ -40,8 +44,12 @@ interface UsageSummary {
 
 @Injectable()
 export class RoleplaySessionLogsService {
+  private readonly logger = new LoggerService(RoleplaySessionLogsService.name);
+
   constructor(
     private readonly roleplaySessionLogsRepository: RoleplaySessionLogsRepository,
+    private readonly s3Service: S3Service,
+    private readonly configService: AppConfigService,
   ) {}
 
   /** Cross-tenant, filtered, paginated list of genuine end-user roleplays. */
@@ -120,7 +128,7 @@ export class RoleplaySessionLogsService {
       usage,
       models: this.buildModels(usageRows),
       latency: this.buildLatency(latencyRow),
-      recording: recording ?? null,
+      recording: await this.buildRecording(recording),
       feedback: feedback
         ? {
             rating: Number(feedback.rating),
@@ -153,6 +161,37 @@ export class RoleplaySessionLogsService {
         createdAt: m.createdAt,
       })),
     };
+  }
+
+  /**
+   * Attaches a short-lived presigned playback URL to the egress recording
+   * pointer. `url` is null when the bucket isn't configured or presigning
+   * fails — the pointer itself is still returned so the UI can show that a
+   * recording exists.
+   */
+  private async buildRecording(
+    recording: { storageKey: string; egressId: string } | null,
+  ): Promise<RoleplaySessionRecordingDto | null> {
+    if (!recording) return null;
+
+    let url: string | null = null;
+    const bucket = this.configService.scenarioSessionAudioStorage.bucket;
+    if (bucket) {
+      try {
+        url = await this.s3Service.generatePresignedUrl({
+          bucket,
+          key: recording.storageKey,
+          operation: 'get',
+          expiresIn: 2400, // 40 minutes, matching the learn recording endpoint
+        });
+      } catch (error) {
+        this.logger.error(
+          `Failed to presign recording URL for key ${recording.storageKey}: ${error.message}`,
+        );
+      }
+    }
+
+    return { ...recording, url };
   }
 
   /** Maps a raw query row into the API row shape (numeric coercion + duration). */

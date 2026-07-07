@@ -134,9 +134,13 @@ export class ParticipantJoinedHandler {
               roomName,
             );
 
+        // V2V test sessions are always recorded (the audio is the point of the
+        // test); real sessions stay behind the feature flag.
+        const isV2VTest = scenarioSession?.metadata?.v2vTest === true;
         if (
           scenarioSession &&
-          this.configService.featureFlag.scenarioSessionAudioRecording
+          (this.configService.featureFlag.scenarioSessionAudioRecording ||
+            isV2VTest)
         ) {
           const { bucket, region, accessKey, secret } =
             this.configService.scenarioSessionAudioStorage;

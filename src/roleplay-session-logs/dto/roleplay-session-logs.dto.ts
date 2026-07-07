@@ -275,6 +275,13 @@ export class RoleplaySessionLatencyDto {
 export class RoleplaySessionRecordingDto {
   @ApiProperty() storageKey!: string;
   @ApiProperty() egressId!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Short-lived presigned S3 URL for playback; null when the audio storage bucket is not configured',
+  })
+  url!: string | null;
 }
 
 /** Post-session learner feedback (most recent), when present. */
