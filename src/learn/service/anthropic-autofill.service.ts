@@ -62,6 +62,7 @@ export class AnthropicAutofillService {
     const effectiveModel = modelOverride ?? this.model;
     this.logger.info(
       `[ENHANCE] start field=${fieldName} provider=anthropic model=${effectiveModel} ` +
+        `temperature=${temperatureOverride ?? 'default'} ` +
         `promptCode=${promptCode} expectJson=${expectJson}`,
     );
     const startedAt = Date.now();
@@ -144,7 +145,7 @@ export class AnthropicAutofillService {
 
     const effectiveModel = modelOverride ?? this.model;
     this.logger.info(
-      `[AGENT_V2] start provider=anthropic model=${effectiveModel} promptCode=${promptCode} expectJson=${expectJson}`,
+      `[AGENT_V2] start provider=anthropic model=${effectiveModel} temperature=${temperatureOverride ?? 'default'} promptCode=${promptCode} expectJson=${expectJson}`,
     );
     const startedAt = Date.now();
 

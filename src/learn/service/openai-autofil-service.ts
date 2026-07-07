@@ -58,6 +58,7 @@ export class OpenAIAutofillService {
     const effectiveModel = modelOverride ?? this.model;
     this.logger.info(
       `[ENHANCE] start field=${fieldName} provider=openai model=${effectiveModel} ` +
+        `temperature=${temperatureOverride ?? 'default'} ` +
         `promptCode=${promptCode} expectJson=${expectJson}`,
     );
     const startedAt = Date.now();
@@ -131,7 +132,7 @@ export class OpenAIAutofillService {
 
     const effectiveModel = modelOverride ?? this.model;
     this.logger.info(
-      `[AGENT_V2] start provider=openai model=${effectiveModel} promptCode=${promptCode} expectJson=${expectJson}`,
+      `[AGENT_V2] start provider=openai model=${effectiveModel} temperature=${temperatureOverride ?? 'default'} promptCode=${promptCode} expectJson=${expectJson}`,
     );
     const startedAt = Date.now();
 
