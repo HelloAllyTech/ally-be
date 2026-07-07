@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Post,
@@ -99,17 +100,19 @@ export class CopilotController {
       }
     } catch (error) {
       // Errors inside the generator are already surfaced as `error` frames;
-      // this catches pre-stream failures (404/403, model auth, …).
+      // this catches pre-stream failures (404/403, model auth, …) plus the
+      // post-stream assistant-message append. A missing session (getSession or
+      // appendMessage) is tagged `session_not_found` so the client can silently
+      // re-create the session and replay the turn instead of dead-ending.
       const message = error instanceof Error ? error.message : String(error);
+      const code =
+        error instanceof NotFoundException
+          ? 'session_not_found'
+          : 'stream_failed';
       this.logger.error(
         `Copilot stream failed for session ${sessionId}: ${message}`,
       );
-      res.write(
-        `event: error\ndata: ${JSON.stringify({
-          code: 'stream_failed',
-          message,
-        })}\n\n`,
-      );
+      res.write(`event: error\ndata: ${JSON.stringify({ code, message })}\n\n`);
     } finally {
       res.end();
     }
