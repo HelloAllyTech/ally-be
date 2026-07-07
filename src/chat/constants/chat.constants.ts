@@ -33,6 +33,26 @@ export enum ChatEvents {
   SESSION_CREATED = 'SESSION_CREATED',
 }
 
+// Why a live recording's stream was finalized. A clean user-initiated stop is
+// COMPLETED; the rest mean the socket died before the counselor finished, so
+// the audio (and therefore the summary) is almost certainly partial. Stamped on
+// chat.metadata.streamEndReason by endChat and read at finalize to flag the
+// session as an incomplete recording. endChat's ACTIVE guard means the FIRST
+// end wins, so a real stop (COMPLETED) is never overwritten by the socket-close
+// disconnect that immediately follows it.
+export enum StreamEndReason {
+  COMPLETED = 'completed',
+  CLIENT_DISCONNECT = 'client-disconnect',
+  JANITOR_ORPHAN = 'janitor-orphan',
+  SHUTDOWN_DRAIN = 'shutdown-drain',
+}
+
+export const ABNORMAL_STREAM_END_REASONS: readonly StreamEndReason[] = [
+  StreamEndReason.CLIENT_DISCONNECT,
+  StreamEndReason.JANITOR_ORPHAN,
+  StreamEndReason.SHUTDOWN_DRAIN,
+];
+
 // A chat's summary is produced asynchronously by the AI service; the chat only
 // leaves PENDING when a transcribe/summarize result is posted back. If that
 // result is lost (worker crash, dropped SQS message, an AI-service error that

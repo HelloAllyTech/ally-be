@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { MicrophoneChatGateway } from '../microphone-chat.gateway';
 import { ChatService } from '../../service/chat.service';
+import { StreamEndReason } from '../../constants/chat.constants';
 import { StreamFileProcessorService } from '../../../audio/service/stream-file-processor.service';
 import { MessageBrokerService } from '../../../message-broker/service/message-broker.service';
 import { BroadcastMessageService } from '../../../audio/service/broadcast-message.service';
@@ -280,7 +281,11 @@ describe('MicrophoneChatGateway', () => {
 
       await gateway.handleDisconnect(mockSocket);
 
-      expect(mockChatService.endChat).toHaveBeenCalledWith(1);
+      expect(mockChatService.endChat).toHaveBeenCalledWith(
+        1,
+        undefined,
+        StreamEndReason.CLIENT_DISCONNECT,
+      );
       expect(
         mockBroadcastMessageService.broadcastUserDisconnectedMessage,
       ).toHaveBeenCalled();
@@ -305,7 +310,11 @@ describe('MicrophoneChatGateway', () => {
 
       await gateway.handleDisconnect(mockSocket);
 
-      expect(mockChatService.endChat).toHaveBeenCalledWith(1);
+      expect(mockChatService.endChat).toHaveBeenCalledWith(
+        1,
+        undefined,
+        StreamEndReason.CLIENT_DISCONNECT,
+      );
       expect(
         mockBroadcastMessageService.broadcastUserDisconnectedMessage,
       ).toHaveBeenCalled();
@@ -331,7 +340,11 @@ describe('MicrophoneChatGateway', () => {
 
       // The abandoned recording is finalized via the normal end path, and the
       // stale session is evicted.
-      expect(mockChatService.endChat).toHaveBeenCalledWith(42);
+      expect(mockChatService.endChat).toHaveBeenCalledWith(
+        42,
+        undefined,
+        StreamEndReason.JANITOR_ORPHAN,
+      );
       expect(gatewayPrivate.sessions['dead-sid']).toBeUndefined();
     });
 
@@ -373,8 +386,16 @@ describe('MicrophoneChatGateway', () => {
 
       await gatewayPrivate.onModuleDestroy();
 
-      expect(mockChatService.endChat).toHaveBeenCalledWith(42);
-      expect(mockChatService.endChat).toHaveBeenCalledWith(43);
+      expect(mockChatService.endChat).toHaveBeenCalledWith(
+        42,
+        undefined,
+        StreamEndReason.SHUTDOWN_DRAIN,
+      );
+      expect(mockChatService.endChat).toHaveBeenCalledWith(
+        43,
+        undefined,
+        StreamEndReason.SHUTDOWN_DRAIN,
+      );
       expect(mockChatService.endChat).toHaveBeenCalledTimes(2);
       expect(gatewayPrivate.sessions).toEqual({});
     });
