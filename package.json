@@ -94,7 +94,7 @@
     "sanitize-html": "^2.17.3",
     "sarvamai": "^1.1.6",
     "socket.io": "^4.8.3",
-    "typeorm": "^0.3.28",
+    "typeorm": "^0.3.30",
     "uuid": "^13.0.0",
     "winston": "^3.19.0",
     "winston-cloudwatch": "^6.3.0"
