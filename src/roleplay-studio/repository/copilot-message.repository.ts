@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { CopilotMessage } from '../entity/copilot-message.entity';
 import { CopilotSession } from '../entity/copilot-session.entity';
@@ -42,7 +42,12 @@ export class CopilotMessageRepository extends Repository<CopilotMessage> {
       );
       const seq = rows?.[0]?.lastMessageSeq;
       if (seq === undefined) {
-        throw new Error(`Copilot session not found: ${sessionId}`);
+        // NotFoundException (not a bare Error) so the stream controller can tag
+        // the SSE error frame `session_not_found` and the client can recover by
+        // re-creating the session. Reachable if the session row disappears
+        // between the orchestrator's getSession check and this append (e.g. a
+        // local DB reset mid-turn).
+        throw new NotFoundException(`Copilot session not found: ${sessionId}`);
       }
       const repo = em.getRepository(CopilotMessage);
       return repo.save(
