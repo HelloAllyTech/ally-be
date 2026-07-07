@@ -8,8 +8,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * model name" for backward compatibility. See
  * prompt-llm-config-standardization-adr.md (phase 2).
  */
-export class AddProviderToPrompts1812000000000 implements MigrationInterface {
-  name = 'AddProviderToPrompts1812000000000';
+export class AddProviderToPrompts1819000000000 implements MigrationInterface {
+  name = 'AddProviderToPrompts1819000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

@@ -18,8 +18,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * One-way cleanup — `down()` is a no-op (re-run the original seed migrations to
  * restore, though the source templates no longer exist in the repo).
  */
-export class DeleteScenarioGeneratableFieldsPrompts1813000000000 implements MigrationInterface {
-  name = 'DeleteScenarioGeneratableFieldsPrompts1813000000000';
+export class DeleteScenarioGeneratableFieldsPrompts1820000000000 implements MigrationInterface {
+  name = 'DeleteScenarioGeneratableFieldsPrompts1820000000000';
 
   private readonly whereClause = `"promptCode" LIKE 'openai_simulation\\_%'`;
 
