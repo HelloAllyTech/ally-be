@@ -116,6 +116,15 @@ export interface RoleplaySpecDocument {
   agentTestCaseIds?: string[];
   openingStatement?: string;
   difficulty?: string;
+  /**
+   * Voice-naturalness / latency-masking runtime toggles, mirroring the Roleplay
+   * Studio 1 scenario-metadata flags. Passthrough JSONB → compiled spec → room
+   * metadata `spec.*`, honored by the v2 voice worker (ally-ai-learn).
+   */
+  fillerEnabled?: boolean;
+  comfortAudioEnabled?: boolean;
+  continuousBackchanneling?: boolean;
+  interimReplyEnabled?: boolean;
   actorModel?: RoleplayModelConfig;
   directorModel?: RoleplayModelConfig;
   /** Opaque client-owned block — passthrough, never validated. */
