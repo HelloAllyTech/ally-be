@@ -14,6 +14,7 @@ import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.ent
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 import { GetScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioStatus, ScenarioSortBy } from '../type/scenario.type';
+import { ScenarioEngine } from '../enum/scenario-engine.enum';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 import { ScenarioBehaviorInstruction } from '../entity/scenario-behavior-instruction.entity';
 import { GetScenarioResponse } from '../interface/session.interface';
@@ -169,6 +170,14 @@ export class ScenariosRepository extends Repository<Scenarios> {
       .addGroupBy('user.name');
 
     this.applySearchFilter(query, search);
+
+    // The v1 studio list owns SIMULATION scenarios only. Roleplay Studio v2
+    // materialises thin ROLEPLAY_V2 shells in `scenarios` (real config lives in
+    // roleplay_specs); they must never surface here. `engine` is NOT NULL with a
+    // 'SIMULATION' default, so a plain inequality keeps every v1 row.
+    query.andWhere('scenario.engine != :roleplayV2Engine', {
+      roleplayV2Engine: ScenarioEngine.ROLEPLAY_V2,
+    });
 
     if (isMultiTenantAdmin && userId) {
       query.andWhere(
