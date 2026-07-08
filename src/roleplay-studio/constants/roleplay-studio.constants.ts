@@ -36,6 +36,15 @@ export const REHEARSAL_TRAINEE_PROFILES: RehearsalTraineeProfile[] = [
 
 export const REHEARSAL_DEFAULT_TURNS_PER_PROFILE = 8;
 
+// Cap on the total number of simulated sessions (trainee profiles + agent
+// test cases) a single rehearsal may run.
+export const REHEARSAL_MAX_UNITS = 12;
+
+// Transcript label for agent-test-case sessions. A *label* stored in
+// rehearsal_transcripts.traineeProfile, NOT a RehearsalTraineeProfile enum
+// member — profile selection stays SKILLED/POOR/ADVERSARIAL only.
+export const REHEARSAL_CONDITION_DRIVEN_LABEL = 'CONDITION_DRIVEN';
+
 // Spec structural bounds (FROZEN contract).
 export const SPEC_MIN_STATES = 3;
 export const SPEC_MAX_STATES = 6;
