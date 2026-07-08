@@ -36,7 +36,10 @@ export class RehearsalRun extends BaseWithoutTenantEntity {
   status!: RehearsalStatus;
 
   // Snapshot of the run request: traineeProfiles, turnsPerProfile,
-  // languageId, judgeModel.
+  // languageId, judgeModel, testCases (agent-test-case snapshots
+  // {id,title,category,condition,test} — the source rows are hard-deleted,
+  // so runs stay self-describing), timeoutMinutes (watchdog, scales with
+  // the unit count).
   @Column({ type: 'jsonb' })
   config!: Record<string, any>;
 

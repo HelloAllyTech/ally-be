@@ -6,8 +6,9 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { ModuleRef } from '@nestjs/core';
-import { In } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { AiService } from 'src/ai/service/ai.service';
+import { AgentTestCase } from 'src/learn/entity/agent-test-case.entity';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { RedisService } from 'src/redis/service/redis.service';
@@ -27,14 +28,17 @@ import {
   UpdateRehearsalWebhookDto,
 } from '../dto/rehearsal.dto';
 import {
+  REHEARSAL_CONDITION_DRIVEN_LABEL,
   REHEARSAL_DEFAULT_TURNS_PER_PROFILE,
   REHEARSAL_END_STATUSES,
+  REHEARSAL_MAX_UNITS,
   REHEARSAL_PENDING_STATUSES,
   REHEARSAL_REDIS_KEY_PREFIX,
   REHEARSAL_TRAINEE_PROFILES,
   ROLEPLAY_COPILOT_PROMPTS,
 } from '../constants/roleplay-studio.constants';
 import { SPEC_SCHEMA_VERSION } from '../type/roleplay-spec-document.type';
+import { RoleplayRehearsalTestCase } from '../type/rehearsal-run-request.type';
 
 /**
  * Rehearsal lifecycle — a scenario-report clone for Roleplay Studio v2:
@@ -56,6 +60,10 @@ export class RehearsalService {
     private readonly aiService: AiService,
     private readonly redisService: RedisService,
     private readonly configService: AppConfigService,
+    // AgentTestCase lives in LearnModule (not imported here); reach its
+    // repository through the app DataSource — same pattern as
+    // SpecValidatorService.
+    private readonly dataSource: DataSource,
     // AnthropicAutofillService lives in LearnModule and is not exported; the
     // learn module must stay untouched, so it is resolved lazily from the
     // app-wide container (strict: false) for the critique flow only.
@@ -98,12 +106,39 @@ export class RehearsalService {
       );
     }
 
+    // undefined → all three (back-compat); explicit [] → test-case-only run.
+    const traineeProfiles = dto.traineeProfiles ?? REHEARSAL_TRAINEE_PROFILES;
+    const testCases = await this.loadTestCaseSnapshots(
+      dto.agentTestCaseIds ?? [],
+    );
+    const totalUnits = traineeProfiles.length + testCases.length;
+    if (totalUnits === 0) {
+      throw new BadRequestException(
+        'Select at least one trainee profile or agent test case',
+      );
+    }
+    if (totalUnits > REHEARSAL_MAX_UNITS) {
+      throw new BadRequestException(
+        `A rehearsal can run at most ${REHEARSAL_MAX_UNITS} sessions ` +
+          `(profiles + test cases); got ${totalUnits}`,
+      );
+    }
+
     const config = {
-      traineeProfiles: REHEARSAL_TRAINEE_PROFILES,
+      traineeProfiles,
       turnsPerProfile:
         dto.turnsPerProfile ?? REHEARSAL_DEFAULT_TURNS_PER_PROFILE,
-      languageId: dto.languageId,
+      languageId:
+        dto.languageId ??
+        (version.spec as Record<string, any>)?.language?.languageId,
       judgeModel: dto.judgeModel ?? null,
+      // Snapshots (camelCase key in storage, snake_case on the wire): the
+      // agent_test_cases table is global + hard-deleted, so historical runs
+      // must stay self-describing.
+      testCases,
+      // Units run serially in ai-learn — scale the watchdog with the load
+      // (3 units ≙ the historical baseline the default timeout was sized for).
+      timeoutMinutes: this.timeoutMinutes * Math.ceil(totalUnits / 3),
     };
     const run = await this.rehearsalRunRepository.save(
       this.rehearsalRunRepository.create({
@@ -122,11 +157,63 @@ export class RehearsalService {
     await this.redisService.set(
       `${REHEARSAL_REDIS_KEY_PREFIX}:${run.id}`,
       run.id,
-      this.timeoutMinutes * 60,
+      config.timeoutMinutes * 60,
     );
 
     await this.triggerRehearsalRun(run, version.spec as Record<string, any>);
     return this.getRehearsal(run.id);
+  }
+
+  /**
+   * Fetch + validate the selected agent test cases and snapshot
+   * {id,title,category,condition,test} preserving the request order.
+   * Invalid selections 400 with EVERY offending id (unknown ids and ids
+   * whose condition/test is blank) — never silently skipped.
+   */
+  private async loadTestCaseSnapshots(
+    ids: string[],
+  ): Promise<RoleplayRehearsalTestCase[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    const found = await this.dataSource
+      .getRepository(AgentTestCase)
+      .find({ where: { id: In(ids) } });
+    const byId = new Map(found.map((testCase) => [testCase.id, testCase]));
+
+    const missing = ids.filter((id) => !byId.has(id));
+    const blank = ids.filter((id) => {
+      const testCase = byId.get(id);
+      return (
+        testCase !== undefined &&
+        (!testCase.condition?.trim() || !testCase.test?.trim())
+      );
+    });
+    const problems: string[] = [];
+    if (missing.length > 0) {
+      problems.push(`unknown agent test case ids: ${missing.join(', ')}`);
+    }
+    if (blank.length > 0) {
+      problems.push(
+        `agent test cases missing a condition or test: ${blank.join(', ')}`,
+      );
+    }
+    if (problems.length > 0) {
+      throw new BadRequestException(
+        `Invalid agent test case selection — ${problems.join('; ')}`,
+      );
+    }
+
+    return ids.map((id) => {
+      const testCase = byId.get(id)!;
+      return {
+        id: testCase.id,
+        title: testCase.title,
+        category: testCase.category ?? null,
+        condition: testCase.condition!,
+        test: testCase.test!,
+      };
+    });
   }
 
   private async triggerRehearsalRun(
@@ -144,6 +231,7 @@ export class RehearsalService {
           turns_per_profile: run.config.turnsPerProfile,
           language_id: run.config.languageId,
           judge_model: run.config.judgeModel,
+          test_cases: run.config.testCases ?? [],
         },
       });
 
@@ -298,22 +386,55 @@ export class RehearsalService {
     return this.getRehearsal(rehearsalId);
   }
 
-  /** One row per trainee profile: replace on re-delivery, insert otherwise. */
+  /**
+   * One row per trainee profile plus one per agent test case: replace on
+   * re-delivery, insert otherwise. Test-case entries (test_case_id set) are
+   * keyed by { rehearsalRunId, agentTestCaseId } and labelled
+   * CONDITION_DRIVEN; profile entries keep the legacy key.
+   */
   private async upsertTranscripts(
     rehearsalId: string,
     transcripts: Record<string, any>[],
   ): Promise<void> {
     for (const entry of transcripts) {
-      const traineeProfile = String(entry.trainee_profile ?? 'UNKNOWN');
-      const existing = await this.rehearsalTranscriptRepository.findOne({
-        where: { rehearsalRunId: rehearsalId, traineeProfile },
-      });
       const fields = {
         transcript: Array.isArray(entry.transcript) ? entry.transcript : [],
         judgeScores: entry.judge_scores ?? null,
         judgeNotes: entry.judge_notes ?? null,
         directorTrace: entry.director_trace ?? null,
       };
+
+      if (entry.test_case_id) {
+        const agentTestCaseId = String(entry.test_case_id);
+        const caseFields = {
+          ...fields,
+          testCaseResult: entry.test_result ?? null,
+        };
+        const existing = await this.rehearsalTranscriptRepository.findOne({
+          where: { rehearsalRunId: rehearsalId, agentTestCaseId },
+        });
+        if (existing) {
+          await this.rehearsalTranscriptRepository.update(
+            existing.id,
+            caseFields,
+          );
+        } else {
+          await this.rehearsalTranscriptRepository.save(
+            this.rehearsalTranscriptRepository.create({
+              rehearsalRunId: rehearsalId,
+              agentTestCaseId,
+              traineeProfile: REHEARSAL_CONDITION_DRIVEN_LABEL,
+              ...caseFields,
+            }),
+          );
+        }
+        continue;
+      }
+
+      const traineeProfile = String(entry.trainee_profile ?? 'UNKNOWN');
+      const existing = await this.rehearsalTranscriptRepository.findOne({
+        where: { rehearsalRunId: rehearsalId, traineeProfile },
+      });
       if (existing) {
         await this.rehearsalTranscriptRepository.update(existing.id, fields);
       } else {
@@ -386,9 +507,10 @@ export class RehearsalService {
     if (!run || REHEARSAL_END_STATUSES.includes(run.status)) {
       return;
     }
-    const cutoff = new Date(
-      Date.now() - this.timeoutMinutes * TIME.MINUTE_IN_MS,
-    );
+    // Per-run timeout scales with the unit count; class default covers rows
+    // created before config.timeoutMinutes existed.
+    const timeoutMinutes = run.config?.timeoutMinutes ?? this.timeoutMinutes;
+    const cutoff = new Date(Date.now() - timeoutMinutes * TIME.MINUTE_IN_MS);
     if (run.createdAt > cutoff) {
       return;
     }
