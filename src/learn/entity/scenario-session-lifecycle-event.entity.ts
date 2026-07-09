@@ -24,6 +24,9 @@ export enum ScenarioSessionLifecycleEventType {
   AGENT_DISPATCHED = 'AGENT_DISPATCHED',
   PARTICIPANT_JOINED = 'PARTICIPANT_JOINED',
   AGENT_JOINED = 'AGENT_JOINED',
+  // Agent participant left the room. An AGENT_JOINED with a later AGENT_LEFT
+  // (before ROOM_FINISHED) is a mid-session drop — distinct from a healthy end.
+  AGENT_LEFT = 'AGENT_LEFT',
   RECORDING_STARTED = 'RECORDING_STARTED',
   ROOM_FINISHED = 'ROOM_FINISHED',
 }

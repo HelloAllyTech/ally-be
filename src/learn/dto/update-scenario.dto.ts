@@ -260,6 +260,29 @@ export class UpdateScenarioDto {
 
   @ApiProperty({
     description:
+      'Public URL of the uploaded comfort-audio track (from the comfort-audio library) to play as the comfort audio for this simulation. When unset, comfort audio (if enabled) falls back to the synthesized room tone. Only meaningful when comfortAudioEnabled is true.',
+    example:
+      'https://assets-bucket.s3.us-east-1.amazonaws.com/comfort-audio-library/1730000000000-rain.mp3',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  comfortAudioUrl?: string;
+
+  @ApiProperty({
+    description:
+      'Playback volume (0..1) of the comfort audio for this simulation. When unset, falls back to the global COMFORT_AUDIO_VOLUME default. Only meaningful when comfortAudioEnabled is true.',
+    example: 0.3,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  comfortAudioVolume?: number;
+
+  @ApiProperty({
+    description:
       'Trim conversation history sent to the agent to the last few dialogues (older turns dropped) to reduce turn latency. Defaults to false (opt-in) when unspecified.',
     example: false,
     required: false,

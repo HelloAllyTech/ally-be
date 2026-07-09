@@ -24,6 +24,8 @@ import {
   CreateDashboardResponseDto,
 } from '../dto/analytics.dto';
 import {
+  AgentJoinReliabilityQueryDto,
+  AgentJoinReliabilityResponseDto,
   AnalyticsOverviewQueryDto,
   AnalyticsOverviewResponseDto,
   ConversationDriftQueryDto,
@@ -112,6 +114,30 @@ export class AnalyticsController {
       query.range ?? '90d',
       query.bucket,
       query.language,
+    );
+  }
+
+  @Get('agent-join-reliability')
+  @AuthRoles(UserRole.SUPER_ADMIN)
+  @ApiOperation({
+    summary: 'Agent-join reliability trend (super-admin)',
+    description:
+      'Per-bucket agent-join failure rate + dispatch->join latency (p50/p95) ' +
+      'from the session lifecycle log, plus the overall session outcome mix. ' +
+      'Bucket granularity follows the `range` param (30d -> day, 90d -> week, ' +
+      '12m -> month).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Agent-join reliability trend retrieved successfully',
+    type: AgentJoinReliabilityResponseDto,
+  })
+  async getAgentJoinReliability(
+    @Query() query: AgentJoinReliabilityQueryDto,
+  ): Promise<AgentJoinReliabilityResponseDto> {
+    return this.platformAnalyticsService.getAgentJoinReliability(
+      query.range ?? '90d',
+      query.bucket,
     );
   }
 

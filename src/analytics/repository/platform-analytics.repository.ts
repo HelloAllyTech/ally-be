@@ -8,6 +8,21 @@ import { ScenarioSessionEventStatus } from '../../learn/enum/scenario-session-st
  */
 export type AnalyticsBucket = 'day' | 'week' | 'month';
 
+export interface AgentJoinReliabilityBucketRow {
+  bucket: string;
+  totalSessions: number;
+  joinFailures: number;
+  midSessionDrops: number;
+  joinLatencyP50Sec: number | null;
+  joinLatencyP95Sec: number | null;
+}
+
+export interface SessionOutcomeMixRow {
+  completed: number;
+  noConversation: number;
+  inProgress: number;
+}
+
 export interface NewUsersBucketRow {
   /** Bucket start as a calendar date string (yyyy-mm-dd). */
   bucket: string;
@@ -105,6 +120,96 @@ export class PlatformAnalyticsRepository {
     if (bucket === 'day') return 'day';
     if (bucket === 'month') return 'month';
     return 'week';
+  }
+
+  /**
+   * Agent-join reliability per time bucket, derived from the session lifecycle
+   * log. Each session is bucketed by its first lifecycle event (room created).
+   * `joinFailures` = sessions with lifecycle events but no AGENT_JOINED;
+   * `midSessionDrops` = AGENT_JOINED followed by an AGENT_LEFT; join latency =
+   * AGENT_DISPATCHED -> AGENT_JOINED gap (seconds), percentiles over the
+   * sessions that did join. `trunc` is whitelisted by resolveBucket.
+   */
+  async getAgentJoinReliabilityByBucket(
+    start: Date,
+    end: Date,
+    bucket: AnalyticsBucket,
+  ): Promise<AgentJoinReliabilityBucketRow[]> {
+    const trunc = this.resolveBucket(bucket);
+    const rows = await this.dataSource.query(
+      `
+      WITH per_session AS (
+        SELECT
+          date_trunc('${trunc}', min(l."occurredAt")) AS bucket_ts,
+          bool_or(l."type" = 'AGENT_JOINED') AS agent_joined,
+          bool_or(l."type" = 'AGENT_LEFT')   AS agent_left,
+          min(l."occurredAt") FILTER (WHERE l."type" = 'AGENT_DISPATCHED') AS dispatched_at,
+          min(l."occurredAt") FILTER (WHERE l."type" = 'AGENT_JOINED')     AS joined_at
+        FROM scenario_session_lifecycle_events l
+        WHERE l."occurredAt" >= $1 AND l."occurredAt" < $2
+        GROUP BY l."scenarioSessionId"
+      )
+      SELECT
+        to_char(bucket_ts, 'YYYY-MM-DD') AS bucket,
+        COUNT(*)::int AS "totalSessions",
+        COUNT(*) FILTER (WHERE NOT agent_joined)::int AS "joinFailures",
+        COUNT(*) FILTER (WHERE agent_joined AND agent_left)::int AS "midSessionDrops",
+        round(percentile_cont(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (joined_at - dispatched_at))
+        ) FILTER (WHERE agent_joined AND dispatched_at IS NOT NULL))::int AS "joinLatencyP50Sec",
+        round(percentile_cont(0.95) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (joined_at - dispatched_at))
+        ) FILTER (WHERE agent_joined AND dispatched_at IS NOT NULL))::int AS "joinLatencyP95Sec"
+      FROM per_session
+      GROUP BY bucket_ts
+      ORDER BY bucket_ts ASC
+      `,
+      [start, end],
+    );
+    return rows.map((r: Record<string, unknown>) => ({
+      bucket: r.bucket as string,
+      totalSessions: Number(r.totalSessions) || 0,
+      joinFailures: Number(r.joinFailures) || 0,
+      midSessionDrops: Number(r.midSessionDrops) || 0,
+      joinLatencyP50Sec:
+        r.joinLatencyP50Sec === null ? null : Number(r.joinLatencyP50Sec),
+      joinLatencyP95Sec:
+        r.joinLatencyP95Sec === null ? null : Number(r.joinLatencyP95Sec),
+    }));
+  }
+
+  /**
+   * Overall session outcome mix over [start, end): COMPLETED (ended with a
+   * transcript), NO_CONVERSATION (ended empty — includes agent-never-joined),
+   * IN_PROGRESS (still active). Mirrors the derived `outcome` in
+   * roleplay-session-logs. Excludes preview/seed rooms.
+   */
+  async getSessionOutcomeMix(
+    start: Date,
+    end: Date,
+  ): Promise<SessionOutcomeMixRow> {
+    const rows = await this.dataSource.query(
+      `
+      SELECT
+        COUNT(*) FILTER (WHERE ss."status" = 'ACTIVE')::int AS "inProgress",
+        COUNT(*) FILTER (WHERE ss."status" = 'ENDED' AND EXISTS (
+          SELECT 1 FROM scenario_session_messages m WHERE m."scenarioSessionId" = ss.id
+        ))::int AS "completed",
+        COUNT(*) FILTER (WHERE ss."status" = 'ENDED' AND NOT EXISTS (
+          SELECT 1 FROM scenario_session_messages m WHERE m."scenarioSessionId" = ss.id
+        ))::int AS "noConversation"
+      FROM scenario_sessions ss
+      WHERE ss."createdAt" >= $1 AND ss."createdAt" < $2
+        AND ss."roomId" LIKE 'ss_%'
+      `,
+      [start, end],
+    );
+    const r = (rows[0] ?? {}) as Record<string, unknown>;
+    return {
+      completed: Number(r.completed) || 0,
+      noConversation: Number(r.noConversation) || 0,
+      inProgress: Number(r.inProgress) || 0,
+    };
   }
 
   /**

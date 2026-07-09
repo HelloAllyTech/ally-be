@@ -3,6 +3,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { DriftJudgeService } from './drift-judge.service';
 import {
   ActiveUsersPointDto,
+  AgentJoinReliabilityResponseDto,
   AnalyticsBucketParam,
   AnalyticsOverviewResponseDto,
   AnalyticsRange,
@@ -503,6 +504,59 @@ export class PlatformAnalyticsService {
       targetMs: VOICE_LATENCY_TARGET_MS,
       points,
     };
+  }
+
+  /**
+   * Agent-join reliability trend: per-bucket failure rate + join latency
+   * percentiles from the session lifecycle log, plus the overall outcome mix.
+   * The failure rate is computed here (JS) from the per-bucket counts to avoid
+   * divide-by-zero SQL. Window/bucket resolution mirrors getVoiceLatency.
+   */
+  async getAgentJoinReliability(
+    range: AnalyticsRange,
+    bucketParam?: AnalyticsBucketParam,
+  ): Promise<AgentJoinReliabilityResponseDto> {
+    const now = new Date();
+    const todayStart = startOfUtcDay(now);
+    const endExclusive = addDays(todayStart, 1);
+
+    let defaultBucket: AnalyticsBucket;
+    let windowStart: Date;
+    if (range === '30d') {
+      defaultBucket = 'day';
+      windowStart = addDays(todayStart, -29);
+    } else if (range === '90d') {
+      defaultBucket = 'week';
+      windowStart = addDays(todayStart, -89);
+    } else {
+      defaultBucket = 'month';
+      windowStart = startOfUtcMonth(addMonths(todayStart, -11));
+    }
+    const bucket: AnalyticsBucket = bucketParam ?? defaultBucket;
+
+    const [rows, outcomeMix] = await Promise.all([
+      this.repo.getAgentJoinReliabilityByBucket(
+        windowStart,
+        endExclusive,
+        bucket,
+      ),
+      this.repo.getSessionOutcomeMix(windowStart, endExclusive),
+    ]);
+
+    const points = rows.map((r) => ({
+      bucket: r.bucket,
+      totalSessions: r.totalSessions,
+      joinFailures: r.joinFailures,
+      failureRatePct:
+        r.totalSessions > 0
+          ? Math.round((r.joinFailures / r.totalSessions) * 1000) / 10
+          : 0,
+      midSessionDrops: r.midSessionDrops,
+      joinLatencyP50Sec: r.joinLatencyP50Sec,
+      joinLatencyP95Sec: r.joinLatencyP95Sec,
+    }));
+
+    return { range, bucket, points, outcomeMix };
   }
 
   async getStartLatency(

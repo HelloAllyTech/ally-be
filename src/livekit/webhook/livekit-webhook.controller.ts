@@ -12,6 +12,7 @@ import { WebhookReceiver } from 'livekit-server-sdk';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ParticipantJoinedHandler } from './handlers/participant-joined.handler';
+import { ParticipantLeftHandler } from './handlers/participant-left.handler';
 import { RoomFinishedHandler } from './handlers/room-finished.handler';
 
 @ApiTags('LiveKit Webhook')
@@ -25,6 +26,7 @@ export class LivekitWebhookController {
   constructor(
     private readonly configService: AppConfigService,
     private readonly participantJoinedHandler: ParticipantJoinedHandler,
+    private readonly participantLeftHandler: ParticipantLeftHandler,
     private readonly roomFinishedHandler: RoomFinishedHandler,
   ) {
     this.initializeWebhookReceiver();
@@ -130,6 +132,9 @@ export class LivekitWebhookController {
         case 'participant_joined':
           await this.handleParticipantJoined(event);
           break;
+        case 'participant_left':
+          await this.handleParticipantLeft(event);
+          break;
         case 'room_finished':
           await this.handleRoomFinished(event);
           break;
@@ -149,6 +154,21 @@ export class LivekitWebhookController {
     } catch (error) {
       this.logger.error(
         `Error in participant_joined handler: ${error.message}`,
+        error.stack,
+      );
+    }
+  }
+
+  private async handleParticipantLeft(event: any) {
+    this.logger.debug(
+      `Participant left: ${event.participant?.identity} in room ${event.room?.name}`,
+    );
+
+    try {
+      await this.participantLeftHandler.handle(event);
+    } catch (error) {
+      this.logger.error(
+        `Error in participant_left handler: ${error.message}`,
         error.stack,
       );
     }
