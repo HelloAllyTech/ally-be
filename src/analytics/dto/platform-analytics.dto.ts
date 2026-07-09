@@ -179,6 +179,85 @@ export class DriftBackfillJobDto {
   @ApiProperty({ required: false, nullable: true }) error?: string | null;
 }
 
+export class AgentJoinReliabilityQueryDto {
+  @ApiProperty({
+    description: 'Time window for the agent-join reliability trend',
+    enum: ANALYTICS_RANGES,
+    default: '90d',
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(ANALYTICS_RANGES)
+  range?: AnalyticsRange;
+
+  @ApiProperty({
+    description:
+      'Bucket granularity. Defaults to the range default ' +
+      '(30d -> day, 90d -> week, 12m -> month) when omitted.',
+    enum: ANALYTICS_BUCKETS,
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(ANALYTICS_BUCKETS)
+  bucket?: AnalyticsBucketParam;
+}
+
+export class AgentJoinReliabilityPointDto {
+  @ApiProperty({ description: 'Bucket start date (ISO yyyy-mm-dd)' })
+  bucket!: string;
+
+  @ApiProperty({ description: 'Sessions started in this bucket (load proxy)' })
+  totalSessions!: number;
+
+  @ApiProperty({ description: 'Sessions where the agent never joined' })
+  joinFailures!: number;
+
+  @ApiProperty({ description: 'Join-failure rate as a percentage (0-100)' })
+  failureRatePct!: number;
+
+  @ApiProperty({
+    description: 'Sessions where the agent joined then left before room end',
+  })
+  midSessionDrops!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Median dispatch->join latency (seconds); null if no joins',
+  })
+  joinLatencyP50Sec!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'p95 dispatch->join latency (seconds); null if no joins',
+  })
+  joinLatencyP95Sec!: number | null;
+}
+
+export class SessionOutcomeMixDto {
+  @ApiProperty({ description: 'Ended with a transcript' })
+  completed!: number;
+
+  @ApiProperty({ description: 'Ended empty (includes agent-never-joined)' })
+  noConversation!: number;
+
+  @ApiProperty({ description: 'Still active' })
+  inProgress!: number;
+}
+
+export class AgentJoinReliabilityResponseDto {
+  @ApiProperty({ enum: ANALYTICS_RANGES })
+  range!: AnalyticsRange;
+
+  @ApiProperty({ description: 'Bucket granularity (day / week / month)' })
+  bucket!: string;
+
+  @ApiProperty({ type: [AgentJoinReliabilityPointDto] })
+  points!: AgentJoinReliabilityPointDto[];
+
+  @ApiProperty({ type: SessionOutcomeMixDto })
+  outcomeMix!: SessionOutcomeMixDto;
+}
+
 export class VoiceLatencyQueryDto {
   @ApiProperty({
     description: 'Time window for the voice-to-voice latency trend',

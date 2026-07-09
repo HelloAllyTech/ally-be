@@ -295,6 +295,14 @@ export class ParticipantJoinedHandler {
           this.logger.info(
             `Successfully dispatched agent for participant ${participantIdentity} in room ${roomName}`,
           );
+          if (scenarioSession) {
+            void this.scenarioSessionService.recordLifecycleEvent(
+              scenarioSession.id,
+              ScenarioSessionLifecycleEventType.AGENT_DISPATCHED,
+              new Date(),
+              { via: 'fallback', agentName: participantIdentity },
+            );
+          }
         } catch (dispatchError) {
           // If dispatch fails, clear it from in-progress so we can retry on next join
           ParticipantJoinedHandler.removeInProgress(roomName);

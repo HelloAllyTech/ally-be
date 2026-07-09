@@ -107,16 +107,17 @@ export class RoleplaySessionLogsRepository {
    * Derived per-session outcome, richer than the binary ACTIVE|ENDED status.
    * ACTIVE -> IN_PROGRESS; ENDED with >=1 transcript message -> COMPLETED;
    * ENDED with none -> NO_CONVERSATION (surfaces "agent never joined" / empty
-   * sessions). A correlated EXISTS keeps it a per-row check; ss.id is cast to
-   * text to match how scenario_session_messages stores the id (see
-   * findTranscript) and to avoid casting arbitrary stored ids to uuid.
+   * sessions). A correlated EXISTS keeps it a per-row check. Both
+   * scenario_session_messages."scenarioSessionId" and scenario_sessions.id are
+   * uuid, so they are compared directly (a `::text` cast would raise
+   * `operator does not exist: uuid = text`).
    */
   private static readonly OUTCOME_EXPR = `
     CASE
       WHEN ss."status" = 'ACTIVE' THEN 'IN_PROGRESS'
       WHEN EXISTS (
         SELECT 1 FROM scenario_session_messages ssm
-        WHERE ssm."scenarioSessionId" = ss.id::text
+        WHERE ssm."scenarioSessionId" = ss.id
       ) THEN 'COMPLETED'
       ELSE 'NO_CONVERSATION'
     END`;
