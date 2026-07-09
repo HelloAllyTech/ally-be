@@ -42,6 +42,7 @@ import { LlmModule } from './llm/llm.module';
 import { ConversationalGuardrailsModule } from './conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from './case/case.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
+import { ComfortAudioModule } from './comfort-audio/comfort-audio.module';
 import { ScenarioReportModule } from './scenario-report/scenario-report.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { AppVersionModule } from './app-version/app-version.module';
@@ -97,6 +98,7 @@ import { RoleplayStudioModule } from './roleplay-studio/roleplay-studio.module';
     LlmModule,
     ConversationalGuardrailsModule,
     ScenarioCoverImageLibraryModule,
+    ComfortAudioModule,
     ScenarioReportModule,
     SchedulerModule,
     AppVersionModule,
