@@ -7,6 +7,7 @@ import {
   RoleplaySessionLogDetailDto,
   RoleplaySessionLogRowDto,
   RoleplaySessionModelsDto,
+  RoleplaySessionOutcome,
   RoleplaySessionRecordingDto,
   RoleplaySessionUsageDto,
 } from '../dto/roleplay-session-logs.dto';
@@ -209,6 +210,7 @@ export class RoleplaySessionLogsService {
       scenarioId: Number(r.scenarioId),
       scenarioTitle: r.scenarioTitle ?? null,
       status: r.status as ScenarioSessionStatus,
+      outcome: r.outcome as RoleplaySessionOutcome,
       startedAt: r.startedAt ?? null,
       endedAt: r.endedAt ?? null,
       durationSeconds: this.resolveDurationSeconds(r),

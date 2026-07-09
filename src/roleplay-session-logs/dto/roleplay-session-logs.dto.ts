@@ -111,6 +111,21 @@ export class ListRoleplaySessionLogsQueryDto {
   isV2VTest?: boolean;
 }
 
+/**
+ * Derived, read-model outcome of a session — richer than the binary
+ * ScenarioSessionStatus (ACTIVE|ENDED), which can't distinguish a healthy
+ * finished session from one that ended with no conversation (e.g. the agent
+ * never joined). Computed at read time; not persisted.
+ */
+export enum RoleplaySessionOutcome {
+  /** Session is still ACTIVE. */
+  IN_PROGRESS = 'IN_PROGRESS',
+  /** ENDED with at least one transcript message. */
+  COMPLETED = 'COMPLETED',
+  /** ENDED with zero messages — no conversation happened (agent may never have joined). */
+  NO_CONVERSATION = 'NO_CONVERSATION',
+}
+
 export class RoleplaySessionLogRowDto {
   @ApiProperty() id!: string;
   @ApiProperty() counselorId!: number;
@@ -121,6 +136,14 @@ export class RoleplaySessionLogRowDto {
   @ApiProperty() scenarioId!: number;
   @ApiProperty({ nullable: true }) scenarioTitle!: string | null;
   @ApiProperty({ enum: ScenarioSessionStatus }) status!: ScenarioSessionStatus;
+  @ApiProperty({
+    enum: RoleplaySessionOutcome,
+    description:
+      'Derived outcome. NO_CONVERSATION flags ENDED sessions with zero ' +
+      'transcript messages (e.g. the agent never joined) — invisible in the ' +
+      'raw ACTIVE|ENDED status.',
+  })
+  outcome!: RoleplaySessionOutcome;
   @ApiProperty({ nullable: true }) startedAt!: Date | null;
   @ApiProperty({ nullable: true }) endedAt!: Date | null;
   @ApiProperty({ nullable: true, description: 'Effective duration in seconds' })

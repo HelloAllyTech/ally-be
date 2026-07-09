@@ -17,6 +17,8 @@ export interface RoleplaySessionLogRawRow {
   scenarioId: number | string;
   scenarioTitle: string | null;
   status: string;
+  /** Derived session outcome (see RoleplaySessionOutcome). */
+  outcome: string;
   startedAt: Date | null;
   endedAt: Date | null;
   score: number | string | null;
@@ -102,6 +104,24 @@ export class RoleplaySessionLogsRepository {
   };
 
   /**
+   * Derived per-session outcome, richer than the binary ACTIVE|ENDED status.
+   * ACTIVE -> IN_PROGRESS; ENDED with >=1 transcript message -> COMPLETED;
+   * ENDED with none -> NO_CONVERSATION (surfaces "agent never joined" / empty
+   * sessions). A correlated EXISTS keeps it a per-row check; ss.id is cast to
+   * text to match how scenario_session_messages stores the id (see
+   * findTranscript) and to avoid casting arbitrary stored ids to uuid.
+   */
+  private static readonly OUTCOME_EXPR = `
+    CASE
+      WHEN ss."status" = 'ACTIVE' THEN 'IN_PROGRESS'
+      WHEN EXISTS (
+        SELECT 1 FROM scenario_session_messages ssm
+        WHERE ssm."scenarioSessionId" = ss.id::text
+      ) THEN 'COMPLETED'
+      ELSE 'NO_CONVERSATION'
+    END`;
+
+  /**
    * Applies the shared filters (exclusions + user filters) to a query that has
    * already FROM `scenario_sessions ss` and joined `users u` + `scenarios scn`.
    * Kept in one place so the list query and the count query stay in lockstep.
@@ -173,6 +193,7 @@ export class RoleplaySessionLogsRepository {
       .addSelect('ss."scenarioId"', 'scenarioId')
       .addSelect('scn."title"', 'scenarioTitle')
       .addSelect('ss."status"', 'status')
+      .addSelect(RoleplaySessionLogsRepository.OUTCOME_EXPR, 'outcome')
       .addSelect('ss."startedAt"', 'startedAt')
       .addSelect('ss."endedAt"', 'endedAt')
       .addSelect('ss."score"', 'score')
@@ -240,6 +261,7 @@ export class RoleplaySessionLogsRepository {
       .addSelect('ss."scenarioId"', 'scenarioId')
       .addSelect('scn."title"', 'scenarioTitle')
       .addSelect('ss."status"', 'status')
+      .addSelect(RoleplaySessionLogsRepository.OUTCOME_EXPR, 'outcome')
       .addSelect('ss."startedAt"', 'startedAt')
       .addSelect('ss."endedAt"', 'endedAt')
       .addSelect('ss."score"', 'score')

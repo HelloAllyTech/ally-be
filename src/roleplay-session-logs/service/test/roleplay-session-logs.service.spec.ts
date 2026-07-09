@@ -21,6 +21,7 @@ describe('RoleplaySessionLogsService', () => {
     scenarioId: '7',
     scenarioTitle: 'Crisis call',
     status: ScenarioSessionStatus.ENDED,
+    outcome: 'COMPLETED',
     startedAt: new Date('2026-06-01T10:00:00Z'),
     endedAt: new Date('2026-06-01T10:05:00Z'),
     score: '88.5',
@@ -133,6 +134,8 @@ describe('RoleplaySessionLogsService', () => {
       expect(row.scenarioId).toBe(7);
       expect(row.score).toBe(88.5);
       expect(row.orgName).toBe('Org One');
+      // Derived outcome threads through unchanged from the repository row.
+      expect(row.outcome).toBe('COMPLETED');
     });
 
     it('computes durationSeconds from the session window minus pauses', async () => {

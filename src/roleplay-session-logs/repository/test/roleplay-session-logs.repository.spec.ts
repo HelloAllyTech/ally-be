@@ -92,6 +92,19 @@ describe('RoleplaySessionLogsRepository', () => {
       expect(sql.some((s) => s.includes(':search'))).toBe(false);
     });
 
+    it('selects a derived outcome (IN_PROGRESS / COMPLETED / NO_CONVERSATION)', async () => {
+      await repository.list({} as ListRoleplaySessionLogsQueryDto);
+      const outcomeCall = builder.addSelect.mock.calls.find(
+        (c: any[]) => c[1] === 'outcome',
+      );
+      expect(outcomeCall).toBeDefined();
+      const expr = outcomeCall[0] as string;
+      expect(expr).toContain('scenario_session_messages');
+      expect(expr).toContain(`'IN_PROGRESS'`);
+      expect(expr).toContain(`'COMPLETED'`);
+      expect(expr).toContain(`'NO_CONVERSATION'`);
+    });
+
     it('defaults to createdAt DESC ordering and given paging', async () => {
       await repository.list({
         limit: 50,
