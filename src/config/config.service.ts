@@ -245,12 +245,16 @@ export class AppConfigService {
   }
 
   get livekit() {
+    const agentName = this.configService.get<string>(
+      'LIVEKIT_AGENT_NAME',
+      'Agent',
+    );
     return {
       apiKey: this.configService.get<string>('LIVEKIT_API_KEY'),
       apiSecret: this.configService.get<string>('LIVEKIT_API_SECRET'),
       serverUrl: this.configService.get<string>('LIVEKIT_URL'),
       environment: this.configService.get<string>('LIVEKIT_ENVIRONMENT'),
-      agentName: this.configService.get<string>('LIVEKIT_AGENT_NAME', 'Agent'),
+      agentName,
       // Second agent that plays the counselor side in superadmin V2V test
       // sessions; dispatched into the same room under this name.
       simulatedUserAgentName: this.configService.get<string>(
@@ -259,9 +263,14 @@ export class AppConfigService {
       ),
       // Roleplay Studio v2 runtime agent (actor + director). Dispatched for
       // scenarios with engine=ROLEPLAY_V2; rooms are prefixed `roleplay-`.
+      // Defaults to `${agentName}V2` so it inherits the same per-environment /
+      // per-developer namespacing as the v1 agent name — otherwise every worker
+      // on a shared LiveKit project registers as the constant "AgentV2" and
+      // explicit dispatches get load-balanced to the wrong worker. Override with
+      // LIVEKIT_ROLEPLAY_AGENT_NAME. (Default agentName "Agent" -> "AgentV2".)
       roleplayAgentName: this.configService.get<string>(
         'LIVEKIT_ROLEPLAY_AGENT_NAME',
-        'AgentV2',
+        `${agentName}V2`,
       ),
     };
   }
