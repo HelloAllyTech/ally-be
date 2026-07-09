@@ -52,6 +52,10 @@ describe('PlatformAnalyticsService', () => {
       getReturningActiveUserCountSince: jest.fn().mockResolvedValue(0),
       getCompletedSimsSince: jest.fn().mockResolvedValue(0),
       getVoiceLatencyByBucket: jest.fn().mockResolvedValue([]),
+      getAgentJoinReliabilityByBucket: jest.fn().mockResolvedValue([]),
+      getSessionOutcomeMix: jest
+        .fn()
+        .mockResolvedValue({ completed: 0, noConversation: 0, inProgress: 0 }),
     };
 
     // Drift aggregations live in DriftAnalyticsRepository and drift backfill is
@@ -460,6 +464,45 @@ describe('PlatformAnalyticsService', () => {
         ([, dimension]) => dimension,
       );
       expect(dims).not.toContain('scenarioVersion');
+    });
+  });
+
+  describe('getAgentJoinReliability', () => {
+    it('computes failureRatePct per bucket and guards divide-by-zero', async () => {
+      (repo.getAgentJoinReliabilityByBucket as jest.Mock).mockResolvedValue([
+        {
+          bucket: '2026-07-01',
+          totalSessions: 10,
+          joinFailures: 3,
+          midSessionDrops: 1,
+          joinLatencyP50Sec: 2,
+          joinLatencyP95Sec: 8,
+        },
+        {
+          bucket: '2026-07-02',
+          totalSessions: 0,
+          joinFailures: 0,
+          midSessionDrops: 0,
+          joinLatencyP50Sec: null,
+          joinLatencyP95Sec: null,
+        },
+      ]);
+      (repo.getSessionOutcomeMix as jest.Mock).mockResolvedValue({
+        completed: 7,
+        noConversation: 3,
+        inProgress: 1,
+      });
+
+      const result = await service.getAgentJoinReliability('30d');
+
+      expect(result.points[0].failureRatePct).toBe(30);
+      expect(result.points[1].failureRatePct).toBe(0); // no divide-by-zero
+      expect(result.points[0].midSessionDrops).toBe(1);
+      expect(result.outcomeMix).toEqual({
+        completed: 7,
+        noConversation: 3,
+        inProgress: 1,
+      });
     });
   });
 });
