@@ -231,6 +231,21 @@ export class AgentJoinReliabilityPointDto {
     description: 'p95 dispatch->join latency (seconds); null if no joins',
   })
   joinLatencyP95Sec!: number | null;
+
+  @ApiProperty({ description: 'Sessions with a conversation (>=1 agent turn)' })
+  conversations!: number;
+
+  @ApiProperty({
+    description:
+      'Suspected mid-session freezes (agent left the last human turn ' +
+      'unanswered, or an LLM call timed out)',
+  })
+  suspectedFreezes!: number;
+
+  @ApiProperty({
+    description: 'Suspected-freeze rate over conversations, percent (0-100)',
+  })
+  freezeRatePct!: number;
 }
 
 export class SessionOutcomeMixDto {

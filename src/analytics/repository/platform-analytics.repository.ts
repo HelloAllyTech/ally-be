@@ -23,6 +23,12 @@ export interface SessionOutcomeMixRow {
   inProgress: number;
 }
 
+export interface SuspectedFreezeBucketRow {
+  bucket: string;
+  conversations: number;
+  suspectedFreezes: number;
+}
+
 export interface NewUsersBucketRow {
   /** Bucket start as a calendar date string (yyyy-mm-dd). */
   bucket: string;
@@ -210,6 +216,63 @@ export class PlatformAnalyticsRepository {
       noConversation: Number(r.noConversation) || 0,
       inProgress: Number(r.inProgress) || 0,
     };
+  }
+
+  /**
+   * Suspected mid-session "freeze" rate per time bucket. Among sessions that
+   * actually had a conversation (>=1 agent turn), a freeze is either (a) the
+   * conversation ended on a HUMAN turn the agent never answered — the last
+   * transcript message is the learner's — or (b) any turn's LLM call timed out.
+   * Bucketed by session createdAt. All join columns are uuid/int (no casts).
+   * `trunc` is whitelisted by resolveBucket.
+   */
+  async getSuspectedFreezeByBucket(
+    start: Date,
+    end: Date,
+    bucket: AnalyticsBucket,
+  ): Promise<SuspectedFreezeBucketRow[]> {
+    const trunc = this.resolveBucket(bucket);
+    const rows = await this.dataSource.query(
+      `
+      WITH sess AS (
+        SELECT
+          ss."createdAt" AS created_at,
+          EXISTS (
+            SELECT 1 FROM scenario_session_messages m
+            WHERE m."scenarioSessionId" = ss.id AND m."senderId" <> ss."counselorId"
+          ) AS has_agent,
+          (
+            SELECT m."senderId" = ss."counselorId"
+            FROM scenario_session_messages m
+            WHERE m."scenarioSessionId" = ss.id
+            ORDER BY m."startSeconds" DESC NULLS LAST, m."createdAt" DESC
+            LIMIT 1
+          ) AS last_is_human,
+          EXISTS (
+            SELECT 1 FROM scenario_session_turn_metrics t
+            WHERE t."scenarioSessionId" = ss.id AND t."llmTimedOut" = true
+          ) AS llm_timeout
+        FROM scenario_sessions ss
+        WHERE ss."createdAt" >= $1 AND ss."createdAt" < $2
+          AND ss."roomId" LIKE 'ss_%'
+      )
+      SELECT
+        to_char(date_trunc('${trunc}', created_at), 'YYYY-MM-DD') AS bucket,
+        COUNT(*) FILTER (WHERE has_agent)::int AS "conversations",
+        COUNT(*) FILTER (
+          WHERE has_agent AND (COALESCE(last_is_human, false) OR llm_timeout)
+        )::int AS "suspectedFreezes"
+      FROM sess
+      GROUP BY 1
+      ORDER BY 1 ASC
+      `,
+      [start, end],
+    );
+    return rows.map((r: Record<string, unknown>) => ({
+      bucket: r.bucket as string,
+      conversations: Number(r.conversations) || 0,
+      suspectedFreezes: Number(r.suspectedFreezes) || 0,
+    }));
   }
 
   /**

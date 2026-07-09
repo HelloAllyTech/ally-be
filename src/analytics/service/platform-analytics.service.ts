@@ -534,27 +534,49 @@ export class PlatformAnalyticsService {
     }
     const bucket: AnalyticsBucket = bucketParam ?? defaultBucket;
 
-    const [rows, outcomeMix] = await Promise.all([
+    const [rows, outcomeMix, freezeRows] = await Promise.all([
       this.repo.getAgentJoinReliabilityByBucket(
         windowStart,
         endExclusive,
         bucket,
       ),
       this.repo.getSessionOutcomeMix(windowStart, endExclusive),
+      this.repo.getSuspectedFreezeByBucket(windowStart, endExclusive, bucket),
     ]);
 
-    const points = rows.map((r) => ({
-      bucket: r.bucket,
-      totalSessions: r.totalSessions,
-      joinFailures: r.joinFailures,
-      failureRatePct:
-        r.totalSessions > 0
-          ? Math.round((r.joinFailures / r.totalSessions) * 1000) / 10
-          : 0,
-      midSessionDrops: r.midSessionDrops,
-      joinLatencyP50Sec: r.joinLatencyP50Sec,
-      joinLatencyP95Sec: r.joinLatencyP95Sec,
-    }));
+    // Merge over the UNION of buckets: join-reliability is keyed off the
+    // (forward-only) lifecycle log, but freeze signals come from transcripts /
+    // turn-metrics which exist historically — so a bucket may have freeze data
+    // with no lifecycle rows (and vice versa). Default the missing side to 0.
+    const relByBucket = new Map(rows.map((r) => [r.bucket, r]));
+    const freezeByBucket = new Map(freezeRows.map((f) => [f.bucket, f]));
+    const buckets = Array.from(
+      new Set([...relByBucket.keys(), ...freezeByBucket.keys()]),
+    ).sort();
+
+    const pct = (num: number, denom: number): number =>
+      denom > 0 ? Math.round((num / denom) * 1000) / 10 : 0;
+
+    const points = buckets.map((b) => {
+      const r = relByBucket.get(b);
+      const f = freezeByBucket.get(b);
+      const totalSessions = r?.totalSessions ?? 0;
+      const joinFailures = r?.joinFailures ?? 0;
+      const conversations = f?.conversations ?? 0;
+      const suspectedFreezes = f?.suspectedFreezes ?? 0;
+      return {
+        bucket: b,
+        totalSessions,
+        joinFailures,
+        failureRatePct: pct(joinFailures, totalSessions),
+        midSessionDrops: r?.midSessionDrops ?? 0,
+        joinLatencyP50Sec: r?.joinLatencyP50Sec ?? null,
+        joinLatencyP95Sec: r?.joinLatencyP95Sec ?? null,
+        conversations,
+        suspectedFreezes,
+        freezeRatePct: pct(suspectedFreezes, conversations),
+      };
+    });
 
     return { range, bucket, points, outcomeMix };
   }

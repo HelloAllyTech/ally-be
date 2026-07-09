@@ -374,6 +374,41 @@ export class RoleplaySessionLogsRepository {
       .getRawMany();
   }
 
+  /**
+   * Freeze signals for one session: did it have an agent turn, and did it end
+   * on a human turn the agent never answered (the last transcript message is
+   * the learner's)? The service combines this with the LLM-timeout turn count
+   * to flag a suspected mid-session freeze. All ids are uuid (no casts).
+   */
+  async getFreezeSignals(
+    id: string,
+  ): Promise<{ hasAgentTurn: boolean; endedOnUnansweredHumanTurn: boolean }> {
+    const rows = await this.dataSource.query(
+      `
+      SELECT
+        EXISTS (
+          SELECT 1 FROM scenario_session_messages m
+          WHERE m."scenarioSessionId" = ss.id AND m."senderId" <> ss."counselorId"
+        ) AS has_agent,
+        COALESCE((
+          SELECT m."senderId" = ss."counselorId"
+          FROM scenario_session_messages m
+          WHERE m."scenarioSessionId" = ss.id
+          ORDER BY m."startSeconds" DESC NULLS LAST, m."createdAt" DESC
+          LIMIT 1
+        ), false) AS last_is_human
+      FROM scenario_sessions ss
+      WHERE ss.id = $1::uuid
+      `,
+      [id],
+    );
+    const r = (rows[0] ?? {}) as Record<string, unknown>;
+    return {
+      hasAgentTurn: r.has_agent === true,
+      endedOnUnansweredHumanTurn: r.last_is_human === true,
+    };
+  }
+
   /** Transcript turns for a session, ordered by playback position then time. */
   async findTranscript(id: string): Promise<
     Array<{

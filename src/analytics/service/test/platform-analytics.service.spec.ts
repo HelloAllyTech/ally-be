@@ -53,6 +53,7 @@ describe('PlatformAnalyticsService', () => {
       getCompletedSimsSince: jest.fn().mockResolvedValue(0),
       getVoiceLatencyByBucket: jest.fn().mockResolvedValue([]),
       getAgentJoinReliabilityByBucket: jest.fn().mockResolvedValue([]),
+      getSuspectedFreezeByBucket: jest.fn().mockResolvedValue([]),
       getSessionOutcomeMix: jest
         .fn()
         .mockResolvedValue({ completed: 0, noConversation: 0, inProgress: 0 }),
@@ -492,12 +493,23 @@ describe('PlatformAnalyticsService', () => {
         noConversation: 3,
         inProgress: 1,
       });
+      // 2 freezes out of 8 conversations in the first bucket -> 25%.
+      (repo.getSuspectedFreezeByBucket as jest.Mock).mockResolvedValue([
+        { bucket: '2026-07-01', conversations: 8, suspectedFreezes: 2 },
+      ]);
 
       const result = await service.getAgentJoinReliability('30d');
 
-      expect(result.points[0].failureRatePct).toBe(30);
-      expect(result.points[1].failureRatePct).toBe(0); // no divide-by-zero
-      expect(result.points[0].midSessionDrops).toBe(1);
+      const b1 = result.points.find((p) => p.bucket === '2026-07-01')!;
+      const b2 = result.points.find((p) => p.bucket === '2026-07-02')!;
+      expect(b1.failureRatePct).toBe(30);
+      expect(b2.failureRatePct).toBe(0); // no divide-by-zero
+      expect(b1.midSessionDrops).toBe(1);
+      // freeze merge by bucket + rate computation
+      expect(b1.conversations).toBe(8);
+      expect(b1.suspectedFreezes).toBe(2);
+      expect(b1.freezeRatePct).toBe(25);
+      expect(b2.freezeRatePct).toBe(0); // bucket with no freeze data
       expect(result.outcomeMix).toEqual({
         completed: 7,
         noConversation: 3,
