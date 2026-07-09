@@ -356,6 +356,12 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.VIEW_USER_PREFERENCES,
 ];
 
+// SUPER_DUPER_ADMIN is a peer of SUPER_ADMIN today: it clones the exact same
+// permission set. Keep it as a spread of SUPER_ADMIN_PERMISSIONS (rather than a
+// duplicated list) so the two stay identical until the role is intentionally
+// diverged with extra capabilities later.
+const SUPER_DUPER_ADMIN_PERMISSIONS = [...SUPER_ADMIN_PERMISSIONS];
+
 const COUNSELOR_PERMISSIONS = [
   // Core counselor functions
   PERMISSIONS.VIEW_CHAT,
@@ -578,6 +584,7 @@ const SCRIBE_REVIEWER_PERMISSIONS = [
 export {
   PERMISSIONS,
   SUPER_ADMIN_PERMISSIONS,
+  SUPER_DUPER_ADMIN_PERMISSIONS,
   COUNSELOR_PERMISSIONS,
   ADMIN_PERMISSIONS,
   MULTI_TENANT_ADMIN_PERMISSIONS,

@@ -8,7 +8,10 @@ import { SimulationCredits } from 'src/learn/entity/simulation-credits.entity';
 import { Group } from 'src/authorization/entity/group.entity';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { UserGroup } from 'src/authorization/entity/user-group.entity';
-import { UserRole } from 'src/common/constants/user.constants';
+import {
+  UserRole,
+  SUPER_ADMIN_ROLES,
+} from 'src/common/constants/user.constants';
 import { Chat, ChatStatus } from 'src/chat/entity/chat.entity';
 
 @Injectable()
@@ -99,10 +102,10 @@ export class UserRepository extends Repository<User> {
         SELECT 1
         FROM user_groups ug_excl
         INNER JOIN groups g_excl ON g_excl.id = ug_excl."groupId"
-        WHERE ug_excl."userId" = "user"."id" AND g_excl.name = :superAdminRole
+        WHERE ug_excl."userId" = "user"."id" AND g_excl.name IN (:...superAdminRoles)
       )`,
         );
-        params.superAdminRole = 'SUPER_ADMIN';
+        params.superAdminRoles = SUPER_ADMIN_ROLES;
       }
 
       if (filters?.roles) {
