@@ -1,4 +1,3 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { CopilotMessageRepository } from '../copilot-message.repository';
@@ -24,7 +23,9 @@ describe('CopilotMessageRepository.appendMessage', () => {
 
   const buildRepo = (queryResult: unknown) => {
     queryMock = jest.fn().mockResolvedValue(queryResult);
-    saveMock = jest.fn().mockImplementation((entity) => Promise.resolve(entity));
+    saveMock = jest
+      .fn()
+      .mockImplementation((entity) => Promise.resolve(entity));
     const em = {
       query: queryMock,
       getRepository: jest.fn().mockReturnValue({

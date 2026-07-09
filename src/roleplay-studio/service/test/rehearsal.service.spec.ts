@@ -248,7 +248,8 @@ describe('RehearsalService', () => {
     it('400s above REHEARSAL_MAX_UNITS (12)', async () => {
       const ids = Array.from(
         { length: 10 },
-        (_, i) => `44444444-4444-4444-8444-4444444444${String(i).padStart(2, '0')}`,
+        (_, i) =>
+          `44444444-4444-4444-8444-4444444444${String(i).padStart(2, '0')}`,
       );
       mockTestCaseRepo.find.mockResolvedValue(
         ids.map((id) => buildTestCase(id)),
