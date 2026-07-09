@@ -47,7 +47,9 @@ export class ComfortAudioService {
     return bucket;
   }
 
-  private toResponseDto(entity: ComfortAudioTrack): ComfortAudioTrackResponseDto {
+  private toResponseDto(
+    entity: ComfortAudioTrack,
+  ): ComfortAudioTrackResponseDto {
     return {
       id: entity.id,
       name: entity.name,
@@ -131,7 +133,9 @@ export class ComfortAudioService {
       where: { id },
     });
     if (!track) {
-      throw new NotFoundException(`Comfort audio track with ID ${id} not found`);
+      throw new NotFoundException(
+        `Comfort audio track with ID ${id} not found`,
+      );
     }
     return this.toResponseDto(track);
   }

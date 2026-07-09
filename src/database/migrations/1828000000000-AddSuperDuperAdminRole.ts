@@ -24,9 +24,7 @@ const NEW_GROUP = 'SUPER_DUPER_ADMIN';
 const SOURCE_GROUP = 'SUPER_ADMIN';
 const PROMOTE_EMAIL = 'sandeep.malhotra@helloally.ai';
 
-export class AddSuperDuperAdminRole1828000000000
-  implements MigrationInterface
-{
+export class AddSuperDuperAdminRole1828000000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // 1. Create the SUPER_DUPER_ADMIN group (groups.name has no unique
     //    constraint, so guard with NOT EXISTS to stay idempotent).

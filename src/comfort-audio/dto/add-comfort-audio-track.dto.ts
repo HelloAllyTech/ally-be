@@ -27,7 +27,11 @@ export class AddComfortAudioTrackDto {
   @IsNotEmpty()
   // allow_underscores/require_tld:false so local S3 hosts (e.g. the localstack
   // "s3_bucket" bucket) validate; prod bucket names are DNS-valid regardless.
-  @IsUrl({ protocols: ['http', 'https'], require_tld: false, allow_underscores: true })
+  @IsUrl({
+    protocols: ['http', 'https'],
+    require_tld: false,
+    allow_underscores: true,
+  })
   audioUrl!: string;
 
   @ApiProperty({ description: 'MIME type of the audio file', required: false })

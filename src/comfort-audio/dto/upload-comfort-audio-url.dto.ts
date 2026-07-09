@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNotEmpty, IsNumber, IsString, Max, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 import { ComfortAudioUploadContentType } from '../enum/comfort-audio-upload-content-type.enum';
 import { COMFORT_AUDIO_MAX_FILE_SIZE_BYTES } from '../constants/comfort-audio.constants';

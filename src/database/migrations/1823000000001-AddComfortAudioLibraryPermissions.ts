@@ -1,9 +1,7 @@
 import { UserRole } from 'src/common/constants/user.constants';
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddComfortAudioLibraryPermissions1823000000001
-  implements MigrationInterface
-{
+export class AddComfortAudioLibraryPermissions1823000000001 implements MigrationInterface {
   name = 'AddComfortAudioLibraryPermissions1823000000001';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

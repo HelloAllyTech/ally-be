@@ -19,7 +19,12 @@ export class ComfortAudioTrack extends BaseWithoutTenantEntity {
   @Column({ type: 'text', name: 'audio_url' })
   audioUrl!: string;
 
-  @Column({ type: 'varchar', length: 100, name: 'content_type', nullable: true })
+  @Column({
+    type: 'varchar',
+    length: 100,
+    name: 'content_type',
+    nullable: true,
+  })
   contentType?: string | null;
 
   @Column({ type: 'bigint', name: 'size_bytes', nullable: true })

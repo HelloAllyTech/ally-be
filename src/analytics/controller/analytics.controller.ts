@@ -118,7 +118,7 @@ export class AnalyticsController {
   }
 
   @Get('agent-join-reliability')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({
     summary: 'Agent-join reliability trend (super-admin)',
     description:
