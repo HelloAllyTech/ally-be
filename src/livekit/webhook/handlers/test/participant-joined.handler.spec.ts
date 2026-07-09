@@ -94,6 +94,8 @@ describe('ParticipantJoinedHandler', () => {
     const mockScenarioSessionService = {
       getScenarioSessionByRoomId: jest.fn(),
       updateScenarioSession: jest.fn(),
+      recordLifecycleEvent: jest.fn(),
+      sessionIdFromRoomName: jest.fn(),
     };
 
     const mockScenarioSharedService = {

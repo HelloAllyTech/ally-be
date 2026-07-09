@@ -10,6 +10,7 @@ import { ScenarioSessionRepository } from './repository/scenario-session.reposit
 import { ScenarioSessionMessagesRepository } from './repository/scenario-session-messages.repository';
 import { LiveKitModule } from 'src/livekit/livekit.module';
 import { ScenarioSessionFeedbacks } from './entity/scenario-session-feedbacks.entity';
+import { ScenarioSessionLifecycleEvent } from './entity/scenario-session-lifecycle-event.entity';
 import { ScenarioEvents } from './entity/scenario-events.entity';
 import { SessionEventModule } from 'src/session-event/session-event.module';
 import { AiModule } from 'src/ai/ai.module';
@@ -121,6 +122,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
       ScenarioSessions,
       ScenarioEvents,
       ScenarioSessionFeedbacks,
+      ScenarioSessionLifecycleEvent,
       ScenarioSessionMessages,
       ScenarioSessionEvents,
       ScenarioVoices,

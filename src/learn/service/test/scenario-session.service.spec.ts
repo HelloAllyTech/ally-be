@@ -19,6 +19,7 @@ import { ScenarioSessionBehaviorInstructions } from 'src/learn/entity/scenario-s
 import { ScenarioSessionMessages } from 'src/learn/entity/scenario-session-messages.entity';
 import { ScenarioSessionMessageType } from 'src/learn/enum/scenario-session-message.type.enum';
 import { ScenarioSessionFeedbacks } from 'src/learn/entity/scenario-session-feedbacks.entity';
+import { ScenarioSessionLifecycleEvent } from 'src/learn/entity/scenario-session-lifecycle-event.entity';
 import { ScenarioSessionReflectionPromptResponse } from 'src/learn/entity/scenario-session-reflection-prompt-response.entity';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import { ScenarioSessionStatus } from 'src/learn/enum/scenario-session-status.enum';
@@ -408,6 +409,10 @@ describe('ScenarioSessionService', () => {
         {
           provide: getRepositoryToken(ScenarioSessionFeedbacks),
           useValue: mockFeedbackRepo,
+        },
+        {
+          provide: getRepositoryToken(ScenarioSessionLifecycleEvent),
+          useValue: { insert: jest.fn() },
         },
         {
           provide: getRepositoryToken(ScenarioSessionReflectionPromptResponse),

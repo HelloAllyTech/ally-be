@@ -45,6 +45,7 @@ describe('RoleplaySessionLogsService', () => {
       getRecordingBySession: jest.fn().mockResolvedValue(null),
       getFeedbackBySession: jest.fn().mockResolvedValue(null),
       findAgentTestCases: jest.fn().mockResolvedValue([]),
+      findLifecycleEvents: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<RoleplaySessionLogsRepository>;
 
     s3Service = {
@@ -203,6 +204,21 @@ describe('RoleplaySessionLogsService', () => {
         },
       ]);
 
+      repo.findLifecycleEvents.mockResolvedValue([
+        {
+          id: 'l1',
+          type: 'ROOM_CREATED',
+          occurredAt: new Date('2026-06-01T09:59:00Z'),
+          detail: null,
+        },
+        {
+          id: 'l2',
+          type: 'PARTICIPANT_JOINED',
+          occurredAt: new Date('2026-06-01T10:00:00Z'),
+          detail: { identity: '42' },
+        },
+      ]);
+
       const detail = await service.getById('sess-1');
 
       expect(detail.id).toBe('sess-1');
@@ -212,6 +228,10 @@ describe('RoleplaySessionLogsService', () => {
       expect(detail.events[0].eventName).toBe('Empathy shown');
       expect(detail.transcript).toHaveLength(1);
       expect(detail.transcript[0].content).toBe('Hello');
+      // Lifecycle timeline threads through, oldest-first, detail preserved.
+      expect(detail.lifecycle).toHaveLength(2);
+      expect(detail.lifecycle[0].type).toBe('ROOM_CREATED');
+      expect(detail.lifecycle[1].detail).toEqual({ identity: '42' });
     });
 
     it('presigns a playback URL for the egress recording', async () => {

@@ -52,6 +52,7 @@ describe('RoomFinishedHandler', () => {
     const mockScenarioSessionService = {
       getScenarioSessionByRoomId: jest.fn(),
       endScenarioSession: jest.fn(),
+      recordLifecycleEvent: jest.fn(),
     };
 
     mockLogger = {

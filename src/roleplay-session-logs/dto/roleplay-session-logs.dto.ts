@@ -199,6 +199,25 @@ export class RoleplaySessionLogEventDto {
   @ApiProperty({ nullable: true }) message!: string | null;
 }
 
+/** One infrastructure lifecycle milestone in a session's timeline. */
+export class RoleplaySessionLifecycleEventDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({
+    description:
+      'ROOM_CREATED | AGENT_DISPATCHED | PARTICIPANT_JOINED | AGENT_JOINED | ' +
+      'RECORDING_STARTED | ROOM_FINISHED',
+  })
+  type!: string;
+  @ApiProperty() occurredAt!: Date;
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+    description: 'Small context payload (participant identity, egress id, …)',
+  })
+  detail!: Record<string, any> | null;
+}
+
 export class RoleplaySessionLogMessageDto {
   @ApiProperty() id!: number;
   @ApiProperty() senderId!: number;
@@ -420,6 +439,14 @@ export class RoleplaySessionLogDetailDto extends RoleplaySessionLogRowDto {
 
   @ApiProperty({ type: [RoleplaySessionLogEventDto] })
   events!: RoleplaySessionLogEventDto[];
+
+  @ApiProperty({
+    type: [RoleplaySessionLifecycleEventDto],
+    description:
+      'Infrastructure lifecycle timeline (room/agent/participant/recording). ' +
+      'A missing AGENT_JOINED entry indicates the agent never joined.',
+  })
+  lifecycle!: RoleplaySessionLifecycleEventDto[];
 
   @ApiProperty({ type: [RoleplaySessionLogMessageDto] })
   transcript!: RoleplaySessionLogMessageDto[];

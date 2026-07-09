@@ -27,6 +27,10 @@ import {
   Repository,
 } from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
+import {
+  ScenarioSessionLifecycleEvent,
+  ScenarioSessionLifecycleEventType,
+} from '../entity/scenario-session-lifecycle-event.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ScenarioSessionMessageType } from '../enum/scenario-session-message.type.enum';
 import { ScenarioSessionTagCategory } from '../enum/scenario-session-tag-category.enum';
@@ -136,6 +140,8 @@ export class ScenarioSessionService {
     private sessionEventSharedService: SessionEventSharedService,
     @InjectRepository(ScenarioSessionFeedbacks)
     private scenarioSessionFeedbacksRepository: Repository<ScenarioSessionFeedbacks>,
+    @InjectRepository(ScenarioSessionLifecycleEvent)
+    private scenarioSessionLifecycleEventRepository: Repository<ScenarioSessionLifecycleEvent>,
     @InjectRepository(ScenarioSessionReflectionPromptResponse)
     private scenarioSessionReflectionPromptResponseRepository: Repository<ScenarioSessionReflectionPromptResponse>,
     private dataSource: DataSource,
@@ -179,6 +185,39 @@ export class ScenarioSessionService {
       pagination,
       options,
     );
+  }
+
+  /** The scenario-session id encoded in a LiveKit room name (`ss_<id>`), or null. */
+  sessionIdFromRoomName(roomName: string): string | null {
+    return roomName?.startsWith('ss_') ? roomName.slice(3) : null;
+  }
+
+  /**
+   * Best-effort append of a session lifecycle milestone (room created, agent
+   * dispatched/joined, participant joined, recording started, room finished),
+   * used by the super-admin session-logs timeline. Never throws — a logging
+   * failure must not break session setup/teardown, mirroring the egress/
+   * recording best-effort pattern.
+   */
+  async recordLifecycleEvent(
+    scenarioSessionId: string,
+    type: ScenarioSessionLifecycleEventType,
+    occurredAt: Date = new Date(),
+    detail?: Record<string, any>,
+  ): Promise<void> {
+    try {
+      await this.scenarioSessionLifecycleEventRepository.insert({
+        scenarioSessionId,
+        type,
+        occurredAt,
+        detail: detail ?? null,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to record lifecycle event ${type} for session ` +
+          `${scenarioSessionId}: ${(error as Error)?.message}`,
+      );
+    }
   }
 
   async getScenarioSessionSkills(
@@ -683,6 +722,10 @@ export class ScenarioSessionService {
           startScenarioSessionDto.ttl ?? DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
         metadata: roomMetadata,
       });
+      void this.recordLifecycleEvent(
+        scenarioSession.id,
+        ScenarioSessionLifecycleEventType.ROOM_CREATED,
+      );
 
       // Proactively dispatch the agent immediately so it can initialize during
       // the frontend's ringing-bell delay. The participant_joined webhook is still
@@ -696,6 +739,14 @@ export class ScenarioSessionService {
           `${scenarioSession.roomId}`,
           this.configService.livekit.agentName,
           JSON.stringify(roomMetadata),
+        )
+        .then(() =>
+          this.recordLifecycleEvent(
+            scenarioSession.id,
+            ScenarioSessionLifecycleEventType.AGENT_DISPATCHED,
+            new Date(),
+            { via: 'proactive' },
+          ),
         )
         .catch((err) => {
           // Clear the pre-mark so the participant_joined webhook can take over.

@@ -346,6 +346,33 @@ export class RoleplaySessionLogsRepository {
       .getRawMany();
   }
 
+  /**
+   * Infrastructure lifecycle timeline for a session, oldest first (room
+   * created, agent dispatched/joined, participant joined, recording started,
+   * room finished). Powers the session-detail timeline; an absent AGENT_JOINED
+   * row is the "agent never joined" signal.
+   */
+  async findLifecycleEvents(id: string): Promise<
+    Array<{
+      id: string;
+      type: string;
+      occurredAt: Date;
+      detail: Record<string, any> | null;
+    }>
+  > {
+    return this.dataSource
+      .createQueryBuilder()
+      .select('l."id"', 'id')
+      .addSelect('l."type"', 'type')
+      .addSelect('l."occurredAt"', 'occurredAt')
+      .addSelect('l."detail"', 'detail')
+      .from('scenario_session_lifecycle_events', 'l')
+      .where('l."scenarioSessionId" = :id', { id })
+      .orderBy('l."occurredAt"', 'ASC')
+      .addOrderBy('l."createdAt"', 'ASC')
+      .getRawMany();
+  }
+
   /** Transcript turns for a session, ordered by playback position then time. */
   async findTranscript(id: string): Promise<
     Array<{

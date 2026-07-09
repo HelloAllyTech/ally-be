@@ -99,6 +99,7 @@ export class RoleplaySessionLogsService {
       recording,
       feedback,
       agentTestCases,
+      lifecycle,
     ] = await Promise.all([
       this.roleplaySessionLogsRepository.findSummary(id),
       this.roleplaySessionLogsRepository.findEvents(id),
@@ -108,6 +109,7 @@ export class RoleplaySessionLogsService {
       this.roleplaySessionLogsRepository.getRecordingBySession(id),
       this.roleplaySessionLogsRepository.getFeedbackBySession(id),
       this.roleplaySessionLogsRepository.findAgentTestCases(),
+      this.roleplaySessionLogsRepository.findLifecycleEvents(id),
     ]);
 
     const usage = this.buildUsage(usageRows);
@@ -152,6 +154,12 @@ export class RoleplaySessionLogsService {
         score: this.toNumberOrNull(e.score),
         emoji: e.emoji ?? null,
         message: e.message ?? null,
+      })),
+      lifecycle: lifecycle.map((l) => ({
+        id: l.id,
+        type: l.type,
+        occurredAt: l.occurredAt,
+        detail: l.detail ?? null,
       })),
       transcript: transcript.map((m) => ({
         id: Number(m.id),
