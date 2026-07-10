@@ -20,7 +20,7 @@
 
 | Store | Tech | Owned by | Holds | Where defined |
 |-------|------|----------|-------|---------------|
-| **Primary relational DB** | PostgreSQL (TypeORM) | `ally-be` | All transactional/business data — users, tenants, scenarios, sessions, chats, cases, reviews, badges, prompts, analytics config, audit logs (120 tables) | `src/**/entity/*.entity.ts` |
+| **Primary relational DB** | PostgreSQL (TypeORM) | `ally-be` | All transactional/business data — users, tenants, scenarios, sessions, chats, cases, reviews, badges, prompts, analytics config, audit logs (121 tables) | `src/**/entity/*.entity.ts` |
 | **Vector DB** | Weaviate | `ally-ai` | Embedded conversation turns + reference documents for semantic search / RAG | `ally-ai/app/core/vector_db/constants.py` |
 | **Cache / ephemeral** | Redis (`ioredis`) | `ally-be` | Caching, rate-limit counters, transient session/room state | `src/redis/` |
 | **Message queue** | AWS SQS | `ally-be` ↔ `ally-ai` | Async jobs — transcription & summarization results, cross-service events | `src/message-broker/` |
@@ -227,6 +227,7 @@ Each subsystem has the full set of tables: `*_reviews` (`status`: HIDDEN/IN_REVI
 | `conversational_guardrails_translations` | BaseWithoutTenant | `guardrail_id`, `language_id`, `helper_dialogue`, `actor_dialogue` | Uniq `(guardrail_id, language_id)` |
 | `tooltips` | BaseWithoutTenant | `location` (uniq), `tip_text`, `icon`, `active`, `created_by`, `updated_by` | Contextual UI tooltips |
 | `tooltip_translations` | (custom) | `tooltip_id`, `language_id`, `tip_text` | Uniq `(tooltip_id, language_id)` |
+| `blogs` | BaseWithoutTenant | `id` (uuid), `title`, `slug` (uniq where not deleted), `tldr`, `body` (text, sanitized HTML), `tags` (jsonb string[]), `category`, `header_image_url`, `status` (`BlogStatus`: DRAFT/PUBLISHED, default DRAFT), `published_at`, `created_by`, `updated_by`, `deleted_at` | Platform-wide blog (release announcements & product updates). Super-admin authored (perms `view:blogs`/`edit:blog`/`delete:blog`); **published** rows served ungated at `/api/v1/blog/public` and rendered on app.helloally.ai/blog |
 
 ### 3.9 Roleplay Studio v2 (`roleplay-studio`)
 
