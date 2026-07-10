@@ -52,6 +52,11 @@ describe('PlatformAnalyticsService', () => {
       getReturningActiveUserCountSince: jest.fn().mockResolvedValue(0),
       getCompletedSimsSince: jest.fn().mockResolvedValue(0),
       getVoiceLatencyByBucket: jest.fn().mockResolvedValue([]),
+      getAgentJoinReliabilityByBucket: jest.fn().mockResolvedValue([]),
+      getSuspectedFreezeByBucket: jest.fn().mockResolvedValue([]),
+      getSessionOutcomeMix: jest
+        .fn()
+        .mockResolvedValue({ completed: 0, noConversation: 0, inProgress: 0 }),
     };
 
     // Drift aggregations live in DriftAnalyticsRepository and drift backfill is
@@ -460,6 +465,56 @@ describe('PlatformAnalyticsService', () => {
         ([, dimension]) => dimension,
       );
       expect(dims).not.toContain('scenarioVersion');
+    });
+  });
+
+  describe('getAgentJoinReliability', () => {
+    it('computes failureRatePct per bucket and guards divide-by-zero', async () => {
+      (repo.getAgentJoinReliabilityByBucket as jest.Mock).mockResolvedValue([
+        {
+          bucket: '2026-07-01',
+          totalSessions: 10,
+          joinFailures: 3,
+          midSessionDrops: 1,
+          joinLatencyP50Sec: 2,
+          joinLatencyP95Sec: 8,
+        },
+        {
+          bucket: '2026-07-02',
+          totalSessions: 0,
+          joinFailures: 0,
+          midSessionDrops: 0,
+          joinLatencyP50Sec: null,
+          joinLatencyP95Sec: null,
+        },
+      ]);
+      (repo.getSessionOutcomeMix as jest.Mock).mockResolvedValue({
+        completed: 7,
+        noConversation: 3,
+        inProgress: 1,
+      });
+      // 2 freezes out of 8 conversations in the first bucket -> 25%.
+      (repo.getSuspectedFreezeByBucket as jest.Mock).mockResolvedValue([
+        { bucket: '2026-07-01', conversations: 8, suspectedFreezes: 2 },
+      ]);
+
+      const result = await service.getAgentJoinReliability('30d');
+
+      const b1 = result.points.find((p) => p.bucket === '2026-07-01')!;
+      const b2 = result.points.find((p) => p.bucket === '2026-07-02')!;
+      expect(b1.failureRatePct).toBe(30);
+      expect(b2.failureRatePct).toBe(0); // no divide-by-zero
+      expect(b1.midSessionDrops).toBe(1);
+      // freeze merge by bucket + rate computation
+      expect(b1.conversations).toBe(8);
+      expect(b1.suspectedFreezes).toBe(2);
+      expect(b1.freezeRatePct).toBe(25);
+      expect(b2.freezeRatePct).toBe(0); // bucket with no freeze data
+      expect(result.outcomeMix).toEqual({
+        completed: 7,
+        noConversation: 3,
+        inProgress: 1,
+      });
     });
   });
 });

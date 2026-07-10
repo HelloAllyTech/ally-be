@@ -24,6 +24,8 @@ import {
   CreateDashboardResponseDto,
 } from '../dto/analytics.dto';
 import {
+  AgentJoinReliabilityQueryDto,
+  AgentJoinReliabilityResponseDto,
   AnalyticsOverviewQueryDto,
   AnalyticsOverviewResponseDto,
   ConversationDriftQueryDto,
@@ -54,7 +56,10 @@ import {
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
-import { UserRole } from 'src/common/constants/user.constants';
+import {
+  UserRole,
+  SUPER_ADMIN_ROLES,
+} from 'src/common/constants/user.constants';
 
 @ApiTags('Analytics')
 @Controller('v1/analytics')
@@ -68,7 +73,7 @@ export class AnalyticsController {
   ) {}
 
   @Get('overview')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({
     summary: 'Platform analytics overview (super-admin)',
     description:
@@ -88,7 +93,7 @@ export class AnalyticsController {
   }
 
   @Get('voice-latency')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({
     summary: 'Voice-to-voice latency trend (super-admin)',
     description:
@@ -112,8 +117,32 @@ export class AnalyticsController {
     );
   }
 
+  @Get('agent-join-reliability')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Agent-join reliability trend (super-admin)',
+    description:
+      'Per-bucket agent-join failure rate + dispatch->join latency (p50/p95) ' +
+      'from the session lifecycle log, plus the overall session outcome mix. ' +
+      'Bucket granularity follows the `range` param (30d -> day, 90d -> week, ' +
+      '12m -> month).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Agent-join reliability trend retrieved successfully',
+    type: AgentJoinReliabilityResponseDto,
+  })
+  async getAgentJoinReliability(
+    @Query() query: AgentJoinReliabilityQueryDto,
+  ): Promise<AgentJoinReliabilityResponseDto> {
+    return this.platformAnalyticsService.getAgentJoinReliability(
+      query.range ?? '90d',
+      query.bucket,
+    );
+  }
+
   @Get('start-latency')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({
     summary: 'Simulation start-latency trend (super-admin)',
     description:
@@ -140,7 +169,7 @@ export class AnalyticsController {
   }
 
   @Get('conversation-drift')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({
     summary: 'Conversation drift analytics (super-admin)',
     description:
@@ -167,7 +196,7 @@ export class AnalyticsController {
   }
 
   @Get('token-consumption')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({
     summary: 'AI token consumption by model & task (super-admin)',
     description:
@@ -185,7 +214,7 @@ export class AnalyticsController {
   }
 
   @Get('scribe/overview')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({
     summary: 'Scribe-session analytics overview (super-admin)',
     description:
@@ -202,7 +231,7 @@ export class AnalyticsController {
   }
 
   @Get('scribe/summary-failures')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({
     summary: 'Scribe summary-generation failure analytics (super-admin)',
     description:
@@ -219,7 +248,7 @@ export class AnalyticsController {
   }
 
   @Post('conversation-drift/backfill')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({
     summary: 'Re-run the drift backfill over the last N days (super-admin)',
     description:
@@ -237,7 +266,7 @@ export class AnalyticsController {
   }
 
   @Get('conversation-drift/backfill/:jobId')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({ summary: 'Drift backfill job status (super-admin)' })
   @ApiResponse({ status: 200, type: DriftBackfillJobDto })
   async driftBackfillStatus(

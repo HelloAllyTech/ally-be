@@ -46,6 +46,10 @@ describe('RoleplaySessionLogsService', () => {
       getFeedbackBySession: jest.fn().mockResolvedValue(null),
       findAgentTestCases: jest.fn().mockResolvedValue([]),
       findLifecycleEvents: jest.fn().mockResolvedValue([]),
+      getFreezeSignals: jest.fn().mockResolvedValue({
+        hasAgentTurn: false,
+        endedOnUnansweredHumanTurn: false,
+      }),
     } as unknown as jest.Mocked<RoleplaySessionLogsRepository>;
 
     s3Service = {
@@ -232,6 +236,20 @@ describe('RoleplaySessionLogsService', () => {
       expect(detail.lifecycle).toHaveLength(2);
       expect(detail.lifecycle[0].type).toBe('ROOM_CREATED');
       expect(detail.lifecycle[1].detail).toEqual({ identity: '42' });
+      // Default freeze signals (no agent turn) => not a suspected freeze.
+      expect(detail.suspectedFreeze).toBe(false);
+    });
+
+    it('flags a suspected freeze when the agent left the last human turn unanswered', async () => {
+      repo.findOne.mockResolvedValue(baseRow);
+      (repo.getFreezeSignals as jest.Mock).mockResolvedValue({
+        hasAgentTurn: true,
+        endedOnUnansweredHumanTurn: true,
+      });
+
+      const detail = await service.getById('sess-1');
+
+      expect(detail.suspectedFreeze).toBe(true);
     });
 
     it('presigns a playback URL for the egress recording', async () => {

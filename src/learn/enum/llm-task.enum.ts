@@ -35,6 +35,8 @@ export enum LlmTask {
   ROLEPLAY_COPILOT = 'roleplay_copilot',
   // Roleplay Studio v2: rehearsal critique → spec-patch proposals.
   ROLEPLAY_CRITIQUE = 'roleplay_critique',
+  // Track 2.0 quiz: grading one open-ended learner answer against its rubric.
+  TRACK_QUIZ_GRADING = 'track_quiz_grading',
   TRANSLATE_SCENARIO = 'translate_scenario',
   TRANSLATE_TEXT = 'translate_text',
   TRANSLATE_OBJECT = 'translate_object',

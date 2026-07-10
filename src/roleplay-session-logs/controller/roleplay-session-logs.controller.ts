@@ -7,7 +7,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { UserRole } from '../../common/constants/user.constants';
+import { SUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import { RoleplaySessionLogsService } from '../service/roleplay-session-logs.service';
 import {
   ListRoleplaySessionLogsQueryDto,
@@ -25,7 +25,7 @@ export class RoleplaySessionLogsController {
   ) {}
 
   @Get()
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({
     summary: 'List all roleplay sessions across all orgs (super-admin)',
     description:
@@ -43,7 +43,7 @@ export class RoleplaySessionLogsController {
   }
 
   @Get(':id')
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({
     summary: 'Get a single roleplay session detail (super-admin)',
     description:

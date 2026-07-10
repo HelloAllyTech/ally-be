@@ -448,6 +448,13 @@ export class RoleplaySessionLogDetailDto extends RoleplaySessionLogRowDto {
   })
   lifecycle!: RoleplaySessionLifecycleEventDto[];
 
+  @ApiProperty({
+    description:
+      'Suspected mid-session freeze: the conversation ended on a human turn ' +
+      'the agent never answered, or an LLM call timed out during the session.',
+  })
+  suspectedFreeze!: boolean;
+
   @ApiProperty({ type: [RoleplaySessionLogMessageDto] })
   transcript!: RoleplaySessionLogMessageDto[];
 }

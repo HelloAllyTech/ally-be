@@ -86,7 +86,7 @@ import {
 import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
 import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
-import { UserRole } from 'src/common/constants/user.constants';
+import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -1245,7 +1245,7 @@ export class LearnController {
       'The session appears in Roleplay Session Logs.',
   })
   @ApiBody({ type: StartV2VTestSessionDto })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @Post('v2v-test-session-start')
   async startV2VTestSession(
     @CurrentUser() user: TokenUser,

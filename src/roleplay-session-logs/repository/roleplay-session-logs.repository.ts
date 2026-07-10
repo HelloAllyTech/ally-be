@@ -107,16 +107,17 @@ export class RoleplaySessionLogsRepository {
    * Derived per-session outcome, richer than the binary ACTIVE|ENDED status.
    * ACTIVE -> IN_PROGRESS; ENDED with >=1 transcript message -> COMPLETED;
    * ENDED with none -> NO_CONVERSATION (surfaces "agent never joined" / empty
-   * sessions). A correlated EXISTS keeps it a per-row check; ss.id is cast to
-   * text to match how scenario_session_messages stores the id (see
-   * findTranscript) and to avoid casting arbitrary stored ids to uuid.
+   * sessions). A correlated EXISTS keeps it a per-row check. Both
+   * scenario_session_messages."scenarioSessionId" and scenario_sessions.id are
+   * uuid, so they are compared directly (a `::text` cast would raise
+   * `operator does not exist: uuid = text`).
    */
   private static readonly OUTCOME_EXPR = `
     CASE
       WHEN ss."status" = 'ACTIVE' THEN 'IN_PROGRESS'
       WHEN EXISTS (
         SELECT 1 FROM scenario_session_messages ssm
-        WHERE ssm."scenarioSessionId" = ss.id::text
+        WHERE ssm."scenarioSessionId" = ss.id
       ) THEN 'COMPLETED'
       ELSE 'NO_CONVERSATION'
     END`;
@@ -371,6 +372,41 @@ export class RoleplaySessionLogsRepository {
       .orderBy('l."occurredAt"', 'ASC')
       .addOrderBy('l."createdAt"', 'ASC')
       .getRawMany();
+  }
+
+  /**
+   * Freeze signals for one session: did it have an agent turn, and did it end
+   * on a human turn the agent never answered (the last transcript message is
+   * the learner's)? The service combines this with the LLM-timeout turn count
+   * to flag a suspected mid-session freeze. All ids are uuid (no casts).
+   */
+  async getFreezeSignals(
+    id: string,
+  ): Promise<{ hasAgentTurn: boolean; endedOnUnansweredHumanTurn: boolean }> {
+    const rows = await this.dataSource.query(
+      `
+      SELECT
+        EXISTS (
+          SELECT 1 FROM scenario_session_messages m
+          WHERE m."scenarioSessionId" = ss.id AND m."senderId" <> ss."counselorId"
+        ) AS has_agent,
+        COALESCE((
+          SELECT m."senderId" = ss."counselorId"
+          FROM scenario_session_messages m
+          WHERE m."scenarioSessionId" = ss.id
+          ORDER BY m."startSeconds" DESC NULLS LAST, m."createdAt" DESC
+          LIMIT 1
+        ), false) AS last_is_human
+      FROM scenario_sessions ss
+      WHERE ss.id = $1::uuid
+      `,
+      [id],
+    );
+    const r = (rows[0] ?? {}) as Record<string, unknown>;
+    return {
+      hasAgentTurn: r.has_agent === true,
+      endedOnUnansweredHumanTurn: r.last_is_human === true,
+    };
   }
 
   /** Transcript turns for a session, ordered by playback position then time. */
