@@ -53,6 +53,15 @@ export class CreateBlogDto {
   @MaxLength(120)
   category?: string;
 
+  @ApiPropertyOptional({
+    description: 'Author display name shown as the byline',
+    example: 'Jane Doe',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  authorName?: string;
+
   @ApiPropertyOptional({ description: 'Header image URL (from upload-url)' })
   @IsOptional()
   @IsString()

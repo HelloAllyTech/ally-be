@@ -69,6 +69,7 @@ export class BlogService {
       body: entity.body ?? null,
       tags: entity.tags ?? [],
       category: entity.category ?? null,
+      authorName: entity.authorName ?? null,
       headerImageUrl: entity.headerImageUrl ?? null,
       status: entity.status,
       publishedAt: entity.publishedAt ?? null,
@@ -134,6 +135,7 @@ export class BlogService {
       body: sanitizeBlogHtml(dto.body) ?? null,
       tags: dto.tags ?? [],
       category: dto.category ?? null,
+      authorName: dto.authorName ?? null,
       headerImageUrl: dto.headerImageUrl ?? null,
       status,
       publishedAt: status === BlogStatus.PUBLISHED ? new Date() : null,
@@ -172,6 +174,9 @@ export class BlogService {
     }
     if (dto.tags !== undefined) existing.tags = dto.tags ?? [];
     if (dto.category !== undefined) existing.category = dto.category ?? null;
+    if (dto.authorName !== undefined) {
+      existing.authorName = dto.authorName ?? null;
+    }
     if (dto.headerImageUrl !== undefined) {
       existing.headerImageUrl = dto.headerImageUrl ?? null;
     }

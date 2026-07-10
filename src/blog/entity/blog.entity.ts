@@ -43,6 +43,11 @@ export class Blog extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', length: 120, nullable: true })
   category?: string | null;
 
+  // Display name of the post's author (free-form; distinct from created_by which
+  // references the super-admin user who authored the record).
+  @Column({ type: 'varchar', name: 'author_name', length: 120, nullable: true })
+  authorName?: string | null;
+
   @Column({ type: 'text', name: 'header_image_url', nullable: true })
   headerImageUrl?: string | null;
 

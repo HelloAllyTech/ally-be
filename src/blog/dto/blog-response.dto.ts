@@ -25,6 +25,9 @@ export class BlogResponseDto {
   category?: string | null;
 
   @ApiPropertyOptional()
+  authorName?: string | null;
+
+  @ApiPropertyOptional()
   headerImageUrl?: string | null;
 
   @ApiProperty({ enum: BlogStatus })
