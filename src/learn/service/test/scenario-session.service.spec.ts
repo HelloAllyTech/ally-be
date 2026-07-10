@@ -49,6 +49,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
+import { TrackProgressService } from 'src/track/service/track-progress.service';
 import { ScenarioSharedService } from '../scenario-shared.service';
 import { isEnglishLanguage } from '../../util/scenario.util';
 import { BehaviorTranslationRepository } from 'src/learn/repository/behavior-translation.repository';
@@ -488,6 +489,13 @@ describe('ScenarioSessionService', () => {
         {
           provide: CaseSessionService,
           useValue: mockCaseSessionService,
+        },
+        {
+          provide: TrackProgressService,
+          useValue: {
+            validateRoleplayStart: jest.fn(),
+            handleRoleplayEnd: jest.fn(),
+          },
         },
         {
           provide: BehaviorTranslationRepository,
