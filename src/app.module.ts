@@ -54,6 +54,7 @@ import { DynamicI18nModule } from './dynamic-i18n/dynamic-i18n.module';
 import { TooltipModule } from './tooltip/tooltip.module';
 import { RoleplaySessionLogsModule } from './roleplay-session-logs/roleplay-session-logs.module';
 import { RoleplayStudioModule } from './roleplay-studio/roleplay-studio.module';
+import { BlogModule } from './blog/blog.module';
 
 @Module({
   imports: [
@@ -111,6 +112,7 @@ import { RoleplayStudioModule } from './roleplay-studio/roleplay-studio.module';
     TooltipModule,
     RoleplaySessionLogsModule,
     RoleplayStudioModule,
+    BlogModule,
   ],
   controllers: [],
   providers: [
