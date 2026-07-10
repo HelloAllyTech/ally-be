@@ -230,21 +230,27 @@ export class LanguageAnalyticsRepository {
     );
   }
 
-  /** Weighted error sums per language (conditioned-out excluded). */
-  async weightedByLanguage(
-    f: LanguageAnalyticsFilters,
-  ): Promise<
-    Array<{ language: string | null; severity: string; count: string }>
+  /** Error counts per (language, dimension, severity), conditioned-out
+   *  excluded — drives both the by-language rate and each language's worst
+   *  dimension on the overview. */
+  async weightedByLanguage(f: LanguageAnalyticsFilters): Promise<
+    Array<{
+      language: string | null;
+      dimension: string;
+      severity: string;
+      count: string;
+    }>
   > {
     const params: unknown[] = [];
     const where = this.annotationWhere(f, params);
     return this.dataSource.query(
       `SELECT a."language" AS language,
+              a."dimension" AS dimension,
               a."severity" AS severity,
               COUNT(*) AS count
          FROM language_error_annotations a
         WHERE ${where} AND a."conditionedOut" = false
-        GROUP BY a."language", a."severity"`,
+        GROUP BY a."language", a."dimension", a."severity"`,
       params,
     );
   }

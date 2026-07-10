@@ -219,6 +219,38 @@ export class LanguageRateByLanguageDto {
   @ApiProperty() weightedRatePer100!: number;
 }
 
+/** One row of the per-language performance overview (the tab's default,
+ *  all-languages view). Everything here is an aggregate; per-session detail
+ *  lives in Roleplay Session Logs. */
+export class LanguageOverviewRowDto {
+  @ApiProperty() language!: string;
+  @ApiProperty() sessionsJudged!: number;
+  @ApiProperty() nTurns!: number;
+  @ApiProperty({ description: 'Weighted errors / 100 turns (severity 1/5/10)' })
+  weightedRatePer100!: number;
+  @ApiProperty({
+    nullable: true,
+    description: 'Avg script fidelity %; null = unmeasured',
+  })
+  scriptFidelityPct!: number | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'Avg round-trip WER/CER %; null = unmeasured',
+  })
+  roundTripWerPct!: number | null;
+  @ApiProperty({ description: '% of turns with STT-garbled counselor input' })
+  garbledInputPct!: number;
+  @ApiProperty({
+    nullable: true,
+    description: 'Highest weighted-rate dimension',
+  })
+  worstDimension!: string | null;
+  @ApiProperty({
+    description: "The worst dimension's weighted rate / 100 turns",
+  })
+  worstDimensionRatePer100!: number;
+}
+
 export class LanguageCategoryCountDto {
   @ApiProperty() dimension!: string;
   @ApiProperty() category!: string;
@@ -344,6 +376,13 @@ export class LanguageQualityResponseDto {
 
   @ApiProperty({ type: [LanguageRateByLanguageDto] })
   rateByLanguage!: LanguageRateByLanguageDto[];
+
+  @ApiProperty({
+    type: [LanguageOverviewRowDto],
+    description:
+      'Per-language performance overview — the default (all-languages) view.',
+  })
+  languageOverview!: LanguageOverviewRowDto[];
 
   @ApiProperty({ type: [LanguageCategoryCountDto] })
   categoryBreakdown!: LanguageCategoryCountDto[];

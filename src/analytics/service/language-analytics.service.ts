@@ -167,6 +167,7 @@ export class LanguageAnalyticsService {
       categoryBreakdown: [],
       isolationBasisBreakdown: [],
       errorLog: [],
+      languageOverview: [],
       objectiveMetrics: { scriptFidelityPct: null, roundTripWerPct: null },
       layerTrend: [],
       rateByScenarioVersion: [],
@@ -323,14 +324,20 @@ export class LanguageAnalyticsService {
     );
 
     // --- By language ---------------------------------------------------------
+    // byLanguage rows are (language, dimension, severity, count): total
+    // weighted per language plus each language's worst dimension.
     const weightedPerLanguage = new Map<string, number>();
+    const weightedPerLanguageDim = new Map<string, Map<string, number>>();
     for (const row of byLanguage) {
       const key = row.language ?? 'unknown';
+      const weighted = Number(row.count) * (SEVERITY_WEIGHT[row.severity] ?? 1);
       weightedPerLanguage.set(
         key,
-        (weightedPerLanguage.get(key) ?? 0) +
-          Number(row.count) * (SEVERITY_WEIGHT[row.severity] ?? 1),
+        (weightedPerLanguage.get(key) ?? 0) + weighted,
       );
+      const dims = weightedPerLanguageDim.get(key) ?? new Map<string, number>();
+      dims.set(row.dimension, (dims.get(row.dimension) ?? 0) + weighted);
+      weightedPerLanguageDim.set(key, dims);
     }
     const rateByLanguage = totals
       .map((t) => {
@@ -346,6 +353,49 @@ export class LanguageAnalyticsService {
                   ((weightedPerLanguage.get(language) ?? 0) / nTurns) * 100,
                 )
               : 0,
+        };
+      })
+      .sort((a, b) => b.weightedRatePer100 - a.weightedRatePer100);
+
+    // Per-language performance overview — the tab's default view. One row per
+    // language: rate, objective metrics, worst dimension. Aggregates only;
+    // per-session detail lives in session logs.
+    const languageOverview = totals
+      .map((t) => {
+        const language = t.language ?? 'unknown';
+        const nTurns = Number(t.turns);
+        const dims = weightedPerLanguageDim.get(language);
+        let worstDimension: string | null = null;
+        let worstWeighted = 0;
+        if (dims) {
+          for (const [dimension, weighted] of dims) {
+            if (weighted > worstWeighted) {
+              worstWeighted = weighted;
+              worstDimension = dimension;
+            }
+          }
+        }
+        return {
+          language,
+          sessionsJudged: Number(t.sessions),
+          nTurns,
+          weightedRatePer100:
+            nTurns > 0
+              ? round2(
+                  ((weightedPerLanguage.get(language) ?? 0) / nTurns) * 100,
+                )
+              : 0,
+          scriptFidelityPct:
+            t.script_fidelity == null
+              ? null
+              : round2(Number(t.script_fidelity)),
+          roundTripWerPct:
+            t.round_trip_wer == null ? null : round2(Number(t.round_trip_wer)),
+          garbledInputPct:
+            nTurns > 0 ? round2((Number(t.turns_garbled) / nTurns) * 100) : 0,
+          worstDimension,
+          worstDimensionRatePer100:
+            nTurns > 0 ? round2((worstWeighted / nTurns) * 100) : 0,
         };
       })
       .sort((a, b) => b.weightedRatePer100 - a.weightedRatePer100);
@@ -439,6 +489,7 @@ export class LanguageAnalyticsService {
         turnsJudged > 0 ? round2((totalWeighted / turnsJudged) * 100) : 0,
       errorRateByDimension,
       rateByLanguage,
+      languageOverview,
       categoryBreakdown,
       objectiveMetrics: { scriptFidelityPct, roundTripWerPct },
       layerTrend,
