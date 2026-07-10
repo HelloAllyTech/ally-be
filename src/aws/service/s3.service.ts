@@ -371,8 +371,9 @@ export class S3Service {
     fileName: string,
     fileSize: number,
     contentType: string,
+    maxFileSizeBytes = 2 * 1024 * 1024, // 2 MB default (images); callers may raise it
   ): Promise<{ presignedUrl: string; imageUrl: string }> {
-    const maxFileSize = 2 * 1024 * 1024; // 2 MB
+    const maxFileSize = maxFileSizeBytes;
     if (fileSize > maxFileSize) {
       throw new BadRequestException(
         `File size must be less than ${maxFileSize / 1024 / 1024} MB`,
