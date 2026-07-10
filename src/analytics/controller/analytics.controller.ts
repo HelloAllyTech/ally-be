@@ -34,8 +34,10 @@ import {
   ConversationDriftResponseDto,
   DriftBackfillJobDto,
   LanguageBackfillJobDto,
+  LanguageEvalReferenceDto,
   LanguageQualityQueryDto,
   LanguageQualityResponseDto,
+  SetLanguageEvalReferenceDto,
   StartDriftBackfillDto,
   StartLanguageBackfillDto,
   StartLatencyQueryDto,
@@ -301,6 +303,34 @@ export class AnalyticsController {
     return this.languageAnalyticsService.getLanguageQuality(query);
   }
 
+  @Get('language-quality/reference')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'The pinned reference experiment (super-admin)',
+    description:
+      'FR13: the saved filter tuple all language-quality deltas are read against.',
+  })
+  @ApiResponse({ status: 200, type: LanguageEvalReferenceDto })
+  async getLanguageReference(): Promise<LanguageEvalReferenceDto | null> {
+    return this.languageAnalyticsService.getReference();
+  }
+
+  @Post('language-quality/reference')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Pin a reference experiment (super-admin)',
+    description:
+      'Saves the given filter tuple ({language?, scenarioVersionId?, ' +
+      'promptVersion?, llmModel?}) as THE pinned reference; unpins any ' +
+      'previous one. Deltas on the Language tab are read against it.',
+  })
+  @ApiResponse({ status: 201, type: LanguageEvalReferenceDto })
+  async setLanguageReference(
+    @Body() body: SetLanguageEvalReferenceDto,
+  ): Promise<LanguageEvalReferenceDto | null> {
+    return this.languageAnalyticsService.setReference(body);
+  }
+
   @Post('language-quality/backfill')
   @AuthRoles(...SUPER_ADMIN_ROLES)
   @ApiOperation({
@@ -316,7 +346,12 @@ export class AnalyticsController {
   async startLanguageBackfill(
     @Body() body: StartLanguageBackfillDto,
   ): Promise<LanguageBackfillJobDto> {
-    return this.languageJudgeService.startBackfill(body.sinceDays ?? 90, true);
+    // rejudge=true re-runs already-judged sessions (rubric/metric iteration);
+    // default only judges new ones.
+    return this.languageJudgeService.startBackfill(
+      body.sinceDays ?? 90,
+      !body.rejudge,
+    );
   }
 
   @Get('language-quality/backfill/:jobId')

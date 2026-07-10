@@ -6,6 +6,18 @@ export interface LanguageAnalyticsFilters {
   language?: string | null;
   judgeModel: string;
   judgePromptVersion: string;
+  /** Experiment slice (FR13): restrict to one configuration tuple. */
+  scenarioVersionId?: string | null;
+  promptVersion?: string | null;
+  llmModel?: string | null;
+}
+
+/** The saved filter tuple of a pinned reference experiment. */
+export interface EvalReferenceFilters {
+  language?: string | null;
+  scenarioVersionId?: string | null;
+  promptVersion?: string | null;
+  llmModel?: string | null;
 }
 
 /**
@@ -43,29 +55,126 @@ export class LanguageAnalyticsRepository {
     };
   }
 
-  private sessionWhere(f: LanguageAnalyticsFilters, params: unknown[]): string {
+  private buildWhere(
+    alias: string,
+    f: LanguageAnalyticsFilters,
+    params: unknown[],
+  ): string {
     params.push(f.start, f.judgeModel, f.judgePromptVersion);
-    let where = `COALESCE(s."occurredAt", s."createdAt") >= $1
-      AND s."judgeModel" = $2 AND s."judgePromptVersion" = $3`;
-    if (f.language) {
-      params.push(f.language);
-      where += ` AND s."language" = $${params.length}`;
+    let where = `COALESCE(${alias}."occurredAt", ${alias}."createdAt") >= $1
+      AND ${alias}."judgeModel" = $2 AND ${alias}."judgePromptVersion" = $3`;
+    const dims: Array<[string, string | null | undefined]> = [
+      ['language', f.language],
+      ['scenarioVersionId', f.scenarioVersionId],
+      ['promptVersion', f.promptVersion],
+      ['llmModel', f.llmModel],
+    ];
+    for (const [column, value] of dims) {
+      if (value) {
+        params.push(value);
+        where += ` AND ${alias}."${column}" = $${params.length}`;
+      }
     }
     return where;
+  }
+
+  private sessionWhere(f: LanguageAnalyticsFilters, params: unknown[]): string {
+    return this.buildWhere('s', f, params);
   }
 
   private annotationWhere(
     f: LanguageAnalyticsFilters,
     params: unknown[],
   ): string {
-    params.push(f.start, f.judgeModel, f.judgePromptVersion);
-    let where = `COALESCE(a."occurredAt", a."createdAt") >= $1
-      AND a."judgeModel" = $2 AND a."judgePromptVersion" = $3`;
-    if (f.language) {
-      params.push(f.language);
-      where += ` AND a."language" = $${params.length}`;
+    return this.buildWhere('a', f, params);
+  }
+
+  /** The pinned reference experiment, if any (FR13). */
+  async getPinnedReference(): Promise<{
+    name: string;
+    filters: EvalReferenceFilters;
+    pinnedAt: Date;
+  } | null> {
+    const rows = await this.dataSource.query(
+      `SELECT name, filters, "updatedAt" AS pinned_at
+         FROM eval_experiments
+        WHERE "isPinnedReference" = true
+        ORDER BY "updatedAt" DESC LIMIT 1`,
+    );
+    if (!rows?.length) return null;
+    return {
+      name: rows[0].name,
+      filters: rows[0].filters ?? {},
+      pinnedAt: rows[0].pinned_at,
+    };
+  }
+
+  /** Pin a new reference experiment (unpins any previous one). */
+  async setPinnedReference(
+    name: string,
+    filters: EvalReferenceFilters,
+    createdBy?: number,
+  ): Promise<void> {
+    await this.dataSource.transaction(async (em) => {
+      await em.query(
+        `UPDATE eval_experiments SET "isPinnedReference" = false, "updatedAt" = now()
+          WHERE "isPinnedReference" = true`,
+      );
+      await em.query(
+        `INSERT INTO eval_experiments (name, filters, "isPinnedReference", "createdBy")
+         VALUES ($1, $2::jsonb, true, $3)`,
+        [name, JSON.stringify(filters ?? {}), createdBy ?? null],
+      );
+    });
+  }
+
+  /**
+   * changed_from_prev (FR18): for each scenario version, the top-level config
+   * elements that differ from its parent version — the single-variable
+   * attribution the experiment charts name. Empty array = root version or
+   * identical config; null parent config = not derivable.
+   */
+  async changedElementsByScenarioVersion(
+    versionIds: string[],
+  ): Promise<Record<string, string[]>> {
+    if (!versionIds.length) return {};
+    const rows: Array<{
+      id: string;
+      config: Record<string, unknown> | null;
+      parent_config: Record<string, unknown> | null;
+      parent_id: string | null;
+    }> = await this.dataSource.query(
+      `SELECT sv.id, sv.config, sv."parentVersionId" AS parent_id,
+              pv.config AS parent_config
+         FROM scenario_versions sv
+         LEFT JOIN scenario_versions pv ON pv.id = sv."parentVersionId"
+        WHERE sv.id::text = ANY($1)`,
+      [versionIds],
+    );
+    // Bookkeeping keys that always churn and are never experiment variables.
+    const IGNORED = new Set(['status', 'mappedEvents']);
+    const result: Record<string, string[]> = {};
+    for (const row of rows) {
+      if (!row.parent_id || !row.config || !row.parent_config) {
+        result[row.id] = [];
+        continue;
+      }
+      const keys = new Set([
+        ...Object.keys(row.config),
+        ...Object.keys(row.parent_config),
+      ]);
+      const changed: string[] = [];
+      for (const key of keys) {
+        if (IGNORED.has(key)) continue;
+        if (
+          JSON.stringify(row.config[key] ?? null) !==
+          JSON.stringify(row.parent_config[key] ?? null)
+        )
+          changed.push(key);
+      }
+      result[row.id] = changed.sort();
     }
-    return where;
+    return result;
   }
 
   /** Session denominators, per language: sessions, turns, garbled turns. */
@@ -76,6 +185,7 @@ export class LanguageAnalyticsRepository {
       turns: string;
       turns_garbled: string;
       script_fidelity: string | null;
+      round_trip_wer: string | null;
     }>
   > {
     const params: unknown[] = [];
@@ -85,7 +195,8 @@ export class LanguageAnalyticsRepository {
               COUNT(*) AS sessions,
               COALESCE(SUM(s."turnsJudged"), 0) AS turns,
               COALESCE(SUM(s."turnsGarbled"), 0) AS turns_garbled,
-              AVG(s."scriptFidelityPct") AS script_fidelity
+              AVG(s."scriptFidelityPct") AS script_fidelity,
+              AVG(s."roundTripWerPct") AS round_trip_wer
          FROM language_judgment_sessions s
         WHERE ${where}
         GROUP BY s."language"`,

@@ -161,6 +161,8 @@ export class RoleplaySessionLogsService {
             turnsJudged: languageJudgment.session.turnsJudged,
             turnsGarbled: languageJudgment.session.turnsGarbled,
             errorCount: languageJudgment.annotations.length,
+            scriptFidelityPct: languageJudgment.session.scriptFidelityPct,
+            roundTripWerPct: languageJudgment.session.roundTripWerPct,
             annotations: languageJudgment.annotations.map((a) => ({
               ...a,
               // Resolve the AI-turn ordinal to its message row so the UI can

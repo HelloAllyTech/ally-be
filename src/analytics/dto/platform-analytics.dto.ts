@@ -259,6 +259,42 @@ export class LanguageRateByExperimentDto {
   @ApiProperty() sessionsJudged!: number;
   @ApiProperty() nTurns!: number;
   @ApiProperty() weightedRatePer100!: number;
+  @ApiProperty({
+    required: false,
+    type: [String],
+    description:
+      'changed_from_prev (FR18, scenario versions only): the config elements ' +
+      'that differ from the parent version. >1 element = not a valid ' +
+      'one-variable experiment.',
+  })
+  changedFromPrev?: string[];
+}
+
+export class LanguageEvalReferenceDto {
+  @ApiProperty() name!: string;
+  @ApiProperty({
+    description:
+      '{language?, scenarioVersionId?, promptVersion?, llmModel?} — the saved slice',
+  })
+  filters!: Record<string, any>;
+  @ApiProperty() pinnedAt!: Date;
+}
+
+export class SetLanguageEvalReferenceDto {
+  @ApiProperty({ required: false, description: 'Display name for the pin' })
+  name?: string;
+  @ApiProperty({
+    required: false,
+    description: '{language?, scenarioVersionId?, promptVersion?, llmModel?}',
+  })
+  filters?: Record<string, any>;
+}
+
+export class LanguageDimensionDeltaDto {
+  @ApiProperty() dimension!: string;
+  @ApiProperty({ description: 'current rate − reference rate (per 100 turns)' })
+  delta!: number;
+  @ApiProperty() referenceRatePer100!: number;
 }
 
 export class LanguageLayerTrendPointDto {
@@ -340,6 +376,22 @@ export class LanguageQualityResponseDto {
 
   @ApiProperty({ type: [LanguageRateByExperimentDto] })
   rateByModel!: LanguageRateByExperimentDto[];
+
+  @ApiProperty({
+    type: LanguageEvalReferenceDto,
+    nullable: true,
+    description:
+      'The pinned reference experiment (FR13); null when none pinned.',
+  })
+  reference!: LanguageEvalReferenceDto | null;
+
+  @ApiProperty({
+    type: [LanguageDimensionDeltaDto],
+    description:
+      'Per-dimension delta vs the pinned reference (FR16). Only meaningful ' +
+      'within one judge version; empty when no reference is pinned.',
+  })
+  deltaByDimension!: LanguageDimensionDeltaDto[];
 }
 
 export class StartLanguageBackfillDto {
@@ -350,6 +402,15 @@ export class StartLanguageBackfillDto {
       'Judge sessions created in the last N days (default 90 = ~3 months).',
   })
   sinceDays?: number;
+
+  @ApiProperty({
+    required: false,
+    default: false,
+    description:
+      'Re-judge sessions that already have a judgment (rubric/metric ' +
+      'iteration). Default false = only unjudged sessions.',
+  })
+  rejudge?: boolean;
 }
 
 export class LanguageBackfillJobDto {

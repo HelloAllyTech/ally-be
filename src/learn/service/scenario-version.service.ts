@@ -328,6 +328,13 @@ export class ScenarioVersionService {
     return {
       mappedEvents,
       ...metadata,
+      // Per-language translation content (scenario_translations). Included so
+      // (a) version diffs can attribute per-language opening-statement changes
+      // (language-eval FR18 changed_from_prev) and (b) publish faithfully
+      // round-trips translations instead of silently dropping them.
+      translationOpeningStatements: admin.translationOpeningStatements ?? {},
+      translationDescription: admin.translationDescription ?? {},
+      translationTitle: admin.translationTitle ?? {},
       title: admin.title,
       description: admin.description,
       prompt: admin.prompt,

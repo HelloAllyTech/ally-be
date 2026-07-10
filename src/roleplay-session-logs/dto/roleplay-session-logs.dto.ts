@@ -426,6 +426,17 @@ export class RoleplaySessionLanguageQualityDto {
   @ApiProperty() turnsJudged!: number;
   @ApiProperty() turnsGarbled!: number;
   @ApiProperty() errorCount!: number;
+  @ApiProperty({
+    nullable: true,
+    description: '% of turns rendered cleanly in the target script (FR2)',
+  })
+  scriptFidelityPct!: number | null;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Round-trip WER/CER % over a sample of this session turns (FR2); null = unmeasured',
+  })
+  roundTripWerPct!: number | null;
   @ApiProperty({ type: [RoleplaySessionLanguageAnnotationDto] })
   annotations!: RoleplaySessionLanguageAnnotationDto[];
 }

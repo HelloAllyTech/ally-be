@@ -12,6 +12,8 @@ export interface LanguageSessionRow {
   scenario_version_id: string | null;
   language: string;
   language_label: string | null;
+  /** languages.evalConfig — FR19 per-language declarative config. */
+  eval_config: Record<string, any> | null;
   persona: string | null;
   prompt_versions: Record<string, unknown> | null;
   occurred_at: Date | null;
@@ -21,6 +23,9 @@ export interface LanguageSessionRow {
   register_directive_configured: boolean;
   style_exemplars_configured: boolean;
   allowed_fillers: string[] | null;
+  /** scenario_voices row the session used (round-trip TTS resolution). */
+  tts_provider: string | null;
+  tts_voice_config: Record<string, any> | null;
 }
 
 /** One per-turn judgment as returned by the ally-ai language judge (snake_case). */
@@ -100,6 +105,9 @@ export class LanguageJudgeRepository {
              s."scenarioVersionId" AS scenario_version_id,
              COALESCE(l.value, 'en') AS language,
              l.label            AS language_label,
+             l."evalConfig"     AS eval_config,
+             v.provider         AS tts_provider,
+             v.config           AS tts_voice_config,
              sc.prompt          AS persona,
              sc.engine          AS engine,
              s.metadata->'promptVersions' AS prompt_versions,
@@ -124,6 +132,8 @@ export class LanguageJudgeRepository {
       FROM scenario_sessions s
       LEFT JOIN languages l
         ON l.id = NULLIF(s.metadata->>'languageId', '')::int
+      LEFT JOIN scenario_voices v
+        ON v.id::text = NULLIF(s.metadata->>'voiceId', '')
       LEFT JOIN scenarios sc ON sc.id = s."scenarioId"
       WHERE ${countableSessionPredicate('s')}`;
     if (opts.language)
@@ -163,6 +173,10 @@ export class LanguageJudgeRepository {
     judgePromptVersion: string,
     aiText: Record<number, string>,
     userText: Record<number, string>,
+    objective?: {
+      scriptFidelityPct?: number | null;
+      roundTripWerPct?: number | null;
+    },
   ): Promise<void> {
     const promptVersion = this.mainPromptVersion(session.prompt_versions);
     const turnsGarbled = result.per_turn.filter(
@@ -175,8 +189,9 @@ export class LanguageJudgeRepository {
            "tenant_id", "scenarioSessionId", "turnsJudged", "turnsGarbled",
            "droppedAnnotations", "language", "scenarioId", "scenarioVersionId",
            "engine", "llmModel", "llmProvider", "promptVersion", "occurredAt",
-           "judgeModel", "judgePromptVersion"
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+           "judgeModel", "judgePromptVersion", "scriptFidelityPct",
+           "roundTripWerPct"
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
          ON CONFLICT ("scenarioSessionId", "judgeModel", "judgePromptVersion")
          DO UPDATE SET
            "turnsJudged" = EXCLUDED."turnsJudged",
@@ -190,6 +205,8 @@ export class LanguageJudgeRepository {
            "llmProvider" = EXCLUDED."llmProvider",
            "promptVersion" = EXCLUDED."promptVersion",
            "occurredAt" = EXCLUDED."occurredAt",
+           "scriptFidelityPct" = EXCLUDED."scriptFidelityPct",
+           "roundTripWerPct" = EXCLUDED."roundTripWerPct",
            "updatedAt" = now()
          RETURNING id`,
         [
@@ -208,6 +225,8 @@ export class LanguageJudgeRepository {
           session.occurred_at,
           judgeModel,
           judgePromptVersion,
+          objective?.scriptFidelityPct ?? null,
+          objective?.roundTripWerPct ?? null,
         ],
       );
       const judgmentId: string = rows[0].id;

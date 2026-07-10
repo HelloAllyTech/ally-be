@@ -7,6 +7,10 @@ import { RedisService } from '../../redis/service/redis.service';
 import { LanguageBackfillJobDto } from '../dto/platform-analytics.dto';
 import { DriftJudgeRepository } from '../repository/drift-judge.repository';
 import {
+  computeScriptFidelityPct,
+  scriptForLanguage,
+} from '../util/script-fidelity.util';
+import {
   LanguageJudgeAiResult,
   LanguageJudgeRepository,
   LanguageSessionRow,
@@ -111,6 +115,14 @@ export class LanguageJudgeService {
             continue;
           }
           const judged = await this.judgeViaAi(transcript, s, rubric);
+          // Objective metrics (FR2). Script fidelity is pure code; round-trip
+          // WER is a best-effort ally-ai call — a failure degrades to null
+          // (shown as unmeasured), never blocks the judgment.
+          const scriptFidelityPct = computeScriptFidelityPct(
+            Object.values(aiText),
+            scriptForLanguage(s.language, s.eval_config?.script),
+          );
+          const roundTripWerPct = await this.roundTripViaAi(s, aiText);
           await this.repo.persistJudgment(
             s,
             judged.result,
@@ -118,6 +130,7 @@ export class LanguageJudgeService {
             judged.judgePromptVersion,
             aiText,
             userText,
+            { scriptFidelityPct, roundTripWerPct },
           );
           job.judged += 1;
           job.errorAnnotations += judged.result.per_turn.reduce(
@@ -160,11 +173,13 @@ export class LanguageJudgeService {
         transcript,
         persona: s.persona ?? '',
         language: s.language,
+        // FR19: per-language declarative config from languages.evalConfig;
+        // the judge renders absent values as "unknown".
         language_eval_config: {
           language_label: s.language_label ?? undefined,
-          // target_variety / diglossia / code_switch_partners come from
-          // languages.evalConfig (Phase 3); the judge renders absent values
-          // as "unknown".
+          target_variety: s.eval_config?.targetVariety ?? undefined,
+          diglossia: s.eval_config?.diglossia ?? undefined,
+          code_switch_partners: s.eval_config?.codeSwitchPartners ?? [],
         },
         scenario_style_config: {
           register_directive_configured: s.register_directive_configured,
@@ -190,5 +205,54 @@ export class LanguageJudgeService {
       judgePromptVersion: d.judge_prompt_version,
       result: d.result,
     };
+  }
+
+  /** How many of a session's AI turns to round-trip (longest first). */
+  private static readonly ROUND_TRIP_SAMPLE = 5;
+
+  /**
+   * Round-trip WER via ally-ai (PRD FR2): re-synthesize a sample of the
+   * session's own AI turns with the session's TTS provider (or a language
+   * fallback), transcribe them back, average the error. Best-effort: any
+   * failure returns null (rendered as "not yet measured", never as 0).
+   */
+  private async roundTripViaAi(
+    s: LanguageSessionRow,
+    aiText: Record<number, string>,
+  ): Promise<number | null> {
+    try {
+      const utterances = Object.entries(aiText)
+        .map(([turnIndex, text]) => ({
+          turn_index: Number(turnIndex),
+          text: (text ?? '').trim(),
+        }))
+        .filter((u) => u.text.length > 0)
+        .sort((a, b) => b.text.length - a.text.length)
+        .slice(0, LanguageJudgeService.ROUND_TRIP_SAMPLE);
+      if (utterances.length === 0) return null;
+
+      const { apiUrl, outboundApiKey } = this.config.ai;
+      const res = await axios.post(
+        `${apiUrl}/api/v1/round-trip-wer/`,
+        {
+          utterances,
+          language: s.language,
+          tts_provider: s.tts_provider ?? undefined,
+          unit: s.eval_config?.errorRateUnit === 'cer' ? 'cer' : 'wer',
+        },
+        {
+          headers: { 'x-api-key': outboundApiKey },
+          // Up to 5 utterances × (TTS + ASR) round trips.
+          timeout: 180_000,
+        },
+      );
+      const avg = (res.data as { avg_error_pct: number | null }).avg_error_pct;
+      return avg == null ? null : Number(avg);
+    } catch (e) {
+      this.logger.warn(
+        `round-trip WER unavailable for session ${s.id}: ${(e as Error).message}`,
+      );
+      return null;
+    }
   }
 }

@@ -610,6 +610,8 @@ export class RoleplaySessionLogsRepository {
       judgePromptVersion: string;
       turnsJudged: number;
       turnsGarbled: number;
+      scriptFidelityPct: number | null;
+      roundTripWerPct: number | null;
     };
     annotations: Array<{
       turnIndex: number;
@@ -632,6 +634,8 @@ export class RoleplaySessionLogsRepository {
       .addSelect('j."judgePromptVersion"', 'judgePromptVersion')
       .addSelect('j."turnsJudged"', 'turnsJudged')
       .addSelect('j."turnsGarbled"', 'turnsGarbled')
+      .addSelect('j."scriptFidelityPct"', 'scriptFidelityPct')
+      .addSelect('j."roundTripWerPct"', 'roundTripWerPct')
       .from('language_judgment_sessions', 'j')
       .where('j."scenarioSessionId" = :id', { id })
       .orderBy('j."updatedAt"', 'DESC')
@@ -642,6 +646,8 @@ export class RoleplaySessionLogsRepository {
         judgePromptVersion: string;
         turnsJudged: number | string;
         turnsGarbled: number | string;
+        scriptFidelityPct: number | string | null;
+        roundTripWerPct: number | string | null;
       }>();
     if (!sessionRow) return null;
 
@@ -670,6 +676,14 @@ export class RoleplaySessionLogsRepository {
         judgePromptVersion: sessionRow.judgePromptVersion,
         turnsJudged: Number(sessionRow.turnsJudged),
         turnsGarbled: Number(sessionRow.turnsGarbled),
+        scriptFidelityPct:
+          sessionRow.scriptFidelityPct == null
+            ? null
+            : Number(sessionRow.scriptFidelityPct),
+        roundTripWerPct:
+          sessionRow.roundTripWerPct == null
+            ? null
+            : Number(sessionRow.roundTripWerPct),
       },
       annotations: annotations.map((a) => ({
         turnIndex: Number(a.turnIndex),

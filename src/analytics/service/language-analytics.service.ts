@@ -1,13 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import {
   AnalyticsRange,
+  LanguageDimensionDeltaDto,
   LanguageDimensionErrorRateDto,
+  LanguageEvalReferenceDto,
   LanguageLayerTrendPointDto,
   LanguageQualityQueryDto,
   LanguageQualityResponseDto,
   LanguageRateByExperimentDto,
+  SetLanguageEvalReferenceDto,
 } from '../dto/platform-analytics.dto';
 import {
+  EvalReferenceFilters,
   LanguageAnalyticsFilters,
   LanguageAnalyticsRepository,
 } from '../repository/language-analytics.repository';
@@ -89,6 +93,65 @@ export class LanguageAnalyticsService {
       .sort((a, b) => b.weightedRatePer100 - a.weightedRatePer100);
   }
 
+  /** The pinned reference experiment (FR13); null when none. */
+  async getReference(): Promise<LanguageEvalReferenceDto | null> {
+    return this.repo.getPinnedReference();
+  }
+
+  /** Pin a reference experiment (unpins the previous one). */
+  async setReference(
+    body: SetLanguageEvalReferenceDto,
+    createdBy?: number,
+  ): Promise<LanguageEvalReferenceDto | null> {
+    const filters: EvalReferenceFilters = body.filters ?? {};
+    const name =
+      body.name?.trim() ||
+      `reference (${
+        Object.entries(filters)
+          .filter(([, v]) => v)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(', ') || 'all sessions'
+      })`;
+    await this.repo.setPinnedReference(name, filters, createdBy);
+    return this.repo.getPinnedReference();
+  }
+
+  /** Per-dimension weighted rates for an arbitrary slice (reference deltas). */
+  private async dimensionRatesFor(
+    filters: LanguageAnalyticsFilters,
+  ): Promise<Map<string, number>> {
+    const [totals, counts] = await Promise.all([
+      this.repo.sessionTotalsByLanguage(filters),
+      this.repo.annotationCounts(filters),
+    ]);
+    const turnsJudged = totals.reduce((n, t) => n + Number(t.turns), 0);
+    const turnsGarbled = totals.reduce(
+      (n, t) => n + Number(t.turns_garbled),
+      0,
+    );
+    const weightedByDim = new Map<string, number>();
+    for (const row of counts) {
+      weightedByDim.set(
+        row.dimension,
+        (weightedByDim.get(row.dimension) ?? 0) +
+          Number(row.count) * (SEVERITY_WEIGHT[row.severity] ?? 1),
+      );
+    }
+    const rates = new Map<string, number>();
+    for (const dimension of Object.keys(DIMENSION_LAYER)) {
+      const nTurns = CONDITIONED_DIMENSIONS.has(dimension)
+        ? Math.max(0, turnsJudged - turnsGarbled)
+        : turnsJudged;
+      rates.set(
+        dimension,
+        nTurns > 0
+          ? round2(((weightedByDim.get(dimension) ?? 0) / nTurns) * 100)
+          : 0,
+      );
+    }
+    return rates;
+  }
+
   async getLanguageQuality(
     query: LanguageQualityQueryDto,
   ): Promise<LanguageQualityResponseDto> {
@@ -109,6 +172,8 @@ export class LanguageAnalyticsService {
       rateByScenarioVersion: [],
       rateByPromptVersion: [],
       rateByModel: [],
+      reference: null,
+      deltaByDimension: [],
     };
 
     const judgeVersion = await this.repo.latestJudgeVersion();
@@ -133,6 +198,7 @@ export class LanguageAnalyticsService {
       byScenarioVersion,
       byPromptVersion,
       byModel,
+      reference,
     ] = await Promise.all([
       this.repo.sessionTotalsByLanguage(filters),
       this.repo.annotationCounts(filters),
@@ -144,7 +210,37 @@ export class LanguageAnalyticsService {
       this.byExperiment(filters, 'scenarioVersionId'),
       this.byExperiment(filters, 'promptVersion'),
       this.byExperiment(filters, 'llmModel'),
+      this.repo.getPinnedReference(),
     ]);
+
+    // changed_from_prev (FR18): name the config element(s) each scenario
+    // version changed vs its parent — the "implicates" attribution.
+    const changedByVersion = await this.repo.changedElementsByScenarioVersion(
+      byScenarioVersion
+        .map((r) => r.value)
+        .filter((v): v is string => !!v && v !== 'unknown'),
+    );
+    const rateByScenarioVersion = byScenarioVersion.map((r) => ({
+      ...r,
+      changedFromPrev:
+        r.value && changedByVersion[r.value] !== undefined
+          ? changedByVersion[r.value]
+          : undefined,
+    }));
+
+    // Reference rates (FR16): same judge version + time window as the current
+    // view, with the reference's own slice filters applied. Deltas are
+    // computed after the current per-dimension rates exist (below).
+    const refRates = reference
+      ? await this.dimensionRatesFor({
+          start,
+          ...judgeVersion,
+          language: reference.filters?.language ?? null,
+          scenarioVersionId: reference.filters?.scenarioVersionId ?? null,
+          promptVersion: reference.filters?.promptVersion ?? null,
+          llmModel: reference.filters?.llmModel ?? null,
+        })
+      : null;
 
     const sessionsJudged = totals.reduce((n, t) => n + Number(t.sessions), 0);
     const turnsJudged = totals.reduce((n, t) => n + Number(t.turns), 0);
@@ -315,6 +411,24 @@ export class LanguageAnalyticsService {
           fidelityValues.reduce((a, b) => a + b, 0) / fidelityValues.length,
         )
       : null;
+    const werValues = totals
+      .map((t) => t.round_trip_wer)
+      .filter((v) => v != null)
+      .map(Number);
+    const roundTripWerPct = werValues.length
+      ? round2(werValues.reduce((a, b) => a + b, 0) / werValues.length)
+      : null;
+
+    const deltaByDimension: LanguageDimensionDeltaDto[] = refRates
+      ? errorRateByDimension.map((d) => {
+          const referenceRatePer100 = refRates.get(d.dimension) ?? 0;
+          return {
+            dimension: d.dimension,
+            referenceRatePer100,
+            delta: round2(d.weightedRatePer100 - referenceRatePer100),
+          };
+        })
+      : [];
 
     return {
       ...judgeVersion,
@@ -326,11 +440,13 @@ export class LanguageAnalyticsService {
       errorRateByDimension,
       rateByLanguage,
       categoryBreakdown,
-      objectiveMetrics: { scriptFidelityPct, roundTripWerPct: null },
+      objectiveMetrics: { scriptFidelityPct, roundTripWerPct },
       layerTrend,
-      rateByScenarioVersion: byScenarioVersion,
+      rateByScenarioVersion,
       rateByPromptVersion: byPromptVersion,
       rateByModel: byModel,
+      reference,
+      deltaByDimension,
       isolationBasisBreakdown: isolation
         .map((r) => ({ basis: r.basis ?? 'unknown', count: Number(r.count) }))
         .sort((a, b) => b.count - a.count),
