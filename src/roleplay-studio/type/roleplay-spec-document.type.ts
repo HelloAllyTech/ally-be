@@ -123,6 +123,10 @@ export interface RoleplaySpecDocument {
    */
   fillerEnabled?: boolean;
   comfortAudioEnabled?: boolean;
+  /** Public URL of the selected comfort-audio track (comfort-audio library). */
+  comfortAudioUrl?: string;
+  /** Comfort-audio playback volume (0..1); falls back to the global default when unset. */
+  comfortAudioVolume?: number;
   continuousBackchanneling?: boolean;
   interimReplyEnabled?: boolean;
   actorModel?: RoleplayModelConfig;

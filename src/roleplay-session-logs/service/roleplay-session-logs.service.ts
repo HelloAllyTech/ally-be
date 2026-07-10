@@ -100,6 +100,7 @@ export class RoleplaySessionLogsService {
       feedback,
       agentTestCases,
       lifecycle,
+      freezeSignals,
     ] = await Promise.all([
       this.roleplaySessionLogsRepository.findSummary(id),
       this.roleplaySessionLogsRepository.findEvents(id),
@@ -110,7 +111,15 @@ export class RoleplaySessionLogsService {
       this.roleplaySessionLogsRepository.getFeedbackBySession(id),
       this.roleplaySessionLogsRepository.findAgentTestCases(),
       this.roleplaySessionLogsRepository.findLifecycleEvents(id),
+      this.roleplaySessionLogsRepository.getFreezeSignals(id),
     ]);
+
+    // Suspected mid-session freeze: had a conversation and either the agent
+    // never answered the final human turn or an LLM call timed out.
+    const suspectedFreeze =
+      freezeSignals.hasAgentTurn &&
+      (freezeSignals.endedOnUnansweredHumanTurn ||
+        Number(latencyRow.llmTimedOutTurns) > 0);
 
     const usage = this.buildUsage(usageRows);
     const usageSummary: UsageSummary | undefined = usage
@@ -155,6 +164,7 @@ export class RoleplaySessionLogsService {
         emoji: e.emoji ?? null,
         message: e.message ?? null,
       })),
+      suspectedFreeze,
       lifecycle: lifecycle.map((l) => ({
         id: l.id,
         type: l.type,

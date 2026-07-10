@@ -747,7 +747,10 @@ export class ScenarioSessionService {
             scenarioSession.id,
             ScenarioSessionLifecycleEventType.AGENT_DISPATCHED,
             new Date(),
-            { via: 'proactive' },
+            {
+              via: 'proactive',
+              agentName: this.configService.livekit.agentName,
+            },
           ),
         )
         .catch((err) => {
