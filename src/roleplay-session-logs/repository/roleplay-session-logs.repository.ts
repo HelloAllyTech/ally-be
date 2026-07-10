@@ -593,6 +593,196 @@ export class RoleplaySessionLogsRepository {
       .getRawMany();
   }
 
+  /**
+   * Latest language-quality judgment for a session: the session-denominator
+   * row, its error annotations, and the AI-turn ordinal → message-id mapping.
+   *
+   * The mapping query MUST mirror the transcript build used at judge time
+   * (drift-judge.repository buildTranscript: AI turns ordered by
+   * COALESCE(startSeconds, 0), id) — annotation turnIndex values were assigned
+   * against that ordering, and the detail page's own transcript query orders
+   * slightly differently (NULLS LAST), so ordinals are resolved here, not
+   * client-side.
+   */
+  async findLanguageJudgment(id: string): Promise<{
+    session: {
+      judgeModel: string;
+      judgePromptVersion: string;
+      turnsJudged: number;
+      turnsGarbled: number;
+    };
+    annotations: Array<{
+      turnIndex: number;
+      layer: string;
+      dimension: string;
+      category: string;
+      severity: string;
+      isolationBasis: string | null;
+      inputGarbled: string | null;
+      conditionedOut: boolean;
+      evidenceQuote: string | null;
+      reasoning: string | null;
+    }>;
+    aiMessageIds: number[];
+  } | null> {
+    const sessionRow = await this.dataSource
+      .createQueryBuilder()
+      .select('j."id"', 'judgmentId')
+      .addSelect('j."judgeModel"', 'judgeModel')
+      .addSelect('j."judgePromptVersion"', 'judgePromptVersion')
+      .addSelect('j."turnsJudged"', 'turnsJudged')
+      .addSelect('j."turnsGarbled"', 'turnsGarbled')
+      .from('language_judgment_sessions', 'j')
+      .where('j."scenarioSessionId" = :id', { id })
+      .orderBy('j."updatedAt"', 'DESC')
+      .limit(1)
+      .getRawOne<{
+        judgmentId: string;
+        judgeModel: string;
+        judgePromptVersion: string;
+        turnsJudged: number | string;
+        turnsGarbled: number | string;
+      }>();
+    if (!sessionRow) return null;
+
+    const annotations = await this.dataSource
+      .createQueryBuilder()
+      .select('a."turnIndex"', 'turnIndex')
+      .addSelect('a."layer"', 'layer')
+      .addSelect('a."dimension"', 'dimension')
+      .addSelect('a."category"', 'category')
+      .addSelect('a."severity"', 'severity')
+      .addSelect('a."isolationBasis"', 'isolationBasis')
+      .addSelect('a."inputGarbled"', 'inputGarbled')
+      .addSelect('a."conditionedOut"', 'conditionedOut')
+      .addSelect('a."evidenceQuote"', 'evidenceQuote')
+      .addSelect('a."reasoning"', 'reasoning')
+      .from('language_error_annotations', 'a')
+      .where('a."sessionJudgmentId" = :jid', { jid: sessionRow.judgmentId })
+      .orderBy('a."turnIndex"', 'ASC')
+      .getRawMany();
+
+    const aiMessageIds = await this.findAiMessageIdsInJudgeOrder(id);
+
+    return {
+      session: {
+        judgeModel: sessionRow.judgeModel,
+        judgePromptVersion: sessionRow.judgePromptVersion,
+        turnsJudged: Number(sessionRow.turnsJudged),
+        turnsGarbled: Number(sessionRow.turnsGarbled),
+      },
+      annotations: annotations.map((a) => ({
+        turnIndex: Number(a.turnIndex),
+        layer: a.layer,
+        dimension: a.dimension,
+        category: a.category,
+        severity: a.severity,
+        isolationBasis: a.isolationBasis ?? null,
+        inputGarbled: a.inputGarbled ?? null,
+        conditionedOut: Boolean(a.conditionedOut),
+        evidenceQuote: a.evidenceQuote ?? null,
+        reasoning: a.reasoning ?? null,
+      })),
+      aiMessageIds,
+    };
+  }
+
+  /**
+   * AI-turn message ids in the ORDER THE JUDGES SAW THEM
+   * (drift-judge.repository buildTranscript: COALESCE(startSeconds,0), id).
+   * Array index = judge turnIndex. Shared by the language and drift readers.
+   */
+  private async findAiMessageIdsInJudgeOrder(id: string): Promise<number[]> {
+    const rows: { id: number | string }[] = await this.dataSource.query(
+      `SELECT id FROM scenario_session_messages
+        WHERE "scenarioSessionId" = $1 AND "senderId" = -1
+        ORDER BY COALESCE("startSeconds", 0), id`,
+      [id],
+    );
+    return rows.map((m) => Number(m.id));
+  }
+
+  /**
+   * Latest conversation-drift judgment for a session (turn_drift_judgment):
+   * session rollup + per-turn labels, with the turnIndex → message-id mapping
+   * resolved the same way as the language judgment. Closes the gap where
+   * drift was aggregate-only and invisible on the session that produced it.
+   */
+  async findDriftJudgment(id: string): Promise<{
+    judgeModel: string;
+    judgePromptVersion: string;
+    sessionDrifted: boolean | null;
+    firstDriftTurn: number | null;
+    turns: Array<{
+      turnIndex: number;
+      messageId: number | null;
+      coherence: string | null;
+      topicLabel: string | null;
+      inCharacter: boolean | null;
+      counselorUtteranceGarbled: string | null;
+      sttErrorType: string | null;
+      aiReplyFailureMode: string | null;
+      rootAttribution: string | null;
+      reasoning: string | null;
+    }>;
+  } | null> {
+    const latest = await this.dataSource
+      .createQueryBuilder()
+      .select('j."judgeModel"', 'judgeModel')
+      .addSelect('j."judgePromptVersion"', 'judgePromptVersion')
+      .from('turn_drift_judgment', 'j')
+      .where('j."scenarioSessionId" = :id', { id })
+      .orderBy('j."updatedAt"', 'DESC')
+      .limit(1)
+      .getRawOne<{ judgeModel: string; judgePromptVersion: string }>();
+    if (!latest) return null;
+
+    const rows = await this.dataSource
+      .createQueryBuilder()
+      .select('j."turnIndex"', 'turnIndex')
+      .addSelect('j."coherence"', 'coherence')
+      .addSelect('j."topicLabel"', 'topicLabel')
+      .addSelect('j."inCharacter"', 'inCharacter')
+      .addSelect('j."counselorUtteranceGarbled"', 'counselorUtteranceGarbled')
+      .addSelect('j."sttErrorType"', 'sttErrorType')
+      .addSelect('j."aiReplyFailureMode"', 'aiReplyFailureMode')
+      .addSelect('j."rootAttribution"', 'rootAttribution')
+      .addSelect('j."reasoning"', 'reasoning')
+      .addSelect('j."sessionDrifted"', 'sessionDrifted')
+      .addSelect('j."firstDriftTurn"', 'firstDriftTurn')
+      .from('turn_drift_judgment', 'j')
+      .where('j."scenarioSessionId" = :id', { id })
+      .andWhere('j."judgeModel" = :jm', { jm: latest.judgeModel })
+      .andWhere('j."judgePromptVersion" = :jpv', {
+        jpv: latest.judgePromptVersion,
+      })
+      .orderBy('j."turnIndex"', 'ASC')
+      .getRawMany();
+    if (!rows.length) return null;
+
+    const aiMessageIds = await this.findAiMessageIdsInJudgeOrder(id);
+
+    return {
+      judgeModel: latest.judgeModel,
+      judgePromptVersion: latest.judgePromptVersion,
+      sessionDrifted: rows[0].sessionDrifted ?? null,
+      firstDriftTurn:
+        rows[0].firstDriftTurn != null ? Number(rows[0].firstDriftTurn) : null,
+      turns: rows.map((r) => ({
+        turnIndex: Number(r.turnIndex),
+        messageId: aiMessageIds[Number(r.turnIndex)] ?? null,
+        coherence: r.coherence ?? null,
+        topicLabel: r.topicLabel ?? null,
+        inCharacter: r.inCharacter ?? null,
+        counselorUtteranceGarbled: r.counselorUtteranceGarbled ?? null,
+        sttErrorType: r.sttErrorType ?? null,
+        aiReplyFailureMode: r.aiReplyFailureMode ?? null,
+        rootAttribution: r.rootAttribution ?? null,
+        reasoning: r.reasoning ?? null,
+      })),
+    };
+  }
+
   /** Most recent post-session learner feedback for a session, if any. */
   async getFeedbackBySession(id: string): Promise<{
     rating: number | string;

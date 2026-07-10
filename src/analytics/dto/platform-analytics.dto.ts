@@ -179,6 +179,192 @@ export class DriftBackfillJobDto {
   @ApiProperty({ required: false, nullable: true }) error?: string | null;
 }
 
+export class LanguageQualityQueryDto {
+  @ApiProperty({ enum: ANALYTICS_RANGES, default: '90d', required: false })
+  @IsOptional()
+  @IsIn(ANALYTICS_RANGES)
+  range?: AnalyticsRange;
+
+  @ApiProperty({
+    required: false,
+    description: "Filter to one language (languages.value, e.g. 'ta-IN')",
+  })
+  @IsOptional()
+  language?: string;
+}
+
+export class LanguageDimensionErrorRateDto {
+  @ApiProperty() dimension!: string;
+  @ApiProperty({ description: 'comprehension | content | appropriateness' })
+  layer!: string;
+  @ApiProperty({
+    description:
+      'Eligible turns for this dimension (garbled-input turns excluded for understanding/adequacy)',
+  })
+  nTurns!: number;
+  @ApiProperty() minorCount!: number;
+  @ApiProperty() majorCount!: number;
+  @ApiProperty() criticalCount!: number;
+  @ApiProperty({
+    description: 'Σ(count × weight{1,5,10}) / nTurns × 100',
+  })
+  weightedRatePer100!: number;
+  @ApiProperty({ nullable: true }) dominantCategory!: string | null;
+}
+
+export class LanguageRateByLanguageDto {
+  @ApiProperty() language!: string;
+  @ApiProperty() sessionsJudged!: number;
+  @ApiProperty() nTurns!: number;
+  @ApiProperty() weightedRatePer100!: number;
+}
+
+export class LanguageCategoryCountDto {
+  @ApiProperty() dimension!: string;
+  @ApiProperty() category!: string;
+  @ApiProperty() count!: number;
+  @ApiProperty({ description: 'count × severity weight, summed' })
+  weighted!: number;
+}
+
+export class LanguageIsolationBasisCountDto {
+  @ApiProperty({
+    description:
+      'input_clean | input_garbled | persona_specified | persona_unspecified | pattern_systemic',
+  })
+  basis!: string;
+  @ApiProperty() count!: number;
+}
+
+export class LanguageErrorLogRowDto {
+  @ApiProperty() scenarioSessionId!: string;
+  @ApiProperty() turnIndex!: number;
+  @ApiProperty({ nullable: true }) language!: string | null;
+  @ApiProperty() dimension!: string;
+  @ApiProperty() category!: string;
+  @ApiProperty() severity!: string;
+  @ApiProperty({ nullable: true }) isolationBasis!: string | null;
+  @ApiProperty({ nullable: true }) evidenceQuote!: string | null;
+  @ApiProperty({ nullable: true }) reasoning!: string | null;
+  @ApiProperty({ nullable: true }) aiText!: string | null;
+  @ApiProperty({ nullable: true }) occurredAt!: Date | null;
+}
+
+export class LanguageRateByExperimentDto {
+  @ApiProperty({
+    nullable: true,
+    description: 'The experiment-dimension value (version id / model / …)',
+  })
+  value!: string | null;
+  @ApiProperty() sessionsJudged!: number;
+  @ApiProperty() nTurns!: number;
+  @ApiProperty() weightedRatePer100!: number;
+}
+
+export class LanguageLayerTrendPointDto {
+  @ApiProperty({ description: 'Week bucket (ISO date)' }) bucket!: string;
+  @ApiProperty({ description: 'comprehension | content | appropriateness' })
+  layer!: string;
+  @ApiProperty() nTurns!: number;
+  @ApiProperty() weightedRatePer100!: number;
+}
+
+export class LanguageObjectiveMetricsDto {
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Avg script fidelity % across judged sessions; null until Phase 2 populates it (renders as "not yet measured").',
+  })
+  scriptFidelityPct!: number | null;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Round-trip WER % — the Realization gate. Null until Phase 2 ships; a null gate MASKS the audio layer (unmeasured, not fine).',
+  })
+  roundTripWerPct!: number | null;
+}
+
+export class LanguageQualityResponseDto {
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Judge version all numbers below are computed from (latest run in ' +
+      'window). Comparisons are only valid within one judge version.',
+  })
+  judgeModel!: string | null;
+  @ApiProperty({ nullable: true }) judgePromptVersion!: string | null;
+
+  @ApiProperty() sessionsJudged!: number;
+  @ApiProperty() turnsJudged!: number;
+  @ApiProperty() turnsGarbled!: number;
+  @ApiProperty({
+    description:
+      'Headline: Σ weighted errors (conditioned-out excluded) / turnsJudged × 100. NO 1-5 quality score exists anywhere.',
+  })
+  totalWeightedRatePer100!: number;
+
+  @ApiProperty({ type: [LanguageDimensionErrorRateDto] })
+  errorRateByDimension!: LanguageDimensionErrorRateDto[];
+
+  @ApiProperty({ type: [LanguageRateByLanguageDto] })
+  rateByLanguage!: LanguageRateByLanguageDto[];
+
+  @ApiProperty({ type: [LanguageCategoryCountDto] })
+  categoryBreakdown!: LanguageCategoryCountDto[];
+
+  @ApiProperty({
+    type: [LanguageIsolationBasisCountDto],
+    description:
+      'The prompt-vs-model split: persona_unspecified = config gap (cheap fix); persona_specified = model ignored an instruction.',
+  })
+  isolationBasisBreakdown!: LanguageIsolationBasisCountDto[];
+
+  @ApiProperty({ type: [LanguageErrorLogRowDto] })
+  errorLog!: LanguageErrorLogRowDto[];
+
+  @ApiProperty({ type: LanguageObjectiveMetricsDto })
+  objectiveMetrics!: LanguageObjectiveMetricsDto;
+
+  @ApiProperty({
+    type: [LanguageLayerTrendPointDto],
+    description:
+      'Weighted error rate per layer per week — the FR10 isolation check: a one-variable change should move only its layer.',
+  })
+  layerTrend!: LanguageLayerTrendPointDto[];
+
+  @ApiProperty({ type: [LanguageRateByExperimentDto] })
+  rateByScenarioVersion!: LanguageRateByExperimentDto[];
+
+  @ApiProperty({ type: [LanguageRateByExperimentDto] })
+  rateByPromptVersion!: LanguageRateByExperimentDto[];
+
+  @ApiProperty({ type: [LanguageRateByExperimentDto] })
+  rateByModel!: LanguageRateByExperimentDto[];
+}
+
+export class StartLanguageBackfillDto {
+  @ApiProperty({
+    required: false,
+    default: 90,
+    description:
+      'Judge sessions created in the last N days (default 90 = ~3 months).',
+  })
+  sinceDays?: number;
+}
+
+export class LanguageBackfillJobDto {
+  @ApiProperty() jobId!: string;
+  @ApiProperty({ description: 'queued | running | done | error' })
+  status!: string;
+  @ApiProperty() total!: number;
+  @ApiProperty() processed!: number;
+  @ApiProperty() judged!: number;
+  @ApiProperty({ description: 'Total error annotations persisted so far.' })
+  errorAnnotations!: number;
+  @ApiProperty() skipped!: number;
+  @ApiProperty({ required: false, nullable: true }) error?: string | null;
+}
+
 export class AgentJoinReliabilityQueryDto {
   @ApiProperty({
     description: 'Time window for the agent-join reliability trend',

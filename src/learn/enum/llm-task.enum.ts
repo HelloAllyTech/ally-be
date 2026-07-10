@@ -25,6 +25,7 @@ export enum LlmTask {
   DIARIZATION = 'diarization',
   EMBEDDING = 'embedding',
   DRIFT_JUDGE = 'drift_judge',
+  LANGUAGE_JUDGE = 'language_judge',
 
   // ally-be studio operations (in-process).
   AUTOFILL_FIELD = 'autofill_field',

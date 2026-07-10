@@ -101,6 +101,8 @@ export class RoleplaySessionLogsService {
       agentTestCases,
       lifecycle,
       freezeSignals,
+      languageJudgment,
+      drift,
     ] = await Promise.all([
       this.roleplaySessionLogsRepository.findSummary(id),
       this.roleplaySessionLogsRepository.findEvents(id),
@@ -112,6 +114,8 @@ export class RoleplaySessionLogsService {
       this.roleplaySessionLogsRepository.findAgentTestCases(),
       this.roleplaySessionLogsRepository.findLifecycleEvents(id),
       this.roleplaySessionLogsRepository.getFreezeSignals(id),
+      this.roleplaySessionLogsRepository.findLanguageJudgment(id),
+      this.roleplaySessionLogsRepository.findDriftJudgment(id),
     ]);
 
     // Suspected mid-session freeze: had a conversation and either the agent
@@ -149,6 +153,22 @@ export class RoleplaySessionLogsService {
           }
         : null,
       actorEvaluation: this.buildActorEvaluation(row),
+      drift,
+      languageQuality: languageJudgment
+        ? {
+            judgeModel: languageJudgment.session.judgeModel,
+            judgePromptVersion: languageJudgment.session.judgePromptVersion,
+            turnsJudged: languageJudgment.session.turnsJudged,
+            turnsGarbled: languageJudgment.session.turnsGarbled,
+            errorCount: languageJudgment.annotations.length,
+            annotations: languageJudgment.annotations.map((a) => ({
+              ...a,
+              // Resolve the AI-turn ordinal to its message row so the UI can
+              // anchor badges without re-deriving turn order client-side.
+              messageId: languageJudgment.aiMessageIds[a.turnIndex] ?? null,
+            })),
+          }
+        : null,
       agentTestCases: agentTestCases.map((g) => ({
         id: g.id,
         title: g.title,

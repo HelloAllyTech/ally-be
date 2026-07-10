@@ -384,7 +384,104 @@ export class RoleplaySessionActorEvaluationDto {
   pass!: boolean | null;
 }
 
+export class RoleplaySessionLanguageAnnotationDto {
+  @ApiProperty({ description: 'AI-turn ordinal within the session' })
+  turnIndex!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'scenario_session_messages.id of the AI turn (badge anchor in the UI)',
+  })
+  messageId!: number | null;
+
+  @ApiProperty({ description: 'comprehension | content | appropriateness' })
+  layer!: string;
+
+  @ApiProperty() dimension!: string;
+  @ApiProperty() category!: string;
+  @ApiProperty({ description: 'minor | major | critical' }) severity!: string;
+
+  @ApiProperty({ nullable: true }) isolationBasis!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'STT quality of the counselor input: none | partial | severe',
+  })
+  inputGarbled!: string | null;
+
+  @ApiProperty({
+    description:
+      'True when excluded from the dimension error rate (garbled-input conditioning)',
+  })
+  conditionedOut!: boolean;
+
+  @ApiProperty({ nullable: true }) evidenceQuote!: string | null;
+  @ApiProperty({ nullable: true }) reasoning!: string | null;
+}
+
+export class RoleplaySessionLanguageQualityDto {
+  @ApiProperty() judgeModel!: string;
+  @ApiProperty() judgePromptVersion!: string;
+  @ApiProperty() turnsJudged!: number;
+  @ApiProperty() turnsGarbled!: number;
+  @ApiProperty() errorCount!: number;
+  @ApiProperty({ type: [RoleplaySessionLanguageAnnotationDto] })
+  annotations!: RoleplaySessionLanguageAnnotationDto[];
+}
+
+export class RoleplaySessionDriftTurnDto {
+  @ApiProperty() turnIndex!: number;
+  @ApiProperty({ nullable: true }) messageId!: number | null;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'fully_coherent | minor_disfluency | degrading | mostly_incoherent | gibberish',
+  })
+  coherence!: string | null;
+  @ApiProperty({ nullable: true }) topicLabel!: string | null;
+  @ApiProperty({ nullable: true }) inCharacter!: boolean | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'STT garble on the counselor input: none | partial | severe',
+  })
+  counselorUtteranceGarbled!: string | null;
+  @ApiProperty({ nullable: true }) sttErrorType!: string | null;
+  @ApiProperty({ nullable: true }) aiReplyFailureMode!: string | null;
+  @ApiProperty({ nullable: true }) rootAttribution!: string | null;
+  @ApiProperty({ nullable: true }) reasoning!: string | null;
+}
+
+export class RoleplaySessionDriftDto {
+  @ApiProperty() judgeModel!: string;
+  @ApiProperty() judgePromptVersion!: string;
+  @ApiProperty({ nullable: true }) sessionDrifted!: boolean | null;
+  @ApiProperty({ nullable: true }) firstDriftTurn!: number | null;
+  @ApiProperty({ type: [RoleplaySessionDriftTurnDto] })
+  turns!: RoleplaySessionDriftTurnDto[];
+}
+
 export class RoleplaySessionLogDetailDto extends RoleplaySessionLogRowDto {
+  @ApiProperty({
+    type: RoleplaySessionDriftDto,
+    nullable: true,
+    description:
+      'Conversation-drift judgment for this session (latest judge run); ' +
+      'null when the session has not been drift-judged. Session-level view ' +
+      'of the same rows the analytics Drift tab aggregates.',
+  })
+  drift!: RoleplaySessionDriftDto | null;
+
+  @ApiProperty({
+    type: RoleplaySessionLanguageQualityDto,
+    nullable: true,
+    description:
+      'Language-quality judge result for this session (latest judge run); ' +
+      'null when the session has not been judged. Session-level view of the ' +
+      'same rows the analytics Language tab aggregates.',
+  })
+  languageQuality!: RoleplaySessionLanguageQualityDto | null;
+
   @ApiProperty({ nullable: true, description: 'Post-session summary (jsonb)' })
   summary!: Record<string, any> | null;
 

@@ -11,6 +11,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AnalyticsService } from '../service/analytics.service';
+import { LanguageAnalyticsService } from '../service/language-analytics.service';
+import { LanguageJudgeService } from '../service/language-judge.service';
 import { PlatformAnalyticsService } from '../service/platform-analytics.service';
 import { ScribeAnalyticsService } from '../service/scribe-analytics.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -31,7 +33,11 @@ import {
   ConversationDriftQueryDto,
   ConversationDriftResponseDto,
   DriftBackfillJobDto,
+  LanguageBackfillJobDto,
+  LanguageQualityQueryDto,
+  LanguageQualityResponseDto,
   StartDriftBackfillDto,
+  StartLanguageBackfillDto,
   StartLatencyQueryDto,
   StartLatencyResponseDto,
   TokenConsumptionQueryDto,
@@ -70,6 +76,8 @@ export class AnalyticsController {
     private readonly analyticsService: AnalyticsService,
     private readonly platformAnalyticsService: PlatformAnalyticsService,
     private readonly scribeAnalyticsService: ScribeAnalyticsService,
+    private readonly languageJudgeService: LanguageJudgeService,
+    private readonly languageAnalyticsService: LanguageAnalyticsService,
   ) {}
 
   @Get('overview')
@@ -273,6 +281,67 @@ export class AnalyticsController {
     @Param('jobId') jobId: string,
   ): Promise<DriftBackfillJobDto> {
     return this.platformAnalyticsService.getDriftBackfillStatus(jobId);
+  }
+
+  @Get('language-quality')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Language-quality evaluation dashboard (super-admin)',
+    description:
+      'Categorized, severity-weighted language error rates per 100 turns — ' +
+      'by dimension (severity-stacked), by language, by category — plus the ' +
+      'prompt-vs-model isolation split and a recent error log. Aggregated ' +
+      'from the same per-session judgment rows shown in Roleplay Session ' +
+      'Logs. Pinned to the latest judge version; no scalar quality scores.',
+  })
+  @ApiResponse({ status: 200, type: LanguageQualityResponseDto })
+  async getLanguageQuality(
+    @Query() query: LanguageQualityQueryDto,
+  ): Promise<LanguageQualityResponseDto> {
+    return this.languageAnalyticsService.getLanguageQuality(query);
+  }
+
+  @Post('language-quality/backfill')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Run the language-quality judge backfill (super-admin)',
+    description:
+      'Kicks off an async language-quality judge backfill on ally-ai over ' +
+      'sessions created in the last `sinceDays` days (default 90), judging ' +
+      'only sessions not already judged. Writes per-session denominator rows ' +
+      'and per-error annotations (read raw by Roleplay Session Logs; ' +
+      'aggregated by the analytics dashboard). Returns a job id to poll.',
+  })
+  @ApiResponse({ status: 202, type: LanguageBackfillJobDto })
+  async startLanguageBackfill(
+    @Body() body: StartLanguageBackfillDto,
+  ): Promise<LanguageBackfillJobDto> {
+    return this.languageJudgeService.startBackfill(body.sinceDays ?? 90, true);
+  }
+
+  @Get('language-quality/backfill/:jobId')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Language-quality backfill job status (super-admin)',
+  })
+  @ApiResponse({ status: 200, type: LanguageBackfillJobDto })
+  async languageBackfillStatus(
+    @Param('jobId') jobId: string,
+  ): Promise<LanguageBackfillJobDto> {
+    const job = await this.languageJudgeService.getJob(jobId);
+    if (!job) {
+      return {
+        jobId,
+        status: 'error',
+        total: 0,
+        processed: 0,
+        judged: 0,
+        errorAnnotations: 0,
+        skipped: 0,
+        error: 'job not found (expired or unknown)',
+      };
+    }
+    return job;
   }
 
   @ApiOperation({ summary: 'Get all dashboards' })
