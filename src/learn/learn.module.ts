@@ -50,6 +50,7 @@ import { ScenarioEventsTranslationsRepository } from './repository/scenario-even
 import { ScenarioSessionReviewModule } from 'src/scenario-session-review/scenario-session-review.module';
 import { ConversationalGuardrailsModule } from 'src/conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from 'src/case/case.module';
+import { TrackModule } from 'src/track/track.module';
 import { ScenarioSessionDetailsRepository } from './repository/scenario-session-details.repository';
 import { ScenarioReportModule } from 'src/scenario-report/scenario-report.module';
 import { ScenarioSessionTags } from './entity/scenario-session-tags.entity';
@@ -159,6 +160,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     forwardRef(() => ScenarioSessionReviewModule),
     forwardRef(() => ConversationalGuardrailsModule),
     forwardRef(() => CaseModule),
+    forwardRef(() => TrackModule),
     forwardRef(() => PromptModule),
     ScenarioReportModule,
     forwardRef(() => ConversationalGuardrailsModule),

@@ -97,6 +97,7 @@ import {
 } from '../type/scenario-session-leaderboard-event.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
+import { TrackProgressService } from 'src/track/service/track-progress.service';
 import { CommonUtil } from 'src/common/util/common.util';
 import { ScenarioSharedService } from './scenario-shared.service';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
@@ -157,6 +158,7 @@ export class ScenarioSessionService {
     private eventEmitter: EventEmitter2,
     private caseSharedService: CaseSharedService,
     private caseSessionService: CaseSessionService,
+    private trackProgressService: TrackProgressService,
     @InjectRepository(ScenarioSessionBehaviorInstructions)
     private scenarioSessionBehaviorInstructionsRepository: Repository<ScenarioSessionBehaviorInstructions>,
     private behaviorTranslationRepository: BehaviorTranslationRepository,
@@ -874,6 +876,15 @@ export class ScenarioSessionService {
           );
         }
       }
+    } else if (startScenarioSessionDto.trackItemProgressId) {
+      // Track 2.0: validate the roleplay belongs to an unlocked track item
+      // visible to the caller's tenant.
+      const userIdStr = ExecutionManager.getUserId();
+      await this.trackProgressService.validateRoleplayStart(
+        startScenarioSessionDto.trackItemProgressId,
+        scenarioId,
+        { userId: Number(userIdStr), tenantId },
+      );
     } else if (startScenarioSessionDto.caseSessionItemId) {
       const caseSessionItem =
         await this.caseSharedService.getPermittedCaseSessionItemBySessionItemId(
@@ -1032,6 +1043,13 @@ export class ScenarioSessionService {
     else if (scenarioSession.caseSessionItemId) {
       await this.caseSessionService.handleEndCaseSession({
         caseSessionItemId: scenarioSession.caseSessionItemId,
+        score,
+        callDuration,
+      });
+    } else if (scenarioSession.trackItemProgressId) {
+      // Track 2.0: roleplay played inside a track.
+      await this.trackProgressService.handleRoleplayEnd({
+        trackItemProgressId: scenarioSession.trackItemProgressId,
         score,
         callDuration,
       });
