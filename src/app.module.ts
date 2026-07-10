@@ -41,6 +41,7 @@ import { PromptModule } from './prompt/prompt.module';
 import { LlmModule } from './llm/llm.module';
 import { ConversationalGuardrailsModule } from './conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from './case/case.module';
+import { TrackModule } from './track/track.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
 import { ScenarioReportModule } from './scenario-report/scenario-report.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
@@ -87,6 +88,7 @@ import { RoleplayStudioModule } from './roleplay-studio/roleplay-studio.module';
     PlaceModule,
     ScenarioPathModule,
     CaseModule,
+    TrackModule,
     LanguageModule,
     ScenarioSessionReviewModule,
     ScribeSessionReviewModule,

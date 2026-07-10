@@ -121,6 +121,19 @@ tenants/groups.
 | `scenario_path_sessions` | BaseWithoutTenant | `scenario_path_id`, `user_id`, `started_at`, `completed_at`, `completed_scenarios`, `deleted_at` | A user's run through a path |
 | `scenario_path_session_items` | BaseWithoutTenant | `scenario_path_session_id`, `user_id`, `scenario_path_item_id`, `status` (`SessionItemStatus`, UNLOCKED) | Per-step progress |
 
+**Track 2.0 (`track`)** — multi-component learning tracks, built alongside (not replacing) `scenario_paths`. A track holds ordered **sections**, each holding ordered **components** of type `ROLEPLAY | CASE | QUIZ | ARTICLE | VIDEO | JOURNAL`.
+
+| Table | Base | Key columns | Notes |
+|---|---|---|---|
+| `tracks` | BaseWithoutTenant | `id` (uuid), `title`, `description`, `cover_image_url`, `status` (`TrackStatus`, DRAFT), `is_global`, `progression_mode` (SEQUENTIAL), `total_items`, `estimated_duration_minutes`, `translations` (jsonb), `deleted_at` | Course root |
+| `track_sections` | BaseWithoutTenant | `track_id`, `title`, `order` (uniq per track), `unlock_rule` (SEQUENTIAL), `translations`, `deleted_at` | Named unit inside a track |
+| `track_items` | BaseWithoutTenant | `track_id`, `track_section_id`, `type` (`TrackItemType`), `order` (uniq per section), `title`, `scenario_id` (int, ROLEPLAY), `case_id` (uuid, CASE), `content` (jsonb — quiz/article/video/journal definition), `completion_criteria` (jsonb — minScore/passScore/watchPct/minReadSeconds), `deleted_at` | Hybrid polymorphism: reference columns for DB-backed content, `content` jsonb for inline-authored |
+| `track_tenants` | BaseWithoutTenant | `track_id`, `tenant_id`, `deleted_at` | Track→tenant visibility |
+| `track_enrollments` | BaseWithoutTenant | `track_id`, `user_id` (uniq pair), `tenant_id`, `started_at`, `completed_at`, `completed_items`, `last_activity_at`, `deleted_at` | A learner's run through a track |
+| `track_item_progress` | BaseWithoutTenant | `track_enrollment_id`, `track_item_id` (uniq pair), `user_id`, `status` (`SessionItemStatus`, LOCKED), `started_at`, `completed_at`, `score`, `attempt_count`, `case_session_id` (loose FK → `case_sessions`), `meta` (jsonb: maxWatchedPct, article read stamps), `deleted_at` | ALL rows created upfront at enrollment (first UNLOCKED, rest LOCKED); `id` is referenced by `scenario_sessions.track_item_progress_id` |
+| `track_quiz_attempts` | BaseWithoutTenant | `track_item_progress_id`, `track_item_id`, `user_id`, `attempt_number`, `answers` (jsonb), `grading` (jsonb, incl. LLM feedback for open-ended), `score_pct`, `passed`, `status` (SUBMITTED\|PENDING_GRADING\|GRADED), `submitted_at`, `graded_at` | One row per quiz attempt |
+| `track_journal_entries` | BaseWithoutTenant | `track_item_progress_id`, `prompt_id` (uniq pair), `track_item_id`, `user_id`, `response` (text), `submitted_at` (null = draft) | One row per journal prompt |
+
 ### 3.3 Scenario *runtime* — sessions & telemetry (`learn`)
 
 This is where most **analytics** about training performance live.

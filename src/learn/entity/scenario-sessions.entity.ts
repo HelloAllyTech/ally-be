@@ -65,4 +65,8 @@ export class ScenarioSessions extends BaseEntity {
 
   @Column({ type: 'uuid', nullable: true })
   caseSessionItemId?: string;
+
+  // Track 2.0: the track_item_progress row this session was played for.
+  @Column({ type: 'uuid', nullable: true })
+  trackItemProgressId?: string;
 }

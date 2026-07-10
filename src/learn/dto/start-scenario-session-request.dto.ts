@@ -28,6 +28,15 @@ export class StartScenarioSessionRequestDto {
   caseSessionItemId?: string;
 
   @ApiProperty({
+    description: 'Track 2.0 item progress ID (roleplay played inside a track)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    required: false,
+  })
+  @IsString()
+  @IsOptional()
+  trackItemProgressId?: string;
+
+  @ApiProperty({
     description:
       'Scenario version this session runs against. Defaults to the scenario’s ' +
       'published version when omitted.',
