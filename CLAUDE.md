@@ -1,3 +1,12 @@
+> **📚 Canonical docs: the [Ally Developer Wiki](https://tech.helloally.ai).**
+> Platform architecture, SDLC rules, deployment, and environment docs are maintained
+> centrally in the `helloallytech.github.io` repo (`wiki/` folder). Start with this
+> repo's page — https://tech.helloally.ai/#/wiki/repos/ally-be.md — and update the wiki
+> when you change architecture, workflows, or environment setup. The wiki is public:
+> never add secrets, IPs, internal hostnames, or cloud region details to it.
+
+---
+
 # CLAUDE.md
 
 Guidance for Claude Code when working in **ally-be** — the Ally backend API.
