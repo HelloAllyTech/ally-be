@@ -6,6 +6,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Res,
 } from '@nestjs/common';
 import {
@@ -26,6 +27,7 @@ import {
   AcceptSuggestedTestCasesDto,
   CreateCopilotMessageDto,
   CreateCopilotSessionDto,
+  ListCopilotSessionsQueryDto,
 } from '../dto/copilot.dto';
 
 @ApiTags('Roleplay Studio Copilot')
@@ -50,14 +52,30 @@ export class CopilotController {
     return this.copilotSessionService.createSession(dto.specId, user.id);
   }
 
+  @Get('sessions')
+  @AuthPermissions([PERMISSIONS.EDIT_ROLEPLAY_COPILOT])
+  @ApiOperation({
+    summary:
+      "List the caller's ACTIVE copilot sessions for a spec (newest first) — cross-browser resume",
+  })
+  listSessions(
+    @Query() query: ListCopilotSessionsQueryDto,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.copilotSessionService.listOwnedSessions(query.specId, user.id);
+  }
+
   @Get('sessions/:sessionId')
   @AuthPermissions([PERMISSIONS.EDIT_ROLEPLAY_COPILOT])
-  @ApiOperation({ summary: 'Get a copilot session' })
+  @ApiOperation({ summary: 'Get a copilot session with its full transcript' })
   getSession(
     @Param('sessionId', ParseUUIDPipe) sessionId: string,
     @CurrentUser() user: TokenUser,
   ) {
-    return this.copilotSessionService.getSession(sessionId, user.id);
+    return this.copilotSessionService.getSessionWithMessages(
+      sessionId,
+      user.id,
+    );
   }
 
   @Get('sessions/:sessionId/messages')

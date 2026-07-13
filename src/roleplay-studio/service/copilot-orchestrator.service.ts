@@ -106,15 +106,20 @@ export class CopilotOrchestratorService {
 
     const context: ToolExecutionContext = {
       spec,
+      sessionId,
       userId,
       appliedPatches: [],
       lastSpecVersionId: null,
     };
 
-    // Turn accumulators for the persisted assistant message.
+    // Turn accumulators for the persisted assistant message. Structured
+    // card payloads (questions, test-case suggestions) are persisted in the
+    // row's metadata so a resumed chat can reconstruct them faithfully.
     const textParts: string[] = [];
     const allToolCalls: Record<string, any>[] = [];
     const allToolResults: Record<string, any>[] = [];
+    const questions: Record<string, any>[] = [];
+    const testCaseSuggestions: Record<string, any>[] = [];
     let iterations = 0;
     let stopReason: string | null = null;
     let turnErrored = false;
@@ -191,6 +196,13 @@ export class CopilotOrchestratorService {
           }
 
           for (const frame of outcome.events ?? []) {
+            if (frame.event === 'question') {
+              questions.push(frame.data);
+            } else if (frame.event === 'test_case_suggestions') {
+              testCaseSuggestions.push(
+                ...((frame.data.suggestions ?? []) as Record<string, any>[]),
+              );
+            }
             yield frame;
           }
           yield {
@@ -259,6 +271,8 @@ export class CopilotOrchestratorService {
           iterations,
           stopReason,
           errored: turnErrored,
+          ...(questions.length > 0 ? { questions } : {}),
+          ...(testCaseSuggestions.length > 0 ? { testCaseSuggestions } : {}),
         },
         createdBy: userId,
       });

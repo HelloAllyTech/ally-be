@@ -41,6 +41,7 @@ import {
 } from './rehearsal-comparison.service';
 import { ImprovementHookService } from './improvement-hook.service';
 import { ImprovementNotificationService } from './improvement-notification.service';
+import { ImprovementNarrationService } from './improvement-narration.service';
 import { applyJsonPatch, JsonPatchOp } from '../util/json-patch.util';
 import { diffSpecDocuments } from '../util/spec-diff.util';
 import {
@@ -91,6 +92,7 @@ export class ImprovementOrchestratorService
     private readonly comparisonService: RehearsalComparisonService,
     private readonly improvementHookService: ImprovementHookService,
     private readonly notificationService: ImprovementNotificationService,
+    private readonly narrationService: ImprovementNarrationService,
     private readonly redisService: RedisService,
     private readonly configService: AppConfigService,
   ) {}
@@ -120,6 +122,13 @@ export class ImprovementOrchestratorService
     versionId: string,
     dto: StartImprovementRunDto,
     userId: number,
+    // Internal-caller options (the copilot's start_auto_improve tool) —
+    // deliberately NOT on the REST DTO so API clients can't bind runs to
+    // arbitrary chat sessions.
+    options: {
+      copilotSessionId?: string;
+      autoAcceptOnTargetsMet?: boolean;
+    } = {},
   ): Promise<ImprovementRun> {
     const spec = await this.roleplaySpecService.getSpec(specId);
     const version = await this.roleplaySpecService.getVersion(
@@ -173,6 +182,10 @@ export class ImprovementOrchestratorService
           judgeModel: dto.judgeModel,
           cheapIntermediateRounds: dto.cheapIntermediateRounds ?? true,
           timeoutMinutes,
+          // Copilot linkage: progress is narrated into this chat session and
+          // TARGETS_MET auto-applies the best version to the draft.
+          copilotSessionId: options.copilotSessionId ?? null,
+          autoAcceptOnTargetsMet: options.autoAcceptOnTargetsMet ?? false,
         },
         currentRound: 1,
         createdBy: userId,
@@ -315,6 +328,11 @@ export class ImprovementOrchestratorService
       deltas: { vsPrevious, vsBaseline } as Record<string, any>,
     });
     round.scores = scores; // keep the in-memory row usable for narrowing
+
+    await this.narrationService.postRoundScored(run, round, {
+      vsPrevious,
+      vsBaseline,
+    });
 
     await this.verifyPreviousRoundProposals(run, round, vsPrevious);
 
@@ -469,6 +487,8 @@ export class ImprovementOrchestratorService
       status: ImprovementRoundStatus.DONE,
       proposalsAppliedCount: applied.length,
     });
+
+    await this.narrationService.postProposalsApplied(run, round, applied);
 
     await this.spawnRound(
       run,
@@ -817,6 +837,31 @@ export class ImprovementOrchestratorService
     });
     await this.redisService.del(`${IMPROVEMENT_REDIS_KEY_PREFIX}:${run.id}`);
     this.notify(run);
+
+    // Copilot-initiated runs auto-apply the winner: the trainer asked for a
+    // hands-off loop, editing is locked client-side while it runs, and the
+    // result stays reviewable (versions + chat trajectory).
+    if (
+      finalOutcome === ImprovementRunOutcome.TARGETS_MET &&
+      run.config?.autoAcceptOnTargetsMet &&
+      best
+    ) {
+      try {
+        const accepted = await this.acceptRun(run.id, {}, run.createdBy);
+        await this.narrationService.postReady(accepted);
+        return;
+      } catch (error) {
+        this.logger.error(
+          `Auto-accept failed for improvement run ${run.id}: ${
+            error instanceof Error ? error.message : String(error)
+          } — falling back to manual review`,
+        );
+      }
+    }
+    await this.narrationService.postFinished(
+      await this.getRun(run.id),
+      finalOutcome,
+    );
   }
 
   private async failRun(
@@ -838,6 +883,10 @@ export class ImprovementOrchestratorService
     });
     await this.redisService.del(`${IMPROVEMENT_REDIS_KEY_PREFIX}:${run.id}`);
     this.notify(run);
+    await this.narrationService.postFailed(
+      await this.getRun(run.id),
+      errorMessage,
+    );
   }
 
   // ------------------------------------------------------------------ review

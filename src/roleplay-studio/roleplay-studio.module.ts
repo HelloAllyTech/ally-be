@@ -45,6 +45,7 @@ import { RehearsalComparisonService } from './service/rehearsal-comparison.servi
 import { ImprovementHookService } from './service/improvement-hook.service';
 import { ImprovementOrchestratorService } from './service/improvement-orchestrator.service';
 import { ImprovementNotificationService } from './service/improvement-notification.service';
+import { ImprovementNarrationService } from './service/improvement-narration.service';
 import { ImprovementGateway } from './gateway/improvement.gateway';
 import { DirectorTelemetryService } from './service/director-telemetry.service';
 import { DirectorStateTransitionProcessor } from './processor/director-state-transition.processor';
@@ -126,6 +127,7 @@ import { ImprovementController } from './controller/improvement.controller';
     ImprovementHookService,
     ImprovementOrchestratorService,
     ImprovementNotificationService,
+    ImprovementNarrationService,
     ImprovementGateway,
     RehearsalTimerService,
     RehearsalNotificationService,

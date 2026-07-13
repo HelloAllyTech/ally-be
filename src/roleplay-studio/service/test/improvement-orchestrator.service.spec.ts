@@ -5,6 +5,7 @@ import { ImprovementOrchestratorService } from '../improvement-orchestrator.serv
 import { RehearsalComparisonService } from '../rehearsal-comparison.service';
 import { ImprovementHookService } from '../improvement-hook.service';
 import { ImprovementNotificationService } from '../improvement-notification.service';
+import { ImprovementNarrationService } from '../improvement-narration.service';
 import { ImprovementRunRepository } from '../../repository/improvement-run.repository';
 import { ImprovementRoundRepository } from '../../repository/improvement-round.repository';
 import { CritiqueProposalRepository } from '../../repository/critique-proposal.repository';
@@ -71,6 +72,7 @@ describe('ImprovementOrchestratorService', () => {
   let mockSpecService: Record<string, jest.Mock>;
   let mockRehearsalService: Record<string, jest.Mock>;
   let mockRedis: Record<string, jest.Mock>;
+  let mockNarration: Record<string, jest.Mock>;
 
   const makeRun = (overrides: Record<string, any> = {}) => {
     const run = {
@@ -219,6 +221,13 @@ describe('ImprovementOrchestratorService', () => {
       set: jest.fn().mockResolvedValue(undefined),
       del: jest.fn().mockResolvedValue(undefined),
     };
+    mockNarration = {
+      postRoundScored: jest.fn().mockResolvedValue(undefined),
+      postProposalsApplied: jest.fn().mockResolvedValue(undefined),
+      postFinished: jest.fn().mockResolvedValue(undefined),
+      postReady: jest.fn().mockResolvedValue(undefined),
+      postFailed: jest.fn().mockResolvedValue(undefined),
+    };
 
     service = new ImprovementOrchestratorService(
       mockRunRepo as unknown as ImprovementRunRepository,
@@ -233,6 +242,7 @@ describe('ImprovementOrchestratorService', () => {
       new RehearsalComparisonService(),
       new ImprovementHookService(),
       new ImprovementNotificationService(),
+      mockNarration as unknown as ImprovementNarrationService,
       mockRedis as unknown as RedisService,
       {
         roleplayStudio: { rehearsalTimeoutMinutes: 30 },
@@ -461,6 +471,116 @@ describe('ImprovementOrchestratorService', () => {
       'prop-ok',
       expect.objectContaining({ status: CritiqueProposalStatus.VERIFIED }),
     );
+  });
+
+  // ------------------------------------------------- auto-accept (copilot)
+
+  it('auto-accepts on TARGETS_MET when the run is copilot-linked, then posts ready', async () => {
+    const run = makeRun({
+      config: {
+        ...makeRun().config,
+        copilotSessionId: 'sess-1',
+        autoAcceptOnTargetsMet: true,
+      },
+    });
+    runs.set(run.id, run);
+    const round = makeRound();
+
+    await service.onRehearsalFinished(
+      rehearsalRun({ improvementRoundId: round.id }) as any,
+    );
+
+    expect(mockSpecService.persistDraftMutation).toHaveBeenCalledWith(
+      expect.objectContaining({ id: SPEC_ID }),
+      expect.anything(),
+      USER_ID,
+      RoleplaySpecVersionSource.AUTO_IMPROVE_ACCEPTED,
+    );
+    expect(runs.get(run.id)!.status).toBe(ImprovementRunStatus.ACCEPTED);
+    expect(mockNarration.postReady).toHaveBeenCalled();
+    expect(mockNarration.postFinished).not.toHaveBeenCalled();
+  });
+
+  it('falls back to postFinished when auto-accept fails', async () => {
+    const run = makeRun({
+      config: {
+        ...makeRun().config,
+        copilotSessionId: 'sess-1',
+        autoAcceptOnTargetsMet: true,
+      },
+    });
+    runs.set(run.id, run);
+    const round = makeRound();
+    mockSpecService.persistDraftMutation.mockRejectedValue(
+      new Error('draft write failed'),
+    );
+
+    await service.onRehearsalFinished(
+      rehearsalRun({ improvementRoundId: round.id }) as any,
+    );
+
+    expect(runs.get(run.id)!.status).toBe(ImprovementRunStatus.AWAITING_REVIEW);
+    expect(mockNarration.postReady).not.toHaveBeenCalled();
+    expect(mockNarration.postFinished).toHaveBeenCalledWith(
+      expect.objectContaining({ id: run.id }),
+      ImprovementRunOutcome.TARGETS_MET,
+    );
+  });
+
+  it('does NOT auto-accept without the flag (REST-started runs)', async () => {
+    const run = makeRun();
+    const round = makeRound();
+
+    await service.onRehearsalFinished(
+      rehearsalRun({ improvementRoundId: round.id }) as any,
+    );
+
+    expect(mockSpecService.persistDraftMutation).not.toHaveBeenCalled();
+    expect(runs.get(run.id)!.status).toBe(ImprovementRunStatus.AWAITING_REVIEW);
+    expect(mockNarration.postFinished).toHaveBeenCalled();
+  });
+
+  it('narrates round scores and applied proposals during iteration', async () => {
+    makeRun();
+    const round = makeRound();
+    mockRehearsalService.critiqueRehearsal.mockResolvedValue({
+      proposals: [
+        {
+          id: 'prop-1',
+          ops: [{ op: 'replace', path: '/openingStatement', value: 'better' }],
+          summary: 'fix opening',
+        },
+      ],
+    });
+
+    await service.onRehearsalFinished(
+      rehearsalRun({
+        improvementRoundId: round.id,
+        results: failingScores,
+      }) as any,
+    );
+
+    expect(mockNarration.postRoundScored).toHaveBeenCalledWith(
+      expect.objectContaining({ id: RUN_ID }),
+      expect.objectContaining({ id: round.id }),
+      expect.objectContaining({ vsPrevious: null }),
+    );
+    expect(mockNarration.postProposalsApplied).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      [expect.objectContaining({ id: 'prop-1' })],
+    );
+  });
+
+  it('threads copilot options into the run config on start', async () => {
+    await service.startImprovementRun(SPEC_ID, BASE_VERSION_ID, {}, USER_ID, {
+      copilotSessionId: 'sess-9',
+      autoAcceptOnTargetsMet: true,
+    });
+
+    const saved = runs.get(RUN_ID)!;
+    expect(saved.config.copilotSessionId).toBe('sess-9');
+    expect(saved.config.autoAcceptOnTargetsMet).toBe(true);
   });
 
   // ------------------------------------------------------------------ review

@@ -148,6 +148,29 @@ vs the previous run + failing test cases + condensed evidence + proposal history
 prompt; `suggest_test_cases` now emits a structured `test_case_suggestions` SSE frame the
 studio renders as accept-to-persist cards.
 
+### Chat-first flow (the copilot drives the whole loop)
+
+The studio is chat-first: the trainer never leaves the copilot chat. After the interview, the
+copilot's **verify & auto-improve protocol** (see `interviewer_system.txt`) offers test cases
+(`suggest_test_cases` cards persisted via `POST /copilot/sessions/:id/test-cases`, which also
+wires `agentTestCaseIds` and appends an `[accepted …]` transcript marker; `get_agent_test_cases`
+surfaces existing catalog cases), confirms remaining config via `ask_trainer`, then calls the
+side-effectful **`start_auto_improve`** tool — it snapshots the draft and starts a
+copilot-linked run (`config.copilotSessionId`, `autoAcceptOnTargetsMet: true`).
+`ImprovementNarrationService` posts loop progress into the chat as plain-content assistant rows
+(replay-safe in the Anthropic history; metadata `improvement_update`/`improvement_ready` drives
+the studio's progress/ready cards). On TARGETS_MET the best version is **auto-accepted into the
+draft** and the ready message carries Test-live/Publish actions (targeting the *best* version —
+the one holding the COMPLETED verification rehearsal the publish gate requires); on weaker
+outcomes the message asks, and the trainer's reply resolves via **`resolve_improvement_run`**
+(accept/discard; "iterate more" = accept then start again). The advisory `propose_rehearsal`
+tool was removed. Chat persistence: `GET /copilot/sessions/:id` returns the full transcript,
+`GET /copilot/sessions?specId=` resumes the caller's latest ACTIVE session cross-browser, and
+per-turn card payloads (questions, suggestions) are persisted in message metadata so a resumed
+chat reconstructs them faithfully. The web workspace collapsed to two tabs — Chat (with an
+editable Spec/State-machine workbench on the right, locked while the copilot streams or a loop
+runs) and Publish (version history).
+
 ---
 
 ## Flow 3 — RUN (Actor + Director, in `ally-ai-learn`)

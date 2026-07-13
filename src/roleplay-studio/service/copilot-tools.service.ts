@@ -4,33 +4,33 @@ import { v4 as uuidv4 } from 'uuid';
 import { LoggerService } from 'src/logger/logger.service';
 import { ScenarioVoices } from 'src/learn/entity/scenario-voices.entity';
 import { Competency } from 'src/learn/entity/competency.entity';
+import { AgentTestCase } from 'src/learn/entity/agent-test-case.entity';
 import { RoleplaySpec } from '../entity/roleplay-spec.entity';
 import { RoleplaySpecService } from './roleplay-spec.service';
 import { SpecValidatorService } from './spec-validator.service';
 import { SpecCompilerService } from './spec-compiler.service';
 import { CritiqueEvidenceService } from './critique-evidence.service';
 import { RehearsalComparisonService } from './rehearsal-comparison.service';
+import { ImprovementOrchestratorService } from './improvement-orchestrator.service';
+import { RoleplaySpecVersionSource } from '../enum/roleplay-spec-version-source.enum';
 import { RehearsalRunRepository } from '../repository/rehearsal-run.repository';
 import { RehearsalTranscriptRepository } from '../repository/rehearsal-transcript.repository';
 import { CritiqueProposalRepository } from '../repository/critique-proposal.repository';
 import { ImprovementRunRepository } from '../repository/improvement-run.repository';
 import { ImprovementRoundRepository } from '../repository/improvement-round.repository';
 import { RehearsalStatus } from '../enum/rehearsal-status.enum';
-import { RoleplaySpecVersionSource } from '../enum/roleplay-spec-version-source.enum';
 import {
   applyJsonPatch,
   JsonPatchError,
   JsonPatchOp,
 } from '../util/json-patch.util';
 import { ToolExecutionOutcome } from '../type/copilot-sse-event.type';
-import {
-  REHEARSAL_DEFAULT_TURNS_PER_PROFILE,
-  REHEARSAL_TRAINEE_PROFILES,
-} from '../constants/roleplay-studio.constants';
 
 /** Mutable per-turn context threaded through tool executions. */
 export interface ToolExecutionContext {
   spec: RoleplaySpec;
+  /** The copilot session this turn belongs to (loop narration target). */
+  sessionId: string;
   userId: number;
   /** Patches applied so far this turn (spec_patch payloads). */
   appliedPatches: Record<string, any>[];
@@ -64,6 +64,7 @@ export class CopilotToolsService {
     private readonly critiqueProposalRepository: CritiqueProposalRepository,
     private readonly improvementRunRepository: ImprovementRunRepository,
     private readonly improvementRoundRepository: ImprovementRoundRepository,
+    private readonly improvementOrchestrator: ImprovementOrchestratorService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -209,16 +210,57 @@ export class CopilotToolsService {
         },
       },
       {
-        name: 'propose_rehearsal',
+        name: 'get_agent_test_cases',
         description:
-          'Propose an automated rehearsal of the current draft to the trainer (they start it ' +
-          'from the studio UI). No side effects.',
+          'List the existing agent test case library (id, title, category, condition, test). ' +
+          'Use it to offer relevant EXISTING cases to the trainer (via ask_trainer) and write ' +
+          'chosen ids into agentTestCaseIds with update_spec; suggest_test_cases covers NEW cases.',
+        input_schema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'start_auto_improve',
+        description:
+          'Snapshot the current draft and start the autonomous improve loop: it rehearses the ' +
+          'spec with simulated trainees and the selected agent test cases, critiques the results, ' +
+          'applies fixes, and re-rehearses until the targets are met (or rounds run out). ' +
+          'Progress messages are posted into this chat automatically, and when the targets are ' +
+          'met the improved spec is applied to the draft automatically. Requires a fully valid ' +
+          'draft; refuses while a run is already in progress.',
         input_schema: {
           type: 'object',
           properties: {
-            turnsPerProfile: { type: 'number' },
-            rationale: { type: 'string' },
+            maxRounds: {
+              type: 'number',
+              description: 'Improvement rounds cap (default 3)',
+            },
+            minOverall: {
+              type: 'number',
+              description: 'Minimum judged overall score target (default 70)',
+            },
+            requireAllTestCasesPass: {
+              type: 'boolean',
+              description:
+                'Every selected agent test case must pass (default true)',
+            },
           },
+        },
+      },
+      {
+        name: 'resolve_improvement_run',
+        description:
+          "Resolve a finished auto-improve run per the trainer's decision: 'accept' applies the " +
+          'best version to the draft, \'discard\' keeps the current draft. For "iterate more", ' +
+          'accept first (locking in gains), then call start_auto_improve again.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            improvementRunId: {
+              type: 'string',
+              description: 'Omit for the latest run awaiting review',
+            },
+            action: { type: 'string', enum: ['accept', 'discard'] },
+          },
+          required: ['action'],
         },
       },
     ];
@@ -246,8 +288,12 @@ export class CopilotToolsService {
         return this.executeGetRehearsalFindings(input, context);
       case 'get_improvement_run_status':
         return this.executeGetImprovementRunStatus(input, context);
-      case 'propose_rehearsal':
-        return this.executeProposeRehearsal(input);
+      case 'get_agent_test_cases':
+        return this.executeGetAgentTestCases();
+      case 'start_auto_improve':
+        return this.executeStartAutoImprove(input, context);
+      case 'resolve_improvement_run':
+        return this.executeResolveImprovementRun(input, context);
       default:
         return {
           modelResult: { ok: false, error: `Unknown tool "${name}"` },
@@ -610,22 +656,186 @@ export class CopilotToolsService {
     };
   }
 
-  private executeProposeRehearsal(
-    input: Record<string, any>,
-  ): ToolExecutionOutcome {
-    const proposal = {
-      traineeProfiles: REHEARSAL_TRAINEE_PROFILES,
-      turnsPerProfile:
-        Number(input?.turnsPerProfile) || REHEARSAL_DEFAULT_TURNS_PER_PROFILE,
-      rationale: input?.rationale ?? null,
-    };
+  private async executeGetAgentTestCases(): Promise<ToolExecutionOutcome> {
+    const testCases = await this.dataSource
+      .getRepository(AgentTestCase)
+      .find({ order: { title: 'ASC' }, take: 100 });
     return {
       modelResult: {
         ok: true,
-        proposal,
-        note: 'Proposal surfaced to the trainer; they start the rehearsal from the studio.',
+        testCases: testCases.map((testCase) => ({
+          id: testCase.id,
+          title: testCase.title,
+          category: testCase.category ?? null,
+          condition: testCase.condition ?? null,
+          test: testCase.test ?? null,
+        })),
       },
-      summary: `Proposed a rehearsal (${proposal.turnsPerProfile} turns/profile)`,
+      summary: `Listed ${testCases.length} existing agent test case(s)`,
+    };
+  }
+
+  /**
+   * Snapshot the draft and start the autonomous improve loop, linked to this
+   * chat (progress narration + auto-apply on targets met). The draft is
+   * snapshotted explicitly because title-only PUT edits mutate draftSpec
+   * without a version snapshot — "latest version == draft" isn't guaranteed.
+   */
+  private async executeStartAutoImprove(
+    input: Record<string, any>,
+    context: ToolExecutionContext,
+  ): Promise<ToolExecutionOutcome> {
+    const validation = await this.specValidator.validate(
+      context.spec.draftSpec,
+    );
+    if (!validation.valid) {
+      return {
+        modelResult: {
+          ok: false,
+          error: 'spec_invalid',
+          message:
+            'The draft has validation errors — fix them with update_spec, then retry.',
+          errors: validation.errors,
+        },
+        summary: `Auto-improve refused: ${validation.errors.length} validation error(s)`,
+      };
+    }
+
+    const { spec: savedSpec, version } =
+      await this.roleplaySpecService.persistDraftMutation(
+        context.spec,
+        context.spec.draftSpec,
+        context.userId,
+        RoleplaySpecVersionSource.SNAPSHOT,
+      );
+    context.spec = savedSpec;
+    context.lastSpecVersionId = version.id;
+
+    const agentTestCaseIds =
+      ((savedSpec.draftSpec as Record<string, any>)?.agentTestCaseIds as
+        | string[]
+        | undefined) ?? [];
+
+    let run;
+    try {
+      run = await this.improvementOrchestrator.startImprovementRun(
+        savedSpec.id,
+        version.id,
+        {
+          maxRounds:
+            typeof input?.maxRounds === 'number' ? input.maxRounds : undefined,
+          targets: {
+            ...(typeof input?.minOverall === 'number'
+              ? { minOverall: input.minOverall }
+              : {}),
+            ...(typeof input?.requireAllTestCasesPass === 'boolean'
+              ? { requireAllTestCasesPass: input.requireAllTestCasesPass }
+              : {}),
+          },
+          agentTestCaseIds,
+        },
+        context.userId,
+        {
+          copilotSessionId: context.sessionId,
+          autoAcceptOnTargetsMet: true,
+        },
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes('already in progress')) {
+        return {
+          modelResult: {
+            ok: false,
+            error: 'run_in_progress',
+            message:
+              'An improvement run is already in progress for this spec — wait for it to finish.',
+          },
+          summary: 'Auto-improve refused: a run is already in progress',
+        };
+      }
+      throw error;
+    }
+
+    return {
+      modelResult: {
+        ok: true,
+        improvementRunId: run.id,
+        baseVersionId: version.id,
+        maxRounds: run.config.maxRounds,
+        targets: run.config.targets,
+        testCaseCount: agentTestCaseIds.length,
+        note:
+          'The loop is running; progress messages will be posted into this chat. ' +
+          'Tell the trainer it may take a while and they can leave and come back.',
+      },
+      summary: `Auto-improve started (run ${run.id.slice(0, 8)}, ${agentTestCaseIds.length} test case(s))`,
+    };
+  }
+
+  private async executeResolveImprovementRun(
+    input: Record<string, any>,
+    context: ToolExecutionContext,
+  ): Promise<ToolExecutionOutcome> {
+    const action = String(input?.action ?? '');
+    if (!['accept', 'discard'].includes(action)) {
+      return {
+        modelResult: {
+          ok: false,
+          error: 'invalid_action',
+          message: "action must be 'accept' or 'discard'",
+        },
+        summary: 'resolve_improvement_run failed: invalid action',
+      };
+    }
+
+    let run;
+    if (input?.improvementRunId) {
+      run = await this.improvementRunRepository.findOne({
+        where: { id: String(input.improvementRunId), specId: context.spec.id },
+      });
+    } else {
+      run = await this.improvementRunRepository.findAwaitingReview(
+        context.spec.id,
+      );
+    }
+    if (!run) {
+      return {
+        modelResult: {
+          ok: false,
+          error: 'no_run_awaiting_review',
+          message: 'No improvement run is awaiting review for this spec.',
+        },
+        summary: 'No improvement run awaiting review',
+      };
+    }
+
+    const resolved =
+      action === 'accept'
+        ? await this.improvementOrchestrator.acceptRun(
+            run.id,
+            {},
+            context.userId,
+          )
+        : await this.improvementOrchestrator.discardRun(run.id, context.userId);
+
+    // Accepting rewrites the draft — refresh the turn's spec so later tool
+    // calls (or a follow-up start_auto_improve) see the applied version.
+    if (action === 'accept') {
+      context.spec = await this.roleplaySpecService.getSpec(context.spec.id);
+    }
+
+    return {
+      modelResult: {
+        ok: true,
+        improvementRunId: resolved.id,
+        status: resolved.status,
+        bestVersionId: resolved.bestVersionId ?? null,
+        acceptedVersionId: resolved.acceptedVersionId ?? null,
+      },
+      summary:
+        action === 'accept'
+          ? 'Accepted the improvement into the draft'
+          : 'Discarded the improvement run',
     };
   }
 }
