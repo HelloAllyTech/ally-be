@@ -16,6 +16,12 @@ export class CreateCopilotSessionDto {
   specId!: string;
 }
 
+export class ListCopilotSessionsQueryDto {
+  @ApiProperty({ description: 'Spec whose sessions to list' })
+  @IsUUID()
+  specId!: string;
+}
+
 export class CreateCopilotMessageDto {
   @ApiProperty({ description: "The trainer's message for this turn" })
   @IsString()
@@ -32,6 +38,15 @@ export class CreateCopilotMessageDto {
 }
 
 export class SuggestedTestCaseDto {
+  @ApiPropertyOptional({
+    description:
+      'The suggestion id from the test_case_suggestions SSE frame — lets the ' +
+      'transcript record which suggestion cards were accepted (resume fidelity)',
+  })
+  @IsOptional()
+  @IsUUID()
+  suggestionId?: string;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

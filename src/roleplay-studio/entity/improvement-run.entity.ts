@@ -42,7 +42,9 @@ export class ImprovementRun extends BaseWithoutTenantEntity {
   // { maxRounds, targets: { minOverall?, minDimensions?,
   //   requireAllTestCasesPass }, agentTestCaseIds, traineeProfiles,
   //   turnsPerProfile, languageId, judgeModel?, cheapIntermediateRounds,
-  //   timeoutMinutes, testCases (launch-time snapshots) }.
+  //   timeoutMinutes, copilotSessionId? (chat the loop narrates into),
+  //   autoAcceptOnTargetsMet? (copilot-initiated runs apply the winner
+  //   to the draft automatically) }.
   @Column({ type: 'jsonb' })
   config!: Record<string, any>;
 

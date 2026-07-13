@@ -171,6 +171,36 @@ describe('CopilotOrchestratorService', () => {
     expect(lastTwo[1].content[0].tool_use_id).toBe('tu-1');
   });
 
+  it('threads sessionId into the tool context and persists question/suggestion metadata', async () => {
+    const question = { id: 'q-1', prompt: 'Which skill?', kind: 'freeText' };
+    const suggestion = { id: 's-1', title: 'Leak check' };
+    toolsExecute.mockResolvedValueOnce({
+      modelResult: { ok: true },
+      summary: 'asked',
+      events: [
+        { event: 'question', data: question },
+        { event: 'test_case_suggestions', data: { suggestions: [suggestion] } },
+      ],
+      endTurn: true,
+    });
+    streamMock.mockReturnValue(makeStream([toolUseBlock('tu-1')], 'tool_use'));
+
+    const frames = await collect();
+
+    expect(toolsExecute).toHaveBeenCalledWith(
+      'update_spec',
+      expect.anything(),
+      expect.objectContaining({ sessionId: 'sess-1', userId: 7 }),
+    );
+    expect(frames.map((frame) => frame.event)).toEqual(
+      expect.arrayContaining(['question', 'test_case_suggestions']),
+    );
+    // Resume fidelity: the persisted assistant row carries the card payloads.
+    const assistantRow = appendMessage.mock.calls[1][1];
+    expect(assistantRow.metadata.questions).toEqual([question]);
+    expect(assistantRow.metadata.testCaseSuggestions).toEqual([suggestion]);
+  });
+
   it('caps the tool loop at maxToolIterations and emits an error frame', async () => {
     // The model asks for a tool on every round-trip, forever.
     let counter = 0;
