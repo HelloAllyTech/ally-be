@@ -8,6 +8,14 @@ import { RoleplaySpec } from '../entity/roleplay-spec.entity';
 import { RoleplaySpecService } from './roleplay-spec.service';
 import { SpecValidatorService } from './spec-validator.service';
 import { SpecCompilerService } from './spec-compiler.service';
+import { CritiqueEvidenceService } from './critique-evidence.service';
+import { RehearsalComparisonService } from './rehearsal-comparison.service';
+import { RehearsalRunRepository } from '../repository/rehearsal-run.repository';
+import { RehearsalTranscriptRepository } from '../repository/rehearsal-transcript.repository';
+import { CritiqueProposalRepository } from '../repository/critique-proposal.repository';
+import { ImprovementRunRepository } from '../repository/improvement-run.repository';
+import { ImprovementRoundRepository } from '../repository/improvement-round.repository';
+import { RehearsalStatus } from '../enum/rehearsal-status.enum';
 import { RoleplaySpecVersionSource } from '../enum/roleplay-spec-version-source.enum';
 import {
   applyJsonPatch,
@@ -49,6 +57,13 @@ export class CopilotToolsService {
     private readonly roleplaySpecService: RoleplaySpecService,
     private readonly specValidator: SpecValidatorService,
     private readonly specCompiler: SpecCompilerService,
+    private readonly critiqueEvidenceService: CritiqueEvidenceService,
+    private readonly comparisonService: RehearsalComparisonService,
+    private readonly rehearsalRunRepository: RehearsalRunRepository,
+    private readonly rehearsalTranscriptRepository: RehearsalTranscriptRepository,
+    private readonly critiqueProposalRepository: CritiqueProposalRepository,
+    private readonly improvementRunRepository: ImprovementRunRepository,
+    private readonly improvementRoundRepository: ImprovementRoundRepository,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -161,6 +176,39 @@ export class CopilotToolsService {
         input_schema: { type: 'object', properties: {} },
       },
       {
+        name: 'get_rehearsal_findings',
+        description:
+          'Fetch rehearsal evidence for this spec: judge scores (with the delta vs the ' +
+          'previous rehearsal), failed/inconclusive agent test cases with evaluator evidence, ' +
+          'condensed transcript excerpts, and prior critique proposals with their outcomes. ' +
+          'ALWAYS call this before proposing update_spec fixes for a rehearsal problem.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            rehearsalId: {
+              type: 'string',
+              description:
+                'A specific rehearsal run id; omit for the latest completed rehearsal',
+            },
+          },
+        },
+      },
+      {
+        name: 'get_improvement_run_status',
+        description:
+          "Status of the spec's auto-improve runs: per-round scores + deltas, applied " +
+          'proposals, the best version so far, and whether a result awaits trainer review.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            improvementRunId: {
+              type: 'string',
+              description: 'A specific run id; omit for the latest run',
+            },
+          },
+        },
+      },
+      {
         name: 'propose_rehearsal',
         description:
           'Propose an automated rehearsal of the current draft to the trainer (they start it ' +
@@ -194,6 +242,10 @@ export class CopilotToolsService {
         return this.executeGetCompetencies();
       case 'compile_spec':
         return this.executeCompileSpec(context);
+      case 'get_rehearsal_findings':
+        return this.executeGetRehearsalFindings(input, context);
+      case 'get_improvement_run_status':
+        return this.executeGetImprovementRunStatus(input, context);
       case 'propose_rehearsal':
         return this.executeProposeRehearsal(input);
       default:
@@ -322,9 +374,16 @@ export class CopilotToolsService {
   private executeSuggestTestCases(
     input: Record<string, any>,
   ): ToolExecutionOutcome {
-    const suggestions = Array.isArray(input?.suggestions)
-      ? input.suggestions
-      : [];
+    const suggestions = (
+      Array.isArray(input?.suggestions) ? input.suggestions : []
+    ).map((suggestion: Record<string, any>) => ({
+      id: uuidv4(),
+      title: String(suggestion?.title ?? ''),
+      category: suggestion?.category ?? null,
+      description: suggestion?.description ?? null,
+      condition: suggestion?.condition ?? null,
+      test: suggestion?.test ?? null,
+    }));
     return {
       modelResult: {
         ok: true,
@@ -332,9 +391,156 @@ export class CopilotToolsService {
         note: 'Suggestions surfaced to the trainer; accepted ones are persisted via the studio.',
       },
       summary: `Suggested ${suggestions.length} test case(s): ${suggestions
-        .map((suggestion: any) => suggestion?.title)
+        .map((suggestion) => suggestion.title)
         .filter(Boolean)
         .join(', ')}`,
+      // Structured frame so the studio can render accept-to-persist cards
+      // (the summary string alone used to be the only thing that survived).
+      events: [{ event: 'test_case_suggestions', data: { suggestions } }],
+    };
+  }
+
+  /**
+   * Rehearsal evidence pack for the copilot: scores + delta vs the previous
+   * rehearsal, failing test cases, condensed transcript evidence, and the
+   * proposal history. Read-only.
+   */
+  private async executeGetRehearsalFindings(
+    input: Record<string, any>,
+    context: ToolExecutionContext,
+  ): Promise<ToolExecutionOutcome> {
+    const specId = context.spec.id;
+    let run;
+    if (input?.rehearsalId) {
+      run = await this.rehearsalRunRepository.findOne({
+        where: { id: String(input.rehearsalId), specId },
+      });
+    } else {
+      run = await this.rehearsalRunRepository
+        .createQueryBuilder('run')
+        .where('run.specId = :specId', { specId })
+        .andWhere('run.status = :status', {
+          status: RehearsalStatus.COMPLETED,
+        })
+        .orderBy('run.createdAt', 'DESC')
+        .getOne();
+    }
+    if (!run || run.status !== RehearsalStatus.COMPLETED) {
+      return {
+        modelResult: {
+          ok: false,
+          error: 'no_completed_rehearsal',
+          message:
+            'No completed rehearsal found for this spec — suggest running one first.',
+        },
+        summary: 'No completed rehearsal found',
+      };
+    }
+
+    const previous = await this.rehearsalRunRepository
+      .createQueryBuilder('previous')
+      .where('previous.specId = :specId', { specId })
+      .andWhere('previous.status = :status', {
+        status: RehearsalStatus.COMPLETED,
+      })
+      .andWhere('previous.createdAt < :createdAt', {
+        createdAt: run.createdAt,
+      })
+      .andWhere('previous.id != :id', { id: run.id })
+      .orderBy('previous.createdAt', 'DESC')
+      .getOne();
+
+    const transcripts = await this.rehearsalTranscriptRepository.listByRun(
+      run.id,
+    );
+    const version = await this.roleplaySpecService.getVersionById(
+      run.specVersionId,
+    );
+    const evidence = this.critiqueEvidenceService.buildEvidence(
+      run,
+      transcripts,
+      version.spec,
+      { charBudget: 8_000 },
+    );
+    const proposals = await this.critiqueProposalRepository.listByRehearsal(
+      run.id,
+    );
+    const failing = (
+      (run.results?.test_case_results ?? []) as Record<string, any>[]
+    ).filter((result) => result.verdict !== 'PASSED');
+
+    return {
+      modelResult: {
+        ok: true,
+        rehearsalId: run.id,
+        specVersionId: run.specVersionId,
+        results: run.results ?? null,
+        deltaVsPrevious: previous
+          ? this.comparisonService.compare(previous.results, run.results)
+          : null,
+        failingTestCases: failing,
+        evidence,
+        priorProposals: proposals.map((proposal) => ({
+          id: proposal.id,
+          summary: proposal.summary,
+          targetSection: proposal.targetSection,
+          severity: proposal.severity,
+          status: proposal.status,
+        })),
+      },
+      summary: `Rehearsal ${run.id.slice(0, 8)}: overall ${
+        run.results?.overall ?? '?'
+      }, ${failing.length} failing test case(s)`,
+    };
+  }
+
+  private async executeGetImprovementRunStatus(
+    input: Record<string, any>,
+    context: ToolExecutionContext,
+  ): Promise<ToolExecutionOutcome> {
+    const specId = context.spec.id;
+    let run;
+    if (input?.improvementRunId) {
+      run = await this.improvementRunRepository.findOne({
+        where: { id: String(input.improvementRunId), specId },
+      });
+    } else {
+      const runs = await this.improvementRunRepository.listBySpec(specId);
+      run = runs[0] ?? null;
+    }
+    if (!run) {
+      return {
+        modelResult: {
+          ok: false,
+          error: 'no_improvement_run',
+          message: 'No auto-improve run exists for this spec.',
+        },
+        summary: 'No improvement run found',
+      };
+    }
+    const rounds = await this.improvementRoundRepository.listByRun(run.id);
+    return {
+      modelResult: {
+        ok: true,
+        improvementRunId: run.id,
+        status: run.status,
+        outcome: run.outcome ?? null,
+        currentRound: run.currentRound,
+        bestVersionId: run.bestVersionId ?? null,
+        awaitingReview: run.status === 'AWAITING_REVIEW',
+        rounds: rounds.map((round) => ({
+          roundNumber: round.roundNumber,
+          kind: round.kind,
+          status: round.status,
+          fullScope: round.fullScope,
+          scores: round.scores ?? null,
+          deltas: round.deltas ?? null,
+          proposalsAppliedCount: round.proposalsAppliedCount,
+        })),
+      },
+      summary: `Improvement run ${run.id.slice(0, 8)}: ${run.status}${
+        run.outcome ? ` (${run.outcome})` : ''
+      }, round ${run.currentRound}`,
     };
   }
 

@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -18,7 +19,10 @@ import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { RehearsalService } from '../service/rehearsal.service';
-import { CreateRehearsalDto } from '../dto/rehearsal.dto';
+import {
+  CreateRehearsalDto,
+  UpdateCritiqueProposalStatusDto,
+} from '../dto/rehearsal.dto';
 
 @ApiTags('Roleplay Studio Rehearsals')
 @ApiBearerAuth()
@@ -87,9 +91,33 @@ export class RehearsalController {
   @AuthPermissions([PERMISSIONS.EDIT_ROLEPLAY_REHEARSALS])
   @ApiOperation({
     summary:
-      'LLM critique of a completed rehearsal → {proposals: [{patch, rationale, targetSection, severity}]}',
+      'Evidence-rich LLM critique of a completed rehearsal → persisted ' +
+      '{proposals: [{id, ops, summary, rationale, targetSection, severity, expectedEffect}]}',
   })
-  critiqueRehearsal(@Param('rehearsalId', ParseUUIDPipe) rehearsalId: string) {
-    return this.rehearsalService.critiqueRehearsal(rehearsalId);
+  critiqueRehearsal(
+    @Param('rehearsalId', ParseUUIDPipe) rehearsalId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.rehearsalService.critiqueRehearsal(rehearsalId, user.id);
+  }
+
+  @Get('rehearsals/:rehearsalId/critique-proposals')
+  @AuthPermissions([PERMISSIONS.VIEW_ROLEPLAY_REHEARSALS])
+  @ApiOperation({ summary: 'Persisted critique proposals for a rehearsal' })
+  listProposals(@Param('rehearsalId', ParseUUIDPipe) rehearsalId: string) {
+    return this.rehearsalService.listProposals(rehearsalId);
+  }
+
+  @Patch('rehearsals/critique-proposals/:proposalId')
+  @AuthPermissions([PERMISSIONS.EDIT_ROLEPLAY_REHEARSALS])
+  @ApiOperation({
+    summary: "Record a trainer's accept/reject decision on a proposal",
+  })
+  updateProposalStatus(
+    @Param('proposalId', ParseUUIDPipe) proposalId: string,
+    @Body() dto: UpdateCritiqueProposalStatusDto,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.rehearsalService.updateProposalStatus(proposalId, dto, user.id);
   }
 }

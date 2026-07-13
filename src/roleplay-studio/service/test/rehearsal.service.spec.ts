@@ -9,10 +9,13 @@ import { RehearsalStatus } from '../../enum/rehearsal-status.enum';
 import { RehearsalTraineeProfile } from '../../enum/rehearsal-status.enum';
 import { RehearsalRunRepository } from '../../repository/rehearsal-run.repository';
 import { RehearsalTranscriptRepository } from '../../repository/rehearsal-transcript.repository';
+import { CritiqueProposalRepository } from '../../repository/critique-proposal.repository';
 import { RoleplaySpecService } from '../roleplay-spec.service';
 import { SpecCompilerService } from '../spec-compiler.service';
 import { SpecValidatorService } from '../spec-validator.service';
 import { RehearsalNotificationService } from '../rehearsal-notification.service';
+import { CritiqueEvidenceService } from '../critique-evidence.service';
+import { ImprovementHookService } from '../improvement-hook.service';
 import { REHEARSAL_CONDITION_DRIVEN_LABEL } from '../../constants/roleplay-studio.constants';
 
 const SPEC_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
@@ -38,12 +41,15 @@ describe('RehearsalService', () => {
   let savedRun: Record<string, any> | undefined;
   let mockRunRepo: Record<string, jest.Mock>;
   let mockTranscriptRepo: Record<string, jest.Mock>;
+  let mockProposalRepo: Record<string, jest.Mock>;
   let mockSpecService: Record<string, jest.Mock>;
-  let mockValidator: { validate: jest.Mock };
+  let mockValidator: { validate: jest.Mock; validateStructure: jest.Mock };
   let mockAiService: Record<string, jest.Mock>;
   let mockRedis: Record<string, jest.Mock>;
   let mockTestCaseRepo: { find: jest.Mock };
   let mockDataSource: { getRepository: jest.Mock };
+  let mockAutofill: { generateContentFromPrompt: jest.Mock };
+  let mockModuleRef: { get: jest.Mock };
 
   const specDocument = {
     language: { languageId: 7, languageCode: 'en-US' },
@@ -79,6 +85,7 @@ describe('RehearsalService', () => {
     };
     mockValidator = {
       validate: jest.fn().mockResolvedValue({ valid: true, errors: [] }),
+      validateStructure: jest.fn().mockReturnValue([]),
     };
     mockAiService = {
       triggerRoleplayRehearsalRun: jest.fn().mockResolvedValue(undefined),
@@ -88,14 +95,26 @@ describe('RehearsalService', () => {
       set: jest.fn().mockResolvedValue(undefined),
       del: jest.fn().mockResolvedValue(undefined),
     };
+    mockProposalRepo = {
+      historyForSpec: jest.fn().mockResolvedValue([]),
+      listByRehearsal: jest.fn().mockResolvedValue([]),
+      softDelete: jest.fn().mockResolvedValue({ affected: 0 }),
+      create: jest.fn((entity) => entity),
+      save: jest.fn(async (entity) => ({ id: 'prop-id', ...entity })),
+      findOne: jest.fn().mockResolvedValue(null),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
     mockTestCaseRepo = { find: jest.fn().mockResolvedValue([]) };
     mockDataSource = {
       getRepository: jest.fn(() => mockTestCaseRepo),
     };
+    mockAutofill = { generateContentFromPrompt: jest.fn() };
+    mockModuleRef = { get: jest.fn(() => mockAutofill) };
 
     service = new RehearsalService(
       mockRunRepo as unknown as RehearsalRunRepository,
       mockTranscriptRepo as unknown as RehearsalTranscriptRepository,
+      mockProposalRepo as unknown as CritiqueProposalRepository,
       mockSpecService as unknown as RoleplaySpecService,
       {
         compile: jest.fn((doc) => ({ compiled: true, doc })),
@@ -104,13 +123,17 @@ describe('RehearsalService', () => {
       {
         notifyUpdate: jest.fn(),
       } as unknown as RehearsalNotificationService,
+      new CritiqueEvidenceService(),
+      {
+        notifyRehearsalFinished: jest.fn(),
+      } as unknown as ImprovementHookService,
       mockAiService as unknown as AiService,
       mockRedis as unknown as RedisService,
       {
         roleplayStudio: { rehearsalTimeoutMinutes: BASE_TIMEOUT_MINUTES },
       } as unknown as AppConfigService,
       mockDataSource as unknown as DataSource,
-      { get: jest.fn() } as unknown as ModuleRef,
+      mockModuleRef as unknown as ModuleRef,
     );
   });
 
@@ -481,6 +504,153 @@ describe('RehearsalService', () => {
         expect.objectContaining({ id: RUN_ID }),
         expect.objectContaining({ status: RehearsalStatus.FAILED }),
       );
+    });
+  });
+
+  // ----------------------------------------------------------------- critique
+
+  describe('critiqueRehearsal — normalization + persistence', () => {
+    beforeEach(() => {
+      savedRun = {
+        id: RUN_ID,
+        specId: SPEC_ID,
+        specVersionId: VERSION_ID,
+        status: RehearsalStatus.COMPLETED,
+        createdBy: USER_ID,
+        results: { overall: 60, dimensions: {} },
+        reportMarkdown: '# report',
+        config: {},
+      };
+      mockSpecService.getVersionById = jest.fn().mockResolvedValue({
+        id: VERSION_ID,
+        specId: SPEC_ID,
+        spec: { title: 'Spec', openingStatement: 'Hello' },
+      });
+      mockTranscriptRepo.listByRun.mockResolvedValue([]);
+    });
+
+    const critique = () => service.critiqueRehearsal(RUN_ID, USER_ID);
+
+    it('normalizes all three LLM proposal shapes into flat ops + summary', async () => {
+      mockAutofill.generateContentFromPrompt.mockResolvedValue(
+        JSON.stringify({
+          proposals: [
+            {
+              // canonical flat shape
+              ops: [{ op: 'replace', path: '/openingStatement', value: 'A' }],
+              summary: 'flat',
+              rationale: 'r1',
+              targetSection: 'openingStatement',
+              severity: 'critical',
+            },
+            {
+              // legacy patch:{ops, summary}
+              patch: {
+                ops: [{ op: 'replace', path: '/openingStatement', value: 'B' }],
+                summary: 'nested',
+              },
+              rationale: 'r2',
+              targetSection: 'openingStatement',
+              severity: 'major',
+            },
+            {
+              // legacy patch: [...] + unknown severity → minor
+              patch: [{ op: 'replace', path: '/openingStatement', value: 'C' }],
+              rationale: 'r3',
+              targetSection: 'openingStatement',
+              severity: 'high',
+            },
+          ],
+        }),
+      );
+
+      const { proposals } = await critique();
+      expect(proposals).toHaveLength(3);
+      expect(proposals[0]).toEqual(
+        expect.objectContaining({ summary: 'flat', severity: 'critical' }),
+      );
+      expect(proposals[1]).toEqual(
+        expect.objectContaining({ summary: 'nested', severity: 'major' }),
+      );
+      expect(proposals[2].severity).toBe('minor');
+      for (const proposal of proposals) {
+        expect(Array.isArray(proposal.ops)).toBe(true);
+        expect(proposal.ops[0]).toEqual(
+          expect.objectContaining({ op: 'replace', path: '/openingStatement' }),
+        );
+      }
+    });
+
+    it('persists invalid-ops proposals as SKIPPED_INVALID and does not return them', async () => {
+      mockAutofill.generateContentFromPrompt.mockResolvedValue(
+        JSON.stringify({
+          proposals: [
+            {
+              ops: [{ op: 'replace', path: '/does/not/exist', value: 1 }],
+              summary: 'broken',
+              rationale: 'r',
+              targetSection: 'persona',
+              severity: 'major',
+            },
+            {
+              ops: [{ op: 'replace', path: '/openingStatement', value: 'ok' }],
+              summary: 'good',
+              rationale: 'r',
+              targetSection: 'openingStatement',
+              severity: 'minor',
+            },
+          ],
+        }),
+      );
+
+      const { proposals } = await critique();
+      expect(proposals).toHaveLength(1);
+      expect(proposals[0].summary).toBe('good');
+      const persisted = mockProposalRepo.save.mock.calls.map(
+        (call: any[]) => call[0],
+      );
+      expect(persisted).toHaveLength(2);
+      expect(
+        persisted.find((entity: any) => entity.summary === 'broken')?.status,
+      ).toBe('SKIPPED_INVALID');
+    });
+
+    it('renders evidence + proposal history into the prompt variables', async () => {
+      mockProposalRepo.historyForSpec.mockResolvedValue([
+        {
+          status: 'REJECTED',
+          severity: 'major',
+          targetSection: 'rubric',
+          summary: 'Previously rejected idea',
+        },
+      ]);
+      mockAutofill.generateContentFromPrompt.mockResolvedValue(
+        JSON.stringify({ proposals: [] }),
+      );
+
+      await critique();
+
+      const [, variables] =
+        mockAutofill.generateContentFromPrompt.mock.calls[0];
+      expect(variables.evidence).toBeDefined();
+      expect(variables.proposalHistory).toContain('Previously rejected idea');
+      expect(variables.proposalHistory).toContain('[REJECTED]');
+    });
+
+    it('400s when the rehearsal is not completed', async () => {
+      savedRun!.status = RehearsalStatus.IN_PROGRESS;
+      await expect(critique()).rejects.toThrow(BadRequestException);
+    });
+
+    it('drops proposals with no ops at all', async () => {
+      mockAutofill.generateContentFromPrompt.mockResolvedValue(
+        JSON.stringify({
+          proposals: [{ rationale: 'no ops here', severity: 'minor' }],
+        }),
+      );
+      const { proposals } = await critique();
+      expect(proposals).toHaveLength(0);
+      expect(mockProposalRepo.save).not.toHaveBeenCalled();
     });
   });
 });

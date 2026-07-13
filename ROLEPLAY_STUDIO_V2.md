@@ -113,6 +113,41 @@ on conflict. Findings feed `rehearsal_critique.txt` back in the copilot as accep
 The Actor and Director prompts (below) are used **verbatim** in rehearsal — that's the point:
 the harness tests the real runtime, not a stand-in.
 
+### Evidence-rich critique + persisted proposals
+
+The post-rehearsal critique is fed more than the judge summary: `CritiqueEvidenceService`
+condenses the stored transcripts + director traces (failed test cases in full, leak-window
+exchanges, state-path timelines, uncovered rubric behaviors) under a char budget, and the
+prompt also receives the spec's **proposal history** so the model never re-proposes a patch
+that was rejected or failed verification. Every proposal is normalized to flat RFC-6902 `ops`,
+pre-validated against the critiqued version (invalid → `SKIPPED_INVALID`), persisted to
+`roleplay_critique_proposals` with a predicted `expectedEffect` (dimensions/test cases it
+should move), and lifecycle-tracked: `PROPOSED → APPLIED/REJECTED → VERIFIED /
+FAILED_VERIFICATION` once a later rehearsal confirms or contradicts the prediction.
+
+### Flow 2b — AUTO-IMPROVE (autonomous iteration loop, in `ally-be`)
+
+`ImprovementOrchestratorService` closes the loop end-to-end: **rehearse → critique → apply the
+proposals to a scratch version lineage (`roleplay_spec_versions.source = auto_improve` — the
+trainer's draft is never touched mid-run) → re-rehearse**, advancing on rehearsal webhooks (a
+Redis TTL watchdog finishes a stalled run with its best-so-far). Stop conditions: targets met
+(deterministic-first — all selected agent test cases PASSED and no PASSED→FAILED flip vs the
+baseline round, then judged minimums with a ±5 noise band), the critic produces no new
+proposals (an ops-hash guard also hard-skips retried patches), or `maxRounds` (default 3).
+Intermediate rounds can run a **cheap targeted scope** (only the failing profiles/test cases);
+a cheap round that meets targets is re-verified at full scope before the loop stops. The
+trainer then reviews the score trajectory + cumulative diff (`GET
+/v1/roleplay-studio/improvement-runs/:id/diff`) and **accepts** (best version's spec is copied
+into the draft, `source = auto_improve_accepted`, guarded by an optimistic-concurrency token)
+or **discards**. Tables: `roleplay_improvement_runs`, `roleplay_improvement_rounds`; UI: the
+studio's *Improve* step (socket namespace `/roleplay-studio/improvements`).
+
+The copilot also sees rehearsal evidence directly: `get_rehearsal_findings` (scores + deltas
+vs the previous run + failing test cases + condensed evidence + proposal history) and
+`get_improvement_run_status` tools, plus a one-line "latest rehearsal" note in its system
+prompt; `suggest_test_cases` now emits a structured `test_case_suggestions` SSE frame the
+studio renders as accept-to-persist cards.
+
 ---
 
 ## Flow 3 — RUN (Actor + Director, in `ally-ai-learn`)
