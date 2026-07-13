@@ -375,8 +375,9 @@ export class CopilotOrchestratorService {
       if (awaiting) {
         lines.push(
           'An auto-improve run is AWAITING the trainer’s review ' +
-            `(outcome ${awaiting.outcome ?? 'unknown'}); they can accept or ` +
-            'discard it in the studio. Use get_improvement_run_status for detail.',
+            `(outcome ${awaiting.outcome ?? 'unknown'}). Summarize it in this chat and, ` +
+            'once the trainer decides, call resolve_improvement_run (accept or discard). ' +
+            'Use get_improvement_run_status for detail.',
         );
       }
       return lines.length > 0
