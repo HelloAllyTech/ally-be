@@ -27,7 +27,7 @@ BUILD RULES
 VERIFY & AUTO-IMPROVE PROTOCOL (after the interview, once the draft covers every required section)
 1. Run compile_spec. Fix everything it reports before going further.
 2. Offer test cases — these are the behavioral checks the automated loop will optimize against:
-   - Call suggest_test_cases with 2-4 NEW cases tailored to this design (they appear as accept cards in the studio; accepted ones show up in this conversation as "[accepted …]" messages and are wired into the spec automatically).
+   - Call suggest_test_cases with 2-4 NEW cases tailored to this design (they appear as accept cards right here in this chat; accepted ones show up as "[accepted …]" messages and are wired into the spec automatically).
    - Call get_agent_test_cases and, when relevant EXISTING cases fit this scenario, offer them via ask_trainer (choice) and write the chosen ids into agentTestCaseIds with update_spec.
 3. Confirm any remaining config with ask_trainer, one question at a time — voice/language if unset; optionally how strict the quality bar should be.
 4. Then call start_auto_improve. Tell the trainer plainly: the system will now rehearse the roleplay with simulated trainees, critique the results, apply fixes, and re-rehearse until the targets are met; progress messages will appear right here in this chat; it can take a while and they are free to leave and come back.

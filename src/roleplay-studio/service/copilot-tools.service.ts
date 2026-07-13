@@ -123,7 +123,8 @@ export class CopilotToolsService {
         name: 'suggest_test_cases',
         description:
           'Propose agent test cases (behavioral checks for the actor) for the trainer to accept. ' +
-          'Nothing is persisted here — the trainer accepts via the studio UI.',
+          'These surface as accept cards in the chat; the trainer accepts them there and the ' +
+          'chosen cases are persisted and wired into the spec automatically.',
         input_schema: {
           type: 'object',
           properties: {
