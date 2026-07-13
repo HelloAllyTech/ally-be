@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { LoggerService } from 'src/logger/logger.service';
@@ -50,8 +50,23 @@ export interface ToolExecutionContext {
  * the model can self-repair without touching the stored draft.
  */
 @Injectable()
-export class CopilotToolsService {
+export class CopilotToolsService implements OnModuleInit {
   private readonly logger = LoggerService.getInstance(CopilotToolsService.name);
+
+  /**
+   * Log the registered copilot tool names at boot. This is the unambiguous
+   * signal for which build is actually live: the chat-first build lists
+   * `start_auto_improve` and has no `propose_rehearsal`. If you ever see
+   * `propose_rehearsal` in a tool note, the running process predates the
+   * chat-first flow (stale dist/, old container, or wrong API target) — it
+   * is not this source.
+   */
+  onModuleInit(): void {
+    const names = this.getToolDefinitions().map((tool) => tool.name);
+    this.logger.info(
+      `Copilot tools registered (${names.length}): ${names.join(', ')}`,
+    );
+  }
 
   constructor(
     private readonly roleplaySpecService: RoleplaySpecService,
