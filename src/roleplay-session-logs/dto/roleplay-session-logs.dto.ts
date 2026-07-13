@@ -499,6 +499,16 @@ export class RoleplaySessionRunConfigDto {
   @ApiProperty({ nullable: true }) temperature!: number | null;
   @ApiProperty({ nullable: true }) topP!: number | null;
   @ApiProperty({ nullable: true }) maxTokens!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      "STT provider/model configured for the session's language " +
+      '(languages.sttProviderConfig) — config source, so it is shown for ' +
+      'every session regardless of per-call usage emission.',
+  })
+  sttProvider!: string | null;
+  @ApiProperty({ nullable: true }) sttModel!: string | null;
 }
 
 export class RoleplaySessionLogDetailDto extends RoleplaySessionLogRowDto {

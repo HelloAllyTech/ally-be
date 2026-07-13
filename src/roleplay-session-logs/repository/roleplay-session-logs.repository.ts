@@ -339,6 +339,8 @@ export class RoleplaySessionLogsRepository {
     temperature: number | null;
     topP: number | null;
     maxTokens: number | null;
+    sttProvider: string | null;
+    sttModel: string | null;
   } | null> {
     const rows = await this.dataSource.query(
       `SELECT
@@ -346,6 +348,8 @@ export class RoleplaySessionLogsRepository {
          sv."versionNumber"              AS scenario_version_number,
          sv."name"                       AS scenario_version_name,
          ss.metadata->'promptVersions'   AS prompt_versions,
+         lang."sttProviderConfig"->>'provider'          AS stt_provider,
+         lang."sttProviderConfig"->'config'->>'model'   AS stt_model,
          (SELECT mode() WITHIN GROUP (ORDER BY m."llmProvider")
             FROM scenario_session_turn_metrics m
             WHERE m."scenarioSessionId" = ss.id
@@ -368,6 +372,8 @@ export class RoleplaySessionLogsRepository {
               AND m.metadata->>'maxTokens' IS NOT NULL)        AS max_tokens
        FROM scenario_sessions ss
        LEFT JOIN scenario_versions sv ON sv.id = ss."scenarioVersionId"
+       LEFT JOIN languages lang
+         ON lang.id = NULLIF(ss.metadata->>'languageId', '')::int
        WHERE ss.id = $1`,
       [id],
     );
@@ -392,6 +398,8 @@ export class RoleplaySessionLogsRepository {
       temperature: num(r.temperature),
       topP: num(r.top_p),
       maxTokens: num(r.max_tokens),
+      sttProvider: r.stt_provider ?? null,
+      sttModel: r.stt_model ?? null,
     };
   }
 
