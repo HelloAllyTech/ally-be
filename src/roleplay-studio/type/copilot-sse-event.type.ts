@@ -11,6 +11,7 @@ export type CopilotSseEventName =
   | 'tool_result'
   | 'spec_patch'
   | 'question'
+  | 'test_case_suggestions'
   | 'error'
   | 'done';
 
@@ -45,6 +46,21 @@ export interface CopilotQuestionEvent {
   prompt: string;
   kind: 'freeText' | 'choice';
   options?: string[];
+}
+
+export interface CopilotTestCaseSuggestion {
+  id: string;
+  title: string;
+  category?: string | null;
+  description?: string | null;
+  condition?: string | null;
+  test?: string | null;
+}
+
+/** Structured suggest_test_cases payload — accepted cards persist into the
+ *  agent_test_cases catalog via the existing learn endpoint. */
+export interface CopilotTestCaseSuggestionsEvent {
+  suggestions: CopilotTestCaseSuggestion[];
 }
 
 export interface CopilotErrorEvent {

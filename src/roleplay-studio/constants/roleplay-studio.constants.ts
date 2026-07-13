@@ -45,6 +45,20 @@ export const REHEARSAL_MAX_UNITS = 12;
 // member — profile selection stays SKILLED/POOR/ADVERSARIAL only.
 export const REHEARSAL_CONDITION_DRIVEN_LABEL = 'CONDITION_DRIVEN';
 
+// Auto-improve loop: redis watchdog prefix (shares the rehearsal timer's
+// keyspace-expiry subscription; the handler branches on prefix).
+export const IMPROVEMENT_REDIS_KEY_PREFIX = 'roleplay-improvement';
+export const IMPROVEMENT_DEFAULT_MAX_ROUNDS = 3;
+export const IMPROVEMENT_MAX_ROUNDS_LIMIT = 6;
+// Default stop targets — deterministic gate (all test cases pass) first;
+// judged overall as the secondary bar.
+export const IMPROVEMENT_DEFAULT_TARGETS = {
+  minOverall: 70,
+  requireAllTestCasesPass: true,
+} as const;
+// Verification tolerance for a proposal's predicted dimension movement.
+export const IMPROVEMENT_VERIFICATION_TOLERANCE = 3;
+
 // Spec structural bounds (FROZEN contract).
 export const SPEC_MIN_STATES = 3;
 export const SPEC_MAX_STATES = 6;

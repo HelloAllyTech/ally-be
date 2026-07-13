@@ -79,6 +79,17 @@ describe('CopilotOrchestratorService', () => {
       getSpec: jest.fn().mockResolvedValue({ id: 'spec-1', draftSpec: {} }),
     } as any;
     const llmUsage = { record: usageRecord } as any;
+    const rehearsalRunRepository = {
+      createQueryBuilder: jest.fn(() => ({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        getOne: jest.fn().mockResolvedValue(null),
+      })),
+    } as any;
+    const improvementRunRepository = {
+      findAwaitingReview: jest.fn().mockResolvedValue(null),
+    } as any;
 
     service = new CopilotOrchestratorService(
       configService,
@@ -86,6 +97,8 @@ describe('CopilotOrchestratorService', () => {
       copilotSessionService,
       copilotToolsService,
       copilotMessageRepository,
+      rehearsalRunRepository,
+      improvementRunRepository,
       roleplaySpecService,
       llmUsage,
     );

@@ -22,6 +22,9 @@ import { RehearsalStatus } from '../enum/rehearsal-status.enum';
 @Index('idx_rehearsal_runs_spec_version_id', ['specVersionId'], {
   where: '"deletedAt" IS NULL',
 })
+@Index('idx_rehearsal_runs_improvement_round_id', ['improvementRoundId'], {
+  where: '"deletedAt" IS NULL',
+})
 export class RehearsalRun extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -61,6 +64,10 @@ export class RehearsalRun extends BaseWithoutTenantEntity {
 
   @Column({ type: 'timestamp', nullable: true })
   endedAt?: Date | null;
+
+  /** Set when this rehearsal belongs to an auto-improve loop round. */
+  @Column({ type: 'uuid', nullable: true })
+  improvementRoundId?: string | null;
 
   @Column({ type: 'int' })
   createdBy!: number;

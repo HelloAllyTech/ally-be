@@ -16,15 +16,22 @@ import { SuccessResponse } from 'src/common/type/common.type';
 import { TIME } from 'src/common/constants/time.constants';
 import { AnthropicAutofillService } from 'src/learn/service/anthropic-autofill.service';
 import { RehearsalRun } from '../entity/rehearsal-run.entity';
+import { CritiqueProposal } from '../entity/critique-proposal.entity';
 import { RehearsalStatus } from '../enum/rehearsal-status.enum';
+import { CritiqueProposalStatus } from '../enum/critique-proposal-status.enum';
 import { RehearsalRunRepository } from '../repository/rehearsal-run.repository';
 import { RehearsalTranscriptRepository } from '../repository/rehearsal-transcript.repository';
+import { CritiqueProposalRepository } from '../repository/critique-proposal.repository';
 import { RoleplaySpecService } from './roleplay-spec.service';
 import { SpecCompilerService } from './spec-compiler.service';
 import { SpecValidatorService } from './spec-validator.service';
 import { RehearsalNotificationService } from './rehearsal-notification.service';
+import { CritiqueEvidenceService } from './critique-evidence.service';
+import { ImprovementHookService } from './improvement-hook.service';
+import { applyJsonPatch, JsonPatchOp } from '../util/json-patch.util';
 import {
   CreateRehearsalDto,
+  UpdateCritiqueProposalStatusDto,
   UpdateRehearsalWebhookDto,
 } from '../dto/rehearsal.dto';
 import {
@@ -53,10 +60,13 @@ export class RehearsalService {
   constructor(
     private readonly rehearsalRunRepository: RehearsalRunRepository,
     private readonly rehearsalTranscriptRepository: RehearsalTranscriptRepository,
+    private readonly critiqueProposalRepository: CritiqueProposalRepository,
     private readonly roleplaySpecService: RoleplaySpecService,
     private readonly specCompiler: SpecCompilerService,
     private readonly specValidator: SpecValidatorService,
     private readonly rehearsalNotificationService: RehearsalNotificationService,
+    private readonly critiqueEvidenceService: CritiqueEvidenceService,
+    private readonly improvementHookService: ImprovementHookService,
     private readonly aiService: AiService,
     private readonly redisService: RedisService,
     private readonly configService: AppConfigService,
@@ -81,6 +91,7 @@ export class RehearsalService {
     specVersionId: string,
     dto: CreateRehearsalDto,
     userId: number,
+    options: { improvementRoundId?: string } = {},
   ): Promise<RehearsalRun> {
     const spec = await this.roleplaySpecService.getSpec(specId);
     const version = await this.roleplaySpecService.getVersion(
@@ -146,6 +157,7 @@ export class RehearsalService {
         specVersionId: version.id,
         status: RehearsalStatus.STARTED,
         config,
+        improvementRoundId: options.improvementRoundId ?? null,
         createdBy: userId,
         updatedBy: userId,
       }),
@@ -259,6 +271,25 @@ export class RehearsalService {
       });
       await this.redisService.del(`${REHEARSAL_REDIS_KEY_PREFIX}:${run.id}`);
       this.rehearsalNotificationService.notifyUpdate(run.createdBy, run.id);
+      await this.notifyImprovementLoop(run.id);
+    }
+  }
+
+  /** Hand a just-ended run to the auto-improve loop (no-op for standalone runs). */
+  private async notifyImprovementLoop(rehearsalId: string): Promise<void> {
+    try {
+      const run = await this.rehearsalRunRepository.findOne({
+        where: { id: rehearsalId },
+      });
+      if (run?.improvementRoundId) {
+        this.improvementHookService.notifyRehearsalFinished(run);
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to notify improvement loop for rehearsal ${rehearsalId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -326,6 +357,7 @@ export class RehearsalService {
     await this.aiService.triggerRoleplayRehearsalCancel(rehearsalId);
 
     this.rehearsalNotificationService.notifyUpdate(run.createdBy, rehearsalId);
+    await this.notifyImprovementLoop(rehearsalId);
     return { success: true };
   }
 
@@ -383,6 +415,15 @@ export class RehearsalService {
     }
 
     this.rehearsalNotificationService.notifyUpdate(run.createdBy, rehearsalId);
+    // Only a REAL transition into an end status advances the loop — a locked
+    // (already-ended) run's late webhook must not re-fire the hook.
+    if (
+      !statusLocked &&
+      updatePayload.status !== undefined &&
+      REHEARSAL_END_STATUSES.includes(updatePayload.status)
+    ) {
+      await this.notifyImprovementLoop(rehearsalId);
+    }
     return this.getRehearsal(rehearsalId);
   }
 
@@ -452,19 +493,36 @@ export class RehearsalService {
   // --------------------------------------------------------------- critique
 
   /**
-   * Post-rehearsal critique: renders the rehearsal_critique prompt with the
-   * spec + judge results + report and returns
-   * { proposals: [{ patch, rationale, targetSection, severity }] }.
+   * Post-rehearsal critique. Renders the rehearsal_critique prompt with the
+   * spec + judge results + report + condensed transcript evidence + the
+   * spec's prior-proposal history, then normalizes and pre-validates every
+   * proposal and persists the batch as roleplay_critique_proposals rows.
+   *
+   * Proposals whose ops fail to apply or produce a structurally invalid spec
+   * are persisted as SKIPPED_INVALID and not returned — callers only ever see
+   * patches that are guaranteed to apply cleanly to this version's document.
    */
   async critiqueRehearsal(
     rehearsalId: string,
-  ): Promise<{ proposals: Record<string, any>[] }> {
+    userId: number,
+    options: { improvementRunId?: string; roundNumber?: number } = {},
+  ): Promise<{ proposals: CritiqueProposal[] }> {
     const run = await this.getRehearsal(rehearsalId);
     if (run.status !== RehearsalStatus.COMPLETED) {
       throw new BadRequestException('Critique requires a completed rehearsal');
     }
     const version = await this.roleplaySpecService.getVersionById(
       run.specVersionId,
+    );
+    const transcripts =
+      await this.rehearsalTranscriptRepository.listByRun(rehearsalId);
+    const evidence = this.critiqueEvidenceService.buildEvidence(
+      run,
+      transcripts,
+      version.spec,
+    );
+    const history = await this.critiqueProposalRepository.historyForSpec(
+      run.specId,
     );
 
     const anthropicAutofillService = this.moduleRef.get(
@@ -477,6 +535,8 @@ export class RehearsalService {
         spec: JSON.stringify(version.spec, null, 2),
         results: JSON.stringify(run.results ?? {}, null, 2),
         reportMarkdown: run.reportMarkdown ?? '(no report)',
+        evidence,
+        proposalHistory: this.renderProposalHistory(history),
       },
       true, // expectJson
     );
@@ -492,9 +552,166 @@ export class RehearsalService {
         'Critique model returned invalid JSON; try again',
       );
     }
+    const rawProposals = Array.isArray(parsed.proposals)
+      ? parsed.proposals
+      : [];
+
+    // Re-critique replaces prior UNDECIDED proposals for this run; decided
+    // ones (applied/rejected/verified/…) are the audit trail and stay.
+    await this.critiqueProposalRepository.softDelete({
+      rehearsalRunId: rehearsalId,
+      status: CritiqueProposalStatus.PROPOSED,
+    });
+
+    const saved: CritiqueProposal[] = [];
+    for (const rawProposal of rawProposals) {
+      const normalized = this.normalizeProposal(rawProposal);
+      if (!normalized) continue;
+      const status = this.validateProposalOps(version.spec, normalized.ops)
+        ? CritiqueProposalStatus.PROPOSED
+        : CritiqueProposalStatus.SKIPPED_INVALID;
+      const row = await this.critiqueProposalRepository.save(
+        this.critiqueProposalRepository.create({
+          rehearsalRunId: rehearsalId,
+          specVersionId: version.id,
+          improvementRunId: options.improvementRunId ?? null,
+          roundNumber: options.roundNumber ?? null,
+          ...normalized,
+          status,
+          createdBy: userId,
+          updatedBy: userId,
+        }),
+      );
+      if (status === CritiqueProposalStatus.PROPOSED) {
+        saved.push(row);
+      }
+    }
+    return { proposals: saved };
+  }
+
+  /**
+   * Accept whatever proposal shape the LLM produced — canonical flat `ops`,
+   * legacy `patch: {ops, summary}`, or legacy `patch: [...]` — and return the
+   * canonical row fields. Unknown severity coerces to "minor".
+   */
+  private normalizeProposal(raw: Record<string, any>): {
+    ops: JsonPatchOp[];
+    summary: string;
+    rationale: string;
+    targetSection: string;
+    severity: string;
+    expectedEffect: Record<string, any> | null;
+  } | null {
+    const ops: unknown = Array.isArray(raw.ops)
+      ? raw.ops
+      : Array.isArray(raw.patch?.ops)
+        ? raw.patch.ops
+        : Array.isArray(raw.patch)
+          ? raw.patch
+          : null;
+    if (!Array.isArray(ops) || ops.length === 0) return null;
+
+    const severityRaw = String(raw.severity ?? '').toLowerCase();
+    const severity = ['critical', 'major', 'minor'].includes(severityRaw)
+      ? severityRaw
+      : 'minor';
+    const summary = String(
+      raw.summary ?? raw.patch?.summary ?? 'Spec edit',
+    ).slice(0, 250);
+
+    const expectedEffect =
+      raw.expectedEffect && typeof raw.expectedEffect === 'object'
+        ? {
+            dimensions: Array.isArray(raw.expectedEffect.dimensions)
+              ? raw.expectedEffect.dimensions
+              : [],
+            testCases: Array.isArray(raw.expectedEffect.testCases)
+              ? raw.expectedEffect.testCases
+              : [],
+          }
+        : null;
+
     return {
-      proposals: Array.isArray(parsed.proposals) ? parsed.proposals : [],
+      ops: ops as JsonPatchOp[],
+      summary,
+      rationale: String(raw.rationale ?? ''),
+      targetSection: String(raw.targetSection ?? 'spec'),
+      severity,
+      expectedEffect,
     };
+  }
+
+  /** True when the ops apply cleanly AND the result passes structural validation. */
+  private validateProposalOps(
+    specDocument: Record<string, any>,
+    ops: JsonPatchOp[],
+  ): boolean {
+    try {
+      const next = applyJsonPatch(specDocument, ops);
+      const blocking = this.specValidator
+        .validateStructure(next)
+        .filter((issue) => issue.code !== 'required');
+      return blocking.length === 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /** One line per prior proposal — the prompt's oscillation guard. */
+  private renderProposalHistory(history: CritiqueProposal[]): string {
+    if (history.length === 0) return '(none)';
+    return history
+      .slice(-40) // most recent 40 keep the prompt bounded
+      .map(
+        (proposal) =>
+          `- [${proposal.status}] (${proposal.severity}, ${proposal.targetSection}) ${proposal.summary}`,
+      )
+      .join('\n');
+  }
+
+  // ---------------------------------------------------- proposal lifecycle
+
+  async listProposals(rehearsalId: string): Promise<CritiqueProposal[]> {
+    await this.getRehearsal(rehearsalId);
+    return this.critiqueProposalRepository.listByRehearsal(rehearsalId);
+  }
+
+  /**
+   * Record the trainer's interactive accept/reject (the web applies accepted
+   * ops locally via the spec slice; this endpoint keeps the audit trail and
+   * the critique history accurate).
+   */
+  async updateProposalStatus(
+    proposalId: string,
+    dto: UpdateCritiqueProposalStatusDto,
+    userId: number,
+  ): Promise<CritiqueProposal> {
+    const proposal = await this.critiqueProposalRepository.findOne({
+      where: { id: proposalId },
+    });
+    if (!proposal) {
+      throw new NotFoundException('Critique proposal not found');
+    }
+    if (proposal.status !== CritiqueProposalStatus.PROPOSED) {
+      throw new BadRequestException(
+        `Proposal is already ${proposal.status.toLowerCase()}`,
+      );
+    }
+    const status =
+      dto.status === 'applied'
+        ? CritiqueProposalStatus.APPLIED
+        : CritiqueProposalStatus.REJECTED;
+    await this.critiqueProposalRepository.update(proposalId, {
+      status,
+      appliedInVersionId:
+        status === CritiqueProposalStatus.APPLIED
+          ? (dto.appliedInVersionId ?? null)
+          : null,
+      updatedBy: userId,
+    });
+    return (await this.critiqueProposalRepository.findOne({
+      where: { id: proposalId },
+    }))!;
   }
 
   // ---------------------------------------------------------------- timeouts
@@ -533,6 +750,7 @@ export class RehearsalService {
         run.createdBy,
         rehearsalId,
       );
+      await this.notifyImprovementLoop(rehearsalId);
     }
   }
 }

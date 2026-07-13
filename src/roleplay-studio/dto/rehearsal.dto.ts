@@ -63,6 +63,24 @@ export class CreateRehearsalDto {
   judgeModel?: string;
 }
 
+export class UpdateCritiqueProposalStatusDto {
+  @ApiPropertyOptional({
+    description:
+      "Trainer decision: 'applied' (ops were folded into the draft) or 'rejected'",
+    enum: ['applied', 'rejected'],
+  })
+  @IsString()
+  @IsEnum(['applied', 'rejected'] as const)
+  status!: 'applied' | 'rejected';
+
+  @ApiPropertyOptional({
+    description: 'Spec version that includes the applied ops (accept path)',
+  })
+  @IsOptional()
+  @IsUUID()
+  appliedInVersionId?: string;
+}
+
 /**
  * FROZEN ai-learn → ally-be webhook body
  * (PATCH /v1/roleplay-studio/rehearsals/webhook/:rehearsalId, x-api-key).

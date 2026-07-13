@@ -278,21 +278,14 @@ export class RoleplaySpecService {
       try {
         return await this.dataSource.transaction(async (em) => {
           const specRepo = em.getRepository(RoleplaySpec);
-          const versionRepo = em.getRepository(RoleplaySpecVersion);
 
-          const versionNumber =
-            await this.specVersionRepository.getNextVersionNumber(spec.id, em);
-          const version = await versionRepo.save(
-            versionRepo.create({
-              specId: spec.id,
-              versionNumber,
-              spec: nextDraft,
-              status: RoleplaySpecVersionStatus.DRAFT,
-              source,
-              patchId: patchId ?? null,
-              createdBy: userId,
-              updatedBy: userId,
-            }),
+          const version = await this.insertVersionSnapshot(
+            em,
+            spec.id,
+            nextDraft,
+            userId,
+            source,
+            patchId,
           );
 
           await specRepo.update(spec.id, {
@@ -316,6 +309,60 @@ export class RoleplaySpecService {
         throw error;
       }
     }
+  }
+
+  /**
+   * Versions-only sibling of persistDraftMutation for the auto-improve loop:
+   * appends an immutable snapshot WITHOUT touching roleplay_specs.draftSpec —
+   * the trainer's working draft stays theirs until they accept the result.
+   */
+  async appendVersionSnapshot(
+    specId: string,
+    specDocument: Partial<RoleplaySpecDocument>,
+    userId: number,
+    source: RoleplaySpecVersionSource,
+  ): Promise<RoleplaySpecVersion> {
+    const MAX_ATTEMPTS = 3;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await this.dataSource.transaction((em) =>
+          this.insertVersionSnapshot(em, specId, specDocument, userId, source),
+        );
+      } catch (error) {
+        if (attempt < MAX_ATTEMPTS && isDuplicateKeyException(error)) {
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
+  /** Shared version-row insert (inside the caller's transaction). */
+  private async insertVersionSnapshot(
+    em: EntityManager,
+    specId: string,
+    specDocument: Partial<RoleplaySpecDocument>,
+    userId: number,
+    source: RoleplaySpecVersionSource,
+    patchId?: string,
+  ): Promise<RoleplaySpecVersion> {
+    const versionRepo = em.getRepository(RoleplaySpecVersion);
+    const versionNumber = await this.specVersionRepository.getNextVersionNumber(
+      specId,
+      em,
+    );
+    return versionRepo.save(
+      versionRepo.create({
+        specId,
+        versionNumber,
+        spec: specDocument,
+        status: RoleplaySpecVersionStatus.DRAFT,
+        source,
+        patchId: patchId ?? null,
+        createdBy: userId,
+        updatedBy: userId,
+      }),
+    );
   }
 
   // -------------------------------------------------------------- versions

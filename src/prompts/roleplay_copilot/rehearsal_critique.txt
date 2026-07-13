@@ -19,6 +19,13 @@ Agent test cases: when the results JSON carries test_case_results, each entry is
 
 Ground every proposal in evidence: cite the profile and moment ("ADVERSARIAL turn 6 extracted the affair secret while still in Guarded") from the report/transcripts. Propose the SMALLEST patch that fixes the diagnosis. 2-6 proposals, ordered by severity. Severity: "critical" (design fails its purpose), "major" (noticeably wrong difficulty/leakage), "minor" (polish).
 
+For every proposal, also predict its effect in expectedEffect:
+- dimensions: which of the four dimensions the patch should move, and in which direction ("increase" is almost always the goal).
+- testCases: for each affected agent test case (use its test_case_id from the results), the verdict you expect after the fix (normally "PASSED").
+Only list metrics the patch genuinely targets — the prediction is CHECKED against the next rehearsal, and a wrong prediction marks the proposal failed-verification. An empty expectedEffect is allowed for pure-polish patches.
+
+Previously attempted proposals for this spec are listed below with their outcome status. Do NOT re-propose ops equivalent to a proposal marked REJECTED (the trainer declined it) or FAILED_VERIFICATION (it was tried and did not produce its predicted effect). Build on VERIFIED proposals rather than undoing them, unless the evidence says a verified change overshot.
+
 Spec (JSON):
 {{spec}}
 
@@ -28,14 +35,25 @@ Judge results (JSON):
 Rehearsal report:
 {{reportMarkdown}}
 
+Condensed transcript & director-trace evidence:
+{{evidence}}
+
+Previously attempted proposals (with outcomes):
+{{proposalHistory}}
+
 Output strict JSON only — no code fences, no commentary:
 {
   "proposals": [
     {
-      "patch": { "ops": [ { "op": "add | replace | remove", "path": "<json pointer>", "value": <any> } ], "summary": "<one line>" },
+      "ops": [ { "op": "add | replace | remove", "path": "<json pointer>", "value": <any> } ],
+      "summary": "<one line>",
       "rationale": "<evidence-grounded reason, citing profile + moment>",
       "targetSection": "<persona | stateMachine | disclosureLedger | rubric | engineeredEvents | openingStatement | difficulty>",
-      "severity": "critical | major | minor"
+      "severity": "critical | major | minor",
+      "expectedEffect": {
+        "dimensions": [ { "name": "<persona_consistency | disclosure_discipline | difficulty_calibration | rubric_coverage>", "direction": "increase | decrease" } ],
+        "testCases": [ { "id": "<test_case_id>", "expectedVerdict": "PASSED | FAILED | INCONCLUSIVE" } ]
+      }
     }
   ]
 }
