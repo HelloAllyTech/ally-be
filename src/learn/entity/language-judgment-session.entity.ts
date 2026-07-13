@@ -73,6 +73,13 @@ export class LanguageJudgmentSession extends BaseEntity {
   @Column({ nullable: true })
   llmProvider?: string;
 
+  /** TTS voice the session used (the round-trip-WER experiment axis). */
+  @Column({ nullable: true })
+  voiceId?: string;
+
+  @Column({ nullable: true })
+  voiceName?: string;
+
   /** Headline prompts_versions version the session ran with. */
   @Column({ nullable: true })
   promptVersion?: string;

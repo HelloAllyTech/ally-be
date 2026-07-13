@@ -357,6 +357,33 @@ export class LanguageAnalyticsRepository {
     );
   }
 
+  /**
+   * Round-trip WER averaged per TTS voice — the TTS experiment axis (voice is
+   * what round-trip WER isolates). Only sessions with a measured WER count.
+   */
+  async roundTripWerByVoice(f: LanguageAnalyticsFilters): Promise<
+    Array<{
+      voice_id: string | null;
+      voice_name: string | null;
+      sessions: string;
+      avg_wer: string | null;
+    }>
+  > {
+    const params: unknown[] = [];
+    const where = this.sessionWhere(f, params);
+    return this.dataSource.query(
+      `SELECT s."voiceId" AS voice_id,
+              s."voiceName" AS voice_name,
+              COUNT(*) FILTER (WHERE s."roundTripWerPct" IS NOT NULL) AS sessions,
+              AVG(s."roundTripWerPct") AS avg_wer
+         FROM language_judgment_sessions s
+        WHERE ${where} AND s."roundTripWerPct" IS NOT NULL
+        GROUP BY s."voiceId", s."voiceName"
+        ORDER BY avg_wer DESC NULLS LAST`,
+      params,
+    );
+  }
+
   /** Recent annotations for the error-log table (deep-links to session logs). */
   async errorLog(
     f: LanguageAnalyticsFilters,

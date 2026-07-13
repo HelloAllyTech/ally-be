@@ -337,6 +337,16 @@ export class LanguageLayerTrendPointDto {
   @ApiProperty() weightedRatePer100!: number;
 }
 
+export class LanguageWerByVoiceDto {
+  @ApiProperty({ nullable: true }) voiceId!: string | null;
+  @ApiProperty({ nullable: true, description: 'Display name of the TTS voice' })
+  voiceName!: string | null;
+  @ApiProperty({ description: 'Sessions with a measured round-trip WER' })
+  sessions!: number;
+  @ApiProperty({ description: 'Average round-trip WER/CER % for this voice' })
+  avgRoundTripWerPct!: number;
+}
+
 export class LanguageObjectiveMetricsDto {
   @ApiProperty({
     nullable: true,
@@ -415,6 +425,14 @@ export class LanguageQualityResponseDto {
 
   @ApiProperty({ type: [LanguageRateByExperimentDto] })
   rateByModel!: LanguageRateByExperimentDto[];
+
+  @ApiProperty({
+    type: [LanguageWerByVoiceDto],
+    description:
+      'Round-trip WER per TTS voice — the TTS experiment axis. Empty until ' +
+      'round-trip WER is measured (Phase 2 / ASR available).',
+  })
+  werByVoice!: LanguageWerByVoiceDto[];
 
   @ApiProperty({
     type: LanguageEvalReferenceDto,

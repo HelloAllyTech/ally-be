@@ -26,6 +26,8 @@ export interface LanguageSessionRow {
   /** scenario_voices row the session used (round-trip TTS resolution). */
   tts_provider: string | null;
   tts_voice_config: Record<string, any> | null;
+  voice_id: string | null;
+  voice_name: string | null;
 }
 
 /** One per-turn judgment as returned by the ally-ai language judge (snake_case). */
@@ -108,6 +110,8 @@ export class LanguageJudgeRepository {
              l."evalConfig"     AS eval_config,
              v.provider         AS tts_provider,
              v.config           AS tts_voice_config,
+             NULLIF(s.metadata->>'voiceId', '') AS voice_id,
+             v.name             AS voice_name,
              sc.prompt          AS persona,
              sc.engine          AS engine,
              s.metadata->'promptVersions' AS prompt_versions,
@@ -190,8 +194,8 @@ export class LanguageJudgeRepository {
            "droppedAnnotations", "language", "scenarioId", "scenarioVersionId",
            "engine", "llmModel", "llmProvider", "promptVersion", "occurredAt",
            "judgeModel", "judgePromptVersion", "scriptFidelityPct",
-           "roundTripWerPct"
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+           "roundTripWerPct", "voiceId", "voiceName"
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
          ON CONFLICT ("scenarioSessionId", "judgeModel", "judgePromptVersion")
          DO UPDATE SET
            "turnsJudged" = EXCLUDED."turnsJudged",
@@ -207,6 +211,8 @@ export class LanguageJudgeRepository {
            "occurredAt" = EXCLUDED."occurredAt",
            "scriptFidelityPct" = EXCLUDED."scriptFidelityPct",
            "roundTripWerPct" = EXCLUDED."roundTripWerPct",
+           "voiceId" = EXCLUDED."voiceId",
+           "voiceName" = EXCLUDED."voiceName",
            "updatedAt" = now()
          RETURNING id`,
         [
@@ -227,6 +233,8 @@ export class LanguageJudgeRepository {
           judgePromptVersion,
           objective?.scriptFidelityPct ?? null,
           objective?.roundTripWerPct ?? null,
+          session.voice_id,
+          session.voice_name,
         ],
       );
       const judgmentId: string = rows[0].id;

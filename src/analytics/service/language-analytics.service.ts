@@ -173,6 +173,7 @@ export class LanguageAnalyticsService {
       rateByScenarioVersion: [],
       rateByPromptVersion: [],
       rateByModel: [],
+      werByVoice: [],
       reference: null,
       deltaByDimension: [],
     };
@@ -200,6 +201,7 @@ export class LanguageAnalyticsService {
       byPromptVersion,
       byModel,
       reference,
+      werByVoiceRows,
     ] = await Promise.all([
       this.repo.sessionTotalsByLanguage(filters),
       this.repo.annotationCounts(filters),
@@ -212,6 +214,7 @@ export class LanguageAnalyticsService {
       this.byExperiment(filters, 'promptVersion'),
       this.byExperiment(filters, 'llmModel'),
       this.repo.getPinnedReference(),
+      this.repo.roundTripWerByVoice(filters),
     ]);
 
     // changed_from_prev (FR18): name the config element(s) each scenario
@@ -496,6 +499,12 @@ export class LanguageAnalyticsService {
       rateByScenarioVersion,
       rateByPromptVersion: byPromptVersion,
       rateByModel: byModel,
+      werByVoice: werByVoiceRows.map((r) => ({
+        voiceId: r.voice_id,
+        voiceName: r.voice_name,
+        sessions: Number(r.sessions),
+        avgRoundTripWerPct: round2(Number(r.avg_wer)),
+      })),
       reference,
       deltaByDimension,
       isolationBasisBreakdown: isolation
