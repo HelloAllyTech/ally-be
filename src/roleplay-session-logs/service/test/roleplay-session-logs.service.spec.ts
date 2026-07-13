@@ -52,6 +52,7 @@ describe('RoleplaySessionLogsService', () => {
       }),
       findLanguageJudgment: jest.fn().mockResolvedValue(null),
       findDriftJudgment: jest.fn().mockResolvedValue(null),
+      findRunConfig: jest.fn().mockResolvedValue(null),
     } as unknown as jest.Mocked<RoleplaySessionLogsRepository>;
 
     s3Service = {

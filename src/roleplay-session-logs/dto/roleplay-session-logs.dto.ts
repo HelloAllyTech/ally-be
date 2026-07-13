@@ -472,7 +472,45 @@ export class RoleplaySessionDriftDto {
   turns!: RoleplaySessionDriftTurnDto[];
 }
 
+export class RoleplaySessionScenarioVersionDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({ nullable: true }) versionNumber!: number | null;
+  @ApiProperty({ nullable: true }) name!: string | null;
+}
+
+export class RoleplaySessionRunConfigDto {
+  @ApiProperty({
+    type: RoleplaySessionScenarioVersionDto,
+    nullable: true,
+    description: 'The scenario/metadata version this session ran against',
+  })
+  scenarioVersion!: RoleplaySessionScenarioVersionDto | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Prompt versions the session ran with, as {promptCode: version} ' +
+      '(captured at session start). null when not recorded.',
+  })
+  promptVersions!: Record<string, unknown> | null;
+
+  @ApiProperty({ nullable: true }) llmProvider!: string | null;
+  @ApiProperty({ nullable: true }) llmModel!: string | null;
+  @ApiProperty({ nullable: true }) temperature!: number | null;
+  @ApiProperty({ nullable: true }) topP!: number | null;
+  @ApiProperty({ nullable: true }) maxTokens!: number | null;
+}
+
 export class RoleplaySessionLogDetailDto extends RoleplaySessionLogRowDto {
+  @ApiProperty({
+    type: RoleplaySessionRunConfigDto,
+    nullable: true,
+    description:
+      'The configuration this session ran under (prompt versions, scenario ' +
+      'version, effective LLM settings). Read from capture at generation time.',
+  })
+  runConfig!: RoleplaySessionRunConfigDto | null;
+
   @ApiProperty({
     type: RoleplaySessionDriftDto,
     nullable: true,

@@ -318,6 +318,83 @@ export class RoleplaySessionLogsRepository {
     return row?.summary ?? null;
   }
 
+  /**
+   * The configuration a session actually ran under (PRD FR15) — the prompt
+   * versions, scenario/metadata version, and the effective LLM settings
+   * (provider/model/generation params). All of this was captured at generation
+   * time: prompt versions + scenario version on scenario_sessions, and
+   * provider/model + gen params on scenario_session_turn_metrics. Read-only;
+   * nothing new is recorded. Effective LLM values use mode() across the
+   * session's turns (constant per session in practice; mode is robust if not).
+   */
+  async findRunConfig(id: string): Promise<{
+    scenarioVersion: {
+      id: string;
+      versionNumber: number | null;
+      name: string | null;
+    } | null;
+    promptVersions: Record<string, unknown> | null;
+    llmProvider: string | null;
+    llmModel: string | null;
+    temperature: number | null;
+    topP: number | null;
+    maxTokens: number | null;
+  } | null> {
+    const rows = await this.dataSource.query(
+      `SELECT
+         ss."scenarioVersionId"          AS scenario_version_id,
+         sv."versionNumber"              AS scenario_version_number,
+         sv."name"                       AS scenario_version_name,
+         ss.metadata->'promptVersions'   AS prompt_versions,
+         (SELECT mode() WITHIN GROUP (ORDER BY m."llmProvider")
+            FROM scenario_session_turn_metrics m
+            WHERE m."scenarioSessionId" = ss.id
+              AND m."llmProvider" IS NOT NULL)                 AS llm_provider,
+         (SELECT mode() WITHIN GROUP (ORDER BY m."llmModel")
+            FROM scenario_session_turn_metrics m
+            WHERE m."scenarioSessionId" = ss.id
+              AND m."llmModel" IS NOT NULL)                    AS llm_model,
+         (SELECT mode() WITHIN GROUP (ORDER BY (m.metadata->>'temperature'))
+            FROM scenario_session_turn_metrics m
+            WHERE m."scenarioSessionId" = ss.id
+              AND m.metadata->>'temperature' IS NOT NULL)      AS temperature,
+         (SELECT mode() WITHIN GROUP (ORDER BY (m.metadata->>'topP'))
+            FROM scenario_session_turn_metrics m
+            WHERE m."scenarioSessionId" = ss.id
+              AND m.metadata->>'topP' IS NOT NULL)             AS top_p,
+         (SELECT mode() WITHIN GROUP (ORDER BY (m.metadata->>'maxTokens'))
+            FROM scenario_session_turn_metrics m
+            WHERE m."scenarioSessionId" = ss.id
+              AND m.metadata->>'maxTokens' IS NOT NULL)        AS max_tokens
+       FROM scenario_sessions ss
+       LEFT JOIN scenario_versions sv ON sv.id = ss."scenarioVersionId"
+       WHERE ss.id = $1`,
+      [id],
+    );
+    const r = rows?.[0];
+    if (!r) return null;
+    const num = (v: unknown): number | null =>
+      v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v);
+    return {
+      scenarioVersion: r.scenario_version_id
+        ? {
+            id: r.scenario_version_id,
+            versionNumber:
+              r.scenario_version_number == null
+                ? null
+                : Number(r.scenario_version_number),
+            name: r.scenario_version_name ?? null,
+          }
+        : null,
+      promptVersions: r.prompt_versions ?? null,
+      llmProvider: r.llm_provider ?? null,
+      llmModel: r.llm_model ?? null,
+      temperature: num(r.temperature),
+      topP: num(r.top_p),
+      maxTokens: num(r.max_tokens),
+    };
+  }
+
   /** Scored/triggered events for a session, oldest first, with the event name. */
   async findEvents(id: string): Promise<
     Array<{
