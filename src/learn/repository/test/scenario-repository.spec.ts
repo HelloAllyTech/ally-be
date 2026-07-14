@@ -6,7 +6,7 @@ import { ScenarioTriggerWarnings } from '../../entity/scenario-trigger-warnings.
 import { TriggerWarnings } from '../../entity/trigger-warnings.entity';
 import { ScenarioTenants } from '../../entity/scenario-tenants.entity';
 import { ScenarioEvents } from '../../entity/scenario-events.entity';
-import { Pagination } from 'src/common/type/common.type';
+import { AssignmentStatus, Pagination } from 'src/common/type/common.type';
 import { ScenariosRepository } from '../scenario.repository';
 import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
 import { ScenarioStatus } from '../../type/scenario.type';
@@ -286,6 +286,41 @@ describe('ScenariosRepository', () => {
         'scenarioTenants',
         expect.stringContaining('"scenarioTenants"."tenantId" = :tenantId'),
         { tenantId: 'tenant-1' },
+      );
+    });
+
+    it('should filter to assigned scenarios when assignmentStatus is ASSIGNED', async () => {
+      mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
+      await repository.getAdminScenarios({
+        tenantId: 'tenant-1',
+        assignmentStatus: AssignmentStatus.ASSIGNED,
+      });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        '"scenarioTenants"."id" IS NOT NULL',
+      );
+    });
+
+    it('should filter to unassigned scenarios when assignmentStatus is UNASSIGNED', async () => {
+      mockQueryBuilder.getRawMany.mockResolvedValue([]);
+      await repository.getAdminScenarios({
+        tenantId: 'tenant-1',
+        assignmentStatus: AssignmentStatus.UNASSIGNED,
+      });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        '"scenarioTenants"."id" IS NULL',
+      );
+    });
+
+    it('should ignore assignmentStatus when tenantId is not provided', async () => {
+      mockQueryBuilder.getRawMany.mockResolvedValue([]);
+      await repository.getAdminScenarios({
+        assignmentStatus: AssignmentStatus.ASSIGNED,
+      });
+
+      expect(mockQueryBuilder.andWhere).not.toHaveBeenCalledWith(
+        '"scenarioTenants"."id" IS NOT NULL',
       );
     });
 

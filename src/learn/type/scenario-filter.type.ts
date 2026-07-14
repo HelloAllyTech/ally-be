@@ -1,9 +1,11 @@
 import { EntityManager } from 'typeorm';
 import { Scenarios } from '../entity/scenarios.entity';
+import { AssignmentStatus } from 'src/common/type/common.type';
 
 export type ScenarioFilters = {
   status?: string;
   tenantId?: string;
+  assignmentStatus?: AssignmentStatus;
   search?: string;
   isPublic?: boolean;
   isMultiTenantAdmin?: boolean;

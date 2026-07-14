@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Scenarios } from '../entity/scenarios.entity';
-import { Pagination } from 'src/common/type/common.type';
+import { AssignmentStatus, Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
@@ -137,8 +137,14 @@ export class ScenariosRepository extends Repository<Scenarios> {
     scenarioFilters?: ScenarioFilters,
     options?: Pagination,
   ) {
-    const { status, tenantId, search, isMultiTenantAdmin, userId } =
-      scenarioFilters ?? {};
+    const {
+      status,
+      tenantId,
+      assignmentStatus,
+      search,
+      isMultiTenantAdmin,
+      userId,
+    } = scenarioFilters ?? {};
     const query = this.createQueryBuilder('scenario')
       .leftJoin(User, 'user', 'scenario."createdBy"=user.id')
       .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
@@ -228,6 +234,12 @@ export class ScenariosRepository extends Repository<Scenarios> {
           'BOOL_OR("scenarioTenants".id IS NOT NULL)',
           'isAssignedToTenant',
         );
+
+      if (assignmentStatus === AssignmentStatus.ASSIGNED) {
+        query.andWhere('"scenarioTenants"."id" IS NOT NULL');
+      } else if (assignmentStatus === AssignmentStatus.UNASSIGNED) {
+        query.andWhere('"scenarioTenants"."id" IS NULL');
+      }
     }
     return query.getRawMany();
   }
