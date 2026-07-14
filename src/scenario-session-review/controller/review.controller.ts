@@ -107,6 +107,12 @@ export class ScenarioSessionReviewController {
     enum: ReadFilter,
     description: 'Filter by read status: ALL (default), READ, UNREAD',
   })
+  @ApiQuery({
+    name: 'scenarioId',
+    required: false,
+    type: Number,
+    description: 'Restrict reviews to a single scenario (roleplay agent)',
+  })
   async getAllReviews(
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
     @Query('offset', new ParseIntPipe({ optional: true })) offset?: number,
@@ -114,6 +120,8 @@ export class ScenarioSessionReviewController {
     @Query('sortOrder') sortOrder: SortOrder = SortOrder.DESC,
     @Query('languageCode') languageCode?: string,
     @Query('readFilter') readFilter?: ReadFilter,
+    @Query('scenarioId', new ParseIntPipe({ optional: true }))
+    scenarioId?: number,
   ) {
     return this.reviewService.getAllReviews({
       limit,
@@ -122,6 +130,7 @@ export class ScenarioSessionReviewController {
       sortOrder,
       languageCode,
       readFilter,
+      scenarioId,
     });
   }
 
