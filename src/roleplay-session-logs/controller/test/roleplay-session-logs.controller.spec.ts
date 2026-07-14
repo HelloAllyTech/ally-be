@@ -2,7 +2,7 @@ import { Reflector } from '@nestjs/core';
 import { RoleplaySessionLogsController } from '../roleplay-session-logs.controller';
 import { RoleplaySessionLogsService } from '../../service/roleplay-session-logs.service';
 import { ROLES_KEY } from '../../../auth/decorators/roles.decorator';
-import { SUPER_ADMIN_ROLES } from '../../../common/constants/user.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from '../../../common/constants/user.constants';
 
 describe('RoleplaySessionLogsController', () => {
   let controller: RoleplaySessionLogsController;
@@ -17,13 +17,13 @@ describe('RoleplaySessionLogsController', () => {
     controller = new RoleplaySessionLogsController(service);
   });
 
-  it('guards both endpoints with the super-admin roles', () => {
+  it('guards both endpoints with the super-duper-admin roles', () => {
     const reflector = new Reflector();
     const listRoles = reflector.get(ROLES_KEY, controller.list);
     const detailRoles = reflector.get(ROLES_KEY, controller.getById);
 
-    expect(listRoles).toEqual(SUPER_ADMIN_ROLES);
-    expect(detailRoles).toEqual(SUPER_ADMIN_ROLES);
+    expect(listRoles).toEqual(SUPER_DUPER_ADMIN_ROLES);
+    expect(detailRoles).toEqual(SUPER_DUPER_ADMIN_ROLES);
   });
 
   it('delegates list to the service', async () => {
