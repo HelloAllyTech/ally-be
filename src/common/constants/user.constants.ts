@@ -23,6 +23,14 @@ export const SUPER_ADMIN_ROLES: UserRole[] = [
   UserRole.SUPER_DUPER_ADMIN,
 ];
 
+/**
+ * The elevated super-admin tier. SUPER_DUPER_ADMIN sits above SUPER_ADMIN: gate
+ * the most privileged surfaces on this list so a plain SUPER_ADMIN is excluded.
+ * Mirrors ally-web's SUPER_DUPER_ADMIN_ROLES; kept as an array to leave room for
+ * future peer roles.
+ */
+export const SUPER_DUPER_ADMIN_ROLES: UserRole[] = [UserRole.SUPER_DUPER_ADMIN];
+
 export enum AppType {
   APP = 'APP',
   ADMIN = 'ADMIN',

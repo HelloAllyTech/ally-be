@@ -7,7 +7,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
-import { SUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import { RoleplaySessionLogsService } from '../service/roleplay-session-logs.service';
 import {
   ListRoleplaySessionLogsQueryDto,
@@ -25,9 +25,9 @@ export class RoleplaySessionLogsController {
   ) {}
 
   @Get()
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @AuthRoles(...SUPER_DUPER_ADMIN_ROLES)
   @ApiOperation({
-    summary: 'List all roleplay sessions across all orgs (super-admin)',
+    summary: 'List all roleplay sessions across all orgs (super-duper-admin)',
     description:
       'Platform-wide (cross-tenant) list of genuine end-user roleplay sessions ' +
       'with the user, organization, scenario, status, duration and score. ' +
@@ -43,9 +43,9 @@ export class RoleplaySessionLogsController {
   }
 
   @Get(':id')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @AuthRoles(...SUPER_DUPER_ADMIN_ROLES)
   @ApiOperation({
-    summary: 'Get a single roleplay session detail (super-admin)',
+    summary: 'Get a single roleplay session detail (super-duper-admin)',
     description:
       'Cross-tenant detail for one roleplay session: core fields plus the ' +
       'post-session summary, scored events and full transcript.',

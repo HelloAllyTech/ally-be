@@ -7,6 +7,7 @@ import {
   Body,
   Put,
   Delete,
+  ParseEnumPipe,
   ParseUUIDPipe,
   Version,
   Patch,
@@ -25,6 +26,7 @@ import { ScenarioSessionService } from '../service/scenario-session.service';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
+import { AssignmentStatus } from 'src/common/type/common.type';
 import { ScenarioSessionSortBy } from '../enum/scenario-session-sort-by.enum';
 import { ScenarioSessionResponseDto } from '../dto/scenario-session-response.dto';
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
@@ -166,6 +168,13 @@ export class LearnController {
     description: 'TenantId',
   })
   @ApiQuery({
+    name: 'assignmentStatus',
+    required: false,
+    enum: AssignmentStatus,
+    description:
+      'Filter by tenant assignment status (requires tenantId; ignored without it)',
+  })
+  @ApiQuery({
     name: 'search',
     required: false,
     type: String,
@@ -182,10 +191,15 @@ export class LearnController {
     @Query('order') order: SortOrder = SortOrder.ASC,
     @Query('status') status?: string,
     @Query('tenantId', new ParseUUIDPipe({ optional: true })) tenantId?: string,
+    @Query(
+      'assignmentStatus',
+      new ParseEnumPipe(AssignmentStatus, { optional: true }),
+    )
+    assignmentStatus?: AssignmentStatus,
     @Query('search') search?: string,
   ) {
     return this.scenarioService.getAdminScenarios(
-      { status, tenantId, search },
+      { status, tenantId, assignmentStatus, search },
       {
         limit,
         offset,

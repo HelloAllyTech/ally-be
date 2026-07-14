@@ -290,7 +290,8 @@ export class ScenarioService {
     options?: Pagination,
     currentUser?: TokenUser,
   ) {
-    const { status, tenantId, search } = scenarioFilters ?? {};
+    const { status, tenantId, assignmentStatus, search } =
+      scenarioFilters ?? {};
     if (tenantId) {
       const tenant = await this.tenantService.findById(tenantId);
       if (!tenant) {
@@ -306,6 +307,7 @@ export class ScenarioService {
       {
         status,
         tenantId,
+        assignmentStatus,
         search,
         isMultiTenantAdmin,
         userId: currentUser?.id,
