@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { SessionEventService } from '../session-event.service';
 import { SessionEvents } from '../../entity/session-events.entity';
@@ -18,12 +22,14 @@ import {
 } from 'src/session-event/enum/session-event-detection.enum';
 import { SessionEventTranslationService } from '../session-event-translation.service';
 import { SessionEventSharedService } from '../session-event-shared.service';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
 
 describe('SessionEventService', () => {
   let service: SessionEventService;
   let repository: jest.Mocked<SessionEventRepository>;
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let sessionEventSharedService: jest.Mocked<SessionEventSharedService>;
+  let permissionsService: jest.Mocked<PermissionsService>;
 
   const mockSessionEvent: SessionEvents = {
     id: 'event-1',
@@ -108,6 +114,10 @@ describe('SessionEventService', () => {
       findSessionEventById: jest.fn(),
     };
 
+    const mockPermissionsService = {
+      isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SessionEventService,
@@ -127,6 +137,10 @@ describe('SessionEventService', () => {
           provide: SessionEventSharedService,
           useValue: mockSessionEventSharedService,
         },
+        {
+          provide: PermissionsService,
+          useValue: mockPermissionsService,
+        },
       ],
     }).compile();
 
@@ -134,6 +148,7 @@ describe('SessionEventService', () => {
     repository = module.get(SessionEventRepository);
     sessionEventTranslationService = module.get(SessionEventTranslationService);
     sessionEventSharedService = module.get(SessionEventSharedService);
+    permissionsService = module.get(PermissionsService);
   });
 
   afterEach(() => {
@@ -382,6 +397,57 @@ describe('SessionEventService', () => {
       );
 
       expect(result).toBe(true); // undefined !== 0 is true
+    });
+
+    it('should throw ForbiddenException when a multi-tenant admin updates an event created by someone else', async () => {
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      repository.findOne.mockResolvedValue({
+        ...mockSessionEvent,
+        createdBy: 999,
+      } as SessionEvents);
+
+      await expect(
+        service.updateSessionEvent(
+          eventId,
+          mockUpdateSessionEventDto,
+          mockUserId,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+      expect(repository.update).not.toHaveBeenCalled();
+    });
+
+    it('should allow a multi-tenant admin to update an event they created', async () => {
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+      repository.findOne.mockResolvedValue({
+        ...mockSessionEvent,
+        createdBy: mockUserId,
+      } as SessionEvents);
+      repository.update.mockResolvedValue({ affected: 1 } as any);
+
+      const result = await service.updateSessionEvent(
+        eventId,
+        mockUpdateSessionEventDto,
+        mockUserId,
+      );
+
+      expect(result).toBe(true);
+    });
+
+    it('should allow non multi-tenant admins to update events created by others', async () => {
+      permissionsService.isMultiTenantAdmin.mockResolvedValue(false);
+      repository.findOne.mockResolvedValue({
+        ...mockSessionEvent,
+        createdBy: 999,
+      } as SessionEvents);
+      repository.update.mockResolvedValue({ affected: 1 } as any);
+
+      const result = await service.updateSessionEvent(
+        eventId,
+        mockUpdateSessionEventDto,
+        mockUserId,
+      );
+
+      expect(result).toBe(true);
     });
 
     it('should throw NotFoundException when session event not found', async () => {
