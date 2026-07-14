@@ -201,27 +201,42 @@ describe('CopilotOrchestratorService', () => {
     expect(assistantRow.metadata.testCaseSuggestions).toEqual([suggestion]);
   });
 
-  it('caps the tool loop at maxToolIterations and emits an error frame', async () => {
-    // The model asks for a tool on every round-trip, forever.
+  it('makes a tool-less wrap-up pass when the tool loop hits the cap', async () => {
+    // The model asks for a tool on every round-trip until the budget is spent;
+    // the final tool-less pass lets it summarize instead of erroring out.
     let counter = 0;
-    streamMock.mockImplementation(() =>
-      makeStream([toolUseBlock(`tu-${++counter}`)], 'tool_use'),
-    );
+    streamMock.mockImplementation(() => {
+      counter += 1;
+      return counter <= MAX_ITERATIONS
+        ? makeStream([toolUseBlock(`tu-${counter}`)], 'tool_use')
+        : makeStream(
+            [{ type: 'text', text: 'Got most of it — reply "continue".' }],
+            'end_turn',
+          );
+    });
 
     const frames = await collect();
     const events = frames.map((frame) => frame.event);
 
-    expect(streamMock).toHaveBeenCalledTimes(MAX_ITERATIONS);
+    // MAX_ITERATIONS tool round-trips + one tool-less wrap-up pass.
+    expect(streamMock).toHaveBeenCalledTimes(MAX_ITERATIONS + 1);
     expect(toolsExecute).toHaveBeenCalledTimes(MAX_ITERATIONS);
+    // The wrap-up pass is made without tools.
+    expect(streamMock.mock.calls[MAX_ITERATIONS][0].tools).toBeUndefined();
     expect(events.filter((event) => event === 'tool_call')).toHaveLength(
       MAX_ITERATIONS,
     );
-    expect(frames.find((frame) => frame.event === 'error')?.data.code).toBe(
-      'max_tool_iterations',
+    // No raw error frame — the model wrapped up gracefully.
+    expect(events).not.toContain('error');
+    // The wrap-up text is streamed and persisted as the assistant message.
+    expect(frames.find((frame) => frame.event === 'token')?.data.delta).toBe(
+      'Got most of it — reply "continue".',
     );
-    // The turn still closes cleanly and the assistant message is persisted.
     expect(events[events.length - 1]).toBe('done');
     expect(appendMessage).toHaveBeenCalledTimes(2);
+    expect(appendMessage.mock.calls[1][1].content).toBe(
+      'Got most of it — reply "continue".',
+    );
     expect(appendMessage.mock.calls[1][1].toolCalls).toHaveLength(
       MAX_ITERATIONS,
     );
