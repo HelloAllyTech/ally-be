@@ -15,6 +15,7 @@ import {
   UploadComfortAudioUrlResponseDto,
 } from '../dto/upload-comfort-audio-url.dto';
 import { AddComfortAudioTrackDto } from '../dto/add-comfort-audio-track.dto';
+import { UpdateComfortAudioTrackDto } from '../dto/update-comfort-audio-track.dto';
 import {
   GetComfortAudioTracksQueryDto,
   ComfortAudioTrackSortBy,
@@ -59,6 +60,7 @@ export class ComfortAudioService {
         entity.sizeBytes === null || entity.sizeBytes === undefined
           ? null
           : Number(entity.sizeBytes),
+      isArchived: entity.archivedAt != null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
@@ -121,6 +123,7 @@ export class ComfortAudioService {
       offset: dto.offset ?? 0,
       sortBy: dto.sortBy ?? ComfortAudioTrackSortBy.CREATED_AT,
       sortOrder: dto.sortOrder ?? ComfortAudioTrackSortOrder.DESC,
+      includeArchived: dto.includeArchived ?? false,
     });
     return {
       tracks: tracks.map((entity) => this.toResponseDto(entity)),
@@ -138,6 +141,39 @@ export class ComfortAudioService {
       );
     }
     return this.toResponseDto(track);
+  }
+
+  /**
+   * Rename and/or archive/unarchive an existing track. Archiving flips
+   * `archivedAt` (null = active) — it never touches S3 or scenario metadata, so
+   * scenarios already pointing at the track's URL keep playing it; the track
+   * just stops appearing in the roleplay picker going forward.
+   */
+  async updateTrack(
+    id: string,
+    dto: UpdateComfortAudioTrackDto,
+  ): Promise<ComfortAudioTrackResponseDto> {
+    const track = await this.comfortAudioTrackRepository.findOne({
+      where: { id },
+    });
+    if (!track) {
+      throw new NotFoundException(
+        `Comfort audio track with ID ${id} not found`,
+      );
+    }
+
+    if (dto.name !== undefined) {
+      track.name = dto.name;
+    }
+    if (dto.isArchived !== undefined) {
+      track.archivedAt = dto.isArchived ? new Date() : null;
+    }
+
+    const saved = await this.comfortAudioTrackRepository.save(track);
+    this.logger.info(
+      `Comfort audio track updated: ${saved.id} (archived=${saved.archivedAt != null})`,
+    );
+    return this.toResponseDto(saved);
   }
 
   async delete(id: string): Promise<{ success: boolean }> {

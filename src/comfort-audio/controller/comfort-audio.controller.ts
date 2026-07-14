@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -29,6 +30,7 @@ import {
   UploadComfortAudioUrlResponseDto,
 } from '../dto/upload-comfort-audio-url.dto';
 import { AddComfortAudioTrackDto } from '../dto/add-comfort-audio-track.dto';
+import { UpdateComfortAudioTrackDto } from '../dto/update-comfort-audio-track.dto';
 
 @ApiTags('Comfort Audio')
 @ApiBearerAuth()
@@ -105,6 +107,28 @@ export class ComfortAudioController {
     @Param('id') id: string,
   ): Promise<ComfortAudioTrackResponseDto> {
     return this.comfortAudioService.getById(id);
+  }
+
+  @Patch(':id')
+  @AuthPermissions([PERMISSIONS.EDIT_COMFORT_AUDIO_LIBRARY])
+  @ApiOperation({
+    summary: 'Rename and/or archive/unarchive a comfort-audio track',
+    description:
+      'Archiving hides the track from the roleplay picker going forward but keeps it working for scenarios already using it. Reversible.',
+  })
+  @ApiParam({ name: 'id', description: 'Track UUID' })
+  @ApiBody({ type: UpdateComfortAudioTrackDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns the updated track',
+    type: ComfortAudioTrackResponseDto,
+  })
+  @ApiResponse({ status: 404, description: 'Not found' })
+  async update(
+    @Param('id') id: string,
+    @Body() dto: UpdateComfortAudioTrackDto,
+  ): Promise<ComfortAudioTrackResponseDto> {
+    return this.comfortAudioService.updateTrack(id, dto);
   }
 
   @Delete(':id')
