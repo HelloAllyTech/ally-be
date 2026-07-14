@@ -263,14 +263,14 @@ export class AppConfigService {
       ),
       // Roleplay Studio v2 runtime agent (actor + director). Dispatched for
       // scenarios with engine=ROLEPLAY_V2; rooms are prefixed `roleplay-`.
-      // Defaults to `${agentName}V2` so it inherits the same per-environment /
-      // per-developer namespacing as the v1 agent name — otherwise every worker
-      // on a shared LiveKit project registers as the constant "AgentV2" and
-      // explicit dispatches get load-balanced to the wrong worker. Override with
-      // LIVEKIT_ROLEPLAY_AGENT_NAME. (Default agentName "Agent" -> "AgentV2".)
+      // Defaults to the SAME name as the v1 agent because v2 is now served by
+      // the merged single worker (app/worker.py routes v1 + v2 by the `engine`
+      // metadata marker) — one fleet, one prewarmed model set, no duplication.
+      // Override with LIVEKIT_ROLEPLAY_AGENT_NAME (e.g. set it to `${agentName}V2`)
+      // to fall back to a separate dedicated v2 fleet.
       roleplayAgentName: this.configService.get<string>(
         'LIVEKIT_ROLEPLAY_AGENT_NAME',
-        `${agentName}V2`,
+        agentName,
       ),
     };
   }
@@ -339,6 +339,40 @@ export class AppConfigService {
           'false',
         ) === 'true',
     };
+  }
+
+  /**
+   * Roleplay Studio v2 rollout gate. A v2 session is allowed only when BOTH
+   * hold: the feature flag is on AND the user's email is on the allowlist.
+   *
+   * - `enabled` (ROLEPLAY_V2_ENABLED): master kill-switch. Defaults ON. When
+   *   `false`, v2 is off for EVERYONE — including allowlisted users.
+   * - `allowlist` (ROLEPLAY_V2_ALLOWLIST): comma-separated emails, lower-cased.
+   *   `sandeep.malhotra@helloally.ai` and `gopi.s@helloally.ai` are always
+   *   included so the current testers work without extra env config;
+   *   ROLEPLAY_V2_ALLOWLIST adds more.
+   *
+   * This is the primary who/whether gate. The learn-core worker also self-guards
+   * on its own ROLEPLAY_V2_ENABLED (defense in depth), so enabling v2 end-to-end
+   * in an environment requires that flag to be on there too.
+   */
+  get roleplayV2() {
+    const enabled =
+      this.configService.get<string>('ROLEPLAY_V2_ENABLED', 'true') !== 'false';
+    const extra = (
+      this.configService.get<string>('ROLEPLAY_V2_ALLOWLIST', '') ?? ''
+    )
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+    const allowlist = Array.from(
+      new Set([
+        'sandeep.malhotra@helloally.ai',
+        'gopi.s@helloally.ai',
+        ...extra,
+      ]),
+    );
+    return { enabled, allowlist };
   }
 
   get googleCloudTranslationConfig() {

@@ -171,6 +171,8 @@ import {
 } from 'src/common/util/time.util';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { TokenUser } from 'src/auth/type/auth.types';
+import { User } from 'src/user/entity/user.entity';
+import { isRoleplayV2EmailAllowed } from 'src/common/util/roleplay-v2-access.util';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
 import {
   AUDIT_ACTIONS,
@@ -233,10 +235,15 @@ export class ScenarioService {
     if (!tenantId) {
       throw new BadRequestException('Tenant ID is required');
     }
+    // v2 scenarios are only listed for a v2-allowlisted requester (e.g. the
+    // tester); every other learner sees the v1 catalog exactly as before and
+    // never encounters a v2 scenario (nor its rollout-gate 403).
+    const includeRoleplayV2 = await this.isCurrentUserRoleplayV2Allowed();
     const { data: fetchedData, count } =
       await this.scenariosRepository.getScenarios({
         tenantId,
         ...(languageCode && { languageCode }),
+        ...(includeRoleplayV2 && { includeRoleplayV2: true }),
       });
     let data = fetchedData;
 
@@ -283,6 +290,27 @@ export class ScenarioService {
     }
 
     return { data, count };
+  }
+
+  /**
+   * Whether the CURRENT request's user may see/use v2 (flag on + allowlisted).
+   * Fully defensive: any missing context resolves to false so the safe default
+   * is "hide v2". Shares the exact allowlist logic used by the session-start
+   * gate (isRoleplayV2EmailAllowed).
+   */
+  private async isCurrentUserRoleplayV2Allowed(): Promise<boolean> {
+    try {
+      const config = this.configService.roleplayV2;
+      if (!config?.enabled) return false;
+      const userId = Number(ExecutionManager.getUserId());
+      if (!userId || Number.isNaN(userId)) return false;
+      const user = await this.dataSource
+        .getRepository(User)
+        .findOne({ where: { id: userId }, select: ['id', 'email'] });
+      return isRoleplayV2EmailAllowed(user?.email, config);
+    } catch {
+      return false;
+    }
   }
 
   async getAdminScenarios(

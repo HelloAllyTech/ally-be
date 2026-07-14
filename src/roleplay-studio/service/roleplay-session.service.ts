@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -11,6 +12,7 @@ import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import { ScenarioVoices } from 'src/learn/entity/scenario-voices.entity';
+import { User } from 'src/user/entity/user.entity';
 import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from 'src/learn/constants/scenario-session.constants';
 import { RoleplaySpecService } from './roleplay-spec.service';
 import { SpecCompilerService } from './spec-compiler.service';
@@ -20,6 +22,7 @@ import { RoleplayDirectorEventRepository } from '../repository/roleplay-director
 import { RoleplayRubricScoreRepository } from '../repository/roleplay-rubric-score.repository';
 import { StartRoleplaySessionDto } from '../dto/roleplay-session.dto';
 import { ROLEPLAY_ROOM_ID_PREFIX } from '../constants/roleplay-studio.constants';
+import { isRoleplayV2EmailAllowed } from 'src/common/util/roleplay-v2-access.util';
 
 /**
  * ROLEPLAY_V2 session runtime: creates the scenario_sessions row (roomId
@@ -58,6 +61,13 @@ export class RoleplaySessionService {
     specVersionId: string | null,
     dto: StartRoleplaySessionDto = {},
   ) {
+    // Primary rollout gate: v2 runs only when the master flag is on AND the
+    // user is allowlisted (see AppConfigService.roleplayV2). Enforced here —
+    // the single choke point both the learner path and the studio test path
+    // pass through — so a disabled flag or an off-list user never dispatches a
+    // v2 room.
+    await this.assertRoleplayV2Allowed(userId);
+
     const spec = await this.roleplaySpecService.getSpec(specId);
     const version = await this.resolveVersion(spec, specVersionId);
     const document = version.spec;
@@ -181,6 +191,27 @@ export class RoleplaySessionService {
   }
 
   // ------------------------------------------------------------- internals
+
+  /**
+   * Throw unless this user may start a v2 session: the master flag must be on
+   * AND the user's email must be allowlisted. A disabled flag blocks EVERYONE,
+   * allowlisted users included. Kept private so both entry paths (learner +
+   * studio test) share exactly one gate.
+   */
+  private async assertRoleplayV2Allowed(userId: number): Promise<void> {
+    const config = this.configService.roleplayV2;
+    if (!config.enabled) {
+      throw new ForbiddenException('Roleplay v2 is not currently enabled.');
+    }
+    const user = await this.dataSource
+      .getRepository(User)
+      .findOne({ where: { id: userId }, select: ['id', 'email'] });
+    if (!isRoleplayV2EmailAllowed(user?.email, config)) {
+      throw new ForbiddenException(
+        'Roleplay v2 is not available for this account yet.',
+      );
+    }
+  }
 
   private async resolveVersion(
     spec: RoleplaySpec,

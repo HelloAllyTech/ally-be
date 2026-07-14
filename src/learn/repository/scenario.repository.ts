@@ -58,6 +58,17 @@ export class ScenariosRepository extends Repository<Scenarios> {
       statuses: [ScenarioStatus.ACTIVE],
     });
 
+    // ROLEPLAY_V2 shells must not surface in the learner catalog by default —
+    // ordinary users would otherwise see them and hit the v2 rollout gate.
+    // Only a v2-allowlisted requester opts in via includeRoleplayV2 (see
+    // ScenarioService.getScenariosV2); every other caller (incl. the @Public
+    // catalog endpoints) excludes them.
+    if (!filters?.includeRoleplayV2) {
+      query.andWhere('scenario.engine != :roleplayV2Engine', {
+        roleplayV2Engine: ScenarioEngine.ROLEPLAY_V2,
+      });
+    }
+
     if (filters?.isPublic) {
       query.andWhere('scenario.isPublic = :isPublic', {
         isPublic: filters.isPublic,

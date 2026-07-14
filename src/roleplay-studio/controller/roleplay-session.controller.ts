@@ -32,7 +32,7 @@ export class RoleplaySessionController {
   @AuthPermissions([PERMISSIONS.EDIT_ROLEPLAY_SPEC])
   @ApiOperation({
     summary:
-      'Start a test session against a specific spec version (roleplay- room + AgentV2 dispatch)',
+      'Start a test session against a specific spec version (roleplay- room, dispatched to the merged v1+v2 worker; gated by the v2 flag + allowlist)',
   })
   startSession(
     @Param('specId', ParseUUIDPipe) specId: string,

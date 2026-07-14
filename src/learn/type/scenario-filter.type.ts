@@ -11,6 +11,13 @@ export type ScenarioFilters = {
   isMultiTenantAdmin?: boolean;
   userId?: number;
   languageCode?: string;
+  /**
+   * Include ROLEPLAY_V2 scenarios in the result. Defaults to false so the
+   * learner catalog never surfaces v2 shells to ordinary users (mirrors the
+   * admin list). Only set true for a v2-allowlisted requester (see
+   * ScenarioService.getScenariosV2).
+   */
+  includeRoleplayV2?: boolean;
 };
 
 export type GetScenarioByIdOptions = {
