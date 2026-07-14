@@ -697,10 +697,24 @@ export class UserService {
   }
 
   /**
-   * Determines the user role based on available roles
-   * Priority: ADMIN > COUNSELOR > first available role
+   * Determines the user role based on available roles.
+   * Priority: SUPER_DUPER_ADMIN > SUPER_ADMIN > ADMIN > COUNSELOR > first
+   * available role.
+   *
+   * The super-admin tiers must outrank ADMIN/COUNSELOR: a user can hold both a
+   * super-admin group and ADMIN, and collapsing them to ADMIN would hide the
+   * super-admin surfaces that gate on this single role (e.g. the admin
+   * dashboard's isSuperAdminRole nav check).
    */
   private determineUserRole(roles: Group[]): string {
+    if (roles.some((role) => role.name === UserRole.SUPER_DUPER_ADMIN)) {
+      return UserRole.SUPER_DUPER_ADMIN;
+    }
+
+    if (roles.some((role) => role.name === UserRole.SUPER_ADMIN)) {
+      return UserRole.SUPER_ADMIN;
+    }
+
     if (roles.some((role) => role.name === UserRole.ADMIN)) {
       return UserRole.ADMIN;
     }
@@ -709,7 +723,7 @@ export class UserService {
       return UserRole.COUNSELOR;
     }
 
-    // Return the first available role if neither ADMIN nor COUNSELOR
+    // Return the first available role if none of the above matched
     return roles[0].name;
   }
 

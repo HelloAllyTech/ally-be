@@ -348,9 +348,12 @@ export class AppConfigService {
    * - `enabled` (ROLEPLAY_V2_ENABLED): master kill-switch. Defaults ON. When
    *   `false`, v2 is off for EVERYONE — including allowlisted users.
    * - `allowlist` (ROLEPLAY_V2_ALLOWLIST): comma-separated emails, lower-cased.
-   *   `sandeep.malhotra@helloally.ai` and `gopi.s@helloally.ai` are always
-   *   included so the current testers work without extra env config;
-   *   ROLEPLAY_V2_ALLOWLIST adds more.
+   *   `sandeep.malhotra@helloally.ai`, `gopi.s@helloally.ai` and
+   *   `gopikrishnan.sasikumar@helloally.ai` are always included so the current
+   *   testers work without extra env config; ROLEPLAY_V2_ALLOWLIST adds more.
+   *   `+tag` sub-addresses of any allowlisted email match too (see
+   *   normalizeEmailForAllowlist), so testers can use as many `+tag` accounts
+   *   as they like without listing each one.
    *
    * This is the primary who/whether gate. The learn-core worker also self-guards
    * on its own ROLEPLAY_V2_ENABLED (defense in depth), so enabling v2 end-to-end
@@ -369,6 +372,7 @@ export class AppConfigService {
       new Set([
         'sandeep.malhotra@helloally.ai',
         'gopi.s@helloally.ai',
+        'gopikrishnan.sasikumar@helloally.ai',
         ...extra,
       ]),
     );
