@@ -74,8 +74,11 @@ export class CopilotToolsService {
         name: 'update_spec',
         description:
           'Apply an RFC-6902 patch (add/replace/remove only) to the current draft spec document. ' +
-          'Use small, incremental patches — one concern per call. The result is validated; on ' +
-          'failure you get the structured error list back and MUST self-repair with a corrected patch.',
+          'Batch related edits into ONE call — the ops array carries many operations, so group ' +
+          'everything you can decide together (all the basics, a whole persona, the full objective ' +
+          'set) into a single patch instead of one field per call; that keeps the turn within its ' +
+          'tool round-trip budget. The result is validated; on failure you get the structured error ' +
+          'list back and MUST self-repair with a corrected patch.',
         input_schema: {
           type: 'object',
           properties: {

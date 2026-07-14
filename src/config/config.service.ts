@@ -407,10 +407,13 @@ export class AppConfigService {
         'ROLEPLAY_COPILOT_MODEL',
         'claude-sonnet-4-6',
       ),
-      // Hard cap on tool-use round-trips per copilot turn.
+      // Hard cap on tool-use round-trips per copilot turn. A substantial
+      // build/edit turn legitimately needs several sequential update_spec
+      // patches plus read/compile calls, so keep this generous; on cap-hit the
+      // orchestrator does a tool-less wrap-up rather than erroring out.
       maxToolIterations: this.configService.get<number>(
         'ROLEPLAY_COPILOT_MAX_TOOL_ITERATIONS',
-        8,
+        16,
       ),
       // Rehearsal runs that outlive this are failed by the redis TTL timer.
       rehearsalTimeoutMinutes: this.configService.get<number>(

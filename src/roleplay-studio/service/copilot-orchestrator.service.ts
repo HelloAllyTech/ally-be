@@ -231,17 +231,40 @@ export class CopilotOrchestratorService {
           stopReason = 'end_turn';
           break;
         }
+      }
 
-        if (iteration === maxIterations - 1) {
-          // Cap reached with the model still asking for tools.
-          yield {
-            event: 'error',
-            data: {
-              code: 'max_tool_iterations',
-              message: `Tool-use iteration cap (${maxIterations}) reached; turn truncated.`,
-            },
-          };
+      // We exhausted the round-trip budget while the model still wanted tools.
+      // Instead of dying with a raw error, make one final tool-less pass so the
+      // copilot summarizes what it changed and what's left — the trainer can
+      // reply "continue" to pick up (applied patches are already persisted).
+      if (stopReason === 'tool_use') {
+        this.logger.warn(
+          `Copilot session ${sessionId} hit the ${maxIterations}-iteration ` +
+            'cap; making a tool-less wrap-up pass.',
+        );
+        const wrapUpStream = this.client.messages.stream({
+          model,
+          max_tokens: COPILOT_MAX_TOKENS,
+          system,
+          messages,
+        });
+        for await (const event of wrapUpStream as AsyncIterable<any>) {
+          if (
+            event?.type === 'content_block_delta' &&
+            event?.delta?.type === 'text_delta' &&
+            event.delta.text
+          ) {
+            yield { event: 'token', data: { delta: event.delta.text } };
+          }
         }
+        const wrapUpMessage: any = await (wrapUpStream as any).finalMessage();
+        this.recordUsage(wrapUpMessage?.usage, model, sessionId, iterations);
+        for (const block of wrapUpMessage?.content ?? []) {
+          if (block?.type === 'text' && block.text) {
+            textParts.push(block.text);
+          }
+        }
+        stopReason = wrapUpMessage?.stop_reason ?? 'end_turn';
       }
     } catch (error) {
       turnErrored = true;
