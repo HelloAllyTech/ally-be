@@ -420,6 +420,10 @@ export class AppConfigService {
         'OPENAI_TRANSCRIPTION_MODEL',
         'whisper-1',
       ),
+      imageModel: this.configService.get<string>(
+        'OPENAI_IMAGE_MODEL',
+        'gpt-image-1',
+      ),
     };
   }
 
@@ -465,6 +469,19 @@ export class AppConfigService {
       apiKey:
         this.configService.get<string>('GEMINI_API_KEY') ??
         this.configService.get<string>('GOOGLE_GENERATIVE_AI_API_KEY'),
+      imageModel: this.configService.get<string>(
+        'GEMINI_IMAGE_MODEL',
+        'gemini-2.5-flash-image',
+      ),
+    };
+  }
+
+  get characterImage() {
+    return {
+      defaultProvider: this.configService.get<string>(
+        'CHARACTER_IMAGE_DEFAULT_PROVIDER',
+        'openai',
+      ),
     };
   }
 

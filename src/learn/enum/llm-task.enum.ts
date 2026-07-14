@@ -39,6 +39,8 @@ export enum LlmTask {
   // Track 2.0 quiz: grading one open-ended learner answer against its rubric.
   TRACK_QUIZ_GRADING = 'track_quiz_grading',
   TRANSLATE_SCENARIO = 'translate_scenario',
+  // Admin-dashboard scenario cover-image generation (Simulation Studio).
+  GENERATE_COVER_IMAGE = 'generate_cover_image',
   TRANSLATE_TEXT = 'translate_text',
   TRANSLATE_OBJECT = 'translate_object',
 
