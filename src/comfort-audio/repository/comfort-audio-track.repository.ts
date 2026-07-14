@@ -21,6 +21,7 @@ export class ComfortAudioTrackRepository extends Repository<ComfortAudioTrack> {
       offset = 0,
       sortBy = ComfortAudioTrackSortBy.CREATED_AT,
       sortOrder = ComfortAudioTrackSortOrder.DESC,
+      includeArchived = false,
     } = options;
 
     const query = this.createQueryBuilder('comfortAudioTrack')
@@ -30,6 +31,10 @@ export class ComfortAudioTrackRepository extends Repository<ComfortAudioTrack> {
       )
       .limit(limit)
       .offset(offset);
+
+    if (!includeArchived) {
+      query.andWhere('comfortAudioTrack.archivedAt IS NULL');
+    }
 
     const [tracks, count] = await query.getManyAndCount();
     return { tracks, count };

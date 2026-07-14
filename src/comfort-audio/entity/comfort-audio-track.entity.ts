@@ -30,6 +30,14 @@ export class ComfortAudioTrack extends BaseWithoutTenantEntity {
   @Column({ type: 'bigint', name: 'size_bytes', nullable: true })
   sizeBytes?: number | null;
 
+  /**
+   * When set, the track is archived: it can no longer be newly selected as the
+   * comfort audio for a roleplay, but it keeps working for scenarios that
+   * already reference its URL. Null = active. Archiving is reversible.
+   */
+  @Column({ type: 'timestamp', name: 'archived_at', nullable: true })
+  archivedAt?: Date | null;
+
   @Column({ name: 'created_by', type: 'int' })
   createdBy!: number;
 }

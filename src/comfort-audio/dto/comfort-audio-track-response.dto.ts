@@ -16,6 +16,12 @@ export class ComfortAudioTrackResponseDto {
   @ApiProperty({ required: false, nullable: true })
   sizeBytes?: number | null;
 
+  @ApiProperty({
+    description:
+      'Archived tracks cannot be newly selected for a roleplay, but keep working for scenarios already using them.',
+  })
+  isArchived!: boolean;
+
   @ApiProperty()
   createdAt!: Date;
 

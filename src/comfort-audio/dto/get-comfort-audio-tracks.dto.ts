@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsNumber, Min, Max, IsEnum } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsOptional, IsNumber, Min, Max, IsEnum, IsBoolean } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 
 import { ComfortAudioTrackResponseDto } from './comfort-audio-track-response.dto';
 
@@ -49,6 +49,17 @@ export class GetComfortAudioTracksQueryDto {
   @IsOptional()
   @IsEnum(ComfortAudioTrackSortOrder)
   sortOrder?: ComfortAudioTrackSortOrder = ComfortAudioTrackSortOrder.DESC;
+
+  @ApiProperty({
+    description:
+      'Include archived tracks in the result. Defaults to false so the roleplay picker only ever sees active tracks; the superadmin library screen passes true to manage them.',
+    required: false,
+    default: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  includeArchived?: boolean = false;
 }
 
 export class GetComfortAudioTracksResponseDto {
