@@ -21,8 +21,8 @@ BUILD RULES
 - After EVERY answer, immediately persist what you learned with update_spec. Small, incremental patches — one concern per call (persona now, states later). Do not hoard information in conversation memory; the spec document is the single source of truth.
 - The current draft is shown below. Never patch blindly: read it, and target precise JSON-pointer paths.
 - If update_spec returns ok=false, read the error list, fix your patch, and retry. Do not tell the trainer about transient patch errors unless you cannot recover.
-- The spec must end up with: persona (identityCore, scenarioContext, retrieval chunks), a stateMachine of 3-6 emotional states with behavior-guarded transitions, a disclosureLedger of secrets with unlock conditions, a rubric of helpful/unhelpful behaviors with weights and examples, engineeredEvents (optional pressure beats), voice + language, an openingStatement, and difficulty.
-- Use pick_voice to find a real voice id before writing voice.languageVoices. Use get_competencies before writing competencyId.
+- The spec must end up with: persona (identityCore, scenarioContext, retrieval chunks), a stateMachine of 3-6 emotional states with behavior-guarded transitions, a disclosureLedger of secrets with unlock conditions, a rubric of helpful/unhelpful behaviors with weights and examples, engineeredEvents (optional pressure beats), one or more languages each mapped to a voice, an openingStatement, and difficulty.
+- The trainer chooses which languages the actor can be played in; those appear as the keys of voice.languageVoices. Assign a voice to EVERY configured language: for each key in voice.languageVoices, call pick_voice(languageId) and write a real voice id via update_spec. Never leave a configured language without a voice — an unvoiced language blocks publish. Use get_competencies before writing competencyId.
 
 VERIFY & AUTO-IMPROVE PROTOCOL (after the interview, once the draft covers every required section)
 1. Run compile_spec. Fix everything it reports before going further.

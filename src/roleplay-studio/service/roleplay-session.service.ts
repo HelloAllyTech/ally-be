@@ -12,6 +12,7 @@ import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import { ScenarioVoices } from 'src/learn/entity/scenario-voices.entity';
+import { Languages } from 'src/language/entity/languages.entity';
 import { User } from 'src/user/entity/user.entity';
 import { DEFAULT_SCENARIO_SESSION_TTL_SECONDS } from 'src/learn/constants/scenario-session.constants';
 import { RoleplaySpecService } from './roleplay-spec.service';
@@ -91,13 +92,21 @@ export class RoleplaySessionService {
       throw new BadRequestException('Voice not found or inactive');
     }
 
-    const languageBlock = {
-      languageId,
-      languageCode:
-        languageId === document.language?.languageId
-          ? (document.language?.languageCode ?? null)
-          : null,
-    };
+    // The spec only stores the languageCode for its single default language, so
+    // for any other configured language resolve the locale from the catalog —
+    // the worker needs it for STT/TTS. Falls back to `value` if translationCode
+    // is unset.
+    let languageCode: string | null =
+      languageId === document.language?.languageId
+        ? (document.language?.languageCode ?? null)
+        : null;
+    if (!languageCode) {
+      const languageRow = await this.dataSource
+        .getRepository(Languages)
+        .findOne({ where: { id: Number(languageId) } });
+      languageCode = languageRow?.translationCode || languageRow?.value || null;
+    }
+    const languageBlock = { languageId, languageCode };
 
     const scenarioSession = await this.createSessionRow(
       userId,
