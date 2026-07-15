@@ -11,6 +11,8 @@ import { User } from './entity/user.entity';
 import { AdminTenant } from './entity/admin-tenant.entity';
 import { AdminTenantRepository } from './repository/admin-tenant.repository';
 import { AdminTenantService } from './service/admin-tenant.service';
+import { SuperDuperAdminController } from './controller/super-duper-admin.controller';
+import { SuperDuperAdminService } from './service/super-duper-admin.service';
 import { UserPreferencesRepository } from './repository/user-prefernces.repository';
 import { AwsModule } from 'src/aws/aws.module';
 
@@ -29,8 +31,9 @@ import { AwsModule } from 'src/aws/aws.module';
     UserPreferencesRepository,
     AdminTenantRepository,
     AdminTenantService,
+    SuperDuperAdminService,
   ],
-  controllers: [UserController],
+  controllers: [UserController, SuperDuperAdminController],
   exports: [
     UserService,
     UserRepository,
