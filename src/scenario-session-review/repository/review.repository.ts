@@ -78,6 +78,12 @@ export class ScenarioSessionReviewRepository extends Repository<ScenarioSessionR
       });
     }
 
+    if (options.excludeOwn) {
+      query.andWhere('review.createdBy != :excludeCreatedBy', {
+        excludeCreatedBy: userId,
+      });
+    }
+
     if (
       options.sortBy === ReviewSortBy.MOST_REVIEWED ||
       options.sortBy === ReviewSortBy.MOST_COMMENTED
