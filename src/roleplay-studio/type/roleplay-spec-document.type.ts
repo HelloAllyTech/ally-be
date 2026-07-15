@@ -105,7 +105,20 @@ export interface RoleplayModelConfig {
 export interface RoleplaySpecDocument {
   specSchemaVersion: string;
   title: string;
+  /**
+   * Primary competency (kept for backward-compat / the thin scenario shell).
+   * Derived from `competencyIds[0]` when the multi-select is used.
+   */
   competencyId?: string;
+  /** All competencies this spec trains (first-class multi-select). */
+  competencyIds?: string[];
+  /**
+   * Competency display names, index-aligned with `competencyIds`. Written by
+   * the copilot (it already has id→name from get_competencies) and passed
+   * through to the runtime so the actor/director/trainee prompts can name the
+   * competencies without a DB lookup.
+   */
+  competencyNames?: string[];
   persona: RoleplayPersona;
   stateMachine: RoleplayStateMachine;
   disclosureLedger: DisclosureLedger;
