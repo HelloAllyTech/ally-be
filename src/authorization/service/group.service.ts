@@ -50,7 +50,15 @@ export class GroupService {
     }
     const userGroups = await this.getUserRolesByUserId(userId);
     const groupIds = userGroups.map((group) => group.id);
-    await this.cache.set(`user:groups:${userId}`, JSON.stringify(groupIds));
+    // TTL (30 min) matches getUserPermissions, which writes the same
+    // `user:groups:<id>` key. Without it, a last-writer-wins race between the
+    // two writers can pin the key permanently, so an out-of-band group change
+    // (e.g. a role promotion applied by a raw SQL migration) is never busted.
+    await this.cache.set(
+      `user:groups:${userId}`,
+      JSON.stringify(groupIds),
+      1800,
+    );
     return groupIds;
   }
 
