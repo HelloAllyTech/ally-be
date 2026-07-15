@@ -14,11 +14,12 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * no-op in any environment where that account does not exist (e.g. fresh local
  * databases), so it is safe to run everywhere. It is idempotent.
  *
- * NOTE: role/permission lookups are cached in Redis for ~30 min
- * (`user:groups:<id>`, `user:roles:<id>`, `group:permissions:<groupId>`). A raw
- * migration cannot bust that cache, so the promoted user may not see the change
- * until their cached entries expire — flush those keys (or wait out the TTL) if
- * an immediate effect is needed.
+ * NOTE: role/permission lookups are cached in Redis (`user:groups:<id>`,
+ * `user:roles:<id>`, `group:permissions:<groupId>`). A raw migration cannot bust
+ * that cache, so the promoted user may not see the change until the cached
+ * entries expire. All three now carry a 30-min TTL, but for an immediate effect
+ * flush those keys after deploying (e.g. `redis-cli --scan --pattern
+ * '*user:roles:*' | xargs -r redis-cli del`).
  */
 const NEW_GROUP = 'SUPER_DUPER_ADMIN';
 const SOURCE_GROUP = 'SUPER_ADMIN';
