@@ -87,13 +87,18 @@ export class CopilotOrchestratorService {
 
     // Persist the trainer's message first — the transcript survives whatever
     // happens next.
-    const userContent = dto.questionId
-      ? `[answers question ${dto.questionId}] ${dto.message}`
-      : dto.message;
+    const userContent = this.renderUserContent(dto);
+    const userMetadata =
+      dto.questionId || dto.answer
+        ? {
+            ...(dto.questionId ? { questionId: dto.questionId } : {}),
+            ...(dto.answer ? { answer: dto.answer } : {}),
+          }
+        : null;
     await this.copilotMessageRepository.appendMessage(sessionId, {
       role: CopilotMessageRole.USER,
       content: userContent,
-      metadata: dto.questionId ? { questionId: dto.questionId } : null,
+      metadata: userMetadata,
       createdBy: userId,
     });
 
@@ -119,6 +124,7 @@ export class CopilotOrchestratorService {
     const allToolCalls: Record<string, any>[] = [];
     const allToolResults: Record<string, any>[] = [];
     const questions: Record<string, any>[] = [];
+    const behaviourReviews: Record<string, any>[] = [];
     const testCaseSuggestions: Record<string, any>[] = [];
     let iterations = 0;
     let stopReason: string | null = null;
@@ -198,6 +204,8 @@ export class CopilotOrchestratorService {
           for (const frame of outcome.events ?? []) {
             if (frame.event === 'question') {
               questions.push(frame.data);
+            } else if (frame.event === 'behaviour_review') {
+              behaviourReviews.push(frame.data);
             } else if (frame.event === 'test_case_suggestions') {
               testCaseSuggestions.push(
                 ...((frame.data.suggestions ?? []) as Record<string, any>[]),
@@ -295,6 +303,7 @@ export class CopilotOrchestratorService {
           stopReason,
           errored: turnErrored,
           ...(questions.length > 0 ? { questions } : {}),
+          ...(behaviourReviews.length > 0 ? { behaviourReviews } : {}),
           ...(testCaseSuggestions.length > 0 ? { testCaseSuggestions } : {}),
         },
         createdBy: userId,
@@ -307,6 +316,43 @@ export class CopilotOrchestratorService {
         specVersionId: context.lastSpecVersionId,
       },
     };
+  }
+
+  /**
+   * Build the persisted user-turn content. A structured `answer` (from a
+   * multi-select / dropdown / behaviour-review card) is rendered into a
+   * deterministic suffix — labels come in via `message`, ids/custom/none via
+   * `answer` — so the copilot can act on the exact selections.
+   */
+  private renderUserContent(dto: CreateCopilotMessageDto): string {
+    const prefix = dto.questionId
+      ? `[answers question ${dto.questionId}] `
+      : '';
+    const base = (dto.message ?? '').trim();
+    const answer = dto.answer;
+    if (!answer) {
+      return `${prefix}${base}`.trim();
+    }
+    const parts: string[] = [];
+    if (answer.none) {
+      parts.push('none of these');
+    }
+    if (answer.selectedOptionIds?.length) {
+      parts.push(`selected ids: ${answer.selectedOptionIds.join(', ')}`);
+    }
+    if (answer.customValues?.length) {
+      parts.push(
+        `custom: ${answer.customValues.map((value) => `"${value}"`).join(', ')}`,
+      );
+    }
+    if (answer.helpful?.length) {
+      parts.push(`helpful behaviours: ${answer.helpful.join('; ')}`);
+    }
+    if (answer.unhelpful?.length) {
+      parts.push(`unhelpful behaviours: ${answer.unhelpful.join('; ')}`);
+    }
+    const suffix = parts.length ? ` [${parts.join(' | ')}]` : '';
+    return `${prefix}${base}${suffix}`.trim();
   }
 
   /**

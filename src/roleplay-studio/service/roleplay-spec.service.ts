@@ -70,10 +70,19 @@ export class RoleplaySpecService {
     dto: CreateRoleplaySpecDto,
     userId: number,
   ): Promise<RoleplaySpec> {
+    const competencyIds =
+      dto.competencyIds && dto.competencyIds.length > 0
+        ? dto.competencyIds
+        : dto.competencyId
+          ? [dto.competencyId]
+          : undefined;
+    const competencyId = competencyIds?.[0] ?? dto.competencyId ?? null;
+
     const draftSpec: Partial<RoleplaySpecDocument> = {
       specSchemaVersion: SPEC_SCHEMA_VERSION,
       title: dto.title,
-      ...(dto.competencyId ? { competencyId: dto.competencyId } : {}),
+      ...(competencyId ? { competencyId } : {}),
+      ...(competencyIds ? { competencyIds } : {}),
       ...(dto.spec ?? {}),
     };
 
@@ -86,7 +95,8 @@ export class RoleplaySpecService {
           title: dto.title,
           status: ScenarioStatus.DRAFT,
           engine: ScenarioEngine.ROLEPLAY_V2,
-          competencyId: dto.competencyId,
+          competencyId: competencyId ?? undefined,
+          competencyIds: competencyIds ?? null,
           isGlobal: false,
           isPublic: false,
           createdBy: userId,
@@ -100,7 +110,8 @@ export class RoleplaySpecService {
         specRepo.create({
           title: dto.title,
           status: RoleplaySpecStatus.DRAFT,
-          competencyId: dto.competencyId ?? null,
+          competencyId,
+          competencyIds: competencyIds ?? null,
           scenarioId: scenario.id,
           draftSpec,
           createdBy: userId,
@@ -193,11 +204,25 @@ export class RoleplaySpecService {
       spec.title = dto.title;
       spec.draftSpec = { ...spec.draftSpec, title: dto.title };
     }
-    if (dto.competencyId !== undefined) {
+    if (dto.competencyIds !== undefined) {
+      const ids =
+        dto.competencyIds && dto.competencyIds.length > 0
+          ? dto.competencyIds
+          : null;
+      spec.competencyIds = ids;
+      spec.competencyId = ids?.[0] ?? null;
+      spec.draftSpec = {
+        ...spec.draftSpec,
+        competencyIds: ids ?? undefined,
+        competencyId: ids?.[0] ?? undefined,
+      };
+    } else if (dto.competencyId !== undefined) {
       spec.competencyId = dto.competencyId;
+      spec.competencyIds = dto.competencyId ? [dto.competencyId] : null;
       spec.draftSpec = {
         ...spec.draftSpec,
         competencyId: dto.competencyId ?? undefined,
+        competencyIds: dto.competencyId ? [dto.competencyId] : undefined,
       };
     }
     spec.updatedBy = userId;
@@ -288,13 +313,20 @@ export class RoleplaySpecService {
             patchId,
           );
 
+          const nextCompetencyIds =
+            nextDraft.competencyIds ?? spec.competencyIds ?? null;
           await specRepo.update(spec.id, {
             draftSpec: nextDraft,
             title:
               typeof nextDraft.title === 'string' && nextDraft.title.trim()
                 ? nextDraft.title
                 : spec.title,
-            competencyId: nextDraft.competencyId ?? spec.competencyId ?? null,
+            competencyIds: nextCompetencyIds,
+            competencyId:
+              nextCompetencyIds?.[0] ??
+              nextDraft.competencyId ??
+              spec.competencyId ??
+              null,
             updatedBy: userId,
           });
           const saved = await specRepo.findOneOrFail({
@@ -471,11 +503,18 @@ export class RoleplaySpecService {
         publishedAt: new Date(),
         updatedBy: userId,
       });
+      const publishedCompetencyIds =
+        version.spec.competencyIds ?? spec.competencyIds ?? null;
       await specRepo.update(spec.id, {
         status: RoleplaySpecStatus.PUBLISHED,
         publishedVersionId: version.id,
         title: version.spec.title ?? spec.title,
-        competencyId: version.spec.competencyId ?? spec.competencyId ?? null,
+        competencyIds: publishedCompetencyIds,
+        competencyId:
+          publishedCompetencyIds?.[0] ??
+          version.spec.competencyId ??
+          spec.competencyId ??
+          null,
         updatedBy: userId,
       });
 
@@ -503,11 +542,18 @@ export class RoleplaySpecService {
       );
     }
     const doc = version.spec;
+    const scenarioCompetencyIds =
+      doc.competencyIds ?? spec.competencyIds ?? null;
     await scenarioRepo.update(scenario.id, {
       title: doc.title ?? spec.title,
       description: doc.persona?.scenarioContext ?? scenario.description,
       status: ScenarioStatus.ACTIVE,
-      competencyId: doc.competencyId ?? spec.competencyId ?? undefined,
+      competencyId:
+        scenarioCompetencyIds?.[0] ??
+        doc.competencyId ??
+        spec.competencyId ??
+        undefined,
+      competencyIds: scenarioCompetencyIds,
       difficultyLevel:
         (doc.difficulty as Scenarios['difficultyLevel']) ??
         scenario.difficultyLevel,
