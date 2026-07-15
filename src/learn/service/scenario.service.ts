@@ -318,8 +318,14 @@ export class ScenarioService {
     options?: Pagination,
     currentUser?: TokenUser,
   ) {
-    const { status, tenantId, assignmentStatus, search } =
-      scenarioFilters ?? {};
+    const {
+      status,
+      category,
+      partnerOrgName,
+      tenantId,
+      assignmentStatus,
+      search,
+    } = scenarioFilters ?? {};
     if (tenantId) {
       const tenant = await this.tenantService.findById(tenantId);
       if (!tenant) {
@@ -334,6 +340,8 @@ export class ScenarioService {
     const scenarios = await this.scenariosRepository.getAdminScenarios(
       {
         status,
+        category,
+        partnerOrgName,
         tenantId,
         assignmentStatus,
         search,
@@ -370,6 +378,8 @@ export class ScenarioService {
         createdBy: item.user_name,
         createdByUserId: item.scenario_createdBy,
         status: item.scenario_status,
+        category: item.scenario_category,
+        partnerOrgName: item.scenario_partnerOrgName,
         usage: item.usage,
         isAssignedToTenant: item.isAssignedToTenant,
         triggerWarnings: item.triggerWarnings,
@@ -1529,6 +1539,8 @@ export class ScenarioService {
       isGlobal: scenario.isGlobal,
       scenario: scenario.scenario,
       competencyId: scenario.competencyId, // Copy competency from original scenario
+      category: scenario.category,
+      partnerOrgName: scenario.partnerOrgName,
       createdBy: Number(ExecutionManager.getUserId()),
       updatedBy: Number(ExecutionManager.getUserId()),
     };

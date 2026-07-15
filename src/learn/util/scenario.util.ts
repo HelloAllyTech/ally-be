@@ -67,6 +67,8 @@ export const SCENARIO_ROOT_FIELDS: (keyof UpdateScenarioDto)[] = [
   'isGlobal',
   'difficultyLevel',
   'competencyId',
+  'category',
+  'partnerOrgName',
 ];
 
 /**
@@ -123,6 +125,8 @@ export const mapCreateScenarioRequestToEntity = (
     isGlobal: scenario.isGlobal,
     difficultyLevel: scenario.difficultyLevel,
     competencyId: scenario.competencyId,
+    category: scenario.category,
+    partnerOrgName: scenario.partnerOrgName,
     metadata: {
       name: scenario.name,
       age: scenario.age,
@@ -235,6 +239,8 @@ export const mapUpdateScenarioRequestToEntity = (
     'isGlobal',
     'difficultyLevel',
     'competencyId',
+    'category',
+    'partnerOrgName',
   ];
 
   for (const field of updateScenarioObjectFields) {

@@ -180,6 +180,18 @@ export class LearnController {
     type: String,
     description: 'Search by title',
   })
+  @ApiQuery({
+    name: 'category',
+    required: false,
+    type: String,
+    description: 'Filter by scenario category (comma-separated)',
+  })
+  @ApiQuery({
+    name: 'partnerOrgName',
+    required: false,
+    type: String,
+    description: 'Filter by partner organisation tag (substring match)',
+  })
   @Get('admin-scenarios')
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIOS])
   async getAdminScenarios(
@@ -197,9 +209,11 @@ export class LearnController {
     )
     assignmentStatus?: AssignmentStatus,
     @Query('search') search?: string,
+    @Query('category') category?: string,
+    @Query('partnerOrgName') partnerOrgName?: string,
   ) {
     return this.scenarioService.getAdminScenarios(
-      { status, tenantId, assignmentStatus, search },
+      { status, category, partnerOrgName, tenantId, assignmentStatus, search },
       {
         limit,
         offset,

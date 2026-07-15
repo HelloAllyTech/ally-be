@@ -4,6 +4,10 @@ import { AssignmentStatus } from 'src/common/type/common.type';
 
 export type ScenarioFilters = {
   status?: string;
+  /** Comma-separated ScenarioCategory values (mirrors `status`). */
+  category?: string;
+  /** Case-insensitive substring match on the partner organisation tag. */
+  partnerOrgName?: string;
   tenantId?: string;
   assignmentStatus?: AssignmentStatus;
   search?: string;
