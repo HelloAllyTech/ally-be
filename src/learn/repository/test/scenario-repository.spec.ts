@@ -379,7 +379,7 @@ describe('ScenariosRepository', () => {
         const mockQuery = { andWhere: jest.fn().mockReturnThis() } as any;
         (repository as any).applySearchFilter(mockQuery, 'test');
         expect(mockQuery.andWhere).toHaveBeenCalledWith(
-          '(scenario.title ILIKE :search)',
+          '(scenario.title ILIKE :search OR scenario.partnerOrgName ILIKE :search)',
           { search: '%test%' },
         );
       });

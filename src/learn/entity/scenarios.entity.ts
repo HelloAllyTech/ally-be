@@ -7,6 +7,7 @@ import {
 } from 'typeorm';
 import { ScenarioDifficultyLevel, ScenarioStatus } from '../type/scenario.type';
 import { ScenarioEngine } from '../enum/scenario-engine.enum';
+import { ScenarioCategory } from '../enum/scenario-category.enum';
 
 @Entity('scenarios')
 export class Scenarios extends BaseWithoutTenantEntity {
@@ -85,4 +86,15 @@ export class Scenarios extends BaseWithoutTenantEntity {
   // constraint, matching repo convention). Null for v1 scenarios.
   @Column({ type: 'uuid', nullable: true })
   roleplaySpecId?: string | null;
+
+  // Editorial grouping for the Studio list (Originals / Demo / Partner Sim…).
+  // Null for scenarios that predate the field.
+  @Column({ type: 'varchar', nullable: true, enum: ScenarioCategory })
+  category?: ScenarioCategory | null;
+
+  // Free-text partner organisation tag, meaningful mainly when
+  // category=PARTNER_SIM. Deliberately not an FK to `tenants` — partners may
+  // not exist as tenants.
+  @Column({ type: 'varchar', nullable: true, length: 255 })
+  partnerOrgName?: string | null;
 }

@@ -150,6 +150,8 @@ export class ScenariosRepository extends Repository<Scenarios> {
   ) {
     const {
       status,
+      category,
+      partnerOrgName,
       tenantId,
       assignmentStatus,
       search,
@@ -211,6 +213,22 @@ export class ScenariosRepository extends Repository<Scenarios> {
         });
       }
     }
+
+    if (category) {
+      const categories = this.parseStringArray(category);
+      if (categories.length > 0) {
+        query.andWhere('scenario.category IN (:...categories)', {
+          categories,
+        });
+      }
+    }
+
+    if (partnerOrgName && partnerOrgName.trim()) {
+      query.andWhere('scenario.partnerOrgName ILIKE :partnerOrgName', {
+        partnerOrgName: `%${partnerOrgName.trim()}%`,
+      });
+    }
+
     if (options?.sortBy) {
       if (options.sortBy === ScenarioSortBy.USAGE) {
         query.orderBy('usage', options.order as 'ASC' | 'DESC');
@@ -289,7 +307,12 @@ export class ScenariosRepository extends Repository<Scenarios> {
     if (search && search.trim()) {
       const searchTerm = `%${search.trim()}%`;
 
-      query.andWhere('(scenario.title ILIKE :search)', { search: searchTerm });
+      // Admin-list search only (single call site): matches the partner-org
+      // tag as well as the title so typing a partner name surfaces its sims.
+      query.andWhere(
+        '(scenario.title ILIKE :search OR scenario.partnerOrgName ILIKE :search)',
+        { search: searchTerm },
+      );
     }
   }
 

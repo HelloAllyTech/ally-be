@@ -30,6 +30,11 @@ import {
 } from '../dto/upload-image-url.dto';
 import { AddScenarioCoverImageDto } from '../dto/add-scenario-cover-image.dto';
 import { ParseArrayBodyPipe } from '../pipes/parse-array-body.pipe';
+import {
+  GenerateCoverImageRequestDto,
+  GenerateCoverImageResponseDto,
+} from '../dto/generate-cover-image.dto';
+import { CoverImageGenerationService } from '../service/cover-image-generation.service';
 
 @ApiTags('Scenario Cover Image Library')
 @ApiBearerAuth()
@@ -38,7 +43,33 @@ import { ParseArrayBodyPipe } from '../pipes/parse-array-body.pipe';
 export class ScenarioCoverImageLibraryController {
   constructor(
     private readonly scenarioCoverImageLibraryService: ScenarioCoverImageLibraryService,
+    private readonly coverImageGenerationService: CoverImageGenerationService,
   ) {}
+
+  @Post('generate')
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_COVER_IMAGE_LIBRARY])
+  @ApiOperation({
+    summary: 'Generate a scenario cover image with AI',
+    description:
+      'Stateless: renders the managed `cover_image_generation` prompt with ' +
+      'the scenario title/description, generates the image, stores it in S3 ' +
+      'and the library, and returns the URL. The client saves it on the ' +
+      'scenario via the normal update flow.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Returns the generated image URL and the provider used',
+    type: GenerateCoverImageResponseDto,
+  })
+  @ApiResponse({ status: 400, description: 'Provider rejected the request' })
+  @ApiResponse({ status: 502, description: 'Provider unavailable' })
+  async generateCoverImage(
+    @Body() generateCoverImageDto: GenerateCoverImageRequestDto,
+  ): Promise<GenerateCoverImageResponseDto> {
+    return this.coverImageGenerationService.generateCoverImage(
+      generateCoverImageDto,
+    );
+  }
 
   @Post('upload-url')
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_COVER_IMAGE_LIBRARY])

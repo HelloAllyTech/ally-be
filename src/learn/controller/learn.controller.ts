@@ -180,6 +180,18 @@ export class LearnController {
     type: String,
     description: 'Search by title',
   })
+  @ApiQuery({
+    name: 'category',
+    required: false,
+    type: String,
+    description: 'Filter by scenario category (comma-separated)',
+  })
+  @ApiQuery({
+    name: 'partnerOrgName',
+    required: false,
+    type: String,
+    description: 'Filter by partner organisation tag (substring match)',
+  })
   @Get('admin-scenarios')
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIOS])
   async getAdminScenarios(
@@ -197,9 +209,11 @@ export class LearnController {
     )
     assignmentStatus?: AssignmentStatus,
     @Query('search') search?: string,
+    @Query('category') category?: string,
+    @Query('partnerOrgName') partnerOrgName?: string,
   ) {
     return this.scenarioService.getAdminScenarios(
-      { status, tenantId, assignmentStatus, search },
+      { status, category, partnerOrgName, tenantId, assignmentStatus, search },
       {
         limit,
         offset,
@@ -808,6 +822,13 @@ export class LearnController {
     type: Boolean,
     description: 'When true, include message tags in the response',
   })
+  @ApiQuery({
+    name: 'languageCode',
+    required: false,
+    type: String,
+    description:
+      'When provided (and not "en"), returns translated message content',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_SESSION_SCENARIO_MESSAGES])
   @Get('scenario-session/:scenarioSessionId/messages')
   async getMessagesByScenarioSessionId(
@@ -817,6 +838,7 @@ export class LearnController {
     @Query('sortBy') sortBy?: string,
     @Query('order') order: SortOrder = SortOrder.ASC,
     @Query('includeTags') includeTags?: boolean,
+    @Query('languageCode') languageCode?: string,
   ) {
     return this.scenarioSessionService.getMessagesByScenarioSessionId(
       scenarioSessionId,
@@ -827,6 +849,7 @@ export class LearnController {
         order,
       },
       { includeTags: !!includeTags },
+      languageCode,
     );
   }
 

@@ -25,6 +25,7 @@ import {
   ChecklistType,
 } from '../type/scenario.type';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
+import { ScenarioCategory } from '../enum/scenario-category.enum';
 import { CustomFieldsDto } from './custom-fields.dto';
 import {
   MAX_CUSTOM_FIELDS_COUNT,
@@ -118,6 +119,24 @@ export class UpdateScenarioDto {
   @IsString()
   @IsOptional()
   coverVideoUrl?: string;
+
+  @ApiProperty({
+    description: 'Editorial category of the scenario (Studio grouping)',
+    example: ScenarioCategory.ORIGINALS,
+    enum: ScenarioCategory,
+  })
+  @IsEnum(ScenarioCategory)
+  @IsOptional()
+  category?: ScenarioCategory;
+
+  @ApiProperty({
+    description: 'Partner organisation tag (used when category is PARTNER_SIM)',
+    example: 'Acme Health',
+  })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  partnerOrgName?: string;
 
   @ApiProperty({
     description: 'Status of the scenario (only DRAFT or ACTIVE allowed)',

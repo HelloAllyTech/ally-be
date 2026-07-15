@@ -344,6 +344,8 @@ export class ScenarioVersionService {
       isGlobal: admin.isGlobal,
       difficultyLevel: admin.difficultyLevel,
       competencyId: admin.competencyId,
+      category: admin.category,
+      partnerOrgName: admin.partnerOrgName,
       status: ScenarioStatus.DRAFT,
       triggerWarningIds: (admin.triggerWarnings ?? []).map((tw: any) =>
         String(tw.id),

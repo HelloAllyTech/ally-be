@@ -6,9 +6,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * working for scenarios that already reference its URL (playback resolves by
  * URL, not by track id). Null = active; archiving is reversible.
  */
-export class AddArchivedAtToComfortAudioTracks1837000000000
-  implements MigrationInterface
-{
+export class AddArchivedAtToComfortAudioTracks1837000000000 implements MigrationInterface {
   name = 'AddArchivedAtToComfortAudioTracks1837000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

@@ -20,6 +20,7 @@ describe('AppConfigService.roleplayV2', () => {
     expect(enabled).toBe(true);
     expect(allowlist).toContain(SANDEEP);
     expect(allowlist).toContain('gopi.s@helloally.ai');
+    expect(allowlist).toContain('gopikrishnan.sasikumar@helloally.ai');
   });
 
   it('is disabled only when ROLEPLAY_V2_ENABLED is exactly "false"', () => {
