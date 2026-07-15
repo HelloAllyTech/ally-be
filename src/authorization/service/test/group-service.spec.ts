@@ -187,6 +187,7 @@ describe('GroupService', () => {
       expect(redisService.set).toHaveBeenCalledWith(
         'user:groups:2',
         JSON.stringify([10, 20]),
+        1800,
       );
       expect(groupRepo.findUserRoleByUserId).toHaveBeenCalledWith(2);
     });
