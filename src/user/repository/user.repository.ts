@@ -193,6 +193,67 @@ export class UserRepository extends Repository<User> {
       .getMany();
   }
 
+  // Platform-level lookup (deliberately NOT tenant-pinned — super-admin tiers
+  // span tenants): all users holding the given role, newest first.
+  async getUsersWithRole(role: UserRole, search?: string) {
+    const query = this.createQueryBuilder('user')
+      .select('user.id', 'id')
+      .addSelect('user.name', 'name')
+      .addSelect('user.email', 'email')
+      .addSelect('user.status', 'status')
+      .addSelect('user.createdAt', 'createdAt')
+      .innerJoin(UserGroup, 'userGroup', 'userGroup.userId = user.id')
+      .innerJoin(Group, 'group', 'group.id = userGroup.groupId')
+      .where('group.name = :role', { role })
+      .orderBy('user.createdAt', 'DESC');
+
+    if (search && search.trim()) {
+      query.andWhere('(user.name ILIKE :search OR user.email ILIKE :search)', {
+        search: `%${search.trim()}%`,
+      });
+    }
+
+    const users = await query.getRawMany();
+    return { users, count: users.length };
+  }
+
+  // Platform-level lookup (NOT tenant-pinned): ACTIVE users holding none of
+  // the excluded roles — candidates for promotion into the super-admin tier.
+  // Limited because the candidate pool is "almost every user"; callers narrow
+  // it with `search`.
+  async getActiveUsersWithoutRoles(
+    excludedRoles: UserRole[],
+    search?: string,
+    limit = 20,
+  ) {
+    const query = this.createQueryBuilder('user')
+      .select('user.id', 'id')
+      .addSelect('user.name', 'name')
+      .addSelect('user.email', 'email')
+      .addSelect('user.status', 'status')
+      .addSelect('user.createdAt', 'createdAt')
+      .where('user.status = :activeStatus', { activeStatus: 'ACTIVE' })
+      .andWhere(
+        `NOT EXISTS (
+          SELECT 1 FROM "user_groups" ug
+          INNER JOIN "groups" g ON g.id = ug."groupId"
+          WHERE ug."userId" = user.id AND g.name IN (:...excludedRoles)
+        )`,
+        { excludedRoles },
+      )
+      .orderBy('user.createdAt', 'DESC')
+      .limit(limit);
+
+    if (search && search.trim()) {
+      query.andWhere('(user.name ILIKE :search OR user.email ILIKE :search)', {
+        search: `%${search.trim()}%`,
+      });
+    }
+
+    const users = await query.getRawMany();
+    return { users, count: users.length };
+  }
+
   async getCounselorNames(limit?: number, offset?: number, search?: string) {
     const query = this.createQueryBuilder('user')
       .select('user.id', 'id')
