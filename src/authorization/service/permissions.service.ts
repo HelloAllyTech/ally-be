@@ -32,7 +32,14 @@ export class PermissionsService {
     }
     const userRoles = await this.groupService.getUserRolesByUserId(userId);
     const roleNames = userRoles.map((role) => role.name);
-    await this.cache.set(`user:roles:${userId}`, JSON.stringify(roleNames));
+    // TTL (30 min) matches `user:groups` / `group:permissions` so an
+    // out-of-band role change (e.g. a promotion applied by a raw SQL migration,
+    // which cannot bust Redis) self-heals instead of being cached forever.
+    await this.cache.set(
+      `user:roles:${userId}`,
+      JSON.stringify(roleNames),
+      1800,
+    );
     return roleNames;
   }
 
