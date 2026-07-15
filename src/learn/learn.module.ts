@@ -115,6 +115,7 @@ import { ScenarioSessionRecording } from './entity/scenario-session-recording.en
 import { ScenarioSessionRecordingRepository } from './repository/scenario-session-recording.repository';
 import { ScenarioSessionRecordingController } from './controller/scenario-session-recording.controller';
 import { ScenarioSessionRecordingService } from './service/scenario-session-recording.service';
+import { TranscriptTranslationModule } from 'src/transcript-translation/transcript-translation.module';
 
 @Module({
   imports: [
@@ -167,6 +168,7 @@ import { ScenarioSessionRecordingService } from './service/scenario-session-reco
     AiChatModule,
     AuditModule,
     LlmUsageModule,
+    TranscriptTranslationModule,
   ],
   controllers: [
     LearnController,

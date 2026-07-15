@@ -47,6 +47,17 @@ export class RedisService {
     return `${this.prefix}:${key}`;
   }
 
+  // Best-effort distributed lock. Returns true if the lock was acquired.
+  async acquireLock(key: string, ttlSeconds: number): Promise<boolean> {
+    const fullKey = this.getFullKey(key);
+    const result = await this.redis.set(fullKey, '1', 'EX', ttlSeconds, 'NX');
+    return result === 'OK';
+  }
+
+  async releaseLock(key: string): Promise<void> {
+    await this.del(key);
+  }
+
   async getByPattern(pattern: string): Promise<string[]> {
     const keys: string[] = [];
     const stream = this.redis.scanStream({ match: pattern });
