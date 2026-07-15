@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Scenarios } from '../entity/scenarios.entity';
-import { Pagination } from 'src/common/type/common.type';
+import { AssignmentStatus, Pagination } from 'src/common/type/common.type';
 import { User } from 'src/user/entity/user.entity';
 import { ScenarioSessions } from '../entity/scenario-sessions.entity';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
@@ -14,6 +14,7 @@ import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.ent
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 import { GetScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioStatus, ScenarioSortBy } from '../type/scenario.type';
+import { ScenarioEngine } from '../enum/scenario-engine.enum';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 import { ScenarioBehaviorInstruction } from '../entity/scenario-behavior-instruction.entity';
 import { GetScenarioResponse } from '../interface/session.interface';
@@ -56,6 +57,17 @@ export class ScenariosRepository extends Repository<Scenarios> {
     query.where('scenario.status IN (:...statuses)', {
       statuses: [ScenarioStatus.ACTIVE],
     });
+
+    // ROLEPLAY_V2 shells must not surface in the learner catalog by default —
+    // ordinary users would otherwise see them and hit the v2 rollout gate.
+    // Only a v2-allowlisted requester opts in via includeRoleplayV2 (see
+    // ScenarioService.getScenariosV2); every other caller (incl. the @Public
+    // catalog endpoints) excludes them.
+    if (!filters?.includeRoleplayV2) {
+      query.andWhere('scenario.engine != :roleplayV2Engine', {
+        roleplayV2Engine: ScenarioEngine.ROLEPLAY_V2,
+      });
+    }
 
     if (filters?.isPublic) {
       query.andWhere('scenario.isPublic = :isPublic', {
@@ -136,8 +148,16 @@ export class ScenariosRepository extends Repository<Scenarios> {
     scenarioFilters?: ScenarioFilters,
     options?: Pagination,
   ) {
-    const { status, tenantId, search, isMultiTenantAdmin, userId } =
-      scenarioFilters ?? {};
+    const {
+      status,
+      category,
+      partnerOrgName,
+      tenantId,
+      assignmentStatus,
+      search,
+      isMultiTenantAdmin,
+      userId,
+    } = scenarioFilters ?? {};
     const query = this.createQueryBuilder('scenario')
       .leftJoin(User, 'user', 'scenario."createdBy"=user.id')
       .leftJoin(ScenarioTriggerWarnings, 'stw', 'stw.scenarioId = scenario.id')
@@ -170,6 +190,14 @@ export class ScenariosRepository extends Repository<Scenarios> {
 
     this.applySearchFilter(query, search);
 
+    // The v1 studio list owns SIMULATION scenarios only. Roleplay Studio v2
+    // materialises thin ROLEPLAY_V2 shells in `scenarios` (real config lives in
+    // roleplay_specs); they must never surface here. `engine` is NOT NULL with a
+    // 'SIMULATION' default, so a plain inequality keeps every v1 row.
+    query.andWhere('scenario.engine != :roleplayV2Engine', {
+      roleplayV2Engine: ScenarioEngine.ROLEPLAY_V2,
+    });
+
     if (isMultiTenantAdmin && userId) {
       query.andWhere(
         '(scenario.isPublic = true OR scenario.createdBy = :userId)',
@@ -185,6 +213,22 @@ export class ScenariosRepository extends Repository<Scenarios> {
         });
       }
     }
+
+    if (category) {
+      const categories = this.parseStringArray(category);
+      if (categories.length > 0) {
+        query.andWhere('scenario.category IN (:...categories)', {
+          categories,
+        });
+      }
+    }
+
+    if (partnerOrgName && partnerOrgName.trim()) {
+      query.andWhere('scenario.partnerOrgName ILIKE :partnerOrgName', {
+        partnerOrgName: `%${partnerOrgName.trim()}%`,
+      });
+    }
+
     if (options?.sortBy) {
       if (options.sortBy === ScenarioSortBy.USAGE) {
         query.orderBy('usage', options.order as 'ASC' | 'DESC');
@@ -219,6 +263,12 @@ export class ScenariosRepository extends Repository<Scenarios> {
           'BOOL_OR("scenarioTenants".id IS NOT NULL)',
           'isAssignedToTenant',
         );
+
+      if (assignmentStatus === AssignmentStatus.ASSIGNED) {
+        query.andWhere('"scenarioTenants"."id" IS NOT NULL');
+      } else if (assignmentStatus === AssignmentStatus.UNASSIGNED) {
+        query.andWhere('"scenarioTenants"."id" IS NULL');
+      }
     }
     return query.getRawMany();
   }
@@ -257,7 +307,12 @@ export class ScenariosRepository extends Repository<Scenarios> {
     if (search && search.trim()) {
       const searchTerm = `%${search.trim()}%`;
 
-      query.andWhere('(scenario.title ILIKE :search)', { search: searchTerm });
+      // Admin-list search only (single call site): matches the partner-org
+      // tag as well as the title so typing a partner name surfaces its sims.
+      query.andWhere(
+        '(scenario.title ILIKE :search OR scenario.partnerOrgName ILIKE :search)',
+        { search: searchTerm },
+      );
     }
   }
 

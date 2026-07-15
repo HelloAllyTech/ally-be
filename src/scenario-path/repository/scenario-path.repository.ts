@@ -9,6 +9,7 @@ import {
   ScenarioPathSortBy,
 } from '../type/scenario-paths.type';
 import { ScenarioPathSession } from '../entity/scenario-path-session.entity';
+import { AssignmentStatus } from 'src/common/type/common.type';
 
 @Injectable()
 export class ScenarioPathRepository extends Repository<ScenarioPath> {
@@ -33,6 +34,12 @@ export class ScenarioPathRepository extends Repository<ScenarioPath> {
         .setParameters({
           tenantId: filters.tenantId,
         });
+
+      if (filters.assignmentStatus === AssignmentStatus.ASSIGNED) {
+        query.andWhere('"scenarioPathTenant"."id" IS NOT NULL');
+      } else if (filters.assignmentStatus === AssignmentStatus.UNASSIGNED) {
+        query.andWhere('"scenarioPathTenant"."id" IS NULL');
+      }
     }
 
     this.applyStatusFilter(query, filters);

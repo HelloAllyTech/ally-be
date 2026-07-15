@@ -4,6 +4,7 @@ import { UserRepository } from '../user.repository';
 import { User } from 'src/user/entity/user.entity';
 import { UserSortBy, SortOrder } from 'src/user/enum/user.enum';
 import { UserFilterOptions } from 'src/user/interface/user-filter-options.interface';
+import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 describe('UserRepository', () => {
   let repository: UserRepository;
@@ -115,11 +116,11 @@ describe('UserRepository', () => {
 
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('NOT EXISTS'),
-        expect.objectContaining({ superAdminRole: 'SUPER_ADMIN' }),
+        expect.objectContaining({ superAdminRoles: SUPER_ADMIN_ROLES }),
       );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        expect.stringContaining('g_excl.name = :superAdminRole'),
-        expect.objectContaining({ superAdminRole: 'SUPER_ADMIN' }),
+        expect.stringContaining('g_excl.name IN (:...superAdminRoles)'),
+        expect.objectContaining({ superAdminRoles: SUPER_ADMIN_ROLES }),
       );
     });
 
@@ -166,7 +167,7 @@ describe('UserRepository', () => {
         expect.stringContaining('g.name IN (:...roles)'),
         expect.objectContaining({
           roles: ['ADMIN', 'USER'],
-          superAdminRole: 'SUPER_ADMIN',
+          superAdminRoles: SUPER_ADMIN_ROLES,
         }),
       );
     });
@@ -236,7 +237,7 @@ describe('UserRepository', () => {
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledTimes(1);
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('NOT EXISTS'),
-        expect.objectContaining({ superAdminRole: 'SUPER_ADMIN' }),
+        expect.objectContaining({ superAdminRoles: SUPER_ADMIN_ROLES }),
       );
     });
 
@@ -337,7 +338,7 @@ describe('UserRepository', () => {
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('NOT EXISTS'),
         expect.objectContaining({
-          superAdminRole: 'SUPER_ADMIN',
+          superAdminRoles: SUPER_ADMIN_ROLES,
           roles: ['ADMIN'],
         }),
       );

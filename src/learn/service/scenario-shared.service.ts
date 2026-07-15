@@ -967,7 +967,7 @@ export class ScenarioSharedService {
 
     // Only include prompts with non-empty content so ally-ai-learn uses dashboard edits.
     // Also forwards hasStates so ai-learn knows when to resolve simulation states.
-    return prompts.reduce<
+    const result = prompts.reduce<
       Record<
         string,
         {
@@ -977,6 +977,9 @@ export class ScenarioSharedService {
             | { name: string; label?: string; required?: boolean }
           )[];
           hasStates?: boolean;
+          provider?: string;
+          model?: string;
+          temperature?: number;
         }
       >
     >((acc, prompt) => {
@@ -986,10 +989,35 @@ export class ScenarioSharedService {
           prompt: content,
           availableVariables: prompt.availableVariables || [],
           hasStates: prompt.hasStates ?? false,
+          // Forward the prompt-level LLM overrides so the voice runtime
+          // (ai-learn's get_prompt_llm_overrides) can honor a per-prompt
+          // provider/model/temperature. Only include when set so the payload
+          // stays clean and the runtime falls back to its code default.
+          ...(prompt.provider ? { provider: prompt.provider } : {}),
+          ...(prompt.model ? { model: prompt.model } : {}),
+          ...(typeof prompt.temperature === 'number'
+            ? { temperature: prompt.temperature }
+            : {}),
         };
       }
       return acc;
     }, {});
+
+    // Observability: log which shipped prompts carry a per-prompt LLM override,
+    // so the voice runtime's chosen provider/model/temperature is traceable from
+    // the ally-be side (mirrors ai-learn's `[LLM] applying overrides` log).
+    const withOverrides = Object.entries(result)
+      .filter(([, p]) => p.provider || p.model || p.temperature != null)
+      .map(
+        ([code, p]) =>
+          `${code}(provider=${p.provider ?? '-'} model=${p.model ?? '-'} temperature=${p.temperature ?? '-'})`,
+      );
+    this.logger.info(
+      `[SESSION_PROMPTS] shipping ${Object.keys(result).length} prompts to ai-learn; ` +
+        `${withOverrides.length} with LLM override: ${withOverrides.join(', ') || 'none'}`,
+    );
+
+    return result;
   }
 
   async getScenarioSessionSkills(

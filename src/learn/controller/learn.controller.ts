@@ -7,6 +7,7 @@ import {
   Body,
   Put,
   Delete,
+  ParseEnumPipe,
   ParseUUIDPipe,
   Version,
   Patch,
@@ -25,6 +26,7 @@ import { ScenarioSessionService } from '../service/scenario-session.service';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
+import { AssignmentStatus } from 'src/common/type/common.type';
 import { ScenarioSessionSortBy } from '../enum/scenario-session-sort-by.enum';
 import { ScenarioSessionResponseDto } from '../dto/scenario-session-response.dto';
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
@@ -75,8 +77,6 @@ import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills
 import { ScenarioSessionEventChecklistResponseDto } from '../dto/scenario-session-event-checklist-response.dto';
 import { ScenarioSessionReflectionPromptsResponseDto } from '../dto/scenario-session-reflection-prompts-response.dto';
 import { UpdateReflectionPromptResponseDto } from '../dto/reflection-prompts-request.dto';
-import { GenerateScenarioFieldDto } from '../dto/generate-scenario-field.dto';
-import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field-response.dto';
 import {
   EnhanceScenarioFieldDto,
   EnhanceScenarioFieldResponseDto,
@@ -88,7 +88,7 @@ import {
 import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
 import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
-import { UserRole } from 'src/common/constants/user.constants';
+import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -168,10 +168,29 @@ export class LearnController {
     description: 'TenantId',
   })
   @ApiQuery({
+    name: 'assignmentStatus',
+    required: false,
+    enum: AssignmentStatus,
+    description:
+      'Filter by tenant assignment status (requires tenantId; ignored without it)',
+  })
+  @ApiQuery({
     name: 'search',
     required: false,
     type: String,
     description: 'Search by title',
+  })
+  @ApiQuery({
+    name: 'category',
+    required: false,
+    type: String,
+    description: 'Filter by scenario category (comma-separated)',
+  })
+  @ApiQuery({
+    name: 'partnerOrgName',
+    required: false,
+    type: String,
+    description: 'Filter by partner organisation tag (substring match)',
   })
   @Get('admin-scenarios')
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIOS])
@@ -184,10 +203,17 @@ export class LearnController {
     @Query('order') order: SortOrder = SortOrder.ASC,
     @Query('status') status?: string,
     @Query('tenantId', new ParseUUIDPipe({ optional: true })) tenantId?: string,
+    @Query(
+      'assignmentStatus',
+      new ParseEnumPipe(AssignmentStatus, { optional: true }),
+    )
+    assignmentStatus?: AssignmentStatus,
     @Query('search') search?: string,
+    @Query('category') category?: string,
+    @Query('partnerOrgName') partnerOrgName?: string,
   ) {
     return this.scenarioService.getAdminScenarios(
-      { status, tenantId, search },
+      { status, category, partnerOrgName, tenantId, assignmentStatus, search },
       {
         limit,
         offset,
@@ -291,25 +317,14 @@ export class LearnController {
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
   @Get('models')
   async getAvailableModels(): Promise<
-    { value: string; label: string; provider: string }[]
+    {
+      value: string;
+      label: string;
+      provider: string;
+      supportsTemperature: boolean;
+    }[]
   > {
     return this.scenarioService.getAvailableModels();
-  }
-
-  @ApiOperation({
-    summary: 'Auto-generate content for a scenario field using AI',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Generated field content',
-    type: GenerateScenarioFieldResponseDto,
-  })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
-  @Post('scenarios/generate-field')
-  async generateScenarioField(
-    @Body() generateScenarioFieldDto: GenerateScenarioFieldDto,
-  ): Promise<GenerateScenarioFieldResponseDto> {
-    return this.scenarioService.generateField(generateScenarioFieldDto);
   }
 
   @ApiOperation({
@@ -1267,7 +1282,7 @@ export class LearnController {
       'The session appears in Roleplay Session Logs.',
   })
   @ApiBody({ type: StartV2VTestSessionDto })
-  @AuthRoles(UserRole.SUPER_ADMIN)
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @Post('v2v-test-session-start')
   async startV2VTestSession(
     @CurrentUser() user: TokenUser,

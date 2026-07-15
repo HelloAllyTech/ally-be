@@ -19,6 +19,7 @@ import { ScenarioSessionBehaviorInstructions } from 'src/learn/entity/scenario-s
 import { ScenarioSessionMessages } from 'src/learn/entity/scenario-session-messages.entity';
 import { ScenarioSessionMessageType } from 'src/learn/enum/scenario-session-message.type.enum';
 import { ScenarioSessionFeedbacks } from 'src/learn/entity/scenario-session-feedbacks.entity';
+import { ScenarioSessionLifecycleEvent } from 'src/learn/entity/scenario-session-lifecycle-event.entity';
 import { ScenarioSessionReflectionPromptResponse } from 'src/learn/entity/scenario-session-reflection-prompt-response.entity';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import { ScenarioSessionStatus } from 'src/learn/enum/scenario-session-status.enum';
@@ -48,6 +49,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
+import { TrackProgressService } from 'src/track/service/track-progress.service';
 import { ScenarioSharedService } from '../scenario-shared.service';
 import { isEnglishLanguage } from '../../util/scenario.util';
 import { BehaviorTranslationRepository } from 'src/learn/repository/behavior-translation.repository';
@@ -416,6 +418,10 @@ describe('ScenarioSessionService', () => {
           useValue: mockFeedbackRepo,
         },
         {
+          provide: getRepositoryToken(ScenarioSessionLifecycleEvent),
+          useValue: { insert: jest.fn() },
+        },
+        {
           provide: getRepositoryToken(ScenarioSessionReflectionPromptResponse),
           useValue: mockScenarioSessionReflectionPromptResponseRepo,
         },
@@ -489,6 +495,13 @@ describe('ScenarioSessionService', () => {
         {
           provide: CaseSessionService,
           useValue: mockCaseSessionService,
+        },
+        {
+          provide: TrackProgressService,
+          useValue: {
+            validateRoleplayStart: jest.fn(),
+            handleRoleplayEnd: jest.fn(),
+          },
         },
         {
           provide: BehaviorTranslationRepository,

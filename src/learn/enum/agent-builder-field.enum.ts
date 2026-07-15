@@ -4,7 +4,7 @@
  * independent parallel LLM call. The string values double as the prompt-file
  * basename (via toPromptCode('agent_builder', <basename>)).
  *
- * Distinct from {@link GeneratableField} (the studio's per-field regenerate set)
+ * Distinct from the removed generate/regenerate feature (the studio's per-field regenerate set)
  * on purpose: the copilot is driven by the free-text actor brief + competency +
  * agent test cases, not by an already-populated scenario, so it has its own
  * prompt codes, variables, and output parsing.

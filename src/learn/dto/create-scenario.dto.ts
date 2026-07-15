@@ -25,6 +25,7 @@ import {
   ChecklistType,
 } from '../type/scenario.type';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
+import { ScenarioCategory } from '../enum/scenario-category.enum';
 import { CustomFieldsDto } from './custom-fields.dto';
 import {
   MAX_CUSTOM_FIELDS_COUNT,
@@ -117,6 +118,24 @@ export class CreateScenarioDto {
   @IsString()
   @IsOptional()
   coverVideoUrl?: string;
+
+  @ApiProperty({
+    description: 'Editorial category of the scenario (Studio grouping)',
+    example: ScenarioCategory.ORIGINALS,
+    enum: ScenarioCategory,
+  })
+  @IsEnum(ScenarioCategory)
+  @IsOptional()
+  category?: ScenarioCategory;
+
+  @ApiProperty({
+    description: 'Partner organisation tag (used when category is PARTNER_SIM)',
+    example: 'Acme Health',
+  })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  partnerOrgName?: string;
 
   @ApiProperty({
     description: 'Status of the scenario',
@@ -255,6 +274,29 @@ export class CreateScenarioDto {
   @IsOptional()
   @IsBoolean()
   comfortAudioEnabled?: boolean;
+
+  @ApiProperty({
+    description:
+      'Public URL of the uploaded comfort-audio track (from the comfort-audio library) to play as the comfort audio for this simulation. When unset, comfort audio (if enabled) falls back to the synthesized room tone. Only meaningful when comfortAudioEnabled is true.',
+    example:
+      'https://assets-bucket.s3.us-east-1.amazonaws.com/comfort-audio-library/1730000000000-rain.mp3',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  comfortAudioUrl?: string;
+
+  @ApiProperty({
+    description:
+      'Playback volume (0..1) of the comfort audio for this simulation. When unset, falls back to the global COMFORT_AUDIO_VOLUME default. Only meaningful when comfortAudioEnabled is true.',
+    example: 0.3,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  comfortAudioVolume?: number;
 
   @ApiProperty({
     description:

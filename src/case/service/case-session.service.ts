@@ -14,6 +14,7 @@ import { CaseSortBy, CaseStatus } from '../type/cases.type';
 import { SessionItemStatus } from 'src/common/type/common.type';
 import { CaseSessionItemRepository } from '../repository/case-session-item.repository';
 import { DataSource, EntityManager } from 'typeorm';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { CaseSession } from '../entity/case-session.entity';
 import { CaseSessionItem } from '../entity/case-session-item.entity';
 import { GetUpcomingCaseItemResponseDto } from '../dto/get-case.dto';
@@ -35,6 +36,7 @@ export class CaseSessionService {
     private readonly dataSource: DataSource,
     private readonly configService: AppConfigService,
     private readonly sharedLanguageService: SharedLanguageService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
 
   async getUserCases(
@@ -431,65 +433,78 @@ export class CaseSessionService {
       throw new BadRequestException('Case session not found');
     }
 
-    return await this.dataSource.transaction(
-      async (entityManager: EntityManager) => {
-        const caseSessionItemRepo =
-          entityManager.getRepository(CaseSessionItem);
-        const caseSessionRepo = entityManager.getRepository(CaseSession);
+    let completedCaseSessionId: string | null = null;
+    await this.dataSource.transaction(async (entityManager: EntityManager) => {
+      const caseSessionItemRepo = entityManager.getRepository(CaseSessionItem);
+      const caseSessionRepo = entityManager.getRepository(CaseSession);
 
-        await caseSessionItemRepo.update(currentCaseSessionItem.id, {
-          status: SessionItemStatus.COMPLETED,
-        });
-        this.logger.info(
-          `Updated case session item status to COMPLETED for caseSessionItemId: ${caseSessionItemId}`,
+      await caseSessionItemRepo.update(currentCaseSessionItem.id, {
+        status: SessionItemStatus.COMPLETED,
+      });
+      this.logger.info(
+        `Updated case session item status to COMPLETED for caseSessionItemId: ${caseSessionItemId}`,
+      );
+
+      const nextCaseItem =
+        await this.caseSharedService.getNextCaseItemByCurrentItemId(
+          currentCaseSessionItem.caseItemId,
         );
 
-        const nextCaseItem =
-          await this.caseSharedService.getNextCaseItemByCurrentItemId(
-            currentCaseSessionItem.caseItemId,
-          );
-
-        // All sub items are complete
-        if (!nextCaseItem) {
-          await caseSessionRepo.update(currentCaseSession.id, {
-            completedAt: new Date(),
-            completedScenarios:
-              (currentCaseSession?.completedScenarios ?? 0) + 1,
-          });
-          this.logger.info(
-            `Updated case session to completed for caseSessionId: ${currentCaseSession.id}`,
-          );
-          return;
-        }
+      // All sub items are complete
+      if (!nextCaseItem) {
         await caseSessionRepo.update(currentCaseSession.id, {
+          completedAt: new Date(),
           completedScenarios: (currentCaseSession?.completedScenarios ?? 0) + 1,
         });
-        const nextCaseSessionItem =
-          await this.caseSessionItemRepository.findOne({
-            where: {
-              caseItemId: nextCaseItem?.id,
-              userId: Number(userId),
-            },
-          });
-
-        // If no entry created for next case item, create one
-        // Wouldn't reach ideally
-        if (!nextCaseSessionItem?.id) {
-          // No entry created for next scenario
-          const nextSessionItemEntity = caseSessionItemRepo.create({
-            caseSessionId: currentCaseSession.id,
-            caseItemId: nextCaseItem.id,
-            userId: Number(userId),
-            status: SessionItemStatus.UNLOCKED,
-          });
-          await caseSessionItemRepo.save(nextSessionItemEntity);
-          this.logger.info(
-            `Created and unlocked next case session item for caseSessionItemId: ${caseSessionItemId}`,
-          );
-          return;
-        }
+        completedCaseSessionId = currentCaseSession.id;
+        this.logger.info(
+          `Updated case session to completed for caseSessionId: ${currentCaseSession.id}`,
+        );
         return;
-      },
-    );
+      }
+      await caseSessionRepo.update(currentCaseSession.id, {
+        completedScenarios: (currentCaseSession?.completedScenarios ?? 0) + 1,
+      });
+      const nextCaseSessionItem = await this.caseSessionItemRepository.findOne({
+        where: {
+          caseItemId: nextCaseItem?.id,
+          userId: Number(userId),
+        },
+      });
+
+      // If no entry created for next case item, create one
+      // Wouldn't reach ideally
+      if (!nextCaseSessionItem?.id) {
+        // No entry created for next scenario
+        const nextSessionItemEntity = caseSessionItemRepo.create({
+          caseSessionId: currentCaseSession.id,
+          caseItemId: nextCaseItem.id,
+          userId: Number(userId),
+          status: SessionItemStatus.UNLOCKED,
+        });
+        await caseSessionItemRepo.save(nextSessionItemEntity);
+        this.logger.info(
+          `Created and unlocked next case session item for caseSessionItemId: ${caseSessionItemId}`,
+        );
+        return;
+      }
+      return;
+    });
+
+    // Emitted after commit so listeners (e.g. Track 2.0 case-in-track
+    // progression) read the completed state. Best-effort — must never break
+    // the case flow.
+    if (completedCaseSessionId) {
+      try {
+        this.eventEmitter.emit('case.session.completed', {
+          caseSessionId: completedCaseSessionId,
+          userId: Number(userId),
+        });
+      } catch (error) {
+        this.logger.error(
+          `Failed to emit case.session.completed for ${completedCaseSessionId}: ${error}`,
+        );
+      }
+    }
   }
 }

@@ -31,6 +31,7 @@ import {
   CHAT_REPROCESS_LOOKBACK_DAYS,
   CHAT_SUMMARY_TIMEOUT_ERROR,
   MAX_STUCK_REPROCESS_ATTEMPTS,
+  StreamEndReason,
 } from '../constants/chat.constants';
 import { TIME } from '../../common/constants/time.constants';
 import { UpdateChatInput } from '../type/chat.type';
@@ -130,6 +131,13 @@ export class ChatService {
     const decryptedCallDetails = await this.decryptCallDetails(chat.details);
     chat.details = decryptedCallDetails ?? ({} as CallDetails);
 
+    // Explicit, client-facing signal that this session's audio was cut short
+    // (socket dropped mid-recording), so the summary is from a partial
+    // recording. Derived from metadata written by the stream finalizer.
+    const incompleteRecording =
+      (chat.metadata as Record<string, any> | undefined)?.incompleteRecording ??
+      null;
+
     const review =
       await this.scribeSessionReviewSharedService.getReviewByScribeSessionId(
         id,
@@ -137,6 +145,7 @@ export class ChatService {
     if (review) {
       return {
         ...chat,
+        incompleteRecording,
         reviewId: review.id,
         reviewStatus: review.status,
         reviewNote: review.note,
@@ -144,7 +153,7 @@ export class ChatService {
         reviewUpdatedAt: review.updatedAt,
       };
     }
-    return chat;
+    return { ...chat, incompleteRecording };
   }
 
   async createChatWithClientAndCounselor(
@@ -407,7 +416,11 @@ export class ChatService {
     return chat?.status === ChatStatus.ENDED;
   }
 
-  async endChat(chatId: number, endedAt?: Date) {
+  async endChat(
+    chatId: number,
+    endedAt?: Date,
+    endReason: StreamEndReason = StreamEndReason.COMPLETED,
+  ) {
     const chat = await this.getChatById(chatId);
     if (!chat) {
       throw new HttpException('Chat not found', 404);
@@ -417,9 +430,17 @@ export class ChatService {
       throw new HttpException('Chat is not active', 400);
     }
 
+    // Record WHY the stream ended so the finalizer can tell a clean stop from a
+    // dropped socket. The ACTIVE guard above means only the first end persists,
+    // so a real user stop (COMPLETED) is never overwritten by the socket-close
+    // disconnect that follows it. Merge to preserve existing metadata.
     await this.chatRepository.update(chatId, {
       status: ChatStatus.ENDED,
       endedAt: endedAt || new Date(),
+      metadata: {
+        ...((chat.metadata as Record<string, any> | undefined) ?? {}),
+        streamEndReason: endReason,
+      } as Record<string, any>,
     });
     this.cache.del(`chat:${chatId}`);
     const updatedChat = await this.getChatById(chatId);

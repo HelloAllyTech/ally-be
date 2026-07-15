@@ -314,6 +314,25 @@ describe('UserService', () => {
       expect(result && result.role).toBe(UserRole.ADMIN);
     });
 
+    it('should prefer SUPER_DUPER_ADMIN over ADMIN', async () => {
+      mockGroupService.getUserRolesByUserId.mockResolvedValue([
+        { id: 1, name: UserRole.ADMIN },
+        { id: 2, name: UserRole.SUPER_DUPER_ADMIN },
+        { id: 3, name: UserRole.LEARNER },
+      ]);
+      const result = await service.getMinimalUserInfo(mockUser);
+      expect(result && result.role).toBe(UserRole.SUPER_DUPER_ADMIN);
+    });
+
+    it('should prefer SUPER_ADMIN over ADMIN', async () => {
+      mockGroupService.getUserRolesByUserId.mockResolvedValue([
+        { id: 1, name: UserRole.ADMIN },
+        { id: 2, name: UserRole.SUPER_ADMIN },
+      ]);
+      const result = await service.getMinimalUserInfo(mockUser);
+      expect(result && result.role).toBe(UserRole.SUPER_ADMIN);
+    });
+
     it('should return user info with COUNSELOR role when no ADMIN', async () => {
       mockGroupService.getUserRolesByUserId.mockResolvedValue([
         { id: 1, name: UserRole.COUNSELOR },

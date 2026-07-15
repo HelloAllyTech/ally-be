@@ -1,3 +1,4 @@
+import { AssignmentStatus } from 'src/common/type/common.type';
 import { SortOrder } from 'src/scenario-path/type/scenario-paths.type';
 import { CreateCaseItemDto } from '../dto/create-case-item.dto';
 import { CreateCaseDto } from '../dto/create-case.dto';
@@ -38,6 +39,7 @@ export interface CaseFilterOptions {
   offset?: number;
   search?: string;
   tenantId?: string;
+  assignmentStatus?: AssignmentStatus;
   sortBy?: CaseSortBy;
   order?: SortOrder;
 }

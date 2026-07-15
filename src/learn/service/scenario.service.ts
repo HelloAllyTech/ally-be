@@ -4,6 +4,7 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, DeepPartial, EntityManager, In } from 'typeorm';
 
@@ -21,6 +22,7 @@ async function executeInChunks<T, R>(
   return results;
 }
 import { Scenarios } from '../entity/scenarios.entity';
+import { ScenarioEngine } from '../enum/scenario-engine.enum';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { validateSimulationStates } from '../util/validate-simulation-states.util';
@@ -71,7 +73,6 @@ import {
   mapCreateScenarioRequestToEntity,
   mapUpdateScenarioRequestToEntity,
   formatAutoTerminationEventsList,
-  getPromptCodeForScenarioField,
   applyScenarioTranslations,
 } from '../util/scenario.util';
 import { sanitizeJsonbMetadata } from 'src/common/util/sanitize-jsonb.util';
@@ -133,12 +134,7 @@ import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-in
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { OpenAIAutofillService } from './openai-autofil-service';
 import { AnthropicAutofillService } from './anthropic-autofill.service';
-import {
-  buildBehaviorIdMapping,
-  ENHANCE_AUTO_IMPROVE_INSTRUCTION,
-} from '../util/autofill-shared.util';
-import { GenerateScenarioFieldDto } from '../dto/generate-scenario-field.dto';
-import { GenerateScenarioFieldResponseDto } from '../dto/generate-scenario-field-response.dto';
+import { ENHANCE_AUTO_IMPROVE_INSTRUCTION } from '../util/autofill-shared.util';
 import {
   EnhanceScenarioFieldDto,
   EnhanceScenarioFieldResponseDto,
@@ -151,7 +147,6 @@ import {
 } from '../enum/enhanceable-field.enum';
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
-import { GeneratableField } from '../enum/generatable-field.enum';
 import { AgentBuilderField } from '../enum/agent-builder-field.enum';
 import {
   GenerateAgentBuilderFieldDto,
@@ -159,6 +154,12 @@ import {
 } from '../dto/generate-agent-builder-field.dto';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import {
+  getLlmModels,
+  LlmRuntime,
+  LlmProviderName,
+} from 'src/llm/constants/llm-model-registry.constants';
+import { modelSupportsTemperature } from 'src/common/util/llm-model.util';
 import {
   buildAvailableLanguagesMap,
   getDistinctScenarioLanguageIds,
@@ -168,10 +169,10 @@ import {
   isValidTimeFormatHHMMSS,
   parseTimeToSeconds,
 } from 'src/common/util/time.util';
-import { COMPETENCY_BEHAVIOR_INSTRUCTION_PRESETS } from '../constants/competency-behavior-instruction-templates.constants';
-import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { TokenUser } from 'src/auth/type/auth.types';
+import { User } from 'src/user/entity/user.entity';
+import { isRoleplayV2EmailAllowed } from 'src/common/util/roleplay-v2-access.util';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
 import {
   AUDIT_ACTIONS,
@@ -234,10 +235,15 @@ export class ScenarioService {
     if (!tenantId) {
       throw new BadRequestException('Tenant ID is required');
     }
+    // v2 scenarios are only listed for a v2-allowlisted requester (e.g. the
+    // tester); every other learner sees the v1 catalog exactly as before and
+    // never encounters a v2 scenario (nor its rollout-gate 403).
+    const includeRoleplayV2 = await this.isCurrentUserRoleplayV2Allowed();
     const { data: fetchedData, count } =
       await this.scenariosRepository.getScenarios({
         tenantId,
         ...(languageCode && { languageCode }),
+        ...(includeRoleplayV2 && { includeRoleplayV2: true }),
       });
     let data = fetchedData;
 
@@ -286,12 +292,40 @@ export class ScenarioService {
     return { data, count };
   }
 
+  /**
+   * Whether the CURRENT request's user may see/use v2 (flag on + allowlisted).
+   * Fully defensive: any missing context resolves to false so the safe default
+   * is "hide v2". Shares the exact allowlist logic used by the session-start
+   * gate (isRoleplayV2EmailAllowed).
+   */
+  private async isCurrentUserRoleplayV2Allowed(): Promise<boolean> {
+    try {
+      const config = this.configService.roleplayV2;
+      if (!config?.enabled) return false;
+      const userId = Number(ExecutionManager.getUserId());
+      if (!userId || Number.isNaN(userId)) return false;
+      const user = await this.dataSource
+        .getRepository(User)
+        .findOne({ where: { id: userId }, select: ['id', 'email'] });
+      return isRoleplayV2EmailAllowed(user?.email, config);
+    } catch {
+      return false;
+    }
+  }
+
   async getAdminScenarios(
     scenarioFilters?: ScenarioFilters,
     options?: Pagination,
     currentUser?: TokenUser,
   ) {
-    const { status, tenantId, search } = scenarioFilters ?? {};
+    const {
+      status,
+      category,
+      partnerOrgName,
+      tenantId,
+      assignmentStatus,
+      search,
+    } = scenarioFilters ?? {};
     if (tenantId) {
       const tenant = await this.tenantService.findById(tenantId);
       if (!tenant) {
@@ -306,7 +340,10 @@ export class ScenarioService {
     const scenarios = await this.scenariosRepository.getAdminScenarios(
       {
         status,
+        category,
+        partnerOrgName,
         tenantId,
+        assignmentStatus,
         search,
         isMultiTenantAdmin,
         userId: currentUser?.id,
@@ -341,6 +378,8 @@ export class ScenarioService {
         createdBy: item.user_name,
         createdByUserId: item.scenario_createdBy,
         status: item.scenario_status,
+        category: item.scenario_category,
+        partnerOrgName: item.scenario_partnerOrgName,
         usage: item.usage,
         isAssignedToTenant: item.isAssignedToTenant,
         triggerWarnings: item.triggerWarnings,
@@ -1259,6 +1298,16 @@ export class ScenarioService {
 
     const scenario = await this.validateUpdateScenario(id, updateScenarioDto);
 
+    // Roleplay Studio v2 shells are materialised from a versioned spec — the
+    // v1 studio's fan-out must never touch them, or the next spec publish
+    // would silently clobber the edit. Author through the roleplay-studio
+    // endpoints instead.
+    if (scenario.engine === ScenarioEngine.ROLEPLAY_V2) {
+      throw new UnprocessableEntityException(
+        'This scenario is managed by Roleplay Studio v2; edit its roleplay spec instead.',
+      );
+    }
+
     const isMultiTenantAdmin =
       await this.permissionsService.isMultiTenantAdmin(userId);
     if (isMultiTenantAdmin && scenario.createdBy !== userId) {
@@ -1490,6 +1539,8 @@ export class ScenarioService {
       isGlobal: scenario.isGlobal,
       scenario: scenario.scenario,
       competencyId: scenario.competencyId, // Copy competency from original scenario
+      category: scenario.category,
+      partnerOrgName: scenario.partnerOrgName,
       createdBy: Number(ExecutionManager.getUserId()),
       updatedBy: Number(ExecutionManager.getUserId()),
     };
@@ -2833,13 +2884,103 @@ export class ScenarioService {
   }
 
   async getAvailableModels(): Promise<
-    { value: string; label: string; provider: string }[]
+    {
+      value: string;
+      label: string;
+      provider: string;
+      supportsTemperature: boolean;
+    }[]
   > {
-    const [openaiModels, anthropicModels] = await Promise.all([
-      this.openAIAutofillService.getAvailableModels(),
-      this.anthropicAutofillService.getAvailableModels(),
+    // Sourced from the universal LLM registry (single source of truth),
+    // filtered to the providers the autofill/enhance/copilot path can actually
+    // execute (OpenAI + Anthropic — no Gemini autofill client exists). This
+    // replaces the old per-provider PREFERRED_* lists so a model added to the
+    // registry surfaces here automatically.
+    const AUTOFILL_PROVIDERS = new Set<LlmProviderName>([
+      'openai',
+      'anthropic',
     ]);
-    return [...openaiModels, ...anthropicModels];
+    return getLlmModels(LlmRuntime.ALLY_BE)
+      .filter((m) => AUTOFILL_PROVIDERS.has(m.provider))
+      .map((m) => ({
+        value: m.model,
+        label: m.label,
+        provider: m.provider,
+        supportsTemperature: m.supportsTemperature,
+      }));
+  }
+
+  /**
+   * Resolve which autofill service + model + temperature to use for a
+   * prompt-driven studio-AI call (generate / enhance / agent-builder copilot).
+   *
+   * Precedence (later wins): code default → prompt-level config (from Prompt
+   * Management) → the request's explicit override. This lets an author set a
+   * per-prompt model/temperature that applies whenever the UI doesn't send an
+   * explicit one (e.g. the Agent Builder Copilot, which sends none).
+   *
+   * Only OpenAI + Anthropic run autofill; a prompt-level Gemini provider is
+   * ignored here (no Gemini autofill executor) so the call never breaks.
+   * Temperature is dropped for models that reject a custom one (OpenAI
+   * reasoning models).
+   */
+  private async resolveAutofillLlm(
+    promptCode: string,
+    req: { provider?: string; model?: string; temperature?: number },
+  ): Promise<{
+    service: OpenAIAutofillService | AnthropicAutofillService;
+    provider: 'openai' | 'anthropic';
+    model?: string;
+    temperature?: number;
+  }> {
+    const registry = new Map<
+      'openai' | 'anthropic',
+      OpenAIAutofillService | AnthropicAutofillService
+    >([
+      ['openai', this.openAIAutofillService],
+      ['anthropic', this.anthropicAutofillService],
+    ]);
+    const isRunnable = (p?: string): p is 'openai' | 'anthropic' =>
+      p === 'openai' || p === 'anthropic';
+
+    const promptCfg =
+      await this.promptSharedService.getPromptLlmConfig(promptCode);
+
+    if (req.provider && !isRunnable(req.provider)) {
+      this.logger.warn(
+        `Unrecognized autofill provider "${req.provider}", falling back to openai`,
+      );
+    }
+
+    // Provider: request → prompt-level (if autofill-runnable) → openai.
+    let provider: 'openai' | 'anthropic' = 'openai';
+    if (isRunnable(req.provider)) provider = req.provider;
+    else if (isRunnable(promptCfg.provider)) provider = promptCfg.provider;
+
+    // Model: request → prompt-level (only when its provider matches the resolved
+    // provider — a Claude model can't run on OpenAI) → service default.
+    let model = req.model;
+    if (!model && promptCfg.model && promptCfg.provider === provider) {
+      model = promptCfg.model;
+    }
+
+    // Temperature: request → prompt-level; dropped for no-temperature models.
+    let temperature =
+      typeof req.temperature === 'number'
+        ? req.temperature
+        : promptCfg.temperature;
+    const providerDefault =
+      provider === 'anthropic'
+        ? this.configService.anthropic?.autofillModel
+        : this.configService.openai?.autofillModel;
+    if (
+      typeof temperature === 'number' &&
+      !modelSupportsTemperature(model ?? providerDefault)
+    ) {
+      temperature = undefined;
+    }
+
+    return { service: registry.get(provider)!, provider, model, temperature };
   }
 
   /**
@@ -2860,23 +3001,6 @@ export class ScenarioService {
         'currentValue is required to enhance a field — there is nothing to improve.',
       );
     }
-
-    const autofillServiceRegistry = new Map<
-      string,
-      OpenAIAutofillService | AnthropicAutofillService
-    >([
-      ['openai', this.openAIAutofillService],
-      ['anthropic', this.anthropicAutofillService],
-    ]);
-    const resolvedProvider = provider ?? 'openai';
-    if (provider && !autofillServiceRegistry.has(provider)) {
-      this.logger.warn(
-        `Unrecognized enhance provider "${provider}", falling back to openai`,
-      );
-    }
-    const autofillService =
-      autofillServiceRegistry.get(resolvedProvider) ??
-      this.openAIAutofillService;
 
     // Blank custom box ⇒ generic auto-improve directive.
     const effectiveGuidance =
@@ -2927,12 +3051,23 @@ export class ScenarioService {
       };
     }
 
+    const {
+      service: autofillService,
+      model: effectiveModel,
+      temperature,
+    } = await this.resolveAutofillLlm(promptCode, {
+      provider,
+      model,
+      temperature: enhanceScenarioFieldDto.temperature,
+    });
+
     const content = await autofillService.enhanceFieldContent(
       fieldName,
       promptCode,
       variables,
       expectJson,
-      model,
+      effectiveModel,
+      temperature,
     );
 
     this.logger.info(`Enhancement completed for ${fieldName}`);
@@ -3013,217 +3148,6 @@ export class ScenarioService {
     });
   }
 
-  async generateField(
-    generateScenarioFieldDto: GenerateScenarioFieldDto,
-  ): Promise<GenerateScenarioFieldResponseDto> {
-    const { fieldName, scenarioContext, model, provider } =
-      generateScenarioFieldDto;
-    const autofillServiceRegistry = new Map<
-      string,
-      OpenAIAutofillService | AnthropicAutofillService
-    >([
-      ['openai', this.openAIAutofillService],
-      ['anthropic', this.anthropicAutofillService],
-    ]);
-    const resolvedProvider = provider ?? 'openai';
-    if (provider && !autofillServiceRegistry.has(provider)) {
-      this.logger.warn(
-        `Unrecognized autofill provider "${provider}", falling back to openai`,
-      );
-    }
-    const autofillService =
-      autofillServiceRegistry.get(resolvedProvider) ??
-      this.openAIAutofillService;
-
-    let promptCode = getPromptCodeForScenarioField(fieldName);
-
-    // Use English-specific prompt for linguistic style when language is English
-    if (
-      fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES &&
-      scenarioContext.languageCode?.toLowerCase().startsWith('en')
-    ) {
-      promptCode = toPromptCode(
-        'openai_simulation',
-        'linguistic_style_samples_english',
-      );
-    }
-
-    // Indic-skewed default filler prompt pushes Malayalam/Devanagari; use English prompt for en*
-    if (
-      fieldName === GeneratableField.ALLOWED_FILLER_WORDS &&
-      scenarioContext.languageCode?.toLowerCase().startsWith('en')
-    ) {
-      promptCode = toPromptCode(
-        'openai_simulation',
-        'allowed_filler_words_english',
-      );
-    }
-
-    if (!promptCode) {
-      throw new BadRequestException(
-        `Field "${fieldName}" is not supported for auto-generation`,
-      );
-    }
-
-    let behaviorIdMapping;
-    if (fieldName === GeneratableField.BEHAVIOR_INSTRUCTIONS) {
-      if (!scenarioContext.competency) {
-        throw new BadRequestException(
-          'Competency is required for behavior instruction generation',
-        );
-      }
-
-      const { data: behaviors } = await this.behaviorService.getBehaviors();
-      const result = buildBehaviorIdMapping(behaviors);
-      behaviorIdMapping = result.mapping;
-
-      this.logger.info(
-        `Loaded ${behaviors.length} behaviors, mapped ${result.mapping.size} IDs`,
-      );
-
-      let hasPredefined = false;
-
-      const predefinedBehaviors =
-        COMPETENCY_BEHAVIOR_INSTRUCTION_PRESETS[scenarioContext.competency];
-
-      if (predefinedBehaviors?.length) {
-        const nameToSeqId = new Map<string, number>();
-        for (const [seqId, behavior] of result.mapping.entries()) {
-          nameToSeqId.set(behavior.name, seqId);
-        }
-
-        const shouldDo: number[] = [];
-        const shouldNotDo: number[] = [];
-
-        for (const template of predefinedBehaviors) {
-          const seqId = nameToSeqId.get(template.behaviorName);
-          if (seqId === undefined) continue;
-          if (template.category === BehaviorInstructionCategory.SHOULD_DO) {
-            shouldDo.push(seqId);
-          } else {
-            shouldNotDo.push(seqId);
-          }
-        }
-
-        if (shouldDo.length > 0 || shouldNotDo.length > 0) {
-          hasPredefined = true;
-          const predefinedDoc: Record<string, number[]> = {};
-          if (shouldDo.length > 0) predefinedDoc.SHOULD_DO = shouldDo;
-          if (shouldNotDo.length > 0) predefinedDoc.SHOULD_NOT_DO = shouldNotDo;
-          scenarioContext.predefinedBehaviorInstructionsDoc =
-            JSON.stringify(predefinedDoc);
-
-          const usedSeqIds = new Set([...shouldDo, ...shouldNotDo]);
-          const relevantLines = [...usedSeqIds]
-            .map((seqId) => {
-              const b = result.mapping.get(seqId);
-              return b ? `${seqId}. ${b.name}` : null;
-            })
-            .filter(Boolean);
-          scenarioContext.allowedHelperBehaviorsList = relevantLines.join('\n');
-
-          this.logger.info(
-            `Using predefined presets: ${shouldDo.length} SHOULD_DO, ${shouldNotDo.length} SHOULD_NOT_DO behaviors`,
-          );
-        }
-      }
-
-      if (!hasPredefined) {
-        scenarioContext.allowedHelperBehaviorsList = result.formattedList;
-        this.logger.info(
-          `No presets found for "${scenarioContext.competency}", using full behavior list`,
-        );
-      }
-    }
-
-    let contextToUse = scenarioContext;
-    if (
-      fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES ||
-      fieldName === GeneratableField.ALLOWED_FILLER_WORDS
-    ) {
-      if (!scenarioContext.languageId || !scenarioContext.languageCode) {
-        throw new BadRequestException(
-          'languageId and languageCode are required for this field generation',
-        );
-      }
-      const languageName =
-        scenarioContext.languageName ||
-        this.getLanguageNameFromCode(scenarioContext.languageCode);
-      const baseLinguisticContext = {
-        ...scenarioContext,
-        language_name: languageName,
-        language_code: scenarioContext.languageCode,
-        location: scenarioContext.currentLocation ?? '',
-        name: scenarioContext.name ?? 'Client',
-        age: scenarioContext.age ?? '',
-        gender: scenarioContext.gender ?? '',
-      } as any;
-
-      if (fieldName === GeneratableField.LINGUISTIC_STYLE_SAMPLES) {
-        const characterSummary = scenarioContext.characterProfileText ?? '';
-        const challengeSummary = scenarioContext.challengeDescription ?? '';
-        const emotionalState = [characterSummary, challengeSummary]
-          .filter(Boolean)
-          .join('. ');
-        contextToUse = {
-          ...baseLinguisticContext,
-          emotional_state: emotionalState,
-        };
-      } else {
-        // Allowed fillers: prompt Context uses only characterProfileText; avoid duplicating
-        // persona/challenge blobs (Task line already has language, location, gender).
-        contextToUse = baseLinguisticContext;
-      }
-    }
-
-    if (
-      (fieldName === GeneratableField.OPENING_STATEMENTS ||
-        fieldName === GeneratableField.DESCRIPTION) &&
-      scenarioContext.languageId
-    ) {
-      const id = Number(scenarioContext.languageId);
-      if (!Number.isFinite(id)) {
-        throw new BadRequestException('Invalid languageId');
-      }
-      const langs = await this.sharedLanguageService.getLanguagesByIds([id]);
-      const lang = langs[0];
-      if (!lang) {
-        throw new BadRequestException(`Language not found: ${id}`);
-      }
-      const code =
-        scenarioContext.languageCode?.trim() ||
-        lang.value?.trim() ||
-        lang.translationCode?.trim() ||
-        '';
-      const name =
-        scenarioContext.languageName?.trim() ||
-        lang.label?.trim() ||
-        this.getLanguageNameFromCode(code);
-      if (!code) {
-        throw new BadRequestException(
-          'Could not resolve language code for field generation',
-        );
-      }
-      contextToUse = {
-        ...scenarioContext,
-        languageCode: code,
-        languageName: name,
-      };
-    }
-
-    const content = await autofillService.generateFieldContent(
-      fieldName,
-      promptCode,
-      contextToUse,
-      behaviorIdMapping,
-      model,
-    );
-
-    this.logger.info(`Generation completed for ${fieldName}`);
-
-    return { fieldName, content };
-  }
-
   /**
    * Agent Builder Copilot: generate ONE Basic Settings field from the
    * wizard's three inputs (actor brief + competency + agent test cases). Each
@@ -3235,23 +3159,6 @@ export class ScenarioService {
     dto: GenerateAgentBuilderFieldDto,
   ): Promise<GenerateAgentBuilderFieldResponseDto> {
     const { field, actorDescription, competency, agentTestCases, model } = dto;
-
-    const autofillServiceRegistry = new Map<
-      string,
-      OpenAIAutofillService | AnthropicAutofillService
-    >([
-      ['openai', this.openAIAutofillService],
-      ['anthropic', this.anthropicAutofillService],
-    ]);
-    const resolvedProvider = dto.provider ?? 'openai';
-    if (dto.provider && !autofillServiceRegistry.has(dto.provider)) {
-      this.logger.warn(
-        `Unrecognized agent-builder provider "${dto.provider}", falling back to openai`,
-      );
-    }
-    const autofillService =
-      autofillServiceRegistry.get(resolvedProvider) ??
-      this.openAIAutofillService;
 
     const numKnowledgeSources = dto.numKnowledgeSources ?? 3;
     const variables: Record<string, string> = {
@@ -3270,11 +3177,24 @@ export class ScenarioService {
       field === AgentBuilderField.PERSONA ||
       field === AgentBuilderField.KNOWLEDGE_SOURCES;
 
+    // Honor the prompt's per-prompt model/temperature (the wizard sends none),
+    // with any explicit request override winning.
+    const {
+      service: autofillService,
+      model: effectiveModel,
+      temperature,
+    } = await this.resolveAutofillLlm(promptCode, {
+      provider: dto.provider,
+      model,
+      temperature: dto.temperature,
+    });
+
     const raw = await autofillService.generateContentFromPrompt(
       promptCode,
       variables,
       expectJson,
-      model,
+      effectiveModel,
+      temperature,
     );
 
     return { field, value: this.parseAgentBuilderField(field, raw) };

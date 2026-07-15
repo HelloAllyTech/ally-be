@@ -7,8 +7,13 @@ import {
   RoleplaySessionLogDetailDto,
   RoleplaySessionLogRowDto,
   RoleplaySessionModelsDto,
+  RoleplaySessionOutcome,
+  RoleplaySessionRecordingDto,
   RoleplaySessionUsageDto,
 } from '../dto/roleplay-session-logs.dto';
+import { S3Service } from '../../aws/service/s3.service';
+import { AppConfigService } from '../../config/config.service';
+import { LoggerService } from '../../logger/logger.service';
 import { ScenarioSessionStatus } from '../../learn/enum/scenario-session-status.enum';
 import {
   RoleplaySessionLatencyRow,
@@ -40,8 +45,12 @@ interface UsageSummary {
 
 @Injectable()
 export class RoleplaySessionLogsService {
+  private readonly logger = new LoggerService(RoleplaySessionLogsService.name);
+
   constructor(
     private readonly roleplaySessionLogsRepository: RoleplaySessionLogsRepository,
+    private readonly s3Service: S3Service,
+    private readonly configService: AppConfigService,
   ) {}
 
   /** Cross-tenant, filtered, paginated list of genuine end-user roleplays. */
@@ -90,6 +99,11 @@ export class RoleplaySessionLogsService {
       recording,
       feedback,
       agentTestCases,
+      lifecycle,
+      freezeSignals,
+      languageJudgment,
+      drift,
+      runConfig,
     ] = await Promise.all([
       this.roleplaySessionLogsRepository.findSummary(id),
       this.roleplaySessionLogsRepository.findEvents(id),
@@ -99,7 +113,19 @@ export class RoleplaySessionLogsService {
       this.roleplaySessionLogsRepository.getRecordingBySession(id),
       this.roleplaySessionLogsRepository.getFeedbackBySession(id),
       this.roleplaySessionLogsRepository.findAgentTestCases(),
+      this.roleplaySessionLogsRepository.findLifecycleEvents(id),
+      this.roleplaySessionLogsRepository.getFreezeSignals(id),
+      this.roleplaySessionLogsRepository.findLanguageJudgment(id),
+      this.roleplaySessionLogsRepository.findDriftJudgment(id),
+      this.roleplaySessionLogsRepository.findRunConfig(id),
     ]);
+
+    // Suspected mid-session freeze: had a conversation and either the agent
+    // never answered the final human turn or an LLM call timed out.
+    const suspectedFreeze =
+      freezeSignals.hasAgentTurn &&
+      (freezeSignals.endedOnUnansweredHumanTurn ||
+        Number(latencyRow.llmTimedOutTurns) > 0);
 
     const usage = this.buildUsage(usageRows);
     const usageSummary: UsageSummary | undefined = usage
@@ -120,7 +146,7 @@ export class RoleplaySessionLogsService {
       usage,
       models: this.buildModels(usageRows),
       latency: this.buildLatency(latencyRow),
-      recording: recording ?? null,
+      recording: await this.buildRecording(recording),
       feedback: feedback
         ? {
             rating: Number(feedback.rating),
@@ -129,6 +155,25 @@ export class RoleplaySessionLogsService {
           }
         : null,
       actorEvaluation: this.buildActorEvaluation(row),
+      runConfig,
+      drift,
+      languageQuality: languageJudgment
+        ? {
+            judgeModel: languageJudgment.session.judgeModel,
+            judgePromptVersion: languageJudgment.session.judgePromptVersion,
+            turnsJudged: languageJudgment.session.turnsJudged,
+            turnsGarbled: languageJudgment.session.turnsGarbled,
+            errorCount: languageJudgment.annotations.length,
+            scriptFidelityPct: languageJudgment.session.scriptFidelityPct,
+            roundTripWerPct: languageJudgment.session.roundTripWerPct,
+            annotations: languageJudgment.annotations.map((a) => ({
+              ...a,
+              // Resolve the AI-turn ordinal to its message row so the UI can
+              // anchor badges without re-deriving turn order client-side.
+              messageId: languageJudgment.aiMessageIds[a.turnIndex] ?? null,
+            })),
+          }
+        : null,
       agentTestCases: agentTestCases.map((g) => ({
         id: g.id,
         title: g.title,
@@ -144,6 +189,13 @@ export class RoleplaySessionLogsService {
         emoji: e.emoji ?? null,
         message: e.message ?? null,
       })),
+      suspectedFreeze,
+      lifecycle: lifecycle.map((l) => ({
+        id: l.id,
+        type: l.type,
+        occurredAt: l.occurredAt,
+        detail: l.detail ?? null,
+      })),
       transcript: transcript.map((m) => ({
         id: Number(m.id),
         senderId: Number(m.senderId),
@@ -153,6 +205,37 @@ export class RoleplaySessionLogsService {
         createdAt: m.createdAt,
       })),
     };
+  }
+
+  /**
+   * Attaches a short-lived presigned playback URL to the egress recording
+   * pointer. `url` is null when the bucket isn't configured or presigning
+   * fails — the pointer itself is still returned so the UI can show that a
+   * recording exists.
+   */
+  private async buildRecording(
+    recording: { storageKey: string; egressId: string } | null,
+  ): Promise<RoleplaySessionRecordingDto | null> {
+    if (!recording) return null;
+
+    let url: string | null = null;
+    const bucket = this.configService.scenarioSessionAudioStorage.bucket;
+    if (bucket) {
+      try {
+        url = await this.s3Service.generatePresignedUrl({
+          bucket,
+          key: recording.storageKey,
+          operation: 'get',
+          expiresIn: 2400, // 40 minutes, matching the learn recording endpoint
+        });
+      } catch (error) {
+        this.logger.error(
+          `Failed to presign recording URL for key ${recording.storageKey}: ${error.message}`,
+        );
+      }
+    }
+
+    return { ...recording, url };
   }
 
   /** Maps a raw query row into the API row shape (numeric coercion + duration). */
@@ -170,6 +253,7 @@ export class RoleplaySessionLogsService {
       scenarioId: Number(r.scenarioId),
       scenarioTitle: r.scenarioTitle ?? null,
       status: r.status as ScenarioSessionStatus,
+      outcome: r.outcome as RoleplaySessionOutcome,
       startedAt: r.startedAt ?? null,
       endedAt: r.endedAt ?? null,
       durationSeconds: this.resolveDurationSeconds(r),

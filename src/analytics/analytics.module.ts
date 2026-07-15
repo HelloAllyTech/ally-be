@@ -6,11 +6,16 @@ import { PlatformAnalyticsService } from './service/platform-analytics.service';
 import { ScribeAnalyticsService } from './service/scribe-analytics.service';
 import { DriftJudgeService } from './service/drift-judge.service';
 import { DriftBackfillSchedulerRegistrationService } from './service/drift-backfill-scheduler-registration.service';
+import { LanguageJudgeService } from './service/language-judge.service';
+import { LanguageBackfillSchedulerRegistrationService } from './service/language-backfill-scheduler-registration.service';
 import { PlatformAnalyticsRepository } from './repository/platform-analytics.repository';
 import { ScribeAnalyticsRepository } from './repository/scribe-analytics.repository';
 import { LlmUsageRepository } from './repository/llm-usage.repository';
 import { DriftAnalyticsRepository } from './repository/drift-analytics.repository';
 import { DriftJudgeRepository } from './repository/drift-judge.repository';
+import { LanguageJudgeRepository } from './repository/language-judge.repository';
+import { LanguageAnalyticsRepository } from './repository/language-analytics.repository';
+import { LanguageAnalyticsService } from './service/language-analytics.service';
 import { MetabaseService } from './service/metabase.service';
 import { AppConfigModule } from '../config/config.module';
 import { ProviderFactory } from '../factory/provider.factory';
@@ -39,6 +44,11 @@ import { TenantModule } from 'src/tenant/tenant.module';
     DriftJudgeService,
     DriftJudgeRepository,
     DriftBackfillSchedulerRegistrationService,
+    LanguageJudgeService,
+    LanguageJudgeRepository,
+    LanguageBackfillSchedulerRegistrationService,
+    LanguageAnalyticsService,
+    LanguageAnalyticsRepository,
     PlatformAnalyticsRepository,
     ScribeAnalyticsRepository,
     LlmUsageRepository,

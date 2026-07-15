@@ -445,6 +445,8 @@ describe('StreamFileProcessorService', () => {
         checkpointChunks: [],
         checkpointBytes: 0,
         lastCheckpointBytes: 0,
+        flushChain: Promise.resolve(),
+        partUploadFailed: false,
       };
 
       service.saveAudio(mockSession, { chatId, audioBase64 });
@@ -491,6 +493,8 @@ describe('StreamFileProcessorService', () => {
         checkpointChunks: [],
         checkpointBytes: 0,
         lastCheckpointBytes: 0,
+        flushChain: Promise.resolve(),
+        partUploadFailed: false,
       };
 
       service.saveAudio(mockSession, { chatId, audioBase64 });
@@ -515,6 +519,8 @@ describe('StreamFileProcessorService', () => {
       checkpointChunks: [Buffer.from('abc')],
       checkpointBytes: 3,
       lastCheckpointBytes: 0,
+      flushChain: Promise.resolve(),
+      partUploadFailed: false,
       ...over,
     });
 
@@ -627,6 +633,8 @@ describe('StreamFileProcessorService', () => {
         checkpointChunks: [],
         checkpointBytes: 0,
         lastCheckpointBytes: 0,
+        flushChain: Promise.resolve(),
+        partUploadFailed: false,
       };
 
       jest
@@ -647,6 +655,100 @@ describe('StreamFileProcessorService', () => {
 
       expect(s3Service.completeMultipartUploadWithParts).toHaveBeenCalled();
       expect(aiEventService.publishTranscribeAudioEvent).toHaveBeenCalled();
+    });
+
+    const seedFinalizableStream = (chatId: number) => {
+      service['activeCallStreams'][chatId] = {
+        parts: [{ ETag: 'E', PartNumber: 1 }],
+        uploadId: 'up-x',
+        key: 'key-x',
+        partNumber: 2,
+        currentFileIndex: 0,
+        files: [
+          {
+            cipher: {} as any,
+            writeStream: new MockWriteStream() as any,
+            encryptionKey: Buffer.from('k'),
+            iv: Buffer.from('iv'),
+            tempFilePath: '/tmp/a',
+            bufferSize: 10,
+          },
+          {
+            cipher: {} as any,
+            writeStream: new MockWriteStream() as any,
+            encryptionKey: Buffer.from('k2'),
+            iv: Buffer.from('iv2'),
+            tempFilePath: '/tmp/b',
+            bufferSize: 0,
+          },
+        ],
+        callId: mockSession.id,
+        chatId,
+        checkpointChunks: [],
+        checkpointBytes: 0,
+        lastCheckpointBytes: 0,
+        flushChain: Promise.resolve(),
+        partUploadFailed: false,
+      };
+      jest
+        .spyOn(service as any, 'flushFileAsPart')
+        .mockResolvedValue(undefined);
+      s3Service.completeMultipartUploadWithParts.mockResolvedValue(
+        undefined as any,
+      );
+      chatAudioUploadsService.updateAudioUpload.mockResolvedValue({
+        sampleRate: 16000,
+      } as any);
+      s3Service.generatePresignedUrl.mockResolvedValue('https://audio');
+      aiEventService.publishTranscribeAudioEvent.mockResolvedValue(
+        undefined as any,
+      );
+    };
+
+    it('flags the recording incomplete when the stream ended abnormally', async () => {
+      const chatId = mockChat.id;
+      seedFinalizableStream(chatId);
+      chatService.getChatWithCallDetails.mockResolvedValue({
+        chat: {
+          id: chatId,
+          metadata: {
+            correlationId: 'c1',
+            streamEndReason: 'client-disconnect',
+          },
+        },
+        callDetails: {},
+      } as any);
+      chatService.updateChat.mockResolvedValue(undefined as any);
+
+      await service.endCallStream({ chatId });
+
+      // still transcribed (partial audio salvaged) ...
+      expect(aiEventService.publishTranscribeAudioEvent).toHaveBeenCalled();
+      // ... but tagged as an incomplete recording, preserving existing metadata
+      expect(chatService.updateChat).toHaveBeenCalledWith(chatId, {
+        metadata: expect.objectContaining({
+          correlationId: 'c1',
+          incompleteRecording: { reason: 'client-disconnect' },
+        }),
+      });
+    });
+
+    it('does NOT flag a cleanly-stopped (completed) recording', async () => {
+      const chatId = mockChat.id;
+      seedFinalizableStream(chatId);
+      chatService.getChatWithCallDetails.mockResolvedValue({
+        chat: { id: chatId, metadata: { streamEndReason: 'completed' } },
+        callDetails: {},
+      } as any);
+      chatService.updateChat.mockResolvedValue(undefined as any);
+
+      await service.endCallStream({ chatId });
+
+      expect(aiEventService.publishTranscribeAudioEvent).toHaveBeenCalled();
+      const flaggedIncomplete = chatService.updateChat.mock.calls.some(
+        ([, patch]: any[]) => patch?.metadata?.incompleteRecording,
+      );
+      expect(flaggedIncomplete).toBe(false);
     });
 
     it('should handle empty file case', async () => {
@@ -680,6 +782,8 @@ describe('StreamFileProcessorService', () => {
         checkpointChunks: [],
         checkpointBytes: 0,
         lastCheckpointBytes: 0,
+        flushChain: Promise.resolve(),
+        partUploadFailed: false,
       };
 
       s3Service.abortMultipartUpload.mockResolvedValue(undefined as any);

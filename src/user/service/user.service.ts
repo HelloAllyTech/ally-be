@@ -10,7 +10,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { User } from '../entity/user.entity';
 import { QueueService } from '../../queue/service/queue.service';
 import { Chat } from '../../chat/entity/chat.entity';
-import { UserRole } from '../../common/constants/user.constants';
+import {
+  UserRole,
+  SUPER_ADMIN_ROLES,
+} from '../../common/constants/user.constants';
 import { UserStatus } from '../constants/user-status.constants';
 import { RedisService } from '../../redis/service/redis.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
@@ -398,7 +401,9 @@ export class UserService {
       throw new BadRequestException('Phone number already registered');
     }
 
-    const isSuperAdmin = userData.roles.includes(UserRole.SUPER_ADMIN);
+    const isSuperAdmin = userData.roles.some((role) =>
+      SUPER_ADMIN_ROLES.includes(role),
+    );
     const isMultiTenantAdmin = userId
       ? await this.permissionsService.isMultiTenantAdmin(Number(userId))
       : false;
@@ -544,7 +549,9 @@ export class UserService {
     if (!bulkData.tenantId) {
       throw new BadRequestException('Tenant ID is required');
     }
-    const isSuperAdmin = bulkData.roles.includes(UserRole.SUPER_ADMIN);
+    const isSuperAdmin = bulkData.roles.some((role) =>
+      SUPER_ADMIN_ROLES.includes(role),
+    );
     if (!isSuperAdmin) {
       const tenant = await this.tenantService.findById(bulkData.tenantId);
       if (!tenant) {
@@ -690,10 +697,24 @@ export class UserService {
   }
 
   /**
-   * Determines the user role based on available roles
-   * Priority: ADMIN > COUNSELOR > first available role
+   * Determines the user role based on available roles.
+   * Priority: SUPER_DUPER_ADMIN > SUPER_ADMIN > ADMIN > COUNSELOR > first
+   * available role.
+   *
+   * The super-admin tiers must outrank ADMIN/COUNSELOR: a user can hold both a
+   * super-admin group and ADMIN, and collapsing them to ADMIN would hide the
+   * super-admin surfaces that gate on this single role (e.g. the admin
+   * dashboard's isSuperAdminRole nav check).
    */
   private determineUserRole(roles: Group[]): string {
+    if (roles.some((role) => role.name === UserRole.SUPER_DUPER_ADMIN)) {
+      return UserRole.SUPER_DUPER_ADMIN;
+    }
+
+    if (roles.some((role) => role.name === UserRole.SUPER_ADMIN)) {
+      return UserRole.SUPER_ADMIN;
+    }
+
     if (roles.some((role) => role.name === UserRole.ADMIN)) {
       return UserRole.ADMIN;
     }
@@ -702,7 +723,7 @@ export class UserService {
       return UserRole.COUNSELOR;
     }
 
-    // Return the first available role if neither ADMIN nor COUNSELOR
+    // Return the first available role if none of the above matched
     return roles[0].name;
   }
 

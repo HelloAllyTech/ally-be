@@ -245,17 +245,32 @@ export class AppConfigService {
   }
 
   get livekit() {
+    const agentName = this.configService.get<string>(
+      'LIVEKIT_AGENT_NAME',
+      'Agent',
+    );
     return {
       apiKey: this.configService.get<string>('LIVEKIT_API_KEY'),
       apiSecret: this.configService.get<string>('LIVEKIT_API_SECRET'),
       serverUrl: this.configService.get<string>('LIVEKIT_URL'),
       environment: this.configService.get<string>('LIVEKIT_ENVIRONMENT'),
-      agentName: this.configService.get<string>('LIVEKIT_AGENT_NAME', 'Agent'),
+      agentName,
       // Second agent that plays the counselor side in superadmin V2V test
       // sessions; dispatched into the same room under this name.
       simulatedUserAgentName: this.configService.get<string>(
         'SIMULATED_USER_AGENT_NAME',
         'SimulatedUser',
+      ),
+      // Roleplay Studio v2 runtime agent (actor + director). Dispatched for
+      // scenarios with engine=ROLEPLAY_V2; rooms are prefixed `roleplay-`.
+      // Defaults to the SAME name as the v1 agent because v2 is now served by
+      // the merged single worker (app/worker.py routes v1 + v2 by the `engine`
+      // metadata marker) — one fleet, one prewarmed model set, no duplication.
+      // Override with LIVEKIT_ROLEPLAY_AGENT_NAME (e.g. set it to `${agentName}V2`)
+      // to fall back to a separate dedicated v2 fleet.
+      roleplayAgentName: this.configService.get<string>(
+        'LIVEKIT_ROLEPLAY_AGENT_NAME',
+        agentName,
       ),
     };
   }
@@ -326,6 +341,44 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * Roleplay Studio v2 rollout gate. A v2 session is allowed only when BOTH
+   * hold: the feature flag is on AND the user's email is on the allowlist.
+   *
+   * - `enabled` (ROLEPLAY_V2_ENABLED): master kill-switch. Defaults ON. When
+   *   `false`, v2 is off for EVERYONE — including allowlisted users.
+   * - `allowlist` (ROLEPLAY_V2_ALLOWLIST): comma-separated emails, lower-cased.
+   *   `sandeep.malhotra@helloally.ai`, `gopi.s@helloally.ai` and
+   *   `gopikrishnan.sasikumar@helloally.ai` are always included so the current
+   *   testers work without extra env config; ROLEPLAY_V2_ALLOWLIST adds more.
+   *   `+tag` sub-addresses of any allowlisted email match too (see
+   *   normalizeEmailForAllowlist), so testers can use as many `+tag` accounts
+   *   as they like without listing each one.
+   *
+   * This is the primary who/whether gate. The learn-core worker also self-guards
+   * on its own ROLEPLAY_V2_ENABLED (defense in depth), so enabling v2 end-to-end
+   * in an environment requires that flag to be on there too.
+   */
+  get roleplayV2() {
+    const enabled =
+      this.configService.get<string>('ROLEPLAY_V2_ENABLED', 'true') !== 'false';
+    const extra = (
+      this.configService.get<string>('ROLEPLAY_V2_ALLOWLIST', '') ?? ''
+    )
+      .split(',')
+      .map((email) => email.trim().toLowerCase())
+      .filter(Boolean);
+    const allowlist = Array.from(
+      new Set([
+        'sandeep.malhotra@helloally.ai',
+        'gopi.s@helloally.ai',
+        'gopikrishnan.sasikumar@helloally.ai',
+        ...extra,
+      ]),
+    );
+    return { enabled, allowlist };
+  }
+
   get googleCloudTranslationConfig() {
     return {
       credentials: this.configService.get<string>(
@@ -371,6 +424,10 @@ export class AppConfigService {
         'OPENAI_TRANSCRIPTION_MODEL',
         'whisper-1',
       ),
+      imageModel: this.configService.get<string>(
+        'OPENAI_IMAGE_MODEL',
+        'gpt-image-1',
+      ),
     };
   }
 
@@ -380,6 +437,54 @@ export class AppConfigService {
       autofillModel: this.configService.get<string>(
         'ANTHROPIC_AUTOFILL_MODEL',
         'claude-sonnet-4-6',
+      ),
+    };
+  }
+
+  get roleplayStudio() {
+    return {
+      // Copilot (spec-authoring interviewer) model. Same family as the
+      // anthropic autofill default.
+      copilotModel: this.configService.get<string>(
+        'ROLEPLAY_COPILOT_MODEL',
+        'claude-sonnet-4-6',
+      ),
+      // Hard cap on tool-use round-trips per copilot turn. A substantial
+      // build/edit turn legitimately needs several sequential update_spec
+      // patches plus read/compile calls, so keep this generous; on cap-hit the
+      // orchestrator does a tool-less wrap-up rather than erroring out.
+      maxToolIterations: this.configService.get<number>(
+        'ROLEPLAY_COPILOT_MAX_TOOL_ITERATIONS',
+        16,
+      ),
+      // Rehearsal runs that outlive this are failed by the redis TTL timer.
+      rehearsalTimeoutMinutes: this.configService.get<number>(
+        'ROLEPLAY_REHEARSAL_TIMEOUT_MINUTES',
+        30,
+      ),
+    };
+  }
+
+  get gemini() {
+    return {
+      // Prefer an explicit GEMINI_API_KEY; fall back to the standard
+      // GOOGLE_GENERATIVE_AI_API_KEY so an existing Google key works without
+      // duplicating the secret. Used by the coaching-chat Gemini provider.
+      apiKey:
+        this.configService.get<string>('GEMINI_API_KEY') ??
+        this.configService.get<string>('GOOGLE_GENERATIVE_AI_API_KEY'),
+      imageModel: this.configService.get<string>(
+        'GEMINI_IMAGE_MODEL',
+        'gemini-2.5-flash-image',
+      ),
+    };
+  }
+
+  get characterImage() {
+    return {
+      defaultProvider: this.configService.get<string>(
+        'CHARACTER_IMAGE_DEFAULT_PROVIDER',
+        'openai',
       ),
     };
   }

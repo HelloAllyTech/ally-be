@@ -11,6 +11,7 @@ import {
 import { ScenarioPath } from '../../entity/scenario-path.entity';
 import { CreateScenarioPathTenantDto } from '../../dto/create-scenario-path-tenant.dto';
 import { DeleteScenarioPathTenantDto } from '../../dto/delete-scenario-path-tenant.dto';
+import { AssignmentStatus } from 'src/common/type/common.type';
 
 jest.mock('../../../auth/decorators/auth-permissions.decorator', () => ({
   AuthPermissions: () => () => {},
@@ -149,6 +150,36 @@ describe('ScenarioPathController', () => {
         limit: undefined,
         search: undefined,
         tenantId,
+        sortBy: ScenarioPathSortBy.UPDATED_AT,
+        order: SortOrder.DESC,
+      });
+    });
+
+    it('should forward assignmentStatus to the service', async () => {
+      const expectedResult = {
+        data: mockScenarioPaths,
+        count: 2,
+      };
+      service.getScenarioPaths.mockResolvedValue(expectedResult);
+
+      const tenantId = '123e4567-e89b-12d3-a456-426614174000';
+      const result = await controller.getScenarioPaths(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        tenantId,
+        AssignmentStatus.ASSIGNED,
+      );
+
+      expect(result).toEqual(expectedResult);
+      expect(service.getScenarioPaths).toHaveBeenCalledWith({
+        status: undefined,
+        offset: undefined,
+        limit: undefined,
+        search: undefined,
+        tenantId,
+        assignmentStatus: AssignmentStatus.ASSIGNED,
         sortBy: ScenarioPathSortBy.UPDATED_AT,
         order: SortOrder.DESC,
       });

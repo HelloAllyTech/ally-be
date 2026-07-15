@@ -10,6 +10,7 @@ import { ScenarioSessionRepository } from './repository/scenario-session.reposit
 import { ScenarioSessionMessagesRepository } from './repository/scenario-session-messages.repository';
 import { LiveKitModule } from 'src/livekit/livekit.module';
 import { ScenarioSessionFeedbacks } from './entity/scenario-session-feedbacks.entity';
+import { ScenarioSessionLifecycleEvent } from './entity/scenario-session-lifecycle-event.entity';
 import { ScenarioEvents } from './entity/scenario-events.entity';
 import { SessionEventModule } from 'src/session-event/session-event.module';
 import { AiModule } from 'src/ai/ai.module';
@@ -49,6 +50,7 @@ import { ScenarioEventsTranslationsRepository } from './repository/scenario-even
 import { ScenarioSessionReviewModule } from 'src/scenario-session-review/scenario-session-review.module';
 import { ConversationalGuardrailsModule } from 'src/conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from 'src/case/case.module';
+import { TrackModule } from 'src/track/track.module';
 import { ScenarioSessionDetailsRepository } from './repository/scenario-session-details.repository';
 import { ScenarioReportModule } from 'src/scenario-report/scenario-report.module';
 import { ScenarioSessionTags } from './entity/scenario-session-tags.entity';
@@ -122,6 +124,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
       ScenarioSessions,
       ScenarioEvents,
       ScenarioSessionFeedbacks,
+      ScenarioSessionLifecycleEvent,
       ScenarioSessionMessages,
       ScenarioSessionEvents,
       ScenarioVoices,
@@ -158,6 +161,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     forwardRef(() => ScenarioSessionReviewModule),
     forwardRef(() => ConversationalGuardrailsModule),
     forwardRef(() => CaseModule),
+    forwardRef(() => TrackModule),
     forwardRef(() => PromptModule),
     ScenarioReportModule,
     forwardRef(() => ConversationalGuardrailsModule),

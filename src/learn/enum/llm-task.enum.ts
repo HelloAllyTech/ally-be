@@ -25,13 +25,22 @@ export enum LlmTask {
   DIARIZATION = 'diarization',
   EMBEDDING = 'embedding',
   DRIFT_JUDGE = 'drift_judge',
+  LANGUAGE_JUDGE = 'language_judge',
 
   // ally-be studio operations (in-process).
   AUTOFILL_FIELD = 'autofill_field',
   AUTOFILL_ENHANCE_FIELD = 'autofill_enhance_field',
   // Agent Builder Copilot: one parallel per-field generation call.
   AUTOFILL_AGENT_FIELD = 'autofill_agent_field',
+  // Roleplay Studio v2 copilot: one streamed interviewer/tool-loop turn.
+  ROLEPLAY_COPILOT = 'roleplay_copilot',
+  // Roleplay Studio v2: rehearsal critique → spec-patch proposals.
+  ROLEPLAY_CRITIQUE = 'roleplay_critique',
+  // Track 2.0 quiz: grading one open-ended learner answer against its rubric.
+  TRACK_QUIZ_GRADING = 'track_quiz_grading',
   TRANSLATE_SCENARIO = 'translate_scenario',
+  // Admin-dashboard scenario cover-image generation (Simulation Studio).
+  GENERATE_COVER_IMAGE = 'generate_cover_image',
   TRANSLATE_TEXT = 'translate_text',
   TRANSLATE_OBJECT = 'translate_object',
 

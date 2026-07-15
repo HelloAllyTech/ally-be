@@ -628,7 +628,7 @@ describe('SessionEventController', () => {
     it('should get all session events without filters', async () => {
       sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
 
-      const result = await controller.getAllSessionEvents();
+      const result = await controller.getAllSessionEvents(mockUser);
 
       expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
         undefined,
@@ -639,6 +639,7 @@ describe('SessionEventController', () => {
           sortBy: SessionEventSortBy.CREATED_AT,
           order: SortOrder.DESC,
         },
+        mockUser.id,
       );
       expect(result).toEqual(mockResult);
     });
@@ -647,7 +648,10 @@ describe('SessionEventController', () => {
       const visibilityType = SessionEventVisibilityType.ACTIVE;
       sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
 
-      const result = await controller.getAllSessionEvents(visibilityType);
+      const result = await controller.getAllSessionEvents(
+        mockUser,
+        visibilityType,
+      );
 
       expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
         visibilityType,
@@ -658,6 +662,7 @@ describe('SessionEventController', () => {
           sortBy: SessionEventSortBy.CREATED_AT,
           order: SortOrder.DESC,
         },
+        mockUser.id,
       );
       expect(result).toEqual(mockResult);
     });
@@ -667,6 +672,7 @@ describe('SessionEventController', () => {
       sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
 
       const result = await controller.getAllSessionEvents(
+        mockUser,
         undefined,
         searchName,
       );
@@ -680,6 +686,7 @@ describe('SessionEventController', () => {
           sortBy: SessionEventSortBy.CREATED_AT,
           order: SortOrder.DESC,
         },
+        mockUser.id,
       );
       expect(result).toEqual(mockResult);
     });
@@ -692,6 +699,7 @@ describe('SessionEventController', () => {
       sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
 
       const result = await controller.getAllSessionEvents(
+        mockUser,
         undefined,
         undefined,
         limit,
@@ -709,6 +717,7 @@ describe('SessionEventController', () => {
           sortBy,
           order,
         },
+        mockUser.id,
       );
       expect(result).toEqual(mockResult);
     });
@@ -723,6 +732,7 @@ describe('SessionEventController', () => {
       sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
 
       const result = await controller.getAllSessionEvents(
+        mockUser,
         visibilityType,
         searchName,
         limit,
@@ -740,6 +750,7 @@ describe('SessionEventController', () => {
           sortBy,
           order,
         },
+        mockUser.id,
       );
       expect(result).toEqual(mockResult);
     });
@@ -748,7 +759,7 @@ describe('SessionEventController', () => {
       const emptyResult: { data: SessionEventResponseDto[] } = { data: [] };
       sessionEventService.getAllSessionEvents.mockResolvedValue(emptyResult);
 
-      const result = await controller.getAllSessionEvents();
+      const result = await controller.getAllSessionEvents(mockUser);
 
       expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
         undefined,
@@ -759,6 +770,7 @@ describe('SessionEventController', () => {
           sortBy: SessionEventSortBy.CREATED_AT,
           order: SortOrder.DESC,
         },
+        mockUser.id,
       );
       expect(result).toEqual(emptyResult);
     });
@@ -767,7 +779,7 @@ describe('SessionEventController', () => {
       const error = new Error('Service error');
       sessionEventService.getAllSessionEvents.mockRejectedValue(error);
 
-      await expect(controller.getAllSessionEvents()).rejects.toThrow(
+      await expect(controller.getAllSessionEvents(mockUser)).rejects.toThrow(
         'Service error',
       );
       expect(sessionEventService.getAllSessionEvents).toHaveBeenCalledWith(
@@ -779,6 +791,7 @@ describe('SessionEventController', () => {
           sortBy: SessionEventSortBy.CREATED_AT,
           order: SortOrder.DESC,
         },
+        mockUser.id,
       );
     });
 
@@ -786,6 +799,7 @@ describe('SessionEventController', () => {
       sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
 
       const result = await controller.getAllSessionEvents(
+        mockUser,
         SessionEventVisibilityType.ACTIVE,
         undefined,
         10,
@@ -801,6 +815,7 @@ describe('SessionEventController', () => {
           sortBy: SessionEventSortBy.CREATED_AT,
           order: SortOrder.DESC,
         },
+        mockUser.id,
       );
       expect(result).toEqual(mockResult);
     });
@@ -809,6 +824,7 @@ describe('SessionEventController', () => {
       sessionEventService.getAllSessionEvents.mockResolvedValue(mockResult);
 
       const result = await controller.getAllSessionEvents(
+        mockUser,
         undefined,
         undefined,
         0,
@@ -826,6 +842,7 @@ describe('SessionEventController', () => {
           sortBy: SessionEventSortBy.NAME,
           order: SortOrder.ASC,
         },
+        mockUser.id,
       );
       expect(result).toEqual(mockResult);
     });
@@ -838,6 +855,7 @@ describe('SessionEventController', () => {
       });
 
       const result = await controller.getAllSessionEvents(
+        mockUser,
         visibilityType,
         searchName,
       );
@@ -851,6 +869,7 @@ describe('SessionEventController', () => {
           sortBy: SessionEventSortBy.CREATED_AT,
           order: SortOrder.DESC,
         },
+        mockUser.id,
       );
       expect(result).toEqual(mockResult);
     });
