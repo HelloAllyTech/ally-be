@@ -258,6 +258,13 @@ const PERMISSIONS = {
   VIEW_MULTI_TENANT_ADMINS: 'view:multi-tenant-admins',
   EDIT_MULTI_TENANT_ADMINS: 'edit:multi-tenant-admins',
 
+  // === SUPER DUPER ADMIN MANAGEMENT ===
+  // Granted ONLY to SUPER_DUPER_ADMIN (never SUPER_ADMIN) — the dedicated
+  // surface for listing/promoting/demoting super duper admins. This is the
+  // first intentional divergence between the two super-admin tiers.
+  VIEW_SUPER_DUPER_ADMINS: 'view:super-duper-admins',
+  EDIT_SUPER_DUPER_ADMINS: 'edit:super-duper-admins',
+
   // === RUNTIME I18N ===
   VIEW_I18N_TRANSLATIONS: 'view:admin:i18n-translations',
   EDIT_I18N_TRANSLATIONS: 'edit:admin:i18n-translations',
@@ -398,11 +405,15 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.VIEW_USER_PREFERENCES,
 ];
 
-// SUPER_DUPER_ADMIN is a peer of SUPER_ADMIN today: it clones the exact same
-// permission set. Keep it as a spread of SUPER_ADMIN_PERMISSIONS (rather than a
-// duplicated list) so the two stay identical until the role is intentionally
-// diverged with extra capabilities later.
-const SUPER_DUPER_ADMIN_PERMISSIONS = [...SUPER_ADMIN_PERMISSIONS];
+// SUPER_DUPER_ADMIN inherits everything SUPER_ADMIN has (kept as a spread so
+// additions to SUPER_ADMIN flow through automatically), plus the capabilities
+// exclusive to the elevated tier — currently the super-duper-admin management
+// surface (list/promote/demote other super duper admins).
+const SUPER_DUPER_ADMIN_PERMISSIONS = [
+  ...SUPER_ADMIN_PERMISSIONS,
+  PERMISSIONS.VIEW_SUPER_DUPER_ADMINS,
+  PERMISSIONS.EDIT_SUPER_DUPER_ADMINS,
+];
 
 const COUNSELOR_PERMISSIONS = [
   // Core counselor functions
