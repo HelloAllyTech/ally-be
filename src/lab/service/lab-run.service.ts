@@ -7,9 +7,15 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LLM_MODEL_REGISTRY } from 'src/llm/constants/llm-model-registry.constants';
 import { LabRunRepository } from '../repository/lab-run.repository';
 import { LabSkillRepository } from '../repository/lab-skill.repository';
+import { LabRunAssignmentRepository } from '../repository/lab-eval.repositories';
 import { LabRun, LabRunStatus } from '../entity/lab-run.entity';
 import { CreateLabRunDto } from '../dto/lab-run.dto';
 import { LabListQueryDto } from '../dto/lab-query.dto';
+
+/** Run list item enriched with human-eval assignment counters. */
+export type LabRunListItem = LabRun & {
+  evalStats: { assigned: number; submitted: number };
+};
 
 const RUN_MAX_TOKENS = 2048;
 const RUN_TIMEOUT_MS = 90_000;
@@ -29,6 +35,7 @@ export class LabRunService {
   constructor(
     private readonly runRepository: LabRunRepository,
     private readonly skillRepository: LabSkillRepository,
+    private readonly assignmentRepository: LabRunAssignmentRepository,
     private readonly configService: AppConfigService,
   ) {
     this.anthropic = new Anthropic({
@@ -40,12 +47,45 @@ export class LabRunService {
 
   async list(
     query: LabListQueryDto,
-  ): Promise<{ items: LabRun[]; count: number }> {
-    return this.runRepository.list({
+  ): Promise<{ items: LabRunListItem[]; count: number }> {
+    const { items, count } = await this.runRepository.list({
       search: query.search,
       limit: query.limit,
       offset: query.offset,
     });
+
+    // Per-run assignment counters so the admin runs log can show human-eval
+    // progress (n submitted / m assigned) without an extra round-trip.
+    const publishedIds = items.filter((r) => r.publishedAt).map((r) => r.id);
+    const stats = new Map<string, { assigned: number; submitted: number }>();
+    if (publishedIds.length > 0) {
+      const rows: { run_id: string; assigned: string; submitted: string }[] =
+        await this.assignmentRepository
+          .createQueryBuilder('assignment')
+          .select('assignment.runId', 'run_id')
+          .addSelect('COUNT(*)', 'assigned')
+          .addSelect(
+            'COUNT(*) FILTER (WHERE assignment.submitted_at IS NOT NULL)',
+            'submitted',
+          )
+          .where('assignment.runId IN (:...ids)', { ids: publishedIds })
+          .groupBy('assignment.runId')
+          .getRawMany();
+      for (const row of rows) {
+        stats.set(row.run_id, {
+          assigned: Number(row.assigned),
+          submitted: Number(row.submitted),
+        });
+      }
+    }
+
+    return {
+      items: items.map((run) => ({
+        ...run,
+        evalStats: stats.get(run.id) ?? { assigned: 0, submitted: 0 },
+      })),
+      count,
+    };
   }
 
   async getById(id: string): Promise<LabRun> {

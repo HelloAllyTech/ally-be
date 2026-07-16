@@ -55,6 +55,14 @@ export class LabRun extends BaseWithoutTenantEntity {
   @Column({ type: 'text', nullable: true })
   error?: string | null;
 
+  /**
+   * Set when a super-duper-admin publishes this (COMPLETED) run for human
+   * evaluation, together with its eval questions. A run is published at most
+   * once; published runs can be assigned to evaluators.
+   */
+  @Column({ name: 'published_at', type: 'timestamp', nullable: true })
+  publishedAt?: Date | null;
+
   @Column({ name: 'created_by', type: 'int' })
   createdBy!: number;
 }
