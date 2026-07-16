@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { LLM_MODEL_REGISTRY } from 'src/llm/constants/llm-model-registry.constants';
 import { LabRunRepository } from '../repository/lab-run.repository';
 import { LabSkillRepository } from '../repository/lab-skill.repository';
 import { LabRun, LabRunStatus } from '../entity/lab-run.entity';
@@ -19,18 +21,21 @@ const escapeRegExp = (s: string): string =>
 @Injectable()
 export class LabRunService {
   private readonly logger = LoggerService.getInstance(LabRunService.name);
-  private readonly client: Anthropic;
-  private readonly model: string;
+  private readonly anthropic: Anthropic;
+  private readonly openai: OpenAI;
+  /** Fallback model when a skill has no model set (Anthropic). */
+  private readonly defaultModel: string;
 
   constructor(
     private readonly runRepository: LabRunRepository,
     private readonly skillRepository: LabSkillRepository,
     private readonly configService: AppConfigService,
   ) {
-    this.client = new Anthropic({
+    this.anthropic = new Anthropic({
       apiKey: this.configService.anthropic.apiKey,
     });
-    this.model = this.configService.anthropic.autofillModel;
+    this.openai = new OpenAI({ apiKey: this.configService.openai.apiKey });
+    this.defaultModel = this.configService.anthropic.autofillModel;
   }
 
   async list(
@@ -71,10 +76,48 @@ export class LabRunService {
   }
 
   /**
+   * Execute the prompt on the given model, routing to the right provider SDK
+   * by the model's registry entry. AI Lab runs support Anthropic and OpenAI
+   * (the providers this runtime can execute); anything else throws.
+   */
+  private async runModel(modelId: string, prompt: string): Promise<string> {
+    const provider =
+      LLM_MODEL_REGISTRY.find((m) => m.model === modelId)?.provider ??
+      'anthropic';
+
+    if (provider === 'openai') {
+      // No max_tokens: reasoning models (gpt-5) reject `max_tokens` and the
+      // default cap is fine for a preview run.
+      const response = await this.openai.chat.completions.create(
+        { model: modelId, messages: [{ role: 'user', content: prompt }] },
+        { timeout: RUN_TIMEOUT_MS },
+      );
+      return response.choices?.[0]?.message?.content ?? '';
+    }
+
+    if (provider === 'anthropic') {
+      const response = await this.anthropic.messages.create(
+        {
+          model: modelId,
+          max_tokens: RUN_MAX_TOKENS,
+          messages: [{ role: 'user', content: prompt }],
+        },
+        { timeout: RUN_TIMEOUT_MS },
+      );
+      const block = response.content[0];
+      return block?.type === 'text' ? block.text : '';
+    }
+
+    throw new Error(
+      `AI Lab runs do not support the "${provider}" provider (model ${modelId})`,
+    );
+  }
+
+  /**
    * Run a single skill: resolve its prompt, persist a RUNNING row, call the
-   * LLM, then flip the row to COMPLETED (with output) or FAILED (with error).
-   * Always returns the row — a failed LLM call is a FAILED row, not a thrown
-   * error — so the runs log reflects every attempt.
+   * skill's model, then flip the row to COMPLETED (with output) or FAILED
+   * (with error). Always returns the row — a failed LLM call is a FAILED row,
+   * not a thrown error — so the runs log reflects every attempt.
    */
   async create(dto: CreateLabRunDto): Promise<LabRun> {
     const skill = await this.skillRepository.findOne({
@@ -86,6 +129,7 @@ export class LabRunService {
 
     const values = dto.variableValues ?? [];
     const resolvedPrompt = this.resolvePrompt(skill.content, values);
+    const modelId = skill.model || this.defaultModel;
     const userId = Number(ExecutionManager.getUserId() ?? 0);
 
     let run = this.runRepository.create({
@@ -94,26 +138,18 @@ export class LabRunService {
       skillName: skill.name,
       resolvedPrompt,
       variableValues: values.map((v) => ({ name: v.name, value: v.value })),
-      model: this.model,
+      model: modelId,
       status: LabRunStatus.RUNNING,
       createdBy: userId,
     });
     run = await this.runRepository.save(run);
 
     try {
-      const response = await this.client.messages.create(
-        {
-          model: this.model,
-          max_tokens: RUN_MAX_TOKENS,
-          messages: [{ role: 'user', content: resolvedPrompt }],
-        },
-        { timeout: RUN_TIMEOUT_MS },
-      );
-      const block = response.content[0];
-      const text = block?.type === 'text' ? block.text : '';
-      run.output = text;
+      run.output = await this.runModel(modelId, resolvedPrompt);
       run.status = LabRunStatus.COMPLETED;
-      this.logger.info(`[AI_LAB] run ${run.id} completed (skill=${skill.id})`);
+      this.logger.info(
+        `[AI_LAB] run ${run.id} completed (skill=${skill.id}, model=${modelId})`,
+      );
     } catch (error) {
       run.status = LabRunStatus.FAILED;
       run.error = error instanceof Error ? error.message : String(error);
