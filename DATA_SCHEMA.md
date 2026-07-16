@@ -251,6 +251,21 @@ and its director reports telemetry back over the learn SQS queue.
 | `roleplay_director_events` | BaseWithoutTenant | `scenarioSessionId` (idx, loose FK), `roomId` (idx), `eventType` (`director_state_transition`/`director_rubric_score`/`director_disclosure_unlock`/`director_stage_direction`/`roleplay_session_summary` — the SQS `message_type` strings), `turnIndex`, `payload` (jsonb, raw message data), `occurredAt` | **Append-only** director telemetry, one row per SQS message; sessions resolved by `room_id`, unknown rooms skipped |
 | `roleplay_rubric_scores` | BaseWithoutTenant | `scenarioSessionId` (idx), `roomId` (idx), `turnIndex`, `behaviorId` (rubric behavior id from the spec doc, not `behaviors`), `score` (float), `rationale` (text), `occurredAt` | Per-(turn, behavior) flattening of `director_rubric_score` messages for cheap aggregation |
 
+### 3.10 AI Lab (`lab`)
+
+A super-duper-admin workspace (admin tab **AI Lab**) for authoring reusable system-prompt
+templates (**skills**), the placeholder **variables** they reference as `{{name}}`, and the
+candidate **values** bound to those variables (substituted at run time). System-wide (no tenant);
+gated by perms `view:admin:ai-lab` / `edit:admin:ai-lab` / `delete:admin:ai-lab`, granted to both
+the `SUPER_ADMIN` and `SUPER_DUPER_ADMIN` groups. The "Runs" surface is not built yet. Added in
+migrations `1844000000000` (tables) / `1844000000001` (permissions).
+
+| Table | Base | Key columns | Notes |
+|-------|------|-------------|-------|
+| `lab_skills` | BaseWithoutTenant | `id` (uuid), `name` (idx), `description` (nullable), `content` (text — the system-prompt template, may embed `{{variable}}` placeholders), `created_by` | Reusable system-prompt templates |
+| `lab_variables` | BaseWithoutTenant | `id` (uuid), `name` (varchar(255), **uniq** — referenced in templates as `{{name}}`), `description` (nullable), `created_by` | Named template placeholders; name charset restricted to `[A-Za-z0-9_.-]` |
+| `lab_values` | BaseWithoutTenant | `id` (uuid), `variable_id` (uuid, idx, **FK → `lab_variables` ON DELETE CASCADE**), `label` (nullable), `value` (text), `created_by` | Candidate values bound to a variable; deleting the parent variable cascades to its values |
+
 ---
 
 ## 4. Weaviate (vector DB — `ally-ai`)
@@ -303,6 +318,7 @@ Each "collection" stores objects + their embeddings for semantic search / RAG.
 | Daily activity / engagement for analytics | `user_daily_scores`, `badge_users` |
 | Analytics dashboard config | `dashboards` (current), `dashboard` (legacy) |
 | LLM prompts driving the agent | `prompts`, `prompts_versions` (Postgres); guardrails in `conversational_guardrails` |
+| AI Lab skills / variables / values | `lab_skills`, `lab_variables`, `lab_values` |
 | Semantic search / RAG content | Weaviate `Conversation`, `ReferenceDocument` |
 | A recording or uploaded audio file | `scenario_session_recording`, `chat_audio_uploads` → S3 key |
 | Compliance / who-changed-what | `audit_logs`, plus `created_by`/`updated_by` on entities |
