@@ -21,10 +21,19 @@ export class CreateRoleplaySpecDto {
   @IsNotEmpty()
   title!: string;
 
-  @ApiPropertyOptional({ description: 'Competency this spec trains' })
+  @ApiPropertyOptional({ description: 'Primary competency this spec trains' })
   @IsOptional()
   @IsUUID()
   competencyId?: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'All competencies this spec trains (first-class multi-select)',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  competencyIds?: string[];
 
   @ApiPropertyOptional({
     description: 'Optional initial draft spec document (jsonb, schema "1.0")',
@@ -45,6 +54,15 @@ export class UpdateRoleplaySpecDto {
   @IsOptional()
   @IsUUID()
   competencyId?: string | null;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'All competencies this spec trains (first-class multi-select)',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('all', { each: true })
+  competencyIds?: string[] | null;
 }
 
 export class UpdateRoleplaySpecDraftDto {

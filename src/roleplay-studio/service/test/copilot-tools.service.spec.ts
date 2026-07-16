@@ -31,9 +31,20 @@ describe('CopilotToolsService — auto-improve tools', () => {
   let mockOrchestrator: Record<string, jest.Mock>;
   let mockImprovementRunRepo: Record<string, jest.Mock>;
 
+  // Interview-complete draft so start_auto_improve clears the completeness
+  // guard and exercises the snapshot/validate/run path under test.
   const spec = {
     id: SPEC_ID,
-    draftSpec: { title: 'Spec', agentTestCaseIds: ['tc-1', 'tc-2'] },
+    draftSpec: {
+      title: 'Spec',
+      agentTestCaseIds: ['tc-1', 'tc-2'],
+      competencyIds: ['comp-1'],
+      persona: { identityCore: 'A guarded caller', scenarioContext: 'Crisis line' },
+      difficulty: 'MEDIUM',
+      language: { languageId: 1, languageCode: 'en-IN' },
+      voice: { languageVoices: { '1': 'voice-1' } },
+      rubric: { behaviors: [{ id: 'b1', name: 'Reflect feelings', polarity: 'helpful' }] },
+    },
   } as unknown as RoleplaySpec;
 
   beforeEach(() => {
@@ -173,6 +184,38 @@ describe('CopilotToolsService — auto-improve tools', () => {
       expect(outcome.modelResult).toEqual(
         expect.objectContaining({ ok: false, error: 'run_in_progress' }),
       );
+    });
+
+    it('refuses with interview_incomplete before validating or running', async () => {
+      const incompleteContext = {
+        ...context,
+        spec: {
+          id: SPEC_ID,
+          draftSpec: { title: 'Spec' },
+        } as unknown as RoleplaySpec,
+      };
+
+      const outcome = await service.execute(
+        'start_auto_improve',
+        {},
+        incompleteContext,
+      );
+
+      expect(outcome.modelResult.ok).toBe(false);
+      expect(outcome.modelResult.error).toBe('interview_incomplete');
+      expect(outcome.modelResult.missing).toEqual(
+        expect.arrayContaining([
+          'competency selection',
+          'character context',
+          'difficulty',
+          'language',
+          'behaviour rubric',
+        ]),
+      );
+      // The guard short-circuits: no validation, no snapshot, no run.
+      expect(mockValidator.validate).not.toHaveBeenCalled();
+      expect(mockSpecService.persistDraftMutation).not.toHaveBeenCalled();
+      expect(mockOrchestrator.startImprovementRun).not.toHaveBeenCalled();
     });
   });
 

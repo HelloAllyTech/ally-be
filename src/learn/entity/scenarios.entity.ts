@@ -63,6 +63,11 @@ export class Scenarios extends BaseWithoutTenantEntity {
   @Column({ type: 'uuid', nullable: true })
   competencyId?: string;
 
+  // Roleplay Studio v2 first-class multi-competency tagging. competencyId
+  // mirrors competencyIds[0] for back-compat; v1 scenarios leave this null.
+  @Column({ type: 'jsonb', nullable: true })
+  competencyIds?: string[] | null;
+
   @Column({ type: 'jsonb', nullable: true })
   translations?: Record<string, any>;
 

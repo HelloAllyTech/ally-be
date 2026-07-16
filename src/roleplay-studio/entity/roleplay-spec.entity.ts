@@ -38,8 +38,14 @@ export class RoleplaySpec extends BaseWithoutTenantEntity {
   @Column({ enum: RoleplaySpecStatus, default: RoleplaySpecStatus.DRAFT })
   status!: RoleplaySpecStatus;
 
+  // Primary competency (derived from competencyIds[0]); kept for back-compat.
   @Column({ type: 'uuid', nullable: true })
   competencyId?: string | null;
+
+  // All competencies this spec trains (first-class multi-select). Denormalised
+  // from the draft/version jsonb for querying; competencyId stays in sync.
+  @Column({ type: 'jsonb', nullable: true })
+  competencyIds?: string[] | null;
 
   // Loose FK to the thin scenarios row (engine=ROLEPLAY_V2) created at spec
   // creation, flipped ACTIVE on first publish. No DB constraint.
