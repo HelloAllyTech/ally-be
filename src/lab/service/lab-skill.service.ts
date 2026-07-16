@@ -36,6 +36,7 @@ export class LabSkillService {
       name: dto.name,
       description: dto.description ?? null,
       content: dto.content,
+      model: dto.model ?? null,
       createdBy: userId,
     });
     const saved = await this.skillRepository.save(skill);
@@ -48,6 +49,7 @@ export class LabSkillService {
     if (dto.name !== undefined) skill.name = dto.name;
     if (dto.description !== undefined) skill.description = dto.description;
     if (dto.content !== undefined) skill.content = dto.content;
+    if (dto.model !== undefined) skill.model = dto.model;
     const saved = await this.skillRepository.save(skill);
     this.logger.info(`Lab skill updated: ${saved.id}`);
     return saved;

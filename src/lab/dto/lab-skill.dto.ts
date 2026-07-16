@@ -21,6 +21,14 @@ export class CreateLabSkillDto {
   @IsString()
   @IsNotEmpty()
   content!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'LLM model id to run this skill on (from the LLM model registry). Omit for the AI Lab default.',
+  })
+  @IsOptional()
+  @IsString()
+  model?: string;
 }
 
 export class UpdateLabSkillDto {
@@ -40,4 +48,12 @@ export class UpdateLabSkillDto {
   @IsString()
   @IsNotEmpty()
   content?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'LLM model id to run this skill on (from the LLM model registry).',
+  })
+  @IsOptional()
+  @IsString()
+  model?: string;
 }

@@ -23,6 +23,14 @@ export class LabSkill extends BaseWithoutTenantEntity {
   @Column({ type: 'text' })
   content!: string;
 
+  /**
+   * LLM model this skill runs on (an id from the LLM model registry, e.g.
+   * `claude-sonnet-4-6` or `gpt-4o`). Null → the AI Lab default (Anthropic
+   * autofill model) is used at run time.
+   */
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  model?: string | null;
+
   @Column({ name: 'created_by', type: 'int' })
   createdBy!: number;
 }
