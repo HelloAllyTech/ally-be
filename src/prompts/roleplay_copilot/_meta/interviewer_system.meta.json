@@ -1,0 +1,5 @@
+{
+  "name": "Roleplay Copilot — Interviewer System",
+  "description": "System prompt for the Roleplay Studio v2 copilot: runs the four-question trainer interview (skill, learner profile, client sketch, success criteria), incrementally builds the spec via tools, then drives the chat-first verify flow — test-case selection, start_auto_improve, and resolving finished runs.",
+  "category": "Roleplay Studio"
+}

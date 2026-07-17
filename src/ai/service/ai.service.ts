@@ -46,6 +46,7 @@ import {
   UpdateReferenceDocumentResponse,
 } from '../dto/ai.response.dto';
 import { ScribeSessionMode } from 'src/common/constants/chat.constants';
+import { RoleplayRehearsalRunRequest } from 'src/roleplay-studio/type/rehearsal-run-request.type';
 
 @Injectable()
 export class AiService {
@@ -309,6 +310,51 @@ export class AiService {
     }
   }
 
+  /**
+   * Kick off a Roleplay Studio v2 rehearsal in ai-learn (202 accepted).
+   * Progress/results/transcripts come back via the rehearsal webhook
+   * (PATCH /v1/roleplay-studio/rehearsals/webhook/:rehearsalId). Throws on
+   * failure so RehearsalService can mark the run FAILED immediately.
+   */
+  @RetryOnFail(3, 1000)
+  async triggerRoleplayRehearsalRun(
+    request: RoleplayRehearsalRunRequest,
+  ): Promise<void> {
+    await this.makeRequest<unknown, RoleplayRehearsalRunRequest>(
+      ENDPOINTS.ROLEPLAY_REHEARSAL_RUN,
+      request,
+      true,
+      'post',
+      undefined,
+      true, // isLearnService — routes to ally-ai-learn
+    );
+  }
+
+  /**
+   * Signal an in-flight rehearsal to cancel. Best-effort, mirrors
+   * triggerScenarioReportCancel: the CANCELLED status is already durable in
+   * our DB, and a late webhook is ignored by the end-status guard.
+   */
+  async triggerRoleplayRehearsalCancel(rehearsalId: string): Promise<void> {
+    try {
+      await this.makeRequest<unknown, Record<string, never>>(
+        `${ENDPOINTS.ROLEPLAY_REHEARSAL_CANCEL}/${rehearsalId}`,
+        {},
+        false,
+        'post',
+        undefined,
+        true,
+      );
+    } catch {
+      // Already logged inside makeRequest's catch.
+      this.logger.warn(
+        `Cancel propagation to ai-learn failed for rehearsal ${rehearsalId}; ` +
+          `the run will finish naturally and its final webhook will be ignored ` +
+          `by the status guard.`,
+      );
+    }
+  }
+
   private async makeRequest<R, T>(
     endpoint: string,
     data: T,
@@ -538,6 +584,9 @@ export class AiService {
           | string
           | { name: string; label?: string; required?: boolean }
         )[];
+        provider?: string;
+        model?: string;
+        temperature?: number;
       }
     >
   > {
@@ -555,6 +604,9 @@ export class AiService {
             | string
             | { name: string; label?: string; required?: boolean }
           )[];
+          provider?: string;
+          model?: string;
+          temperature?: number;
         }
       > = {};
       for (const p of prompts) {
@@ -575,6 +627,11 @@ export class AiService {
         overrides[mappedKey] = {
           prompt: p.prompt,
           availableVariables: p.availableVariables || [],
+          // Prompt-level LLM overrides (honored by ally-ai's text-gen / drift
+          // judge). Omitted when unset so the runtime keeps its defaults.
+          ...(p.provider ? { provider: p.provider } : {}),
+          ...(p.model ? { model: p.model } : {}),
+          ...(p.temperature != null ? { temperature: p.temperature } : {}),
         };
       }
       return overrides;

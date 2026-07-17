@@ -278,6 +278,9 @@ export async function seedScribeData(
   // and those modules use it unresolved. Mixing the two up means the seeded
   // rows silently never match what a real request looks up.
   let preferencesCreated = 0;
+  // NOTE: SCRIBE_VOICE_NOTE_ENABLED is intentionally NOT seeded — the feature
+  // defaults OFF (no preference row → getScribeVoiceNoteEnabled() returns false).
+  // Admins/super-admins turn it on per-tenant via the settings toggle.
   for (const name of [
     PreferenceName.CUSTOM_FIELDS_ENABLED,
     PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,

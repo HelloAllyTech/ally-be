@@ -313,6 +313,106 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     }));
   }
 
+  /**
+   * Returns per-bucket practice minutes for a single user within [from, to],
+   * grouped by day/week/month. Buckets with no activity are filled with 0 so the
+   * heatmap is continuous. `unit` is a fixed 'day' | 'week' | 'month' literal
+   * (never raw user input) and is bound safely into date_trunc.
+   */
+  async getPracticeMinutesByBucket(
+    userId: number,
+    tenantId: string,
+    unit: 'day' | 'week' | 'month',
+    from: Date,
+    to: Date,
+  ): Promise<{ bucket: string; minutes: number }[]> {
+    const rows = await this.query(
+      `
+      WITH series AS (
+        SELECT generate_series(
+          date_trunc($3, $4::timestamp),
+          date_trunc($3, $5::timestamp),
+          ('1 ' || $3)::interval
+        )::date AS bucket
+      ),
+      agg AS (
+        SELECT
+          date_trunc($3, "date")::date AS bucket,
+          SUM("minutesPlayed") AS minutes
+        FROM user_daily_scores
+        WHERE "userId" = $1
+          AND tenant_id = $2
+          AND "date" >= $4
+          AND "date" <= $5
+        GROUP BY 1
+      )
+      SELECT
+        to_char(s.bucket, 'YYYY-MM-DD') AS bucket,
+        COALESCE(a.minutes, 0) AS minutes
+      FROM series s
+      LEFT JOIN agg a ON a.bucket = s.bucket
+      ORDER BY s.bucket ASC
+      `,
+      [userId, tenantId, unit, from, to],
+    );
+
+    return rows.map((row: any) => ({
+      bucket: row.bucket,
+      minutes: parseFloat(row.minutes) || 0,
+    }));
+  }
+
+  /**
+   * Computes the current and longest consecutive-active-days streaks for a
+   * single user using the "gaps and islands" technique. An active day is one
+   * where minutesPlayed >= 1.00. The current streak is the island whose most
+   * recent day is today or yesterday (yesterday is allowed so the streak is not
+   * shown as broken before the user practices on the current day).
+   */
+  async getUserStreaks(
+    userId: number,
+    tenantId: string,
+  ): Promise<{ currentStreak: number; longestStreak: number }> {
+    const result = await this.query(
+      `
+      WITH active_days AS (
+        SELECT DISTINCT "date"::date AS active_day
+        FROM user_daily_scores
+        WHERE "userId" = $1
+          AND tenant_id = $2
+          AND "minutesPlayed" >= 1.00
+      ),
+      islands AS (
+        SELECT
+          active_day,
+          active_day - (ROW_NUMBER() OVER (ORDER BY active_day))::int AS island
+        FROM active_days
+      ),
+      streaks AS (
+        SELECT
+          COUNT(*) AS streak_length,
+          MAX(active_day) AS last_day
+        FROM islands
+        GROUP BY island
+      )
+      SELECT
+        COALESCE(MAX(streak_length), 0) AS "longestStreak",
+        COALESCE(
+          MAX(streak_length) FILTER (WHERE last_day >= CURRENT_DATE - 1),
+          0
+        ) AS "currentStreak"
+      FROM streaks
+      `,
+      [userId, tenantId],
+    );
+
+    const row = result[0] ?? {};
+    return {
+      currentStreak: parseInt(row.currentStreak) || 0,
+      longestStreak: parseInt(row.longestStreak) || 0,
+    };
+  }
+
   async getMaxActiveDaysPerUser(
     tenantIds?: string[],
     userIds?: number[],

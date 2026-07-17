@@ -10,6 +10,7 @@ import {
   ScenarioPathWithSessionFilterOptions,
   SortOrder,
 } from '../../type/scenario-paths.type';
+import { AssignmentStatus } from 'src/common/type/common.type';
 
 describe('ScenarioPathRepository', () => {
   let repository: ScenarioPathRepository;
@@ -197,6 +198,48 @@ describe('ScenarioPathRepository', () => {
         data: entities,
         count: 1,
       });
+    });
+
+    it('filters to assigned paths when assignmentStatus is ASSIGNED', async () => {
+      const entities = [mockScenarioPathWithTenantMapping];
+      const filters: ScenarioPathFilterOptions = {
+        tenantId: 'tenant-1',
+        assignmentStatus: AssignmentStatus.ASSIGNED,
+      };
+      queryBuilder.getManyAndCount.mockResolvedValue([entities, 1]);
+
+      await repository.getAllScenarioPaths(filters);
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '"scenarioPathTenant"."id" IS NOT NULL',
+      );
+    });
+
+    it('filters to unassigned paths when assignmentStatus is UNASSIGNED', async () => {
+      const filters: ScenarioPathFilterOptions = {
+        tenantId: 'tenant-1',
+        assignmentStatus: AssignmentStatus.UNASSIGNED,
+      };
+      queryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+
+      await repository.getAllScenarioPaths(filters);
+
+      expect(queryBuilder.andWhere).toHaveBeenCalledWith(
+        '"scenarioPathTenant"."id" IS NULL',
+      );
+    });
+
+    it('ignores assignmentStatus when tenantId is not provided', async () => {
+      const filters: ScenarioPathFilterOptions = {
+        assignmentStatus: AssignmentStatus.ASSIGNED,
+      };
+      queryBuilder.getManyAndCount.mockResolvedValue([[], 0]);
+
+      await repository.getAllScenarioPaths(filters);
+
+      expect(queryBuilder.andWhere).not.toHaveBeenCalledWith(
+        '"scenarioPathTenant"."id" IS NOT NULL',
+      );
     });
 
     it('applies all filters together', async () => {

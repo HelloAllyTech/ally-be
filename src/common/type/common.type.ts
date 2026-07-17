@@ -53,6 +53,11 @@ export enum SortOrder {
   DESC = 'DESC',
 }
 
+export enum AssignmentStatus {
+  ASSIGNED = 'ASSIGNED',
+  UNASSIGNED = 'UNASSIGNED',
+}
+
 export enum SessionItemStatus {
   LOCKED = 'LOCKED',
   UNLOCKED = 'UNLOCKED',

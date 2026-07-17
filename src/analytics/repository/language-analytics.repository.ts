@@ -1,0 +1,428 @@
+import { Injectable } from '@nestjs/common';
+import { DataSource } from 'typeorm';
+
+export interface LanguageAnalyticsFilters {
+  start: Date;
+  language?: string | null;
+  judgeModel: string;
+  judgePromptVersion: string;
+  /** Experiment slice (FR13): restrict to one configuration tuple. */
+  scenarioVersionId?: string | null;
+  promptVersion?: string | null;
+  llmModel?: string | null;
+}
+
+/** The saved filter tuple of a pinned reference experiment. */
+export interface EvalReferenceFilters {
+  language?: string | null;
+  scenarioVersionId?: string | null;
+  promptVersion?: string | null;
+  llmModel?: string | null;
+}
+
+/**
+ * Read-side aggregations for the language-quality dashboard tab.
+ *
+ * Aggregates the SAME per-session rows the Roleplay Session Logs detail reads
+ * raw (language_judgment_sessions + language_error_annotations) — single write
+ * path, two read surfaces. All rates are computed in the service from the
+ * counts returned here; nothing here or downstream ever emits a 1-5 score.
+ *
+ * Every query is pinned to ONE (judgeModel, judgePromptVersion) — mixing judge
+ * versions double-counts sessions and makes numbers incomparable (NFR3).
+ * Windowing uses COALESCE(occurredAt, createdAt) on the SESSION time, same
+ * rationale as drift-analytics.
+ */
+@Injectable()
+export class LanguageAnalyticsRepository {
+  constructor(private readonly dataSource: DataSource) {}
+
+  /** Most recent judge version with rows — the version the dashboard pins to. */
+  async latestJudgeVersion(): Promise<{
+    judgeModel: string;
+    judgePromptVersion: string;
+  } | null> {
+    const rows = await this.dataSource.query(
+      `SELECT "judgeModel" AS judge_model,
+              "judgePromptVersion" AS judge_prompt_version
+         FROM language_judgment_sessions
+        ORDER BY "updatedAt" DESC LIMIT 1`,
+    );
+    if (!rows?.length) return null;
+    return {
+      judgeModel: rows[0].judge_model,
+      judgePromptVersion: rows[0].judge_prompt_version,
+    };
+  }
+
+  private buildWhere(
+    alias: string,
+    f: LanguageAnalyticsFilters,
+    params: unknown[],
+  ): string {
+    params.push(f.start, f.judgeModel, f.judgePromptVersion);
+    let where = `COALESCE(${alias}."occurredAt", ${alias}."createdAt") >= $1
+      AND ${alias}."judgeModel" = $2 AND ${alias}."judgePromptVersion" = $3`;
+    const dims: Array<[string, string | null | undefined]> = [
+      ['language', f.language],
+      ['scenarioVersionId', f.scenarioVersionId],
+      ['promptVersion', f.promptVersion],
+      ['llmModel', f.llmModel],
+    ];
+    for (const [column, value] of dims) {
+      if (value) {
+        params.push(value);
+        where += ` AND ${alias}."${column}" = $${params.length}`;
+      }
+    }
+    return where;
+  }
+
+  private sessionWhere(f: LanguageAnalyticsFilters, params: unknown[]): string {
+    return this.buildWhere('s', f, params);
+  }
+
+  private annotationWhere(
+    f: LanguageAnalyticsFilters,
+    params: unknown[],
+  ): string {
+    return this.buildWhere('a', f, params);
+  }
+
+  /** The pinned reference experiment, if any (FR13). */
+  async getPinnedReference(): Promise<{
+    name: string;
+    filters: EvalReferenceFilters;
+    pinnedAt: Date;
+  } | null> {
+    const rows = await this.dataSource.query(
+      `SELECT name, filters, "updatedAt" AS pinned_at
+         FROM eval_experiments
+        WHERE "isPinnedReference" = true
+        ORDER BY "updatedAt" DESC LIMIT 1`,
+    );
+    if (!rows?.length) return null;
+    return {
+      name: rows[0].name,
+      filters: rows[0].filters ?? {},
+      pinnedAt: rows[0].pinned_at,
+    };
+  }
+
+  /** Pin a new reference experiment (unpins any previous one). */
+  async setPinnedReference(
+    name: string,
+    filters: EvalReferenceFilters,
+    createdBy?: number,
+  ): Promise<void> {
+    await this.dataSource.transaction(async (em) => {
+      await em.query(
+        `UPDATE eval_experiments SET "isPinnedReference" = false, "updatedAt" = now()
+          WHERE "isPinnedReference" = true`,
+      );
+      await em.query(
+        `INSERT INTO eval_experiments (name, filters, "isPinnedReference", "createdBy")
+         VALUES ($1, $2::jsonb, true, $3)`,
+        [name, JSON.stringify(filters ?? {}), createdBy ?? null],
+      );
+    });
+  }
+
+  /**
+   * changed_from_prev (FR18): for each scenario version, the top-level config
+   * elements that differ from its parent version — the single-variable
+   * attribution the experiment charts name. Empty array = root version or
+   * identical config; null parent config = not derivable.
+   */
+  async changedElementsByScenarioVersion(
+    versionIds: string[],
+  ): Promise<Record<string, string[]>> {
+    if (!versionIds.length) return {};
+    const rows: Array<{
+      id: string;
+      config: Record<string, unknown> | null;
+      parent_config: Record<string, unknown> | null;
+      parent_id: string | null;
+    }> = await this.dataSource.query(
+      `SELECT sv.id, sv.config, sv."parentVersionId" AS parent_id,
+              pv.config AS parent_config
+         FROM scenario_versions sv
+         LEFT JOIN scenario_versions pv ON pv.id = sv."parentVersionId"
+        WHERE sv.id::text = ANY($1)`,
+      [versionIds],
+    );
+    // Bookkeeping keys that always churn and are never experiment variables.
+    const IGNORED = new Set(['status', 'mappedEvents']);
+    const result: Record<string, string[]> = {};
+    for (const row of rows) {
+      if (!row.parent_id || !row.config || !row.parent_config) {
+        result[row.id] = [];
+        continue;
+      }
+      const keys = new Set([
+        ...Object.keys(row.config),
+        ...Object.keys(row.parent_config),
+      ]);
+      const changed: string[] = [];
+      for (const key of keys) {
+        if (IGNORED.has(key)) continue;
+        if (
+          JSON.stringify(row.config[key] ?? null) !==
+          JSON.stringify(row.parent_config[key] ?? null)
+        )
+          changed.push(key);
+      }
+      result[row.id] = changed.sort();
+    }
+    return result;
+  }
+
+  /** Session denominators, per language: sessions, turns, garbled turns. */
+  async sessionTotalsByLanguage(f: LanguageAnalyticsFilters): Promise<
+    Array<{
+      language: string | null;
+      sessions: string;
+      turns: string;
+      turns_garbled: string;
+      script_fidelity: string | null;
+      round_trip_wer: string | null;
+    }>
+  > {
+    const params: unknown[] = [];
+    const where = this.sessionWhere(f, params);
+    return this.dataSource.query(
+      `SELECT s."language" AS language,
+              COUNT(*) AS sessions,
+              COALESCE(SUM(s."turnsJudged"), 0) AS turns,
+              COALESCE(SUM(s."turnsGarbled"), 0) AS turns_garbled,
+              AVG(s."scriptFidelityPct") AS script_fidelity,
+              AVG(s."roundTripWerPct") AS round_trip_wer
+         FROM language_judgment_sessions s
+        WHERE ${where}
+        GROUP BY s."language"`,
+      params,
+    );
+  }
+
+  /**
+   * Error counts by (dimension, category, severity), conditioned-out rows
+   * excluded — the single source for by-dimension and by-category rollups.
+   */
+  async annotationCounts(f: LanguageAnalyticsFilters): Promise<
+    Array<{
+      dimension: string;
+      category: string;
+      severity: string;
+      count: string;
+    }>
+  > {
+    const params: unknown[] = [];
+    const where = this.annotationWhere(f, params);
+    return this.dataSource.query(
+      `SELECT a."dimension" AS dimension,
+              a."category" AS category,
+              a."severity" AS severity,
+              COUNT(*) AS count
+         FROM language_error_annotations a
+        WHERE ${where} AND a."conditionedOut" = false
+        GROUP BY a."dimension", a."category", a."severity"`,
+      params,
+    );
+  }
+
+  /** Error counts per (language, dimension, severity), conditioned-out
+   *  excluded — drives both the by-language rate and each language's worst
+   *  dimension on the overview. */
+  async weightedByLanguage(f: LanguageAnalyticsFilters): Promise<
+    Array<{
+      language: string | null;
+      dimension: string;
+      severity: string;
+      count: string;
+    }>
+  > {
+    const params: unknown[] = [];
+    const where = this.annotationWhere(f, params);
+    return this.dataSource.query(
+      `SELECT a."language" AS language,
+              a."dimension" AS dimension,
+              a."severity" AS severity,
+              COUNT(*) AS count
+         FROM language_error_annotations a
+        WHERE ${where} AND a."conditionedOut" = false
+        GROUP BY a."language", a."dimension", a."severity"`,
+      params,
+    );
+  }
+
+  /** Prompt-vs-model attribution split (all annotations, incl. conditioned). */
+  async isolationBasisCounts(
+    f: LanguageAnalyticsFilters,
+  ): Promise<Array<{ basis: string | null; count: string }>> {
+    const params: unknown[] = [];
+    const where = this.annotationWhere(f, params);
+    return this.dataSource.query(
+      `SELECT a."isolationBasis" AS basis, COUNT(*) AS count
+         FROM language_error_annotations a
+        WHERE ${where}
+        GROUP BY a."isolationBasis"`,
+      params,
+    );
+  }
+
+  /**
+   * Session denominators grouped by an experiment dimension column
+   * (whitelisted — interpolated into SQL). Average script fidelity rides along
+   * (null until Phase 2 populates it).
+   */
+  async sessionTotalsBy(
+    f: LanguageAnalyticsFilters,
+    column: 'scenarioVersionId' | 'promptVersion' | 'llmModel' | 'engine',
+  ): Promise<
+    Array<{
+      value: string | null;
+      sessions: string;
+      turns: string;
+      turns_garbled: string;
+      script_fidelity: string | null;
+    }>
+  > {
+    const params: unknown[] = [];
+    const where = this.sessionWhere(f, params);
+    return this.dataSource.query(
+      `SELECT s."${column}"::text AS value,
+              COUNT(*) AS sessions,
+              COALESCE(SUM(s."turnsJudged"), 0) AS turns,
+              COALESCE(SUM(s."turnsGarbled"), 0) AS turns_garbled,
+              AVG(s."scriptFidelityPct") AS script_fidelity
+         FROM language_judgment_sessions s
+        WHERE ${where}
+        GROUP BY s."${column}"`,
+      params,
+    );
+  }
+
+  /** Weighted error counts grouped by an experiment dimension column. */
+  async weightedBy(
+    f: LanguageAnalyticsFilters,
+    column: 'scenarioVersionId' | 'promptVersion' | 'llmModel' | 'engine',
+  ): Promise<Array<{ value: string | null; severity: string; count: string }>> {
+    const params: unknown[] = [];
+    const where = this.annotationWhere(f, params);
+    return this.dataSource.query(
+      `SELECT a."${column}"::text AS value,
+              a."severity" AS severity,
+              COUNT(*) AS count
+         FROM language_error_annotations a
+        WHERE ${where} AND a."conditionedOut" = false
+        GROUP BY a."${column}", a."severity"`,
+      params,
+    );
+  }
+
+  /** Judged turns per week bucket (trend denominator). */
+  async turnsByBucket(
+    f: LanguageAnalyticsFilters,
+  ): Promise<Array<{ bucket: Date; turns: string; turns_garbled: string }>> {
+    const params: unknown[] = [];
+    const where = this.sessionWhere(f, params);
+    return this.dataSource.query(
+      `SELECT date_trunc('week', COALESCE(s."occurredAt", s."createdAt")) AS bucket,
+              COALESCE(SUM(s."turnsJudged"), 0) AS turns,
+              COALESCE(SUM(s."turnsGarbled"), 0) AS turns_garbled
+         FROM language_judgment_sessions s
+        WHERE ${where}
+        GROUP BY 1 ORDER BY 1`,
+      params,
+    );
+  }
+
+  /** Error counts per (week bucket, dimension, severity) — trend numerator. */
+  async countsByBucketAndDimension(
+    f: LanguageAnalyticsFilters,
+  ): Promise<
+    Array<{ bucket: Date; dimension: string; severity: string; count: string }>
+  > {
+    const params: unknown[] = [];
+    const where = this.annotationWhere(f, params);
+    return this.dataSource.query(
+      `SELECT date_trunc('week', COALESCE(a."occurredAt", a."createdAt")) AS bucket,
+              a."dimension" AS dimension,
+              a."severity" AS severity,
+              COUNT(*) AS count
+         FROM language_error_annotations a
+        WHERE ${where} AND a."conditionedOut" = false
+        GROUP BY 1, 2, 3 ORDER BY 1`,
+      params,
+    );
+  }
+
+  /**
+   * Round-trip WER averaged per TTS voice — the TTS experiment axis (voice is
+   * what round-trip WER isolates). Only sessions with a measured WER count.
+   */
+  async roundTripWerByVoice(f: LanguageAnalyticsFilters): Promise<
+    Array<{
+      voice_id: string | null;
+      voice_name: string | null;
+      sessions: string;
+      avg_wer: string | null;
+    }>
+  > {
+    const params: unknown[] = [];
+    const where = this.sessionWhere(f, params);
+    return this.dataSource.query(
+      `SELECT s."voiceId" AS voice_id,
+              s."voiceName" AS voice_name,
+              COUNT(*) FILTER (WHERE s."roundTripWerPct" IS NOT NULL) AS sessions,
+              AVG(s."roundTripWerPct") AS avg_wer
+         FROM language_judgment_sessions s
+        WHERE ${where} AND s."roundTripWerPct" IS NOT NULL
+        GROUP BY s."voiceId", s."voiceName"
+        ORDER BY avg_wer DESC NULLS LAST`,
+      params,
+    );
+  }
+
+  /** Recent annotations for the error-log table (deep-links to session logs). */
+  async errorLog(
+    f: LanguageAnalyticsFilters,
+    limit = 50,
+  ): Promise<
+    Array<{
+      scenario_session_id: string;
+      turn_index: number;
+      language: string | null;
+      dimension: string;
+      category: string;
+      severity: string;
+      isolation_basis: string | null;
+      evidence_quote: string | null;
+      reasoning: string | null;
+      ai_text: string | null;
+      occurred_at: Date | null;
+    }>
+  > {
+    const params: unknown[] = [];
+    const where = this.annotationWhere(f, params);
+    params.push(limit);
+    return this.dataSource.query(
+      `SELECT a."scenarioSessionId" AS scenario_session_id,
+              a."turnIndex" AS turn_index,
+              a."language" AS language,
+              a."dimension" AS dimension,
+              a."category" AS category,
+              a."severity" AS severity,
+              a."isolationBasis" AS isolation_basis,
+              a."evidenceQuote" AS evidence_quote,
+              a."reasoning" AS reasoning,
+              a."aiText" AS ai_text,
+              COALESCE(a."occurredAt", a."createdAt") AS occurred_at
+         FROM language_error_annotations a
+        WHERE ${where}
+        ORDER BY COALESCE(a."occurredAt", a."createdAt") DESC
+        LIMIT $${params.length}`,
+      params,
+    );
+  }
+}

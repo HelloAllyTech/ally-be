@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseBoolPipe,
   ParseIntPipe,
   ParseUUIDPipe,
   Patch,
@@ -107,6 +108,18 @@ export class ScenarioSessionReviewController {
     enum: ReadFilter,
     description: 'Filter by read status: ALL (default), READ, UNREAD',
   })
+  @ApiQuery({
+    name: 'scenarioId',
+    required: false,
+    type: Number,
+    description: 'Restrict reviews to a single scenario (roleplay agent)',
+  })
+  @ApiQuery({
+    name: 'excludeOwn',
+    required: false,
+    type: Boolean,
+    description: "Exclude the caller's own reviews (peer sessions only)",
+  })
   async getAllReviews(
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
     @Query('offset', new ParseIntPipe({ optional: true })) offset?: number,
@@ -114,6 +127,10 @@ export class ScenarioSessionReviewController {
     @Query('sortOrder') sortOrder: SortOrder = SortOrder.DESC,
     @Query('languageCode') languageCode?: string,
     @Query('readFilter') readFilter?: ReadFilter,
+    @Query('scenarioId', new ParseIntPipe({ optional: true }))
+    scenarioId?: number,
+    @Query('excludeOwn', new ParseBoolPipe({ optional: true }))
+    excludeOwn?: boolean,
   ) {
     return this.reviewService.getAllReviews({
       limit,
@@ -122,6 +139,8 @@ export class ScenarioSessionReviewController {
       sortOrder,
       languageCode,
       readFilter,
+      scenarioId,
+      excludeOwn,
     });
   }
 

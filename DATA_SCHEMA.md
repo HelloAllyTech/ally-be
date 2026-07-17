@@ -20,7 +20,7 @@
 
 | Store | Tech | Owned by | Holds | Where defined |
 |-------|------|----------|-------|---------------|
-| **Primary relational DB** | PostgreSQL (TypeORM) | `ally-be` | All transactional/business data — users, tenants, scenarios, sessions, chats, cases, reviews, badges, prompts, analytics config, audit logs (105 tables) | `src/**/entity/*.entity.ts` |
+| **Primary relational DB** | PostgreSQL (TypeORM) | `ally-be` | All transactional/business data — users, tenants, scenarios, sessions, chats, cases, reviews, badges, prompts, analytics config, audit logs (121 tables) | `src/**/entity/*.entity.ts` |
 | **Vector DB** | Weaviate | `ally-ai` | Embedded conversation turns + reference documents for semantic search / RAG | `ally-ai/app/core/vector_db/constants.py` |
 | **Cache / ephemeral** | Redis (`ioredis`) | `ally-be` | Caching, rate-limit counters, transient session/room state | `src/redis/` |
 | **Message queue** | AWS SQS | `ally-be` ↔ `ally-ai` | Async jobs — transcription & summarization results, cross-service events | `src/message-broker/` |
@@ -95,7 +95,7 @@ tenants/groups.
 
 | Table | Base | Key columns | Notes |
 |-------|------|-------------|-------|
-| `scenarios` | BaseWithoutTenant | `id` (int), `title`, `scenario`, `description`, `cover_image_url`, `cover_video_url`, `status` (`ScenarioStatus`, default DRAFT), `prompt`, `difficulty_level`, `is_global`, `is_public`, `competency_id`, `metadata`/`translations` (jsonb), `deleted_at` | The core training scenario |
+| `scenarios` | BaseWithoutTenant | `id` (int), `title`, `scenario`, `description`, `cover_image_url`, `cover_video_url`, `status` (`ScenarioStatus`, default DRAFT), `prompt`, `difficulty_level`, `is_global`, `is_public`, `competency_id`, `metadata`/`translations` (jsonb), `engine` (`ScenarioEngine`: `SIMULATION` default \| `ROLEPLAY_V2`), `roleplaySpecId` (uuid, loose FK → `roleplay_specs`), `category` (`ScenarioCategory`: `ORIGINALS`\|`DEMO`\|`PARTNER_SIM`\|`OTHER`, nullable), `partnerOrgName` (varchar 255, nullable free-text tag), `deleted_at` | The core training scenario. `engine=ROLEPLAY_V2` rows are thin shells materialised by Roleplay Studio v2 (§3.9) — the v1 studio rejects edits to them (422). `category`/`partnerOrgName` organise the Studio list (filterable; admin search also matches the partner tag) |
 | `scenario_translations` | BaseWithoutTenant | `scenario_id`, `language_id`, `metadata` | Uniq `(scenario_id, language_id)` |
 | `scenario_tenants` | BaseWithoutTenant | `scenario_id`, `tenant_id`, `deleted_at` | Scenario→tenant visibility |
 | `scenario_voices` | BaseWithoutTenant | `name`, `provider`, `config` (jsonb), `language_id`, `active` | TTS voice catalog |
@@ -121,13 +121,26 @@ tenants/groups.
 | `scenario_path_sessions` | BaseWithoutTenant | `scenario_path_id`, `user_id`, `started_at`, `completed_at`, `completed_scenarios`, `deleted_at` | A user's run through a path |
 | `scenario_path_session_items` | BaseWithoutTenant | `scenario_path_session_id`, `user_id`, `scenario_path_item_id`, `status` (`SessionItemStatus`, UNLOCKED) | Per-step progress |
 
+**Track 2.0 (`track`)** — multi-component learning tracks, built alongside (not replacing) `scenario_paths`. A track holds ordered **sections**, each holding ordered **components** of type `ROLEPLAY | CASE | QUIZ | ARTICLE | VIDEO | JOURNAL`.
+
+| Table | Base | Key columns | Notes |
+|---|---|---|---|
+| `tracks` | BaseWithoutTenant | `id` (uuid), `title`, `description`, `cover_image_url`, `status` (`TrackStatus`, DRAFT), `is_global`, `progression_mode` (SEQUENTIAL), `total_items`, `estimated_duration_minutes`, `translations` (jsonb), `deleted_at` | Course root |
+| `track_sections` | BaseWithoutTenant | `track_id`, `title`, `order` (uniq per track), `unlock_rule` (SEQUENTIAL), `translations`, `deleted_at` | Named unit inside a track |
+| `track_items` | BaseWithoutTenant | `track_id`, `track_section_id`, `type` (`TrackItemType`), `order` (uniq per section), `title`, `scenario_id` (int, ROLEPLAY), `case_id` (uuid, CASE), `content` (jsonb — quiz/article/video/journal definition), `completion_criteria` (jsonb — minScore/passScore/watchPct/minReadSeconds), `deleted_at` | Hybrid polymorphism: reference columns for DB-backed content, `content` jsonb for inline-authored |
+| `track_tenants` | BaseWithoutTenant | `track_id`, `tenant_id`, `deleted_at` | Track→tenant visibility |
+| `track_enrollments` | BaseWithoutTenant | `track_id`, `user_id` (uniq pair), `tenant_id`, `started_at`, `completed_at`, `completed_items`, `last_activity_at`, `deleted_at` | A learner's run through a track |
+| `track_item_progress` | BaseWithoutTenant | `track_enrollment_id`, `track_item_id` (uniq pair), `user_id`, `status` (`SessionItemStatus`, LOCKED), `started_at`, `completed_at`, `score`, `attempt_count`, `case_session_id` (loose FK → `case_sessions`), `meta` (jsonb: maxWatchedPct, article read stamps), `deleted_at` | ALL rows created upfront at enrollment (first UNLOCKED, rest LOCKED); `id` is referenced by `scenario_sessions.track_item_progress_id` |
+| `track_quiz_attempts` | BaseWithoutTenant | `track_item_progress_id`, `track_item_id`, `user_id`, `attempt_number`, `answers` (jsonb), `grading` (jsonb, incl. LLM feedback for open-ended), `score_pct`, `passed`, `status` (SUBMITTED\|PENDING_GRADING\|GRADED), `submitted_at`, `graded_at` | One row per quiz attempt |
+| `track_journal_entries` | BaseWithoutTenant | `track_item_progress_id`, `prompt_id` (uniq pair), `track_item_id`, `user_id`, `response` (text), `submitted_at` (null = draft) | One row per journal prompt |
+
 ### 3.3 Scenario *runtime* — sessions & telemetry (`learn`)
 
 This is where most **analytics** about training performance live.
 
 | Table | Base | Key columns | Notes |
 |-------|------|-------------|-------|
-| `scenario_sessions` | BaseEntity | `id` (uuid), `room_id`, `scenario_id`, `counselor_id` (idx), `status` (`ScenarioSessionStatus`, ACTIVE), `event_status`, `started_at`, `ended_at`, `score` (float), `metadata`, `scenario_path_session_item_id`, `case_session_item_id` | **One simulation run.** Central fact table |
+| `scenario_sessions` | BaseEntity | `id` (uuid), `room_id`, `scenario_id`, `counselor_id` (idx), `status` (`ScenarioSessionStatus`, ACTIVE), `event_status`, `started_at`, `ended_at`, `score` (float), `metadata`, `scenario_path_session_item_id`, `case_session_item_id`, `roleplaySpecVersionId` (uuid, loose FK → `roleplay_spec_versions`; set for ROLEPLAY_V2 runs, DB column only — not on the entity) | **One simulation run.** Central fact table. v2 runs use `room_id` prefix `roleplay-` |
 | `scenario_session_details` | BaseEntity | `scenario_session_id` (idx), `call_duration` (sec), `summary` (jsonb), `metrics` (jsonb: goal→0-100), `compositeScore` (int), `evaluationMarkdown` (text), `evaluationStatus` (IN_PROGRESS/COMPLETED/FAILED), `evaluatedAt` | One row per session; the eval columns hold the goal-based actor evaluation (LLM judge over the real-session transcript, scored vs `agent_test_cases`) populated async via the session-evaluation webhook |
 | `scenario_session_messages` | BaseEntity | `id` (int), `scenario_session_id` (idx), `sender_id`, `message_type` (`ScenarioSessionMessageType`), `content`, `start_seconds`, `end_seconds`, `metadata` | Voice transcript turns |
 | `scenario_session_chats` | BaseEntity | `scenario_session_id`, `user_id`, `summary`, `summarized_message_count` | Text-chat thread; uniq `(session, user)` |
@@ -214,6 +227,44 @@ Each subsystem has the full set of tables: `*_reviews` (`status`: HIDDEN/IN_REVI
 | `conversational_guardrails_translations` | BaseWithoutTenant | `guardrail_id`, `language_id`, `helper_dialogue`, `actor_dialogue` | Uniq `(guardrail_id, language_id)` |
 | `tooltips` | BaseWithoutTenant | `location` (uniq), `tip_text`, `icon`, `active`, `created_by`, `updated_by` | Contextual UI tooltips |
 | `tooltip_translations` | (custom) | `tooltip_id`, `language_id`, `tip_text` | Uniq `(tooltip_id, language_id)` |
+| `blogs` | BaseWithoutTenant | `id` (uuid), `title`, `slug` (uniq where not deleted), `tldr`, `body` (text, sanitized HTML), `tags` (jsonb string[]), `category`, `header_image_url`, `status` (`BlogStatus`: DRAFT/PUBLISHED, default DRAFT), `published_at`, `created_by`, `updated_by`, `deleted_at` | Platform-wide blog (release announcements & product updates). Super-admin authored (perms `view:blogs`/`edit:blog`/`delete:blog`); **published** rows served ungated at `/api/v1/blog/public` and rendered on app.helloally.ai/blog |
+
+### 3.9 Roleplay Studio v2 (`roleplay-studio`)
+
+The spec-driven successor to the v1 scenario studio: an AI copilot interviews the trainer and
+builds a versioned **spec document** (jsonb, schema `"1.0"`: persona, 3-6-state machine,
+disclosure ledger, rubric, engineered events, voice/language, models). Publishing a version
+materialises a thin `scenarios` row (`engine=ROLEPLAY_V2`) so learner listing/launch reuse the
+existing pipeline; at runtime a dedicated LiveKit agent (`AgentV2`, rooms `roleplay-<uuid>`)
+receives the compiled spec (inline under 55KB, else via the api-key-guarded spec-fetch webhook)
+and its director reports telemetry back over the learn SQS queue.
+
+| Table | Base | Key columns | Notes |
+|-------|------|-------------|-------|
+| `roleplay_specs` | BaseWithoutTenant | `id` (uuid), `title`, `status` (`RoleplaySpecStatus`: DRAFT/PUBLISHED/ARCHIVED), `competency_id`, `scenarioId` (int, loose FK → `scenarios`, created DRAFT at spec creation), `draftSpec` (jsonb — the mutable working document), `publishedVersionId` (uuid), `created_by`/`updated_by`, `deleted_at` | Authoring root; the row's `updated_at` is the optimistic-concurrency token for `PUT /specs/:id/draft` (mismatch → 409) |
+| `roleplay_spec_versions` | BaseWithoutTenant | `specId` (idx), `versionNumber` (uniq per spec, monotonic), `spec` (jsonb snapshot), `status` (DRAFT/PUBLISHED/ARCHIVED — one PUBLISHED per spec), `source` (`manual_edit`/`copilot_patch`/`snapshot`), `patchId` (uuid, for copilot patches), `publishedAt`, `deleted_at` | Append-only immutable snapshots — one per draft mutation, so copilot SSE frames and room metadata always reference a stable `specVersionId` |
+| `roleplay_spec_tenants` | BaseWithoutTenant | `specId`, `tenant_id`, `deleted_at`; uniq `(specId, tenantId)` where not deleted | Spec→tenant visibility; copied into `scenario_tenants` on publish |
+| `copilot_sessions` | BaseWithoutTenant | `specId` (idx), `status` (ACTIVE/ENDED), `lastMessageSeq` (atomic per-session message counter), `metadata`, `created_by`/`updated_by`, `deleted_at` | One copilot conversation over a spec |
+| `copilot_messages` | BaseWithoutTenant | `sessionId`, `seq` (uniq `(sessionId, seq)`, gapless), `role` (user/assistant), `content` (text), `toolCalls`/`toolResults`/`specDiff`/`metadata` (jsonb), `created_by` | **Append-only** transcript (no soft delete); `specDiff` records the RFC-6902 patches applied during the turn (patches survive aborted turns) |
+| `rehearsal_runs` | BaseWithoutTenant | `specId`/`specVersionId` (idx), `status` (`RehearsalStatus`: STARTED/IN_PROGRESS/COMPLETED/FAILED/CANCELLED), `config` (jsonb: traineeProfiles SKILLED/POOR/ADVERSARIAL, turnsPerProfile, languageId, judgeModel, `testCases` — agent-test-case snapshots `{id,title,category,condition,test}` copied at launch since `agent_test_cases` is hard-deleted, `timeoutMinutes` — watchdog TTL scaled with unit count), `progress`/`results` (jsonb; results carry `overall` + 0-100 `dimensions`, plus `test_case_results`/`test_counts`/`test_pass_rate` when test cases ran), `reportMarkdown` (text), `metadata` (errorMessage), `endedAt`, `deleted_at` | Automated rehearsal of a spec version in ai-learn (scenario-report lifecycle clone: redis TTL watchdog, webhook updates, socket.io progress). One non-terminal run per version; publish requires a COMPLETED run unless forced |
+| `rehearsal_transcripts` | BaseWithoutTenant | `rehearsalRunId` (idx), `traineeProfile`, `transcript` (jsonb turn list), `judgeScores`/`directorTrace` (jsonb), `judgeNotes` (text), `agentTestCaseId` (uuid, nullable, **no FK** — snapshot lives in the run config), `testCaseResult` (jsonb verdict `{test_case_id,title,verdict PASSED\|FAILED\|INCONCLUSIVE,condition_recreated,evidence,reasoning}`), `deleted_at` | One simulated conversation per trainee profile plus one per selected agent test case (upserted by the webhook); test-case rows carry `traineeProfile='CONDITION_DRIVEN'` (a label, not an enum member) |
+| `roleplay_director_events` | BaseWithoutTenant | `scenarioSessionId` (idx, loose FK), `roomId` (idx), `eventType` (`director_state_transition`/`director_rubric_score`/`director_disclosure_unlock`/`director_stage_direction`/`roleplay_session_summary` — the SQS `message_type` strings), `turnIndex`, `payload` (jsonb, raw message data), `occurredAt` | **Append-only** director telemetry, one row per SQS message; sessions resolved by `room_id`, unknown rooms skipped |
+| `roleplay_rubric_scores` | BaseWithoutTenant | `scenarioSessionId` (idx), `roomId` (idx), `turnIndex`, `behaviorId` (rubric behavior id from the spec doc, not `behaviors`), `score` (float), `rationale` (text), `occurredAt` | Per-(turn, behavior) flattening of `director_rubric_score` messages for cheap aggregation |
+
+### 3.10 AI Lab (`lab`)
+
+A super-duper-admin workspace (admin tab **AI Lab**) for authoring reusable system-prompt
+templates (**skills**), the placeholder **variables** they reference as `{{name}}`, and the
+candidate **values** bound to those variables (substituted at run time). System-wide (no tenant);
+gated by perms `view:admin:ai-lab` / `edit:admin:ai-lab` / `delete:admin:ai-lab`, granted to both
+the `SUPER_ADMIN` and `SUPER_DUPER_ADMIN` groups. The "Runs" surface is not built yet. Added in
+migrations `1844000000000` (tables) / `1844000000001` (permissions).
+
+| Table | Base | Key columns | Notes |
+|-------|------|-------------|-------|
+| `lab_skills` | BaseWithoutTenant | `id` (uuid), `name` (idx), `description` (nullable), `content` (text — the system-prompt template, may embed `{{variable}}` placeholders), `created_by` | Reusable system-prompt templates |
+| `lab_variables` | BaseWithoutTenant | `id` (uuid), `name` (varchar(255), **uniq** — referenced in templates as `{{name}}`), `description` (nullable), `created_by` | Named template placeholders; name charset restricted to `[A-Za-z0-9_.-]` |
+| `lab_values` | BaseWithoutTenant | `id` (uuid), `variable_id` (uuid, idx, **FK → `lab_variables` ON DELETE CASCADE**), `label` (nullable), `value` (text), `created_by` | Candidate values bound to a variable; deleting the parent variable cascades to its values |
 
 ---
 
@@ -257,12 +308,17 @@ Each "collection" stores objects + their embeddings for semantic search / RAG.
 | Who can do/see what | `groups`, `permissions`, `group_permissions`, `user_groups`, `*_tenants`, `*_groups` join tables |
 | A training simulation run + its score | `scenario_sessions` (+ `_details`, `_messages`, `_events`, `_feedbacks`) |
 | Per-turn AI latency / performance | `scenario_session_turn_metrics` |
+| A Roleplay Studio v2 spec / its versions | `roleplay_specs`, `roleplay_spec_versions`, `roleplay_spec_tenants` |
+| Copilot spec-authoring conversations | `copilot_sessions`, `copilot_messages` |
+| Rehearsal runs + simulated-trainee transcripts | `rehearsal_runs`, `rehearsal_transcripts` |
+| v2 director telemetry (state path, unlocks, rubric) | `roleplay_director_events`, `roleplay_rubric_scores` |
 | Simulation start latency (time to first word) | `scenario_session_start_metrics` |
 | Learner progress through curriculum | `scenario_path_sessions` / `_items`, `case_sessions` / `_items` |
 | A real client chat/call + transcript | `chats`, `messages`, `call_details` |
 | Daily activity / engagement for analytics | `user_daily_scores`, `badge_users` |
 | Analytics dashboard config | `dashboards` (current), `dashboard` (legacy) |
 | LLM prompts driving the agent | `prompts`, `prompts_versions` (Postgres); guardrails in `conversational_guardrails` |
+| AI Lab skills / variables / values | `lab_skills`, `lab_variables`, `lab_values` |
 | Semantic search / RAG content | Weaviate `Conversation`, `ReferenceDocument` |
 | A recording or uploaded audio file | `scenario_session_recording`, `chat_audio_uploads` → S3 key |
 | Compliance / who-changed-what | `audit_logs`, plus `created_by`/`updated_by` on entities |
@@ -275,4 +331,4 @@ Each "collection" stores objects + their embeddings for semantic search / RAG.
 - Source files: `src/**/entity/*.entity.ts`, `src/database/migrations/`,
   `ally-ai/app/core/vector_db/constants.py`, `ally-ai/app/migrations/`.
 - Quick entity census: `find src -name '*.entity.ts' | wc -l`
-  (was **105** at last reconcile).
+  (was **120** at last reconcile — includes the 9 Roleplay Studio v2 entities).

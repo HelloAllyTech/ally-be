@@ -33,6 +33,8 @@ import {
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { SuccessResponse } from 'src/common/type/common.type';
+import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
+import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 @ApiTags('SessionEvents')
 @ApiBearerAuth()
@@ -111,6 +113,7 @@ export class SessionEventController {
   @AuthPermissions([PERMISSIONS.VIEW_SESSION_EVENTS])
   @Get()
   async getAllSessionEvents(
+    @CurrentUser() currentUser: TokenUser,
     @Query('visibilityType') visibilityType?: SessionEventVisibilityType,
     @Query('searchName') searchName?: string,
     @Query('limit') limit?: number,
@@ -127,6 +130,7 @@ export class SessionEventController {
         sortBy,
         order,
       },
+      currentUser.id,
     );
   }
 
@@ -136,8 +140,9 @@ export class SessionEventController {
   @Get('events/:id')
   async getSessionEventById(
     @Param('id') id: string,
+    @CurrentUser() currentUser: TokenUser,
   ): Promise<SessionEventResponseDto> {
-    return this.sessionEventService.getSessionEventById(id);
+    return this.sessionEventService.getSessionEventById(id, currentUser.id);
   }
 
   @ApiOperation({ summary: 'Delete session events' })
@@ -153,7 +158,9 @@ export class SessionEventController {
   }
 
   @ApiOperation({ summary: 'Process passive session events' })
-  @AuthPermissions([PERMISSIONS.EDIT_SESSION_EVENTS])
+  // Role-gated (not EDIT_SESSION_EVENTS) so multi-tenant admins, who hold that
+  // permission for library CRUD, cannot trigger this operational endpoint.
+  @AuthRoles(...SUPER_ADMIN_ROLES)
   @Post('translate-passive')
   async translatePassiveSessionEvents(): Promise<SuccessResponse> {
     return await this.sessionEventService.translatePassiveSessionEvents();

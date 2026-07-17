@@ -2,6 +2,7 @@ import { CreateScenarioPathItemDto } from '../dto/create-scenario-path-item.dto'
 import { CreateScenarioPathDto } from '../dto/create-scenario-path.dto';
 import { ScenarioPathSession } from '../entity/scenario-path-session.entity';
 import { ScenarioPath } from '../entity/scenario-path.entity';
+import { AssignmentStatus } from 'src/common/type/common.type';
 
 export enum ScenarioPathStatus {
   DRAFT = 'DRAFT',
@@ -15,6 +16,7 @@ export interface ScenarioPathFilterOptions {
   offset?: number;
   search?: string;
   tenantId?: string;
+  assignmentStatus?: AssignmentStatus;
   sortBy?: ScenarioPathSortBy;
   order?: SortOrder;
 }

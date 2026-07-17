@@ -1,4 +1,0 @@
-{
-  "name": "Knowledge Sources Autofill",
-  "description": "Generates per-simulation knowledge source documents (title + content) that feed RAG retrieval. Driven by character profile, competency, and challenge description; produces exactly numKnowledgeSources documents covering different themes (relational, interior, life-context). Second-person voice, scenario-specific concrete details, no clinical language."
-}

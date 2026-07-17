@@ -3,6 +3,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { DriftJudgeService } from './drift-judge.service';
 import {
   ActiveUsersPointDto,
+  AgentJoinReliabilityResponseDto,
   AnalyticsBucketParam,
   AnalyticsOverviewResponseDto,
   AnalyticsRange,
@@ -503,6 +504,81 @@ export class PlatformAnalyticsService {
       targetMs: VOICE_LATENCY_TARGET_MS,
       points,
     };
+  }
+
+  /**
+   * Agent-join reliability trend: per-bucket failure rate + join latency
+   * percentiles from the session lifecycle log, plus the overall outcome mix.
+   * The failure rate is computed here (JS) from the per-bucket counts to avoid
+   * divide-by-zero SQL. Window/bucket resolution mirrors getVoiceLatency.
+   */
+  async getAgentJoinReliability(
+    range: AnalyticsRange,
+    bucketParam?: AnalyticsBucketParam,
+  ): Promise<AgentJoinReliabilityResponseDto> {
+    const now = new Date();
+    const todayStart = startOfUtcDay(now);
+    const endExclusive = addDays(todayStart, 1);
+
+    let defaultBucket: AnalyticsBucket;
+    let windowStart: Date;
+    if (range === '30d') {
+      defaultBucket = 'day';
+      windowStart = addDays(todayStart, -29);
+    } else if (range === '90d') {
+      defaultBucket = 'week';
+      windowStart = addDays(todayStart, -89);
+    } else {
+      defaultBucket = 'month';
+      windowStart = startOfUtcMonth(addMonths(todayStart, -11));
+    }
+    const bucket: AnalyticsBucket = bucketParam ?? defaultBucket;
+
+    const [rows, outcomeMix, freezeRows] = await Promise.all([
+      this.repo.getAgentJoinReliabilityByBucket(
+        windowStart,
+        endExclusive,
+        bucket,
+      ),
+      this.repo.getSessionOutcomeMix(windowStart, endExclusive),
+      this.repo.getSuspectedFreezeByBucket(windowStart, endExclusive, bucket),
+    ]);
+
+    // Merge over the UNION of buckets: join-reliability is keyed off the
+    // (forward-only) lifecycle log, but freeze signals come from transcripts /
+    // turn-metrics which exist historically — so a bucket may have freeze data
+    // with no lifecycle rows (and vice versa). Default the missing side to 0.
+    const relByBucket = new Map(rows.map((r) => [r.bucket, r]));
+    const freezeByBucket = new Map(freezeRows.map((f) => [f.bucket, f]));
+    const buckets = Array.from(
+      new Set([...relByBucket.keys(), ...freezeByBucket.keys()]),
+    ).sort();
+
+    const pct = (num: number, denom: number): number =>
+      denom > 0 ? Math.round((num / denom) * 1000) / 10 : 0;
+
+    const points = buckets.map((b) => {
+      const r = relByBucket.get(b);
+      const f = freezeByBucket.get(b);
+      const totalSessions = r?.totalSessions ?? 0;
+      const joinFailures = r?.joinFailures ?? 0;
+      const conversations = f?.conversations ?? 0;
+      const suspectedFreezes = f?.suspectedFreezes ?? 0;
+      return {
+        bucket: b,
+        totalSessions,
+        joinFailures,
+        failureRatePct: pct(joinFailures, totalSessions),
+        midSessionDrops: r?.midSessionDrops ?? 0,
+        joinLatencyP50Sec: r?.joinLatencyP50Sec ?? null,
+        joinLatencyP95Sec: r?.joinLatencyP95Sec ?? null,
+        conversations,
+        suspectedFreezes,
+        freezeRatePct: pct(suspectedFreezes, conversations),
+      };
+    });
+
+    return { range, bucket, points, outcomeMix };
   }
 
   async getStartLatency(

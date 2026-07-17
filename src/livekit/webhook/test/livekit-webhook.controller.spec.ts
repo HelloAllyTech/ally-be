@@ -5,6 +5,7 @@ import { LivekitWebhookController } from '../livekit-webhook.controller';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ParticipantJoinedHandler } from '../handlers/participant-joined.handler';
+import { ParticipantLeftHandler } from '../handlers/participant-left.handler';
 import { RoomFinishedHandler } from '../handlers/room-finished.handler';
 import { WebhookReceiver } from 'livekit-server-sdk';
 
@@ -30,6 +31,7 @@ jest.mock('src/logger/logger.service', () => ({
 describe('LivekitWebhookController', () => {
   let controller: LivekitWebhookController;
   let participantJoinedHandler: jest.Mocked<ParticipantJoinedHandler>;
+  let participantLeftHandler: jest.Mocked<ParticipantLeftHandler>;
   let roomFinishedHandler: jest.Mocked<RoomFinishedHandler>;
   let mockLogger: jest.Mocked<any>;
   let mockWebhookReceiver: jest.Mocked<WebhookReceiver>;
@@ -49,6 +51,10 @@ describe('LivekitWebhookController', () => {
     };
 
     const mockParticipantJoinedHandler = {
+      handle: jest.fn(),
+    };
+
+    const mockParticipantLeftHandler = {
       handle: jest.fn(),
     };
 
@@ -104,6 +110,10 @@ describe('LivekitWebhookController', () => {
           useValue: mockParticipantJoinedHandler,
         },
         {
+          provide: ParticipantLeftHandler,
+          useValue: mockParticipantLeftHandler,
+        },
+        {
           provide: RoomFinishedHandler,
           useValue: mockRoomFinishedHandler,
         },
@@ -112,6 +122,7 @@ describe('LivekitWebhookController', () => {
 
     controller = module.get<LivekitWebhookController>(LivekitWebhookController);
     participantJoinedHandler = module.get(ParticipantJoinedHandler);
+    participantLeftHandler = module.get(ParticipantLeftHandler);
     roomFinishedHandler = module.get(RoomFinishedHandler);
   });
 
@@ -144,6 +155,7 @@ describe('LivekitWebhookController', () => {
       new LivekitWebhookController(
         incompleteConfig as any,
         participantJoinedHandler,
+        participantLeftHandler,
         roomFinishedHandler,
       );
 
@@ -253,6 +265,7 @@ describe('LivekitWebhookController', () => {
       const controllerWithoutReceiver = new LivekitWebhookController(
         incompleteConfig as any,
         participantJoinedHandler,
+        participantLeftHandler,
         roomFinishedHandler,
       );
 

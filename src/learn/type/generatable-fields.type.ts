@@ -1,28 +1,12 @@
-import {
-  BehaviorInstructionItem,
-  KnowledgeSourceAutofillItem,
-  SimulationStateAutofillItem,
-  StateInstructionItem,
-} from '../dto/generate-scenario-field-response.dto';
-import { BehaviorResponseDto } from '../dto/behavior-response.dto';
 import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 
-export type BehaviorIdMapping = Map<number, BehaviorResponseDto>;
-
-export interface BehaviorInstructionsWithStateNames {
-  instructions: BehaviorInstructionItem[];
-  stateNames: { stateId: string; name: string }[];
-}
-
-export type GeneratedContent =
-  | string
-  | string[]
-  | StateInstructionItem[]
-  | BehaviorInstructionItem[]
-  | BehaviorInstructionsWithStateNames
-  | SimulationStateAutofillItem[]
-  | KnowledgeSourceAutofillItem[];
-
+/**
+ * Competency → default behaviour-instruction presets. Used to seed the
+ * behaviour table when an author picks a competency (see
+ * competency-behavior-instruction-templates.constants). This is the only
+ * surviving part of the old generatable-fields types after the
+ * generate/regenerate feature was removed.
+ */
 export interface BehaviorInstructionPreset {
   category: BehaviorInstructionCategory;
   behaviorName: string;

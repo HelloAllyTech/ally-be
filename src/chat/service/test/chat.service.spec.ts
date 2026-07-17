@@ -523,7 +523,10 @@ describe('ChatService', () => {
 
       const result = await service.getChat(1);
 
-      expect(result).toEqual(mockChatWithMatchingCounselor);
+      expect(result).toEqual({
+        ...mockChatWithMatchingCounselor,
+        incompleteRecording: null,
+      });
       expect(chatRepository.findChatWithDetails).toHaveBeenCalledWith(
         1,
         'test-tenant',
@@ -596,7 +599,10 @@ describe('ChatService', () => {
 
       const result = await service.getChat(1);
 
-      expect(result).toEqual(mockChatWithMatchingCounselor);
+      expect(result).toEqual({
+        ...mockChatWithMatchingCounselor,
+        incompleteRecording: null,
+      });
     });
 
     it('should allow admin to access chat from same tenant', async () => {
@@ -619,7 +625,10 @@ describe('ChatService', () => {
 
       const result = await service.getChat(1);
 
-      expect(result).toEqual(mockChatWithSameTenant);
+      expect(result).toEqual({
+        ...mockChatWithSameTenant,
+        incompleteRecording: null,
+      });
     });
 
     it('should throw ForbiddenException when userId is undefined', async () => {
@@ -705,6 +714,7 @@ describe('ChatService', () => {
       expect(chatRepository.update).toHaveBeenCalledWith(1, {
         status: ChatStatus.ENDED,
         endedAt: expect.any(Date),
+        metadata: expect.objectContaining({ streamEndReason: 'completed' }),
       });
       expect(cache.del).toHaveBeenCalledWith('chat:1');
     });

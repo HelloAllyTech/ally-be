@@ -133,6 +133,7 @@ describe('PermissionsService', () => {
       expect(redisService.set).toHaveBeenCalledWith(
         `user:roles:${userId}`,
         JSON.stringify(['admin', 'user']),
+        1800,
       );
     });
 
@@ -146,6 +147,7 @@ describe('PermissionsService', () => {
       expect(redisService.set).toHaveBeenCalledWith(
         `user:roles:${userId}`,
         JSON.stringify([]),
+        1800,
       );
     });
 

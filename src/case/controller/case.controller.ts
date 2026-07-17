@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseEnumPipe,
   ParseUUIDPipe,
   Post,
   Put,
@@ -24,7 +25,11 @@ import { CreateCaseDto, CreateCaseResponseDto } from '../dto/create-case.dto';
 import { CaseService } from '../service/case.service';
 import { GetCaseResponseDto } from '../dto/case-response.dto';
 import { CaseSortBy } from '../type/cases.type';
-import { SortOrder, SuccessResponse } from 'src/common/type/common.type';
+import {
+  AssignmentStatus,
+  SortOrder,
+  SuccessResponse,
+} from 'src/common/type/common.type';
 import { UpdateCaseDto, UpdateCaseResponseDto } from '../dto/update-case.dto';
 import { DuplicateCaseResponseDto } from '../dto/duplicate-case.dto';
 import { CreateCaseTenantDto } from '../dto/create-case-tenant.dto';
@@ -78,6 +83,13 @@ export class CaseController {
     description: 'TenantId',
   })
   @ApiQuery({
+    name: 'assignmentStatus',
+    required: false,
+    enum: AssignmentStatus,
+    description:
+      'Filter by tenant assignment status (requires tenantId; ignored without it)',
+  })
+  @ApiQuery({
     name: 'sortBy',
     required: false,
     enum: CaseSortBy,
@@ -97,6 +109,11 @@ export class CaseController {
     @Query('limit') limit?: number,
     @Query('search') search?: string,
     @Query('tenantId', new ParseUUIDPipe({ optional: true })) tenantId?: string,
+    @Query(
+      'assignmentStatus',
+      new ParseEnumPipe(AssignmentStatus, { optional: true }),
+    )
+    assignmentStatus?: AssignmentStatus,
     @Query('sortBy') sortBy: CaseSortBy = CaseSortBy.UPDATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<GetCaseResponseDto> {
@@ -106,6 +123,7 @@ export class CaseController {
       limit,
       search,
       tenantId,
+      assignmentStatus,
       sortBy,
       order,
     });

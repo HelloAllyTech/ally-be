@@ -2,10 +2,14 @@ import { NotFoundException } from '@nestjs/common';
 import { RoleplaySessionLogsService } from '../roleplay-session-logs.service';
 import { RoleplaySessionLogsRepository } from '../../repository/roleplay-session-logs.repository';
 import { ScenarioSessionStatus } from '../../../learn/enum/scenario-session-status.enum';
+import { S3Service } from '../../../aws/service/s3.service';
+import { AppConfigService } from '../../../config/config.service';
 
 describe('RoleplaySessionLogsService', () => {
   let service: RoleplaySessionLogsService;
   let repo: jest.Mocked<RoleplaySessionLogsRepository>;
+  let s3Service: jest.Mocked<S3Service>;
+  let configService: jest.Mocked<AppConfigService>;
 
   const baseRow = {
     id: 'sess-1',
@@ -17,6 +21,7 @@ describe('RoleplaySessionLogsService', () => {
     scenarioId: '7',
     scenarioTitle: 'Crisis call',
     status: ScenarioSessionStatus.ENDED,
+    outcome: 'COMPLETED',
     startedAt: new Date('2026-06-01T10:00:00Z'),
     endedAt: new Date('2026-06-01T10:05:00Z'),
     score: '88.5',
@@ -40,9 +45,27 @@ describe('RoleplaySessionLogsService', () => {
       getRecordingBySession: jest.fn().mockResolvedValue(null),
       getFeedbackBySession: jest.fn().mockResolvedValue(null),
       findAgentTestCases: jest.fn().mockResolvedValue([]),
+      findLifecycleEvents: jest.fn().mockResolvedValue([]),
+      getFreezeSignals: jest.fn().mockResolvedValue({
+        hasAgentTurn: false,
+        endedOnUnansweredHumanTurn: false,
+      }),
+      findLanguageJudgment: jest.fn().mockResolvedValue(null),
+      findDriftJudgment: jest.fn().mockResolvedValue(null),
+      findRunConfig: jest.fn().mockResolvedValue(null),
     } as unknown as jest.Mocked<RoleplaySessionLogsRepository>;
 
-    service = new RoleplaySessionLogsService(repo);
+    s3Service = {
+      generatePresignedUrl: jest
+        .fn()
+        .mockResolvedValue('https://s3.example.com/presigned'),
+    } as unknown as jest.Mocked<S3Service>;
+
+    configService = {
+      scenarioSessionAudioStorage: { bucket: 'recordings-bucket' },
+    } as unknown as jest.Mocked<AppConfigService>;
+
+    service = new RoleplaySessionLogsService(repo, s3Service, configService);
   });
 
   const usageRows = [
@@ -119,6 +142,8 @@ describe('RoleplaySessionLogsService', () => {
       expect(row.scenarioId).toBe(7);
       expect(row.score).toBe(88.5);
       expect(row.orgName).toBe('Org One');
+      // Derived outcome threads through unchanged from the repository row.
+      expect(row.outcome).toBe('COMPLETED');
     });
 
     it('computes durationSeconds from the session window minus pauses', async () => {
@@ -186,6 +211,21 @@ describe('RoleplaySessionLogsService', () => {
         },
       ]);
 
+      repo.findLifecycleEvents.mockResolvedValue([
+        {
+          id: 'l1',
+          type: 'ROOM_CREATED',
+          occurredAt: new Date('2026-06-01T09:59:00Z'),
+          detail: null,
+        },
+        {
+          id: 'l2',
+          type: 'PARTICIPANT_JOINED',
+          occurredAt: new Date('2026-06-01T10:00:00Z'),
+          detail: { identity: '42' },
+        },
+      ]);
+
       const detail = await service.getById('sess-1');
 
       expect(detail.id).toBe('sess-1');
@@ -195,6 +235,63 @@ describe('RoleplaySessionLogsService', () => {
       expect(detail.events[0].eventName).toBe('Empathy shown');
       expect(detail.transcript).toHaveLength(1);
       expect(detail.transcript[0].content).toBe('Hello');
+      // Lifecycle timeline threads through, oldest-first, detail preserved.
+      expect(detail.lifecycle).toHaveLength(2);
+      expect(detail.lifecycle[0].type).toBe('ROOM_CREATED');
+      expect(detail.lifecycle[1].detail).toEqual({ identity: '42' });
+      // Default freeze signals (no agent turn) => not a suspected freeze.
+      expect(detail.suspectedFreeze).toBe(false);
+    });
+
+    it('flags a suspected freeze when the agent left the last human turn unanswered', async () => {
+      repo.findOne.mockResolvedValue(baseRow);
+      (repo.getFreezeSignals as jest.Mock).mockResolvedValue({
+        hasAgentTurn: true,
+        endedOnUnansweredHumanTurn: true,
+      });
+
+      const detail = await service.getById('sess-1');
+
+      expect(detail.suspectedFreeze).toBe(true);
+    });
+
+    it('presigns a playback URL for the egress recording', async () => {
+      repo.findOne.mockResolvedValue(baseRow);
+      repo.getRecordingBySession.mockResolvedValue({
+        storageKey: 'recordings/room-1.ogg',
+        egressId: 'EG_123',
+      });
+
+      const detail = await service.getById('sess-1');
+
+      expect(detail.recording).toEqual({
+        storageKey: 'recordings/room-1.ogg',
+        egressId: 'EG_123',
+        url: 'https://s3.example.com/presigned',
+      });
+      expect(s3Service.generatePresignedUrl).toHaveBeenCalledWith({
+        bucket: 'recordings-bucket',
+        key: 'recordings/room-1.ogg',
+        operation: 'get',
+        expiresIn: 2400,
+      });
+    });
+
+    it('returns the recording pointer with a null url when presigning fails', async () => {
+      repo.findOne.mockResolvedValue(baseRow);
+      repo.getRecordingBySession.mockResolvedValue({
+        storageKey: 'recordings/room-1.ogg',
+        egressId: 'EG_123',
+      });
+      s3Service.generatePresignedUrl.mockRejectedValue(new Error('boom'));
+
+      const detail = await service.getById('sess-1');
+
+      expect(detail.recording).toEqual({
+        storageKey: 'recordings/room-1.ogg',
+        egressId: 'EG_123',
+        url: null,
+      });
     });
   });
 

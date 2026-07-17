@@ -72,6 +72,18 @@ export class ScenarioSessionReviewRepository extends Repository<ScenarioSessionR
       .where('review.tenantId = :tenantId', { tenantId })
       .andWhere('review.status = :status', { status: ReviewStatus.IN_REVIEW });
 
+    if (options.scenarioId) {
+      query.andWhere('scenarioSession.scenarioId = :scenarioId', {
+        scenarioId: options.scenarioId,
+      });
+    }
+
+    if (options.excludeOwn) {
+      query.andWhere('review.createdBy != :excludeCreatedBy', {
+        excludeCreatedBy: userId,
+      });
+    }
+
     if (
       options.sortBy === ReviewSortBy.MOST_REVIEWED ||
       options.sortBy === ReviewSortBy.MOST_COMMENTED

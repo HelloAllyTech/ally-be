@@ -9,6 +9,7 @@ import {
   CasesWithSession,
 } from '../type/cases.type';
 import { CaseSession } from '../entity/case-session.entity';
+import { AssignmentStatus } from 'src/common/type/common.type';
 
 @Injectable()
 export class CaseRepository extends Repository<Case> {
@@ -33,6 +34,12 @@ export class CaseRepository extends Repository<Case> {
         .setParameters({
           tenantId: filters.tenantId,
         });
+
+      if (filters.assignmentStatus === AssignmentStatus.ASSIGNED) {
+        query.andWhere('"caseTenant"."id" IS NOT NULL');
+      } else if (filters.assignmentStatus === AssignmentStatus.UNASSIGNED) {
+        query.andWhere('"caseTenant"."id" IS NULL');
+      }
     }
 
     this.applyStatusFilter(query, filters);

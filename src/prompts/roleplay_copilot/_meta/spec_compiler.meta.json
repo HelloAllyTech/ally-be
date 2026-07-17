@@ -1,0 +1,5 @@
+{
+  "name": "Roleplay Copilot — Spec Repair",
+  "description": "Produces the smallest RFC-6902 patch that fixes a draft roleplay spec's validation errors without altering the trainer's design intent.",
+  "category": "Roleplay Studio"
+}

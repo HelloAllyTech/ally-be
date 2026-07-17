@@ -3,6 +3,8 @@ import { AnalyticsController } from '../analytics.controller';
 import { AnalyticsService } from '../../service/analytics.service';
 import { PlatformAnalyticsService } from '../../service/platform-analytics.service';
 import { ScribeAnalyticsService } from '../../service/scribe-analytics.service';
+import { LanguageJudgeService } from '../../service/language-judge.service';
+import { LanguageAnalyticsService } from '../../service/language-analytics.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
@@ -72,6 +74,14 @@ describe('AnalyticsController', () => {
         {
           provide: ScribeAnalyticsService,
           useValue: { getOverview: jest.fn(), getSummaryFailures: jest.fn() },
+        },
+        {
+          provide: LanguageJudgeService,
+          useValue: { startBackfill: jest.fn(), getJob: jest.fn() },
+        },
+        {
+          provide: LanguageAnalyticsService,
+          useValue: { getLanguageQuality: jest.fn() },
         },
         {
           provide: Reflector,

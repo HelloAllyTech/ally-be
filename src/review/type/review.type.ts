@@ -27,4 +27,6 @@ export interface GetReviewsOptions {
   sortOrder?: SortOrder;
   languageCode?: string;
   readFilter?: ReadFilter;
+  scenarioId?: number;
+  excludeOwn?: boolean;
 }

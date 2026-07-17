@@ -3,6 +3,7 @@ import { LiveKitService } from '../../service/livekit.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ParticipantInfo_Kind } from '@livekit/protocol';
 import { ScenarioSessionService } from 'src/learn/service/scenario-session.service';
+import { ScenarioSessionLifecycleEventType } from 'src/learn/entity/scenario-session-lifecycle-event.entity';
 import { AppConfigService } from 'src/config/config.service';
 import { generateAudioStorageKey } from 'src/common/util/audio.util';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
@@ -89,6 +90,19 @@ export class ParticipantJoinedHandler {
         // Agent joined the room - clean up both tracking sets
         ParticipantJoinedHandler.removeInProgress(roomName);
         this.liveKitService.clearProactiveDispatch(roomName);
+
+        // Record AGENT_JOINED for the session timeline. Its absence is the
+        // signal that the agent never joined (the AssignmentTimeoutError hang).
+        const agentSessionId =
+          this.scenarioSessionService.sessionIdFromRoomName(roomName);
+        if (agentSessionId) {
+          void this.scenarioSessionService.recordLifecycleEvent(
+            agentSessionId,
+            ScenarioSessionLifecycleEventType.AGENT_JOINED,
+            new Date(),
+            { identity: event.participant.identity },
+          );
+        }
       }
 
       if (event.participant.kind !== ParticipantInfo_Kind.AGENT) {
@@ -134,9 +148,22 @@ export class ParticipantJoinedHandler {
               roomName,
             );
 
+        if (scenarioSession) {
+          void this.scenarioSessionService.recordLifecycleEvent(
+            scenarioSession.id,
+            ScenarioSessionLifecycleEventType.PARTICIPANT_JOINED,
+            new Date(),
+            { identity: event.participant.identity },
+          );
+        }
+
+        // V2V test sessions are always recorded (the audio is the point of the
+        // test); real sessions stay behind the feature flag.
+        const isV2VTest = scenarioSession?.metadata?.v2vTest === true;
         if (
           scenarioSession &&
-          this.configService.featureFlag.scenarioSessionAudioRecording
+          (this.configService.featureFlag.scenarioSessionAudioRecording ||
+            isV2VTest)
         ) {
           const { bucket, region, accessKey, secret } =
             this.configService.scenarioSessionAudioStorage;
@@ -184,6 +211,12 @@ export class ParticipantJoinedHandler {
                   secret,
                 });
               this.logger.info(`Audio recording started for room ${roomName}`);
+              void this.scenarioSessionService.recordLifecycleEvent(
+                scenarioSession.id,
+                ScenarioSessionLifecycleEventType.RECORDING_STARTED,
+                new Date(),
+                { egressId: egressInfo.egressId },
+              );
 
               if (egressInfo.startedAt) {
                 scenarioSessionStartedAt = convertTimestampNsToDate(
@@ -262,6 +295,14 @@ export class ParticipantJoinedHandler {
           this.logger.info(
             `Successfully dispatched agent for participant ${participantIdentity} in room ${roomName}`,
           );
+          if (scenarioSession) {
+            void this.scenarioSessionService.recordLifecycleEvent(
+              scenarioSession.id,
+              ScenarioSessionLifecycleEventType.AGENT_DISPATCHED,
+              new Date(),
+              { via: 'fallback', agentName: participantIdentity },
+            );
+          }
         } catch (dispatchError) {
           // If dispatch fails, clear it from in-progress so we can retry on next join
           ParticipantJoinedHandler.removeInProgress(roomName);

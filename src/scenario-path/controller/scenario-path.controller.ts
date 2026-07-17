@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseEnumPipe,
   ParseUUIDPipe,
   Post,
   Put,
@@ -31,7 +32,7 @@ import {
   UpdateScenarioPathResponseDto,
   UpdateScenarioPathDto,
 } from '../dto/update-scenario-path.dto';
-import { SuccessResponse } from 'src/common/type/common.type';
+import { AssignmentStatus, SuccessResponse } from 'src/common/type/common.type';
 import { DuplicateScenarioPathResponseDto } from '../dto/duplicate-scenario-path-response.dto';
 import { ScenarioPathTenantService } from '../service/scenario-path-tenant.service';
 import { CreateScenarioPathTenantDto } from '../dto/create-scenario-path-tenant.dto';
@@ -84,6 +85,13 @@ export class ScenarioPathController {
     description: 'TenantId',
   })
   @ApiQuery({
+    name: 'assignmentStatus',
+    required: false,
+    enum: AssignmentStatus,
+    description:
+      'Filter by tenant assignment status (requires tenantId; ignored without it)',
+  })
+  @ApiQuery({
     name: 'sortBy',
     required: false,
     enum: ScenarioPathSortBy,
@@ -103,6 +111,11 @@ export class ScenarioPathController {
     @Query('limit') limit?: number,
     @Query('search') search?: string,
     @Query('tenantId', new ParseUUIDPipe({ optional: true })) tenantId?: string,
+    @Query(
+      'assignmentStatus',
+      new ParseEnumPipe(AssignmentStatus, { optional: true }),
+    )
+    assignmentStatus?: AssignmentStatus,
     @Query('sortBy') sortBy: ScenarioPathSortBy = ScenarioPathSortBy.UPDATED_AT,
     @Query('order') order: SortOrder = SortOrder.DESC,
   ): Promise<GetScenarioPathsResponseDto> {
@@ -112,6 +125,7 @@ export class ScenarioPathController {
       limit,
       search,
       tenantId,
+      assignmentStatus,
       sortBy,
       order,
     });

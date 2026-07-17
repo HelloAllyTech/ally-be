@@ -6,6 +6,8 @@ import {
   DeleteDateColumn,
 } from 'typeorm';
 import { ScenarioDifficultyLevel, ScenarioStatus } from '../type/scenario.type';
+import { ScenarioEngine } from '../enum/scenario-engine.enum';
+import { ScenarioCategory } from '../enum/scenario-category.enum';
 
 @Entity('scenarios')
 export class Scenarios extends BaseWithoutTenantEntity {
@@ -61,6 +63,11 @@ export class Scenarios extends BaseWithoutTenantEntity {
   @Column({ type: 'uuid', nullable: true })
   competencyId?: string;
 
+  // Roleplay Studio v2 first-class multi-competency tagging. competencyId
+  // mirrors competencyIds[0] for back-compat; v1 scenarios leave this null.
+  @Column({ type: 'jsonb', nullable: true })
+  competencyIds?: string[] | null;
+
   @Column({ type: 'jsonb', nullable: true })
   translations?: Record<string, any>;
 
@@ -69,4 +76,30 @@ export class Scenarios extends BaseWithoutTenantEntity {
   // versioning or have never been published from a version.
   @Column({ type: 'uuid', nullable: true })
   publishedVersionId?: string | null;
+
+  // Which runtime plays this scenario. ROLEPLAY_V2 rows are thin shells
+  // materialised by Roleplay Studio v2 (see src/roleplay-studio/): learner
+  // listing/launch reuses the scenarios pipeline, but the configuration lives
+  // in roleplay_specs/roleplay_spec_versions and the v1 studio must never
+  // edit them (updateScenario rejects with 422).
+  // Optional on the type (defaulted by the DB) so pre-existing structural
+  // uses of the entity shape — GetAdminScenarioDto extends it — stay valid.
+  @Column({ enum: ScenarioEngine, default: ScenarioEngine.SIMULATION })
+  engine?: ScenarioEngine;
+
+  // Loose FK to roleplay_specs.id for engine=ROLEPLAY_V2 rows (no DB
+  // constraint, matching repo convention). Null for v1 scenarios.
+  @Column({ type: 'uuid', nullable: true })
+  roleplaySpecId?: string | null;
+
+  // Editorial grouping for the Studio list (Originals / Demo / Partner Sim…).
+  // Null for scenarios that predate the field.
+  @Column({ type: 'varchar', nullable: true, enum: ScenarioCategory })
+  category?: ScenarioCategory | null;
+
+  // Free-text partner organisation tag, meaningful mainly when
+  // category=PARTNER_SIM. Deliberately not an FK to `tenants` — partners may
+  // not exist as tenants.
+  @Column({ type: 'varchar', nullable: true, length: 255 })
+  partnerOrgName?: string | null;
 }

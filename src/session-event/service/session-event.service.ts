@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -37,6 +38,7 @@ import {
 
 import { SessionEventTranslationService } from './session-event-translation.service';
 import { SessionEventSharedService } from './session-event-shared.service';
+import { PermissionsService } from 'src/authorization/service/permissions.service';
 @Injectable()
 export class SessionEventService {
   constructor(
@@ -44,6 +46,7 @@ export class SessionEventService {
     private readonly dataSource: DataSource,
     private readonly sessionEventTranslationService: SessionEventTranslationService,
     private readonly sessionEventSharedService: SessionEventSharedService,
+    private readonly permissionsService: PermissionsService,
   ) {}
 
   async createSessionEvents(
@@ -169,6 +172,7 @@ export class SessionEventService {
     if (SYSTEM_EVENT_DETECTION_TYPES.includes(event.detectionType)) {
       throw new BadRequestException('System events cannot be edited');
     }
+    await this.assertOwnership(event, userId);
 
     const formattedEventDto =
       mapUpdateEventDtoToDbEvent({
@@ -209,12 +213,17 @@ export class SessionEventService {
     visibilityType?: SessionEventVisibilityType,
     searchName?: string,
     pagination?: Pagination,
+    userId?: number,
   ): Promise<{ data: SessionEventResponseDto[] }> {
     const sessionEvents = await this.sessionEventRepository.getAllSessionEvents(
       visibilityType,
       searchName,
       pagination,
     );
+
+    const isMultiTenantAdmin = userId
+      ? await this.permissionsService.isMultiTenantAdmin(userId)
+      : false;
 
     const formattedSessionEvents = await Promise.all(
       sessionEvents.map(async (event) => {
@@ -228,20 +237,24 @@ export class SessionEventService {
                 ),
               }
             : undefined,
-          isEditable: !SYSTEM_EVENT_DETECTION_TYPES.includes(
-            event.detectionType,
-          ),
+          isEditable: this.isEventEditableBy(event, isMultiTenantAdmin, userId),
         };
       }),
     );
     return { data: formattedSessionEvents };
   }
 
-  async getSessionEventById(id: string): Promise<SessionEventResponseDto> {
+  async getSessionEventById(
+    id: string,
+    userId?: number,
+  ): Promise<SessionEventResponseDto> {
     const event = await this.sessionEventRepository.findOne({ where: { id } });
     if (!event) {
       throw new NotFoundException('Session Event not found');
     }
+    const isMultiTenantAdmin = userId
+      ? await this.permissionsService.isMultiTenantAdmin(userId)
+      : false;
     return {
       ...event,
       detectionData: event?.detectionData
@@ -252,8 +265,34 @@ export class SessionEventService {
             ),
           }
         : undefined,
-      isEditable: !SYSTEM_EVENT_DETECTION_TYPES.includes(event.detectionType),
+      isEditable: this.isEventEditableBy(event, isMultiTenantAdmin, userId),
     };
+  }
+
+  /**
+   * Multi-tenant admins may only edit events they created; the global event
+   * library is otherwise read-only for them. Super admins are unrestricted.
+   */
+  private isEventEditableBy(
+    event: SessionEvents,
+    isMultiTenantAdmin: boolean,
+    userId?: number,
+  ): boolean {
+    if (SYSTEM_EVENT_DETECTION_TYPES.includes(event.detectionType)) {
+      return false;
+    }
+    return !isMultiTenantAdmin || event.createdBy === userId;
+  }
+
+  private async assertOwnership(
+    event: SessionEvents,
+    userId: number,
+  ): Promise<void> {
+    const isMultiTenantAdmin =
+      await this.permissionsService.isMultiTenantAdmin(userId);
+    if (isMultiTenantAdmin && event.createdBy !== userId) {
+      throw new ForbiddenException('You can only edit events you created');
+    }
   }
 
   async deleteSessionEvents(eventIds: string[]): Promise<boolean> {

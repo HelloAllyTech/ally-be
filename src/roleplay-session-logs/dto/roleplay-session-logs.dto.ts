@@ -111,6 +111,21 @@ export class ListRoleplaySessionLogsQueryDto {
   isV2VTest?: boolean;
 }
 
+/**
+ * Derived, read-model outcome of a session — richer than the binary
+ * ScenarioSessionStatus (ACTIVE|ENDED), which can't distinguish a healthy
+ * finished session from one that ended with no conversation (e.g. the agent
+ * never joined). Computed at read time; not persisted.
+ */
+export enum RoleplaySessionOutcome {
+  /** Session is still ACTIVE. */
+  IN_PROGRESS = 'IN_PROGRESS',
+  /** ENDED with at least one transcript message. */
+  COMPLETED = 'COMPLETED',
+  /** ENDED with zero messages — no conversation happened (agent may never have joined). */
+  NO_CONVERSATION = 'NO_CONVERSATION',
+}
+
 export class RoleplaySessionLogRowDto {
   @ApiProperty() id!: string;
   @ApiProperty() counselorId!: number;
@@ -121,6 +136,14 @@ export class RoleplaySessionLogRowDto {
   @ApiProperty() scenarioId!: number;
   @ApiProperty({ nullable: true }) scenarioTitle!: string | null;
   @ApiProperty({ enum: ScenarioSessionStatus }) status!: ScenarioSessionStatus;
+  @ApiProperty({
+    enum: RoleplaySessionOutcome,
+    description:
+      'Derived outcome. NO_CONVERSATION flags ENDED sessions with zero ' +
+      'transcript messages (e.g. the agent never joined) — invisible in the ' +
+      'raw ACTIVE|ENDED status.',
+  })
+  outcome!: RoleplaySessionOutcome;
   @ApiProperty({ nullable: true }) startedAt!: Date | null;
   @ApiProperty({ nullable: true }) endedAt!: Date | null;
   @ApiProperty({ nullable: true, description: 'Effective duration in seconds' })
@@ -174,6 +197,25 @@ export class RoleplaySessionLogEventDto {
   @ApiProperty({ nullable: true }) score!: number | null;
   @ApiProperty({ nullable: true }) emoji!: string | null;
   @ApiProperty({ nullable: true }) message!: string | null;
+}
+
+/** One infrastructure lifecycle milestone in a session's timeline. */
+export class RoleplaySessionLifecycleEventDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({
+    description:
+      'ROOM_CREATED | AGENT_DISPATCHED | PARTICIPANT_JOINED | AGENT_JOINED | ' +
+      'RECORDING_STARTED | ROOM_FINISHED',
+  })
+  type!: string;
+  @ApiProperty() occurredAt!: Date;
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: true,
+    nullable: true,
+    description: 'Small context payload (participant identity, egress id, …)',
+  })
+  detail!: Record<string, any> | null;
 }
 
 export class RoleplaySessionLogMessageDto {
@@ -275,6 +317,13 @@ export class RoleplaySessionLatencyDto {
 export class RoleplaySessionRecordingDto {
   @ApiProperty() storageKey!: string;
   @ApiProperty() egressId!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Short-lived presigned S3 URL for playback; null when the audio storage bucket is not configured',
+  })
+  url!: string | null;
 }
 
 /** Post-session learner feedback (most recent), when present. */
@@ -335,7 +384,163 @@ export class RoleplaySessionActorEvaluationDto {
   pass!: boolean | null;
 }
 
+export class RoleplaySessionLanguageAnnotationDto {
+  @ApiProperty({ description: 'AI-turn ordinal within the session' })
+  turnIndex!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'scenario_session_messages.id of the AI turn (badge anchor in the UI)',
+  })
+  messageId!: number | null;
+
+  @ApiProperty({ description: 'comprehension | content | appropriateness' })
+  layer!: string;
+
+  @ApiProperty() dimension!: string;
+  @ApiProperty() category!: string;
+  @ApiProperty({ description: 'minor | major | critical' }) severity!: string;
+
+  @ApiProperty({ nullable: true }) isolationBasis!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'STT quality of the counselor input: none | partial | severe',
+  })
+  inputGarbled!: string | null;
+
+  @ApiProperty({
+    description:
+      'True when excluded from the dimension error rate (garbled-input conditioning)',
+  })
+  conditionedOut!: boolean;
+
+  @ApiProperty({ nullable: true }) evidenceQuote!: string | null;
+  @ApiProperty({ nullable: true }) reasoning!: string | null;
+}
+
+export class RoleplaySessionLanguageQualityDto {
+  @ApiProperty() judgeModel!: string;
+  @ApiProperty() judgePromptVersion!: string;
+  @ApiProperty() turnsJudged!: number;
+  @ApiProperty() turnsGarbled!: number;
+  @ApiProperty() errorCount!: number;
+  @ApiProperty({
+    nullable: true,
+    description: '% of turns rendered cleanly in the target script (FR2)',
+  })
+  scriptFidelityPct!: number | null;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Round-trip WER/CER % over a sample of this session turns (FR2); null = unmeasured',
+  })
+  roundTripWerPct!: number | null;
+  @ApiProperty({ type: [RoleplaySessionLanguageAnnotationDto] })
+  annotations!: RoleplaySessionLanguageAnnotationDto[];
+}
+
+export class RoleplaySessionDriftTurnDto {
+  @ApiProperty() turnIndex!: number;
+  @ApiProperty({ nullable: true }) messageId!: number | null;
+  @ApiProperty({
+    nullable: true,
+    description:
+      'fully_coherent | minor_disfluency | degrading | mostly_incoherent | gibberish',
+  })
+  coherence!: string | null;
+  @ApiProperty({ nullable: true }) topicLabel!: string | null;
+  @ApiProperty({ nullable: true }) inCharacter!: boolean | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'STT garble on the counselor input: none | partial | severe',
+  })
+  counselorUtteranceGarbled!: string | null;
+  @ApiProperty({ nullable: true }) sttErrorType!: string | null;
+  @ApiProperty({ nullable: true }) aiReplyFailureMode!: string | null;
+  @ApiProperty({ nullable: true }) rootAttribution!: string | null;
+  @ApiProperty({ nullable: true }) reasoning!: string | null;
+}
+
+export class RoleplaySessionDriftDto {
+  @ApiProperty() judgeModel!: string;
+  @ApiProperty() judgePromptVersion!: string;
+  @ApiProperty({ nullable: true }) sessionDrifted!: boolean | null;
+  @ApiProperty({ nullable: true }) firstDriftTurn!: number | null;
+  @ApiProperty({ type: [RoleplaySessionDriftTurnDto] })
+  turns!: RoleplaySessionDriftTurnDto[];
+}
+
+export class RoleplaySessionScenarioVersionDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({ nullable: true }) versionNumber!: number | null;
+  @ApiProperty({ nullable: true }) name!: string | null;
+}
+
+export class RoleplaySessionRunConfigDto {
+  @ApiProperty({
+    type: RoleplaySessionScenarioVersionDto,
+    nullable: true,
+    description: 'The scenario/metadata version this session ran against',
+  })
+  scenarioVersion!: RoleplaySessionScenarioVersionDto | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Prompt versions the session ran with, as {promptCode: version} ' +
+      '(captured at session start). null when not recorded.',
+  })
+  promptVersions!: Record<string, unknown> | null;
+
+  @ApiProperty({ nullable: true }) llmProvider!: string | null;
+  @ApiProperty({ nullable: true }) llmModel!: string | null;
+  @ApiProperty({ nullable: true }) temperature!: number | null;
+  @ApiProperty({ nullable: true }) topP!: number | null;
+  @ApiProperty({ nullable: true }) maxTokens!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      "STT provider/model configured for the session's language " +
+      '(languages.sttProviderConfig) — config source, so it is shown for ' +
+      'every session regardless of per-call usage emission.',
+  })
+  sttProvider!: string | null;
+  @ApiProperty({ nullable: true }) sttModel!: string | null;
+}
+
 export class RoleplaySessionLogDetailDto extends RoleplaySessionLogRowDto {
+  @ApiProperty({
+    type: RoleplaySessionRunConfigDto,
+    nullable: true,
+    description:
+      'The configuration this session ran under (prompt versions, scenario ' +
+      'version, effective LLM settings). Read from capture at generation time.',
+  })
+  runConfig!: RoleplaySessionRunConfigDto | null;
+
+  @ApiProperty({
+    type: RoleplaySessionDriftDto,
+    nullable: true,
+    description:
+      'Conversation-drift judgment for this session (latest judge run); ' +
+      'null when the session has not been drift-judged. Session-level view ' +
+      'of the same rows the analytics Drift tab aggregates.',
+  })
+  drift!: RoleplaySessionDriftDto | null;
+
+  @ApiProperty({
+    type: RoleplaySessionLanguageQualityDto,
+    nullable: true,
+    description:
+      'Language-quality judge result for this session (latest judge run); ' +
+      'null when the session has not been judged. Session-level view of the ' +
+      'same rows the analytics Language tab aggregates.',
+  })
+  languageQuality!: RoleplaySessionLanguageQualityDto | null;
+
   @ApiProperty({ nullable: true, description: 'Post-session summary (jsonb)' })
   summary!: Record<string, any> | null;
 
@@ -390,6 +595,21 @@ export class RoleplaySessionLogDetailDto extends RoleplaySessionLogRowDto {
 
   @ApiProperty({ type: [RoleplaySessionLogEventDto] })
   events!: RoleplaySessionLogEventDto[];
+
+  @ApiProperty({
+    type: [RoleplaySessionLifecycleEventDto],
+    description:
+      'Infrastructure lifecycle timeline (room/agent/participant/recording). ' +
+      'A missing AGENT_JOINED entry indicates the agent never joined.',
+  })
+  lifecycle!: RoleplaySessionLifecycleEventDto[];
+
+  @ApiProperty({
+    description:
+      'Suspected mid-session freeze: the conversation ended on a human turn ' +
+      'the agent never answered, or an LLM call timed out during the session.',
+  })
+  suspectedFreeze!: boolean;
 
   @ApiProperty({ type: [RoleplaySessionLogMessageDto] })
   transcript!: RoleplaySessionLogMessageDto[];

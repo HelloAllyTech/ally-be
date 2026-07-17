@@ -17,6 +17,8 @@ export interface RoleplaySessionLogRawRow {
   scenarioId: number | string;
   scenarioTitle: string | null;
   status: string;
+  /** Derived session outcome (see RoleplaySessionOutcome). */
+  outcome: string;
   startedAt: Date | null;
   endedAt: Date | null;
   score: number | string | null;
@@ -102,6 +104,25 @@ export class RoleplaySessionLogsRepository {
   };
 
   /**
+   * Derived per-session outcome, richer than the binary ACTIVE|ENDED status.
+   * ACTIVE -> IN_PROGRESS; ENDED with >=1 transcript message -> COMPLETED;
+   * ENDED with none -> NO_CONVERSATION (surfaces "agent never joined" / empty
+   * sessions). A correlated EXISTS keeps it a per-row check. Both
+   * scenario_session_messages."scenarioSessionId" and scenario_sessions.id are
+   * uuid, so they are compared directly (a `::text` cast would raise
+   * `operator does not exist: uuid = text`).
+   */
+  private static readonly OUTCOME_EXPR = `
+    CASE
+      WHEN ss."status" = 'ACTIVE' THEN 'IN_PROGRESS'
+      WHEN EXISTS (
+        SELECT 1 FROM scenario_session_messages ssm
+        WHERE ssm."scenarioSessionId" = ss.id
+      ) THEN 'COMPLETED'
+      ELSE 'NO_CONVERSATION'
+    END`;
+
+  /**
    * Applies the shared filters (exclusions + user filters) to a query that has
    * already FROM `scenario_sessions ss` and joined `users u` + `scenarios scn`.
    * Kept in one place so the list query and the count query stay in lockstep.
@@ -173,6 +194,7 @@ export class RoleplaySessionLogsRepository {
       .addSelect('ss."scenarioId"', 'scenarioId')
       .addSelect('scn."title"', 'scenarioTitle')
       .addSelect('ss."status"', 'status')
+      .addSelect(RoleplaySessionLogsRepository.OUTCOME_EXPR, 'outcome')
       .addSelect('ss."startedAt"', 'startedAt')
       .addSelect('ss."endedAt"', 'endedAt')
       .addSelect('ss."score"', 'score')
@@ -240,6 +262,7 @@ export class RoleplaySessionLogsRepository {
       .addSelect('ss."scenarioId"', 'scenarioId')
       .addSelect('scn."title"', 'scenarioTitle')
       .addSelect('ss."status"', 'status')
+      .addSelect(RoleplaySessionLogsRepository.OUTCOME_EXPR, 'outcome')
       .addSelect('ss."startedAt"', 'startedAt')
       .addSelect('ss."endedAt"', 'endedAt')
       .addSelect('ss."score"', 'score')
@@ -295,6 +318,91 @@ export class RoleplaySessionLogsRepository {
     return row?.summary ?? null;
   }
 
+  /**
+   * The configuration a session actually ran under (PRD FR15) — the prompt
+   * versions, scenario/metadata version, and the effective LLM settings
+   * (provider/model/generation params). All of this was captured at generation
+   * time: prompt versions + scenario version on scenario_sessions, and
+   * provider/model + gen params on scenario_session_turn_metrics. Read-only;
+   * nothing new is recorded. Effective LLM values use mode() across the
+   * session's turns (constant per session in practice; mode is robust if not).
+   */
+  async findRunConfig(id: string): Promise<{
+    scenarioVersion: {
+      id: string;
+      versionNumber: number | null;
+      name: string | null;
+    } | null;
+    promptVersions: Record<string, unknown> | null;
+    llmProvider: string | null;
+    llmModel: string | null;
+    temperature: number | null;
+    topP: number | null;
+    maxTokens: number | null;
+    sttProvider: string | null;
+    sttModel: string | null;
+  } | null> {
+    const rows = await this.dataSource.query(
+      `SELECT
+         ss."scenarioVersionId"          AS scenario_version_id,
+         sv."versionNumber"              AS scenario_version_number,
+         sv."name"                       AS scenario_version_name,
+         ss.metadata->'promptVersions'   AS prompt_versions,
+         lang."sttProviderConfig"->>'provider'          AS stt_provider,
+         lang."sttProviderConfig"->'config'->>'model'   AS stt_model,
+         (SELECT mode() WITHIN GROUP (ORDER BY m."llmProvider")
+            FROM scenario_session_turn_metrics m
+            WHERE m."scenarioSessionId" = ss.id
+              AND m."llmProvider" IS NOT NULL)                 AS llm_provider,
+         (SELECT mode() WITHIN GROUP (ORDER BY m."llmModel")
+            FROM scenario_session_turn_metrics m
+            WHERE m."scenarioSessionId" = ss.id
+              AND m."llmModel" IS NOT NULL)                    AS llm_model,
+         (SELECT mode() WITHIN GROUP (ORDER BY (m.metadata->>'temperature'))
+            FROM scenario_session_turn_metrics m
+            WHERE m."scenarioSessionId" = ss.id
+              AND m.metadata->>'temperature' IS NOT NULL)      AS temperature,
+         (SELECT mode() WITHIN GROUP (ORDER BY (m.metadata->>'topP'))
+            FROM scenario_session_turn_metrics m
+            WHERE m."scenarioSessionId" = ss.id
+              AND m.metadata->>'topP' IS NOT NULL)             AS top_p,
+         (SELECT mode() WITHIN GROUP (ORDER BY (m.metadata->>'maxTokens'))
+            FROM scenario_session_turn_metrics m
+            WHERE m."scenarioSessionId" = ss.id
+              AND m.metadata->>'maxTokens' IS NOT NULL)        AS max_tokens
+       FROM scenario_sessions ss
+       LEFT JOIN scenario_versions sv ON sv.id = ss."scenarioVersionId"
+       LEFT JOIN languages lang
+         ON lang.id = NULLIF(ss.metadata->>'languageId', '')::int
+       WHERE ss.id = $1`,
+      [id],
+    );
+    const r = rows?.[0];
+    if (!r) return null;
+    const num = (v: unknown): number | null =>
+      v == null || v === '' || Number.isNaN(Number(v)) ? null : Number(v);
+    return {
+      scenarioVersion: r.scenario_version_id
+        ? {
+            id: r.scenario_version_id,
+            versionNumber:
+              r.scenario_version_number == null
+                ? null
+                : Number(r.scenario_version_number),
+            name: r.scenario_version_name ?? null,
+          }
+        : null,
+      promptVersions: r.prompt_versions ?? null,
+      llmProvider: r.llm_provider ?? null,
+      llmModel: r.llm_model ?? null,
+      temperature: num(r.temperature),
+      topP: num(r.top_p),
+      maxTokens: num(r.max_tokens),
+      sttProvider: r.stt_provider ?? null,
+      sttModel: r.stt_model ?? null,
+    };
+  }
+
   /** Scored/triggered events for a session, oldest first, with the event name. */
   async findEvents(id: string): Promise<
     Array<{
@@ -322,6 +430,68 @@ export class RoleplaySessionLogsRepository {
       .andWhere('e."autoTerminationStatus" = false')
       .orderBy('e."occurredAt"', 'ASC')
       .getRawMany();
+  }
+
+  /**
+   * Infrastructure lifecycle timeline for a session, oldest first (room
+   * created, agent dispatched/joined, participant joined, recording started,
+   * room finished). Powers the session-detail timeline; an absent AGENT_JOINED
+   * row is the "agent never joined" signal.
+   */
+  async findLifecycleEvents(id: string): Promise<
+    Array<{
+      id: string;
+      type: string;
+      occurredAt: Date;
+      detail: Record<string, any> | null;
+    }>
+  > {
+    return this.dataSource
+      .createQueryBuilder()
+      .select('l."id"', 'id')
+      .addSelect('l."type"', 'type')
+      .addSelect('l."occurredAt"', 'occurredAt')
+      .addSelect('l."detail"', 'detail')
+      .from('scenario_session_lifecycle_events', 'l')
+      .where('l."scenarioSessionId" = :id', { id })
+      .orderBy('l."occurredAt"', 'ASC')
+      .addOrderBy('l."createdAt"', 'ASC')
+      .getRawMany();
+  }
+
+  /**
+   * Freeze signals for one session: did it have an agent turn, and did it end
+   * on a human turn the agent never answered (the last transcript message is
+   * the learner's)? The service combines this with the LLM-timeout turn count
+   * to flag a suspected mid-session freeze. All ids are uuid (no casts).
+   */
+  async getFreezeSignals(
+    id: string,
+  ): Promise<{ hasAgentTurn: boolean; endedOnUnansweredHumanTurn: boolean }> {
+    const rows = await this.dataSource.query(
+      `
+      SELECT
+        EXISTS (
+          SELECT 1 FROM scenario_session_messages m
+          WHERE m."scenarioSessionId" = ss.id AND m."senderId" <> ss."counselorId"
+        ) AS has_agent,
+        COALESCE((
+          SELECT m."senderId" = ss."counselorId"
+          FROM scenario_session_messages m
+          WHERE m."scenarioSessionId" = ss.id
+          ORDER BY m."startSeconds" DESC NULLS LAST, m."createdAt" DESC
+          LIMIT 1
+        ), false) AS last_is_human
+      FROM scenario_sessions ss
+      WHERE ss.id = $1::uuid
+      `,
+      [id],
+    );
+    const r = (rows[0] ?? {}) as Record<string, unknown>;
+    return {
+      hasAgentTurn: r.has_agent === true,
+      endedOnUnansweredHumanTurn: r.last_is_human === true,
+    };
   }
 
   /** Transcript turns for a session, ordered by playback position then time. */
@@ -506,6 +676,210 @@ export class RoleplaySessionLogsRepository {
       .orderBy('g."category"', 'ASC')
       .addOrderBy('g."title"', 'ASC')
       .getRawMany();
+  }
+
+  /**
+   * Latest language-quality judgment for a session: the session-denominator
+   * row, its error annotations, and the AI-turn ordinal → message-id mapping.
+   *
+   * The mapping query MUST mirror the transcript build used at judge time
+   * (drift-judge.repository buildTranscript: AI turns ordered by
+   * COALESCE(startSeconds, 0), id) — annotation turnIndex values were assigned
+   * against that ordering, and the detail page's own transcript query orders
+   * slightly differently (NULLS LAST), so ordinals are resolved here, not
+   * client-side.
+   */
+  async findLanguageJudgment(id: string): Promise<{
+    session: {
+      judgeModel: string;
+      judgePromptVersion: string;
+      turnsJudged: number;
+      turnsGarbled: number;
+      scriptFidelityPct: number | null;
+      roundTripWerPct: number | null;
+    };
+    annotations: Array<{
+      turnIndex: number;
+      layer: string;
+      dimension: string;
+      category: string;
+      severity: string;
+      isolationBasis: string | null;
+      inputGarbled: string | null;
+      conditionedOut: boolean;
+      evidenceQuote: string | null;
+      reasoning: string | null;
+    }>;
+    aiMessageIds: number[];
+  } | null> {
+    const sessionRow = await this.dataSource
+      .createQueryBuilder()
+      .select('j."id"', 'judgmentId')
+      .addSelect('j."judgeModel"', 'judgeModel')
+      .addSelect('j."judgePromptVersion"', 'judgePromptVersion')
+      .addSelect('j."turnsJudged"', 'turnsJudged')
+      .addSelect('j."turnsGarbled"', 'turnsGarbled')
+      .addSelect('j."scriptFidelityPct"', 'scriptFidelityPct')
+      .addSelect('j."roundTripWerPct"', 'roundTripWerPct')
+      .from('language_judgment_sessions', 'j')
+      .where('j."scenarioSessionId" = :id', { id })
+      .orderBy('j."updatedAt"', 'DESC')
+      .limit(1)
+      .getRawOne<{
+        judgmentId: string;
+        judgeModel: string;
+        judgePromptVersion: string;
+        turnsJudged: number | string;
+        turnsGarbled: number | string;
+        scriptFidelityPct: number | string | null;
+        roundTripWerPct: number | string | null;
+      }>();
+    if (!sessionRow) return null;
+
+    const annotations = await this.dataSource
+      .createQueryBuilder()
+      .select('a."turnIndex"', 'turnIndex')
+      .addSelect('a."layer"', 'layer')
+      .addSelect('a."dimension"', 'dimension')
+      .addSelect('a."category"', 'category')
+      .addSelect('a."severity"', 'severity')
+      .addSelect('a."isolationBasis"', 'isolationBasis')
+      .addSelect('a."inputGarbled"', 'inputGarbled')
+      .addSelect('a."conditionedOut"', 'conditionedOut')
+      .addSelect('a."evidenceQuote"', 'evidenceQuote')
+      .addSelect('a."reasoning"', 'reasoning')
+      .from('language_error_annotations', 'a')
+      .where('a."sessionJudgmentId" = :jid', { jid: sessionRow.judgmentId })
+      .orderBy('a."turnIndex"', 'ASC')
+      .getRawMany();
+
+    const aiMessageIds = await this.findAiMessageIdsInJudgeOrder(id);
+
+    return {
+      session: {
+        judgeModel: sessionRow.judgeModel,
+        judgePromptVersion: sessionRow.judgePromptVersion,
+        turnsJudged: Number(sessionRow.turnsJudged),
+        turnsGarbled: Number(sessionRow.turnsGarbled),
+        scriptFidelityPct:
+          sessionRow.scriptFidelityPct == null
+            ? null
+            : Number(sessionRow.scriptFidelityPct),
+        roundTripWerPct:
+          sessionRow.roundTripWerPct == null
+            ? null
+            : Number(sessionRow.roundTripWerPct),
+      },
+      annotations: annotations.map((a) => ({
+        turnIndex: Number(a.turnIndex),
+        layer: a.layer,
+        dimension: a.dimension,
+        category: a.category,
+        severity: a.severity,
+        isolationBasis: a.isolationBasis ?? null,
+        inputGarbled: a.inputGarbled ?? null,
+        conditionedOut: Boolean(a.conditionedOut),
+        evidenceQuote: a.evidenceQuote ?? null,
+        reasoning: a.reasoning ?? null,
+      })),
+      aiMessageIds,
+    };
+  }
+
+  /**
+   * AI-turn message ids in the ORDER THE JUDGES SAW THEM
+   * (drift-judge.repository buildTranscript: COALESCE(startSeconds,0), id).
+   * Array index = judge turnIndex. Shared by the language and drift readers.
+   */
+  private async findAiMessageIdsInJudgeOrder(id: string): Promise<number[]> {
+    const rows: { id: number | string }[] = await this.dataSource.query(
+      `SELECT id FROM scenario_session_messages
+        WHERE "scenarioSessionId" = $1 AND "senderId" = -1
+        ORDER BY COALESCE("startSeconds", 0), id`,
+      [id],
+    );
+    return rows.map((m) => Number(m.id));
+  }
+
+  /**
+   * Latest conversation-drift judgment for a session (turn_drift_judgment):
+   * session rollup + per-turn labels, with the turnIndex → message-id mapping
+   * resolved the same way as the language judgment. Closes the gap where
+   * drift was aggregate-only and invisible on the session that produced it.
+   */
+  async findDriftJudgment(id: string): Promise<{
+    judgeModel: string;
+    judgePromptVersion: string;
+    sessionDrifted: boolean | null;
+    firstDriftTurn: number | null;
+    turns: Array<{
+      turnIndex: number;
+      messageId: number | null;
+      coherence: string | null;
+      topicLabel: string | null;
+      inCharacter: boolean | null;
+      counselorUtteranceGarbled: string | null;
+      sttErrorType: string | null;
+      aiReplyFailureMode: string | null;
+      rootAttribution: string | null;
+      reasoning: string | null;
+    }>;
+  } | null> {
+    const latest = await this.dataSource
+      .createQueryBuilder()
+      .select('j."judgeModel"', 'judgeModel')
+      .addSelect('j."judgePromptVersion"', 'judgePromptVersion')
+      .from('turn_drift_judgment', 'j')
+      .where('j."scenarioSessionId" = :id', { id })
+      .orderBy('j."updatedAt"', 'DESC')
+      .limit(1)
+      .getRawOne<{ judgeModel: string; judgePromptVersion: string }>();
+    if (!latest) return null;
+
+    const rows = await this.dataSource
+      .createQueryBuilder()
+      .select('j."turnIndex"', 'turnIndex')
+      .addSelect('j."coherence"', 'coherence')
+      .addSelect('j."topicLabel"', 'topicLabel')
+      .addSelect('j."inCharacter"', 'inCharacter')
+      .addSelect('j."counselorUtteranceGarbled"', 'counselorUtteranceGarbled')
+      .addSelect('j."sttErrorType"', 'sttErrorType')
+      .addSelect('j."aiReplyFailureMode"', 'aiReplyFailureMode')
+      .addSelect('j."rootAttribution"', 'rootAttribution')
+      .addSelect('j."reasoning"', 'reasoning')
+      .addSelect('j."sessionDrifted"', 'sessionDrifted')
+      .addSelect('j."firstDriftTurn"', 'firstDriftTurn')
+      .from('turn_drift_judgment', 'j')
+      .where('j."scenarioSessionId" = :id', { id })
+      .andWhere('j."judgeModel" = :jm', { jm: latest.judgeModel })
+      .andWhere('j."judgePromptVersion" = :jpv', {
+        jpv: latest.judgePromptVersion,
+      })
+      .orderBy('j."turnIndex"', 'ASC')
+      .getRawMany();
+    if (!rows.length) return null;
+
+    const aiMessageIds = await this.findAiMessageIdsInJudgeOrder(id);
+
+    return {
+      judgeModel: latest.judgeModel,
+      judgePromptVersion: latest.judgePromptVersion,
+      sessionDrifted: rows[0].sessionDrifted ?? null,
+      firstDriftTurn:
+        rows[0].firstDriftTurn != null ? Number(rows[0].firstDriftTurn) : null,
+      turns: rows.map((r) => ({
+        turnIndex: Number(r.turnIndex),
+        messageId: aiMessageIds[Number(r.turnIndex)] ?? null,
+        coherence: r.coherence ?? null,
+        topicLabel: r.topicLabel ?? null,
+        inCharacter: r.inCharacter ?? null,
+        counselorUtteranceGarbled: r.counselorUtteranceGarbled ?? null,
+        sttErrorType: r.sttErrorType ?? null,
+        aiReplyFailureMode: r.aiReplyFailureMode ?? null,
+        rootAttribution: r.rootAttribution ?? null,
+        reasoning: r.reasoning ?? null,
+      })),
+    };
   }
 
   /** Most recent post-session learner feedback for a session, if any. */

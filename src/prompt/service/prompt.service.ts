@@ -141,6 +141,24 @@ export class PromptsService {
       updateData.usesBlocks = updatePromptDto.usesBlocks;
     }
 
+    if (updatePromptDto.provider !== undefined) {
+      // Empty string clears the override (back to inferred provider).
+      (updateData as Record<string, unknown>).provider =
+        updatePromptDto.provider || null;
+    }
+
+    if (updatePromptDto.model !== undefined) {
+      // Empty string clears the override (back to code/language default).
+      // Cast: the column is nullable but the entity types `model` as
+      // `string | undefined`; null is the correct SQL value to clear it.
+      (updateData as Record<string, unknown>).model =
+        updatePromptDto.model || null;
+    }
+
+    if (updatePromptDto.temperature !== undefined) {
+      updateData.temperature = updatePromptDto.temperature;
+    }
+
     const updated = await this.promptsRepository.update(id, updateData);
 
     // If prompt content is being updated and dashboard override is enabled, create a new version

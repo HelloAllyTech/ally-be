@@ -38,9 +38,12 @@ import { BadgeModule } from './badge/badge.module';
 import { CommunityModule } from './community/community.module';
 import { ScenarioCharacterModule } from './scenario-character/scenario-character.module';
 import { PromptModule } from './prompt/prompt.module';
+import { LlmModule } from './llm/llm.module';
 import { ConversationalGuardrailsModule } from './conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from './case/case.module';
+import { TrackModule } from './track/track.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
+import { ComfortAudioModule } from './comfort-audio/comfort-audio.module';
 import { ScenarioReportModule } from './scenario-report/scenario-report.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { AppVersionModule } from './app-version/app-version.module';
@@ -50,6 +53,9 @@ import { CustomFieldsModule } from './custom-fields/custom-fields.module';
 import { DynamicI18nModule } from './dynamic-i18n/dynamic-i18n.module';
 import { TooltipModule } from './tooltip/tooltip.module';
 import { RoleplaySessionLogsModule } from './roleplay-session-logs/roleplay-session-logs.module';
+import { RoleplayStudioModule } from './roleplay-studio/roleplay-studio.module';
+import { BlogModule } from './blog/blog.module';
+import { LabModule } from './lab/lab.module';
 
 @Module({
   imports: [
@@ -85,6 +91,7 @@ import { RoleplaySessionLogsModule } from './roleplay-session-logs/roleplay-sess
     PlaceModule,
     ScenarioPathModule,
     CaseModule,
+    TrackModule,
     LanguageModule,
     ScenarioSessionReviewModule,
     ScribeSessionReviewModule,
@@ -92,8 +99,10 @@ import { RoleplaySessionLogsModule } from './roleplay-session-logs/roleplay-sess
     CommunityModule,
     ScenarioCharacterModule,
     PromptModule,
+    LlmModule,
     ConversationalGuardrailsModule,
     ScenarioCoverImageLibraryModule,
+    ComfortAudioModule,
     ScenarioReportModule,
     SchedulerModule,
     AppVersionModule,
@@ -103,6 +112,9 @@ import { RoleplaySessionLogsModule } from './roleplay-session-logs/roleplay-sess
     DynamicI18nModule,
     TooltipModule,
     RoleplaySessionLogsModule,
+    RoleplayStudioModule,
+    BlogModule,
+    LabModule,
   ],
   controllers: [],
   providers: [

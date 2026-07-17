@@ -20,7 +20,7 @@ import {
   UserRole,
 } from '../../common/constants/user.constants';
 import { MessagePayload, UserChatSessionData } from '../type/chat.type';
-import { ChatEvents } from '../constants/chat.constants';
+import { ChatEvents, StreamEndReason } from '../constants/chat.constants';
 import {
   ExecutionContextPropagation,
   WithExecutionContext,
@@ -118,7 +118,11 @@ export class MicrophoneChatGateway
             session.userId ? String(session.userId) : '',
             session.tenantId,
           );
-          await this.chatService.endChat(session.chatId);
+          await this.chatService.endChat(
+            session.chatId,
+            undefined,
+            StreamEndReason.JANITOR_ORPHAN,
+          );
           this.logger.warn(
             `Janitor finalized orphaned recording for chat ${session.chatId} ` +
               `(socket ${sid} gone with no disconnect event)`,
@@ -172,7 +176,11 @@ export class MicrophoneChatGateway
             session.userId ? String(session.userId) : '',
             session.tenantId,
           );
-          await this.chatService.endChat(session.chatId);
+          await this.chatService.endChat(
+            session.chatId,
+            undefined,
+            StreamEndReason.SHUTDOWN_DRAIN,
+          );
           this.logger.warn(
             `Flushed in-flight recording for chat ${session.chatId} on shutdown`,
           );
@@ -279,7 +287,11 @@ export class MicrophoneChatGateway
     ) {
       const { tenantId, userId, chatId, provider } = session;
       try {
-        await this.chatService.endChat(session.chatId);
+        await this.chatService.endChat(
+          session.chatId,
+          undefined,
+          StreamEndReason.CLIENT_DISCONNECT,
+        );
         this.auditLogger.log({
           eventType: AUDIT_EVENTS.CALL_ENDED,
           tenantId,

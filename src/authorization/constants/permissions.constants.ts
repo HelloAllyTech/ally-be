@@ -198,6 +198,18 @@ const PERMISSIONS = {
   EDIT_CASE: 'edit:case',
   DELETE_CASE_TENANT: 'delete:case-tenant',
 
+  // === TRACKS (Track 2.0 multi-component learning tracks) ===
+  VIEW_ADMIN_TRACKS: 'view:admin:tracks',
+  VIEW_ADMIN_TRACK: 'view:admin:track',
+  EDIT_ADMIN_TRACK: 'edit:admin:track',
+  DELETE_ADMIN_TRACK: 'delete:admin:track',
+  EDIT_TENANT_TRACK: 'edit:tenant:track',
+  EDIT_TRACK_TENANT: 'edit:track-tenant',
+  DELETE_TRACK_TENANT: 'delete:track-tenant',
+  VIEW_TRACKS: 'view:tracks',
+  VIEW_TRACK: 'view:track',
+  EDIT_TRACK: 'edit:track',
+
   // === SIMULATION REVIEW ===
   VIEW_SIMULATION_REVIEW: 'view:simulation-review',
   EDIT_SIMULATION_REVIEW: 'edit:simulation-review',
@@ -234,6 +246,10 @@ const PERMISSIONS = {
   VIEW_SCENARIO_COVER_IMAGE_LIBRARY: 'view:scenario-cover-image-library',
   EDIT_SCENARIO_COVER_IMAGE_LIBRARY: 'edit:scenario-cover-image-library',
   DELETE_SCENARIO_COVER_IMAGE_LIBRARY: 'delete:scenario-cover-image-library',
+  // === COMFORT AUDIO LIBRARY ===
+  VIEW_COMFORT_AUDIO_LIBRARY: 'view:comfort-audio-library',
+  EDIT_COMFORT_AUDIO_LIBRARY: 'edit:comfort-audio-library',
+  DELETE_COMFORT_AUDIO_LIBRARY: 'delete:comfort-audio-library',
   // === SCENARIO REPORTS ===
   VIEW_SCENARIO_REPORTS: 'view:scenario-reports',
   EDIT_SCENARIO_REPORTS: 'edit:scenario-reports',
@@ -242,6 +258,13 @@ const PERMISSIONS = {
   VIEW_MULTI_TENANT_ADMINS: 'view:multi-tenant-admins',
   EDIT_MULTI_TENANT_ADMINS: 'edit:multi-tenant-admins',
 
+  // === SUPER DUPER ADMIN MANAGEMENT ===
+  // Granted ONLY to SUPER_DUPER_ADMIN (never SUPER_ADMIN) — the dedicated
+  // surface for listing/promoting/demoting super duper admins. This is the
+  // first intentional divergence between the two super-admin tiers.
+  VIEW_SUPER_DUPER_ADMINS: 'view:super-duper-admins',
+  EDIT_SUPER_DUPER_ADMINS: 'edit:super-duper-admins',
+
   // === RUNTIME I18N ===
   VIEW_I18N_TRANSLATIONS: 'view:admin:i18n-translations',
   EDIT_I18N_TRANSLATIONS: 'edit:admin:i18n-translations',
@@ -249,6 +272,25 @@ const PERMISSIONS = {
   // === TOOLTIPS ===
   VIEW_TOOLTIPS: 'view:admin:tooltips',
   EDIT_TOOLTIPS: 'edit:admin:tooltips',
+
+  // === BLOG ===
+  VIEW_BLOGS: 'view:blogs',
+  EDIT_BLOG: 'edit:blog',
+  DELETE_BLOG: 'delete:blog',
+
+  // === AI LAB ===
+  VIEW_AI_LAB: 'view:admin:ai-lab',
+  EDIT_AI_LAB: 'edit:admin:ai-lab',
+  DELETE_AI_LAB: 'delete:admin:ai-lab',
+
+  // === ROLEPLAY STUDIO V2 ===
+  VIEW_ROLEPLAY_SPECS: 'view:roleplay-specs',
+  EDIT_ROLEPLAY_SPEC: 'edit:roleplay-spec',
+  DELETE_ROLEPLAY_SPEC: 'delete:roleplay-spec',
+  EDIT_ROLEPLAY_COPILOT: 'edit:roleplay-copilot',
+  VIEW_ROLEPLAY_REHEARSALS: 'view:roleplay-rehearsals',
+  EDIT_ROLEPLAY_REHEARSALS: 'edit:roleplay-rehearsals',
+  EDIT_ROLEPLAY_SPEC_TENANT: 'edit:roleplay-spec-tenant',
 };
 
 const SUPER_ADMIN_PERMISSIONS = [
@@ -301,6 +343,13 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_TENANT_SCENARIO_PATH,
   PERMISSIONS.EDIT_SCENARIO_PATH_TENANT,
   PERMISSIONS.DELETE_SCENARIO_PATH_TENANT,
+  PERMISSIONS.VIEW_ADMIN_TRACKS,
+  PERMISSIONS.VIEW_ADMIN_TRACK,
+  PERMISSIONS.EDIT_ADMIN_TRACK,
+  PERMISSIONS.DELETE_ADMIN_TRACK,
+  PERMISSIONS.EDIT_TENANT_TRACK,
+  PERMISSIONS.EDIT_TRACK_TENANT,
+  PERMISSIONS.DELETE_TRACK_TENANT,
   PERMISSIONS.EDIT_SCENARIO_TENANT,
   PERMISSIONS.DELETE_SCENARIO_TENANT,
   PERMISSIONS.VIEW_ADMIN_SCENARIO_VOICE_LANGUAGES,
@@ -321,6 +370,9 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.VIEW_SCENARIO_COVER_IMAGE_LIBRARY,
   PERMISSIONS.EDIT_SCENARIO_COVER_IMAGE_LIBRARY,
   PERMISSIONS.DELETE_SCENARIO_COVER_IMAGE_LIBRARY,
+  PERMISSIONS.VIEW_COMFORT_AUDIO_LIBRARY,
+  PERMISSIONS.EDIT_COMFORT_AUDIO_LIBRARY,
+  PERMISSIONS.DELETE_COMFORT_AUDIO_LIBRARY,
   PERMISSIONS.VIEW_SCENARIO_REPORTS,
   PERMISSIONS.EDIT_SCENARIO_REPORTS,
   PERMISSIONS.EDIT_GLOBAL_SETTINGS,
@@ -332,12 +384,35 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_I18N_TRANSLATIONS,
   PERMISSIONS.VIEW_TOOLTIPS,
   PERMISSIONS.EDIT_TOOLTIPS,
+  PERMISSIONS.VIEW_ROLEPLAY_SPECS,
+  PERMISSIONS.EDIT_ROLEPLAY_SPEC,
+  PERMISSIONS.DELETE_ROLEPLAY_SPEC,
+  PERMISSIONS.EDIT_ROLEPLAY_COPILOT,
+  PERMISSIONS.VIEW_ROLEPLAY_REHEARSALS,
+  PERMISSIONS.EDIT_ROLEPLAY_REHEARSALS,
+  PERMISSIONS.EDIT_ROLEPLAY_SPEC_TENANT,
+  PERMISSIONS.VIEW_BLOGS,
+  PERMISSIONS.EDIT_BLOG,
+  PERMISSIONS.DELETE_BLOG,
+  PERMISSIONS.VIEW_AI_LAB,
+  PERMISSIONS.EDIT_AI_LAB,
+  PERMISSIONS.DELETE_AI_LAB,
   // start:microphone-chat / start:cloud-telephony-chat are intentionally NOT
   // granted here — initiating a recording (scribe/dictation/telephony) is a
   // counsellor capability. A SUPER_ADMIN who is also a counsellor inherits it
   // via the COUNSELOR group (permissions are unioned across a user's roles).
   PERMISSIONS.EDIT_USER_PREFERENCES,
   PERMISSIONS.VIEW_USER_PREFERENCES,
+];
+
+// SUPER_DUPER_ADMIN inherits everything SUPER_ADMIN has (kept as a spread so
+// additions to SUPER_ADMIN flow through automatically), plus the capabilities
+// exclusive to the elevated tier — currently the super-duper-admin management
+// surface (list/promote/demote other super duper admins).
+const SUPER_DUPER_ADMIN_PERMISSIONS = [
+  ...SUPER_ADMIN_PERMISSIONS,
+  PERMISSIONS.VIEW_SUPER_DUPER_ADMINS,
+  PERMISSIONS.EDIT_SUPER_DUPER_ADMINS,
 ];
 
 const COUNSELOR_PERMISSIONS = [
@@ -456,6 +531,11 @@ const ADMIN_PERMISSIONS = [
   PERMISSIONS.VIEW_ADMIN_CASES,
   PERMISSIONS.EDIT_CASE_TENANT,
   PERMISSIONS.DELETE_CASE_TENANT,
+  // Tracks (Track 2.0)
+  PERMISSIONS.VIEW_ADMIN_TRACKS,
+  PERMISSIONS.VIEW_ADMIN_TRACK,
+  PERMISSIONS.EDIT_TRACK_TENANT,
+  PERMISSIONS.DELETE_TRACK_TENANT,
   // Badges — assignment only (EDIT_BADGE_TENANT), NOT EDIT_ADMIN_BADGES, so a
   // tenant ADMIN cannot create/edit/delete global badges.
   PERMISSIONS.VIEW_ADMIN_BADGES,
@@ -490,8 +570,13 @@ const MULTI_TENANT_ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_SETTINGS_SUMMARY_FIELDS,
   PERMISSIONS.VIEW_USER_ROLES,
   PERMISSIONS.VIEW_SCENARIO_COVER_IMAGE_LIBRARY,
+  PERMISSIONS.EDIT_SCENARIO_COVER_IMAGE_LIBRARY,
+  PERMISSIONS.VIEW_COMFORT_AUDIO_LIBRARY,
   PERMISSIONS.DELETE_ADMIN_SCENARIO,
   PERMISSIONS.VIEW_SESSION_EVENTS,
+  // Create/edit of session events is additionally ownership-scoped in
+  // SessionEventService: multi-tenant admins may only edit events they created.
+  PERMISSIONS.EDIT_SESSION_EVENTS,
   PERMISSIONS.VIEW_SCENARIO_EVENTS,
   PERMISSIONS.EDIT_SCENARIO_MAP_EVENTS,
   PERMISSIONS.VIEW_PROMPT,
@@ -514,6 +599,9 @@ const LEARNER_PERMISSIONS = [
   PERMISSIONS.VIEW_SCENARIO_PATHS,
   PERMISSIONS.VIEW_SCENARIO_PATH,
   PERMISSIONS.EDIT_SCENARIO_PATH,
+  PERMISSIONS.VIEW_TRACKS,
+  PERMISSIONS.VIEW_TRACK,
+  PERMISSIONS.EDIT_TRACK,
 
   PERMISSIONS.EDIT_USER_PREFERENCES,
   PERMISSIONS.VIEW_USER_PREFERENCES,
@@ -562,6 +650,7 @@ const SCRIBE_REVIEWER_PERMISSIONS = [
 export {
   PERMISSIONS,
   SUPER_ADMIN_PERMISSIONS,
+  SUPER_DUPER_ADMIN_PERMISSIONS,
   COUNSELOR_PERMISSIONS,
   ADMIN_PERMISSIONS,
   MULTI_TENANT_ADMIN_PERMISSIONS,

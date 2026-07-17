@@ -27,6 +27,10 @@ import {
   Repository,
 } from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
+import {
+  ScenarioSessionLifecycleEvent,
+  ScenarioSessionLifecycleEventType,
+} from '../entity/scenario-session-lifecycle-event.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ScenarioSessionMessageType } from '../enum/scenario-session-message.type.enum';
 import { ScenarioSessionTagCategory } from '../enum/scenario-session-tag-category.enum';
@@ -93,6 +97,7 @@ import {
 } from '../type/scenario-session-leaderboard-event.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
+import { TrackProgressService } from 'src/track/service/track-progress.service';
 import { CommonUtil } from 'src/common/util/common.util';
 import { ScenarioSharedService } from './scenario-shared.service';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
@@ -118,6 +123,9 @@ import { SharedLanguageService } from 'src/language/service/shared-language.serv
 import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
 import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
 import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
+import { ModuleRef } from '@nestjs/core';
+import { ScenarioEngine } from '../enum/scenario-engine.enum';
+import { RoleplaySessionService } from 'src/roleplay-studio/service/roleplay-session.service';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
 const previewRoomMetadataCache = new Map<string, object>();
@@ -134,6 +142,8 @@ export class ScenarioSessionService {
     private sessionEventSharedService: SessionEventSharedService,
     @InjectRepository(ScenarioSessionFeedbacks)
     private scenarioSessionFeedbacksRepository: Repository<ScenarioSessionFeedbacks>,
+    @InjectRepository(ScenarioSessionLifecycleEvent)
+    private scenarioSessionLifecycleEventRepository: Repository<ScenarioSessionLifecycleEvent>,
     @InjectRepository(ScenarioSessionReflectionPromptResponse)
     private scenarioSessionReflectionPromptResponseRepository: Repository<ScenarioSessionReflectionPromptResponse>,
     private dataSource: DataSource,
@@ -149,6 +159,7 @@ export class ScenarioSessionService {
     private eventEmitter: EventEmitter2,
     private caseSharedService: CaseSharedService,
     private caseSessionService: CaseSessionService,
+    private trackProgressService: TrackProgressService,
     @InjectRepository(ScenarioSessionBehaviorInstructions)
     private scenarioSessionBehaviorInstructionsRepository: Repository<ScenarioSessionBehaviorInstructions>,
     private behaviorTranslationRepository: BehaviorTranslationRepository,
@@ -160,6 +171,10 @@ export class ScenarioSessionService {
     private sessionEventTranslationService: SessionEventTranslationService,
     private scenarioSessionEvaluationService: ScenarioSessionEvaluationService,
     private transcriptTranslationService: TranscriptTranslationService,
+    // App-container handle used ONLY to resolve the Roleplay Studio v2
+    // session service for engine=ROLEPLAY_V2 scenarios without importing
+    // RoleplayStudioModule into LearnModule (keeps the v1 wiring untouched).
+    private moduleRef: ModuleRef,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -208,6 +223,39 @@ export class ScenarioSessionService {
     });
 
     return { ...result, messages };
+  }
+
+  /** The scenario-session id encoded in a LiveKit room name (`ss_<id>`), or null. */
+  sessionIdFromRoomName(roomName: string): string | null {
+    return roomName?.startsWith('ss_') ? roomName.slice(3) : null;
+  }
+
+  /**
+   * Best-effort append of a session lifecycle milestone (room created, agent
+   * dispatched/joined, participant joined, recording started, room finished),
+   * used by the super-admin session-logs timeline. Never throws — a logging
+   * failure must not break session setup/teardown, mirroring the egress/
+   * recording best-effort pattern.
+   */
+  async recordLifecycleEvent(
+    scenarioSessionId: string,
+    type: ScenarioSessionLifecycleEventType,
+    occurredAt: Date = new Date(),
+    detail?: Record<string, any>,
+  ): Promise<void> {
+    try {
+      await this.scenarioSessionLifecycleEventRepository.insert({
+        scenarioSessionId,
+        type,
+        occurredAt,
+        detail: detail ?? null,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to record lifecycle event ${type} for session ` +
+          `${scenarioSessionId}: ${(error as Error)?.message}`,
+      );
+    }
   }
 
   async getScenarioSessionSkills(
@@ -523,6 +571,33 @@ export class ScenarioSessionService {
     if (!scenario) {
       throw new BadRequestException('Scenario not found');
     }
+
+    // Roleplay Studio v2 scenarios are thin shells over a versioned spec —
+    // the v2 runtime owns their session lifecycle (roleplay- room, AgentV2
+    // dispatch, director telemetry). Delegate and skip the entire v1 path.
+    // Resolved via ModuleRef (strict: false) so the learn module wiring
+    // stays untouched.
+    if (scenario.engine === ScenarioEngine.ROLEPLAY_V2) {
+      if (!scenario.roleplaySpecId) {
+        throw new BadRequestException(
+          'Roleplay scenario is missing its spec reference',
+        );
+      }
+      const roleplaySessionService = this.moduleRef.get(
+        RoleplaySessionService,
+        { strict: false },
+      );
+      return roleplaySessionService.startSpecSession(
+        counselorId,
+        scenario.roleplaySpecId,
+        null, // published version resolves inside the v2 service
+        {
+          languageId: startScenarioSessionDto.languageId,
+          ttl: startScenarioSessionDto.ttl,
+        },
+      );
+    }
+
     await this.validateStartScenarioSession(
       counselorId,
       scenario.id,
@@ -685,6 +760,10 @@ export class ScenarioSessionService {
           startScenarioSessionDto.ttl ?? DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
         metadata: roomMetadata,
       });
+      void this.recordLifecycleEvent(
+        scenarioSession.id,
+        ScenarioSessionLifecycleEventType.ROOM_CREATED,
+      );
 
       // Proactively dispatch the agent immediately so it can initialize during
       // the frontend's ringing-bell delay. The participant_joined webhook is still
@@ -698,6 +777,17 @@ export class ScenarioSessionService {
           `${scenarioSession.roomId}`,
           this.configService.livekit.agentName,
           JSON.stringify(roomMetadata),
+        )
+        .then(() =>
+          this.recordLifecycleEvent(
+            scenarioSession.id,
+            ScenarioSessionLifecycleEventType.AGENT_DISPATCHED,
+            new Date(),
+            {
+              via: 'proactive',
+              agentName: this.configService.livekit.agentName,
+            },
+          ),
         )
         .catch((err) => {
           // Clear the pre-mark so the participant_joined webhook can take over.
@@ -822,6 +912,15 @@ export class ScenarioSessionService {
           );
         }
       }
+    } else if (startScenarioSessionDto.trackItemProgressId) {
+      // Track 2.0: validate the roleplay belongs to an unlocked track item
+      // visible to the caller's tenant.
+      const userIdStr = ExecutionManager.getUserId();
+      await this.trackProgressService.validateRoleplayStart(
+        startScenarioSessionDto.trackItemProgressId,
+        scenarioId,
+        { userId: Number(userIdStr), tenantId },
+      );
     } else if (startScenarioSessionDto.caseSessionItemId) {
       const caseSessionItem =
         await this.caseSharedService.getPermittedCaseSessionItemBySessionItemId(
@@ -980,6 +1079,13 @@ export class ScenarioSessionService {
     else if (scenarioSession.caseSessionItemId) {
       await this.caseSessionService.handleEndCaseSession({
         caseSessionItemId: scenarioSession.caseSessionItemId,
+        score,
+        callDuration,
+      });
+    } else if (scenarioSession.trackItemProgressId) {
+      // Track 2.0: roleplay played inside a track.
+      await this.trackProgressService.handleRoleplayEnd({
+        trackItemProgressId: scenarioSession.trackItemProgressId,
         score,
         callDuration,
       });

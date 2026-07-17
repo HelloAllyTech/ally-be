@@ -58,6 +58,12 @@ export class ScenarioSessionContextProvider implements ContextProvider {
       (await this.promptSharedService.getPromptByCode(this.PROMPT_CODE)) ||
       null;
 
+    // Prompt-level LLM model/temperature override for the chat prompt, applied
+    // by the chat service under the simulation temperature.
+    const promptLlmConfig = await this.promptSharedService.getPromptLlmConfig(
+      this.PROMPT_CODE,
+    );
+
     // Prepare template variables
     const templateVariables: Record<string, string> = {
       scenarioTitle: scenario.title ?? 'N/A',
@@ -101,6 +107,9 @@ export class ScenarioSessionContextProvider implements ContextProvider {
         callDuration: details?.callDuration,
         transcriptMessages,
         temperature,
+        promptProvider: promptLlmConfig.provider,
+        promptModel: promptLlmConfig.model,
+        promptTemperature: promptLlmConfig.temperature,
       },
     };
   }

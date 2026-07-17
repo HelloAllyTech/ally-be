@@ -9,6 +9,7 @@ import { SessionItemStatus } from 'src/common/type/common.type';
 import { CaseStatus } from '../../type/cases.type';
 import { AppConfigService } from 'src/config/config.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 
 jest.mock('src/logger/logger.service', () => ({
   LoggerService: {
@@ -85,6 +86,7 @@ describe('CaseSessionService', () => {
         { provide: DataSource, useValue: mockDataSource },
         { provide: AppConfigService, useValue: mockConfigService },
         { provide: SharedLanguageService, useValue: mockSharedLanguageService },
+        { provide: EventEmitter2, useValue: { emit: jest.fn() } },
       ],
     }).compile();
 
