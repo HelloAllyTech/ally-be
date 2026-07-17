@@ -40,6 +40,35 @@ export class DirectorTelemetryService {
       .findOne({ where: { roomId } });
   }
 
+  /**
+   * Resolve a session by room id, retrying briefly on a miss. The director
+   * queue is shared across environments, so a miss is usually another env's
+   * room — but it can also be OUR room whose session row is not yet visible
+   * when the first telemetry lands (a dispatch/telemetry race). A couple of
+   * short retries recover that race without ever retrying at the SQS layer,
+   * so genuinely-foreign rooms are still dropped promptly. Tunable via
+   * DIRECTOR_TELEMETRY_RESOLVE_ATTEMPTS / _DELAY_MS.
+   */
+  async resolveSessionWithRetry(
+    roomId: string,
+  ): Promise<ScenarioSessions | null> {
+    if (!roomId) return null;
+    const attempts = Number(
+      process.env.DIRECTOR_TELEMETRY_RESOLVE_ATTEMPTS ?? 3,
+    );
+    const delayMs = Number(
+      process.env.DIRECTOR_TELEMETRY_RESOLVE_DELAY_MS ?? 200,
+    );
+    for (let attempt = 1; attempt <= Math.max(1, attempts); attempt++) {
+      const session = await this.resolveSession(roomId);
+      if (session) return session;
+      if (attempt < attempts) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+    return null;
+  }
+
   toOccurredAt(timestamp?: number): Date | null {
     return timestamp ? new Date(timestamp * 1000) : null;
   }
@@ -52,10 +81,13 @@ export class DirectorTelemetryService {
     eventType: RoleplayDirectorEventType,
     message: DirectorSqsMessage,
   ): Promise<RoleplayDirectorEvent | null> {
-    const session = await this.resolveSession(message.room_id);
+    const session = await this.resolveSessionWithRetry(message.room_id);
     if (!session) {
+      // Expected for other environments' rooms on the shared queue; a warn (not
+      // error) keeps this visible without alerting, after the race-recovery
+      // retries have been exhausted.
       this.logger.warn(
-        `No scenario session for roleplay director event ${eventType} in room ${message.room_id}; skipping`,
+        `No scenario session for roleplay director event ${eventType} in room ${message.room_id} after resolve retries; skipping`,
       );
       return null;
     }

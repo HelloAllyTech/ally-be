@@ -39,11 +39,18 @@ describe('CopilotToolsService — auto-improve tools', () => {
       title: 'Spec',
       agentTestCaseIds: ['tc-1', 'tc-2'],
       competencyIds: ['comp-1'],
-      persona: { identityCore: 'A guarded caller', scenarioContext: 'Crisis line' },
+      persona: {
+        identityCore: 'A guarded caller',
+        scenarioContext: 'Crisis line',
+      },
       difficulty: 'MEDIUM',
       language: { languageId: 1, languageCode: 'en-IN' },
       voice: { languageVoices: { '1': 'voice-1' } },
-      rubric: { behaviors: [{ id: 'b1', name: 'Reflect feelings', polarity: 'helpful' }] },
+      rubric: {
+        behaviors: [
+          { id: 'b1', name: 'Reflect feelings', polarity: 'helpful' },
+        ],
+      },
     },
   } as unknown as RoleplaySpec;
 
