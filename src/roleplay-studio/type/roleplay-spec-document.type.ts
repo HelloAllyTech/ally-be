@@ -83,6 +83,13 @@ export interface EngineeredEvent {
   atSeconds?: number;
   behaviorIds?: string[];
   scoreThreshold?: number;
+  /**
+   * For score-triggered events: fire when the trainee's cumulative score sinks
+   * to/below the threshold ('at_or_below', the default) or rises to/above it
+   * ('at_or_above', a positive-reinforcement beat). Optional & additive; the
+   * runtime defaults to 'at_or_below' when omitted.
+   */
+  scoreComparison?: 'at_or_below' | 'at_or_above';
   direction?: string;
   once?: boolean;
 }
@@ -142,6 +149,11 @@ export interface RoleplaySpecDocument {
   comfortAudioVolume?: number;
   continuousBackchanneling?: boolean;
   interimReplyEnabled?: boolean;
+  /**
+   * Optional Studio-authored static thinking-filler phrases. When empty, the
+   * v2 runtime falls back to a neutral default set. Additive passthrough.
+   */
+  fillerPhrases?: string[];
   actorModel?: RoleplayModelConfig;
   directorModel?: RoleplayModelConfig;
   /** Opaque client-owned block — passthrough, never validated. */

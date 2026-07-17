@@ -12,6 +12,40 @@ export interface RoleplayV2Config {
 }
 
 /**
+ * TEMPORARY launch-phase default allowlist. These testers are included when
+ * `ROLEPLAY_V2_ALLOWLIST` is not set, so the current pilot works without extra
+ * env config. Centralized here (one place, not scattered literals) and fully
+ * overridable via the env var — once v2 rolls out behind a permission/flag,
+ * delete this constant and drive the allowlist entirely from config.
+ */
+export const DEFAULT_ROLEPLAY_V2_ALLOWLIST: readonly string[] = [
+  'sandeep.malhotra@helloally.ai',
+  'gopi.s@helloally.ai',
+  'gopikrishnan.sasikumar@helloally.ai',
+];
+
+/**
+ * Build the effective allowlist from the raw `ROLEPLAY_V2_ALLOWLIST` env value:
+ * the launch-phase defaults plus any env-provided entries, all trimmed,
+ * lower-cased, and de-duplicated. (Env EXTENDS the defaults; the pilot testers
+ * are always kept.)
+ */
+export function buildRoleplayV2Allowlist(
+  rawEnv: string | null | undefined,
+): string[] {
+  const fromEnv = (rawEnv ?? '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  return Array.from(
+    new Set([
+      ...DEFAULT_ROLEPLAY_V2_ALLOWLIST.map((e) => e.toLowerCase()),
+      ...fromEnv,
+    ]),
+  );
+}
+
+/**
  * Canonicalize an email for allowlist matching: lower-case, trim, and drop any
  * `+tag` sub-address. So sandeep.malhotra+admin@… and sandeep.malhotra+learner@…
  * both match the single `sandeep.malhotra@…` allowlist entry — a tester can spin
