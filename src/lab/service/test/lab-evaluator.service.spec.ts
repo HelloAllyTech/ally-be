@@ -6,16 +6,27 @@ import { LabEvaluatorService } from '../lab-evaluator.service';
 import { LabEvaluatorRepository } from '../../repository/lab-evaluator.repository';
 import { LabRunAssignmentRepository } from '../../repository/lab-eval.repositories';
 import { AppConfigService } from 'src/config/config.service';
+import { EmailService } from 'src/notification/service/email.service';
 import { EVALUATOR_TOKEN_KIND } from '../../constants/lab-eval.constants';
 
 describe('LabEvaluatorService', () => {
   let service: LabEvaluatorService;
-  let evaluatorRepository: { findOne: jest.Mock; save: jest.Mock };
+  let evaluatorRepository: {
+    findOne: jest.Mock;
+    save: jest.Mock;
+    create: jest.Mock;
+  };
   let jwtService: { signAsync: jest.Mock };
+  let emailService: { sendEvaluatorInvite: jest.Mock };
 
   beforeEach(async () => {
-    evaluatorRepository = { findOne: jest.fn(), save: jest.fn(async (e) => e) };
+    evaluatorRepository = {
+      findOne: jest.fn(),
+      save: jest.fn(async (e) => ({ id: 'ev1', ...e })),
+      create: jest.fn((e) => e),
+    };
     jwtService = { signAsync: jest.fn().mockResolvedValue('signed-token') };
+    emailService = { sendEvaluatorInvite: jest.fn().mockResolvedValue(true) };
 
     const configService = {
       jwt: { accessToken: { secret: 'secret' } },
@@ -31,6 +42,7 @@ describe('LabEvaluatorService', () => {
         },
         { provide: JwtService, useValue: jwtService },
         { provide: AppConfigService, useValue: configService },
+        { provide: EmailService, useValue: emailService },
       ],
     }).compile();
 
@@ -38,6 +50,16 @@ describe('LabEvaluatorService', () => {
   });
 
   afterEach(() => jest.clearAllMocks());
+
+  describe('create', () => {
+    it('emails the new evaluator their portal invite with the generated password', async () => {
+      const { password } = await service.create({ email: 'Eval@X.com' });
+      expect(emailService.sendEvaluatorInvite).toHaveBeenCalledWith({
+        to: 'eval@x.com',
+        password,
+      });
+    });
+  });
 
   describe('login', () => {
     // rounds=4 keeps the test fast; the service compares regardless of cost.

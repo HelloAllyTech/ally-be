@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 
 import { AwsModule } from '../aws/aws.module';
+import { NotificationModule } from '../notification/notification.module';
 
 import { LabSkill } from './entity/lab-skill.entity';
 import { LabVariable } from './entity/lab-variable.entity';
@@ -63,6 +64,7 @@ import { LabEvalPortalController } from './controller/lab-eval-portal.controller
       LabAutoEvaluation,
     ]),
     AwsModule,
+    NotificationModule,
   ],
   controllers: [
     LabSkillController,
