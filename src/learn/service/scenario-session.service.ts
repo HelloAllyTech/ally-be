@@ -177,7 +177,21 @@ export class ScenarioSessionService {
         options,
       );
 
-    if (!languageCode || languageCode === 'en') {
+    if (!languageCode) {
+      return result;
+    }
+
+    const scenarioSession = await this.scenarioSessionRepository.findOne({
+      where: { id: scenarioSessionId },
+    });
+    const { enLanguageDetails, languageDetails } =
+      await this.getLanguageDetailsForScenarioSession(
+        scenarioSession?.metadata?.languageId,
+      );
+    const sourceLanguageCode =
+      languageDetails?.translationCode ?? enLanguageDetails?.translationCode;
+
+    if (languageCode === sourceLanguageCode) {
       return result;
     }
 

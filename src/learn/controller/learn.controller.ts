@@ -812,7 +812,7 @@ export class LearnController {
     required: false,
     type: String,
     description:
-      'When provided (and not "en"), returns translated message content',
+      "When provided and different from the session's source language, returns translated message content. Omit to get the raw source text.",
   })
   @AuthPermissions([PERMISSIONS.VIEW_SESSION_SCENARIO_MESSAGES])
   @Get('scenario-session/:scenarioSessionId/messages')

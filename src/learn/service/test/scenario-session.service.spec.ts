@@ -404,8 +404,12 @@ describe('ScenarioSessionService', () => {
             getScenarioSessionById: jest.fn(),
             getSessionEventsByScenarioId: jest.fn(),
             getLanguageDetailsForScenarioSession: jest.fn().mockResolvedValue({
-              enLanguageDetails: { id: 1, value: 'en' },
-              languageDetails: { id: 1, value: 'en' },
+              enLanguageDetails: {
+                id: 1,
+                value: 'en',
+                translationCode: 'en',
+              },
+              languageDetails: { id: 1, value: 'en', translationCode: 'en' },
             }),
           },
         },
@@ -617,6 +621,40 @@ describe('ScenarioSessionService', () => {
         transcriptTranslationService.translateMessages,
       ).not.toHaveBeenCalled();
       expect(result.messages).toEqual(mockMessages);
+    });
+
+    it('should translate to English when session source language is not English and languageCode is en', async () => {
+      scenarioSharedService.getLanguageDetailsForScenarioSession.mockResolvedValueOnce(
+        {
+          enLanguageDetails: { id: 1, value: 'en', translationCode: 'en' },
+          languageDetails: { id: 2, value: 'mr', translationCode: 'mr' },
+        } as any,
+      );
+      transcriptTranslationService.translateMessages.mockResolvedValue(
+        new Map([
+          [1, 'Hello there'],
+          [2, 'How are you?'],
+        ]),
+      );
+
+      const result = await service.getMessagesByScenarioSessionId(
+        mockScenarioSessionId,
+        {},
+        undefined,
+        'en',
+      );
+
+      expect(
+        transcriptTranslationService.translateMessages,
+      ).toHaveBeenCalledWith(
+        'scenario',
+        [
+          { id: 1, content: 'Hello there' },
+          { id: 2, content: 'How are you?' },
+        ],
+        'en',
+      );
+      expect(result.messages).toBeDefined();
     });
 
     it('should return translated content when a non-original languageCode is provided', async () => {
