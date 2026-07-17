@@ -86,4 +86,40 @@ The Ally Team`;
       isHtml: false,
     });
   }
+
+  /**
+   * Invite an AI Lab evaluator with their portal link and generated
+   * credentials. These are low-sensitivity, single-purpose accounts (an
+   * evaluator only sees runs assigned to them); the password is generated
+   * server-side and shared here in place of the admin copying it manually.
+   * Best-effort — returns false on failure without throwing.
+   */
+  async sendEvaluatorInvite(params: {
+    to: string;
+    password: string;
+  }): Promise<boolean> {
+    const portalUrl = `${this.config.app.adminBaseUrl}/evaluate`;
+    const subject = "You've been invited to evaluate on Ally AI Lab";
+    const body = `Hello,
+
+You've been added as an evaluator on the Ally AI Lab. Sign in to review and score the records assigned to you:
+
+${portalUrl}
+
+Email: ${params.to}
+Password: ${params.password}
+
+Please keep these credentials private. If you weren't expecting this, you can ignore this email.
+
+Best regards,
+The Ally Team`;
+
+    return this.sesService.sendEmail({
+      from: this.config.email.sourceEmail,
+      to: params.to,
+      subject,
+      body,
+      isHtml: false,
+    });
+  }
 }

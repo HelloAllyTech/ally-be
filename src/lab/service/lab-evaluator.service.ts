@@ -11,6 +11,7 @@ import { AppConfigService } from 'src/config/config.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import isDuplicateKeyException from 'src/exception/custom.exception';
 import { LoggerService } from 'src/logger/logger.service';
+import { EmailService } from 'src/notification/service/email.service';
 import { LabEvaluatorRepository } from '../repository/lab-evaluator.repository';
 import { LabRunAssignmentRepository } from '../repository/lab-eval.repositories';
 import { LabEvaluator } from '../entity/lab-evaluator.entity';
@@ -53,7 +54,21 @@ export class LabEvaluatorService {
     private readonly assignmentRepository: LabRunAssignmentRepository,
     private readonly jwtService: JwtService,
     private readonly configService: AppConfigService,
+    private readonly emailService: EmailService,
   ) {}
+
+  /** Email the evaluator their portal link + credentials (best-effort). */
+  private async sendInvite(email: string, password: string): Promise<void> {
+    try {
+      await this.emailService.sendEvaluatorInvite({ to: email, password });
+    } catch (error) {
+      this.logger.error(
+        `[AI_LAB] failed to send evaluator invite to ${email}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
 
   /** NEVER expose passwordHash/tokenVersion outside this service. */
   private toResponse(evaluator: LabEvaluator): LabEvaluatorResponse {
@@ -147,6 +162,7 @@ export class LabEvaluatorService {
         }),
       );
       this.logger.info(`[AI_LAB] evaluator created: ${saved.id}`);
+      await this.sendInvite(saved.email, password);
       return { evaluator: this.toResponse(saved), password };
     } catch (error) {
       if (isDuplicateKeyException(error)) {
@@ -176,6 +192,7 @@ export class LabEvaluatorService {
     evaluator.tokenVersion += 1;
     await this.evaluatorRepository.save(evaluator);
     this.logger.info(`[AI_LAB] evaluator password regenerated: ${id}`);
+    await this.sendInvite(evaluator.email, password);
     return { password };
   }
 
