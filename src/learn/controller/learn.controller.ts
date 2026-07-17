@@ -23,6 +23,8 @@ import {
 } from '@nestjs/swagger';
 import { ScenarioService } from '../service/scenario.service';
 import { ScenarioSessionService } from '../service/scenario-session.service';
+import { RoleplayCoachingService } from '../service/roleplay-coaching.service';
+import { RoleplayCoachingResponseDto } from '../dto/roleplay-coaching-response.dto';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
@@ -104,6 +106,7 @@ export class LearnController {
     private readonly scenarioTenantService: ScenarioTenantService,
     private readonly triggerWarningService: TriggerWarningsService,
     private readonly scenarioVersionService: ScenarioVersionService,
+    private readonly roleplayCoachingService: RoleplayCoachingService,
   ) {}
 
   @Public()
@@ -869,6 +872,28 @@ export class LearnController {
   ): Promise<ScenarioSessionSkillsResponseDto> {
     return this.scenarioSessionService.getScenarioSessionSkills(
       scenarioSessionId,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Get spec-based coaching for a Roleplay Studio v2 session',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Roleplay v2 coaching (rubric behaviors, state journey, disclosures, ' +
+      'per-turn coaching). available=false for non-v2 sessions.',
+    type: RoleplayCoachingResponseDto,
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_SESSION_SCENARIO_SUMMARY])
+  @Get('scenario-session/:scenarioSessionId/roleplay-coaching')
+  async getRoleplayCoaching(
+    @CurrentUser() tokenUser: TokenUser,
+    @Param('scenarioSessionId', ParseUUIDPipe) scenarioSessionId: string,
+  ): Promise<RoleplayCoachingResponseDto> {
+    return this.roleplayCoachingService.getLearnerCoaching(
+      scenarioSessionId,
+      tokenUser.id,
     );
   }
 

@@ -7,6 +7,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScenarioSessionService } from './service/scenario-session.service';
 import { ScenarioSessions } from './entity/scenario-sessions.entity';
 import { ScenarioSessionRepository } from './repository/scenario-session.repository';
+import { RoleplayCoachingService } from './service/roleplay-coaching.service';
 import { ScenarioSessionMessagesRepository } from './repository/scenario-session-messages.repository';
 import { LiveKitModule } from 'src/livekit/livekit.module';
 import { ScenarioSessionFeedbacks } from './entity/scenario-session-feedbacks.entity';
@@ -186,6 +187,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     ScenarioVersionService,
     ScenarioVersionRepository,
     ScenarioSessionService,
+    RoleplayCoachingService,
     ScenarioSessionRepository,
     ScenarioSessionMessagesRepository,
     ScenariosRepository,
