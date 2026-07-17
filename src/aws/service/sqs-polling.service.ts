@@ -47,6 +47,16 @@ export class SqsPollingService implements OnModuleInit, OnModuleDestroy {
     const handlersByQueue = new Map<string, SqsHandler[]>();
 
     for (const handler of handlers) {
+      // Skip handlers whose queue URL isn't configured (e.g. a feature's queue
+      // not yet provisioned in this environment) — otherwise we'd spin up a
+      // poller against an undefined URL and error-loop every cycle.
+      if (!handler.queueUrl) {
+        this.logger.warn(
+          `Skipping SQS handler ${handler.targetConstructor?.name}.${handler.methodName}: queue URL is not configured`,
+        );
+        continue;
+      }
+
       try {
         // Get the actual instance from the NestJS container
         const instance = this.moduleRef.get(handler.targetConstructor, {

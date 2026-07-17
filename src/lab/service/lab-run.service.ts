@@ -12,6 +12,7 @@ import { LabRun, LabRunStatus } from '../entity/lab-run.entity';
 import { CreateLabRunDto } from '../dto/lab-run.dto';
 import { LabListQueryDto } from '../dto/lab-query.dto';
 import { estimateCostUsd } from '../constants/lab-pricing.constants';
+import { LabRunProducer } from '../producer/lab-run.producer';
 
 /** Text + token usage returned by a provider call. */
 interface ModelResult {
@@ -51,6 +52,7 @@ export class LabRunService {
     private readonly skillRepository: LabSkillRepository,
     private readonly assignmentRepository: LabRunAssignmentRepository,
     private readonly configService: AppConfigService,
+    private readonly runProducer: LabRunProducer,
   ) {
     this.anthropic = new Anthropic({
       apiKey: this.configService.anthropic.apiKey,
@@ -206,10 +208,11 @@ export class LabRunService {
   }
 
   /**
-   * Run a single skill: resolve its prompt, persist a RUNNING row, call the
-   * skill's model, then flip the row to COMPLETED (with output) or FAILED
-   * (with error). Always returns the row — a failed LLM call is a FAILED row,
-   * not a thrown error — so the runs log reflects every attempt.
+   * Create a run for a single skill. When the lab-run queue is configured the
+   * run is persisted as PENDING and enqueued for async execution (returned
+   * immediately so the HTTP request doesn't block on the LLM call); the client
+   * polls the runs log for completion. Without a queue it executes inline and
+   * returns the terminal (COMPLETED/FAILED) row — the original behavior.
    */
   async create(dto: CreateLabRunDto): Promise<LabRun> {
     const skill = await this.skillRepository.findOne({
@@ -223,6 +226,7 @@ export class LabRunService {
     const resolvedPrompt = this.resolvePrompt(skill.content, values);
     const modelId = skill.model || this.defaultModel;
     const userId = Number(ExecutionManager.getUserId() ?? 0);
+    const async = this.runProducer.isEnabled();
 
     let run = this.runRepository.create({
       batchId: dto.batchId ?? null,
@@ -231,39 +235,87 @@ export class LabRunService {
       resolvedPrompt,
       variableValues: values.map((v) => ({ name: v.name, value: v.value })),
       model: modelId,
-      status: LabRunStatus.RUNNING,
+      generationParams: {
+        temperature: skill.temperature ?? null,
+        maxTokens: skill.maxTokens ?? null,
+        systemPrompt: skill.systemPrompt ?? null,
+      },
+      status: async ? LabRunStatus.PENDING : LabRunStatus.RUNNING,
       createdBy: userId,
     });
     run = await this.runRepository.save(run);
 
+    if (async) {
+      const enqueued = await this.runProducer.enqueue(run.id);
+      if (enqueued) return run; // client polls for completion
+      // Enqueue failed unexpectedly — fall through to synchronous execution.
+      run.status = LabRunStatus.RUNNING;
+      run = await this.runRepository.save(run);
+    }
+
+    // Synchronous path: a failed LLM call is a FAILED row, not a thrown error.
     try {
-      const result = await this.runModel(modelId, resolvedPrompt, {
-        temperature: skill.temperature,
-        maxTokens: skill.maxTokens,
-        systemPrompt: skill.systemPrompt,
-      });
-      run.output = result.text;
-      if (result.usage) {
-        run.promptTokens = result.usage.promptTokens;
-        run.completionTokens = result.usage.completionTokens;
-        run.totalTokens =
-          result.usage.promptTokens + result.usage.completionTokens;
-        run.costUsd = estimateCostUsd(
-          modelId,
-          result.usage.promptTokens,
-          result.usage.completionTokens,
-        );
-      }
-      run.status = LabRunStatus.COMPLETED;
-      this.logger.info(
-        `[AI_LAB] run ${run.id} completed (skill=${skill.id}, model=${modelId})`,
-      );
+      return await this.runAndPersist(run);
     } catch (error) {
       run.status = LabRunStatus.FAILED;
       run.error = error instanceof Error ? error.message : String(error);
       this.logger.error(`[AI_LAB] run ${run.id} failed: ${run.error}`);
+      return this.runRepository.save(run);
     }
+  }
 
+  /**
+   * Execute a queued (PENDING) run. Flips it to RUNNING, calls the model, and
+   * persists the COMPLETED result. Throws on failure so the SQS consumer can
+   * let the message retry / dead-letter (terminal failures are marked FAILED
+   * by the DLQ handler via markFailed) — the row is left RUNNING between
+   * attempts rather than flapping to FAILED on every transient error.
+   */
+  async execute(runId: string): Promise<LabRun> {
+    const run = await this.getById(runId);
+    if (run.status === LabRunStatus.COMPLETED) return run; // idempotent
+    run.status = LabRunStatus.RUNNING;
+    await this.runRepository.save(run);
+    return this.runAndPersist(run);
+  }
+
+  /** Mark a run FAILED with a message (used by the DLQ handler). */
+  async markFailed(runId: string, message: string): Promise<void> {
+    const run = await this.runRepository.findOne({ where: { id: runId } });
+    if (!run || run.status === LabRunStatus.COMPLETED) return;
+    run.status = LabRunStatus.FAILED;
+    run.error = message;
+    await this.runRepository.save(run);
+  }
+
+  /**
+   * Core execution: call the run's model with its snapshotted prompt/params,
+   * record output + token usage + estimated cost, and persist as COMPLETED.
+   * Rethrows provider errors (the caller decides how to record failure).
+   */
+  private async runAndPersist(run: LabRun): Promise<LabRun> {
+    const params = run.generationParams ?? {};
+    const result = await this.runModel(run.model, run.resolvedPrompt, {
+      temperature: params.temperature,
+      maxTokens: params.maxTokens,
+      systemPrompt: params.systemPrompt,
+    });
+    run.output = result.text;
+    if (result.usage) {
+      run.promptTokens = result.usage.promptTokens;
+      run.completionTokens = result.usage.completionTokens;
+      run.totalTokens =
+        result.usage.promptTokens + result.usage.completionTokens;
+      run.costUsd = estimateCostUsd(
+        run.model,
+        result.usage.promptTokens,
+        result.usage.completionTokens,
+      );
+    }
+    run.status = LabRunStatus.COMPLETED;
+    this.logger.info(
+      `[AI_LAB] run ${run.id} completed (skill=${run.skillId}, model=${run.model})`,
+    );
     return this.runRepository.save(run);
   }
 

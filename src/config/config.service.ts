@@ -187,6 +187,10 @@ export class AppConfigService {
           'SQS_LEARN_MESSAGE_AND_EVENT_QUEUE_URL',
         ),
       },
+      labRun: {
+        queueUrl: this.configService.get<string>('SQS_LAB_RUN_QUEUE_URL'),
+        dlqUrl: this.configService.get<string>('SQS_LAB_RUN_DLQ_URL'),
+      },
     };
   }
   get s3() {

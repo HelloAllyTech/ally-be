@@ -2,9 +2,18 @@ import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.e
 import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
 
 export enum LabRunStatus {
+  /** Queued for asynchronous execution; not yet started. */
+  PENDING = 'PENDING',
   RUNNING = 'RUNNING',
   COMPLETED = 'COMPLETED',
   FAILED = 'FAILED',
+}
+
+/** Generation params snapshotted at enqueue time for async execution. */
+export interface LabRunGenerationParams {
+  temperature?: number | null;
+  maxTokens?: number | null;
+  systemPrompt?: string | null;
 }
 
 /**
@@ -41,6 +50,13 @@ export class LabRun extends BaseWithoutTenantEntity {
 
   @Column({ type: 'varchar', length: 100 })
   model!: string;
+
+  /**
+   * Generation params snapshotted at create time so an async run can execute
+   * without re-reading (a possibly since-edited) skill. Null for older rows.
+   */
+  @Column({ name: 'generation_params', type: 'jsonb', nullable: true })
+  generationParams?: LabRunGenerationParams | null;
 
   @Column({
     type: 'varchar',

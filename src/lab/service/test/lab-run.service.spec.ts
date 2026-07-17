@@ -6,6 +6,7 @@ import { LabSkillRepository } from '../../repository/lab-skill.repository';
 import { LabRunAssignmentRepository } from '../../repository/lab-eval.repositories';
 import { AppConfigService } from 'src/config/config.service';
 import { LabRunStatus } from '../../entity/lab-run.entity';
+import { LabRunProducer } from '../../producer/lab-run.producer';
 
 describe('LabRunService', () => {
   let service: LabRunService;
@@ -16,6 +17,7 @@ describe('LabRunService', () => {
     findOne: jest.Mock;
     delete: jest.Mock;
   };
+  let runProducer: { isEnabled: jest.Mock; enqueue: jest.Mock };
 
   beforeEach(async () => {
     skillRepository = { findOne: jest.fn() };
@@ -25,6 +27,11 @@ describe('LabRunService', () => {
       save: jest.fn(async (entity) => entity),
       findOne: jest.fn(),
       delete: jest.fn(),
+    };
+    // Default: queue disabled → synchronous execution (original behavior).
+    runProducer = {
+      isEnabled: jest.fn().mockReturnValue(false),
+      enqueue: jest.fn().mockResolvedValue(true),
     };
 
     const configService = {
@@ -42,6 +49,7 @@ describe('LabRunService', () => {
           useValue: { createQueryBuilder: jest.fn() },
         },
         { provide: AppConfigService, useValue: configService },
+        { provide: LabRunProducer, useValue: runProducer },
       ],
     }).compile();
 
@@ -166,6 +174,88 @@ describe('LabRunService', () => {
       await expect(
         service.create({ skillId: 'missing' }),
       ).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it('enqueues a PENDING run without executing when the queue is enabled', async () => {
+      runProducer.isEnabled.mockReturnValue(true);
+      skillRepository.findOne.mockResolvedValue({
+        id: 'sk1',
+        name: 'Greeter',
+        content: 'Hi {{name}}',
+        model: 'claude-x',
+        temperature: 0.4,
+      });
+      const runModelSpy = jest.spyOn(service as never, 'runModel');
+
+      const run = await service.create(dto);
+
+      expect(run.status).toBe(LabRunStatus.PENDING);
+      expect(run.generationParams).toMatchObject({ temperature: 0.4 });
+      expect(runProducer.enqueue).toHaveBeenCalledWith(run.id);
+      expect(runModelSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('execute', () => {
+    it('runs a queued run from its snapshot and marks it COMPLETED', async () => {
+      runRepository.findOne.mockResolvedValue({
+        id: 'run1',
+        model: 'claude-sonnet-4-6',
+        resolvedPrompt: 'Hi Bob',
+        generationParams: {
+          temperature: 0.2,
+          maxTokens: 100,
+          systemPrompt: null,
+        },
+        status: LabRunStatus.PENDING,
+      });
+      const spy = jest.spyOn(service as never, 'runModel').mockResolvedValue({
+        text: 'hi',
+        usage: { promptTokens: 10, completionTokens: 5 },
+      } as never);
+
+      const run = await service.execute('run1');
+
+      expect(run.status).toBe(LabRunStatus.COMPLETED);
+      expect(run.totalTokens).toBe(15);
+      // Executes from the run's snapshot, not by re-reading the skill.
+      expect(spy).toHaveBeenCalledWith('claude-sonnet-4-6', 'Hi Bob', {
+        temperature: 0.2,
+        maxTokens: 100,
+        systemPrompt: null,
+      });
+    });
+
+    it('rethrows on model failure (leaving the row for retry/DLQ)', async () => {
+      runRepository.findOne.mockResolvedValue({
+        id: 'run1',
+        model: 'claude-x',
+        resolvedPrompt: 'p',
+        generationParams: null,
+        status: LabRunStatus.PENDING,
+      });
+      jest
+        .spyOn(service as never, 'runModel')
+        .mockRejectedValue(new Error('boom') as never);
+
+      await expect(service.execute('run1')).rejects.toThrow('boom');
+    });
+  });
+
+  describe('markFailed', () => {
+    it('sets FAILED with the message', async () => {
+      const row = { id: 'run1', status: LabRunStatus.RUNNING };
+      runRepository.findOne.mockResolvedValue(row);
+      await service.markFailed('run1', 'dead-lettered');
+      expect(row.status).toBe(LabRunStatus.FAILED);
+      expect((row as { error?: string }).error).toBe('dead-lettered');
+    });
+
+    it('does not overwrite an already-COMPLETED run', async () => {
+      const row = { id: 'run1', status: LabRunStatus.COMPLETED };
+      runRepository.findOne.mockResolvedValue(row);
+      await service.markFailed('run1', 'dead-lettered');
+      expect(row.status).toBe(LabRunStatus.COMPLETED);
     });
   });
 });

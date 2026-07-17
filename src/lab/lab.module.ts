@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
 
+import { AwsModule } from '../aws/aws.module';
+
 import { LabSkill } from './entity/lab-skill.entity';
 import { LabVariable } from './entity/lab-variable.entity';
 import { LabValue } from './entity/lab-value.entity';
@@ -27,6 +29,8 @@ import { LabRunService } from './service/lab-run.service';
 import { LabEvaluatorService } from './service/lab-evaluator.service';
 import { LabEvalService } from './service/lab-eval.service';
 import { LabEvaluatorGuard } from './guard/lab-evaluator.guard';
+import { LabRunProducer } from './producer/lab-run.producer';
+import { LabRunConsumer } from './consumer/lab-run.consumer';
 import { LabSkillController } from './controller/lab-skill.controller';
 import { LabVariableController } from './controller/lab-variable.controller';
 import { LabValueController } from './controller/lab-value.controller';
@@ -54,6 +58,7 @@ import { LabEvalPortalController } from './controller/lab-eval-portal.controller
       LabRunAssignment,
       LabEvalAnswer,
     ]),
+    AwsModule,
   ],
   controllers: [
     LabSkillController,
@@ -79,6 +84,8 @@ import { LabEvalPortalController } from './controller/lab-eval-portal.controller
     LabEvaluatorService,
     LabEvalService,
     LabEvaluatorGuard,
+    LabRunProducer,
+    LabRunConsumer,
     // Default-config JwtService (same pattern as ChatModule): secrets are
     // passed per sign/verify call from AppConfigService.
     JwtService,
