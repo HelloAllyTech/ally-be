@@ -94,7 +94,7 @@ describe('LabRunService', () => {
       });
       jest
         .spyOn(service as never, 'runModel')
-        .mockResolvedValue('hello Bob' as never);
+        .mockResolvedValue({ text: 'hello Bob', usage: null } as never);
 
       const run = await service.create(dto);
 
@@ -102,6 +102,25 @@ describe('LabRunService', () => {
       expect(run.resolvedPrompt).toBe('Hi Bob');
       expect(run.output).toBe('hello Bob');
       expect(run.error).toBeUndefined();
+    });
+
+    it('records token usage and estimated cost from a priced model', async () => {
+      skillRepository.findOne.mockResolvedValue({
+        id: 'sk1',
+        name: 'Greeter',
+        content: 'x',
+        model: 'claude-sonnet-4-6',
+      });
+      jest.spyOn(service as never, 'runModel').mockResolvedValue({
+        text: 'ok',
+        usage: { promptTokens: 1000, completionTokens: 500 },
+      } as never);
+
+      const run = await service.create({ skillId: 'sk1' });
+
+      expect(run.totalTokens).toBe(1500);
+      // 1000/1e6*3 + 500/1e6*15 = 0.0105
+      expect(Number(run.costUsd)).toBeCloseTo(0.0105, 6);
     });
 
     it('records a FAILED run (without throwing) when the model call errors', async () => {
@@ -130,12 +149,16 @@ describe('LabRunService', () => {
       });
       const spy = jest
         .spyOn(service as never, 'runModel')
-        .mockResolvedValue('ok' as never);
+        .mockResolvedValue({ text: 'ok', usage: null } as never);
 
       const run = await service.create({ skillId: 'sk1' });
 
       expect(run.model).toBe('claude-default');
-      expect(spy).toHaveBeenCalledWith('claude-default', 'x');
+      expect(spy).toHaveBeenCalledWith(
+        'claude-default',
+        'x',
+        expect.any(Object),
+      );
     });
 
     it('throws NotFoundException for an unknown skill', async () => {

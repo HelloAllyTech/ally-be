@@ -55,6 +55,31 @@ export class LabRun extends BaseWithoutTenantEntity {
   @Column({ type: 'text', nullable: true })
   error?: string | null;
 
+  /** Token usage reported by the provider (null if unavailable). */
+  @Column({ name: 'prompt_tokens', type: 'int', nullable: true })
+  promptTokens?: number | null;
+
+  @Column({ name: 'completion_tokens', type: 'int', nullable: true })
+  completionTokens?: number | null;
+
+  @Column({ name: 'total_tokens', type: 'int', nullable: true })
+  totalTokens?: number | null;
+
+  /**
+   * Estimated USD cost, derived from token usage and the per-model pricing
+   * table at run time. `numeric` maps to string via TypeORM's driver, so this
+   * is typed as string|number; read it with Number(...). Null when usage or a
+   * price is unavailable.
+   */
+  @Column({
+    name: 'cost_usd',
+    type: 'numeric',
+    precision: 12,
+    scale: 6,
+    nullable: true,
+  })
+  costUsd?: string | number | null;
+
   /**
    * Set when a super-duper-admin publishes this (COMPLETED) run for human
    * evaluation, together with its eval questions. A run is published at most

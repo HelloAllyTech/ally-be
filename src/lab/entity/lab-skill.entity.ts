@@ -31,6 +31,19 @@ export class LabSkill extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', length: 100, nullable: true })
   model?: string | null;
 
+  /** Sampling temperature. Null → provider default; only sent to models that
+   *  support it (see the LLM registry `supportsTemperature`). */
+  @Column({ type: 'double precision', nullable: true })
+  temperature?: number | null;
+
+  /** Output token cap for the run. Null → the AI Lab default. */
+  @Column({ name: 'max_tokens', type: 'int', nullable: true })
+  maxTokens?: number | null;
+
+  /** Optional system message sent alongside the resolved prompt. */
+  @Column({ name: 'system_prompt', type: 'text', nullable: true })
+  systemPrompt?: string | null;
+
   @Column({ name: 'created_by', type: 'int' })
   createdBy!: number;
 }

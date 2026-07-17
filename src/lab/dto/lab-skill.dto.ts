@@ -1,5 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class CreateLabSkillDto {
   @ApiProperty({ description: 'Display name for the skill' })
@@ -29,6 +37,30 @@ export class CreateLabSkillDto {
   @IsOptional()
   @IsString()
   model?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Sampling temperature (0–2). Only applied to models that support it.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(2)
+  temperature?: number;
+
+  @ApiPropertyOptional({ description: 'Output token cap for the run.' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(32000)
+  maxTokens?: number;
+
+  @ApiPropertyOptional({
+    description: 'Optional system message sent alongside the resolved prompt.',
+  })
+  @IsOptional()
+  @IsString()
+  systemPrompt?: string;
 }
 
 export class UpdateLabSkillDto {
@@ -56,4 +88,25 @@ export class UpdateLabSkillDto {
   @IsOptional()
   @IsString()
   model?: string;
+
+  @ApiPropertyOptional({ description: 'Sampling temperature (0–2).' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(2)
+  temperature?: number;
+
+  @ApiPropertyOptional({ description: 'Output token cap for the run.' })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(32000)
+  maxTokens?: number;
+
+  @ApiPropertyOptional({
+    description: 'Optional system message sent alongside the resolved prompt.',
+  })
+  @IsOptional()
+  @IsString()
+  systemPrompt?: string;
 }

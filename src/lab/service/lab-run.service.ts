@@ -11,6 +11,20 @@ import { LabRunAssignmentRepository } from '../repository/lab-eval.repositories'
 import { LabRun, LabRunStatus } from '../entity/lab-run.entity';
 import { CreateLabRunDto } from '../dto/lab-run.dto';
 import { LabListQueryDto } from '../dto/lab-query.dto';
+import { estimateCostUsd } from '../constants/lab-pricing.constants';
+
+/** Text + token usage returned by a provider call. */
+interface ModelResult {
+  text: string;
+  usage: { promptTokens: number; completionTokens: number } | null;
+}
+
+/** Generation parameters a skill may pin for its run. */
+interface RunOptions {
+  temperature?: number | null;
+  maxTokens?: number | null;
+  systemPrompt?: string | null;
+}
 
 /** Run list item enriched with human-eval assignment counters. */
 export type LabRunListItem = LabRun & {
@@ -118,34 +132,72 @@ export class LabRunService {
   /**
    * Execute the prompt on the given model, routing to the right provider SDK
    * by the model's registry entry. AI Lab runs support Anthropic and OpenAI
-   * (the providers this runtime can execute); anything else throws.
+   * (the providers this runtime can execute); anything else throws. Applies the
+   * skill's optional generation params and returns the output plus token usage.
    */
-  private async runModel(modelId: string, prompt: string): Promise<string> {
-    const provider =
-      LLM_MODEL_REGISTRY.find((m) => m.model === modelId)?.provider ??
-      'anthropic';
+  private async runModel(
+    modelId: string,
+    prompt: string,
+    opts: RunOptions = {},
+  ): Promise<ModelResult> {
+    const registryEntry = LLM_MODEL_REGISTRY.find((m) => m.model === modelId);
+    const provider = registryEntry?.provider ?? 'anthropic';
+    // Temperature is only safe on models that support it (reasoning models
+    // reject a non-default temperature).
+    const temperature =
+      opts.temperature != null && registryEntry?.supportsTemperature !== false
+        ? opts.temperature
+        : undefined;
 
     if (provider === 'openai') {
-      // No max_tokens: reasoning models (gpt-5) reject `max_tokens` and the
-      // default cap is fine for a preview run.
       const response = await this.openai.chat.completions.create(
-        { model: modelId, messages: [{ role: 'user', content: prompt }] },
+        {
+          model: modelId,
+          messages: [
+            ...(opts.systemPrompt
+              ? [{ role: 'system' as const, content: opts.systemPrompt }]
+              : []),
+            { role: 'user' as const, content: prompt },
+          ],
+          // max_completion_tokens (not the deprecated max_tokens) so reasoning
+          // models accept it too; omitted when the skill sets no cap.
+          ...(opts.maxTokens ? { max_completion_tokens: opts.maxTokens } : {}),
+          ...(temperature != null ? { temperature } : {}),
+        },
         { timeout: RUN_TIMEOUT_MS },
       );
-      return response.choices?.[0]?.message?.content ?? '';
+      return {
+        text: response.choices?.[0]?.message?.content ?? '',
+        usage: response.usage
+          ? {
+              promptTokens: response.usage.prompt_tokens ?? 0,
+              completionTokens: response.usage.completion_tokens ?? 0,
+            }
+          : null,
+      };
     }
 
     if (provider === 'anthropic') {
       const response = await this.anthropic.messages.create(
         {
           model: modelId,
-          max_tokens: RUN_MAX_TOKENS,
+          max_tokens: opts.maxTokens ?? RUN_MAX_TOKENS,
+          ...(opts.systemPrompt ? { system: opts.systemPrompt } : {}),
+          ...(temperature != null ? { temperature } : {}),
           messages: [{ role: 'user', content: prompt }],
         },
         { timeout: RUN_TIMEOUT_MS },
       );
       const block = response.content[0];
-      return block?.type === 'text' ? block.text : '';
+      return {
+        text: block?.type === 'text' ? block.text : '',
+        usage: response.usage
+          ? {
+              promptTokens: response.usage.input_tokens ?? 0,
+              completionTokens: response.usage.output_tokens ?? 0,
+            }
+          : null,
+      };
     }
 
     throw new Error(
@@ -185,7 +237,23 @@ export class LabRunService {
     run = await this.runRepository.save(run);
 
     try {
-      run.output = await this.runModel(modelId, resolvedPrompt);
+      const result = await this.runModel(modelId, resolvedPrompt, {
+        temperature: skill.temperature,
+        maxTokens: skill.maxTokens,
+        systemPrompt: skill.systemPrompt,
+      });
+      run.output = result.text;
+      if (result.usage) {
+        run.promptTokens = result.usage.promptTokens;
+        run.completionTokens = result.usage.completionTokens;
+        run.totalTokens =
+          result.usage.promptTokens + result.usage.completionTokens;
+        run.costUsd = estimateCostUsd(
+          modelId,
+          result.usage.promptTokens,
+          result.usage.completionTokens,
+        );
+      }
       run.status = LabRunStatus.COMPLETED;
       this.logger.info(
         `[AI_LAB] run ${run.id} completed (skill=${skill.id}, model=${modelId})`,
