@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TIME } from '../common/constants/time.constants';
+import { buildRoleplayV2Allowlist } from '../common/util/roleplay-v2-access.util';
 @Injectable()
 export class AppConfigService {
   constructor(private configService: ConfigService) {}
@@ -366,19 +367,11 @@ export class AppConfigService {
   get roleplayV2() {
     const enabled =
       this.configService.get<string>('ROLEPLAY_V2_ENABLED', 'true') !== 'false';
-    const extra = (
-      this.configService.get<string>('ROLEPLAY_V2_ALLOWLIST', '') ?? ''
-    )
-      .split(',')
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean);
-    const allowlist = Array.from(
-      new Set([
-        'sandeep.malhotra@helloally.ai',
-        'gopi.s@helloally.ai',
-        'gopikrishnan.sasikumar@helloally.ai',
-        ...extra,
-      ]),
+    // Allowlist = launch-phase default testers + ROLEPLAY_V2_ALLOWLIST env
+    // entries, centralized in roleplay-v2-access.util so there is exactly one
+    // place to change when v2 moves to a permission/flag-based rollout.
+    const allowlist = buildRoleplayV2Allowlist(
+      this.configService.get<string>('ROLEPLAY_V2_ALLOWLIST', ''),
     );
     return { enabled, allowlist };
   }
