@@ -12,6 +12,7 @@ import { LabEvalQuestion } from './entity/lab-eval-question.entity';
 import { LabEvaluator } from './entity/lab-evaluator.entity';
 import { LabRunAssignment } from './entity/lab-run-assignment.entity';
 import { LabEvalAnswer } from './entity/lab-eval-answer.entity';
+import { LabAutoEvaluation } from './entity/lab-auto-evaluation.entity';
 import { LabSkillRepository } from './repository/lab-skill.repository';
 import { LabVariableRepository } from './repository/lab-variable.repository';
 import { LabValueRepository } from './repository/lab-value.repository';
@@ -22,7 +23,9 @@ import {
   LabEvalQuestionRepository,
   LabRunAssignmentRepository,
 } from './repository/lab-eval.repositories';
+import { LabAutoEvaluationRepository } from './repository/lab-auto-evaluation.repository';
 import { LabSkillService } from './service/lab-skill.service';
+import { LabAutoEvalService } from './service/lab-auto-eval.service';
 import { LabVariableService } from './service/lab-variable.service';
 import { LabValueService } from './service/lab-value.service';
 import { LabRunService } from './service/lab-run.service';
@@ -57,6 +60,7 @@ import { LabEvalPortalController } from './controller/lab-eval-portal.controller
       LabEvaluator,
       LabRunAssignment,
       LabEvalAnswer,
+      LabAutoEvaluation,
     ]),
     AwsModule,
   ],
@@ -77,7 +81,9 @@ import { LabEvalPortalController } from './controller/lab-eval-portal.controller
     LabEvalQuestionRepository,
     LabRunAssignmentRepository,
     LabEvalAnswerRepository,
+    LabAutoEvaluationRepository,
     LabSkillService,
+    LabAutoEvalService,
     LabVariableService,
     LabValueService,
     LabRunService,

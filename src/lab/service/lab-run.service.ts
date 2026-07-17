@@ -15,13 +15,13 @@ import { estimateCostUsd } from '../constants/lab-pricing.constants';
 import { LabRunProducer } from '../producer/lab-run.producer';
 
 /** Text + token usage returned by a provider call. */
-interface ModelResult {
+export interface ModelResult {
   text: string;
   usage: { promptTokens: number; completionTokens: number } | null;
 }
 
 /** Generation parameters a skill may pin for its run. */
-interface RunOptions {
+export interface RunOptions {
   temperature?: number | null;
   maxTokens?: number | null;
   systemPrompt?: string | null;
@@ -129,6 +129,20 @@ export class LabRunService {
       resolved = resolved.replace(pattern, value);
     }
     return resolved;
+  }
+
+  /** Public model call used by other lab services (e.g. the LLM judge). */
+  async callModel(
+    modelId: string,
+    prompt: string,
+    opts: RunOptions = {},
+  ): Promise<ModelResult> {
+    return this.runModel(modelId, prompt, opts);
+  }
+
+  /** Default model used when a caller doesn't specify one. */
+  getDefaultModel(): string {
+    return this.defaultModel;
   }
 
   /**
