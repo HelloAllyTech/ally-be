@@ -102,6 +102,17 @@ export class CustomFieldDefinition extends BaseEntity {
   @Column({ default: true })
   showInTable!: boolean;
 
+  /**
+   * Whether counsellors/admins can filter the session-logs (scribe) table by
+   * this field. Independent of `showInTable` — a field can be filterable
+   * without being a visible column (e.g. seeded default fields), and vice
+   * versa. Owned per scope: ORG_ADMIN fields are toggled from the in-app
+   * custom-fields editor, SUPER_ADMIN fields from scribe settings. Defaults
+   * to true so existing fields become filterable on rollout.
+   */
+  @Column({ default: true })
+  filterable!: boolean;
+
   @Column({ default: true })
   isActive!: boolean;
 

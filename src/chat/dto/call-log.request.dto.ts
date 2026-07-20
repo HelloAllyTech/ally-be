@@ -26,6 +26,17 @@ export enum SortOrder {
   DESC = 'DESC',
 }
 
+/**
+ * One custom/default-field filter clause. `fieldDefinitionId` is a
+ * CustomFieldDefinition id; `value` is interpreted per that definition's
+ * fieldType (string for TEXT, id list for SELECT, [from,to] for NUMBER/DATE
+ * ranges). Sent by the client as a JSON-encoded `fieldFilters` query param.
+ */
+export interface FieldFilter {
+  fieldDefinitionId: string;
+  value: string | string[];
+}
+
 export interface CallLogFilters {
   limit?: number;
   offset?: number;
@@ -42,6 +53,7 @@ export interface CallLogFilters {
   tags?: string;
   archive?: string;
   callName?: string;
+  fieldFilters?: FieldFilter[];
 }
 
 export class CallLogRequestDto {

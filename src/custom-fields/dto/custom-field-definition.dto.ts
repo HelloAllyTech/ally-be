@@ -90,6 +90,11 @@ export class CreateCustomFieldDefinitionDto {
 
   @ApiPropertyOptional()
   @IsOptional()
+  @IsBoolean()
+  filterable?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
   @IsUUID()
   tenantId?: string;
 }
@@ -139,6 +144,11 @@ export class UpdateCustomFieldDefinitionDto {
   @IsOptional()
   @IsBoolean()
   showInTable?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  filterable?: boolean;
 
   @ApiPropertyOptional()
   @IsOptional()

@@ -48,7 +48,7 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { CallInfoDto, DeleteChatResponseDto } from '../dto/chat.response.dto';
 import { SummaryFeedbackResponse } from '../dto/call-log.response.dto';
 import { ForbiddenException } from '../../exception/custom.exception';
-import { CallLogFilters } from '../dto/call-log.request.dto';
+import { CallLogFilters, FieldFilter } from '../dto/call-log.request.dto';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { ChatRepository } from '../repository/chat.repository';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
@@ -608,8 +608,15 @@ export class ChatService {
     options: Pagination,
     archive?: string,
     callName?: string,
+    fieldFilters?: FieldFilter[],
   ) {
-    return this.callLogService.getCallLogs(user, options, archive, callName);
+    return this.callLogService.getCallLogs(
+      user,
+      options,
+      archive,
+      callName,
+      fieldFilters,
+    );
   }
 
   async updateArchiveStatus(

@@ -44,7 +44,11 @@ import {
 import { MessageRequest } from '../../ai/dto/ai.request.dto';
 import { Response } from 'express';
 import { GetMessagesResponse } from '../dto/message.response.dto';
-import { CallLogSortBy, SortOrder } from '../dto/call-log.request.dto';
+import {
+  CallLogSortBy,
+  FieldFilter,
+  SortOrder,
+} from '../dto/call-log.request.dto';
 import {
   PaginatedResponse,
   SuccessResponse,
@@ -196,6 +200,14 @@ export class ChatController {
     type: String,
     description: 'Filter by archive status',
   })
+  @ApiQuery({
+    name: 'fieldFilters',
+    required: false,
+    type: String,
+    description:
+      'JSON-encoded array of custom/default-field filters: ' +
+      '[{ "fieldDefinitionId": "...", "value": string | string[] }]',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_CALL_LOGS])
   @Get('call-logs')
   async getCallLogs(
@@ -206,6 +218,7 @@ export class ChatController {
     @Query('order') order: SortOrder = SortOrder.DESC,
     @Query('archive') archive?: 'true' | 'false',
     @Query('callName') callName?: string,
+    @Query('fieldFilters') fieldFilters?: string,
   ) {
     return this.service.getCallLogs(
       tokenUser,
@@ -217,7 +230,31 @@ export class ChatController {
       },
       archive,
       callName,
+      this.parseFieldFilters(fieldFilters),
     );
+  }
+
+  /**
+   * Parses the `fieldFilters` query param (a JSON-encoded array). Malformed
+   * input is ignored (returns undefined) rather than 400-ing the whole list
+   * request; each entry must have a string fieldDefinitionId and a
+   * string/string[] value to be kept.
+   */
+  private parseFieldFilters(raw?: string): FieldFilter[] | undefined {
+    if (!raw) return undefined;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return undefined;
+      const filters = parsed.filter(
+        (f): f is FieldFilter =>
+          f &&
+          typeof f.fieldDefinitionId === 'string' &&
+          (typeof f.value === 'string' || Array.isArray(f.value)),
+      );
+      return filters.length > 0 ? filters : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   @ApiOperation({ summary: 'Get admin call logs with filtering' })
@@ -317,6 +354,14 @@ export class ChatController {
     type: String,
     description: 'Filter by archive status',
   })
+  @ApiQuery({
+    name: 'fieldFilters',
+    required: false,
+    type: String,
+    description:
+      'JSON-encoded array of custom/default-field filters: ' +
+      '[{ "fieldDefinitionId": "...", "value": string | string[] }]',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_CALL_LOGS_SUMMARY])
   @Get('call-logs-summary')
   async getAdminCallLogs(
@@ -335,6 +380,7 @@ export class ChatController {
     @Query('tags') tags?: string,
     @Query('archive') archive?: 'true' | 'false',
     @Query('callName') callName?: string,
+    @Query('fieldFilters') fieldFilters?: string,
   ) {
     const parsedMinDuration = minDuration ? parseFloat(minDuration) : undefined;
     const parsedMaxDuration = maxDuration ? parseFloat(maxDuration) : undefined;
@@ -361,6 +407,7 @@ export class ChatController {
       tags,
       archive,
       callName,
+      fieldFilters: this.parseFieldFilters(fieldFilters),
     });
   }
 

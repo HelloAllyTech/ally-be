@@ -1,4 +1,5 @@
 import { Pagination } from 'src/common/type/common.type';
+import { FieldFilter } from '../dto/call-log.request.dto';
 
 export enum NewCallFollowUp {
   NEW_CALL = 'New Call',
@@ -188,4 +189,5 @@ export interface CallLogsParams extends Pagination {
   tenantId: string;
   archive?: string;
   callName?: string;
+  fieldFilters?: FieldFilter[];
 }

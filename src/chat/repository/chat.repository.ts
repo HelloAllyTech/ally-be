@@ -13,14 +13,42 @@ import { User } from 'src/user/entity/user.entity';
 import {
   CallLogFilters,
   CallLogSortBy,
+  FieldFilter,
   SortOrder,
 } from '../dto/call-log.request.dto';
 import { CallLogsParams } from '../type/call.details.type';
+import { CustomFieldDefinition } from '../../custom-fields/entity/custom-field-definition.entity';
+import { applyFieldFilters } from '../util/field-filter-query';
 
 @Injectable()
 export class ChatRepository extends Repository<Chat> {
   constructor(private dataSource: DataSource) {
     super(Chat, dataSource.createEntityManager());
+  }
+
+  /**
+   * Loads the CustomFieldDefinitions referenced by the requested field
+   * filters (tenant-scoped) so applyFieldFilters can build a type-correct
+   * predicate for each. Returns an empty map when there are no filters.
+   */
+  private async loadFilterDefinitions(
+    tenantId: string,
+    fieldFilters?: FieldFilter[],
+  ): Promise<Map<string, CustomFieldDefinition>> {
+    const ids = [
+      ...new Set((fieldFilters ?? []).map((f) => f.fieldDefinitionId)),
+    ];
+    if (ids.length === 0) return new Map();
+
+    const defs = await this.dataSource
+      .getRepository(CustomFieldDefinition)
+      .createQueryBuilder('d')
+      .where('d.id IN (:...ids)', { ids })
+      .andWhere('d.tenantId = :tenantId', { tenantId })
+      .andWhere('d.isActive = true')
+      .getMany();
+
+    return new Map(defs.map((d) => [d.id, d]));
   }
 
   async getCallLogsQuery(
@@ -83,6 +111,17 @@ export class ChatRepository extends Repository<Chat> {
       });
     }
 
+    const definitionMap = await this.loadFilterDefinitions(
+      params.tenantId,
+      params.fieldFilters,
+    );
+    applyFieldFilters(
+      query,
+      params.fieldFilters,
+      definitionMap,
+      params.tenantId,
+    );
+
     const [data, count] = await query.getManyAndCount();
     return { data, count };
   }
@@ -133,6 +172,12 @@ export class ChatRepository extends Repository<Chat> {
     this.applyDurationFilters(query, filters);
     this.applyQualityFilters(query, filters);
     this.applyTagFilters(query, filters);
+
+    const definitionMap = await this.loadFilterDefinitions(
+      tenantId,
+      filters.fieldFilters,
+    );
+    applyFieldFilters(query, filters.fieldFilters, definitionMap, tenantId);
 
     query.andWhere('chat.tenant_id = :tenantId', { tenantId });
 
