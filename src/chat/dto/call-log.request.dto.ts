@@ -54,7 +54,29 @@ export interface CallLogFilters {
   archive?: string;
   callName?: string;
   fieldFilters?: FieldFilter[];
+  /** Comma-separated ScribeSessionMode values (SCRIBE, DICTATION). */
+  mode?: string;
+  /** Comma-separated status groups (SUCCESS, PROCESSING, FAILED, NO_AUDIO). */
+  status?: string;
+  /** Comma-separated channel groups (LIVE, UPLOAD). */
+  source?: string;
 }
+
+/**
+ * The subset of built-in column filters shared by the scribe (call-logs) and
+ * admin (call-logs-summary) endpoints, passed through from query params.
+ */
+export type BuiltInCallLogFilters = Pick<
+  CallLogFilters,
+  | 'startDate'
+  | 'endDate'
+  | 'minDuration'
+  | 'maxDuration'
+  | 'tags'
+  | 'mode'
+  | 'status'
+  | 'source'
+>;
 
 export class CallLogRequestDto {
   @ApiProperty({ required: false, description: 'Number of records to return' })

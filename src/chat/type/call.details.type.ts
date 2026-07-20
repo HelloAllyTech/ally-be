@@ -190,4 +190,13 @@ export interface CallLogsParams extends Pagination {
   archive?: string;
   callName?: string;
   fieldFilters?: FieldFilter[];
+  // Built-in column filters (mirror the relevant CallLogFilters fields).
+  startDate?: string;
+  endDate?: string;
+  minDuration?: number;
+  maxDuration?: number;
+  tags?: string;
+  mode?: string;
+  status?: string;
+  source?: string;
 }

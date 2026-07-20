@@ -6,7 +6,11 @@ import { ChatRepository } from '../repository/chat.repository';
 import { CallDetailsRepository } from '../repository/call-details.repository';
 import { CallDetailsService } from './call-details.service';
 import { UserService } from '../../user/service/user.service';
-import { CallLogFilters, FieldFilter } from '../dto/call-log.request.dto';
+import {
+  BuiltInCallLogFilters,
+  CallLogFilters,
+  FieldFilter,
+} from '../dto/call-log.request.dto';
 import { CallDetails } from '../entity/call.details.entity';
 
 @Injectable()
@@ -24,6 +28,7 @@ export class CallLogService {
     archive?: string,
     callName?: string,
     fieldFilters?: FieldFilter[],
+    builtIn?: BuiltInCallLogFilters,
   ) {
     const { data: callLogs, count } =
       await this.chatRepository.getCallLogsQuery({
@@ -36,6 +41,7 @@ export class CallLogService {
         archive,
         callName,
         fieldFilters,
+        ...builtIn,
       });
 
     const decryptedCallLogs = await Promise.all(

@@ -219,6 +219,14 @@ export class ChatController {
     @Query('archive') archive?: 'true' | 'false',
     @Query('callName') callName?: string,
     @Query('fieldFilters') fieldFilters?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('minDuration') minDuration?: string,
+    @Query('maxDuration') maxDuration?: string,
+    @Query('tags') tags?: string,
+    @Query('mode') mode?: string,
+    @Query('status') status?: string,
+    @Query('source') source?: string,
   ) {
     return this.service.getCallLogs(
       tokenUser,
@@ -231,6 +239,16 @@ export class ChatController {
       archive,
       callName,
       this.parseFieldFilters(fieldFilters),
+      {
+        startDate,
+        endDate,
+        minDuration: minDuration ? parseFloat(minDuration) : undefined,
+        maxDuration: maxDuration ? parseFloat(maxDuration) : undefined,
+        tags,
+        mode,
+        status,
+        source,
+      },
     );
   }
 
@@ -381,6 +399,9 @@ export class ChatController {
     @Query('archive') archive?: 'true' | 'false',
     @Query('callName') callName?: string,
     @Query('fieldFilters') fieldFilters?: string,
+    @Query('mode') mode?: string,
+    @Query('status') status?: string,
+    @Query('source') source?: string,
   ) {
     const parsedMinDuration = minDuration ? parseFloat(minDuration) : undefined;
     const parsedMaxDuration = maxDuration ? parseFloat(maxDuration) : undefined;
@@ -408,6 +429,9 @@ export class ChatController {
       archive,
       callName,
       fieldFilters: this.parseFieldFilters(fieldFilters),
+      mode,
+      status,
+      source,
     });
   }
 

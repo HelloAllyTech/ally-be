@@ -243,6 +243,16 @@ describe('ChatController', () => {
         undefined,
         undefined,
         undefined,
+        {
+          startDate: undefined,
+          endDate: undefined,
+          minDuration: undefined,
+          maxDuration: undefined,
+          tags: undefined,
+          mode: undefined,
+          status: undefined,
+          source: undefined,
+        },
       );
     });
 
@@ -263,6 +273,16 @@ describe('ChatController', () => {
         undefined,
         undefined,
         undefined,
+        {
+          startDate: undefined,
+          endDate: undefined,
+          minDuration: undefined,
+          maxDuration: undefined,
+          tags: undefined,
+          mode: undefined,
+          status: undefined,
+          source: undefined,
+        },
       );
     });
   });

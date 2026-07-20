@@ -111,6 +111,23 @@ export class ChatRepository extends Repository<Chat> {
       });
     }
 
+    // Built-in column filters (date/duration/tags/mode/status/channel) — same
+    // helpers the admin query uses, so behaviour stays consistent across views.
+    const builtInFilters: CallLogFilters = {
+      startDate: params.startDate,
+      endDate: params.endDate,
+      minDuration: params.minDuration,
+      maxDuration: params.maxDuration,
+      tags: params.tags,
+      mode: params.mode,
+      status: params.status,
+      source: params.source,
+    };
+    this.applyDateFilters(query, builtInFilters);
+    this.applyDurationFilters(query, builtInFilters);
+    this.applyTagFilters(query, builtInFilters);
+    this.applyModeStatusSourceFilters(query, builtInFilters);
+
     const definitionMap = await this.loadFilterDefinitions(
       params.tenantId,
       params.fieldFilters,
@@ -172,6 +189,7 @@ export class ChatRepository extends Repository<Chat> {
     this.applyDurationFilters(query, filters);
     this.applyQualityFilters(query, filters);
     this.applyTagFilters(query, filters);
+    this.applyModeStatusSourceFilters(query, filters);
 
     const definitionMap = await this.loadFilterDefinitions(
       tenantId,
@@ -297,6 +315,66 @@ export class ChatRepository extends Repository<Chat> {
         "EXISTS (SELECT 1 FROM jsonb_array_elements(details.summary->'tags') AS tag WHERE tag->>'tag' = ANY(:tags))",
         { tags },
       );
+    }
+  }
+
+  /**
+   * Filters on the built-in Mode / Status / Channel columns. The client sends
+   * the display groups (matching the chips), which map to the underlying
+   * enum/JSON values:
+   *  - mode:   SCRIBE (also null) | DICTATION            (callInfo->>'mode')
+   *  - status: SUCCESS | PROCESSING (PENDING/IN_PROGRESS) | FAILED | NO_AUDIO
+   *  - source: LIVE (anything but AUDIO_UPLOAD, incl null) | UPLOAD
+   */
+  private applyModeStatusSourceFilters(
+    query: SelectQueryBuilder<Chat>,
+    filters: CallLogFilters,
+  ) {
+    if (filters.mode) {
+      const modes = filters.mode.split(',').map((m) => m.trim());
+      const clauses: string[] = [];
+      if (modes.includes('SCRIBE')) {
+        clauses.push(
+          `(details."callInfo"->>'mode' = 'SCRIBE' OR details."callInfo"->>'mode' IS NULL)`,
+        );
+      }
+      if (modes.includes('DICTATION')) {
+        clauses.push(`details."callInfo"->>'mode' = 'DICTATION'`);
+      }
+      if (clauses.length > 0) {
+        query.andWhere(`(${clauses.join(' OR ')})`);
+      }
+    }
+
+    if (filters.status) {
+      const groups = filters.status.split(',').map((s) => s.trim());
+      const statusValues: string[] = [];
+      if (groups.includes('SUCCESS')) statusValues.push('SUCCESS');
+      if (groups.includes('PROCESSING'))
+        statusValues.push('PENDING', 'IN_PROGRESS');
+      if (groups.includes('FAILED')) statusValues.push('FAILED');
+      if (groups.includes('NO_AUDIO')) statusValues.push('NO_AUDIO');
+      if (statusValues.length > 0) {
+        query.andWhere('chat.summaryStatus IN (:...summaryStatuses)', {
+          summaryStatuses: statusValues,
+        });
+      }
+    }
+
+    if (filters.source) {
+      const sources = filters.source.split(',').map((s) => s.trim());
+      const clauses: string[] = [];
+      if (sources.includes('UPLOAD')) {
+        clauses.push(`details."callInfo"->>'provider' = 'AUDIO_UPLOAD'`);
+      }
+      if (sources.includes('LIVE')) {
+        clauses.push(
+          `details."callInfo"->>'provider' IS DISTINCT FROM 'AUDIO_UPLOAD'`,
+        );
+      }
+      if (clauses.length > 0) {
+        query.andWhere(`(${clauses.join(' OR ')})`);
+      }
     }
   }
 

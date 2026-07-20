@@ -48,7 +48,11 @@ import { ExecutionManager } from '../../common/execution/execution-manager';
 import { CallInfoDto, DeleteChatResponseDto } from '../dto/chat.response.dto';
 import { SummaryFeedbackResponse } from '../dto/call-log.response.dto';
 import { ForbiddenException } from '../../exception/custom.exception';
-import { CallLogFilters, FieldFilter } from '../dto/call-log.request.dto';
+import {
+  BuiltInCallLogFilters,
+  CallLogFilters,
+  FieldFilter,
+} from '../dto/call-log.request.dto';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
 import { ChatRepository } from '../repository/chat.repository';
 import { AuditLoggerService } from 'src/audit/service/audit-logger.service';
@@ -609,6 +613,7 @@ export class ChatService {
     archive?: string,
     callName?: string,
     fieldFilters?: FieldFilter[],
+    builtIn?: BuiltInCallLogFilters,
   ) {
     return this.callLogService.getCallLogs(
       user,
@@ -616,6 +621,7 @@ export class ChatService {
       archive,
       callName,
       fieldFilters,
+      builtIn,
     );
   }
 
