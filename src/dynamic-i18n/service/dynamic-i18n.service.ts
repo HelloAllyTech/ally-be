@@ -400,6 +400,9 @@ export class DynamicI18nService {
 
   // Called by CI pipelines via x-api-key. Accepts the full repo locale files,
   // finds keys missing from the current draft, adds them, and publishes once.
+  // Each top-level section of a locale file is a namespace (mirrors the seed,
+  // the admin editor, and the dashboard loader, which reassembles the tree
+  // from `{language}/{namespace}.json` files).
   // Returns the new manifest if anything was published, or null if already in sync.
   async ciSync(
     locales: Record<string, Record<string, unknown>>,
@@ -407,33 +410,59 @@ export class DynamicI18nService {
   ): Promise<I18nManifest | null> {
     await this.ensureWorkspace();
 
-    const NAMESPACE = 'translation';
+    // An earlier version of this sync nested the entire locale tree under a
+    // single "translation" namespace, duplicating every section and hiding
+    // new keys from the dashboard. Drop that artifact when the repo locale
+    // has no such section itself.
+    const LEGACY_NAMESPACE = 'translation';
     let anyUpdates = false;
 
     for (const [language, localeContent] of Object.entries(locales)) {
       if (!SAFE_SEGMENT.test(language)) continue;
+      if (!this.isObject(localeContent)) continue;
 
       const draftLanguage = await this.readDraftLanguageOrEmpty(language);
-      const draftNamespace = this.getNamespace(draftLanguage, NAMESPACE);
-      const draftKeys = new Set(
-        this.flattenStrings(draftNamespace).map((e) => e.key),
-      );
+      let languageUpdated = false;
 
-      const newEntries = this.flattenStrings(
-        localeContent as TranslationTree,
-      ).filter((e) => !draftKeys.has(e.key));
-
-      if (newEntries.length === 0) continue;
-
-      this.logger.log(
-        `[ciSync] ${language}: adding ${newEntries.length} new key(s)`,
-      );
-
-      for (const { key, value } of newEntries) {
-        this.setDeepValue(draftNamespace, key, value);
+      if (
+        localeContent[LEGACY_NAMESPACE] === undefined &&
+        draftLanguage[LEGACY_NAMESPACE] !== undefined
+      ) {
+        delete draftLanguage[LEGACY_NAMESPACE];
+        languageUpdated = true;
+        this.logger.log(
+          `[ciSync] ${language}: removed legacy "${LEGACY_NAMESPACE}" namespace`,
+        );
       }
 
-      draftLanguage[NAMESPACE] = draftNamespace;
+      for (const [namespace, content] of Object.entries(localeContent)) {
+        if (!SAFE_SEGMENT.test(namespace)) continue;
+        if (!this.isObject(content)) continue;
+
+        const draftNamespace = this.getNamespace(draftLanguage, namespace);
+        const draftKeys = new Set(
+          this.flattenStrings(draftNamespace).map((e) => e.key),
+        );
+
+        const newEntries = this.flattenStrings(content).filter(
+          (e) => !draftKeys.has(e.key),
+        );
+        if (newEntries.length === 0) continue;
+
+        this.logger.log(
+          `[ciSync] ${language}/${namespace}: adding ${newEntries.length} new key(s)`,
+        );
+
+        for (const { key, value } of newEntries) {
+          this.setDeepValue(draftNamespace, key, value);
+        }
+
+        draftLanguage[namespace] = draftNamespace;
+        languageUpdated = true;
+      }
+
+      if (!languageUpdated) continue;
+
       await this.writeDraftLanguage(language, draftLanguage);
       anyUpdates = true;
     }

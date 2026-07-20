@@ -214,6 +214,95 @@ describe('DynamicI18nService', () => {
     );
   });
 
+  it('ciSync adds new keys under their top-level section namespaces and publishes', async () => {
+    const manifest = await service.ciSync(
+      {
+        en: {
+          common: {
+            title: 'Hello {{name}}',
+            newKey: 'Brand new',
+          },
+          orgMetrics: {
+            states: {
+              noAccess: 'Admins only',
+            },
+          },
+        },
+      },
+      'ci run',
+    );
+
+    expect(manifest).toMatchObject({
+      currentVersion: 'v1',
+      namespaces: ['common', 'dashboard', 'orgMetrics'],
+    });
+
+    const draft = await readJson<Record<string, unknown>>(
+      path.join(rootDir, '.drafts', 'en.json'),
+    );
+    expect(draft).toMatchObject({
+      common: {
+        title: 'Hello {{name}}',
+        newKey: 'Brand new',
+        nested: { cta: 'Start' },
+      },
+      orgMetrics: { states: { noAccess: 'Admins only' } },
+    });
+    expect(draft.translation).toBeUndefined();
+
+    const publishedOrgMetrics = await readJson<Record<string, unknown>>(
+      path.join(rootDir, 'v1', 'en', 'orgMetrics.json'),
+    );
+    expect(publishedOrgMetrics).toEqual({
+      states: { noAccess: 'Admins only' },
+    });
+  });
+
+  it('ciSync keeps draft edits, removes the legacy translation namespace, and skips publish when in sync', async () => {
+    await service.updateTranslations({
+      language: 'en',
+      namespace: 'common',
+      key: 'nested.cta',
+      value: 'Begin',
+    });
+    // Simulate the artifact left behind by the old single-namespace sync.
+    await service.updateTranslations({
+      language: 'en',
+      namespace: 'translation',
+      key: 'common.title',
+      value: 'Hello {{name}}',
+    });
+
+    const manifest = await service.ciSync({
+      en: {
+        common: {
+          title: 'Hello {{name}}',
+          nested: { cta: 'Start' },
+        },
+      },
+    });
+
+    expect(manifest).toMatchObject({ currentVersion: 'v1' });
+    expect(manifest?.namespaces).not.toContain('translation');
+
+    const draft = await readJson<{
+      common: { nested: { cta: string } };
+      translation?: unknown;
+    }>(path.join(rootDir, '.drafts', 'en.json'));
+    expect(draft.common.nested.cta).toBe('Begin');
+    expect(draft.translation).toBeUndefined();
+
+    const secondRun = await service.ciSync({
+      en: {
+        common: {
+          title: 'Hello {{name}}',
+          nested: { cta: 'Start' },
+        },
+      },
+    });
+    expect(secondRun).toBeNull();
+  });
+
   it('returns compact i18n audit log entries with resolved user names', async () => {
     const loggedAt = new Date('2026-04-29T04:31:45.000Z');
     auditLogService.listByEventTypes.mockResolvedValue([
