@@ -124,6 +124,10 @@ const PERMISSIONS = {
 
   // UI Specific Permissions
   VIEW_ANALYTICS: 'view:analytics',
+  // Tenant-admin organization metrics (native dashboard, not Metabase) —
+  // deliberately separate from VIEW_ANALYTICS/VIEW_ANALYTICS_DASHBOARD, which
+  // learners and counselors also hold.
+  VIEW_ORGANIZATION_METRICS: 'view:organization-metrics',
   VIEW_COMMUNITY: 'view:community',
 
   // === OZONETEL ===
@@ -483,6 +487,7 @@ const ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_TAG_POSITIVITY_RATINGS,
 
   PERMISSIONS.VIEW_ANALYTICS,
+  PERMISSIONS.VIEW_ORGANIZATION_METRICS,
   PERMISSIONS.VIEW_COMMUNITY,
   PERMISSIONS.VIEW_AUDIO_UPLOAD,
   PERMISSIONS.CANCEL_AUDIO_UPLOAD,

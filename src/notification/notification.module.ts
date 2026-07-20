@@ -12,6 +12,6 @@ import { AwsModule } from '../aws/aws.module';
     SlackService,
     EmailService,
   ],
-  exports: [NotificationService],
+  exports: [NotificationService, EmailService],
 })
 export class NotificationModule {}

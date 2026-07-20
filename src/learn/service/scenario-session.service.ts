@@ -636,6 +636,15 @@ export class ScenarioSessionService {
       await this.overlayBehaviorInstructionTranslations(scenario, languageId);
     }
 
+    // Learner-facing description returned to the client (viewable on the
+    // roleplay screen): prefer the stored translation for the session
+    // language. Captured here — before room metadata is built — and NOT
+    // mutated onto `scenario`, so the agent's prompt context is unaffected.
+    const learnerDescription =
+      (isOtherLanguage &&
+        scenario?.translations?.[languageDetails?.value]?.description) ||
+      scenario?.description;
+
     // Update termination (Translated Version) event if language is not English
     if (
       isOtherLanguage &&
@@ -809,7 +818,7 @@ export class ScenarioSessionService {
       const mappedScenarioData = {
         id: scenario?.id,
         title: scenario?.title,
-        description: scenario?.description,
+        description: learnerDescription,
         coverImageUrl: scenario?.coverImageUrl,
         coverVideoUrl: scenario?.coverVideoUrl,
         status: scenario?.status,

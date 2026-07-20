@@ -37,6 +37,9 @@ export class LabSkillService {
       description: dto.description ?? null,
       content: dto.content,
       model: dto.model ?? null,
+      temperature: dto.temperature ?? null,
+      maxTokens: dto.maxTokens ?? null,
+      systemPrompt: dto.systemPrompt ?? null,
       createdBy: userId,
     });
     const saved = await this.skillRepository.save(skill);
@@ -50,6 +53,9 @@ export class LabSkillService {
     if (dto.description !== undefined) skill.description = dto.description;
     if (dto.content !== undefined) skill.content = dto.content;
     if (dto.model !== undefined) skill.model = dto.model;
+    if (dto.temperature !== undefined) skill.temperature = dto.temperature;
+    if (dto.maxTokens !== undefined) skill.maxTokens = dto.maxTokens;
+    if (dto.systemPrompt !== undefined) skill.systemPrompt = dto.systemPrompt;
     const saved = await this.skillRepository.save(skill);
     this.logger.info(`Lab skill updated: ${saved.id}`);
     return saved;

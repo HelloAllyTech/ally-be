@@ -17,8 +17,10 @@ import { AuthPermissions } from '../../auth/decorators/auth-permissions.decorato
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 import { LabRunService } from '../service/lab-run.service';
 import { LabEvalService } from '../service/lab-eval.service';
+import { LabAutoEvalService } from '../service/lab-auto-eval.service';
 import { CreateLabRunDto } from '../dto/lab-run.dto';
 import { AssignRunDto, PublishRunDto } from '../dto/lab-eval.dto';
+import { CreateAutoEvalDto } from '../dto/lab-auto-eval.dto';
 import { LabListQueryDto } from '../dto/lab-query.dto';
 import { LabRun } from '../entity/lab-run.entity';
 
@@ -30,6 +32,7 @@ export class LabRunController {
   constructor(
     private readonly runService: LabRunService,
     private readonly evalService: LabEvalService,
+    private readonly autoEvalService: LabAutoEvalService,
   ) {}
 
   @Get()
@@ -106,6 +109,23 @@ export class LabRunController {
   })
   results(@Param('id') id: string) {
     return this.evalService.results(id);
+  }
+
+  @Get(':id/auto-evaluations')
+  @AuthPermissions([PERMISSIONS.VIEW_AI_LAB])
+  @ApiOperation({ summary: 'Automated (LLM-judge) evaluations of a run' })
+  autoEvaluations(@Param('id') id: string) {
+    return this.autoEvalService.listForRun(id);
+  }
+
+  @Post(':id/auto-evaluations')
+  @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
+  @ApiOperation({
+    summary:
+      "Score a completed run's output against a rubric with an LLM judge",
+  })
+  autoEvaluate(@Param('id') id: string, @Body() dto: CreateAutoEvalDto) {
+    return this.autoEvalService.evaluate(id, dto);
   }
 
   @Delete(':id')
