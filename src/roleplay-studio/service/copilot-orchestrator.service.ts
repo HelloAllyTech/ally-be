@@ -7,11 +7,8 @@ import { renderTemplate } from 'src/learn/util/autofill-shared.util';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { CopilotMessageRepository } from '../repository/copilot-message.repository';
-import { RehearsalRunRepository } from '../repository/rehearsal-run.repository';
-import { ImprovementRunRepository } from '../repository/improvement-run.repository';
 import { CopilotMessage } from '../entity/copilot-message.entity';
 import { CopilotMessageRole } from '../enum/copilot-message-role.enum';
-import { RehearsalStatus } from '../enum/rehearsal-status.enum';
 import { CopilotSessionService } from './copilot-session.service';
 import {
   CopilotToolsService,
@@ -51,8 +48,6 @@ export class CopilotOrchestratorService {
     private readonly copilotSessionService: CopilotSessionService,
     private readonly copilotToolsService: CopilotToolsService,
     private readonly copilotMessageRepository: CopilotMessageRepository,
-    private readonly rehearsalRunRepository: RehearsalRunRepository,
-    private readonly improvementRunRepository: ImprovementRunRepository,
     private readonly roleplaySpecService: RoleplaySpecService,
     private readonly llmUsage: LlmUsageService,
   ) {
@@ -102,7 +97,7 @@ export class CopilotOrchestratorService {
       createdBy: userId,
     });
 
-    const system = await this.buildSystemPrompt(spec.draftSpec, spec.id);
+    const system = await this.buildSystemPrompt(spec.draftSpec);
     const messages: any[] = [
       ...this.rebuildAnthropicHistory(history),
       { role: 'user', content: userContent },
@@ -118,14 +113,13 @@ export class CopilotOrchestratorService {
     };
 
     // Turn accumulators for the persisted assistant message. Structured
-    // card payloads (questions, test-case suggestions) are persisted in the
+    // card payloads (questions, behaviour reviews) are persisted in the
     // row's metadata so a resumed chat can reconstruct them faithfully.
     const textParts: string[] = [];
     const allToolCalls: Record<string, any>[] = [];
     const allToolResults: Record<string, any>[] = [];
     const questions: Record<string, any>[] = [];
     const behaviourReviews: Record<string, any>[] = [];
-    const testCaseSuggestions: Record<string, any>[] = [];
     let iterations = 0;
     let stopReason: string | null = null;
     let turnErrored = false;
@@ -206,10 +200,6 @@ export class CopilotOrchestratorService {
               questions.push(frame.data);
             } else if (frame.event === 'behaviour_review') {
               behaviourReviews.push(frame.data);
-            } else if (frame.event === 'test_case_suggestions') {
-              testCaseSuggestions.push(
-                ...((frame.data.suggestions ?? []) as Record<string, any>[]),
-              );
             }
             yield frame;
           }
@@ -304,7 +294,6 @@ export class CopilotOrchestratorService {
           errored: turnErrored,
           ...(questions.length > 0 ? { questions } : {}),
           ...(behaviourReviews.length > 0 ? { behaviourReviews } : {}),
-          ...(testCaseSuggestions.length > 0 ? { testCaseSuggestions } : {}),
         },
         createdBy: userId,
       });
@@ -363,7 +352,6 @@ export class CopilotOrchestratorService {
    */
   private async buildSystemPrompt(
     draftSpec: Record<string, any>,
-    specId: string,
   ): Promise<string> {
     const variables = {
       currentSpec: JSON.stringify(draftSpec ?? {}, null, 2),
@@ -394,72 +382,7 @@ export class CopilotOrchestratorService {
           variables.currentSpec,
       );
     }
-    const awareness = await this.buildRehearsalAwarenessNote(specId);
-    if (awareness) {
-      parts.push(awareness);
-    }
     return parts.join('\n\n');
-  }
-
-  /**
-   * One-line rehearsal/auto-improve context so the copilot proactively
-   * reaches for get_rehearsal_findings instead of designing blind. Best
-   * effort — a lookup failure must never break a turn.
-   */
-  private async buildRehearsalAwarenessNote(
-    specId: string,
-  ): Promise<string | null> {
-    try {
-      const lines: string[] = [];
-      const latest = await this.rehearsalRunRepository
-        .createQueryBuilder('run')
-        .where('run.specId = :specId', { specId })
-        .andWhere('run.status = :status', {
-          status: RehearsalStatus.COMPLETED,
-        })
-        .orderBy('run.createdAt', 'DESC')
-        .getOne();
-      if (latest?.results) {
-        const dimensions = latest.results.dimensions ?? {};
-        const counts = latest.results.test_counts ?? {};
-        const totalCases =
-          (counts.passed ?? 0) +
-          (counts.failed ?? 0) +
-          (counts.inconclusive ?? 0);
-        const testsNote =
-          totalCases > 0
-            ? `; tests ${counts.passed ?? 0}/${totalCases} passing`
-            : '';
-        lines.push(
-          `Latest rehearsal: overall ${latest.results.overall ?? '?'} ` +
-            `(persona ${dimensions.persona_consistency ?? '?'} / disclosure ` +
-            `${dimensions.disclosure_discipline ?? '?'} / difficulty ` +
-            `${dimensions.difficulty_calibration ?? '?'} / rubric ` +
-            `${dimensions.rubric_coverage ?? '?'})${testsNote}. ` +
-            'Call get_rehearsal_findings for the evidence before proposing fixes.',
-        );
-      }
-      const awaiting =
-        await this.improvementRunRepository.findAwaitingReview(specId);
-      if (awaiting) {
-        lines.push(
-          'An auto-improve run is AWAITING the trainer’s review ' +
-            `(outcome ${awaiting.outcome ?? 'unknown'}). Summarize it in this chat and, ` +
-            'once the trainer decides, call resolve_improvement_run (accept or discard). ' +
-            'Use get_improvement_run_status for detail.',
-        );
-      }
-      return lines.length > 0
-        ? `## Rehearsal context\n${lines.join('\n')}`
-        : null;
-    } catch (error) {
-      this.logger.warn(
-        `Rehearsal awareness note failed for spec ${specId}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return null;
-    }
   }
 
   /**

@@ -10,11 +10,6 @@ import { RoleplaySpecVersion } from './entity/roleplay-spec-version.entity';
 import { RoleplaySpecTenant } from './entity/roleplay-spec-tenant.entity';
 import { CopilotSession } from './entity/copilot-session.entity';
 import { CopilotMessage } from './entity/copilot-message.entity';
-import { RehearsalRun } from './entity/rehearsal-run.entity';
-import { RehearsalTranscript } from './entity/rehearsal-transcript.entity';
-import { CritiqueProposal } from './entity/critique-proposal.entity';
-import { ImprovementRun } from './entity/improvement-run.entity';
-import { ImprovementRound } from './entity/improvement-round.entity';
 import { RoleplayDirectorEvent } from './entity/roleplay-director-event.entity';
 import { RoleplayRubricScore } from './entity/roleplay-rubric-score.entity';
 import { RoleplaySpecRepository } from './repository/roleplay-spec.repository';
@@ -22,11 +17,6 @@ import { RoleplaySpecVersionRepository } from './repository/roleplay-spec-versio
 import { RoleplaySpecTenantRepository } from './repository/roleplay-spec-tenant.repository';
 import { CopilotSessionRepository } from './repository/copilot-session.repository';
 import { CopilotMessageRepository } from './repository/copilot-message.repository';
-import { RehearsalRunRepository } from './repository/rehearsal-run.repository';
-import { RehearsalTranscriptRepository } from './repository/rehearsal-transcript.repository';
-import { CritiqueProposalRepository } from './repository/critique-proposal.repository';
-import { ImprovementRunRepository } from './repository/improvement-run.repository';
-import { ImprovementRoundRepository } from './repository/improvement-round.repository';
 import { RoleplayDirectorEventRepository } from './repository/roleplay-director-event.repository';
 import { RoleplayRubricScoreRepository } from './repository/roleplay-rubric-score.repository';
 import { SpecValidatorService } from './service/spec-validator.service';
@@ -36,17 +26,6 @@ import { CopilotSessionService } from './service/copilot-session.service';
 import { CopilotToolsService } from './service/copilot-tools.service';
 import { CopilotOrchestratorService } from './service/copilot-orchestrator.service';
 import { RoleplaySessionService } from './service/roleplay-session.service';
-import { RehearsalService } from './service/rehearsal.service';
-import { CritiqueEvidenceService } from './service/critique-evidence.service';
-import { RehearsalTimerService } from './service/rehearsal-timer.service';
-import { RehearsalNotificationService } from './service/rehearsal-notification.service';
-import { RehearsalGateway } from './gateway/rehearsal.gateway';
-import { RehearsalComparisonService } from './service/rehearsal-comparison.service';
-import { ImprovementHookService } from './service/improvement-hook.service';
-import { ImprovementOrchestratorService } from './service/improvement-orchestrator.service';
-import { ImprovementNotificationService } from './service/improvement-notification.service';
-import { ImprovementNarrationService } from './service/improvement-narration.service';
-import { ImprovementGateway } from './gateway/improvement.gateway';
 import { DirectorTelemetryService } from './service/director-telemetry.service';
 import { DirectorStateTransitionProcessor } from './processor/director-state-transition.processor';
 import { DirectorRubricScoreProcessor } from './processor/director-rubric-score.processor';
@@ -57,15 +36,12 @@ import { RoleplaySpecController } from './controller/roleplay-spec.controller';
 import { CopilotController } from './controller/copilot.controller';
 import { RoleplaySessionController } from './controller/roleplay-session.controller';
 import { RoleplayStudioWebhookController } from './controller/roleplay-studio-webhook.controller';
-import { RehearsalController } from './controller/rehearsal.controller';
-import { RehearsalWebhookController } from './controller/rehearsal-webhook.controller';
-import { ImprovementController } from './controller/improvement.controller';
 
 /**
- * Roleplay Studio v2 — spec authoring (copilot-driven), rehearsal, and the
- * ROLEPLAY_V2 session runtime. Deliberately self-contained: the v1 learn
- * module is never imported for its providers (entities are reached through
- * the shared DataSource), so v1 stays untouched.
+ * Roleplay Studio v2 — spec authoring (copilot-driven) and the ROLEPLAY_V2
+ * session runtime. Deliberately self-contained: the v1 learn module is never
+ * imported for its providers (entities are reached through the shared
+ * DataSource), so v1 stays untouched.
  *
  * The director SQS processors are registered dynamically from onModuleInit
  * via ProcessorRegistry.registerCustomProcessor — zero edits under
@@ -79,11 +55,6 @@ import { ImprovementController } from './controller/improvement.controller';
       RoleplaySpecTenant,
       CopilotSession,
       CopilotMessage,
-      RehearsalRun,
-      RehearsalTranscript,
-      CritiqueProposal,
-      ImprovementRun,
-      ImprovementRound,
       RoleplayDirectorEvent,
       RoleplayRubricScore,
     ]),
@@ -97,9 +68,6 @@ import { ImprovementController } from './controller/improvement.controller';
     CopilotController,
     RoleplaySessionController,
     RoleplayStudioWebhookController,
-    RehearsalController,
-    RehearsalWebhookController,
-    ImprovementController,
   ],
   providers: [
     RoleplaySpecRepository,
@@ -107,11 +75,6 @@ import { ImprovementController } from './controller/improvement.controller';
     RoleplaySpecTenantRepository,
     CopilotSessionRepository,
     CopilotMessageRepository,
-    RehearsalRunRepository,
-    RehearsalTranscriptRepository,
-    CritiqueProposalRepository,
-    ImprovementRunRepository,
-    ImprovementRoundRepository,
     RoleplayDirectorEventRepository,
     RoleplayRubricScoreRepository,
     SpecValidatorService,
@@ -121,17 +84,6 @@ import { ImprovementController } from './controller/improvement.controller';
     CopilotToolsService,
     CopilotOrchestratorService,
     RoleplaySessionService,
-    RehearsalService,
-    CritiqueEvidenceService,
-    RehearsalComparisonService,
-    ImprovementHookService,
-    ImprovementOrchestratorService,
-    ImprovementNotificationService,
-    ImprovementNarrationService,
-    ImprovementGateway,
-    RehearsalTimerService,
-    RehearsalNotificationService,
-    RehearsalGateway,
     DirectorTelemetryService,
     DirectorStateTransitionProcessor,
     DirectorRubricScoreProcessor,

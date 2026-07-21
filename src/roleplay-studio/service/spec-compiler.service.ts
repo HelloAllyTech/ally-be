@@ -17,7 +17,8 @@ export interface CompiledSpecInfo {
  * but it:
  *  - strips the client-owned `ui` block (opaque authoring data, never sent to
  *    the agent),
- *  - strips `agentTestCaseIds` (a studio-side evaluation concern),
+ *  - strips the legacy `agentTestCaseIds` field (a studio-side concern that may
+ *    still linger on older persisted drafts; never sent to the agent),
  *  - drops null/undefined top-level keys so the serialized payload stays
  *    small enough to inline in LiveKit room metadata when possible.
  */

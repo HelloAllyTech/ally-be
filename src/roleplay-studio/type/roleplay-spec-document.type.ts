@@ -122,7 +122,7 @@ export interface RoleplaySpecDocument {
   /**
    * Competency display names, index-aligned with `competencyIds`. Written by
    * the copilot (it already has id→name from get_competencies) and passed
-   * through to the runtime so the actor/director/trainee prompts can name the
+   * through to the runtime so the actor/director prompts can name the
    * competencies without a DB lookup.
    */
   competencyNames?: string[];
@@ -133,7 +133,6 @@ export interface RoleplaySpecDocument {
   engineeredEvents?: EngineeredEvent[];
   voice: RoleplayVoiceConfig;
   language: RoleplayLanguageConfig;
-  agentTestCaseIds?: string[];
   openingStatement?: string;
   difficulty?: string;
   /**

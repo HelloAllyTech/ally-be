@@ -8,7 +8,6 @@ import {
 describe('SpecValidatorService', () => {
   let service: SpecValidatorService;
   let mockVoiceRepo: { find: jest.Mock };
-  let mockTestCaseRepo: { find: jest.Mock };
 
   const buildValidSpec = (): RoleplaySpecDocument => ({
     specSchemaVersion: SPEC_SCHEMA_VERSION,
@@ -86,7 +85,6 @@ describe('SpecValidatorService', () => {
     ],
     voice: { languageVoices: { '1': 'voice-1' } },
     language: { languageId: 1, languageCode: 'en-US' },
-    agentTestCaseIds: ['tc-1'],
     openingStatement: 'I am not even sure why I booked this.',
     difficulty: 'MEDIUM',
     actorModel: { provider: 'anthropic', config: {} },
@@ -102,11 +100,8 @@ describe('SpecValidatorService', () => {
           { id: 'voice-1', name: 'Ivy', languageId: 1, active: true },
         ]),
     };
-    mockTestCaseRepo = { find: jest.fn().mockResolvedValue([{ id: 'tc-1' }]) };
     const dataSource = {
-      getRepository: jest.fn((entity: { name: string }) =>
-        entity.name === 'ScenarioVoices' ? mockVoiceRepo : mockTestCaseRepo,
-      ),
+      getRepository: jest.fn(() => mockVoiceRepo),
     } as unknown as DataSource;
     service = new SpecValidatorService(dataSource);
   });
@@ -302,21 +297,12 @@ describe('SpecValidatorService', () => {
       expect(result.errors.some((e) => e.code === 'unknown_voice')).toBe(true);
     });
 
-    it('flags unknown agent test cases', async () => {
-      mockTestCaseRepo.find.mockResolvedValue([]);
-      const result = await service.validate(buildValidSpec());
-      expect(
-        result.errors.some((e) => e.code === 'unknown_agent_test_case'),
-      ).toBe(true);
-    });
-
     it('skips DB checks when checkDb is false', async () => {
       const result = await service.validate(buildValidSpec(), {
         checkDb: false,
       });
       expect(result.valid).toBe(true);
       expect(mockVoiceRepo.find).not.toHaveBeenCalled();
-      expect(mockTestCaseRepo.find).not.toHaveBeenCalled();
     });
 
     it('skips DB checks when the document is structurally broken', async () => {

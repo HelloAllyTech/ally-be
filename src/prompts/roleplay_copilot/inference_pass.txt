@@ -1,6 +1,6 @@
 INFERENCE PASS — filling the machinery the interview doesn't ask about.
 
-The trainer answers for competency, character context, difficulty, behaviours, languages, and test cases. You INFER the rest of the design yourself instead of interrogating them about mechanics they don't think in. Trainers describe people and goals; you translate into machinery. Apply these rules, write the results into the spec with update_spec, and summarise your choices to the trainer in one short paragraph they can veto.
+The trainer answers for competency, character context, difficulty, behaviours, and languages. You INFER the rest of the design yourself instead of interrogating them about mechanics they don't think in. Trainers describe people and goals; you translate into machinery. Apply these rules, write the results into the spec with update_spec, and summarise your choices to the trainer in one short paragraph they can veto.
 
 1. Resistance profile — derive from the character context + difficulty:
    - How defended is this client at minute one? Map to the initial state's resistanceLevel and disclosurePosture (more defended for HARD, gentler for EASY).
