@@ -25,11 +25,11 @@ export class CreatePromptTranslations1854000000000 implements MigrationInterface
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `ALTER TABLE "prompts" ADD COLUMN "translationEnabled" boolean NOT NULL DEFAULT false`,
+      `ALTER TABLE "prompts" ADD COLUMN IF NOT EXISTS "translationEnabled" boolean NOT NULL DEFAULT false`,
     );
 
     await queryRunner.query(
-      `CREATE TABLE "prompt_translations" (
+      `CREATE TABLE IF NOT EXISTS "prompt_translations" (
         "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "promptId" uuid NOT NULL,
         "languageId" integer NOT NULL,
@@ -55,23 +55,23 @@ export class CreatePromptTranslations1854000000000 implements MigrationInterface
     );
 
     await queryRunner.query(
-      `CREATE INDEX "idx_prompt_translations_language" ON "prompt_translations" ("languageId")`,
+      `CREATE INDEX IF NOT EXISTS "idx_prompt_translations_language" ON "prompt_translations" ("languageId")`,
     );
     await queryRunner.query(
-      `CREATE INDEX "idx_prompt_translations_status" ON "prompt_translations" ("status")`,
+      `CREATE INDEX IF NOT EXISTS "idx_prompt_translations_status" ON "prompt_translations" ("status")`,
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
-      `DROP INDEX "public"."idx_prompt_translations_status"`,
+      `DROP INDEX IF EXISTS "public"."idx_prompt_translations_status"`,
     );
     await queryRunner.query(
-      `DROP INDEX "public"."idx_prompt_translations_language"`,
+      `DROP INDEX IF EXISTS "public"."idx_prompt_translations_language"`,
     );
-    await queryRunner.query(`DROP TABLE "prompt_translations"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "prompt_translations"`);
     await queryRunner.query(
-      `ALTER TABLE "prompts" DROP COLUMN "translationEnabled"`,
+      `ALTER TABLE "prompts" DROP COLUMN IF EXISTS "translationEnabled"`,
     );
   }
 }
