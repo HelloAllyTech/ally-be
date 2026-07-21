@@ -14,6 +14,21 @@ export class PromptsRepository extends Repository<Prompt> {
     super(Prompt, dataSource.createEntityManager());
   }
 
+  /**
+   * All English source prompts opted into translation: `translationEnabled` and
+   * a translatable `promptType`. Drives the backfill; never returns the legacy
+   * localized variant rows (they are never enabled).
+   */
+  findTranslationSources(translatableTypes: string[]): Promise<Prompt[]> {
+    return this.createQueryBuilder('prompt')
+      .where('prompt.translationEnabled = true')
+      .andWhere('prompt.promptType IN (:...translatableTypes)', {
+        translatableTypes,
+      })
+      .select(['prompt.id', 'prompt.promptCode', 'prompt.promptType'])
+      .getMany();
+  }
+
   getPromptById(id: string): Promise<PromptDetailResponse | null> {
     return this.createQueryBuilder('prompt')
       .leftJoin(
@@ -28,6 +43,11 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.isObsolete', 'isObsolete')
       .addSelect('prompt.kind', 'kind')
       .addSelect('prompt.promptType', 'promptType')
+      .addSelect('prompt.translationEnabled', 'translationEnabled')
+      .addSelect(
+        `CAST((SELECT COUNT(*) FROM prompt_translations pt WHERE pt."promptId" = prompt.id AND pt.status = 'ready') AS integer)`,
+        'translationsReady',
+      )
       .addSelect('prompt.hasStates', 'hasStates')
       .addSelect('prompt.availableVariables', 'availableVariables')
       .addSelect('prompt.usesBlocks', 'usesBlocks')
@@ -61,6 +81,11 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.isObsolete', 'isObsolete')
       .addSelect('prompt.kind', 'kind')
       .addSelect('prompt.promptType', 'promptType')
+      .addSelect('prompt.translationEnabled', 'translationEnabled')
+      .addSelect(
+        `CAST((SELECT COUNT(*) FROM prompt_translations pt WHERE pt."promptId" = prompt.id AND pt.status = 'ready') AS integer)`,
+        'translationsReady',
+      )
       .addSelect('prompt.hasStates', 'hasStates')
       .addSelect('prompt.availableVariables', 'availableVariables')
       .addSelect('prompt.usesBlocks', 'usesBlocks')
@@ -108,6 +133,11 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.isObsolete', 'isObsolete')
       .addSelect('prompt.kind', 'kind')
       .addSelect('prompt.promptType', 'promptType')
+      .addSelect('prompt.translationEnabled', 'translationEnabled')
+      .addSelect(
+        `CAST((SELECT COUNT(*) FROM prompt_translations pt WHERE pt."promptId" = prompt.id AND pt.status = 'ready') AS integer)`,
+        'translationsReady',
+      )
       .addSelect('prompt.hasStates', 'hasStates')
       .addSelect('prompt.availableVariables', 'availableVariables')
       .addSelect('prompt.usesBlocks', 'usesBlocks')

@@ -18,8 +18,12 @@ import { PromptResponse } from '../type/prompt-response.type';
 import { standardizePromptCode } from '../util/prompt-code.util';
 import { parseVariablesFromPrompt } from '../util/parse-variables.util';
 import { reconcileAvailableVariables } from '../util/normalize-available-variable.util';
-import { PROMPT_VERSION_RETENTION_LIMIT } from '../constants/prompt.constants';
+import {
+  PROMPT_VERSION_RETENTION_LIMIT,
+  TRANSLATABLE_PROMPT_TYPES,
+} from '../constants/prompt.constants';
 import { LoggerService } from 'src/logger/logger.service';
+import { PromptTranslationService } from './prompt-translation.service';
 
 @Injectable()
 export class PromptsService {
@@ -30,6 +34,7 @@ export class PromptsService {
     private readonly promptVersionRepository: PromptVersionRepository,
     private readonly promptSharedService: PromptSharedService,
     private readonly dataSource: DataSource,
+    private readonly promptTranslationService: PromptTranslationService,
   ) {}
 
   async createPrompts(createPromptsDto: CreatePromptsDto): Promise<Prompt[]> {
@@ -159,6 +164,10 @@ export class PromptsService {
       updateData.temperature = updatePromptDto.temperature;
     }
 
+    if (updatePromptDto.translationEnabled !== undefined) {
+      updateData.translationEnabled = updatePromptDto.translationEnabled;
+    }
+
     const updated = await this.promptsRepository.update(id, updateData);
 
     // If prompt content is being updated and dashboard override is enabled, create a new version
@@ -232,7 +241,55 @@ export class PromptsService {
       });
     }
 
+    this.maybeTriggerAutoTranslation(id, prompt, updatePromptDto, {
+      versionCreated: !!(contentToVersion && useDashboardOverride),
+    });
+
     return updated.affected !== 0;
+  }
+
+  /**
+   * Fire-and-forget re-translation when a `translationEnabled` main_agent/
+   * branching source changes its English body (a new version) or when
+   * translation was just enabled. Runs in the background so the update response
+   * isn't blocked; `translatePrompt` re-checks eligibility and skips languages
+   * already fresh by `sourceHash`, so an over-eager fire is a cheap no-op.
+   */
+  private maybeTriggerAutoTranslation(
+    id: string,
+    previous: Prompt,
+    dto: UpdatePromptDto,
+    ctx: { versionCreated: boolean },
+  ): void {
+    const finalTranslationEnabled =
+      dto.translationEnabled !== undefined
+        ? dto.translationEnabled
+        : previous.translationEnabled;
+    const finalPromptType =
+      dto.promptType !== undefined ? dto.promptType : previous.promptType;
+    const justEnabled =
+      dto.translationEnabled === true && previous.translationEnabled !== true;
+
+    if (
+      finalTranslationEnabled !== true ||
+      !TRANSLATABLE_PROMPT_TYPES.includes(finalPromptType ?? '') ||
+      !(ctx.versionCreated || justEnabled)
+    ) {
+      return;
+    }
+
+    void this.promptTranslationService
+      .translatePrompt(id)
+      .then((r) =>
+        this.logger.info(`Auto-translation ${id}: ${JSON.stringify(r)}`),
+      )
+      .catch((err: unknown) =>
+        this.logger.error(
+          `Auto-translation trigger failed for ${id}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        ),
+      );
   }
 
   async getPrompts(

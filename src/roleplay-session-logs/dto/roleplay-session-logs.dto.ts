@@ -494,6 +494,21 @@ export class RoleplaySessionRunConfigDto {
   })
   promptVersions!: Record<string, unknown> | null;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'promptCode of the main-agent prompt this simulation selected. null when unset (default prompt).',
+  })
+  selectedMainPromptCode!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Effective main-agent prompt variant this session ran: 'GENERIC' " +
+      "(English source) or 'MULTILINGUAL' (translated). null for older sessions.",
+  })
+  mainPromptVariant!: string | null;
+
   @ApiProperty({ nullable: true }) llmProvider!: string | null;
   @ApiProperty({ nullable: true }) llmModel!: string | null;
   @ApiProperty({ nullable: true }) temperature!: number | null;

@@ -120,4 +120,18 @@ export class Prompt extends BaseWithoutTenantEntity {
     },
   })
   temperature?: number;
+
+  /**
+   * Opt-in marker identifying this row as a true English source whose template
+   * body should be auto-translated into the eligible Indian languages
+   * (`prompt_translations`). Translation is never auto-detected: the trigger,
+   * backfill, and runtime self-heal all gate on this flag, so manually-created
+   * localized variant rows (indistinguishable from sources by schema) are left
+   * untouched unless an admin explicitly enables them.
+   *
+   * Optional in TS for test ergonomics; the DB column has a NOT NULL default of
+   * false, so reads always materialize a boolean.
+   */
+  @Column({ type: 'boolean', default: false })
+  translationEnabled?: boolean;
 }

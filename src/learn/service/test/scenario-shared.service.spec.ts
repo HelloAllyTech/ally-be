@@ -23,6 +23,7 @@ import { ScenarioBehaviorInstructionBehaviorRepository } from '../../repository/
 import { BehaviorRepository } from '../../repository/behavior.repository';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import { PromptTranslationService } from 'src/prompt/service/prompt-translation.service';
 import { ALLY_AI_LEARN_PROMPT_PREFIX } from '../../constants/scenario-session.constants';
 import { CompetencyService } from '../competency.service';
 import { AppConfigService } from 'src/config/config.service';
@@ -92,6 +93,13 @@ describe('ScenarioSharedService', () => {
 
     const mockPromptSharedService = {
       getPromptsByOptions: jest.fn().mockResolvedValue([]),
+    };
+
+    const mockPromptTranslationService = {
+      // By default, pass English bodies through unchanged.
+      overlayTranslations: jest
+        .fn()
+        .mockImplementation((byCode: Record<string, string>) => byCode),
     };
 
     const mockCompetencyService = {
@@ -221,6 +229,10 @@ describe('ScenarioSharedService', () => {
         {
           provide: PromptSharedService,
           useValue: mockPromptSharedService,
+        },
+        {
+          provide: PromptTranslationService,
+          useValue: mockPromptTranslationService,
         },
         {
           provide: CompetencyService,

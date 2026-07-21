@@ -4,6 +4,7 @@ import { PromptsService } from '../prompt.service';
 import { PromptsRepository } from '../../repository/prompt.repository';
 import { PromptVersionRepository } from '../../repository/prompt-version.repository';
 import { PromptSharedService } from '../prompt-shared.service';
+import { PromptTranslationService } from '../prompt-translation.service';
 import { CreatePromptsDto } from '../../dto/create-prompts.dto';
 import { UpdatePromptDto } from '../../dto/update-prompt.dto';
 import { Prompt } from '../../entity/prompt.entity';
@@ -14,6 +15,7 @@ import { PromptResponse } from '../../type/prompt-response.type';
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
     getUserId: jest.fn(),
+    getExecutionId: jest.fn(),
   },
 }));
 
@@ -24,6 +26,7 @@ describe('PromptsService', () => {
   let service: PromptsService;
   let promptsRepository: PromptsRepository;
   let promptVersionRepository: PromptVersionRepository;
+  let translatePrompt: jest.Mock;
 
   const mockUserId = '123';
   const mockPromptId = '123e4567-e89b-12d3-a456-426614174000';
@@ -100,6 +103,14 @@ describe('PromptsService', () => {
           useValue: {
             getPromptByCode: jest.fn(),
             getPromptsByOptions: jest.fn(),
+          },
+        },
+        {
+          provide: PromptTranslationService,
+          useValue: {
+            translatePrompt: (translatePrompt = jest
+              .fn()
+              .mockResolvedValue({ eligible: true, translated: 4 })),
           },
         },
         {
@@ -547,6 +558,97 @@ describe('PromptsService', () => {
         promptVersionRepository.deleteVersionsBefore as jest.Mock
       ).mock.calls[0];
       expect(callArgs[1]).toBeGreaterThanOrEqual(1);
+    });
+  });
+
+  describe('updatePrompt — auto-translation trigger', () => {
+    const enabledMainAgent: Prompt = {
+      ...mockPrompt,
+      promptType: 'main_agent',
+      translationEnabled: true,
+      useDashboardOverride: true,
+    };
+
+    const mockVersionCreate = () => {
+      (promptsRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+      (
+        promptVersionRepository.getLatestPromptVersion as jest.Mock
+      ).mockResolvedValue(mockPromptVersion);
+      (promptVersionRepository.create as jest.Mock).mockReturnValue(
+        mockPromptVersion,
+      );
+      (promptVersionRepository.save as jest.Mock).mockResolvedValue(
+        mockPromptVersion,
+      );
+    };
+
+    it('fires when an enabled main_agent prompt body changes', async () => {
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue(
+        enabledMainAgent,
+      );
+      mockVersionCreate();
+
+      await service.updatePrompt(mockPromptId, { prompt: 'New body' });
+
+      expect(translatePrompt).toHaveBeenCalledWith(mockPromptId);
+    });
+
+    it('fires when translation is just enabled (enable action)', async () => {
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue({
+        ...mockPrompt,
+        promptType: 'main_agent',
+        translationEnabled: false,
+      });
+      (promptsRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+
+      await service.updatePrompt(mockPromptId, { translationEnabled: true });
+
+      expect(translatePrompt).toHaveBeenCalledWith(mockPromptId);
+    });
+
+    it('does NOT fire for a disabled prompt even when the body changes', async () => {
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue({
+        ...mockPrompt,
+        promptType: 'main_agent',
+        translationEnabled: false,
+        useDashboardOverride: true,
+      });
+      mockVersionCreate();
+
+      await service.updatePrompt(mockPromptId, { prompt: 'New body' });
+
+      expect(translatePrompt).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fire for a non-translatable promptType', async () => {
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue({
+        ...mockPrompt,
+        promptType: 'multilingual',
+        translationEnabled: true,
+        useDashboardOverride: true,
+      });
+      mockVersionCreate();
+
+      await service.updatePrompt(mockPromptId, { prompt: 'New body' });
+
+      expect(translatePrompt).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fire when an enabled prompt is edited without a body change', async () => {
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue(
+        enabledMainAgent,
+      );
+      (promptsRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+
+      await service.updatePrompt(mockPromptId, { description: 'tweak only' });
+
+      expect(translatePrompt).not.toHaveBeenCalled();
     });
   });
 

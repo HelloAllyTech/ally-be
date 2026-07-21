@@ -3,10 +3,22 @@ import { Languages } from '../entity/languages.entity';
 import { LanguagesRepository } from '../repository/languages.repository';
 import { DEFAULT_LANGUAGE_CODE } from '../constants/language.constant';
 import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from 'src/learn/constants/scenario-session.constants';
+import { ELIGBLE_APP_LANGUAGES } from 'src/common/constants/translation.constants';
 
 @Injectable()
 export class SharedLanguageService {
   constructor(private readonly languagesRepository: LanguagesRepository) {}
+
+  /**
+   * The active language rows the app supports for translation
+   * (`ELIGBLE_APP_LANGUAGES`, currently hi/mr/ta/kn). English is naturally
+   * excluded since it is not an eligible *target*.
+   */
+  getEligibleAppLanguages(): Promise<Languages[]> {
+    return this.languagesRepository.getByTranslationCodes(
+      ELIGBLE_APP_LANGUAGES,
+    );
+  }
 
   /**
    * Get languages by their IDs

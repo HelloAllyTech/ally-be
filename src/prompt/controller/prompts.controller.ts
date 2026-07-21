@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  ParseIntPipe,
   Post,
   Put,
   Query,
@@ -19,6 +20,13 @@ import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PromptsService } from '../service/prompt.service';
+import {
+  PromptTranslationService,
+  TranslateOneResult,
+  TranslatePromptResult,
+  BackfillResult,
+} from '../service/prompt-translation.service';
+import { PromptTranslation } from '../entity/prompt-translation.entity';
 import { UpdatePromptDto } from '../dto/update-prompt.dto';
 import { CreatePromptsDto } from '../dto/create-prompts.dto';
 import { SyncPromptsDto } from '../dto/sync-prompts.dto';
@@ -34,7 +42,57 @@ import { PromptResponse } from '../type/prompt-response.type';
   version: '1',
 })
 export class PromptsController {
-  constructor(private readonly promptsService: PromptsService) {}
+  constructor(
+    private readonly promptsService: PromptsService,
+    private readonly promptTranslationService: PromptTranslationService,
+  ) {}
+
+  // ===== PROMPT TRANSLATION ENDPOINTS =====
+
+  @ApiOperation({
+    summary:
+      'Backfill: (re)translate every enabled source across eligible languages',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_PROMPT])
+  @Post('translations/backfill')
+  async backfillTranslations(): Promise<BackfillResult> {
+    return this.promptTranslationService.backfillEnabledPrompts();
+  }
+
+  @ApiOperation({
+    summary: 'List stored translations for a prompt (read-only, per language)',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_PROMPT])
+  @Get(':id/translations')
+  async listPromptTranslations(
+    @Param('id') id: string,
+  ): Promise<PromptTranslation[]> {
+    return this.promptTranslationService.listTranslations(id);
+  }
+
+  @ApiOperation({
+    summary: 'Re-translate a prompt into all eligible languages',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_PROMPT])
+  @Post(':id/translations')
+  async retranslatePrompt(
+    @Param('id') id: string,
+  ): Promise<TranslatePromptResult> {
+    return this.promptTranslationService.translatePrompt(id);
+  }
+
+  @ApiOperation({
+    summary:
+      'Re-translate a prompt into a single language (per-language retry)',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_PROMPT])
+  @Post(':id/translations/:languageId')
+  async retranslatePromptLanguage(
+    @Param('id') id: string,
+    @Param('languageId', ParseIntPipe) languageId: number,
+  ): Promise<TranslateOneResult> {
+    return this.promptTranslationService.translateOne(id, languageId);
+  }
 
   // ===== PROMPT ENDPOINTS =====
 

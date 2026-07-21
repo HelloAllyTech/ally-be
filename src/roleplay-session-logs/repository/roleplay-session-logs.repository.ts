@@ -334,6 +334,8 @@ export class RoleplaySessionLogsRepository {
       name: string | null;
     } | null;
     promptVersions: Record<string, unknown> | null;
+    selectedMainPromptCode: string | null;
+    mainPromptVariant: string | null;
     llmProvider: string | null;
     llmModel: string | null;
     temperature: number | null;
@@ -348,6 +350,8 @@ export class RoleplaySessionLogsRepository {
          sv."versionNumber"              AS scenario_version_number,
          sv."name"                       AS scenario_version_name,
          ss.metadata->'promptVersions'   AS prompt_versions,
+         ss.metadata->>'selectedMainPromptCode' AS selected_main_prompt_code,
+         ss.metadata->>'mainPromptVariant'      AS main_prompt_variant,
          lang."sttProviderConfig"->>'provider'          AS stt_provider,
          lang."sttProviderConfig"->'config'->>'model'   AS stt_model,
          (SELECT mode() WITHIN GROUP (ORDER BY m."llmProvider")
@@ -393,6 +397,8 @@ export class RoleplaySessionLogsRepository {
           }
         : null,
       promptVersions: r.prompt_versions ?? null,
+      selectedMainPromptCode: r.selected_main_prompt_code ?? null,
+      mainPromptVariant: r.main_prompt_variant ?? null,
       llmProvider: r.llm_provider ?? null,
       llmModel: r.llm_model ?? null,
       temperature: num(r.temperature),

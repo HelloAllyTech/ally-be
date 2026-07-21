@@ -112,4 +112,16 @@ export class UpdatePromptDto {
   @Min(0)
   @Max(2)
   temperature?: number;
+
+  @ApiProperty({
+    description:
+      'Opt-in: when true, this English source prompt (main_agent/branching) is ' +
+      'auto-translated into the eligible Indian languages and re-translated when ' +
+      'its body changes. Enabling it triggers an initial translation. Leave ' +
+      'false for manually-created localized variant rows.',
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  translationEnabled?: boolean;
 }

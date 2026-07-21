@@ -3,6 +3,7 @@ import { CanActivate } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { PromptsController } from '../prompts.controller';
 import { PromptsService } from '../../service/prompt.service';
+import { PromptTranslationService } from '../../service/prompt-translation.service';
 import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { CreatePromptsDto } from '../../dto/create-prompts.dto';
@@ -21,6 +22,7 @@ class MockGuard implements CanActivate {
 describe('PromptsController', () => {
   let controller: PromptsController;
   let service: PromptsService;
+  let translationService: PromptTranslationService;
 
   const mockPromptResponse: PromptResponse = {
     id: '123e4567-e89b-12d3-a456-426614174000',
@@ -57,6 +59,15 @@ describe('PromptsController', () => {
             syncPrompts: jest.fn(),
           },
         },
+        {
+          provide: PromptTranslationService,
+          useValue: {
+            translateOne: jest.fn(),
+            translatePrompt: jest.fn(),
+            listTranslations: jest.fn(),
+            backfillEnabledPrompts: jest.fn(),
+          },
+        },
       ],
     })
       .overrideGuard(AuthGuard('jwt'))
@@ -69,6 +80,9 @@ describe('PromptsController', () => {
 
     controller = module.get<PromptsController>(PromptsController);
     service = module.get<PromptsService>(PromptsService);
+    translationService = module.get<PromptTranslationService>(
+      PromptTranslationService,
+    );
   });
 
   afterEach(() => {
@@ -510,6 +524,35 @@ describe('PromptsController', () => {
       await expect(
         controller.updatePrompt('invalid-id', updatePromptDto),
       ).rejects.toThrow('Update failed');
+    });
+  });
+
+  describe('translation endpoints', () => {
+    it('listPromptTranslations delegates to listTranslations', async () => {
+      const rows = [{ languageId: 2 }] as never;
+      (translationService.listTranslations as jest.Mock).mockResolvedValue(
+        rows,
+      );
+
+      const result = await controller.listPromptTranslations('p1');
+
+      expect(translationService.listTranslations).toHaveBeenCalledWith('p1');
+      expect(result).toBe(rows);
+    });
+
+    it('retranslatePrompt delegates to translatePrompt (all languages)', async () => {
+      await controller.retranslatePrompt('p1');
+      expect(translationService.translatePrompt).toHaveBeenCalledWith('p1');
+    });
+
+    it('retranslatePromptLanguage delegates to translateOne', async () => {
+      await controller.retranslatePromptLanguage('p1', 2);
+      expect(translationService.translateOne).toHaveBeenCalledWith('p1', 2);
+    });
+
+    it('backfillTranslations delegates to backfillEnabledPrompts', async () => {
+      await controller.backfillTranslations();
+      expect(translationService.backfillEnabledPrompts).toHaveBeenCalled();
     });
   });
 });

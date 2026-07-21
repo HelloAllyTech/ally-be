@@ -505,6 +505,35 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * Defaults for translating agent prompt templates (main_agent / branching)
+   * into Indian languages. These are fallbacks only: the seeded
+   * `agent_template_translation` prompt row carries its own provider/model,
+   * editable from Prompt Management, which take precedence. Temperature is kept
+   * low for faithful translation, and maxTokens is generous since a full agent
+   * template can be long.
+   */
+  get promptTranslation() {
+    return {
+      defaultProvider: this.configService.get<string>(
+        'PROMPT_TRANSLATION_PROVIDER',
+        'gemini',
+      ),
+      defaultModel: this.configService.get<string>(
+        'PROMPT_TRANSLATION_MODEL',
+        'gemini-2.5-pro',
+      ),
+      maxTokens: this.configService.get<number>(
+        'PROMPT_TRANSLATION_MAX_TOKENS',
+        8192,
+      ),
+      temperature: this.configService.get<number>(
+        'PROMPT_TRANSLATION_TEMPERATURE',
+        0.2,
+      ),
+    };
+  }
+
   get i18n() {
     return {
       rootDir: this.configService.get<string>('I18N_ROOT_DIR', '/var/www/i18n'),

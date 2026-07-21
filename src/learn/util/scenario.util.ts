@@ -1,5 +1,6 @@
 import { DeepPartial } from 'typeorm';
 import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
+import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from '../constants/scenario-session.constants';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
@@ -51,6 +52,7 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'stateNames',
   'selectedMainPromptCode',
   'selectedEvaluatorPromptCode',
+  'mainPromptVariantByLanguage',
   'states',
   'agentTestCaseIds',
 ];
@@ -178,6 +180,7 @@ export const mapCreateScenarioRequestToEntity = (
       stateNames: scenario.stateNames,
       selectedMainPromptCode: scenario.selectedMainPromptCode,
       selectedEvaluatorPromptCode: scenario.selectedEvaluatorPromptCode,
+      mainPromptVariantByLanguage: scenario.mainPromptVariantByLanguage,
       states: scenario.states,
       agentTestCaseIds: scenario.agentTestCaseIds,
     },
@@ -217,6 +220,24 @@ export const formatScenarioTriggerWarningsList = (
   });
 
 export const getActiveScenarioMandatoryFields = () => SCENARIO_MANDATORY_FIELDS;
+
+/**
+ * Decide whether a session should be served the MULTILINGUAL (translated)
+ * main-agent/branching bodies rather than the English source. True only when
+ * the session's language is a non-source language AND the simulation explicitly
+ * opted that language into MULTILINGUAL. Missing entry, GENERIC, English, or an
+ * unknown language all fall back to English (the safe default).
+ */
+export const shouldServeMultilingual = (
+  languageDetails: { id?: number; translationCode?: string } | null | undefined,
+  variantByLanguage: Record<string, string> | null | undefined,
+): boolean => {
+  if (!languageDetails?.id) return false;
+  if (languageDetails.translationCode === DEFAULT_LANGUAGE_TRANSLATION_CODE) {
+    return false;
+  }
+  return variantByLanguage?.[String(languageDetails.id)] === 'MULTILINGUAL';
+};
 
 export const mapUpdateScenarioRequestToEntity = (
   updateScenarioDto: UpdateScenarioDto,

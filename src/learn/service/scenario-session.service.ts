@@ -88,6 +88,7 @@ import {
 import {
   getActiveScenarioMandatoryFields,
   isEnglishLanguage,
+  shouldServeMultilingual,
 } from '../util/scenario.util';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { ScenarioSessionReviewSharedService } from 'src/scenario-session-review/service/review-shared.service';
@@ -702,13 +703,28 @@ export class ScenarioSessionService {
       try {
         const promptVersions =
           await this.scenarioSharedService.getResolvedPromptVersionsForScenarioSession();
-        if (Object.keys(promptVersions).length > 0) {
-          scenarioSession.metadata = {
-            ...(scenarioSession.metadata ?? {}),
-            promptVersions,
-          };
-          await this.scenarioSessionRepository.save(scenarioSession);
-        }
+        // Also record WHICH main-agent prompt was selected and the effective
+        // language-variant (GENERIC vs MULTILINGUAL) this session actually ran,
+        // so drift analytics and session logs can attribute/compare per prompt
+        // and per variant (the alphabetical promptVersions pick can't).
+        const selectedMainPromptCode = scenario?.metadata
+          ?.selectedMainPromptCode as string | undefined;
+        const mainPromptVariant = shouldServeMultilingual(
+          languageDetails,
+          scenario?.metadata?.mainPromptVariantByLanguage as
+            | Record<string, string>
+            | undefined,
+        )
+          ? 'MULTILINGUAL'
+          : 'GENERIC';
+
+        scenarioSession.metadata = {
+          ...(scenarioSession.metadata ?? {}),
+          ...(Object.keys(promptVersions).length > 0 ? { promptVersions } : {}),
+          ...(selectedMainPromptCode ? { selectedMainPromptCode } : {}),
+          mainPromptVariant,
+        };
+        await this.scenarioSessionRepository.save(scenarioSession);
       } catch {
         // capture is best-effort; ignore failures
       }

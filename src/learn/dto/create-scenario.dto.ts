@@ -448,6 +448,20 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description:
+      'Per-language choice of main-agent prompt variant for this simulation, ' +
+      'keyed by languageId: "GENERIC" (English source; the model speaks the ' +
+      'target language) or "MULTILINGUAL" (the translated prompt body). A ' +
+      'missing entry defaults to GENERIC. English sessions always use English. ' +
+      'Lets creators A/B which variant wins per language.',
+    required: false,
+    example: { '2': 'MULTILINGUAL', '6': 'GENERIC' },
+  })
+  @IsOptional()
+  @IsObject()
+  mainPromptVariantByLanguage?: Record<string, 'GENERIC' | 'MULTILINGUAL'>;
+
+  @ApiProperty({
+    description:
       'Per-simulation states used by main-agent prompt variants with ' +
       '`hasStates: true`. See SimulationStateDto for the field schema and ' +
       'server-side validation rules.',

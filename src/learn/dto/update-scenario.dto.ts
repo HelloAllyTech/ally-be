@@ -460,6 +460,19 @@ export class UpdateScenarioDto {
 
   @ApiProperty({
     description:
+      'Per-language choice of main-agent prompt variant for this simulation, ' +
+      'keyed by languageId: "GENERIC" (English source) or "MULTILINGUAL" ' +
+      '(translated body). Missing entry defaults to GENERIC; English always ' +
+      'uses English.',
+    required: false,
+    example: { '2': 'MULTILINGUAL', '6': 'GENERIC' },
+  })
+  @IsOptional()
+  @IsObject()
+  mainPromptVariantByLanguage?: Record<string, 'GENERIC' | 'MULTILINGUAL'>;
+
+  @ApiProperty({
+    description:
       'Per-simulation states used by `hasStates` main-agent prompt variants. ' +
       'Runtime resolves the active state per turn score and substitutes its ' +
       'guidelines into `{state_x_guidelines}`. Server-side validation enforces ' +

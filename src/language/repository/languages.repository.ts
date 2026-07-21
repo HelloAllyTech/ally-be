@@ -20,6 +20,13 @@ export class LanguagesRepository extends Repository<Languages> {
     return this.findOne({ where: { translationCode: languageCode } });
   }
 
+  getByTranslationCodes(codes: string[]): Promise<Languages[]> {
+    if (!codes.length) return Promise.resolve([]);
+    return this.find({
+      where: { translationCode: In(codes), active: true },
+    });
+  }
+
   getLanguageByValue(value: string): Promise<Languages | null> {
     return this.findOne({ where: { value } });
   }

@@ -20,6 +20,10 @@ export type PromptResponse = {
   kind?: string;
   /** Role/category in the agent pipeline: 'main_agent' | 'branching' | 'multilingual'. */
   promptType?: string;
+  /** Opt-in: this English source is auto-translated (main_agent/branching only). */
+  translationEnabled?: boolean;
+  /** Count of languages whose translation is currently `ready` (for a coverage badge). */
+  translationsReady?: number;
   /** When true, this prompt declares a States section; studio renders the state editor. */
   hasStates?: boolean;
   usesBlocks?: string[];

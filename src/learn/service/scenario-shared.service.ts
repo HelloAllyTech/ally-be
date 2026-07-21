@@ -49,9 +49,12 @@ import {
   getActiveScenarioMandatoryFields,
   hydrateAdminScenarioFromVersionConfig,
   isEnglishLanguage,
+  shouldServeMultilingual,
 } from '../util/scenario.util';
 import { ScenarioVersionRepository } from '../repository/scenario-version.repository';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import { PromptTranslationService } from 'src/prompt/service/prompt-translation.service';
+import { Languages } from 'src/language/entity/languages.entity';
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
 import {
   ScenarioEvaluationEmotionalMovementItem,
@@ -131,6 +134,7 @@ export class ScenarioSharedService {
     private behaviorRepository: BehaviorRepository,
     private conversationalGuardrailsService: ConversationalGuardrailsService,
     private promptSharedService: PromptSharedService,
+    private promptTranslationService: PromptTranslationService,
     private competencyService: CompetencyService,
     private configService: AppConfigService,
     private s3Service: S3Service,
@@ -594,7 +598,12 @@ export class ScenarioSharedService {
     const guardrails =
       await this.conversationalGuardrailsService.getRandomGuardrailsForSession();
 
-    const prompts = await this.getPromptsForScenarioSession();
+    const prompts = await this.getPromptsForScenarioSession(
+      languageDetails,
+      metadata?.mainPromptVariantByLanguage as
+        | Record<string, string>
+        | undefined,
+    );
     scenarioData.promptData.prompts = prompts;
 
     return {
@@ -955,7 +964,10 @@ export class ScenarioSharedService {
     }
   }
 
-  private async getPromptsForScenarioSession() {
+  private async getPromptsForScenarioSession(
+    languageDetails?: Languages | null,
+    variantByLanguage?: Record<string, string> | null,
+  ) {
     const prompts = await this.promptSharedService.getPromptsByOptions({
       promptCodePrefix: ALLY_AI_LEARN_PROMPT_PREFIX,
       useDashboardOverrideOnly: true,
@@ -1016,6 +1028,27 @@ export class ScenarioSharedService {
       `[SESSION_PROMPTS] shipping ${Object.keys(result).length} prompts to ai-learn; ` +
         `${withOverrides.length} with LLM override: ${withOverrides.join(', ') || 'none'}`,
     );
+
+    // For a non-English session, overlay translated bodies where a fresh
+    // translation exists — but ONLY when the simulation opted this language into
+    // the MULTILINGUAL variant. GENERIC (or unset) ships the English body so the
+    // model speaks the target language from the source prompt (today's default).
+    // Anything not translated stays English (ai-learn treats any non-empty body
+    // as authoritative). Skipped entirely for English/default sessions.
+    if (shouldServeMultilingual(languageDetails, variantByLanguage)) {
+      const englishByCode = Object.fromEntries(
+        Object.entries(result).map(([code, value]) => [code, value.prompt]),
+      );
+      const overlaid = await this.promptTranslationService.overlayTranslations(
+        englishByCode,
+        languageDetails!.id!,
+      );
+      for (const code of Object.keys(result)) {
+        if (overlaid[code] && overlaid[code] !== result[code].prompt) {
+          result[code].prompt = overlaid[code];
+        }
+      }
+    }
 
     return result;
   }

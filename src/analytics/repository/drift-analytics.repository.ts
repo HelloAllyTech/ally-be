@@ -167,25 +167,34 @@ export class DriftAnalyticsRepository {
       // sessions whose language has no STT config (so no 'unknown' bucket).
       qb.innerJoin('languages', 'lang', 'lang.value = j."language"');
     } else if (dimension === 'promptVersion') {
-      // Resolve the main-agent prompt NAME (+ version) the session ran, instead
-      // of a bare version number. Per session: pick the main-agent code out of
-      // metadata.promptVersions ({code: version}) and join `prompts` for its
-      // name. CROSS JOIN LATERAL drops sessions with no main-agent entry; the
-      // jsonb_typeof guard keeps jsonb_object_keys from erroring on a
-      // non-object; INNER JOIN prompts drops codes with no matching row — so
-      // only identifiable prompts are charted (no 'unknown' bucket).
+      // Resolve the main-agent prompt NAME (+ version) the session ran, plus the
+      // effective language variant (GENERIC vs MULTILINGUAL) so the two are
+      // separately comparable in the drift chart (the whole point of the
+      // per-language experiment). Per session, pick the code as:
+      //   1) metadata.selectedMainPromptCode (the actually-selected prompt), else
+      //   2) the first main_agent/base_role key in metadata.promptVersions
+      //      (older sessions predating selectedMainPromptCode capture).
+      // Variant comes from metadata.mainPromptVariant (default GENERIC for older
+      // sessions). CROSS JOIN LATERAL yields one row/session; the jsonb_typeof
+      // guard avoids jsonb_object_keys erroring on non-objects; INNER JOIN
+      // prompts drops unidentifiable codes (no 'unknown' bucket).
       qb.innerJoin(
         `(SELECT s.id AS sid,
-                 pr.name || ' (v' || (s.metadata->'promptVersions'->>mc.code) || ')' AS label
+                 pr.name
+                   || ' (v' || COALESCE(s.metadata->'promptVersions'->>mc.code, '?') || ')'
+                   || ' · ' || COALESCE(NULLIF(s.metadata->>'mainPromptVariant', ''), 'GENERIC') AS label
             FROM scenario_sessions s
             CROSS JOIN LATERAL (
-              SELECT k AS code
-                FROM jsonb_object_keys(
-                       CASE WHEN jsonb_typeof(s.metadata->'promptVersions') = 'object'
-                            THEN s.metadata->'promptVersions' ELSE '{}'::jsonb END) k
-               WHERE k ILIKE '%main_agent%' OR k ILIKE '%base_role%'
-               ORDER BY k
-               LIMIT 1
+              SELECT COALESCE(
+                       NULLIF(s.metadata->>'selectedMainPromptCode', ''),
+                       (SELECT k
+                          FROM jsonb_object_keys(
+                                 CASE WHEN jsonb_typeof(s.metadata->'promptVersions') = 'object'
+                                      THEN s.metadata->'promptVersions' ELSE '{}'::jsonb END) k
+                         WHERE k ILIKE '%main_agent%' OR k ILIKE '%base_role%'
+                         ORDER BY k
+                         LIMIT 1)
+                     ) AS code
             ) mc
             JOIN prompts pr ON pr."promptCode" = mc.code)`,
         'pinfo',
