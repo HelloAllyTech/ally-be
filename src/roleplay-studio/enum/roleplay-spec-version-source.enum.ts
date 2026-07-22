@@ -6,8 +6,14 @@
 export enum RoleplaySpecVersionSource {
   // Trainer saved the draft through PUT /specs/:id/draft.
   MANUAL_EDIT = 'manual_edit',
-  // The copilot applied an RFC-6902 patch via the update_spec tool.
+  // The copilot applied an RFC-6902 patch via the update_spec tool while
+  // BUILDING the spec (the authoring interview).
   COPILOT_PATCH = 'copilot_patch',
+  // The copilot applied an RFC-6902 patch while ITERATING — refining an
+  // already-built spec from the trainer's live-test feedback. Split from
+  // COPILOT_PATCH so the version history distinguishes "authored" from
+  // "refined after testing".
+  COPILOT_ITERATION = 'copilot_iteration',
   // Explicit checkpoint via POST /specs/:id/versions.
   SNAPSHOT = 'snapshot',
 }

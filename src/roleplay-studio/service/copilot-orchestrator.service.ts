@@ -17,6 +17,7 @@ import {
 import { RoleplaySpecService } from './roleplay-spec.service';
 import { CopilotSseFrame } from '../type/copilot-sse-event.type';
 import { CreateCopilotMessageDto } from '../dto/copilot.dto';
+import { CopilotSessionMode } from '../enum/copilot-session-mode.enum';
 import {
   COPILOT_MAX_TOKENS,
   ROLEPLAY_COPILOT_PROMPTS,
@@ -71,6 +72,7 @@ export class CopilotOrchestratorService {
       userId,
     );
     const spec = await this.roleplaySpecService.getSpec(session.specId);
+    const mode = session.mode ?? CopilotSessionMode.BUILDING;
     const model = this.configService.roleplayStudio.copilotModel;
     const maxIterations = Math.max(
       1,
@@ -97,17 +99,18 @@ export class CopilotOrchestratorService {
       createdBy: userId,
     });
 
-    const system = await this.buildSystemPrompt(spec.draftSpec);
+    const system = await this.buildSystemPrompt(spec.draftSpec, mode);
     const messages: any[] = [
       ...this.rebuildAnthropicHistory(history),
       { role: 'user', content: userContent },
     ];
-    const tools = this.copilotToolsService.getToolDefinitions();
+    const tools = this.copilotToolsService.getToolDefinitions(mode);
 
     const context: ToolExecutionContext = {
       spec,
       sessionId,
       userId,
+      mode,
       appliedPatches: [],
       lastSpecVersionId: null,
     };
@@ -120,6 +123,7 @@ export class CopilotOrchestratorService {
     const allToolResults: Record<string, any>[] = [];
     const questions: Record<string, any>[] = [];
     const behaviourReviews: Record<string, any>[] = [];
+    const iterationSummaries: Record<string, any>[] = [];
     let iterations = 0;
     let stopReason: string | null = null;
     let turnErrored = false;
@@ -200,6 +204,8 @@ export class CopilotOrchestratorService {
               questions.push(frame.data);
             } else if (frame.event === 'behaviour_review') {
               behaviourReviews.push(frame.data);
+            } else if (frame.event === 'iteration_summary') {
+              iterationSummaries.push(frame.data);
             }
             yield frame;
           }
@@ -289,11 +295,13 @@ export class CopilotOrchestratorService {
           context.appliedPatches.length > 0 ? context.appliedPatches : null,
         metadata: {
           model,
+          mode,
           iterations,
           stopReason,
           errored: turnErrored,
           ...(questions.length > 0 ? { questions } : {}),
           ...(behaviourReviews.length > 0 ? { behaviourReviews } : {}),
+          ...(iterationSummaries.length > 0 ? { iterationSummaries } : {}),
         },
         createdBy: userId,
       });
@@ -345,22 +353,29 @@ export class CopilotOrchestratorService {
   }
 
   /**
-   * Interviewer system prompt = interviewer_system + inference_pass from the
-   * prompt registry, rendered with the current draft. Missing prompts (e.g.
-   * before the first sync) degrade to a minimal built-in instruction rather
-   * than failing the turn.
+   * System prompt for the turn, selected by mode and rendered with the current
+   * draft:
+   *  - BUILDING → interviewer_system + inference_pass (the authoring interview).
+   *  - ITERATING → iteration_system (feedback-driven refinement).
+   * Missing prompts (e.g. before the first sync) degrade to a minimal built-in
+   * instruction rather than failing the turn.
    */
   private async buildSystemPrompt(
     draftSpec: Record<string, any>,
+    mode: CopilotSessionMode,
   ): Promise<string> {
     const variables = {
       currentSpec: JSON.stringify(draftSpec ?? {}, null, 2),
     };
+    const codes =
+      mode === CopilotSessionMode.ITERATING
+        ? [ROLEPLAY_COPILOT_PROMPTS.ITERATION_SYSTEM]
+        : [
+            ROLEPLAY_COPILOT_PROMPTS.INTERVIEWER_SYSTEM,
+            ROLEPLAY_COPILOT_PROMPTS.INFERENCE_PASS,
+          ];
     const parts: string[] = [];
-    for (const code of [
-      ROLEPLAY_COPILOT_PROMPTS.INTERVIEWER_SYSTEM,
-      ROLEPLAY_COPILOT_PROMPTS.INFERENCE_PASS,
-    ]) {
+    for (const code of codes) {
       try {
         const template = await this.promptSharedService.getPromptByCode(code);
         if (template) {
@@ -376,10 +391,16 @@ export class CopilotOrchestratorService {
     }
     if (parts.length === 0) {
       parts.push(
-        'You are the Roleplay Studio copilot, an expert instructional designer. ' +
-          'Interview the trainer one question at a time (ask_trainer) and build the ' +
-          'roleplay spec incrementally with update_spec.\n\nCurrent draft spec:\n' +
-          variables.currentSpec,
+        mode === CopilotSessionMode.ITERATING
+          ? 'You are the Roleplay Studio copilot in iteration mode. The spec is ' +
+              'already built. Turn the trainer’s live-test feedback into minimal, ' +
+              'targeted edits to the right part of the spec with update_spec, then ' +
+              'summarise the change with summarize_iteration.\n\nCurrent draft spec:\n' +
+              variables.currentSpec
+          : 'You are the Roleplay Studio copilot, an expert instructional designer. ' +
+              'Interview the trainer one question at a time (ask_trainer) and build the ' +
+              'roleplay spec incrementally with update_spec.\n\nCurrent draft spec:\n' +
+              variables.currentSpec,
       );
     }
     return parts.join('\n\n');

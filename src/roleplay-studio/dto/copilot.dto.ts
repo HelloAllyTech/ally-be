@@ -3,12 +3,14 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
   ValidateNested,
 } from 'class-validator';
+import { CopilotSessionMode } from '../enum/copilot-session-mode.enum';
 
 /**
  * Structured answer for select/dropdown/behaviour-review questions. The FE
@@ -64,6 +66,27 @@ export class CreateCopilotSessionDto {
   @ApiProperty({ description: 'The roleplay spec this copilot session edits' })
   @IsUUID()
   specId!: string;
+
+  @ApiPropertyOptional({
+    enum: CopilotSessionMode,
+    description:
+      'Starting mode (defaults to BUILDING). Use ITERATING to open a session ' +
+      'straight into feedback-driven refinement of an already-built spec.',
+  })
+  @IsOptional()
+  @IsEnum(CopilotSessionMode)
+  mode?: CopilotSessionMode;
+}
+
+export class SetCopilotSessionModeDto {
+  @ApiProperty({
+    enum: CopilotSessionMode,
+    description:
+      'The mode to switch the copilot session to: BUILDING (authoring interview) ' +
+      'or ITERATING (refine from live-test feedback).',
+  })
+  @IsEnum(CopilotSessionMode)
+  mode!: CopilotSessionMode;
 }
 
 export class ListCopilotSessionsQueryDto {

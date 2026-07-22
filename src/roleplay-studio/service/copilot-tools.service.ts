@@ -10,7 +10,12 @@ import { CompetencyBehaviorType } from 'src/learn/enum/competency-behavior.enum'
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
 import { COMPETENCY_BEHAVIOR_INSTRUCTION_PRESETS } from 'src/learn/constants/competency-behavior-instruction-templates.constants';
 import { Languages } from 'src/language/entity/languages.entity';
+import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import { RoleplaySpec } from '../entity/roleplay-spec.entity';
+import { RoleplayDirectorEvent } from '../entity/roleplay-director-event.entity';
+import { RoleplayRubricScore } from '../entity/roleplay-rubric-score.entity';
+import { RoleplayDirectorEventType } from '../enum/director-event-type.enum';
+import { CopilotSessionMode } from '../enum/copilot-session-mode.enum';
 import { RoleplaySpecService } from './roleplay-spec.service';
 import { SpecValidatorService } from './spec-validator.service';
 import { SpecCompilerService } from './spec-compiler.service';
@@ -28,11 +33,20 @@ export interface ToolExecutionContext {
   /** The copilot session this turn belongs to (loop narration target). */
   sessionId: string;
   userId: number;
+  /**
+   * Copilot mode for the session. Drives the version-snapshot source of
+   * update_spec (COPILOT_PATCH while BUILDING, COPILOT_ITERATION while
+   * ITERATING). Optional/undefined is treated as BUILDING.
+   */
+  mode?: CopilotSessionMode;
   /** Patches applied so far this turn (spec_patch payloads). */
   appliedPatches: Record<string, any>[];
   /** Latest snapshot id produced this turn (for the done frame). */
   lastSpecVersionId: string | null;
 }
+
+/** How many recent live-test sessions get_test_session_insights summarises. */
+const TEST_INSIGHTS_SESSION_LIMIT = 3;
 
 /**
  * The copilot's tool belt. Definitions are plain Anthropic tool JSON; every
@@ -56,8 +70,17 @@ export class CopilotToolsService {
     private readonly dataSource: DataSource,
   ) {}
 
-  getToolDefinitions(): any[] {
-    return [
+  /**
+   * The tool belt for a turn. BUILDING exposes the authoring/interview tools.
+   * ITERATING adds the two feedback-loop tools (get_test_session_insights,
+   * summarize_iteration) on top — the shared authoring tools (update_spec,
+   * compile_spec, ask_trainer, catalog lookups) stay available so the copilot
+   * can still edit any part of the spec while refining.
+   */
+  getToolDefinitions(
+    mode: CopilotSessionMode = CopilotSessionMode.BUILDING,
+  ): any[] {
+    const tools: any[] = [
       {
         name: 'update_spec',
         description:
@@ -234,6 +257,73 @@ export class CopilotToolsService {
         input_schema: { type: 'object', properties: {} },
       },
     ];
+
+    if (mode === CopilotSessionMode.ITERATING) {
+      tools.push(
+        {
+          name: 'get_test_session_insights',
+          description:
+            "Pull runtime telemetry from the trainer's most recent LIVE-TEST runs of this " +
+            'roleplay: the state path (which emotional states were reached and on which turn), ' +
+            'disclosure unlocks (which secrets came out and when), rubric behaviour hits and the ' +
+            'cumulative score, and the end-of-run summary. Call this BEFORE editing for feedback ' +
+            'about pacing, disclosure timing, scoring, or "the client did X" — it tells you what ' +
+            'actually happened so you patch the real cause and can explain the change concretely. ' +
+            'Returns an empty list when the trainer has not tested yet.',
+          input_schema: { type: 'object', properties: {} },
+        },
+        {
+          name: 'summarize_iteration',
+          description:
+            'Show the trainer a structured summary of the change you just made for one piece of ' +
+            'feedback: what they asked for, WHY you changed the parts you did (grounded in the ' +
+            'runtime model + any telemetry), and the list of edits. Call this AFTER applying the ' +
+            'update_spec patches for that feedback — the individual patches stream as progress, ' +
+            'this card is the recap. One piece of feedback → one summarize_iteration call.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              feedback: {
+                type: 'string',
+                description: "Restate the trainer's feedback in one line",
+              },
+              reasoning: {
+                type: 'string',
+                description:
+                  'Why these spec parts drive the behaviour and why you changed them',
+              },
+              changes: {
+                type: 'array',
+                description: 'One entry per spec area you edited',
+                items: {
+                  type: 'object',
+                  properties: {
+                    area: {
+                      type: 'string',
+                      description:
+                        'Spec area touched, e.g. "State machine", "Disclosure ledger", "Rubric"',
+                    },
+                    summary: {
+                      type: 'string',
+                      description: 'What changed in that area (one line)',
+                    },
+                  },
+                  required: ['area', 'summary'],
+                },
+              },
+              note: {
+                type: 'string',
+                description:
+                  'Optional short closing note inviting another test run',
+              },
+            },
+            required: ['feedback', 'reasoning', 'changes'],
+          },
+        },
+      );
+    }
+
+    return tools;
   }
 
   async execute(
@@ -258,6 +348,10 @@ export class CopilotToolsService {
         return this.executeGetLanguages();
       case 'compile_spec':
         return this.executeCompileSpec(context);
+      case 'get_test_session_insights':
+        return this.executeGetTestSessionInsights(context);
+      case 'summarize_iteration':
+        return this.executeSummarizeIteration(input);
       default:
         return {
           modelResult: { ok: false, error: `Unknown tool "${name}"` },
@@ -315,12 +409,16 @@ export class CopilotToolsService {
     }
 
     const patchId = uuidv4();
+    const source =
+      context.mode === CopilotSessionMode.ITERATING
+        ? RoleplaySpecVersionSource.COPILOT_ITERATION
+        : RoleplaySpecVersionSource.COPILOT_PATCH;
     const { spec: savedSpec, version } =
       await this.roleplaySpecService.persistDraftMutation(
         context.spec,
         nextDraft,
         context.userId,
-        RoleplaySpecVersionSource.COPILOT_PATCH,
+        source,
         patchId,
       );
     // Thread the fresh row (updatedAt!) through the rest of the turn.
@@ -642,6 +740,216 @@ export class CopilotToolsService {
             info.inline ? 'inlineable' : 'needs specFetch'
           })`
         : `Spec has ${validation.errors.length} validation issue(s)`,
+    };
+  }
+
+  /**
+   * Summarise the trainer's recent LIVE-TEST runs of this roleplay so the
+   * copilot can ground iteration edits in what actually happened at runtime.
+   * Scoped to the trainer's own sessions for this spec's scenario, newest
+   * first, capped at TEST_INSIGHTS_SESSION_LIMIT. Read-only.
+   */
+  private async executeGetTestSessionInsights(
+    context: ToolExecutionContext,
+  ): Promise<ToolExecutionOutcome> {
+    const scenarioId = context.spec.scenarioId;
+    if (scenarioId === undefined || scenarioId === null) {
+      return {
+        modelResult: {
+          ok: true,
+          sessions: [],
+          note: 'This spec has no scenario yet — reason from the spec alone.',
+        },
+        summary: 'No live-test sessions found',
+      };
+    }
+
+    const sessions = await this.dataSource
+      .getRepository(ScenarioSessions)
+      .find({
+        where: { scenarioId, counselorId: context.userId },
+        order: { createdAt: 'DESC' },
+        take: TEST_INSIGHTS_SESSION_LIMIT,
+      });
+    if (sessions.length === 0) {
+      return {
+        modelResult: {
+          ok: true,
+          sessions: [],
+          note: 'The trainer has not live-tested this roleplay yet — reason from the spec alone and say so.',
+        },
+        summary: 'No live-test sessions found',
+      };
+    }
+
+    const sessionIds = sessions.map((session) => session.id);
+    const [events, scores] = await Promise.all([
+      this.dataSource.getRepository(RoleplayDirectorEvent).find({
+        where: { scenarioSessionId: In(sessionIds) },
+        order: { createdAt: 'ASC' },
+      }),
+      this.dataSource.getRepository(RoleplayRubricScore).find({
+        where: { scenarioSessionId: In(sessionIds) },
+        order: { turnIndex: 'ASC' },
+      }),
+    ]);
+
+    const stateNameById = this.stateNameMap(context.spec.draftSpec);
+    const behaviorNameById = this.rubricNameMap(context.spec.draftSpec);
+
+    const summaries = sessions.map((session) =>
+      this.summariseTestSession(
+        session,
+        events.filter((event) => event.scenarioSessionId === session.id),
+        scores.filter((score) => score.scenarioSessionId === session.id),
+        stateNameById,
+        behaviorNameById,
+      ),
+    );
+
+    return {
+      modelResult: { ok: true, sessions: summaries },
+      summary: `Summarised ${summaries.length} recent live-test run(s)`,
+    };
+  }
+
+  /** stateId → state name, from the draft's state machine (for readable telemetry). */
+  private stateNameMap(draftSpec: Record<string, any>): Map<string, string> {
+    const states = Array.isArray(draftSpec?.stateMachine?.states)
+      ? draftSpec.stateMachine.states
+      : [];
+    return new Map(
+      states
+        .filter((state: any) => state?.id)
+        .map((state: any) => [
+          String(state.id),
+          String(state.name ?? state.id),
+        ]),
+    );
+  }
+
+  /** behaviorId → behaviour name, from the draft's rubric. */
+  private rubricNameMap(draftSpec: Record<string, any>): Map<string, string> {
+    const behaviors = Array.isArray(draftSpec?.rubric?.behaviors)
+      ? draftSpec.rubric.behaviors
+      : [];
+    return new Map(
+      behaviors
+        .filter((behavior: any) => behavior?.id)
+        .map((behavior: any) => [
+          String(behavior.id),
+          String(behavior.name ?? behavior.id),
+        ]),
+    );
+  }
+
+  /**
+   * Collapse one session's raw director telemetry into a compact, model-facing
+   * shape: the state path with turn indices, disclosures unlocked, aggregated
+   * rubric hits, and the end-of-run summary.
+   */
+  private summariseTestSession(
+    session: ScenarioSessions,
+    events: RoleplayDirectorEvent[],
+    scores: RoleplayRubricScore[],
+    stateNames: Map<string, string>,
+    behaviorNames: Map<string, string>,
+  ): Record<string, any> {
+    const nameState = (id: unknown) => {
+      const key = id === undefined || id === null ? '' : String(id);
+      return key ? (stateNames.get(key) ?? key) : null;
+    };
+
+    const statePath = events
+      .filter(
+        (event) =>
+          event.eventType === RoleplayDirectorEventType.STATE_TRANSITION,
+      )
+      .map((event) => ({
+        turn: event.turnIndex ?? event.payload?.turn_index ?? null,
+        from: nameState(event.payload?.from_state_id),
+        to: nameState(event.payload?.to_state_id),
+        via:
+          event.payload?.observed_behavior ?? event.payload?.guard_id ?? null,
+      }));
+
+    const disclosures = events
+      .filter(
+        (event) =>
+          event.eventType === RoleplayDirectorEventType.DISCLOSURE_UNLOCK,
+      )
+      .map((event) => ({
+        turn: event.turnIndex ?? event.payload?.turn_index ?? null,
+        secretId: event.payload?.secret_id ?? null,
+        via: event.payload?.unlock_condition_id ?? null,
+      }));
+
+    // Aggregate rubric hits per behaviour: how many times it scored and the
+    // average score — the currency the copilot reasons about.
+    const byBehavior = new Map<string, { hits: number; total: number }>();
+    for (const score of scores) {
+      const entry = byBehavior.get(score.behaviorId) ?? { hits: 0, total: 0 };
+      entry.hits += 1;
+      entry.total += Number(score.score ?? 0);
+      byBehavior.set(score.behaviorId, entry);
+    }
+    const rubric = [...byBehavior.entries()].map(([behaviorId, entry]) => ({
+      behavior: behaviorNames.get(behaviorId) ?? behaviorId,
+      hits: entry.hits,
+      avgScore: Number((entry.total / entry.hits).toFixed(2)),
+    }));
+
+    const runtimeSummary = session.metadata?.roleplaySummary ?? null;
+    const lastTurn = Math.max(
+      0,
+      ...events.map((event) => event.turnIndex ?? 0),
+      ...scores.map((score) => score.turnIndex ?? 0),
+    );
+
+    return {
+      startedAt: session.createdAt,
+      endedAt: session.endedAt ?? null,
+      turns: lastTurn,
+      cumulativeScore: runtimeSummary?.cumulativeScore ?? session.score ?? null,
+      finalState: runtimeSummary?.finalStateId
+        ? nameState(runtimeSummary.finalStateId)
+        : (statePath[statePath.length - 1]?.to ?? null),
+      statePath,
+      disclosuresUnlocked: disclosures,
+      rubric,
+    };
+  }
+
+  /**
+   * Emit the iteration_summary card (the "summary of updates made" the trainer
+   * sees after a feedback-driven edit). Pure formatting — no persistence; the
+   * spec_patch frames already committed the edits.
+   */
+  private executeSummarizeIteration(
+    input: Record<string, any>,
+  ): ToolExecutionOutcome {
+    const changes = (Array.isArray(input?.changes) ? input.changes : [])
+      .map((change: any) => ({
+        area: String(change?.area ?? '').trim(),
+        summary: String(change?.summary ?? '').trim(),
+      }))
+      .filter((change: any) => change.area || change.summary);
+    const summaryCard = {
+      id: uuidv4(),
+      feedback: String(input?.feedback ?? '').trim(),
+      reasoning: String(input?.reasoning ?? '').trim(),
+      changes,
+      ...(typeof input?.note === 'string' && input.note.trim()
+        ? { note: input.note.trim() }
+        : {}),
+    };
+    return {
+      modelResult: {
+        ok: true,
+        note: 'Iteration summary delivered to the trainer.',
+      },
+      summary: `Summarised iteration: ${changes.length} change(s)`,
+      events: [{ event: 'iteration_summary', data: summaryCard }],
     };
   }
 }

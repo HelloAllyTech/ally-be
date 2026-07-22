@@ -5,6 +5,7 @@ import {
   NotFoundException,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   Res,
@@ -27,6 +28,7 @@ import {
   CreateCopilotMessageDto,
   CreateCopilotSessionDto,
   ListCopilotSessionsQueryDto,
+  SetCopilotSessionModeDto,
 } from '../dto/copilot.dto';
 
 @ApiTags('Roleplay Studio Copilot')
@@ -48,7 +50,11 @@ export class CopilotController {
     @Body() dto: CreateCopilotSessionDto,
     @CurrentUser() user: TokenUser,
   ) {
-    return this.copilotSessionService.createSession(dto.specId, user.id);
+    return this.copilotSessionService.createSession(
+      dto.specId,
+      user.id,
+      dto.mode,
+    );
   }
 
   @Get('sessions')
@@ -85,6 +91,20 @@ export class CopilotController {
     @CurrentUser() user: TokenUser,
   ) {
     return this.copilotSessionService.listMessages(sessionId, user.id);
+  }
+
+  @Patch('sessions/:sessionId/mode')
+  @AuthPermissions([PERMISSIONS.EDIT_ROLEPLAY_COPILOT])
+  @ApiOperation({
+    summary:
+      'Switch the copilot mode: BUILDING (authoring interview) ⇄ ITERATING (refine from live-test feedback)',
+  })
+  setMode(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Body() dto: SetCopilotSessionModeDto,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.copilotSessionService.setMode(sessionId, dto.mode, user.id);
   }
 
   @Post('sessions/:sessionId/messages/stream')

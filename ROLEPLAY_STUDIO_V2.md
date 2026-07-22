@@ -24,7 +24,8 @@ updated when the spec schema or prompts change.
 The unit of work is the **Scenario Spec** — one versioned JSON document that fully describes a
 roleplay. Two LLM roles revolve around it:
 
-- **Copilot** (`ally-be`) *builds* the spec by interviewing the trainer.
+- **Copilot** (`ally-be`) *builds* the spec by interviewing the trainer, then *iterates* on it
+  from the trainer's live-test feedback.
 - **Actor + Director** (`ally-ai-learn`) *run* the spec as a live voice roleplay.
 
 The spec is the single source of truth. Every prompt either writes it, reads it, or is compiled
@@ -71,10 +72,10 @@ Trainer ⇄ copilot chat, streamed over SSE
    appends an immutable `roleplay_spec_versions` snapshot. `compile_spec` validates the draft
    before the trainer tests live or publishes.
 
-Orchestrator: `src/roleplay-studio/service/copilot-orchestrator.service.ts` (Anthropic tool loop).
-Tools: `copilot-tools.service.ts` (`update_spec`, `ask_trainer`, `pick_voice`,
+Orchestrator: `src/roleplay-studio/service/copilot-orchestrator.service.ts` (Anthropic tool loop,
+mode-aware). Tools: `copilot-tools.service.ts` (`update_spec`, `ask_trainer`, `pick_voice`,
 `get_competencies`, `get_competency_behaviours`, `review_behaviours`, `get_languages`,
-`compile_spec`).
+`compile_spec`; Iterate mode adds `get_test_session_insights`, `summarize_iteration`).
 
 **Prompts** (`src/prompts/roleplay_copilot/`):
 
@@ -83,6 +84,38 @@ Tools: `copilot-tools.service.ts` (`update_spec`, `ask_trainer`, `pick_voice`,
 | `interviewer_system.txt` | Copilot system prompt: the interview protocol, tool policy (one question/turn, patch after every answer), and the design quality bar |
 | `inference_pass.txt` | Rules for inferring the mechanics (resistance, disclosure tiers, state-machine shape, events, opening line, prosody, difficulty) from the answers |
 | `spec_compiler.txt` | Backs `compile_spec`: validate/normalize the draft and report fixable errors |
+
+---
+
+## Flow 1b — ITERATE (Copilot, feedback-driven, in `ally-be`)
+
+Once the spec is built, the trainer flips the copilot from **Build** to **Iterate** in the studio
+(`PATCH /v1/roleplay-studio/copilot/sessions/:id/mode`, persisted as `copilot_sessions.mode`).
+They live-test the roleplay, then describe what to change in plain language ("she opened up too
+fast", "the secret comes out too early"); the copilot reasons from that symptom to the spec field
+that controls it and patches only that — it refines, it never rebuilds.
+
+1. **Ground** — for feedback about pacing / disclosure / scoring the copilot calls
+   `get_test_session_insights`, which summarises the trainer's recent live-test runs from the
+   director telemetry (state path with turn indices, disclosure unlocks, aggregated rubric hits,
+   cumulative score, end-of-run summary) so the edit targets the real cause.
+2. **Reason & patch** — it maps the symptom to a cause (open-too-fast → raise
+   `minTurnsInState` / `minCumulativeScore` on the transition into the open state; reveals-too-early
+   → tighten a secret's `minStateIds`; mis-scored → edit a rubric behavior) and applies small,
+   targeted `update_spec` patches (version snapshot source `copilot_iteration`).
+3. **Summarise** — it calls `summarize_iteration`, emitting the FROZEN `iteration_summary` SSE
+   frame (`{feedback, reasoning, changes[]}`) — the "summary of updates made" card — and invites
+   another test run. Each `update_spec` still streams a `spec_patch` frame as live progress.
+
+Mode selects the system prompt and tool belt in `copilot-orchestrator.service.ts`: ITERATING uses
+`iteration_system` and adds `get_test_session_insights` + `summarize_iteration` on top of the
+shared authoring tools.
+
+**Prompt** (`src/prompts/roleplay_copilot/`):
+
+| Prompt | Role |
+|--------|------|
+| `iteration_system.txt` | Copilot system prompt for Iterate mode: the symptom→spec runtime model, the ground/reason/patch/summarise workflow, and the "refine, don't rebuild" rules |
 
 ---
 
@@ -121,13 +154,14 @@ studio's live observer panel (LiveKit data channel, topic `director`) and persis
 
 ---
 
-## Prompt catalog (all 7)
+## Prompt catalog (all 8)
 
 | Prompt | Repo · path | Phase | Role |
 |--------|-------------|-------|------|
 | `interviewer_system` | ally-be · `prompts/roleplay_copilot/` | Build | Copilot system: interview + build rules |
 | `inference_pass` | ally-be · `prompts/roleplay_copilot/` | Build | Infer mechanics from the answers |
 | `spec_compiler` | ally-be · `prompts/roleplay_copilot/` | Build | Validate/normalize the draft spec |
+| `iteration_system` | ally-be · `prompts/roleplay_copilot/` | Iterate | Copilot system: turn live-test feedback into targeted spec edits |
 | `actor/static_prefix` | ally-ai-learn · `prompts/actor/` | Run | Stable identity/context/style (compiled once) |
 | `actor/turn_card` | ally-ai-learn · `prompts/actor/` | Run | Per-turn state + ledger + memory + direction |
 | `director/system` | ally-ai-learn · `prompts/director/` | Run | Referee: score, transition, unlock, direct |
@@ -151,6 +185,6 @@ rejects editing v2 rows (422). See `DATA_SCHEMA.md` §3.9 for the tables.
 ## Key code paths
 
 - Spec + versioning + publish: `src/roleplay-studio/service/roleplay-spec.service.ts`, `spec-validator.service.ts`
-- Copilot: `service/copilot-orchestrator.service.ts`, `service/copilot-tools.service.ts`
+- Copilot (build + iterate; mode on `copilot_sessions.mode`): `service/copilot-orchestrator.service.ts`, `service/copilot-tools.service.ts`, `service/copilot-session.service.ts`
 - Session dispatch + Director telemetry: `service/roleplay-session.service.ts`, `processor/*`
 - Runtime (ally-ai-learn): `app/worker_v2.py`, `app/roleplay_v2/{actor,director,session,spec}/`

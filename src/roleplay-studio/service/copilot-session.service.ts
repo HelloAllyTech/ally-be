@@ -9,6 +9,7 @@ import { CopilotSessionRepository } from '../repository/copilot-session.reposito
 import { CopilotMessageRepository } from '../repository/copilot-message.repository';
 import { RoleplaySpecService } from './roleplay-spec.service';
 import { CopilotSessionStatus } from '../enum/copilot-session-status.enum';
+import { CopilotSessionMode } from '../enum/copilot-session-mode.enum';
 
 /**
  * Copilot session lifecycle + non-streaming REST around the transcript.
@@ -22,16 +23,40 @@ export class CopilotSessionService {
     private readonly roleplaySpecService: RoleplaySpecService,
   ) {}
 
-  async createSession(specId: string, userId: number): Promise<CopilotSession> {
+  async createSession(
+    specId: string,
+    userId: number,
+    mode: CopilotSessionMode = CopilotSessionMode.BUILDING,
+  ): Promise<CopilotSession> {
     // 404s when the spec doesn't exist.
     await this.roleplaySpecService.getSpec(specId);
     return this.sessionRepository.save(
       this.sessionRepository.create({
         specId,
+        mode,
         createdBy: userId,
         updatedBy: userId,
       }),
     );
+  }
+
+  /**
+   * Flip a session between BUILDING and ITERATING. The studio calls this when
+   * the trainer switches to Iterate mode after building (and back). No-op-safe:
+   * setting the current mode just returns the session. Ownership-guarded.
+   */
+  async setMode(
+    sessionId: string,
+    mode: CopilotSessionMode,
+    userId: number,
+  ): Promise<CopilotSession> {
+    const session = await this.getSession(sessionId, userId);
+    if (session.mode === mode) {
+      return session;
+    }
+    session.mode = mode;
+    session.updatedBy = userId;
+    return this.sessionRepository.save(session);
   }
 
   async getSession(
