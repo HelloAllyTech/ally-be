@@ -326,3 +326,10 @@ export const ALLY_AI_PROMPT_PREFIX = 'ally_ai_';
 export const ALLY_AI_LEARN_PROMPT_PREFIX = 'ally_ai_learn_';
 
 export const SKILL_ICONS_S3_PREFIX = 'skill-icons/';
+
+/**
+ * Warn threshold for LiveKit room-metadata payload size (bytes). LiveKit caps
+ * room metadata at 64 KiB; warn at 75% so growth (knowledge sources, translated
+ * prompts, language glossary) is visible well before sessions start failing.
+ */
+export const ROOM_METADATA_WARN_BYTES = 48 * 1024;
