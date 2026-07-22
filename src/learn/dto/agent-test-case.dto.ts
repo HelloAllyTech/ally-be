@@ -1,5 +1,30 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
+import { AgentTestCaseType } from '../enum/agent-test-case.enum';
+
+export class AgentTestCaseRubricDto {
+  @ApiProperty({
+    description: 'What this rubric row evaluates',
+    example: 'Acknowledges the user’s emotion before problem-solving',
+  })
+  @IsString()
+  criteria!: string;
+
+  @ApiProperty({
+    description: 'How the judge should score this criteria',
+    example: 'Award full marks only if the emotion is named explicitly.',
+  })
+  @IsString()
+  scoringInstructions!: string;
+}
 
 export class CreateAgentTestCaseDto {
   @ApiProperty({
@@ -11,12 +36,24 @@ export class CreateAgentTestCaseDto {
   title!: string;
 
   @ApiProperty({
-    description: 'Category the test case belongs to',
-    example: 'Relationship',
+    description: 'Test case type. Defaults to "condition" when omitted.',
+    enum: AgentTestCaseType,
+    default: AgentTestCaseType.CONDITION,
+    required: false,
   })
-  @IsNotEmpty()
-  @IsString()
-  category!: string;
+  @IsOptional()
+  @IsEnum(AgentTestCaseType)
+  type?: AgentTestCaseType;
+
+  @ApiProperty({
+    description: 'Free-text tags used to group/search test cases',
+    type: [String],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 
   @ApiProperty({
     description: 'Free-text description of the test case',
@@ -27,7 +64,7 @@ export class CreateAgentTestCaseDto {
   description?: string;
 
   @ApiProperty({
-    description: 'Condition under which this test case applies',
+    description: 'Condition test cases: the condition to simulate',
     required: false,
   })
   @IsOptional()
@@ -35,30 +72,49 @@ export class CreateAgentTestCaseDto {
   condition?: string;
 
   @ApiProperty({
-    description: 'The test / assertion the agent is evaluated against',
+    description: 'Condition test cases: test pass description',
     required: false,
   })
   @IsOptional()
   @IsString()
   test?: string;
+
+  @ApiProperty({
+    description: 'Full-session test cases: rubric rows',
+    type: [AgentTestCaseRubricDto],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AgentTestCaseRubricDto)
+  rubrics?: AgentTestCaseRubricDto[];
 }
 
 export class UpdateAgentTestCaseDto {
-  @ApiProperty({
-    description: 'Title of the agent test case',
-    required: false,
-  })
+  @ApiProperty({ description: 'Title of the agent test case', required: false })
   @IsOptional()
   @IsString()
   title?: string;
 
   @ApiProperty({
-    description: 'Category the test case belongs to',
+    description: 'Test case type',
+    enum: AgentTestCaseType,
     required: false,
   })
   @IsOptional()
-  @IsString()
-  category?: string;
+  @IsEnum(AgentTestCaseType)
+  type?: AgentTestCaseType;
+
+  @ApiProperty({
+    description: 'Free-text tags used to group/search test cases',
+    type: [String],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
 
   @ApiProperty({
     description: 'Free-text description of the test case',
@@ -69,7 +125,7 @@ export class UpdateAgentTestCaseDto {
   description?: string;
 
   @ApiProperty({
-    description: 'Condition under which this test case applies',
+    description: 'Condition test cases: the condition to simulate',
     required: false,
   })
   @IsOptional()
@@ -77,12 +133,23 @@ export class UpdateAgentTestCaseDto {
   condition?: string;
 
   @ApiProperty({
-    description: 'The test / assertion the agent is evaluated against',
+    description: 'Condition test cases: test pass description',
     required: false,
   })
   @IsOptional()
   @IsString()
   test?: string;
+
+  @ApiProperty({
+    description: 'Full-session test cases: rubric rows',
+    type: [AgentTestCaseRubricDto],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => AgentTestCaseRubricDto)
+  rubrics?: AgentTestCaseRubricDto[];
 }
 
 export class AgentTestCaseResponseDto {
@@ -92,8 +159,11 @@ export class AgentTestCaseResponseDto {
   @ApiProperty({ description: 'Title of the agent test case' })
   title!: string;
 
-  @ApiProperty({ description: 'Category the test case belongs to' })
-  category!: string;
+  @ApiProperty({ enum: AgentTestCaseType, description: 'Test case type' })
+  type!: AgentTestCaseType;
+
+  @ApiProperty({ type: [String], description: 'Tags' })
+  tags!: string[];
 
   @ApiProperty({
     description: 'Free-text description of the test case',
@@ -102,16 +172,23 @@ export class AgentTestCaseResponseDto {
   description?: string;
 
   @ApiProperty({
-    description: 'Condition under which this test case applies',
+    description: 'Condition test cases: the condition to simulate',
     required: false,
   })
   condition?: string;
 
   @ApiProperty({
-    description: 'The test / assertion the agent is evaluated against',
+    description: 'Condition test cases: test pass description',
     required: false,
   })
   test?: string;
+
+  @ApiProperty({
+    description: 'Full-session test cases: rubric rows',
+    type: [AgentTestCaseRubricDto],
+    required: false,
+  })
+  rubrics?: AgentTestCaseRubricDto[];
 }
 
 export class GetAgentTestCasesResponseDto {

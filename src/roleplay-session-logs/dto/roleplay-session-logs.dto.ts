@@ -337,7 +337,7 @@ export class RoleplaySessionFeedbackDto {
 export class RoleplaySessionAgentTestCaseDto {
   @ApiProperty() id!: string;
   @ApiProperty() title!: string;
-  @ApiProperty() category!: string;
+  @ApiProperty({ type: [String] }) tags!: string[];
   @ApiProperty({ nullable: true }) description!: string | null;
 }
 

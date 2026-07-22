@@ -104,6 +104,7 @@ tenants/groups.
 | `behaviors` | BaseWithoutTenant | `id` (uuid), `name`, `created_by` | Skills/behaviors to demonstrate |
 | `behavior_translations` | BaseWithoutTenant | `behavior_id`, `language_id`, `name` | Uniq `(behavior_id, language_id)` |
 | `competencies` | BaseWithoutTenant | `id` (uuid), `name` | Higher-order skill groupings |
+| `agent_test_cases` | BaseWithoutTenant (no tenant_id, no soft-delete) | `id` (uuid), `title`, `type` (`AgentTestCaseType`: `condition`\|`full_session`, default `condition`), `tags` (jsonb `string[]`), `description` (text), `condition` (text), `test` (text), `rubrics` (jsonb `[{criteria, scoringInstructions}]`), `created_by` (int) | **Global** catalog of agent/actor evaluation test cases (SUPER_DUPER_ADMIN-authored); `scenario_session_details.metrics` is scored against these. Renamed from `optimisation_goals` (migration 1810); `type`/`rubrics`/`tags` (replacing single `category`) added in 1862 |
 | `filler_tags` | BaseWithoutTenant | `name` | Speech fillers ("um", "uh") catalog |
 | `scenario_behavior_instructions` | BaseWithoutTenant | `scenario_id`, `category` (`BehaviorInstructionCategory`), `state_instructions` (jsonb), `deleted_at` | Per-scenario behavior detection rules |
 | `scenario_behavior_instruction_behaviors` | BaseWithoutTenant | `behavior_id`, `scenario_behavior_instruction_id` | Many-to-many join |

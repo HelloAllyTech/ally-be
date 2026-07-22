@@ -20,9 +20,12 @@ export class AgentTestCaseRepository extends Repository<AgentTestCase> {
     this.logger.info(`Getting agent test cases with search: ${search}`);
     if (search) {
       const searchTerm = `%${search.trim()}%`;
-      query.where('(goal.title ILIKE :search OR goal.category ILIKE :search)', {
-        search: searchTerm,
-      });
+      query.where(
+        '(goal.title ILIKE :search OR goal.tags::text ILIKE :search)',
+        {
+          search: searchTerm,
+        },
+      );
     }
     if (options) {
       this.applySorting(query, options);
