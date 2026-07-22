@@ -5509,6 +5509,26 @@ describe('ScenarioService', () => {
       expect(result.translations).toBeUndefined();
     });
 
+    it('enhances reminders through the same generic field path, using its own field label', async () => {
+      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+        'Maintain eye contact.\nAsk open-ended questions.',
+      );
+
+      const result = await service.enhanceField({
+        fieldName: EnhanceableField.REMINDERS,
+        currentValue: 'Maintain eye contact.\nAsk questions.',
+      } as any);
+
+      const call = openAIAutofillService.enhanceFieldContent.mock.calls[0];
+      expect(call[0]).toBe(EnhanceableField.REMINDERS);
+      const variables = call[2];
+      expect(variables.fieldLabel).toContain('Reminders');
+      expect(result).toEqual({
+        fieldName: EnhanceableField.REMINDERS,
+        content: 'Maintain eye contact.\nAsk open-ended questions.',
+      });
+    });
+
     it('routes to Anthropic when provider is anthropic', async () => {
       anthropicAutofillService.enhanceFieldContent.mockResolvedValue(
         'improved',

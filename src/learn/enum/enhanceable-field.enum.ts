@@ -16,6 +16,7 @@ export enum EnhanceableField {
   CHARACTER_PROFILE_TEXT = 'characterProfileText',
   DESCRIPTION = 'description',
   OPENING_STATEMENTS = 'openingStatements',
+  REMINDERS = 'reminders',
   LINGUISTIC_STYLE_SAMPLES = 'linguisticStyleSamples',
   ALLOWED_FILLER_WORDS = 'allowedFillerWords',
   KNOWLEDGE_SOURCES = 'knowledgeSources',
@@ -44,6 +45,10 @@ export const ENHANCEABLE_FIELD_LABELS: Record<EnhanceableField, string> = {
   [EnhanceableField.OPENING_STATEMENTS]:
     'Opening dialogues — the first lines the AI client says to open the ' +
     'session. One dialogue line per text line.',
+  [EnhanceableField.REMINDERS]:
+    'Reminders — short bullet-point reminders shown to the learner during ' +
+    "the live session (not part of the AI client's prompt or scoring). One " +
+    'reminder per line.',
   [EnhanceableField.LINGUISTIC_STYLE_SAMPLES]:
     'Linguistic style samples — example sentences showing how the AI client ' +
     'speaks (vocabulary, tone, rhythm). One sample per line. Keep them in the ' +
