@@ -160,6 +160,28 @@ export class LanguageGlossaryService {
   }
 
   /**
+   * Tier 1: published `retrieved` sections compiled to text, for the live
+   * agent's knowledge-retrieval title selection (Phase 5). `retrievalHint`
+   * tells the selector when to pull a section — glossary sections are
+   * production resources (what the NEXT reply needs), not discussion topics.
+   */
+  async resolveTier1Sections(
+    languageId: number,
+  ): Promise<{ title: string; content: string; retrievalHint?: string }[]> {
+    const sections = await this.glossaryRepository.findPublishedByLanguage(
+      languageId,
+      GlossaryInjectionMode.RETRIEVED,
+    );
+    return sections
+      .map((section) => ({
+        title: section.title,
+        content: compileSection(section),
+        retrievalHint: section.retrievalHint ?? undefined,
+      }))
+      .filter((s) => s.content.length > 0);
+  }
+
+  /**
    * Seed job (GL-5): generate a draft glossary for a language via the
    * `glossary_generation` registry prompt. Published sections are never
    * overwritten — drafts only. Returns per-section outcomes.

@@ -436,6 +436,28 @@ export class ScenarioSharedService {
           `[GLOSSARY] Tier 0 resolution failed for language ${languageDetails.id}; serving without glossary: ${error}`,
         );
       }
+
+      // Tier 1 (LANGUAGE_GLOSSARY_DESIGN.md §5.2): published retrieved-mode
+      // sections join the agent's knowledge-retrieval title selection. Titles
+      // are prefixed so the selector (and logs) can tell glossary sections
+      // from scenario knowledge; retrievalHint rides along as the "when to
+      // pull this" trigger description.
+      try {
+        const tier1 = await this.languageGlossaryService.resolveTier1Sections(
+          languageDetails.id,
+        );
+        if (tier1.length > 0) {
+          const label = languageDetails.label || 'Language';
+          promptData.glossarySections = tier1.map((s) => ({
+            ...s,
+            title: `[${label} glossary] ${s.title}`,
+          }));
+        }
+      } catch (error) {
+        this.logger.warn(
+          `[GLOSSARY] Tier 1 resolution failed for language ${languageDetails.id}; serving without glossary sections: ${error}`,
+        );
+      }
     }
 
     if (metadata?.languageId) {

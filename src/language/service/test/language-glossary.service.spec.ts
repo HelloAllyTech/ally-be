@@ -192,6 +192,36 @@ describe('LanguageGlossaryService', () => {
     });
   });
 
+  describe('resolveTier1Sections', () => {
+    it('compiles published retrieved sections with their hints, dropping empty ones', async () => {
+      glossaryRepository.findPublishedByLanguage.mockResolvedValue([
+        makeSection({
+          sectionCode: 'clinical_terms',
+          title: 'Clinical terms',
+          injectionMode: GlossaryInjectionMode.RETRIEVED,
+          status: GlossarySectionStatus.PUBLISHED,
+          retrievalHint: 'Retrieve when clinical.',
+        }),
+        makeSection({
+          sectionCode: 'empty_one',
+          title: 'Empty',
+          injectionMode: GlossaryInjectionMode.RETRIEVED,
+          status: GlossarySectionStatus.PUBLISHED,
+          entries: [],
+        }),
+      ]);
+      const out = await service.resolveTier1Sections(6);
+      expect(glossaryRepository.findPublishedByLanguage).toHaveBeenCalledWith(
+        6,
+        GlossaryInjectionMode.RETRIEVED,
+      );
+      expect(out).toHaveLength(1);
+      expect(out[0].title).toBe('Clinical terms');
+      expect(out[0].retrievalHint).toBe('Retrieve when clinical.');
+      expect(out[0].content).toContain('## Clinical terms');
+    });
+  });
+
   describe('resolveTier0Glossary', () => {
     it('compiles only published always-sections', async () => {
       glossaryRepository.findPublishedByLanguage.mockResolvedValue([

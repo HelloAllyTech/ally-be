@@ -1369,6 +1369,73 @@ describe('ScenarioSharedService', () => {
       );
     });
 
+    it('should ship prefixed Tier 1 glossary sections on promptData.glossarySections', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+      (scenarioTranslationsRepository as any).findOne = jest
+        .fn()
+        .mockResolvedValue(null);
+      const glossaryService = (service as any).languageGlossaryService;
+      glossaryService.resolveTier0Glossary = jest.fn().mockResolvedValue('');
+      glossaryService.resolveTier1Sections = jest.fn().mockResolvedValue([
+        {
+          title: 'Clinical terms',
+          content: '## Clinical terms\n- worry: say "டென்ஷன்"',
+          retrievalHint: 'Retrieve when clinical.',
+        },
+      ]);
+
+      const result = await service.createRoomMetadata({
+        scenario: glossaryScenario,
+        sessionEvents: [],
+        languageDetails: {
+          id: 2,
+          value: 'ta-IN',
+          label: 'Tamil (India)',
+        } as any,
+        previousMemory: null,
+      });
+
+      const sections = (result.scenario.promptData as any).glossarySections;
+      expect(sections).toHaveLength(1);
+      expect(sections[0].title).toBe('[Tamil (India) glossary] Clinical terms');
+      expect(sections[0].retrievalHint).toBe('Retrieve when clinical.');
+    });
+
+    it('should omit glossarySections when no retrieved sections are published', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+      (scenarioTranslationsRepository as any).findOne = jest
+        .fn()
+        .mockResolvedValue(null);
+      const glossaryService = (service as any).languageGlossaryService;
+      glossaryService.resolveTier0Glossary = jest.fn().mockResolvedValue('');
+      glossaryService.resolveTier1Sections = jest.fn().mockResolvedValue([]);
+
+      const result = await service.createRoomMetadata({
+        scenario: glossaryScenario,
+        sessionEvents: [],
+        languageDetails: {
+          id: 2,
+          value: 'ta-IN',
+          label: 'Tamil (India)',
+        } as any,
+        previousMemory: null,
+      });
+
+      expect(
+        (result.scenario.promptData as any).glossarySections,
+      ).toBeUndefined();
+    });
+
     it('should put active language characteristics on promptData.languageCharacteristics (trimmed string)', async () => {
       scenarioVoiceRepository.findOne.mockResolvedValue({
         id: 'voice-1',
