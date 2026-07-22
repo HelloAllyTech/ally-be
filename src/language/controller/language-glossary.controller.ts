@@ -68,4 +68,24 @@ export class LanguageGlossaryController {
   async generateDraftGlossary(@Param('id') id: number) {
     return this.glossaryService.generateDraftGlossary(Number(id));
   }
+
+  @ApiOperation({
+    summary:
+      'Backfill draft glossaries (all active non-English languages, or the given ids)',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Post('glossary/backfill')
+  async backfillGlossaries(@Body() body?: { languageIds?: number[] }) {
+    return this.glossaryService.backfillGlossaries(body?.languageIds);
+  }
+
+  @ApiOperation({
+    summary:
+      'Consolidate judge error annotations into PROPOSED glossary entries (never auto-published)',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Post(':id/glossary/consolidate')
+  async consolidateGlossary(@Param('id') id: number) {
+    return this.glossaryService.consolidateGlossary(Number(id));
+  }
 }

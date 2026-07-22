@@ -6,12 +6,16 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { LlmProviderFactory } from 'src/ai-chat/provider/llm-provider.factory';
 import { AppConfigService } from 'src/config/config.service';
 import { Prompt } from 'src/prompt/entity/prompt.entity';
 import { PromptVersion } from 'src/prompt/entity/prompt-version.entity';
+import { LanguageErrorAnnotation } from 'src/learn/entity/language-error-annotation.entity';
 import {
+  GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT,
+  GLOSSARY_CONSOLIDATION_DIMENSIONS,
+  GLOSSARY_CONSOLIDATION_PROMPT_CODE,
   GLOSSARY_GENERATION_PROMPT_CODE,
   TIER0_TOKEN_CAP,
 } from '../constants/glossary.constants';
@@ -50,6 +54,34 @@ interface GeneratedSection {
   entries: Partial<GlossaryEntry>[];
 }
 
+interface ConsolidatedEntry extends Partial<GlossaryEntry> {
+  sourceAnnotationIndexes?: number[];
+}
+
+interface ConsolidatedSection {
+  sectionCode: string;
+  title?: string;
+  injectionMode?: string;
+  retrievalHint?: string;
+  entries: ConsolidatedEntry[];
+}
+
+export interface BackfillGlossariesOutcome {
+  languageId: number;
+  value: string;
+  created: string[];
+  updated: string[];
+  skipped: string[];
+  error?: string;
+}
+
+export interface ConsolidateGlossaryResult {
+  annotationsConsidered: number;
+  proposed: number;
+  skippedDuplicates: number;
+  sections: string[];
+}
+
 /**
  * Language glossary lifecycle + seed job (LANGUAGE_GLOSSARY_DESIGN.md §6, §8).
  *
@@ -67,6 +99,8 @@ export class LanguageGlossaryService {
     private readonly promptRepository: Repository<Prompt>,
     @InjectRepository(PromptVersion)
     private readonly promptVersionRepository: Repository<PromptVersion>,
+    @InjectRepository(LanguageErrorAnnotation)
+    private readonly annotationRepository: Repository<LanguageErrorAnnotation>,
     private readonly llmProviderFactory: LlmProviderFactory,
     private readonly configService: AppConfigService,
   ) {}
@@ -191,7 +225,9 @@ export class LanguageGlossaryService {
     createdBy?: string,
   ): Promise<{ created: string[]; updated: string[]; skipped: string[] }> {
     const language = await this.assertLanguageExists(languageId);
-    const { systemPrompt, engine } = await this.resolveGenerationPrompt();
+    const { systemPrompt, engine } = await this.resolvePromptByCode(
+      GLOSSARY_GENERATION_PROMPT_CODE,
+    );
 
     const filled = systemPrompt
       .split('{{languageName}}')
@@ -269,6 +305,278 @@ export class LanguageGlossaryService {
     return { created, updated, skipped };
   }
 
+  /**
+   * Backfill (wave rollout): generate draft glossaries for many languages in
+   * one action. Defaults to every active non-English language; per-language
+   * failures are recorded, never thrown. Sequential — one Gemini call each.
+   */
+  async backfillGlossaries(
+    languageIds?: number[],
+    createdBy?: string,
+  ): Promise<BackfillGlossariesOutcome[]> {
+    const languages = languageIds?.length
+      ? await this.languagesRepository.find({ where: { id: In(languageIds) } })
+      : (
+          await this.languagesRepository.find({ where: { active: true } })
+        ).filter((l) => !l.value.startsWith('en'));
+
+    const outcomes: BackfillGlossariesOutcome[] = [];
+    for (const language of languages) {
+      try {
+        const result = await this.generateDraftGlossary(language.id, createdBy);
+        outcomes.push({
+          languageId: language.id,
+          value: language.value,
+          ...result,
+        });
+      } catch (error) {
+        outcomes.push({
+          languageId: language.id,
+          value: language.value,
+          created: [],
+          updated: [],
+          skipped: [],
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    this.logger.log(
+      `[GLOSSARY_BACKFILL] languages=${outcomes.length} failed=${outcomes.filter((o) => o.error).length}`,
+    );
+    return outcomes;
+  }
+
+  /**
+   * Consolidation loop (Phase 4, design §6.2): cluster the language judge's
+   * error annotations into PROPOSED glossary entries with provenance back to
+   * the annotations they generalize. Entries land as entry-status 'proposed'
+   * — invisible to the compiler until a reviewer accepts them — so this can
+   * never change what agents say on its own. Annotations already referenced
+   * by any entry's provenance are excluded (consumed-set), so re-runs only
+   * see new failures.
+   */
+  async consolidateGlossary(
+    languageId: number,
+    createdBy?: string,
+  ): Promise<ConsolidateGlossaryResult> {
+    const language = await this.assertLanguageExists(languageId);
+    const sections =
+      await this.glossaryRepository.findAllForLanguage(languageId);
+
+    const consumed = new Set<string>();
+    for (const section of sections) {
+      for (const entry of section.entries ?? []) {
+        for (const annotationId of entry.provenance?.annotationIds ?? []) {
+          consumed.add(annotationId as string);
+        }
+      }
+    }
+
+    // Cross-tenant read by design: the glossary is global per language, so it
+    // learns from every tenant's judged sessions.
+    const recent = await this.annotationRepository.find({
+      where: {
+        language: language.value,
+        dimension: In([...GLOSSARY_CONSOLIDATION_DIMENSIONS]),
+        conditionedOut: false,
+      },
+      order: { occurredAt: 'DESC' },
+      take: GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT,
+    });
+    const annotations = recent.filter((a) => !consumed.has(a.id));
+    if (annotations.length === 0) {
+      return {
+        annotationsConsidered: 0,
+        proposed: 0,
+        skippedDuplicates: 0,
+        sections: [],
+      };
+    }
+
+    const { systemPrompt, engine } = await this.resolvePromptByCode(
+      GLOSSARY_CONSOLIDATION_PROMPT_CODE,
+    );
+    const filled = systemPrompt
+      .split('{{languageName}}')
+      .join(language.label)
+      .split('{{languageCode}}')
+      .join(language.value)
+      .split('{{existingGlossary}}')
+      .join(this.summarizeGlossary(sections))
+      .split('{{annotations}}')
+      .join(this.summarizeAnnotations(annotations));
+
+    const provider = this.llmProviderFactory.getProvider(engine.provider);
+    const raw = await provider.getCompletion(
+      [
+        { role: 'system', content: filled },
+        {
+          role: 'user',
+          content: `Consolidate the ${annotations.length} annotations for ${language.label} (${language.value}).`,
+        },
+      ],
+      {
+        model: engine.model,
+        temperature: engine.temperature,
+        maxTokens: engine.maxTokens,
+      },
+    );
+
+    const consolidated = this.parseConsolidatedSections(raw);
+    let proposed = 0;
+    let skippedDuplicates = 0;
+    const touched: string[] = [];
+
+    for (const gen of consolidated) {
+      const existing = await this.glossaryRepository.findSection(
+        languageId,
+        gen.sectionCode,
+      );
+      const section =
+        existing ??
+        this.glossaryRepository.create({
+          languageId,
+          sectionCode: gen.sectionCode,
+          title: gen.title || gen.sectionCode.replace(/_/g, ' '),
+          entries: [],
+          retrievalHint: gen.retrievalHint,
+          injectionMode:
+            gen.injectionMode === GlossaryInjectionMode.ALWAYS
+              ? GlossaryInjectionMode.ALWAYS
+              : GlossaryInjectionMode.RETRIEVED,
+          status: GlossarySectionStatus.DRAFT,
+          provenance: { source: 'consolidation' },
+          createdBy,
+        });
+
+      const existingKeys = new Set(
+        (section.entries ?? []).map((e) => this.entryDedupeKey(e)),
+      );
+
+      let appended = 0;
+      for (const entry of gen.entries ?? []) {
+        if (!entry || typeof entry !== 'object' || !entry.type) continue;
+        const key = this.entryDedupeKey(entry as GlossaryEntry);
+        if (existingKeys.has(key)) {
+          skippedDuplicates++;
+          continue;
+        }
+        existingKeys.add(key);
+        const annotationIds = (entry.sourceAnnotationIndexes ?? [])
+          .map((i) => annotations[i - 1]?.id)
+          .filter((id): id is string => Boolean(id));
+        const fields: ConsolidatedEntry = { ...entry };
+        delete fields.sourceAnnotationIndexes;
+        section.entries = [
+          ...(section.entries ?? []),
+          {
+            ...(fields as GlossaryEntry),
+            id: randomUUID(),
+            status: GlossaryEntryStatus.PROPOSED,
+            importance: this.clampImportance(entry.importance),
+            provenance: { source: 'consolidation', annotationIds },
+          },
+        ];
+        appended++;
+      }
+
+      if (appended > 0 || !existing) {
+        section.version = (existing?.version ?? 0) + 1;
+        section.updatedBy = createdBy;
+        await this.glossaryRepository.save(section);
+        touched.push(gen.sectionCode);
+        proposed += appended;
+      }
+    }
+
+    this.logger.log(
+      `[GLOSSARY_CONSOLIDATE] language=${language.value} annotations=${annotations.length} proposed=${proposed} duplicates=${skippedDuplicates} sections=${touched.join(',')}`,
+    );
+    return {
+      annotationsConsidered: annotations.length,
+      proposed,
+      skippedDuplicates,
+      sections: touched,
+    };
+  }
+
+  /** Stable identity for duplicate detection across runs (any entry status). */
+  private entryDedupeKey(entry: Partial<GlossaryEntry>): string {
+    const norm = (v?: string) => (v ?? '').trim().toLowerCase();
+    return `${entry.type}|${norm(entry.english)}|${norm(entry.preferred)}|${norm(entry.text)}`;
+  }
+
+  private clampImportance(value: unknown): number | undefined {
+    if (typeof value !== 'number' || Number.isNaN(value)) return undefined;
+    return Math.min(5, Math.max(1, Math.round(value)));
+  }
+
+  /** Compact existing-glossary listing for the consolidation prompt. */
+  private summarizeGlossary(sections: LanguageGlossarySection[]): string {
+    if (sections.length === 0) return '(no glossary sections exist yet)';
+    return sections
+      .map((s) => {
+        const entrySummaries = (s.entries ?? [])
+          .slice(0, 40)
+          .map((e) =>
+            e.type === 'term_pair'
+              ? `${e.english}→${e.preferred}`
+              : (e.text ?? '').slice(0, 80),
+          )
+          .filter(Boolean)
+          .join('; ');
+        return `- ${s.sectionCode} (${s.injectionMode}, ${s.status}) "${s.title}": ${entrySummaries || '(empty)'}`;
+      })
+      .join('\n');
+  }
+
+  /** Numbered annotation listing for the consolidation prompt (1-based). */
+  private summarizeAnnotations(annotations: LanguageErrorAnnotation[]): string {
+    const clip = (v: string | undefined | null, n: number) =>
+      (v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
+    return annotations
+      .map((a, i) => {
+        const parts = [
+          `#${i + 1} [${a.dimension}/${a.category} ${a.severity}]`,
+          a.evidenceQuote ? `span="${clip(a.evidenceQuote, 160)}"` : '',
+          a.reasoning ? `reasoning="${clip(a.reasoning, 200)}"` : '',
+          a.aiText ? `reply="${clip(a.aiText, 200)}"` : '',
+        ];
+        return parts.filter(Boolean).join(' ');
+      })
+      .join('\n');
+  }
+
+  /** Parse the consolidation model output (tolerating markdown fences). */
+  private parseConsolidatedSections(raw: string): ConsolidatedSection[] {
+    const cleaned = raw
+      .trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/, '');
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      throw new BadRequestException(
+        'Glossary consolidation returned unparseable output; retry or adjust the glossary_consolidation prompt',
+      );
+    }
+    const list = Array.isArray(parsed)
+      ? parsed
+      : ((parsed as Record<string, unknown>)?.sections as unknown[]);
+    if (!Array.isArray(list)) {
+      throw new BadRequestException(
+        'Glossary consolidation output is not a section array',
+      );
+    }
+    return list.filter(
+      (s): s is ConsolidatedSection =>
+        !!s &&
+        typeof (s as ConsolidatedSection).sectionCode === 'string' &&
+        Array.isArray((s as ConsolidatedSection).entries),
+    );
+  }
+
   private async getSectionOrThrow(
     languageId: number,
     sectionCode: string,
@@ -317,13 +625,13 @@ export class LanguageGlossaryService {
     }
   }
 
-  private async resolveGenerationPrompt() {
+  private async resolvePromptByCode(promptCode: string) {
     const row = await this.promptRepository.findOne({
-      where: { promptCode: GLOSSARY_GENERATION_PROMPT_CODE },
+      where: { promptCode },
     });
     if (!row) {
       throw new NotFoundException(
-        `Prompt '${GLOSSARY_GENERATION_PROMPT_CODE}' not found — run migrations`,
+        `Prompt '${promptCode}' not found — run migrations`,
       );
     }
 
@@ -335,9 +643,7 @@ export class LanguageGlossaryService {
       body = version?.prompt ?? body;
     }
     if (!body) {
-      throw new NotFoundException(
-        `Prompt '${GLOSSARY_GENERATION_PROMPT_CODE}' has no body`,
-      );
+      throw new NotFoundException(`Prompt '${promptCode}' has no body`);
     }
 
     const defaults = this.configService.promptTranslation;

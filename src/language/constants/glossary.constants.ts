@@ -24,3 +24,21 @@ export const GLOSSARY_SECTION_ORDER = [
 
 /** Max entries accepted per section in one upsert (sanity bound, not a product limit). */
 export const MAX_GLOSSARY_ENTRIES_PER_SECTION = 200;
+
+/** Registry prompt that consolidates judge error annotations into proposed entries. */
+export const GLOSSARY_CONSOLIDATION_PROMPT_CODE = 'glossary_consolidation';
+
+/**
+ * Judge dimensions the consolidation loop mines. Style/lexicon dimensions only —
+ * fluency/coherence/understanding errors are model competence, not glossary-able.
+ */
+export const GLOSSARY_CONSOLIDATION_DIMENSIONS = [
+  'register',
+  'dialect_lexicon',
+  'colloquialness',
+  'codeswitch',
+  'persona_social',
+] as const;
+
+/** Most-recent annotations considered per consolidation run (keeps the prompt bounded). */
+export const GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT = 200;

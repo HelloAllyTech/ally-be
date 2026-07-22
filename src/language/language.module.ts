@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AiChatModule } from 'src/ai-chat/ai-chat.module';
 import { Prompt } from 'src/prompt/entity/prompt.entity';
 import { PromptVersion } from 'src/prompt/entity/prompt-version.entity';
+import { LanguageErrorAnnotation } from 'src/learn/entity/language-error-annotation.entity';
 import { Languages } from './entity/languages.entity';
 import { LanguageGlossarySection } from './entity/language-glossary-section.entity';
 import { LanguagesRepository } from './repository/languages.repository';
@@ -23,6 +24,7 @@ import { UserModule } from 'src/user/user.module';
       LanguageGlossarySection,
       Prompt,
       PromptVersion,
+      LanguageErrorAnnotation,
     ]),
     AiChatModule,
     forwardRef(() => UserModule),

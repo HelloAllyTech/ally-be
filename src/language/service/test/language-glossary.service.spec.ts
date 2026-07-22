@@ -38,6 +38,7 @@ describe('LanguageGlossaryService', () => {
   let languagesRepository: any;
   let promptRepository: any;
   let promptVersionRepository: any;
+  let annotationRepository: any;
   let llmProviderFactory: any;
   let getCompletion: jest.Mock;
 
@@ -66,6 +67,7 @@ describe('LanguageGlossaryService', () => {
         .fn()
         .mockResolvedValue({ prompt: 'Generate for {{languageName}}' }),
     };
+    annotationRepository = { find: jest.fn().mockResolvedValue([]) };
     getCompletion = jest.fn();
     llmProviderFactory = {
       getProvider: jest.fn().mockReturnValue({ getCompletion }),
@@ -83,6 +85,7 @@ describe('LanguageGlossaryService', () => {
       languagesRepository,
       promptRepository,
       promptVersionRepository,
+      annotationRepository,
       llmProviderFactory,
       configService as any,
     );
@@ -291,6 +294,146 @@ describe('LanguageGlossaryService', () => {
     it('rejects unparseable model output', async () => {
       getCompletion.mockResolvedValue('sorry, here is your glossary: ...');
       await expect(service.generateDraftGlossary(6)).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('backfillGlossaries', () => {
+    it('generates for every active non-English language, capturing per-language failures', async () => {
+      languagesRepository.find = jest.fn().mockResolvedValue([
+        { id: 1, value: 'en-IN', label: 'English (India)', active: true },
+        { id: 6, value: 'ta-IN', label: 'Tamil (India)', active: true },
+        { id: 2, value: 'hi-IN', label: 'Hindi (India)', active: true },
+      ]);
+      const spy = jest
+        .spyOn(service, 'generateDraftGlossary')
+        .mockResolvedValueOnce({
+          created: ['core_style'],
+          updated: [],
+          skipped: [],
+        })
+        .mockRejectedValueOnce(new Error('gemini down'));
+
+      const outcomes = await service.backfillGlossaries();
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(outcomes.map((o) => o.value)).toEqual(['ta-IN', 'hi-IN']);
+      expect(outcomes[0].created).toEqual(['core_style']);
+      expect(outcomes[1].error).toBe('gemini down');
+    });
+
+    it('targets explicit language ids when given', async () => {
+      languagesRepository.find = jest
+        .fn()
+        .mockResolvedValue([{ id: 6, value: 'ta-IN', label: 'Tamil (India)' }]);
+      const spy = jest
+        .spyOn(service, 'generateDraftGlossary')
+        .mockResolvedValue({ created: [], updated: [], skipped: [] });
+      await service.backfillGlossaries([6]);
+      expect(spy).toHaveBeenCalledWith(6, undefined);
+    });
+  });
+
+  describe('consolidateGlossary', () => {
+    const annotation = (id: string, extra: Record<string, unknown> = {}) => ({
+      id,
+      dimension: 'dialect_lexicon',
+      category: 'wrong_regional_variety',
+      severity: 'major',
+      evidenceQuote: 'பதட்டம்',
+      reasoning: 'Literary register for a clinical term.',
+      aiText: 'உங்களுக்கு பதட்டம் உள்ளதா?',
+      ...extra,
+    });
+
+    const consolidationOutput = [
+      {
+        sectionCode: 'clinical_terms',
+        title: 'Clinical terms',
+        injectionMode: 'retrieved',
+        retrievalHint: 'Retrieve when clinical.',
+        entries: [
+          {
+            type: 'term_pair',
+            english: 'anxiety',
+            preferred: 'டென்ஷன்',
+            avoid: 'பதட்டம்',
+            importance: 4,
+            sourceAnnotationIndexes: [1, 2],
+          },
+        ],
+      },
+    ];
+
+    it('returns zeros without calling the LLM when no unconsumed annotations exist', async () => {
+      glossaryRepository.findAllForLanguage.mockResolvedValue([
+        makeSection({
+          entries: [
+            {
+              id: 'e1',
+              type: 'rule',
+              text: 'old',
+              status: GlossaryEntryStatus.PROPOSED,
+              provenance: { source: 'consolidation', annotationIds: ['a1'] },
+            },
+          ],
+        }),
+      ]);
+      annotationRepository.find.mockResolvedValue([annotation('a1')]);
+      const result = await service.consolidateGlossary(6);
+      expect(result.annotationsConsidered).toBe(0);
+      expect(getCompletion).not.toHaveBeenCalled();
+    });
+
+    it('lands consolidated entries as proposed with annotation provenance', async () => {
+      annotationRepository.find.mockResolvedValue([
+        annotation('a1'),
+        annotation('a2'),
+      ]);
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      const result = await service.consolidateGlossary(6, 'admin');
+
+      expect(result.annotationsConsidered).toBe(2);
+      expect(result.proposed).toBe(1);
+      expect(result.sections).toEqual(['clinical_terms']);
+      const saved = glossaryRepository.save.mock.calls.at(-1)[0];
+      expect(saved.status).toBe(GlossarySectionStatus.DRAFT);
+      const entry = saved.entries[0];
+      expect(entry.status).toBe(GlossaryEntryStatus.PROPOSED);
+      expect(entry.provenance.annotationIds).toEqual(['a1', 'a2']);
+      expect(entry.importance).toBe(4);
+      expect(entry.sourceAnnotationIndexes).toBeUndefined();
+    });
+
+    it('skips entries that duplicate existing ones (any status)', async () => {
+      annotationRepository.find.mockResolvedValue([annotation('a1')]);
+      glossaryRepository.findSection.mockResolvedValue(
+        makeSection({
+          sectionCode: 'clinical_terms',
+          entries: [
+            {
+              id: 'e1',
+              type: 'term_pair',
+              english: 'Anxiety',
+              preferred: 'டென்ஷன்',
+              status: GlossaryEntryStatus.PUBLISHED,
+            },
+          ],
+        }),
+      );
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      const result = await service.consolidateGlossary(6);
+      expect(result.proposed).toBe(0);
+      expect(result.skippedDuplicates).toBe(1);
+    });
+
+    it('rejects unparseable consolidation output', async () => {
+      annotationRepository.find.mockResolvedValue([annotation('a1')]);
+      getCompletion.mockResolvedValue('here are your entries: ...');
+      await expect(service.consolidateGlossary(6)).rejects.toThrow(
         BadRequestException,
       );
     });
