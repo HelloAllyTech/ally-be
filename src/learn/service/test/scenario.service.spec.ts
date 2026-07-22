@@ -4971,6 +4971,7 @@ describe('ScenarioService', () => {
           updatedAt: new Date(),
           llmProviderConfig: {},
           sttProviderConfig: {},
+          evalConfig: {},
         },
         {
           id: 2,
@@ -4982,6 +4983,7 @@ describe('ScenarioService', () => {
           updatedAt: new Date(),
           llmProviderConfig: {},
           sttProviderConfig: {},
+          evalConfig: {},
         },
       ];
 
