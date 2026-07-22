@@ -24,7 +24,6 @@ import { LoggerService } from 'src/logger/logger.service';
 import { CopilotSessionService } from '../service/copilot-session.service';
 import { CopilotOrchestratorService } from '../service/copilot-orchestrator.service';
 import {
-  AcceptSuggestedTestCasesDto,
   CreateCopilotMessageDto,
   CreateCopilotSessionDto,
   ListCopilotSessionsQueryDto,
@@ -134,23 +133,5 @@ export class CopilotController {
     } finally {
       res.end();
     }
-  }
-
-  @Post('sessions/:sessionId/test-cases')
-  @AuthPermissions([PERMISSIONS.EDIT_ROLEPLAY_COPILOT])
-  @ApiOperation({
-    summary:
-      'Accept suggested test cases (creates agent_test_cases + appends ids to the draft spec)',
-  })
-  acceptTestCases(
-    @Param('sessionId', ParseUUIDPipe) sessionId: string,
-    @Body() dto: AcceptSuggestedTestCasesDto,
-    @CurrentUser() user: TokenUser,
-  ) {
-    return this.copilotSessionService.acceptSuggestedTestCases(
-      sessionId,
-      dto,
-      user.id,
-    );
   }
 }

@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, In } from 'typeorm';
 import { ScenarioVoices } from 'src/learn/entity/scenario-voices.entity';
-import { AgentTestCase } from 'src/learn/entity/agent-test-case.entity';
 import {
   SPEC_MAX_STATES,
   SPEC_MIN_STATES,
@@ -24,8 +23,7 @@ import {
  *    state bounds (3-6), exactly one initial state, no dangling
  *    toStateId/behaviorIds/minStateIds/duplicate ids, enum fields.
  *  - DB-backed checks (async, opt-in via `checkDb`) — voice ids must exist
- *    and be active in scenario_voices (and belong to the right language),
- *    agentTestCaseIds must exist in agent_test_cases.
+ *    and be active in scenario_voices (and belong to the right language).
  */
 @Injectable()
 export class SpecValidatorService {
@@ -467,17 +465,6 @@ export class SpecValidatorService {
 
     // ---- misc scalar/opaque blocks ----
     if (
-      spec.agentTestCaseIds !== undefined &&
-      (!Array.isArray(spec.agentTestCaseIds) ||
-        spec.agentTestCaseIds.some((id) => !this.isNonEmptyString(id)))
-    ) {
-      err(
-        '/agentTestCaseIds',
-        'invalid_type',
-        'agentTestCaseIds must be an array of ids',
-      );
-    }
-    if (
       spec.openingStatement !== undefined &&
       typeof spec.openingStatement !== 'string'
     ) {
@@ -511,7 +498,7 @@ export class SpecValidatorService {
 
   /**
    * Catalog checks: voices must exist + be active in scenario_voices (and
-   * belong to the language they are keyed under), agentTestCaseIds must exist.
+   * belong to the language they are keyed under).
    */
   private async validateAgainstCatalogs(
     spec: Partial<RoleplaySpecDocument>,
@@ -550,23 +537,6 @@ export class SpecValidatorService {
           });
         }
       }
-    }
-
-    const testCaseIds = [...new Set(spec.agentTestCaseIds ?? [])];
-    if (testCaseIds.length > 0) {
-      const found = await this.dataSource
-        .getRepository(AgentTestCase)
-        .find({ where: { id: In(testCaseIds) }, select: { id: true } });
-      const foundIds = new Set(found.map((testCase) => testCase.id));
-      (spec.agentTestCaseIds ?? []).forEach((id, i) => {
-        if (!foundIds.has(id)) {
-          errors.push({
-            path: `/agentTestCaseIds/${i}`,
-            code: 'unknown_agent_test_case',
-            message: `agent test case "${id}" does not exist`,
-          });
-        }
-      });
     }
 
     return errors;

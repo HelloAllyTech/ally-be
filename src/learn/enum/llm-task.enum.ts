@@ -34,8 +34,6 @@ export enum LlmTask {
   AUTOFILL_AGENT_FIELD = 'autofill_agent_field',
   // Roleplay Studio v2 copilot: one streamed interviewer/tool-loop turn.
   ROLEPLAY_COPILOT = 'roleplay_copilot',
-  // Roleplay Studio v2: rehearsal critique → spec-patch proposals.
-  ROLEPLAY_CRITIQUE = 'roleplay_critique',
   // Track 2.0 quiz: grading one open-ended learner answer against its rubric.
   TRACK_QUIZ_GRADING = 'track_quiz_grading',
   TRANSLATE_SCENARIO = 'translate_scenario',

@@ -3,7 +3,6 @@ import { Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
-  IsBoolean,
   IsDateString,
   IsInt,
   IsNotEmpty,
@@ -83,17 +82,6 @@ export class CreateRoleplaySpecVersionDto {
   @IsOptional()
   @IsString()
   name?: string;
-}
-
-export class PublishRoleplaySpecVersionDto {
-  @ApiPropertyOptional({
-    description:
-      'Skip the rehearsal gate (publish without a COMPLETED rehearsal for this version)',
-    default: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  force?: boolean;
 }
 
 export class ShareRoleplaySpecTenantsDto {

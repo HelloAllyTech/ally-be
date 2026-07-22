@@ -24,7 +24,6 @@ import {
   CreateRoleplaySpecDto,
   CreateRoleplaySpecVersionDto,
   ListRoleplaySpecsQueryDto,
-  PublishRoleplaySpecVersionDto,
   ShareRoleplaySpecTenantsDto,
   UpdateRoleplaySpecDraftDto,
   UpdateRoleplaySpecDto,
@@ -154,21 +153,14 @@ export class RoleplaySpecController {
   @Post(':specId/versions/:versionId/publish')
   @AuthPermissions([PERMISSIONS.EDIT_ROLEPLAY_SPEC])
   @ApiOperation({
-    summary:
-      'Publish a version (422 on validation errors; 409 without a completed rehearsal unless force)',
+    summary: 'Publish a version (422 on validation errors)',
   })
   publishVersion(
     @Param('specId', ParseUUIDPipe) specId: string,
     @Param('versionId', ParseUUIDPipe) versionId: string,
-    @Body() dto: PublishRoleplaySpecVersionDto,
     @CurrentUser() user: TokenUser,
   ) {
-    return this.roleplaySpecService.publishVersion(
-      specId,
-      versionId,
-      user.id,
-      dto?.force ?? false,
-    );
+    return this.roleplaySpecService.publishVersion(specId, versionId, user.id);
   }
 
   // --------------------------------------------------------------- tenants

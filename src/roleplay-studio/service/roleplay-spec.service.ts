@@ -22,11 +22,9 @@ import { RoleplaySpecTenant } from '../entity/roleplay-spec-tenant.entity';
 import { RoleplaySpecStatus } from '../enum/roleplay-spec-status.enum';
 import { RoleplaySpecVersionStatus } from '../enum/roleplay-spec-version-status.enum';
 import { RoleplaySpecVersionSource } from '../enum/roleplay-spec-version-source.enum';
-import { RehearsalStatus } from '../enum/rehearsal-status.enum';
 import { RoleplaySpecRepository } from '../repository/roleplay-spec.repository';
 import { RoleplaySpecVersionRepository } from '../repository/roleplay-spec-version.repository';
 import { RoleplaySpecTenantRepository } from '../repository/roleplay-spec-tenant.repository';
-import { RehearsalRunRepository } from '../repository/rehearsal-run.repository';
 import { SpecValidatorService } from './spec-validator.service';
 import {
   RoleplaySpecDocument,
@@ -46,9 +44,9 @@ import {
  *
  * The thin `scenarios` shell (engine=ROLEPLAY_V2, status DRAFT) is created AT
  * SPEC CREATION so `scenarioId` always exists; publish validates the chosen
- * snapshot, applies the rehearsal gate (409 unless force), flips the shell
- * ACTIVE with the spec's title/competency, and copies roleplay_spec_tenants
- * into scenario_tenants so learner listing works unchanged.
+ * snapshot, flips the shell ACTIVE with the spec's title/competency, and
+ * copies roleplay_spec_tenants into scenario_tenants so learner listing works
+ * unchanged.
  */
 @Injectable()
 export class RoleplaySpecService {
@@ -58,7 +56,6 @@ export class RoleplaySpecService {
     private readonly specRepository: RoleplaySpecRepository,
     private readonly specVersionRepository: RoleplaySpecVersionRepository,
     private readonly specTenantRepository: RoleplaySpecTenantRepository,
-    private readonly rehearsalRunRepository: RehearsalRunRepository,
     private readonly specValidator: SpecValidatorService,
     private readonly permissionsService: PermissionsService,
     private readonly dataSource: DataSource,
@@ -451,9 +448,7 @@ export class RoleplaySpecService {
   /**
    * Publish a snapshot:
    *  1. full validation (structure + catalogs) → 422 with the error list;
-   *  2. rehearsal gate — a COMPLETED rehearsal run for THIS version is
-   *     required unless `force` → 409;
-   *  3. one transaction: archive the previously published version, flip this
+   *  2. one transaction: archive the previously published version, flip this
    *     one PUBLISHED, point the spec at it, materialise the thin scenario
    *     (title/competency/status ACTIVE) and copy spec tenants →
    *     scenario_tenants.
@@ -462,7 +457,6 @@ export class RoleplaySpecService {
     specId: string,
     versionId: string,
     userId: number,
-    force = false,
   ): Promise<RoleplaySpecVersion> {
     const spec = await this.getSpec(specId);
     await this.assertOwnership(spec, userId);
@@ -474,20 +468,6 @@ export class RoleplaySpecService {
         message: 'Spec version failed validation',
         errors: validation.errors,
       });
-    }
-
-    if (!force) {
-      const completedRehearsal = await this.rehearsalRunRepository.findOne({
-        where: {
-          specVersionId: versionId,
-          status: RehearsalStatus.COMPLETED,
-        },
-      });
-      if (!completedRehearsal) {
-        throw new ConflictException(
-          'No completed rehearsal for this version. Run a rehearsal first, or publish with force=true.',
-        );
-      }
     }
 
     return this.dataSource.transaction(async (em) => {

@@ -12,7 +12,6 @@ export type CopilotSseEventName =
   | 'spec_patch'
   | 'question'
   | 'behaviour_review'
-  | 'test_case_suggestions'
   | 'error'
   | 'done';
 
@@ -96,21 +95,6 @@ export interface CopilotBehaviourReviewEvent {
   helpful: CopilotBehaviourReviewItem[];
   unhelpful: CopilotBehaviourReviewItem[];
   allowCustom?: boolean;
-}
-
-export interface CopilotTestCaseSuggestion {
-  id: string;
-  title: string;
-  category?: string | null;
-  description?: string | null;
-  condition?: string | null;
-  test?: string | null;
-}
-
-/** Structured suggest_test_cases payload — accepted cards persist into the
- *  agent_test_cases catalog via the existing learn endpoint. */
-export interface CopilotTestCaseSuggestionsEvent {
-  suggestions: CopilotTestCaseSuggestion[];
 }
 
 export interface CopilotErrorEvent {

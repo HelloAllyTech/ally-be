@@ -79,17 +79,6 @@ describe('CopilotOrchestratorService', () => {
       getSpec: jest.fn().mockResolvedValue({ id: 'spec-1', draftSpec: {} }),
     } as any;
     const llmUsage = { record: usageRecord } as any;
-    const rehearsalRunRepository = {
-      createQueryBuilder: jest.fn(() => ({
-        where: jest.fn().mockReturnThis(),
-        andWhere: jest.fn().mockReturnThis(),
-        orderBy: jest.fn().mockReturnThis(),
-        getOne: jest.fn().mockResolvedValue(null),
-      })),
-    } as any;
-    const improvementRunRepository = {
-      findAwaitingReview: jest.fn().mockResolvedValue(null),
-    } as any;
 
     service = new CopilotOrchestratorService(
       configService,
@@ -97,8 +86,6 @@ describe('CopilotOrchestratorService', () => {
       copilotSessionService,
       copilotToolsService,
       copilotMessageRepository,
-      rehearsalRunRepository,
-      improvementRunRepository,
       roleplaySpecService,
       llmUsage,
     );
@@ -171,16 +158,12 @@ describe('CopilotOrchestratorService', () => {
     expect(lastTwo[1].content[0].tool_use_id).toBe('tu-1');
   });
 
-  it('threads sessionId into the tool context and persists question/suggestion metadata', async () => {
+  it('threads sessionId into the tool context and persists question metadata', async () => {
     const question = { id: 'q-1', prompt: 'Which skill?', kind: 'freeText' };
-    const suggestion = { id: 's-1', title: 'Leak check' };
     toolsExecute.mockResolvedValueOnce({
       modelResult: { ok: true },
       summary: 'asked',
-      events: [
-        { event: 'question', data: question },
-        { event: 'test_case_suggestions', data: { suggestions: [suggestion] } },
-      ],
+      events: [{ event: 'question', data: question }],
       endTurn: true,
     });
     streamMock.mockReturnValue(makeStream([toolUseBlock('tu-1')], 'tool_use'));
@@ -193,12 +176,11 @@ describe('CopilotOrchestratorService', () => {
       expect.objectContaining({ sessionId: 'sess-1', userId: 7 }),
     );
     expect(frames.map((frame) => frame.event)).toEqual(
-      expect.arrayContaining(['question', 'test_case_suggestions']),
+      expect.arrayContaining(['question']),
     );
     // Resume fidelity: the persisted assistant row carries the card payloads.
     const assistantRow = appendMessage.mock.calls[1][1];
     expect(assistantRow.metadata.questions).toEqual([question]);
-    expect(assistantRow.metadata.testCaseSuggestions).toEqual([suggestion]);
   });
 
   it('makes a tool-less wrap-up pass when the tool loop hits the cap', async () => {

@@ -454,11 +454,6 @@ export class AppConfigService {
         'ROLEPLAY_COPILOT_MAX_TOOL_ITERATIONS',
         16,
       ),
-      // Rehearsal runs that outlive this are failed by the redis TTL timer.
-      rehearsalTimeoutMinutes: this.configService.get<number>(
-        'ROLEPLAY_REHEARSAL_TIMEOUT_MINUTES',
-        30,
-      ),
     };
   }
 

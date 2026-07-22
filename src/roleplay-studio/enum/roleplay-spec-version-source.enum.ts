@@ -10,9 +10,4 @@ export enum RoleplaySpecVersionSource {
   COPILOT_PATCH = 'copilot_patch',
   // Explicit checkpoint via POST /specs/:id/versions.
   SNAPSHOT = 'snapshot',
-  // An auto-improve round folded critique proposals into a scratch version
-  // (versions-only lineage — the working draft is never touched mid-run).
-  AUTO_IMPROVE = 'auto_improve',
-  // Trainer accepted an auto-improve result: best version copied to the draft.
-  AUTO_IMPROVE_ACCEPTED = 'auto_improve_accepted',
 }
