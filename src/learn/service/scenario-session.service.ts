@@ -788,6 +788,11 @@ export class ScenarioSessionService {
         scenario?.metadata?.currentState,
         scenario?.metadata?.stateNames,
       );
+      // Reminders are only shown to the learner when remindersEnabled is on for the scenario
+      const reminders = this.getReminders(
+        scenario?.metadata?.remindersEnabled,
+        learnerReminders,
+      );
       // Create LiveKit room
       await this.livekitService.createRoom({
         name: `${scenarioSession.roomId}`,
@@ -845,7 +850,8 @@ export class ScenarioSessionService {
         id: scenario?.id,
         title: scenario?.title,
         description: learnerDescription,
-        reminders: learnerReminders,
+        reminders,
+        remindersEnabled: scenario?.metadata?.remindersEnabled,
         coverImageUrl: scenario?.coverImageUrl,
         coverVideoUrl: scenario?.coverVideoUrl,
         status: scenario?.status,
@@ -2500,6 +2506,13 @@ export class ScenarioSessionService {
           stateId: stateName.stateId,
         };
       });
+    }
+    return [];
+  }
+
+  getReminders(remindersEnabled?: boolean, reminders?: string[]) {
+    if (remindersEnabled && reminders?.length) {
+      return reminders;
     }
     return [];
   }
