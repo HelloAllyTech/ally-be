@@ -24,4 +24,12 @@ export class Languages extends BaseWithoutTenantEntity {
 
   @Column({ type: 'jsonb', default: {} })
   sttProviderConfig!: Record<string, any>;
+
+  /**
+   * Per-language declarative eval config (script, errorRateUnit, targetVariety,
+   * diglossia, …). Column added by migration 1829000000002; previously missing
+   * from this entity (read only via raw SQL in analytics).
+   */
+  @Column({ type: 'jsonb', default: {} })
+  evalConfig!: Record<string, any>;
 }

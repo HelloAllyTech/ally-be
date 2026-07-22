@@ -24,6 +24,7 @@ import { BehaviorRepository } from '../../repository/behavior.repository';
 import { ConversationalGuardrailsService } from 'src/conversational-guardrails/service/conversational-guardrails.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { PromptTranslationService } from 'src/prompt/service/prompt-translation.service';
+import { LanguageGlossaryService } from 'src/language/service/language-glossary.service';
 import { ALLY_AI_LEARN_PROMPT_PREFIX } from '../../constants/scenario-session.constants';
 import { CompetencyService } from '../competency.service';
 import { AppConfigService } from 'src/config/config.service';
@@ -100,6 +101,11 @@ describe('ScenarioSharedService', () => {
       overlayTranslations: jest
         .fn()
         .mockImplementation((byCode: Record<string, string>) => byCode),
+    };
+
+    const mockLanguageGlossaryService = {
+      // By default, no published glossary — sessions serve without it.
+      resolveTier0Glossary: jest.fn().mockResolvedValue(''),
     };
 
     const mockCompetencyService = {
@@ -233,6 +239,10 @@ describe('ScenarioSharedService', () => {
         {
           provide: PromptTranslationService,
           useValue: mockPromptTranslationService,
+        },
+        {
+          provide: LanguageGlossaryService,
+          useValue: mockLanguageGlossaryService,
         },
         {
           provide: CompetencyService,
@@ -1241,6 +1251,122 @@ describe('ScenarioSharedService', () => {
       });
 
       expect((result.scenario.promptData as any).languageLabel).toBeUndefined();
+    });
+
+    const glossaryScenario = {
+      id: 1,
+      title: 'Test Scenario',
+      description: 'Test Description',
+      prompt: 'Act only as the client.',
+      metadata: {
+        voiceId: 'voice-1',
+        languageId: 2,
+        language: 'ta-IN',
+        name: 'Alex',
+        age: 28,
+        gender: 'Male',
+        currentLocation: 'Chennai',
+        openingStatements: ['Vanakkam'],
+      },
+      terminationEvents: [],
+      behaviorInstructions: [],
+      difficultyLevel: 'EASY',
+    } as any;
+
+    it('should put the compiled Tier 0 glossary on promptData.languageGlossary for non-English sessions', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+      (scenarioTranslationsRepository as any).findOne = jest
+        .fn()
+        .mockResolvedValue(null);
+      const glossaryService = (service as any).languageGlossaryService;
+      glossaryService.resolveTier0Glossary = jest
+        .fn()
+        .mockResolvedValue('## Core style\n- worry: say "டென்ஷன்"');
+
+      const result = await service.createRoomMetadata({
+        scenario: glossaryScenario,
+        sessionEvents: [],
+        languageDetails: {
+          id: 2,
+          value: 'ta-IN',
+          label: 'Tamil (India)',
+        } as any,
+        previousMemory: null,
+      });
+
+      expect(glossaryService.resolveTier0Glossary).toHaveBeenCalledWith(2);
+      expect((result.scenario.promptData as any).languageGlossary).toContain(
+        '## Core style',
+      );
+    });
+
+    it('should skip the glossary entirely for English sessions', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+      (scenarioTranslationsRepository as any).findOne = jest
+        .fn()
+        .mockResolvedValue(null);
+      const glossaryService = (service as any).languageGlossaryService;
+      glossaryService.resolveTier0Glossary = jest.fn();
+
+      const result = await service.createRoomMetadata({
+        scenario: glossaryScenario,
+        sessionEvents: [],
+        languageDetails: {
+          id: 1,
+          value: 'en-IN',
+          label: 'English (India)',
+        } as any,
+        previousMemory: null,
+      });
+
+      expect(glossaryService.resolveTier0Glossary).not.toHaveBeenCalled();
+      expect(
+        (result.scenario.promptData as any).languageGlossary,
+      ).toBeUndefined();
+    });
+
+    it('should never block a session when glossary resolution fails', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+      (scenarioTranslationsRepository as any).findOne = jest
+        .fn()
+        .mockResolvedValue(null);
+      const glossaryService = (service as any).languageGlossaryService;
+      glossaryService.resolveTier0Glossary = jest
+        .fn()
+        .mockRejectedValue(new Error('db down'));
+
+      const result = await service.createRoomMetadata({
+        scenario: glossaryScenario,
+        sessionEvents: [],
+        languageDetails: {
+          id: 2,
+          value: 'ta-IN',
+          label: 'Tamil (India)',
+        } as any,
+        previousMemory: null,
+      });
+
+      expect(
+        (result.scenario.promptData as any).languageGlossary,
+      ).toBeUndefined();
+      expect((result.scenario.promptData as any).languageLabel).toBe(
+        'Tamil (India)',
+      );
     });
 
     it('should put active language characteristics on promptData.languageCharacteristics (trimmed string)', async () => {

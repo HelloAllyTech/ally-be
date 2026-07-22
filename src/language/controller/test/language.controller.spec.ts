@@ -61,6 +61,7 @@ describe('LanguageController', () => {
         updatedAt: new Date('2024-01-01'),
         llmProviderConfig: {},
         sttProviderConfig: {},
+        evalConfig: {},
       },
       {
         id: 2,
@@ -72,6 +73,7 @@ describe('LanguageController', () => {
         updatedAt: new Date('2024-01-02'),
         llmProviderConfig: {},
         sttProviderConfig: {},
+        evalConfig: {},
       },
       {
         id: 3,
@@ -83,6 +85,7 @@ describe('LanguageController', () => {
         updatedAt: new Date('2024-01-03'),
         llmProviderConfig: {},
         sttProviderConfig: {},
+        evalConfig: {},
       },
     ];
 

@@ -19,6 +19,7 @@ import {
   SCENARIO_SESSION_TRANSLATABLE_FIELDS,
   STT_LLM_PROVIDER_CONFIG,
   SKILL_ICONS_S3_PREFIX,
+  ROOM_METADATA_WARN_BYTES,
 } from '../constants/scenario-session.constants';
 import { AppConfigService } from 'src/config/config.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -55,6 +56,7 @@ import { ScenarioVersionRepository } from '../repository/scenario-version.reposi
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { PromptTranslationService } from 'src/prompt/service/prompt-translation.service';
 import { Languages } from 'src/language/entity/languages.entity';
+import { LanguageGlossaryService } from 'src/language/service/language-glossary.service';
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
 import {
   ScenarioEvaluationEmotionalMovementItem,
@@ -135,6 +137,7 @@ export class ScenarioSharedService {
     private conversationalGuardrailsService: ConversationalGuardrailsService,
     private promptSharedService: PromptSharedService,
     private promptTranslationService: PromptTranslationService,
+    private languageGlossaryService: LanguageGlossaryService,
     private competencyService: CompetencyService,
     private configService: AppConfigService,
     private s3Service: S3Service,
@@ -415,6 +418,26 @@ export class ScenarioSharedService {
       promptData.languageLabel = languageDetails.label;
     }
 
+    // Tier 0 language-glossary style card (LANGUAGE_GLOSSARY_DESIGN.md §5.1):
+    // compiled from published always-sections, language-level, ~1-2k tokens.
+    // Publishing a section is the rollout gate — no published content, no block.
+    // English sessions skip entirely; a glossary failure never blocks a session.
+    if (languageDetails?.id && !languageDetails.value?.startsWith('en')) {
+      try {
+        const glossary =
+          await this.languageGlossaryService.resolveTier0Glossary(
+            languageDetails.id,
+          );
+        if (glossary) {
+          promptData.languageGlossary = glossary;
+        }
+      } catch (error) {
+        this.logger.warn(
+          `[GLOSSARY] Tier 0 resolution failed for language ${languageDetails.id}; serving without glossary: ${error}`,
+        );
+      }
+    }
+
     if (metadata?.languageId) {
       const samples =
         metadata?.linguisticStyleSamples?.[String(metadata.languageId)];
@@ -606,7 +629,7 @@ export class ScenarioSharedService {
     );
     scenarioData.promptData.prompts = prompts;
 
-    return {
+    const roomMetadata = {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
       environment: this.configService.livekit.environment,
@@ -637,6 +660,25 @@ export class ScenarioSharedService {
         behaviorInstructions: formattedBehaviorInstructionForMetadata,
       },
     };
+
+    // LiveKit caps room metadata at 64 KiB and nothing here trims — surface the
+    // payload size so headroom is visible before it becomes a session failure
+    // (LANGUAGE_GLOSSARY_DESIGN.md edge case 11). Session-start only.
+    const metadataBytes = Buffer.byteLength(
+      JSON.stringify(roomMetadata),
+      'utf8',
+    );
+    if (metadataBytes > ROOM_METADATA_WARN_BYTES) {
+      this.logger.warn(
+        `[ROOM_METADATA_SIZE] ${metadataBytes} bytes (warn threshold ${ROOM_METADATA_WARN_BYTES}, LiveKit cap 65536) scenario=${scenario.id}`,
+      );
+    } else {
+      this.logger.info(
+        `[ROOM_METADATA_SIZE] ${metadataBytes} bytes scenario=${scenario.id}`,
+      );
+    }
+
+    return roomMetadata;
   }
 
   async getScenarioVoice(id: string): Promise<ScenarioVoices> {
