@@ -16,35 +16,29 @@ export enum GlossarySectionStatus {
   ARCHIVED = 'archived',
 }
 
-/** Per-entry lifecycle inside `entries` — consolidation proposals land as
- * `proposed` and are invisible to the compiler until a reviewer accepts them. */
+/** Lifecycle of a consolidation proposal in `entries`. Proposals are invisible
+ * to the compiler; `accepted` means the markdown was appended to `content`
+ * (the row is kept for annotation provenance / the consumed-set). */
 export enum GlossaryEntryStatus {
-  PUBLISHED = 'published',
   PROPOSED = 'proposed',
+  ACCEPTED = 'accepted',
   REJECTED = 'rejected',
 }
 
-export type GlossaryEntryType = 'term_pair' | 'rule' | 'pattern';
-
 /**
- * One typed glossary entry. Shape varies by `type`:
- * - `term_pair` (register fix): `english` / `preferred` / `avoid`
- * - `rule` (agreement fix): `text` + native-script `examples`
- * - `pattern` (phrasebook): `text` (+ optional `examples`)
+ * One consolidation proposal: a markdown line (or few lines) the judge-mining
+ * job suggests appending to the section's `content`. The glossary body itself
+ * is plain markdown (`content`) — proposals are the only structured part,
+ * because accept/reject review needs discrete items with provenance.
  */
 export interface GlossaryEntry {
   id: string;
-  type: GlossaryEntryType;
-  english?: string;
-  preferred?: string;
-  avoid?: string;
-  text?: string;
-  note?: string;
-  examples?: string[];
+  /** Proposed markdown to append to the section content on accept. */
+  markdown: string;
   status: GlossaryEntryStatus;
   importance?: number;
   provenance?: {
-    source: 'seed' | 'consolidation' | 'manual';
+    source: 'consolidation' | 'seed' | 'manual';
     annotationIds?: string[];
   };
 }
@@ -52,8 +46,10 @@ export interface GlossaryEntry {
 /**
  * A section of a per-language glossary served to the live agent — a compact
  * "constrain and correct" reference for languages the LLM half-knows
- * (LANGUAGE_GLOSSARY_DESIGN.md). The prompt block is compiled from published
- * entries; the jsonb is the source of truth, never hand-formatted text.
+ * (LANGUAGE_GLOSSARY_DESIGN.md). The section body is plain markdown
+ * (`content`) — what admins edit is what the agent gets (prefixed with the
+ * title header). `entries` holds only consolidation proposals awaiting
+ * review.
  *
  * `organizationId` is NULL for global rows (all rows in v1). Uniqueness over
  * (languageId, sectionCode, organizationId) is enforced by an expression index
@@ -83,6 +79,11 @@ export class LanguageGlossarySection extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', length: 255 })
   title!: string;
 
+  /** The glossary body: plain markdown, served to the agent as-is. */
+  @Column({ type: 'text', default: '' })
+  content!: string;
+
+  /** Consolidation proposals awaiting review — never served to the agent. */
   @Column({ type: 'jsonb', default: () => `'[]'` })
   entries!: GlossaryEntry[];
 

@@ -1,5 +1,4 @@
 import {
-  GlossaryEntryStatus,
   GlossaryInjectionMode,
   GlossarySectionStatus,
   LanguageGlossarySection,
@@ -18,6 +17,7 @@ const section = (
     languageId: 6,
     sectionCode: 'core_style',
     title: 'Core style',
+    content: '- worry: say "டென்ஷன்" (avoid: "பதட்டம்")',
     entries: [],
     injectionMode: GlossaryInjectionMode.ALWAYS,
     status: GlossarySectionStatus.PUBLISHED,
@@ -27,106 +27,31 @@ const section = (
 
 describe('glossary-compiler.util', () => {
   describe('compileSection', () => {
-    it('renders term_pair entries with preferred/avoid/note', () => {
-      const out = compileSection(
-        section({
-          entries: [
-            {
-              id: '1',
-              type: 'term_pair',
-              english: 'worry',
-              preferred: 'டென்ஷன்',
-              avoid: 'பதட்டம்',
-              note: 'code-mixed',
-              status: GlossaryEntryStatus.PUBLISHED,
-            },
-          ],
-        }),
-      );
+    it('frames the markdown content with the title header', () => {
+      const out = compileSection(section({}));
       expect(out).toBe(
-        '## Core style\n- worry: say "டென்ஷன்"; avoid "பதட்டம்" (code-mixed)',
+        '## Core style\n- worry: say "டென்ஷன்" (avoid: "பதட்டம்")',
       );
     });
 
-    it('renders rule entries with indented examples', () => {
+    it('returns empty string when content is empty', () => {
+      expect(compileSection(section({ content: '' }))).toBe('');
+      expect(compileSection(section({ content: '   \n ' }))).toBe('');
+    });
+
+    it('never renders consolidation proposals', () => {
       const out = compileSection(
         section({
           entries: [
             {
-              id: '1',
-              type: 'rule',
-              text: 'Mother: always she-forms.',
-              examples: ['அம்மா சொன்னாங்க'],
-              status: GlossaryEntryStatus.PUBLISHED,
+              id: 'p1',
+              markdown: '- proposed line that must not leak',
+              status: 'proposed' as any,
             },
           ],
         }),
       );
-      expect(out).toContain('- Mother: always she-forms.');
-      expect(out).toContain('  e.g. அம்மா சொன்னாங்க');
-    });
-
-    it('renders pattern entries like rules', () => {
-      const out = compileSection(
-        section({
-          entries: [
-            {
-              id: '1',
-              type: 'pattern',
-              text: 'Gentle probe',
-              examples: ['என்ன ஆச்சு?'],
-              status: GlossaryEntryStatus.PUBLISHED,
-            },
-          ],
-        }),
-      );
-      expect(out).toContain('- Gentle probe');
-    });
-
-    it('excludes proposed and rejected entries', () => {
-      const out = compileSection(
-        section({
-          entries: [
-            {
-              id: '1',
-              type: 'rule',
-              text: 'published rule',
-              status: GlossaryEntryStatus.PUBLISHED,
-            },
-            {
-              id: '2',
-              type: 'rule',
-              text: 'proposed rule',
-              status: GlossaryEntryStatus.PROPOSED,
-            },
-            {
-              id: '3',
-              type: 'rule',
-              text: 'rejected rule',
-              status: GlossaryEntryStatus.REJECTED,
-            },
-          ],
-        }),
-      );
-      expect(out).toContain('published rule');
-      expect(out).not.toContain('proposed rule');
-      expect(out).not.toContain('rejected rule');
-    });
-
-    it('skips malformed entries and returns empty when nothing renders', () => {
-      const out = compileSection(
-        section({
-          entries: [
-            {
-              id: '1',
-              type: 'term_pair',
-              status: GlossaryEntryStatus.PUBLISHED,
-            },
-            { id: '2', type: 'rule', status: GlossaryEntryStatus.PUBLISHED },
-          ],
-        }),
-      );
-      expect(out).toBe('');
+      expect(out).not.toContain('proposed line');
     });
   });
 
@@ -136,14 +61,7 @@ describe('glossary-compiler.util', () => {
         sectionCode: code,
         title: code,
         injectionMode: mode,
-        entries: [
-          {
-            id: '1',
-            type: 'rule',
-            text: `rule of ${code}`,
-            status: GlossaryEntryStatus.PUBLISHED,
-          },
-        ],
+        content: `- rule of ${code}`,
       });
 
     it('includes only published always-sections, in fixed order', () => {
@@ -154,6 +72,8 @@ describe('glossary-compiler.util', () => {
         published('core_style', GlossaryInjectionMode.ALWAYS),
         section({
           sectionCode: 'draft_one',
+          title: 'draft_one',
+          content: '- draft line',
           status: GlossarySectionStatus.DRAFT,
         }),
       ]);

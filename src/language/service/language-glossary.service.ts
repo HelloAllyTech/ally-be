@@ -21,7 +21,6 @@ import {
 } from '../constants/glossary.constants';
 import { UpsertGlossarySectionDto } from '../dto/glossary-section.dto';
 import {
-  GlossaryEntry,
   GlossaryEntryStatus,
   GlossaryInjectionMode,
   GlossarySectionStatus,
@@ -51,10 +50,13 @@ interface GeneratedSection {
   title: string;
   injectionMode: string;
   retrievalHint?: string;
-  entries: Partial<GlossaryEntry>[];
+  /** Markdown body — what admins edit and what the agent gets. */
+  content: string;
 }
 
-interface ConsolidatedEntry extends Partial<GlossaryEntry> {
+interface ConsolidatedProposal {
+  markdown: string;
+  importance?: number;
   sourceAnnotationIndexes?: number[];
 }
 
@@ -63,7 +65,7 @@ interface ConsolidatedSection {
   title?: string;
   injectionMode?: string;
   retrievalHint?: string;
-  entries: ConsolidatedEntry[];
+  proposals: ConsolidatedProposal[];
 }
 
 export interface BackfillGlossariesOutcome {
@@ -136,7 +138,7 @@ export class LanguageGlossaryService {
         createdBy: updatedBy,
       }),
       title: dto.title,
-      entries: dto.entries as GlossaryEntry[],
+      content: dto.content,
       retrievalHint: dto.retrievalHint,
       injectionMode: dto.injectionMode,
       importance: dto.importance,
@@ -268,15 +270,6 @@ export class LanguageGlossaryService {
         continue;
       }
 
-      const entries: GlossaryEntry[] = (gen.entries ?? [])
-        .filter((e) => e && typeof e === 'object')
-        .map((e) => ({
-          ...(e as GlossaryEntry),
-          id: randomUUID(),
-          status: GlossaryEntryStatus.PUBLISHED,
-          provenance: { source: 'seed' },
-        }));
-
       const section = this.glossaryRepository.create({
         ...(existing ?? {
           languageId,
@@ -284,7 +277,7 @@ export class LanguageGlossaryService {
           createdBy,
         }),
         title: gen.title,
-        entries,
+        content: gen.content,
         retrievalHint: gen.retrievalHint,
         injectionMode:
           gen.injectionMode === GlossaryInjectionMode.ALWAYS
@@ -438,6 +431,7 @@ export class LanguageGlossaryService {
           languageId,
           sectionCode: gen.sectionCode,
           title: gen.title || gen.sectionCode.replace(/_/g, ' '),
+          content: '',
           entries: [],
           retrievalHint: gen.retrievalHint,
           injectionMode:
@@ -449,31 +443,37 @@ export class LanguageGlossaryService {
           createdBy,
         });
 
-      const existingKeys = new Set(
-        (section.entries ?? []).map((e) => this.entryDedupeKey(e)),
-      );
+      // Dedupe against both existing proposals and lines already in the
+      // section's markdown content.
+      const existingKeys = new Set([
+        ...(section.entries ?? []).map((e) => normalizeMarkdown(e.markdown)),
+        ...(section.content ?? '')
+          .split('\n')
+          .map((line) => normalizeMarkdown(line))
+          .filter(Boolean),
+      ]);
 
       let appended = 0;
-      for (const entry of gen.entries ?? []) {
-        if (!entry || typeof entry !== 'object' || !entry.type) continue;
-        const key = this.entryDedupeKey(entry as GlossaryEntry);
+      for (const proposal of gen.proposals ?? []) {
+        if (!proposal || typeof proposal.markdown !== 'string') continue;
+        const markdown = proposal.markdown.trim();
+        if (!markdown) continue;
+        const key = normalizeMarkdown(markdown);
         if (existingKeys.has(key)) {
           skippedDuplicates++;
           continue;
         }
         existingKeys.add(key);
-        const annotationIds = (entry.sourceAnnotationIndexes ?? [])
+        const annotationIds = (proposal.sourceAnnotationIndexes ?? [])
           .map((i) => annotations[i - 1]?.id)
           .filter((id): id is string => Boolean(id));
-        const fields: ConsolidatedEntry = { ...entry };
-        delete fields.sourceAnnotationIndexes;
         section.entries = [
           ...(section.entries ?? []),
           {
-            ...(fields as GlossaryEntry),
             id: randomUUID(),
+            markdown,
             status: GlossaryEntryStatus.PROPOSED,
-            importance: this.clampImportance(entry.importance),
+            importance: this.clampImportance(proposal.importance),
             provenance: { source: 'consolidation', annotationIds },
           },
         ];
@@ -500,12 +500,6 @@ export class LanguageGlossaryService {
     };
   }
 
-  /** Stable identity for duplicate detection across runs (any entry status). */
-  private entryDedupeKey(entry: Partial<GlossaryEntry>): string {
-    const norm = (v?: string) => (v ?? '').trim().toLowerCase();
-    return `${entry.type}|${norm(entry.english)}|${norm(entry.preferred)}|${norm(entry.text)}`;
-  }
-
   private clampImportance(value: unknown): number | undefined {
     if (typeof value !== 'number' || Number.isNaN(value)) return undefined;
     return Math.min(5, Math.max(1, Math.round(value)));
@@ -516,18 +510,10 @@ export class LanguageGlossaryService {
     if (sections.length === 0) return '(no glossary sections exist yet)';
     return sections
       .map((s) => {
-        const entrySummaries = (s.entries ?? [])
-          .slice(0, 40)
-          .map((e) =>
-            e.type === 'term_pair'
-              ? `${e.english}→${e.preferred}`
-              : (e.text ?? '').slice(0, 80),
-          )
-          .filter(Boolean)
-          .join('; ');
-        return `- ${s.sectionCode} (${s.injectionMode}, ${s.status}) "${s.title}": ${entrySummaries || '(empty)'}`;
+        const body = (s.content ?? '').trim().slice(0, 1500);
+        return `### ${s.sectionCode} (${s.injectionMode}, ${s.status}) "${s.title}"\n${body || '(empty)'}`;
       })
-      .join('\n');
+      .join('\n\n');
   }
 
   /** Numbered annotation listing for the consolidation prompt (1-based). */
@@ -573,8 +559,69 @@ export class LanguageGlossaryService {
       (s): s is ConsolidatedSection =>
         !!s &&
         typeof (s as ConsolidatedSection).sectionCode === 'string' &&
-        Array.isArray((s as ConsolidatedSection).entries),
+        Array.isArray((s as ConsolidatedSection).proposals),
     );
+  }
+
+  /**
+   * Accept a consolidation proposal: append its markdown to the section
+   * content (cap-checked when the section is live Tier 0) and keep the row as
+   * `accepted` so its annotation provenance stays in the consumed-set.
+   */
+  async acceptProposal(
+    languageId: number,
+    sectionCode: string,
+    entryId: string,
+    updatedBy?: string,
+  ): Promise<LanguageGlossarySection> {
+    const section = await this.getSectionOrThrow(languageId, sectionCode);
+    const proposal = (section.entries ?? []).find(
+      (e) => e.id === entryId && e.status === GlossaryEntryStatus.PROPOSED,
+    );
+    if (!proposal) {
+      throw new NotFoundException(
+        `Proposal ${entryId} not found (or already reviewed) in '${sectionCode}'`,
+      );
+    }
+
+    const candidate = {
+      ...section,
+      content:
+        `${(section.content ?? '').trimEnd()}\n${proposal.markdown}`.trim(),
+    } as LanguageGlossarySection;
+    if (
+      section.status === GlossarySectionStatus.PUBLISHED &&
+      section.injectionMode === GlossaryInjectionMode.ALWAYS
+    ) {
+      await this.assertTier0WithinCap(languageId, candidate);
+    }
+
+    section.content = candidate.content;
+    proposal.status = GlossaryEntryStatus.ACCEPTED;
+    section.version += 1;
+    section.updatedBy = updatedBy;
+    return this.glossaryRepository.save(section);
+  }
+
+  /** Reject a proposal — kept (status 'rejected') so its annotations stay consumed. */
+  async rejectProposal(
+    languageId: number,
+    sectionCode: string,
+    entryId: string,
+    updatedBy?: string,
+  ): Promise<LanguageGlossarySection> {
+    const section = await this.getSectionOrThrow(languageId, sectionCode);
+    const proposal = (section.entries ?? []).find(
+      (e) => e.id === entryId && e.status === GlossaryEntryStatus.PROPOSED,
+    );
+    if (!proposal) {
+      throw new NotFoundException(
+        `Proposal ${entryId} not found (or already reviewed) in '${sectionCode}'`,
+      );
+    }
+    proposal.status = GlossaryEntryStatus.REJECTED;
+    section.updatedBy = updatedBy;
+    return this.glossaryRepository.save(section);
   }
 
   private async getSectionOrThrow(
@@ -685,7 +732,12 @@ export class LanguageGlossaryService {
         !!s &&
         typeof (s as GeneratedSection).sectionCode === 'string' &&
         typeof (s as GeneratedSection).title === 'string' &&
-        Array.isArray((s as GeneratedSection).entries),
+        typeof (s as GeneratedSection).content === 'string',
     );
   }
+}
+
+/** Case/whitespace-insensitive identity for markdown-line dedupe. */
+function normalizeMarkdown(line: string | undefined): string {
+  return (line ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 }

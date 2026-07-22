@@ -80,6 +80,38 @@ export class LanguageGlossaryController {
   }
 
   @ApiOperation({
+    summary: 'Accept a consolidation proposal (appends to content)',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Post(':id/glossary/:sectionCode/proposals/:entryId/accept')
+  async acceptProposal(
+    @Param('id') id: number,
+    @Param('sectionCode') sectionCode: string,
+    @Param('entryId') entryId: string,
+  ) {
+    return this.glossaryService.acceptProposal(
+      Number(id),
+      sectionCode,
+      entryId,
+    );
+  }
+
+  @ApiOperation({ summary: 'Reject a consolidation proposal' })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Post(':id/glossary/:sectionCode/proposals/:entryId/reject')
+  async rejectProposal(
+    @Param('id') id: number,
+    @Param('sectionCode') sectionCode: string,
+    @Param('entryId') entryId: string,
+  ) {
+    return this.glossaryService.rejectProposal(
+      Number(id),
+      sectionCode,
+      entryId,
+    );
+  }
+
+  @ApiOperation({
     summary:
       'Consolidate judge error annotations into PROPOSED glossary entries (never auto-published)',
   })

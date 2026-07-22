@@ -18,14 +18,8 @@ const makeSection = (
     languageId: 6,
     sectionCode: 'core_style',
     title: 'Core style',
-    entries: [
-      {
-        id: 'e1',
-        type: 'rule',
-        text: 'Speak colloquial Tamil.',
-        status: GlossaryEntryStatus.PUBLISHED,
-      },
-    ],
+    content: '- Speak colloquial Tamil.',
+    entries: [],
     injectionMode: GlossaryInjectionMode.ALWAYS,
     status: GlossarySectionStatus.DRAFT,
     version: 1,
@@ -56,7 +50,7 @@ describe('LanguageGlossaryService', () => {
         id: 'p1',
         promptCode: 'glossary_generation',
         useDashboardOverride: true,
-        currentVersion: 1,
+        currentVersion: 2,
         provider: 'gemini',
         model: 'gemini-2.5-pro',
         temperature: null,
@@ -94,14 +88,7 @@ describe('LanguageGlossaryService', () => {
   describe('upsertSection', () => {
     const dto: UpsertGlossarySectionDto = {
       title: 'Core style',
-      entries: [
-        {
-          id: 'e1',
-          type: 'rule',
-          text: 'Speak colloquial Tamil.',
-          status: GlossaryEntryStatus.PUBLISHED,
-        },
-      ] as any,
+      content: '- Speak colloquial Tamil.',
       injectionMode: GlossaryInjectionMode.ALWAYS,
     };
 
@@ -109,7 +96,7 @@ describe('LanguageGlossaryService', () => {
       const saved = await service.upsertSection(6, 'core_style', dto);
       expect(saved.status).toBe(GlossarySectionStatus.DRAFT);
       expect(saved.version).toBe(1);
-      expect(glossaryRepository.save).toHaveBeenCalled();
+      expect(saved.content).toBe('- Speak colloquial Tamil.');
     });
 
     it('bumps version when updating an existing section', async () => {
@@ -130,14 +117,11 @@ describe('LanguageGlossaryService', () => {
     it('enforces the Tier 0 cap when editing a published always-section', async () => {
       const huge = {
         ...dto,
-        entries: Array.from({ length: 199 }, (_, i) => ({
-          id: `e${i}`,
-          type: 'rule' as const,
-          text: `A long rule about colloquial spoken Tamil register number ${i}. `.repeat(
-            5,
-          ),
-          status: GlossaryEntryStatus.PUBLISHED,
-        })),
+        content: Array.from(
+          { length: 400 },
+          (_, i) =>
+            `- A long standing rule about colloquial spoken Tamil register number ${i}.`,
+        ).join('\n'),
       } as UpsertGlossarySectionDto;
       glossaryRepository.findSection.mockResolvedValue(
         makeSection({ status: GlossarySectionStatus.PUBLISHED }),
@@ -156,21 +140,17 @@ describe('LanguageGlossaryService', () => {
     });
 
     it('blocks publish when the prospective Tier 0 set exceeds the cap', async () => {
-      const bigEntries = Array.from({ length: 150 }, (_, i) => ({
-        id: `e${i}`,
-        type: 'rule' as const,
-        text: `Very long standing instruction about register and agreement ${i}. `.repeat(
-          6,
-        ),
-        status: GlossaryEntryStatus.PUBLISHED,
-      }));
+      const bigContent = Array.from(
+        { length: 300 },
+        (_, i) => `- Very long standing instruction about register ${i}.`,
+      ).join('\n');
       glossaryRepository.findSection.mockResolvedValue(
-        makeSection({ sectionCode: 'pronouns_kinship', entries: bigEntries }),
+        makeSection({ sectionCode: 'pronouns_kinship', content: bigContent }),
       );
       glossaryRepository.findPublishedByLanguage.mockResolvedValue([
         makeSection({
           status: GlossarySectionStatus.PUBLISHED,
-          entries: bigEntries,
+          content: bigContent,
         }),
       ]);
       await expect(
@@ -210,14 +190,10 @@ describe('LanguageGlossaryService', () => {
           title: 'Empty',
           injectionMode: GlossaryInjectionMode.RETRIEVED,
           status: GlossarySectionStatus.PUBLISHED,
-          entries: [],
+          content: '',
         }),
       ]);
       const out = await service.resolveTier1Sections(6);
-      expect(glossaryRepository.findPublishedByLanguage).toHaveBeenCalledWith(
-        6,
-        GlossaryInjectionMode.RETRIEVED,
-      );
       expect(out).toHaveLength(1);
       expect(out[0].title).toBe('Clinical terms');
       expect(out[0].retrievalHint).toBe('Retrieve when clinical.');
@@ -246,20 +222,18 @@ describe('LanguageGlossaryService', () => {
         title: 'Core style',
         injectionMode: 'always',
         retrievalHint: null,
-        entries: [{ type: 'rule', text: 'Speak colloquial Tamil.' }],
+        content: '- Speak colloquial Tamil.\n- Keep code-mixed English words.',
       },
       {
         sectionCode: 'clinical_terms',
         title: 'Clinical terms',
         injectionMode: 'retrieved',
         retrievalHint: 'Retrieve when clinical.',
-        entries: [
-          { type: 'term_pair', english: 'worry', preferred: 'டென்ஷன்' },
-        ],
+        content: '- worry: say "டென்ஷன்" (avoid: "பதட்டம்")',
       },
     ];
 
-    it('parses fenced JSON, fills placeholders, and saves drafts with fresh entry ids', async () => {
+    it('parses fenced JSON, fills placeholders, and saves markdown drafts', async () => {
       getCompletion.mockResolvedValue(
         '```json\n' + JSON.stringify(generated) + '\n```',
       );
@@ -271,10 +245,7 @@ describe('LanguageGlossaryService', () => {
         (c: any[]) => c[0],
       );
       expect(savedSections[0].status).toBe(GlossarySectionStatus.DRAFT);
-      expect(savedSections[0].entries[0].id).toBeDefined();
-      expect(savedSections[0].entries[0].status).toBe(
-        GlossaryEntryStatus.PUBLISHED,
-      );
+      expect(savedSections[0].content).toContain('- Speak colloquial Tamil.');
       expect(savedSections[1].retrievalHint).toBe('Retrieve when clinical.');
     });
 
@@ -353,12 +324,9 @@ describe('LanguageGlossaryService', () => {
         title: 'Clinical terms',
         injectionMode: 'retrieved',
         retrievalHint: 'Retrieve when clinical.',
-        entries: [
+        proposals: [
           {
-            type: 'term_pair',
-            english: 'anxiety',
-            preferred: 'டென்ஷன்',
-            avoid: 'பதட்டம்',
+            markdown: '- anxiety: say "டென்ஷன்" (avoid: "பதட்டம்")',
             importance: 4,
             sourceAnnotationIndexes: [1, 2],
           },
@@ -372,8 +340,7 @@ describe('LanguageGlossaryService', () => {
           entries: [
             {
               id: 'e1',
-              type: 'rule',
-              text: 'old',
+              markdown: '- old proposal',
               status: GlossaryEntryStatus.PROPOSED,
               provenance: { source: 'consolidation', annotationIds: ['a1'] },
             },
@@ -386,7 +353,7 @@ describe('LanguageGlossaryService', () => {
       expect(getCompletion).not.toHaveBeenCalled();
     });
 
-    it('lands consolidated entries as proposed with annotation provenance', async () => {
+    it('lands markdown proposals with annotation provenance', async () => {
       annotationRepository.find.mockResolvedValue([
         annotation('a1'),
         annotation('a2'),
@@ -400,27 +367,19 @@ describe('LanguageGlossaryService', () => {
       expect(result.sections).toEqual(['clinical_terms']);
       const saved = glossaryRepository.save.mock.calls.at(-1)[0];
       expect(saved.status).toBe(GlossarySectionStatus.DRAFT);
-      const entry = saved.entries[0];
-      expect(entry.status).toBe(GlossaryEntryStatus.PROPOSED);
-      expect(entry.provenance.annotationIds).toEqual(['a1', 'a2']);
-      expect(entry.importance).toBe(4);
-      expect(entry.sourceAnnotationIndexes).toBeUndefined();
+      const proposal = saved.entries[0];
+      expect(proposal.status).toBe(GlossaryEntryStatus.PROPOSED);
+      expect(proposal.markdown).toContain('டென்ஷன்');
+      expect(proposal.provenance!.annotationIds).toEqual(['a1', 'a2']);
+      expect(proposal.importance).toBe(4);
     });
 
-    it('skips entries that duplicate existing ones (any status)', async () => {
+    it('skips proposals duplicating existing content lines or proposals', async () => {
       annotationRepository.find.mockResolvedValue([annotation('a1')]);
       glossaryRepository.findSection.mockResolvedValue(
         makeSection({
           sectionCode: 'clinical_terms',
-          entries: [
-            {
-              id: 'e1',
-              type: 'term_pair',
-              english: 'Anxiety',
-              preferred: 'டென்ஷன்',
-              status: GlossaryEntryStatus.PUBLISHED,
-            },
-          ],
+          content: '- anxiety: say "டென்ஷன்" (avoid: "பதட்டம்")',
         }),
       );
       getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
@@ -436,6 +395,68 @@ describe('LanguageGlossaryService', () => {
       await expect(service.consolidateGlossary(6)).rejects.toThrow(
         BadRequestException,
       );
+    });
+  });
+
+  describe('proposal review', () => {
+    const proposal = {
+      id: 'p1',
+      markdown: '- anxiety: say "டென்ஷன்"',
+      status: GlossaryEntryStatus.PROPOSED,
+      provenance: { source: 'consolidation' as const, annotationIds: ['a1'] },
+    };
+
+    it('accept appends the markdown to content and keeps the row as accepted', async () => {
+      glossaryRepository.findSection.mockResolvedValue(
+        makeSection({ entries: [{ ...proposal }] }),
+      );
+      const saved = await service.acceptProposal(6, 'core_style', 'p1');
+      expect(saved.content).toContain('- anxiety: say "டென்ஷன்"');
+      expect(saved.entries[0].status).toBe(GlossaryEntryStatus.ACCEPTED);
+      expect(saved.entries[0].provenance!.annotationIds).toEqual(['a1']);
+    });
+
+    it('accept enforces the Tier 0 cap on a live always-section', async () => {
+      const bigContent = Array.from(
+        { length: 400 },
+        (_, i) => `- Very long standing rule number ${i} about register.`,
+      ).join('\n');
+      glossaryRepository.findSection.mockResolvedValue(
+        makeSection({
+          status: GlossarySectionStatus.PUBLISHED,
+          content: bigContent,
+          entries: [{ ...proposal }],
+        }),
+      );
+      glossaryRepository.findPublishedByLanguage.mockResolvedValue([
+        makeSection({
+          status: GlossarySectionStatus.PUBLISHED,
+          content: bigContent,
+        }),
+      ]);
+      await expect(
+        service.acceptProposal(6, 'core_style', 'p1'),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('reject keeps the row (annotations stay consumed) without touching content', async () => {
+      glossaryRepository.findSection.mockResolvedValue(
+        makeSection({ entries: [{ ...proposal }] }),
+      );
+      const saved = await service.rejectProposal(6, 'core_style', 'p1');
+      expect(saved.content).not.toContain('anxiety');
+      expect(saved.entries[0].status).toBe(GlossaryEntryStatus.REJECTED);
+    });
+
+    it('404s when the proposal is missing or already reviewed', async () => {
+      glossaryRepository.findSection.mockResolvedValue(
+        makeSection({
+          entries: [{ ...proposal, status: GlossaryEntryStatus.ACCEPTED }],
+        }),
+      );
+      await expect(
+        service.acceptProposal(6, 'core_style', 'p1'),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });

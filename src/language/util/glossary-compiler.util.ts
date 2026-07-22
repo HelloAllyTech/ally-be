@@ -1,7 +1,5 @@
 import { countTokens as countO200kTokens } from 'gpt-tokenizer/encoding/o200k_base';
 import {
-  GlossaryEntry,
-  GlossaryEntryStatus,
   GlossaryInjectionMode,
   GlossarySectionStatus,
   LanguageGlossarySection,
@@ -9,12 +7,10 @@ import {
 import { GLOSSARY_SECTION_ORDER } from '../constants/glossary.constants';
 
 /**
- * Deterministic compiler from glossary sections (typed `entries` jsonb) to the
- * prompt text served to the live agent. The jsonb is the source of truth; the
- * rendered block is never hand-edited (LANGUAGE_GLOSSARY_DESIGN.md §4, §8).
- *
- * Only `published` entries render — `proposed`/`rejected` entries (consolidation
- * drafts) are invisible to runtime until a reviewer accepts them.
+ * Glossary sections are plain markdown (`content`) — what admins write is what
+ * the agent gets, prefixed with the section title as a `##` header. The only
+ * job left for a "compiler" is header framing, ordering, and token
+ * accounting. Consolidation proposals (`entries`) are never served.
  */
 
 /**
@@ -27,39 +23,11 @@ export function countGlossaryTokens(text: string): number {
   return countO200kTokens(text);
 }
 
-function renderEntry(entry: GlossaryEntry): string[] {
-  const lines: string[] = [];
-  switch (entry.type) {
-    case 'term_pair': {
-      if (!entry.english || !entry.preferred) return [];
-      let line = `- ${entry.english}: say "${entry.preferred}"`;
-      if (entry.avoid) line += `; avoid "${entry.avoid}"`;
-      if (entry.note) line += ` (${entry.note})`;
-      lines.push(line);
-      break;
-    }
-    case 'rule':
-    case 'pattern': {
-      if (!entry.text) return [];
-      lines.push(`- ${entry.text}`);
-      for (const example of entry.examples ?? []) {
-        lines.push(`  e.g. ${example}`);
-      }
-      break;
-    }
-  }
-  return lines;
-}
-
-/** Compile one section: title header + its published entries. Empty string when
- * nothing renders (no published entries with renderable content). */
+/** One section: `## title` + its markdown body. Empty when the body is empty. */
 export function compileSection(section: LanguageGlossarySection): string {
-  const entries = (section.entries ?? []).filter(
-    (e) => e.status === GlossaryEntryStatus.PUBLISHED,
-  );
-  const lines = entries.flatMap(renderEntry);
-  if (lines.length === 0) return '';
-  return `## ${section.title}\n${lines.join('\n')}`;
+  const body = (section.content ?? '').trim();
+  if (!body) return '';
+  return `## ${section.title}\n${body}`;
 }
 
 function sectionOrderKey(sectionCode: string): [number, string] {
