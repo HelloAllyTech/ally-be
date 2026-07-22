@@ -67,7 +67,7 @@ RULES:
       `INSERT INTO "prompts"
          ("promptCode", "name", "description", "currentVersion", "useDashboardOverride", "provider", "model")
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT ("promptCode") DO NOTHING`,
+       ON CONFLICT DO NOTHING`,
       [this.code, name, description, 1, true, 'gemini', 'gemini-2.5-pro'],
     );
 

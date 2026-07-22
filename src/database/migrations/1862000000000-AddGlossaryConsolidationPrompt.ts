@@ -66,11 +66,16 @@ RULES:
 - Only propose 'always' placement for standing constraints (register policy, agreement rules) that matter on every turn.
 - Return ONLY the JSON array. Return [] if nothing generalizes.`;
 
+    // Arbiter-less ON CONFLICT: the deploy pipeline can run migrations twice
+    // concurrently (app-container boot + playbook exec), and environments
+    // carry a unique index on prompts.name as well as promptCode — a targeted
+    // ON CONFLICT ("promptCode") still raises on the name index when the
+    // other runner won the race (seen on the dev deploy 2026-07-22).
     await queryRunner.query(
       `INSERT INTO "prompts"
          ("promptCode", "name", "description", "currentVersion", "useDashboardOverride", "provider", "model")
        VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT ("promptCode") DO NOTHING`,
+       ON CONFLICT DO NOTHING`,
       [this.code, name, description, 1, true, 'gemini', 'gemini-2.5-pro'],
     );
 
