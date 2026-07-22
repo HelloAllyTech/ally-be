@@ -51,6 +51,20 @@ export class GetAdminScenarioDto extends Scenarios {
     additionalProperties: { type: 'string' },
   })
   translationTitle?: Record<string, string>;
+
+  @ApiPropertyOptional({
+    description:
+      'Reminders per non-primary language (scenario_translations.metadata.reminders), keyed by languageId string',
+    type: 'object',
+    additionalProperties: { type: 'array', items: { type: 'string' } },
+  })
+  translationReminders?: Record<string, string[]>;
+
+  @ApiPropertyOptional({
+    description:
+      'Language id whose reminders are stored on scenario metadata (primary / English path). Mirrors openingDialoguePrimaryLanguageId resolution.',
+  })
+  remindersPrimaryLanguageId?: number | null;
 }
 
 export class GetScenarioDto extends Scenarios {

@@ -646,6 +646,16 @@ export class ScenarioSessionService {
         scenario?.translations?.[languageDetails?.value]?.description) ||
       scenario?.description;
 
+    // Text reminders shown alongside the description on the roleplay screen.
+    // Same translation-lookup shape as description — purely informational,
+    // never merged into checklistEvents/sessionEvents below (reminders must
+    // stay unlinked from AI scoring).
+    const learnerReminders =
+      (isOtherLanguage &&
+        scenario?.translations?.[languageDetails?.value]?.reminders) ||
+      scenario?.metadata?.reminders ||
+      [];
+
     // Update termination (Translated Version) event if language is not English
     if (
       isOtherLanguage &&
@@ -835,6 +845,7 @@ export class ScenarioSessionService {
         id: scenario?.id,
         title: scenario?.title,
         description: learnerDescription,
+        reminders: learnerReminders,
         coverImageUrl: scenario?.coverImageUrl,
         coverVideoUrl: scenario?.coverVideoUrl,
         status: scenario?.status,

@@ -217,6 +217,7 @@ describe('ScenarioSessionService', () => {
 
     const mockSessionEventSharedService = {
       getSessionEventsByScenarioId: jest.fn(),
+      getSessionEventsTranslationsByScenarioId: jest.fn(),
       findByIds: jest.fn(),
     };
 
@@ -2622,6 +2623,149 @@ describe('ScenarioSessionService', () => {
         'Agent',
         expect.any(String),
       );
+    });
+
+    it('should surface reminders and description from scenario metadata for an English session', async () => {
+      const startDto = {
+        scenarioId: mockScenarioId,
+        ttl: 3600,
+        languageId: 1,
+      };
+      const mockScenarioWithReminders = {
+        ...mockScenario,
+        description: 'English description',
+        metadata: {
+          title: 'Test Scenario',
+          voiceId: 'test-voice',
+          languageVoices: { 1: 'voice-123' },
+          reminders: ['Maintain eye contact', 'Ask open-ended questions'],
+        },
+        isGlobal: false,
+      };
+      scenarioService.getAdminScenario.mockResolvedValue(
+        mockScenarioWithReminders as any,
+      );
+      scenarioService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-123',
+        name: 'Test Voice',
+        voiceId: 'openai-voice-id',
+        provider: 'openai',
+      } as any);
+      scenarioTenantService.getScenarioTenant.mockResolvedValue({
+        id: 1,
+        scenarioId: mockScenarioId,
+        tenantId: mockTenantId,
+      } as any);
+      sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      sessionEventSharedService.findByIds.mockResolvedValue([]);
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        consumedCredits: 0,
+        creditLimit: 100,
+      } as any);
+      scenarioSessionRepository.createScenarioSession.mockResolvedValue({
+        ...mockScenarioSession,
+        id: 'new-session-id',
+        roomId: 'new-room-id',
+      });
+      scenarioSharedService.createRoomMetadata.mockResolvedValue({
+        scenario: mockScenarioWithReminders,
+      } as any);
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue({
+        token: 'access-token-123',
+        roomName: 'new-room-id',
+        serverUrl: 'https://livekit.example.com',
+      });
+
+      const result = await service.startScenarioSession(
+        mockCounselorId,
+        startDto as any,
+      );
+
+      expect((result as any).scenario.reminders).toEqual([
+        'Maintain eye contact',
+        'Ask open-ended questions',
+      ]);
+      expect((result as any).scenario.description).toBe('English description');
+    });
+
+    it('should surface translated reminders and description for a non-English session', async () => {
+      const startDto = {
+        scenarioId: mockScenarioId,
+        ttl: 3600,
+        languageId: 2,
+      };
+      scenarioSharedService.getLanguageDetailsForScenarioSession.mockResolvedValueOnce(
+        {
+          enLanguageDetails: { id: 1, value: 'en', translationCode: 'en' },
+          languageDetails: { id: 2, value: 'mr', translationCode: 'mr' },
+        } as any,
+      );
+      const mockScenarioWithTranslations = {
+        ...mockScenario,
+        description: 'English description',
+        metadata: {
+          title: 'Test Scenario',
+          voiceId: 'test-voice',
+          languageVoices: { 2: 'voice-123' },
+          reminders: ['English reminder'],
+        },
+        translations: {
+          mr: {
+            description: 'मराठी वर्णन',
+            reminders: ['डोळा संपर्क ठेवा'],
+          },
+        },
+        isGlobal: false,
+      };
+      scenarioService.getAdminScenario.mockResolvedValue(
+        mockScenarioWithTranslations as any,
+      );
+      scenarioService.getScenarioVoice.mockResolvedValue({
+        id: 'voice-123',
+        name: 'Test Voice',
+        voiceId: 'openai-voice-id',
+        provider: 'openai',
+      } as any);
+      scenarioTenantService.getScenarioTenant.mockResolvedValue({
+        id: 1,
+        scenarioId: mockScenarioId,
+        tenantId: mockTenantId,
+      } as any);
+      sessionEventSharedService.getSessionEventsTranslationsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      sessionEventSharedService.findByIds.mockResolvedValue([]);
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        consumedCredits: 0,
+        creditLimit: 100,
+      } as any);
+      scenarioSessionRepository.createScenarioSession.mockResolvedValue({
+        ...mockScenarioSession,
+        id: 'new-session-id',
+        roomId: 'new-room-id',
+      });
+      scenarioSharedService.createRoomMetadata.mockResolvedValue({
+        scenario: mockScenarioWithTranslations,
+      } as any);
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue({
+        token: 'access-token-123',
+        roomName: 'new-room-id',
+        serverUrl: 'https://livekit.example.com',
+      });
+
+      const result = await service.startScenarioSession(
+        mockCounselorId,
+        startDto as any,
+      );
+
+      expect((result as any).scenario.reminders).toEqual(['डोळा संपर्क ठेवा']);
+      expect((result as any).scenario.description).toBe('मराठी वर्णन');
     });
 
     it('should clear the proactive flag when proactive dispatch fails so the webhook fallback can take over', async () => {

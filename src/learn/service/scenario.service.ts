@@ -808,6 +808,16 @@ export class ScenarioService {
             savedScenarios[i].metadata,
           );
         }
+        if (
+          dto.translationReminders &&
+          Object.keys(dto.translationReminders).length > 0
+        ) {
+          await this.upsertTranslationReminders(
+            savedScenarios[i].id,
+            dto.translationReminders,
+            savedScenarios[i].metadata,
+          );
+        }
       }
 
       return savedScenarios;
@@ -1471,7 +1481,8 @@ export class ScenarioService {
         success &&
         (updateScenarioDto.translationOpeningStatements !== undefined ||
           updateScenarioDto.translationDescription !== undefined ||
-          updateScenarioDto.translationTitle !== undefined)
+          updateScenarioDto.translationTitle !== undefined ||
+          updateScenarioDto.translationReminders !== undefined)
       ) {
         const fresh = await this.scenariosRepository.findOne({
           where: { id },
@@ -1494,6 +1505,13 @@ export class ScenarioService {
           await this.upsertTranslationTitle(
             id,
             updateScenarioDto.translationTitle,
+            fresh?.metadata,
+          );
+        }
+        if (updateScenarioDto.translationReminders !== undefined) {
+          await this.upsertTranslationReminders(
+            id,
+            updateScenarioDto.translationReminders,
             fresh?.metadata,
           );
         }
@@ -2330,6 +2348,91 @@ export class ScenarioService {
           mergedTranslations[code] = {
             ...(currentTranslations[code] || {}),
             title: normalizedByLanguageId[Number(language.id)],
+          };
+        }
+        await this.dataSource
+          .getRepository(Scenarios)
+          .update(scenarioId, { translations: mergedTranslations });
+      }
+    }
+  }
+
+  private async upsertTranslationReminders(
+    scenarioId: number,
+    translationReminders: Record<string, string[]>,
+    metadataForPrimaryResolution?: Record<string, any> | null,
+  ): Promise<void> {
+    const primaryId =
+      await this.scenarioSharedService.resolveOpeningDialoguePrimaryLanguageId(
+        metadataForPrimaryResolution,
+      );
+
+    const existing =
+      await this.scenarioTranslationsRepository.getScenarioTranslationsByScenarioId(
+        scenarioId,
+      );
+
+    const toCreate: CreateScenarioTranslation[] = [];
+    const toUpdate: UpdateScenarioTranslation[] = [];
+    const normalizedByLanguageId: Record<number, string[]> = {};
+
+    for (const [langIdStr, lines] of Object.entries(translationReminders)) {
+      const languageId = Number(langIdStr);
+      if (!Number.isFinite(languageId)) continue;
+      if (primaryId != null && languageId === primaryId) continue;
+
+      const row = existing?.find((r) => Number(r.languageId) === languageId);
+      const normalizedLines = Array.isArray(lines)
+        ? lines.map((l) => String(l).trim()).filter((l) => l.length > 0)
+        : [];
+      normalizedByLanguageId[languageId] = normalizedLines;
+
+      const mergedMetadata = {
+        ...(row?.metadata ?? {}),
+        reminders: normalizedLines,
+      };
+
+      if (row) {
+        toUpdate.push({ scenarioId, languageId, metadata: mergedMetadata });
+      } else {
+        toCreate.push({ scenarioId, languageId, metadata: mergedMetadata });
+      }
+    }
+
+    if (toCreate.length) {
+      await this.scenarioTranslationsRepository.createScenarioTranslations(
+        toCreate,
+      );
+    }
+    if (toUpdate.length) {
+      await this.scenarioTranslationsRepository.updateScenarioTranslations(
+        toUpdate,
+      );
+    }
+
+    // Mirror reminders translations into scenarios.translations JSONB keyed
+    // by translationCode — reminders are shown live during a session (unlike
+    // openingStatements, which are admin/prompt-only), so the session-start
+    // read path needs the same code-keyed lookup as description/title.
+    const touchedLanguageIds = Object.keys(normalizedByLanguageId).map(Number);
+    if (touchedLanguageIds.length) {
+      const languages =
+        await this.sharedLanguageService.getLanguagesByIds(touchedLanguageIds);
+      if (languages.length) {
+        const scenario = await this.scenariosRepository.findOne({
+          where: { id: scenarioId },
+        });
+        const currentTranslations: Record<string, any> =
+          (scenario?.translations as Record<string, any>) || {};
+        const mergedTranslations: Record<string, any> = {
+          ...currentTranslations,
+        };
+        for (const language of languages) {
+          const code = language.translationCode?.trim();
+          if (!code) continue;
+          mergedTranslations[code] = {
+            ...(currentTranslations[code] || {}),
+            reminders: normalizedByLanguageId[Number(language.id)],
           };
         }
         await this.dataSource

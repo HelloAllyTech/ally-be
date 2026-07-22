@@ -349,6 +349,26 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description:
+      'Plain-text reminder bullet points shown to the learner during the live session. Purely informational — not linked to AI scoring/checklist events.',
+    example: ['Maintain eye contact', 'Ask open-ended questions'],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  reminders?: string[];
+
+  @ApiProperty({
+    description:
+      'Reminders for non-primary languages (scenario_translations.metadata.reminders), keyed by languageId string',
+    type: 'object',
+    additionalProperties: { type: 'array', items: { type: 'string' } },
+  })
+  @IsObject()
+  @IsOptional()
+  translationReminders?: Record<string, string[]>;
+
+  @ApiProperty({
+    description:
       'Challenge description text for non-primary languages (scenario_translations.metadata.description), keyed by languageId string. Supports the same HTML formatting allow-list as the primary description.',
     type: 'object',
     additionalProperties: { type: 'string' },

@@ -810,6 +810,7 @@ export class ScenarioSharedService {
     const translationOpeningStatements: Record<string, string[]> = {};
     const translationDescription: Record<string, string> = {};
     const translationTitle: Record<string, string> = {};
+    const translationReminders: Record<string, string[]> = {};
     for (const row of translationRows ?? []) {
       const meta = parseScenarioTranslationMetadata(row.metadata);
       const cleaned = normalizeTranslationOpeningStatementsLines(
@@ -826,6 +827,12 @@ export class ScenarioSharedService {
       if (typeof title === 'string' && title.trim().length > 0) {
         translationTitle[String(row.languageId)] = title;
       }
+      const cleanedReminders = normalizeTranslationOpeningStatementsLines(
+        meta.reminders,
+      );
+      if (cleanedReminders.length > 0) {
+        translationReminders[String(row.languageId)] = cleanedReminders;
+      }
     }
     const primaryLanguageId =
       await this.resolveOpeningDialoguePrimaryLanguageId(result.metadata);
@@ -838,6 +845,9 @@ export class ScenarioSharedService {
     (result as GetAdminScenarioDto).challengeDescriptionPrimaryLanguageId =
       primaryLanguageId;
     (result as GetAdminScenarioDto).translationTitle = translationTitle;
+    (result as GetAdminScenarioDto).translationReminders = translationReminders;
+    (result as GetAdminScenarioDto).remindersPrimaryLanguageId =
+      primaryLanguageId;
 
     return result;
   }

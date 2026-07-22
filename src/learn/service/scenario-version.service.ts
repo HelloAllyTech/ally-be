@@ -335,6 +335,7 @@ export class ScenarioVersionService {
       translationOpeningStatements: admin.translationOpeningStatements ?? {},
       translationDescription: admin.translationDescription ?? {},
       translationTitle: admin.translationTitle ?? {},
+      translationReminders: admin.translationReminders ?? {},
       title: admin.title,
       description: admin.description,
       prompt: admin.prompt,

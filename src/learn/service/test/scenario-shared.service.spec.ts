@@ -806,6 +806,41 @@ describe('ScenarioSharedService', () => {
       });
     });
 
+    it('should map translationReminders from scenario_translations.metadata.reminders and skip empty rows', async () => {
+      const scenarioResult = {
+        id: 1,
+        title: 'Test',
+        terminationEvents: [],
+      };
+      scenariosRepository.getAdminScenarioById.mockResolvedValue(
+        scenarioResult as any,
+      );
+      scenarioTranslationsRepository.getScenarioTranslationsByScenarioId.mockResolvedValue(
+        [
+          {
+            scenarioId: 1,
+            languageId: 7,
+            metadata: { reminders: ['Mantén el contacto visual', '  '] },
+          },
+          {
+            scenarioId: 1,
+            languageId: 9,
+            metadata: { reminders: [] },
+          },
+        ] as any,
+      );
+      sharedLanguageService.getLanguageByValue.mockResolvedValue({
+        id: 1,
+      } as any);
+
+      const result = await service.getAdminScenario(1);
+
+      expect(result.translationReminders).toEqual({
+        '7': ['Mantén el contacto visual'],
+      });
+      expect(result.remindersPrimaryLanguageId).toBe(1);
+    });
+
     it('should expose both translationDescription and translationOpeningStatements from same row when both metadata fields are present', async () => {
       const scenarioResult = {
         id: 1,
