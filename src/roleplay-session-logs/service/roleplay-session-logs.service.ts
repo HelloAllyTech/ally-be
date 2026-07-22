@@ -177,7 +177,7 @@ export class RoleplaySessionLogsService {
       agentTestCases: agentTestCases.map((g) => ({
         id: g.id,
         title: g.title,
-        category: g.category,
+        tags: g.tags ?? [],
         description: g.description ?? null,
       })),
       events: events.map((e) => ({

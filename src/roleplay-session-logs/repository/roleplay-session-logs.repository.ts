@@ -668,7 +668,7 @@ export class RoleplaySessionLogsRepository {
     Array<{
       id: string;
       title: string;
-      category: string;
+      tags: string[];
       description: string | null;
     }>
   > {
@@ -676,11 +676,10 @@ export class RoleplaySessionLogsRepository {
       .createQueryBuilder()
       .select('g."id"', 'id')
       .addSelect('g."title"', 'title')
-      .addSelect('g."category"', 'category')
+      .addSelect('g."tags"', 'tags')
       .addSelect('g."description"', 'description')
       .from('agent_test_cases', 'g')
-      .orderBy('g."category"', 'ASC')
-      .addOrderBy('g."title"', 'ASC')
+      .orderBy('g."title"', 'ASC')
       .getRawMany();
   }
 

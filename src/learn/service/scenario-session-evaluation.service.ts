@@ -89,7 +89,9 @@ export class ScenarioSessionEvaluationService {
         goals: goals.map((g) => ({
           id: g.id,
           title: g.title,
-          category: g.category,
+          // The ai-learn judge contract still carries a single `category`
+          // string; join the tag list so migrated rows keep the same value.
+          category: (g.tags ?? []).join(', '),
           description: g.description ?? null,
         })),
         language: this.resolveLanguage(scenarioSession),

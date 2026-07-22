@@ -50,7 +50,7 @@ export class AgentTestCaseController {
     name: 'search',
     required: false,
     type: String,
-    description: 'Filter by title or category',
+    description: 'Filter by title or tags',
   })
   @ApiQuery({
     name: 'offset',

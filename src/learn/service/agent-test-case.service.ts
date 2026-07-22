@@ -8,6 +8,7 @@ import {
 } from '../dto/agent-test-case.dto';
 import { Pagination } from 'src/common/type/common.type';
 import { AgentTestCase } from '../entity/agent-test-case.entity';
+import { AgentTestCaseType } from '../enum/agent-test-case.enum';
 
 @Injectable()
 export class AgentTestCaseService {
@@ -19,11 +20,9 @@ export class AgentTestCaseService {
     dto: CreateAgentTestCaseDto,
     createdBy?: number,
   ): Promise<AgentTestCaseResponseDto> {
-    const goal = this.agentTestCaseRepository.create({
-      ...dto,
-      createdBy,
-    });
-    const saved = await this.agentTestCaseRepository.save(goal);
+    const entity = this.agentTestCaseRepository.create({ createdBy });
+    this.applyDto(entity, dto);
+    const saved = await this.agentTestCaseRepository.save(entity);
     return this.mapToResponseDto(saved);
   }
 
@@ -34,23 +33,23 @@ export class AgentTestCaseService {
     const { data, count } =
       await this.agentTestCaseRepository.getAgentTestCases(search, options);
     return {
-      data: data.map((goal) => this.mapToResponseDto(goal)),
+      data: data.map((testCase) => this.mapToResponseDto(testCase)),
       count,
     };
   }
 
   async getAgentTestCase(id: string): Promise<AgentTestCaseResponseDto> {
-    const goal = await this.getOrThrow(id);
-    return this.mapToResponseDto(goal);
+    const testCase = await this.getOrThrow(id);
+    return this.mapToResponseDto(testCase);
   }
 
   async updateAgentTestCase(
     id: string,
     dto: UpdateAgentTestCaseDto,
   ): Promise<AgentTestCaseResponseDto> {
-    const goal = await this.getOrThrow(id);
-    Object.assign(goal, dto);
-    const saved = await this.agentTestCaseRepository.save(goal);
+    const testCase = await this.getOrThrow(id);
+    this.applyDto(testCase, dto);
+    const saved = await this.agentTestCaseRepository.save(testCase);
     return this.mapToResponseDto(saved);
   }
 
@@ -60,21 +59,55 @@ export class AgentTestCaseService {
   }
 
   private async getOrThrow(id: string): Promise<AgentTestCase> {
-    const goal = await this.agentTestCaseRepository.getAgentTestCaseById(id);
-    if (!goal) {
+    const testCase =
+      await this.agentTestCaseRepository.getAgentTestCaseById(id);
+    if (!testCase) {
       throw new NotFoundException(`Agent test case with id ${id} not found`);
     }
-    return goal;
+    return testCase;
   }
 
-  private mapToResponseDto(goal: AgentTestCase): AgentTestCaseResponseDto {
+  /**
+   * Merge the DTO onto the entity and normalise by type so the two variants
+   * never carry each other's stale fields: condition tests keep condition/test
+   * and clear rubrics; full-session tests keep rubrics and clear condition/test.
+   */
+  private applyDto(
+    entity: AgentTestCase,
+    dto: CreateAgentTestCaseDto | UpdateAgentTestCaseDto,
+  ): void {
+    const type = dto.type ?? entity.type ?? AgentTestCaseType.CONDITION;
+
+    if (dto.title !== undefined) entity.title = dto.title;
+    entity.type = type;
+    if (dto.tags !== undefined) entity.tags = dto.tags;
+    if (entity.tags === undefined || entity.tags === null) entity.tags = [];
+    if (dto.description !== undefined) entity.description = dto.description;
+
+    if (type === AgentTestCaseType.CONDITION) {
+      entity.condition = dto.condition ?? entity.condition ?? null;
+      entity.test = dto.test ?? entity.test ?? null;
+      entity.rubrics = null;
+    } else {
+      entity.rubrics = (dto.rubrics ?? entity.rubrics ?? []).map((r) => ({
+        criteria: r.criteria,
+        scoringInstructions: r.scoringInstructions,
+      }));
+      entity.condition = null;
+      entity.test = null;
+    }
+  }
+
+  private mapToResponseDto(testCase: AgentTestCase): AgentTestCaseResponseDto {
     return {
-      id: goal.id,
-      title: goal.title,
-      category: goal.category,
-      description: goal.description,
-      condition: goal.condition,
-      test: goal.test,
+      id: testCase.id,
+      title: testCase.title,
+      type: testCase.type,
+      tags: testCase.tags ?? [],
+      description: testCase.description ?? undefined,
+      condition: testCase.condition ?? undefined,
+      test: testCase.test ?? undefined,
+      rubrics: testCase.rubrics ?? undefined,
     };
   }
 }
