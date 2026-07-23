@@ -100,3 +100,56 @@ describe('RoleplaySessionService — v2 rollout gate', () => {
     await expect(assertAllowed(service, 2)).rejects.toThrow(ForbiddenException);
   });
 });
+
+describe('RoleplaySessionService — room-metadata specFetch URL', () => {
+  const makeService = (opts: { inline: boolean }) => {
+    const specCompiler = {
+      compileWithInfo: jest.fn(() => ({
+        compiled: { title: 'spec' },
+        inline: opts.inline,
+        sizeBytes: opts.inline ? 1024 : 100 * 1024,
+      })),
+    };
+    const configService = {
+      api: { baseUrl: 'https://api.example/' },
+    } as unknown as AppConfigService;
+    return new RoleplaySessionService(
+      {} as any,
+      specCompiler as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      configService,
+      {} as any,
+    );
+  };
+
+  const build = (service: RoleplaySessionService) =>
+    (service as any).buildRoomMetadata({
+      document: { specSchemaVersion: '1.0' },
+      version: { id: 'ver-1' },
+      spec: { id: 'spec-1' },
+      scenarioSession: { id: 'sess-1' },
+      userId: 7,
+      language: {},
+      voice: { id: 'v', name: 'n', provider: 'p', config: null },
+    }) as Record<string, any>;
+
+  // Must carry the setGlobalPrefix('api') segment — the v2 agent's
+  // ensure_spec 404s without it. The identical bug in the learn
+  // room-metadata URL stranded all sessions on 2026-07-23 (9fcf495f).
+  it('points specFetch at the /api/v1 webhook for oversized specs', () => {
+    const metadata = build(makeService({ inline: false }));
+    expect(metadata.spec).toBeNull();
+    expect(metadata.specFetch).toEqual({
+      versionId: 'ver-1',
+      url: 'https://api.example/api/v1/roleplay-studio/webhook/spec-versions/ver-1',
+    });
+  });
+
+  it('inlines small specs with no specFetch pointer', () => {
+    const metadata = build(makeService({ inline: true }));
+    expect(metadata.spec).toEqual({ title: 'spec' });
+    expect(metadata.specFetch).toBeNull();
+  });
+});

@@ -309,7 +309,11 @@ export class RoleplaySessionService {
         ? null
         : {
             versionId: version.id,
-            url: `${baseUrl}/v1/roleplay-studio/webhook/spec-versions/${version.id}`,
+            // main.ts sets setGlobalPrefix('api'), so the route lives under
+            // /api/v1/... — API_BASE_URL is the bare origin and does NOT
+            // carry it. Same class of bug stranded learn sessions on
+            // 2026-07-23 (see 9fcf495f).
+            url: `${baseUrl}/api/v1/roleplay-studio/webhook/spec-versions/${version.id}`,
           },
       session: {
         scenarioSessionId: scenarioSession.id,
