@@ -454,6 +454,18 @@ export class AppConfigService {
         'ROLEPLAY_COPILOT_MAX_TOOL_ITERATIONS',
         16,
       ),
+      // Test runs that outlive this are failed by the redis TTL timer
+      // (scaled by the unit count at run creation).
+      testRunTimeoutMinutes: this.configService.get<number>(
+        'ROLEPLAY_TEST_RUN_TIMEOUT_MINUTES',
+        30,
+      ),
+      // Auto-improve copilot turns stuck IMPROVING past this are failed by
+      // the same timer (roleplay-improve:{reportId} watchdog key).
+      improveTurnTimeoutMinutes: this.configService.get<number>(
+        'ROLEPLAY_IMPROVE_TURN_TIMEOUT_MINUTES',
+        10,
+      ),
     };
   }
 

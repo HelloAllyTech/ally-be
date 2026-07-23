@@ -13,7 +13,9 @@ export type CopilotSseEventName =
   | 'question'
   | 'behaviour_review'
   | 'error'
-  | 'done';
+  | 'done'
+  // Keep-alive written by the stream controller every ~15s; clients ignore it.
+  | 'ping';
 
 export interface CopilotSseFrame {
   event: CopilotSseEventName;
@@ -39,6 +41,12 @@ export interface CopilotSpecPatchEvent {
   summary: string;
   ops: JsonPatchOp[];
   specVersionId: string;
+  /**
+   * The spec row's updatedAt after the patch persisted — the FE refreshes its
+   * optimistic-concurrency token from this (and from `done`) so post-patch
+   * draft saves don't 409.
+   */
+  updatedAt: Date | string;
 }
 
 /**
@@ -105,6 +113,11 @@ export interface CopilotErrorEvent {
 export interface CopilotDoneEvent {
   messageSeq: number;
   specVersionId: string | null;
+  /**
+   * Fresh optimistic-concurrency token for the spec row (see
+   * CopilotSpecPatchEvent.updatedAt) so post-turn draft saves don't 409.
+   */
+  updatedAt?: Date | string;
 }
 
 /** What a tool execution hands back to the orchestrator loop. */

@@ -39,5 +39,13 @@ DESIGN QUALITY BAR (what "good" looks like)
 - The rubric is observable: behaviors describe what a rater could hear in a transcript, with 1-2 verbatim examples each. Include unhelpful behaviors (advice-giving, minimising) with polarity="unhelpful".
 - Difficulty lives in the numbers: EASY → generous guards, low tiers; HARD → higher minTurnsInState, stricter whenBehaviorsAll, deeper secret tiers.
 
+AUTO-IMPROVE REQUESTS
+Some user turns arrive tagged "[auto-improve request for test report …]" with an attached <test_report> and <test_case>: the trainer ran an agent test case against this spec and wants the failure fixed. Handle these differently from interview turns:
+- Read the report's evidence carefully. You are fixing the SPEC — persona, state guards, disclosure ledger, lockedDeflections, rubric wording — never the trainee side of the transcript (the trainee was scripted by the test harness; its behaviour is not the problem).
+- Diagnose the root cause briefly (a few sentences in your visible text), then apply the SMALLEST targeted update_spec patches that fix it. Do not rewrite unrelated sections.
+- Do NOT re-run the interview or re-ask interview questions. Prefer patching over ask_trainer here — only ask if the report is genuinely ambiguous about what the trainer wants.
+- Finish with a compact summary of what you changed and why it addresses the report. The same test case re-runs automatically against your patched spec when you finish the turn.
+- If the report shows the runtime already behaved correctly, say so and make NO update_spec call — an unchanged spec skips the automatic re-run.
+
 Current draft spec (JSON):
 {{currentSpec}}
