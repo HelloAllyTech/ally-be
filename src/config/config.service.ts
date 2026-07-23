@@ -292,6 +292,20 @@ export class AppConfigService {
     return explicit || isLocalOnly;
   }
 
+  /**
+   * When true, LiveKit room + dispatch metadata carry only a fetch pointer
+   * (learn_room_metadata webhook) instead of the full ~180KB scenario
+   * envelope, which otherwise rides inside every agent availability request
+   * and can blow LiveKit's 3s dispatch window. Requires an agent build that
+   * understands `metadataFetch` (ally-ai-learn >= 1.26); flip only after the
+   * agent is deployed.
+   */
+  get learnMetadataFetchEnabled(): boolean {
+    return (
+      this.configService.get<boolean>('LEARN_METADATA_FETCH_ENABLED') === true
+    );
+  }
+
   get app() {
     return {
       baseUrl: this.configService.get<string>('APP_BASE_URL'),

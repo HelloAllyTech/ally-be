@@ -51,6 +51,7 @@ import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
 import { TrackProgressService } from 'src/track/service/track-progress.service';
 import { ScenarioSharedService } from '../scenario-shared.service';
+import { RoomMetadataStoreService } from '../room-metadata-store.service';
 import { isEnglishLanguage } from '../../util/scenario.util';
 import { BehaviorTranslationRepository } from 'src/learn/repository/behavior-translation.repository';
 import { ScenarioBehaviorInstructionTranslationRepository } from 'src/learn/repository/scenario-behavior-instruction-translation.repository';
@@ -388,6 +389,17 @@ describe('ScenarioSessionService', () => {
           useValue: mockScenarioSessionMessagesRepo,
         },
         { provide: ScenarioService, useValue: mockScenarioService },
+        {
+          provide: RoomMetadataStoreService,
+          useValue: {
+            // Legacy inline passthrough — slim-envelope behavior is covered
+            // by room-metadata-store.service.spec.ts.
+            prepareRoomMetadata: jest.fn(async (_room, envelope) => ({
+              roomPayload: envelope,
+              dispatchPayload: envelope,
+            })),
+          },
+        },
         {
           provide: ScenarioSharedService,
           useValue: mockScenarioSharedService,

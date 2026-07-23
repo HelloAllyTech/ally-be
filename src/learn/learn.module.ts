@@ -95,6 +95,9 @@ import { AgentTestCaseRepository } from './repository/agent-test-case.repository
 import { AgentTestCaseService } from './service/agent-test-case.service';
 import { ScenarioSessionEvaluationService } from './service/scenario-session-evaluation.service';
 import { ScenarioSessionEvaluationWebhookController } from './controller/scenario-session-evaluation-webhook.controller';
+import { RoomMetadataWebhookController } from './controller/room-metadata-webhook.controller';
+import { LearnRoomMetadata } from './entity/learn-room-metadata.entity';
+import { RoomMetadataStoreService } from './service/room-metadata-store.service';
 import { AgentTestCaseController } from './controller/agent-test-case.controller';
 import { CompetencyBehavior } from './entity/competency-behavior.entity';
 import { CompetencyBehaviorRepository } from './repository/competency-behavior.repository';
@@ -149,6 +152,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
       AuditModule,
       ScenarioSessionRecording,
       ScenarioVersion,
+      LearnRoomMetadata,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
@@ -180,6 +184,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     AgentTestCaseController,
     ScenarioSessionRecordingController,
     ScenarioSessionEvaluationWebhookController,
+    RoomMetadataWebhookController,
   ],
   providers: [
     ScenarioService,
@@ -202,6 +207,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     PermissionValidator,
     ScenarioEventsRepository,
     ScenarioSharedService,
+    RoomMetadataStoreService,
     ScenarioTenantService,
     ScenarioTenantRepository,
     ScenarioTenantValidationShared,

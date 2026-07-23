@@ -101,6 +101,7 @@ import { CaseSessionService } from 'src/case/service/case-session.service';
 import { TrackProgressService } from 'src/track/service/track-progress.service';
 import { CommonUtil } from 'src/common/util/common.util';
 import { ScenarioSharedService } from './scenario-shared.service';
+import { RoomMetadataStoreService } from './room-metadata-store.service';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
 import { ScenarioSessionSkillsResponseDto } from '../dto/scenario-session-skills-response.dto';
 import { BehaviorTranslationRepository } from '../repository/behavior-translation.repository';
@@ -139,6 +140,7 @@ export class ScenarioSessionService {
     private scenarioSessionMessagesRepository: ScenarioSessionMessagesRepository,
     private scenarioService: ScenarioService,
     private scenarioSharedService: ScenarioSharedService,
+    private roomMetadataStoreService: RoomMetadataStoreService,
     private livekitService: LiveKitService,
     private sessionEventSharedService: SessionEventSharedService,
     @InjectRepository(ScenarioSessionFeedbacks)
@@ -793,12 +795,22 @@ export class ScenarioSessionService {
         scenario?.metadata?.remindersEnabled,
         learnerReminders,
       );
+      // Store the full envelope and put only a fetch pointer on the room and
+      // dispatch (when LEARN_METADATA_FETCH_ENABLED; legacy inline otherwise).
+      // Keeps the agent availability request tiny — the inline ~180KB envelope
+      // is what blew LiveKit's 3s dispatch window and stranded joins.
+      const { roomPayload, dispatchPayload } =
+        await this.roomMetadataStoreService.prepareRoomMetadata(
+          `${scenarioSession.roomId}`,
+          roomMetadata,
+        );
+
       // Create LiveKit room
       await this.livekitService.createRoom({
         name: `${scenarioSession.roomId}`,
         ttl:
           startScenarioSessionDto.ttl ?? DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
-        metadata: roomMetadata,
+        metadata: roomPayload,
       });
       void this.recordLifecycleEvent(
         scenarioSession.id,
@@ -816,7 +828,7 @@ export class ScenarioSessionService {
         .agentDispatch(
           `${scenarioSession.roomId}`,
           this.configService.livekit.agentName,
-          JSON.stringify(roomMetadata),
+          JSON.stringify(dispatchPayload),
         )
         .then(() =>
           this.recordLifecycleEvent(
@@ -2222,14 +2234,23 @@ export class ScenarioSessionService {
       scenario?.metadata?.stateNames,
     );
 
+    // Fetch-pointer metadata when enabled (see startScenarioSession).
+    const { roomPayload, dispatchPayload } =
+      await this.roomMetadataStoreService.prepareRoomMetadata(
+        roomName,
+        roomMetadata,
+      );
+
     await this.livekitService.createRoom({
       name: roomName,
-      metadata: roomMetadata,
+      metadata: roomPayload,
     });
 
-    // Cache metadata for direct dispatch (local dev when webhook unreachable)
+    // Cache metadata for direct dispatch (local dev when webhook unreachable).
+    // Cache exactly what a dispatch should carry, so dispatchPreviewAgent
+    // sends the same payload shape as the proactive path.
     if (this.configService.allowDirectAgentDispatch) {
-      previewRoomMetadataCache.set(roomName, roomMetadata);
+      previewRoomMetadataCache.set(roomName, dispatchPayload);
     }
 
     // Proactively dispatch the agent so it can initialize during the frontend's
@@ -2240,7 +2261,7 @@ export class ScenarioSessionService {
       .agentDispatch(
         roomName,
         this.configService.livekit.agentName,
-        JSON.stringify(roomMetadata),
+        JSON.stringify(dispatchPayload),
       )
       .catch((err) => {
         // Clear the pre-mark so dispatchPreviewAgent / webhook can take over.
@@ -2623,11 +2644,18 @@ export class ScenarioSessionService {
     await this.scenarioSessionRepository.save(scenarioSession);
 
     try {
+      // Fetch-pointer metadata when enabled (see startScenarioSession).
+      const { roomPayload, dispatchPayload } =
+        await this.roomMetadataStoreService.prepareRoomMetadata(
+          `${scenarioSession.roomId}`,
+          roomMetadata,
+        );
+
       // Create the LiveKit room and dispatch the counselor AI agent.
       await this.livekitService.createRoom({
         name: `${scenarioSession.roomId}`,
         ttl: DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
-        metadata: roomMetadata,
+        metadata: roomPayload,
       });
 
       this.livekitService.preMarkProactiveDispatch(`${scenarioSession.roomId}`);
@@ -2635,7 +2663,7 @@ export class ScenarioSessionService {
         .agentDispatch(
           `${scenarioSession.roomId}`,
           this.configService.livekit.agentName,
-          JSON.stringify(roomMetadata),
+          JSON.stringify(dispatchPayload),
         )
         .catch((err) => {
           this.livekitService.clearProactiveDispatch(

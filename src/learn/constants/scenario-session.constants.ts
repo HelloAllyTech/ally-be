@@ -333,3 +333,10 @@ export const SKILL_ICONS_S3_PREFIX = 'skill-icons/';
  * prompts, language glossary) is visible well before sessions start failing.
  */
 export const ROOM_METADATA_WARN_BYTES = 48 * 1024;
+
+/**
+ * How long a stored room-metadata envelope stays fetchable
+ * (learn_room_metadata rows). Rooms live minutes to hours; the agent fetches
+ * within seconds of dispatch. Sweep runs opportunistically on each store.
+ */
+export const ROOM_METADATA_STALE_HOURS = 24;

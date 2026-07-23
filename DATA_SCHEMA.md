@@ -155,6 +155,7 @@ This is where most **analytics** about training performance live.
 | `scenario_session_message_tags` | BaseEntity | `scenario_session_id`, `message_id`, `tag_id`, `category` (`ScenarioSessionTagCategory`) | Message↔tag join |
 | `scenario_session_reflection_prompt_response` | BaseEntity | `scenario_session_id`, `prompt_id`, `response` | Reflection answers |
 | `scenario_session_behavior_instructions` | BaseWithoutTenant | `scenario_session_id` (idx), `scenario_behavior_instruction_id`, `occurred_at` | Which behavior instructions triggered |
+| `learn_room_metadata` | BaseWithoutTenant | `roomName` (PK, `ss_*`/`preview-*`), `payload` (jsonb), `createdAt` (idx) | **Short-lived working data, not analytics.** Full room-metadata envelope per LiveKit room, stored at session start when `LEARN_METADATA_FETCH_ENABLED`; the voice agent fetches it via the api-key webhook (`GET /v1/learn/webhook/room-metadata/:roomName`) so LiveKit room/dispatch metadata stays a tiny pointer. Rows swept after 24h |
 
 ### 3.4 Scenario reports (`scenario-report`)
 
