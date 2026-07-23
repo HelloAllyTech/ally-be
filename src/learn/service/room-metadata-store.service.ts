@@ -98,7 +98,9 @@ export class RoomMetadataStoreService {
       version: `${fullEnvelope.version ?? '1.0'}`,
       metadataFetch: {
         roomName,
-        url: `${baseUrl}/v1/learn/webhook/room-metadata/${encodeURIComponent(roomName)}`,
+        // main.ts sets setGlobalPrefix('api'), so every route lives under
+        // /api/v1/... — API_BASE_URL is the bare origin and does NOT carry it.
+        url: `${baseUrl}/api/v1/learn/webhook/room-metadata/${encodeURIComponent(roomName)}`,
       },
     };
   }

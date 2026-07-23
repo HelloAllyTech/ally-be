@@ -78,7 +78,9 @@ describe('RoomMetadataStoreService', () => {
         version: '1.0',
         metadataFetch: {
           roomName: 'ss_abc',
-          url: 'https://api.example/v1/learn/webhook/room-metadata/ss_abc',
+          // Must carry the setGlobalPrefix('api') segment — the agent 404s
+          // without it (2026-07-23 rollout incident).
+          url: 'https://api.example/api/v1/learn/webhook/room-metadata/ss_abc',
         },
       });
       expect(out.dispatchPayload).toEqual(out.roomPayload);
@@ -92,7 +94,7 @@ describe('RoomMetadataStoreService', () => {
         fullEnvelope,
       );
       expect((out.roomPayload as any).metadataFetch.url).toContain(
-        '/room-metadata/preview-12-a%20b',
+        '/api/v1/learn/webhook/room-metadata/preview-12-a%20b',
       );
     });
 
