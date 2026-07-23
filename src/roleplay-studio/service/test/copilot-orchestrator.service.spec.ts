@@ -79,6 +79,14 @@ describe('CopilotOrchestratorService', () => {
       getSpec: jest.fn().mockResolvedValue({ id: 'spec-1', draftSpec: {} }),
     } as any;
     const llmUsage = { record: usageRecord } as any;
+    const testRunService = {
+      getReport: jest.fn().mockResolvedValue({
+        id: 'report-1',
+        specVersionId: 'ver-1',
+        testCaseSnapshot: { title: 'Case', type: 'condition' },
+        reportMarkdown: '# Test report',
+      }),
+    } as any;
 
     service = new CopilotOrchestratorService(
       configService,
@@ -88,6 +96,7 @@ describe('CopilotOrchestratorService', () => {
       copilotMessageRepository,
       roleplaySpecService,
       llmUsage,
+      testRunService,
     );
     (service as any).client = { messages: { stream: streamMock } };
   });

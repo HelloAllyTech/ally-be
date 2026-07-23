@@ -60,6 +60,20 @@ export class CopilotAnswerDto {
   unhelpful?: string[];
 }
 
+/**
+ * Auto-improve bridge: the server injects the referenced test report into the
+ * turn (AUTO_IMPROVE_MESSAGE_TEMPLATE), consumes the turn to completion even
+ * if the client disconnects, and re-runs the report's test case when the
+ * copilot patched the spec.
+ */
+export class CopilotAutoImproveDto {
+  @ApiProperty({
+    description: 'COMPLETED test report driving this auto-improve turn',
+  })
+  @IsUUID()
+  reportId!: string;
+}
+
 export class CreateCopilotSessionDto {
   @ApiProperty({ description: 'The roleplay spec this copilot session edits' })
   @IsUUID()
@@ -95,4 +109,15 @@ export class CreateCopilotMessageDto {
   @ValidateNested()
   @Type(() => CopilotAnswerDto)
   answer?: CopilotAnswerDto;
+
+  @ApiPropertyOptional({
+    type: CopilotAutoImproveDto,
+    description:
+      'Marks this turn as an auto-improve request for a test report; the ' +
+      'report content is injected server-side',
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CopilotAutoImproveDto)
+  autoImprove?: CopilotAutoImproveDto;
 }
