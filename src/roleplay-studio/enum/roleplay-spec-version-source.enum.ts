@@ -10,4 +10,7 @@ export enum RoleplaySpecVersionSource {
   COPILOT_PATCH = 'copilot_patch',
   // Explicit checkpoint via POST /specs/:id/versions.
   SNAPSHOT = 'snapshot',
+  // Draft pinned at test-run start so every test report stays reproducible
+  // (versions-only snapshot — the working draft is untouched).
+  TEST_RUN = 'test_run',
 }

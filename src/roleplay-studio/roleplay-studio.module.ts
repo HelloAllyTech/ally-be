@@ -12,6 +12,8 @@ import { CopilotSession } from './entity/copilot-session.entity';
 import { CopilotMessage } from './entity/copilot-message.entity';
 import { RoleplayDirectorEvent } from './entity/roleplay-director-event.entity';
 import { RoleplayRubricScore } from './entity/roleplay-rubric-score.entity';
+import { RoleplayTestRun } from './entity/roleplay-test-run.entity';
+import { RoleplayTestReport } from './entity/roleplay-test-report.entity';
 import { RoleplaySpecRepository } from './repository/roleplay-spec.repository';
 import { RoleplaySpecVersionRepository } from './repository/roleplay-spec-version.repository';
 import { RoleplaySpecTenantRepository } from './repository/roleplay-spec-tenant.repository';
@@ -19,6 +21,8 @@ import { CopilotSessionRepository } from './repository/copilot-session.repositor
 import { CopilotMessageRepository } from './repository/copilot-message.repository';
 import { RoleplayDirectorEventRepository } from './repository/roleplay-director-event.repository';
 import { RoleplayRubricScoreRepository } from './repository/roleplay-rubric-score.repository';
+import { RoleplayTestRunRepository } from './repository/roleplay-test-run.repository';
+import { RoleplayTestReportRepository } from './repository/roleplay-test-report.repository';
 import { SpecValidatorService } from './service/spec-validator.service';
 import { SpecCompilerService } from './service/spec-compiler.service';
 import { RoleplaySpecService } from './service/roleplay-spec.service';
@@ -26,6 +30,8 @@ import { CopilotSessionService } from './service/copilot-session.service';
 import { CopilotToolsService } from './service/copilot-tools.service';
 import { CopilotOrchestratorService } from './service/copilot-orchestrator.service';
 import { RoleplaySessionService } from './service/roleplay-session.service';
+import { RoleplayTestRunService } from './service/roleplay-test-run.service';
+import { RoleplayTestRunTimerService } from './service/roleplay-test-run-timer.service';
 import { DirectorTelemetryService } from './service/director-telemetry.service';
 import { DirectorStateTransitionProcessor } from './processor/director-state-transition.processor';
 import { DirectorRubricScoreProcessor } from './processor/director-rubric-score.processor';
@@ -36,12 +42,14 @@ import { RoleplaySpecController } from './controller/roleplay-spec.controller';
 import { CopilotController } from './controller/copilot.controller';
 import { RoleplaySessionController } from './controller/roleplay-session.controller';
 import { RoleplayStudioWebhookController } from './controller/roleplay-studio-webhook.controller';
+import { RoleplayTestRunController } from './controller/roleplay-test-run.controller';
+import { TestRunWebhookController } from './controller/test-run-webhook.controller';
 
 /**
- * Roleplay Studio v2 — spec authoring (copilot-driven) and the ROLEPLAY_V2
- * session runtime. Deliberately self-contained: the v1 learn module is never
- * imported for its providers (entities are reached through the shared
- * DataSource), so v1 stays untouched.
+ * Roleplay Studio v2 — spec authoring (copilot-driven), Improve test runs,
+ * and the ROLEPLAY_V2 session runtime. Deliberately self-contained: the v1
+ * learn module is never imported for its providers (entities are reached
+ * through the shared DataSource), so v1 stays untouched.
  *
  * The director SQS processors are registered dynamically from onModuleInit
  * via ProcessorRegistry.registerCustomProcessor — zero edits under
@@ -57,6 +65,8 @@ import { RoleplayStudioWebhookController } from './controller/roleplay-studio-we
       CopilotMessage,
       RoleplayDirectorEvent,
       RoleplayRubricScore,
+      RoleplayTestRun,
+      RoleplayTestReport,
     ]),
     AiModule,
     LiveKitModule,
@@ -68,6 +78,8 @@ import { RoleplayStudioWebhookController } from './controller/roleplay-studio-we
     CopilotController,
     RoleplaySessionController,
     RoleplayStudioWebhookController,
+    RoleplayTestRunController,
+    TestRunWebhookController,
   ],
   providers: [
     RoleplaySpecRepository,
@@ -77,6 +89,8 @@ import { RoleplayStudioWebhookController } from './controller/roleplay-studio-we
     CopilotMessageRepository,
     RoleplayDirectorEventRepository,
     RoleplayRubricScoreRepository,
+    RoleplayTestRunRepository,
+    RoleplayTestReportRepository,
     SpecValidatorService,
     SpecCompilerService,
     RoleplaySpecService,
@@ -84,6 +98,8 @@ import { RoleplayStudioWebhookController } from './controller/roleplay-studio-we
     CopilotToolsService,
     CopilotOrchestratorService,
     RoleplaySessionService,
+    RoleplayTestRunService,
+    RoleplayTestRunTimerService,
     DirectorTelemetryService,
     DirectorStateTransitionProcessor,
     DirectorRubricScoreProcessor,

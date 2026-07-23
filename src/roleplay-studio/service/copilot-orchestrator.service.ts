@@ -15,9 +15,11 @@ import {
   ToolExecutionContext,
 } from './copilot-tools.service';
 import { RoleplaySpecService } from './roleplay-spec.service';
+import { RoleplayTestRunService } from './roleplay-test-run.service';
 import { CopilotSseFrame } from '../type/copilot-sse-event.type';
 import { CreateCopilotMessageDto } from '../dto/copilot.dto';
 import {
+  AUTO_IMPROVE_MESSAGE_TEMPLATE,
   COPILOT_MAX_TOKENS,
   ROLEPLAY_COPILOT_PROMPTS,
 } from '../constants/roleplay-studio.constants';
@@ -50,6 +52,9 @@ export class CopilotOrchestratorService {
     private readonly copilotMessageRepository: CopilotMessageRepository,
     private readonly roleplaySpecService: RoleplaySpecService,
     private readonly llmUsage: LlmUsageService,
+    // Reader for auto-improve turns (one-way dep — the test-run service never
+    // calls back into the orchestrator, so no cycle).
+    private readonly testRunService: RoleplayTestRunService,
   ) {
     this.client = new Anthropic({
       apiKey: this.configService.anthropic.apiKey,
@@ -81,13 +86,24 @@ export class CopilotOrchestratorService {
       await this.copilotMessageRepository.listBySession(sessionId);
 
     // Persist the trainer's message first — the transcript survives whatever
-    // happens next.
-    const userContent = this.renderUserContent(dto);
+    // happens next. Auto-improve turns append the full test report rendered
+    // server-side (never trusted from the client).
+    let userContent = this.renderUserContent(dto);
+    if (dto.autoImprove) {
+      const injected = await this.buildAutoImproveContent(
+        dto.autoImprove.reportId,
+        userId,
+      );
+      userContent = userContent ? `${userContent}\n\n${injected}` : injected;
+    }
     const userMetadata =
-      dto.questionId || dto.answer
+      dto.questionId || dto.answer || dto.autoImprove
         ? {
             ...(dto.questionId ? { questionId: dto.questionId } : {}),
             ...(dto.answer ? { answer: dto.answer } : {}),
+            ...(dto.autoImprove
+              ? { autoImprove: { reportId: dto.autoImprove.reportId } }
+              : {}),
           }
         : null;
     await this.copilotMessageRepository.appendMessage(sessionId, {
@@ -303,8 +319,48 @@ export class CopilotOrchestratorService {
       data: {
         messageSeq: assistantMessage.seq,
         specVersionId: context.lastSpecVersionId,
+        // Fresh concurrency token (context.spec is re-threaded on every
+        // persisted patch) so the FE's next draft save doesn't 409.
+        updatedAt: context.spec.updatedAt,
       },
     };
+  }
+
+  /**
+   * Server-side auto-improve injection: fill AUTO_IMPROVE_MESSAGE_TEMPLATE
+   * from the test report row (title/type from the stored snapshot, the pinned
+   * version's number, the judge's markdown, and the full case snapshot).
+   */
+  private async buildAutoImproveContent(
+    reportId: string,
+    userId: number,
+  ): Promise<string> {
+    const report = await this.testRunService.getReport(reportId, userId);
+    const version = await this.roleplaySpecService.getVersionById(
+      report.specVersionId,
+    );
+    return this.fillTemplate(AUTO_IMPROVE_MESSAGE_TEMPLATE, {
+      reportId: report.id,
+      title: report.testCaseSnapshot?.title ?? 'Untitled test case',
+      type: report.testCaseSnapshot?.type ?? 'condition',
+      versionNumber: String(version.versionNumber),
+      reportMarkdown: report.reportMarkdown ?? '(no report markdown)',
+      testCaseSnapshot: JSON.stringify(report.testCaseSnapshot ?? {}),
+    });
+  }
+
+  /**
+   * Deterministic {{token}} fill — replacement callbacks so `$`-sequences in
+   * report markdown can't be interpreted as regex replacement patterns.
+   */
+  private fillTemplate(
+    template: string,
+    variables: Record<string, string>,
+  ): string {
+    return Object.entries(variables).reduce(
+      (rendered, [key, value]) => rendered.replace(`{{${key}}}`, () => value),
+      template,
+    );
   }
 
   /**

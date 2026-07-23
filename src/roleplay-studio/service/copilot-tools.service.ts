@@ -332,6 +332,9 @@ export class CopilotToolsService {
       summary,
       ops,
       specVersionId: version.id,
+      // Fresh concurrency token — without it the FE's expectedUpdatedAt goes
+      // stale after every copilot patch and the next draft save 409s.
+      updatedAt: savedSpec.updatedAt,
     };
     context.appliedPatches.push(patchPayload);
 
