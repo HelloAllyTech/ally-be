@@ -154,10 +154,21 @@ export class AiService {
       tags: tags,
       prompts,
     };
+    // This call sits inside the scribe save flow — cap it well below the
+    // 5-minute default so a slow/dead AI service fails fast and the client
+    // can fall back to neutral ratings instead of hanging the save.
     const response = await this.makeRequest<
       TagPositivityRatingsResponse,
       TagPositivityRatingsRequest
-    >(ENDPOINTS.TAG_POSITIVITY_RATINGS, request);
+    >(
+      ENDPOINTS.TAG_POSITIVITY_RATINGS,
+      request,
+      false,
+      'post',
+      undefined,
+      false,
+      15_000,
+    );
     return response;
   }
 
@@ -361,7 +372,12 @@ export class AiService {
     method: 'get' | 'post' | 'put' | 'delete' = 'post',
     headers?: Record<string, string>,
     isLearnService = false,
+    // Endpoints on a user-facing request path (e.g. tag positivity during a
+    // scribe save) must pass something far below the 5-minute default, so an
+    // unhealthy AI service degrades the feature instead of hanging the save.
+    timeoutMs?: number,
   ): Promise<R> {
+    const requestTimeout = timeoutMs ?? this.maxTimeout;
     const execId = uuidv4();
     let timeoutId: NodeJS.Timeout | undefined;
     const startTime = new Date().toISOString();
@@ -381,7 +397,7 @@ export class AiService {
       this.logger.info(
         `AI Request START | execId=${execId} | endpoint=${endpoint} | url=${url} | ` +
           `method=${method} | isLearnService=${isLearnService} | ` +
-          `dataSize=${dataSize}B | timeout=${this.maxTimeout}ms | startTime=${startTime}`,
+          `dataSize=${dataSize}B | timeout=${requestTimeout}ms | startTime=${startTime}`,
       );
       this.logger.debug(
         `AI Request BODY | execId=${execId} | endpoint=${endpoint} | ` +
@@ -409,7 +425,7 @@ export class AiService {
             : this.config.ai.outboundApiKey,
           ...(headers || {}),
         },
-        timeout: this.maxTimeout,
+        timeout: requestTimeout,
         url,
         method,
         data,

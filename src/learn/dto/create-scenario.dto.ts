@@ -634,6 +634,16 @@ export class CreateScenarioDto {
   currentState?: boolean;
 
   @ApiProperty({
+    description:
+      'Whether reminders are shown to the learner during the roleplay',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  remindersEnabled?: boolean;
+
+  @ApiProperty({
     description: 'Competency ID',
     example: '123e4567-e89b-12d3-a456-426614174000',
     required: false,

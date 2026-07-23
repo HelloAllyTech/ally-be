@@ -49,6 +49,7 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'enableFeedback',
   'pauseEnabled',
   'currentState',
+  'remindersEnabled',
   'knowledgeSources',
   'stateNames',
   'selectedMainPromptCode',
@@ -174,6 +175,7 @@ export const mapCreateScenarioRequestToEntity = (
       enableFeedback: scenario.enableFeedback,
       pauseEnabled: scenario.pauseEnabled,
       currentState: scenario.currentState,
+      remindersEnabled: scenario.remindersEnabled,
       knowledgeSources: scenario.knowledgeSources?.map((knowledgeSource) => ({
         id: knowledgeSource.id,
         title: knowledgeSource.title,

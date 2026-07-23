@@ -2639,6 +2639,7 @@ describe('ScenarioSessionService', () => {
           voiceId: 'test-voice',
           languageVoices: { 1: 'voice-123' },
           reminders: ['Maintain eye contact', 'Ask open-ended questions'],
+          remindersEnabled: true,
         },
         isGlobal: false,
       };
@@ -2690,6 +2691,7 @@ describe('ScenarioSessionService', () => {
         'Ask open-ended questions',
       ]);
       expect((result as any).scenario.description).toBe('English description');
+      expect((result as any).scenario.remindersEnabled).toBe(true);
     });
 
     it('should surface translated reminders and description for a non-English session', async () => {
@@ -2712,6 +2714,7 @@ describe('ScenarioSessionService', () => {
           voiceId: 'test-voice',
           languageVoices: { 2: 'voice-123' },
           reminders: ['English reminder'],
+          remindersEnabled: true,
         },
         translations: {
           mr: {
@@ -3339,6 +3342,23 @@ describe('ScenarioSessionService', () => {
       expect(stateInstructions).toEqual(
         mockScenario.metadata.stateInstructions,
       );
+    });
+  });
+
+  describe('getReminders', () => {
+    it('should return empty array when remindersEnabled is false', () => {
+      const reminders = service.getReminders(false, ['Maintain eye contact']);
+      expect(reminders).toEqual([]);
+    });
+
+    it('should return empty array when reminders is empty', () => {
+      const reminders = service.getReminders(true, []);
+      expect(reminders).toEqual([]);
+    });
+
+    it('should return reminders when remindersEnabled is true and reminders is not empty', () => {
+      const reminders = service.getReminders(true, ['Maintain eye contact']);
+      expect(reminders).toEqual(['Maintain eye contact']);
     });
   });
 
