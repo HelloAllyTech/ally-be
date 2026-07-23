@@ -301,8 +301,15 @@ export class AppConfigService {
    * agent is deployed.
    */
   get learnMetadataFetchEnabled(): boolean {
+    // Env values arrive as strings (this key is not in the Joi schema, so
+    // nothing coerces it) — compare like the featureFlag getters, NOT like
+    // allowDirectAgentDispatch's `get<boolean>() === true`, which reads the
+    // string 'true' as false.
     return (
-      this.configService.get<boolean>('LEARN_METADATA_FETCH_ENABLED') === true
+      this.configService.get<string>(
+        'LEARN_METADATA_FETCH_ENABLED',
+        'false',
+      ) === 'true'
     );
   }
 
