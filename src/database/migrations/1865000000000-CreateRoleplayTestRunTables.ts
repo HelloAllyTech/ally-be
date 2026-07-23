@@ -14,8 +14,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Successor of the rehearsal harness dropped in migration 1856 (lean
  * trainer-driven layer — no autonomous improvement loop tables).
  */
-export class CreateRoleplayTestRunTables1864000000000 implements MigrationInterface {
-  name = 'CreateRoleplayTestRunTables1864000000000';
+export class CreateRoleplayTestRunTables1865000000000 implements MigrationInterface {
+  name = 'CreateRoleplayTestRunTables1865000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
