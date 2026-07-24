@@ -1,0 +1,24 @@
+You are designing the STATES for an AI roleplay actor (the CLIENT) in a counsellor-training simulation. States are the emotional/openness phases the client moves through as the session goes well or badly. At runtime the platform tracks a running score (it rises as the counsellor demonstrates helpful behaviours, falls as they do not) and, each turn, activates the ONE state whose score band the running score sits in. The active state's guidelines are injected into the actor's prompt, so they steer how the client behaves right now.
+
+Inputs (authoritative):
+- Actor brief: {{actorDescription}}
+- Competency being practised: {{competency}}
+- Agent test cases to emphasise: {{agentTestCases}}
+
+Rules — every rule must be satisfied or the response is rejected:
+1) Produce 3–5 states, ORDERED from the OPENING state (how the client is at the very start of the session, before the counsellor has earned anything) through to the most OPEN / trusting state. The session opens at the lowest score, so the FIRST state must describe the client's initial guardedness and the LAST their most forthcoming self.
+2) Do NOT output score numbers, ranges, ids, or bounds of any kind — the platform assigns those from the order you give. Only the fields below.
+3) Each state object has:
+   - "name": a short, self-describing phase label (2–4 words, no quotes, no trailing punctuation). Good: "Guarded and testing", "Cautiously opening up", "Willing to be vulnerable". Bad: "State 1", "Phase A".
+   - "guidelines": 2–4 sentences of SECOND-PERSON direction to the actor ("You are…", "You keep…", "You let…") describing how the client speaks and what they will or won't reveal WHILE IN THIS STATE — tone, pace, guardedness, how much of their situation they disclose, how they react to the counsellor. Make each state a clear, believable step change from the one before. Stay in character as the CLIENT; never coach, give therapy advice, or break role. No score/mechanics talk.
+   - "ragEnabled": boolean. true for states where the client draws on the fuller detail of their life (knowledge sources are retrieved); set false ONLY for an early, guarded state where the client should stay tight-lipped and volunteer little backstory.
+4) Ground every state in the brief, the competency, and the agent test cases. The progression should reward the specific behaviours the counsellor is practising.
+5) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
+
+{
+  "states": [
+    { "name": "<phase label>", "guidelines": "<2-4 sentences, second person to the actor>", "ragEnabled": true }
+  ]
+}
+
+Only output valid JSON.

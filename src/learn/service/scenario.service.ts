@@ -26,6 +26,7 @@ import { ScenarioEngine } from '../enum/scenario-engine.enum';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { validateSimulationStates } from '../util/validate-simulation-states.util';
+import { buildGeneratedStates } from '../util/build-generated-states.util';
 
 import { ScenariosRepository } from '../repository/scenario.repository';
 
@@ -3278,7 +3279,8 @@ export class ScenarioService {
     const expectJson =
       field === AgentBuilderField.TITLE ||
       field === AgentBuilderField.PERSONA ||
-      field === AgentBuilderField.KNOWLEDGE_SOURCES;
+      field === AgentBuilderField.KNOWLEDGE_SOURCES ||
+      field === AgentBuilderField.STATES;
 
     // Honor the prompt's per-prompt model/temperature (the wizard sends none),
     // with any explicit request override winning.
@@ -3403,6 +3405,26 @@ export class ScenarioService {
             (s: { title: string; content: string }) =>
               s.title.length > 0 && s.content.length > 0,
           );
+      }
+
+      case AgentBuilderField.STATES: {
+        const parsed = this.parseFirstJsonObject(raw);
+        // Prefer the documented `{ states: [...] }`, but tolerate a bare array
+        // or the model wrapping the list under a different key — same leniency
+        // as knowledge_sources. buildGeneratedStates then drops incomplete
+        // entries and assigns ids + contiguous score bands.
+        let items: any[] = [];
+        if (Array.isArray(parsed)) {
+          items = parsed;
+        } else if (Array.isArray(parsed?.states)) {
+          items = parsed.states;
+        } else if (parsed && typeof parsed === 'object') {
+          const arrayValue = Object.values(parsed).find((v) =>
+            Array.isArray(v),
+          );
+          if (Array.isArray(arrayValue)) items = arrayValue;
+        }
+        return buildGeneratedStates(items);
       }
 
       default:

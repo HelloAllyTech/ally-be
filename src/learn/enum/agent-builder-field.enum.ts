@@ -15,4 +15,10 @@ export enum AgentBuilderField {
   CHALLENGE_DESCRIPTION = 'challenge_description',
   KNOWLEDGE_SOURCES = 'knowledge_sources',
   PERSONA = 'persona',
+  // Per-simulation score-driven states (metadata.states). Only meaningful for
+  // main-agent prompts that reference {state_x_guidelines}; the studio wizard
+  // fires this field ONLY when such a variant is selected. The model supplies
+  // ordered {name, guidelines, ragEnabled}; the server assigns stable ids and
+  // the contiguous score bands (see buildGeneratedStates).
+  STATES = 'states',
 }
