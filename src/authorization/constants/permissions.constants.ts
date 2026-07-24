@@ -555,6 +555,11 @@ const MULTI_TENANT_ADMIN_PERMISSIONS = [
   PERMISSIONS.VIEW_SCENARIO_LANGUAGES,
   PERMISSIONS.VIEW_SCENARIO_CHARACTER,
   PERMISSIONS.VIEW_ADMIN_SCENARIO_VOICE_LANGUAGES,
+  // Voice preview (listen to a sample before assigning it to a character) —
+  // the language→voice dropdown itself is populated via
+  // VIEW_ADMIN_SCENARIO_VOICE_LANGUAGES above, but the "play" action hits a
+  // separate endpoint gated by VIEW_SCENARIO_VOICES.
+  PERMISSIONS.VIEW_SCENARIO_VOICES,
   PERMISSIONS.VIEW_USERS,
   PERMISSIONS.VIEW_TENANT,
   PERMISSIONS.EDIT_TENANT,
