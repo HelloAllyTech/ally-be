@@ -14,7 +14,8 @@ import { AgentBuilderField } from '../enum/agent-builder-field.enum';
 /**
  * One parallel field-generation call for Agent Builder Copilot. The frontend
  * fires one of these per target field (role instruction, title, challenge
- * description, knowledge sources, persona) concurrently, each rendering its own
+ * description, knowledge sources, persona, and — only when a states-enabled
+ * main-agent prompt is selected — states) concurrently, each rendering its own
  * editable prompt template with the shared runtime variables below.
  */
 export class GenerateAgentBuilderFieldDto {
@@ -102,7 +103,9 @@ export class GenerateAgentBuilderFieldResponseDto {
       'Parsed field value. Shape depends on `field`: string for ' +
       'role_instruction / title / challenge_description; ' +
       '{name,age,gender,profession,currentLocation} for persona; ' +
-      '[{title,content}] for knowledge_sources.',
+      '[{title,content}] for knowledge_sources; ' +
+      '[{id,name,guidelines,scoreLower,scoreUpper,ragEnabled}] for states ' +
+      '(ids + contiguous score bands assigned server-side).',
   })
   value!: unknown;
 }
