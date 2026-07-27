@@ -71,6 +71,7 @@ export class LivekitWebhookController {
       if (
         roomMetadata?.environment !== this.configService.livekit.environment
       ) {
+        this.logDroppedEvent(parsedBody, roomMetadata);
         return res.status(HttpStatus.OK).send();
       }
 
@@ -107,6 +108,31 @@ export class LivekitWebhookController {
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Trace for events discarded by the environment filter. Cross-environment
+   * drops are routine (dev and prod share one LiveKit server) and stay at
+   * debug — but metadata that exists WITHOUT an environment field is the
+   * signature of an envelope bug (a room our own env created but can no
+   * longer receive events for): that silently killed room_finished handling
+   * for 4 days in 2026-07 (2ab4daaf, 8cffeaf2), so it logs at warn.
+   */
+  private logDroppedEvent(
+    parsedBody: any,
+    roomMetadata: Record<string, any> | null,
+  ): void {
+    const eventType = parsedBody?.event ?? 'unknown';
+    const roomName = parsedBody?.room?.name ?? 'unknown';
+    if (roomMetadata && roomMetadata.environment === undefined) {
+      this.logger.warn(
+        `[WEBHOOK_ENV_FILTER] dropping '${eventType}' for room '${roomName}': metadata has NO environment field — likely an envelope missing it (every event for that room is being discarded)`,
+      );
+      return;
+    }
+    this.logger.debug(
+      `[WEBHOOK_ENV_FILTER] dropping '${eventType}' for room '${roomName}': environment '${roomMetadata?.environment ?? 'none'}' != '${this.configService.livekit.environment}'`,
+    );
   }
 
   private parseMetadata(metadata: unknown): Record<string, any> | null {

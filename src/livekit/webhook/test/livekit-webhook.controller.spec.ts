@@ -314,6 +314,48 @@ describe('LivekitWebhookController', () => {
       expect(roomFinishedHandler.handle).not.toHaveBeenCalled();
       expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.OK);
       expect(mockResponse.send).toHaveBeenCalledWith();
+      // Routine cross-env drop: traced at debug, never warn.
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('[WEBHOOK_ENV_FILTER]'),
+      );
+      expect(mockLogger.warn).not.toHaveBeenCalled();
+    });
+
+    it('warns when dropping an event whose metadata has no environment field', async () => {
+      // Signature of an envelope bug (2ab4daaf / 8cffeaf2): a room WITH
+      // metadata but WITHOUT environment loses every webhook silently.
+      const noEnvFieldRequest = {
+        headers: {
+          authorization: 'Bearer test-token',
+        },
+        [Symbol.asyncIterator]: jest
+          .fn()
+          .mockImplementation(async function* () {
+            yield Buffer.from(
+              JSON.stringify({
+                event: 'room_finished',
+                room: {
+                  name: 'roleplay-abc',
+                  metadata: JSON.stringify({ engine: 'roleplay_v2' }),
+                },
+              }),
+            );
+          }),
+      };
+
+      await controller.handleWebhook(
+        noEnvFieldRequest as any,
+        mockResponse as Response,
+      );
+
+      expect(mockWebhookReceiver.receive).not.toHaveBeenCalled();
+      expect(mockResponse.status).toHaveBeenCalledWith(HttpStatus.OK);
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('NO environment field'),
+      );
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('roleplay-abc'),
+      );
     });
 
     it('should handle webhook verification error', async () => {
