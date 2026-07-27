@@ -306,6 +306,7 @@ describe('ScenarioSessionService', () => {
     const mockSharedLanguageService = {
       getLanguagesByIds: jest.fn(),
       getLanguageByLanguageCode: jest.fn(),
+      getLanguageValueById: jest.fn().mockResolvedValue('en'),
     };
 
     const mockScenarioVoicesRepository = {
@@ -3468,6 +3469,32 @@ describe('ScenarioSessionService', () => {
       expect(created.eventsDetected).toBe(0);
       expect(created.llmTimedOut).toBe(false);
       expect(created.interrupted).toBe(false);
+    });
+
+    it("falls back to the session's configured language when the metric omits it", async () => {
+      const sessionWithLanguage = {
+        ...session,
+        metadata: { languageId: 7 },
+      } as ScenarioSessions;
+      sharedLanguageService.getLanguageValueById.mockResolvedValue('ta-IN');
+      const sparse: LearnTurnMetricsData = {
+        turn_index: 0,
+        response_latency_ms: 900,
+      };
+
+      await service.addTurnMetrics(sessionWithLanguage, sparse);
+
+      expect(sharedLanguageService.getLanguageValueById).toHaveBeenCalledWith(
+        7,
+      );
+      const created = mockRepo.create.mock.calls[0][0];
+      expect(created.language).toBe('ta-IN');
+    });
+
+    it('does not consult the language service when the metric already carries a language', async () => {
+      await service.addTurnMetrics(session, metrics);
+
+      expect(sharedLanguageService.getLanguageValueById).not.toHaveBeenCalled();
     });
   });
 });

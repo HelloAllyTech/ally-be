@@ -57,6 +57,23 @@ export class SharedLanguageService {
     return this.languagesRepository.getLanguageByValue(value);
   }
 
+  /**
+   * Resolve a language id (as stored in `scenario_sessions.metadata.languageId`)
+   * to its `value` (e.g. 'ta-IN'), regardless of `active` status — matching the
+   * `LEFT JOIN languages l ON l.id = ...` convention used by the analytics/drift
+   * read paths, which don't filter on `active` either. Returns 'en' when the id
+   * is missing or unresolvable (deleted/misconfigured row).
+   */
+  async getLanguageValueById(
+    languageId: number | null | undefined,
+  ): Promise<string> {
+    if (!languageId) return DEFAULT_LANGUAGE_CODE;
+    const language = await this.languagesRepository.findOneBy({
+      id: languageId,
+    });
+    return language?.value ?? DEFAULT_LANGUAGE_CODE;
+  }
+
   async getValidLanguageCodes(languageIds: number[]) {
     const { languages } = await this.getValidLanguages(languageIds);
 

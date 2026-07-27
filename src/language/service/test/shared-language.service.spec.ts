@@ -42,6 +42,7 @@ describe('SharedLanguageService', () => {
           provide: LanguagesRepository,
           useValue: {
             getLanguagesById: jest.fn(),
+            findOneBy: jest.fn(),
           },
         },
       ],
@@ -120,6 +121,32 @@ describe('SharedLanguageService', () => {
 
       expect(result.languages).toEqual([]); // English should be filtered out
       expect(result.languagesMap).toEqual({});
+    });
+  });
+
+  describe('getLanguageValueById', () => {
+    it("resolves a language id to its value, ignoring 'active' status", async () => {
+      languagesRepository.findOneBy.mockResolvedValue(mockLanguage1);
+
+      const result = await service.getLanguageValueById(1);
+
+      expect(result).toBe('hi-IN');
+      expect(languagesRepository.findOneBy).toHaveBeenCalledWith({ id: 1 });
+    });
+
+    it("defaults to 'en' when the id is missing", async () => {
+      const result = await service.getLanguageValueById(null);
+
+      expect(result).toBe('en');
+      expect(languagesRepository.findOneBy).not.toHaveBeenCalled();
+    });
+
+    it("defaults to 'en' when the id doesn't resolve to a row", async () => {
+      languagesRepository.findOneBy.mockResolvedValue(null);
+
+      const result = await service.getLanguageValueById(999);
+
+      expect(result).toBe('en');
     });
   });
 });

@@ -2026,6 +2026,22 @@ export class ScenarioSessionService {
   }
 
   /**
+   * Fallback language for a turn/start-metrics row when the SQS payload didn't
+   * carry one (the ally-ai-learn runtime doesn't always send it) — resolves the
+   * session's own configured language (metadata.languageId -> languages.value),
+   * the same source every read-time language join in analytics/drift/session
+   * logs already resolves against. Defaults to 'en' when unset/unresolvable.
+   */
+  private async resolveSessionLanguageValue(
+    scenarioSession: ScenarioSessions,
+  ): Promise<string> {
+    const languageId = Number(scenarioSession.metadata?.languageId);
+    return this.sharedLanguageService.getLanguageValueById(
+      Number.isFinite(languageId) && languageId > 0 ? languageId : null,
+    );
+  }
+
+  /**
    * Persist one per-turn latency sample into scenario_session_turn_metrics.
    * `occurredAt` is the agent-side turn timestamp; falls back to now() if absent.
    */
@@ -2035,6 +2051,9 @@ export class ScenarioSessionService {
     occurredAt?: Date,
   ): Promise<void> {
     const repo = this.dataSource.getRepository(ScenarioSessionTurnMetrics);
+    const language =
+      metrics.language ??
+      (await this.resolveSessionLanguageValue(scenarioSession));
     const row = repo.create({
       scenarioSessionId: scenarioSession.id,
       tenantId: scenarioSession.tenantId,
@@ -2052,7 +2071,7 @@ export class ScenarioSessionService {
       processEventsMs: metrics.process_events_ms,
       behaviorsMs: metrics.behaviors_ms,
       scenarioId: metrics.scenario_id ?? scenarioSession.scenarioId,
-      language: metrics.language,
+      language,
       llmModel: metrics.llm_model,
       llmProvider: metrics.llm_provider,
       env: metrics.env,
@@ -2087,6 +2106,9 @@ export class ScenarioSessionService {
     occurredAt?: Date,
   ): Promise<void> {
     const repo = this.dataSource.getRepository(ScenarioSessionStartMetrics);
+    const language =
+      metrics.language ??
+      (await this.resolveSessionLanguageValue(scenarioSession));
     const row = repo.create({
       scenarioSessionId: scenarioSession.id,
       tenantId: scenarioSession.tenantId,
@@ -2098,7 +2120,7 @@ export class ScenarioSessionService {
       prepMs: metrics.prep_ms,
       openingPlayoutMs: metrics.opening_playout_ms,
       scenarioId: metrics.scenario_id ?? scenarioSession.scenarioId,
-      language: metrics.language,
+      language,
       env: metrics.env,
       occurredAt: occurredAt ?? new Date(),
       source: 'pipeline',
