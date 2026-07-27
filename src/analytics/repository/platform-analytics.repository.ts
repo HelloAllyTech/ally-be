@@ -574,9 +574,14 @@ export class PlatformAnalyticsRepository {
    * live-agent numbers; 'transcript' rows are historical/derived and would
    * muddy a cross-language comparison). Joins back to the owning session's
    * configured language the same way the `language` filter branch of
-   * {@link getVoiceLatencyByBucket} does — scenario_session_turn_metrics has no
-   * language column of its own. Unresolved languages (deleted/misconfigured
-   * languages row) fall back to 'en', matching that same filter branch.
+   * {@link getVoiceLatencyByBucket} does — `m."language"` itself is largely
+   * unpopulated, so it's not used for grouping. Unresolved languages
+   * (deleted/misconfigured languages row) fall back to 'en', matching that
+   * same filter branch. Grouped/ordered by the raw expression rather than the
+   * `language` output alias: `scenario_session_turn_metrics` has its own (real,
+   * if sparse) `language` column, and Postgres resolves a GROUP BY/ORDER BY
+   * name against an input column of that name in preference to an output
+   * alias — grouping by the alias would silently group by the wrong column.
    */
   async getVoiceLatencyByLanguage(
     start: Date,
@@ -603,8 +608,8 @@ export class PlatformAnalyticsRepository {
       .andWhere('m."occurredAt" < :end', { end })
       .andWhere(`m."source" = 'pipeline'`)
       .andWhere('m."responseLatencyMs" IS NOT NULL')
-      .groupBy('language')
-      .orderBy('language', 'ASC')
+      .groupBy(`COALESCE(l."value", 'en')`)
+      .orderBy(`COALESCE(l."value", 'en')`, 'ASC')
       .getRawMany<{
         language: string;
         turns: number;
