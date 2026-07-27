@@ -491,18 +491,22 @@ export class PlatformAnalyticsService {
       )},${isoDate(endExclusive)}) bucket=${bucket}`,
     );
 
-    const points = await this.repo.getVoiceLatencyByBucket(
-      windowStart,
-      endExclusive,
-      bucket,
-      language,
-    );
+    const [points, byLanguage] = await Promise.all([
+      this.repo.getVoiceLatencyByBucket(
+        windowStart,
+        endExclusive,
+        bucket,
+        language,
+      ),
+      this.repo.getVoiceLatencyByLanguage(windowStart, endExclusive),
+    ]);
 
     return {
       range,
       bucket,
       targetMs: VOICE_LATENCY_TARGET_MS,
       points,
+      byLanguage,
     };
   }
 

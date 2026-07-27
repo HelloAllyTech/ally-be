@@ -52,6 +52,7 @@ describe('PlatformAnalyticsService', () => {
       getReturningActiveUserCountSince: jest.fn().mockResolvedValue(0),
       getCompletedSimsSince: jest.fn().mockResolvedValue(0),
       getVoiceLatencyByBucket: jest.fn().mockResolvedValue([]),
+      getVoiceLatencyByLanguage: jest.fn().mockResolvedValue([]),
       getAgentJoinReliabilityByBucket: jest.fn().mockResolvedValue([]),
       getSuspectedFreezeByBucket: jest.fn().mockResolvedValue([]),
       getSessionOutcomeMix: jest
@@ -322,7 +323,24 @@ describe('PlatformAnalyticsService', () => {
         bucket: 'week',
         targetMs: 1500,
         points,
+        byLanguage: [],
       });
+    });
+
+    it('includes the language breakdown alongside the bucketed trend', async () => {
+      const byLanguage = [
+        { language: 'en', turns: 100, avgMs: 900, p95Ms: 1600 },
+        { language: 'hi-IN', turns: 40, avgMs: 1200, p95Ms: 2100 },
+      ];
+      repo.getVoiceLatencyByLanguage.mockResolvedValue(byLanguage);
+
+      const result = await service.getVoiceLatency('30d');
+
+      expect(repo.getVoiceLatencyByLanguage).toHaveBeenCalledWith(
+        new Date('2024-05-14T00:00:00.000Z'),
+        new Date('2024-06-13T00:00:00.000Z'),
+      );
+      expect(result.byLanguage).toEqual(byLanguage);
     });
   });
 

@@ -75,6 +75,16 @@ export interface VoiceLatencyBucketRow {
   p95Ms: number;
 }
 
+export interface VoiceLatencyByLanguageRow {
+  language: string;
+  /** Live-pipeline turns aggregated for this language. */
+  turns: number;
+  /** Mean voice-to-voice latency (ms). */
+  avgMs: number;
+  /** p95 voice-to-voice latency (ms). */
+  p95Ms: number;
+}
+
 export interface StartLatencyBucketRow {
   /** Bucket start as a calendar date string (yyyy-mm-dd). */
   bucket: string;
@@ -552,6 +562,60 @@ export class PlatformAnalyticsRepository {
       turns: Number(r.turns) || 0,
       avgMs: Number(r.avgMs) || 0,
       p50Ms: Number(r.p50Ms) || 0,
+      p95Ms: Number(r.p95Ms) || 0,
+    }));
+  }
+
+  /**
+   * Live-pipeline voice-to-voice latency (avg/p95), one row per language, over
+   * the whole window (no time bucketing) — the "which language is slow" view
+   * that sits alongside the time-series trend from
+   * {@link getVoiceLatencyByBucket}. Scoped to source='pipeline' only (the
+   * live-agent numbers; 'transcript' rows are historical/derived and would
+   * muddy a cross-language comparison). Joins back to the owning session's
+   * configured language the same way the `language` filter branch of
+   * {@link getVoiceLatencyByBucket} does — scenario_session_turn_metrics has no
+   * language column of its own. Unresolved languages (deleted/misconfigured
+   * languages row) fall back to 'en', matching that same filter branch.
+   */
+  async getVoiceLatencyByLanguage(
+    start: Date,
+    end: Date,
+  ): Promise<VoiceLatencyByLanguageRow[]> {
+    const rows = await this.dataSource
+      .createQueryBuilder()
+      .select(`COALESCE(l."value", 'en')`, 'language')
+      .addSelect('COUNT(*)::int', 'turns')
+      .addSelect('round(avg(m."responseLatencyMs"))::int', 'avgMs')
+      .addSelect(
+        `round(percentile_cont(0.95) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p95Ms',
+      )
+      .from('scenario_session_turn_metrics', 'm')
+      .innerJoin('scenario_sessions', 's', 's.id = m."scenarioSessionId"')
+      .leftJoin(
+        'languages',
+        'l',
+        `l.id = NULLIF(s.metadata->>'languageId', '')::int`,
+      )
+      .where('m."occurredAt" >= :start', { start })
+      .andWhere('m."occurredAt" < :end', { end })
+      .andWhere(`m."source" = 'pipeline'`)
+      .andWhere('m."responseLatencyMs" IS NOT NULL')
+      .groupBy('language')
+      .orderBy('language', 'ASC')
+      .getRawMany<{
+        language: string;
+        turns: number;
+        avgMs: number;
+        p95Ms: number;
+      }>();
+
+    return rows.map((r) => ({
+      language: r.language,
+      turns: Number(r.turns) || 0,
+      avgMs: Number(r.avgMs) || 0,
       p95Ms: Number(r.p95Ms) || 0,
     }));
   }

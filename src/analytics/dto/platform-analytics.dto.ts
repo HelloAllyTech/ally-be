@@ -631,6 +631,22 @@ export class VoiceLatencyPointDto {
   p95Ms!: number;
 }
 
+export class VoiceLatencyByLanguageRowDto {
+  @ApiProperty({ description: "Language value (e.g. 'en', 'hi-IN')" })
+  language!: string;
+
+  @ApiProperty({
+    description: 'Live-pipeline turns aggregated for this language',
+  })
+  turns!: number;
+
+  @ApiProperty({ description: 'Mean voice-to-voice latency (ms)' })
+  avgMs!: number;
+
+  @ApiProperty({ description: 'p95 voice-to-voice latency (ms)' })
+  p95Ms!: number;
+}
+
 export class VoiceLatencyResponseDto {
   @ApiProperty({
     description: 'Time window the trend was computed over',
@@ -655,6 +671,15 @@ export class VoiceLatencyResponseDto {
     type: [VoiceLatencyPointDto],
   })
   points!: VoiceLatencyPointDto[];
+
+  @ApiProperty({
+    description:
+      'Live-pipeline voice-to-voice latency (avg/p95), one row per language, ' +
+      'over the same window as `points`. Independent of the `language` query ' +
+      'filter — always broken out across every language that had traffic.',
+    type: [VoiceLatencyByLanguageRowDto],
+  })
+  byLanguage!: VoiceLatencyByLanguageRowDto[];
 }
 
 export class StartLatencyQueryDto {
