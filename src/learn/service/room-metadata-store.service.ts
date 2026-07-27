@@ -15,6 +15,7 @@ import { LearnRoomMetadata } from '../entity/learn-room-metadata.entity';
  */
 export interface SlimRoomMetadata {
   version: string;
+  environment?: string;
   metadataFetch: {
     roomName: string;
     url: string;
@@ -96,6 +97,11 @@ export class RoomMetadataStoreService {
     const baseUrl = (this.configService.api.baseUrl ?? '').replace(/\/$/, '');
     return {
       version: `${fullEnvelope.version ?? '1.0'}`,
+      // The LiveKit webhook receiver (livekit-webhook.controller.ts) filters
+      // every event on room.metadata.environment matching this env's config —
+      // the slim envelope must carry it too, or every webhook for a room
+      // created under this envelope gets silently dropped.
+      environment: fullEnvelope.environment,
       metadataFetch: {
         roomName,
         // main.ts sets setGlobalPrefix('api'), so every route lives under

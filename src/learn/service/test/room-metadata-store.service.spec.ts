@@ -76,6 +76,10 @@ describe('RoomMetadataStoreService', () => {
       );
       expect(out.roomPayload).toEqual({
         version: '1.0',
+        // Must be carried through: the LiveKit webhook receiver filters every
+        // event on room.metadata.environment (2026-07-24 outage — the slim
+        // envelope silently dropped every webhook by omitting this field).
+        environment: 'test',
         metadataFetch: {
           roomName: 'ss_abc',
           // Must carry the setGlobalPrefix('api') segment — the agent 404s
