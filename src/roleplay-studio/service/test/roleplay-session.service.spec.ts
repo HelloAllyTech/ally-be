@@ -112,6 +112,7 @@ describe('RoleplaySessionService — room-metadata specFetch URL', () => {
     };
     const configService = {
       api: { baseUrl: 'https://api.example/' },
+      livekit: { environment: 'unit-test-env' },
     } as unknown as AppConfigService;
     return new RoleplaySessionService(
       {} as any,
@@ -151,5 +152,14 @@ describe('RoleplaySessionService — room-metadata specFetch URL', () => {
     const metadata = build(makeService({ inline: true }));
     expect(metadata.spec).toEqual({ title: 'spec' });
     expect(metadata.specFetch).toBeNull();
+  });
+
+  // The LiveKit webhook receiver drops any event whose
+  // room.metadata.environment doesn't match this deployment — without this
+  // field every v2 webhook is silently discarded (same bug as the v1 slim
+  // envelope, 2ab4daaf).
+  it('carries the livekit environment so webhooks are not dropped', () => {
+    const metadata = build(makeService({ inline: true }));
+    expect(metadata.environment).toBe('unit-test-env');
   });
 });

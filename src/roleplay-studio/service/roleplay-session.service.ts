@@ -303,6 +303,13 @@ export class RoleplaySessionService {
     const baseUrl = (this.configService.api.baseUrl ?? '').replace(/\/$/, '');
     return {
       engine: 'roleplay_v2',
+      // The LiveKit webhook receiver (livekit-webhook.controller.ts) filters
+      // every event on room.metadata.environment matching this env's config —
+      // without this field every webhook for v2 rooms is silently dropped
+      // (room_finished never ends abandoned sessions). Same bug as the v1
+      // slim envelope, fixed there in 2ab4daaf. Additive to the FROZEN
+      // envelope contract: the agent's pydantic model ignores unknown fields.
+      environment: this.configService.livekit.environment,
       specSchemaVersion: document.specSchemaVersion ?? null,
       spec: inline ? compiled : null,
       specFetch: inline
