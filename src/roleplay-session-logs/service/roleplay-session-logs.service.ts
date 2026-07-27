@@ -259,6 +259,7 @@ export class RoleplaySessionLogsService {
       durationSeconds: this.resolveDurationSeconds(r),
       score: this.clampScore(this.toNumberOrNull(r.score)),
       platform: r.platform ?? null,
+      language: r.language ?? null,
       createdAt: r.createdAt,
       totalTokens: usage ? usage.totalTokens : null,
       estimatedCostUsd: usage ? usage.estimatedCostUsd : null,

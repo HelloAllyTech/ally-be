@@ -26,6 +26,7 @@ describe('RoleplaySessionLogsService', () => {
     endedAt: new Date('2026-06-01T10:05:00Z'),
     score: '88.5',
     platform: 'web',
+    language: 'English',
     callDuration: null,
     totalPausedMs: '0',
     createdAt: new Date('2026-06-01T10:00:00Z'),

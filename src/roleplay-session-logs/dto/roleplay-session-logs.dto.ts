@@ -85,6 +85,16 @@ export class ListRoleplaySessionLogsQueryDto {
 
   @ApiProperty({
     required: false,
+    description:
+      'Restrict to sessions run in a language, matched against languages.value ' +
+      "(e.g. 'ta-IN')",
+  })
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @ApiProperty({
+    required: false,
     enum: RoleplaySessionLogSortBy,
     default: RoleplaySessionLogSortBy.CREATED_AT,
   })
@@ -150,6 +160,11 @@ export class RoleplaySessionLogRowDto {
   durationSeconds!: number | null;
   @ApiProperty({ nullable: true }) score!: number | null;
   @ApiProperty({ nullable: true }) platform!: string | null;
+  @ApiProperty({
+    nullable: true,
+    description: "Display label of the session's language (e.g. 'English')",
+  })
+  language!: string | null;
   @ApiProperty() createdAt!: Date;
 
   @ApiProperty({

@@ -23,6 +23,8 @@ export interface RoleplaySessionLogRawRow {
   endedAt: Date | null;
   score: number | string | null;
   platform: string | null;
+  /** Display label of the session's language (e.g. 'English'), resolved via `languages`. */
+  language: string | null;
   callDuration: number | string | null;
   totalPausedMs: number | string | null;
   createdAt: Date;
@@ -30,7 +32,6 @@ export interface RoleplaySessionLogRawRow {
   isV2VTest: boolean;
   /** Detail-only enrichments (present on `findOne`, absent on `list`). */
   scenarioVersionId?: string | null;
-  language?: string | null;
   voiceId?: string | null;
   compositeScore?: number | string | null;
   evalMetrics?: Record<string, number> | null;
@@ -145,6 +146,10 @@ export class RoleplaySessionLogsRepository {
       qb.andWhere('ss."tenant_id" = :tenantId', { tenantId: filters.tenantId });
     }
 
+    if (filters.language) {
+      qb.andWhere('lang."value" = :language', { language: filters.language });
+    }
+
     if (filters.search) {
       qb.andWhere(
         '(u."name" ILIKE :search OR u."email" ILIKE :search OR scn."title" ILIKE :search)',
@@ -199,6 +204,7 @@ export class RoleplaySessionLogsRepository {
       .addSelect('ss."endedAt"', 'endedAt')
       .addSelect('ss."score"', 'score')
       .addSelect(`ss.metadata->>'platform'`, 'platform')
+      .addSelect(`COALESCE(lang."label", lang."value")`, 'language')
       .addSelect('d."callDuration"', 'callDuration')
       .addSelect('ss."totalPausedMs"', 'totalPausedMs')
       .addSelect('ss."createdAt"', 'createdAt')
@@ -217,6 +223,12 @@ export class RoleplaySessionLogsRepository {
         'scenario_session_details',
         'd',
         'd."scenarioSessionId"::uuid = ss.id',
+      )
+      // Resolve the session's configured language id (metadata) to a label.
+      .leftJoin(
+        'languages',
+        'lang',
+        `lang.id = NULLIF(ss.metadata->>'languageId', '')::int`,
       );
 
     this.applyFilters(dataQb, filters);
@@ -240,7 +252,12 @@ export class RoleplaySessionLogsRepository {
       .select('COUNT(*)::int', 'count')
       .from('scenario_sessions', 'ss')
       .leftJoin('users', 'u', 'u.id = ss."counselorId"')
-      .leftJoin('scenarios', 'scn', 'scn.id = ss."scenarioId"');
+      .leftJoin('scenarios', 'scn', 'scn.id = ss."scenarioId"')
+      .leftJoin(
+        'languages',
+        'lang',
+        `lang.id = NULLIF(ss.metadata->>'languageId', '')::int`,
+      );
 
     this.applyFilters(countQb, filters);
 
