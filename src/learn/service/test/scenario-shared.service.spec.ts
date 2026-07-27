@@ -97,10 +97,14 @@ describe('ScenarioSharedService', () => {
     };
 
     const mockPromptTranslationService = {
-      // By default, pass English bodies through unchanged.
+      // By default, pass English bodies through unchanged (new {body} shape).
       overlayTranslations: jest
         .fn()
-        .mockImplementation((byCode: Record<string, string>) => byCode),
+        .mockImplementation((byCode: Record<string, string>) =>
+          Object.fromEntries(
+            Object.entries(byCode).map(([code, body]) => [code, { body }]),
+          ),
+        ),
     };
 
     const mockLanguageGlossaryService = {

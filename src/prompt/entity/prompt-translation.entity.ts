@@ -67,6 +67,18 @@ export class PromptTranslation extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', length: 100, nullable: true })
   model?: string;
 
+  /**
+   * Runtime override for the MULTILINGUAL path: which provider/model runs the
+   * main agent when this translated body is served for its language. Null =
+   * inherit the prompt's own provider/model. (Distinct from provider/model
+   * above, which is the engine that produced the translation.)
+   */
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  runtimeProvider?: string;
+
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  runtimeModel?: string;
+
   /** Which translation-prompt/glossary produced this (for deliberate re-translation). */
   @Column({ type: 'varchar', length: 50, nullable: true })
   translationPromptVersion?: string;

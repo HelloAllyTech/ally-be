@@ -15,6 +15,8 @@ export interface RuntimeTranslationRow {
   translatedPrompt: string | null;
   sourceHash: string | null;
   status: PromptTranslationStatus | null;
+  runtimeProvider: string | null;
+  runtimeModel: string | null;
 }
 
 @Injectable()
@@ -49,6 +51,8 @@ export class PromptTranslationRepository extends Repository<PromptTranslation> {
       .addSelect('pt."translatedPrompt"', 'translatedPrompt')
       .addSelect('pt."sourceHash"', 'sourceHash')
       .addSelect('pt.status', 'status')
+      .addSelect('pt."runtimeProvider"', 'runtimeProvider')
+      .addSelect('pt."runtimeModel"', 'runtimeModel')
       .getRawMany<RuntimeTranslationRow>();
   }
 
@@ -87,5 +91,24 @@ export class PromptTranslationRepository extends Repository<PromptTranslation> {
     error?: string,
   ): Promise<void> {
     await this.update({ promptId, languageId }, { status, error });
+  }
+
+  /**
+   * Set (or clear, with null) the runtime provider/model for one (prompt,
+   * language) — the model that runs the main agent when this translated body is
+   * served. No-op when the row doesn't exist yet (nothing translated).
+   */
+  async setRuntimeModel(
+    promptId: string,
+    languageId: number,
+    runtimeProvider: string | null,
+    runtimeModel: string | null,
+  ): Promise<void> {
+    // null clears the override (back to the prompt's own model); TypeORM skips
+    // `undefined` but writes `null`, so cast to allow the null write.
+    await this.update({ promptId, languageId }, {
+      runtimeProvider,
+      runtimeModel,
+    } as unknown as Partial<PromptTranslation>);
   }
 }

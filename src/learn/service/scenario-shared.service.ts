@@ -1118,8 +1118,17 @@ export class ScenarioSharedService {
         languageDetails!.id!,
       );
       for (const code of Object.keys(result)) {
-        if (overlaid[code] && overlaid[code] !== result[code].prompt) {
-          result[code].prompt = overlaid[code];
+        const o = overlaid[code];
+        if (!o) continue;
+        if (o.body && o.body !== result[code].prompt) {
+          result[code].prompt = o.body;
+        }
+        // Per-language runtime engine override for the served translated body:
+        // which model runs the main agent for this language. Only set when a
+        // translation was served AND a runtime model is configured.
+        if (o.runtimeModel) {
+          result[code].model = o.runtimeModel;
+          if (o.runtimeProvider) result[code].provider = o.runtimeProvider;
         }
       }
     }

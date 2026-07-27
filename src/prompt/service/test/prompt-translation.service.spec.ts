@@ -319,7 +319,7 @@ describe('PromptTranslationService.translateOne', () => {
 
       const out = await service.overlayTranslations(englishByCode, 1);
 
-      expect(out).toEqual(englishByCode);
+      expect(out).toEqual({ code1: { body: 'AAAA' } });
       expect(getRuntimeRows).not.toHaveBeenCalled();
     });
 
@@ -329,8 +329,22 @@ describe('PromptTranslationService.translateOne', () => {
 
       const out = await service.overlayTranslations(englishByCode, 2);
 
-      expect(out.code1).toBe('अनुवाद');
+      expect(out.code1.body).toBe('अनुवाद');
       expect(heal).not.toHaveBeenCalled();
+    });
+
+    it('carries the per-language runtime model when the translated body is served', async () => {
+      getRuntimeRows.mockResolvedValue([
+        row({ runtimeProvider: 'openai', runtimeModel: 'gpt-4o' }),
+      ]);
+
+      const out = await service.overlayTranslations(englishByCode, 2);
+
+      expect(out.code1).toEqual({
+        body: 'अनुवाद',
+        runtimeProvider: 'openai',
+        runtimeModel: 'gpt-4o',
+      });
     });
 
     it('falls back to English and self-heals the stale language only', async () => {
@@ -341,7 +355,7 @@ describe('PromptTranslationService.translateOne', () => {
 
       const out = await service.overlayTranslations(englishByCode, 2);
 
-      expect(out.code1).toBe('AAAA');
+      expect(out.code1.body).toBe('AAAA');
       // targets the specific (promptId, languageId), not all languages
       expect(heal).toHaveBeenCalledWith('p1', 2);
     });
@@ -356,7 +370,7 @@ describe('PromptTranslationService.translateOne', () => {
 
       const out = await service.overlayTranslations(englishByCode, 2);
 
-      expect(out.code1).toBe('AAAA');
+      expect(out.code1.body).toBe('AAAA');
       expect(heal).toHaveBeenCalledWith('p1', 2);
     });
 
@@ -368,7 +382,7 @@ describe('PromptTranslationService.translateOne', () => {
 
       const out = await service.overlayTranslations(englishByCode, 2);
 
-      expect(out.code1).toBe('AAAA'); // English fallback
+      expect(out.code1.body).toBe('AAAA'); // English fallback
       expect(heal).not.toHaveBeenCalled();
     });
 
@@ -389,15 +403,30 @@ describe('PromptTranslationService.translateOne', () => {
         2,
       );
 
-      expect(out.code1).toBe('AAAA');
-      expect(out.code2).toBe('BBBB');
+      expect(out.code1.body).toBe('AAAA');
+      expect(out.code2.body).toBe('BBBB');
       expect(heal).not.toHaveBeenCalled();
     });
 
     it('returns input unchanged when languageId is falsy', async () => {
       const out = await service.overlayTranslations(englishByCode, 0);
-      expect(out).toEqual(englishByCode);
+      expect(out).toEqual({ code1: { body: 'AAAA' } });
       expect(getLanguagesByIds).not.toHaveBeenCalled();
+    });
+
+    it('setRuntimeModel delegates to the repository (with null when cleared)', async () => {
+      const setRuntimeModel = jest.fn().mockResolvedValue(undefined);
+      (
+        service as unknown as {
+          translationRepository: { setRuntimeModel: jest.Mock };
+        }
+      ).translationRepository.setRuntimeModel = setRuntimeModel;
+
+      await service.setRuntimeModel('p1', 2, 'openai', 'gpt-4o');
+      expect(setRuntimeModel).toHaveBeenCalledWith('p1', 2, 'openai', 'gpt-4o');
+
+      await service.setRuntimeModel('p1', 2, '', '');
+      expect(setRuntimeModel).toHaveBeenLastCalledWith('p1', 2, null, null);
     });
   });
 

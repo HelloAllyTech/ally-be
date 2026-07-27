@@ -66,6 +66,7 @@ describe('PromptsController', () => {
             translatePrompt: jest.fn(),
             listTranslations: jest.fn(),
             backfillEnabledPrompts: jest.fn(),
+            setRuntimeModel: jest.fn(),
           },
         },
       ],
@@ -553,6 +554,19 @@ describe('PromptsController', () => {
     it('backfillTranslations delegates to backfillEnabledPrompts', async () => {
       await controller.backfillTranslations();
       expect(translationService.backfillEnabledPrompts).toHaveBeenCalled();
+    });
+
+    it('setTranslationRuntimeModel delegates to setRuntimeModel', async () => {
+      await controller.setTranslationRuntimeModel('p1', 2, {
+        provider: 'openai',
+        model: 'gpt-4o',
+      });
+      expect(translationService.setRuntimeModel).toHaveBeenCalledWith(
+        'p1',
+        2,
+        'openai',
+        'gpt-4o',
+      );
     });
   });
 });

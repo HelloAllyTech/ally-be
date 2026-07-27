@@ -27,6 +27,7 @@ import {
   BackfillResult,
 } from '../service/prompt-translation.service';
 import { PromptTranslation } from '../entity/prompt-translation.entity';
+import { SetTranslationRuntimeModelDto } from '../dto/set-translation-runtime-model.dto';
 import { UpdatePromptDto } from '../dto/update-prompt.dto';
 import { CreatePromptsDto } from '../dto/create-prompts.dto';
 import { SyncPromptsDto } from '../dto/sync-prompts.dto';
@@ -92,6 +93,26 @@ export class PromptsController {
     @Param('languageId', ParseIntPipe) languageId: number,
   ): Promise<TranslateOneResult> {
     return this.promptTranslationService.translateOne(id, languageId);
+  }
+
+  @ApiOperation({
+    summary:
+      'Set the runtime model that runs the main agent for one language (multilingual path)',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_PROMPT])
+  @Put(':id/translations/:languageId/runtime-model')
+  async setTranslationRuntimeModel(
+    @Param('id') id: string,
+    @Param('languageId', ParseIntPipe) languageId: number,
+    @Body() dto: SetTranslationRuntimeModelDto,
+  ): Promise<{ ok: true }> {
+    await this.promptTranslationService.setRuntimeModel(
+      id,
+      languageId,
+      dto.provider,
+      dto.model,
+    );
+    return { ok: true };
   }
 
   // ===== PROMPT ENDPOINTS =====

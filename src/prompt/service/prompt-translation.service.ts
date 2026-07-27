@@ -46,6 +46,17 @@ export interface BackfillResult {
 }
 
 /**
+ * A prompt body to ship for a session, plus an optional runtime engine override
+ * (only set when a translated body is served and the translation carries a
+ * per-language runtime model).
+ */
+export interface OverlaidPrompt {
+  body: string;
+  runtimeProvider?: string;
+  runtimeModel?: string;
+}
+
+/**
  * Orchestrates translating a single prompt template into a single language
  * (BE-7). Ties together body resolution + hashing (BE-6), the engine/provider
  * path (BE-3), the seeded translation prompt (BE-4), and the token guard (BE-5),
@@ -159,9 +170,14 @@ export class PromptTranslationService {
   async overlayTranslations(
     englishByCode: Record<string, string>,
     languageId: number,
-  ): Promise<Record<string, string>> {
+  ): Promise<Record<string, OverlaidPrompt>> {
+    const passthrough = (): Record<string, OverlaidPrompt> =>
+      Object.fromEntries(
+        Object.entries(englishByCode).map(([code, body]) => [code, { body }]),
+      );
+
     const codes = Object.keys(englishByCode);
-    if (!codes.length || !languageId) return englishByCode;
+    if (!codes.length || !languageId) return passthrough();
 
     const [language] = await this.sharedLanguageService.getLanguagesByIds([
       languageId,
@@ -170,7 +186,7 @@ export class PromptTranslationService {
       !language ||
       language.translationCode === DEFAULT_LANGUAGE_TRANSLATION_CODE
     ) {
-      return englishByCode;
+      return passthrough();
     }
 
     const rows = await this.translationRepository.getRuntimeRows(
@@ -178,7 +194,7 @@ export class PromptTranslationService {
       languageId,
     );
 
-    const result: Record<string, string> = { ...englishByCode };
+    const result: Record<string, OverlaidPrompt> = passthrough();
     const selfHeal = new Set<string>();
     const served: string[] = [];
 
@@ -195,7 +211,13 @@ export class PromptTranslationService {
         row.sourceHash === this.targetsService.hashBody(english);
 
       if (fresh && row.translatedPrompt?.trim()) {
-        result[row.promptCode] = row.translatedPrompt;
+        // Serve the translated body, plus the per-language runtime engine
+        // override (which model runs the main agent for this language) when set.
+        result[row.promptCode] = {
+          body: row.translatedPrompt,
+          runtimeProvider: row.runtimeProvider ?? undefined,
+          runtimeModel: row.runtimeModel ?? undefined,
+        };
         served.push(row.promptCode);
       } else if (row.status !== PromptTranslationStatus.FAILED) {
         // Self-heal only missing/stale rows, NOT `failed` ones: a persistently
@@ -228,6 +250,25 @@ export class PromptTranslationService {
   /** List the stored translation rows for a prompt (all languages) — read model for the UI. */
   listTranslations(promptId: string) {
     return this.translationRepository.findAllForPrompt(promptId);
+  }
+
+  /**
+   * Set (or clear, with null/empty) the per-language runtime model that runs the
+   * main agent when this translation's body is served. No-op if the row doesn't
+   * exist yet (nothing translated for that language).
+   */
+  async setRuntimeModel(
+    promptId: string,
+    languageId: number,
+    provider?: string | null,
+    model?: string | null,
+  ): Promise<void> {
+    await this.translationRepository.setRuntimeModel(
+      promptId,
+      languageId,
+      provider || null,
+      model || null,
+    );
   }
 
   /**
