@@ -4,6 +4,11 @@
 > repo's page — https://tech.helloally.ai/#/wiki/repos/ally-be.md — and update the wiki
 > when you change architecture, workflows, or environment setup. The wiki is public:
 > never add secrets, IPs, internal hostnames, or cloud region details to it.
+>
+> **Before any user-facing change**, also read **Product Management Best Practices** —
+> https://tech.helloally.ai/#/wiki/product/best-practices.md — the hub of house rules plus
+> subsections (UI, Gamification, Data Visualisation, Prioritisation, User Personas, and more
+> over time). File new product judgement calls back into the matching subsection.
 
 ---
 
