@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AnalyticsService } from '../service/analytics.service';
+import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
 import { LanguageAnalyticsService } from '../service/language-analytics.service';
 import { LanguageJudgeService } from '../service/language-judge.service';
 import { PlatformAnalyticsService } from '../service/platform-analytics.service';
@@ -48,6 +49,10 @@ import {
   VoiceLatencyResponseDto,
 } from '../dto/platform-analytics.dto';
 import {
+  AnalyticsHighlightsQueryDto,
+  AnalyticsHighlightsResponseDto,
+} from '../dto/highlights-analytics.dto';
+import {
   ScribeAnalyticsQueryDto,
   ScribeOverviewResponseDto,
   ScribeSummaryFailureResponseDto,
@@ -76,6 +81,7 @@ import {
 export class AnalyticsController {
   constructor(
     private readonly analyticsService: AnalyticsService,
+    private readonly highlightsAnalyticsService: HighlightsAnalyticsService,
     private readonly platformAnalyticsService: PlatformAnalyticsService,
     private readonly scribeAnalyticsService: ScribeAnalyticsService,
     private readonly languageJudgeService: LanguageJudgeService,
@@ -100,6 +106,32 @@ export class AnalyticsController {
     @Query() query: AnalyticsOverviewQueryDto,
   ): Promise<AnalyticsOverviewResponseDto> {
     return this.platformAnalyticsService.getOverview(query.range ?? '30d');
+  }
+
+  @Get('highlights')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Leadership highlights (super-admin)',
+    description:
+      'Leadership KPI aggregates NOT already served by /overview or ' +
+      '/scribe/overview: org adoption (active orgs + top orgs by completed ' +
+      'simulations), practice minutes, roleplay quality trend (composite ' +
+      'evaluation score), learner CSAT trend, learning-track funnel and AI ' +
+      'cost per completed simulation. Bucket granularity follows the `range` ' +
+      'param (30d -> day, 90d -> week, 12m -> month) unless overridden.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Highlights aggregates retrieved successfully',
+    type: AnalyticsHighlightsResponseDto,
+  })
+  async getHighlights(
+    @Query() query: AnalyticsHighlightsQueryDto,
+  ): Promise<AnalyticsHighlightsResponseDto> {
+    return this.highlightsAnalyticsService.getHighlights(
+      query.range ?? '30d',
+      query.bucket,
+    );
   }
 
   @Get('voice-latency')
