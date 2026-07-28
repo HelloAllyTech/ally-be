@@ -917,6 +917,25 @@ describe('ScenarioSessionService', () => {
       );
     });
 
+    it('does not throw when details exist without a summary (still generating / evaluation-only row)', async () => {
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
+      scenarioSessionRepository.getScenarioSession.mockResolvedValue({
+        ...mockScenarioSession,
+        startedAt: new Date('2026-07-28T09:00:00Z'),
+        endedAt: new Date('2026-07-28T09:05:00Z'),
+        details: { summary: null, evaluationStatus: 'COMPLETED' },
+      } as any);
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+
+      // Regression: this used to dereference details.summary.improvements and
+      // 500 the feedback GET whenever the mapped details row had no summary.
+      const result = await service.getScenarioSession(
+        mockScenarioSessionId,
+        mockCounselorId,
+      );
+      expect((result as any).details.summary).toBeNull();
+    });
+
     it('should return scenario session with feedback for admin user', async () => {
       const mockFeedback = { id: 'feedback-1', rating: 5 };
       permissionValidatorService.validatePermissions.mockResolvedValue(true);
@@ -1393,8 +1412,9 @@ describe('ScenarioSessionService', () => {
       ];
       const mockDetailsSave = jest.fn().mockResolvedValue(undefined);
       const mockDetailsRepo = {
-        create: jest.fn().mockImplementation((dto) => dto),
-        save: mockDetailsSave,
+        // summary persist is an atomic upsert against the unique
+        // scenarioSessionId index (duplicate-details fix)
+        upsert: mockDetailsSave,
       };
       const mockEntityManager = {
         getRepository: jest.fn(() => mockDetailsRepo),
@@ -1428,6 +1448,7 @@ describe('ScenarioSessionService', () => {
         expect.objectContaining({
           summary: { feedback: mockSummaryResponse },
         }),
+        { conflictPaths: ['scenarioSessionId'] },
       );
 
       mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
@@ -1451,8 +1472,9 @@ describe('ScenarioSessionService', () => {
       ];
       const mockDetailsSave = jest.fn().mockResolvedValue(undefined);
       const mockDetailsRepo = {
-        create: jest.fn().mockImplementation((dto) => dto),
-        save: mockDetailsSave,
+        // summary persist is an atomic upsert against the unique
+        // scenarioSessionId index (duplicate-details fix)
+        upsert: mockDetailsSave,
       };
       const mockEntityManager = {
         getRepository: jest.fn(() => mockDetailsRepo),
@@ -1486,6 +1508,7 @@ describe('ScenarioSessionService', () => {
         expect.objectContaining({
           summary: { feedback: mockFeedbackResponse },
         }),
+        { conflictPaths: ['scenarioSessionId'] },
       );
     });
 
@@ -1517,8 +1540,9 @@ describe('ScenarioSessionService', () => {
       ];
       const mockDetailsSave = jest.fn().mockResolvedValue(undefined);
       const mockDetailsRepo = {
-        create: jest.fn().mockImplementation((dto) => dto),
-        save: mockDetailsSave,
+        // summary persist is an atomic upsert against the unique
+        // scenarioSessionId index (duplicate-details fix)
+        upsert: mockDetailsSave,
       };
       const mockEntityManager = {
         getRepository: jest.fn(() => mockDetailsRepo),
@@ -1587,8 +1611,9 @@ describe('ScenarioSessionService', () => {
       ];
       const mockDetailsSave = jest.fn().mockResolvedValue(undefined);
       const mockDetailsRepo = {
-        create: jest.fn().mockImplementation((dto) => dto),
-        save: mockDetailsSave,
+        // summary persist is an atomic upsert against the unique
+        // scenarioSessionId index (duplicate-details fix)
+        upsert: mockDetailsSave,
       };
       const mockEntityManager = {
         getRepository: jest.fn(() => mockDetailsRepo),

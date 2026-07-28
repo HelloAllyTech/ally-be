@@ -1,9 +1,15 @@
 import { BaseEntity } from 'src/common/entity/base.entity';
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
-@Index('scenario_session_details_scenario_session_id_idx', [
-  'scenarioSessionId',
-])
+// UNIQUE: one details row per session (migration 1869). Both writers (summary
+// persist + evaluation upsert) rely on this as their ON CONFLICT target —
+// without it, concurrent session-end writers used to insert duplicate rows
+// and the read path mapped an arbitrary one (missing-feedback bug).
+@Index(
+  'scenario_session_details_scenario_session_id_idx',
+  ['scenarioSessionId'],
+  { unique: true },
+)
 @Entity('scenario_session_details')
 export class ScenarioSessionDetails extends BaseEntity {
   @PrimaryGeneratedColumn('uuid')

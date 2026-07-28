@@ -169,20 +169,17 @@ export class ScenarioSessionEvaluationService {
       evaluatedAt: Date;
     }>,
   ): Promise<void> {
-    const existing = await this.scenarioSessionDetailsRepository.findOne({
-      where: { scenarioSessionId: scenarioSession.id },
-    });
-    if (existing) {
-      Object.assign(existing, patch);
-      await this.scenarioSessionDetailsRepository.save(existing);
-      return;
-    }
-    await this.scenarioSessionDetailsRepository.save(
-      this.scenarioSessionDetailsRepository.create({
+    // Atomic upsert against the unique scenarioSessionId index (migration
+    // 1869): the previous find-then-create raced the summary writer at
+    // session end and produced duplicate details rows. Only the patch
+    // columns are written on conflict, so an existing summary is untouched.
+    await this.scenarioSessionDetailsRepository.upsert(
+      {
         scenarioSessionId: scenarioSession.id,
         tenantId: scenarioSession.tenantId,
         ...patch,
-      }),
+      },
+      { conflictPaths: ['scenarioSessionId'] },
     );
   }
 

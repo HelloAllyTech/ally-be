@@ -472,7 +472,13 @@ export class ScenarioSessionService {
       );
       if ((scenarioSession as any).details) {
         (scenarioSession as any).details.callDuration = callDuration;
-        if (!enableRecommendations) {
+        // summary can legitimately be null (still generating, or the row was
+        // written by the evaluation path first) — never let this GET throw on
+        // it; the client keeps polling until the summary lands.
+        if (
+          !enableRecommendations &&
+          (scenarioSession as any).details.summary
+        ) {
           (scenarioSession as any).details.summary.improvements =
             (scenarioSession as any).details.summary.improvements ??
             (scenarioSession as any).details.summary.areas_of_improvement?.map(
@@ -1453,18 +1459,23 @@ export class ScenarioSessionService {
 
     // Persist outside the AI try/catch so a row is ALWAYS written — whether the
     // summary succeeded, was skipped (no messages / too short), or failed.
+    // Atomic upsert: the evaluation writer races this on session end, and a
+    // blind INSERT here used to create a second details row (the
+    // missing-feedback bug — see migration 1869).
     try {
       await this.dataSource.transaction(async (entityManager) => {
         const scenarioSessionDetailsRepo = entityManager.getRepository(
           ScenarioSessionDetails,
         );
-        const scenarioSessionDetails = scenarioSessionDetailsRepo.create({
-          scenarioSessionId,
-          callDuration,
-          summary,
-          tenantId,
-        });
-        await scenarioSessionDetailsRepo.save(scenarioSessionDetails);
+        await scenarioSessionDetailsRepo.upsert(
+          {
+            scenarioSessionId,
+            callDuration,
+            summary: summary as Record<string, any>,
+            tenantId,
+          },
+          { conflictPaths: ['scenarioSessionId'] },
+        );
       });
     } catch (error) {
       this.logger.error(
