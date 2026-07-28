@@ -200,3 +200,13 @@ export interface CallLogsParams extends Pagination {
   status?: string;
   source?: string;
 }
+
+/**
+ * A tag as it arrives from a client: always a name, optionally an already-known
+ * positivity rating. Newer web builds send bare names and let the stored rating
+ * stand; older ones still send a rating they resolved themselves.
+ */
+export type IncomingTag = {
+  tag: string;
+  positivity_rating?: number;
+};

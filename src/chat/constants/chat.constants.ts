@@ -98,6 +98,11 @@ export const SUMMARY_RETRY_MAX_ATTEMPTS = 3;
 // are left for a manual retry rather than auto-retried indefinitely.
 export const SUMMARY_RETRY_LOOKBACK_DAYS = 30;
 
+// Middle of the 1-5 positivity scale. Tags are stored with this the moment the
+// counsellor types them, then re-rated in the background — so a slow or dead AI
+// service delays the colour of a chip, never the save itself.
+export const NEUTRAL_TAG_POSITIVITY = 3;
+
 export const LANGUAGE_MAP = {
   bn: 'Bengali',
   pa: 'Gurmukhi',

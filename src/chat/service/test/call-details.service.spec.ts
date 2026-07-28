@@ -207,6 +207,9 @@ describe('CallDetailsService', () => {
           provide: AiService,
           useValue: {
             generateSummaryAndTags: jest.fn(),
+            generateTagPositivityRatings: jest.fn().mockResolvedValue({
+              tags: [],
+            }),
           },
         },
         {
@@ -835,6 +838,129 @@ describe('CallDetailsService', () => {
         service.updateCallDetails(1, { keyConcerns: 'edited' } as any),
       ).rejects.toThrow(NotFoundException);
       expect(callDetailsRepository.mergeSummaryOrCreate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateCallDetails - tag rating is off the save path', () => {
+    beforeEach(() => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
+      jest
+        .spyOn(callDetailsRepository, 'findOne')
+        .mockResolvedValue({ summary: { tags: [] } } as any);
+      (callDetailsRepository as any).mergeSummary = jest
+        .fn()
+        .mockResolvedValue(1);
+    });
+
+    it('stores tags typed as bare names immediately, with a neutral rating', async () => {
+      await service.updateCallDetails(1, { tags: ['Anxiety', 'Grief'] } as any);
+
+      expect(callDetailsRepository.mergeSummaryOrCreate).toHaveBeenCalledWith(
+        1,
+        'test-tenant',
+        {
+          tags: [
+            { tag: 'Anxiety', positivity_rating: 3 },
+            { tag: 'Grief', positivity_rating: 3 },
+          ],
+        },
+      );
+    });
+
+    it('never calls the rating LLM on the save path', async () => {
+      // The wedged AI service used to hold scribe saves open for minutes and,
+      // on failure, wipe the tags. Nothing on this path may touch it.
+      await service.updateCallDetails(1, { tags: ['Anxiety'] } as any);
+
+      expect(aiService.generateTagPositivityRatings).not.toHaveBeenCalled();
+      expect(callDetailsRepository.mergeSummaryOrCreate).toHaveBeenCalledTimes(
+        1,
+      );
+    });
+
+    it('keeps a rating a tag already had instead of resetting it to neutral', async () => {
+      jest.spyOn(callDetailsRepository, 'findOne').mockResolvedValue({
+        summary: { tags: [{ tag: 'Anxiety', positivity_rating: 1 }] },
+      } as any);
+
+      await service.updateCallDetails(1, { tags: ['Anxiety', 'Grief'] } as any);
+
+      expect(callDetailsRepository.mergeSummaryOrCreate).toHaveBeenCalledWith(
+        1,
+        'test-tenant',
+        {
+          tags: [
+            { tag: 'Anxiety', positivity_rating: 1 },
+            { tag: 'Grief', positivity_rating: 3 },
+          ],
+        },
+      );
+    });
+
+    it('clears the tags when an empty list is sent', async () => {
+      await service.updateCallDetails(1, { tags: [] } as any);
+
+      expect(callDetailsRepository.mergeSummaryOrCreate).toHaveBeenCalledWith(
+        1,
+        'test-tenant',
+        { tags: [] },
+      );
+      expect(aiService.generateTagPositivityRatings).not.toHaveBeenCalled();
+    });
+
+    it('ignores a malformed tags value rather than wiping the stored tags', async () => {
+      await service.updateCallDetails(1, {
+        tags: 'not-a-list',
+        keyConcerns: 'edited',
+      } as any);
+
+      const [, , patch] = (
+        callDetailsRepository.mergeSummaryOrCreate as jest.Mock
+      ).mock.calls[0];
+      expect(patch).toEqual({ tags: 'not-a-list', keyConcerns: 'edited' });
+      expect(aiService.generateTagPositivityRatings).not.toHaveBeenCalled();
+    });
+
+    it('keeps a rating the caller supplied, so an older web build still works', async () => {
+      // The deployed web build resolves ratings itself and sends Tag[]. Dropping
+      // its rating would look like ratings had silently stopped updating.
+      await service.updateCallDetails(1, {
+        tags: [{ tag: 'Anxiety', positivity_rating: 5 }],
+      } as any);
+
+      expect(callDetailsRepository.mergeSummaryOrCreate).toHaveBeenCalledWith(
+        1,
+        'test-tenant',
+        { tags: [{ tag: 'Anxiety', positivity_rating: 5 }] },
+      );
+    });
+
+    it('leaves a stored tag that predates ratings exactly as it is', async () => {
+      jest.spyOn(callDetailsRepository, 'findOne').mockResolvedValue({
+        summary: { tags: [{ tag: 'Anxiety' }] },
+      } as any);
+
+      await service.updateCallDetails(1, { tags: ['Anxiety'] } as any);
+
+      // No positivity_rating invented for it — that would change how the chip
+      // renders for every legacy session.
+      expect(callDetailsRepository.mergeSummaryOrCreate).toHaveBeenCalledWith(
+        1,
+        'test-tenant',
+        { tags: [{ tag: 'Anxiety' }] },
+      );
+    });
+
+    it('de-duplicates and trims tag names', async () => {
+      await service.updateCallDetails(1, {
+        tags: [' Anxiety ', 'Anxiety', ''],
+      } as any);
+
+      expect(callDetailsRepository.mergeSummaryOrCreate).toHaveBeenCalledWith(
+        1,
+        'test-tenant',
+        { tags: [{ tag: 'Anxiety', positivity_rating: 3 }] },
+      );
     });
   });
 

@@ -27,8 +27,13 @@ import { MessageType } from '../entity/message.entity';
 import {
   SUMMARY_RETRY_MAX_ATTEMPTS,
   SUMMARY_RETRY_LOOKBACK_DAYS,
+  NEUTRAL_TAG_POSITIVITY,
 } from '../constants/chat.constants';
-import { FlattenedSummaryNotePayloadCamelCase } from '../type/call.details.type';
+import {
+  FlattenedSummaryNotePayloadCamelCase,
+  IncomingTag,
+  Tag,
+} from '../type/call.details.type';
 import { CallInfo } from '../dto/call-log.response.dto';
 import { CallDetails } from '../entity/call.details.entity';
 import { AddNoteDto, AddNotesResponse } from '../dto/notes.dto';
@@ -690,6 +695,20 @@ export class CallDetailsService {
       );
     }
 
+    const tenantId = ExecutionManager.getTenantId()!;
+    const patch = summary as Record<string, unknown>;
+
+    // Tags arrive as bare names from the client and are stored immediately,
+    // keeping any rating a tag already had. Nothing here calls the LLM: a save
+    // must never wait on the AI service, and a rating failure must never be
+    // able to lose the tags the counsellor typed. Re-rating new tags is
+    // deliberately NOT done here — see the note on normalizeTags.
+    const incomingTags =
+      'tags' in patch ? this.normalizeTags(patch.tags) : null;
+    if (incomingTags) {
+      patch.tags = await this.withKnownRatings(chatId, tenantId, incomingTags);
+    }
+
     // Merge, don't replace. The client's copy of the summary is always a
     // snapshot taken before the edit, so a whole-object write silently drops
     // anything added since — AI-filled fields, tags, or a regeneration that
@@ -697,8 +716,8 @@ export class CallDetailsService {
     // their stored value; an explicit null clears the key.
     const { created } = await this.callDetailsRepository.mergeSummaryOrCreate(
       chatId,
-      ExecutionManager.getTenantId()!,
-      summary as Record<string, unknown>,
+      tenantId,
+      patch,
     );
     if (created) {
       this.logger.warn(
@@ -723,6 +742,78 @@ export class CallDetailsService {
         `Summary manually edited for chat ${chatId}; marked SUCCESS and cleared retryable`,
       );
     }
+  }
+
+  /**
+   * Accept tags as either bare names (`["Anxiety"]`, what the client now sends)
+   * or already-shaped `Tag[]`, and reduce both to a de-duplicated name list.
+   * Returns null when the value isn't a usable tag list so a malformed payload
+   * can't wipe the stored tags.
+   *
+   * NOTE: new tags are stored at NEUTRAL_TAG_POSITIVITY and are never re-rated.
+   * Moving the LLM rating off the save path is what matters here — it used to
+   * block the save for minutes and, on failure, wipe the tags. Re-rating new
+   * tags out of band is still wanted, but it needs to be built as something
+   * observable (a queued job with a visible outcome), not a detached promise
+   * whose failure is invisible. Until then a counsellor-typed tag keeps the
+   * neutral chip colour, which is a cosmetic gap, not data loss.
+   */
+  private normalizeTags(value: unknown): IncomingTag[] | null {
+    if (!Array.isArray(value)) return null;
+    const entries = value
+      .map((entry): IncomingTag | null => {
+        if (typeof entry === 'string') return { tag: entry.trim() };
+        const candidate = entry as Partial<Tag> | undefined;
+        if (typeof candidate?.tag !== 'string') return null;
+        return {
+          tag: candidate.tag.trim(),
+          ...(typeof candidate.positivity_rating === 'number'
+            ? { positivity_rating: candidate.positivity_rating }
+            : {}),
+        };
+      })
+      .filter((entry): entry is IncomingTag => Boolean(entry?.tag));
+
+    // First occurrence wins, so a duplicate can't drop a rating the first copy
+    // carried.
+    const deduped = new Map<string, IncomingTag>();
+    for (const entry of entries) {
+      if (!deduped.has(entry.tag)) deduped.set(entry.tag, entry);
+    }
+    return [...deduped.values()];
+  }
+
+  /**
+   * Shape incoming tags for storage. A rating supplied by the caller wins (an
+   * older web build still sends rated tags, and dropping its rating would look
+   * like the ratings had stopped working); otherwise the tag keeps the entry it
+   * already had, stored shape and all; a genuinely new tag starts neutral.
+   */
+  private async withKnownRatings(
+    chatId: number,
+    tenantId: string,
+    incoming: IncomingTag[],
+  ): Promise<Tag[]> {
+    const existing = await this.callDetailsRepository.findOne({
+      where: { chatId, tenantId },
+    });
+    const previous = new Map(
+      (existing?.summary?.tags ?? []).map((tag) => [tag.tag, tag]),
+    );
+    return incoming.map((entry) => {
+      if (typeof entry.positivity_rating === 'number') {
+        return { tag: entry.tag, positivity_rating: entry.positivity_rating };
+      }
+      // Returned as-is rather than rebuilt: some stored tags predate ratings and
+      // have no positivity_rating at all, and inventing one would change how
+      // they render.
+      return (
+        previous.get(entry.tag) ?? {
+          tag: entry.tag,
+          positivity_rating: NEUTRAL_TAG_POSITIVITY,
+        }
+      );
+    });
   }
 
   async updateCallInfo(chatId: number, body: CallInfoDto, chat: Chat) {
