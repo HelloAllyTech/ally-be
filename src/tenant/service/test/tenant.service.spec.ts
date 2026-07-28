@@ -89,7 +89,8 @@ describe('TenantService', () => {
     hideRankInCommunity: false,
     enableAudioUpload: true,
     enableMicrophoneMode: true,
-    enableDictationMode: true,
+    // Retired feature: the response always reports it disabled.
+    enableDictationMode: false,
   };
 
   const mockCreateTenantData = {
@@ -552,7 +553,7 @@ describe('TenantService', () => {
           enabledDashboardIds: [],
           enableAudioUpload: true,
           enableMicrophoneMode: true,
-          enableDictationMode: true,
+          enableDictationMode: false,
         }),
       );
     });
@@ -648,11 +649,10 @@ describe('TenantService', () => {
       );
     });
 
-    it('should call settingsService.updateChatTypes when enableAudioUpload, enableMicrophoneMode, or enableDictationMode is provided', async () => {
+    it('should call settingsService.updateChatTypes when enableAudioUpload or enableMicrophoneMode is provided', async () => {
       const updateDto = {
         enableAudioUpload: false,
         enableMicrophoneMode: false,
-        enableDictationMode: false,
       };
 
       tenantRepository.findOne
@@ -676,6 +676,40 @@ describe('TenantService', () => {
 
     it('should not call settingsService.updateChatTypes when neither enableAudioUpload nor enableMicrophoneMode is provided', async () => {
       const updateDto = { description: 'Updated description' };
+
+      tenantRepository.findOne
+        .mockResolvedValueOnce(mockTenant)
+        .mockResolvedValueOnce(mockTenant);
+
+      await service.updateTenant('test-tenant-id', updateDto as any);
+
+      expect(settingsService.updateChatTypes).not.toHaveBeenCalled();
+    });
+
+    it('should keep dictation hidden even when enableDictationMode is true', async () => {
+      const updateDto = {
+        enableAudioUpload: true,
+        enableMicrophoneMode: true,
+        enableDictationMode: true,
+      };
+
+      tenantRepository.findOne
+        .mockResolvedValueOnce(mockTenant)
+        .mockResolvedValueOnce(mockTenant);
+
+      await service.updateTenant('test-tenant-id', updateDto as any);
+
+      expect(settingsService.updateChatTypes).toHaveBeenCalledWith(
+        {
+          tenantId: 'test-tenant-id',
+          hiddenChatTypes: [ChatTypes.DICTATION_MODE],
+        },
+        mockEntityManager,
+      );
+    });
+
+    it('should not touch chat types when only enableDictationMode is provided', async () => {
+      const updateDto = { enableDictationMode: true };
 
       tenantRepository.findOne
         .mockResolvedValueOnce(mockTenant)

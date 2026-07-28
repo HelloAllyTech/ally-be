@@ -114,6 +114,26 @@ export const DEFAULT_SUMMARY_FIELDS_SET = new Set(DEFAULT_SUMMARY_FIELDS_ARRAY);
 export const DEFAULT_CHAT_TYPES = Object.values(ChatTypes);
 
 /**
+ * Chat types that are retired and can no longer be started. They stay in the
+ * ChatTypes enum and in DEFAULT_CHAT_TYPES so historical HIDDEN_CHAT_TYPES
+ * preferences keep validating, but they are never offered to a client.
+ *
+ * DICTATION_MODE — the live-mic dictation session, superseded by "Create Note".
+ * Nothing about existing data changes: DICTATION chats keep their mode, their
+ * transcripts, their summaries and their edit paths. Note that manual notes are
+ * also stored with mode DICTATION (see ChatService.createNote), so the mode
+ * itself is very much still in use — only this entry point is gone.
+ */
+export const DEPRECATED_CHAT_TYPES: readonly ChatTypes[] = [
+  ChatTypes.DICTATION_MODE,
+];
+
+/** Chat types a tenant can actually be offered today. */
+export const SELECTABLE_CHAT_TYPES = DEFAULT_CHAT_TYPES.filter(
+  (type) => !DEPRECATED_CHAT_TYPES.includes(type),
+);
+
+/**
  * Names of the global_settings rows that hold editable legal page content.
  * Each row stores `{ html: string }` in its jsonb `value` column.
  */

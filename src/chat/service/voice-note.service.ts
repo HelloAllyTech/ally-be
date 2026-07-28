@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import OpenAI, { toFile } from 'openai';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import { SettingsService } from 'src/settings/service/settings.service';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import {
   GenerateNoteFromAudioResponseDto,
@@ -125,6 +127,7 @@ export class VoiceNoteService {
   constructor(
     private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
+    private readonly settingsService: SettingsService,
   ) {
     this.openai = new OpenAI({ apiKey: this.configService.openai.apiKey });
     this.anthropic = new Anthropic({
@@ -143,6 +146,17 @@ export class VoiceNoteService {
     fieldsRaw: string | undefined,
     languageHint?: string,
   ): Promise<GenerateNoteFromAudioResponseDto> {
+    // Checked before anything else: both downstream calls (Whisper, then
+    // Anthropic) are billable, so a request from an org without the feature
+    // must not reach them. Mirrors ChatService.createNote's toggle guard —
+    // COUNSELOR_ACCESS alone is not enough.
+    const enabled = await this.settingsService.getScribeVoiceNoteEnabled();
+    if (!enabled) {
+      throw new ForbiddenException(
+        'Scribe voice note is not enabled for this organization',
+      );
+    }
+
     if (!audio?.buffer?.length) {
       throw new BadRequestException('No audio was provided.');
     }

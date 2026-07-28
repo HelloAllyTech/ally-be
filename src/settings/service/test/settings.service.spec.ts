@@ -12,7 +12,7 @@ import {
 import {
   DEFAULT_SUMMARY_FIELDS_ARRAY,
   DEFAULT_SUMMARY_FIELDS_SET,
-  DEFAULT_CHAT_TYPES,
+  SELECTABLE_CHAT_TYPES,
   LEGAL_CONTENT_NAMES,
 } from '../../constants/settings.constants';
 import { GlobalSettingsRepository } from '../../repository/global-settings.repository';
@@ -879,27 +879,35 @@ describe('SettingsService', () => {
 
       const result = await service.getChatTypes();
 
-      const expectedVisibleTypes = DEFAULT_CHAT_TYPES.filter(
+      const expectedVisibleTypes = SELECTABLE_CHAT_TYPES.filter(
         (type) => type !== ChatTypes.MICROPHONE_CHAT,
       );
       expect(result).toEqual(expectedVisibleTypes);
     });
 
-    it('should return all default chat types when no hidden types exist', async () => {
+    it('should return all selectable chat types when no hidden types exist', async () => {
       preferenceService.getPreference.mockResolvedValue(null);
 
       const result = await service.getChatTypes();
 
-      expect(result).toEqual(DEFAULT_CHAT_TYPES);
+      expect(result).toEqual(SELECTABLE_CHAT_TYPES);
     });
 
-    it('should return all default chat types when preference has empty value', async () => {
+    it('should return all selectable chat types when preference has empty value', async () => {
       const emptyPreference = { ...mockChatTypesPreference, value: [] };
       preferenceService.getPreference.mockResolvedValue(emptyPreference);
 
       const result = await service.getChatTypes();
 
-      expect(result).toEqual(DEFAULT_CHAT_TYPES);
+      expect(result).toEqual(SELECTABLE_CHAT_TYPES);
+    });
+
+    it('should never advertise the retired dictation mode', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+
+      const result = await service.getChatTypes();
+
+      expect(result).not.toContain(ChatTypes.DICTATION_MODE);
     });
 
     it('should throw BadRequestException when tenantId is missing', async () => {

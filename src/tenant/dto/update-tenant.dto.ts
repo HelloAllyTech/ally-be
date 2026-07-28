@@ -65,8 +65,11 @@ export class UpdateTenantDto {
   @IsOptional()
   enableAudioUpload?: boolean;
 
+  /** @deprecated Dictation mode is retired; this value is accepted and ignored. */
   @ApiProperty({
-    description: 'Enable dictation mode for the tenant',
+    description:
+      'Deprecated. Dictation mode is retired — accepted for backwards compatibility and ignored.',
+    deprecated: true,
   })
   @IsBoolean()
   @IsOptional()

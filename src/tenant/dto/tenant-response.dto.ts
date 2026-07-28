@@ -60,9 +60,11 @@ export class TenantResponseDto {
   })
   enableMicrophoneMode!: boolean;
 
+  /** @deprecated Dictation mode is retired; always false. */
   @ApiProperty({
-    description: 'Whether dictation mode is enabled',
-    example: true,
+    description: 'Deprecated. Dictation mode is retired — always false.',
+    example: false,
+    deprecated: true,
   })
   enableDictationMode!: boolean;
 
