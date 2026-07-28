@@ -21,6 +21,15 @@ export class MergeDuplicateScenarioSessionDetails1869000000000 implements Migrat
   name = 'MergeDuplicateScenarioSessionDetails1869000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Serialize against still-running old-code writers for the duration of
+    // this transaction: a session ending mid-migration could otherwise insert
+    // a duplicate between the DELETE and the unique-index build and fail the
+    // deploy. EXCLUSIVE blocks writes but not reads; the table is tiny
+    // (~4k rows), so the hold is milliseconds.
+    await queryRunner.query(
+      `LOCK TABLE scenario_session_details IN EXCLUSIVE MODE`,
+    );
+
     // 1) Coalesce all payload columns into the canonical row per session.
     //    pick(col): first non-null value, scanning rows summary-first, newest
     //    first — so a complete summary row wins over an evaluation-only row,
