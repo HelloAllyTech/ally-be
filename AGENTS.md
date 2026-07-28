@@ -12,6 +12,8 @@ change architecture, workflows, environment setup, or SDLC rules.
 - Platform overview — https://tech.helloally.ai/#/wiki/platform/overview.md
 - Architecture & data flow — https://tech.helloally.ai/#/wiki/platform/architecture.md
 - Cross-repo agent guide (conventions, common tasks, gotchas) — https://tech.helloally.ai/#/wiki/platform/agent-guide.md
+- **Product Management Best Practices** (read before any user-facing change) — https://tech.helloally.ai/#/wiki/product/best-practices.md
+  - Subsections: [UI](https://tech.helloally.ai/#/wiki/product/ui.md) · [Gamification](https://tech.helloally.ai/#/wiki/product/gamification.md) · [Data Visualisation](https://tech.helloally.ai/#/wiki/product/data-visualisation.md) · [Prioritisation](https://tech.helloally.ai/#/wiki/product/prioritisation.md) · [User Personas](https://tech.helloally.ai/#/wiki/product/user-personas.md) — the section grows over time; check the hub for the current list.
 - Contributing / SDLC rules — https://tech.helloally.ai/#/wiki/contributing/guide.md
 - Developer setup — https://tech.helloally.ai/#/wiki/contributing/dev-setup.md
 
