@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { AnalyticsController } from './controller/analytics.controller';
 import { TenantAnalyticsController } from './controller/tenant-analytics.controller';
 import { AnalyticsService } from './service/analytics.service';
+import { HighlightsAnalyticsService } from './service/highlights-analytics.service';
+import { HighlightsAnalyticsRepository } from './repository/highlights-analytics.repository';
 import { PlatformAnalyticsService } from './service/platform-analytics.service';
 import { ScribeAnalyticsService } from './service/scribe-analytics.service';
 import { DriftJudgeService } from './service/drift-judge.service';
@@ -41,6 +43,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
   controllers: [AnalyticsController, TenantAnalyticsController],
   providers: [
     AnalyticsService,
+    HighlightsAnalyticsService,
+    HighlightsAnalyticsRepository,
     PlatformAnalyticsService,
     ScribeAnalyticsService,
     DriftJudgeService,
