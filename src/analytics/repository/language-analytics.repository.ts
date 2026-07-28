@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { excludeTestTenants } from '../util/test-tenant.util';
 
 export interface LanguageAnalyticsFilters {
   start: Date;
@@ -43,10 +44,13 @@ export class LanguageAnalyticsRepository {
     judgePromptVersion: string;
   } | null> {
     const rows = await this.dataSource.query(
+      // Test orgs are excluded here too: otherwise a test org's judge run could
+      // become the version the whole dashboard pins itself to.
       `SELECT "judgeModel" AS judge_model,
               "judgePromptVersion" AS judge_prompt_version
-         FROM language_judgment_sessions
-        ORDER BY "updatedAt" DESC LIMIT 1`,
+         FROM language_judgment_sessions s
+        WHERE ${excludeTestTenants('s."tenant_id"')}
+        ORDER BY s."updatedAt" DESC LIMIT 1`,
     );
     if (!rows?.length) return null;
     return {
@@ -61,8 +65,11 @@ export class LanguageAnalyticsRepository {
     params: unknown[],
   ): string {
     params.push(f.start, f.judgeModel, f.judgePromptVersion);
+    // The test-org predicate is parameter-free, so it composes here without
+    // disturbing the $n numbering the dimension loop below appends to.
     let where = `COALESCE(${alias}."occurredAt", ${alias}."createdAt") >= $1
-      AND ${alias}."judgeModel" = $2 AND ${alias}."judgePromptVersion" = $3`;
+      AND ${alias}."judgeModel" = $2 AND ${alias}."judgePromptVersion" = $3
+      AND ${excludeTestTenants(`${alias}."tenant_id"`)}`;
     const dims: Array<[string, string | null | undefined]> = [
       ['language', f.language],
       ['scenarioVersionId', f.scenarioVersionId],

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { excludeTestTenants } from '../util/test-tenant.util';
 
 export interface TokenUsageByModelTaskRow {
   service: string;
@@ -55,6 +56,9 @@ export class LlmUsageRepository {
       .from('llm_usage', 'lu')
       .where('lu."occurredAt" >= :start', { start })
       .andWhere('lu."occurredAt" < :end', { end })
+      // Null-preserving: most llm_usage rows are deliberately tenantless
+      // (judges, autofill, translation) and must survive the filter.
+      .andWhere(excludeTestTenants('lu."tenant_id"'))
       .groupBy('lu.service')
       .addGroupBy('lu.model')
       .addGroupBy('lu.provider')

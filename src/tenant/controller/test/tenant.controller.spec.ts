@@ -26,6 +26,7 @@ describe('TenantController', () => {
     code: 'test-tenant',
     description: 'Test tenant description',
     status: TenantStatus.ACTIVE,
+    isTestOrganization: false,
     metadata: { key: 'value' },
     settings: { setting: 'value' },
     createdAt: new Date('2023-01-01'),

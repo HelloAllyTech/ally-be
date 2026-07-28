@@ -49,6 +49,13 @@ export class TenantResponseDto {
   hideRankInCommunity!: boolean;
 
   @ApiProperty({
+    description:
+      'Whether this is an internal/demo/QA organization excluded from analytics',
+    example: false,
+  })
+  isTestOrganization!: boolean;
+
+  @ApiProperty({
     description: 'Whether audio upload is enabled',
     example: true,
   })

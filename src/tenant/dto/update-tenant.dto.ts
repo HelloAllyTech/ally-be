@@ -81,4 +81,14 @@ export class UpdateTenantDto {
   @IsBoolean()
   @IsOptional()
   hideRankInCommunity?: boolean;
+
+  @ApiProperty({
+    description:
+      'Mark as an internal/demo/QA organization. Super-admin analytics ' +
+      'excludes these organizations and their users entirely. Super-admins ' +
+      'only — ignored when a multi-tenant admin sends it.',
+  })
+  @IsBoolean()
+  @IsOptional()
+  isTestOrganization?: boolean;
 }

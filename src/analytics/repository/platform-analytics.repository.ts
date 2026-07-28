@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ScenarioSessionEventStatus } from '../../learn/enum/scenario-session-status.enum';
+import {
+  excludeTestTenants,
+  excludeTestTenantsBySession,
+  excludeTestTenantsByUser,
+} from '../util/test-tenant.util';
 
 /**
  * Bucket granularity for time-series aggregation. Controlled internally by the
@@ -163,6 +168,9 @@ export class PlatformAnalyticsRepository {
           min(l."occurredAt") FILTER (WHERE l."type" = 'AGENT_JOINED')     AS joined_at
         FROM scenario_session_lifecycle_events l
         WHERE l."occurredAt" >= $1 AND l."occurredAt" < $2
+          -- No tenant column on this table (webhook writes have no resolved
+          -- tenant), so exclude test orgs via the owning session.
+          AND ${excludeTestTenantsBySession('l."scenarioSessionId"')}
         GROUP BY l."scenarioSessionId"
       )
       SELECT
@@ -217,6 +225,7 @@ export class PlatformAnalyticsRepository {
       FROM scenario_sessions ss
       WHERE ss."createdAt" >= $1 AND ss."createdAt" < $2
         AND ss."roomId" LIKE 'ss_%'
+        AND ${excludeTestTenants('ss."tenant_id"')}
       `,
       [start, end],
     );
@@ -265,6 +274,7 @@ export class PlatformAnalyticsRepository {
         FROM scenario_sessions ss
         WHERE ss."createdAt" >= $1 AND ss."createdAt" < $2
           AND ss."roomId" LIKE 'ss_%'
+          AND ${excludeTestTenants('ss."tenant_id"')}
       )
       SELECT
         to_char(date_trunc('${trunc}', created_at), 'YYYY-MM-DD') AS bucket,
@@ -305,6 +315,7 @@ export class PlatformAnalyticsRepository {
       .from('users', 'u')
       .where('u."createdAt" >= :start', { start })
       .andWhere('u."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('u."tenant_id"'))
       .groupBy('bucket')
       .orderBy('bucket', 'ASC')
       .getRawMany<{ bucket: string; newUsers: number }>();
@@ -322,6 +333,7 @@ export class PlatformAnalyticsRepository {
       .select('COUNT(*)::int', 'count')
       .from('users', 'u')
       .where('u."createdAt" < :date', { date })
+      .andWhere(excludeTestTenants('u."tenant_id"'))
       .getRawOne<{ count: number }>();
 
     return Number(row?.count) || 0;
@@ -333,6 +345,7 @@ export class PlatformAnalyticsRepository {
       .createQueryBuilder()
       .select('COUNT(*)::int', 'count')
       .from('users', 'u')
+      .where(excludeTestTenants('u."tenant_id"'))
       .getRawOne<{ count: number }>();
 
     return Number(row?.count) || 0;
@@ -359,6 +372,7 @@ export class PlatformAnalyticsRepository {
       .from('scenario_sessions', 's')
       .where('COALESCE(s."startedAt", s."createdAt") >= :start', { start })
       .andWhere('COALESCE(s."startedAt", s."createdAt") < :end', { end })
+      .andWhere(excludeTestTenants('s."tenant_id"'))
       .getRawMany<{ day: string; counselorId: number }>();
 
     return rows.map((r) => ({
@@ -388,6 +402,7 @@ export class PlatformAnalyticsRepository {
       })
       .andWhere('COALESCE(s."endedAt", s."createdAt") >= :start', { start })
       .andWhere('COALESCE(s."endedAt", s."createdAt") < :end', { end })
+      .andWhere(excludeTestTenants('s."tenant_id"'))
       .groupBy('week')
       .orderBy('week', 'ASC')
       .getRawMany<{ week: string; count: number }>();
@@ -421,6 +436,7 @@ export class PlatformAnalyticsRepository {
       .innerJoin('users', 'u', 'u.id = s."counselorId"')
       .where('COALESCE(s."startedAt", s."createdAt") >= :start', { start })
       .andWhere('COALESCE(s."startedAt", s."createdAt") < :end', { end })
+      .andWhere(excludeTestTenants('s."tenant_id"'))
       .getRawMany<{
         week: string;
         counselorId: number;
@@ -442,6 +458,9 @@ export class PlatformAnalyticsRepository {
       .addSelect('COUNT(DISTINCT ug."userId")::int', 'count')
       .from('user_groups', 'ug')
       .innerJoin('groups', 'g', 'g.id = ug."groupId"')
+      // Via the user rather than ug."tenant_id": that column is legacy (added
+      // with DEFAULT 'default') and less trustworthy than users.tenant_id.
+      .where(excludeTestTenantsByUser('ug."userId"'))
       .groupBy('g.name')
       .orderBy('count', 'DESC')
       .getRawMany<{ role: string; count: number }>();
@@ -459,6 +478,7 @@ export class PlatformAnalyticsRepository {
       .select('COUNT(DISTINCT s."counselorId")::int', 'count')
       .from('scenario_sessions', 's')
       .where('COALESCE(s."startedAt", s."createdAt") >= :since', { since })
+      .andWhere(excludeTestTenants('s."tenant_id"'))
       .getRawOne<{ count: number }>();
 
     return Number(row?.count) || 0;
@@ -476,6 +496,7 @@ export class PlatformAnalyticsRepository {
       .innerJoin('users', 'u', 'u.id = s."counselorId"')
       .where('COALESCE(s."startedAt", s."createdAt") >= :since', { since })
       .andWhere('u."createdAt" < :since', { since })
+      .andWhere(excludeTestTenants('s."tenant_id"'))
       .getRawOne<{ count: number }>();
 
     return Number(row?.count) || 0;
@@ -538,7 +559,8 @@ export class PlatformAnalyticsRepository {
     }
     qb.where('m."occurredAt" >= :start', { start })
       .andWhere('m."occurredAt" < :end', { end })
-      .andWhere('m."responseLatencyMs" IS NOT NULL');
+      .andWhere('m."responseLatencyMs" IS NOT NULL')
+      .andWhere(excludeTestTenants('m."tenant_id"'));
     if (language) {
       qb.andWhere(`COALESCE(l.value, 'en') = :language`, { language });
     }
@@ -608,6 +630,7 @@ export class PlatformAnalyticsRepository {
       .andWhere('m."occurredAt" < :end', { end })
       .andWhere(`m."source" = 'pipeline'`)
       .andWhere('m."responseLatencyMs" IS NOT NULL')
+      .andWhere(excludeTestTenants('m."tenant_id"'))
       .groupBy(`COALESCE(l."value", 'en')`)
       .orderBy(`COALESCE(l."value", 'en')`, 'ASC')
       .getRawMany<{
@@ -682,7 +705,8 @@ export class PlatformAnalyticsRepository {
     }
     qb.where('m."occurredAt" >= :start', { start })
       .andWhere('m."occurredAt" < :end', { end })
-      .andWhere('m."startLatencyMs" IS NOT NULL');
+      .andWhere('m."startLatencyMs" IS NOT NULL')
+      .andWhere(excludeTestTenants('m."tenant_id"'));
     if (language) {
       qb.andWhere(`COALESCE(l.value, 'en') = :language`, { language });
     }
@@ -728,6 +752,7 @@ export class PlatformAnalyticsRepository {
         completed: ScenarioSessionEventStatus.COMPLETED,
       })
       .andWhere('COALESCE(s."endedAt", s."createdAt") >= :since', { since })
+      .andWhere(excludeTestTenants('s."tenant_id"'))
       .getRawOne<{ count: number }>();
 
     return Number(row?.count) || 0;
