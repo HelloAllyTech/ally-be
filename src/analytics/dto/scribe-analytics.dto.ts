@@ -1,6 +1,10 @@
-import { IsIn, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
-import { ANALYTICS_RANGES, AnalyticsRange } from './platform-analytics.dto';
+import {
+  AnalyticsRange,
+  AnalyticsScopingDto,
+  AnalyticsWindowDto,
+  AnalyticsWindowQueryDto,
+} from './platform-analytics.dto';
 
 /**
  * Scribe-session analytics (super-admin, platform-wide / cross-tenant). These
@@ -9,17 +13,7 @@ import { ANALYTICS_RANGES, AnalyticsRange } from './platform-analytics.dto';
  * are derived from `scenario_sessions`. Time window selected via `range`:
  * 30d -> daily buckets, 90d -> weekly, 12m -> monthly.
  */
-export class ScribeAnalyticsQueryDto {
-  @ApiProperty({
-    description: 'Time window for scribe analytics',
-    enum: ANALYTICS_RANGES,
-    default: '30d',
-    required: false,
-  })
-  @IsOptional()
-  @IsIn(ANALYTICS_RANGES)
-  range?: AnalyticsRange;
-}
+export class ScribeAnalyticsQueryDto extends AnalyticsWindowQueryDto {}
 
 /** A single point on a count-over-time trend. */
 export class ScribeTrendPointDto {
@@ -49,8 +43,34 @@ export class ScribeOverviewSummaryDto {
 export class ScribeOverviewResponseDto {
   @ApiProperty() range!: AnalyticsRange;
   @ApiProperty({ enum: ['day', 'week', 'month'] }) bucket!: string;
+
+  @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
+
+  @ApiProperty({ type: AnalyticsScopingDto })
+  scoping!: AnalyticsScopingDto;
+
   @ApiProperty({ type: ScribeOverviewSummaryDto })
   summary!: ScribeOverviewSummaryDto;
+
+  @ApiProperty({
+    type: ScribeOverviewSummaryDto,
+    nullable: true,
+    description:
+      'Same scalars over the equal-length preceding window, present only when ' +
+      '`compare=prev` — the basis a KPI delta is stated against.',
+  })
+  previous!: ScribeOverviewSummaryDto | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Label for `previous`, e.g. "previous 30 days"',
+  })
+  previousLabel!: string | null;
   @ApiProperty({
     type: [ScribeTrendPointDto],
     description: 'Scribe sessions created per bucket (gap-filled).',
@@ -141,6 +161,12 @@ export class ScribeFailureSummaryDto {
 export class ScribeSummaryFailureResponseDto {
   @ApiProperty() range!: AnalyticsRange;
   @ApiProperty({ enum: ['day', 'week', 'month'] }) bucket!: string;
+
+  @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
   @ApiProperty({ type: ScribeFailureSummaryDto })
   summary!: ScribeFailureSummaryDto;
   @ApiProperty({ type: [ScribeFailureRatePointDto] })

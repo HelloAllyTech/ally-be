@@ -61,6 +61,100 @@ describe('ScribeAnalyticsService', () => {
 
   afterEach(() => jest.useRealTimers());
 
+  describe('window, comparison and tenant scoping', () => {
+    it('echoes the resolved window with an inclusive end date', async () => {
+      const res = await service.getOverview({ range: '30d' });
+
+      expect(res.window).toMatchObject({
+        from: '2024-05-14',
+        to: '2024-06-12',
+        label: 'Last 30 days',
+        days: 30,
+        bucket: 'day',
+      });
+    });
+
+    it('supports an explicit from/to window', async () => {
+      const res = await service.getOverview({
+        from: '2024-04-01',
+        to: '2024-04-30',
+      });
+
+      expect(res.window.label).toBe('2024-04-01 → 2024-04-30');
+      expect(res.sessionsTrend).toHaveLength(30);
+    });
+
+    it('omits `previous` unless compare=prev is asked for', async () => {
+      const res = await service.getOverview({ range: '30d' });
+
+      expect(res.previous).toBeNull();
+      expect(res.previousLabel).toBeNull();
+      expect(repo.getOutcomeCounts).toHaveBeenCalledTimes(1);
+    });
+
+    it('computes the preceding-window summary for compare=prev', async () => {
+      repo.getOutcomeCounts
+        .mockResolvedValueOnce([
+          { key: ChatSummaryStatus.SUCCESS, count: 90 },
+          { key: ChatSummaryStatus.FAILED, count: 10 },
+        ])
+        .mockResolvedValueOnce([
+          { key: ChatSummaryStatus.SUCCESS, count: 50 },
+          { key: ChatSummaryStatus.FAILED, count: 50 },
+        ]);
+
+      const res = await service.getOverview({
+        range: '30d',
+        compare: 'prev',
+      });
+
+      expect(res.summary.successRatePct).toBe(90);
+      expect(res.previous?.successRatePct).toBe(50);
+      expect(res.previousLabel).toBe('previous 30 days');
+
+      // The comparison window must be the 30 days immediately before.
+      const [prevStart, prevEnd] = repo.getOutcomeCounts.mock.calls[1];
+      expect(prevStart.toISOString().slice(0, 10)).toBe('2024-04-14');
+      expect(prevEnd.toISOString().slice(0, 10)).toBe('2024-05-14');
+    });
+
+    it('threads tenantId through every scribe aggregate', async () => {
+      const res = await service.getOverview({
+        range: '30d',
+        tenantId: 'acme',
+      });
+
+      // Scribe resolves entirely through chats.tenant_id, so nothing has to stay
+      // platform-wide — the UI has no panels to badge here.
+      expect(res.scoping).toEqual({ tenantId: 'acme', unscopedSections: [] });
+      expect(repo.getOutcomeCounts).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'acme',
+      );
+      expect(repo.getCaptureMethodCounts).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'acme',
+      );
+    });
+
+    it('threads tenantId through the failure aggregates too', async () => {
+      await service.getSummaryFailures({ range: '30d', tenantId: 'acme' });
+
+      expect(repo.getPhaseDropoff).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'acme',
+      );
+      expect(repo.getSttProviderStats).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'acme',
+      );
+    });
+  });
+
   describe('getOverview', () => {
     it('gap-fills the daily trend and computes the success rate (share of all sessions)', async () => {
       repo.getSessionsByBucket.mockResolvedValue([
@@ -78,7 +172,7 @@ describe('ScribeAnalyticsService', () => {
         { key: 'DICTATION', count: 25 },
       ]);
 
-      const res = await service.getOverview('30d');
+      const res = await service.getOverview({ range: '30d' });
 
       expect(res.range).toBe('30d');
       expect(res.bucket).toBe('day');
@@ -123,7 +217,7 @@ describe('ScribeAnalyticsService', () => {
         { key: 'live', count: 70 },
         { key: 'upload', count: 45 },
       ]);
-      const res = await service.getOverview('30d');
+      const res = await service.getOverview({ range: '30d' });
       expect(res.captureBreakdown).toEqual([
         { key: 'live', count: 70 },
         { key: 'upload', count: 45 },
@@ -134,7 +228,7 @@ describe('ScribeAnalyticsService', () => {
       repo.getOutcomeCounts.mockResolvedValue([
         { key: ChatSummaryStatus.IN_PROGRESS, count: 3 },
       ]);
-      const res = await service.getOverview('30d');
+      const res = await service.getOverview({ range: '30d' });
       // 0 summarised / 3 total = 0%.
       expect(res.summary.successRatePct).toBe(0);
       expect(res.summary.totalSessions).toBe(3);
@@ -160,7 +254,7 @@ describe('ScribeAnalyticsService', () => {
         { key: 'other', count: 1 },
       ]);
 
-      const res = await service.getSummaryFailures('30d');
+      const res = await service.getSummaryFailures({ range: '30d' });
 
       expect(res.failureRateTrend).toHaveLength(30);
       const last = res.failureRateTrend[res.failureRateTrend.length - 1];
@@ -193,7 +287,7 @@ describe('ScribeAnalyticsService', () => {
         { bucket: '2024-06-12', failed: 6, terminal: 10 },
       ]);
 
-      const res = await service.getSummaryFailures('30d');
+      const res = await service.getSummaryFailures({ range: '30d' });
       const last = res.failureRateTrend[res.failureRateTrend.length - 1];
 
       expect(last.failureRate).toBeCloseTo(0.1, 4); // final: 1/10
@@ -209,7 +303,7 @@ describe('ScribeAnalyticsService', () => {
         { key: 'delivered', count: 5 }, // succeeded
       ]);
 
-      const res = await service.getSummaryFailures('30d');
+      const res = await service.getSummaryFailures({ range: '30d' });
       const funnel = res.phaseFunnel;
 
       // ladder order preserved
@@ -246,7 +340,7 @@ describe('ScribeAnalyticsService', () => {
         { key: 'gpt-4o-mini', count: 9 },
       ]);
 
-      const res = await service.getSummaryFailures('30d');
+      const res = await service.getSummaryFailures({ range: '30d' });
       expect(res.sttProviderStats).toHaveLength(2);
       expect(res.sttProviderStats[0]).toMatchObject({
         provider: 'deepgram',
@@ -264,7 +358,7 @@ describe('ScribeAnalyticsService', () => {
         { bucket: '2024-06-12', failed: 1, terminal: 7 },
       ]);
 
-      const res = await service.getSummaryFailures('30d');
+      const res = await service.getSummaryFailures({ range: '30d' });
       const last = res.failureRateTrend[res.failureRateTrend.length - 1];
 
       expect(last.failureRate).toBeCloseTo(0.1429, 4);
@@ -272,7 +366,7 @@ describe('ScribeAnalyticsService', () => {
     });
 
     it('handles zero failures without dividing by zero', async () => {
-      const res = await service.getSummaryFailures('30d');
+      const res = await service.getSummaryFailures({ range: '30d' });
       expect(res.summary.failureRatePct).toBe(0);
       expect(res.summary.retryableSharePct).toBe(0);
       expect(res.summary.timeoutSharePct).toBe(0);

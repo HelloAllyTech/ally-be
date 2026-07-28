@@ -5,15 +5,21 @@ import {
   ActiveUsersPointDto,
   AgentJoinReliabilityResponseDto,
   AnalyticsBucketParam,
+  AgentJoinReliabilityQueryDto,
+  AnalyticsOverviewQueryDto,
   AnalyticsOverviewResponseDto,
   AnalyticsRange,
+  AnalyticsSummaryDto,
   ConversationDriftResponseDto,
   DriftBackfillJobDto,
   RetentionPointDto,
   SimulationsCompletedPointDto,
+  StartLatencyQueryDto,
   StartLatencyResponseDto,
+  TokenConsumptionQueryDto,
   TokenConsumptionResponseDto,
   UserGrowthPointDto,
+  VoiceLatencyQueryDto,
   VoiceLatencyResponseDto,
 } from '../dto/platform-analytics.dto';
 import {
@@ -30,8 +36,16 @@ import {
   computeServiceCostUsd,
 } from '../constants/llm-pricing.constants';
 import { DriftAnalyticsRepository } from '../repository/drift-analytics.repository';
-
-const MS_PER_DAY = 86_400_000;
+import {
+  AnalyticsWindow,
+  addDays,
+  addMonths,
+  isoDate,
+  previousWindow,
+  resolveAnalyticsWindow,
+  startOfUtcMonth,
+  startOfUtcWeekMonday,
+} from '../util/analytics-window.util';
 
 /** Voice-to-voice latency target (ms) — the reference line on the trend. */
 const VOICE_LATENCY_TARGET_MS = 1500;
@@ -39,42 +53,9 @@ const VOICE_LATENCY_TARGET_MS = 1500;
 /** Simulation start-latency target (ms) — the reference line on the trend. */
 const START_LATENCY_TARGET_MS = 4000;
 
-/**
- * All bucketing/axis math is done in UTC. `date_trunc` on the tz-naive
- * `timestamp` columns is pure calendar math, so the repository's `yyyy-mm-dd`
- * keys line up with this UTC-generated axis regardless of the Node timezone.
- */
-function startOfUtcDay(d: Date): Date {
-  return new Date(
-    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-  );
-}
-
-function addDays(d: Date, n: number): Date {
-  return new Date(d.getTime() + n * MS_PER_DAY);
-}
-
-function addMonths(d: Date, n: number): Date {
-  return new Date(
-    Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, d.getUTCDate()),
-  );
-}
-
-function startOfUtcMonth(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-}
-
-/** ISO week start (Monday 00:00 UTC), matching Postgres `date_trunc('week')`. */
-function startOfUtcWeekMonday(d: Date): Date {
-  const day = startOfUtcDay(d);
-  const dow = day.getUTCDay(); // 0=Sun .. 6=Sat
-  const offset = (dow + 6) % 7; // days since Monday
-  return addDays(day, -offset);
-}
-
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
+// UTC date maths and the range->window mapping live in analytics-window.util,
+// shared with the sibling analytics services (they each used to keep a private
+// copy, which is how the same window could be computed two ways).
 
 function parseUtcDate(yyyyMmDd: string): Date {
   return new Date(`${yyyyMmDd}T00:00:00.000Z`);
@@ -94,6 +75,17 @@ export class PlatformAnalyticsService {
   ) {}
 
   /**
+   * Bucket granularity the latency/reliability/drift/cost endpoints default to
+   * per range. Kept identical to what each of them computed inline, so putting
+   * them on the shared window resolver does not re-bucket any live chart.
+   */
+  private static defaultBucketFor(range: AnalyticsRange): AnalyticsBucket {
+    if (range === '30d') return 'day';
+    if (range === '90d') return 'week';
+    return 'month';
+  }
+
+  /**
    * AI cost broken down by (service × model × task), converted to an estimated
    * USD cost via the per-service pricing tables (LLM tokens, STT audio minutes,
    * TTS characters). The frontend pivots `points` into a stacked bar with a
@@ -101,20 +93,18 @@ export class PlatformAnalyticsService {
    * `priced=false` flags rows with no pricing entry (cost 0).
    */
   async getTokenConsumption(
-    range: AnalyticsRange,
+    query: TokenConsumptionQueryDto,
   ): Promise<TokenConsumptionResponseDto> {
-    const now = new Date();
-    const todayStart = startOfUtcDay(now);
-    const endExclusive = addDays(todayStart, 1);
-    let windowStart: Date;
-    if (range === '30d') windowStart = addDays(todayStart, -29);
-    else if (range === '90d') windowStart = addDays(todayStart, -89);
-    else windowStart = startOfUtcMonth(addMonths(todayStart, -11));
+    const window = resolveAnalyticsWindow(query, {
+      defaultRange: '30d',
+      defaultBucketFor: PlatformAnalyticsService.defaultBucketFor,
+    });
+    const { start: windowStart, endExclusive } = window;
 
     this.logger.info(
-      `Building AI cost range=${range} window=[${isoDate(
-        windowStart,
-      )},${isoDate(endExclusive)})`,
+      `Building AI cost window=[${isoDate(windowStart)},${isoDate(
+        endExclusive,
+      )})`,
     );
 
     const rows = await this.llmUsageRepo.getTokenUsageByModelAndTask(
@@ -155,7 +145,15 @@ export class PlatformAnalyticsService {
     });
 
     return {
-      range,
+      range: query.range ?? '30d',
+      window: {
+        from: isoDate(windowStart),
+        to: isoDate(addDays(endExclusive, -1)),
+        label: window.label,
+        days: window.days,
+        bucket: window.bucket,
+        computedAt: new Date().toISOString(),
+      },
       totalEstimatedCostUsd: round2(
         points.reduce((sum, p) => sum + p.estimatedCostUsd, 0),
       ),
@@ -208,35 +206,25 @@ export class PlatformAnalyticsService {
    * - 12m       -> monthly buckets for growth, daily DAU/WAU/MAU series
    */
   async getOverview(
-    range: AnalyticsRange,
+    query: AnalyticsOverviewQueryDto,
   ): Promise<AnalyticsOverviewResponseDto> {
-    const now = new Date();
-    const todayStart = startOfUtcDay(now);
-    // Exclusive upper bound = start of tomorrow, so all of today is included.
-    const endExclusive = addDays(todayStart, 1);
-
-    const bucket: AnalyticsBucket = range === '12m' ? 'month' : 'week';
-
-    let windowStart: Date;
-    if (range === '30d') {
-      windowStart = addDays(todayStart, -29);
-    } else if (range === '90d') {
-      windowStart = addDays(todayStart, -89);
-    } else {
-      windowStart = startOfUtcMonth(addMonths(todayStart, -11));
-    }
+    const window = resolveAnalyticsWindow(query, {
+      defaultRange: '30d',
+      // Growth/retention have always been week-grained here (month at 12m);
+      // preserved so existing charts do not silently re-bucket.
+      defaultBucketFor: (r) => (r === '12m' ? 'month' : 'week'),
+    });
+    const windowStart = window.start;
+    const endExclusive = window.endExclusive;
+    const bucket = window.bucket;
 
     // 29-day lookback so trailing 7-/30-day rolls are correct at the left edge.
     const activityStart = addDays(windowStart, -29);
 
-    // Rolling last-30-days window + current ISO week, for the KPI summary.
-    const since30 = addDays(now, -30);
-    const startOfThisWeek = startOfUtcWeekMonday(now);
-
     this.logger.info(
-      `Building analytics overview range=${range} window=[${isoDate(
-        windowStart,
-      )},${isoDate(endExclusive)}) bucket=${bucket}`,
+      `Building analytics overview window=[${isoDate(windowStart)},${isoDate(
+        endExclusive,
+      )}) bucket=${bucket} compare=${query.compare ?? 'none'}`,
     );
 
     const [
@@ -247,9 +235,9 @@ export class PlatformAnalyticsService {
       weeklyActive,
       usersByRole,
       totalUsers,
-      active30,
-      returning30,
-      simsThisWeek,
+      activeInWindow,
+      returningInWindow,
+      simsInWindow,
     ] = await Promise.all([
       this.repo.getNewUsersByBucket(windowStart, endExclusive, bucket),
       this.repo.getUserCountBefore(windowStart),
@@ -258,23 +246,41 @@ export class PlatformAnalyticsService {
       this.repo.getWeeklyActivePairsWithCreatedAt(windowStart, endExclusive),
       this.repo.getUsersByRole(),
       this.repo.getTotalUsers(),
-      this.repo.getActiveUserCountSince(since30),
-      this.repo.getReturningActiveUserCountSince(since30),
-      this.repo.getCompletedSimsSince(startOfThisWeek),
+      // Summary KPIs now cover the SELECTED window rather than a fixed rolling
+      // 30 days / current week. A KPI strip that silently reports a different
+      // period than the charts beside it invites exactly the wrong comparison.
+      this.repo.getActiveUserCountSince(windowStart, endExclusive),
+      this.repo.getReturningActiveUserCountSince(windowStart, endExclusive),
+      this.repo.getCompletedSimsSince(windowStart, endExclusive),
     ]);
 
-    const retentionRatePct =
-      active30 > 0
-        ? parseFloat(((returning30 / active30) * 100).toFixed(1))
-        : 0;
+    const summary = {
+      totalUsers,
+      activeUsers: activeInWindow,
+      simulationsCompleted: simsInWindow,
+      retentionRatePct:
+        activeInWindow > 0
+          ? parseFloat(((returningInWindow / activeInWindow) * 100).toFixed(1))
+          : 0,
+    };
+
+    const { previous, previousLabel } = await this.buildOverviewComparison(
+      query,
+      window,
+    );
 
     return {
-      summary: {
-        totalUsers,
-        activeUsers30d: active30,
-        simsThisWeek,
-        retentionRatePct,
+      window: {
+        from: isoDate(windowStart),
+        to: isoDate(addDays(endExclusive, -1)),
+        label: window.label,
+        days: window.days,
+        bucket: window.bucket,
+        computedAt: new Date().toISOString(),
       },
+      summary,
+      previous,
+      previousLabel,
       userGrowth: this.buildUserGrowth(
         newUsersBuckets,
         baselineUsers,
@@ -294,6 +300,44 @@ export class PlatformAnalyticsService {
       ),
       retention: this.buildRetention(weeklyActive, windowStart, endExclusive),
       usersByRole,
+    };
+  }
+
+  /**
+   * Summary aggregates over the equal-length preceding window, when requested.
+   *
+   * `totalUsers` for the previous window is the cumulative count as at that
+   * window's end, which is exactly `getUserCountBefore(window.start)` — the same
+   * value already fetched as the growth-chart baseline, so the comparison costs
+   * one query less than it looks.
+   */
+  private async buildOverviewComparison(
+    query: AnalyticsOverviewQueryDto,
+    window: AnalyticsWindow,
+  ): Promise<{
+    previous: AnalyticsSummaryDto | null;
+    previousLabel: string | null;
+  }> {
+    if (query.compare !== 'prev')
+      return { previous: null, previousLabel: null };
+
+    const prev = previousWindow(window);
+    const [totalUsersThen, active, returning, sims] = await Promise.all([
+      this.repo.getUserCountBefore(prev.endExclusive),
+      this.repo.getActiveUserCountSince(prev.start, prev.endExclusive),
+      this.repo.getReturningActiveUserCountSince(prev.start, prev.endExclusive),
+      this.repo.getCompletedSimsSince(prev.start, prev.endExclusive),
+    ]);
+
+    return {
+      previous: {
+        totalUsers: totalUsersThen,
+        activeUsers: active,
+        simulationsCompleted: sims,
+        retentionRatePct:
+          active > 0 ? parseFloat(((returning / active) * 100).toFixed(1)) : 0,
+      },
+      previousLabel: prev.label,
     };
   }
 
@@ -320,19 +364,21 @@ export class PlatformAnalyticsService {
       llmModel?: string;
       llmProvider?: string;
       promptVersion?: string;
+      from?: string;
+      to?: string;
+      bucket?: AnalyticsBucketParam;
     } = {},
   ): Promise<ConversationDriftResponseDto> {
-    const now = new Date();
-    const todayStart = startOfUtcDay(now);
-    const endExclusive = addDays(todayStart, 1);
-    let windowStart: Date;
-    if (range === '30d') windowStart = addDays(todayStart, -29);
-    else if (range === '90d') windowStart = addDays(todayStart, -89);
-    else windowStart = startOfUtcMonth(addMonths(todayStart, -11));
+    const window = resolveAnalyticsWindow(
+      { range, from: filters.from, to: filters.to, bucket: filters.bucket },
+      {
+        defaultRange: '90d',
+        defaultBucketFor: PlatformAnalyticsService.defaultBucketFor,
+      },
+    );
+    const { start: windowStart, endExclusive, bucket: trendBucket } = window;
 
     const f = { start: windowStart, end: endExclusive, ...filters };
-    const trendBucket: AnalyticsBucket =
-      range === '30d' ? 'day' : range === '90d' ? 'week' : 'month';
 
     const [
       byLanguage,
@@ -422,6 +468,14 @@ export class PlatformAnalyticsService {
 
     return {
       range,
+      window: {
+        from: isoDate(windowStart),
+        to: isoDate(addDays(endExclusive, -1)),
+        label: window.label,
+        days: window.days,
+        bucket: window.bucket,
+        computedAt: new Date().toISOString(),
+      },
       summary: {
         totalSessions,
         driftedSessions,
@@ -462,31 +516,17 @@ export class PlatformAnalyticsService {
   }
 
   async getVoiceLatency(
-    range: AnalyticsRange,
-    bucketParam?: AnalyticsBucketParam,
-    language?: string,
+    query: VoiceLatencyQueryDto,
   ): Promise<VoiceLatencyResponseDto> {
-    const now = new Date();
-    const todayStart = startOfUtcDay(now);
-    const endExclusive = addDays(todayStart, 1);
-
-    let defaultBucket: AnalyticsBucket;
-    let windowStart: Date;
-    if (range === '30d') {
-      defaultBucket = 'day';
-      windowStart = addDays(todayStart, -29);
-    } else if (range === '90d') {
-      defaultBucket = 'week';
-      windowStart = addDays(todayStart, -89);
-    } else {
-      defaultBucket = 'month';
-      windowStart = startOfUtcMonth(addMonths(todayStart, -11));
-    }
-
-    const bucket: AnalyticsBucket = bucketParam ?? defaultBucket;
+    const { language } = query;
+    const window = resolveAnalyticsWindow(query, {
+      defaultRange: '90d',
+      defaultBucketFor: PlatformAnalyticsService.defaultBucketFor,
+    });
+    const { start: windowStart, endExclusive, bucket } = window;
 
     this.logger.info(
-      `Building voice-latency trend range=${range} window=[${isoDate(
+      `Building voice-latency trend window=[${isoDate(
         windowStart,
       )},${isoDate(endExclusive)}) bucket=${bucket}`,
     );
@@ -502,7 +542,15 @@ export class PlatformAnalyticsService {
     ]);
 
     return {
-      range,
+      range: query.range ?? '90d',
+      window: {
+        from: isoDate(windowStart),
+        to: isoDate(addDays(endExclusive, -1)),
+        label: window.label,
+        days: window.days,
+        bucket: window.bucket,
+        computedAt: new Date().toISOString(),
+      },
       bucket,
       targetMs: VOICE_LATENCY_TARGET_MS,
       points,
@@ -517,26 +565,13 @@ export class PlatformAnalyticsService {
    * divide-by-zero SQL. Window/bucket resolution mirrors getVoiceLatency.
    */
   async getAgentJoinReliability(
-    range: AnalyticsRange,
-    bucketParam?: AnalyticsBucketParam,
+    query: AgentJoinReliabilityQueryDto,
   ): Promise<AgentJoinReliabilityResponseDto> {
-    const now = new Date();
-    const todayStart = startOfUtcDay(now);
-    const endExclusive = addDays(todayStart, 1);
-
-    let defaultBucket: AnalyticsBucket;
-    let windowStart: Date;
-    if (range === '30d') {
-      defaultBucket = 'day';
-      windowStart = addDays(todayStart, -29);
-    } else if (range === '90d') {
-      defaultBucket = 'week';
-      windowStart = addDays(todayStart, -89);
-    } else {
-      defaultBucket = 'month';
-      windowStart = startOfUtcMonth(addMonths(todayStart, -11));
-    }
-    const bucket: AnalyticsBucket = bucketParam ?? defaultBucket;
+    const window = resolveAnalyticsWindow(query, {
+      defaultRange: '90d',
+      defaultBucketFor: PlatformAnalyticsService.defaultBucketFor,
+    });
+    const { start: windowStart, endExclusive, bucket } = window;
 
     const [rows, outcomeMix, freezeRows] = await Promise.all([
       this.repo.getAgentJoinReliabilityByBucket(
@@ -582,35 +617,34 @@ export class PlatformAnalyticsService {
       };
     });
 
-    return { range, bucket, points, outcomeMix };
+    return {
+      range: query.range ?? '90d',
+      window: {
+        from: isoDate(windowStart),
+        to: isoDate(addDays(endExclusive, -1)),
+        label: window.label,
+        days: window.days,
+        bucket: window.bucket,
+        computedAt: new Date().toISOString(),
+      },
+      bucket,
+      points,
+      outcomeMix,
+    };
   }
 
   async getStartLatency(
-    range: AnalyticsRange,
-    bucketParam?: AnalyticsBucketParam,
-    language?: string,
+    query: StartLatencyQueryDto,
   ): Promise<StartLatencyResponseDto> {
-    const now = new Date();
-    const todayStart = startOfUtcDay(now);
-    const endExclusive = addDays(todayStart, 1);
-
-    let defaultBucket: AnalyticsBucket;
-    let windowStart: Date;
-    if (range === '30d') {
-      defaultBucket = 'day';
-      windowStart = addDays(todayStart, -29);
-    } else if (range === '90d') {
-      defaultBucket = 'week';
-      windowStart = addDays(todayStart, -89);
-    } else {
-      defaultBucket = 'month';
-      windowStart = startOfUtcMonth(addMonths(todayStart, -11));
-    }
-
-    const bucket: AnalyticsBucket = bucketParam ?? defaultBucket;
+    const { language } = query;
+    const window = resolveAnalyticsWindow(query, {
+      defaultRange: '90d',
+      defaultBucketFor: PlatformAnalyticsService.defaultBucketFor,
+    });
+    const { start: windowStart, endExclusive, bucket } = window;
 
     this.logger.info(
-      `Building start-latency trend range=${range} window=[${isoDate(
+      `Building start-latency trend window=[${isoDate(
         windowStart,
       )},${isoDate(endExclusive)}) bucket=${bucket}`,
     );
@@ -623,7 +657,15 @@ export class PlatformAnalyticsService {
     );
 
     return {
-      range,
+      range: query.range ?? '90d',
+      window: {
+        from: isoDate(windowStart),
+        to: isoDate(addDays(endExclusive, -1)),
+        label: window.label,
+        days: window.days,
+        bucket: window.bucket,
+        computedAt: new Date().toISOString(),
+      },
       bucket,
       targetMs: START_LATENCY_TARGET_MS,
       points,
