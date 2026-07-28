@@ -164,6 +164,10 @@ describe('CallDetailsService', () => {
             findOne: jest.fn(),
             update: jest.fn(),
             save: jest.fn(),
+            mergeSummary: jest.fn(),
+            mergeSummaryOrCreate: jest.fn().mockResolvedValue({
+              created: false,
+            }),
           },
         },
         {
@@ -675,13 +679,12 @@ describe('CallDetailsService', () => {
         'Test summary',
         'test-key',
       );
-      expect(callDetailsRepository.update).toHaveBeenCalledWith(
-        { chatId: 1, tenantId: 'test-tenant' },
+      expect(callDetailsRepository.mergeSummaryOrCreate).toHaveBeenCalledWith(
+        1,
+        'test-tenant',
         {
-          summary: {
-            ...summary,
-            sessionSummary: 'encrypted_Test summary',
-          },
+          ...summary,
+          sessionSummary: 'encrypted_Test summary',
         },
       );
     });
@@ -777,10 +780,61 @@ describe('CallDetailsService', () => {
       await service.updateCallDetails(1, summary);
 
       expect(cryptoService.encrypt).not.toHaveBeenCalled();
-      expect(callDetailsRepository.update).toHaveBeenCalledWith(
-        { chatId: 1, tenantId: 'test-tenant' },
-        { summary },
+      expect(callDetailsRepository.mergeSummaryOrCreate).toHaveBeenCalledWith(
+        1,
+        'test-tenant',
+        summary,
       );
+    });
+
+    it('sends only the edited keys as a patch, leaving the rest to the merge', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
+
+      // A partial payload — what an autosave sends. The service must forward it
+      // as-is rather than expanding it into a whole-summary replace, so the
+      // untouched (AI-generated) keys survive in the database.
+      await service.updateCallDetails(1, { keyConcerns: 'edited' } as any);
+
+      expect(callDetailsRepository.mergeSummaryOrCreate).toHaveBeenCalledWith(
+        1,
+        'test-tenant',
+        { keyConcerns: 'edited' },
+      );
+    });
+
+    it('passes an explicit null through so a cleared field is cleared', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
+
+      await service.updateCallDetails(1, { homework: null } as any);
+
+      expect(callDetailsRepository.mergeSummaryOrCreate).toHaveBeenCalledWith(
+        1,
+        'test-tenant',
+        { homework: null },
+      );
+    });
+
+    it('logs when the call_details row had to be created to hold the edit', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(mockChat as any);
+      (
+        callDetailsRepository.mergeSummaryOrCreate as jest.Mock
+      ).mockResolvedValueOnce({ created: true });
+      const warn = jest.spyOn((service as any).logger, 'warn');
+
+      await service.updateCallDetails(1, { keyConcerns: 'edited' } as any);
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('had no call_details row'),
+      );
+    });
+
+    it('throws when the chat is not the caller’s, without writing', async () => {
+      jest.spyOn(chatRepository, 'findOne').mockResolvedValue(null);
+
+      await expect(
+        service.updateCallDetails(1, { keyConcerns: 'edited' } as any),
+      ).rejects.toThrow(NotFoundException);
+      expect(callDetailsRepository.mergeSummaryOrCreate).not.toHaveBeenCalled();
     });
   });
 

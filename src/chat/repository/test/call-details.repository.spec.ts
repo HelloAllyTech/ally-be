@@ -157,4 +157,126 @@ describe('CallDetailsRepository', () => {
       expect(mockQueryBuilder.offset).toHaveBeenCalledWith(5);
     });
   });
+
+  describe('mergeSummary', () => {
+    let updateQueryBuilder: any;
+    let createQueryBuilderSpy: jest.SpyInstance;
+
+    beforeEach(() => {
+      updateQueryBuilder = {
+        update: jest.fn().mockReturnThis(),
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        setParameter: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({ affected: 1 }),
+      };
+      createQueryBuilderSpy = jest
+        .spyOn(repository, 'createQueryBuilder')
+        .mockReturnValue(updateQueryBuilder as any);
+    });
+
+    afterEach(() => {
+      createQueryBuilderSpy.mockRestore();
+    });
+
+    it('merges the patch into the stored summary instead of replacing it', async () => {
+      const affected = await repository.mergeSummary(7, mockTenantId, {
+        keyConcerns: 'edited',
+      });
+
+      // The whole point: `||` is a key-wise merge, so untouched keys survive.
+      const setArg = updateQueryBuilder.set.mock.calls[0][0];
+      expect(setArg.summary()).toBe(
+        `COALESCE("summary", '{}'::jsonb) || :patch::jsonb`,
+      );
+      expect(updateQueryBuilder.setParameter).toHaveBeenCalledWith(
+        'patch',
+        JSON.stringify({ keyConcerns: 'edited' }),
+      );
+      expect(affected).toBe(1);
+    });
+
+    it('scopes the update to the chat and tenant', async () => {
+      await repository.mergeSummary(7, mockTenantId, { homework: 'x' });
+
+      expect(updateQueryBuilder.where).toHaveBeenCalledWith(
+        '"chatId" = :chatId',
+        { chatId: 7 },
+      );
+      expect(updateQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'tenant_id = :tenantId',
+        { tenantId: mockTenantId },
+      );
+    });
+
+    it('serializes an explicit null so the key is cleared, not skipped', async () => {
+      await repository.mergeSummary(7, mockTenantId, { homework: null });
+
+      expect(updateQueryBuilder.setParameter).toHaveBeenCalledWith(
+        'patch',
+        '{"homework":null}',
+      );
+    });
+
+    it('reports 0 when the chat has no call_details row', async () => {
+      updateQueryBuilder.execute.mockResolvedValue({ affected: 0 });
+
+      const affected = await repository.mergeSummary(7, mockTenantId, {
+        homework: 'x',
+      });
+
+      expect(affected).toBe(0);
+    });
+  });
+
+  describe('mergeSummaryOrCreate', () => {
+    it('creates the row when the merge matched nothing', async () => {
+      const insert = jest.fn().mockResolvedValue({});
+      const entityManager = {
+        getRepository: jest.fn().mockReturnValue({ insert }),
+      };
+      (repository as any).dataSource.transaction = jest
+        .fn()
+        .mockImplementation((cb: any) => cb(entityManager));
+      const mergeSummary = jest
+        .spyOn(repository, 'mergeSummary')
+        .mockResolvedValue(0);
+
+      const result = await repository.mergeSummaryOrCreate(7, mockTenantId, {
+        keyConcerns: 'edited',
+      });
+
+      expect(mergeSummary).toHaveBeenCalledWith(
+        7,
+        mockTenantId,
+        { keyConcerns: 'edited' },
+        entityManager,
+      );
+      expect(insert).toHaveBeenCalledWith({
+        chatId: 7,
+        tenantId: mockTenantId,
+        summary: { keyConcerns: 'edited' },
+      });
+      expect(result).toEqual({ created: true });
+    });
+
+    it('does not insert when the merge updated a row', async () => {
+      const insert = jest.fn();
+      const entityManager = {
+        getRepository: jest.fn().mockReturnValue({ insert }),
+      };
+      (repository as any).dataSource.transaction = jest
+        .fn()
+        .mockImplementation((cb: any) => cb(entityManager));
+      jest.spyOn(repository, 'mergeSummary').mockResolvedValue(1);
+
+      const result = await repository.mergeSummaryOrCreate(7, mockTenantId, {
+        keyConcerns: 'edited',
+      });
+
+      expect(insert).not.toHaveBeenCalled();
+      expect(result).toEqual({ created: false });
+    });
+  });
 });

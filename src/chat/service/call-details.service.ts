@@ -690,10 +690,21 @@ export class CallDetailsService {
       );
     }
 
-    await this.callDetailsRepository.update(
-      { chatId, tenantId: ExecutionManager.getTenantId() },
-      { summary },
+    // Merge, don't replace. The client's copy of the summary is always a
+    // snapshot taken before the edit, so a whole-object write silently drops
+    // anything added since — AI-filled fields, tags, or a regeneration that
+    // landed while the counsellor was typing. Keys absent from the payload keep
+    // their stored value; an explicit null clears the key.
+    const { created } = await this.callDetailsRepository.mergeSummaryOrCreate(
+      chatId,
+      ExecutionManager.getTenantId()!,
+      summary as Record<string, unknown>,
     );
+    if (created) {
+      this.logger.warn(
+        `updateCallDetails - chatId:${chatId} had no call_details row; created one to persist the edit`,
+      );
+    }
 
     // A manual edit is an authoritative summary. If the chat's summary had
     // failed (transcript saved, summary retryable), mark it SUCCESS and clear
