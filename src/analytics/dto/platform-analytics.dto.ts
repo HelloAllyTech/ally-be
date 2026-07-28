@@ -1,10 +1,20 @@
-import { IsIn, IsOptional } from 'class-validator';
+import {
+  IsDateString,
+  IsIn,
+  IsOptional,
+  IsString,
+  Matches,
+} from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+
+import { MAX_CUSTOM_RANGE_DAYS } from '../util/analytics-window.util';
 
 /**
  * Supported time windows for the super-admin analytics overview.
  * - 30d / 90d  -> weekly buckets
  * - 12m        -> monthly buckets
+ *
+ * For an arbitrary period use `from`/`to` on {@link AnalyticsWindowQueryDto}.
  */
 export const ANALYTICS_RANGES = ['30d', '90d', '12m'] as const;
 export type AnalyticsRange = (typeof ANALYTICS_RANGES)[number];
@@ -13,9 +23,76 @@ export type AnalyticsRange = (typeof ANALYTICS_RANGES)[number];
 export const ANALYTICS_BUCKETS = ['day', 'week', 'month'] as const;
 export type AnalyticsBucketParam = (typeof ANALYTICS_BUCKETS)[number];
 
-export class AnalyticsOverviewQueryDto {
+/** Comparison basis a client may request alongside the current window. */
+export const ANALYTICS_COMPARE = ['prev'] as const;
+export type AnalyticsCompareParam = (typeof ANALYTICS_COMPARE)[number];
+
+/**
+ * Echoes the resolved window back to the client so every chart, caption and
+ * export can state the period it covers instead of leaving the reader to infer
+ * it from a dropdown that may since have moved.
+ */
+export class AnalyticsWindowDto {
+  @ApiProperty({ description: 'Window start (yyyy-mm-dd, inclusive)' })
+  from!: string;
+
+  @ApiProperty({ description: 'Window end (yyyy-mm-dd, inclusive)' })
+  to!: string;
+
+  @ApiProperty({ description: 'Human-readable window, e.g. "Last 30 days"' })
+  label!: string;
+
+  @ApiProperty({ description: 'Whole days spanned' })
+  days!: number;
+
+  @ApiProperty({ enum: ANALYTICS_BUCKETS })
+  bucket!: AnalyticsBucketParam;
+
   @ApiProperty({
-    description: 'Time window for the analytics overview',
+    description: 'Server time the aggregates were computed, ISO 8601',
+  })
+  computedAt!: string;
+}
+
+/**
+ * Which parts of a response actually honoured a `tenantId` filter.
+ *
+ * Some aggregates cannot be attributed to one org — most `llm_usage` rows are
+ * deliberately tenantless (judges, autofill, translation), so AI spend is a
+ * platform figure. Rather than silently returning platform-wide numbers under a
+ * tenant filter, which would read as tenant-specific and be wrong, the response
+ * names the sections that stayed platform-wide so the UI can badge them.
+ */
+export class AnalyticsScopingDto {
+  @ApiProperty({
+    description:
+      'Tenant the response was narrowed to, or null for platform-wide',
+    nullable: true,
+    type: String,
+  })
+  tenantId!: string | null;
+
+  @ApiProperty({
+    description:
+      'Response sections that remain platform-wide despite the tenant filter',
+    type: [String],
+  })
+  unscopedSections!: string[];
+}
+
+/**
+ * Query params shared by every windowed super-admin analytics endpoint.
+ *
+ * `range` stays the default so existing clients are unaffected; `from`/`to`
+ * override it for an explicit period. `compare` opts into the equal-length
+ * preceding window, which is what lets a KPI state its change against a named
+ * basis instead of showing a bare number. `tenantId` narrows to one org where
+ * the underlying tables can honestly support it — the response says which
+ * sections were actually scoped.
+ */
+export class AnalyticsWindowQueryDto {
+  @ApiProperty({
+    description: 'Rolling time window. Ignored when `from`/`to` are supplied.',
     enum: ANALYTICS_RANGES,
     default: '30d',
     required: false,
@@ -23,14 +100,73 @@ export class AnalyticsOverviewQueryDto {
   @IsOptional()
   @IsIn(ANALYTICS_RANGES)
   range?: AnalyticsRange;
+
+  @ApiProperty({
+    description:
+      'Bucket granularity; defaults to the endpoint default for the range.',
+    enum: ANALYTICS_BUCKETS,
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(ANALYTICS_BUCKETS)
+  bucket?: AnalyticsBucketParam;
+
+  @ApiProperty({
+    description:
+      'Custom window start (yyyy-mm-dd, inclusive). Must be sent with `to`.',
+    required: false,
+    example: '2026-01-01',
+  })
+  @IsOptional()
+  @IsDateString(
+    { strict: true },
+    { message: 'from must be an ISO date (yyyy-mm-dd)' },
+  )
+  from?: string;
+
+  @ApiProperty({
+    description:
+      'Custom window end (yyyy-mm-dd, INCLUSIVE). Must be sent with `from`. ' +
+      `Windows are capped at ${MAX_CUSTOM_RANGE_DAYS} days.`,
+    required: false,
+    example: '2026-03-31',
+  })
+  @IsOptional()
+  @IsDateString(
+    { strict: true },
+    { message: 'to must be an ISO date (yyyy-mm-dd)' },
+  )
+  to?: string;
+
+  @ApiProperty({
+    description:
+      "Set to 'prev' to also return summary aggregates for the equal-length " +
+      'window immediately before this one, as the comparison basis for deltas.',
+    enum: ANALYTICS_COMPARE,
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(ANALYTICS_COMPARE)
+  compare?: AnalyticsCompareParam;
+
+  @ApiProperty({
+    description:
+      'Narrow to a single tenant (uuid or code). Sections whose source tables ' +
+      'cannot be attributed to a tenant stay platform-wide and are flagged in ' +
+      '`scoping.unscopedSections`.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{1,64}$/, {
+    message: 'tenantId must be a tenant uuid or code',
+  })
+  tenantId?: string;
 }
 
-export class ConversationDriftQueryDto {
-  @ApiProperty({ enum: ANALYTICS_RANGES, default: '90d', required: false })
-  @IsOptional()
-  @IsIn(ANALYTICS_RANGES)
-  range?: AnalyticsRange;
+export class AnalyticsOverviewQueryDto extends AnalyticsWindowQueryDto {}
 
+export class ConversationDriftQueryDto extends AnalyticsWindowQueryDto {
   @ApiProperty({
     description: 'Filter by language value (e.g. ta, hi)',
     required: false,
@@ -123,6 +259,12 @@ export class DriftTrendPointDto {
 
 export class ConversationDriftResponseDto {
   @ApiProperty({ enum: ANALYTICS_RANGES }) range!: AnalyticsRange;
+
+  @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
   @ApiProperty({ type: DriftSummaryDto }) summary!: DriftSummaryDto;
   @ApiProperty({ type: [DriftRateByLanguageDto] })
   driftRateByLanguage!: DriftRateByLanguageDto[];
@@ -483,28 +625,7 @@ export class LanguageBackfillJobDto {
   @ApiProperty({ required: false, nullable: true }) error?: string | null;
 }
 
-export class AgentJoinReliabilityQueryDto {
-  @ApiProperty({
-    description: 'Time window for the agent-join reliability trend',
-    enum: ANALYTICS_RANGES,
-    default: '90d',
-    required: false,
-  })
-  @IsOptional()
-  @IsIn(ANALYTICS_RANGES)
-  range?: AnalyticsRange;
-
-  @ApiProperty({
-    description:
-      'Bucket granularity. Defaults to the range default ' +
-      '(30d -> day, 90d -> week, 12m -> month) when omitted.',
-    enum: ANALYTICS_BUCKETS,
-    required: false,
-  })
-  @IsOptional()
-  @IsIn(ANALYTICS_BUCKETS)
-  bucket?: AnalyticsBucketParam;
-}
+export class AgentJoinReliabilityQueryDto extends AnalyticsWindowQueryDto {}
 
 export class AgentJoinReliabilityPointDto {
   @ApiProperty({ description: 'Bucket start date (ISO yyyy-mm-dd)' })
@@ -567,6 +688,12 @@ export class AgentJoinReliabilityResponseDto {
   @ApiProperty({ enum: ANALYTICS_RANGES })
   range!: AnalyticsRange;
 
+  @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
+
   @ApiProperty({ description: 'Bucket granularity (day / week / month)' })
   bucket!: string;
 
@@ -577,28 +704,7 @@ export class AgentJoinReliabilityResponseDto {
   outcomeMix!: SessionOutcomeMixDto;
 }
 
-export class VoiceLatencyQueryDto {
-  @ApiProperty({
-    description: 'Time window for the voice-to-voice latency trend',
-    enum: ANALYTICS_RANGES,
-    default: '90d',
-    required: false,
-  })
-  @IsOptional()
-  @IsIn(ANALYTICS_RANGES)
-  range?: AnalyticsRange;
-
-  @ApiProperty({
-    description:
-      'Bucket granularity. Defaults to the range default ' +
-      '(30d -> day, 90d -> week, 12m -> month) when omitted.',
-    enum: ANALYTICS_BUCKETS,
-    required: false,
-  })
-  @IsOptional()
-  @IsIn(ANALYTICS_BUCKETS)
-  bucket?: AnalyticsBucketParam;
-
+export class VoiceLatencyQueryDto extends AnalyticsWindowQueryDto {
   @ApiProperty({
     description: "Filter by the session's language value (e.g. en-IN, hi-IN)",
     required: false,
@@ -655,6 +761,12 @@ export class VoiceLatencyResponseDto {
   range!: AnalyticsRange;
 
   @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
+
+  @ApiProperty({
     description: 'Bucket granularity (day / week / month) for this range',
   })
   bucket!: string;
@@ -682,28 +794,7 @@ export class VoiceLatencyResponseDto {
   byLanguage!: VoiceLatencyByLanguageRowDto[];
 }
 
-export class StartLatencyQueryDto {
-  @ApiProperty({
-    description: 'Time window for the simulation start-latency trend',
-    enum: ANALYTICS_RANGES,
-    default: '90d',
-    required: false,
-  })
-  @IsOptional()
-  @IsIn(ANALYTICS_RANGES)
-  range?: AnalyticsRange;
-
-  @ApiProperty({
-    description:
-      'Bucket granularity. Defaults to the range default ' +
-      '(30d -> day, 90d -> week, 12m -> month) when omitted.',
-    enum: ANALYTICS_BUCKETS,
-    required: false,
-  })
-  @IsOptional()
-  @IsIn(ANALYTICS_BUCKETS)
-  bucket?: AnalyticsBucketParam;
-
+export class StartLatencyQueryDto extends AnalyticsWindowQueryDto {
   @ApiProperty({
     description: "Filter by the session's language value (e.g. en-IN, hi-IN)",
     required: false,
@@ -767,6 +858,12 @@ export class StartLatencyResponseDto {
   range!: AnalyticsRange;
 
   @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
+
+  @ApiProperty({
     description: 'Bucket granularity (day / week / month) for this range',
   })
   bucket!: string;
@@ -785,17 +882,7 @@ export class StartLatencyResponseDto {
   points!: StartLatencyPointDto[];
 }
 
-export class TokenConsumptionQueryDto {
-  @ApiProperty({
-    description: 'Time window for the token-consumption breakdown',
-    enum: ANALYTICS_RANGES,
-    default: '30d',
-    required: false,
-  })
-  @IsOptional()
-  @IsIn(ANALYTICS_RANGES)
-  range?: AnalyticsRange;
-}
+export class TokenConsumptionQueryDto extends AnalyticsWindowQueryDto {}
 
 export class TokenConsumptionPointDto {
   @ApiProperty({ description: "AI service: 'llm' | 'stt' | 'tts'" })
@@ -827,6 +914,12 @@ export class TokenConsumptionPointDto {
 
 export class TokenConsumptionResponseDto {
   @ApiProperty({ enum: ANALYTICS_RANGES }) range!: AnalyticsRange;
+
+  @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
   @ApiProperty({ description: 'Sum of estimatedCostUsd across all points' })
   totalEstimatedCostUsd!: number;
   @ApiProperty({ description: 'Sum of totalTokens across all points' })
@@ -835,19 +928,35 @@ export class TokenConsumptionResponseDto {
   points!: TokenConsumptionPointDto[];
 }
 
+/**
+ * Overview KPI scalars.
+ *
+ * Every field except `totalUsers` covers the SELECTED window. They used to cover
+ * a fixed rolling 30 days and the current ISO week regardless of the range
+ * picker, which meant the KPI strip silently reported a different period than
+ * the charts beside it — the reader has no way to see that, and compares them
+ * anyway. The fields were named `activeUsers30d` / `simsThisWeek` accordingly;
+ * both are renamed here because a name that states a period the value does not
+ * cover is a bug waiting to be believed.
+ */
 export class AnalyticsSummaryDto {
-  @ApiProperty({ description: 'Total registered users on the platform' })
+  @ApiProperty({
+    description:
+      'Total registered users as at the end of the window (cumulative, not ' +
+      'windowed)',
+  })
   totalUsers!: number;
 
-  @ApiProperty({ description: 'Distinct users active in the last 30 days' })
-  activeUsers30d!: number;
+  @ApiProperty({ description: 'Distinct users active within the window' })
+  activeUsers!: number;
 
-  @ApiProperty({ description: 'Simulations completed in the current ISO week' })
-  simsThisWeek!: number;
+  @ApiProperty({ description: 'Simulations completed within the window' })
+  simulationsCompleted!: number;
 
   @ApiProperty({
     description:
-      'Retention rate (%) — returning active users ÷ all active users over the last 30 days',
+      'Retention rate (%) — returning active users ÷ all active users, within ' +
+      'the window',
   })
   retentionRatePct!: number;
 }
@@ -909,8 +1018,30 @@ export class UsersByRolePointDto {
 }
 
 export class AnalyticsOverviewResponseDto {
+  @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
+
   @ApiProperty({ type: AnalyticsSummaryDto })
   summary!: AnalyticsSummaryDto;
+
+  @ApiProperty({
+    type: AnalyticsSummaryDto,
+    nullable: true,
+    description:
+      'Same scalars over the equal-length preceding window, present only when ' +
+      '`compare=prev` — the basis a KPI delta is stated against.',
+  })
+  previous!: AnalyticsSummaryDto | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Label for `previous`, e.g. "previous 30 days"',
+  })
+  previousLabel!: string | null;
 
   @ApiProperty({ type: [UserGrowthPointDto] })
   userGrowth!: UserGrowthPointDto[];

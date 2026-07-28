@@ -3,45 +3,25 @@ import { LoggerService } from 'src/logger/logger.service';
 import { ChatSummaryStatus } from '../../chat/entity/chat.entity';
 import { AnalyticsRange } from '../dto/platform-analytics.dto';
 import {
+  ScribeAnalyticsQueryDto,
   ScribeOverviewResponseDto,
+  ScribeOverviewSummaryDto,
   ScribeSummaryFailureResponseDto,
 } from '../dto/scribe-analytics.dto';
 import { AnalyticsBucket } from '../repository/platform-analytics.repository';
 import { ScribeAnalyticsRepository } from '../repository/scribe-analytics.repository';
+import {
+  AnalyticsWindow,
+  addDays,
+  generateBucketLabels,
+  isoDate,
+  previousWindow,
+  resolveAnalyticsWindow,
+} from '../util/analytics-window.util';
 
-const MS_PER_DAY = 86_400_000;
+// UTC date maths and the range->window mapping live in analytics-window.util,
+// shared with the sibling analytics services.
 
-/**
- * All bucketing/axis math is done in UTC. `date_trunc` on the tz-naive
- * `timestamp` columns is pure calendar math, so the repository's `yyyy-mm-dd`
- * keys line up with this UTC-generated axis regardless of the Node timezone.
- */
-function startOfUtcDay(d: Date): Date {
-  return new Date(
-    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-  );
-}
-function addDays(d: Date, n: number): Date {
-  return new Date(d.getTime() + n * MS_PER_DAY);
-}
-function addMonths(d: Date, n: number): Date {
-  return new Date(
-    Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, d.getUTCDate()),
-  );
-}
-function startOfUtcMonth(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-}
-/** ISO week start (Monday 00:00 UTC), matching Postgres `date_trunc('week')`. */
-function startOfUtcWeekMonday(d: Date): Date {
-  const day = startOfUtcDay(d);
-  const dow = day.getUTCDay(); // 0=Sun .. 6=Sat
-  const offset = (dow + 6) % 7; // days since Monday
-  return addDays(day, -offset);
-}
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
 function round1(n: number): number {
   return parseFloat(n.toFixed(1));
 }
@@ -67,86 +47,50 @@ export class ScribeAnalyticsService {
 
   constructor(private readonly repo: ScribeAnalyticsRepository) {}
 
-  /**
-   * Resolve the [windowStart, endExclusive) window and bucket granularity for a
-   * range: 30d -> daily, 90d -> weekly, 12m -> monthly. windowStart is aligned
-   * to the bucket boundary so the gap-filled axis is clean.
-   */
-  private resolveWindow(range: AnalyticsRange): {
-    windowStart: Date;
-    endExclusive: Date;
-    bucket: AnalyticsBucket;
-  } {
-    const todayStart = startOfUtcDay(new Date());
-    const endExclusive = addDays(todayStart, 1);
-
-    if (range === '12m') {
-      return {
-        windowStart: startOfUtcMonth(addMonths(todayStart, -11)),
-        endExclusive,
-        bucket: 'month',
-      };
-    }
-    if (range === '90d') {
-      return {
-        windowStart: startOfUtcWeekMonday(addDays(todayStart, -89)),
-        endExclusive,
-        bucket: 'week',
-      };
-    }
-    return {
-      windowStart: addDays(todayStart, -29),
-      endExclusive,
-      bucket: 'day',
-    };
+  /** Bucket granularity this endpoint defaults to per range. */
+  private static defaultBucketFor(range: AnalyticsRange): AnalyticsBucket {
+    if (range === '12m') return 'month';
+    if (range === '90d') return 'week';
+    return 'day';
   }
 
-  /** Ordered list of bucket keys (yyyy-mm-dd) spanning [start, end). */
-  private axisKeys(start: Date, end: Date, bucket: AnalyticsBucket): string[] {
-    const keys: string[] = [];
-    let cursor =
-      bucket === 'month'
-        ? startOfUtcMonth(start)
-        : bucket === 'week'
-          ? startOfUtcWeekMonday(start)
-          : startOfUtcDay(start);
-    const endMs = end.getTime();
-    // Guard against pathological loops.
-    let guard = 0;
-    while (cursor.getTime() < endMs && guard < 1000) {
-      keys.push(isoDate(cursor));
-      cursor =
-        bucket === 'month'
-          ? addMonths(cursor, 1)
-          : bucket === 'week'
-            ? addDays(cursor, 7)
-            : addDays(cursor, 1);
-      guard += 1;
-    }
-    return keys;
-  }
-
-  async getOverview(range: AnalyticsRange): Promise<ScribeOverviewResponseDto> {
-    const { windowStart, endExclusive, bucket } = this.resolveWindow(range);
+  async getOverview(
+    query: ScribeAnalyticsQueryDto,
+  ): Promise<ScribeOverviewResponseDto> {
+    const window = resolveAnalyticsWindow(query, {
+      defaultRange: '30d',
+      defaultBucketFor: ScribeAnalyticsService.defaultBucketFor,
+    });
+    const { start: windowStart, endExclusive, bucket } = window;
+    const tenantId = query.tenantId;
     this.logger.info(
-      `Building scribe overview range=${range} window=[${isoDate(
-        windowStart,
-      )},${isoDate(endExclusive)}) bucket=${bucket}`,
+      `Building scribe overview window=[${isoDate(windowStart)},${isoDate(
+        endExclusive,
+      )}) bucket=${bucket} tenant=${tenantId ?? 'all'} compare=${
+        query.compare ?? 'none'
+      }`,
     );
 
     const [sessionRows, outcomeRows, modeRows, captureRows] = await Promise.all(
       [
-        this.repo.getSessionsByBucket(windowStart, endExclusive, bucket),
-        this.repo.getOutcomeCounts(windowStart, endExclusive),
-        this.repo.getModeCounts(windowStart, endExclusive),
-        this.repo.getCaptureMethodCounts(windowStart, endExclusive),
+        this.repo.getSessionsByBucket(
+          windowStart,
+          endExclusive,
+          bucket,
+          tenantId,
+        ),
+        this.repo.getOutcomeCounts(windowStart, endExclusive, tenantId),
+        this.repo.getModeCounts(windowStart, endExclusive, tenantId),
+        this.repo.getCaptureMethodCounts(windowStart, endExclusive, tenantId),
       ],
     );
 
     const byBucket = new Map(sessionRows.map((r) => [r.bucket, r.count]));
-    const sessionsTrend = this.axisKeys(windowStart, endExclusive, bucket).map(
-      (key) => ({ bucket: key, count: byBucket.get(key) ?? 0 }),
-    );
+    const sessionsTrend = generateBucketLabels(
+      windowStart,
+      endExclusive,
+      bucket,
+    ).map((key) => ({ bucket: key, count: byBucket.get(key) ?? 0 }));
 
     const outcome = new Map(outcomeRows.map((r) => [r.key, r.count]));
     const count = (s: ChatSummaryStatus) => outcome.get(s) ?? 0;
@@ -157,9 +101,30 @@ export class ScribeAnalyticsService {
     const noAudio = count(ChatSummaryStatus.NO_AUDIO);
     const totalSessions = outcomeRows.reduce((a, r) => a + r.count, 0);
 
+    const { previous, previousLabel } = await this.buildOverviewComparison(
+      query,
+      window,
+    );
+
     return {
-      range,
+      range: query.range ?? '30d',
       bucket,
+      window: {
+        from: isoDate(windowStart),
+        to: isoDate(addDays(endExclusive, -1)),
+        label: window.label,
+        days: window.days,
+        bucket,
+        computedAt: new Date().toISOString(),
+      },
+      scoping: {
+        tenantId: tenantId ?? null,
+        // Every scribe aggregate resolves through chats.tenant_id, so a tenant
+        // filter applies cleanly to all of them.
+        unscopedSections: [],
+      },
+      previous,
+      previousLabel,
       summary: {
         totalSessions,
         // Share of ALL sessions that produced a summary, so this KPI equals the
@@ -184,13 +149,20 @@ export class ScribeAnalyticsService {
   }
 
   async getSummaryFailures(
-    range: AnalyticsRange,
+    query: ScribeAnalyticsQueryDto,
   ): Promise<ScribeSummaryFailureResponseDto> {
-    const { windowStart, endExclusive, bucket } = this.resolveWindow(range);
+    const window = resolveAnalyticsWindow(query, {
+      defaultRange: '30d',
+      defaultBucketFor: ScribeAnalyticsService.defaultBucketFor,
+    });
+    const { start: windowStart, endExclusive, bucket } = window;
+    const tenantId = query.tenantId;
     this.logger.info(
-      `Building scribe summary-failures range=${range} window=[${isoDate(
+      `Building scribe summary-failures window=[${isoDate(
         windowStart,
-      )},${isoDate(endExclusive)}) bucket=${bucket}`,
+      )},${isoDate(endExclusive)}) bucket=${bucket} tenant=${
+        tenantId ?? 'all'
+      }`,
     );
 
     const [
@@ -205,27 +177,33 @@ export class ScribeAnalyticsService {
       sttProviderStats,
       summaryModelStats,
     ] = await Promise.all([
-      this.repo.getFailureRateByBucket(windowStart, endExclusive, bucket),
+      this.repo.getFailureRateByBucket(
+        windowStart,
+        endExclusive,
+        bucket,
+        tenantId,
+      ),
       this.repo.getFirstAttemptFailureRateByBucket(
         windowStart,
         endExclusive,
         bucket,
+        tenantId,
       ),
-      this.repo.getFailureBreakdown(windowStart, endExclusive),
-      this.repo.getFailuresByMode(windowStart, endExclusive),
-      this.repo.getFailuresByCaptureMethod(windowStart, endExclusive),
-      this.repo.getFailureRetryableCounts(windowStart, endExclusive),
-      this.repo.getFailureTimeoutCounts(windowStart, endExclusive),
-      this.repo.getPhaseDropoff(windowStart, endExclusive),
-      this.repo.getSttProviderStats(windowStart, endExclusive),
-      this.repo.getSummaryModelStats(windowStart, endExclusive),
+      this.repo.getFailureBreakdown(windowStart, endExclusive, tenantId),
+      this.repo.getFailuresByMode(windowStart, endExclusive, tenantId),
+      this.repo.getFailuresByCaptureMethod(windowStart, endExclusive, tenantId),
+      this.repo.getFailureRetryableCounts(windowStart, endExclusive, tenantId),
+      this.repo.getFailureTimeoutCounts(windowStart, endExclusive, tenantId),
+      this.repo.getPhaseDropoff(windowStart, endExclusive, tenantId),
+      this.repo.getSttProviderStats(windowStart, endExclusive, tenantId),
+      this.repo.getSummaryModelStats(windowStart, endExclusive, tenantId),
     ]);
 
     const byBucket = new Map(rateRows.map((r) => [r.bucket, r]));
     const firstByBucket = new Map(
       firstAttemptRateRows.map((r) => [r.bucket, r]),
     );
-    const failureRateTrend = this.axisKeys(
+    const failureRateTrend = generateBucketLabels(
       windowStart,
       endExclusive,
       bucket,
@@ -279,8 +257,16 @@ export class ScribeAnalyticsService {
     const timeout = timeoutRows.find((r) => r.key === 'timeout')?.count ?? 0;
 
     return {
-      range,
+      range: query.range ?? '30d',
       bucket,
+      window: {
+        from: isoDate(windowStart),
+        to: isoDate(addDays(endExclusive, -1)),
+        label: window.label,
+        days: window.days,
+        bucket,
+        computedAt: new Date().toISOString(),
+      },
       summary: {
         totalTerminal,
         totalFailed,
@@ -298,6 +284,50 @@ export class ScribeAnalyticsService {
       phaseFunnel,
       sttProviderStats,
       summaryModelStats,
+    };
+  }
+
+  /**
+   * Overview summary over the equal-length preceding window, when requested.
+   *
+   * Only the outcome counts are re-run: everything in the summary derives from
+   * them, and the trend is not needed to state a change.
+   */
+  private async buildOverviewComparison(
+    query: ScribeAnalyticsQueryDto,
+    window: AnalyticsWindow,
+  ): Promise<{
+    previous: ScribeOverviewSummaryDto | null;
+    previousLabel: string | null;
+  }> {
+    if (query.compare !== 'prev')
+      return { previous: null, previousLabel: null };
+
+    const prev = previousWindow(window);
+    const outcomeRows = await this.repo.getOutcomeCounts(
+      prev.start,
+      prev.endExclusive,
+      query.tenantId,
+    );
+
+    const outcome = new Map(outcomeRows.map((r) => [r.key, r.count]));
+    const count = (st: ChatSummaryStatus) => outcome.get(st) ?? 0;
+    const totalSessions = outcomeRows.reduce((a, r) => a + r.count, 0);
+
+    return {
+      previous: {
+        totalSessions,
+        successRatePct:
+          totalSessions > 0
+            ? round1((count(ChatSummaryStatus.SUCCESS) / totalSessions) * 100)
+            : 0,
+        processing:
+          count(ChatSummaryStatus.PENDING) +
+          count(ChatSummaryStatus.IN_PROGRESS),
+        noAudio: count(ChatSummaryStatus.NO_AUDIO),
+        failed: count(ChatSummaryStatus.FAILED),
+      },
+      previousLabel: prev.label,
     };
   }
 }

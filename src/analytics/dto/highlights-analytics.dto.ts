@@ -1,29 +1,18 @@
-import { IsIn, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import {
   ANALYTICS_BUCKETS,
   ANALYTICS_RANGES,
-  AnalyticsBucketParam,
   AnalyticsRange,
+  AnalyticsScopingDto,
+  AnalyticsWindowDto,
+  AnalyticsWindowQueryDto,
 } from './platform-analytics.dto';
 
-export class AnalyticsHighlightsQueryDto {
-  @ApiProperty({ enum: ANALYTICS_RANGES, default: '30d', required: false })
-  @IsOptional()
-  @IsIn(ANALYTICS_RANGES)
-  range?: AnalyticsRange;
-
-  @ApiProperty({
-    description:
-      'Bucket granularity; defaults to the range default ' +
-      '(30d -> day, 90d -> week, 12m -> month).',
-    enum: ANALYTICS_BUCKETS,
-    required: false,
-  })
-  @IsOptional()
-  @IsIn(ANALYTICS_BUCKETS)
-  bucket?: AnalyticsBucketParam;
-}
+/**
+ * Window/compare/tenant params come from the shared base; the bucket default
+ * for this endpoint is 30d -> day, 90d -> week, 12m -> month.
+ */
+export class AnalyticsHighlightsQueryDto extends AnalyticsWindowQueryDto {}
 
 /** KPI-strip scalars for the leadership Highlights tab. */
 export class HighlightsSummaryDto {
@@ -80,11 +69,32 @@ export class HighlightsSummaryDto {
   totalAiCostUsd!: number;
 
   @ApiProperty({
+    description:
+      'Calls whose model has no pricing entry. They contribute $0, so ' +
+      '`totalAiCostUsd` understates real spend by an unknown amount whenever ' +
+      'this is non-zero — surfaces must say so rather than present the total ' +
+      'as complete.',
+  })
+  unpricedCalls!: number;
+
+  @ApiProperty({
     description: 'totalAiCostUsd / completedSimulations',
     nullable: true,
     type: Number,
   })
   costPerCompletedSimUsd!: number | null;
+}
+
+/**
+ * The tail of orgs too small to name, aggregated. Keeps the total honest without
+ * re-identifying the learners in a two-person org (see MIN_ORG_GROUP_SIZE).
+ */
+export class TopOrgsBelowFloorDto {
+  @ApiProperty({ description: 'Orgs below the minimum group size' })
+  orgs!: number;
+
+  @ApiProperty({ description: 'Their combined completed simulations' })
+  completedSimulations!: number;
 }
 
 export class TopOrgRowDto {
@@ -171,11 +181,45 @@ export class AnalyticsHighlightsResponseDto {
 
   @ApiProperty({ enum: ANALYTICS_BUCKETS }) bucket!: string;
 
+  @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
+
+  @ApiProperty({ type: AnalyticsScopingDto })
+  scoping!: AnalyticsScopingDto;
+
   @ApiProperty({ type: HighlightsSummaryDto })
   summary!: HighlightsSummaryDto;
 
-  @ApiProperty({ type: [TopOrgRowDto] })
+  @ApiProperty({
+    type: HighlightsSummaryDto,
+    nullable: true,
+    description:
+      'Same aggregates over the equal-length preceding window, present only ' +
+      'when `compare=prev`. This is the basis a KPI delta is stated against — ' +
+      'without it the UI must show the bare number, not a change.',
+  })
+  previous!: HighlightsSummaryDto | null;
+
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'Label for `previous`, e.g. "previous 30 days"',
+  })
+  previousLabel!: string | null;
+
+  @ApiProperty({
+    type: [TopOrgRowDto],
+    description:
+      'Named orgs at or above the minimum group size, descending. The rest are ' +
+      'aggregated into `topOrgsBelowFloor`.',
+  })
   topOrgs!: TopOrgRowDto[];
+
+  @ApiProperty({ type: TopOrgsBelowFloorDto })
+  topOrgsBelowFloor!: TopOrgsBelowFloorDto;
 
   @ApiProperty({
     type: [PracticeMinutesPointDto],

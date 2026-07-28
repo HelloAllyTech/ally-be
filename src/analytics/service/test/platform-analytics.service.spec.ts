@@ -110,7 +110,7 @@ describe('PlatformAnalyticsService', () => {
         { bucket: '2024-06-10', newUsers: 3 },
       ]);
 
-      const { userGrowth } = await service.getOverview('30d');
+      const { userGrowth } = await service.getOverview({ range: '30d' });
 
       expect(userGrowth.map((p) => p.date)).toEqual(WEEKLY_AXIS);
       expect(userGrowth).toEqual([
@@ -132,7 +132,7 @@ describe('PlatformAnalyticsService', () => {
         { day: '2024-06-12', counselorId: 1 },
       ]);
 
-      const { activeUsers } = await service.getOverview('30d');
+      const { activeUsers } = await service.getOverview({ range: '30d' });
 
       expect(activeUsers).toHaveLength(30);
       expect(activeUsers[0].date).toBe('2024-05-14');
@@ -169,7 +169,7 @@ describe('PlatformAnalyticsService', () => {
         { week: '2024-06-10', counselorId: 3, userCreatedAt: '2024-01-01' },
       ]);
 
-      const { retention } = await service.getOverview('30d');
+      const { retention } = await service.getOverview({ range: '30d' });
 
       expect(retention.map((p) => p.weekStart)).toEqual(WEEKLY_AXIS);
       expect(retention).toEqual([
@@ -188,7 +188,9 @@ describe('PlatformAnalyticsService', () => {
         { week: '2024-06-10', count: 5 },
       ]);
 
-      const { simulationsCompleted } = await service.getOverview('30d');
+      const { simulationsCompleted } = await service.getOverview({
+        range: '30d',
+      });
 
       expect(simulationsCompleted).toEqual([
         { weekStart: '2024-05-13', count: 0 },
@@ -211,12 +213,14 @@ describe('PlatformAnalyticsService', () => {
         { role: 'SUPER_ADMIN', count: 2 },
       ]);
 
-      const { summary, usersByRole } = await service.getOverview('30d');
+      const { summary, usersByRole } = await service.getOverview({
+        range: '30d',
+      });
 
       expect(summary).toEqual({
         totalUsers: 100,
-        activeUsers30d: 10,
-        simsThisWeek: 7,
+        activeUsers: 10,
+        simulationsCompleted: 7,
         retentionRatePct: 40,
       });
       expect(usersByRole).toEqual([
@@ -229,7 +233,7 @@ describe('PlatformAnalyticsService', () => {
       repo.getActiveUserCountSince.mockResolvedValue(0);
       repo.getReturningActiveUserCountSince.mockResolvedValue(0);
 
-      const { summary } = await service.getOverview('30d');
+      const { summary } = await service.getOverview({ range: '30d' });
 
       expect(summary.retentionRatePct).toBe(0);
     });
@@ -237,7 +241,7 @@ describe('PlatformAnalyticsService', () => {
 
   describe('range -> bucket mapping', () => {
     it('uses monthly buckets for the 12m range', async () => {
-      await service.getOverview('12m');
+      await service.getOverview({ range: '12m' });
       expect(repo.getNewUsersByBucket).toHaveBeenCalledWith(
         expect.any(Date),
         expect.any(Date),
@@ -246,7 +250,7 @@ describe('PlatformAnalyticsService', () => {
     });
 
     it('uses weekly buckets for the 90d range', async () => {
-      await service.getOverview('90d');
+      await service.getOverview({ range: '90d' });
       expect(repo.getNewUsersByBucket).toHaveBeenCalledWith(
         expect.any(Date),
         expect.any(Date),
@@ -257,7 +261,7 @@ describe('PlatformAnalyticsService', () => {
 
   describe('getVoiceLatency', () => {
     it('defaults to daily buckets for the 30d range over the 30-day window', async () => {
-      await service.getVoiceLatency('30d');
+      await service.getVoiceLatency({ range: '30d' });
 
       expect(repo.getVoiceLatencyByBucket).toHaveBeenCalledWith(
         new Date('2024-05-14T00:00:00.000Z'), // today - 29d
@@ -268,7 +272,7 @@ describe('PlatformAnalyticsService', () => {
     });
 
     it('defaults to weekly buckets for the 90d range', async () => {
-      await service.getVoiceLatency('90d');
+      await service.getVoiceLatency({ range: '90d' });
 
       const [start, end, bucket] = repo.getVoiceLatencyByBucket.mock.calls[0];
       expect(bucket).toBe('week');
@@ -277,7 +281,7 @@ describe('PlatformAnalyticsService', () => {
     });
 
     it('defaults to monthly buckets for the 12m range', async () => {
-      await service.getVoiceLatency('12m');
+      await service.getVoiceLatency({ range: '12m' });
       expect(repo.getVoiceLatencyByBucket).toHaveBeenCalledWith(
         expect.any(Date),
         expect.any(Date),
@@ -287,7 +291,7 @@ describe('PlatformAnalyticsService', () => {
     });
 
     it('honours an explicit bucket override while keeping the range window', async () => {
-      await service.getVoiceLatency('12m', 'week');
+      await service.getVoiceLatency({ range: '12m', bucket: 'week' });
 
       const [start, , bucket] = repo.getVoiceLatencyByBucket.mock.calls[0];
       // bucket overridden, but the window is still the 12-month range start.
@@ -316,9 +320,16 @@ describe('PlatformAnalyticsService', () => {
       ];
       repo.getVoiceLatencyByBucket.mockResolvedValue(points);
 
-      const result = await service.getVoiceLatency('90d');
+      const result = await service.getVoiceLatency({ range: '90d' });
 
-      expect(result).toEqual({
+      expect(result.window).toMatchObject({
+        from: '2024-03-15',
+        to: '2024-06-12',
+        label: 'Last 90 days',
+        days: 90,
+        bucket: 'week',
+      });
+      expect(result).toMatchObject({
         range: '90d',
         bucket: 'week',
         targetMs: 1500,
@@ -334,7 +345,7 @@ describe('PlatformAnalyticsService', () => {
       ];
       repo.getVoiceLatencyByLanguage.mockResolvedValue(byLanguage);
 
-      const result = await service.getVoiceLatency('30d');
+      const result = await service.getVoiceLatency({ range: '30d' });
 
       expect(repo.getVoiceLatencyByLanguage).toHaveBeenCalledWith(
         new Date('2024-05-14T00:00:00.000Z'),
@@ -346,7 +357,7 @@ describe('PlatformAnalyticsService', () => {
 
   describe('getTokenConsumption', () => {
     it('queries the [start, end) window for the range', async () => {
-      await service.getTokenConsumption('30d');
+      await service.getTokenConsumption({ range: '30d' });
 
       expect(llmUsageRepo.getTokenUsageByModelAndTask).toHaveBeenCalledWith(
         new Date('2024-05-14T00:00:00.000Z'), // today - 29d
@@ -410,7 +421,7 @@ describe('PlatformAnalyticsService', () => {
         },
       ]);
 
-      const result = await service.getTokenConsumption('30d');
+      const result = await service.getTokenConsumption({ range: '30d' });
 
       expect(result.range).toBe('30d');
       const byModel = Object.fromEntries(
@@ -516,7 +527,7 @@ describe('PlatformAnalyticsService', () => {
         { bucket: '2026-07-01', conversations: 8, suspectedFreezes: 2 },
       ]);
 
-      const result = await service.getAgentJoinReliability('30d');
+      const result = await service.getAgentJoinReliability({ range: '30d' });
 
       const b1 = result.points.find((p) => p.bucket === '2026-07-01')!;
       const b2 = result.points.find((p) => p.bucket === '2026-07-02')!;

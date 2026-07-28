@@ -95,7 +95,12 @@ export class AnalyticsController {
     description:
       'Platform-wide metrics: user growth, active users (DAU/WAU/MAU), ' +
       'simulations completed, weekly retention and users by role, plus a KPI ' +
-      'summary. Time window selected via the `range` query param.',
+      'summary. Window selected via `range` or an explicit `from`/`to`; ' +
+      '`compare=prev` adds the equal-length preceding window as the basis for ' +
+      'KPI deltas. NOTE: the summary scalars cover the SELECTED window — they ' +
+      'previously covered a fixed rolling 30 days and the current ISO week ' +
+      'regardless of the picker, hence the `activeUsers` / ' +
+      '`simulationsCompleted` renames.',
   })
   @ApiResponse({
     status: 200,
@@ -105,7 +110,7 @@ export class AnalyticsController {
   async getOverview(
     @Query() query: AnalyticsOverviewQueryDto,
   ): Promise<AnalyticsOverviewResponseDto> {
-    return this.platformAnalyticsService.getOverview(query.range ?? '30d');
+    return this.platformAnalyticsService.getOverview(query);
   }
 
   @Get('highlights')
@@ -118,7 +123,11 @@ export class AnalyticsController {
       'simulations), practice minutes, roleplay quality trend (composite ' +
       'evaluation score), learner CSAT trend, learning-track funnel and AI ' +
       'cost per completed simulation. Bucket granularity follows the `range` ' +
-      'param (30d -> day, 90d -> week, 12m -> month) unless overridden.',
+      'param (30d -> day, 90d -> week, 12m -> month) unless overridden. ' +
+      'Supports an explicit `from`/`to` window, `compare=prev` for the ' +
+      'equal-length preceding window (the basis for KPI deltas), and ' +
+      '`tenantId` to narrow to one org — see `scoping.unscopedSections` for the ' +
+      'aggregates that stay platform-wide regardless.',
   })
   @ApiResponse({
     status: 200,
@@ -128,10 +137,7 @@ export class AnalyticsController {
   async getHighlights(
     @Query() query: AnalyticsHighlightsQueryDto,
   ): Promise<AnalyticsHighlightsResponseDto> {
-    return this.highlightsAnalyticsService.getHighlights(
-      query.range ?? '30d',
-      query.bucket,
-    );
+    return this.highlightsAnalyticsService.getHighlights(query);
   }
 
   @Get('voice-latency')
@@ -152,11 +158,7 @@ export class AnalyticsController {
   async getVoiceLatency(
     @Query() query: VoiceLatencyQueryDto,
   ): Promise<VoiceLatencyResponseDto> {
-    return this.platformAnalyticsService.getVoiceLatency(
-      query.range ?? '90d',
-      query.bucket,
-      query.language,
-    );
+    return this.platformAnalyticsService.getVoiceLatency(query);
   }
 
   @Get('agent-join-reliability')
@@ -177,10 +179,7 @@ export class AnalyticsController {
   async getAgentJoinReliability(
     @Query() query: AgentJoinReliabilityQueryDto,
   ): Promise<AgentJoinReliabilityResponseDto> {
-    return this.platformAnalyticsService.getAgentJoinReliability(
-      query.range ?? '90d',
-      query.bucket,
-    );
+    return this.platformAnalyticsService.getAgentJoinReliability(query);
   }
 
   @Get('start-latency')
@@ -203,11 +202,7 @@ export class AnalyticsController {
   async getStartLatency(
     @Query() query: StartLatencyQueryDto,
   ): Promise<StartLatencyResponseDto> {
-    return this.platformAnalyticsService.getStartLatency(
-      query.range ?? '90d',
-      query.bucket,
-      query.language,
-    );
+    return this.platformAnalyticsService.getStartLatency(query);
   }
 
   @Get('conversation-drift')
@@ -250,9 +245,7 @@ export class AnalyticsController {
   async getTokenConsumption(
     @Query() query: TokenConsumptionQueryDto,
   ): Promise<TokenConsumptionResponseDto> {
-    return this.platformAnalyticsService.getTokenConsumption(
-      query.range ?? '30d',
-    );
+    return this.platformAnalyticsService.getTokenConsumption(query);
   }
 
   @Get('scribe/overview')
@@ -269,7 +262,7 @@ export class AnalyticsController {
   async getScribeOverview(
     @Query() query: ScribeAnalyticsQueryDto,
   ): Promise<ScribeOverviewResponseDto> {
-    return this.scribeAnalyticsService.getOverview(query.range ?? '30d');
+    return this.scribeAnalyticsService.getOverview(query);
   }
 
   @Get('scribe/summary-failures')
@@ -286,7 +279,7 @@ export class AnalyticsController {
   async getScribeSummaryFailures(
     @Query() query: ScribeAnalyticsQueryDto,
   ): Promise<ScribeSummaryFailureResponseDto> {
-    return this.scribeAnalyticsService.getSummaryFailures(query.range ?? '30d');
+    return this.scribeAnalyticsService.getSummaryFailures(query);
   }
 
   @Post('conversation-drift/backfill')

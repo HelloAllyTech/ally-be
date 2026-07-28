@@ -7,6 +7,8 @@ import { AnalyticsBucket } from './platform-analytics.repository';
 import {
   excludeTestTenants,
   excludeTestTenantsByUser,
+  scopeToTenant,
+  scopeToTenantByUser,
 } from '../util/test-tenant.util';
 
 export interface TopOrgRow {
@@ -14,6 +16,17 @@ export interface TopOrgRow {
   tenantName: string;
   completedSimulations: number;
 }
+
+/**
+ * Smallest activity count an org may be NAMED at.
+ *
+ * A per-org breakdown is a breakdown of people: an org with two completed
+ * simulations in the window is one or two identifiable learners, so naming it
+ * alongside a score or a volume re-identifies them to anyone who knows the org.
+ * Orgs below the floor are aggregated into a single unnamed "Other orgs" row by
+ * the service, which keeps the total honest without exposing the tail.
+ */
+export const MIN_ORG_GROUP_SIZE = 5;
 
 export interface PracticeMinutesBucketRow {
   /** Bucket start as a calendar date string (yyyy-mm-dd). */
@@ -72,6 +85,16 @@ export interface AiUsageBucketRow {
  * "Completed simulation" here mirrors getSimulationsCompletedByWeek exactly
  * (eventStatus = COMPLETED, timestamped by COALESCE(endedAt, createdAt), no
  * roomId filter) so Highlights reconciles 1:1 with the Overview tab.
+ *
+ * Most methods accept an optional `tenantId` to narrow to one org. Two do not,
+ * and deliberately:
+ *   - {@link getAiUsageByBucket} — most `llm_usage` rows are tenantless by
+ *     design (judges, autofill, translation), so a tenant-filtered cost figure
+ *     would silently report a fraction of real spend. AI cost stays a platform
+ *     number and the response flags it as unscoped.
+ *   - {@link getActiveOrgCount} / {@link getTopOrgsByCompletedSims} — counting
+ *     and ranking orgs is inherently cross-org; narrowing to one makes the
+ *     question meaningless rather than answering it differently.
  */
 @Injectable()
 export class HighlightsAnalyticsRepository {
@@ -109,12 +132,19 @@ export class HighlightsAnalyticsRepository {
    * is cast to text (casting the varchar to uuid would throw) and the code is
    * tried as a fallback join key. Aggregate first so the join touches <= limit
    * rows; unresolvable tenants stay visible under their raw id.
+   *
+   * Only orgs at or above {@link MIN_ORG_GROUP_SIZE} are returned; the caller
+   * gets `belowFloor` so it can render the remainder as one unnamed row rather
+   * than dropping it and understating the total.
    */
   async getTopOrgsByCompletedSims(
     start: Date,
     end: Date,
     limit = 10,
-  ): Promise<TopOrgRow[]> {
+  ): Promise<{
+    rows: TopOrgRow[];
+    belowFloor: { orgs: number; sims: number };
+  }> {
     const rows = await this.dataSource.query(
       `
       WITH agg AS (
@@ -125,26 +155,77 @@ export class HighlightsAnalyticsRepository {
           AND COALESCE(s."endedAt", s."createdAt") < $2
           AND ${excludeTestTenants('s."tenant_id"')}
         GROUP BY s."tenant_id"
-        ORDER BY completed DESC
-        LIMIT $4
+      ),
+      named AS (
+        SELECT * FROM agg WHERE completed >= $4 ORDER BY completed DESC LIMIT $5
       )
       SELECT
-        agg.tenant_id                   AS "tenantId",
-        COALESCE(t.name, agg.tenant_id) AS "tenantName",
-        agg.completed                   AS "completedSimulations"
-      FROM agg
+        named.tenant_id                   AS "tenantId",
+        COALESCE(t.name, named.tenant_id) AS "tenantName",
+        named.completed                   AS "completedSimulations",
+        (SELECT COUNT(*)::int FROM agg WHERE completed < $4)      AS "belowFloorOrgs",
+        (SELECT COALESCE(SUM(completed), 0)::int FROM agg
+          WHERE completed < $4)                                   AS "belowFloorSims"
+      FROM named
       LEFT JOIN tenants t
-        ON (t.id::text = agg.tenant_id OR t.code = agg.tenant_id)
+        ON (t.id::text = named.tenant_id OR t.code = named.tenant_id)
        AND t."deletedAt" IS NULL
-      ORDER BY agg.completed DESC
+      ORDER BY named.completed DESC
       `,
-      [start, end, ScenarioSessionEventStatus.COMPLETED, limit],
+      [
+        start,
+        end,
+        ScenarioSessionEventStatus.COMPLETED,
+        MIN_ORG_GROUP_SIZE,
+        limit,
+      ],
     );
-    return rows.map((r: Record<string, unknown>) => ({
-      tenantId: r.tenantId as string,
-      tenantName: r.tenantName as string,
-      completedSimulations: Number(r.completedSimulations) || 0,
-    }));
+
+    // The below-floor totals are window-level constants repeated on every row;
+    // when no org clears the floor there are no rows, so re-derive them.
+    const first = (rows[0] ?? {}) as Record<string, unknown>;
+    const belowFloor = rows.length
+      ? {
+          orgs: Number(first.belowFloorOrgs) || 0,
+          sims: Number(first.belowFloorSims) || 0,
+        }
+      : await this.getBelowFloorTotals(start, end);
+
+    return {
+      rows: rows.map((r: Record<string, unknown>) => ({
+        tenantId: r.tenantId as string,
+        tenantName: r.tenantName as string,
+        completedSimulations: Number(r.completedSimulations) || 0,
+      })),
+      belowFloor,
+    };
+  }
+
+  /** Below-floor org/sim totals, for the case where no org clears the floor. */
+  private async getBelowFloorTotals(
+    start: Date,
+    end: Date,
+  ): Promise<{ orgs: number; sims: number }> {
+    const rows = await this.dataSource.query(
+      `
+      WITH agg AS (
+        SELECT s."tenant_id" AS tenant_id, COUNT(*)::int AS completed
+        FROM scenario_sessions s
+        WHERE s."eventStatus" = $3
+          AND COALESCE(s."endedAt", s."createdAt") >= $1
+          AND COALESCE(s."endedAt", s."createdAt") < $2
+          AND ${excludeTestTenants('s."tenant_id"')}
+        GROUP BY s."tenant_id"
+      )
+      SELECT
+        COUNT(*)::int                          AS orgs,
+        COALESCE(SUM(completed), 0)::int       AS sims
+      FROM agg WHERE completed < $4
+      `,
+      [start, end, ScenarioSessionEventStatus.COMPLETED, MIN_ORG_GROUP_SIZE],
+    );
+    const r = (rows[0] ?? {}) as Record<string, unknown>;
+    return { orgs: Number(r.orgs) || 0, sims: Number(r.sims) || 0 };
   }
 
   /**
@@ -157,9 +238,10 @@ export class HighlightsAnalyticsRepository {
     start: Date,
     end: Date,
     bucket: AnalyticsBucket,
+    tenantId?: string,
   ): Promise<PracticeMinutesBucketRow[]> {
     const trunc = this.resolveBucket(bucket);
-    const rows = await this.dataSource
+    const qb = this.dataSource
       .createQueryBuilder()
       .select(
         `to_char(date_trunc('${trunc}', d."date"), 'YYYY-MM-DD')`,
@@ -170,7 +252,11 @@ export class HighlightsAnalyticsRepository {
       .from('user_daily_scores', 'd')
       .where('d."date" >= :start', { start })
       .andWhere('d."date" < :end', { end })
-      .andWhere(excludeTestTenants('d."tenant_id"'))
+      .andWhere(excludeTestTenants('d."tenant_id"'));
+    if (tenantId) {
+      qb.andWhere(scopeToTenant('d."tenant_id"', ':tenantId'), { tenantId });
+    }
+    const rows = await qb
       .groupBy('bucket')
       .orderBy('bucket', 'ASC')
       .getRawMany<{
@@ -197,9 +283,10 @@ export class HighlightsAnalyticsRepository {
     start: Date,
     end: Date,
     bucket: AnalyticsBucket,
+    tenantId?: string,
   ): Promise<QualityTrendBucketRow[]> {
     const trunc = this.resolveBucket(bucket);
-    const rows = await this.dataSource
+    const qb = this.dataSource
       .createQueryBuilder()
       .select(
         `to_char(date_trunc('${trunc}', COALESCE(d."evaluatedAt", d."createdAt")), 'YYYY-MM-DD')`,
@@ -217,7 +304,11 @@ export class HighlightsAnalyticsRepository {
       .andWhere('d."compositeScore" IS NOT NULL')
       .andWhere('COALESCE(d."evaluatedAt", d."createdAt") >= :start', { start })
       .andWhere('COALESCE(d."evaluatedAt", d."createdAt") < :end', { end })
-      .andWhere(excludeTestTenants('d."tenant_id"'))
+      .andWhere(excludeTestTenants('d."tenant_id"'));
+    if (tenantId) {
+      qb.andWhere(scopeToTenant('d."tenant_id"', ':tenantId'), { tenantId });
+    }
+    const rows = await qb
       .groupBy('bucket')
       .orderBy('bucket', 'ASC')
       .getRawMany<{
@@ -238,8 +329,9 @@ export class HighlightsAnalyticsRepository {
   async getQualityOverall(
     start: Date,
     end: Date,
+    tenantId?: string,
   ): Promise<{ avgCompositeScore: number | null; evaluatedSessions: number }> {
-    const row = await this.dataSource
+    const qb = this.dataSource
       .createQueryBuilder()
       .select(
         'round(avg(d."compositeScore")::numeric, 1)::float',
@@ -253,11 +345,14 @@ export class HighlightsAnalyticsRepository {
       .andWhere('d."compositeScore" IS NOT NULL')
       .andWhere('COALESCE(d."evaluatedAt", d."createdAt") >= :start', { start })
       .andWhere('COALESCE(d."evaluatedAt", d."createdAt") < :end', { end })
-      .andWhere(excludeTestTenants('d."tenant_id"'))
-      .getRawOne<{
-        avgCompositeScore: number | null;
-        evaluatedSessions: number;
-      }>();
+      .andWhere(excludeTestTenants('d."tenant_id"'));
+    if (tenantId) {
+      qb.andWhere(scopeToTenant('d."tenant_id"', ':tenantId'), { tenantId });
+    }
+    const row = await qb.getRawOne<{
+      avgCompositeScore: number | null;
+      evaluatedSessions: number;
+    }>();
 
     return {
       avgCompositeScore:
@@ -274,9 +369,10 @@ export class HighlightsAnalyticsRepository {
     start: Date,
     end: Date,
     bucket: AnalyticsBucket,
+    tenantId?: string,
   ): Promise<CsatTrendBucketRow[]> {
     const trunc = this.resolveBucket(bucket);
-    const rows = await this.dataSource
+    const qb = this.dataSource
       .createQueryBuilder()
       .select(
         `to_char(date_trunc('${trunc}', f."createdAt"), 'YYYY-MM-DD')`,
@@ -287,7 +383,11 @@ export class HighlightsAnalyticsRepository {
       .from('scenario_session_feedbacks', 'f')
       .where('f."createdAt" >= :start', { start })
       .andWhere('f."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('f."tenant_id"'))
+      .andWhere(excludeTestTenants('f."tenant_id"'));
+    if (tenantId) {
+      qb.andWhere(scopeToTenant('f."tenant_id"', ':tenantId'), { tenantId });
+    }
+    const rows = await qb
       .groupBy('bucket')
       .orderBy('bucket', 'ASC')
       .getRawMany<{
@@ -307,16 +407,23 @@ export class HighlightsAnalyticsRepository {
   async getCsatOverall(
     start: Date,
     end: Date,
+    tenantId?: string,
   ): Promise<{ avgRating: number | null; responses: number }> {
-    const row = await this.dataSource
+    const qb = this.dataSource
       .createQueryBuilder()
       .select('round(avg(f."rating")::numeric, 2)::float', 'avgRating')
       .addSelect('COUNT(*)::int', 'responses')
       .from('scenario_session_feedbacks', 'f')
       .where('f."createdAt" >= :start', { start })
       .andWhere('f."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('f."tenant_id"'))
-      .getRawOne<{ avgRating: number | null; responses: number }>();
+      .andWhere(excludeTestTenants('f."tenant_id"'));
+    if (tenantId) {
+      qb.andWhere(scopeToTenant('f."tenant_id"', ':tenantId'), { tenantId });
+    }
+    const row = await qb.getRawOne<{
+      avgRating: number | null;
+      responses: number;
+    }>();
 
     return {
       avgRating: row?.avgRating == null ? null : Number(row.avgRating),
@@ -329,12 +436,18 @@ export class HighlightsAnalyticsRepository {
    * [start, end): started/completed are counted for that cohort regardless of
    * when they happened, so enrolled >= started >= completed always holds.
    * NB: `track_enrollments` extends BaseWithoutTenantEntity with a camelCase
-   * `tenantId` column (not the usual `tenant_id`) — unused here (platform-wide).
+   * `tenantId` column (not the usual `tenant_id`) which is nullable, so the
+   * tenant is reached through the enrolled user instead — the same route the
+   * test-org exclusion takes.
    */
   async getTrackFunnelCounts(
     start: Date,
     end: Date,
+    tenantId?: string,
   ): Promise<TrackFunnelCounts> {
+    const tenantPredicate = tenantId
+      ? `AND ${scopeToTenantByUser('e."userId"', '$3')}`
+      : '';
     const rows = await this.dataSource.query(
       `
       SELECT
@@ -345,8 +458,9 @@ export class HighlightsAnalyticsRepository {
       WHERE e."deletedAt" IS NULL
         AND e."createdAt" >= $1 AND e."createdAt" < $2
         AND ${excludeTestTenantsByUser('e."userId"')}
+        ${tenantPredicate}
       `,
-      [start, end],
+      tenantId ? [start, end, tenantId] : [start, end],
     );
     const r = (rows[0] ?? {}) as Record<string, unknown>;
     return {
@@ -359,9 +473,16 @@ export class HighlightsAnalyticsRepository {
   /**
    * Attempt-level quiz pass counts over GRADED attempts in [start, end),
    * windowed on when the attempt was submitted. `track_quiz_attempts` has no
-   * tenant column at all — platform-wide only.
+   * tenant column, so the tenant is reached through the attempting user.
    */
-  async getQuizPassCounts(start: Date, end: Date): Promise<QuizPassCounts> {
+  async getQuizPassCounts(
+    start: Date,
+    end: Date,
+    tenantId?: string,
+  ): Promise<QuizPassCounts> {
+    const tenantPredicate = tenantId
+      ? `AND ${scopeToTenantByUser('q."userId"', '$4')}`
+      : '';
     const rows = await this.dataSource.query(
       `
       SELECT
@@ -373,8 +494,11 @@ export class HighlightsAnalyticsRepository {
         AND COALESCE(q."submittedAt", q."createdAt") >= $1
         AND COALESCE(q."submittedAt", q."createdAt") < $2
         AND ${excludeTestTenantsByUser('q."userId"')}
+        ${tenantPredicate}
       `,
-      [start, end, QuizAttemptStatus.GRADED],
+      tenantId
+        ? [start, end, QuizAttemptStatus.GRADED, tenantId]
+        : [start, end, QuizAttemptStatus.GRADED],
     );
     const r = (rows[0] ?? {}) as Record<string, unknown>;
     return {
@@ -391,9 +515,10 @@ export class HighlightsAnalyticsRepository {
     start: Date,
     end: Date,
     bucket: AnalyticsBucket,
+    tenantId?: string,
   ): Promise<CompletedSimsBucketRow[]> {
     const trunc = this.resolveBucket(bucket);
-    const rows = await this.dataSource
+    const qb = this.dataSource
       .createQueryBuilder()
       .select(
         `to_char(date_trunc('${trunc}', COALESCE(s."endedAt", s."createdAt")), 'YYYY-MM-DD')`,
@@ -406,7 +531,11 @@ export class HighlightsAnalyticsRepository {
       })
       .andWhere('COALESCE(s."endedAt", s."createdAt") >= :start', { start })
       .andWhere('COALESCE(s."endedAt", s."createdAt") < :end', { end })
-      .andWhere(excludeTestTenants('s."tenant_id"'))
+      .andWhere(excludeTestTenants('s."tenant_id"'));
+    if (tenantId) {
+      qb.andWhere(scopeToTenant('s."tenant_id"', ':tenantId'), { tenantId });
+    }
+    const rows = await qb
       .groupBy('bucket')
       .orderBy('bucket', 'ASC')
       .getRawMany<{ bucket: string; count: number }>();

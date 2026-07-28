@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { excludeTestTenants } from '../util/test-tenant.util';
+import { excludeTestTenants, scopeToTenant } from '../util/test-tenant.util';
 import { ChatSummaryStatus } from '../../chat/entity/chat.entity';
 import { ScribePhaseReached } from '../../chat/entity/chat-summary-attempt.entity';
 import { CHAT_SUMMARY_TIMEOUT_ERROR } from '../../chat/constants/chat.constants';
@@ -43,7 +43,9 @@ export interface ScribeProviderStatRow {
  * Uses a `DataSource`-backed query builder (the queries span `chats` and
  * `call_details`). Columns are the default TypeORM camelCase identifiers
  * (quoted); `tenant_id` is the only snake_case column. These are platform-wide
- * (super-admin) metrics, so they are deliberately NOT scoped to a tenant.
+ * (super-admin) metrics by default; every method takes an optional `tenantId`
+ * to narrow to one org, applied through {@link tenantWhere} so the test-org
+ * exclusion and the tenant filter can never drift apart.
  *
  * Truncated dates are returned as `yyyy-mm-dd` strings (`to_char`) so the keys
  * line up with the service's UTC-generated axis regardless of process timezone.
@@ -61,11 +63,29 @@ export class ScribeAnalyticsRepository {
     return 'week';
   }
 
+  /**
+   * The tenant predicate for every scribe query: always exclude test orgs, and
+   * additionally narrow to one org when `tenantId` is given.
+   *
+   * Returned as a spreadable `[sql, params]` pair so a call site reads
+   * `.andWhere(...this.tenantWhere(tenantId))` — one place to change, and no way
+   * to remember the exclusion but forget the narrowing (or vice versa).
+   */
+  private tenantWhere(tenantId?: string): [string, Record<string, unknown>] {
+    const exclusion = excludeTestTenants('c."tenant_id"');
+    if (!tenantId) return [exclusion, {}];
+    return [
+      `${exclusion} AND ${scopeToTenant('c."tenant_id"', ':tenantId')}`,
+      { tenantId },
+    ];
+  }
+
   /** Scribe sessions created per time bucket within [start, end). */
   async getSessionsByBucket(
     start: Date,
     end: Date,
     bucket: AnalyticsBucket,
+    tenantId?: string,
   ): Promise<ScribeBucketCountRow[]> {
     const trunc = this.resolveBucket(bucket);
     const rows = await this.dataSource
@@ -78,7 +98,7 @@ export class ScribeAnalyticsRepository {
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('c."tenant_id"'))
+      .andWhere(...this.tenantWhere(tenantId))
       .groupBy('bucket')
       .orderBy('bucket', 'ASC')
       .getRawMany<{ bucket: string; count: number }>();
@@ -87,7 +107,11 @@ export class ScribeAnalyticsRepository {
   }
 
   /** Session counts grouped by summaryStatus within [start, end). */
-  async getOutcomeCounts(start: Date, end: Date): Promise<ScribeKeyCountRow[]> {
+  async getOutcomeCounts(
+    start: Date,
+    end: Date,
+    tenantId?: string,
+  ): Promise<ScribeKeyCountRow[]> {
     const rows = await this.dataSource
       .createQueryBuilder()
       .select('c."summaryStatus"', 'key')
@@ -95,7 +119,7 @@ export class ScribeAnalyticsRepository {
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('c."tenant_id"'))
+      .andWhere(...this.tenantWhere(tenantId))
       .groupBy('c."summaryStatus"')
       .getRawMany<{ key: string; count: number }>();
 
@@ -108,7 +132,11 @@ export class ScribeAnalyticsRepository {
    * with no call_details row or no mode is treated as SCRIBE, matching how the
    * summary pipeline defaults it.
    */
-  async getModeCounts(start: Date, end: Date): Promise<ScribeKeyCountRow[]> {
+  async getModeCounts(
+    start: Date,
+    end: Date,
+    tenantId?: string,
+  ): Promise<ScribeKeyCountRow[]> {
     const rows = await this.dataSource
       .createQueryBuilder()
       .select(
@@ -120,7 +148,7 @@ export class ScribeAnalyticsRepository {
       .leftJoin('call_details', 'cd', 'cd."chatId" = c.id')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('c."tenant_id"'))
+      .andWhere(...this.tenantWhere(tenantId))
       .setParameter('defaultMode', ScribeSessionMode.SCRIBE)
       .groupBy('key')
       .getRawMany<{ key: string; count: number }>();
@@ -139,6 +167,7 @@ export class ScribeAnalyticsRepository {
   async getCaptureMethodCounts(
     start: Date,
     end: Date,
+    tenantId?: string,
   ): Promise<ScribeKeyCountRow[]> {
     const rows = await this.dataSource
       .createQueryBuilder()
@@ -155,7 +184,7 @@ export class ScribeAnalyticsRepository {
       .leftJoin('call_details', 'cd', 'cd."chatId" = c.id')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('c."tenant_id"'))
+      .andWhere(...this.tenantWhere(tenantId))
       .setParameter('uploadProvider', AudioChatProvider.AUDIO_UPLOAD)
       .groupBy('key')
       .orderBy('count', 'DESC')
@@ -174,6 +203,7 @@ export class ScribeAnalyticsRepository {
     start: Date,
     end: Date,
     bucket: AnalyticsBucket,
+    tenantId?: string,
   ): Promise<ScribeFailureRateRow[]> {
     const trunc = this.resolveBucket(bucket);
     const rows = await this.dataSource
@@ -193,7 +223,7 @@ export class ScribeAnalyticsRepository {
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('c."tenant_id"'))
+      .andWhere(...this.tenantWhere(tenantId))
       .setParameter('failed', ChatSummaryStatus.FAILED)
       .setParameter('terminal', [
         ChatSummaryStatus.SUCCESS,
@@ -225,6 +255,7 @@ export class ScribeAnalyticsRepository {
   async getFailureBreakdown(
     start: Date,
     end: Date,
+    tenantId?: string,
   ): Promise<ScribeKeyCountRow[]> {
     const rows = await this.dataSource
       .createQueryBuilder()
@@ -256,7 +287,7 @@ export class ScribeAnalyticsRepository {
       .leftJoin('chat_audio_uploads', 'au', 'au."chatId" = c.id')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('c."tenant_id"'))
+      .andWhere(...this.tenantWhere(tenantId))
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
@@ -278,6 +309,7 @@ export class ScribeAnalyticsRepository {
   async getFailuresByMode(
     start: Date,
     end: Date,
+    tenantId?: string,
   ): Promise<ScribeKeyCountRow[]> {
     const rows = await this.dataSource
       .createQueryBuilder()
@@ -287,7 +319,7 @@ export class ScribeAnalyticsRepository {
       .leftJoin('call_details', 'cd', 'cd."chatId" = c.id')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('c."tenant_id"'))
+      .andWhere(...this.tenantWhere(tenantId))
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
@@ -309,6 +341,7 @@ export class ScribeAnalyticsRepository {
   async getFailuresByCaptureMethod(
     start: Date,
     end: Date,
+    tenantId?: string,
   ): Promise<ScribeKeyCountRow[]> {
     const rows = await this.dataSource
       .createQueryBuilder()
@@ -325,7 +358,7 @@ export class ScribeAnalyticsRepository {
       .leftJoin('call_details', 'cd', 'cd."chatId" = c.id')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('c."tenant_id"'))
+      .andWhere(...this.tenantWhere(tenantId))
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
@@ -345,6 +378,7 @@ export class ScribeAnalyticsRepository {
   async getFailureRetryableCounts(
     start: Date,
     end: Date,
+    tenantId?: string,
   ): Promise<ScribeKeyCountRow[]> {
     const row = await this.dataSource
       .createQueryBuilder()
@@ -359,7 +393,7 @@ export class ScribeAnalyticsRepository {
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('c."tenant_id"'))
+      .andWhere(...this.tenantWhere(tenantId))
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
@@ -379,6 +413,7 @@ export class ScribeAnalyticsRepository {
   async getFailureTimeoutCounts(
     start: Date,
     end: Date,
+    tenantId?: string,
   ): Promise<ScribeKeyCountRow[]> {
     const row = await this.dataSource
       .createQueryBuilder()
@@ -393,7 +428,7 @@ export class ScribeAnalyticsRepository {
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('c."tenant_id"'))
+      .andWhere(...this.tenantWhere(tenantId))
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
@@ -419,6 +454,7 @@ export class ScribeAnalyticsRepository {
     start: Date,
     end: Date,
     bucket: AnalyticsBucket,
+    tenantId?: string,
   ): Promise<ScribeFailureRateRow[]> {
     const trunc = this.resolveBucket(bucket);
     const rows = await this.dataSource
@@ -438,7 +474,7 @@ export class ScribeAnalyticsRepository {
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('c."tenant_id"'))
+      .andWhere(...this.tenantWhere(tenantId))
       .setParameter('failed', ChatSummaryStatus.FAILED)
       .setParameter('terminal', [
         ChatSummaryStatus.SUCCESS,
@@ -463,13 +499,23 @@ export class ScribeAnalyticsRepository {
    * flat failure breakdown with a "where sessions stop" funnel. Keyed by phase;
    * the service turns the drop-off distribution into cumulative reached counts.
    */
-  async getPhaseDropoff(start: Date, end: Date): Promise<ScribeKeyCountRow[]> {
+  async getPhaseDropoff(
+    start: Date,
+    end: Date,
+    tenantId?: string,
+  ): Promise<ScribeKeyCountRow[]> {
     // Raw SQL: TypeORM's query builder mangles the ARRAY[...] indexing and the
     // derived-table subquery (emitting invalid quoted identifiers), so use a
     // parameterized raw query. `count` comes back ::int -> JS number.
+    // The tenant predicate is inlined rather than routed through tenantWhere()
+    // because that helper returns query-builder-style `:named` params, which the
+    // raw driver does not bind.
     const ladder =
       `ARRAY['created','audio-uploaded','transcribed','diarized',` +
       `'summarized','delivered']`;
+    const tenantPredicate = tenantId
+      ? `AND ${scopeToTenant('c."tenant_id"', '$3')}`
+      : '';
     const rows = await this.dataSource.query<{ key: string; count: number }[]>(
       `SELECT per_chat.phase AS key, COUNT(*)::int AS count
        FROM (
@@ -481,10 +527,11 @@ export class ScribeAnalyticsRepository {
          INNER JOIN chats c ON c.id = a."chatId"
          WHERE c."createdAt" >= $1 AND c."createdAt" < $2
            AND ${excludeTestTenants('c."tenant_id"')}
+           ${tenantPredicate}
          GROUP BY a."chatId"
        ) per_chat
        GROUP BY per_chat.phase`,
-      [start, end],
+      tenantId ? [start, end, tenantId] : [start, end],
     );
 
     return rows.map((r) => ({ key: r.key, count: Number(r.count) || 0 }));
@@ -501,10 +548,15 @@ export class ScribeAnalyticsRepository {
   async getSttProviderStats(
     start: Date,
     end: Date,
+    tenantId?: string,
   ): Promise<ScribeProviderStatRow[]> {
     // Raw SQL: the query builder can't express the LATERAL jsonb_array_elements
     // expansion (it emits a zero-length quoted identifier and the query fails),
-    // so use a parameterized raw query.
+    // so use a parameterized raw query. Tenant predicate inlined for the same
+    // reason as getPhaseDropoff — tenantWhere() emits `:named` params.
+    const tenantPredicate = tenantId
+      ? `AND ${scopeToTenant('c."tenant_id"', '$3')}`
+      : '';
     const rows = await this.dataSource.query<
       { provider: string; tried: number; ok: number; failed: number }[]
     >(
@@ -518,9 +570,10 @@ export class ScribeAnalyticsRepository {
        WHERE c."createdAt" >= $1 AND c."createdAt" < $2
          AND a."sttAttempts" IS NOT NULL
          AND ${excludeTestTenants('c."tenant_id"')}
+         ${tenantPredicate}
        GROUP BY elem->>'provider'
        ORDER BY tried DESC`,
-      [start, end],
+      tenantId ? [start, end, tenantId] : [start, end],
     );
 
     return rows.map((r) => ({
@@ -539,6 +592,7 @@ export class ScribeAnalyticsRepository {
   async getSummaryModelStats(
     start: Date,
     end: Date,
+    tenantId?: string,
   ): Promise<ScribeKeyCountRow[]> {
     const rows = await this.dataSource
       .createQueryBuilder()
@@ -548,7 +602,7 @@ export class ScribeAnalyticsRepository {
       .innerJoin('chats', 'c', 'c.id = a."chatId"')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
-      .andWhere(excludeTestTenants('c."tenant_id"'))
+      .andWhere(...this.tenantWhere(tenantId))
       .andWhere(`NULLIF(a."summaryModel", '') IS NOT NULL`)
       .andWhere('a.outcome = :success', { success: 'success' })
       .groupBy(`a."summaryModel"`)

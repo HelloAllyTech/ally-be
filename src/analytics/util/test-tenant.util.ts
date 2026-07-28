@@ -77,3 +77,66 @@ export function excludeTestTenantsByUser(userIdColumn: string): string {
     `WHERE ttu.id = ${userIdColumn} AND tt."isTestOrganization" = true)`
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Narrowing to ONE tenant (the super-admin org filter)                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Restrict a query to a single tenant, matching either its uuid or its code —
+ * the same dual-key treatment the exclusion predicates use, because
+ * `scenario_sessions.tenant_id` is a VARCHAR holding a uuid in real
+ * environments and a code like 'ally' in seed data.
+ *
+ * `placeholder` is the SQL parameter token the CALLER has allocated (`'$3'` for
+ * the raw positional queries, `':tenantId'` for a query builder). The tenant id
+ * is never interpolated into the fragment: these helpers stay value-free so the
+ * id always travels as a bound parameter.
+ *
+ * Aliases are prefixed `st`/`sts`/`stu` so they cannot collide with the caller's
+ * aliases or with the `tt`/`tts`/`ttu` used by the exclusion predicates above —
+ * both sets appear in the same WHERE clause.
+ */
+export function scopeToTenant(
+  tenantColumn: string,
+  placeholder: string,
+): string {
+  return (
+    `EXISTS (SELECT 1 FROM tenants st ` +
+    `WHERE (st.id::text = (${tenantColumn})::text ` +
+    `OR st.code = (${tenantColumn})::text) ` +
+    `AND (st.id::text = ${placeholder} OR st.code = ${placeholder}))`
+  );
+}
+
+/** Restrict to one tenant by walking the owning session. */
+export function scopeToTenantBySession(
+  sessionIdColumn: string,
+  placeholder: string,
+): string {
+  return (
+    `EXISTS (SELECT 1 FROM scenario_sessions sts ` +
+    `JOIN tenants st ON (st.id::text = sts."tenant_id" ` +
+    `OR st.code = sts."tenant_id") ` +
+    `WHERE sts.id = ${sessionIdColumn} ` +
+    `AND (st.id::text = ${placeholder} OR st.code = ${placeholder}))`
+  );
+}
+
+/**
+ * Restrict to one tenant by walking the owning user — for tables with neither a
+ * tenant column nor a session (`track_quiz_attempts`), and for tables whose own
+ * tenant column is nullable but whose user is not (`track_enrollments`).
+ */
+export function scopeToTenantByUser(
+  userIdColumn: string,
+  placeholder: string,
+): string {
+  return (
+    `EXISTS (SELECT 1 FROM users stu ` +
+    `JOIN tenants st ON (st.id::text = stu."tenant_id" ` +
+    `OR st.code = stu."tenant_id") ` +
+    `WHERE stu.id = ${userIdColumn} ` +
+    `AND (st.id::text = ${placeholder} OR st.code = ${placeholder}))`
+  );
+}

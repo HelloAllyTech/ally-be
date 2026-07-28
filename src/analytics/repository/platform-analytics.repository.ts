@@ -471,33 +471,50 @@ export class PlatformAnalyticsRepository {
     }));
   }
 
-  /** Distinct users with any session activity since `since`. */
-  async getActiveUserCountSince(since: Date): Promise<number> {
-    const row = await this.dataSource
+  /**
+   * Distinct users with any session activity in [since, until).
+   *
+   * `until` is optional so the default call still means "since then, up to now".
+   * Passing it makes the count windowed, which is what lets the same query serve
+   * as the comparison basis for an equal-length preceding period — without an
+   * upper bound, a "previous period" count would silently include the current
+   * one and the delta would always trend to zero.
+   */
+  async getActiveUserCountSince(since: Date, until?: Date): Promise<number> {
+    const qb = this.dataSource
       .createQueryBuilder()
       .select('COUNT(DISTINCT s."counselorId")::int', 'count')
       .from('scenario_sessions', 's')
       .where('COALESCE(s."startedAt", s."createdAt") >= :since', { since })
-      .andWhere(excludeTestTenants('s."tenant_id"'))
-      .getRawOne<{ count: number }>();
+      .andWhere(excludeTestTenants('s."tenant_id"'));
+    if (until) {
+      qb.andWhere('COALESCE(s."startedAt", s."createdAt") < :until', { until });
+    }
+    const row = await qb.getRawOne<{ count: number }>();
 
     return Number(row?.count) || 0;
   }
 
   /**
-   * Distinct active users since `since` whose account predates `since`
+   * Distinct active users in [since, until) whose account predates `since`
    * (i.e. returning users, used for the retention rate).
    */
-  async getReturningActiveUserCountSince(since: Date): Promise<number> {
-    const row = await this.dataSource
+  async getReturningActiveUserCountSince(
+    since: Date,
+    until?: Date,
+  ): Promise<number> {
+    const qb = this.dataSource
       .createQueryBuilder()
       .select('COUNT(DISTINCT s."counselorId")::int', 'count')
       .from('scenario_sessions', 's')
       .innerJoin('users', 'u', 'u.id = s."counselorId"')
       .where('COALESCE(s."startedAt", s."createdAt") >= :since', { since })
       .andWhere('u."createdAt" < :since', { since })
-      .andWhere(excludeTestTenants('s."tenant_id"'))
-      .getRawOne<{ count: number }>();
+      .andWhere(excludeTestTenants('s."tenant_id"'));
+    if (until) {
+      qb.andWhere('COALESCE(s."startedAt", s."createdAt") < :until', { until });
+    }
+    const row = await qb.getRawOne<{ count: number }>();
 
     return Number(row?.count) || 0;
   }
@@ -742,9 +759,13 @@ export class PlatformAnalyticsRepository {
     }));
   }
 
-  /** Completed simulations whose completion timestamp is on/after `since`. */
-  async getCompletedSimsSince(since: Date): Promise<number> {
-    const row = await this.dataSource
+  /**
+   * Completed simulations in [since, until) — `until` optional, so the default
+   * call still means "since then, up to now" and a bounded call can serve as the
+   * comparison basis for a preceding period.
+   */
+  async getCompletedSimsSince(since: Date, until?: Date): Promise<number> {
+    const qb = this.dataSource
       .createQueryBuilder()
       .select('COUNT(*)::int', 'count')
       .from('scenario_sessions', 's')
@@ -752,8 +773,11 @@ export class PlatformAnalyticsRepository {
         completed: ScenarioSessionEventStatus.COMPLETED,
       })
       .andWhere('COALESCE(s."endedAt", s."createdAt") >= :since', { since })
-      .andWhere(excludeTestTenants('s."tenant_id"'))
-      .getRawOne<{ count: number }>();
+      .andWhere(excludeTestTenants('s."tenant_id"'));
+    if (until) {
+      qb.andWhere('COALESCE(s."endedAt", s."createdAt") < :until', { until });
+    }
+    const row = await qb.getRawOne<{ count: number }>();
 
     return Number(row?.count) || 0;
   }
