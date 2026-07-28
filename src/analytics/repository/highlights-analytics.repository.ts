@@ -4,6 +4,10 @@ import { ScenarioSessionEventStatus } from '../../learn/enum/scenario-session-st
 import { ActorEvaluationStatus } from '../../learn/service/scenario-session-evaluation.service';
 import { QuizAttemptStatus } from '../../track/type/quiz.type';
 import { AnalyticsBucket } from './platform-analytics.repository';
+import {
+  excludeTestTenants,
+  excludeTestTenantsByUser,
+} from '../util/test-tenant.util';
 
 export interface TopOrgRow {
   tenantId: string;
@@ -92,6 +96,7 @@ export class HighlightsAnalyticsRepository {
       })
       .andWhere('COALESCE(s."endedAt", s."createdAt") >= :start', { start })
       .andWhere('COALESCE(s."endedAt", s."createdAt") < :end', { end })
+      .andWhere(excludeTestTenants('s."tenant_id"'))
       .getRawOne<{ count: number }>();
 
     return Number(row?.count) || 0;
@@ -118,6 +123,7 @@ export class HighlightsAnalyticsRepository {
         WHERE s."eventStatus" = $3
           AND COALESCE(s."endedAt", s."createdAt") >= $1
           AND COALESCE(s."endedAt", s."createdAt") < $2
+          AND ${excludeTestTenants('s."tenant_id"')}
         GROUP BY s."tenant_id"
         ORDER BY completed DESC
         LIMIT $4
@@ -164,6 +170,7 @@ export class HighlightsAnalyticsRepository {
       .from('user_daily_scores', 'd')
       .where('d."date" >= :start', { start })
       .andWhere('d."date" < :end', { end })
+      .andWhere(excludeTestTenants('d."tenant_id"'))
       .groupBy('bucket')
       .orderBy('bucket', 'ASC')
       .getRawMany<{
@@ -210,6 +217,7 @@ export class HighlightsAnalyticsRepository {
       .andWhere('d."compositeScore" IS NOT NULL')
       .andWhere('COALESCE(d."evaluatedAt", d."createdAt") >= :start', { start })
       .andWhere('COALESCE(d."evaluatedAt", d."createdAt") < :end', { end })
+      .andWhere(excludeTestTenants('d."tenant_id"'))
       .groupBy('bucket')
       .orderBy('bucket', 'ASC')
       .getRawMany<{
@@ -245,6 +253,7 @@ export class HighlightsAnalyticsRepository {
       .andWhere('d."compositeScore" IS NOT NULL')
       .andWhere('COALESCE(d."evaluatedAt", d."createdAt") >= :start', { start })
       .andWhere('COALESCE(d."evaluatedAt", d."createdAt") < :end', { end })
+      .andWhere(excludeTestTenants('d."tenant_id"'))
       .getRawOne<{
         avgCompositeScore: number | null;
         evaluatedSessions: number;
@@ -278,6 +287,7 @@ export class HighlightsAnalyticsRepository {
       .from('scenario_session_feedbacks', 'f')
       .where('f."createdAt" >= :start', { start })
       .andWhere('f."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('f."tenant_id"'))
       .groupBy('bucket')
       .orderBy('bucket', 'ASC')
       .getRawMany<{
@@ -305,6 +315,7 @@ export class HighlightsAnalyticsRepository {
       .from('scenario_session_feedbacks', 'f')
       .where('f."createdAt" >= :start', { start })
       .andWhere('f."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('f."tenant_id"'))
       .getRawOne<{ avgRating: number | null; responses: number }>();
 
     return {
@@ -333,6 +344,7 @@ export class HighlightsAnalyticsRepository {
       FROM track_enrollments e
       WHERE e."deletedAt" IS NULL
         AND e."createdAt" >= $1 AND e."createdAt" < $2
+        AND ${excludeTestTenantsByUser('e."userId"')}
       `,
       [start, end],
     );
@@ -360,6 +372,7 @@ export class HighlightsAnalyticsRepository {
         AND q."status" = $3
         AND COALESCE(q."submittedAt", q."createdAt") >= $1
         AND COALESCE(q."submittedAt", q."createdAt") < $2
+        AND ${excludeTestTenantsByUser('q."userId"')}
       `,
       [start, end, QuizAttemptStatus.GRADED],
     );
@@ -393,6 +406,7 @@ export class HighlightsAnalyticsRepository {
       })
       .andWhere('COALESCE(s."endedAt", s."createdAt") >= :start', { start })
       .andWhere('COALESCE(s."endedAt", s."createdAt") < :end', { end })
+      .andWhere(excludeTestTenants('s."tenant_id"'))
       .groupBy('bucket')
       .orderBy('bucket', 'ASC')
       .getRawMany<{ bucket: string; count: number }>();
@@ -436,6 +450,9 @@ export class HighlightsAnalyticsRepository {
       .from('llm_usage', 'lu')
       .where('lu."occurredAt" >= :start', { start })
       .andWhere('lu."occurredAt" < :end', { end })
+      // Null-preserving: most llm_usage rows are deliberately tenantless
+      // (judges, autofill, translation) and must survive the filter.
+      .andWhere(excludeTestTenants('lu."tenant_id"'))
       .groupBy('bucket')
       .addGroupBy('lu.service')
       .addGroupBy('lu.provider')

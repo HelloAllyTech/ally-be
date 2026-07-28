@@ -416,6 +416,11 @@ export class TenantService {
           );
         }
       }
+
+      // Flagging an org as a test organization removes it from platform-wide
+      // analytics, so it stays a super-admin decision — MULTI_TENANT_ADMIN
+      // holds EDIT_TENANT too, and this PATCH route is shared by both.
+      delete updateTenantDto.isTestOrganization;
     }
     if (
       (updateTenantDto.name && updateTenantDto.name !== tenant.name) ||

@@ -30,6 +30,13 @@ export class Tenant {
   @Column({ default: TenantStatus.ACTIVE })
   status!: TenantStatus;
 
+  /**
+   * Internal / demo / QA org. Super-admin analytics excludes these tenants and
+   * their users entirely — see src/analytics/util/test-tenant.util.ts.
+   */
+  @Column({ type: 'boolean', default: false })
+  isTestOrganization!: boolean;
+
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
 

@@ -73,6 +73,7 @@ describe('TenantService', () => {
     code: 'test-tenant',
     description: 'Test tenant description',
     status: TenantStatus.ACTIVE,
+    isTestOrganization: false,
     metadata: { key: 'value' },
     settings: { setting: 'value' },
     logoUrl: undefined as any,

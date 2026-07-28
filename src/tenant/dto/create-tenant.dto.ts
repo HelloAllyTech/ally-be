@@ -90,4 +90,13 @@ export class CreateTenantDto {
   @IsBoolean()
   @IsOptional()
   hideRankInCommunity?: boolean;
+
+  @ApiProperty({
+    description:
+      'Mark as an internal/demo/QA organization. Super-admin analytics ' +
+      'excludes these organizations and their users entirely.',
+  })
+  @IsBoolean()
+  @IsOptional()
+  isTestOrganization?: boolean;
 }

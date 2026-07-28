@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { excludeTestTenants } from '../util/test-tenant.util';
 import { ChatSummaryStatus } from '../../chat/entity/chat.entity';
 import { ScribePhaseReached } from '../../chat/entity/chat-summary-attempt.entity';
 import { CHAT_SUMMARY_TIMEOUT_ERROR } from '../../chat/constants/chat.constants';
@@ -77,6 +78,7 @@ export class ScribeAnalyticsRepository {
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('c."tenant_id"'))
       .groupBy('bucket')
       .orderBy('bucket', 'ASC')
       .getRawMany<{ bucket: string; count: number }>();
@@ -93,6 +95,7 @@ export class ScribeAnalyticsRepository {
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('c."tenant_id"'))
       .groupBy('c."summaryStatus"')
       .getRawMany<{ key: string; count: number }>();
 
@@ -117,6 +120,7 @@ export class ScribeAnalyticsRepository {
       .leftJoin('call_details', 'cd', 'cd."chatId" = c.id')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('c."tenant_id"'))
       .setParameter('defaultMode', ScribeSessionMode.SCRIBE)
       .groupBy('key')
       .getRawMany<{ key: string; count: number }>();
@@ -151,6 +155,7 @@ export class ScribeAnalyticsRepository {
       .leftJoin('call_details', 'cd', 'cd."chatId" = c.id')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('c."tenant_id"'))
       .setParameter('uploadProvider', AudioChatProvider.AUDIO_UPLOAD)
       .groupBy('key')
       .orderBy('count', 'DESC')
@@ -188,6 +193,7 @@ export class ScribeAnalyticsRepository {
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('c."tenant_id"'))
       .setParameter('failed', ChatSummaryStatus.FAILED)
       .setParameter('terminal', [
         ChatSummaryStatus.SUCCESS,
@@ -250,6 +256,7 @@ export class ScribeAnalyticsRepository {
       .leftJoin('chat_audio_uploads', 'au', 'au."chatId" = c.id')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('c."tenant_id"'))
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
@@ -280,6 +287,7 @@ export class ScribeAnalyticsRepository {
       .leftJoin('call_details', 'cd', 'cd."chatId" = c.id')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('c."tenant_id"'))
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
@@ -317,6 +325,7 @@ export class ScribeAnalyticsRepository {
       .leftJoin('call_details', 'cd', 'cd."chatId" = c.id')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('c."tenant_id"'))
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
@@ -350,6 +359,7 @@ export class ScribeAnalyticsRepository {
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('c."tenant_id"'))
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
@@ -383,6 +393,7 @@ export class ScribeAnalyticsRepository {
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('c."tenant_id"'))
       .andWhere('c."summaryStatus" = :failed', {
         failed: ChatSummaryStatus.FAILED,
       })
@@ -427,6 +438,7 @@ export class ScribeAnalyticsRepository {
       .from('chats', 'c')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('c."tenant_id"'))
       .setParameter('failed', ChatSummaryStatus.FAILED)
       .setParameter('terminal', [
         ChatSummaryStatus.SUCCESS,
@@ -468,6 +480,7 @@ export class ScribeAnalyticsRepository {
          FROM chat_summary_attempts a
          INNER JOIN chats c ON c.id = a."chatId"
          WHERE c."createdAt" >= $1 AND c."createdAt" < $2
+           AND ${excludeTestTenants('c."tenant_id"')}
          GROUP BY a."chatId"
        ) per_chat
        GROUP BY per_chat.phase`,
@@ -504,6 +517,7 @@ export class ScribeAnalyticsRepository {
        CROSS JOIN LATERAL jsonb_array_elements(a."sttAttempts") elem
        WHERE c."createdAt" >= $1 AND c."createdAt" < $2
          AND a."sttAttempts" IS NOT NULL
+         AND ${excludeTestTenants('c."tenant_id"')}
        GROUP BY elem->>'provider'
        ORDER BY tried DESC`,
       [start, end],
@@ -534,6 +548,7 @@ export class ScribeAnalyticsRepository {
       .innerJoin('chats', 'c', 'c.id = a."chatId"')
       .where('c."createdAt" >= :start', { start })
       .andWhere('c."createdAt" < :end', { end })
+      .andWhere(excludeTestTenants('c."tenant_id"'))
       .andWhere(`NULLIF(a."summaryModel", '') IS NOT NULL`)
       .andWhere('a.outcome = :success', { success: 'success' })
       .groupBy(`a."summaryModel"`)
