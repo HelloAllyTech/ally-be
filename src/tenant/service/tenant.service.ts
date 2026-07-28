@@ -168,9 +168,9 @@ export class TenantService {
           if (!(tenantData.enableMicrophoneMode ?? false)) {
             hiddenChatTypes.push(ChatTypes.MICROPHONE_CHAT);
           }
-          if (!(tenantData.enableDictationMode ?? false)) {
-            hiddenChatTypes.push(ChatTypes.DICTATION_MODE);
-          }
+          // Dictation is retired: hidden unconditionally, whatever the caller
+          // sent for the (now ignored) enableDictationMode field.
+          hiddenChatTypes.push(ChatTypes.DICTATION_MODE);
           if (hiddenChatTypes.length > 0) {
             await this.settingsService.updateChatTypes(
               { tenantId: savedTenant.id, hiddenChatTypes },
@@ -232,7 +232,7 @@ export class TenantService {
       enabledDashboardIds: dto.enabledDashboardIds,
       enableMicrophoneMode: dto.enableMicrophoneMode,
       enableAudioUpload: dto.enableAudioUpload,
-      enableDictationMode: dto.enableDictationMode,
+      // dto.enableDictationMode is intentionally not forwarded — retired.
       hideRankInCommunity: dto.hideRankInCommunity,
     };
     return this.updateTenant(tenantId, settingsOnly);
@@ -281,7 +281,9 @@ export class TenantService {
       enableMicrophoneMode: !hiddenChatTypes.includes(
         ChatTypes.MICROPHONE_CHAT,
       ),
-      enableDictationMode: !hiddenChatTypes.includes(ChatTypes.DICTATION_MODE),
+      // Retired feature. Kept on the response so existing API consumers don't
+      // break on a missing field, but it is always false now.
+      enableDictationMode: false,
       ...(options?.includeUserCount
         ? { userCount: parseInt(userCountResult?.[0]?.userCount ?? '0', 10) }
         : {}),
@@ -444,10 +446,13 @@ export class TenantService {
       enabledDashboardIds,
       enableMicrophoneMode,
       enableAudioUpload,
-      enableDictationMode,
       hideRankInCommunity,
       ...tenantUpdateData
     } = updateTenantDto;
+
+    // Retired flag — not a Tenant column, and deliberately ignored rather than
+    // acted on, so strip it before the entity update.
+    delete tenantUpdateData.enableDictationMode;
 
     if (enabledDashboardIds && enabledDashboardIds.length > 0) {
       await this.tenantDashboardSharedService.validateDashboardIds(
@@ -480,11 +485,13 @@ export class TenantService {
           updatedTenantData as Partial<Tenant>,
         );
 
-        // Handle chat types if explicitly provided
+        // Handle chat types if explicitly provided. enableDictationMode is no
+        // longer a trigger — on its own it has nothing left to change, and
+        // acting on it would rewrite the whole preference and unhide the two
+        // live types the caller never mentioned.
         if (
           enableAudioUpload !== undefined ||
-          enableMicrophoneMode !== undefined ||
-          enableDictationMode !== undefined
+          enableMicrophoneMode !== undefined
         ) {
           const hiddenChatTypes = <ChatTypes[]>[];
           if (
@@ -499,12 +506,9 @@ export class TenantService {
           ) {
             hiddenChatTypes.push(ChatTypes.MICROPHONE_CHAT);
           }
-          if (
-            enableDictationMode !== undefined &&
-            !(enableDictationMode ?? false)
-          ) {
-            hiddenChatTypes.push(ChatTypes.DICTATION_MODE);
-          }
+          // Retired: always hidden, and any incoming enableDictationMode is
+          // deliberately ignored so the flag cannot be turned back on.
+          hiddenChatTypes.push(ChatTypes.DICTATION_MODE);
 
           await this.settingsService.updateChatTypes(
             { tenantId: id, hiddenChatTypes },

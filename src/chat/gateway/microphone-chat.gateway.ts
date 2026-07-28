@@ -407,6 +407,24 @@ export class MicrophoneChatGateway
 
     this.setAuthContext(session);
 
+    // Live dictation sessions are retired. Clients no longer offer the entry
+    // point (DICTATION_MODE is absent from GET /settings/chat-types), so this
+    // only fires for a stale client holding a cached chat-types response. Fail
+    // the start rather than silently downgrading to SCRIBE, which would record
+    // the session under a mode the counselor did not choose.
+    if (mode === ScribeSessionMode.DICTATION) {
+      this.logger.error(
+        `Client ${client.id} attempted to start a retired dictation session`,
+      );
+      this.logErrorAudioCallAuditEvent(
+        session,
+        null,
+        'Dictation mode is no longer supported',
+      );
+      client.disconnect();
+      return;
+    }
+
     const activeChat = await this.chatService.getChatsByCouncilorId(
       session.userId,
       { status: ChatStatus.ACTIVE },

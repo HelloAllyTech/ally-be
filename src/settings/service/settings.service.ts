@@ -24,6 +24,7 @@ import {
 import {
   DEFAULT_CHAT_TYPES,
   LEGAL_CONTENT_NAMES,
+  SELECTABLE_CHAT_TYPES,
 } from '../constants/settings.constants';
 import {
   DEFAULT_HIDDEN_SECTION_IDS,
@@ -527,7 +528,11 @@ export class SettingsService {
       PreferenceRelatedEntity.ORGANIZATION,
     );
 
-    const visibleChatTypes = DEFAULT_CHAT_TYPES.filter(
+    // SELECTABLE_CHAT_TYPES, not DEFAULT_CHAT_TYPES: retired types are never
+    // advertised regardless of the tenant's preference. This is what stops
+    // already-shipped web and mobile builds from offering dictation, since both
+    // gate the Start Session buttons on this response.
+    const visibleChatTypes = SELECTABLE_CHAT_TYPES.filter(
       (type) => !hiddenChatTypes.includes(type),
     );
     return visibleChatTypes;
