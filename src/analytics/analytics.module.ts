@@ -4,6 +4,8 @@ import { TenantAnalyticsController } from './controller/tenant-analytics.control
 import { AnalyticsService } from './service/analytics.service';
 import { HighlightsAnalyticsService } from './service/highlights-analytics.service';
 import { HighlightsAnalyticsRepository } from './repository/highlights-analytics.repository';
+import { CohortAnalyticsService } from './service/cohort-analytics.service';
+import { CohortAnalyticsRepository } from './repository/cohort-analytics.repository';
 import { PlatformAnalyticsService } from './service/platform-analytics.service';
 import { ScribeAnalyticsService } from './service/scribe-analytics.service';
 import { DriftJudgeService } from './service/drift-judge.service';
@@ -45,6 +47,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     AnalyticsService,
     HighlightsAnalyticsService,
     HighlightsAnalyticsRepository,
+    CohortAnalyticsService,
+    CohortAnalyticsRepository,
     PlatformAnalyticsService,
     ScribeAnalyticsService,
     DriftJudgeService,
