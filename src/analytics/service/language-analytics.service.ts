@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   AnalyticsRange,
   LanguageDimensionDeltaDto,
@@ -39,7 +39,13 @@ const DIMENSION_LAYER: Record<string, string> = {
 /** Dimensions whose denominator excludes garbled-input turns (conditioning). */
 const CONDITIONED_DIMENSIONS = new Set(['understanding', 'adequacy']);
 
-const RANGE_DAYS: Record<AnalyticsRange, number> = {
+/**
+ * Trailing day counts per range. `all` is deliberately absent: this endpoint
+ * measures a rolling window from today rather than resolving one against the
+ * platform's data floor, so it cannot answer "all time" — the guard in
+ * getLanguageQuality rejects that range instead of quietly returning 90 days.
+ */
+const RANGE_DAYS: Record<Exclude<AnalyticsRange, 'all'>, number> = {
   '30d': 30,
   '90d': 90,
   '12m': 365,
@@ -155,6 +161,16 @@ export class LanguageAnalyticsService {
   async getLanguageQuality(
     query: LanguageQualityQueryDto,
   ): Promise<LanguageQualityResponseDto> {
+    // Validated BEFORE the no-judgments early return, so an unsupported range is
+    // rejected on its own terms rather than depending on whether the tenant
+    // happens to have judged sessions yet.
+    const range = query.range ?? '90d';
+    if (range === 'all') {
+      throw new BadRequestException(
+        'range=all is not supported by this endpoint',
+      );
+    }
+
     const empty: LanguageQualityResponseDto = {
       judgeModel: null,
       judgePromptVersion: null,
@@ -181,7 +197,7 @@ export class LanguageAnalyticsService {
     const judgeVersion = await this.repo.latestJudgeVersion();
     if (!judgeVersion) return empty;
 
-    const days = RANGE_DAYS[query.range ?? '90d'] ?? 90;
+    const days = RANGE_DAYS[range];
     const start = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const filters = {
       start,

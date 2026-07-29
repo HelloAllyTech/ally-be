@@ -2,10 +2,12 @@ import { BadRequestException } from '@nestjs/common';
 
 import {
   MAX_CUSTOM_RANGE_DAYS,
+  describeWindow,
   generateBucketLabels,
   isoDate,
   previousWindow,
   resolveAnalyticsWindow,
+  truncToBucket,
 } from '../analytics-window.util';
 import { AnalyticsRange } from '../../dto/platform-analytics.dto';
 import { AnalyticsBucket } from '../../repository/platform-analytics.repository';
@@ -20,12 +22,19 @@ const defaultBucketFor = (range: AnalyticsRange): AnalyticsBucket => {
   return 'month';
 };
 
-const resolve = (query: Parameters<typeof resolveAnalyticsWindow>[0]) =>
+const resolve = (
+  query: Parameters<typeof resolveAnalyticsWindow>[0],
+  allTimeStart?: Date,
+) =>
   resolveAnalyticsWindow(query, {
     defaultRange: '30d',
     defaultBucketFor,
+    allTimeStart,
     now: NOW,
   });
+
+/** A plausible platform data floor for the all-time cases. */
+const FLOOR = new Date('2022-11-03T09:41:00.000Z');
 
 describe('resolveAnalyticsWindow', () => {
   describe('rolling presets', () => {
@@ -135,6 +144,112 @@ describe('resolveAnalyticsWindow', () => {
       );
     });
   });
+
+  describe("range='all'", () => {
+    it('runs from the supplied data floor to today, in month buckets', () => {
+      const w = resolve({ range: 'all' }, FLOOR);
+
+      // Truncated to the UTC day: the floor is a timestamp, the axis is dates.
+      expect(isoDate(w.start)).toBe('2022-11-03');
+      expect(isoDate(w.endExclusive)).toBe('2024-06-13');
+      expect(w.label).toBe('All time');
+      expect(w.bucket).toBe('month');
+      expect(w.allTime).toBe(true);
+      expect(w.custom).toBe(false);
+    });
+
+    it('is not capped by the custom-range limit', () => {
+      // MAX_CUSTOM_RANGE_DAYS guards an arbitrary from/to scan; all-time is a
+      // deliberate whole-history read and spans further than that by design.
+      expect(resolve({ range: 'all' }, FLOOR).days).toBeGreaterThan(
+        MAX_CUSTOM_RANGE_DAYS,
+      );
+    });
+
+    it('honours an explicit bucket, including year', () => {
+      expect(resolve({ range: 'all', bucket: 'year' }, FLOOR).bucket).toBe(
+        'year',
+      );
+      expect(resolve({ range: 'all', bucket: 'day' }, FLOOR).bucket).toBe(
+        'day',
+      );
+    });
+
+    it('rejects the range when the caller supplied no data floor', () => {
+      // The alternatives — today, or a guessed epoch — both return a window
+      // that looks resolved and covers the wrong period.
+      expect(() => resolve({ range: 'all' })).toThrow(BadRequestException);
+      expect(() => resolve({ range: 'all' })).toThrow(/not supported/);
+    });
+
+    it('clamps a floor in the future to today rather than inverting the window', () => {
+      const w = resolve({ range: 'all' }, new Date('2030-01-01T00:00:00.000Z'));
+
+      expect(isoDate(w.start)).toBe('2024-06-12');
+      expect(w.endExclusive.getTime()).toBeGreaterThan(w.start.getTime());
+    });
+
+    it('lets from/to win over range=all without needing a floor', () => {
+      const w = resolve({ range: 'all', from: '2024-01-01', to: '2024-01-31' });
+
+      expect(w.custom).toBe(true);
+      expect(w.allTime).toBe(false);
+    });
+  });
+
+  describe('inProgressBucket', () => {
+    it("names the bucket containing today, at the window's grain", () => {
+      expect(resolve({ range: '30d' }).inProgressBucket).toBe('2024-06-12');
+      expect(resolve({ range: '90d' }).inProgressBucket).toBe('2024-06-10');
+      expect(resolve({ range: '12m' }).inProgressBucket).toBe('2024-06-01');
+      expect(
+        resolve({ range: 'all', bucket: 'year' }, FLOOR).inProgressBucket,
+      ).toBe('2024-01-01');
+    });
+
+    it('is null for a custom window that ended in the past', () => {
+      expect(
+        resolve({ from: '2024-01-01', to: '2024-01-31' }).inProgressBucket,
+      ).toBeNull();
+    });
+
+    it('is set for a custom window that runs up to today', () => {
+      expect(
+        resolve({ from: '2024-06-01', to: '2024-06-12' }).inProgressBucket,
+      ).toBe('2024-06-12');
+    });
+  });
+});
+
+describe('describeWindow', () => {
+  it('reports `to` inclusive and carries the all-time / in-progress flags', () => {
+    const at = new Date('2024-06-12T15:00:00.000Z');
+    const described = describeWindow(resolve({ range: 'all' }, FLOOR), at);
+
+    expect(described).toEqual({
+      from: '2022-11-03',
+      // Inclusive: the exclusive bound is 2024-06-13.
+      to: '2024-06-12',
+      label: 'All time',
+      days: 588,
+      bucket: 'month',
+      allTime: true,
+      inProgressBucket: '2024-06-01',
+      computedAt: at.toISOString(),
+    });
+  });
+});
+
+describe('truncToBucket', () => {
+  const d = (s: string) => new Date(`${s}T13:45:00.000Z`);
+
+  it('matches what Postgres date_trunc would produce for each grain', () => {
+    // 2024-05-15 is a Wednesday.
+    expect(isoDate(truncToBucket(d('2024-05-15'), 'day'))).toBe('2024-05-15');
+    expect(isoDate(truncToBucket(d('2024-05-15'), 'week'))).toBe('2024-05-13');
+    expect(isoDate(truncToBucket(d('2024-05-15'), 'month'))).toBe('2024-05-01');
+    expect(isoDate(truncToBucket(d('2024-05-15'), 'year'))).toBe('2024-01-01');
+  });
 });
 
 describe('previousWindow', () => {
@@ -155,6 +270,15 @@ describe('previousWindow', () => {
     const prevDays =
       (prev.endExclusive.getTime() - prev.start.getTime()) / 86_400_000;
     expect(prevDays).toBe(current.days);
+  });
+
+  it('refuses an all-time window instead of comparing against empty history', () => {
+    // There is nothing before the platform's first row, so a "previous period"
+    // is guaranteed empty and every delta against it would read as growth from
+    // zero. Callers must return no comparison at all.
+    expect(() => previousWindow(resolve({ range: 'all' }, FLOOR))).toThrow(
+      /no comparison basis/,
+    );
   });
 
   it('matches the length of a custom window rather than a calendar month', () => {
@@ -215,6 +339,16 @@ describe('generateBucketLabels', () => {
       '2023-09-01',
       '2023-10-01',
     ]);
+  });
+
+  it('emits year starts covering the window', () => {
+    const labels = generateBucketLabels(
+      d('2022-11-03'),
+      d('2024-06-13'),
+      'year',
+    );
+
+    expect(labels).toEqual(['2022-01-01', '2023-01-01', '2024-01-01']);
   });
 
   it('emits a single label for a one-day window', () => {

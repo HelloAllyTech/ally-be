@@ -6,6 +6,7 @@ import {
   AnalyticsHighlightsResponseDto,
   CostPerSimPointDto,
   HighlightsSummaryDto,
+  PlayTimePointDto,
   PracticeMinutesPointDto,
 } from '../dto/highlights-analytics.dto';
 import { AnalyticsBucket } from '../repository/platform-analytics.repository';
@@ -15,6 +16,7 @@ import {
 } from '../repository/highlights-analytics.repository';
 import {
   AnalyticsWindow,
+  describeWindow,
   generateBucketLabels,
   isoDate,
   previousWindow,
@@ -45,7 +47,11 @@ const TENANT_UNSCOPED_SECTIONS = [
   'topOrgs',
 ];
 
-/** Bucket granularity this endpoint defaults to per range. */
+/**
+ * Bucket granularity this endpoint defaults to per range. `all` resolves to
+ * month in the window util, which is where the all-time default belongs — it is
+ * a property of the range, not of this endpoint.
+ */
 const defaultBucketFor = (range: AnalyticsRange): AnalyticsBucket => {
   if (range === '30d') return 'day';
   if (range === '90d') return 'week';
@@ -64,22 +70,30 @@ export class HighlightsAnalyticsService {
   constructor(private readonly repo: HighlightsAnalyticsRepository) {}
 
   /**
-   * Leadership "Highlights" aggregates: org adoption, practice minutes,
-   * roleplay quality, learner CSAT, track funnel and AI cost per completed
-   * simulation. Count/sum series are gap-filled to a contiguous bucket axis;
-   * average series (quality, CSAT) are left sparse — an average has no
-   * meaningful zero, and plotting one would fabricate a measurement.
+   * Leadership "Highlights" aggregates: org adoption, practice minutes, mean
+   * session length, roleplay quality, learner CSAT, track funnel and AI cost
+   * per completed simulation. Count/sum series are gap-filled to a contiguous
+   * bucket axis. Average series are never gap-filled with zeros — an average
+   * has no meaningful zero, and plotting one would fabricate a measurement:
+   * session length is put on the full axis with NULLs, and quality/CSAT are
+   * left sparse (the older treatment; nulls are the better of the two, since
+   * they keep the x-axis a real calendar).
    *
    * With `compare=prev` the same summary aggregates are also computed over the
    * equal-length preceding window, so each KPI can state its change against a
-   * named basis rather than standing alone as a bare number.
+   * named basis rather than standing alone as a bare number. `range=all` has no
+   * such basis and returns none — see {@link buildComparison}.
    */
   async getHighlights(
     query: AnalyticsHighlightsQueryDto,
   ): Promise<AnalyticsHighlightsResponseDto> {
+    // The data floor is one extra cheap query, and only for an all-time range.
+    const needsFloor =
+      (query.range ?? '30d') === 'all' && !query.from && !query.to;
     const window = resolveAnalyticsWindow(query, {
       defaultRange: '30d',
       defaultBucketFor,
+      allTimeStart: needsFloor ? await this.repo.getDataFloor() : undefined,
     });
     const tenantId = query.tenantId;
 
@@ -95,6 +109,8 @@ export class HighlightsAnalyticsService {
       activeOrgs,
       topOrgsResult,
       practiceRows,
+      playTimeRows,
+      playTimeOverall,
       qualityTrend,
       qualityOverall,
       csatTrend,
@@ -112,6 +128,13 @@ export class HighlightsAnalyticsService {
         window.bucket,
         tenantId,
       ),
+      this.repo.getPlayTimeByBucket(
+        window.start,
+        window.endExclusive,
+        window.bucket,
+        tenantId,
+      ),
+      this.repo.getPlayTimeOverall(window.start, window.endExclusive, tenantId),
       this.repo.getQualityTrendByBucket(
         window.start,
         window.endExclusive,
@@ -160,6 +183,26 @@ export class HighlightsAnalyticsService {
       activeLearners: practiceByBucket.get(b)?.activeLearners ?? 0,
     }));
 
+    // Session length onto the SAME contiguous axis, gap-filled with NULLs.
+    // Two wrong answers were available here. Zero would draw a crash in session
+    // length where there was simply nobody practising. Leaving the bucket out
+    // entirely — what the older average series do — collapses the axis, so a
+    // quiet fortnight renders as two adjacent days and the line closes over it
+    // invisibly. A null is neither: the calendar stays real and the line breaks
+    // where nothing was measured. `sessions` gap-fills to 0 because it is a
+    // count, and "no sessions" is a fact.
+    const playTimeByBucket = new Map(playTimeRows.map((r) => [r.bucket, r]));
+    const playTime: PlayTimePointDto[] = labels.map((b) => {
+      const row = playTimeByBucket.get(b);
+      return {
+        bucket: b,
+        avgMinutes: row?.avgMinutes ?? null,
+        medianMinutes: row?.medianMinutes ?? null,
+        p95Minutes: row?.p95Minutes ?? null,
+        sessions: row?.sessions ?? 0,
+      };
+    });
+
     const costByBucket = this.accumulateCost(usageRows);
     const simsMap = new Map(simsByBucket.map((r) => [r.bucket, r.count]));
     const costPerSim: CostPerSimPointDto[] = labels.map((b) => {
@@ -178,6 +221,7 @@ export class HighlightsAnalyticsService {
       activeOrgs,
       simsByBucket,
       practiceRows,
+      playTimeOverall,
       qualityOverall,
       csatOverall,
       funnelCounts,
@@ -194,15 +238,7 @@ export class HighlightsAnalyticsService {
     return {
       range: query.range ?? '30d',
       bucket: window.bucket,
-      window: {
-        from: isoDate(window.start),
-        // `to` is reported inclusive, which is how a reader reads a date range.
-        to: isoDate(new Date(window.endExclusive.getTime() - 86_400_000)),
-        label: window.label,
-        days: window.days,
-        bucket: window.bucket,
-        computedAt: new Date().toISOString(),
-      },
+      window: describeWindow(window),
       scoping: {
         tenantId: tenantId ?? null,
         unscopedSections: tenantId ? TENANT_UNSCOPED_SECTIONS : [],
@@ -216,6 +252,7 @@ export class HighlightsAnalyticsService {
         completedSimulations: topOrgsResult.belowFloor.sims,
       },
       practiceMinutes,
+      playTime,
       qualityTrend,
       csatTrend,
       trackFunnel: {
@@ -239,6 +276,12 @@ export class HighlightsAnalyticsService {
    * Only the scalars are recomputed — the trends are not, because a delta needs
    * one number per window, not a second axis. Skipping the trend queries keeps
    * the comparison to roughly the cost of the summary alone.
+   *
+   * An all-time window is refused a comparison even when `compare=prev` asks for
+   * one: the equal-length period before the platform's first row is empty by
+   * construction, so every KPI would report "up from zero" — a fact about the
+   * windowing, not about the metric. The surface then shows the bare value with
+   * its sample size, which is what a number with no comparison basis is.
    */
   private async buildComparison(
     query: AnalyticsHighlightsQueryDto,
@@ -248,13 +291,14 @@ export class HighlightsAnalyticsService {
     previous: HighlightsSummaryDto | null;
     previousLabel: string | null;
   }> {
-    if (query.compare !== 'prev')
+    if (query.compare !== 'prev' || window.allTime)
       return { previous: null, previousLabel: null };
 
     const prev = previousWindow(window);
     const [
       activeOrgs,
       practiceRows,
+      playTimeOverall,
       qualityOverall,
       csatOverall,
       funnelCounts,
@@ -269,6 +313,7 @@ export class HighlightsAnalyticsService {
         window.bucket,
         tenantId,
       ),
+      this.repo.getPlayTimeOverall(prev.start, prev.endExclusive, tenantId),
       this.repo.getQualityOverall(prev.start, prev.endExclusive, tenantId),
       this.repo.getCsatOverall(prev.start, prev.endExclusive, tenantId),
       this.repo.getTrackFunnelCounts(prev.start, prev.endExclusive, tenantId),
@@ -291,6 +336,7 @@ export class HighlightsAnalyticsService {
         activeOrgs,
         simsByBucket,
         practiceRows,
+        playTimeOverall,
         qualityOverall,
         csatOverall,
         funnelCounts,
@@ -341,6 +387,7 @@ export class HighlightsAnalyticsService {
     activeOrgs,
     simsByBucket,
     practiceRows,
+    playTimeOverall,
     qualityOverall,
     csatOverall,
     funnelCounts,
@@ -350,6 +397,7 @@ export class HighlightsAnalyticsService {
     activeOrgs: number;
     simsByBucket: { count: number }[];
     practiceRows: { minutes: number }[];
+    playTimeOverall: { avgMinutes: number | null; sessions: number };
     qualityOverall: {
       avgCompositeScore: number | null;
       evaluatedSessions: number;
@@ -390,6 +438,8 @@ export class HighlightsAnalyticsService {
         completedSimulations > 0
           ? round2(totalAiCostUsd / completedSimulations)
           : null,
+      avgPlayTimeMinutes: playTimeOverall.avgMinutes,
+      playTimeSessions: playTimeOverall.sessions,
     };
   }
 }

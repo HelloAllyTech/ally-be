@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AnalyticsController } from '../analytics.controller';
 import { AnalyticsService } from '../../service/analytics.service';
 import { CohortAnalyticsService } from '../../service/cohort-analytics.service';
+import { UsageLevelAnalyticsService } from '../../service/usage-level-analytics.service';
+import { RoleplayVolumeAnalyticsService } from '../../service/roleplay-volume-analytics.service';
 import { HighlightsAnalyticsService } from '../../service/highlights-analytics.service';
 import { PlatformAnalyticsService } from '../../service/platform-analytics.service';
 import { ScribeAnalyticsService } from '../../service/scribe-analytics.service';
@@ -76,6 +78,14 @@ describe('AnalyticsController', () => {
         {
           provide: CohortAnalyticsService,
           useValue: { getCohortRetention: jest.fn() },
+        },
+        {
+          provide: UsageLevelAnalyticsService,
+          useValue: { getUsageLevels: jest.fn() },
+        },
+        {
+          provide: RoleplayVolumeAnalyticsService,
+          useValue: { getRoleplayVolume: jest.fn() },
         },
         {
           provide: PlatformAnalyticsService,

@@ -13,14 +13,23 @@ import { MAX_CUSTOM_RANGE_DAYS } from '../util/analytics-window.util';
  * Supported time windows for the super-admin analytics overview.
  * - 30d / 90d  -> weekly buckets
  * - 12m        -> monthly buckets
+ * - all        -> the platform's first row to today, monthly buckets
+ *
+ * `all` carries no comparison basis: there is no equal-length period before the
+ * beginning of the data, so `compare=prev` is ignored for it and `previous`
+ * comes back null rather than as a delta against empty history.
  *
  * For an arbitrary period use `from`/`to` on {@link AnalyticsWindowQueryDto}.
  */
-export const ANALYTICS_RANGES = ['30d', '90d', '12m'] as const;
+export const ANALYTICS_RANGES = ['30d', '90d', '12m', 'all'] as const;
 export type AnalyticsRange = (typeof ANALYTICS_RANGES)[number];
 
-/** Bucket granularities a client may explicitly request for a trend. */
-export const ANALYTICS_BUCKETS = ['day', 'week', 'month'] as const;
+/**
+ * Bucket granularities a client may explicitly request for a trend. This is the
+ * per-chart grouping control on the surface: the window says WHAT period is
+ * covered, the bucket says at what grain it is read.
+ */
+export const ANALYTICS_BUCKETS = ['day', 'week', 'month', 'year'] as const;
 export type AnalyticsBucketParam = (typeof ANALYTICS_BUCKETS)[number];
 
 /** Comparison basis a client may request alongside the current window. */
@@ -47,6 +56,24 @@ export class AnalyticsWindowDto {
 
   @ApiProperty({ enum: ANALYTICS_BUCKETS })
   bucket!: AnalyticsBucketParam;
+
+  @ApiProperty({
+    description:
+      "True when the window spans all of the platform's history. Such a " +
+      'window has no comparison basis, so `previous` is always null for it.',
+  })
+  allTime!: boolean;
+
+  @ApiProperty({
+    description:
+      'Bucket start (yyyy-mm-dd) of the period that contains today, or null ' +
+      'when the window ended in the past. That bucket is still accruing, so ' +
+      'its figure can only rise: show it in tables (flagged) and leave it off ' +
+      'line and bar charts, where an unfinished period renders as a fall.',
+    nullable: true,
+    type: String,
+  })
+  inProgressBucket!: string | null;
 
   @ApiProperty({
     description: 'Server time the aggregates were computed, ISO 8601',
@@ -988,24 +1015,32 @@ export class ActiveUsersPointDto {
   mau!: number;
 }
 
+/**
+ * `bucket` was `weekStart`: both of these series were hard-coded to ISO weeks
+ * regardless of the requested granularity, so a name that promised a week was
+ * accurate. They now honour `bucket`, and a field called `weekStart` holding the
+ * first of a month is the kind of name that gets believed.
+ */
 export class SimulationsCompletedPointDto {
-  @ApiProperty({ description: 'ISO week start date (yyyy-mm-dd)' })
-  weekStart!: string;
+  @ApiProperty({ description: 'Bucket start date (yyyy-mm-dd)' })
+  bucket!: string;
 
-  @ApiProperty({ description: 'Number of simulations completed in the week' })
+  @ApiProperty({ description: 'Number of simulations completed in the bucket' })
   count!: number;
 }
 
 export class RetentionPointDto {
-  @ApiProperty({ description: 'ISO week start date (yyyy-mm-dd)' })
-  weekStart!: string;
+  @ApiProperty({ description: 'Bucket start date (yyyy-mm-dd)' })
+  bucket!: string;
 
   @ApiProperty({
-    description: 'Active users whose account was created in this week',
+    description: 'Active users whose account was created in this bucket',
   })
   newUsers!: number;
 
-  @ApiProperty({ description: 'Active users whose account predates this week' })
+  @ApiProperty({
+    description: 'Active users whose account predates this bucket',
+  })
   returningUsers!: number;
 }
 

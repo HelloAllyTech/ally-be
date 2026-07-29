@@ -50,8 +50,18 @@ export function addMonths(d: Date, n: number): Date {
   );
 }
 
+export function addYears(d: Date, n: number): Date {
+  return new Date(
+    Date.UTC(d.getUTCFullYear() + n, d.getUTCMonth(), d.getUTCDate()),
+  );
+}
+
 export function startOfUtcMonth(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+}
+
+export function startOfUtcYear(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
 }
 
 /** ISO week start (Monday 00:00 UTC), matching Postgres `date_trunc('week')`. */
@@ -64,6 +74,19 @@ export function startOfUtcWeekMonday(d: Date): Date {
 
 export function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Truncate a date to the start of the bucket that contains it — the JS twin of
+ * Postgres `date_trunc`, so a value bucketed in SQL and a value bucketed here
+ * produce the same `yyyy-mm-dd` key. Used wherever a row's own timestamp has to
+ * be compared against the bucket it landed in (new-vs-returning labelling).
+ */
+export function truncToBucket(d: Date, bucket: AnalyticsBucket): Date {
+  if (bucket === 'day') return startOfUtcDay(d);
+  if (bucket === 'week') return startOfUtcWeekMonday(d);
+  if (bucket === 'month') return startOfUtcMonth(d);
+  return startOfUtcYear(d);
 }
 
 /** A resolved query window plus the bucket granularity to aggregate it by. */
@@ -82,6 +105,29 @@ export interface AnalyticsWindow {
   label: string;
   /** True when the window came from explicit `from`/`to` rather than a preset. */
   custom: boolean;
+  /**
+   * True for `range=all`: the window runs from the platform's first row to
+   * today.
+   *
+   * Callers must not ask {@link previousWindow} for a comparison basis on an
+   * all-time window. "The equal-length period before all of history" contains no
+   * data by construction, so every delta computed against it would read as
+   * growth from zero — which is an artefact of the windowing, not a change in
+   * the metric.
+   */
+  allTime: boolean;
+  /**
+   * Start of the bucket that contains today (`yyyy-mm-dd`), or null when the
+   * window ended in the past.
+   *
+   * This bucket is STILL ACCRUING: its figure can only rise, so it is not
+   * comparable with the completed buckets beside it. Surfaces show it in tables
+   * (flagged) and leave it off line and bar charts — there is no way to draw
+   * "not finished yet", so an unfinished period renders as a fall the reader
+   * explains to themselves. Named here rather than re-derived per client so
+   * every surface flags the same bucket.
+   */
+  inProgressBucket: string | null;
 }
 
 export interface WindowQuery {
@@ -95,7 +141,17 @@ const RANGE_LABEL: Record<AnalyticsRange, string> = {
   '30d': 'Last 30 days',
   '90d': 'Last 90 days',
   '12m': 'Last 12 months',
+  all: 'All time',
 };
+
+/**
+ * Bucket an all-time window defaults to.
+ *
+ * Month rather than the range-derived default: an all-time window is years
+ * wide, and a daily axis over it is a thousand ticks nobody can read. The
+ * granularity is a per-chart choice from there — see the `bucket` param.
+ */
+const ALL_TIME_DEFAULT_BUCKET: AnalyticsBucket = 'month';
 
 /** Bucket that keeps a custom window to a readable number of points. */
 function autoBucketForDays(days: number): AnalyticsBucket {
@@ -131,12 +187,21 @@ function parseIsoDate(value: string, field: string): Date {
  * differ — highlights buckets 30d by day, the platform overview by week. Passing
  * it in preserves each endpoint's existing granularity rather than silently
  * re-bucketing live charts.
+ *
+ * `range=all` needs `allTimeStart` — the platform's first row, which only the
+ * database knows. Callers fetch it (see `getPlatformDataFloor`) and pass it in;
+ * without it an all-time window would have to guess an epoch, and a chart whose
+ * axis starts at a guessed date is a chart with an invented history. When the
+ * platform has no rows at all the floor collapses to today, which is the honest
+ * answer: the window is empty because there is nothing in it.
  */
 export function resolveAnalyticsWindow(
   query: WindowQuery,
   opts: {
     defaultRange: AnalyticsRange;
     defaultBucketFor: (range: AnalyticsRange) => AnalyticsBucket;
+    /** Required when the resolved range is 'all'. */
+    allTimeStart?: Date;
     now?: Date;
   },
 ): AnalyticsWindow {
@@ -164,13 +229,21 @@ export function resolveAnalyticsWindow(
         `Custom range is limited to ${MAX_CUSTOM_RANGE_DAYS} days, got ${days}`,
       );
     }
+    const bucket = query.bucket ?? autoBucketForDays(days);
     return {
       start,
       endExclusive,
-      bucket: query.bucket ?? autoBucketForDays(days),
+      bucket,
       days,
       label: `${isoDate(start)} → ${isoDate(toInclusive)}`,
       custom: true,
+      allTime: false,
+      // A custom window that stops short of today has no in-progress bucket;
+      // one that runs up to (or past) today does.
+      inProgressBucket:
+        endExclusive > todayStart
+          ? isoDate(truncToBucket(todayStart, bucket))
+          : null,
     };
   }
 
@@ -182,20 +255,72 @@ export function resolveAnalyticsWindow(
     start = addDays(todayStart, -29);
   } else if (range === '90d') {
     start = addDays(todayStart, -89);
-  } else {
+  } else if (range === '12m') {
     start = startOfUtcMonth(addMonths(todayStart, -11));
+  } else {
+    // All time: the platform's first row. An endpoint that has not measured its
+    // data floor cannot answer this range — rejecting it is the only honest
+    // option, because the fallbacks (today, or a guessed epoch) would both
+    // return a window that looks resolved and covers the wrong period.
+    if (!opts.allTimeStart) {
+      throw new BadRequestException(
+        'range=all is not supported by this endpoint',
+      );
+    }
+    start = startOfUtcDay(
+      opts.allTimeStart > todayStart ? todayStart : opts.allTimeStart,
+    );
   }
   const days = Math.round(
     (endExclusive.getTime() - start.getTime()) / MS_PER_DAY,
   );
+  const bucket =
+    query.bucket ??
+    (range === 'all' ? ALL_TIME_DEFAULT_BUCKET : opts.defaultBucketFor(range));
 
   return {
     start,
     endExclusive,
-    bucket: query.bucket ?? opts.defaultBucketFor(range),
+    bucket,
     days,
     label: RANGE_LABEL[range],
     custom: false,
+    allTime: range === 'all',
+    inProgressBucket: isoDate(truncToBucket(todayStart, bucket)),
+  };
+}
+
+/**
+ * The resolved window as the clients see it — one builder so every endpoint
+ * echoes the same shape.
+ *
+ * `to` is reported INCLUSIVE, which is how a reader reads a date range; the
+ * repositories only ever see the exclusive bound. This used to be an object
+ * literal repeated in each endpoint, which is how a field could be added to the
+ * contract and reach only some of them.
+ */
+export function describeWindow(
+  window: AnalyticsWindow,
+  now = new Date(),
+): {
+  from: string;
+  to: string;
+  label: string;
+  days: number;
+  bucket: AnalyticsBucket;
+  allTime: boolean;
+  inProgressBucket: string | null;
+  computedAt: string;
+} {
+  return {
+    from: isoDate(window.start),
+    to: isoDate(addDays(window.endExclusive, -1)),
+    label: window.label,
+    days: window.days,
+    bucket: window.bucket,
+    allTime: window.allTime,
+    inProgressBucket: window.inProgressBucket,
+    computedAt: now.toISOString(),
   };
 }
 
@@ -206,12 +331,24 @@ export function resolveAnalyticsWindow(
  * Equal length matters: comparing a 30-day window against a calendar month, or
  * against a period of a different length, produces a delta that is an artefact
  * of the windowing rather than a change in the metric.
+ *
+ * Throws for an all-time window: there is nothing before the platform's first
+ * row, so the "previous period" is guaranteed empty and every delta against it
+ * would report growth from zero. Callers must return no comparison at all
+ * instead — a KPI with no basis shows its bare value, which is honest, where a
+ * KPI with a fabricated basis is not.
  */
 export function previousWindow(window: AnalyticsWindow): {
   start: Date;
   endExclusive: Date;
   label: string;
 } {
+  if (window.allTime) {
+    throw new Error(
+      'previousWindow: an all-time window has no comparison basis — ' +
+        'return { previous: null } instead of comparing against empty history',
+    );
+  }
   const endExclusive = window.start;
   const start = addDays(window.start, -window.days);
   return {
@@ -251,6 +388,16 @@ export function generateBucketLabels(
     while (cur <= last) {
       labels.push(isoDate(cur));
       cur = addMonths(cur, 1);
+    }
+    return labels;
+  }
+
+  if (bucket === 'year') {
+    let cur = startOfUtcYear(windowStart);
+    const last = startOfUtcYear(lastDay);
+    while (cur <= last) {
+      labels.push(isoDate(cur));
+      cur = addYears(cur, 1);
     }
     return labels;
   }
