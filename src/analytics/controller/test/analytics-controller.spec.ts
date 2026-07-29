@@ -9,6 +9,16 @@ import { PlatformAnalyticsService } from '../../service/platform-analytics.servi
 import { ScribeAnalyticsService } from '../../service/scribe-analytics.service';
 import { LanguageJudgeService } from '../../service/language-judge.service';
 import { LanguageAnalyticsService } from '../../service/language-analytics.service';
+import { ActivationAnalyticsService } from '../../service/activation-analytics.service';
+import { CompletionRateAnalyticsService } from '../../service/completion-rate-analytics.service';
+import { LanguageMixAnalyticsService } from '../../service/language-mix-analytics.service';
+import { SkillGrowthAnalyticsService } from '../../service/skill-growth-analytics.service';
+import { QualityDistributionAnalyticsService } from '../../service/quality-distribution-analytics.service';
+import { CompetencyMapAnalyticsService } from '../../service/competency-map-analytics.service';
+import { TrackDropoffAnalyticsService } from '../../service/track-dropoff-analytics.service';
+import { CoachingLoopAnalyticsService } from '../../service/coaching-loop-analytics.service';
+import { OrgHealthAnalyticsService } from '../../service/org-health-analytics.service';
+import { ScribeAdoptionAnalyticsService } from '../../service/scribe-adoption-analytics.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
@@ -102,6 +112,50 @@ describe('AnalyticsController', () => {
         {
           provide: LanguageAnalyticsService,
           useValue: { getLanguageQuality: jest.fn() },
+        },
+        // Testing-tab services. Stubbed rather than exercised here: this suite
+        // covers the dashboard/permission surface, and each of these has its own
+        // service spec asserting the rules that matter (suppression floors,
+        // null-over-zero-denominator rates, residual derivation).
+        {
+          provide: ActivationAnalyticsService,
+          useValue: { getActivation: jest.fn() },
+        },
+        {
+          provide: CompletionRateAnalyticsService,
+          useValue: { getCompletionRate: jest.fn() },
+        },
+        {
+          provide: LanguageMixAnalyticsService,
+          useValue: { getLanguageMix: jest.fn() },
+        },
+        {
+          provide: SkillGrowthAnalyticsService,
+          useValue: { getSkillGrowth: jest.fn() },
+        },
+        {
+          provide: QualityDistributionAnalyticsService,
+          useValue: { getQualityDistribution: jest.fn() },
+        },
+        {
+          provide: CompetencyMapAnalyticsService,
+          useValue: { getCompetencyMap: jest.fn() },
+        },
+        {
+          provide: TrackDropoffAnalyticsService,
+          useValue: { getTrackDropoff: jest.fn() },
+        },
+        {
+          provide: CoachingLoopAnalyticsService,
+          useValue: { getCoachingLoop: jest.fn() },
+        },
+        {
+          provide: OrgHealthAnalyticsService,
+          useValue: { getOrgHealth: jest.fn() },
+        },
+        {
+          provide: ScribeAdoptionAnalyticsService,
+          useValue: { getScribeAdoption: jest.fn() },
         },
         {
           provide: Reflector,

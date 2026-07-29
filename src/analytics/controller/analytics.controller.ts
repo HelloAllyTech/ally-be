@@ -11,7 +11,17 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AnalyticsService } from '../service/analytics.service';
+import { ActivationAnalyticsService } from '../service/activation-analytics.service';
+import { CoachingLoopAnalyticsService } from '../service/coaching-loop-analytics.service';
 import { CohortAnalyticsService } from '../service/cohort-analytics.service';
+import { CompetencyMapAnalyticsService } from '../service/competency-map-analytics.service';
+import { CompletionRateAnalyticsService } from '../service/completion-rate-analytics.service';
+import { LanguageMixAnalyticsService } from '../service/language-mix-analytics.service';
+import { OrgHealthAnalyticsService } from '../service/org-health-analytics.service';
+import { QualityDistributionAnalyticsService } from '../service/quality-distribution-analytics.service';
+import { ScribeAdoptionAnalyticsService } from '../service/scribe-adoption-analytics.service';
+import { SkillGrowthAnalyticsService } from '../service/skill-growth-analytics.service';
+import { TrackDropoffAnalyticsService } from '../service/track-dropoff-analytics.service';
 import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
 import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
@@ -72,6 +82,49 @@ import {
   ScribeOverviewResponseDto,
   ScribeSummaryFailureResponseDto,
 } from '../dto/scribe-analytics.dto';
+// Endpoints behind the admin "Testing" tab — the staging surface for leadership
+// charts that are candidates for Highlights. Named for what they measure rather
+// than for the tab, so a chart that graduates does not drag a rename with it.
+import {
+  ActivationQueryDto,
+  ActivationResponseDto,
+} from '../dto/activation-analytics.dto';
+import {
+  CompletionRateQueryDto,
+  CompletionRateResponseDto,
+} from '../dto/completion-rate-analytics.dto';
+import {
+  LanguageMixQueryDto,
+  LanguageMixResponseDto,
+} from '../dto/language-mix-analytics.dto';
+import {
+  SkillGrowthQueryDto,
+  SkillGrowthResponseDto,
+} from '../dto/skill-growth-analytics.dto';
+import {
+  QualityDistributionQueryDto,
+  QualityDistributionResponseDto,
+} from '../dto/quality-distribution-analytics.dto';
+import {
+  CompetencyMapQueryDto,
+  CompetencyMapResponseDto,
+} from '../dto/competency-map-analytics.dto';
+import {
+  TrackDropoffQueryDto,
+  TrackDropoffResponseDto,
+} from '../dto/track-dropoff-analytics.dto';
+import {
+  CoachingLoopQueryDto,
+  CoachingLoopResponseDto,
+} from '../dto/coaching-loop-analytics.dto';
+import {
+  OrgHealthQueryDto,
+  OrgHealthResponseDto,
+} from '../dto/org-health-analytics.dto';
+import {
+  ScribeAdoptionQueryDto,
+  ScribeAdoptionResponseDto,
+} from '../dto/scribe-adoption-analytics.dto';
 import {
   ApiTags,
   ApiOperation,
@@ -104,6 +157,16 @@ export class AnalyticsController {
     private readonly scribeAnalyticsService: ScribeAnalyticsService,
     private readonly languageJudgeService: LanguageJudgeService,
     private readonly languageAnalyticsService: LanguageAnalyticsService,
+    private readonly activationAnalyticsService: ActivationAnalyticsService,
+    private readonly completionRateAnalyticsService: CompletionRateAnalyticsService,
+    private readonly languageMixAnalyticsService: LanguageMixAnalyticsService,
+    private readonly skillGrowthAnalyticsService: SkillGrowthAnalyticsService,
+    private readonly qualityDistributionAnalyticsService: QualityDistributionAnalyticsService,
+    private readonly competencyMapAnalyticsService: CompetencyMapAnalyticsService,
+    private readonly trackDropoffAnalyticsService: TrackDropoffAnalyticsService,
+    private readonly coachingLoopAnalyticsService: CoachingLoopAnalyticsService,
+    private readonly orgHealthAnalyticsService: OrgHealthAnalyticsService,
+    private readonly scribeAdoptionAnalyticsService: ScribeAdoptionAnalyticsService,
   ) {}
 
   @Get('overview')
@@ -248,6 +311,298 @@ export class AnalyticsController {
     @Query() query: RoleplayVolumeQueryDto,
   ): Promise<RoleplayVolumeResponseDto> {
     return this.roleplayVolumeAnalyticsService.getRoleplayVolume(query);
+  }
+
+  /* ------------------------------------------------------------------------ */
+  /* Testing-tab endpoints                                                     */
+  /*                                                                           */
+  /* Candidates for the leadership Highlights tab, surfaced on a separate admin */
+  /* tab first so they can be judged against real data before anything on      */
+  /* Highlights is changed. Same guard as every sibling here — the tab itself   */
+  /* is reserved for the elevated admin tier in the frontend, matching the      */
+  /* existing convention that the SUPER_DUPER distinction is a UI one.          */
+  /* ------------------------------------------------------------------------ */
+
+  @Get('activation')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Activation: practising learners, funnel, time to first practice',
+    description:
+      'Three views of the same question — do new learners reach value, and how ' +
+      'fast. (1) `practisingLearners`: distinct learners who completed a scored ' +
+      'session per bucket, the candidate north-star series, gap-filled with real ' +
+      'zeros because it is a count. (2) `funnel`: signed up -> started a sim -> ' +
+      'completed one -> completed 3+, over the ALL-TIME learner population; the ' +
+      'first stage is 100% by construction and is labelled as the denominator ' +
+      'rather than presented as a measurement. (3) `timeToFirstPractice`: days ' +
+      'from signup to first completed session as COUNTS per band (bands are ' +
+      'inclusive on both ends, stated in `boundsNote`), with a residual ' +
+      '"never practised" figure derived as registered minus activated — a ' +
+      'learner who never practised has no first session to bucket. The funnel ' +
+      'and the distribution ignore the window deliberately: both are questions ' +
+      'about accounts, not about a period. Test organisations are excluded ' +
+      'throughout, and preview/seed rooms do not count as sessions.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Activation metrics retrieved successfully',
+    type: ActivationResponseDto,
+  })
+  async getActivation(
+    @Query() query: ActivationQueryDto,
+  ): Promise<ActivationResponseDto> {
+    return this.activationAnalyticsService.getActivation(query);
+  }
+
+  @Get('completion-rate')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Started vs completed roleplays per period (super-admin)',
+    description:
+      'Of the sessions learners launched in each bucket, how many reached a ' +
+      'scored ending — the leading friction signal, and the caveat behind every ' +
+      'efficacy metric on the platform (those can only see sessions that ' +
+      'finished). `completionRatePct` is NULL for a bucket with no launches: a ' +
+      'rate over a zero denominator is undefined, not 0%, and a fabricated zero ' +
+      'here would be the most flattering possible way to be wrong. The counts ' +
+      'are gap-filled so the axis stays a real calendar.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Completion rate retrieved successfully',
+    type: CompletionRateResponseDto,
+  })
+  async getCompletionRate(
+    @Query() query: CompletionRateQueryDto,
+  ): Promise<CompletionRateResponseDto> {
+    return this.completionRateAnalyticsService.getCompletionRate(query);
+  }
+
+  @Get('language-mix')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Completed sessions by language per period (super-admin)',
+    description:
+      'Which languages carry practice, and whether the mix is shifting — the ' +
+      'input to language investment decisions. VOLUME only: language QUALITY is ' +
+      'the /language-quality endpoint, and duplicating it here would let a ' +
+      'reader compare a number with itself. The tail beyond `maxSeries` ' +
+      'languages is pooled into "Other" on the server so a client cannot invent ' +
+      'a ninth colour for a dimension nobody can hold nine of; sessions with no ' +
+      'resolvable language become "Unknown". `bucketTotals` travels with the ' +
+      'shares because a 100%-stacked chart hides its own denominator — every bar ' +
+      'is the same height over forty sessions or four thousand.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Language mix retrieved successfully',
+    type: LanguageMixResponseDto,
+  })
+  async getLanguageMix(
+    @Query() query: LanguageMixQueryDto,
+  ): Promise<LanguageMixResponseDto> {
+    return this.languageMixAnalyticsService.getLanguageMix(query);
+  }
+
+  @Get('skill-growth')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Composite score by Nth completed session (super-admin)',
+    description:
+      "Does a learner's eighth simulation score better than their first — the " +
+      'efficacy question the training product exists to answer. Median with the ' +
+      'interquartile range per session ordinal, because an average without a ' +
+      'distribution is a half-truth and in scoring the spread is always the ' +
+      'interesting half. Two variants come from ONE pass over one denominator: ' +
+      '`all` (every learner) and `experienced` (only learners with ' +
+      '`experiencedMinSessions`+ evaluated sessions), the control for the ' +
+      'survivorship the first cannot rule out — computed separately they would ' +
+      'drift. Percentiles are null below `minSampleSize` observations for that ' +
+      'ordinal while `n` still travels, so a surface can say "n = 4 · need 20" ' +
+      'rather than print a number it cannot stand behind. ALL-TIME by design: an ' +
+      "ordinal is a position in a learner's own history, not a date, so a " +
+      'windowed version would report the length of the window. Scores are LLM ' +
+      'judged and comparable only within one judge/rubric version — see ' +
+      '`provenance`.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Skill growth curve retrieved successfully',
+    type: SkillGrowthResponseDto,
+  })
+  async getSkillGrowth(
+    @Query() query: SkillGrowthQueryDto,
+  ): Promise<SkillGrowthResponseDto> {
+    return this.skillGrowthAnalyticsService.getSkillGrowth(query);
+  }
+
+  @Get('quality-distribution')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary:
+      'Quality percentiles and satisfaction mix per period (super-admin)',
+    description:
+      'The distribution-aware successor to the two mean-lines on Highlights. ' +
+      '(1) `quality`: median with p25/p75 of the LLM-judged composite score per ' +
+      'bucket, sparse — a bucket with no evaluated sessions is ABSENT, because ' +
+      'an average has no meaningful zero and gap-filling one fabricates a ' +
+      'measurement. (2) `satisfaction`: ratings split 1-2 / 3 / 4-5 rather than ' +
+      'averaged, since a mean of 3.8 from all-4s and a mean of 3.8 from ' +
+      'half-5s-and-half-2s call for opposite responses; the counts are ' +
+      'gap-filled but every derived percentage is null over a zero denominator, ' +
+      'and `responseRatePct` states what share of completed sessions were rated ' +
+      'at all — the silent denominator behind any satisfaction figure. (3) ' +
+      '`lowRatingTags`: what sessions rated 3 or below were tagged with, ranked, ' +
+      'tail pooled into "Other". Percentiles are suppressed below ' +
+      '`minSampleSize` while the counts survive.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Quality distribution retrieved successfully',
+    type: QualityDistributionResponseDto,
+  })
+  async getQualityDistribution(
+    @Query() query: QualityDistributionQueryDto,
+  ): Promise<QualityDistributionResponseDto> {
+    return this.qualityDistributionAnalyticsService.getQualityDistribution(
+      query,
+    );
+  }
+
+  @Get('competency-map')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary:
+      'Practice volume against median score per competency (super-admin)',
+    description:
+      'Which counselling competencies are heavily practised, and which score ' +
+      'badly — high volume with a low score is a teaching gap, low volume is a ' +
+      "coverage gap. Attributed through the scenario's competency tags; a " +
+      'scenario tagged with several competencies counts towards EACH of them, so ' +
+      'the per-competency session counts can sum to more than ' +
+      '`summary.completedSessions` (declared rather than silently ' +
+      'double-counted). Sessions whose scenario carries no competency are ' +
+      'reported separately as `unattributed` instead of being dropped. ' +
+      '`medianScore` is null below `minSampleSize` evaluated sessions with ' +
+      '`belowFloor` set and the row still present — the counts are not an ' +
+      'estimate of anything and suppressing the row would hide the tail. ' +
+      'ALL-TIME: a monthly competency total says more about the month.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Competency map retrieved successfully',
+    type: CompetencyMapResponseDto,
+  })
+  async getCompetencyMap(
+    @Query() query: CompetencyMapQueryDto,
+  ): Promise<CompetencyMapResponseDto> {
+    return this.competencyMapAnalyticsService.getCompetencyMap(query);
+  }
+
+  @Get('track-dropoff')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Track item completion by format (super-admin)',
+    description:
+      'Of the track items learners actually reached, the share they finished, ' +
+      'broken down by item FORMAT (roleplay / case / quiz / article / video / ' +
+      'journal) and by section. Format rather than position: position in a track ' +
+      'is confounded with format, and format is the lever anyone can pull. ' +
+      '"Reached" means a progress row that is not LOCKED — an item the learner ' +
+      "could get to. Item types come back in the platform's own enum order, " +
+      'because an ordered category keeps its order everywhere including a ' +
+      'legend, and a list that re-sorts itself between loads cannot be compared ' +
+      "with last week's screenshot. Rates over fewer than `minGroupSize` " +
+      'learners are suppressed while the row and its counts stay.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Track drop-off retrieved successfully',
+    type: TrackDropoffResponseDto,
+  })
+  async getTrackDropoff(
+    @Query() query: TrackDropoffQueryDto,
+  ): Promise<TrackDropoffResponseDto> {
+    return this.trackDropoffAnalyticsService.getTrackDropoff(query);
+  }
+
+  @Get('coaching-loop')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Review sharing and turnaround per period (super-admin)',
+    description:
+      'Whether the human feedback loop is alive: how many completed sessions ' +
+      'were shared for review, and how long learners wait for the first comment ' +
+      'from someone else. Adoption and responsiveness are returned as separate ' +
+      'series so a client can draw two panels rather than two axes — a count and ' +
+      'a duration on one pair of axes invite a correlation the data does not ' +
+      'support. Turnaround percentiles are null below `minSampleSize` reviews in ' +
+      'the bucket: a median over two reviews is a name, not a statistic. ' +
+      'Aggregate only, and deliberately never broken down by reviewer — naming a ' +
+      'slow trainer is a judgement this surface must not make.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Coaching loop metrics retrieved successfully',
+    type: CoachingLoopResponseDto,
+  })
+  async getCoachingLoop(
+    @Query() query: CoachingLoopQueryDto,
+  ): Promise<CoachingLoopResponseDto> {
+    return this.coachingLoopAnalyticsService.getCoachingLoop(query);
+  }
+
+  @Get('org-health')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Per-organisation activity, recency and credit use (super-admin)',
+    description:
+      'One row per customer organisation, ordered by longest silence first — the ' +
+      'account-management agenda. All-time totals plus a trailing 12-ISO-week ' +
+      'trend on a shared axis (so rows are comparable with each other, not each ' +
+      'scaled to itself) and last-28-days against previous-28-days for ' +
+      'direction. Ordered by recency rather than volume because a lifetime total ' +
+      'makes an org that stopped three months ago look like a top customer, ' +
+      'which is the opposite of the churn question. Credit utilisation is summed ' +
+      'from the PER-USER `simulation_credits` rows; an org with no limit set ' +
+      'returns null with `creditsUnset` rather than 0%, because there is no ' +
+      'ceiling to be a share of. Orgs under `minGroupSize` learners keep their ' +
+      'counts and have their rates suppressed — a percentage over four ' +
+      'identifiable people is a statement about those people.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Organisation health retrieved successfully',
+    type: OrgHealthResponseDto,
+  })
+  async getOrgHealth(
+    @Query() query: OrgHealthQueryDto,
+  ): Promise<OrgHealthResponseDto> {
+    return this.orgHealthAnalyticsService.getOrgHealth(query);
+  }
+
+  @Get('scribe-adoption')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Orgs and counsellors using Scribe per period (super-admin)',
+    description:
+      'Whether the live-support stream is spreading beyond pilots: distinct ' +
+      'organisations and distinct counsellors with at least one scribe session ' +
+      'per bucket, with session volume as context. BREADTH, not operations — one ' +
+      'enthusiastic org can carry a session count on its own, and failure rates, ' +
+      'pipeline funnels and STT provider reliability already live on ' +
+      '/scribe/overview and /scribe/summary-failures. Archived sessions are ' +
+      'excluded. Counts, so the axis is gap-filled with real zeros.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Scribe adoption retrieved successfully',
+    type: ScribeAdoptionResponseDto,
+  })
+  async getScribeAdoption(
+    @Query() query: ScribeAdoptionQueryDto,
+  ): Promise<ScribeAdoptionResponseDto> {
+    return this.scribeAdoptionAnalyticsService.getScribeAdoption(query);
   }
 
   @Get('voice-latency')
