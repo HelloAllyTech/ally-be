@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AnalyticsController } from '../analytics.controller';
 import { AnalyticsService } from '../../service/analytics.service';
+import { CohortAnalyticsService } from '../../service/cohort-analytics.service';
 import { HighlightsAnalyticsService } from '../../service/highlights-analytics.service';
 import { PlatformAnalyticsService } from '../../service/platform-analytics.service';
 import { ScribeAnalyticsService } from '../../service/scribe-analytics.service';
@@ -71,6 +72,10 @@ describe('AnalyticsController', () => {
         {
           provide: HighlightsAnalyticsService,
           useValue: { getHighlights: jest.fn() },
+        },
+        {
+          provide: CohortAnalyticsService,
+          useValue: { getCohortRetention: jest.fn() },
         },
         {
           provide: PlatformAnalyticsService,

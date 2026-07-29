@@ -11,6 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { AnalyticsService } from '../service/analytics.service';
+import { CohortAnalyticsService } from '../service/cohort-analytics.service';
 import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
 import { LanguageAnalyticsService } from '../service/language-analytics.service';
 import { LanguageJudgeService } from '../service/language-judge.service';
@@ -53,6 +54,10 @@ import {
   AnalyticsHighlightsResponseDto,
 } from '../dto/highlights-analytics.dto';
 import {
+  CohortRetentionQueryDto,
+  CohortRetentionResponseDto,
+} from '../dto/cohort-analytics.dto';
+import {
   ScribeAnalyticsQueryDto,
   ScribeOverviewResponseDto,
   ScribeSummaryFailureResponseDto,
@@ -82,6 +87,7 @@ export class AnalyticsController {
   constructor(
     private readonly analyticsService: AnalyticsService,
     private readonly highlightsAnalyticsService: HighlightsAnalyticsService,
+    private readonly cohortAnalyticsService: CohortAnalyticsService,
     private readonly platformAnalyticsService: PlatformAnalyticsService,
     private readonly scribeAnalyticsService: ScribeAnalyticsService,
     private readonly languageJudgeService: LanguageJudgeService,
@@ -138,6 +144,33 @@ export class AnalyticsController {
     @Query() query: AnalyticsHighlightsQueryDto,
   ): Promise<AnalyticsHighlightsResponseDto> {
     return this.highlightsAnalyticsService.getHighlights(query);
+  }
+
+  @Get('cohort-retention')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Monthly learner cohort retention (super-admin)',
+    description:
+      'For each month, the learner accounts created in it, followed forward: ' +
+      'how many of that cohort practised at least N minutes in each later ' +
+      'calendar month. All three "active user" definitions (10 / 50 / 100 ' +
+      'minutes per month) are returned in the same response so the client can ' +
+      'switch definition without a refetch and the three can never disagree ' +
+      'about the denominator. ALL-TIME and month-grained by design — this ' +
+      'endpoint takes no `range`/`bucket`/`from`/`to`, because a cohort is only ' +
+      'readable once it has been followed for several months. Month 0 is not ' +
+      'measured: the signup month is the cohort itself, 100% by definition. ' +
+      '`tenantId` narrows both the population and the activity.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Cohort retention grid retrieved successfully',
+    type: CohortRetentionResponseDto,
+  })
+  async getCohortRetention(
+    @Query() query: CohortRetentionQueryDto,
+  ): Promise<CohortRetentionResponseDto> {
+    return this.cohortAnalyticsService.getCohortRetention(query);
   }
 
   @Get('voice-latency')
