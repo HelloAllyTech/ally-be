@@ -78,6 +78,10 @@ describe('HighlightsAnalyticsService', () => {
         .fn()
         .mockResolvedValue({ rows: [], belowFloor: { orgs: 0, sims: 0 } }),
       getPracticeMinutesByBucket: jest.fn().mockResolvedValue([]),
+      getPlayTimeByBucket: jest.fn().mockResolvedValue([]),
+      getPlayTimeOverall: jest
+        .fn()
+        .mockResolvedValue({ avgMinutes: null, sessions: 0 }),
       getQualityTrendByBucket: jest.fn().mockResolvedValue([]),
       getQualityOverall: jest
         .fn()
@@ -94,6 +98,9 @@ describe('HighlightsAnalyticsService', () => {
         .mockResolvedValue({ attempts: 0, passed: 0 }),
       getCompletedSimulationsByBucket: jest.fn().mockResolvedValue([]),
       getAiUsageByBucket: jest.fn().mockResolvedValue([]),
+      getDataFloor: jest
+        .fn()
+        .mockResolvedValue(new Date('2023-03-15T00:00:00.000Z')),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -110,6 +117,66 @@ describe('HighlightsAnalyticsService', () => {
   afterEach(() => {
     jest.useRealTimers();
     jest.clearAllMocks();
+  });
+
+  describe("range='all'", () => {
+    it('spans the measured data floor to today, in month buckets', async () => {
+      const res = await service.getHighlights({ range: 'all' });
+
+      expect(repo.getDataFloor).toHaveBeenCalled();
+      expect(res.bucket).toBe('month');
+      expect(res.window).toMatchObject({
+        from: '2023-03-15',
+        to: '2024-06-12',
+        label: 'All time',
+        allTime: true,
+        inProgressBucket: '2024-06-01',
+      });
+      // 2023-03 .. 2024-06 inclusive = 16 monthly buckets.
+      expect(res.practiceMinutes).toHaveLength(16);
+      expect(res.practiceMinutes[0].bucket).toBe('2023-03-01');
+    });
+
+    it('passes the requested grain to every bucketed query', async () => {
+      await service.getHighlights({ range: 'all', bucket: 'year' });
+
+      for (const fn of [
+        repo.getPracticeMinutesByBucket,
+        repo.getPlayTimeByBucket,
+        repo.getQualityTrendByBucket,
+        repo.getCsatTrendByBucket,
+        repo.getCompletedSimulationsByBucket,
+      ]) {
+        expect(fn).toHaveBeenCalledWith(
+          expect.any(Date),
+          expect.any(Date),
+          'year',
+          undefined,
+        );
+      }
+      expect(repo.getAiUsageByBucket).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'year',
+      );
+    });
+
+    it('returns no comparison basis even when compare=prev is asked for', async () => {
+      const res = await service.getHighlights({
+        range: 'all',
+        compare: 'prev',
+      });
+
+      expect(res.previous).toBeNull();
+      expect(res.previousLabel).toBeNull();
+      // ...and does not spend the comparison queries either.
+      expect(repo.getPlayTimeOverall).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not measure the data floor for a bounded range', async () => {
+      await service.getHighlights({ range: '90d' });
+      expect(repo.getDataFloor).not.toHaveBeenCalled();
+    });
   });
 
   describe('bucket axis + gap-fill', () => {
@@ -423,6 +490,125 @@ describe('HighlightsAnalyticsService', () => {
       expect(res.csatTrend).toEqual([
         { bucket: '2024-06-02', avgRating: 4.25, responses: 8 },
       ]);
+    });
+
+    it('puts session length on the full axis, gap-filled with nulls not zeros', async () => {
+      repo.getPlayTimeByBucket.mockResolvedValue([
+        {
+          bucket: '2024-06-03',
+          avgMinutes: 14.2,
+          medianMinutes: 11.5,
+          p95Minutes: 38.4,
+          sessions: 17,
+        },
+      ]);
+
+      const res = await service.getHighlights({ range: '30d' });
+
+      // The axis stays a real calendar: 30 days, not the 1 day that happened
+      // to have sessions.
+      expect(res.playTime).toHaveLength(30);
+      expect(res.playTime.find((p) => p.bucket === '2024-06-03')).toEqual({
+        bucket: '2024-06-03',
+        avgMinutes: 14.2,
+        medianMinutes: 11.5,
+        p95Minutes: 38.4,
+        sessions: 17,
+      });
+
+      const quiet = res.playTime.filter((p) => p.bucket !== '2024-06-03');
+      // Null, never 0 — a zero would read as "sessions collapsed to nothing".
+      expect(
+        quiet.every(
+          (p) =>
+            p.avgMinutes === null &&
+            p.medianMinutes === null &&
+            p.p95Minutes === null,
+        ),
+      ).toBe(true);
+      // But the COUNT gap-fills to zero: "nobody practised" is a fact.
+      expect(quiet.every((p) => p.sessions === 0)).toBe(true);
+    });
+  });
+
+  describe('mean session length KPI', () => {
+    it('takes the exact whole-window mean, not a mean of the buckets', async () => {
+      // Buckets that would average to 20 if re-averaged; the exact figure is 9.
+      repo.getPlayTimeByBucket.mockResolvedValue([
+        {
+          bucket: '2024-06-01',
+          avgMinutes: 30,
+          medianMinutes: 30,
+          p95Minutes: 30,
+          sessions: 1,
+        },
+        {
+          bucket: '2024-06-02',
+          avgMinutes: 10,
+          medianMinutes: 10,
+          p95Minutes: 10,
+          sessions: 99,
+        },
+      ]);
+      repo.getPlayTimeOverall.mockResolvedValue({
+        avgMinutes: 9,
+        sessions: 100,
+      });
+
+      const res = await service.getHighlights({ range: '30d' });
+
+      expect(res.summary.avgPlayTimeMinutes).toBe(9);
+      expect(res.summary.playTimeSessions).toBe(100);
+    });
+
+    it('reports null rather than zero when nothing was timed', async () => {
+      const res = await service.getHighlights({ range: '30d' });
+
+      expect(res.summary.avgPlayTimeMinutes).toBeNull();
+      expect(res.summary.playTimeSessions).toBe(0);
+    });
+
+    it('computes the comparison window mean too', async () => {
+      repo.getPlayTimeOverall
+        .mockResolvedValueOnce({ avgMinutes: 14, sessions: 40 })
+        .mockResolvedValueOnce({ avgMinutes: 11, sessions: 31 });
+
+      const res = await service.getHighlights({
+        range: '30d',
+        compare: 'prev',
+      });
+
+      expect(res.summary.avgPlayTimeMinutes).toBe(14);
+      expect(res.previous?.avgPlayTimeMinutes).toBe(11);
+      expect(res.previousLabel).toBeTruthy();
+    });
+
+    it('scopes both the trend and the KPI to a tenant filter', async () => {
+      await service.getHighlights({ range: '30d', tenantId: 'ally' });
+
+      expect(repo.getPlayTimeByBucket).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'day',
+        'ally',
+      );
+      expect(repo.getPlayTimeOverall).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'ally',
+      );
+    });
+
+    it('does not flag session length as unscoped — sessions carry a tenant', async () => {
+      const res = await service.getHighlights({
+        range: '30d',
+        tenantId: 'ally',
+      });
+
+      expect(res.scoping.unscopedSections).not.toContain('playTime');
+      expect(res.scoping.unscopedSections).not.toContain(
+        'summary.avgPlayTimeMinutes',
+      );
     });
   });
 });

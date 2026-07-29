@@ -6,6 +6,10 @@ import { HighlightsAnalyticsService } from './service/highlights-analytics.servi
 import { HighlightsAnalyticsRepository } from './repository/highlights-analytics.repository';
 import { CohortAnalyticsService } from './service/cohort-analytics.service';
 import { CohortAnalyticsRepository } from './repository/cohort-analytics.repository';
+import { UsageLevelAnalyticsService } from './service/usage-level-analytics.service';
+import { UsageLevelAnalyticsRepository } from './repository/usage-level-analytics.repository';
+import { RoleplayVolumeAnalyticsService } from './service/roleplay-volume-analytics.service';
+import { RoleplayVolumeAnalyticsRepository } from './repository/roleplay-volume-analytics.repository';
 import { PlatformAnalyticsService } from './service/platform-analytics.service';
 import { ScribeAnalyticsService } from './service/scribe-analytics.service';
 import { DriftJudgeService } from './service/drift-judge.service';
@@ -49,6 +53,10 @@ import { TenantModule } from 'src/tenant/tenant.module';
     HighlightsAnalyticsRepository,
     CohortAnalyticsService,
     CohortAnalyticsRepository,
+    UsageLevelAnalyticsService,
+    UsageLevelAnalyticsRepository,
+    RoleplayVolumeAnalyticsService,
+    RoleplayVolumeAnalyticsRepository,
     PlatformAnalyticsService,
     ScribeAnalyticsService,
     DriftJudgeService,

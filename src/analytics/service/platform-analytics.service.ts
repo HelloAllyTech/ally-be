@@ -24,11 +24,11 @@ import {
 } from '../dto/platform-analytics.dto';
 import {
   AnalyticsBucket,
+  BucketActiveUserRow,
+  BucketCountRow,
   DailyActivityRow,
   NewUsersBucketRow,
   PlatformAnalyticsRepository,
-  WeeklyActiveUserRow,
-  WeeklyCountRow,
 } from '../repository/platform-analytics.repository';
 import { LlmUsageRepository } from '../repository/llm-usage.repository';
 import {
@@ -39,12 +39,12 @@ import { DriftAnalyticsRepository } from '../repository/drift-analytics.reposito
 import {
   AnalyticsWindow,
   addDays,
-  addMonths,
+  describeWindow,
+  generateBucketLabels,
   isoDate,
   previousWindow,
   resolveAnalyticsWindow,
-  startOfUtcMonth,
-  startOfUtcWeekMonday,
+  truncToBucket,
 } from '../util/analytics-window.util';
 
 /** Voice-to-voice latency target (ms) — the reference line on the trend. */
@@ -83,6 +83,26 @@ export class PlatformAnalyticsService {
     if (range === '30d') return 'day';
     if (range === '90d') return 'week';
     return 'month';
+  }
+
+  /**
+   * Resolve the window for an endpoint that supports `range=all`.
+   *
+   * The data floor is only measured when it is actually needed — an all-time
+   * range with no explicit `from`/`to`. Every other range is pure calendar
+   * math and pays nothing for this.
+   */
+  private async resolveOverviewWindow(
+    query: AnalyticsOverviewQueryDto,
+    defaultBucketFor: (range: AnalyticsRange) => AnalyticsBucket,
+  ): Promise<AnalyticsWindow> {
+    const needsFloor =
+      (query.range ?? '30d') === 'all' && !query.from && !query.to;
+    return resolveAnalyticsWindow(query, {
+      defaultRange: '30d',
+      defaultBucketFor,
+      allTimeStart: needsFloor ? await this.repo.getDataFloor() : undefined,
+    });
   }
 
   /**
@@ -146,14 +166,7 @@ export class PlatformAnalyticsService {
 
     return {
       range: query.range ?? '30d',
-      window: {
-        from: isoDate(windowStart),
-        to: isoDate(addDays(endExclusive, -1)),
-        label: window.label,
-        days: window.days,
-        bucket: window.bucket,
-        computedAt: new Date().toISOString(),
-      },
+      window: describeWindow(window),
       totalEstimatedCostUsd: round2(
         points.reduce((sum, p) => sum + p.estimatedCostUsd, 0),
       ),
@@ -204,16 +217,27 @@ export class PlatformAnalyticsService {
    * Build the consolidated super-admin analytics overview for the given range.
    * - 30d / 90d -> weekly buckets for growth, daily DAU/WAU/MAU series
    * - 12m       -> monthly buckets for growth, daily DAU/WAU/MAU series
+   * - all       -> monthly buckets over the platform's whole history
+   *
+   * `bucket` overrides the default, and now reaches EVERY bucketed series here:
+   * user growth, completed simulations and the new-vs-returning split were
+   * previously fixed to ISO weeks whatever was asked for, which meant a client
+   * asking for monthly data got two monthly charts and two weekly ones with no
+   * way to see the difference.
+   *
+   * The DAU/WAU/MAU series stays daily on purpose — those are trailing-window
+   * definitions sampled per day, so re-bucketing them would not re-grain the
+   * same metric, it would silently answer a different question.
    */
   async getOverview(
     query: AnalyticsOverviewQueryDto,
   ): Promise<AnalyticsOverviewResponseDto> {
-    const window = resolveAnalyticsWindow(query, {
-      defaultRange: '30d',
+    const window = await this.resolveOverviewWindow(
+      query,
       // Growth/retention have always been week-grained here (month at 12m);
       // preserved so existing charts do not silently re-bucket.
-      defaultBucketFor: (r) => (r === '12m' ? 'month' : 'week'),
-    });
+      (r) => (r === '12m' ? 'month' : 'week'),
+    );
     const windowStart = window.start;
     const endExclusive = window.endExclusive;
     const bucket = window.bucket;
@@ -231,8 +255,8 @@ export class PlatformAnalyticsService {
       newUsersBuckets,
       baselineUsers,
       dailyActivity,
-      simsByWeek,
-      weeklyActive,
+      simsByBucket,
+      activeByBucket,
       usersByRole,
       totalUsers,
       activeInWindow,
@@ -242,8 +266,16 @@ export class PlatformAnalyticsService {
       this.repo.getNewUsersByBucket(windowStart, endExclusive, bucket),
       this.repo.getUserCountBefore(windowStart),
       this.repo.getDailyActivityPairs(activityStart, endExclusive),
-      this.repo.getSimulationsCompletedByWeek(windowStart, endExclusive),
-      this.repo.getWeeklyActivePairsWithCreatedAt(windowStart, endExclusive),
+      this.repo.getSimulationsCompletedByBucket(
+        windowStart,
+        endExclusive,
+        bucket,
+      ),
+      this.repo.getActivePairsWithCreatedAtByBucket(
+        windowStart,
+        endExclusive,
+        bucket,
+      ),
       this.repo.getUsersByRole(),
       this.repo.getTotalUsers(),
       // Summary KPIs now cover the SELECTED window rather than a fixed rolling
@@ -270,14 +302,7 @@ export class PlatformAnalyticsService {
     );
 
     return {
-      window: {
-        from: isoDate(windowStart),
-        to: isoDate(addDays(endExclusive, -1)),
-        label: window.label,
-        days: window.days,
-        bucket: window.bucket,
-        computedAt: new Date().toISOString(),
-      },
+      window: describeWindow(window),
       summary,
       previous,
       previousLabel,
@@ -294,11 +319,17 @@ export class PlatformAnalyticsService {
         endExclusive,
       ),
       simulationsCompleted: this.buildSimulationsCompleted(
-        simsByWeek,
+        simsByBucket,
         windowStart,
         endExclusive,
+        bucket,
       ),
-      retention: this.buildRetention(weeklyActive, windowStart, endExclusive),
+      retention: this.buildRetention(
+        activeByBucket,
+        windowStart,
+        endExclusive,
+        bucket,
+      ),
       usersByRole,
     };
   }
@@ -310,6 +341,9 @@ export class PlatformAnalyticsService {
    * window's end, which is exactly `getUserCountBefore(window.start)` — the same
    * value already fetched as the growth-chart baseline, so the comparison costs
    * one query less than it looks.
+   *
+   * An all-time window gets no comparison even when one is asked for: nothing
+   * precedes the platform's first row, so every delta would be "up from zero".
    */
   private async buildOverviewComparison(
     query: AnalyticsOverviewQueryDto,
@@ -318,7 +352,7 @@ export class PlatformAnalyticsService {
     previous: AnalyticsSummaryDto | null;
     previousLabel: string | null;
   }> {
-    if (query.compare !== 'prev')
+    if (query.compare !== 'prev' || window.allTime)
       return { previous: null, previousLabel: null };
 
     const prev = previousWindow(window);
@@ -468,14 +502,7 @@ export class PlatformAnalyticsService {
 
     return {
       range,
-      window: {
-        from: isoDate(windowStart),
-        to: isoDate(addDays(endExclusive, -1)),
-        label: window.label,
-        days: window.days,
-        bucket: window.bucket,
-        computedAt: new Date().toISOString(),
-      },
+      window: describeWindow(window),
       summary: {
         totalSessions,
         driftedSessions,
@@ -543,14 +570,7 @@ export class PlatformAnalyticsService {
 
     return {
       range: query.range ?? '90d',
-      window: {
-        from: isoDate(windowStart),
-        to: isoDate(addDays(endExclusive, -1)),
-        label: window.label,
-        days: window.days,
-        bucket: window.bucket,
-        computedAt: new Date().toISOString(),
-      },
+      window: describeWindow(window),
       bucket,
       targetMs: VOICE_LATENCY_TARGET_MS,
       points,
@@ -619,14 +639,7 @@ export class PlatformAnalyticsService {
 
     return {
       range: query.range ?? '90d',
-      window: {
-        from: isoDate(windowStart),
-        to: isoDate(addDays(endExclusive, -1)),
-        label: window.label,
-        days: window.days,
-        bucket: window.bucket,
-        computedAt: new Date().toISOString(),
-      },
+      window: describeWindow(window),
       bucket,
       points,
       outcomeMix,
@@ -658,50 +671,15 @@ export class PlatformAnalyticsService {
 
     return {
       range: query.range ?? '90d',
-      window: {
-        from: isoDate(windowStart),
-        to: isoDate(addDays(endExclusive, -1)),
-        label: window.label,
-        days: window.days,
-        bucket: window.bucket,
-        computedAt: new Date().toISOString(),
-      },
+      window: describeWindow(window),
       bucket,
       targetMs: START_LATENCY_TARGET_MS,
       points,
     };
   }
 
-  /**
-   * Generate a contiguous list of bucket start labels (yyyy-mm-dd) spanning the
-   * window, so charts get a gap-free axis even for buckets with zero rows.
-   */
-  private generateBucketLabels(
-    windowStart: Date,
-    endExclusive: Date,
-    bucket: AnalyticsBucket,
-  ): string[] {
-    const lastDay = addDays(endExclusive, -1);
-    const labels: string[] = [];
-
-    if (bucket === 'month') {
-      let cur = startOfUtcMonth(windowStart);
-      const last = startOfUtcMonth(lastDay);
-      while (cur <= last) {
-        labels.push(isoDate(cur));
-        cur = addMonths(cur, 1);
-      }
-    } else {
-      let cur = startOfUtcWeekMonday(windowStart);
-      const last = startOfUtcWeekMonday(lastDay);
-      while (cur <= last) {
-        labels.push(isoDate(cur));
-        cur = addDays(cur, 7);
-      }
-    }
-
-    return labels;
-  }
+  // Bucket-axis generation lives in analytics-window.util (it also knows the
+  // day and year grains this private copy never handled).
 
   private buildUserGrowth(
     rows: NewUsersBucketRow[],
@@ -711,7 +689,7 @@ export class PlatformAnalyticsService {
     bucket: AnalyticsBucket,
   ): UserGrowthPointDto[] {
     const byBucket = new Map(rows.map((r) => [r.bucket, r.newUsers]));
-    const labels = this.generateBucketLabels(windowStart, endExclusive, bucket);
+    const labels = generateBucketLabels(windowStart, endExclusive, bucket);
 
     let cumulative = baseline;
     return labels.map((date) => {
@@ -765,43 +743,58 @@ export class PlatformAnalyticsService {
     return union.size;
   }
 
+  /** Zero-filled: a bucket with no completed simulations really is zero. */
   private buildSimulationsCompleted(
-    rows: WeeklyCountRow[],
+    rows: BucketCountRow[],
     windowStart: Date,
     endExclusive: Date,
+    bucket: AnalyticsBucket,
   ): SimulationsCompletedPointDto[] {
-    const byWeek = new Map(rows.map((r) => [r.week, r.count]));
-    return this.generateBucketLabels(windowStart, endExclusive, 'week').map(
-      (weekStart) => ({ weekStart, count: byWeek.get(weekStart) ?? 0 }),
-    );
+    const byBucket = new Map(rows.map((r) => [r.bucket, r.count]));
+    return generateBucketLabels(windowStart, endExclusive, bucket).map((b) => ({
+      bucket: b,
+      count: byBucket.get(b) ?? 0,
+    }));
   }
 
+  /**
+   * Split each bucket's active users into new (account created in that same
+   * bucket) and returning. The two partition the bucket's actives, which is what
+   * makes them safe to stack.
+   *
+   * "New" is defined against the CURRENT bucket, so the account-creation date is
+   * truncated with the same grain the activity was — comparing a user's creation
+   * week against a monthly activity bucket would label almost everyone
+   * returning. `truncToBucket` is the JS twin of the SQL `date_trunc` the
+   * repository applied, so the two keys are directly comparable.
+   */
   private buildRetention(
-    rows: WeeklyActiveUserRow[],
+    rows: BucketActiveUserRow[],
     windowStart: Date,
     endExclusive: Date,
+    bucket: AnalyticsBucket,
   ): RetentionPointDto[] {
-    const weeks = this.generateBucketLabels(windowStart, endExclusive, 'week');
+    const buckets = generateBucketLabels(windowStart, endExclusive, bucket);
     const tally = new Map<
       string,
       { newUsers: number; returningUsers: number }
     >();
-    for (const w of weeks) tally.set(w, { newUsers: 0, returningUsers: 0 });
+    for (const b of buckets) tally.set(b, { newUsers: 0, returningUsers: 0 });
 
-    for (const { week, userCreatedAt } of rows) {
-      const entry = tally.get(week);
+    for (const row of rows) {
+      const entry = tally.get(row.bucket);
       if (!entry) continue; // outside the visible axis (shouldn't happen)
-      const createdWeek = isoDate(
-        startOfUtcWeekMonday(parseUtcDate(userCreatedAt)),
+      const createdBucket = isoDate(
+        truncToBucket(parseUtcDate(row.userCreatedAt), bucket),
       );
-      if (createdWeek === week) entry.newUsers += 1;
+      if (createdBucket === row.bucket) entry.newUsers += 1;
       else entry.returningUsers += 1;
     }
 
-    return weeks.map((weekStart) => {
-      const entry = tally.get(weekStart)!;
+    return buckets.map((b) => {
+      const entry = tally.get(b)!;
       return {
-        weekStart,
+        bucket: b,
         newUsers: entry.newUsers,
         returningUsers: entry.returningUsers,
       };

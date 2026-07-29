@@ -6,12 +6,13 @@ import {
   excludeTestTenantsBySession,
   excludeTestTenantsByUser,
 } from '../util/test-tenant.util';
+import { getPlatformDataFloor } from '../util/data-floor.util';
 
 /**
  * Bucket granularity for time-series aggregation. Controlled internally by the
  * service (never user input) so it is safe to interpolate into `date_trunc`.
  */
-export type AnalyticsBucket = 'day' | 'week' | 'month';
+export type AnalyticsBucket = 'day' | 'week' | 'month' | 'year';
 
 export interface AgentJoinReliabilityBucketRow {
   bucket: string;
@@ -46,15 +47,15 @@ export interface DailyActivityRow {
   counselorId: number;
 }
 
-export interface WeeklyCountRow {
-  /** ISO week start (Monday) as a calendar date string (yyyy-mm-dd). */
-  week: string;
+export interface BucketCountRow {
+  /** Bucket start as a calendar date string (yyyy-mm-dd). */
+  bucket: string;
   count: number;
 }
 
-export interface WeeklyActiveUserRow {
-  /** ISO week start (Monday) of the activity, as yyyy-mm-dd. */
-  week: string;
+export interface BucketActiveUserRow {
+  /** Bucket start of the activity, as yyyy-mm-dd. */
+  bucket: string;
   counselorId: number;
   /** The user's account creation date, as yyyy-mm-dd. */
   userCreatedAt: string;
@@ -135,11 +136,12 @@ export interface StartLatencyBucketRow {
 export class PlatformAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  private resolveBucket(bucket: AnalyticsBucket): 'day' | 'week' | 'month' {
+  private resolveBucket(bucket: AnalyticsBucket): AnalyticsBucket {
     // Defense-in-depth: bucket is internal, but never interpolate anything we
     // have not explicitly whitelisted.
     if (bucket === 'day') return 'day';
     if (bucket === 'month') return 'month';
+    if (bucket === 'year') return 'year';
     return 'week';
   }
 
@@ -382,18 +384,25 @@ export class PlatformAnalyticsRepository {
   }
 
   /**
-   * Completed simulations grouped by ISO week within [start, end).
-   * Completion timestamp is `COALESCE(endedAt, createdAt)`.
+   * Completed simulations grouped by time bucket within [start, end).
+   * Completion timestamp is `COALESCE(endedAt, createdAt)`. `trunc` is
+   * whitelisted by resolveBucket.
+   *
+   * Was week-only, which is why the chart above it was titled "per week"; the
+   * grain is now the reader's choice, so neither the query nor the title may
+   * assume one.
    */
-  async getSimulationsCompletedByWeek(
+  async getSimulationsCompletedByBucket(
     start: Date,
     end: Date,
-  ): Promise<WeeklyCountRow[]> {
+    bucket: AnalyticsBucket,
+  ): Promise<BucketCountRow[]> {
+    const trunc = this.resolveBucket(bucket);
     const rows = await this.dataSource
       .createQueryBuilder()
       .select(
-        `to_char(date_trunc('week', COALESCE(s."endedAt", s."createdAt")), 'YYYY-MM-DD')`,
-        'week',
+        `to_char(date_trunc('${trunc}', COALESCE(s."endedAt", s."createdAt")), 'YYYY-MM-DD')`,
+        'bucket',
       )
       .addSelect('COUNT(*)::int', 'count')
       .from('scenario_sessions', 's')
@@ -403,31 +412,39 @@ export class PlatformAnalyticsRepository {
       .andWhere('COALESCE(s."endedAt", s."createdAt") >= :start', { start })
       .andWhere('COALESCE(s."endedAt", s."createdAt") < :end', { end })
       .andWhere(excludeTestTenants('s."tenant_id"'))
-      .groupBy('week')
-      .orderBy('week', 'ASC')
-      .getRawMany<{ week: string; count: number }>();
+      .groupBy('bucket')
+      .orderBy('bucket', 'ASC')
+      .getRawMany<{ bucket: string; count: number }>();
 
     return rows.map((r) => ({
-      week: r.week,
+      bucket: r.bucket,
       count: Number(r.count) || 0,
     }));
   }
 
   /**
-   * Distinct weekly-active (week, counselorId) pairs within [start, end),
-   * joined to the user's account creation date so the service can label each
-   * weekly-active user as "new" (account created that week) or "returning".
-   * Activity timestamp is `COALESCE(startedAt, createdAt)`.
+   * Distinct active (bucket, counselorId) pairs within [start, end), joined to
+   * the user's account creation date so the service can label each active user
+   * as "new" (account created in that same bucket) or "returning". Activity
+   * timestamp is `COALESCE(startedAt, createdAt)`; `trunc` is whitelisted by
+   * resolveBucket.
+   *
+   * Note that the new/returning split is defined RELATIVE TO THE BUCKET, so it
+   * genuinely means something different at each grain — "new this week" and "new
+   * this year" are different questions, not the same answer re-binned. The
+   * surface names the grain for exactly this reason.
    */
-  async getWeeklyActivePairsWithCreatedAt(
+  async getActivePairsWithCreatedAtByBucket(
     start: Date,
     end: Date,
-  ): Promise<WeeklyActiveUserRow[]> {
+    bucket: AnalyticsBucket,
+  ): Promise<BucketActiveUserRow[]> {
+    const trunc = this.resolveBucket(bucket);
     const rows = await this.dataSource
       .createQueryBuilder()
       .select(
-        `to_char(date_trunc('week', COALESCE(s."startedAt", s."createdAt")), 'YYYY-MM-DD')`,
-        'week',
+        `to_char(date_trunc('${trunc}', COALESCE(s."startedAt", s."createdAt")), 'YYYY-MM-DD')`,
+        'bucket',
       )
       .addSelect('s."counselorId"', 'counselorId')
       .addSelect(`to_char(u."createdAt", 'YYYY-MM-DD')`, 'userCreatedAt')
@@ -438,16 +455,25 @@ export class PlatformAnalyticsRepository {
       .andWhere('COALESCE(s."startedAt", s."createdAt") < :end', { end })
       .andWhere(excludeTestTenants('s."tenant_id"'))
       .getRawMany<{
-        week: string;
+        bucket: string;
         counselorId: number;
         userCreatedAt: string;
       }>();
 
     return rows.map((r) => ({
-      week: r.week,
+      bucket: r.bucket,
       counselorId: Number(r.counselorId),
       userCreatedAt: r.userCreatedAt,
     }));
+  }
+
+  /**
+   * Where the platform's data begins — the left edge of an all-time window.
+   * See {@link getPlatformDataFloor}; kept behind the repository so the service
+   * stays free of SQL.
+   */
+  async getDataFloor(): Promise<Date> {
+    return getPlatformDataFloor(this.dataSource);
   }
 
   /** Distinct user counts grouped by role/group name. */

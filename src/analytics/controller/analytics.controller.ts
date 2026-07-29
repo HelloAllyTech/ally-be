@@ -12,6 +12,8 @@ import {
 } from '@nestjs/common';
 import { AnalyticsService } from '../service/analytics.service';
 import { CohortAnalyticsService } from '../service/cohort-analytics.service';
+import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.service';
+import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
 import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
 import { LanguageAnalyticsService } from '../service/language-analytics.service';
 import { LanguageJudgeService } from '../service/language-judge.service';
@@ -58,6 +60,14 @@ import {
   CohortRetentionResponseDto,
 } from '../dto/cohort-analytics.dto';
 import {
+  UsageLevelQueryDto,
+  UsageLevelResponseDto,
+} from '../dto/usage-level-analytics.dto';
+import {
+  RoleplayVolumeQueryDto,
+  RoleplayVolumeResponseDto,
+} from '../dto/roleplay-volume-analytics.dto';
+import {
   ScribeAnalyticsQueryDto,
   ScribeOverviewResponseDto,
   ScribeSummaryFailureResponseDto,
@@ -88,6 +98,8 @@ export class AnalyticsController {
     private readonly analyticsService: AnalyticsService,
     private readonly highlightsAnalyticsService: HighlightsAnalyticsService,
     private readonly cohortAnalyticsService: CohortAnalyticsService,
+    private readonly usageLevelAnalyticsService: UsageLevelAnalyticsService,
+    private readonly roleplayVolumeAnalyticsService: RoleplayVolumeAnalyticsService,
     private readonly platformAnalyticsService: PlatformAnalyticsService,
     private readonly scribeAnalyticsService: ScribeAnalyticsService,
     private readonly languageJudgeService: LanguageJudgeService,
@@ -126,7 +138,8 @@ export class AnalyticsController {
     description:
       'Leadership KPI aggregates NOT already served by /overview or ' +
       '/scribe/overview: org adoption (active orgs + top orgs by completed ' +
-      'simulations), practice minutes, roleplay quality trend (composite ' +
+      'simulations), practice minutes, mean/median/p95 simulation length, ' +
+      'roleplay quality trend (composite ' +
       'evaluation score), learner CSAT trend, learning-track funnel and AI ' +
       'cost per completed simulation. Bucket granularity follows the `range` ' +
       'param (30d -> day, 90d -> week, 12m -> month) unless overridden. ' +
@@ -171,6 +184,70 @@ export class AnalyticsController {
     @Query() query: CohortRetentionQueryDto,
   ): Promise<CohortRetentionResponseDto> {
     return this.cohortAnalyticsService.getCohortRetention(query);
+  }
+
+  @Get('usage-levels')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Monthly learner usage-level mix (super-admin)',
+    description:
+      'For each of the last 12 complete calendar months plus the current one, ' +
+      'how many learners practised 0 / under 10 / 10-25 / 25-50 / 50-100 / ' +
+      '100-500 / 500-1000 / 1000+ minutes in that month — the distribution ' +
+      'behind the practice-minutes total, and whether the mix is shifting up. ' +
+      'Bands are lower-inclusive and upper-exclusive, and are counted from a ' +
+      "learner's monthly SUM of user_daily_scores.minutesPlayed. Both " +
+      'denominators ("percentage of users" has two defensible readings — every ' +
+      'registered learner, or only those who had ever practised) are returned ' +
+      'per month from the same pass, so the client switches definition without a ' +
+      'refetch and the two can never divide different numerators. MONTH-GRAINED ' +
+      'and fixed-window by design — this endpoint takes no ' +
+      '`range`/`bucket`/`from`/`to`, because a shift in a distribution is only ' +
+      'visible across several months. The current month is flagged `partial`: it ' +
+      'is still accruing minutes, so its low bands are overstated. `tenantId` ' +
+      'narrows both the population and the activity.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Usage-level distribution retrieved successfully',
+    type: UsageLevelResponseDto,
+  })
+  async getUsageLevels(
+    @Query() query: UsageLevelQueryDto,
+  ): Promise<UsageLevelResponseDto> {
+    return this.usageLevelAnalyticsService.getUsageLevels(query);
+  }
+
+  @Get('roleplay-volume')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Learners by lifetime completed roleplays (super-admin)',
+    description:
+      'How the learner population splits across bands of COMPLETED ROLEPLAYS ' +
+      'per learner: 0 / 1 / 2 / 3-5 / 6-10 / 11-25 / 26-50 / 51+. The ' +
+      'distribution behind the roleplay volume charts — whether the volume comes ' +
+      'from the whole population or from a handful of enthusiasts, and how large ' +
+      'the never-started group is. Bands are inclusive on BOTH bounds (a count ' +
+      'is discrete, so "3-5" means 3, 4 or 5), counted per learner from ' +
+      'scenario_sessions with eventStatus COMPLETED attributed by counselorId. ' +
+      'The zero band is a residual (`registeredLearners - learnersWithAny`) ' +
+      'because a learner who never practised has no session row to count. ' +
+      'ALL-TIME by design — this endpoint takes no `range`/`bucket`/`from`/`to`: ' +
+      'a lifetime count is the quantity that answers the question, and over a ' +
+      '30-day window nearly every learner would land in the lowest bands ' +
+      'whatever their real depth. Counts, never percentages, are returned, with ' +
+      '`minPopulationSize` as the floor below which a share must not be stated. ' +
+      '`tenantId` narrows both the population and the sessions.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Roleplay-volume distribution retrieved successfully',
+    type: RoleplayVolumeResponseDto,
+  })
+  async getRoleplayVolume(
+    @Query() query: RoleplayVolumeQueryDto,
+  ): Promise<RoleplayVolumeResponseDto> {
+    return this.roleplayVolumeAnalyticsService.getRoleplayVolume(query);
   }
 
   @Get('voice-latency')

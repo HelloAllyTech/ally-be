@@ -12,7 +12,7 @@ import { AnalyticsBucket } from '../repository/platform-analytics.repository';
 import { ScribeAnalyticsRepository } from '../repository/scribe-analytics.repository';
 import {
   AnalyticsWindow,
-  addDays,
+  describeWindow,
   generateBucketLabels,
   isoDate,
   previousWindow,
@@ -109,14 +109,7 @@ export class ScribeAnalyticsService {
     return {
       range: query.range ?? '30d',
       bucket,
-      window: {
-        from: isoDate(windowStart),
-        to: isoDate(addDays(endExclusive, -1)),
-        label: window.label,
-        days: window.days,
-        bucket,
-        computedAt: new Date().toISOString(),
-      },
+      window: describeWindow(window),
       scoping: {
         tenantId: tenantId ?? null,
         // Every scribe aggregate resolves through chats.tenant_id, so a tenant
@@ -259,14 +252,7 @@ export class ScribeAnalyticsService {
     return {
       range: query.range ?? '30d',
       bucket,
-      window: {
-        from: isoDate(windowStart),
-        to: isoDate(addDays(endExclusive, -1)),
-        label: window.label,
-        days: window.days,
-        bucket,
-        computedAt: new Date().toISOString(),
-      },
+      window: describeWindow(window),
       summary: {
         totalTerminal,
         totalFailed,

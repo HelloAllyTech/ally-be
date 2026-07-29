@@ -10,6 +10,7 @@ import {
   scopeToTenant,
   scopeToTenantByUser,
 } from '../util/test-tenant.util';
+import { getPlatformDataFloor } from '../util/data-floor.util';
 
 export interface TopOrgRow {
   tenantId: string;
@@ -33,6 +34,18 @@ export interface PracticeMinutesBucketRow {
   bucket: string;
   minutes: number;
   activeLearners: number;
+}
+
+export interface PlayTimeBucketRow {
+  bucket: string;
+  /** Mean session length in minutes. Null is impossible here — see the query. */
+  avgMinutes: number;
+  /** Median session length in minutes. */
+  medianMinutes: number;
+  /** 95th-percentile session length in minutes. */
+  p95Minutes: number;
+  /** Sessions behind the bucket's figures. */
+  sessions: number;
 }
 
 export interface QualityTrendBucketRow {
@@ -100,12 +113,23 @@ export interface AiUsageBucketRow {
 export class HighlightsAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  private resolveBucket(bucket: AnalyticsBucket): 'day' | 'week' | 'month' {
+  private resolveBucket(bucket: AnalyticsBucket): AnalyticsBucket {
     // Defense-in-depth: bucket is internal, but never interpolate anything we
     // have not explicitly whitelisted.
     if (bucket === 'day') return 'day';
     if (bucket === 'month') return 'month';
+    if (bucket === 'year') return 'year';
     return 'week';
+  }
+
+  /**
+   * Where the platform's data begins — the left edge of an all-time window.
+   * See {@link getPlatformDataFloor}. Deliberately the same measurement the
+   * overview endpoint uses, so the two responses that this tab composes cover
+   * the same period rather than two axes that nearly line up.
+   */
+  async getDataFloor(): Promise<Date> {
+    return getPlatformDataFloor(this.dataSource);
   }
 
   /** Distinct orgs with >=1 completed simulation in [start, end). */
@@ -270,6 +294,147 @@ export class HighlightsAnalyticsRepository {
       minutes: Number(r.minutes) || 0,
       activeLearners: Number(r.activeLearners) || 0,
     }));
+  }
+
+  /**
+   * How long a simulation actually lasts, per bucket: mean, median and p95
+   * session length in minutes, plus the session count behind them.
+   *
+   * Distinct from {@link getPracticeMinutesByBucket}, which is the TOTAL time
+   * the platform was used — that one rises when more people practise, this one
+   * only moves when a single sitting gets longer or shorter. Roughly, practice
+   * minutes = this mean x completed simulations.
+   *
+   * Median and p95 travel with the mean because session length is skewed: a
+   * handful of very long sittings pull an average away from the typical
+   * session, and an average with no distribution behind it is a half-truth.
+   * The mean is the subject; the other two say how much to trust it.
+   *
+   * Definition, deliberately identical to the tab's "completed simulation" so
+   * the two charts reconcile: `eventStatus = COMPLETED`, timestamped by
+   * `COALESCE(endedAt, createdAt)`. Duration is the persisted
+   * `scenario_session_details."callDuration"` (seconds, already net of paused
+   * time) — the same figure that feeds `user_daily_scores.minutesPlayed`, so
+   * this chart and the practice-minutes chart cannot disagree about what a
+   * minute of practice is.
+   *
+   * Sessions with a NULL or non-positive duration are excluded rather than
+   * counted as zero: a session that produced no measurable time is a session
+   * that did not happen, and averaging it in would report a fall in engagement
+   * whenever the failure rate rose.
+   *
+   * Buckets with no completed sessions are ABSENT, not zero — an average has no
+   * meaningful zero.
+   */
+  async getPlayTimeByBucket(
+    start: Date,
+    end: Date,
+    bucket: AnalyticsBucket,
+    tenantId?: string,
+  ): Promise<PlayTimeBucketRow[]> {
+    const trunc = this.resolveBucket(bucket);
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select(
+        `to_char(date_trunc('${trunc}', COALESCE(s."endedAt", s."createdAt")), 'YYYY-MM-DD')`,
+        'bucket',
+      )
+      .addSelect(
+        'round((avg(d."callDuration") / 60.0)::numeric, 1)::float',
+        'avgMinutes',
+      )
+      .addSelect(
+        `round((percentile_cont(0.5) WITHIN GROUP ` +
+          `(ORDER BY d."callDuration") / 60.0)::numeric, 1)::float`,
+        'medianMinutes',
+      )
+      .addSelect(
+        `round((percentile_cont(0.95) WITHIN GROUP ` +
+          `(ORDER BY d."callDuration") / 60.0)::numeric, 1)::float`,
+        'p95Minutes',
+      )
+      .addSelect('COUNT(*)::int', 'sessions')
+      .from('scenario_sessions', 's')
+      .innerJoin(
+        'scenario_session_details',
+        'd',
+        'd."scenarioSessionId" = s.id',
+      )
+      .where('s."eventStatus" = :completed', {
+        completed: ScenarioSessionEventStatus.COMPLETED,
+      })
+      .andWhere('d."callDuration" IS NOT NULL')
+      .andWhere('d."callDuration" > 0')
+      .andWhere('COALESCE(s."endedAt", s."createdAt") >= :start', { start })
+      .andWhere('COALESCE(s."endedAt", s."createdAt") < :end', { end })
+      .andWhere(excludeTestTenants('s."tenant_id"'));
+    if (tenantId) {
+      qb.andWhere(scopeToTenant('s."tenant_id"', ':tenantId'), { tenantId });
+    }
+    const rows = await qb
+      .groupBy('bucket')
+      .orderBy('bucket', 'ASC')
+      .getRawMany<{
+        bucket: string;
+        avgMinutes: number;
+        medianMinutes: number;
+        p95Minutes: number;
+        sessions: number;
+      }>();
+
+    return rows.map((r) => ({
+      bucket: r.bucket,
+      avgMinutes: Number(r.avgMinutes) || 0,
+      medianMinutes: Number(r.medianMinutes) || 0,
+      p95Minutes: Number(r.p95Minutes) || 0,
+      sessions: Number(r.sessions) || 0,
+    }));
+  }
+
+  /**
+   * Whole-window mean session length + session count (the exact KPI).
+   *
+   * Computed over the raw sessions rather than re-averaged from the buckets: a
+   * mean of per-bucket means weights a quiet Sunday the same as a busy Monday.
+   */
+  async getPlayTimeOverall(
+    start: Date,
+    end: Date,
+    tenantId?: string,
+  ): Promise<{ avgMinutes: number | null; sessions: number }> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select(
+        'round((avg(d."callDuration") / 60.0)::numeric, 1)::float',
+        'avgMinutes',
+      )
+      .addSelect('COUNT(*)::int', 'sessions')
+      .from('scenario_sessions', 's')
+      .innerJoin(
+        'scenario_session_details',
+        'd',
+        'd."scenarioSessionId" = s.id',
+      )
+      .where('s."eventStatus" = :completed', {
+        completed: ScenarioSessionEventStatus.COMPLETED,
+      })
+      .andWhere('d."callDuration" IS NOT NULL')
+      .andWhere('d."callDuration" > 0')
+      .andWhere('COALESCE(s."endedAt", s."createdAt") >= :start', { start })
+      .andWhere('COALESCE(s."endedAt", s."createdAt") < :end', { end })
+      .andWhere(excludeTestTenants('s."tenant_id"'));
+    if (tenantId) {
+      qb.andWhere(scopeToTenant('s."tenant_id"', ':tenantId'), { tenantId });
+    }
+    const row = await qb.getRawOne<{
+      avgMinutes: number | null;
+      sessions: number;
+    }>();
+
+    return {
+      avgMinutes: row?.avgMinutes == null ? null : Number(row.avgMinutes),
+      sessions: Number(row?.sessions) || 0,
+    };
   }
 
   /**

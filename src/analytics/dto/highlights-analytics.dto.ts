@@ -83,6 +83,20 @@ export class HighlightsSummaryDto {
     type: Number,
   })
   costPerCompletedSimUsd!: number | null;
+
+  @ApiProperty({
+    description:
+      'Mean length of one completed simulation, in minutes, over the whole ' +
+      'range. Computed over the raw sessions, not re-averaged from the buckets.',
+    nullable: true,
+    type: Number,
+  })
+  avgPlayTimeMinutes!: number | null;
+
+  @ApiProperty({
+    description: 'Timed sessions backing the mean session length',
+  })
+  playTimeSessions!: number;
 }
 
 /**
@@ -115,6 +129,41 @@ export class PracticeMinutesPointDto {
   minutes!: number;
   @ApiProperty({ description: 'Distinct learners active in the bucket' })
   activeLearners!: number;
+}
+
+/**
+ * How long one simulation lasts, per bucket. Median and p95 travel with the
+ * mean because session length is skewed — an average with no distribution
+ * behind it is a half-truth.
+ *
+ * The three figures are NULL in a bucket with no completed, timed session.
+ * Null rather than absent, and null rather than zero: absent would collapse the
+ * x-axis so a quiet fortnight rendered as two adjacent days, and zero would
+ * draw a crash in session length where there was simply nobody practising.
+ * `sessions` is a count, so its zero is a real zero.
+ */
+export class PlayTimePointDto {
+  @ApiProperty({ description: 'Bucket start, yyyy-mm-dd' }) bucket!: string;
+  @ApiProperty({
+    description: 'Mean session length (minutes); null if nothing was timed',
+    nullable: true,
+    type: Number,
+  })
+  avgMinutes!: number | null;
+  @ApiProperty({
+    description: 'Median session length (minutes); null if nothing was timed',
+    nullable: true,
+    type: Number,
+  })
+  medianMinutes!: number | null;
+  @ApiProperty({
+    description: 'p95 session length (minutes); null if nothing was timed',
+    nullable: true,
+    type: Number,
+  })
+  p95Minutes!: number | null;
+  @ApiProperty({ description: 'Timed sessions behind this bucket' })
+  sessions!: number;
 }
 
 export class QualityTrendPointDto {
@@ -226,6 +275,15 @@ export class AnalyticsHighlightsResponseDto {
     description: 'Gap-filled to a contiguous bucket axis',
   })
   practiceMinutes!: PracticeMinutesPointDto[];
+
+  @ApiProperty({
+    type: [PlayTimePointDto],
+    description:
+      'On the contiguous bucket axis, but gap-filled with NULLs rather than ' +
+      'zeros: an average has no meaningful zero, and a bucket with no session ' +
+      'has no value. The axis stays a real calendar; the line breaks.',
+  })
+  playTime!: PlayTimePointDto[];
 
   @ApiProperty({
     type: [QualityTrendPointDto],

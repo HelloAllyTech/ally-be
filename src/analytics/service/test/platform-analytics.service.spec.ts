@@ -45,8 +45,11 @@ describe('PlatformAnalyticsService', () => {
       getUserCountBefore: jest.fn().mockResolvedValue(0),
       getTotalUsers: jest.fn().mockResolvedValue(0),
       getDailyActivityPairs: jest.fn().mockResolvedValue([]),
-      getSimulationsCompletedByWeek: jest.fn().mockResolvedValue([]),
-      getWeeklyActivePairsWithCreatedAt: jest.fn().mockResolvedValue([]),
+      getSimulationsCompletedByBucket: jest.fn().mockResolvedValue([]),
+      getActivePairsWithCreatedAtByBucket: jest.fn().mockResolvedValue([]),
+      getDataFloor: jest
+        .fn()
+        .mockResolvedValue(new Date('2023-03-15T00:00:00.000Z')),
       getUsersByRole: jest.fn().mockResolvedValue([]),
       getActiveUserCountSince: jest.fn().mockResolvedValue(0),
       getReturningActiveUserCountSince: jest.fn().mockResolvedValue(0),
@@ -160,32 +163,60 @@ describe('PlatformAnalyticsService', () => {
 
   describe('retention', () => {
     it('labels weekly-active users new vs returning by account-creation week', async () => {
-      repo.getWeeklyActivePairsWithCreatedAt.mockResolvedValue([
+      repo.getActivePairsWithCreatedAtByBucket.mockResolvedValue([
         // active in week 05-13, account created same week -> new
-        { week: '2024-05-13', counselorId: 1, userCreatedAt: '2024-05-15' },
+        { bucket: '2024-05-13', counselorId: 1, userCreatedAt: '2024-05-15' },
         // active in week 06-10, account created same week -> new
-        { week: '2024-06-10', counselorId: 2, userCreatedAt: '2024-06-11' },
+        { bucket: '2024-06-10', counselorId: 2, userCreatedAt: '2024-06-11' },
         // active in week 06-10, account created long ago -> returning
-        { week: '2024-06-10', counselorId: 3, userCreatedAt: '2024-01-01' },
+        { bucket: '2024-06-10', counselorId: 3, userCreatedAt: '2024-01-01' },
       ]);
 
       const { retention } = await service.getOverview({ range: '30d' });
 
-      expect(retention.map((p) => p.weekStart)).toEqual(WEEKLY_AXIS);
+      expect(retention.map((p) => p.bucket)).toEqual(WEEKLY_AXIS);
       expect(retention).toEqual([
-        { weekStart: '2024-05-13', newUsers: 1, returningUsers: 0 },
-        { weekStart: '2024-05-20', newUsers: 0, returningUsers: 0 },
-        { weekStart: '2024-05-27', newUsers: 0, returningUsers: 0 },
-        { weekStart: '2024-06-03', newUsers: 0, returningUsers: 0 },
-        { weekStart: '2024-06-10', newUsers: 1, returningUsers: 1 },
+        { bucket: '2024-05-13', newUsers: 1, returningUsers: 0 },
+        { bucket: '2024-05-20', newUsers: 0, returningUsers: 0 },
+        { bucket: '2024-05-27', newUsers: 0, returningUsers: 0 },
+        { bucket: '2024-06-03', newUsers: 0, returningUsers: 0 },
+        { bucket: '2024-06-10', newUsers: 1, returningUsers: 1 },
+      ]);
+    });
+
+    it('labels new vs returning against the REQUESTED grain, not the week', async () => {
+      // Same three users, read monthly. User 1 (created 2024-05-15) is active in
+      // May and was created in May, so monthly it is "new" — where weekly it
+      // depended on which week the account was opened. The split is a property
+      // of the bucket, so it has to be recomputed at the bucket's grain rather
+      // than carried over from the weekly answer.
+      repo.getActivePairsWithCreatedAtByBucket.mockResolvedValue([
+        { bucket: '2024-05-01', counselorId: 1, userCreatedAt: '2024-05-28' },
+        { bucket: '2024-06-01', counselorId: 2, userCreatedAt: '2024-06-11' },
+        { bucket: '2024-06-01', counselorId: 3, userCreatedAt: '2024-01-01' },
+      ]);
+
+      const { retention } = await service.getOverview({
+        range: '30d',
+        bucket: 'month',
+      });
+
+      expect(repo.getActivePairsWithCreatedAtByBucket).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'month',
+      );
+      expect(retention).toEqual([
+        { bucket: '2024-05-01', newUsers: 1, returningUsers: 0 },
+        { bucket: '2024-06-01', newUsers: 1, returningUsers: 1 },
       ]);
     });
   });
 
   describe('simulationsCompleted', () => {
     it('zero-fills the weekly axis', async () => {
-      repo.getSimulationsCompletedByWeek.mockResolvedValue([
-        { week: '2024-06-10', count: 5 },
+      repo.getSimulationsCompletedByBucket.mockResolvedValue([
+        { bucket: '2024-06-10', count: 5 },
       ]);
 
       const { simulationsCompleted } = await service.getOverview({
@@ -193,11 +224,34 @@ describe('PlatformAnalyticsService', () => {
       });
 
       expect(simulationsCompleted).toEqual([
-        { weekStart: '2024-05-13', count: 0 },
-        { weekStart: '2024-05-20', count: 0 },
-        { weekStart: '2024-05-27', count: 0 },
-        { weekStart: '2024-06-03', count: 0 },
-        { weekStart: '2024-06-10', count: 5 },
+        { bucket: '2024-05-13', count: 0 },
+        { bucket: '2024-05-20', count: 0 },
+        { bucket: '2024-05-27', count: 0 },
+        { bucket: '2024-06-03', count: 0 },
+        { bucket: '2024-06-10', count: 5 },
+      ]);
+    });
+
+    it('honours an explicit bucket instead of always aggregating by week', async () => {
+      // This series was hard-coded to ISO weeks whatever the client asked for,
+      // so a monthly request silently got a weekly chart.
+      repo.getSimulationsCompletedByBucket.mockResolvedValue([
+        { bucket: '2024-06-01', count: 9 },
+      ]);
+
+      const { simulationsCompleted } = await service.getOverview({
+        range: '30d',
+        bucket: 'month',
+      });
+
+      expect(repo.getSimulationsCompletedByBucket).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'month',
+      );
+      expect(simulationsCompleted).toEqual([
+        { bucket: '2024-05-01', count: 0 },
+        { bucket: '2024-06-01', count: 9 },
       ]);
     });
   });
@@ -256,6 +310,67 @@ describe('PlatformAnalyticsService', () => {
         expect.any(Date),
         'week',
       );
+    });
+  });
+
+  describe("range='all'", () => {
+    it('starts the window at the measured data floor and buckets by month', async () => {
+      const result = await service.getOverview({ range: 'all' });
+
+      expect(repo.getDataFloor).toHaveBeenCalled();
+      expect(result.window).toMatchObject({
+        from: '2023-03-15', // the mocked floor, not a guessed epoch
+        to: '2024-06-12',
+        label: 'All time',
+        bucket: 'month',
+        allTime: true,
+      });
+      expect(repo.getNewUsersByBucket).toHaveBeenCalledWith(
+        new Date('2023-03-15T00:00:00.000Z'),
+        new Date('2024-06-13T00:00:00.000Z'),
+        'month',
+      );
+    });
+
+    it('does not measure the data floor for any other range', async () => {
+      await service.getOverview({ range: '30d' });
+      expect(repo.getDataFloor).not.toHaveBeenCalled();
+    });
+
+    it('flags the in-progress bucket so surfaces can leave it off a plot', async () => {
+      const { window } = await service.getOverview({ range: 'all' });
+      // June 2024 contains the fixed "today" and is therefore still accruing.
+      expect(window.inProgressBucket).toBe('2024-06-01');
+    });
+
+    it('returns no comparison basis even when compare=prev is asked for', async () => {
+      // Nothing precedes the platform's first row, so a delta against the
+      // "previous period" would report growth from zero for every KPI.
+      const result = await service.getOverview({
+        range: 'all',
+        compare: 'prev',
+      });
+
+      expect(result.previous).toBeNull();
+      expect(result.previousLabel).toBeNull();
+    });
+
+    it('still compares equal-length windows for a bounded range', async () => {
+      const result = await service.getOverview({
+        range: '30d',
+        compare: 'prev',
+      });
+
+      expect(result.previousLabel).toBe('previous 30 days');
+      expect(result.previous).not.toBeNull();
+    });
+
+    it('rejects range=all on an endpoint with no data floor', async () => {
+      // Token consumption resolves a calendar window only; answering "all time"
+      // there would mean inventing a start date.
+      await expect(
+        service.getTokenConsumption({ range: 'all' }),
+      ).rejects.toThrow(/range=all is not supported/);
     });
   });
 
