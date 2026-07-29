@@ -10,6 +10,28 @@ import { UsageLevelAnalyticsService } from './service/usage-level-analytics.serv
 import { UsageLevelAnalyticsRepository } from './repository/usage-level-analytics.repository';
 import { RoleplayVolumeAnalyticsService } from './service/roleplay-volume-analytics.service';
 import { RoleplayVolumeAnalyticsRepository } from './repository/roleplay-volume-analytics.repository';
+// Testing-tab endpoints: candidates for the leadership Highlights tab, kept on a
+// separate admin tab until they have proved they change a decision.
+import { ActivationAnalyticsService } from './service/activation-analytics.service';
+import { ActivationAnalyticsRepository } from './repository/activation-analytics.repository';
+import { CompletionRateAnalyticsService } from './service/completion-rate-analytics.service';
+import { CompletionRateAnalyticsRepository } from './repository/completion-rate-analytics.repository';
+import { LanguageMixAnalyticsService } from './service/language-mix-analytics.service';
+import { LanguageMixAnalyticsRepository } from './repository/language-mix-analytics.repository';
+import { SkillGrowthAnalyticsService } from './service/skill-growth-analytics.service';
+import { SkillGrowthAnalyticsRepository } from './repository/skill-growth-analytics.repository';
+import { QualityDistributionAnalyticsService } from './service/quality-distribution-analytics.service';
+import { QualityDistributionAnalyticsRepository } from './repository/quality-distribution-analytics.repository';
+import { CompetencyMapAnalyticsService } from './service/competency-map-analytics.service';
+import { CompetencyMapAnalyticsRepository } from './repository/competency-map-analytics.repository';
+import { TrackDropoffAnalyticsService } from './service/track-dropoff-analytics.service';
+import { TrackDropoffAnalyticsRepository } from './repository/track-dropoff-analytics.repository';
+import { CoachingLoopAnalyticsService } from './service/coaching-loop-analytics.service';
+import { CoachingLoopAnalyticsRepository } from './repository/coaching-loop-analytics.repository';
+import { OrgHealthAnalyticsService } from './service/org-health-analytics.service';
+import { OrgHealthAnalyticsRepository } from './repository/org-health-analytics.repository';
+import { ScribeAdoptionAnalyticsService } from './service/scribe-adoption-analytics.service';
+import { ScribeAdoptionAnalyticsRepository } from './repository/scribe-adoption-analytics.repository';
 import { PlatformAnalyticsService } from './service/platform-analytics.service';
 import { ScribeAnalyticsService } from './service/scribe-analytics.service';
 import { DriftJudgeService } from './service/drift-judge.service';
@@ -57,6 +79,26 @@ import { TenantModule } from 'src/tenant/tenant.module';
     UsageLevelAnalyticsRepository,
     RoleplayVolumeAnalyticsService,
     RoleplayVolumeAnalyticsRepository,
+    ActivationAnalyticsService,
+    ActivationAnalyticsRepository,
+    CompletionRateAnalyticsService,
+    CompletionRateAnalyticsRepository,
+    LanguageMixAnalyticsService,
+    LanguageMixAnalyticsRepository,
+    SkillGrowthAnalyticsService,
+    SkillGrowthAnalyticsRepository,
+    QualityDistributionAnalyticsService,
+    QualityDistributionAnalyticsRepository,
+    CompetencyMapAnalyticsService,
+    CompetencyMapAnalyticsRepository,
+    TrackDropoffAnalyticsService,
+    TrackDropoffAnalyticsRepository,
+    CoachingLoopAnalyticsService,
+    CoachingLoopAnalyticsRepository,
+    OrgHealthAnalyticsService,
+    OrgHealthAnalyticsRepository,
+    ScribeAdoptionAnalyticsService,
+    ScribeAdoptionAnalyticsRepository,
     PlatformAnalyticsService,
     ScribeAnalyticsService,
     DriftJudgeService,
