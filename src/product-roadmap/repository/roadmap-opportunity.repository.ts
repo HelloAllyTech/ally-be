@@ -9,6 +9,12 @@ export interface RoadmapOpportunityRow extends RoadmapOpportunity {
   priorityScore: number;
   myCoins: number;
   commentCount: number;
+  /**
+   * The owner name to SHOW: the linked Ally user's current name, falling back to the legacy
+   * `owner` text for rows migrated from the standalone app. Resolved in SQL rather than copied
+   * onto the row, so renaming a person in Ally propagates with no sync step.
+   */
+  ownerDisplay: string | null;
 }
 
 export interface ListOpportunitiesOptions {
@@ -94,6 +100,7 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
       .addSelect('COALESCE(alloc.score, 0)::int', 'priorityScore')
       .addSelect('COALESCE(mine.coins, 0)::int', 'myCoins')
       .addSelect('COALESCE(cmt.cnt, 0)::int', 'commentCount')
+      .addSelect('COALESCE(owner_user.name, opp."owner")', 'ownerDisplay')
       .leftJoin(
         `(SELECT a."opportunityId", SUM(a.coins)::int AS score
             FROM roadmap_allocations a
@@ -101,6 +108,7 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
         'alloc',
         'alloc."opportunityId" = opp.id',
       )
+      .leftJoin('users', 'owner_user', 'owner_user.id = opp."ownerUserId"')
       .leftJoin(
         'roadmap_allocations',
         'mine',
@@ -176,8 +184,10 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
                            AND a."userId" = $2 AND a."periodKey" = $3), 0)   AS "myCoins",
               COALESCE((SELECT COUNT(*)::int FROM roadmap_opportunity_comments c
                          WHERE c."opportunityId" = opp.id
-                           AND c."deletedAt" IS NULL), 0)                    AS "commentCount"
+                           AND c."deletedAt" IS NULL), 0)                    AS "commentCount",
+              COALESCE(owner_user.name, opp."owner")                         AS "ownerDisplay"
          FROM roadmap_opportunities opp
+         LEFT JOIN users owner_user ON owner_user.id = opp."ownerUserId"
         WHERE opp.id = $1 AND opp."deletedAt" IS NULL`,
       [id, userId, periodKey],
     );
@@ -193,8 +203,14 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
     const rows = await this.dataSource.query<
       { createdBy: number; productGoal: string; owner: string | null }[]
     >(
-      `SELECT DISTINCT "createdBy", "productGoal", "owner"
-         FROM roadmap_opportunities WHERE "deletedAt" IS NULL`,
+      // The owner facet must use the RESOLVED name, or a reassigned opportunity would advertise a
+      // filter value ("Sandeep Malhotra") that no longer matches any row.
+      `SELECT DISTINCT o."createdBy",
+                       o."productGoal",
+                       COALESCE(u.name, o."owner") AS "owner"
+         FROM roadmap_opportunities o
+         LEFT JOIN users u ON u.id = o."ownerUserId"
+        WHERE o."deletedAt" IS NULL`,
     );
     return {
       createdBy: [...new Set(rows.map((r) => r.createdBy))],
@@ -242,8 +258,16 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
         productGoal: o.productGoal,
       });
     }
-    if (o.owner?.length)
-      qb.andWhere('opp."owner" IN (:...owner)', { owner: o.owner });
+    if (o.owner?.length) {
+      // Match either representation. A saved view migrated from the standalone app filters on a
+      // NAME, and after reassignment that same person is an `ownerUserId` whose name lives in
+      // `users` — checking only one column would make a migrated view stop matching the moment
+      // somebody linked the owner to a real account.
+      qb.andWhere(
+        '(opp."owner" IN (:...owner) OR owner_user.name IN (:...owner))',
+        { owner: o.owner },
+      );
+    }
     if (o.createdBy?.length) {
       qb.andWhere('opp."createdBy" IN (:...createdBy)', {
         createdBy: o.createdBy,
