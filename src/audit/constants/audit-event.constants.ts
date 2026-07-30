@@ -67,6 +67,10 @@ export const AUDIT_EVENTS = {
   DYNAMIC_I18N_TRANSLATION_UPDATED: 'DYNAMIC_I18N_TRANSLATION_UPDATED',
   DYNAMIC_I18N_PUBLISHED: 'DYNAMIC_I18N_PUBLISHED',
   DYNAMIC_I18N_ROLLED_BACK: 'DYNAMIC_I18N_ROLLED_BACK',
+  // Analytics Agent: one entry per question that reached the database, plus every
+  // refusal. A surface that reads platform-wide data from a free-text prompt needs
+  // a record of what was actually read, not only that the tab was opened.
+  ANALYTICS_AGENT_QUERY: 'ANALYTICS_AGENT_QUERY',
 } as const;
 
 export const AUDIT_ACTIONS = {
