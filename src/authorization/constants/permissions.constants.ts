@@ -287,6 +287,16 @@ const PERMISSIONS = {
   EDIT_AI_LAB: 'edit:admin:ai-lab',
   DELETE_AI_LAB: 'delete:admin:ai-lab',
 
+  // === PRODUCT ROADMAP ===
+  // Three tiers, because the roadmap is a voting board rather than a CRUD screen:
+  // VIEW is read-only, VOTE adds "participate" (file an opportunity, allocate your
+  // monthly coins, comment, keep your own saved views), and EDIT is the management
+  // surface (stages, editing/deleting anyone's opportunity, goals/owners,
+  // split/merge, release notes, pinning a view for everyone).
+  VIEW_PRODUCT_ROADMAP: 'view:admin:product-roadmap',
+  VOTE_PRODUCT_ROADMAP: 'vote:admin:product-roadmap',
+  EDIT_PRODUCT_ROADMAP: 'edit:admin:product-roadmap',
+
   // === ROLEPLAY STUDIO V2 ===
   VIEW_ROLEPLAY_SPECS: 'view:roleplay-specs',
   EDIT_ROLEPLAY_SPEC: 'edit:roleplay-spec',
@@ -397,6 +407,11 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.VIEW_AI_LAB,
   PERMISSIONS.EDIT_AI_LAB,
   PERMISSIONS.DELETE_AI_LAB,
+  // Product Roadmap: SUPER_ADMIN can see the board and vote on it. The management
+  // surface (EDIT_PRODUCT_ROADMAP) is deliberately withheld here and granted only to
+  // SUPER_DUPER_ADMIN below.
+  PERMISSIONS.VIEW_PRODUCT_ROADMAP,
+  PERMISSIONS.VOTE_PRODUCT_ROADMAP,
   // start:microphone-chat / start:cloud-telephony-chat are intentionally NOT
   // granted here — initiating a recording (scribe/dictation/telephony) is a
   // counsellor capability. A SUPER_ADMIN who is also a counsellor inherits it
@@ -413,6 +428,10 @@ const SUPER_DUPER_ADMIN_PERMISSIONS = [
   ...SUPER_ADMIN_PERMISSIONS,
   PERMISSIONS.VIEW_SUPER_DUPER_ADMINS,
   PERMISSIONS.EDIT_SUPER_DUPER_ADMINS,
+  // Product Roadmap management: stage transitions, editing/deleting anyone's
+  // opportunity, the goal/owner taxonomy, split/merge, release notes, and pinning a
+  // saved view for everyone. SUPER_ADMIN gets VIEW + VOTE only (see above).
+  PERMISSIONS.EDIT_PRODUCT_ROADMAP,
 ];
 
 const COUNSELOR_PERMISSIONS = [

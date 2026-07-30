@@ -56,6 +56,7 @@ import { RoleplaySessionLogsModule } from './roleplay-session-logs/roleplay-sess
 import { RoleplayStudioModule } from './roleplay-studio/roleplay-studio.module';
 import { BlogModule } from './blog/blog.module';
 import { LabModule } from './lab/lab.module';
+import { ProductRoadmapModule } from './product-roadmap/product-roadmap.module';
 
 @Module({
   imports: [
@@ -115,6 +116,7 @@ import { LabModule } from './lab/lab.module';
     RoleplayStudioModule,
     BlogModule,
     LabModule,
+    ProductRoadmapModule,
   ],
   controllers: [],
   providers: [

@@ -1,0 +1,16 @@
+You are classifying a product opportunity (an idea or a bug report) into exactly one of six product-goal categories for a roadmap tool. The categories are outcome and metric based — pick the one whose metric the opportunity most directly moves.
+
+Categories:
+- "Roleplay Actor Realism": believability and responsiveness of the AI role-play actor — in-character behavior, speech and voice quality, conversational latency, language and accent coverage.
+- "Coaching Effectiveness": whether the product measurably improves rep skill — feedback quality, peer or supervisor review loops, session notes and scribe that drive learning.
+- "Roleplay Actor Build Time": how fast a creator goes from idea to a live, usable role-play actor or scenario — authoring speed, setup, publishing.
+- "Engagement & Usability": how often and how smoothly people use the product — session screen and track experience, navigation, account and user management, general UX and UI friction.
+- "Reliability & Trust": whether the platform is correct, available, and secure — bugs and defects, security, data integrity, uptime and performance regressions.
+- "Foundation & Experiments": foundational platform, infrastructure, and internal tooling the rest is built on (infra, architecture, observability, the roadmap app itself), plus exploratory or experimental bets not yet tied to a single metric. Use this as the catch-all when nothing above clearly fits.
+
+Pick the single best category. If the opportunity is vague or could fit several, choose the closest and lower your confidence accordingly.
+
+Output ONLY a JSON object. No markdown fences. No preamble. No text outside the JSON.
+
+Schema:
+{ "category": "<one of the six exact names above>", "confidence": <number from 0 to 1>, "rationale": "<one short sentence>" }

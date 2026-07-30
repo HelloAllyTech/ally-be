@@ -22,6 +22,9 @@ import {
   ScenarioEvaluationChatMessage,
   ScenarioEvaluationRequest,
   ActorGoalEvaluationRequest,
+  RoadmapOpportunityBulkUpsertRequest,
+  RoadmapOpportunityUpsertRequest,
+  RoadmapSimilarOpportunitiesRequest,
   SearchReferenceDocumentsRequest,
   TagPositivityRatingsRequest,
   TranscribeAudioRequest,
@@ -40,6 +43,10 @@ import {
   GetReferenceDocumentResponse,
   IdentifySpeakersResponse,
   ScenarioEvaluationResponse,
+  RoadmapOpportunityBulkUpsertResponse,
+  RoadmapOpportunityDeleteResponse,
+  RoadmapOpportunityUpsertResponse,
+  RoadmapSimilarOpportunitiesResponse,
   SearchReferenceDocumentsResponse,
   TagPositivityRatingsResponse,
   TranscribeAudioResponse,
@@ -191,6 +198,81 @@ export class AiService {
       SearchReferenceDocumentsRequest
     >(ENDPOINTS.SEARCH_REFERENCE_DOCUMENTS, searchRequest, true);
     return response;
+  }
+
+  // ── Product Roadmap semantic duplicate detection ──────────────────────────
+  // ally-ai owns the `RoadmapOpportunity` Weaviate collection. The EXPLICIT timeouts below
+  // are not optional: makeRequest defaults to this.maxTimeout (5 MINUTES), and a five-minute
+  // hang on the opportunity-create path would be catastrophic for a feature whose whole
+  // contract is "best-effort" — an opportunity must save even when ally-ai is down.
+
+  /** Idempotent: the Weaviate object uuid IS the opportunity id. 8s — a write nobody waits on. */
+  async upsertRoadmapOpportunity(request: RoadmapOpportunityUpsertRequest) {
+    return this.makeRequest<
+      RoadmapOpportunityUpsertResponse,
+      RoadmapOpportunityUpsertRequest
+    >(
+      `${ENDPOINTS.ROADMAP_OPPORTUNITY_UPSERT}/${request.opportunity_id}`,
+      request,
+      true,
+      'put',
+      undefined,
+      false,
+      8_000,
+    );
+  }
+
+  /**
+   * MANDATORY on soft delete and on merge. Postgres reads filter on deletedAt IS NULL but
+   * Weaviate has no idea, so a skipped delete means duplicate-detection proposes a deleted
+   * opportunity forever.
+   */
+  async deleteRoadmapOpportunity(opportunityId: string) {
+    return this.makeRequest<RoadmapOpportunityDeleteResponse, undefined>(
+      `${ENDPOINTS.ROADMAP_OPPORTUNITY_DELETE}/${opportunityId}`,
+      undefined,
+      true,
+      'delete',
+      undefined,
+      false,
+      8_000,
+    );
+  }
+
+  /** 15s — a user IS waiting on this one (duplicate check while typing a new opportunity). */
+  async findSimilarRoadmapOpportunities(
+    request: RoadmapSimilarOpportunitiesRequest,
+  ) {
+    return this.makeRequest<
+      RoadmapSimilarOpportunitiesResponse,
+      RoadmapSimilarOpportunitiesRequest
+    >(
+      ENDPOINTS.ROADMAP_OPPORTUNITY_SEARCH,
+      request,
+      true,
+      'post',
+      undefined,
+      false,
+      15_000,
+    );
+  }
+
+  /** Backfill/reindex batches. 60s because a batch embeds up to 64 items in one call. */
+  async bulkUpsertRoadmapOpportunities(
+    request: RoadmapOpportunityBulkUpsertRequest,
+  ) {
+    return this.makeRequest<
+      RoadmapOpportunityBulkUpsertResponse,
+      RoadmapOpportunityBulkUpsertRequest
+    >(
+      ENDPOINTS.ROADMAP_OPPORTUNITY_BULK_UPSERT,
+      request,
+      true,
+      'post',
+      undefined,
+      false,
+      60_000,
+    );
   }
 
   async updateReferenceDocument(

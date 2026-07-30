@@ -98,3 +98,36 @@ export interface ScenarioEvaluationResponse {
   emotional_movement: ScenarioEvaluationEmotionalMovementItem[];
   areas_of_growth: ScenarioEvaluationAreaOfImprovementItem[];
 }
+
+// ── Product Roadmap semantic duplicate detection (ally-ai / Weaviate) ────────
+
+export interface RoadmapOpportunityUpsertResponse {
+  opportunity_id: string;
+  /** SHA-256 of the embedded text; ally-be stores it to detect staleness. */
+  text_hash: string;
+  embedding_model: string;
+}
+
+export interface RoadmapOpportunityBulkUpsertResponse {
+  succeeded: RoadmapOpportunityUpsertResponse[];
+  /** Per-item failures. The caller must surface these — a partially-failed batch that reports
+   * success is exactly how the standalone app's own backfill wrote 241 fallbacks to a file
+   * labelled "Done. 241 classified." */
+  failed: { opportunity_id: string; error: string }[];
+}
+
+export interface RoadmapSimilarOpportunityMatch {
+  opportunity_id: string;
+  product_goal: string;
+  /** Cosine similarity in [0, 1]. */
+  similarity: number;
+}
+
+export interface RoadmapSimilarOpportunitiesResponse {
+  matches: RoadmapSimilarOpportunityMatch[];
+}
+
+export interface RoadmapOpportunityDeleteResponse {
+  opportunity_id: string;
+  deleted: boolean;
+}
