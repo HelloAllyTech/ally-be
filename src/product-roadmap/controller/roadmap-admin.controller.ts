@@ -42,6 +42,7 @@ import {
   AiReviewResponseDto,
   AiTextResponseDto,
   DuplicatesResponseDto,
+  PruneVectorsResponseDto,
   ReindexResponseDto,
 } from '../dto/roadmap-response.dto';
 import { RoadmapTaxonomyService } from '../service/roadmap-taxonomy.service';
@@ -356,5 +357,21 @@ export class RoadmapAdminController {
   @ApiResponse({ status: 201, type: ReindexResponseDto })
   reindex(@Query('force') force?: string): Promise<ReindexResponseDto> {
     return this.vectorService.reindexAll(force === 'true');
+  }
+
+  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @Post('admin/vectors/prune')
+  @ApiOperation({
+    summary: 'Delete vectors whose opportunity no longer exists',
+    description:
+      'The other half of repair: reindex only pushes Postgres into Weaviate, so it can never ' +
+      'remove a vector left behind by a HARD-deleted row. Such an orphan is filtered out of ' +
+      'results but still consumes one of the top-N similarity slots a real duplicate needed. ' +
+      'Deletes on the basis of absence, so it refuses to act when the orphan ratio is high ' +
+      'enough to suggest our own id set is incomplete — check `abortedReason` on the response.',
+  })
+  @ApiResponse({ status: 201, type: PruneVectorsResponseDto })
+  pruneVectors(): Promise<PruneVectorsResponseDto> {
+    return this.vectorService.pruneOrphanedVectors();
   }
 }

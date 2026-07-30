@@ -36,4 +36,5 @@ export const ENDPOINTS = {
   ROADMAP_OPPORTUNITY_DELETE: 'api/v1/roadmap-opportunities',
   ROADMAP_OPPORTUNITY_SEARCH: 'api/v1/roadmap-opportunities/search',
   ROADMAP_OPPORTUNITY_BULK_UPSERT: 'api/v1/roadmap-opportunities/bulk-upsert',
+  ROADMAP_OPPORTUNITY_IDS: 'api/v1/roadmap-opportunities/ids',
 } as const;

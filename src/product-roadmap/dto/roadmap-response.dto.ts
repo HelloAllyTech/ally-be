@@ -113,3 +113,27 @@ export class ReindexResponseDto {
   @ApiProperty() succeeded!: number;
   @ApiProperty() failed!: number;
 }
+
+export class PruneVectorsResponseDto {
+  @ApiProperty({ description: 'Ids enumerated in the vector index' })
+  scanned!: number;
+
+  @ApiProperty({
+    description: 'Vectors with no Postgres row at all, deleted by this run',
+  })
+  orphansDeleted!: number;
+
+  @ApiProperty({
+    description: 'Orphans found but whose delete call failed; retry the sweep',
+  })
+  failed!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Set when the sweep REFUSED to delete anything. A high orphan ratio means the id set we ' +
+      'diffed against was probably incomplete, and deleting on that basis would destroy good ' +
+      'vectors. Nothing was deleted; investigate and re-run.',
+  })
+  abortedReason!: string | null;
+}
