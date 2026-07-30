@@ -21,8 +21,11 @@ import {
   EVAL_RATING_SCALE_MIN,
 } from '../constants/lab-eval.constants';
 
-/** One evaluation question supplied at publish time. */
-export class PublishRunQuestionDto {
+/**
+ * One evaluation question's text/type/scale — the shape shared by ad-hoc
+ * run-publish questions and Question Set questions (see lab-question-set.dto).
+ */
+export class EvalQuestionDto {
   @ApiProperty({ description: 'The question text shown to evaluators' })
   @IsString()
   @IsNotEmpty()
@@ -41,6 +44,17 @@ export class PublishRunQuestionDto {
   @Min(EVAL_RATING_SCALE_MIN)
   @Max(EVAL_RATING_SCALE_MAX)
   scaleMax?: number;
+}
+
+/** One evaluation question supplied at publish time. */
+export class PublishRunQuestionDto extends EvalQuestionDto {
+  @ApiPropertyOptional({
+    description:
+      'If imported from a Question Set, that set’s id (for traceability only)',
+  })
+  @IsOptional()
+  @IsUUID()
+  sourceQuestionSetId?: string;
 }
 
 export class PublishRunDto {

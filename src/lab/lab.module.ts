@@ -14,6 +14,8 @@ import { LabEvaluator } from './entity/lab-evaluator.entity';
 import { LabRunAssignment } from './entity/lab-run-assignment.entity';
 import { LabEvalAnswer } from './entity/lab-eval-answer.entity';
 import { LabAutoEvaluation } from './entity/lab-auto-evaluation.entity';
+import { LabQuestionSet } from './entity/lab-question-set.entity';
+import { LabQuestionSetQuestion } from './entity/lab-question-set-question.entity';
 import { LabSkillRepository } from './repository/lab-skill.repository';
 import { LabVariableRepository } from './repository/lab-variable.repository';
 import { LabValueRepository } from './repository/lab-value.repository';
@@ -25,6 +27,10 @@ import {
   LabRunAssignmentRepository,
 } from './repository/lab-eval.repositories';
 import { LabAutoEvaluationRepository } from './repository/lab-auto-evaluation.repository';
+import {
+  LabQuestionSetRepository,
+  LabQuestionSetQuestionRepository,
+} from './repository/lab-question-set.repository';
 import { LabSkillService } from './service/lab-skill.service';
 import { LabAutoEvalService } from './service/lab-auto-eval.service';
 import { LabVariableService } from './service/lab-variable.service';
@@ -32,6 +38,7 @@ import { LabValueService } from './service/lab-value.service';
 import { LabRunService } from './service/lab-run.service';
 import { LabEvaluatorService } from './service/lab-evaluator.service';
 import { LabEvalService } from './service/lab-eval.service';
+import { LabQuestionSetService } from './service/lab-question-set.service';
 import { LabEvaluatorGuard } from './guard/lab-evaluator.guard';
 import { LabRunProducer } from './producer/lab-run.producer';
 import { LabRunConsumer } from './consumer/lab-run.consumer';
@@ -41,6 +48,7 @@ import { LabValueController } from './controller/lab-value.controller';
 import { LabRunController } from './controller/lab-run.controller';
 import { LabEvaluatorController } from './controller/lab-evaluator.controller';
 import { LabEvalPortalController } from './controller/lab-eval-portal.controller';
+import { LabQuestionSetController } from './controller/lab-question-set.controller';
 
 /**
  * AI Lab: a super-duper-admin workspace for authoring reusable system prompts
@@ -62,6 +70,8 @@ import { LabEvalPortalController } from './controller/lab-eval-portal.controller
       LabRunAssignment,
       LabEvalAnswer,
       LabAutoEvaluation,
+      LabQuestionSet,
+      LabQuestionSetQuestion,
     ]),
     AwsModule,
     NotificationModule,
@@ -73,6 +83,7 @@ import { LabEvalPortalController } from './controller/lab-eval-portal.controller
     LabRunController,
     LabEvaluatorController,
     LabEvalPortalController,
+    LabQuestionSetController,
   ],
   providers: [
     LabSkillRepository,
@@ -84,6 +95,8 @@ import { LabEvalPortalController } from './controller/lab-eval-portal.controller
     LabRunAssignmentRepository,
     LabEvalAnswerRepository,
     LabAutoEvaluationRepository,
+    LabQuestionSetRepository,
+    LabQuestionSetQuestionRepository,
     LabSkillService,
     LabAutoEvalService,
     LabVariableService,
@@ -91,6 +104,7 @@ import { LabEvalPortalController } from './controller/lab-eval-portal.controller
     LabRunService,
     LabEvaluatorService,
     LabEvalService,
+    LabQuestionSetService,
     LabEvaluatorGuard,
     LabRunProducer,
     LabRunConsumer,

@@ -13,6 +13,8 @@ export enum LabEvalQuestionType {
   RATING = 'RATING',
   YES_NO = 'YES_NO',
   TEXT = 'TEXT',
+  /** Explanatory text shown to the evaluator; not answered or submitted. */
+  DESCRIPTION = 'DESCRIPTION',
 }
 
 /**
@@ -50,6 +52,15 @@ export class LabEvalQuestion extends BaseWithoutTenantEntity {
   /** Display order within the run's question list. */
   @Column({ type: 'int', default: 0 })
   position!: number;
+
+  /**
+   * If this question was imported from a Question Set at publish time, the
+   * set's id (for traceability only — no app logic reads this). Null for
+   * ad-hoc questions. Soft reference (ON DELETE SET NULL): sets are
+   * archive-only once published, so this rarely goes null in practice.
+   */
+  @Column({ name: 'source_question_set_id', type: 'uuid', nullable: true })
+  sourceQuestionSetId?: string | null;
 
   @Column({ name: 'created_by', type: 'int' })
   createdBy!: number;
