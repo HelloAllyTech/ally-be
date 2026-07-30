@@ -28,6 +28,26 @@ const toArray = ({ value }: { value: unknown }): unknown => {
   return String(value).split(',');
 };
 
+/**
+ * toArray, coerced to numbers.
+ *
+ * `@Type(() => Number)` does NOT do this when `@Transform` is also on the property:
+ * class-transformer lets the explicit transform win, so the value stayed an array of STRINGS and
+ * `@IsInt({ each: true })` rejected even `?createdBy=1` with a 400. The creator filter was
+ * therefore unusable from the moment it was added — caught when building its UI.
+ *
+ * Non-numeric input is passed through untouched so @IsInt still produces its own clear message
+ * rather than this silently turning junk into NaN.
+ */
+const toIntArray = ({ value }: { value: unknown }): unknown => {
+  const parsed = toArray({ value });
+  if (parsed === undefined) return undefined;
+  return (parsed as unknown[]).map((v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : v;
+  });
+};
+
 export class ListOpportunitiesQueryDto {
   @ApiPropertyOptional({
     description: 'Case-insensitive substring of the description',
@@ -72,9 +92,8 @@ export class ListOpportunitiesQueryDto {
     isArray: true,
   })
   @IsOptional()
-  @Transform(toArray)
+  @Transform(toIntArray)
   @IsArray()
-  @Type(() => Number)
   @IsInt({ each: true })
   createdBy?: number[];
 
@@ -177,11 +196,21 @@ export class UpdateOpportunityDto {
   @MinLength(1)
   productGoal?: string;
 
-  /** Explicit null clears the owner. */
-  @ApiPropertyOptional({ nullable: true })
+  /**
+   * Assign the owner by Ally user id. Explicit null un-assigns.
+   *
+   * An owner must be a SUPER_ADMIN / SUPER_DUPER_ADMIN user — the service rejects anyone else, so
+   * this cannot be used to point an opportunity at an arbitrary account. The legacy free-text
+   * `owner` field is deliberately NOT writable any more: accepting both would let a caller set a
+   * display name that disagrees with the linked user.
+   */
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'Ally user id of a super-admin; null un-assigns',
+  })
   @IsOptional()
-  @IsString()
-  owner?: string | null;
+  @IsInt()
+  ownerUserId?: number | null;
 
   @ApiPropertyOptional({ maxLength: ROADMAP_LIMITS.PRD_MAX, nullable: true })
   @IsOptional()
