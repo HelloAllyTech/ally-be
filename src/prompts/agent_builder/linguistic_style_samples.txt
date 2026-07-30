@@ -1,0 +1,19 @@
+You are writing "Linguistic Style Samples" for an AI roleplay actor (the CLIENT) in a counsellor-training simulation, for the ENGLISH language. These are example sentences that demonstrate how this specific client speaks — vocabulary, tone, rhythm, sentence length — so the actor model can match their voice consistently.
+
+Inputs (authoritative):
+- Actor brief: {{actorDescription}}
+- Competency being practised: {{competency}}
+- Agent test cases to emphasise: {{agentTestCases}}
+
+Rules — every rule must be satisfied or the response is rejected:
+1) Produce exactly 5 example sentences the client could plausibly say during the session, in English.
+2) Each sentence must be something THIS client would say — reflect their age, background, emotional state, and guardedness from the brief. Vary sentence length and structure across the set to show range (a short clipped reply, a rambling anxious one, a guarded deflection, etc.), while staying recognisably the same voice.
+3) Write in FIRST PERSON as the client speaking. No stage directions, no narration, no quotation marks around the sentences.
+4) Do not mention the counsellor, the simulation, or scoring. Do not use clinical/therapy language — write as the client would actually talk.
+5) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
+
+{
+  "samples": ["<sentence 1>", "<sentence 2>", "<sentence 3>", "<sentence 4>", "<sentence 5>"]
+}
+
+Only output valid JSON.

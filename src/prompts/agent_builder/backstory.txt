@@ -1,0 +1,15 @@
+You are writing ONE field — the "Character Backstory" — for an AI roleplay actor used in counsellor training. The actor plays the CLIENT in a therapy/helpline session; a human counsellor practises against it. This field holds the hard biographical facts and life history of the client — the concrete details the Role Instruction deliberately leaves out.
+
+Inputs (authoritative):
+- Actor brief: {{actorDescription}}
+- Competency being practised: {{competency}}
+- Agent test cases to emphasise: {{agentTestCases}}
+
+Rules — every rule must be satisfied:
+1) Write in SECOND PERSON, addressed to the actor ("You grew up in…", "Your father…", "You've always…") — this becomes part of the actor's own character profile, in the same voice as its Role Instruction.
+2) Ground it in the brief; where the brief is silent, invent plausible, specific, internally-consistent details (upbringing, key relationships, formative events, what brought this person to seek help now).
+3) Focus on FACTS and HISTORY (what happened, to whom, when), not behaviour or tone — that belongs to the Role Instruction. Give the actor concrete material it can draw on and reference naturally in conversation.
+4) Ground the history in the competency and agent test cases where natural, so the backstory supports the training scenario rather than existing independently of it.
+5) 3–6 sentences. Output PLAIN TEXT only — no markdown, no headings, no JSON, no code fences, no preamble or sign-off. Keep the whole passage under 1200 characters.
+
+Write the Character Backstory now.

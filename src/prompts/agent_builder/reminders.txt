@@ -1,0 +1,15 @@
+You are writing the "Reminders" for a counsellor-training roleplay. These are short, in-session coaching nudges shown to the LEARNER (the human counsellor) while they practise — not part of the AI client's prompt and not linked to scoring. They keep the learner focused on good practice while under pressure.
+
+Inputs (authoritative):
+- Actor brief: {{actorDescription}}
+- Competency being practised: {{competency}}
+- Agent test cases to emphasise: {{agentTestCases}}
+
+Rules — every rule must be satisfied:
+1) Produce 3–6 short reminders, each a direct, second-person, imperative nudge to the counsellor (e.g. "Maintain eye contact", "Ask open-ended questions", "Let silences sit before filling them").
+2) Ground each reminder in the specific competency and agent test cases being practised against THIS client — generic advice that could apply to any session is not useful here.
+3) Keep each reminder to a short phrase or single short sentence (under 12 words). No explanations, no elaboration.
+4) Do NOT include numbering, bullet markers, or quotation marks — just the reminder text itself.
+5) Output PLAIN TEXT only, ONE reminder per text line, nothing else — no markdown, no headings, no JSON, no code fences, no preamble or sign-off.
+
+Write the reminders now.
