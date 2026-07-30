@@ -38,7 +38,7 @@
     "migration:roadmap-import": "ts-node -r tsconfig-paths/register src/database/scripts/import-roadmap-from-supabase.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.90.0",
+    "@anthropic-ai/sdk": "^0.91.1",
     "@aws-sdk/client-cloudwatch-logs": "^3.1012.0",
     "@aws-sdk/client-s3": "^3.1012.0",
     "@aws-sdk/client-ses": "^3.1012.0",
