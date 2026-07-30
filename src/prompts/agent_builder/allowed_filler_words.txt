@@ -1,0 +1,18 @@
+You are choosing "Allowed Filler Words" for an AI roleplay actor (the CLIENT) in a counsellor-training simulation, for the ENGLISH language. These are short hesitation words/phrases (e.g. "um", "you know", "I guess") the voice agent is permitted to sprinkle into speech to sound natural, matched to this client's age, background, and speaking style.
+
+Inputs (authoritative):
+- Actor brief: {{actorDescription}}
+- Competency being practised: {{competency}}
+- Agent test cases to emphasise: {{agentTestCases}}
+
+Rules — every rule must be satisfied or the response is rejected:
+1) Produce 8–10 short filler words or short filler phrases (1–4 words each) in English that fit THIS client's age, background, and emotional state from the brief — e.g. a nervous teenager and a guarded older adult would use different fillers.
+2) Each item must be a genuine hesitation/discourse filler (like "um", "uh", "I mean", "you know", "sort of", "like"), not a full sentence, opinion, or piece of backstory.
+3) No duplicates. No punctuation beyond what the filler itself needs. No quotation marks around the items.
+4) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
+
+{
+  "fillers": ["<filler 1>", "<filler 2>", "..."]
+}
+
+Only output valid JSON.

@@ -3280,7 +3280,9 @@ export class ScenarioService {
       field === AgentBuilderField.TITLE ||
       field === AgentBuilderField.PERSONA ||
       field === AgentBuilderField.KNOWLEDGE_SOURCES ||
-      field === AgentBuilderField.STATES;
+      field === AgentBuilderField.STATES ||
+      field === AgentBuilderField.LINGUISTIC_STYLE_SAMPLES ||
+      field === AgentBuilderField.ALLOWED_FILLER_WORDS;
 
     // Honor the prompt's per-prompt model/temperature (the wizard sends none),
     // with any explicit request override winning.
@@ -3336,6 +3338,9 @@ export class ScenarioService {
     switch (field) {
       case AgentBuilderField.ROLE_INSTRUCTION:
       case AgentBuilderField.CHALLENGE_DESCRIPTION:
+      case AgentBuilderField.BACKSTORY:
+      case AgentBuilderField.OPENING_STATEMENTS:
+      case AgentBuilderField.REMINDERS:
         return raw.trim();
 
       case AgentBuilderField.TITLE: {
@@ -3427,9 +3432,40 @@ export class ScenarioService {
         return buildGeneratedStates(items);
       }
 
+      case AgentBuilderField.LINGUISTIC_STYLE_SAMPLES: {
+        return this.parseStringListField(raw, 'samples');
+      }
+
+      case AgentBuilderField.ALLOWED_FILLER_WORDS: {
+        return this.parseStringListField(raw, 'fillers');
+      }
+
       default:
         return raw.trim();
     }
+  }
+
+  /**
+   * Shared lenient parser for fields whose contract is `{ <key>: string[] }` —
+   * tolerates a bare array or the model wrapping the list under a different
+   * key, same leniency as knowledge_sources/states. Drops non-string /
+   * empty-after-trim entries.
+   */
+  private parseStringListField(raw: string, key: string): string[] {
+    const parsed = this.parseFirstJsonObject(raw);
+    let items: any[] = [];
+    if (Array.isArray(parsed)) {
+      items = parsed;
+    } else if (Array.isArray(parsed?.[key])) {
+      items = parsed[key];
+    } else if (parsed && typeof parsed === 'object') {
+      const arrayValue = Object.values(parsed).find((v) => Array.isArray(v));
+      if (Array.isArray(arrayValue)) items = arrayValue;
+    }
+    return items
+      .filter((s): s is string => typeof s === 'string')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
   }
 
   private getLanguageNameFromCode(code: string): string {

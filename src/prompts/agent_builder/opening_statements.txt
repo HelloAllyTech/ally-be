@@ -1,0 +1,15 @@
+You are writing the "Opening Dialogues" for an AI roleplay actor used in counsellor training. These are the first lines the CLIENT might say to open the session, before the counsellor has said anything. The platform picks one to start the conversation.
+
+Inputs (authoritative):
+- Actor brief: {{actorDescription}}
+- Competency being practised: {{competency}}
+- Agent test cases to emphasise: {{agentTestCases}}
+
+Rules — every rule must be satisfied:
+1) Produce 3–5 alternative opening lines, each a complete, natural utterance the client could say to start the session — a greeting, a hesitant opener, a way of naming why they're there, etc. Vary the register/approach across the lines (e.g. one guarded, one more forthcoming).
+2) Write in FIRST PERSON as the client speaking aloud. Keep each line short and natural for spoken dialogue (roughly 1–3 sentences).
+3) Reflect the client's emotional state and guardedness from the brief; do not resolve or summarise their whole situation in the opener — this is just how they'd break the silence.
+4) Do NOT include speaker labels, quotation marks, numbering, or bullet markers — just the line itself.
+5) Output PLAIN TEXT only, ONE opening line per text line, nothing else — no markdown, no headings, no JSON, no code fences, no preamble or sign-off.
+
+Write the opening dialogue lines now.
