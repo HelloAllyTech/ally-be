@@ -45,6 +45,7 @@ import {
   ScenarioEvaluationResponse,
   RoadmapOpportunityBulkUpsertResponse,
   RoadmapOpportunityDeleteResponse,
+  RoadmapOpportunityIdsResponse,
   RoadmapOpportunityUpsertResponse,
   RoadmapSimilarOpportunitiesResponse,
   SearchReferenceDocumentsResponse,
@@ -272,6 +273,29 @@ export class AiService {
       undefined,
       false,
       60_000,
+    );
+  }
+
+  /**
+   * One page of ids in the vector index, for reconciliation. 20s — a whole page is one cheap
+   * ids-only read, but a large `limit` over a cold collection is slower than a keyed lookup.
+   *
+   * This is the ONLY call here that can surface an opportunity ally-be has forgotten about; every
+   * other one is keyed by an id we already hold. Without it, a vector whose row was hard-deleted
+   * is undetectable.
+   */
+  async listRoadmapOpportunityIds(limit = 200, after?: string) {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (after) query.set('after', after);
+
+    return this.makeRequest<RoadmapOpportunityIdsResponse, undefined>(
+      `${ENDPOINTS.ROADMAP_OPPORTUNITY_IDS}?${query.toString()}`,
+      undefined,
+      true,
+      'get',
+      undefined,
+      false,
+      20_000,
     );
   }
 

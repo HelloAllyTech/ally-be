@@ -131,3 +131,15 @@ export interface RoadmapOpportunityDeleteResponse {
   opportunity_id: string;
   deleted: boolean;
 }
+
+/**
+ * One page of ids currently held in the `RoadmapOpportunity` Weaviate collection.
+ *
+ * `next_cursor` is null at the end of the collection. Cursor paging, not offset paging: offset
+ * paging over a collection being written to can skip objects, and a reconciliation sweep that
+ * skips an id would UNDER-report drift while looking like it passed.
+ */
+export interface RoadmapOpportunityIdsResponse {
+  ids: string[];
+  next_cursor: string | null;
+}
