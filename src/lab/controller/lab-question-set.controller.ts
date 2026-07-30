@@ -47,7 +47,9 @@ export class LabQuestionSetController {
 
   @Post()
   @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
-  @ApiOperation({ summary: 'Create a draft question set (optionally with initial questions)' })
+  @ApiOperation({
+    summary: 'Create a draft question set (optionally with initial questions)',
+  })
   create(@Body() dto: CreateQuestionSetDto) {
     return this.setService.create(dto);
   }
@@ -83,7 +85,10 @@ export class LabQuestionSetController {
 
   @Delete(':id')
   @AuthPermissions([PERMISSIONS.DELETE_AI_LAB])
-  @ApiOperation({ summary: 'Delete a draft question set (published sets must be archived instead)' })
+  @ApiOperation({
+    summary:
+      'Delete a draft question set (published sets must be archived instead)',
+  })
   delete(@Param('id') id: string): Promise<{ success: boolean }> {
     return this.setService.remove(id);
   }

@@ -63,7 +63,8 @@ export class UpdateQuestionSetDto {
 
 export class ArchiveQuestionSetDto {
   @ApiProperty({
-    description: 'true to archive (hide from the run-publish picker), false to unarchive',
+    description:
+      'true to archive (hide from the run-publish picker), false to unarchive',
   })
   @IsBoolean()
   isArchived!: boolean;

@@ -12,9 +12,7 @@ import {
   LabQuestionSetQuestionRepository,
 } from '../repository/lab-question-set.repository';
 import { LabQuestionSet } from '../entity/lab-question-set.entity';
-import {
-  LabQuestionSetQuestion,
-} from '../entity/lab-question-set-question.entity';
+import { LabQuestionSetQuestion } from '../entity/lab-question-set-question.entity';
 import { LabEvalQuestionType } from '../entity/lab-eval-question.entity';
 import {
   ArchiveQuestionSetDto,
