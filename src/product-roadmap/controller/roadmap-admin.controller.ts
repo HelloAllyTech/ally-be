@@ -44,7 +44,9 @@ import {
   DuplicatesResponseDto,
   PruneVectorsResponseDto,
   ReindexResponseDto,
+  RoadmapEligibleOwnerDto,
 } from '../dto/roadmap-response.dto';
+import { RoadmapOpportunityService } from '../service/roadmap-opportunity.service';
 import { RoadmapTaxonomyService } from '../service/roadmap-taxonomy.service';
 import {
   RoadmapInterviewNoteService,
@@ -66,6 +68,7 @@ export class RoadmapAdminController {
     private readonly releaseNoteService: RoadmapReleaseNoteService,
     private readonly aiService: RoadmapAiService,
     private readonly vectorService: RoadmapVectorService,
+    private readonly opportunityService: RoadmapOpportunityService,
     private readonly access: RoadmapAccessService,
   ) {}
 
@@ -136,6 +139,20 @@ export class RoadmapAdminController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.taxonomyService.deleteGoal(user.id, id);
+  }
+
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @Get('opportunity-owners/eligible')
+  @ApiOperation({
+    summary: 'Ally super-admin users who may own an opportunity',
+    description:
+      "The owner picker's options. Derived from SUPER_ADMIN / SUPER_DUPER_ADMIN group " +
+      'membership rather than a hand-maintained list, so losing super-admin removes someone ' +
+      'from the picker with no separate cleanup. Existing assignments are left untouched.',
+  })
+  @ApiResponse({ status: 200, type: [RoadmapEligibleOwnerDto] })
+  listEligibleOwners(): Promise<RoadmapEligibleOwnerDto[]> {
+    return this.opportunityService.listEligibleOwners();
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])

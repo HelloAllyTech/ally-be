@@ -1,8 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { In, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { User } from 'src/user/entity/user.entity';
+import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 import { RoadmapOpportunity } from '../entity/roadmap-opportunity.entity';
 import { RoadmapOpportunityStage } from '../enum/roadmap-opportunity.enum';
@@ -18,6 +23,7 @@ import {
 import {
   GetOpportunitiesResponseDto,
   OpportunityResponseDto,
+  RoadmapEligibleOwnerDto,
   RoadmapFacetsDto,
   RoadmapUserRefDto,
 } from '../dto/roadmap-response.dto';
@@ -120,7 +126,24 @@ export class RoadmapOpportunityService {
       patch.description = dto.description.trim();
     if (dto.type !== undefined) patch.type = dto.type;
     if (dto.productGoal !== undefined) patch.productGoal = dto.productGoal;
-    if (dto.owner !== undefined) patch.owner = dto.owner ?? null;
+    if (dto.ownerUserId !== undefined) {
+      // ONE representation is written, never both. `owner` is a text FK into
+      // roadmap_opportunity_owners(name), so copying the Ally user's name into it fails the
+      // constraint unless that person also exists as a taxonomy row — and inventing taxonomy rows
+      // to mirror user accounts is exactly the hand-maintained list this change removes.
+      //
+      // So: `ownerUserId` is the assignment and `owner` stays purely legacy — only ever set by the
+      // Supabase migration. Reads COALESCE the two, and the owner-name filter matches either, so a
+      // migrated saved view keeps working after its owner is linked to a real account.
+      patch.ownerUserId = dto.ownerUserId ?? null;
+      if (dto.ownerUserId !== null) {
+        await this.assertEligibleOwner(dto.ownerUserId);
+      } else {
+        // Un-assigning must also clear a legacy string, or the row would keep displaying a name
+        // for an opportunity nobody owns.
+        patch.owner = null;
+      }
+    }
     if (dto.prd !== undefined) patch.prd = dto.prd ?? null;
 
     if (dto.stage !== undefined) {
@@ -226,7 +249,10 @@ export class RoadmapOpportunityService {
       type: row.type,
       stage: row.stage,
       productGoal: row.productGoal,
-      owner: row.owner ?? null,
+      // The resolved display name, not the raw column — see RoadmapOpportunityRow.ownerDisplay.
+      // `owner` stays the API's single owner field so no client has to know both representations.
+      owner: row.ownerDisplay ?? row.owner ?? null,
+      ownerUserId: row.ownerUserId ?? null,
       prd: row.prd ?? null,
       releasedAt: row.releasedAt ?? null,
       priorityScore: Number(row.priorityScore ?? 0),
@@ -236,6 +262,46 @@ export class RoadmapOpportunityService {
       updatedAt: row.updatedAt,
       creator: users.get(row.createdBy) ?? this.unknownUser(row.createdBy),
     }));
+  }
+
+  /**
+   * The users who may own an opportunity: Ally SUPER_ADMIN / SUPER_DUPER_ADMIN accounts.
+   *
+   * Group membership is the source of truth rather than a hand-maintained list, so somebody losing
+   * super-admin stops appearing here without anyone remembering to prune a taxonomy table. Their
+   * existing assignments are left alone — history should not silently rewrite itself.
+   */
+  async listEligibleOwners(): Promise<RoadmapEligibleOwnerDto[]> {
+    const rows = await this.userRepository
+      .createQueryBuilder('user')
+      .select(['user.id', 'user.name', 'user.email'])
+      .where(
+        `EXISTS (
+           SELECT 1 FROM user_groups ug
+           INNER JOIN groups g ON g.id = ug."groupId"
+           WHERE ug."userId" = "user"."id" AND g.name IN (:...roles)
+         )`,
+        { roles: SUPER_ADMIN_ROLES },
+      )
+      .orderBy('user.name', 'ASC')
+      .getMany();
+
+    return rows.map((u) => ({ id: u.id, name: u.name, email: u.email }));
+  }
+
+  /**
+   * Reject an owner who is not a super-admin.
+   *
+   * 422 rather than 400: the id is well-formed, it just names someone ineligible — the same shape
+   * the coin-cap breach uses, so the client can show the message rather than a generic failure.
+   */
+  private async assertEligibleOwner(userId: number): Promise<void> {
+    const eligible = await this.listEligibleOwners();
+    if (!eligible.some((u) => u.id === userId)) {
+      throw new UnprocessableEntityException(
+        'An opportunity owner must be an Ally super-admin user.',
+      );
+    }
   }
 
   private async resolveUsers(

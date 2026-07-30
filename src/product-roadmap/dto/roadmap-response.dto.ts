@@ -18,7 +18,11 @@ export class OpportunityResponseDto {
   @ApiProperty({ enum: RoadmapOpportunityStage })
   stage!: RoadmapOpportunityStage;
   @ApiProperty() productGoal!: string;
+  /** Display name: the linked super-admin's current name, or a legacy migrated string. */
   @ApiPropertyOptional({ nullable: true }) owner?: string | null;
+
+  /** Null for legacy migrated rows whose owner was never linked to an Ally account. */
+  @ApiPropertyOptional({ nullable: true }) ownerUserId?: number | null;
   @ApiPropertyOptional({ nullable: true }) prd?: string | null;
   @ApiPropertyOptional({ nullable: true }) releasedAt?: Date | null;
 
@@ -136,4 +140,10 @@ export class PruneVectorsResponseDto {
       'vectors. Nothing was deleted; investigate and re-run.',
   })
   abortedReason!: string | null;
+}
+
+export class RoadmapEligibleOwnerDto {
+  @ApiProperty() id!: number;
+  @ApiProperty() name!: string;
+  @ApiProperty() email!: string;
 }

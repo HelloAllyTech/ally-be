@@ -63,9 +63,28 @@ export class RoadmapOpportunity extends BaseWithoutTenantEntity {
   @Column({ type: 'text' })
   productGoal!: string;
 
-  /** FK BY NAME to roadmap_opportunity_owners(name), ON UPDATE CASCADE ON DELETE SET NULL. */
+  /**
+   * LEGACY owner name. FK BY NAME to roadmap_opportunity_owners(name),
+   * ON UPDATE CASCADE ON DELETE SET NULL.
+   *
+   * Only authoritative while `ownerUserId` IS NULL — i.e. for rows migrated from the standalone
+   * app, whose owners were free-text names rather than accounts. Kept rather than dropped because
+   * saved-view state filters on owner NAMES: four of the eight migrated views are defined entirely
+   * by `ownerFilter`, and replacing the name with an id would make them silently match nothing.
+   */
   @Column({ type: 'text', nullable: true })
   owner?: string | null;
+
+  /**
+   * The real owner: an Ally SUPER_ADMIN / SUPER_DUPER_ADMIN user.
+   *
+   * This is the assignment for anything set after migration 1871000000004. The DISPLAY name is
+   * derived from `users.name` via join rather than copied here, so renaming a person in Ally
+   * propagates without a sync step — the same property the FK-by-name gave the legacy column.
+   * ON DELETE SET NULL: removing an Ally user must not delete roadmap history.
+   */
+  @Column({ type: 'int', nullable: true })
+  ownerUserId?: number | null;
 
   /** Optional long-form PRD, ≤20000 chars. Plain text / markdown, not HTML. */
   @Column({ type: 'text', nullable: true })
