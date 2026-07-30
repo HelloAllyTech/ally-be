@@ -147,3 +147,36 @@ export class RoadmapEligibleOwnerDto {
   @ApiProperty() name!: string;
   @ApiProperty() email!: string;
 }
+
+export class RoadmapImportCheckDto {
+  @ApiProperty() check!: string;
+  @ApiProperty() expected!: string;
+  @ApiProperty() actual!: string;
+  @ApiProperty() ok!: boolean;
+}
+
+export class RoadmapImportResultDto {
+  @ApiProperty({
+    description:
+      'True only when the data is durably written. False for a dry run AND for any failure.',
+  })
+  committed!: boolean;
+
+  @ApiProperty() dryRun!: boolean;
+
+  @ApiProperty({ type: [RoadmapImportCheckDto] })
+  checks!: RoadmapImportCheckDto[];
+
+  @ApiProperty({
+    type: [RoadmapImportCheckDto],
+    description:
+      'Empty on success. Non-empty means the transaction was rolled back.',
+  })
+  failedChecks!: RoadmapImportCheckDto[];
+
+  @ApiProperty({
+    type: [String],
+    description: 'The same progress output the CLI prints.',
+  })
+  log!: string[];
+}
