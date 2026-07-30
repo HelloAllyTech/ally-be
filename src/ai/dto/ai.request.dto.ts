@@ -155,3 +155,38 @@ export type ScenarioEvaluationRequest = {
   enable_recommendations?: boolean;
   language_code?: string | null;
 };
+
+// ── Product Roadmap semantic duplicate detection (ally-ai / Weaviate) ────────
+// snake_case on the wire, matching the reference-document precedent.
+
+/**
+ * Upsert one opportunity's vector. The Weaviate object uuid IS `opportunity_id`, so this is
+ * idempotent by construction and there is no create/update split.
+ *
+ * NOTE the description is sent for EMBEDDING only — ally-ai does not persist it. Duplicating
+ * opportunity text into Weaviate would need a write on every description edit, and any missed
+ * write would feed a stale description into the LLM's duplicate judgement. ally-be already has
+ * every description in hand when it runs that step.
+ */
+export interface RoadmapOpportunityUpsertRequest {
+  opportunity_id: string;
+  description: string;
+  product_goal: string;
+}
+
+export interface RoadmapOpportunityBulkUpsertRequest {
+  items: RoadmapOpportunityUpsertRequest[];
+}
+
+export interface RoadmapSimilarOpportunitiesRequest {
+  description: string;
+  /** Optional scoping to one product goal. */
+  product_goal?: string;
+  /** Default 20 (source: match_count). */
+  limit?: number;
+  /**
+   * Default 0.5. Calibrated for Voyage voyage-3-large at 1024 dimensions in the standalone
+   * app; needs re-calibrating for OpenAI text-embedding-3-small at 1536.
+   */
+  threshold?: number;
+}

@@ -34,7 +34,8 @@
     "seed": "ts-node -r tsconfig-paths/register src/database/seeds/run.ts",
     "seed:reset": "ts-node -r tsconfig-paths/register src/database/seeds/reset.ts",
     "generate:linguistic-samples": "ts-node -r tsconfig-paths/register src/database/scripts/generate-linguistic-style-samples.ts",
-    "prepare": "husky"
+    "prepare": "husky",
+    "migration:roadmap-import": "ts-node -r tsconfig-paths/register src/database/scripts/import-roadmap-from-supabase.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.90.0",

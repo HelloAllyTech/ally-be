@@ -26,4 +26,14 @@ export const ENDPOINTS = {
   ROLEPLAY_TEST_RUN_RUN: 'api/v1/roleplay-rehearsal/run',
   // Per-run path — append the run id at call site.
   ROLEPLAY_TEST_RUN_CANCEL: 'api/v1/roleplay-rehearsal/cancel',
+  // Product Roadmap semantic duplicate detection. ally-ai owns the
+  // `RoadmapOpportunity` Weaviate collection; ally-be's Postgres stays the
+  // system of record and treats the vector store as a DERIVED index. The
+  // Weaviate object uuid IS the roadmap_opportunities.id, so there is no
+  // separate id property to keep in sync.
+  // Upsert/delete take the opportunity id appended to the path.
+  ROADMAP_OPPORTUNITY_UPSERT: 'api/v1/roadmap-opportunities',
+  ROADMAP_OPPORTUNITY_DELETE: 'api/v1/roadmap-opportunities',
+  ROADMAP_OPPORTUNITY_SEARCH: 'api/v1/roadmap-opportunities/search',
+  ROADMAP_OPPORTUNITY_BULK_UPSERT: 'api/v1/roadmap-opportunities/bulk-upsert',
 } as const;

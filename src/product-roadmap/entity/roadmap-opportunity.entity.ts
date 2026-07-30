@@ -1,0 +1,121 @@
+import {
+  Column,
+  DeleteDateColumn,
+  Entity,
+  Index,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
+import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import {
+  RoadmapEmbeddingStatus,
+  RoadmapOpportunityStage,
+  RoadmapOpportunityType,
+} from '../enum/roadmap-opportunity.enum';
+
+/**
+ * The atomic unit of the roadmap: an idea or a bug that people spend coins on.
+ *
+ * There is deliberately no `priorityScore` column. The score is SUM(coins) over ALL users
+ * and ALL periods, computed as a SQL aggregate joined into the list query
+ * (RoadmapOpportunityRepository.listOpportunities). A denormalised counter was rejected: the
+ * code path most likely to get the arithmetic wrong is split/merge, which moves many
+ * allocation rows in one transaction, and a wrong counter cannot be recovered without a
+ * rebuild job you would have to write anyway. If this ever becomes a bottleneck (it will not
+ * at a few hundred opportunities), the next step is a MATERIALIZED VIEW refreshed
+ * CONCURRENTLY — never a counter column, because a matview can be rebuilt from truth.
+ */
+@Entity('roadmap_opportunities')
+@Index('idx_roadmap_opps_stage', ['stage'], { where: '"deletedAt" IS NULL' })
+@Index('idx_roadmap_opps_product_goal', ['productGoal'], {
+  where: '"deletedAt" IS NULL',
+})
+@Index('idx_roadmap_opps_owner', ['owner'], { where: '"deletedAt" IS NULL' })
+@Index('idx_roadmap_opps_created_by', ['createdBy'], {
+  where: '"deletedAt" IS NULL',
+})
+export class RoadmapOpportunity extends BaseWithoutTenantEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  /**
+   * The whole opportunity, in one field — there is no separate title. ≤1000 chars and
+   * non-blank (CHECK constraint). Callers render the first line as the heading.
+   */
+  @Column({ type: 'text' })
+  description!: string;
+
+  @Column({
+    enum: RoadmapOpportunityType,
+    default: RoadmapOpportunityType.IDEA,
+  })
+  type!: RoadmapOpportunityType;
+
+  @Column({
+    enum: RoadmapOpportunityStage,
+    default: RoadmapOpportunityStage.NEW,
+  })
+  stage!: RoadmapOpportunityStage;
+
+  /**
+   * FK BY NAME to roadmap_product_goals(name), ON UPDATE CASCADE. Not a uuid, because
+   * saved-view state stores goal names — see RoadmapSavedViewState.
+   */
+  @Column({ type: 'text' })
+  productGoal!: string;
+
+  /** FK BY NAME to roadmap_opportunity_owners(name), ON UPDATE CASCADE ON DELETE SET NULL. */
+  @Column({ type: 'text', nullable: true })
+  owner?: string | null;
+
+  /** Optional long-form PRD, ≤20000 chars. Plain text / markdown, not HTML. */
+  @Column({ type: 'text', nullable: true })
+  prd?: string | null;
+
+  /**
+   * Stamped only when the stage TRANSITIONS into RELEASED, and never re-stamped on a later
+   * edit. Split copies it to new parts rather than regenerating. Note a large share of
+   * migrated rows have stage=released with releasedAt NULL, because the source trigger also
+   * only fired on transition — do not backfill it.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  releasedAt?: Date | null;
+
+  // ── Weaviate reconciliation state (see RoadmapEmbeddingStatus) ────────────────
+  @Column({
+    enum: RoadmapEmbeddingStatus,
+    default: RoadmapEmbeddingStatus.PENDING,
+  })
+  embeddingStatus!: RoadmapEmbeddingStatus;
+
+  /** Bounded so a permanently-failing row cannot be retried forever by the sweep. */
+  @Column({ type: 'int', default: 0 })
+  embeddingAttempts!: number;
+
+  @Column({ type: 'timestamp', nullable: true })
+  embeddedAt?: Date | null;
+
+  /** Hash of the text that produced the current vector; drives staleness detection. */
+  @Column({ type: 'text', nullable: true })
+  textHash?: string | null;
+
+  // ── audit ────────────────────────────────────────────────────────────────────
+  // Integer users.id with NO foreign key, per ally-be convention. A removed Ally user
+  // therefore leaves an unresolvable createdBy; response mappers fall back to a placeholder
+  // rather than leaking a bare id.
+  @Column({ type: 'int' })
+  createdBy!: number;
+
+  @Column({ type: 'int' })
+  updatedBy!: number;
+
+  /**
+   * Soft delete. This is why deleting an opportunity MUST also delete it from Weaviate:
+   * Postgres reads filter on deletedAt IS NULL, the vector index has no idea, and a missed
+   * delete means duplicate-detection proposes a deleted opportunity forever.
+   *
+   * Upside of soft delete: release notes keep a denormalised uuid[] of the opportunities
+   * they were generated from, and those ids stay resolvable instead of dangling.
+   */
+  @DeleteDateColumn()
+  deletedAt?: Date;
+}
