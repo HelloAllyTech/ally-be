@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource, In } from 'typeorm';
+import { DataSource, In, QueryFailedError } from 'typeorm';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
@@ -47,6 +47,7 @@ import {
   computeStructuralSignature,
   validateTrackStructure,
 } from './track-structure.validator';
+import { sanitizeDeep } from '../util/sanitize-structure.util';
 import { TrackSharedService, TrackWithStructure } from './track-shared.service';
 
 @Injectable()
@@ -215,6 +216,7 @@ export class TrackService {
       throw new NotFoundException('Track not found');
     }
 
+    this.sanitizeStructure(dto.sections);
     validateTrackStructure(dto.sections);
     this.applyContentDefaults(dto.sections);
     await this.validateReferences(dto.sections);
@@ -261,61 +263,70 @@ export class TrackService {
     );
     const userId = this.getUserId();
 
-    await this.dataSource.transaction(async (manager) => {
-      const sectionRepo = manager.getRepository(TrackSection);
-      const itemRepo = manager.getRepository(TrackItem);
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        const sectionRepo = manager.getRepository(TrackSection);
+        const itemRepo = manager.getRepository(TrackItem);
 
-      const incomingSectionIds = dto.sections
-        .map((s) => s.id)
-        .filter((sid): sid is string => !!sid);
-      const incomingItemIds = dto.sections
-        .flatMap((s) => s.items.map((i) => i.id))
-        .filter((iid): iid is string => !!iid);
+        const incomingSectionIds = dto.sections
+          .map((s) => s.id)
+          .filter((sid): sid is string => !!sid);
+        const incomingItemIds = dto.sections
+          .flatMap((s) => s.items.map((i) => i.id))
+          .filter((iid): iid is string => !!iid);
 
-      const removedSectionIds = [...existingSectionIds].filter(
-        (sid) => !incomingSectionIds.includes(sid),
-      );
-      const removedItemIds = [...existingItemIds].filter(
-        (iid) => !incomingItemIds.includes(iid),
-      );
-      if (removedSectionIds.length > 0) {
-        await sectionRepo.softDelete({ id: In(removedSectionIds) });
-      }
-      if (removedItemIds.length > 0) {
-        await itemRepo.softDelete({ id: In(removedItemIds) });
-      }
-
-      for (const section of dto.sections) {
-        const savedSection = await sectionRepo.save({
-          ...(section.id ? { id: section.id } : {}),
-          trackId: id,
-          title: section.title,
-          description: section.description,
-          order: section.order,
-        });
-        for (const item of section.items) {
-          await itemRepo.save({
-            ...(item.id ? { id: item.id } : {}),
-            trackId: id,
-            trackSectionId: savedSection.id,
-            type: item.type,
-            order: item.order,
-            title: item.title,
-            description: item.description,
-            scenarioId:
-              item.type === TrackItemType.ROLEPLAY ? item.scenarioId : null,
-            caseId: item.type === TrackItemType.CASE ? item.caseId : null,
-            content: item.content ?? null,
-            completionCriteria: item.completionCriteria ?? null,
-          } as Partial<TrackItem>);
+        const removedSectionIds = [...existingSectionIds].filter(
+          (sid) => !incomingSectionIds.includes(sid),
+        );
+        const removedItemIds = [...existingItemIds].filter(
+          (iid) => !incomingItemIds.includes(iid),
+        );
+        if (removedSectionIds.length > 0) {
+          await sectionRepo.softDelete({ id: In(removedSectionIds) });
         }
-      }
+        if (removedItemIds.length > 0) {
+          await itemRepo.softDelete({ id: In(removedItemIds) });
+        }
 
-      await manager.getRepository(Track).update(id, {
-        totalItems,
-        ...(userId ? { updatedBy: userId } : {}),
+        for (const section of dto.sections) {
+          const savedSection = await sectionRepo.save({
+            ...(section.id ? { id: section.id } : {}),
+            trackId: id,
+            title: section.title,
+            description: section.description,
+            order: section.order,
+          });
+          for (const item of section.items) {
+            await itemRepo.save({
+              ...(item.id ? { id: item.id } : {}),
+              trackId: id,
+              trackSectionId: savedSection.id,
+              type: item.type,
+              order: item.order,
+              title: item.title,
+              description: item.description,
+              scenarioId:
+                item.type === TrackItemType.ROLEPLAY ? item.scenarioId : null,
+              caseId: item.type === TrackItemType.CASE ? item.caseId : null,
+              content: item.content ?? null,
+              completionCriteria: item.completionCriteria ?? null,
+            } as Partial<TrackItem>);
+          }
+        }
+
+        await manager.getRepository(Track).update(id, {
+          totalItems,
+          ...(userId ? { updatedBy: userId } : {}),
+        });
       });
-    });
+    } catch (err) {
+      if (err instanceof QueryFailedError) {
+        throw new BadRequestException(
+          'Could not save the course structure — some content may contain invalid characters. Remove any unusual formatting from pasted text and try saving again.',
+        );
+      }
+      throw err;
+    }
 
     this.logger.info(`Track ${id} structure saved (${totalItems} items)`);
     return { success: true };
@@ -491,6 +502,25 @@ export class TrackService {
       const caseEntity = await this.caseSharedService.getActiveCaseById(caseId);
       if (!caseEntity) {
         throw new BadRequestException(`Invalid or inactive case ID: ${caseId}`);
+      }
+    }
+  }
+
+  /** Strips characters Postgres rejects in text/jsonb (NUL bytes, lone surrogates) from free text. */
+  private sanitizeStructure(sections: UpsertTrackSectionDto[]): void {
+    for (const section of sections) {
+      section.title = sanitizeDeep(section.title);
+      if (section.description !== undefined) {
+        section.description = sanitizeDeep(section.description);
+      }
+      for (const item of section.items) {
+        item.title = sanitizeDeep(item.title);
+        if (item.description !== undefined) {
+          item.description = sanitizeDeep(item.description);
+        }
+        if (item.content !== undefined) {
+          item.content = sanitizeDeep(item.content);
+        }
       }
     }
   }
