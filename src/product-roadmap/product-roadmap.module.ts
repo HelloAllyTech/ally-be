@@ -40,6 +40,7 @@ import {
   RoadmapReleaseNoteService,
 } from './service/roadmap-content.service';
 import { RoadmapNotificationService } from './service/roadmap-notification.service';
+import { RoadmapImportService } from './service/roadmap-import.service';
 import { RoadmapOpportunityService } from './service/roadmap-opportunity.service';
 import { RoadmapSavedViewService } from './service/roadmap-saved-view.service';
 import { RoadmapSplitMergeService } from './service/roadmap-split-merge.service';
@@ -121,6 +122,7 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
     RoadmapNotificationService,
     RoadmapAccessService,
     RoadmapVectorService,
+    RoadmapImportService,
     RoadmapOpportunityService,
     RoadmapAllocationService,
     RoadmapSplitMergeService,

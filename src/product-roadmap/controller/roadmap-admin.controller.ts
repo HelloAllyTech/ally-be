@@ -11,9 +11,13 @@ import {
   Post,
   Put,
   Query,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiConsumes,
   ApiOperation,
   ApiResponse,
   ApiSecurity,
@@ -28,6 +32,7 @@ import {
   AiDraftDto,
   AiReleaseNotesDto,
   AiSummariseDto,
+  RoadmapImportRequestDto,
   CreateInterviewNoteDto,
   CreateReleaseNoteDto,
   CreateTaxonomyItemDto,
@@ -43,9 +48,11 @@ import {
   AiTextResponseDto,
   DuplicatesResponseDto,
   PruneVectorsResponseDto,
+  RoadmapImportResultDto,
   ReindexResponseDto,
   RoadmapEligibleOwnerDto,
 } from '../dto/roadmap-response.dto';
+import { RoadmapImportService } from '../service/roadmap-import.service';
 import { RoadmapOpportunityService } from '../service/roadmap-opportunity.service';
 import { RoadmapTaxonomyService } from '../service/roadmap-taxonomy.service';
 import {
@@ -69,6 +76,7 @@ export class RoadmapAdminController {
     private readonly aiService: RoadmapAiService,
     private readonly vectorService: RoadmapVectorService,
     private readonly opportunityService: RoadmapOpportunityService,
+    private readonly importService: RoadmapImportService,
     private readonly access: RoadmapAccessService,
   ) {}
 
@@ -390,5 +398,37 @@ export class RoadmapAdminController {
   @ApiResponse({ status: 201, type: PruneVectorsResponseDto })
   pruneVectors(): Promise<PruneVectorsResponseDto> {
     return this.vectorService.pruneOrphanedVectors();
+  }
+  // ── one-off Supabase migration ────────────────────────────────────────────
+
+  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @Post('admin/import')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: "Import the standalone roadmap app's Supabase snapshot",
+    description:
+      'Runs the SAME transaction and the same 16 verification checks as the CLI importer — the ' +
+      'logic is shared, not duplicated. Exists so the migration does not require a host that can ' +
+      'reach production Postgres, and so a snapshot containing user-interview transcripts never ' +
+      'has to move between machines. ' +
+      'DRY RUN BY DEFAULT: send dryRun="false" to commit. On any failed check the transaction is ' +
+      'rolled back and the per-check detail is returned in the body rather than thrown, so the ' +
+      'caller can see which check failed and by how much.',
+  })
+  @ApiResponse({ status: 201, type: RoadmapImportResultDto })
+  importSnapshot(
+    @CurrentUser() user: TokenUser,
+    @UploadedFile() file: Express.Multer.File,
+    @Body() dto: RoadmapImportRequestDto,
+  ): Promise<RoadmapImportResultDto> {
+    return this.importService.importFromBundle(user.id, file, {
+      // Multipart values are strings. Only the exact string 'false' commits — a typo, a missing
+      // field or a truthy-looking value all fall back to a dry run.
+      dryRun: dto.dryRun !== 'false',
+      createMissingUsers: dto.createMissingUsers === 'true',
+      allowUserCreation: dto.allowUserCreation === 'true',
+      tenantId: dto.tenantId,
+    });
   }
 }

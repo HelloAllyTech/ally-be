@@ -257,3 +257,43 @@ export class AiReleaseNotesDto {
   @IsUUID(undefined, { each: true })
   opportunityIds!: string[];
 }
+
+/**
+ * Options for POST admin/import. Multipart, so every value arrives as a STRING — hence the
+ * explicit 'true' comparisons rather than @IsBoolean.
+ */
+export class RoadmapImportRequestDto {
+  @ApiPropertyOptional({
+    description:
+      'Send "false" to COMMIT. Anything else, including omitting it, is a dry run — writing must ' +
+      'be deliberate, so the safe value is the default.',
+  })
+  @IsOptional()
+  @IsString()
+  dryRun?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Send "true" to create Ally accounts for source voters who have none.',
+  })
+  @IsOptional()
+  @IsString()
+  createMissingUsers?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Second, independent confirmation for user creation. Both this and createMissingUsers ' +
+      'must be "true" — it is the only step that writes outside the roadmap_* namespace.',
+  })
+  @IsOptional()
+  @IsString()
+  allowUserCreation?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Tenant for any created user. Never guessed; required if users will be created.',
+  })
+  @IsOptional()
+  @IsUUID()
+  tenantId?: string;
+}
