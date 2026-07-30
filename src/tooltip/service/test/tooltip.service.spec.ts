@@ -18,7 +18,6 @@ describe('TooltipService', () => {
     id: 'tooltip-uuid-1',
     location: 'login_button',
     tipText: 'Click here to log in',
-    icon: '😀',
     active: true,
     createdBy: 42,
     updatedBy: 42,
@@ -68,7 +67,6 @@ describe('TooltipService', () => {
     const createDto: CreateTooltipDto = {
       location: 'login_button',
       tipText: 'Click here to log in',
-      icon: '😀',
       active: false,
     };
 
@@ -231,7 +229,6 @@ describe('TooltipService', () => {
         id: 'tooltip-uuid-2',
         location: 'profile_icon',
         tipText: 'View your profile',
-        icon: '',
         active: false,
         createdBy: 1,
         updatedBy: 1,

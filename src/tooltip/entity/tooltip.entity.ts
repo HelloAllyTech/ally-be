@@ -13,9 +13,6 @@ export class Tooltip extends BaseWithoutTenantEntity {
   @Column('text')
   tipText!: string;
 
-  @Column({ type: 'text', nullable: true })
-  icon?: string | null;
-
   @Column({ default: false })
   active!: boolean;
 

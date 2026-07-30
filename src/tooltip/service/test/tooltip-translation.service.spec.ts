@@ -18,7 +18,6 @@ describe('TooltipTranslationService', () => {
     id: 'tooltip-uuid-1',
     location: 'login_button',
     tipText: 'Click here to log in',
-    icon: '😀',
     active: true,
     createdBy: 1,
     updatedBy: 1,

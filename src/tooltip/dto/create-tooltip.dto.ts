@@ -1,10 +1,4 @@
-import {
-  IsBoolean,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  MaxLength,
-} from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class CreateTooltipDto {
   @IsString()
@@ -15,10 +9,6 @@ export class CreateTooltipDto {
   @IsNotEmpty()
   @MaxLength(200)
   tipText!: string;
-
-  @IsOptional()
-  @IsString()
-  icon?: string;
 
   @IsBoolean()
   active!: boolean;
