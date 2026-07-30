@@ -11,10 +11,6 @@ export class UpdateTooltipDto {
   tipText?: string;
 
   @IsOptional()
-  @IsString()
-  icon?: string;
-
-  @IsOptional()
   @IsBoolean()
   active?: boolean;
 }

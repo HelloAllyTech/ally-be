@@ -227,7 +227,7 @@ Each subsystem has the full set of tables: `*_reviews` (`status`: HIDDEN/IN_REVI
 | `reference_documents` | BaseWithoutTenant | `heading`, `content`, `category`, `tags` (text[]), `created_by`, `is_public`, `organization_id`, `is_archived`, `archived_at`, `upload_status` (pending/success/failed) | Knowledge-base docs — **mirrored into Weaviate** (see §4) for RAG |
 | `conversational_guardrails` | BaseWithoutTenant | `name`, `helper_dialogue`, `actor_dialogue`, `active` | Conversation safety rules |
 | `conversational_guardrails_translations` | BaseWithoutTenant | `guardrail_id`, `language_id`, `helper_dialogue`, `actor_dialogue` | Uniq `(guardrail_id, language_id)` |
-| `tooltips` | BaseWithoutTenant | `location` (uniq), `tip_text`, `icon`, `active`, `created_by`, `updated_by` | Contextual UI tooltips |
+| `tooltips` | BaseWithoutTenant | `location` (uniq), `tip_text`, `active`, `created_by`, `updated_by` | Contextual UI tooltips |
 | `tooltip_translations` | (custom) | `tooltip_id`, `language_id`, `tip_text` | Uniq `(tooltip_id, language_id)` |
 | `blogs` | BaseWithoutTenant | `id` (uuid), `title`, `slug` (uniq where not deleted), `tldr`, `body` (text, sanitized HTML), `tags` (jsonb string[]), `category`, `header_image_url`, `status` (`BlogStatus`: DRAFT/PUBLISHED, default DRAFT), `published_at`, `created_by`, `updated_by`, `deleted_at` | Platform-wide blog (release announcements & product updates). Super-admin authored (perms `view:blogs`/`edit:blog`/`delete:blog`); **published** rows served ungated at `/api/v1/blog/public` and rendered on app.helloally.ai/blog |
 
