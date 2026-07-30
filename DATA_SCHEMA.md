@@ -253,18 +253,28 @@ and its director reports telemetry back over the learn SQS queue.
 
 ### 3.10 AI Lab (`lab`)
 
-A super-duper-admin workspace (admin tab **AI Lab**) for authoring reusable system-prompt
-templates (**skills**), the placeholder **variables** they reference as `{{name}}`, and the
-candidate **values** bound to those variables (substituted at run time). System-wide (no tenant);
-gated by perms `view:admin:ai-lab` / `edit:admin:ai-lab` / `delete:admin:ai-lab`, granted to both
-the `SUPER_ADMIN` and `SUPER_DUPER_ADMIN` groups. The "Runs" surface is not built yet. Added in
-migrations `1844000000000` (tables) / `1844000000001` (permissions).
+A workspace (admin tab **AI Lab**) for authoring reusable system-prompt templates (**skills**),
+the placeholder **variables** they reference as `{{name}}`, candidate **values** bound to those
+variables (substituted at run time), **runs** (one row per skill execution), human evaluation of
+published runs, and reusable **question sets**. System-wide (no tenant); gated by perms
+`view:admin:ai-lab` / `edit:admin:ai-lab` / `delete:admin:ai-lab`, granted to both the
+`SUPER_ADMIN` and `SUPER_DUPER_ADMIN` groups. Core tables added in migrations `1844000000000`
+(tables) / `1844000000001` (permissions); human-eval tables in `1848000000000`; question sets in
+`1873000000000`.
 
 | Table | Base | Key columns | Notes |
 |-------|------|-------------|-------|
-| `lab_skills` | BaseWithoutTenant | `id` (uuid), `name` (idx), `description` (nullable), `content` (text — the system-prompt template, may embed `{{variable}}` placeholders), `created_by` | Reusable system-prompt templates |
+| `lab_skills` | BaseWithoutTenant | `id` (uuid), `name` (idx), `description` (nullable), `content` (text — the system-prompt template, may embed `{{variable}}` placeholders), `model`/`temperature`/`max_tokens`/`system_prompt` (nullable overrides), `created_by` | Reusable system-prompt templates |
 | `lab_variables` | BaseWithoutTenant | `id` (uuid), `name` (varchar(255), **uniq** — referenced in templates as `{{name}}`), `description` (nullable), `created_by` | Named template placeholders; name charset restricted to `[A-Za-z0-9_.-]` |
 | `lab_values` | BaseWithoutTenant | `id` (uuid), `variable_id` (uuid, idx, **FK → `lab_variables` ON DELETE CASCADE**), `label` (nullable), `value` (text), `created_by` | Candidate values bound to a variable; deleting the parent variable cascades to its values |
+| `lab_runs` | BaseWithoutTenant | `id` (uuid), `batch_id` (uuid, idx, nullable — groups rows from one "Run" click), `skill_id`/`skill_name` (name snapshotted, no FK), `resolved_prompt`, `variable_values` (jsonb snapshot), `model`, `generation_params` (jsonb), `status` (PENDING/RUNNING/COMPLETED/FAILED), `output`/`error` (nullable), token/cost columns (nullable), `published_at` (nullable — set once when published for human eval), `created_by` | One row per skill execution; snapshots content so edits/deletes of the skill don't affect history |
+| `lab_eval_questions` | BaseWithoutTenant | `id` (uuid), `run_id` (uuid, idx, **FK → `lab_runs` ON DELETE CASCADE**), `question` (text), `type` (RATING/YES_NO/TEXT/DESCRIPTION — DESCRIPTION is explanatory text, never answered), `scale_min`/`scale_max` (int, RATING only), `position` (int), `source_question_set_id` (uuid, idx, nullable, **FK → `lab_question_sets` ON DELETE SET NULL** — set when imported from a question set at publish time), `created_by` | Frozen at run-publish time; a run is published at most once with ≥1 question |
+| `lab_evaluators` | BaseWithoutTenant | `id` (uuid), `email` (varchar(320), **uniq**), `password_hash`, `token_version` (int), `last_login_at` (nullable), `created_by` | Standalone evaluator accounts (not platform users); sign in at `/evaluate` |
+| `lab_run_assignments` | BaseWithoutTenant | `id` (uuid), `run_id`/`evaluator_id` (uuid, idx each, **uniq(run_id, evaluator_id)**, FKs ON DELETE CASCADE), `submitted_at` (nullable — flips once, then immutable), `created_by` | Published run ↔ evaluator assignment |
+| `lab_eval_answers` | BaseWithoutTenant | `id` (uuid), `assignment_id`/`question_id` (uuid, **uniq(assignment_id, question_id)**, FKs ON DELETE CASCADE), `answer_text`/`answer_rating`/`answer_bool` (one populated per question type) | Written atomically with `lab_run_assignments.submitted_at` |
+| `lab_auto_evaluations` | BaseWithoutTenant | `id` (uuid), `run_id` (uuid, FK), `model`, `criteria` (text), `score`/`reasoning`/`error` (nullable) | Automated LLM-judge scoring of a run's output against a rubric |
+| `lab_question_sets` | BaseWithoutTenant | `id` (uuid), `name` (idx), `description` (nullable), `published_at` (nullable, one-way — locks the question list), `archived_at` (nullable, reversible — hides from the run-publish picker; only settable once published), `created_by` | Reusable, named human-eval question lists; draft while unpublished, freely editable (incl. question list) until published |
+| `lab_question_set_questions` | BaseWithoutTenant | `id` (uuid), `question_set_id` (uuid, idx, **FK → `lab_question_sets` ON DELETE CASCADE**), `question`, `type` (RATING/YES_NO/TEXT/DESCRIPTION), `scale_min`/`scale_max`, `position` | Replaced wholesale while the parent set is a draft; copied (not referenced) into `lab_eval_questions` when imported at run-publish time |
 
 ---
 

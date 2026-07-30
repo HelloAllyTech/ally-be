@@ -47,6 +47,7 @@ const questionResponse = (q: LabEvalQuestion) => ({
   scaleMin: q.scaleMin,
   scaleMax: q.scaleMax,
   position: q.position,
+  sourceQuestionSetId: q.sourceQuestionSetId ?? null,
 });
 
 @Injectable()
@@ -90,6 +91,7 @@ export class LabEvalService {
         scaleMin: 1,
         scaleMax: q.type === LabEvalQuestionType.RATING ? (q.scaleMax ?? 5) : 5,
         position: index,
+        sourceQuestionSetId: q.sourceQuestionSetId ?? null,
         createdBy: userId,
       }),
     );
@@ -323,6 +325,11 @@ export class LabEvalService {
         return { ...base, yesCount, noCount };
       }
 
+      // DESCRIPTION is explanatory text, not answered — no aggregate to show.
+      if (question.type === LabEvalQuestionType.DESCRIPTION) {
+        return base;
+      }
+
       return {
         ...base,
         answers: qAnswers.map((a) => ({
@@ -470,6 +477,10 @@ export class LabEvalService {
 
     const rows: Partial<LabEvalAnswer>[] = [];
     for (const question of questions) {
+      // DESCRIPTION questions are explanatory text — no answer is collected.
+      if (question.type === LabEvalQuestionType.DESCRIPTION) {
+        continue;
+      }
       const answer = answerByQuestion.get(question.id);
       if (!answer) {
         throw new BadRequestException('Every question must be answered');
