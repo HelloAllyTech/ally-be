@@ -8,6 +8,10 @@ import {
 } from '@nestjs/common';
 import { DataSource, DeepPartial, EntityManager, In } from 'typeorm';
 
+// Page size for `translateChecklistItems` — keeps a single batch's worth of
+// `ScenarioEvents` (+ their base `SessionEvents`) in memory at a time.
+const DEFAULT_CHECKLIST_TRANSLATION_BATCH_SIZE = 50;
+
 async function executeInChunks<T, R>(
   items: T[],
   chunkSize: number,
@@ -2982,30 +2986,78 @@ export class ScenarioService {
    * retranslating to fully refresh a checklist item, so this re-translates
    * both sides for every `ScenarioEvents` row with
    * `checklistVisibilityStatus = true`.
+   *
+   * Processes one page of `batchSize` `ScenarioEvents` rows at a time
+   * (instead of loading every checklist-visible row up front) so memory
+   * stays bounded and a crash/timeout partway through only loses the
+   * in-flight batch — re-invoking the method just resumes from batch 1 and
+   * safely re-upserts anything already done. Base `SessionEvents` are
+   * deduped across batches (via `translatedSessionEventIds`) so the same
+   * shared event referenced by many scenarios is only retranslated once.
    */
-  async translateChecklistItems(): Promise<SuccessResponse> {
-    const checklistEvents =
-      await this.scenarioEventsRepository.getAllChecklistVisibleEvents();
-
-    if (!checklistEvents.length) {
-      return { success: true };
+  async translateChecklistItems(
+    batchSize: number = DEFAULT_CHECKLIST_TRANSLATION_BATCH_SIZE,
+  ): Promise<
+    SuccessResponse & {
+      processedScenarioEvents: number;
+      processedSessionEvents: number;
     }
+  > {
+    const effectiveBatchSize =
+      batchSize > 0 ? batchSize : DEFAULT_CHECKLIST_TRANSLATION_BATCH_SIZE;
 
-    await this.createUpdateScenarioEventsTranslations(checklistEvents);
+    const attemptedSessionEventIds = new Set<string>();
+    let processedSessionEvents = 0;
+    let offset = 0;
+    let processedScenarioEvents = 0;
 
-    const eventIds = Array.from(
-      new Set(checklistEvents.map((event) => event.eventId)),
-    );
-    const sessionEvents =
-      await this.sessionEventSharedService.findByIds(eventIds);
+    for (;;) {
+      const batch =
+        await this.scenarioEventsRepository.getAllChecklistVisibleEvents({
+          limit: effectiveBatchSize,
+          offset,
+        });
 
-    if (sessionEvents.length) {
-      await this.sessionEventTranslationService.createUpdateSessionEventTranslations(
-        sessionEvents,
+      if (!batch.length) {
+        break;
+      }
+
+      await this.createUpdateScenarioEventsTranslations(batch);
+
+      const newEventIds = Array.from(
+        new Set(batch.map((event) => event.eventId)),
+      ).filter((eventId) => !attemptedSessionEventIds.has(eventId));
+
+      if (newEventIds.length) {
+        newEventIds.forEach((eventId) => attemptedSessionEventIds.add(eventId));
+
+        const sessionEvents =
+          await this.sessionEventSharedService.findByIds(newEventIds);
+
+        if (sessionEvents.length) {
+          await this.sessionEventTranslationService.createUpdateSessionEventTranslations(
+            sessionEvents,
+          );
+          processedSessionEvents += sessionEvents.length;
+        }
+      }
+
+      processedScenarioEvents += batch.length;
+      this.logger?.info?.(
+        `[translateChecklistItems] processed ${processedScenarioEvents} checklist item(s) so far (batch offset ${offset}, size ${effectiveBatchSize})`,
       );
+
+      if (batch.length < effectiveBatchSize) {
+        break;
+      }
+      offset += effectiveBatchSize;
     }
 
-    return { success: true };
+    return {
+      success: true,
+      processedScenarioEvents,
+      processedSessionEvents,
+    };
   }
 
   async getBranchingInstructionDynamicShortcuts(

@@ -5063,7 +5063,14 @@ describe('ScenarioService', () => {
 
       const result = await service.translateChecklistItems();
 
-      expect(result).toEqual({ success: true });
+      expect(result).toEqual({
+        success: true,
+        processedScenarioEvents: 0,
+        processedSessionEvents: 0,
+      });
+      expect(
+        scenarioEventsRepository.getAllChecklistVisibleEvents,
+      ).toHaveBeenCalledWith({ limit: 50, offset: 0 });
       expect(
         service.createUpdateScenarioEventsTranslations,
       ).not.toHaveBeenCalled();
@@ -5081,6 +5088,7 @@ describe('ScenarioService', () => {
         { id: 'event-2', name: 'Greeting' },
       ];
 
+      // Single page: fewer rows than the batch size, so the loop stops here.
       scenarioEventsRepository.getAllChecklistVisibleEvents.mockResolvedValue(
         checklistEvents as any,
       );
@@ -5093,7 +5101,11 @@ describe('ScenarioService', () => {
 
       const result = await service.translateChecklistItems();
 
-      expect(result).toEqual({ success: true });
+      expect(result).toEqual({
+        success: true,
+        processedScenarioEvents: 3,
+        processedSessionEvents: 2,
+      });
       expect(
         service.createUpdateScenarioEventsTranslations,
       ).toHaveBeenCalledWith(checklistEvents);
@@ -5121,10 +5133,102 @@ describe('ScenarioService', () => {
 
       const result = await service.translateChecklistItems();
 
-      expect(result).toEqual({ success: true });
+      expect(result).toEqual({
+        success: true,
+        processedScenarioEvents: 1,
+        processedSessionEvents: 0,
+      });
       expect(
         sessionEventTranslationService.createUpdateSessionEventTranslations,
       ).not.toHaveBeenCalled();
+    });
+
+    it('pages through multiple batches and dedupes shared base session events', async () => {
+      const pageOne = [
+        { id: 'se-1', scenarioId: 1, eventId: 'event-1', message: 'Nice!' },
+        { id: 'se-2', scenarioId: 2, eventId: 'event-1', message: 'Great!' },
+      ];
+      const pageTwo = [
+        { id: 'se-3', scenarioId: 3, eventId: 'event-2', message: 'Good!' },
+      ];
+
+      scenarioEventsRepository.getAllChecklistVisibleEvents
+        .mockResolvedValueOnce(pageOne as any)
+        .mockResolvedValueOnce(pageTwo as any);
+      jest
+        .spyOn(service, 'createUpdateScenarioEventsTranslations')
+        .mockResolvedValue(undefined);
+      sessionEventSharedService.findByIds
+        .mockResolvedValueOnce([{ id: 'event-1', name: 'Empathy' }] as any)
+        .mockResolvedValueOnce([{ id: 'event-2', name: 'Greeting' }] as any);
+
+      const result = await service.translateChecklistItems(2);
+
+      expect(result).toEqual({
+        success: true,
+        processedScenarioEvents: 3,
+        processedSessionEvents: 2,
+      });
+      expect(
+        scenarioEventsRepository.getAllChecklistVisibleEvents,
+      ).toHaveBeenNthCalledWith(1, { limit: 2, offset: 0 });
+      expect(
+        scenarioEventsRepository.getAllChecklistVisibleEvents,
+      ).toHaveBeenNthCalledWith(2, { limit: 2, offset: 2 });
+      expect(
+        scenarioEventsRepository.getAllChecklistVisibleEvents,
+      ).toHaveBeenCalledTimes(2);
+      expect(sessionEventSharedService.findByIds).toHaveBeenNthCalledWith(1, [
+        'event-1',
+      ]);
+      expect(sessionEventSharedService.findByIds).toHaveBeenNthCalledWith(2, [
+        'event-2',
+      ]);
+    });
+
+    it('does not re-translate the same base session event twice across batches', async () => {
+      const pageOne = [
+        { id: 'se-1', scenarioId: 1, eventId: 'event-1', message: 'Nice!' },
+        { id: 'se-2', scenarioId: 2, eventId: 'event-1', message: 'Great!' },
+      ];
+      const pageTwo = [
+        { id: 'se-3', scenarioId: 3, eventId: 'event-1', message: 'Good!' },
+      ];
+
+      scenarioEventsRepository.getAllChecklistVisibleEvents
+        .mockResolvedValueOnce(pageOne as any)
+        .mockResolvedValueOnce(pageTwo as any);
+      jest
+        .spyOn(service, 'createUpdateScenarioEventsTranslations')
+        .mockResolvedValue(undefined);
+      sessionEventSharedService.findByIds.mockResolvedValue([
+        { id: 'event-1', name: 'Empathy' },
+      ] as any);
+
+      const result = await service.translateChecklistItems(2);
+
+      expect(result).toEqual({
+        success: true,
+        processedScenarioEvents: 3,
+        processedSessionEvents: 1,
+      });
+      // event-1 already translated in batch 1, so batch 2 shouldn't look it up again.
+      expect(sessionEventSharedService.findByIds).toHaveBeenCalledTimes(1);
+      expect(
+        sessionEventTranslationService.createUpdateSessionEventTranslations,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to the default batch size for a non-positive value', async () => {
+      scenarioEventsRepository.getAllChecklistVisibleEvents.mockResolvedValue(
+        [],
+      );
+
+      await service.translateChecklistItems(0);
+
+      expect(
+        scenarioEventsRepository.getAllChecklistVisibleEvents,
+      ).toHaveBeenCalledWith({ limit: 50, offset: 0 });
     });
   });
 

@@ -727,13 +727,31 @@ export class LearnController {
 
   @ApiOperation({
     summary: 'Re-translate every checklist item across all scenarios',
+    description:
+      'Processes checklist-visible scenario events in pages so a large ' +
+      'dataset never gets loaded into memory or a single request at once.',
+  })
+  @ApiQuery({
+    name: 'batchSize',
+    required: false,
+    type: Number,
+    description: 'Rows processed per page (default 50)',
   })
   // Role-gated (not EDIT_SCENARIO_MAP_EVENTS) so multi-tenant admins cannot
   // trigger this operational, all-scenarios bulk operation.
   @AuthRoles(...SUPER_ADMIN_ROLES)
   @Post('scenarios/checklist-items/translate')
-  async translateChecklistItems(): Promise<SuccessResponse> {
-    return this.scenarioService.translateChecklistItems();
+  async translateChecklistItems(
+    @Query('batchSize') batchSize?: number,
+  ): Promise<
+    SuccessResponse & {
+      processedScenarioEvents: number;
+      processedSessionEvents: number;
+    }
+  > {
+    return this.scenarioService.translateChecklistItems(
+      batchSize ? Number(batchSize) : undefined,
+    );
   }
 
   @ApiOperation({ summary: 'Delete scenario events' })

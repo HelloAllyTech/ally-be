@@ -530,6 +530,28 @@ describe('ScenarioEventsRepository', () => {
 
       expect(result).toEqual([]);
     });
+
+    it('should order by id and apply limit/offset when pagination is provided', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+
+      await repository.getAllChecklistVisibleEvents({ limit: 25, offset: 50 });
+
+      expect(mockQueryBuilder.orderBy).toHaveBeenCalledWith(
+        'scenarioEvent.id',
+        'ASC',
+      );
+      expect(mockQueryBuilder.limit).toHaveBeenCalledWith(25);
+      expect(mockQueryBuilder.offset).toHaveBeenCalledWith(50);
+    });
+
+    it('should not apply limit/offset when pagination is omitted', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+
+      await repository.getAllChecklistVisibleEvents();
+
+      expect(mockQueryBuilder.limit).not.toHaveBeenCalled();
+      expect(mockQueryBuilder.offset).not.toHaveBeenCalled();
+    });
   });
 
   describe('getEventChecklist', () => {
