@@ -507,6 +507,31 @@ describe('ScenarioEventsRepository', () => {
     });
   });
 
+  describe('getAllChecklistVisibleEvents', () => {
+    it('should query by checklistVisibilityStatus = true and return the results', async () => {
+      const checklistVisibleEvents = [
+        { ...mockScenarioEvents[0], checklistVisibilityStatus: true },
+      ];
+      mockQueryBuilder.getMany.mockResolvedValue(checklistVisibleEvents);
+
+      const result = await repository.getAllChecklistVisibleEvents();
+
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'scenarioEvent.checklistVisibilityStatus = :checklistVisible',
+        { checklistVisible: true },
+      );
+      expect(result).toEqual(checklistVisibleEvents);
+    });
+
+    it('should return an empty array when no checklist-visible events exist', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+
+      const result = await repository.getAllChecklistVisibleEvents();
+
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('getEventChecklist', () => {
     const scenarioSessionId = 'session-uuid-123';
     const scenarioId = 1;

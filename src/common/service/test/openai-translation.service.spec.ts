@@ -149,6 +149,71 @@ describe('OpenAITranslationsService', () => {
       );
       expect(result).toEqual([original]);
     });
+
+    it('falls back to original when output leaks HTML entities', async () => {
+      const createMock = jest.fn().mockResolvedValue({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ message: 'Great job, &lt;user&gt;!' }),
+            },
+          },
+        ],
+      });
+      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
+        () => ({ chat: { completions: { create: createMock } } }) as any,
+      );
+      const service = createService({});
+      const original = JSON.stringify({ message: 'Great job, <user_name>!' });
+      const result = await (service as any).fetchTranslations(
+        [original],
+        'hi',
+        'sys',
+        'usr',
+      );
+      expect(result).toEqual([original]);
+    });
+
+    it('falls back to original when a source placeholder is dropped', async () => {
+      const createMock = jest.fn().mockResolvedValue({
+        choices: [
+          { message: { content: JSON.stringify({ message: 'शाबाश!' }) } },
+        ],
+      });
+      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
+        () => ({ chat: { completions: { create: createMock } } }) as any,
+      );
+      const service = createService({});
+      const original = JSON.stringify({ message: 'Great job, <user_name>!' });
+      const result = await (service as any).fetchTranslations(
+        [original],
+        'hi',
+        'sys',
+        'usr',
+      );
+      expect(result).toEqual([original]);
+    });
+
+    it('accepts output that preserves placeholders with no HTML entities', async () => {
+      const translated = JSON.stringify({
+        message: 'शाबाश, <user_name>!',
+      });
+      const createMock = jest.fn().mockResolvedValue({
+        choices: [{ message: { content: translated } }],
+      });
+      (OpenAI as jest.MockedClass<typeof OpenAI>).mockImplementation(
+        () => ({ chat: { completions: { create: createMock } } }) as any,
+      );
+      const service = createService({});
+      const original = JSON.stringify({ message: 'Great job, <user_name>!' });
+      const result = await (service as any).fetchTranslations(
+        [original],
+        'hi',
+        'sys',
+        'usr',
+      );
+      expect(result).toEqual([translated]);
+    });
   });
 
   describe('translateScenarioData', () => {

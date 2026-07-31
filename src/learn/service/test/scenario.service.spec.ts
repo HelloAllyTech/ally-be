@@ -3,6 +3,7 @@ import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
+import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import {
   BadRequestException,
@@ -70,6 +71,7 @@ describe('ScenarioService', () => {
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
   let scenarioEventsRepository: jest.Mocked<ScenarioEventsRepository>;
   let sessionEventSharedService: jest.Mocked<SessionEventSharedService>;
+  let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
   let scenarioVoiceRepository: jest.Mocked<ScenarioVoicesRepository>;
   let tenantService: jest.Mocked<TenantService>;
   let dataSource: jest.Mocked<DataSource>;
@@ -140,11 +142,16 @@ describe('ScenarioService', () => {
       findOne: jest.fn(),
       create: jest.fn(),
       softDelete: jest.fn(),
+      getAllChecklistVisibleEvents: jest.fn(),
     };
 
     const mockSessionEventSharedService = {
       findByIds: jest.fn(),
       findSessionEventById: jest.fn(),
+    };
+
+    const mockSessionEventTranslationService = {
+      createUpdateSessionEventTranslations: jest.fn(),
     };
 
     const mockScenarioVoiceRepository = {
@@ -343,6 +350,10 @@ describe('ScenarioService', () => {
           useValue: mockSessionEventSharedService,
         },
         {
+          provide: SessionEventTranslationService,
+          useValue: mockSessionEventTranslationService,
+        },
+        {
           provide: TenantService,
           useValue: mockTenantService,
         },
@@ -454,6 +465,7 @@ describe('ScenarioService', () => {
     scenariosRepository = module.get(ScenariosRepository);
     scenarioEventsRepository = module.get(ScenarioEventsRepository);
     sessionEventSharedService = module.get(SessionEventSharedService);
+    sessionEventTranslationService = module.get(SessionEventTranslationService);
     scenarioVoiceRepository = module.get(ScenarioVoicesRepository);
     tenantService = module.get(TenantService);
     dataSource = module.get(DataSource);
@@ -5040,6 +5052,80 @@ describe('ScenarioService', () => {
     //   // Verify no further processing happened
     //   expect(service.persistScenarioEventTranslations).not.toHaveBeenCalled();
     // });
+  });
+
+  describe('translateChecklistItems', () => {
+    it('returns success without doing work when there are no checklist-visible events', async () => {
+      scenarioEventsRepository.getAllChecklistVisibleEvents.mockResolvedValue(
+        [],
+      );
+      jest.spyOn(service, 'createUpdateScenarioEventsTranslations');
+
+      const result = await service.translateChecklistItems();
+
+      expect(result).toEqual({ success: true });
+      expect(
+        service.createUpdateScenarioEventsTranslations,
+      ).not.toHaveBeenCalled();
+      expect(sessionEventSharedService.findByIds).not.toHaveBeenCalled();
+    });
+
+    it('retranslates both the scenario-event overrides and their base session events', async () => {
+      const checklistEvents = [
+        { id: 'se-1', scenarioId: 1, eventId: 'event-1', message: 'Nice!' },
+        { id: 'se-2', scenarioId: 2, eventId: 'event-1', message: 'Great!' },
+        { id: 'se-3', scenarioId: 2, eventId: 'event-2', message: 'Good!' },
+      ];
+      const baseSessionEvents = [
+        { id: 'event-1', name: 'Empathy' },
+        { id: 'event-2', name: 'Greeting' },
+      ];
+
+      scenarioEventsRepository.getAllChecklistVisibleEvents.mockResolvedValue(
+        checklistEvents as any,
+      );
+      jest
+        .spyOn(service, 'createUpdateScenarioEventsTranslations')
+        .mockResolvedValue(undefined);
+      sessionEventSharedService.findByIds.mockResolvedValue(
+        baseSessionEvents as any,
+      );
+
+      const result = await service.translateChecklistItems();
+
+      expect(result).toEqual({ success: true });
+      expect(
+        service.createUpdateScenarioEventsTranslations,
+      ).toHaveBeenCalledWith(checklistEvents);
+      expect(sessionEventSharedService.findByIds).toHaveBeenCalledWith([
+        'event-1',
+        'event-2',
+      ]);
+      expect(
+        sessionEventTranslationService.createUpdateSessionEventTranslations,
+      ).toHaveBeenCalledWith(baseSessionEvents);
+    });
+
+    it('skips the base session-event retranslation when none are found', async () => {
+      const checklistEvents = [
+        { id: 'se-1', scenarioId: 1, eventId: 'event-1', message: 'Nice!' },
+      ];
+
+      scenarioEventsRepository.getAllChecklistVisibleEvents.mockResolvedValue(
+        checklistEvents as any,
+      );
+      jest
+        .spyOn(service, 'createUpdateScenarioEventsTranslations')
+        .mockResolvedValue(undefined);
+      sessionEventSharedService.findByIds.mockResolvedValue([]);
+
+      const result = await service.translateChecklistItems();
+
+      expect(result).toEqual({ success: true });
+      expect(
+        sessionEventTranslationService.createUpdateSessionEventTranslations,
+      ).not.toHaveBeenCalled();
+    });
   });
 
   describe('sanitizeMetadata', () => {

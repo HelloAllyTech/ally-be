@@ -19,6 +19,7 @@ import {
 import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from 'src/learn/constants/scenario-session.constants';
 import { SessionEventSharedService } from './session-event-shared.service';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
+import { sanitizeJsonbMetadata } from 'src/common/util/sanitize-jsonb.util';
 
 @Injectable()
 export class SessionEventTranslationService {
@@ -146,8 +147,8 @@ export class SessionEventTranslationService {
         );
 
         const sanitized = this.sanitizeSessionEventMetadata({
-          name: rawMetadata?.name,
-          message: rawMetadata?.message,
+          name: wrapFieldPlaceholders(rawMetadata?.name),
+          message: wrapFieldPlaceholders(rawMetadata?.message),
           branchInstruction: wrapFieldPlaceholders(
             rawMetadata?.branchInstruction,
           ),
@@ -197,8 +198,8 @@ export class SessionEventTranslationService {
           translatedList.push({
             sessionEventId: sessionEvent.id,
             languageId: Number(language.id),
-            name: translatedData.name ?? '',
-            message: translatedData.message ?? '',
+            name: unwrapFieldPlaceholders(translatedData.name) ?? '',
+            message: unwrapFieldPlaceholders(translatedData.message) ?? '',
             branchInstruction:
               unwrapFieldPlaceholders(translatedData.branchInstruction) ?? '',
             detectionData: this.mergeTranslatedFields(
@@ -253,25 +254,17 @@ export class SessionEventTranslationService {
     }
   }
 
+  /**
+   * Delegates to the shared `sanitizeJsonbMetadata` helper (same one used by
+   * `ScenarioService`/tooltip/behavior-instruction translation) so session-event
+   * translations get the same C0-control-character stripping — a stray control
+   * byte in LLM output otherwise either fails the Postgres insert or renders as
+   * garbled characters in the checklist UI.
+   */
   private sanitizeSessionEventMetadata(
     data?: SessionEventMetadata | null,
   ): Partial<SessionEventMetadata> {
-    if (!data) return {};
-
-    const cleaned: Partial<SessionEventMetadata> = {};
-
-    for (const [key, value] of Object.entries(data)) {
-      if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (trimmed) {
-          (cleaned as Record<string, unknown>)[key] = trimmed;
-        }
-      } else if (value != null) {
-        (cleaned as Record<string, unknown>)[key] = value;
-      }
-    }
-
-    return cleaned;
+    return sanitizeJsonbMetadata(data ?? {});
   }
 
   private extractTranslatableFields(

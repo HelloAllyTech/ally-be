@@ -39,7 +39,7 @@ import {
 } from '../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
-import { Pagination } from 'src/common/type/common.type';
+import { Pagination, SuccessResponse } from 'src/common/type/common.type';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import {
@@ -130,6 +130,7 @@ import {
 import { randomUUID } from 'crypto';
 import { ScenarioReportService } from 'src/scenario-report/service/scenario-report.service';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
+import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
 import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
@@ -190,6 +191,7 @@ export class ScenarioService {
     private scenariosRepository: ScenariosRepository,
     private scenarioEventsRepository: ScenarioEventsRepository,
     private sessionEventSharedService: SessionEventSharedService,
+    private readonly sessionEventTranslationService: SessionEventTranslationService,
     private tenantService: TenantService,
     private scenarioVoiceRepository: ScenarioVoicesRepository,
     private s3Service: S3Service,
@@ -2845,7 +2847,7 @@ export class ScenarioService {
     for (const scenarioEvent of scenarioEvents) {
       const rawMetadata = metadataExtractor(scenarioEvent);
       const sanitized = this.sanitizeMetadata({
-        message: rawMetadata?.message,
+        message: wrapFieldPlaceholders(rawMetadata?.message),
         branchInstruction: wrapFieldPlaceholders(
           rawMetadata?.branchInstruction,
         ),
@@ -2918,7 +2920,7 @@ export class ScenarioService {
           scenarioId: scenarioEvent.scenarioId,
           eventId: scenarioEvent.eventId,
           languageId: Number(language.id),
-          message: translatedData.message ?? '',
+          message: unwrapFieldPlaceholders(translatedData.message) ?? '',
           branchInstruction:
             unwrapFieldPlaceholders(translatedData.branchInstruction) ?? '',
         });
@@ -2967,6 +2969,43 @@ export class ScenarioService {
         );
       }
     }
+  }
+
+  /**
+   * Re-runs translation for every checklist item currently shown to
+   * learners, across every scenario and every configured language.
+   *
+   * A checklist item's text comes from two places: the per-scenario
+   * `ScenarioEvents` override (`message`/`branchInstruction`) and the base
+   * `SessionEvents` row it references (`name`, plus its own `message`/
+   * `branchInstruction` as a fallback when no override exists). Both need
+   * retranslating to fully refresh a checklist item, so this re-translates
+   * both sides for every `ScenarioEvents` row with
+   * `checklistVisibilityStatus = true`.
+   */
+  async translateChecklistItems(): Promise<SuccessResponse> {
+    const checklistEvents =
+      await this.scenarioEventsRepository.getAllChecklistVisibleEvents();
+
+    if (!checklistEvents.length) {
+      return { success: true };
+    }
+
+    await this.createUpdateScenarioEventsTranslations(checklistEvents);
+
+    const eventIds = Array.from(
+      new Set(checklistEvents.map((event) => event.eventId)),
+    );
+    const sessionEvents =
+      await this.sessionEventSharedService.findByIds(eventIds);
+
+    if (sessionEvents.length) {
+      await this.sessionEventTranslationService.createUpdateSessionEventTranslations(
+        sessionEvents,
+      );
+    }
+
+    return { success: true };
   }
 
   async getBranchingInstructionDynamicShortcuts(

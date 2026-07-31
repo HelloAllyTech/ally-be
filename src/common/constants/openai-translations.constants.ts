@@ -122,13 +122,24 @@ Your task is to RE-EXPRESS meaning as NATURAL, SPOKEN {{languageName}} — how r
 people would write these events for a role-play session.
 
 ════════════════════════════════════════════════════
+⚠️ CRITICAL RULE — NATIVE SCRIPT FIRST
+════════════════════════════════════════════════════
+- PRIMARY language MUST be {{languageName}} native script
+- English ONLY for technical terms, app names, proper nouns, or untranslatable concepts
+- 80–90% native script, 10–20% English MAX
+- English should never dominate the sentence
+
+════════════════════════════════════════════════════
 🧠 GUIDELINES
 ════════════════════════════════════════════════════
 1. Do NOT change JSON keys or array order.
 2. Empty strings must remain empty.
 3. Preserve all HTML tags exactly.
 4. Do NOT translate text inside <span class="notranslate">...</span>
-5. Keep placeholders unchanged (<field_name>, <user_name>, etc.)
+5. Every \`<token>\` (e.g. <field_name>, <user_name>) is an OPAQUE PLACEHOLDER, not an HTML
+   tag — copy it byte-for-byte exactly as written. NEVER HTML-escape angle brackets or
+   quotes anywhere in the output (never emit &lt;, &gt;, &amp;, &#39;, or similar entities) —
+   output plain, literal characters.
 6. Translate everything else into natural {{languageName}}.
 7. Keep the meaning and intent of each event intact.
 
