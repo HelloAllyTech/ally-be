@@ -1,6 +1,9 @@
 import { DeepPartial } from 'typeorm';
 import { SCENARIO_MANDATORY_FIELDS } from '../constants/scenario-mandatory-fields.constants';
-import { DEFAULT_LANGUAGE_TRANSLATION_CODE } from '../constants/scenario-session.constants';
+import {
+  DEFAULT_LANGUAGE_TRANSLATION_CODE,
+  LOCAL_LLM_PROVIDERS,
+} from '../constants/scenario-session.constants';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
@@ -33,6 +36,7 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'interimReplyEnabled',
   'customFields',
   'languageVoices',
+  'sttConfigByLanguage',
   'linguisticStyleSamples',
   'allowedFillerWords',
   'languageCharacteristics',
@@ -155,6 +159,7 @@ export const mapCreateScenarioRequestToEntity = (
         useInDefaultPrompt: customField.useInDefaultPrompt ?? true,
       })),
       languageVoices: scenario.languageVoices,
+      sttConfigByLanguage: scenario.sttConfigByLanguage,
       linguisticStyleSamples: scenario.linguisticStyleSamples,
       allowedFillerWords: scenario.allowedFillerWords,
       languageCharacteristics: scenario.languageCharacteristics,
@@ -241,6 +246,182 @@ export const shouldServeMultilingual = (
     return false;
   }
   return variantByLanguage?.[String(languageDetails.id)] === 'MULTILINGUAL';
+};
+
+/** A resolved registry row, reduced to what the agent actually consumes. */
+export interface ResolvedProviderConfig {
+  provider: string;
+  config: Record<string, any>;
+}
+
+type RegistryRow = { provider?: string; config?: Record<string, any> };
+
+/**
+ * Reduce an stt_configs registry row to the `{ provider, config }` shape
+ * ally-ai-learn expects, or null when the row can't produce a working client.
+ *
+ * A row missing a model is treated as unusable rather than passed through: the
+ * agent's `create_stt_client` would pair the chosen provider with the *platform
+ * default* model (Deepgram's "nova-3"), so an ElevenLabs row with no model
+ * yields an ElevenLabs client asking for a Deepgram model — a session that
+ * starts and transcribes nothing. Falling back is the safe read.
+ */
+export const toResolvedSttConfig = (
+  row: RegistryRow | null | undefined,
+): ResolvedProviderConfig | null => {
+  if (!row?.provider || !row?.config?.model) return null;
+  return { provider: row.provider, config: row.config };
+};
+
+/**
+ * Same reduction for an llm_configs row. The model requirement is conditional:
+ * Ollama and vLLM serve whatever the server is running, so a missing model is
+ * legitimate there. For hosted providers it is the same trap as STT — the agent
+ * would pair the chosen provider with `gpt-4o-mini`.
+ */
+export const toResolvedLlmConfig = (
+  row: RegistryRow | null | undefined,
+): ResolvedProviderConfig | null => {
+  if (!row?.provider) return null;
+  const isLocal = LOCAL_LLM_PROVIDERS.includes(row.provider.toLowerCase());
+  if (!isLocal && !row?.config?.model) return null;
+  return { provider: row.provider, config: row.config ?? {} };
+};
+
+/**
+ * Shared precedence walk behind resolveSessionSttConfig / resolveSessionLlmConfig:
+ *   1. the simulation's pick for this language (a registry id)
+ *   2. the language's own registry default
+ *   3. the pre-registry jsonb column on the language
+ *   4. the platform default.
+ */
+const resolveSessionProviderConfig = (
+  picksByLanguage: Record<string, any> | null | undefined,
+  languageId: number | string | null | undefined,
+  registryById: Map<string, RegistryRow>,
+  languageConfigId: string | null | undefined,
+  legacyConfig: Record<string, any> | null | undefined,
+  defaultConfig: ResolvedProviderConfig,
+  toResolved: (
+    row: RegistryRow | null | undefined,
+  ) => ResolvedProviderConfig | null,
+): ResolvedProviderConfig => {
+  const pickedId =
+    languageId != null && picksByLanguage
+      ? picksByLanguage[String(languageId)]
+      : undefined;
+
+  if (typeof pickedId === 'string' && pickedId) {
+    const resolved = toResolved(registryById.get(pickedId));
+    if (resolved) return resolved;
+  }
+
+  if (languageConfigId) {
+    const resolved = toResolved(registryById.get(languageConfigId));
+    if (resolved) return resolved;
+  }
+
+  if (legacyConfig && Object.keys(legacyConfig).length > 0) {
+    return legacyConfig as ResolvedProviderConfig;
+  }
+
+  return defaultConfig;
+};
+
+/**
+ * Resolve the `stt` block sent to ally-ai-learn for one session.
+ *
+ * Precedence, for the session's language only:
+ *   1. the simulation's own choice for this language
+ *      (scenarios.metadata.sttConfigByLanguage[languageId] → a registry row)
+ *   2. the language's default registry row (languages.sttConfigId)
+ *   3. languages.sttProviderConfig — the pre-registry jsonb column, still read
+ *      for rows the migration could not map
+ *   4. the platform default.
+ *
+ * Keyed by language because STT quality is a language question before it is a
+ * simulation one — Sarvam for one Indian language, Google chirp for the next,
+ * Deepgram for English. A flat per-simulation override would force one engine
+ * across every language the simulation runs in. These are the same keys as
+ * `languageVoices`, and like it they store registry ids, not inline configs, so
+ * changing a model is one edit rather than one per simulation.
+ *
+ * An empty object at level 3 counts as "not configured", matching how the
+ * language row is seeded (`DEFAULT '{}'`).
+ */
+export const resolveSessionSttConfig = (
+  sttConfigByLanguage: Record<string, any> | null | undefined,
+  languageId: number | string | null | undefined,
+  registryById: Map<string, RegistryRow>,
+  language:
+    | {
+        sttConfigId?: string | null;
+        sttProviderConfig?: Record<string, any> | null;
+      }
+    | null
+    | undefined,
+  defaultSttConfig: ResolvedProviderConfig,
+): ResolvedProviderConfig =>
+  resolveSessionProviderConfig(
+    sttConfigByLanguage,
+    languageId,
+    registryById,
+    language?.sttConfigId,
+    language?.sttProviderConfig,
+    defaultSttConfig,
+    toResolvedSttConfig,
+  );
+
+/**
+ * Resolve the `llm` block sent to ally-ai-learn for one session.
+ *
+ * Deliberately has no per-simulation layer, unlike STT. This value is only the
+ * *base* config: the agent's `build_llm_client_for_prompt` lets a prompt (or a
+ * selected language variant of it) override the model, and that override wins
+ * over whatever is set here. A simulation-level LLM picker would therefore be
+ * silently defeated whenever the main-agent prompt pins a model — which is the
+ * team's established lever for exactly this kind of per-language tuning. So the
+ * precedence stops at the language:
+ *   languages.llmConfigId → languages.llmProviderConfig → the platform default.
+ */
+export const resolveSessionLlmConfig = (
+  registryById: Map<string, RegistryRow>,
+  language:
+    | {
+        llmConfigId?: string | null;
+        llmProviderConfig?: Record<string, any> | null;
+      }
+    | null
+    | undefined,
+  defaultLlmConfig: ResolvedProviderConfig,
+): ResolvedProviderConfig =>
+  resolveSessionProviderConfig(
+    null,
+    null,
+    registryById,
+    language?.llmConfigId,
+    language?.llmProviderConfig,
+    defaultLlmConfig,
+    toResolvedLlmConfig,
+  );
+
+/**
+ * Registry ids a session might need resolved for one service: the simulation's
+ * pick for this language and the language's own default.
+ */
+export const collectProviderConfigIds = (
+  picksByLanguage: Record<string, any> | null | undefined,
+  languageId: number | string | null | undefined,
+  languageConfigId: string | null | undefined,
+): string[] => {
+  const ids: string[] = [];
+  const pickedId =
+    languageId != null && picksByLanguage
+      ? picksByLanguage[String(languageId)]
+      : undefined;
+  if (typeof pickedId === 'string' && pickedId) ids.push(pickedId);
+  if (languageConfigId) ids.push(languageConfigId);
+  return ids;
 };
 
 export const mapUpdateScenarioRequestToEntity = (

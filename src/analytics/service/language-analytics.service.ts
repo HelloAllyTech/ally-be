@@ -422,7 +422,7 @@ export class LanguageAnalyticsService {
     // --- Categories ----------------------------------------------------------
     const byCategory = new Map<string, { count: number; weighted: number }>();
     for (const row of counts) {
-      const key = `${row.dimension} ${row.category}`;
+      const key = `${row.dimension}\u0000${row.category}`;
       const cur = byCategory.get(key) ?? { count: 0, weighted: 0 };
       cur.count += Number(row.count);
       cur.weighted += Number(row.count) * (SEVERITY_WEIGHT[row.severity] ?? 1);
@@ -430,7 +430,7 @@ export class LanguageAnalyticsService {
     }
     const categoryBreakdown = [...byCategory.entries()]
       .map(([key, v]) => {
-        const [dimension, category] = key.split(' ');
+        const [dimension, category] = key.split('\u0000');
         return { dimension, category, ...v };
       })
       .sort((a, b) => b.weighted - a.weighted);

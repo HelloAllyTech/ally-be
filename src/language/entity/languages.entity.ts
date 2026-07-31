@@ -19,11 +19,29 @@ export class Languages extends BaseWithoutTenantEntity {
   @Column({ default: '' })
   translationCode!: string;
 
+  /**
+   * @deprecated Superseded by `llmConfigId` (the llm_configs registry). Still
+   * read as a fallback for rows the registry migration could not map; dropped
+   * once nothing reads it.
+   */
   @Column({ type: 'jsonb', default: {} })
   llmProviderConfig!: Record<string, any>;
 
+  /** This language's default LLM, referencing the llm_configs registry. */
+  @Column({ type: 'uuid', nullable: true })
+  llmConfigId?: string | null;
+
+  /**
+   * @deprecated Superseded by `sttConfigId` (the stt_configs registry). Still
+   * read as a fallback for rows the registry migration could not map; dropped
+   * once nothing reads it.
+   */
   @Column({ type: 'jsonb', default: {} })
   sttProviderConfig!: Record<string, any>;
+
+  /** This language's default STT, referencing the stt_configs registry. */
+  @Column({ type: 'uuid', nullable: true })
+  sttConfigId?: string | null;
 
   /**
    * Per-language declarative eval config (script, errorRateUnit, targetVariety,

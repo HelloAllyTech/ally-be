@@ -45,6 +45,7 @@ import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
 import { Pagination, SuccessResponse } from 'src/common/type/common.type';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
+import { validateVoiceConfig } from '../util/voice-config-schema.util';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import {
   ScenarioAppLangugeTranslations,
@@ -2011,12 +2012,14 @@ export class ScenarioService {
     providers: string | undefined,
     languageIds: string | undefined,
     options: Pagination,
+    genders?: string,
   ): Promise<ScenarioVoices[]> {
     return this.scenarioVoiceRepository.getScenarioVoices(
       searchName,
       providers,
       languageIds,
       options,
+      genders,
     );
   }
 
@@ -2027,6 +2030,16 @@ export class ScenarioService {
   async createScenarioVoices(
     createScenarioVoicesDto: CreateScenarioVoicesDto,
   ): Promise<ScenarioVoices[]> {
+    createScenarioVoicesDto.voices.forEach((voice, index) =>
+      this.assertValidVoiceConfig(
+        voice.provider,
+        voice.config,
+        createScenarioVoicesDto.voices.length > 1
+          ? `voices[${index}]: `
+          : undefined,
+      ),
+    );
+
     const scenarioVoices = this.scenarioVoiceRepository.create(
       createScenarioVoicesDto.voices,
     );
@@ -2045,12 +2058,45 @@ export class ScenarioService {
       throw new NotFoundException('Scenario voice not found');
     }
 
+    // Partial updates are allowed, so validate the config that will actually be
+    // stored: whichever of provider/config the caller sent, falling back to the
+    // persisted values for the ones they left out.
+    if (
+      updateScenarioVoiceDto.provider !== undefined ||
+      updateScenarioVoiceDto.config !== undefined
+    ) {
+      this.assertValidVoiceConfig(
+        updateScenarioVoiceDto.provider ?? scenarioVoice.provider,
+        updateScenarioVoiceDto.config ?? scenarioVoice.config,
+      );
+    }
+
     const updated = await this.scenarioVoiceRepository.update(
       id,
       updateScenarioVoiceDto as DeepPartial<ScenarioVoices>,
     );
 
     return updated.affected !== 0;
+  }
+
+  /**
+   * Reject a voice whose config the runtime can't use.
+   *
+   * Without this the write succeeds and the breakage only shows up mid-call:
+   * `create_tts_client()` catches the client's ValueError and falls back to a
+   * default Deepgram voice, so the scenario just plays in the wrong voice.
+   */
+  private assertValidVoiceConfig(
+    provider: string | undefined,
+    config: Record<string, any> | undefined,
+    messagePrefix = '',
+  ): void {
+    const errors = validateVoiceConfig(provider ?? '', config);
+    if (errors.length) {
+      throw new BadRequestException(
+        `${messagePrefix}${errors.join(' ')}`.trim(),
+      );
+    }
   }
 
   async getScenarioVoiceLanguagesForAdmin(
@@ -2081,7 +2127,7 @@ export class ScenarioService {
    *
    * The nested cleanup is the critical bit: a stray NULL byte anywhere
    * in `metadata.openingStatements[i]` would otherwise fail the
-   * `scenario_translations` insert with Postgres 22P05 ("  cannot
+   * `scenario_translations` insert with Postgres 22P05 ("\u0000 cannot
    * be converted to text") — the issue this method now defends against.
    *
    * Kept as a thin instance method (instead of inlining the util at

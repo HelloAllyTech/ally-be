@@ -25,6 +25,11 @@ import { ScenarioVersionRepository } from './repository/scenario-version.reposit
 import { ScenarioVersionService } from './service/scenario-version.service';
 import { ScenarioVoices } from './entity/scenario-voices.entity';
 import { ScenarioVoicesRepository } from './repository/scenario-voices.repository';
+import { SttConfigsRepository } from './repository/stt-configs.repository';
+import { SttConfigService } from './service/stt-config.service';
+import { LlmConfigsRepository } from './repository/llm-configs.repository';
+import { LlmConfigService } from './service/llm-config.service';
+import { LanguagesRepository } from '../language/repository/languages.repository';
 import { SimulationCreditsController } from './controller/simulation-credits.controller';
 import { SimulationCreditsService } from './service/simulation-credits.service';
 import { SimulationCreditsRepository } from './repository/simulation-credits.repository';
@@ -202,6 +207,11 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     StartMetricsProcessor,
     LlmUsageProcessor,
     ScenarioVoicesRepository,
+    SttConfigsRepository,
+    SttConfigService,
+    LlmConfigsRepository,
+    LlmConfigService,
+    LanguagesRepository,
     SimulationCreditsService,
     SimulationCreditsRepository,
     PermissionValidator,

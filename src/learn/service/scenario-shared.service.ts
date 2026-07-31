@@ -33,6 +33,8 @@ import { LanguageCode as LanguageValueCode } from '../enum/scenario-language';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { ScenarioVoices } from '../entity/scenario-voices.entity';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
+import { SttConfigsRepository } from '../repository/stt-configs.repository';
+import { LlmConfigsRepository } from '../repository/llm-configs.repository';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { extractEventIds } from 'src/session-event/util/session-event.util';
 import { MAX_COMBINATION_EVENT_DEPTH } from 'src/session-event/constants/event.constant';
@@ -49,7 +51,10 @@ import { ConversationalGuardrailsService } from 'src/conversational-guardrails/s
 import {
   getActiveScenarioMandatoryFields,
   hydrateAdminScenarioFromVersionConfig,
+  collectProviderConfigIds,
   isEnglishLanguage,
+  resolveSessionLlmConfig,
+  resolveSessionSttConfig,
   shouldServeMultilingual,
 } from '../util/scenario.util';
 import { ScenarioVersionRepository } from '../repository/scenario-version.repository';
@@ -128,6 +133,8 @@ export class ScenarioSharedService {
     private scenarioSessionDetailsRepository: ScenarioSessionDetailsRepository,
     private scenarioSessionMessageTagsRepository: ScenarioSessionMessageTagsRepository,
     private scenarioVoiceRepository: ScenarioVoicesRepository,
+    private sttConfigsRepository: SttConfigsRepository,
+    private llmConfigsRepository: LlmConfigsRepository,
     private scenarioSessionRecordingRepository: ScenarioSessionRecordingRepository,
     private sessionEventSharedService: SessionEventSharedService,
     private sharedLanguageService: SharedLanguageService,
@@ -651,6 +658,25 @@ export class ScenarioSharedService {
     );
     scenarioData.promptData.prompts = prompts;
 
+    // Resolve the STT registry rows this session might need — the simulation's
+    // pick for this language and the language's own default — in one query.
+    const sessionLanguageId = languageDetails?.id ?? metadata?.languageId;
+    const [sttRegistryById, llmRegistryById] = await Promise.all([
+      this.sttConfigsRepository.findMapByIds(
+        collectProviderConfigIds(
+          metadata?.sttConfigByLanguage as
+            | Record<string, any>
+            | null
+            | undefined,
+          sessionLanguageId,
+          languageDetails?.sttConfigId,
+        ),
+      ),
+      this.llmConfigsRepository.findMapByIds(
+        collectProviderConfigIds(null, null, languageDetails?.llmConfigId),
+      ),
+    ]);
+
     const roomMetadata = {
       version: '1.0',
       tenantId: ExecutionManager.getTenantId(),
@@ -664,15 +690,27 @@ export class ScenarioSharedService {
         ...(metadata?.language && {
           languageCode: languageCode,
         }),
-        // Use database provider configs if available and not empty
-        ...(languageDetails?.sttProviderConfig &&
-        Object.keys(languageDetails.sttProviderConfig).length > 0
-          ? { stt: languageDetails.sttProviderConfig }
-          : STT_LLM_PROVIDER_CONFIG),
-        ...(languageDetails?.llmProviderConfig &&
-        Object.keys(languageDetails.llmProviderConfig).length > 0
-          ? { llm: languageDetails.llmProviderConfig }
-          : STT_LLM_PROVIDER_CONFIG),
+        // This language's simulation-level pick wins over the language's own
+        // default, which wins over the pre-registry jsonb column, which wins
+        // over the platform default (see resolveSessionSttConfig).
+        stt: resolveSessionSttConfig(
+          metadata?.sttConfigByLanguage as
+            | Record<string, any>
+            | null
+            | undefined,
+          sessionLanguageId,
+          sttRegistryById,
+          languageDetails,
+          STT_LLM_PROVIDER_CONFIG.stt,
+        ),
+        // No per-simulation layer here (see resolveSessionLlmConfig): a prompt's
+        // model override outranks this, so a simulation-level picker would be
+        // silently defeated. Language default → legacy column → platform default.
+        llm: resolveSessionLlmConfig(
+          llmRegistryById,
+          languageDetails,
+          STT_LLM_PROVIDER_CONFIG.llm,
+        ),
         events: allEvents,
         triggerEvents: Array.from(triggerEvents),
         autoTerminationEvents,

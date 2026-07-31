@@ -4,6 +4,8 @@ import {
   formatAutoTerminationEventsList,
   formatScenarioTriggerWarningsList,
   hydrateAdminScenarioFromVersionConfig,
+  collectProviderConfigIds,
+  resolveSessionSttConfig,
 } from '../scenario.util';
 import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
 import { CreateScenarioDto } from '../../dto/create-scenario.dto';
@@ -674,6 +676,218 @@ describe('Scenario Util', () => {
       expect(result.metadata).not.toBe(base.metadata);
       expect(base.metadata?.name).toBe('LiveName');
       expect(base.title).toBe('LIVE title');
+    });
+  });
+
+  describe('resolveSessionSttConfig', () => {
+    const DEEPGRAM_ID = '11111111-1111-4111-8111-111111111111';
+    const GOOGLE_ID = '22222222-2222-4222-8222-222222222222';
+    const ELEVENLABS_ID = '33333333-3333-4333-8333-333333333333';
+
+    const deepgram = { provider: 'deepgram', config: { model: 'nova-3' } };
+    const google = {
+      provider: 'google',
+      config: { model: 'chirp_2', location: 'asia-southeast1' },
+    };
+    const elevenLabs = {
+      provider: 'elevenlabs',
+      config: { model: 'scribe_v2_realtime' },
+    };
+
+    const registry = new Map<string, any>([
+      [DEEPGRAM_ID, deepgram],
+      [GOOGLE_ID, google],
+      [ELEVENLABS_ID, elevenLabs],
+    ]);
+
+    // A language whose default came through the registry migration.
+    const language = { sttConfigId: GOOGLE_ID, sttProviderConfig: {} };
+    const platformDefault = deepgram;
+
+    it("prefers this language's simulation pick over the language default", () => {
+      expect(
+        resolveSessionSttConfig(
+          { '9': ELEVENLABS_ID },
+          9,
+          registry,
+          language,
+          platformDefault,
+        ),
+      ).toEqual(elevenLabs);
+    });
+
+    it('accepts a numeric or string language id', () => {
+      expect(
+        resolveSessionSttConfig(
+          { '9': ELEVENLABS_ID },
+          '9',
+          registry,
+          language,
+          platformDefault,
+        ),
+      ).toEqual(elevenLabs);
+    });
+
+    it('only applies the pick to the language it was set for', () => {
+      // The whole point of keying by language: overriding Kannada must not
+      // drag English onto the same engine.
+      const picks = { '9': ELEVENLABS_ID };
+
+      expect(
+        resolveSessionSttConfig(picks, 1, registry, language, platformDefault),
+      ).toEqual(google);
+      expect(
+        resolveSessionSttConfig(picks, 9, registry, language, platformDefault),
+      ).toEqual(elevenLabs);
+    });
+
+    it('resolves each language independently', () => {
+      const picks = { '1': ELEVENLABS_ID, '5': DEEPGRAM_ID };
+
+      expect(
+        resolveSessionSttConfig(picks, 1, registry, language, platformDefault),
+      ).toEqual(elevenLabs);
+      expect(
+        resolveSessionSttConfig(picks, 5, registry, language, platformDefault),
+      ).toEqual(deepgram);
+    });
+
+    it("falls back to the language's registry default when nothing is picked", () => {
+      for (const picks of [undefined, null, {}, { '9': null }, { '9': '' }]) {
+        expect(
+          resolveSessionSttConfig(
+            picks as any,
+            9,
+            registry,
+            language,
+            platformDefault,
+          ),
+        ).toEqual(google);
+      }
+    });
+
+    it('falls back when the session language is unknown', () => {
+      expect(
+        resolveSessionSttConfig(
+          { '9': ELEVENLABS_ID },
+          undefined,
+          registry,
+          language,
+          platformDefault,
+        ),
+      ).toEqual(google);
+    });
+
+    it('falls back when the referenced registry row is gone', () => {
+      // Deleting a config a language points at is refused, but a simulation's
+      // pick has no such guard — a dangling id must degrade, not throw.
+      expect(
+        resolveSessionSttConfig(
+          { '9': '44444444-4444-4444-8444-444444444444' },
+          9,
+          registry,
+          language,
+          platformDefault,
+        ),
+      ).toEqual(google);
+    });
+
+    it('reads the pre-registry jsonb column when the language has no registry row', () => {
+      const legacyLanguage = {
+        sttConfigId: null,
+        sttProviderConfig: {
+          provider: 'sarvam',
+          config: { model: 'saarika:v2.5' },
+        },
+      };
+
+      expect(
+        resolveSessionSttConfig(
+          null,
+          9,
+          registry,
+          legacyLanguage,
+          platformDefault,
+        ),
+      ).toEqual(legacyLanguage.sttProviderConfig);
+    });
+
+    it('falls back to the platform default when the language is unconfigured', () => {
+      expect(
+        resolveSessionSttConfig(
+          null,
+          9,
+          registry,
+          { sttConfigId: null, sttProviderConfig: {} },
+          platformDefault,
+        ),
+      ).toEqual(platformDefault);
+      expect(
+        resolveSessionSttConfig(null, 9, registry, null, platformDefault),
+      ).toEqual(platformDefault);
+    });
+
+    it('ignores a registry row with no model rather than building a broken client', () => {
+      // provider without a model makes ally-ai-learn pair the chosen provider
+      // with the platform default model — a session that transcribes nothing.
+      const brokenId = '55555555-5555-4555-8555-555555555555';
+      const withBroken = new Map(registry);
+      withBroken.set(brokenId, { provider: 'elevenlabs', config: {} });
+
+      expect(
+        resolveSessionSttConfig(
+          { '9': brokenId },
+          9,
+          withBroken,
+          language,
+          platformDefault,
+        ),
+      ).toEqual(google);
+    });
+
+    it('ignores a picks map that is not an object shape', () => {
+      expect(
+        resolveSessionSttConfig(
+          'elevenlabs' as any,
+          9,
+          registry,
+          language,
+          platformDefault,
+        ),
+      ).toEqual(google);
+      expect(
+        resolveSessionSttConfig(
+          [] as any,
+          9,
+          registry,
+          language,
+          platformDefault,
+        ),
+      ).toEqual(google);
+    });
+  });
+
+  describe('collectProviderConfigIds', () => {
+    const PICK = '33333333-3333-4333-8333-333333333333';
+    const LANG_DEFAULT = '22222222-2222-4222-8222-222222222222';
+
+    it("gathers the simulation's pick and the language default", () => {
+      expect(collectProviderConfigIds({ '9': PICK }, 9, LANG_DEFAULT)).toEqual([
+        PICK,
+        LANG_DEFAULT,
+      ]);
+    });
+
+    it('skips a language the simulation has not overridden', () => {
+      expect(collectProviderConfigIds({ '1': PICK }, 9, LANG_DEFAULT)).toEqual([
+        LANG_DEFAULT,
+      ]);
+    });
+
+    it('returns nothing to fetch when neither side references the registry', () => {
+      expect(collectProviderConfigIds(null, 9, null)).toEqual([]);
+      expect(collectProviderConfigIds({ '9': null }, 9, undefined)).toEqual([]);
+      expect(collectProviderConfigIds({ '9': '' }, 9, undefined)).toEqual([]);
     });
   });
 });

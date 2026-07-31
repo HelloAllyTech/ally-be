@@ -2049,13 +2049,23 @@ describe('ScenarioService', () => {
   });
 
   describe('createScenarioVoices', () => {
+    const validSarvamVoice = {
+      id: 'voice-1',
+      name: 'Voice 1',
+      provider: 'SARVAM',
+      config: { gender: 'male', model: 'bulbul:v2', speaker: 'abhilash' },
+      languageId: 1,
+    };
+    const validGoogleVoice = {
+      id: 'voice-2',
+      name: 'Voice 2',
+      provider: 'GOOGLE',
+      config: { gender: 'female', voice_name: 'en-IN-Chirp3-HD-Achernar' },
+      languageId: 1,
+    };
+
     it('should create multiple scenario voices', async () => {
-      const createDto = {
-        voices: [
-          { id: 'voice-1', name: 'Voice 1' },
-          { id: 'voice-2', name: 'Voice 2' },
-        ],
-      };
+      const createDto = { voices: [validSarvamVoice, validGoogleVoice] };
       scenarioVoiceRepository.create.mockReturnValue(createDto.voices as any);
       scenarioVoiceRepository.save.mockResolvedValue(createDto.voices as any);
 
@@ -2063,6 +2073,127 @@ describe('ScenarioService', () => {
 
       expect(result).toEqual(createDto.voices);
       expect(scenarioVoiceRepository.save).toHaveBeenCalled();
+    });
+
+    it('rejects a provider the runtime cannot dispatch to', async () => {
+      const createDto = {
+        voices: [{ ...validSarvamVoice, provider: 'OPENAI' }],
+      };
+
+      await expect(
+        service.createScenarioVoices(createDto as any),
+      ).rejects.toThrow(BadRequestException);
+      expect(scenarioVoiceRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects a config missing a provider-required field', async () => {
+      const createDto = {
+        voices: [
+          {
+            ...validSarvamVoice,
+            config: { gender: 'male', model: 'bulbul:v2' },
+          },
+        ],
+      };
+
+      await expect(
+        service.createScenarioVoices(createDto as any),
+      ).rejects.toThrow('SARVAM voices require "speaker" in config.');
+      expect(scenarioVoiceRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('names the offending entry when creating a batch', async () => {
+      const createDto = {
+        voices: [
+          validSarvamVoice,
+          {
+            ...validGoogleVoice,
+            provider: 'HUME',
+            config: { gender: 'female' },
+          },
+        ],
+      };
+
+      await expect(
+        service.createScenarioVoices(createDto as any),
+      ).rejects.toThrow(
+        'voices[1]: HUME voices require "voice_name" in config.',
+      );
+    });
+
+    it('accepts a voice with no gender', async () => {
+      // Gender is surfaced as a warning in the dashboard, not enforced here —
+      // it only narrows which languages the studio offers, and plenty of
+      // existing rows have none.
+      const createDto = {
+        voices: [
+          {
+            ...validGoogleVoice,
+            config: { voice_name: 'en-IN-Chirp3-HD-Leda' },
+          },
+        ],
+      };
+      scenarioVoiceRepository.create.mockReturnValue(createDto.voices as any);
+      scenarioVoiceRepository.save.mockResolvedValue(createDto.voices as any);
+
+      await expect(
+        service.createScenarioVoices(createDto as any),
+      ).resolves.toEqual(createDto.voices);
+    });
+  });
+
+  describe('updateScenarioVoice config validation', () => {
+    const storedVoice = {
+      id: 'voice-1',
+      name: 'Stored',
+      provider: 'SARVAM',
+      config: { gender: 'male', model: 'bulbul:v2', speaker: 'abhilash' },
+    };
+
+    it('skips validation when neither provider nor config is being changed', async () => {
+      // An inline rename or active-toggle must not be blocked by a config that
+      // was already broken before this edit.
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        ...storedVoice,
+        config: {},
+      } as any);
+      scenarioVoiceRepository.update.mockResolvedValue({ affected: 1 } as any);
+
+      await expect(
+        service.updateScenarioVoice('voice-1', { name: 'New Name' } as any),
+      ).resolves.toBe(true);
+    });
+
+    it('validates an incoming config against the stored provider', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue(storedVoice as any);
+
+      await expect(
+        service.updateScenarioVoice('voice-1', {
+          config: { gender: 'male', model: 'bulbul:v2' },
+        } as any),
+      ).rejects.toThrow('SARVAM voices require "speaker" in config.');
+    });
+
+    it('validates the stored config against an incoming provider', async () => {
+      // Switching provider without reshaping config is the classic way to end
+      // up dispatching to a default voice.
+      scenarioVoiceRepository.findOne.mockResolvedValue(storedVoice as any);
+
+      await expect(
+        service.updateScenarioVoice('voice-1', { provider: 'HUME' } as any),
+      ).rejects.toThrow('HUME voices require "voice_name" in config.');
+    });
+
+    it('accepts a valid provider and config pair', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue(storedVoice as any);
+      scenarioVoiceRepository.update.mockResolvedValue({ affected: 1 } as any);
+
+      await expect(
+        service.updateScenarioVoice('voice-1', {
+          provider: 'HUME',
+          config: { gender: 'male', voice_name: 'Priya' },
+        } as any),
+      ).resolves.toBe(true);
     });
   });
 

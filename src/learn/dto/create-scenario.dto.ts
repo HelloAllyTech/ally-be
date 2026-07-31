@@ -8,6 +8,7 @@ import {
   IsUUID,
   IsArray,
   IsBoolean,
+  Validate,
   ValidateNested,
   IsObject,
   ArrayMaxSize,
@@ -27,6 +28,7 @@ import {
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
 import { ScenarioCategory } from '../enum/scenario-category.enum';
 import { CustomFieldsDto } from './custom-fields.dto';
+import { IsConfigIdByLanguageConstraint } from './config-id-by-language.constraint';
 import {
   MAX_CUSTOM_FIELDS_COUNT,
   MAX_KNOWLEDGE_SOURCES_COUNT,
@@ -68,6 +70,17 @@ export class CreateScenarioDto {
   @IsObject()
   @IsOptional()
   languageVoices?: Record<string, string>;
+
+  @ApiProperty({
+    description:
+      "Per-language STT choices for this simulation, keyed by language ID and pointing at stt_configs rows — the same shape as languageVoices. Persisted on scenarios.metadata; the row for the session's language is resolved and forwarded to ally-ai-learn as scenario.stt, taking precedence over that language's own default. Omit a language, or map it to null, to inherit the language default.",
+    example: { '9': '3f1b0c8e-77a1-4d2b-9a55-1c0f6c2e4d90' },
+    type: 'object',
+    additionalProperties: { type: 'string', format: 'uuid' },
+  })
+  @IsOptional()
+  @Validate(IsConfigIdByLanguageConstraint)
+  sttConfigByLanguage?: Record<string, string | null> | null;
 
   @ApiProperty({
     description: 'Sample utterances per language for linguistic style',

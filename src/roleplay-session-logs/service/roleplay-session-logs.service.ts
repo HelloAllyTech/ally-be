@@ -369,7 +369,7 @@ export class RoleplaySessionLogsService {
       const out: Array<{ provider: string; model: string }> = [];
       for (const r of rows) {
         if (r.service !== service) continue;
-        const key = `${r.provider} ${r.model}`;
+        const key = `${r.provider}\u0000${r.model}`;
         if (seen.has(key)) continue;
         seen.add(key);
         out.push({ provider: r.provider, model: r.model });

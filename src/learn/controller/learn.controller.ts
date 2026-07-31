@@ -46,6 +46,12 @@ import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator'
 import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
+import {
+  CreateProviderConfigDto,
+  UpdateProviderConfigDto,
+} from '../dto/provider-config.dto';
+import { SttConfigService } from '../service/stt-config.service';
+import { LlmConfigService } from '../service/llm-config.service';
 import { UpdateScenarioVoiceDto } from '../dto/update-scenario-voice.dto';
 import { ScenarioVoiceSortBy } from '../enum/scenario-voice-sort-by.enum';
 import { ScenarioImageUploadRequestDto } from '../dto/scenario-image-upload-request.dto';
@@ -104,6 +110,8 @@ export class LearnController {
     private readonly scenarioTenantService: ScenarioTenantService,
     private readonly triggerWarningService: TriggerWarningsService,
     private readonly scenarioVersionService: ScenarioVersionService,
+    private readonly sttConfigService: SttConfigService,
+    private readonly llmConfigService: LlmConfigService,
   ) {}
 
   @Public()
@@ -1044,6 +1052,14 @@ export class LearnController {
     type: String,
     description: 'Filter by languageIds (comma-separated)',
   })
+  @ApiQuery({
+    name: 'genders',
+    required: false,
+    type: String,
+    description:
+      "Filter by config gender (comma-separated). Use 'unset' to find voices " +
+      'with no gender — those drop their language out of simulation creation.',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_VOICES])
   @Get('scenario-voices')
   async getScenarioVoices(
@@ -1054,6 +1070,7 @@ export class LearnController {
     @Query('searchName') searchName?: string,
     @Query('providers') providers?: string,
     @Query('languageIds') languageIds?: string,
+    @Query('genders') genders?: string,
   ) {
     return this.scenarioService.getScenarioVoices(
       searchName,
@@ -1065,6 +1082,7 @@ export class LearnController {
         sortBy,
         order,
       },
+      genders,
     );
   }
 
@@ -1085,6 +1103,90 @@ export class LearnController {
     @Body() updateScenarioVoiceDto: UpdateScenarioVoiceDto,
   ) {
     return this.scenarioService.updateScenarioVoice(id, updateScenarioVoiceDto);
+  }
+
+  // The STT registry is language-platform configuration, so it reuses the
+  // language permissions rather than introducing a permission nobody has been
+  // granted yet.
+  @ApiOperation({
+    summary: 'List STT configs',
+    description:
+      'Named speech-to-text configurations. Pass activeOnly=true for pickers, which must not offer retired configs.',
+  })
+  @ApiQuery({ name: 'activeOnly', required: false, type: Boolean })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_LANGUAGES])
+  @Get('stt-configs')
+  async getSttConfigs(@Query('activeOnly') activeOnly?: string) {
+    return this.sttConfigService.getConfigs(activeOnly === 'true');
+  }
+
+  @ApiOperation({ summary: 'Create an STT config' })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Post('stt-configs')
+  async createSttConfig(@Body() createConfigDto: CreateProviderConfigDto) {
+    return this.sttConfigService.createConfig(createConfigDto);
+  }
+
+  @ApiOperation({ summary: 'Update an STT config' })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Put('stt-configs/:id')
+  async updateSttConfig(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateConfigDto: UpdateProviderConfigDto,
+  ) {
+    return this.sttConfigService.updateConfig(id, updateConfigDto);
+  }
+
+  @ApiOperation({
+    summary: 'Delete an STT config',
+    description:
+      'Refused while a language still defaults to it — deactivate instead.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Delete('stt-configs/:id')
+  async deleteSttConfig(@Param('id', ParseUUIDPipe) id: string) {
+    return this.sttConfigService.deleteConfig(id);
+  }
+
+  // Same gating rationale as the STT registry: language-platform configuration.
+  @ApiOperation({
+    summary: 'List LLM configs',
+    description:
+      'Named large-language-model configurations. Pass activeOnly=true for pickers, which must not offer retired configs.',
+  })
+  @ApiQuery({ name: 'activeOnly', required: false, type: Boolean })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_LANGUAGES])
+  @Get('llm-configs')
+  async getLlmConfigs(@Query('activeOnly') activeOnly?: string) {
+    return this.llmConfigService.getConfigs(activeOnly === 'true');
+  }
+
+  @ApiOperation({ summary: 'Create an LLM config' })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Post('llm-configs')
+  async createLlmConfig(@Body() createLlmDto: CreateProviderConfigDto) {
+    return this.llmConfigService.createConfig(createLlmDto);
+  }
+
+  @ApiOperation({ summary: 'Update an LLM config' })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Put('llm-configs/:id')
+  async updateLlmConfig(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() updateLlmDto: UpdateProviderConfigDto,
+  ) {
+    return this.llmConfigService.updateConfig(id, updateLlmDto);
+  }
+
+  @ApiOperation({
+    summary: 'Delete an LLM config',
+    description:
+      'Refused while a language still defaults to it — deactivate instead.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Delete('llm-configs/:id')
+  async deleteLlmConfig(@Param('id', ParseUUIDPipe) id: string) {
+    return this.llmConfigService.deleteConfig(id);
   }
 
   @ApiOperation({ summary: 'Delete cover image' })

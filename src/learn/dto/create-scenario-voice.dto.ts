@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsString,
   IsNotEmpty,
@@ -6,7 +7,9 @@ import {
   IsNumber,
   IsBoolean,
   IsOptional,
+  IsEnum,
 } from 'class-validator';
+import { TtsProvider } from '../enum/tts-provider.enum';
 
 export class CreateScenarioVoiceDto {
   @ApiProperty({
@@ -18,18 +21,29 @@ export class CreateScenarioVoiceDto {
   name!: string;
 
   @ApiProperty({
-    description: 'Provider of the scenario voice',
-    example: 'OpenAI',
+    description:
+      'TTS provider. Only providers the voice agent can dispatch to are ' +
+      'accepted — anything else silently falls back to a default voice at ' +
+      'runtime. Case-insensitive on write, normalised to upper-case.',
+    enum: TtsProvider,
+    example: TtsProvider.SARVAM,
   })
-  @IsString()
-  @IsNotEmpty()
-  provider!: string;
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.toUpperCase() : value,
+  )
+  @IsEnum(TtsProvider, {
+    message: `provider must be one of: ${Object.values(TtsProvider).join(', ')}`,
+  })
+  provider!: TtsProvider;
 
   @ApiProperty({
-    description: 'Config of the scenario voice',
+    description:
+      'Provider-specific config. Validated against VOICE_CONFIG_SCHEMA; ' +
+      '"gender" is required for every provider.',
     example: {
-      voiceId: '123',
-      model: 'gpt-4o-mini',
+      gender: 'male',
+      model: 'bulbul:v2',
+      speaker: 'abhilash',
     },
   })
   @IsObject()

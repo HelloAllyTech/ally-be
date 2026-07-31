@@ -4,6 +4,8 @@ import { ScenarioService } from '../../service/scenario.service';
 import { ScenarioSessionService } from '../../service/scenario-session.service';
 import { ScenarioTenantService } from '../../service/scenario-tenant.service';
 import { TriggerWarningsService } from '../../service/trigger-warnings.service';
+import { SttConfigService } from '../../service/stt-config.service';
+import { LlmConfigService } from '../../service/llm-config.service';
 import { ScenarioVersionService } from '../../service/scenario-version.service';
 import { ScenarioSharedService } from '../../service/scenario-shared.service';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
@@ -24,6 +26,7 @@ import { ScenarioVideoUploadContentType } from '../../enum/scenario-video-upload
 import { AddScenarioTenantDto } from '../../dto/add-scenario-tenant.dto';
 import { DeleteScenarioTenantDto } from '../../dto/delete-scenario-tenant.dto';
 import { ScenarioVoiceSortBy } from '../../enum/scenario-voice-sort-by.enum';
+import { TtsProvider } from '../../enum/tts-provider.enum';
 import {
   Gender,
   GenderIdentity,
@@ -281,6 +284,24 @@ describe('LearnController', () => {
         {
           provide: TriggerWarningsService,
           useValue: mockTriggerWarningsService,
+        },
+        {
+          provide: SttConfigService,
+          useValue: {
+            getConfigs: jest.fn(),
+            createConfig: jest.fn(),
+            updateConfig: jest.fn(),
+            deleteConfig: jest.fn(),
+          },
+        },
+        {
+          provide: LlmConfigService,
+          useValue: {
+            getConfigs: jest.fn(),
+            createConfig: jest.fn(),
+            updateConfig: jest.fn(),
+            deleteConfig: jest.fn(),
+          },
         },
         {
           provide: ScenarioVersionService,
@@ -1089,6 +1110,7 @@ describe('LearnController', () => {
           sortBy: undefined,
           order: SortOrder.ASC,
         },
+        undefined,
       );
     });
 
@@ -1114,6 +1136,7 @@ describe('LearnController', () => {
           sortBy: ScenarioVoiceSortBy.NAME,
           order: SortOrder.DESC,
         },
+        undefined,
       );
     });
 
@@ -1140,6 +1163,7 @@ describe('LearnController', () => {
           sortBy: undefined,
           order: SortOrder.ASC,
         },
+        undefined,
       );
     });
 
@@ -1167,6 +1191,7 @@ describe('LearnController', () => {
           sortBy: undefined,
           order: SortOrder.ASC,
         },
+        undefined,
       );
     });
 
@@ -1195,6 +1220,7 @@ describe('LearnController', () => {
           sortBy: undefined,
           order: SortOrder.ASC,
         },
+        undefined,
       );
     });
   });
@@ -1205,9 +1231,12 @@ describe('LearnController', () => {
           {
             id: 'voice-new',
             name: 'New Voice',
-            voiceId: 'openai-voice-new',
-            provider: 'openai',
-            config: { speed: 1.0 },
+            provider: TtsProvider.SARVAM,
+            config: {
+              gender: 'male',
+              model: 'bulbul:v2',
+              speaker: 'abhilash',
+            },
             languageId: 1,
           },
         ],

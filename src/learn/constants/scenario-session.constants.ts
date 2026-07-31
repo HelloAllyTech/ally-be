@@ -37,6 +37,14 @@ export const STT_LLM_PROVIDER_CONFIG = {
   },
 };
 
+/**
+ * Providers that run a locally-served model, where the model name is optional —
+ * the server decides. For every other provider a missing model makes the agent
+ * fall back to the *platform default* model (gpt-4o-mini) while keeping the
+ * chosen provider, e.g. a Gemini client asked for an OpenAI model.
+ */
+export const LOCAL_LLM_PROVIDERS: readonly string[] = ['ollama', 'vllm'];
+
 export const LANGUAGE_LLM_PROVIDER_CONFIG: Record<
   LanguageCode,
   {

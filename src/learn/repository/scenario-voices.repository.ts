@@ -5,6 +5,9 @@ import { Pagination } from 'src/common/type/common.type';
 import { ScenarioVoiceSortBy } from '../enum/scenario-voice-sort-by.enum';
 import { Gender } from '../enum/gender.enum';
 
+/** Sentinel accepted by the `genders` filter to mean "gender is missing". */
+export const UNSET_GENDER_FILTER = 'unset';
+
 @Injectable()
 export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
   constructor(private dataSource: DataSource) {
@@ -16,6 +19,7 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     providers: string | undefined,
     languageIds: string | undefined,
     options: Pagination,
+    genders?: string,
   ): Promise<(ScenarioVoices & { languageLabel: string | null })[]> {
     const query = this.createQueryBuilder('scenarioVoice')
       .leftJoin('languages', 'la', 'la.id = scenarioVoice.languageId')
@@ -44,6 +48,30 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
         languageIds: languageIdList,
       });
     }
+
+    if (genders) {
+      const genderList = genders.split(',').map((g) => g.toLowerCase());
+      // `unset` is not a stored value — it is how the admin dashboard asks for
+      // the rows that are missing a gender, which are the ones that silently
+      // drop their language out of simulation creation.
+      const wantsUnset = genderList.includes(UNSET_GENDER_FILTER);
+      const namedGenders = genderList.filter((g) => g !== UNSET_GENDER_FILTER);
+
+      if (wantsUnset && namedGenders.length) {
+        query.andWhere(
+          `(LOWER(scenarioVoice.config ->> 'gender') IN (:...genders) OR scenarioVoice.config ->> 'gender' IS NULL)`,
+          { genders: namedGenders },
+        );
+      } else if (wantsUnset) {
+        query.andWhere(`scenarioVoice.config ->> 'gender' IS NULL`);
+      } else if (namedGenders.length) {
+        query.andWhere(
+          `LOWER(scenarioVoice.config ->> 'gender') IN (:...genders)`,
+          { genders: namedGenders },
+        );
+      }
+    }
+
     this.applySorting(query, options);
     this.applyPagination(query, options);
 
@@ -99,9 +127,11 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       .addSelect('la.value', 'value')
       .addSelect('la.label', 'label')
       .addSelect('la.translationCode', 'translationCode')
+      // gender/age come from config so the studio's voice picker can group and
+      // label options (provider → gender) instead of showing one flat list.
       .addSelect(
         voicesNeeded
-          ? `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider',sv.provider))`
+          ? `jsonb_agg(DISTINCT jsonb_build_object('id', sv.id, 'name', sv.name, 'provider', sv.provider, 'gender', LOWER(sv.config ->> 'gender'), 'age', sv.config ->> 'age'))`
           : `'[]'::jsonb`,
         'voices',
       )

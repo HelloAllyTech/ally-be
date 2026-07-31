@@ -14,6 +14,8 @@ import { ScenarioSessionDetailsRepository } from '../../repository/scenario-sess
 import { ScenarioSessionMessageTagsRepository } from '../../repository/scenario-session-message-tags.repository';
 import { ScenarioSessionTagCategory } from '../../enum/scenario-session-tag-category.enum';
 import { ScenarioVoicesRepository } from '../../repository/scenario-voices.repository';
+import { SttConfigsRepository } from '../../repository/stt-configs.repository';
+import { LlmConfigsRepository } from '../../repository/llm-configs.repository';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { NotFoundException } from '@nestjs/common';
@@ -163,6 +165,18 @@ describe('ScenarioSharedService', () => {
       find: jest.fn(),
     };
 
+    // Empty registry: every language falls through to its own default, which is
+    // the behaviour these room-metadata assertions were written against.
+    const mockSttConfigsRepository = {
+      findMapByIds: jest.fn().mockResolvedValue(new Map()),
+      listConfigs: jest.fn().mockResolvedValue([]),
+    };
+
+    const mockLlmConfigsRepository = {
+      findMapByIds: jest.fn().mockResolvedValue(new Map()),
+      listConfigs: jest.fn().mockResolvedValue([]),
+    };
+
     const mockSessionEventSharedService = {
       getSessionEventsByScenarioId: jest.fn(),
       getSessionEventsTranslationsByScenarioId: jest.fn(),
@@ -211,6 +225,14 @@ describe('ScenarioSharedService', () => {
         {
           provide: ScenarioVoicesRepository,
           useValue: mockScenarioVoicesRepository,
+        },
+        {
+          provide: SttConfigsRepository,
+          useValue: mockSttConfigsRepository,
+        },
+        {
+          provide: LlmConfigsRepository,
+          useValue: mockLlmConfigsRepository,
         },
         {
           provide: SessionEventSharedService,
