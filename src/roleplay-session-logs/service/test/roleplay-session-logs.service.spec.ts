@@ -158,9 +158,9 @@ describe('RoleplaySessionLogsService', () => {
       expect(data[0].durationSeconds).toBe(240);
     });
 
-    it('prefers the agent-reported callDuration when present', async () => {
+    it('prefers the persisted callDuration, converting ms to seconds', async () => {
       repo.list.mockResolvedValue({
-        rows: [{ ...baseRow, callDuration: '123' }],
+        rows: [{ ...baseRow, callDuration: '123000' }],
         total: 1,
       });
 

@@ -18,8 +18,13 @@ export class ScenarioSessionDetails extends BaseEntity {
   @Column({ type: 'uuid' })
   scenarioSessionId!: string;
 
+  // MILLISECONDS, net of paused time — every writer persists
+  // `endedAt - startedAt - pausedMs` unconverted. Divide by 1000 before
+  // treating it as seconds (the single-session GET does exactly that in its
+  // response, which is why the API payload reads as seconds while the column
+  // does not).
   @Column({ type: 'int', nullable: true })
-  callDuration?: number; // in seconds
+  callDuration?: number;
 
   @Column({ type: 'jsonb', nullable: true })
   summary?: Record<string, any>;
