@@ -100,7 +100,9 @@ export const validateVoiceConfig = (
   validateProviderConfig(VOICE_CONFIG_SCHEMA, provider, config, {
     subject: 'voice',
     supported: Object.values(TtsProvider),
+    // Upper-cased for the message regardless of how the row is stored: the
+    // provider reads as a brand here, not as a storage key.
     requiredMessage: (matched, key) =>
-      `${matched} voices require "${key}" in config.`,
+      `${matched.toUpperCase()} voices require "${key}" in config.`,
     notAnObjectMessage: 'Voice config must be a JSON object.',
   });
