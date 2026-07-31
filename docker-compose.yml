@@ -31,6 +31,12 @@ services:
       # a hostname those containers can resolve. host.docker.internal works from
       # any container on Docker Desktop and is also reachable from this one.
       AWS_S3_INTERNAL_PRESIGN_ENDPOINT_URL: 'http://host.docker.internal:4566'
+      # Google credentials for voice preview (Google TTS) and translation.
+      # .env ships a RELATIVE path, which resolves to /app/gcloud inside the
+      # container and does not exist — google-auth then throws from a lazily
+      # created gRPC stub, outside any request try/catch, killing the process.
+      # Point at the mounted host ADC instead (matches ally-ai-learn's compose).
+      GOOGLE_APPLICATION_CREDENTIALS: '/root/.config/gcloud/application_default_credentials.json'
       # These SQS URLs use "http://localstack:4566" instead of the DNS-style regional
       # hostnames (e.g., sqs.us-east-1.localhost.localstack.cloud) because:
       #
@@ -75,6 +81,9 @@ services:
       - /app/node_modules
       # 3) Persistent i18n storage shared with Caddy on the host
       - /var/www/i18n:/var/www/i18n
+      # 4) Host gcloud ADC, read-only — required by Google TTS/translation.
+      #    Refresh on the host with `gcloud auth application-default login`.
+      - ~/.config/gcloud:/root/.config/gcloud:ro
   postgres:
     image: postgres:14-alpine
     ports:
