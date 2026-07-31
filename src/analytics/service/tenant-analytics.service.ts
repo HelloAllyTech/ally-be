@@ -12,6 +12,11 @@ import {
 } from '../repository/tenant-analytics.repository';
 
 const MS_PER_DAY = 86_400_000;
+const MS_PER_MINUTE = 60_000;
+/** Round to 1 decimal place — enough precision for an "avg X per Y" tile. */
+const round1 = (n: number): number => Math.round(n * 10) / 10;
+/** Top-N cap for the most-used-simulations ranked list. */
+const MOST_USED_SIMULATIONS_LIMIT = 5;
 
 /**
  * UTC calendar math mirroring PlatformAnalyticsService: `date_trunc` on the
@@ -96,6 +101,12 @@ export class TenantAnalyticsService {
       activeUsers,
       simulationsByBucket,
       activeUsersByBucket,
+      newLearnersOnboarded,
+      newLearnersOnboardedByBucket,
+      totalRegisteredLearners,
+      engagementTotals,
+      timeToFirstSession,
+      mostUsedSimulations,
     ] = await Promise.all([
       this.repo.getCompletedSimulationCount(
         tenantId,
@@ -115,16 +126,68 @@ export class TenantAnalyticsService {
         endExclusive,
         bucket,
       ),
+      this.repo.getNewLearnersOnboardedCount(
+        tenantId,
+        windowStart,
+        endExclusive,
+      ),
+      this.repo.getNewLearnersOnboardedByBucket(
+        tenantId,
+        windowStart,
+        endExclusive,
+        bucket,
+      ),
+      this.repo.getTotalRegisteredLearnersCount(tenantId),
+      this.repo.getSessionEngagementTotals(tenantId, windowStart, endExclusive),
+      this.repo.getTimeToFirstSessionStats(tenantId, windowStart, endExclusive),
+      this.repo.getMostUsedSimulations(
+        tenantId,
+        windowStart,
+        endExclusive,
+        MOST_USED_SIMULATIONS_LIMIT,
+      ),
     ]);
 
     const axis = this.buildBucketAxis(windowStart, endExclusive, bucket);
 
+    const avgSessionsPerActiveLearner =
+      engagementTotals.activeLearners > 0
+        ? round1(
+            engagementTotals.totalSessions / engagementTotals.activeLearners,
+          )
+        : null;
+    const avgPracticeMinutesPerLearner =
+      engagementTotals.activeLearners > 0
+        ? round1(
+            engagementTotals.totalDurationMs /
+              engagementTotals.activeLearners /
+              MS_PER_MINUTE,
+          )
+        : null;
+
     return {
       range,
       bucket,
-      summary: { simulationsCompleted, activeUsers },
+      summary: {
+        simulationsCompleted,
+        activeUsers,
+        newLearnersOnboarded,
+        totalRegisteredLearners,
+        avgSessionsPerActiveLearner,
+        avgPracticeMinutesPerLearner,
+        avgDaysToFirstSession:
+          timeToFirstSession.avgDays != null
+            ? round1(timeToFirstSession.avgDays)
+            : null,
+        learnersWithFirstSessionCount: timeToFirstSession.learnerCount,
+      },
       simulationsCompletedTrend: this.zeroFill(axis, simulationsByBucket),
       activeUsersTrend: this.zeroFill(axis, activeUsersByBucket),
+      newLearnersOnboardedTrend: this.zeroFill(
+        axis,
+        newLearnersOnboardedByBucket,
+      ),
+      mostUsedSimulations,
     };
   }
 

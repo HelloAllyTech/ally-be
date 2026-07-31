@@ -119,9 +119,22 @@ describe('TenantAnalyticsController', () => {
     const response: OrganizationMetricsResponseDto = {
       range: '30d',
       bucket: 'day',
-      summary: { simulationsCompleted: 5, activeUsers: 2 },
+      summary: {
+        simulationsCompleted: 5,
+        activeUsers: 2,
+        newLearnersOnboarded: 1,
+        totalRegisteredLearners: 10,
+        avgSessionsPerActiveLearner: 2.5,
+        avgPracticeMinutesPerLearner: 12.3,
+        avgDaysToFirstSession: 1.5,
+        learnersWithFirstSessionCount: 1,
+      },
       simulationsCompletedTrend: [{ bucket: '2026-07-01', count: 5 }],
       activeUsersTrend: [{ bucket: '2026-07-01', count: 2 }],
+      newLearnersOnboardedTrend: [{ bucket: '2026-07-01', count: 1 }],
+      mostUsedSimulations: [
+        { scenarioId: 1, title: 'Difficult Conversation', sessionCount: 3 },
+      ],
     };
 
     it('resolves the tenant from the auth context and defaults range to 30d', async () => {
