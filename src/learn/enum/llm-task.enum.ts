@@ -26,6 +26,12 @@ export enum LlmTask {
   EMBEDDING = 'embedding',
   DRIFT_JUDGE = 'drift_judge',
   LANGUAGE_JUDGE = 'language_judge',
+  // Analytics Agent (admin Analytics -> Analytics Agent tab): one planning call
+  // (question -> SQL) and one narration call (rows -> answer) per question.
+  // Separate labels because the planner carries the whole schema catalogue and
+  // the narrator carries result rows, so their token profiles differ.
+  ANALYTICS_AGENT_PLAN = 'analytics_agent_plan',
+  ANALYTICS_AGENT_ANSWER = 'analytics_agent_answer',
 
   // ally-be studio operations (in-process).
   AUTOFILL_FIELD = 'autofill_field',

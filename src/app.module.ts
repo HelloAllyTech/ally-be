@@ -19,6 +19,7 @@ import { BrokerModule } from './message-broker/broker.module';
 import { NotificationModule } from './notification/notification.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { AnalyticsAgentModule } from './analytics-agent/analytics-agent.module';
 import { ExecutionContextMiddleware } from './common/execution/execution-context.middleware';
 import { TenantModule } from './tenant/tenant.module';
 import { CommonModule } from './common/common.module';
@@ -80,6 +81,7 @@ import { ProductRoadmapModule } from './product-roadmap/product-roadmap.module';
     NotificationModule,
     RateLimitModule,
     AnalyticsModule,
+    AnalyticsAgentModule,
     TenantModule,
     CommonModule,
     SettingsModule,
