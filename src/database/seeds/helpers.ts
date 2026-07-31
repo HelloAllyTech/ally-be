@@ -9,6 +9,7 @@ import { DB } from './config';
 
 import { Tenant } from '../../tenant/entity/tenant.entity';
 import { User } from '../../user/entity/user.entity';
+import { UserPreferences } from '../../user/entity/user-preferences.entity';
 import { AdminTenant } from '../../user/entity/admin-tenant.entity';
 import { Group } from '../../authorization/entity/group.entity';
 import { UserGroup } from '../../authorization/entity/user-group.entity';
@@ -46,10 +47,51 @@ import { Message } from '../../chat/entity/message.entity';
 import { CustomFieldDefinition } from '../../custom-fields/entity/custom-field-definition.entity';
 import { ChatCustomFieldValue } from '../../custom-fields/entity/chat-custom-field-value.entity';
 import { Preference } from '../../settings/entity/preference.entity';
+import { ScenarioCharacter } from '../../scenario-character/entity/scenario-character.entity';
+import { ScenarioTranslations } from '../../learn/entity/scenario-translation.entity';
+import { TriggerWarnings } from '../../learn/entity/trigger-warnings.entity';
+import { ScenarioTriggerWarnings } from '../../learn/entity/scenario-trigger-warnings.entity';
+import { FillerTag } from '../../learn/entity/filler-tag.entity';
+import { AgentTestCase } from '../../learn/entity/agent-test-case.entity';
+import { ScenarioPathSession } from '../../scenario-path/entity/scenario-path-session.entity';
+import { ScenarioPathSessionItem } from '../../scenario-path/entity/scenario-path-session-item.entity';
+import { CaseSession } from '../../case/entity/case-session.entity';
+import { CaseSessionItem } from '../../case/entity/case-session-item.entity';
+import { ScenarioSessionDetails } from '../../learn/entity/scenario-session-details.entity';
+import { ScenarioSessionChat } from '../../learn/entity/scenario-session-chat.entity';
+import { ScenarioSessionChatMessage } from '../../learn/entity/scenario-session-chat-message.entity';
+import { ScenarioSessionFeedbacks } from '../../learn/entity/scenario-session-feedbacks.entity';
+import { ScenarioSessionRecording } from '../../learn/entity/scenario-session-recording.entity';
+import { ScenarioSessionTurnMetrics } from '../../learn/entity/scenario-session-turn-metrics.entity';
+import { ScenarioSessionStartMetrics } from '../../learn/entity/scenario-session-start-metrics.entity';
+import { ScenarioSessionTags } from '../../learn/entity/scenario-session-tags.entity';
+import { ScenarioSessionMessageTags } from '../../learn/entity/scenario-session-message-tags.entity';
+import { ScenarioSessionReflectionPromptResponse } from '../../learn/entity/scenario-session-reflection-prompt-response.entity';
+import { ScenarioSessionBehaviorInstructions } from '../../learn/entity/scenario-session-behavior-instructions.entity';
+import { Track } from '../../track/entity/track.entity';
+import { TrackSection } from '../../track/entity/track-section.entity';
+import { TrackItem } from '../../track/entity/track-item.entity';
+import { TrackTenant } from '../../track/entity/track-tenant.entity';
+import { TrackEnrollment } from '../../track/entity/track-enrollment.entity';
+import { TrackItemProgress } from '../../track/entity/track-item-progress.entity';
+import { TrackQuizAttempt } from '../../track/entity/track-quiz-attempt.entity';
+import { TrackJournalEntry } from '../../track/entity/track-journal-entry.entity';
+import { RoadmapOpportunity } from '../../product-roadmap/entity/roadmap-opportunity.entity';
+import { RoadmapAllocation } from '../../product-roadmap/entity/roadmap-allocation.entity';
+import { RoadmapOpportunityComment } from '../../product-roadmap/entity/roadmap-opportunity-comment.entity';
+import { RoadmapInterviewNote } from '../../product-roadmap/entity/roadmap-interview-note.entity';
+import { RoadmapSavedView } from '../../product-roadmap/entity/roadmap-saved-view.entity';
+import { RoadmapUserTabOrder } from '../../product-roadmap/entity/roadmap-user-tab-order.entity';
+import { RoadmapProductGoal } from '../../product-roadmap/entity/roadmap-product-goal.entity';
+import { RoadmapOpportunityOwner } from '../../product-roadmap/entity/roadmap-opportunity-owner.entity';
+import { LabSkill } from '../../lab/entity/lab-skill.entity';
+import { LabVariable } from '../../lab/entity/lab-variable.entity';
+import { LabValue } from '../../lab/entity/lab-value.entity';
 
 export const SEED_ENTITIES = [
   Tenant,
   User,
+  UserPreferences,
   AdminTenant,
   Group,
   UserGroup,
@@ -87,6 +129,46 @@ export const SEED_ENTITIES = [
   CustomFieldDefinition,
   ChatCustomFieldValue,
   Preference,
+  RoadmapProductGoal,
+  RoadmapOpportunityOwner,
+  RoadmapOpportunity,
+  RoadmapAllocation,
+  RoadmapOpportunityComment,
+  RoadmapInterviewNote,
+  RoadmapSavedView,
+  RoadmapUserTabOrder,
+  LabSkill,
+  LabVariable,
+  LabValue,
+  ScenarioCharacter,
+  ScenarioTranslations,
+  TriggerWarnings,
+  ScenarioTriggerWarnings,
+  FillerTag,
+  AgentTestCase,
+  ScenarioPathSession,
+  ScenarioPathSessionItem,
+  CaseSession,
+  CaseSessionItem,
+  ScenarioSessionDetails,
+  ScenarioSessionChat,
+  ScenarioSessionChatMessage,
+  ScenarioSessionFeedbacks,
+  ScenarioSessionRecording,
+  ScenarioSessionTurnMetrics,
+  ScenarioSessionStartMetrics,
+  ScenarioSessionTags,
+  ScenarioSessionMessageTags,
+  ScenarioSessionReflectionPromptResponse,
+  ScenarioSessionBehaviorInstructions,
+  Track,
+  TrackSection,
+  TrackItem,
+  TrackTenant,
+  TrackEnrollment,
+  TrackItemProgress,
+  TrackQuizAttempt,
+  TrackJournalEntry,
 ];
 
 export function createSeedDataSource(): DataSource {

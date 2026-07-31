@@ -1,10 +1,18 @@
 import { DataSource } from 'typeorm';
 import { Scenarios } from '../../../learn/entity/scenarios.entity';
 import { ScenarioTenants } from '../../../learn/entity/scenario-tenants.entity';
+import { ScenarioTranslations } from '../../../learn/entity/scenario-translation.entity';
+import { TriggerWarnings } from '../../../learn/entity/trigger-warnings.entity';
+import { ScenarioTriggerWarnings } from '../../../learn/entity/scenario-trigger-warnings.entity';
 import { ScenarioPath } from '../../../scenario-path/entity/scenario-path.entity';
 import { ScenarioPathItem } from '../../../scenario-path/entity/scenario-path-item.entity';
 import { ScenarioPathTenant } from '../../../scenario-path/entity/scenario-path-tenant.entity';
+import { ScenarioPathSession } from '../../../scenario-path/entity/scenario-path-session.entity';
+import { ScenarioPathSessionItem } from '../../../scenario-path/entity/scenario-path-session-item.entity';
+import { SessionItemStatus } from '../../../common/type/common.type';
 import { Tenant } from '../../../tenant/entity/tenant.entity';
+import { User } from '../../../user/entity/user.entity';
+import { Languages } from '../../../language/entity/languages.entity';
 import { Competency } from '../../../learn/entity/competency.entity';
 import { ScenarioVoices } from '../../../learn/entity/scenario-voices.entity';
 import { Behavior } from '../../../learn/entity/behavior.entity';
@@ -17,6 +25,9 @@ import {
   SEED_SCENARIO_PROMPT,
   ScenarioFixture,
 } from '../fixtures';
+
+const daysAgo = (n: number): Date =>
+  new Date(Date.now() - n * 24 * 60 * 60 * 1000);
 
 const PRIMARY_LANGUAGE_ID = 1; // en-IN, seeded by 1765966149367-languagesPreferencesMigration
 
@@ -110,13 +121,15 @@ export async function seedScenarios(
       { title: fixture.title },
       {
         description: fixture.description,
-        status: defaults.scenarioStatus,
-        difficultyLevel: defaults.scenarioDifficulty,
+        status: fixture.status ?? defaults.scenarioStatus,
+        difficultyLevel: fixture.difficultyLevel ?? defaults.scenarioDifficulty,
         isGlobal: true,
         isPublic: true,
         coverImageUrl: fixture.coverImageUrl,
         prompt: SEED_SCENARIO_PROMPT,
         competencyId,
+        category: fixture.category,
+        partnerOrgName: fixture.partnerOrgName,
         metadata: {
           ...fixture.metadata,
           languageVoices,
@@ -151,6 +164,9 @@ export async function seedScenarios(
   // normally inserts via ScenarioBehaviorInstructionService. The seeder writes
   // them directly so seeded scenarios behave like UI-created ones.
   await wireBehaviorJoins(ds);
+  await wireTriggerWarnings(ds);
+  const translationCount = await seedScenarioTranslations(ds);
+  log(`scenario translations: ${translationCount}`);
 
   for (const fixture of pathways) {
     const path = await upsert(
@@ -190,6 +206,76 @@ export async function seedScenarios(
     }
   }
   log(`pathways: ${pathways.length}`);
+
+  await seedPathProgress(ds);
+}
+
+/**
+ * Learner progress through "Mental Health Counseling Fundamentals": one
+ * learner who finished it, one who is midway through item 2.
+ */
+async function seedPathProgress(ds: DataSource): Promise<void> {
+  const pathRepo = getRepo(ds, ScenarioPath);
+  const pathItemRepo = getRepo(ds, ScenarioPathItem);
+  const pathSessionRepo = getRepo(ds, ScenarioPathSession);
+  const pathSessionItemRepo = getRepo(ds, ScenarioPathSessionItem);
+  const userRepo = getRepo(ds, User);
+
+  const path = await pathRepo.findOne({
+    where: { title: 'Mental Health Counseling Fundamentals' },
+  });
+  if (!path) return;
+
+  const items = await pathItemRepo.find({ where: { scenarioPathId: path.id } });
+  items.sort((a, b) => a.order - b.order);
+  if (items.length < 2) return;
+
+  const finisher = await userRepo.findOne({
+    where: { email: 'lucia.fernandez@riversidewellness.io' },
+  });
+  const inProgress = await userRepo.findOne({
+    where: { email: 'tobias.becker@riversidewellness.io' },
+  });
+
+  if (finisher) {
+    const session = await upsert(
+      pathSessionRepo,
+      { scenarioPathId: path.id, userId: finisher.id },
+      {
+        startedAt: daysAgo(20),
+        completedAt: daysAgo(15),
+        completedScenarios: items.length,
+      },
+    );
+    for (const item of items) {
+      await upsert(
+        pathSessionItemRepo,
+        { scenarioPathSessionId: session.id, scenarioPathItemId: item.id },
+        { userId: finisher.id, status: SessionItemStatus.COMPLETED },
+      );
+    }
+  }
+
+  if (inProgress) {
+    const session = await upsert(
+      pathSessionRepo,
+      { scenarioPathId: path.id, userId: inProgress.id },
+      { startedAt: daysAgo(6), completedScenarios: 1 },
+    );
+    for (let i = 0; i < items.length; i++) {
+      await upsert(
+        pathSessionItemRepo,
+        { scenarioPathSessionId: session.id, scenarioPathItemId: items[i].id },
+        {
+          userId: inProgress.id,
+          status:
+            i === 0 ? SessionItemStatus.COMPLETED : SessionItemStatus.UNLOCKED,
+        },
+      );
+    }
+  }
+
+  log('scenario path progress: 2 learners (1 completed, 1 in-progress)');
 }
 
 /**
@@ -237,4 +323,64 @@ async function wireBehaviorJoins(ds: DataSource): Promise<void> {
       }
     }
   }
+}
+
+async function wireTriggerWarnings(ds: DataSource): Promise<void> {
+  const triggerWarningRepo = getRepo(ds, TriggerWarnings);
+  const joinRepo = getRepo(ds, ScenarioTriggerWarnings);
+  const scenarioRepo = getRepo(ds, Scenarios);
+
+  for (const fixture of scenarios) {
+    if (!fixture.triggerWarningNames?.length) continue;
+    const scenarioRow = await scenarioRepo.findOne({
+      where: { title: fixture.title },
+    });
+    if (!scenarioRow) continue;
+
+    for (const name of fixture.triggerWarningNames) {
+      const warning = await triggerWarningRepo.findOne({ where: { name } });
+      if (!warning) continue;
+      await upsert(
+        joinRepo,
+        { scenarioId: scenarioRow.id, triggerWarningId: warning.id },
+        { scenarioId: scenarioRow.id, triggerWarningId: warning.id },
+      );
+    }
+  }
+}
+
+/**
+ * Non-English scenario metadata for the fixtures that declare
+ * `translationsByLanguage` — enough to exercise the language switcher
+ * without translating the entire catalog.
+ */
+async function seedScenarioTranslations(ds: DataSource): Promise<number> {
+  const translationRepo = getRepo(ds, ScenarioTranslations);
+  const scenarioRepo = getRepo(ds, Scenarios);
+  const languageRepo = getRepo(ds, Languages);
+
+  let count = 0;
+  for (const fixture of scenarios) {
+    if (!fixture.translationsByLanguage) continue;
+    const scenarioRow = await scenarioRepo.findOne({
+      where: { title: fixture.title },
+    });
+    if (!scenarioRow) continue;
+
+    for (const [languageValue, translation] of Object.entries(
+      fixture.translationsByLanguage,
+    )) {
+      const language = await languageRepo.findOne({
+        where: { value: languageValue },
+      });
+      if (!language) continue;
+      await upsert(
+        translationRepo,
+        { scenarioId: scenarioRow.id, languageId: language.id },
+        { metadata: translation },
+      );
+      count++;
+    }
+  }
+  return count;
 }

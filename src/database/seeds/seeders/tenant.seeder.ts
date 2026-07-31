@@ -1,19 +1,26 @@
 import { DataSource } from 'typeorm';
 import { Tenant, TenantStatus } from '../../../tenant/entity/tenant.entity';
 import { getRepo, log, upsert } from '../helpers';
-import { tenant } from '../fixtures';
+import { tenants } from '../fixtures';
 
-export async function seedTenant(ds: DataSource): Promise<Tenant> {
+export async function seedTenants(ds: DataSource): Promise<Tenant[]> {
   const repo = getRepo(ds, Tenant);
-  const saved = await upsert(
-    repo,
-    { code: tenant.code },
-    {
-      name: tenant.name,
-      description: tenant.description,
-      status: TenantStatus.ACTIVE,
-    },
-  );
-  log(`tenant ${tenant.code} → ${saved.id}`);
+  const saved: Tenant[] = [];
+
+  for (const fixture of tenants) {
+    const tenant = await upsert(
+      repo,
+      { code: fixture.code },
+      {
+        name: fixture.name,
+        description: fixture.description,
+        status: fixture.status ?? TenantStatus.ACTIVE,
+        isTestOrganization: fixture.isTestOrganization ?? false,
+      },
+    );
+    saved.push(tenant);
+    log(`tenant ${tenant.code} → ${tenant.id}`);
+  }
+
   return saved;
 }

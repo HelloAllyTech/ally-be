@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { UserRole } from '../../common/constants/user.constants';
 import { UserStatus } from '../../user/constants/user-status.constants';
+import { TenantStatus } from '../../tenant/entity/tenant.entity';
 import {
   BadgeCategory,
   BadgeStatus,
@@ -11,6 +12,7 @@ import {
   ScenarioDifficultyLevel,
   ScenarioStatus,
 } from '../../learn/type/scenario.type';
+import { ScenarioCategory } from '../../learn/enum/scenario-category.enum';
 import { ScenarioPathStatus } from '../../scenario-path/type/scenario-paths.type';
 import { CaseStatus } from '../../case/type/cases.type';
 import {
@@ -26,12 +28,26 @@ export interface TenantFixture {
   code: string;
   name: string;
   description: string;
+  isTestOrganization?: boolean;
+  status?: TenantStatus;
 }
 
 export interface UserFixture {
   email: string;
   name: string;
   roles: UserRole[];
+  // Tenant this user belongs to (User.tenantId). Must match a TenantFixture.code.
+  tenantCode: string;
+  // Extra tenants a MULTI_TENANT_ADMIN also administers (admin_tenants rows),
+  // beyond their home tenantCode.
+  additionalAdminTenantCodes?: string[];
+  status?: UserStatus;
+  // False = account created in bulk, never completed onboarding.
+  profileCompleted?: boolean;
+  termsAndAgreementApproved?: boolean;
+  // True = an admin suspended this specific account (suspendedBy/At stamped
+  // on the seed admin), distinct from the tenant itself being suspended.
+  suspended?: boolean;
 }
 
 export interface VoiceFixture {
@@ -57,6 +73,11 @@ export interface ScenarioBehaviorInstructionFixture {
   stateInstructions: Array<{ stateId: string; instruction: string }>;
 }
 
+export interface ScenarioTranslationFixture {
+  openingStatements?: string[];
+  characterProfileText?: string;
+}
+
 export interface ScenarioFixture {
   key: string;
   title: string;
@@ -65,6 +86,13 @@ export interface ScenarioFixture {
   coverImageUrl: string;
   metadata: Record<string, any>;
   behaviorInstructions: ScenarioBehaviorInstructionFixture[];
+  status?: ScenarioStatus;
+  difficultyLevel?: ScenarioDifficultyLevel;
+  category?: ScenarioCategory;
+  partnerOrgName?: string;
+  triggerWarningNames?: string[];
+  // Keyed by Languages.value (e.g. 'hi-IN').
+  translationsByLanguage?: Record<string, ScenarioTranslationFixture>;
 }
 
 export interface PathwayFixture {
@@ -93,6 +121,8 @@ export interface SessionFixture {
   // review fixtures can pin to a specific session by room id.
   roomKey: string;
   scenarioKey: string;
+  // Defaults to 'learner@example.com' (the original single-tenant fixture set).
+  counselorEmail?: string;
   status: ScenarioSessionStatus;
   eventStatus: ScenarioSessionEventStatus;
   score?: number;
@@ -142,37 +172,193 @@ export interface ReviewFixture {
   threads: ReviewThreadFixture[];
 }
 
-export const tenant: TenantFixture = {
-  code: TENANT_CODE,
-  name: TENANT_NAME,
-  description: 'Default tenant for local development',
-};
+// Four tenants spanning the shapes a real deployment sees: the internal/demo
+// org every other fixture defaults to, two active paying customers of
+// different sizes, and one suspended for non-payment (an edge case a real
+// platform accumulates within months of onboarding its first cohort).
+export const tenants: TenantFixture[] = [
+  {
+    code: TENANT_CODE,
+    name: TENANT_NAME,
+    description:
+      'Internal Ally workspace used for demos, QA, and platform-team training content.',
+    isTestOrganization: true,
+  },
+  {
+    code: 'northwind-behavioral-health',
+    name: 'Northwind Behavioral Health',
+    description:
+      'Enterprise behavioral health network across 12 clinics; onboarded as an early design partner.',
+    status: TenantStatus.ACTIVE,
+  },
+  {
+    code: 'riverside-wellness-center',
+    name: 'Riverside Wellness Center',
+    description:
+      'Mid-size community counseling center running a cohort-based counselor certification program.',
+    status: TenantStatus.ACTIVE,
+  },
+  {
+    code: 'brightpath-counseling',
+    name: 'Bright Path Counseling',
+    description:
+      'Small private practice group; access suspended pending an overdue renewal invoice.',
+    status: TenantStatus.SUSPENDED,
+  },
+];
 
 export const users: UserFixture[] = [
   {
     email: ADMIN_EMAIL,
-    name: 'Admin User',
+    name: 'Meera Kulkarni',
     roles: [UserRole.SUPER_ADMIN],
+    tenantCode: TENANT_CODE,
+  },
+  {
+    email: 'arjun.rao@helloally.ai',
+    name: 'Arjun Rao',
+    roles: [UserRole.SUPER_DUPER_ADMIN],
+    tenantCode: TENANT_CODE,
   },
   {
     email: 'org-admin@example.com',
-    name: 'Org Admin',
+    name: 'Divya Shah',
     roles: [UserRole.ADMIN],
+    tenantCode: TENANT_CODE,
   },
   {
     email: 'learner@example.com',
-    name: 'Learner',
+    name: 'Kabir Singh',
     roles: [UserRole.LEARNER, UserRole.COUNSELOR],
+    tenantCode: TENANT_CODE,
   },
   {
     email: 'multi-tenant-admin1@example.com',
-    name: 'Multi-Tenant Admin',
+    name: 'Elena Petrova',
     roles: [UserRole.MULTI_TENANT_ADMIN],
+    tenantCode: TENANT_CODE,
+    additionalAdminTenantCodes: [
+      'northwind-behavioral-health',
+      'riverside-wellness-center',
+      'brightpath-counseling',
+    ],
   },
   {
     email: 'reviewer@example.com',
-    name: 'Simulation Reviewer',
+    name: 'Karthik Iyer',
     roles: [UserRole.SIMULATION_REVIEWER],
+    tenantCode: TENANT_CODE,
+  },
+
+  // Northwind Behavioral Health — enterprise customer
+  {
+    email: 'sarah.thompson@northwindbh.org',
+    name: 'Sarah Thompson',
+    roles: [UserRole.MULTI_TENANT_ADMIN],
+    tenantCode: 'northwind-behavioral-health',
+    additionalAdminTenantCodes: ['riverside-wellness-center'],
+  },
+  {
+    email: 'james.okafor@northwindbh.org',
+    name: 'James Okafor',
+    roles: [UserRole.ADMIN],
+    tenantCode: 'northwind-behavioral-health',
+  },
+  {
+    email: 'priya.nair@northwindbh.org',
+    name: 'Priya Nair',
+    roles: [UserRole.LEARNER, UserRole.COUNSELOR],
+    tenantCode: 'northwind-behavioral-health',
+  },
+  {
+    email: 'daniel.reyes@northwindbh.org',
+    name: 'Daniel Reyes',
+    roles: [UserRole.LEARNER, UserRole.COUNSELOR],
+    tenantCode: 'northwind-behavioral-health',
+  },
+  {
+    email: 'fatima.siddiqui@northwindbh.org',
+    name: 'Fatima Siddiqui',
+    roles: [UserRole.LEARNER, UserRole.COUNSELOR],
+    tenantCode: 'northwind-behavioral-health',
+    // Just hired; hasn't completed the first-login profile prompt yet.
+    profileCompleted: false,
+  },
+  {
+    email: 'wei.zhang@northwindbh.org',
+    name: 'Wei Zhang',
+    roles: [UserRole.SIMULATION_REVIEWER],
+    tenantCode: 'northwind-behavioral-health',
+  },
+  {
+    email: 'marcus.olawale@northwindbh.org',
+    name: 'Marcus Olawale',
+    roles: [UserRole.LEARNER],
+    tenantCode: 'northwind-behavioral-health',
+    // Bulk-imported by an org admin ahead of a training cohort; has never logged in.
+    profileCompleted: false,
+    termsAndAgreementApproved: false,
+  },
+  {
+    email: 'grace.kim@gmail.com',
+    name: 'Grace Kim',
+    roles: [UserRole.CLIENT],
+    tenantCode: 'northwind-behavioral-health',
+  },
+
+  // Riverside Wellness Center — mid-size customer
+  {
+    email: 'omar.hassan@riversidewellness.io',
+    name: 'Omar Hassan',
+    roles: [UserRole.ADMIN],
+    tenantCode: 'riverside-wellness-center',
+  },
+  {
+    email: 'lucia.fernandez@riversidewellness.io',
+    name: 'Lucía Fernández',
+    roles: [UserRole.LEARNER, UserRole.COUNSELOR],
+    tenantCode: 'riverside-wellness-center',
+  },
+  {
+    email: 'tobias.becker@riversidewellness.io',
+    name: 'Tobias Becker',
+    roles: [UserRole.LEARNER, UserRole.COUNSELOR],
+    tenantCode: 'riverside-wellness-center',
+  },
+  {
+    email: 'aisha.bello@riversidewellness.io',
+    name: 'Aisha Bello',
+    roles: [UserRole.LEARNER, UserRole.COUNSELOR],
+    tenantCode: 'riverside-wellness-center',
+  },
+  {
+    email: 'yuki.tanaka@riversidewellness.io',
+    name: 'Yuki Tanaka',
+    roles: [UserRole.SCRIBE_REVIEWER],
+    tenantCode: 'riverside-wellness-center',
+  },
+
+  // Bright Path Counseling — small practice, tenant suspended
+  {
+    email: 'oliver.bennett@brightpathcounseling.net',
+    name: 'Oliver Bennett',
+    roles: [UserRole.ADMIN],
+    tenantCode: 'brightpath-counseling',
+  },
+  {
+    email: 'simran.kaur@brightpathcounseling.net',
+    name: 'Simran Kaur',
+    roles: [UserRole.LEARNER, UserRole.COUNSELOR],
+    tenantCode: 'brightpath-counseling',
+  },
+  {
+    email: 'ines.moreno@brightpathcounseling.net',
+    name: 'Inés Moreno',
+    roles: [UserRole.LEARNER, UserRole.COUNSELOR],
+    tenantCode: 'brightpath-counseling',
+    // Individually suspended before the org-wide suspension (a separate,
+    // earlier conduct issue) — exercises suspendedBy/suspendedAt directly.
+    suspended: true,
   },
 ];
 
@@ -359,6 +545,18 @@ export const scenarios: ScenarioFixture[] = [
       characterProfileText:
         'Anjali is a 24-year-old graduate student experiencing persistent low mood, fatigue, and anhedonia over the past several months. She finds it hard to articulate her feelings and tends to minimise them.',
     },
+    category: ScenarioCategory.ORIGINALS,
+    triggerWarningNames: ['Grief and bereavement'],
+    translationsByLanguage: {
+      'hi-IN': {
+        openingStatements: [
+          'मुझे लंबे समय से खुद जैसा महसूस नहीं हुआ है।',
+          'ऐसा लगता है जैसे अब किसी चीज़ में खुशी नहीं मिलती।',
+        ],
+        characterProfileText:
+          'अंजलि एक 24 वर्षीय स्नातक छात्रा है जो पिछले कई महीनों से लगातार उदासी, थकान और किसी भी चीज़ में रुचि न होने का अनुभव कर रही है।',
+      },
+    },
     behaviorInstructions: [
       {
         category: BehaviorInstructionCategory.SHOULD_DO,
@@ -378,9 +576,9 @@ export const scenarios: ScenarioFixture[] = [
       {
         category: BehaviorInstructionCategory.SHOULD_NOT_DO,
         behaviorNames: [
-          'Minimises feelings',
-          'Offers premature reassurance',
-          'Pushes for positivity',
+          "Critical of client's concerns",
+          'Dismissive of concerns',
+          'Imposes personal beliefs',
         ],
         stateInstructions: [
           {
@@ -413,13 +611,25 @@ export const scenarios: ScenarioFixture[] = [
       characterProfileText:
         'Rohan is a 38-year-old school teacher whose mother passed away six weeks ago after a brief illness. He carries guilt about not being present in her final hours and is experiencing intrusive thoughts and disrupted sleep.',
     },
+    category: ScenarioCategory.ORIGINALS,
+    triggerWarningNames: ['Grief and bereavement'],
+    translationsByLanguage: {
+      'hi-IN': {
+        openingStatements: [
+          'मेरी माँ का छह हफ्ते पहले निधन हो गया।',
+          'मैं बार-बार आखिरी दिनों को याद करता रहता हूँ।',
+        ],
+        characterProfileText:
+          'रोहन एक 38 वर्षीय शिक्षक है जिनकी माँ की छह सप्ताह पहले एक छोटी बीमारी के बाद मृत्यु हो गई। वह अपराध बोध और अनिद्रा से जूझ रहे हैं।',
+      },
+    },
     behaviorInstructions: [
       {
         category: BehaviorInstructionCategory.SHOULD_DO,
         behaviorNames: [
-          'Normalises the grief response',
-          'Sits with silence and emotion',
-          'Reflects feelings back accurately',
+          'Demonstrates warmth and genuineness',
+          'Shows consistent concern and care',
+          'Is warm, friendly, and genuine throughout roleplay',
         ],
         stateInstructions: [
           {
@@ -433,7 +643,7 @@ export const scenarios: ScenarioFixture[] = [
         category: BehaviorInstructionCategory.SHOULD_NOT_DO,
         behaviorNames: [
           'Dismissive of concerns',
-          'Rushes the grieving process',
+          'Gives premature advice',
           "Critical of client's concerns",
         ],
         stateInstructions: [
@@ -441,6 +651,329 @@ export const scenarios: ScenarioFixture[] = [
             stateId: '1',
             instruction:
               'Do not say "they are in a better place" or push him to "move on". Avoid timelines for grief.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'financial-stress-anxiety',
+    title: 'Supporting a Client Through Financial Anxiety',
+    description:
+      'Practice sitting with Imran, a shop owner whose business debt is driving irritability, poor sleep, and reluctance to talk about money directly.',
+    competencyName: 'Strengthen Coping Strategies',
+    coverImageUrl: COVER_IMG_MINDFUL_PAUSE,
+    category: ScenarioCategory.ORIGINALS,
+    triggerWarningNames: ['Financial hardship'],
+    metadata: {
+      ...sharedScenarioMetadata,
+      name: 'Imran Qureshi',
+      age: 45,
+      gender: 'male',
+      profession: 'Small Business Owner',
+      currentLocation: 'Lucknow, India',
+      openingStatements: [
+        'Business has not been good this year and I have taken on more debt than I would like.',
+        'I do not really talk about money with anyone, not even my wife.',
+      ],
+      characterProfileText:
+        'Imran is a 45-year-old shop owner whose business took on heavy debt during a slow year. He is presenting with irritability, sleep disturbance, and reluctance to discuss finances directly.',
+    },
+    behaviorInstructions: [
+      {
+        category: BehaviorInstructionCategory.SHOULD_DO,
+        behaviorNames: [
+          'Uses open-ended questions',
+          'Encourages elaboration ("Tell me more…")',
+          'Matches rhythm and pacing to client',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Let Imran set the pace on financial specifics. Focus first on the stress and its effect on sleep/mood before probing numbers.',
+          },
+        ],
+      },
+      {
+        category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+        behaviorNames: ['Gives premature advice', 'Overuse of "why" questions'],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Do not jump to budgeting advice. Avoid repeated "why" questions about the debt itself.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'risk-assessment-safety-planning',
+    title: 'Assessing Risk and Building a Safety Plan',
+    description:
+      'Practice a structured risk assessment with Naomi, a first-year student experiencing rising isolation and passive thoughts of self-harm.',
+    competencyName: 'Assessment of Harm & Response Planning',
+    coverImageUrl: COVER_IMG_SUPPORTIVE_HANDS,
+    category: ScenarioCategory.ORIGINALS,
+    triggerWarningNames: ['Self-harm', 'Suicidal ideation'],
+    metadata: {
+      ...sharedScenarioMetadata,
+      name: 'Naomi Fernandes',
+      age: 19,
+      gender: 'non-binary',
+      profession: 'Undergraduate Student',
+      currentLocation: 'Goa, India',
+      openingStatements: [
+        'I have been feeling really cut off from everyone lately.',
+        'Sometimes I think it would just be easier if I was not around.',
+      ],
+      characterProfileText:
+        'Naomi is a 19-year-old first-year college student navigating questions about their gender identity while facing an unsupportive family environment, with rising social anxiety, isolation, and passive thoughts of self-harm.',
+    },
+    behaviorInstructions: [
+      {
+        category: BehaviorInstructionCategory.SHOULD_DO,
+        behaviorNames: [
+          'Asks directly about harm to self/others/from others',
+          'Assesses intent, means, prior attempts',
+          'Develops collaborative safety plan',
+        ],
+        stateInstructions: [
+          {
+            stateId: '2',
+            instruction:
+              'Once risk language surfaces, ask directly and calmly about intent, means, and any prior attempts before moving to safety planning.',
+          },
+        ],
+      },
+      {
+        category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+        behaviorNames: [
+          'Does not ask about harm to self or others',
+          'Encourages secrecy about harm, promises not to share',
+        ],
+        stateInstructions: [
+          {
+            stateId: '2',
+            instruction:
+              'Never promise unconditional confidentiality once risk is disclosed, and never let the disclosure pass without following up.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'confidentiality-conversation',
+    title: 'Explaining Confidentiality to a Hesitant Client',
+    description:
+      'Practice opening a first session with Devika, who is hesitant to speak candidly because she is worried about workplace stigma if anything gets back to her employer.',
+    competencyName: 'Explain & Promote Confidentiality',
+    coverImageUrl: COVER_IMG_LISTENING_EAR,
+    status: ScenarioStatus.ACTIVE,
+    difficultyLevel: ScenarioDifficultyLevel.EASY,
+    category: ScenarioCategory.DEMO,
+    metadata: {
+      ...sharedScenarioMetadata,
+      name: 'Devika Pillai',
+      age: 29,
+      gender: 'female',
+      profession: 'Software Engineer',
+      currentLocation: 'Bengaluru, India',
+      openingStatements: [
+        'My company set this up as a benefit, so I am a little worried about who actually sees what I say.',
+        'I want to talk about work stress, but I need to know this stays private first.',
+      ],
+      characterProfileText:
+        'Devika is a 29-year-old software engineer presenting with escalating work-related anxiety and panic episodes before client calls. She is hesitant to disclose fully until confidentiality is clearly explained.',
+    },
+    behaviorInstructions: [
+      {
+        category: BehaviorInstructionCategory.SHOULD_DO,
+        behaviorNames: [
+          'Clearly explains confidentiality',
+          'Explains limits (harm to self/others/from others)',
+          'Addresses any questions/concerns about confidentiality',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Lead with a clear, plain-language explanation of confidentiality and its limits before asking Devika to disclose anything substantive.',
+          },
+        ],
+      },
+      {
+        category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+        behaviorNames: [
+          'Describes confidentiality inaccurately',
+          'Promises full confidentiality without exceptions',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Never promise absolute confidentiality — always name the safety-related exceptions.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'retirement-identity-loss',
+    title: 'Navigating Identity Loss After Retirement',
+    description:
+      'Practice supporting Suresh, a recent retiree struggling with a loss of purpose, mild alcohol use, and friction with his adult children — built with Northwind Behavioral Health for their transitions-in-aging program.',
+    competencyName: 'Collaborative Goal Setting',
+    coverImageUrl: COVER_IMG_NATURE_WALK,
+    category: ScenarioCategory.PARTNER_SIM,
+    partnerOrgName: 'Northwind Behavioral Health',
+    triggerWarningNames: ['Substance use', 'Domestic conflict'],
+    metadata: {
+      ...sharedScenarioMetadata,
+      name: 'Suresh Bhandari',
+      age: 61,
+      gender: 'male',
+      profession: 'Retired Bank Manager',
+      currentLocation: 'Nagpur, India',
+      openingStatements: [
+        'I retired eight months ago and I still do not know what to do with myself.',
+        'My kids think I drink too much now. Maybe they are right, I do not know.',
+      ],
+      characterProfileText:
+        'Suresh is a 61-year-old recent retiree struggling with a loss of identity and purpose, mild alcohol use as a coping mechanism, and friction with his adult children about his day-to-day habits.',
+    },
+    behaviorInstructions: [
+      {
+        category: BehaviorInstructionCategory.SHOULD_DO,
+        behaviorNames: [
+          'Asks about client goals and expectations',
+          'Adjusts recommendations collaboratively',
+          'Brainstorms alternatives collaboratively',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Help Suresh articulate what a meaningful day looks like now, rather than prescribing activities for him.',
+          },
+        ],
+      },
+      {
+        category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+        behaviorNames: [
+          'Dictates goals',
+          'Dismisses client goals without explanation',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Do not hand him a routine to follow. Do not dismiss the drinking as a side issue — but let him raise it before confronting it head-on.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'workplace-burnout-checkin',
+    title: 'Workplace Burnout Check-In',
+    description:
+      'A shorter-format check-in with Meher, a marketing manager showing early burnout signs — still being refined with the content team before publishing.',
+    competencyName: 'Rapport Building & Self-Disclosure',
+    coverImageUrl: COVER_IMG_JOURNALING,
+    status: ScenarioStatus.DRAFT,
+    difficultyLevel: ScenarioDifficultyLevel.EASY,
+    category: ScenarioCategory.OTHER,
+    metadata: {
+      ...sharedScenarioMetadata,
+      name: 'Meher Chandran',
+      age: 33,
+      gender: 'female',
+      profession: 'Marketing Manager',
+      currentLocation: 'Chennai, India',
+      openingStatements: [
+        'I have been running on empty for a couple of months now.',
+        'I still get everything done, I just do not feel anything about it anymore.',
+      ],
+      characterProfileText:
+        'Meher is a 33-year-old marketing manager showing early signs of burnout: emotional flatness despite maintained output, cynicism about her work, and reduced sense of accomplishment.',
+    },
+    behaviorInstructions: [
+      {
+        category: BehaviorInstructionCategory.SHOULD_DO,
+        behaviorNames: [
+          'Uses open-ended questions',
+          'Summarises and paraphrases',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Draft instruction — refine once the content team finalises the burnout-specific checklist.',
+          },
+        ],
+      },
+      {
+        category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+        behaviorNames: ['Gives premature advice'],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Draft instruction — avoid solutioning before the checklist ships.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'family-conflict-mediation',
+    title: 'Navigating Family Conflict Around Care Decisions',
+    description:
+      'Practice a three-way dynamic in spirit — sit with Farah, who is caught between siblings who disagree sharply about how to care for their aging father.',
+    competencyName: 'Involvement of Family & Significant Others',
+    coverImageUrl: COVER_IMG_GROUP_SUPPORT,
+    difficultyLevel: ScenarioDifficultyLevel.HARD,
+    category: ScenarioCategory.ORIGINALS,
+    triggerWarningNames: ['Domestic conflict'],
+    metadata: {
+      ...sharedScenarioMetadata,
+      name: 'Farah Al-Sayed',
+      age: 52,
+      gender: 'female',
+      profession: 'Homemaker',
+      currentLocation: 'Hyderabad, India',
+      openingStatements: [
+        'My brothers and I cannot agree on what is best for my father anymore.',
+        'Every phone call turns into an argument and I am the one stuck in the middle.',
+      ],
+      characterProfileText:
+        'Farah is a 52-year-old homemaker acting as the primary point of contact between her siblings over their aging father’s care, absorbing conflicting opinions and feeling responsible for keeping the peace.',
+    },
+    behaviorInstructions: [
+      {
+        category: BehaviorInstructionCategory.SHOULD_DO,
+        behaviorNames: [
+          'Explores family/social network views',
+          'Checks and clarifies understanding',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Help Farah separate her own needs from the role of go-between she has taken on with her siblings.',
+          },
+        ],
+      },
+      {
+        category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+        behaviorNames: ['Dismisses emotions', 'Becomes defensive'],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Do not take a side on the family disagreement or dismiss how exhausting the mediator role has become for her.',
           },
         ],
       },
@@ -455,14 +988,32 @@ export const pathways: PathwayFixture[] = [
       'Introductory path covering core mental health presentations: low mood and grief.',
     scenarioKeys: ['coping-with-depression', 'processing-grief'],
   },
+  {
+    title: 'Risk, Safety & Confidentiality Essentials',
+    description:
+      'Covers the two conversations every new counselor needs before seeing real clients: explaining confidentiality up front, and assessing risk when it surfaces mid-session.',
+    scenarioKeys: [
+      'confidentiality-conversation',
+      'risk-assessment-safety-planning',
+    ],
+  },
 ];
 
 export const cases: CaseFixture[] = [
   {
     title: 'Mood and Grief Presentations',
     description:
-      'Sample case covering common mental health presentations a new counselor will encounter.',
+      'Two of the presentations a new counselor sees most often in the first month: persistent low mood and acute grief.',
     scenarioKeys: ['coping-with-depression', 'processing-grief'],
+  },
+  {
+    title: 'Risk and Safety Fundamentals',
+    description:
+      'Pairs the confidentiality conversation every intake needs with a full risk assessment and safety-planning walkthrough.',
+    scenarioKeys: [
+      'confidentiality-conversation',
+      'risk-assessment-safety-planning',
+    ],
   },
 ];
 
@@ -809,6 +1360,287 @@ export const sessions: SessionFixture[] = [
       { eventCode: 'BC-RUDE', occurredAtTurnIndex: 4 },
       { eventCode: 'SC-LOW', occurredAtTurnIndex: 8 },
     ],
+  },
+  {
+    roomKey: 'financial-stress-anxiety-ended',
+    scenarioKey: 'financial-stress-anxiety',
+    counselorEmail: 'priya.nair@northwindbh.org',
+    status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    score: 88,
+    durationMinutes: 16,
+    transcript: [
+      {
+        from: 'counselor',
+        content:
+          'Hi Imran, thanks for making time today. What would be useful to talk through?',
+      },
+      {
+        from: 'client',
+        content:
+          'Business has not been good this year and I have taken on more debt than I would like.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'That sounds like a heavy thing to be carrying. How has it been affecting you day to day?',
+      },
+      {
+        from: 'client',
+        content:
+          'I am not sleeping well. And I snap at my staff over small things now.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'It sounds like the stress is spilling into a lot of areas at once. Have you been able to talk to anyone about it?',
+      },
+      {
+        from: 'client',
+        content:
+          'Not really. I do not talk about money with anyone, not even my wife.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'That is a lot to hold alone. What makes it hard to bring it up with her?',
+      },
+      {
+        from: 'client',
+        content:
+          'I do not want her to worry. But I suppose she probably already knows something is wrong.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'It sounds like keeping it in is taking its own toll, separate from the debt itself.',
+      },
+      {
+        from: 'client',
+        content:
+          'Yeah. Maybe I need to just say something to her, even if it is hard.',
+      },
+    ],
+    events: [{ eventCode: 'SS-LISTEN', occurredAtTurnIndex: 4 }],
+  },
+  {
+    roomKey: 'risk-assessment-ended',
+    scenarioKey: 'risk-assessment-safety-planning',
+    counselorEmail: 'daniel.reyes@northwindbh.org',
+    status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    score: 91,
+    durationMinutes: 22,
+    transcript: [
+      {
+        from: 'counselor',
+        content:
+          'Hi Naomi, thanks for coming in. What has been on your mind lately?',
+      },
+      {
+        from: 'client',
+        content: 'I have been feeling really cut off from everyone lately.',
+      },
+      {
+        from: 'counselor',
+        content: 'That sounds isolating. How long has it felt this way?',
+      },
+      {
+        from: 'client',
+        content:
+          'A few months now. Sometimes I think it would just be easier if I was not around.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'Thank you for telling me that — I want to make sure I understand. When you say easier if you were not around, are you having thoughts of ending your life?',
+      },
+      {
+        from: 'client',
+        content:
+          'I do not have a plan or anything. It is more like the thought just shows up.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'I appreciate you being honest with me. Have you ever acted on thoughts like this before, or come close to it?',
+      },
+      {
+        from: 'client',
+        content: 'No, never. It just sits there in the back of my mind.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'That is important to know, and I am glad you told me. Can we put together a plan together for what you can do the next time this thought shows up?',
+      },
+      { from: 'client', content: 'Okay. I think that would help, actually.' },
+    ],
+    events: [{ eventCode: 'SS-LISTEN', occurredAtTurnIndex: 4 }],
+  },
+  {
+    roomKey: 'confidentiality-conversation-ended',
+    scenarioKey: 'confidentiality-conversation',
+    counselorEmail: 'lucia.fernandez@riversidewellness.io',
+    status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    score: 95,
+    durationMinutes: 9,
+    transcript: [
+      {
+        from: 'counselor',
+        content:
+          'Hi Devika, welcome. Before we start, I want to walk you through how confidentiality works here.',
+      },
+      {
+        from: 'client',
+        content:
+          'My company set this up as a benefit, so I am a little worried about who actually sees what I say.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'That is a completely fair concern. What you share with me stays between us, with a few specific safety exceptions I will explain.',
+      },
+      { from: 'client', content: 'Okay, what would those exceptions be?' },
+      {
+        from: 'counselor',
+        content:
+          'If I believed you were at risk of serious harm to yourself or someone else, I would need to act on that. Outside of that, none of this goes back to your employer.',
+      },
+      {
+        from: 'client',
+        content:
+          'That actually helps a lot. Okay, I want to talk about work stress then.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'Great, I am glad that clears it up. What has work been like recently?',
+      },
+      {
+        from: 'client',
+        content:
+          'I have been getting panic episodes before client calls. It is getting harder to hide.',
+      },
+    ],
+    events: [{ eventCode: 'SS-LISTEN', occurredAtTurnIndex: 2 }],
+  },
+  {
+    roomKey: 'retirement-identity-loss-active',
+    scenarioKey: 'retirement-identity-loss',
+    counselorEmail: 'tobias.becker@riversidewellness.io',
+    status: ScenarioSessionStatus.ACTIVE,
+    eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
+    durationMinutes: 0,
+    transcript: [
+      {
+        from: 'counselor',
+        content: 'Hi Suresh, good to see you. How has the week been?',
+      },
+      {
+        from: 'client',
+        content:
+          'I retired eight months ago and I still do not know what to do with myself.',
+      },
+    ],
+  },
+  {
+    roomKey: 'family-conflict-mediation-ended',
+    scenarioKey: 'family-conflict-mediation',
+    counselorEmail: 'simran.kaur@brightpathcounseling.net',
+    status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    score: 58,
+    durationMinutes: 19,
+    transcript: [
+      {
+        from: 'counselor',
+        content: 'Hi Farah, thanks for coming in. What has been going on?',
+      },
+      {
+        from: 'client',
+        content:
+          'My brothers and I cannot agree on what is best for my father anymore.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'Family disagreements about care can get complicated. Whose side is actually right here?',
+      },
+      {
+        from: 'client',
+        content:
+          'I do not know, that is kind of the problem. Every phone call turns into an argument.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'You should just tell them what the doctor recommended and stop overthinking it.',
+      },
+      {
+        from: 'client',
+        content: 'I mean... it is not really that simple for my family.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'It usually is simpler than people make it. What does the doctor say to do?',
+      },
+      {
+        from: 'client',
+        content:
+          'I do not think you are really hearing what I am trying to say.',
+      },
+    ],
+    events: [{ eventCode: 'BC-RUDE', occurredAtTurnIndex: 4 }],
+  },
+  {
+    roomKey: 'coping-with-depression-riverside-ended',
+    scenarioKey: 'coping-with-depression',
+    counselorEmail: 'aisha.bello@riversidewellness.io',
+    status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    score: 80,
+    durationMinutes: 15,
+    transcript: [
+      {
+        from: 'counselor',
+        content:
+          'Hi Anjali, thank you for coming in today. What would you like to start with?',
+      },
+      {
+        from: 'client',
+        content: 'I have not really felt like myself in a long time.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'That sounds hard to carry. Can you tell me more about what "not myself" feels like?',
+      },
+      {
+        from: 'client',
+        content:
+          'Just heavy, mostly. Like everything takes more effort than it should.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'That must be exhausting on top of everything else you are managing.',
+      },
+      {
+        from: 'client',
+        content:
+          'It is. I used to paint most weekends and I have not touched a brush in months.',
+      },
+      {
+        from: 'counselor',
+        content:
+          'It sounds like the things that used to bring you joy have started to feel out of reach.',
+      },
+      { from: 'client', content: 'Yeah. Exactly that.' },
+    ],
+    events: [{ eventCode: 'SS-LISTEN', occurredAtTurnIndex: 4 }],
   },
 ];
 
