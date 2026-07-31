@@ -20,6 +20,7 @@ import { NotificationModule } from './notification/notification.module';
 import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AnalyticsAgentModule } from './analytics-agent/analytics-agent.module';
+import { AnalyticsSuggestionsModule } from './analytics-suggestions/analytics-suggestions.module';
 import { ExecutionContextMiddleware } from './common/execution/execution-context.middleware';
 import { TenantModule } from './tenant/tenant.module';
 import { CommonModule } from './common/common.module';
@@ -82,6 +83,7 @@ import { ProductRoadmapModule } from './product-roadmap/product-roadmap.module';
     RateLimitModule,
     AnalyticsModule,
     AnalyticsAgentModule,
+    AnalyticsSuggestionsModule,
     TenantModule,
     CommonModule,
     SettingsModule,
