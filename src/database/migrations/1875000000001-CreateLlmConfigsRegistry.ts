@@ -13,8 +13,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * without a behaviour change. The old column is dropped in a later migration
  * once nothing reads it.
  */
-export class CreateLlmConfigsRegistry1871000000000 implements MigrationInterface {
-  name = 'CreateLlmConfigsRegistry1871000000000';
+export class CreateLlmConfigsRegistry1875000000001 implements MigrationInterface {
+  name = 'CreateLlmConfigsRegistry1875000000001';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

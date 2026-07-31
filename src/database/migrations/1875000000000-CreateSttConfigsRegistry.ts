@@ -19,8 +19,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * one registry row, and the languages using it are pointed at that row. A fresh
  * database with unseeded languages simply gets the platform default row.
  */
-export class CreateSttConfigsRegistry1870000000000 implements MigrationInterface {
-  name = 'CreateSttConfigsRegistry1870000000000';
+export class CreateSttConfigsRegistry1875000000000 implements MigrationInterface {
+  name = 'CreateSttConfigsRegistry1875000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
