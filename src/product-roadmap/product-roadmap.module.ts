@@ -135,6 +135,20 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
     // realtime
     RoadmapGateway,
   ],
-  exports: [RoadmapOpportunityRepository, RoadmapAllocationRepository],
+  /**
+   * RoadmapOpportunityService is exported so AnalyticsSuggestionsModule can file
+   * an accepted suggestion through THE SAME create() path a person filing by
+   * hand uses. Writing the row through the exported repository instead would
+   * skip the vector index and the realtime notify, which is how an opportunity
+   * ends up invisible to duplicate detection and absent from an open board.
+   * RoadmapProductGoalRepository goes with it: the goal name on a suggestion has
+   * to be re-validated against the live taxonomy before it is stored.
+   */
+  exports: [
+    RoadmapOpportunityRepository,
+    RoadmapAllocationRepository,
+    RoadmapOpportunityService,
+    RoadmapProductGoalRepository,
+  ],
 })
 export class ProductRoadmapModule {}

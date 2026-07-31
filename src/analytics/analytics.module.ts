@@ -119,5 +119,36 @@ import { TenantModule } from 'src/tenant/tenant.module';
     ProviderFactory.getAnalyticsFactory(),
     DashboardRepository,
   ],
+  /**
+   * The per-chart aggregate services, exported for AnalyticsSuggestionsModule.
+   *
+   * Only the `getX(query)` read services are exported — never the repositories,
+   * the judges, or the backfill schedulers. A consumer that wants a figure gets
+   * it through the same reviewed service the Analytics tab calls, so the
+   * suggestion engine cannot end up reading the platform differently from the
+   * dashboard a reader would check it against.
+   *
+   * Note that nine of these accept a window and six do not: OrgHealth,
+   * UsageLevel, RoleplayVolume, SkillGrowth, CompetencyMap and TrackDropoff are
+   * all-time by construction (see their query DTOs). Consumers must label those
+   * sections as covering platform history rather than the requested period.
+   */
+  exports: [
+    PlatformAnalyticsService,
+    HighlightsAnalyticsService,
+    ActivationAnalyticsService,
+    CompletionRateAnalyticsService,
+    LanguageMixAnalyticsService,
+    QualityDistributionAnalyticsService,
+    CoachingLoopAnalyticsService,
+    ScribeAdoptionAnalyticsService,
+    ScribeAnalyticsService,
+    OrgHealthAnalyticsService,
+    UsageLevelAnalyticsService,
+    RoleplayVolumeAnalyticsService,
+    SkillGrowthAnalyticsService,
+    CompetencyMapAnalyticsService,
+    TrackDropoffAnalyticsService,
+  ],
 })
 export class AnalyticsModule {}

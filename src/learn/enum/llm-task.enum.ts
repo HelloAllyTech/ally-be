@@ -32,6 +32,10 @@ export enum LlmTask {
   // the narrator carries result rows, so their token profiles differ.
   ANALYTICS_AGENT_PLAN = 'analytics_agent_plan',
   ANALYTICS_AGENT_ANSWER = 'analytics_agent_answer',
+  // Analytics Suggestions (admin Analytics -> Suggestions tab): one call per
+  // Generate run. Its own label because the profile is unlike anything else
+  // here — a whole analytics window in, at most ten suggestions out.
+  ANALYTICS_SUGGESTIONS = 'analytics_suggestions',
 
   // ally-be studio operations (in-process).
   AUTOFILL_FIELD = 'autofill_field',

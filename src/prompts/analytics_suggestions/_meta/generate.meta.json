@@ -1,0 +1,5 @@
+{
+  "name": "Analytics Suggestions: Generate",
+  "description": "System prompt for the admin Analytics -> Suggestions tab. Carries Ally's product-vision context and governs how the model turns one window of platform analytics into at most ten roadmap suggestions: evidence must come from the payload, all-time and unavailable sections must not be misread as window changes, product goals must be copied exactly from the live list, already-proposed and previously-rejected items must not be re-proposed, and returning fewer than ten (or none) is the correct answer when the data supports fewer. The analytics payload is sent as a separate user message, so this prompt has no runtime variables.",
+  "category": "Analytics"
+}
