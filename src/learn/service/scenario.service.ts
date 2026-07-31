@@ -8,6 +8,10 @@ import {
 } from '@nestjs/common';
 import { DataSource, DeepPartial, EntityManager, In } from 'typeorm';
 
+// Page size for `translateChecklistItems` — keeps a single batch's worth of
+// `ScenarioEvents` (+ their base `SessionEvents`) in memory at a time.
+const DEFAULT_CHECKLIST_TRANSLATION_BATCH_SIZE = 50;
+
 async function executeInChunks<T, R>(
   items: T[],
   chunkSize: number,
@@ -39,7 +43,7 @@ import {
 } from '../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioEvents } from '../entity/scenario-events.entity';
-import { Pagination } from 'src/common/type/common.type';
+import { Pagination, SuccessResponse } from 'src/common/type/common.type';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 import { CreateScenarioDto } from '../dto/create-scenario.dto';
 import {
@@ -130,6 +134,7 @@ import {
 import { randomUUID } from 'crypto';
 import { ScenarioReportService } from 'src/scenario-report/service/scenario-report.service';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
+import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
 import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
@@ -190,6 +195,7 @@ export class ScenarioService {
     private scenariosRepository: ScenariosRepository,
     private scenarioEventsRepository: ScenarioEventsRepository,
     private sessionEventSharedService: SessionEventSharedService,
+    private readonly sessionEventTranslationService: SessionEventTranslationService,
     private tenantService: TenantService,
     private scenarioVoiceRepository: ScenarioVoicesRepository,
     private s3Service: S3Service,
@@ -2845,7 +2851,7 @@ export class ScenarioService {
     for (const scenarioEvent of scenarioEvents) {
       const rawMetadata = metadataExtractor(scenarioEvent);
       const sanitized = this.sanitizeMetadata({
-        message: rawMetadata?.message,
+        message: wrapFieldPlaceholders(rawMetadata?.message),
         branchInstruction: wrapFieldPlaceholders(
           rawMetadata?.branchInstruction,
         ),
@@ -2918,7 +2924,7 @@ export class ScenarioService {
           scenarioId: scenarioEvent.scenarioId,
           eventId: scenarioEvent.eventId,
           languageId: Number(language.id),
-          message: translatedData.message ?? '',
+          message: unwrapFieldPlaceholders(translatedData.message) ?? '',
           branchInstruction:
             unwrapFieldPlaceholders(translatedData.branchInstruction) ?? '',
         });
@@ -2967,6 +2973,91 @@ export class ScenarioService {
         );
       }
     }
+  }
+
+  /**
+   * Re-runs translation for every checklist item currently shown to
+   * learners, across every scenario and every configured language.
+   *
+   * A checklist item's text comes from two places: the per-scenario
+   * `ScenarioEvents` override (`message`/`branchInstruction`) and the base
+   * `SessionEvents` row it references (`name`, plus its own `message`/
+   * `branchInstruction` as a fallback when no override exists). Both need
+   * retranslating to fully refresh a checklist item, so this re-translates
+   * both sides for every `ScenarioEvents` row with
+   * `checklistVisibilityStatus = true`.
+   *
+   * Processes one page of `batchSize` `ScenarioEvents` rows at a time
+   * (instead of loading every checklist-visible row up front) so memory
+   * stays bounded and a crash/timeout partway through only loses the
+   * in-flight batch — re-invoking the method just resumes from batch 1 and
+   * safely re-upserts anything already done. Base `SessionEvents` are
+   * deduped across batches (via `translatedSessionEventIds`) so the same
+   * shared event referenced by many scenarios is only retranslated once.
+   */
+  async translateChecklistItems(
+    batchSize: number = DEFAULT_CHECKLIST_TRANSLATION_BATCH_SIZE,
+  ): Promise<
+    SuccessResponse & {
+      processedScenarioEvents: number;
+      processedSessionEvents: number;
+    }
+  > {
+    const effectiveBatchSize =
+      batchSize > 0 ? batchSize : DEFAULT_CHECKLIST_TRANSLATION_BATCH_SIZE;
+
+    const attemptedSessionEventIds = new Set<string>();
+    let processedSessionEvents = 0;
+    let offset = 0;
+    let processedScenarioEvents = 0;
+
+    for (;;) {
+      const batch =
+        await this.scenarioEventsRepository.getAllChecklistVisibleEvents({
+          limit: effectiveBatchSize,
+          offset,
+        });
+
+      if (!batch.length) {
+        break;
+      }
+
+      await this.createUpdateScenarioEventsTranslations(batch);
+
+      const newEventIds = Array.from(
+        new Set(batch.map((event) => event.eventId)),
+      ).filter((eventId) => !attemptedSessionEventIds.has(eventId));
+
+      if (newEventIds.length) {
+        newEventIds.forEach((eventId) => attemptedSessionEventIds.add(eventId));
+
+        const sessionEvents =
+          await this.sessionEventSharedService.findByIds(newEventIds);
+
+        if (sessionEvents.length) {
+          await this.sessionEventTranslationService.createUpdateSessionEventTranslations(
+            sessionEvents,
+          );
+          processedSessionEvents += sessionEvents.length;
+        }
+      }
+
+      processedScenarioEvents += batch.length;
+      this.logger?.info?.(
+        `[translateChecklistItems] processed ${processedScenarioEvents} checklist item(s) so far (batch offset ${offset}, size ${effectiveBatchSize})`,
+      );
+
+      if (batch.length < effectiveBatchSize) {
+        break;
+      }
+      offset += effectiveBatchSize;
+    }
+
+    return {
+      success: true,
+      processedScenarioEvents,
+      processedSessionEvents,
+    };
   }
 
   async getBranchingInstructionDynamicShortcuts(

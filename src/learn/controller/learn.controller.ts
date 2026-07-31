@@ -26,7 +26,7 @@ import { ScenarioSessionService } from '../service/scenario-session.service';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
-import { AssignmentStatus } from 'src/common/type/common.type';
+import { AssignmentStatus, SuccessResponse } from 'src/common/type/common.type';
 import { ScenarioSessionSortBy } from '../enum/scenario-session-sort-by.enum';
 import { ScenarioSessionResponseDto } from '../dto/scenario-session-response.dto';
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
@@ -723,6 +723,35 @@ export class LearnController {
     @Body() createScenarioEventsDto: CreateScenarioEventsDto,
   ) {
     return this.scenarioService.mapEventsToScenario(createScenarioEventsDto);
+  }
+
+  @ApiOperation({
+    summary: 'Re-translate every checklist item across all scenarios',
+    description:
+      'Processes checklist-visible scenario events in pages so a large ' +
+      'dataset never gets loaded into memory or a single request at once.',
+  })
+  @ApiQuery({
+    name: 'batchSize',
+    required: false,
+    type: Number,
+    description: 'Rows processed per page (default 50)',
+  })
+  // Role-gated (not EDIT_SCENARIO_MAP_EVENTS) so multi-tenant admins cannot
+  // trigger this operational, all-scenarios bulk operation.
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @Post('scenarios/checklist-items/translate')
+  async translateChecklistItems(
+    @Query('batchSize') batchSize?: number,
+  ): Promise<
+    SuccessResponse & {
+      processedScenarioEvents: number;
+      processedSessionEvents: number;
+    }
+  > {
+    return this.scenarioService.translateChecklistItems(
+      batchSize ? Number(batchSize) : undefined,
+    );
   }
 
   @ApiOperation({ summary: 'Delete scenario events' })

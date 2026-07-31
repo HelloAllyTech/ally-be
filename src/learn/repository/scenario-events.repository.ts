@@ -83,6 +83,28 @@ export class ScenarioEventsRepository extends Repository<ScenarioEvents> {
     }
   }
 
+  /**
+   * All scenario-event checklist overrides shown to learners
+   * (`checklistVisibilityStatus = true`), across every scenario.
+   * Used to re-run translation for every checklist item.
+   *
+   * Ordered by `id` so `limit`/`offset` paginate deterministically across
+   * repeated calls (batched re-translation reads this page by page).
+   */
+  async getAllChecklistVisibleEvents(
+    pagination?: Pagination,
+  ): Promise<ScenarioEvents[]> {
+    const query = this.createQueryBuilder('scenarioEvent')
+      .where('scenarioEvent.checklistVisibilityStatus = :checklistVisible', {
+        checklistVisible: true,
+      })
+      .orderBy('scenarioEvent.id', 'ASC');
+
+    this.applyPagination(query, pagination);
+
+    return query.getMany();
+  }
+
   async getEventChecklist(
     scenarioSessionId: string,
     scenarioId: number,

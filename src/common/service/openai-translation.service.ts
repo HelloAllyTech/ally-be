@@ -292,6 +292,23 @@ IMPORTANT:
     return temperatureMap[baseCode] ?? 0.61;
   }
 
+  /**
+   * Rejects translation output that leaked raw HTML entities (a sign the model
+   * HTML-escaped angle brackets/quotes instead of leaving text as plain characters)
+   * or dropped a `<placeholder>` token that was present in the source text.
+   */
+  private isTranslationOutputValid(
+    sourceJson: string,
+    translatedJson: string,
+  ): boolean {
+    if (/&lt;|&gt;|&amp;|&#\d+;/.test(translatedJson)) {
+      return false;
+    }
+
+    const sourcePlaceholders = sourceJson.match(/<[^>\s]+>/g) ?? [];
+    return sourcePlaceholders.every((token) => translatedJson.includes(token));
+  }
+
   /* ------------------------------------------------------------------
    * Fetch translations from OpenAI API
    * ------------------------------------------------------------------ */
@@ -321,6 +338,7 @@ IMPORTANT:
       const response = await this.client.chat.completions.create({
         model: this.model,
         temperature,
+        response_format: { type: 'json_object' },
         messages: messages as unknown as ChatCompletionMessageParam[],
       });
 
@@ -338,7 +356,6 @@ IMPORTANT:
       try {
         // Parse the response (should be valid JSON)
         JSON.parse(content);
-        return [content];
       } catch {
         this.logger.warn(
           `[OpenAITranslationsService] Failed to parse JSON response for ${targetLanguageCode}`,
@@ -346,6 +363,15 @@ IMPORTANT:
         // Return original as fallback
         return jsonStrings;
       }
+
+      if (!this.isTranslationOutputValid(jsonStrings[0] ?? '', content)) {
+        this.logger.warn(
+          `[OpenAITranslationsService] Translation output for ${targetLanguageCode} failed validation (leaked HTML entities or dropped a placeholder), returning original`,
+        );
+        return jsonStrings;
+      }
+
+      return [content];
     } catch (error) {
       this.logger.error(
         `[OpenAITranslationsService] Critical error in fetchTranslations for ${targetLanguageCode}`,
