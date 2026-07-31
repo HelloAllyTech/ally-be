@@ -440,13 +440,15 @@ export class RoleplaySessionLogsService {
   }
 
   /**
-   * Prefer the agent-reported `callDuration` (seconds). Otherwise derive it from
-   * the session window minus paused time, but only when both endpoints exist.
+   * Prefer the persisted `callDuration`, which is stored in **milliseconds**
+   * net of paused time (see ScenarioSessionDetails.callDuration) — hence the
+   * /1000. Otherwise derive it from the session window minus paused time, but
+   * only when both endpoints exist.
    */
   private resolveDurationSeconds(r: RoleplaySessionLogRawRow): number | null {
-    const callDuration = this.toNumberOrNull(r.callDuration);
-    if (callDuration !== null && callDuration > 0) {
-      return callDuration;
+    const callDurationMs = this.toNumberOrNull(r.callDuration);
+    if (callDurationMs !== null && callDurationMs > 0) {
+      return Math.round(callDurationMs / 1000);
     }
     if (r.startedAt && r.endedAt) {
       const pausedMs = this.toNumberOrNull(r.totalPausedMs) ?? 0;

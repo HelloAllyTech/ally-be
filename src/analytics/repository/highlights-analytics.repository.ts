@@ -313,10 +313,11 @@ export class HighlightsAnalyticsRepository {
    * Definition, deliberately identical to the tab's "completed simulation" so
    * the two charts reconcile: `eventStatus = COMPLETED`, timestamped by
    * `COALESCE(endedAt, createdAt)`. Duration is the persisted
-   * `scenario_session_details."callDuration"` (seconds, already net of paused
-   * time) — the same figure that feeds `user_daily_scores.minutesPlayed`, so
-   * this chart and the practice-minutes chart cannot disagree about what a
-   * minute of practice is.
+   * `scenario_session_details."callDuration"` — **milliseconds**, already net
+   * of paused time, hence `/ 60000.0` and not `/ 60.0`. It is the same figure
+   * that feeds `user_daily_scores.minutesPlayed` (emitted as
+   * `callDuration / 1000 / 60`), so this chart and the practice-minutes chart
+   * cannot disagree about what a minute of practice is.
    *
    * Sessions with a NULL or non-positive duration are excluded rather than
    * counted as zero: a session that produced no measurable time is a session
@@ -340,17 +341,17 @@ export class HighlightsAnalyticsRepository {
         'bucket',
       )
       .addSelect(
-        'round((avg(d."callDuration") / 60.0)::numeric, 1)::float',
+        'round((avg(d."callDuration") / 60000.0)::numeric, 1)::float',
         'avgMinutes',
       )
       .addSelect(
         `round((percentile_cont(0.5) WITHIN GROUP ` +
-          `(ORDER BY d."callDuration") / 60.0)::numeric, 1)::float`,
+          `(ORDER BY d."callDuration") / 60000.0)::numeric, 1)::float`,
         'medianMinutes',
       )
       .addSelect(
         `round((percentile_cont(0.95) WITHIN GROUP ` +
-          `(ORDER BY d."callDuration") / 60.0)::numeric, 1)::float`,
+          `(ORDER BY d."callDuration") / 60000.0)::numeric, 1)::float`,
         'p95Minutes',
       )
       .addSelect('COUNT(*)::int', 'sessions')
@@ -396,6 +397,8 @@ export class HighlightsAnalyticsRepository {
    *
    * Computed over the raw sessions rather than re-averaged from the buckets: a
    * mean of per-bucket means weights a quiet Sunday the same as a busy Monday.
+   *
+   * `callDuration` is milliseconds — see {@link getPlayTimeByBucket}.
    */
   async getPlayTimeOverall(
     start: Date,
@@ -405,7 +408,7 @@ export class HighlightsAnalyticsRepository {
     const qb = this.dataSource
       .createQueryBuilder()
       .select(
-        'round((avg(d."callDuration") / 60.0)::numeric, 1)::float',
+        'round((avg(d."callDuration") / 60000.0)::numeric, 1)::float',
         'avgMinutes',
       )
       .addSelect('COUNT(*)::int', 'sessions')
