@@ -8,23 +8,13 @@
  * back to the default Deepgram voice, so the scenario plays in the wrong voice
  * rather than failing loudly.
  *
- * Stored lower-case, matching stt_configs and llm_configs. Rows written before
- * migration 1874000000000 were upper-case, and ally-ai-learn lower-cases before
- * comparing either way, so every comparison here goes through
- * `normalizeProviderKey` rather than assuming a casing.
+ * Stored upper-case to match the existing rows; the runtime lower-cases the
+ * value before comparing, so either casing dispatches correctly.
  */
 export enum TtsProvider {
-  DEEPGRAM = 'deepgram',
-  ELEVENLABS = 'elevenlabs',
-  SARVAM = 'sarvam',
-  GOOGLE = 'google',
-  HUME = 'hume',
+  DEEPGRAM = 'DEEPGRAM',
+  ELEVENLABS = 'ELEVENLABS',
+  SARVAM = 'SARVAM',
+  GOOGLE = 'GOOGLE',
+  HUME = 'HUME',
 }
-
-/**
- * Canonical form for comparing a provider value from any source — a stored
- * row, a query-string filter, or a request body. Keeps the code correct
- * whichever side of the casing migration the data is on.
- */
-export const normalizeProviderKey = (provider?: string | null): string =>
-  String(provider ?? '').toLowerCase();

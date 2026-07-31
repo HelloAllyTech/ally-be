@@ -1,7 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { AppConfigService } from 'src/config/config.service';
 import { TTSProviderEnum } from '../dto/preview-request.dto';
-import { normalizeProviderKey } from 'src/learn/enum/tts-provider.enum';
 import { ITTSProvider } from './tts-provider.interface';
 import { DeepgramTTSProvider } from './deepgram-tts.provider';
 import { ElevenLabsTTSProvider } from './elevenlabs-tts.provider';
@@ -31,11 +30,7 @@ export class TTSProviderFactory {
       [TTSProviderEnum.HUME]: keys.humeApiKey,
     };
 
-    // The stored provider may still be upper-case on rows written before the
-    // casing migration, and this map is keyed by the (lower-case) enum, so
-    // normalize before the lookup rather than 404-ing a perfectly good voice.
-    const normalized = normalizeProviderKey(provider) as TTSProviderEnum;
-    const apiKey = keyMap[normalized];
+    const apiKey = keyMap[provider];
     if (!apiKey) {
       this.logger.warn(
         `Provider ${provider} is not configured — missing API key`,
@@ -45,7 +40,7 @@ export class TTSProviderFactory {
       );
     }
 
-    switch (normalized) {
+    switch (provider) {
       case TTSProviderEnum.DEEPGRAM:
         return new DeepgramTTSProvider(apiKey, config);
       case TTSProviderEnum.ELEVENLABS:
@@ -57,7 +52,7 @@ export class TTSProviderFactory {
       case TTSProviderEnum.HUME:
         return new HumeTTSProvider(apiKey, config);
       default: {
-        const _exhaustive: never = normalized;
+        const _exhaustive: never = provider;
         throw new BadRequestException(
           `Unsupported TTS provider: ${_exhaustive}`,
         );

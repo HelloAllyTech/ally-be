@@ -1,11 +1,11 @@
 import { IsOptional, IsString, IsUUID, MaxLength } from 'class-validator';
 
 export enum TTSProviderEnum {
-  DEEPGRAM = 'deepgram',
-  ELEVENLABS = 'elevenlabs',
-  SARVAM = 'sarvam',
-  GOOGLE = 'google',
-  HUME = 'hume',
+  DEEPGRAM = 'DEEPGRAM',
+  ELEVENLABS = 'ELEVENLABS',
+  SARVAM = 'SARVAM',
+  GOOGLE = 'GOOGLE',
+  HUME = 'HUME',
 }
 
 export class PreviewRequestDto {

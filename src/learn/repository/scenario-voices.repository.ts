@@ -36,10 +36,8 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     }
 
     if (providers) {
-      const providerList = providers.split(',').map((p) => p.toLowerCase());
-      // LOWER() on both sides so the filter keeps working for rows written
-      // before the provider-casing migration.
-      query.andWhere('LOWER(scenarioVoice.provider) IN (:...providers)', {
+      const providerList = providers.split(',');
+      query.andWhere('scenarioVoice.provider IN (:...providers)', {
         providers: providerList,
       });
     }

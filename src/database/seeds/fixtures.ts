@@ -365,7 +365,7 @@ export const users: UserFixture[] = [
 // Default voice per language `value` (e.g. 'en-IN'). Seeder pulls the
 // active languages table and creates one voice for each match.
 const sarvamAbhilash: Omit<VoiceFixture, 'name'> = {
-  provider: 'sarvam',
+  provider: 'SARVAM',
   config: {
     age: 'adult',
     model: 'bulbul:v2',
@@ -378,7 +378,7 @@ const googleChirp = (
   voiceName: string,
   languageCode: string,
 ): Omit<VoiceFixture, 'name'> => ({
-  provider: 'google',
+  provider: 'GOOGLE',
   config: { gender: 'female', voice_name: voiceName, languageCode },
 });
 
