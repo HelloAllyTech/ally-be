@@ -50,6 +50,7 @@ import { ScenarioReportModule } from './scenario-report/scenario-report.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { AppVersionModule } from './app-version/app-version.module';
 import { VoicePreviewModule } from './voice-preview/voice-preview.module';
+import { LlmPreviewModule } from './llm-preview/llm-preview.module';
 import { AuditModule } from './audit/audit.module';
 import { CustomFieldsModule } from './custom-fields/custom-fields.module';
 import { DynamicI18nModule } from './dynamic-i18n/dynamic-i18n.module';
@@ -112,6 +113,7 @@ import { ProductRoadmapModule } from './product-roadmap/product-roadmap.module';
     SchedulerModule,
     AppVersionModule,
     VoicePreviewModule,
+    LlmPreviewModule,
     AuditModule,
     CustomFieldsModule,
     DynamicI18nModule,

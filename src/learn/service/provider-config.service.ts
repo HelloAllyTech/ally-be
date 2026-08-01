@@ -50,6 +50,17 @@ export abstract class ProviderConfigService<T extends ProviderConfigRow> {
     return this.repository.listConfigs(activeOnly) as Promise<T[]>;
   }
 
+  /**
+   * Single row by id, or null.
+   *
+   * Exists so callers outside this module (e.g. the LLM preview) can resolve a
+   * config without LearnModule having to export a repository — the module
+   * exports services only.
+   */
+  async getConfigById(id: string): Promise<T | null> {
+    return this.repository.findOne({ where: { id } }) as Promise<T | null>;
+  }
+
   async createConfig(dto: ProviderConfigInput): Promise<T> {
     const name = this.assertName(dto.name);
     await this.assertNameIsFree(name);

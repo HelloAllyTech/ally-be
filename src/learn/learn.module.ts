@@ -273,6 +273,9 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     ScenarioService,
     ScenarioTenantService,
     ScenarioSessionRecordingService,
+    // Exported for LlmPreviewModule, which resolves a config by id before
+    // calling the provider.
+    LlmConfigService,
   ],
 })
 export class LearnModule {}
