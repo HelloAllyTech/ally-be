@@ -1,10 +1,14 @@
 import { modelSupportsTemperature } from 'src/common/util/llm-model.util';
 
 /**
- * Single source of truth for the LLM models the platform offers, replacing the
- * previously-drifting per-app/per-service lists. Exposed via GET /api/v1/llm/models
- * and consumed by the web clients (and, over time, validated against by the
- * runtimes). See prompt-llm-config-standardization-adr.md.
+ * The LLM models the platform offers.
+ *
+ * As of the `llm_models` catalog table this array is no longer the live source:
+ * it seeds that table, and `LlmModelService` falls back to it when the table is
+ * empty or unreadable. The fallback is the point — without it, one bad migration
+ * would empty every model picker in the product at once.
+ *
+ * Exposed via GET /api/v1/llm/models. See prompt-llm-config-standardization-adr.md.
  */
 
 export type LlmProviderName = 'openai' | 'gemini' | 'anthropic';
@@ -29,21 +33,34 @@ export interface LlmModelInfo {
   runtimes: LlmRuntime[];
 }
 
-// Runtime support sets. Gemini now runs in all three runtimes: ai-learn's
-// general LLM path, ally-ai text-gen (langchain-google-genai), and ally-be's
-// coaching chat (@google/genai). Anthropic remains ally-be-only (autofill /
-// copilot). See prompt-llm-config-standardization-adr.md.
-const OPENAI_RUNTIMES = [
-  LlmRuntime.AI_LEARN,
-  LlmRuntime.ALLY_AI,
-  LlmRuntime.ALLY_BE,
-];
-const GEMINI_RUNTIMES = [
-  LlmRuntime.AI_LEARN,
-  LlmRuntime.ALLY_AI,
-  LlmRuntime.ALLY_BE,
-];
-const ANTHROPIC_RUNTIMES = [LlmRuntime.ALLY_BE];
+/**
+ * Which runtimes can execute each provider.
+ *
+ * This is the one part of a model's description that is a fact about *deployed
+ * code* rather than data: Gemini runs in all three runtimes (ai-learn's general
+ * LLM path, ally-ai text-gen via langchain-google-genai, ally-be's coaching chat
+ * via @google/genai), while Anthropic remains ally-be-only because ai-learn's
+ * `app/llms/factory.py` has no Anthropic branch.
+ *
+ * It hangs off the PROVIDER, not the model — every OpenAI model runs wherever
+ * the OpenAI client is wired — which is why the model catalog can live in the
+ * database while this stays in code. Adding a model is data; adding a provider
+ * is a code change. See prompt-llm-config-standardization-adr.md.
+ */
+export const PROVIDER_RUNTIME_MATRIX: Record<LlmProviderName, LlmRuntime[]> = {
+  openai: [LlmRuntime.AI_LEARN, LlmRuntime.ALLY_AI, LlmRuntime.ALLY_BE],
+  gemini: [LlmRuntime.AI_LEARN, LlmRuntime.ALLY_AI, LlmRuntime.ALLY_BE],
+  anthropic: [LlmRuntime.ALLY_BE],
+};
+
+/** Runtimes for a provider; empty for a provider the code cannot run at all. */
+export const runtimesForProvider = (provider: string): LlmRuntime[] =>
+  PROVIDER_RUNTIME_MATRIX[String(provider).toLowerCase() as LlmProviderName] ??
+  [];
+
+const OPENAI_RUNTIMES = PROVIDER_RUNTIME_MATRIX.openai;
+const GEMINI_RUNTIMES = PROVIDER_RUNTIME_MATRIX.gemini;
+const ANTHROPIC_RUNTIMES = PROVIDER_RUNTIME_MATRIX.anthropic;
 
 const entry = (
   provider: LlmProviderName,
