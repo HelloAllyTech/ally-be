@@ -163,23 +163,33 @@ anticipate: **model deprecation**, rather than a new provider.
 (`1875000000001-CreateLlmConfigsRegistry`), with the jsonb retained as a fallback rung.
 Resolution is now: language `llmConfigId` → legacy jsonb → platform default.
 
-### New decision: the capability catalog stays in code
+### New decision: the model catalog moves to the DB; the provider matrix stays in code
 
-A natural next step is "make every model configurable from the admin dashboard, like
-voices". **We are explicitly not doing that**, because `LLM_MODEL_REGISTRY` and
-`llm_configs` answer two different questions:
+> **Revised later the same day.** This section first concluded "the catalog stays in code"
+> wholesale. That was too broad: it treated five fields as one thing. The corrected split
+> is below; the original objection survives for exactly one field.
 
-| | Question | Where it belongs |
+`LLM_MODEL_REGISTRY` bundles three different kinds of fact:
+
+| Field | What it actually is | Home |
 |---|---|---|
-| Capability catalog | *What can the deployed code run?* | Code (`LLM_MODEL_REGISTRY`) |
-| Deployment choice | *What should this language / prompt use?* | DB (`llm_configs`, `prompts.model`) |
+| `provider` + `model` + `label` | Pure data. Adding `gpt-5.1-mini` under OpenAI needs **no code change** — the client is constructed from a provider and a model string | **DB** |
+| `supportsTemperature` | Not a code capability: a prefix guess over the model name (`o1`/`o3`/`o4`/`gpt-5`) in `modelSupportsTemperature`. A fact about the model that we infer, badly | **DB**, seeded from the heuristic |
+| `runtimes[]` | A genuine property of deployed code — ai-learn's `app/llms/factory.py` has OpenAI/Gemini/Ollama/vLLM branches and no Anthropic; `PromptSidePanel.tsx` hardcodes `PROVIDER_ORDER` to OpenAI + Gemini | **Code** |
 
-`runtimes[]` and `supportsTemperature` are properties of deployed code, not configuration.
-Anthropic is `ALLY_BE`-only because ai-learn's `app/llms/factory.py` has no Anthropic
-branch; `PromptSidePanel.tsx` hardcodes `PROVIDER_ORDER` to OpenAI + Gemini for the same
-reason. They change when someone writes code, and they must ship and roll back with it.
+**Refinement:** `runtimes` should not be stored per model at all — it is a property of the
+*provider*. Every OpenAI model runs wherever the OpenAI client is wired. Keep a small
+in-code provider×runtime matrix (3 runtimes × ~5 providers, changing perhaps twice a year)
+and derive a model's runtimes from its provider. Then:
 
-The failure mode if the catalog moved to the DB is not a clean error. In
+- adding a **model** is pure data — no deploy;
+- adding a **provider** is a code change, which is correct, because it is one.
+
+Storing `supportsTemperature` is safe in both directions: `resolveTemperature` omits the
+value when false, and ai-learn drops a temperature the model rejects rather than 400-ing.
+A human correcting a bad guess without a deploy is strictly better than the heuristic.
+
+**The objection that survives** applies only to provider→runtime. In
 `app/llms/factory.py` (~L99):
 
 ```python
@@ -187,12 +197,26 @@ if "model" not in config_dict and not is_local_provider:
     config_dict["model"] = DEFAULT_LLM_CONFIG["model"]
 ```
 
-A config carrying a provider the runtime cannot serve keeps that provider and acquires the
-*platform default model* — so an admin selecting an unrunnable model yields a silently
-wrong client, not a failure anyone notices. A reviewed in-code list is strictly safer.
+A config naming a provider the runtime cannot serve keeps that provider and acquires the
+*platform default model* — a silently wrong client, not a visible failure. Hence the
+provider matrix stays in code: an admin may add any model under a provider the runtime
+already speaks, but cannot invent a provider nothing can build.
 
-**Instead:** validate the DB choice against the catalog, and filter the language-level
-picker by `runtimes` so an unrunnable model is never offered.
+**Costs accepted:**
+- The catalog becomes **environment-specific**. Today it is versioned with the code and
+  identical everywhere; in the DB, dev and prod can diverge. The seed migration covers day
+  one; the liveness probe must report per environment so drift is visible.
+- The endpoint needs a **fallback to the in-code list** when the table is empty or the
+  query fails, or a single bad migration empties every model picker in the product.
+
+**Shape:** a new `llm_models` catalog table, *not* an extension of `llm_configs`. They have
+different cardinality and meaning — `llm_configs` is "a named config a language points at"
+(several may share one model at different temperatures), `llm_models` is "this model exists
+and is selectable". The liveness probe checks models, deduped; overloading one table would
+make it re-check the same model once per referencing config.
+
+`GET /api/v1/llm/models` keeps its exact response contract, merely DB-backed with the
+provider matrix joined in, so `ally-web` needs no change.
 
 ### Known defect — provider vocabulary disagreement
 
@@ -220,9 +244,15 @@ real credential and the real call path, which a model-list API never does. All t
 **4b — scheduled liveness probe.** Register a task in `scheduledTaskRegistry`
 (`src/scheduler/`), which already provides interval buckets and a Postgres advisory lock
 so only one replica runs a tick. Only 5min/15min/30min/hourly buckets exist today, so a
-`daily` bucket is needed. For every model actually in use — `llm_configs` rows,
-`prompts.model`, legacy language jsonb — check the provider's model list and run a small
-live call.
+`monthly` bucket is needed (`@Cron('0 0 3 1 * *')` → `runTasksForInterval('monthly')`).
+Cadence is deliberately monthly, not daily: deprecations carry long lead times, and 4a
+gives an on-demand check for the moment something looks wrong. The accepted cost is up to
+a month of not knowing.
+
+Once 4b lands on top of the `llm_models` catalog, availability state
+(`availability`, `lastCheckedAt`, `lastCheckError`, `consecutiveFailures`) belongs on the
+catalog row — one place per model, rather than scattered across every config, prompt and
+language that references it.
 
 **Alert; do not auto-disable.** Auto-disabling an in-use model converts a future problem
 into an immediate outage: marking `gpt-4o-mini` unavailable would break every English
@@ -241,13 +271,18 @@ also not proof of unusability — providers keep serving de-listed models, and a
 | Order | Work | Risk |
 |---|---|---|
 | 1 | 4a preview endpoint + test button | Low — additive, no schema change |
-| 2 | 4b liveness probe, alert-only | Low |
-| 3 | Reconcile `google`/`gemini`; validate `llm_configs` against the catalog | Medium — touches resolution |
-| 4 | Seed `llm_configs` from the catalog, filtered by `runtimes` | Low |
+| 2 | `llm_models` catalog table, seeded from `LLM_MODEL_REGISTRY`; endpoint reads DB with the in-code list as fallback; provider×runtime matrix stays in code | Low–Medium |
+| 3 | 4b liveness probe, alert-only, monthly | Low |
+| 4 | Reconcile `google`/`gemini`; validate `llm_configs` against the catalog | Medium — touches resolution |
 
-Step 4 is safe only with the runtime filter: seeding a row per catalog model would put
-Anthropic models, which ai-learn cannot run, straight into the language picker — the
-failure this update exists to prevent.
+Step 2 replaces the earlier "seed `llm_configs` from the catalog" item: with a real catalog
+table there is nothing to duplicate into `llm_configs`, which goes on holding *choices*.
+Any picker offering catalog models to a language must still filter by the derived
+`runtimes`, or it will offer Anthropic models that ai-learn cannot run.
+
+Step 4 stays last: it touches the resolution path shipped in `1875000000001`, and it has
+the same hazard shape as the voice-provider casing migration that had to be reverted — a
+stored value the client's dropdown cannot match, where saving silently rewrites the field.
 
 ## Consequences
 - **Pro:** next provider/model is a near one-place change; no drifting lists; no silent
