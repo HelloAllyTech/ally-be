@@ -1,4 +1,15 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -6,11 +17,15 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import {
   LlmModelInfo,
   LlmRuntime,
 } from '../constants/llm-model-registry.constants';
+import { CreateLlmModelDto, UpdateLlmModelDto } from '../dto/llm-model.dto';
+import { LlmModels } from '../entity/llm-models.entity';
 import { LlmModelService } from '../service/llm-model.service';
 
 @ApiTags('LLM')
@@ -38,5 +53,45 @@ export class LlmController {
     @Query('runtime') runtime?: LlmRuntime,
   ): Promise<LlmModelInfo[]> {
     return this.llmModelService.getModels(runtime);
+  }
+
+  /**
+   * The catalog as stored, inactive rows included, for the admin screen.
+   *
+   * Separate from GET /models because that one is the pickers' feed: it hides
+   * inactive rows and falls back to the in-code list, neither of which an editor
+   * should see.
+   */
+  @Get('catalog')
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_LANGUAGES])
+  @ApiOperation({ summary: 'List every catalog row, including inactive ones.' })
+  async getCatalog(): Promise<LlmModels[]> {
+    return this.llmModelService.getCatalog();
+  }
+
+  @Post('catalog')
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @ApiOperation({ summary: 'Add a model to the catalog.' })
+  async createModel(@Body() dto: CreateLlmModelDto): Promise<LlmModels> {
+    return this.llmModelService.createModel(dto);
+  }
+
+  @Patch('catalog/:id')
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @ApiOperation({ summary: 'Update a catalog model.' })
+  async updateModel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateLlmModelDto,
+  ): Promise<LlmModels> {
+    return this.llmModelService.updateModel(id, dto);
+  }
+
+  @Delete('catalog/:id')
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @ApiOperation({ summary: 'Remove a model from the catalog.' })
+  async deleteModel(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ deleted: true }> {
+    return this.llmModelService.deleteModel(id);
   }
 }
