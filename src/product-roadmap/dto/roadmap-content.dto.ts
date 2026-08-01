@@ -238,6 +238,23 @@ export class AiDraftDto {
   productGoal?: string;
 }
 
+export class AiGenerateClaudePromptDto {
+  @ApiProperty({ maxLength: ROADMAP_LIMITS.DESCRIPTION_MAX })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(ROADMAP_LIMITS.DESCRIPTION_MAX)
+  description!: string;
+
+  @ApiPropertyOptional({
+    maxLength: ROADMAP_LIMITS.PRD_MAX,
+    description: 'Optional long-form PRD to fold into the generated prompt.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(ROADMAP_LIMITS.PRD_MAX)
+  prd?: string;
+}
+
 export class AiSummariseDto {
   @ApiProperty({ maxLength: ROADMAP_LIMITS.INTERVIEW_TRANSCRIPT_MAX })
   @IsString()

@@ -145,6 +145,8 @@ export class RoadmapOpportunityService {
       }
     }
     if (dto.prd !== undefined) patch.prd = dto.prd ?? null;
+    if (dto.claudePrompt !== undefined)
+      patch.claudePrompt = dto.claudePrompt ?? null;
 
     if (dto.stage !== undefined) {
       patch.stage = dto.stage;
@@ -254,6 +256,7 @@ export class RoadmapOpportunityService {
       owner: row.ownerDisplay ?? row.owner ?? null,
       ownerUserId: row.ownerUserId ?? null,
       prd: row.prd ?? null,
+      claudePrompt: row.claudePrompt ?? null,
       releasedAt: row.releasedAt ?? null,
       priorityScore: Number(row.priorityScore ?? 0),
       myCoins: Number(row.myCoins ?? 0),

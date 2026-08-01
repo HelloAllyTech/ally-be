@@ -34,6 +34,7 @@ const MAX_TOKENS = {
   DUPLICATES: 1000,
   SUMMARISE: 2000,
   RELEASE_NOTES: 2500,
+  CLAUDE_PROMPT: 2000,
 } as const;
 
 @Injectable()
@@ -281,6 +282,29 @@ export class RoadmapAiService {
       );
       return { matches: [] };
     }
+  }
+
+  /**
+   * Turn an opportunity's description (+ optional PRD) into a ready-to-paste implementation
+   * brief for Claude Code. Plain text, not JSON — same reasoning as summariseTranscript and
+   * draftReleaseNotes: the output is multiline prose, and forcing it through JSON only adds a
+   * fragile parse step for no benefit.
+   */
+  async generateClaudeCodePrompt(
+    description: string,
+    prd?: string,
+  ): Promise<string> {
+    const sections = [`Title:\n"""\n${description}\n"""`];
+    if (prd?.trim()) {
+      sections.push(`PRD:\n"""\n${prd.trim()}\n"""`);
+    }
+    return this.runText(
+      ROADMAP_PROMPT_CODES.GENERATE_CLAUDE_PROMPT,
+      sections.join('\n\n'),
+      MAX_TOKENS.CLAUDE_PROMPT,
+      LlmTask.AUTOFILL_ENHANCE_FIELD,
+      'generate-claude-prompt',
+    );
   }
 
   // ── LLM plumbing ───────────────────────────────────────────────────────────

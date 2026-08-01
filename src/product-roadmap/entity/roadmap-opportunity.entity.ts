@@ -91,6 +91,15 @@ export class RoadmapOpportunity extends BaseWithoutTenantEntity {
   prd?: string | null;
 
   /**
+   * AI-generated Claude Code implementation prompt, ≤20000 chars. Same treatment as `prd`:
+   * plain text/markdown, edited and persisted through the drawer's own Save action rather than
+   * a bespoke write path, so it survives a close/reopen instead of being regenerated (and
+   * re-billed) every time.
+   */
+  @Column({ type: 'text', nullable: true })
+  claudePrompt?: string | null;
+
+  /**
    * Stamped only when the stage TRANSITIONS into RELEASED, and never re-stamped on a later
    * edit. Split copies it to new parts rather than regenerating. Note a large share of
    * migrated rows have stage=released with releasedAt NULL, because the source trigger also

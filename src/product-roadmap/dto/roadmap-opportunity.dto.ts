@@ -217,6 +217,18 @@ export class UpdateOpportunityDto {
   @IsString()
   @MaxLength(ROADMAP_LIMITS.PRD_MAX)
   prd?: string | null;
+
+  @ApiPropertyOptional({
+    maxLength: ROADMAP_LIMITS.CLAUDE_PROMPT_MAX,
+    nullable: true,
+    description:
+      'AI-generated Claude Code implementation prompt, saved verbatim alongside the rest of ' +
+      'the opportunity.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(ROADMAP_LIMITS.CLAUDE_PROMPT_MAX)
+  claudePrompt?: string | null;
 }
 
 export class SplitPartDto {

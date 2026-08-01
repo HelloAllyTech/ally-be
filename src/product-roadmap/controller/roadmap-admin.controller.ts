@@ -30,6 +30,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 import {
   AiDraftDto,
+  AiGenerateClaudePromptDto,
   AiReleaseNotesDto,
   AiSummariseDto,
   RoadmapImportRequestDto,
@@ -353,6 +354,27 @@ export class RoadmapAdminController {
   @ApiResponse({ status: 201, type: AiTextResponseDto })
   async summarise(@Body() dto: AiSummariseDto): Promise<AiTextResponseDto> {
     return { text: await this.aiService.summariseTranscript(dto.transcript) };
+  }
+
+  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @Post('ai/generate-claude-prompt')
+  @ApiOperation({
+    summary: 'Generate a Claude Code implementation prompt from an opportunity',
+    description:
+      'Turns the opportunity description (and optional PRD) into a ready-to-paste brief for ' +
+      'an AI coding agent. Manage-gated: this is a hand-off-to-engineering action, not a ' +
+      'voting action.',
+  })
+  @ApiResponse({ status: 201, type: AiTextResponseDto })
+  async generateClaudePrompt(
+    @Body() dto: AiGenerateClaudePromptDto,
+  ): Promise<AiTextResponseDto> {
+    return {
+      text: await this.aiService.generateClaudeCodePrompt(
+        dto.description,
+        dto.prd,
+      ),
+    };
   }
 
   @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])

@@ -14,6 +14,7 @@ export const COINS_PER_MONTH = 100;
 export const ROADMAP_LIMITS = {
   DESCRIPTION_MAX: 1000,
   PRD_MAX: 20000,
+  CLAUDE_PROMPT_MAX: 20000,
   COMMENT_MAX: 500,
   INTERVIEW_TITLE_MAX: 200,
   INTERVIEW_SUMMARY_MAX: 5000,
@@ -59,6 +60,7 @@ export const ROADMAP_PROMPT_CODES = {
   DUPLICATE_CHECK: 'roadmap_duplicate_check',
   SUMMARISE_INTERVIEW: 'roadmap_summarise_interview',
   RELEASE_NOTES: 'roadmap_release_notes',
+  GENERATE_CLAUDE_PROMPT: 'roadmap_generate_claude_prompt',
 } as const;
 
 /**

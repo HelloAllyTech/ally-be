@@ -24,6 +24,7 @@ export class OpportunityResponseDto {
   /** Null for legacy migrated rows whose owner was never linked to an Ally account. */
   @ApiPropertyOptional({ nullable: true }) ownerUserId?: number | null;
   @ApiPropertyOptional({ nullable: true }) prd?: string | null;
+  @ApiPropertyOptional({ nullable: true }) claudePrompt?: string | null;
   @ApiPropertyOptional({ nullable: true }) releasedAt?: Date | null;
 
   /** SUM(coins) over ALL users and ALL periods. Computed in SQL, never stored. */
