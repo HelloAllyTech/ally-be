@@ -321,8 +321,9 @@ export class TrackService {
       });
     } catch (err) {
       if (err instanceof QueryFailedError) {
+        this.logger.error(`Track ${id} structure save failed: ${err.message}`);
         throw new BadRequestException(
-          'Could not save the course structure — some content may contain invalid characters. Remove any unusual formatting from pasted text and try saving again.',
+          `Could not save the course structure: ${err.message}`,
         );
       }
       throw err;
