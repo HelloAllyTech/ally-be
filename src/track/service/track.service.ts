@@ -288,6 +288,25 @@ export class TrackService {
           await itemRepo.softDelete({ id: In(removedItemIds) });
         }
 
+        // `idx_track_sections_track_id_order` / `idx_track_items_section_id_order`
+        // are non-deferred unique indexes: Postgres checks them per statement, not
+        // at commit. If a section/item's order shifted (e.g. a component was
+        // inserted or removed earlier in the section), the final order values are
+        // unique, but updating rows one at a time in array order can transiently
+        // collide with another row that still holds its old value. Detach existing
+        // rows to negative placeholder orders first so no intermediate state can
+        // clash, then apply the real target orders below.
+        const existingSectionUpdates = dto.sections.filter((s) => s.id);
+        for (const [idx, section] of existingSectionUpdates.entries()) {
+          await sectionRepo.update(section.id!, { order: -(idx + 1) });
+        }
+        for (const section of dto.sections) {
+          const existingItemUpdates = section.items.filter((i) => i.id);
+          for (const [idx, item] of existingItemUpdates.entries()) {
+            await itemRepo.update(item.id!, { order: -(idx + 1) });
+          }
+        }
+
         for (const section of dto.sections) {
           const savedSection = await sectionRepo.save({
             ...(section.id ? { id: section.id } : {}),
