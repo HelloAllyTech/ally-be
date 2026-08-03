@@ -32,6 +32,7 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'comfortAudioUrl',
   'comfortAudioVolume',
   'historyTrimEnabled',
+  'inputCompressionEnabled',
   'continuousBackchanneling',
   'interimReplyEnabled',
   'customFields',
@@ -151,6 +152,7 @@ export const mapCreateScenarioRequestToEntity = (
       comfortAudioUrl: scenario.comfortAudioUrl,
       comfortAudioVolume: scenario.comfortAudioVolume,
       historyTrimEnabled: scenario.historyTrimEnabled,
+      inputCompressionEnabled: scenario.inputCompressionEnabled,
       continuousBackchanneling: scenario.continuousBackchanneling,
       interimReplyEnabled: scenario.interimReplyEnabled,
       customFields: scenario.customFields?.map((customField) => ({
