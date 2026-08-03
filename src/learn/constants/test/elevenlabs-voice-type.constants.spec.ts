@@ -55,25 +55,46 @@ describe('getElevenLabsV3Warning', () => {
   // deliberate work on no evidence of harm.
   // States the mechanism without prescribing a model: v3 genuinely renders
   // these voices (measured), so recommending v2 would overstate the evidence.
-  it('warns for a PVC on v3, naming the substitution but not prescribing', () => {
+  it('warns for a PVC on v3, naming the consequence but not prescribing', () => {
     const w = getElevenLabsV3Warning('eleven_v3', ElevenLabsVoiceType.PVC);
-    expect(w).toMatch(/will not use/i);
-    expect(w).toMatch(/fine-tuned model/i);
-    expect(w).toMatch(/30-90s/);
-    expect(w).toMatch(/judge it by ear/i);
+    expect(w).toMatch(/custom-trained from real recordings/i);
+    // The consequence a reader can act on: audible similarity, not a mechanism.
+    expect(w).toMatch(/will still speak/i);
+    expect(w).toMatch(/not sound as close to the original person/i);
+    expect(w).toMatch(/listen to it/i);
     // Must not claim v3 cannot render it — it can, and does.
     expect(w).not.toMatch(/cannot use this voice/i);
   });
 
   it('warns when the type is unrecorded, since silence is how this went unnoticed', () => {
-    expect(getElevenLabsV3Warning('eleven_v3', null)).toMatch(/unrecorded/i);
-    expect(getElevenLabsV3Warning('eleven_v3', '')).toMatch(/unrecorded/i);
+    for (const t of [null, '']) {
+      const w = getElevenLabsV3Warning('eleven_v3', t);
+      expect(w).toMatch(/do not know how this voice was created/i);
+      // Must name the action that resolves it, or the reader is stuck.
+      expect(w).toMatch(/Sync from ElevenLabs/i);
+    }
   });
 
   it('warns for an ambiguous category rather than assuming', () => {
     expect(
       getElevenLabsV3Warning('eleven_v3', ElevenLabsVoiceType.UNKNOWN),
-    ).toMatch(/did not report a category/i);
+    ).toMatch(/did not tell us how this voice was created/i);
+  });
+
+  // These strings are read by studio users configuring a voice, who cannot act
+  // on our vocabulary. Guarding the whole set rather than one message, because
+  // the jargon crept in one message at a time.
+  it.each([
+    ElevenLabsVoiceType.PVC,
+    ElevenLabsVoiceType.UNKNOWN,
+    null,
+  ])('keeps internal vocabulary out of the %s message', (type) => {
+    const w = getElevenLabsV3Warning('eleven_v3', type) ?? '';
+    expect(w).not.toMatch(/\bPVC\b|\bIVC\b/);
+    expect(w).not.toMatch(/fine-tun/i);
+    expect(w).not.toMatch(/\brender/i);
+    // "the v3 model" is fine; raw model ids are not.
+    expect(w).not.toMatch(/eleven_/);
   });
 
   it.each([

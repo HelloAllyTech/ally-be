@@ -49,7 +49,24 @@ export const ELEVENLABS_CATEGORY_TO_VOICE_TYPE: Record<
   cloned: ElevenLabsVoiceType.UNKNOWN,
 };
 
-/** Voice types `eleven_v3` can actually render from. */
+/**
+ * Voice types we stay silent about on v3.
+ *
+ * Not "types v3 can use a fine-tune from" — there are none. ElevenLabs
+ * confirmed that `high_quality_base_model_ids` lists fine-tuned models and
+ * "won't include v3 for any voice type today", so v3 uses no per-voice
+ * fine-tune at all. Our own sweep agrees: v3 appears on 0 of 153 voices.
+ *
+ * So the real question is not whether a fine-tune is bypassed but whether
+ * losing it matters. For a professional clone the fine-tune IS the likeness to
+ * a specific real person, so losing it is audible against a reference the
+ * listener may know. For a stock or Voice-Design voice there is no such
+ * reference — nothing is being matched — which is why those stay silent even
+ * though stock voices do carry fine-tunes (19 of 21 on this account).
+ *
+ * PREMADE was previously listed here on the assumption that v3 renders stock
+ * voices itself. The conclusion held; the stated reason was wrong.
+ */
 export const V3_COMPATIBLE_VOICE_TYPES: ElevenLabsVoiceType[] = [
   ElevenLabsVoiceType.IVC,
   ElevenLabsVoiceType.VOICE_DESIGN,
@@ -70,10 +87,16 @@ export const isElevenLabsV3Model = (model?: string | null): boolean =>
  * evidence of harm; staying silent is what let 23 production rows end up here
  * unnoticed.
  *
- * The wording states the mechanism and stops short of recommending a model. v3
- * genuinely renders these voices — we measured 200s and indistinguishable audio
- * — so "keep it on v2" would be advice the evidence does not support. What is
- * certain is only that the fine-tune goes unused.
+ * The wording stops short of recommending a model. v3 genuinely renders these
+ * voices — we measured 200s and indistinguishable audio — so "keep it on v2"
+ * would be advice the evidence does not support. What is certain is only that
+ * the fine-tune goes unused.
+ *
+ * Written for a studio user, not an engineer: no "PVC", "fine-tune" or
+ * "render". The reader configuring a voice cannot act on our vocabulary, only
+ * on what will happen and what to do about it — which is why every message
+ * ends in an instruction. An earlier draft said "eleven_v3 will not use this
+ * PVC voice's fine-tuned model", which is precise and unreadable.
  *
  * Returns null when there is nothing to say.
  */
@@ -85,13 +108,13 @@ export const getElevenLabsV3Warning = (
 
   const type = String(voiceType ?? '').trim();
   if (!type) {
-    return 'This voice runs eleven_v3 but its voice type is unrecorded. Sync it from ElevenLabs — v3 cannot use a Professional Voice Clone and will silently substitute a lower-fidelity render.';
+    return 'We do not know how this voice was created, so we cannot say how it will sound on the v3 model. Click "Sync from ElevenLabs" to check.';
   }
   if (type === ElevenLabsVoiceType.UNKNOWN) {
-    return 'ElevenLabs did not report a category that distinguishes an Instant from a Professional clone. Confirm in the ElevenLabs workspace which flow created this voice — v3 cannot use a Professional Voice Clone.';
+    return 'ElevenLabs did not tell us how this voice was created. Check in the ElevenLabs workspace whether it was trained from recordings — if it was, v3 will not sound as close to the original person.';
   }
   if (!V3_COMPATIBLE_VOICE_TYPES.includes(type as ElevenLabsVoiceType)) {
-    return `eleven_v3 will not use this ${type.toUpperCase()} voice's fine-tuned model — it renders from the first ~30-90s of the training audio instead. It still returns audio and may sound close, so judge it by ear. Only eleven_multilingual_v2 uses the fine-tune.`;
+    return 'This voice was custom-trained from real recordings. The v3 model cannot use that training — it will still speak, but it will not sound as close to the original person. Listen to it before you use it.';
   }
   return null;
 };
