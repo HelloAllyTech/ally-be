@@ -119,28 +119,26 @@ export const getElevenLabsV3Warning = (
   return null;
 };
 
-/** ElevenLabs never lists this in a voice's own model support, for any voice. */
-const ELEVENLABS_V3_MODEL = 'eleven_v3';
 /** The model that uses a Professional clone's fine-tune. */
 const ELEVENLABS_FIDELITY_MODEL = 'eleven_multilingual_v2';
 
 export interface ElevenLabsModelOptions {
-  /** Models to offer a picker for this voice. */
+  /**
+   * Models THIS voice's fine-tune actually supports, per ElevenLabs —
+   * annotation data, not the option list. `GET /v1/models` (account-wide,
+   * confirmed via `listAvailableModels`) is what the picker's options come
+   * from; v3 is real and selectable there even though it's never in this
+   * list — v3 uses no per-voice fine-tune at all, for any voice, so its
+   * absence here isn't ElevenLabs rejecting the voice.
+   */
   availableModels: string[];
   /** A safe starting point, or null when there's nothing to prefer. */
   recommendedModel: string | null;
 }
 
 /**
- * Which models to offer for a voice, and which one to default to — both
- * derived from what ElevenLabs told us, not chosen freehand.
- *
- * `availableModels` starts from the voice's own `high_quality_base_model_ids`
- * (ElevenLabs' real, per-voice answer) and always appends v3: ElevenLabs
- * confirmed that field "won't include v3 for any voice type today" because v3
- * uses no per-voice fine-tune at all, not because v3 rejects the voice — the
- * call still returns 200. Its risk is carried by `getElevenLabsV3Warning`, not
- * by leaving it off this list.
+ * Which model THIS voice's fine-tune supports, and which one to default to —
+ * both derived from what ElevenLabs told us, not chosen freehand.
  *
  * `recommendedModel` follows ElevenLabs' own migration guidance: where
  * speaker fidelity to an existing Professional clone matters, stay on
@@ -155,14 +153,12 @@ export const buildElevenLabsModelOptions = (
   voiceType: ElevenLabsVoiceType | string | null,
 ): ElevenLabsModelOptions => {
   const listed = (highQualityBaseModelIds ?? []).filter(Boolean);
-  const availableModels = listed.includes(ELEVENLABS_V3_MODEL)
-    ? listed
-    : [...listed, ELEVENLABS_V3_MODEL];
 
   const recommendedModel =
-    voiceType === ElevenLabsVoiceType.PVC && listed.includes(ELEVENLABS_FIDELITY_MODEL)
+    voiceType === ElevenLabsVoiceType.PVC &&
+    listed.includes(ELEVENLABS_FIDELITY_MODEL)
       ? ELEVENLABS_FIDELITY_MODEL
       : (listed[0] ?? null);
 
-  return { availableModels, recommendedModel };
+  return { availableModels: listed, recommendedModel };
 };

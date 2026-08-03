@@ -305,6 +305,7 @@ describe('LearnController', () => {
             syncVoice: jest.fn(),
             lookupVoice: jest.fn(),
             bulkSyncAllVoices: jest.fn(),
+            listAvailableModels: jest.fn(),
           },
         },
         {
@@ -1749,7 +1750,7 @@ describe('LearnController', () => {
         voiceType: ElevenLabsVoiceType.VOICE_DESIGN,
         gender: 'female',
         language: 'ta',
-        availableModels: ['eleven_v3'],
+        availableModels: [],
         recommendedModel: null,
       };
       elevenLabsVoiceSyncService.lookupVoice.mockResolvedValue(result);
@@ -1776,6 +1777,18 @@ describe('LearnController', () => {
       await expect(controller.bulkSyncElevenLabsVoices()).resolves.toEqual(
         summary,
       );
+    });
+  });
+
+  describe('getElevenLabsModels', () => {
+    it('delegates to the sync service for the account-wide catalog', async () => {
+      const models = [
+        { modelId: 'eleven_v3', name: 'Eleven v3' },
+        { modelId: 'eleven_multilingual_v2', name: 'Eleven Multilingual v2' },
+      ];
+      elevenLabsVoiceSyncService.listAvailableModels.mockResolvedValue(models);
+
+      await expect(controller.getElevenLabsModels()).resolves.toEqual(models);
     });
   });
 });

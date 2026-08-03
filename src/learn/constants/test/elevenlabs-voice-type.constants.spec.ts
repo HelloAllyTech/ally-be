@@ -85,18 +85,17 @@ describe('getElevenLabsV3Warning', () => {
   // These strings are read by studio users configuring a voice, who cannot act
   // on our vocabulary. Guarding the whole set rather than one message, because
   // the jargon crept in one message at a time.
-  it.each([
-    ElevenLabsVoiceType.PVC,
-    ElevenLabsVoiceType.UNKNOWN,
-    null,
-  ])('keeps internal vocabulary out of the %s message', (type) => {
-    const w = getElevenLabsV3Warning('eleven_v3', type) ?? '';
-    expect(w).not.toMatch(/\bPVC\b|\bIVC\b/);
-    expect(w).not.toMatch(/fine-tun/i);
-    expect(w).not.toMatch(/\brender/i);
-    // "the v3 model" is fine; raw model ids are not.
-    expect(w).not.toMatch(/eleven_/);
-  });
+  it.each([ElevenLabsVoiceType.PVC, ElevenLabsVoiceType.UNKNOWN, null])(
+    'keeps internal vocabulary out of the %s message',
+    (type) => {
+      const w = getElevenLabsV3Warning('eleven_v3', type) ?? '';
+      expect(w).not.toMatch(/\bPVC\b|\bIVC\b/);
+      expect(w).not.toMatch(/fine-tun/i);
+      expect(w).not.toMatch(/\brender/i);
+      // "the v3 model" is fine; raw model ids are not.
+      expect(w).not.toMatch(/eleven_/);
+    },
+  );
 
   it.each([
     ElevenLabsVoiceType.IVC,
@@ -118,22 +117,24 @@ describe('getElevenLabsV3Warning', () => {
 describe('buildElevenLabsModelOptions', () => {
   // ElevenLabs: "high_quality_base_model_ids... won't include v3 for any
   // voice type today" — because it lists fine-tuned models and v3 uses none.
-  // Not a rejection of the voice (the call still returns 200), so it belongs
-  // in the offered list; getElevenLabsV3Warning carries the actual risk.
-  it('always appends v3, even when ElevenLabs listed nothing', () => {
+  // Not a rejection of the voice (the call still returns 200). So this is
+  // annotation data (which of the account-wide models this voice's fine-tune
+  // supports), not the option list itself — the option list is the account-
+  // wide GET /v1/models catalog, built elsewhere by listAvailableModels.
+  it('passes through exactly what ElevenLabs listed, with no synthetic additions', () => {
     const { availableModels } = buildElevenLabsModelOptions(
       undefined,
       ElevenLabsVoiceType.VOICE_DESIGN,
     );
-    expect(availableModels).toEqual(['eleven_v3']);
+    expect(availableModels).toEqual([]);
   });
 
-  it('does not duplicate v3 if ElevenLabs ever lists it', () => {
+  it('does not add v3 even if the fine-tune list never carries it', () => {
     const { availableModels } = buildElevenLabsModelOptions(
-      ['eleven_v3', 'eleven_turbo_v2_5'],
+      ['eleven_turbo_v2_5'],
       ElevenLabsVoiceType.PREMADE,
     );
-    expect(availableModels).toEqual(['eleven_v3', 'eleven_turbo_v2_5']);
+    expect(availableModels).toEqual(['eleven_turbo_v2_5']);
   });
 
   // ElevenLabs' own migration guidance: stay on Multilingual v2 for voices

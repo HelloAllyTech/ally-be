@@ -45,6 +45,7 @@ import { ScenarioSortBy } from '../type/scenario.type';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import {
   ElevenLabsBulkSyncSummary,
+  ElevenLabsModelInfo,
   ElevenLabsVoiceLookupResult,
   ElevenLabsVoiceSyncResult,
   ElevenLabsVoiceSyncService,
@@ -1099,6 +1100,16 @@ export class LearnController {
   @Post('scenario-voices/sync-elevenlabs/bulk')
   async bulkSyncElevenLabsVoices(): Promise<ElevenLabsBulkSyncSummary> {
     return this.elevenLabsVoiceSyncService.bulkSyncAllVoices();
+  }
+
+  @ApiOperation({
+    summary:
+      "ElevenLabs' account-wide, text-to-speech-capable model catalog — not tied to any one voice",
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_VOICE])
+  @Get('scenario-voices/elevenlabs-models')
+  async getElevenLabsModels(): Promise<ElevenLabsModelInfo[]> {
+    return this.elevenLabsVoiceSyncService.listAvailableModels();
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_VOICES])

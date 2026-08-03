@@ -97,6 +97,12 @@ export interface ElevenLabsBulkSyncSummary {
   }>;
 }
 
+/** A model from ElevenLabs' account-wide catalog — not tied to any one voice. */
+export interface ElevenLabsModelInfo {
+  modelId: string;
+  name: string;
+}
+
 const ELEVENLABS_API = 'https://api.elevenlabs.io/v1';
 const ELEVENLABS_API_V2 = 'https://api.elevenlabs.io/v2';
 
@@ -328,6 +334,47 @@ export class ElevenLabsVoiceSyncService {
     }
 
     return summary;
+  }
+
+  /**
+   * The account-wide model catalog — independent of any one voice. This is
+   * what a Model picker's options come from; a voice's own
+   * `high_quality_base_model_ids` (used elsewhere for `recommendedModel`) is
+   * a narrower, per-voice fine-tune-compatibility signal, not the option list.
+   *
+   * Filtered to `can_do_text_to_speech`: ElevenLabs' /v1/models also lists
+   * speech-to-speech-only models (voice conversion), which this account can't
+   * use to generate scenario audio from text.
+   */
+  async listAvailableModels(): Promise<ElevenLabsModelInfo[]> {
+    const apiKey = this.configService.voicePreview.elevenlabsApiKey;
+    if (!apiKey) {
+      throw new BadRequestException(
+        'ElevenLabs is not configured on this environment.',
+      );
+    }
+
+    const response = await fetch(`${ELEVENLABS_API}/models`, {
+      headers: { 'xi-api-key': apiKey },
+    });
+    if (!response.ok) {
+      throw new BadRequestException(
+        `ElevenLabs returned ${response.status} listing models.`,
+      );
+    }
+
+    const body = (await response.json()) as Array<{
+      model_id?: string;
+      name?: string;
+      can_do_text_to_speech?: boolean;
+    }>;
+
+    return body
+      .filter((model) => model.can_do_text_to_speech && model.model_id)
+      .map((model) => ({
+        modelId: model.model_id as string,
+        name: model.name ?? (model.model_id as string),
+      }));
   }
 
   /** Pages through the whole workspace once, keyed by voice_id. Free — this is a listing call, not a generation call. */

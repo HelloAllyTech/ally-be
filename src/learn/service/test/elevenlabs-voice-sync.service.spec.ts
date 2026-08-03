@@ -61,16 +61,17 @@ describe('ElevenLabsVoiceSyncService', () => {
         voiceType: 'voice_design',
         gender: 'female',
         language: 'ta',
-        // ElevenLabs listed nothing for this voice — v3 is still offered
-        // (it always "works"), but there's nothing to prefer over it.
-        availableModels: ['eleven_v3'],
+        // ElevenLabs listed nothing for this voice's fine-tune support —
+        // this is annotation data, not the option list (that's the
+        // account-wide catalog from listAvailableModels).
+        availableModels: [],
         recommendedModel: null,
       });
       expect(repository.findOne).not.toHaveBeenCalled();
       expect(repository.update).not.toHaveBeenCalled();
     });
 
-    it('lists ElevenLabs-supported models plus v3, and recommends multilingual v2 for a PVC voice', async () => {
+    it('passes through the fine-tune-supported models, and recommends multilingual v2 for a PVC voice', async () => {
       fetchMock.mockResolvedValue({
         ok: true,
         json: async () => ({
@@ -90,7 +91,6 @@ describe('ElevenLabsVoiceSyncService', () => {
       expect(result.availableModels).toEqual([
         'eleven_turbo_v2_5',
         'eleven_multilingual_v2',
-        'eleven_v3',
       ]);
       expect(result.recommendedModel).toBe('eleven_multilingual_v2');
     });
@@ -292,6 +292,62 @@ describe('ElevenLabsVoiceSyncService', () => {
         BadRequestException,
       );
       expect(repository.find).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('listAvailableModels', () => {
+    it('keeps only text-to-speech-capable models, dropping voice-conversion-only ones', async () => {
+      fetchMock.mockResolvedValue({
+        ok: true,
+        json: async () => [
+          {
+            model_id: 'eleven_v3',
+            name: 'Eleven v3',
+            can_do_text_to_speech: true,
+          },
+          {
+            model_id: 'eleven_multilingual_v2',
+            name: 'Eleven Multilingual v2',
+            can_do_text_to_speech: true,
+          },
+          {
+            model_id: 'eleven_english_sts_v2',
+            name: 'Eleven English v2',
+            can_do_text_to_speech: false,
+          },
+        ],
+      });
+
+      const result = await service.listAvailableModels();
+
+      expect(result).toEqual([
+        { modelId: 'eleven_v3', name: 'Eleven v3' },
+        { modelId: 'eleven_multilingual_v2', name: 'Eleven Multilingual v2' },
+      ]);
+    });
+
+    it('is a single account-wide call, not per-voice', async () => {
+      fetchMock.mockResolvedValue({ ok: true, json: async () => [] });
+
+      await service.listAvailableModels();
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0][0]).toContain('/v1/models');
+    });
+
+    it('rejects when ElevenLabs is not configured on this environment', async () => {
+      configService.voicePreview.elevenlabsApiKey = undefined;
+      await expect(service.listAvailableModels()).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a non-200 from ElevenLabs rather than returning an empty list', async () => {
+      fetchMock.mockResolvedValue({ ok: false, status: 500 });
+      await expect(service.listAvailableModels()).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 });
