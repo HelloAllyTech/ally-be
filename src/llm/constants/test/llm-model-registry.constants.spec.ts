@@ -1,4 +1,5 @@
 import {
+  canonicalProvider,
   getLlmModels,
   LLM_MODEL_REGISTRY,
   LlmRuntime,
@@ -31,6 +32,39 @@ describe('provider × runtime matrix', () => {
 
   it('returns nothing for a provider the code cannot run', () => {
     expect(runtimesForProvider('cohere')).toEqual([]);
+  });
+
+  // Self-hosted providers were selectable as llm_configs before the catalog
+  // replaced that layer; dropping them would be a silent loss of capability.
+  // Only the voice agent can reach them — ally-be and ally-ai have no client.
+  it.each(['ollama', 'vllm'])(
+    'keeps %s available, voice-runtime only',
+    (provider) => {
+      expect(runtimesForProvider(provider)).toEqual([LlmRuntime.AI_LEARN]);
+      expect(runtimesForProvider(provider)).not.toContain(LlmRuntime.ALLY_BE);
+      expect(runtimesForProvider(provider)).not.toContain(LlmRuntime.ALLY_AI);
+    },
+  );
+
+  // 'google' is what every Gemini llm_configs row and language jsonb stores;
+  // 'gemini' is what the voice runtime's enum calls it. ai-learn already treats
+  // them as one (factory.py: `provider == GEMINI or provider == "google"`), so
+  // ally-be must too, or a stored 'google' resolves to no runtime and its
+  // models get dropped from every picker.
+  it('accepts google as an alias for gemini', () => {
+    expect(canonicalProvider('google')).toBe('gemini');
+    expect(canonicalProvider('GOOGLE')).toBe('gemini');
+    expect(canonicalProvider(' Google ')).toBe('gemini');
+    expect(runtimesForProvider('google')).toEqual(
+      PROVIDER_RUNTIME_MATRIX.gemini,
+    );
+  });
+
+  it('leaves a canonical or unknown name untouched', () => {
+    expect(canonicalProvider('openai')).toBe('openai');
+    expect(canonicalProvider('gemini')).toBe('gemini');
+    expect(canonicalProvider('cohere')).toBe('cohere');
+    expect(canonicalProvider(undefined)).toBe('');
   });
 
   // ai-learn's app/llms/factory.py has no Anthropic branch. If that changes,

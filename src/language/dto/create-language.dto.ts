@@ -83,4 +83,13 @@ export class CreateLanguageDto {
   @IsOptional()
   @IsUUID()
   llmConfigId?: string | null;
+
+  @ApiProperty({
+    description:
+      'Catalog model this language runs (llm_models.id). Takes precedence over llmConfigId, which is retained only as a fallback while the config layer is retired.',
+    required: false,
+  })
+  @IsOptional()
+  @IsUUID()
+  llmModelId?: string | null;
 }

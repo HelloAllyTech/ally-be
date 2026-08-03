@@ -11,7 +11,12 @@ import { modelSupportsTemperature } from 'src/common/util/llm-model.util';
  * Exposed via GET /api/v1/llm/models. See prompt-llm-config-standardization-adr.md.
  */
 
-export type LlmProviderName = 'openai' | 'gemini' | 'anthropic';
+export type LlmProviderName =
+  | 'openai'
+  | 'gemini'
+  | 'anthropic'
+  | 'ollama'
+  | 'vllm';
 
 /** Runtimes that execute LLM calls. A model is only usable on a prompt whose
  *  consuming runtime appears in the model's `runtimes`. */
@@ -51,12 +56,49 @@ export const PROVIDER_RUNTIME_MATRIX: Record<LlmProviderName, LlmRuntime[]> = {
   openai: [LlmRuntime.AI_LEARN, LlmRuntime.ALLY_AI, LlmRuntime.ALLY_BE],
   gemini: [LlmRuntime.AI_LEARN, LlmRuntime.ALLY_AI, LlmRuntime.ALLY_BE],
   anthropic: [LlmRuntime.ALLY_BE],
+  // Self-hosted runtimes. Only the voice agent can reach them —
+  // ally-ai-learn's factory has OLLAMA and VLLM branches pointing at
+  // OLLAMA_BASE_URL / the vLLM endpoint, which live alongside that worker.
+  // ally-be and ally-ai have no client for either, and nothing outside the
+  // voice runtime's network can call them, which is also why the LLM preview
+  // reports them as un-testable from here rather than failing obscurely.
+  ollama: [LlmRuntime.AI_LEARN],
+  vllm: [LlmRuntime.AI_LEARN],
+};
+
+/**
+ * Alternative spellings accepted for a provider, mapped to the canonical name.
+ *
+ * `gemini` is canonical because that is what the voice runtime's `LLMProvider`
+ * enum calls it (ally-ai-learn `app/core/constants.py`). `google` exists only in
+ * ally-be's `LLM_CONFIG_SCHEMA` and the admin dropdown, and is what every
+ * Gemini `llm_configs` row and language jsonb currently stores.
+ *
+ * The runtime already treats the two as one — `factory.py` has an explicit
+ * `provider == LLMProvider.GEMINI or provider == "google"` branch — so this
+ * mirrors a decision already made rather than inventing one.
+ *
+ * Codified as an alias rather than migrated away. Rewriting stored `google` to
+ * `gemini` would be the same hazard as the voice-provider casing migration that
+ * had to be reverted: ally-be deploys before the clients, so between the two
+ * there would be a window where the admin dropdown (which offers `google`)
+ * cannot match the stored value, and saving silently rewrites the field.
+ */
+const PROVIDER_ALIASES: Record<string, LlmProviderName> = {
+  google: 'gemini',
+};
+
+/** Canonical provider name for any accepted spelling; '' when unrecognised. */
+export const canonicalProvider = (provider?: string | null): string => {
+  const name = String(provider ?? '')
+    .trim()
+    .toLowerCase();
+  return PROVIDER_ALIASES[name] ?? name;
 };
 
 /** Runtimes for a provider; empty for a provider the code cannot run at all. */
 export const runtimesForProvider = (provider: string): LlmRuntime[] =>
-  PROVIDER_RUNTIME_MATRIX[String(provider).toLowerCase() as LlmProviderName] ??
-  [];
+  PROVIDER_RUNTIME_MATRIX[canonicalProvider(provider) as LlmProviderName] ?? [];
 
 const OPENAI_RUNTIMES = PROVIDER_RUNTIME_MATRIX.openai;
 const GEMINI_RUNTIMES = PROVIDER_RUNTIME_MATRIX.gemini;

@@ -57,6 +57,7 @@ import {
   resolveSessionSttConfig,
   shouldServeMultilingual,
 } from '../util/scenario.util';
+import { LlmModelsRepository } from 'src/llm/repository/llm-models.repository';
 import { ScenarioVersionRepository } from '../repository/scenario-version.repository';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { PromptTranslationService } from 'src/prompt/service/prompt-translation.service';
@@ -135,6 +136,7 @@ export class ScenarioSharedService {
     private scenarioVoiceRepository: ScenarioVoicesRepository,
     private sttConfigsRepository: SttConfigsRepository,
     private llmConfigsRepository: LlmConfigsRepository,
+    private llmModelsRepository: LlmModelsRepository,
     private scenarioSessionRecordingRepository: ScenarioSessionRecordingRepository,
     private sessionEventSharedService: SessionEventSharedService,
     private sharedLanguageService: SharedLanguageService,
@@ -661,21 +663,28 @@ export class ScenarioSharedService {
     // Resolve the STT registry rows this session might need — the simulation's
     // pick for this language and the language's own default — in one query.
     const sessionLanguageId = languageDetails?.id ?? metadata?.languageId;
-    const [sttRegistryById, llmRegistryById] = await Promise.all([
-      this.sttConfigsRepository.findMapByIds(
-        collectProviderConfigIds(
-          metadata?.sttConfigByLanguage as
-            | Record<string, any>
-            | null
-            | undefined,
-          sessionLanguageId,
-          languageDetails?.sttConfigId,
+    const [sttRegistryById, llmRegistryById, llmCatalogById] =
+      await Promise.all([
+        this.sttConfigsRepository.findMapByIds(
+          collectProviderConfigIds(
+            metadata?.sttConfigByLanguage as
+              | Record<string, any>
+              | null
+              | undefined,
+            sessionLanguageId,
+            languageDetails?.sttConfigId,
+          ),
         ),
-      ),
-      this.llmConfigsRepository.findMapByIds(
-        collectProviderConfigIds(null, null, languageDetails?.llmConfigId),
-      ),
-    ]);
+        this.llmConfigsRepository.findMapByIds(
+          collectProviderConfigIds(null, null, languageDetails?.llmConfigId),
+        ),
+        // The catalog model this language runs, which outranks the llm_configs
+        // row. One row, so a findOne rather than a map lookup would do — a map
+        // keeps the resolver's signature uniform with the other rungs.
+        this.llmModelsRepository.findMapByIds(
+          languageDetails?.llmModelId ? [languageDetails.llmModelId] : [],
+        ),
+      ]);
 
     const roomMetadata = {
       version: '1.0',
@@ -710,6 +719,7 @@ export class ScenarioSharedService {
           llmRegistryById,
           languageDetails,
           STT_LLM_PROVIDER_CONFIG.llm,
+          llmCatalogById,
         ),
         events: allEvents,
         triggerEvents: Array.from(triggerEvents),

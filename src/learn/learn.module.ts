@@ -21,6 +21,7 @@ import { LearnEventProcessor } from './processor/learn-event.processor';
 import { ScenarioSessionEvents } from './entity/scenario-session-events.entity';
 import { ScenariosRepository } from './repository/scenario.repository';
 import { ScenarioVersion } from './entity/scenario-version.entity';
+import { LlmModule } from 'src/llm/llm.module';
 import { ScenarioVersionRepository } from './repository/scenario-version.repository';
 import { ScenarioVersionService } from './service/scenario-version.service';
 import { ScenarioVoices } from './entity/scenario-voices.entity';
@@ -127,6 +128,9 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
 
 @Module({
   imports: [
+    // Languages now point at an llm_models catalog row; the resolver needs to
+    // read it when assembling session metadata.
+    LlmModule,
     TypeOrmModule.forFeature([
       Scenarios,
       ScenarioSessions,

@@ -13,6 +13,6 @@ import { LlmModelService } from './service/llm-model.service';
   imports: [TypeOrmModule.forFeature([LlmModels])],
   controllers: [LlmController],
   providers: [LlmModelService, LlmModelsRepository],
-  exports: [LlmModelService],
+  exports: [LlmModelService, LlmModelsRepository],
 })
 export class LlmModule {}

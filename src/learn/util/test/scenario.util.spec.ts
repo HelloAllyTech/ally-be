@@ -6,6 +6,7 @@ import {
   hydrateAdminScenarioFromVersionConfig,
   collectProviderConfigIds,
   resolveSessionSttConfig,
+  resolveSessionLlmConfig,
 } from '../scenario.util';
 import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
 import { CreateScenarioDto } from '../../dto/create-scenario.dto';
@@ -889,5 +890,81 @@ describe('Scenario Util', () => {
       expect(collectProviderConfigIds({ '9': null }, 9, undefined)).toEqual([]);
       expect(collectProviderConfigIds({ '9': '' }, 9, undefined)).toEqual([]);
     });
+  });
+});
+
+describe('resolveSessionLlmConfig — catalog rung', () => {
+  const DEFAULT = { provider: 'openai', config: { model: 'gpt-4o-mini' } };
+  const catalog = new Map<string, any>([
+    ['m1', { provider: 'gemini', model: 'gemini-2.5-flash' }],
+  ]);
+  const configs = new Map<string, any>([
+    ['c1', { provider: 'openai', config: { model: 'gpt-4o' } }],
+  ]);
+
+  it('prefers the catalog model over the legacy config row', () => {
+    expect(
+      resolveSessionLlmConfig(
+        configs,
+        { llmModelId: 'm1', llmConfigId: 'c1' },
+        DEFAULT,
+        catalog,
+      ),
+    ).toEqual({ provider: 'gemini', config: { model: 'gemini-2.5-flash' } });
+  });
+
+  // The config rung is retained precisely so an environment whose backfill did
+  // not match keeps working.
+  it('falls back to the config row when the catalog id does not resolve', () => {
+    expect(
+      resolveSessionLlmConfig(
+        configs,
+        { llmModelId: 'missing', llmConfigId: 'c1' },
+        DEFAULT,
+        catalog,
+      ),
+    ).toEqual({ provider: 'openai', config: { model: 'gpt-4o' } });
+  });
+
+  it('falls through to the legacy jsonb, then the platform default', () => {
+    expect(
+      resolveSessionLlmConfig(
+        new Map(),
+        {
+          llmProviderConfig: {
+            provider: 'google',
+            config: { model: 'legacy' },
+          },
+        },
+        DEFAULT,
+        catalog,
+      ),
+    ).toEqual({ provider: 'google', config: { model: 'legacy' } });
+
+    expect(resolveSessionLlmConfig(new Map(), {}, DEFAULT, catalog)).toEqual(
+      DEFAULT,
+    );
+  });
+
+  it('behaves as before when no catalog map is supplied', () => {
+    expect(
+      resolveSessionLlmConfig(
+        configs,
+        { llmModelId: 'm1', llmConfigId: 'c1' },
+        DEFAULT,
+      ),
+    ).toEqual({ provider: 'openai', config: { model: 'gpt-4o' } });
+  });
+
+  it('ignores a catalog row missing a provider or model', () => {
+    const broken = new Map<string, any>([['m1', { provider: 'gemini' }]]);
+    expect(
+      resolveSessionLlmConfig(
+        configs,
+        { llmModelId: 'm1', llmConfigId: 'c1' },
+        DEFAULT,
+        broken,
+      ),
+    ).toEqual({ provider: 'openai', config: { model: 'gpt-4o' } });
   });
 });

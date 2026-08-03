@@ -16,6 +16,7 @@ import { ScenarioSessionTagCategory } from '../../enum/scenario-session-tag-cate
 import { ScenarioVoicesRepository } from '../../repository/scenario-voices.repository';
 import { SttConfigsRepository } from '../../repository/stt-configs.repository';
 import { LlmConfigsRepository } from '../../repository/llm-configs.repository';
+import { LlmModelsRepository } from 'src/llm/repository/llm-models.repository';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { NotFoundException } from '@nestjs/common';
@@ -176,6 +177,12 @@ describe('ScenarioSharedService', () => {
       findMapByIds: jest.fn().mockResolvedValue(new Map()),
       listConfigs: jest.fn().mockResolvedValue([]),
     };
+    // Catalog rung: languages now point at an llm_models row ahead of the
+    // llm_configs one.
+    const mockLlmModelsRepository = {
+      findMapByIds: jest.fn().mockResolvedValue(new Map()),
+      listModels: jest.fn().mockResolvedValue([]),
+    };
 
     const mockSessionEventSharedService = {
       getSessionEventsByScenarioId: jest.fn(),
@@ -233,6 +240,10 @@ describe('ScenarioSharedService', () => {
         {
           provide: LlmConfigsRepository,
           useValue: mockLlmConfigsRepository,
+        },
+        {
+          provide: LlmModelsRepository,
+          useValue: mockLlmModelsRepository,
         },
         {
           provide: SessionEventSharedService,

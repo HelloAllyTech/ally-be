@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import {
+  canonicalProvider,
   getLlmModels,
   LlmModelInfo,
   LlmRuntime,
@@ -112,9 +113,9 @@ export class LlmModelService {
    * This is the boundary the catalog-in-DB decision rests on.
    */
   private assertRunnableProvider(provider: string): string {
-    const normalised = String(provider ?? '')
-      .trim()
-      .toLowerCase();
+    // Store the canonical name, so the catalog never accumulates two spellings
+    // of the same provider.
+    const normalised = canonicalProvider(provider);
     if (runtimesForProvider(normalised).length === 0) {
       throw new BadRequestException(
         `No runtime can execute "${provider}". Supported providers: ${Object.keys(
@@ -165,7 +166,11 @@ export class LlmModelService {
       return (
         rows
           .map((row) => ({
-            provider: row.provider as LlmModelInfo['provider'],
+            // Canonical spelling only: a stored 'google' is served as 'gemini'
+            // so the pickers, which group by provider, see one name.
+            provider: canonicalProvider(
+              row.provider,
+            ) as LlmModelInfo['provider'],
             model: row.model,
             label: row.label,
             supportsTemperature: row.supportsTemperature,

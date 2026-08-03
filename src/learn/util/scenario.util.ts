@@ -384,18 +384,55 @@ export const resolveSessionSttConfig = (
  * precedence stops at the language:
  *   languages.llmConfigId → languages.llmProviderConfig → the platform default.
  */
+/**
+ * Reduce an `llm_models` catalog row to the `{ provider, config }` shape the
+ * runtime expects.
+ *
+ * A catalog row stores `model` as a column rather than inside a `config` blob,
+ * so it needs lifting into the same shape an `llm_configs` row produces. The
+ * catalog carries no temperature — that is a per-prompt / per-simulation
+ * concern, and no LLM config ever set one, which is why this layer replaced it.
+ */
+export const toResolvedCatalogModel = (
+  row: { provider?: string; model?: string } | null | undefined,
+): ResolvedProviderConfig | null => {
+  if (!row?.provider || !row?.model) return null;
+  return { provider: row.provider, config: { model: row.model } };
+};
+
+/**
+ * Resolve the LLM for a session.
+ *
+ * Precedence: the language's catalog model → its legacy `llm_configs` row →
+ * the pre-registry jsonb column → the platform default. There is no
+ * simulation-level layer, deliberately: a prompt's model override outranks this
+ * (agent factory), so a per-simulation picker would be silently defeated.
+ *
+ * The `llm_configs` rung is retained only so a language whose catalog backfill
+ * did not match keeps behaving as it did. Once every environment is mapped it
+ * can go, together with the table.
+ */
 export const resolveSessionLlmConfig = (
   registryById: Map<string, RegistryRow>,
   language:
     | {
+        llmModelId?: string | null;
         llmConfigId?: string | null;
         llmProviderConfig?: Record<string, any> | null;
       }
     | null
     | undefined,
   defaultLlmConfig: ResolvedProviderConfig,
-): ResolvedProviderConfig =>
-  resolveSessionProviderConfig(
+  catalogById?: Map<string, { provider?: string; model?: string }>,
+): ResolvedProviderConfig => {
+  if (language?.llmModelId && catalogById) {
+    const resolved = toResolvedCatalogModel(
+      catalogById.get(language.llmModelId),
+    );
+    if (resolved) return resolved;
+  }
+
+  return resolveSessionProviderConfig(
     null,
     null,
     registryById,
@@ -404,6 +441,7 @@ export const resolveSessionLlmConfig = (
     defaultLlmConfig,
     toResolvedLlmConfig,
   );
+};
 
 /**
  * Registry ids a session might need resolved for one service: the simulation's

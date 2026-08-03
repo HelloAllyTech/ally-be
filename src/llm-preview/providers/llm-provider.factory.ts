@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { AppConfigService } from 'src/config/config.service';
+import { canonicalProvider } from 'src/llm/constants/llm-model-registry.constants';
 import { AnthropicLlmProvider } from './anthropic-llm.provider';
 import { GeminiLlmProvider } from './gemini-llm.provider';
 import { ILlmProvider } from './llm-provider.interface';
@@ -9,11 +10,9 @@ import { OpenAiLlmProvider } from './openai-llm.provider';
  * Providers this preview can call.
  *
  * `LLM_CONFIG_SCHEMA` accepts `openai | google | gemini | ollama | vllm` while
- * `LLM_MODEL_REGISTRY` uses `openai | gemini | anthropic` — the vocabulary
- * disagreement recorded as a known defect in the ADR. Rather than pretend it is
- * resolved, this normalises on read: `google` and `gemini` are the same
- * provider here, exactly as ai-learn's `infer_provider_from_model` already
- * treats them. Reconciling the stored values is separate, later work.
+ * the model catalog uses `openai | gemini | anthropic`. The two spellings of
+ * Gemini are reconciled by the shared `canonicalProvider` helper rather than
+ * locally here — see the alias note in llm-model-registry.constants.ts.
  */
 export enum PreviewableLlmProvider {
   OPENAI = 'openai',
@@ -27,16 +26,10 @@ const LOCAL_ONLY_PROVIDERS = new Set(['ollama', 'vllm']);
 export const normaliseProvider = (
   provider: string | undefined,
 ): PreviewableLlmProvider | undefined => {
-  const name = String(provider ?? '')
-    .trim()
-    .toLowerCase();
-  if (name === 'openai') return PreviewableLlmProvider.OPENAI;
-  // 'google' is the spelling stored by LLM_CONFIG_SCHEMA; 'gemini' by the model
-  // registry. Same provider.
-  if (name === 'gemini' || name === 'google')
-    return PreviewableLlmProvider.GEMINI;
-  if (name === 'anthropic') return PreviewableLlmProvider.ANTHROPIC;
-  return undefined;
+  const name = canonicalProvider(provider);
+  return (Object.values(PreviewableLlmProvider) as string[]).includes(name)
+    ? (name as PreviewableLlmProvider)
+    : undefined;
 };
 
 @Injectable()

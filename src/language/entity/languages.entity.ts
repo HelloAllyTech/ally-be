@@ -32,6 +32,17 @@ export class Languages extends BaseWithoutTenantEntity {
   llmConfigId?: string | null;
 
   /**
+   * Catalog model this language runs, replacing `llmConfigId` for LLM.
+   *
+   * Every llm_configs row was `{provider, model}` with no temperature — the
+   * same information a catalog row holds — so the config layer added nothing
+   * for LLM and is being retired. `llmConfigId` is kept as a fallback rung
+   * until every environment is backfilled.
+   */
+  @Column({ type: 'uuid', nullable: true })
+  llmModelId?: string | null;
+
+  /**
    * @deprecated Superseded by `sttConfigId` (the stt_configs registry). Still
    * read as a fallback for rows the registry migration could not map; dropped
    * once nothing reads it.
