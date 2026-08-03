@@ -1,3 +1,4 @@
+import { ServiceUnavailableException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import axios from 'axios';
@@ -371,8 +372,7 @@ describe('AiService', () => {
     it('should enhance summary successfully', async () => {
       const mockResponse = {
         data: {
-          enhanced_text: 'Enhanced summary text',
-          improvements: ['clarity', 'grammar'],
+          enhanced_content: 'Enhanced summary text',
         },
       };
       (mockedAxios as any).mockResolvedValue(mockResponse);
@@ -383,17 +383,41 @@ describe('AiService', () => {
       expect(result).toEqual(mockResponse.data);
     });
 
-    it('should handle enhance error gracefully', async () => {
+    it('should cap the request timeout well below the 5-minute default', async () => {
+      (mockedAxios as any).mockResolvedValue({
+        data: { enhanced_content: 'Enhanced summary text' },
+      });
+
+      await service.enhance(mockSummary);
+
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({ timeout: 45_000 }),
+      );
+    });
+
+    // The counsellor is waiting on the wand: a swallowed failure used to return
+    // {} with a 200, so the button silently did nothing.
+    it('should throw ServiceUnavailable when the AI service errors', async () => {
       const error = new Error('Enhance failed');
       (mockedAxios as any).mockRejectedValue(error);
 
-      // This method returns {} on error (doesn't throw)
-      const result = await service.enhance(mockSummary);
-
-      expect(result).toEqual({});
+      await expect(service.enhance(mockSummary)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.stringContaining('errMsg=Enhance failed'),
         expect.anything(),
+      );
+    });
+
+    it('should throw ServiceUnavailable on a 200 with no enhanced_content', async () => {
+      (mockedAxios as any).mockResolvedValue({ data: {} });
+
+      await expect(service.enhance(mockSummary)).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.stringContaining('enhance returned no enhanced_content'),
       );
     });
   });

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import axios, { AxiosError } from 'axios';
 import { v4 as uuidv4 } from 'uuid';
@@ -615,10 +615,31 @@ export class AiService {
       content: summary,
       prompts,
     };
-    const response = await this.makeRequest<
-      EnhanceTextResponse,
-      EnhanceTextRequest
-    >(ENDPOINTS.ENHANCE, request);
+    // The counsellor is sitting on the Enhance button waiting for this, so it
+    // must fail loudly and quickly. It used to swallow every failure
+    // (`throwError` defaulting to false returns `{}` with a 200), which made a
+    // dead AI service look like a wand that simply does nothing — invisible to
+    // the counsellor AND to us. 45s is well under the 5-minute default but
+    // still leaves room for a long narrative field on a slower model.
+    let response: EnhanceTextResponse;
+    try {
+      response = await this.makeRequest<
+        EnhanceTextResponse,
+        EnhanceTextRequest
+      >(ENDPOINTS.ENHANCE, request, true, 'post', undefined, false, 45_000);
+    } catch {
+      // makeRequest has already logged the failure in full detail.
+      throw new ServiceUnavailableException('Content enhancement failed');
+    }
+    // A 200 with no content is the same dead end as an error: never hand the
+    // caller an empty enhancement it would silently write over the field.
+    if (!response?.enhanced_content) {
+      this.logger.error(
+        `AI Request enhance returned no enhanced_content | ` +
+          `response=${JSON.stringify(response)}`,
+      );
+      throw new ServiceUnavailableException('Content enhancement failed');
+    }
     return response;
   }
 

@@ -616,6 +616,12 @@ export class ChatController {
       },
     },
   })
+  @ApiResponse({
+    status: 503,
+    description:
+      'The AI service was unavailable or returned no enhancement. Callers must ' +
+      'surface this — never treat it as an empty enhancement and write it back.',
+  })
   @ApiBody({
     description: 'Summary content to enhance',
     schema: {
