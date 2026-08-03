@@ -42,6 +42,15 @@ export class ScenarioSessionTurnMetrics extends BaseEntity {
   @Column({ nullable: true })
   eouDelayMs?: number;
 
+  /**
+   * Pure STT finalization time (LiveKit EOUMetrics.transcription_delay):
+   * time to obtain the transcript after end of user speech, isolated from
+   * VAD-wait/EOU-decision time which eouDelayMs bundles together. Added to
+   * pinpoint regional-language STT latency vs. endpointing configuration.
+   */
+  @Column({ nullable: true })
+  sttFinalizeMs?: number;
+
   /** LLM time-to-first-token (LiveKit metrics). */
   @Column({ nullable: true })
   llmTtftMs?: number;

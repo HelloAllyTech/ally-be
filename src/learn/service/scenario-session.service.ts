@@ -2073,6 +2073,7 @@ export class ScenarioSessionService {
       invocationId: metrics.invocation_id,
       responseLatencyMs: metrics.response_latency_ms,
       eouDelayMs: metrics.eou_delay_ms,
+      sttFinalizeMs: metrics.stt_finalize_ms,
       llmTtftMs: metrics.llm_ttft_ms,
       ttsTtfbMs: metrics.tts_ttfb_ms,
       orchestrationMs: metrics.orchestration_ms,

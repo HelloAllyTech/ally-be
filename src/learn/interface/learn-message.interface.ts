@@ -46,6 +46,8 @@ export interface LearnTurnMetricsData {
   invocation_id?: string;
   response_latency_ms: number;
   eou_delay_ms?: number;
+  /** Pure STT finalization time (LiveKit EOUMetrics.transcription_delay), isolated from VAD-wait/EOU-decision time bundled into eou_delay_ms. */
+  stt_finalize_ms?: number;
   llm_ttft_ms?: number;
   tts_ttfb_ms?: number;
   orchestration_ms?: number;
