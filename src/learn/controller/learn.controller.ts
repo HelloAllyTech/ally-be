@@ -45,11 +45,14 @@ import { ScenarioSortBy } from '../type/scenario.type';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import {
   ElevenLabsBulkSyncSummary,
-  ElevenLabsModelInfo,
   ElevenLabsVoiceLookupResult,
   ElevenLabsVoiceSyncResult,
   ElevenLabsVoiceSyncService,
 } from '../service/elevenlabs-voice-sync.service';
+import {
+  TtsCatalogEntry,
+  TtsCatalogService,
+} from '../service/tts-catalog.service';
 import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
@@ -113,6 +116,7 @@ import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 export class LearnController {
   constructor(
     private readonly elevenLabsVoiceSyncService: ElevenLabsVoiceSyncService,
+    private readonly ttsCatalogService: TtsCatalogService,
     private readonly scenarioService: ScenarioService,
     private readonly scenarioSessionService: ScenarioSessionService,
     private readonly scenarioTenantService: ScenarioTenantService,
@@ -1104,12 +1108,23 @@ export class LearnController {
 
   @ApiOperation({
     summary:
-      "ElevenLabs' account-wide, text-to-speech-capable model catalog — not tied to any one voice",
+      "A TTS provider's account-wide model/voice catalog — not tied to any one voice",
   })
+  @ApiQuery({ name: 'provider', required: true })
+  @ApiQuery({ name: 'languageCode', required: false })
+  @ApiQuery({ name: 'voiceProvider', required: false })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_VOICE])
-  @Get('scenario-voices/elevenlabs-models')
-  async getElevenLabsModels(): Promise<ElevenLabsModelInfo[]> {
-    return this.elevenLabsVoiceSyncService.listAvailableModels();
+  @Get('scenario-voices/tts-catalog')
+  async getTtsCatalog(
+    @Query('provider') provider: string,
+    @Query('languageCode') languageCode?: string,
+    @Query('voiceProvider') voiceProvider?: string,
+  ): Promise<TtsCatalogEntry[]> {
+    return this.ttsCatalogService.getCatalog({
+      provider,
+      languageCode,
+      voiceProvider,
+    });
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_VOICES])

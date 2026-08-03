@@ -1,4 +1,5 @@
 import { ElevenLabsVoiceSyncService } from '../../service/elevenlabs-voice-sync.service';
+import { TtsCatalogService } from '../../service/tts-catalog.service';
 import { ElevenLabsVoiceType } from '../../constants/elevenlabs-voice-type.constants';
 import { Test, TestingModule } from '@nestjs/testing';
 import { LearnController } from '../learn.controller';
@@ -42,6 +43,7 @@ describe('LearnController', () => {
   let scenarioSessionService: jest.Mocked<ScenarioSessionService>;
   let scenarioTenantService: jest.Mocked<ScenarioTenantService>;
   let elevenLabsVoiceSyncService: jest.Mocked<ElevenLabsVoiceSyncService>;
+  let ttsCatalogService: jest.Mocked<TtsCatalogService>;
 
   const mockTokenUser: TokenUser = {
     id: 123,
@@ -309,6 +311,12 @@ describe('LearnController', () => {
           },
         },
         {
+          // Every provider's model/voice catalog behind one contract; the
+          // controller only delegates, so a stub is enough here too.
+          provide: TtsCatalogService,
+          useValue: { getCatalog: jest.fn() },
+        },
+        {
           provide: LlmConfigService,
           useValue: {
             getConfigs: jest.fn(),
@@ -352,6 +360,7 @@ describe('LearnController', () => {
     scenarioSessionService = module.get(ScenarioSessionService);
     scenarioTenantService = module.get(ScenarioTenantService);
     elevenLabsVoiceSyncService = module.get(ElevenLabsVoiceSyncService);
+    ttsCatalogService = module.get(TtsCatalogService);
   });
 
   afterEach(() => {
@@ -1780,15 +1789,34 @@ describe('LearnController', () => {
     });
   });
 
-  describe('getElevenLabsModels', () => {
-    it('delegates to the sync service for the account-wide catalog', async () => {
-      const models = [
-        { modelId: 'eleven_v3', name: 'Eleven v3' },
-        { modelId: 'eleven_multilingual_v2', name: 'Eleven Multilingual v2' },
+  describe('getTtsCatalog', () => {
+    it('delegates to the shared catalog service with every query param', async () => {
+      const entries = [
+        { value: 'eleven_v3', label: 'Eleven v3' },
+        { value: 'eleven_multilingual_v2', label: 'Eleven Multilingual v2' },
       ];
-      elevenLabsVoiceSyncService.listAvailableModels.mockResolvedValue(models);
+      ttsCatalogService.getCatalog.mockResolvedValue(entries);
 
-      await expect(controller.getElevenLabsModels()).resolves.toEqual(models);
+      await expect(
+        controller.getTtsCatalog('HUME', 'en-IN', 'HUME_AI'),
+      ).resolves.toEqual(entries);
+      expect(ttsCatalogService.getCatalog).toHaveBeenCalledWith({
+        provider: 'HUME',
+        languageCode: 'en-IN',
+        voiceProvider: 'HUME_AI',
+      });
+    });
+
+    it('passes undefined through for the optional params rather than empty strings', async () => {
+      ttsCatalogService.getCatalog.mockResolvedValue([]);
+
+      await controller.getTtsCatalog('ELEVENLABS');
+
+      expect(ttsCatalogService.getCatalog).toHaveBeenCalledWith({
+        provider: 'ELEVENLABS',
+        languageCode: undefined,
+        voiceProvider: undefined,
+      });
     });
   });
 });
