@@ -1,3 +1,4 @@
+import { ElevenLabsVoiceSyncService } from '../../service/elevenlabs-voice-sync.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { LearnController } from '../learn.controller';
 import { ScenarioService } from '../../service/scenario.service';
@@ -293,6 +294,12 @@ describe('LearnController', () => {
             updateConfig: jest.fn(),
             deleteConfig: jest.fn(),
           },
+        },
+        {
+          // Reads a voice's creation type from ElevenLabs; the controller only
+          // delegates, so a stub is enough here.
+          provide: ElevenLabsVoiceSyncService,
+          useValue: { syncVoice: jest.fn() },
         },
         {
           provide: LlmConfigService,

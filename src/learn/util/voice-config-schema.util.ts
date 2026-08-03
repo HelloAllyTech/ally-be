@@ -55,6 +55,17 @@ export const VOICE_CONFIG_SCHEMA: Record<TtsProvider, VoiceConfigField[]> = {
   [TtsProvider.ELEVENLABS]: [
     GENDER_FIELD,
     { key: 'model', required: true, type: 'string' },
+    /**
+     * How the voice was created, which decides whether eleven_v3 can use it.
+     * Optional so every existing row stays valid; populated by the ElevenLabs
+     * sync rather than typed by hand. See elevenlabs-voice-type.constants.ts.
+     */
+    {
+      key: 'voice_type',
+      required: false,
+      type: 'string',
+      options: ['pvc', 'ivc', 'voice_design', 'premade', 'unknown'],
+    },
     {
       key: 'voice_id',
       required: true,

@@ -43,6 +43,10 @@ import { CreateScenarioEventsDto } from '../dto/create-scenario-events.dto';
 import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioSortBy } from '../type/scenario.type';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import {
+  ElevenLabsVoiceSyncResult,
+  ElevenLabsVoiceSyncService,
+} from '../service/elevenlabs-voice-sync.service';
 import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
@@ -105,6 +109,7 @@ import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 })
 export class LearnController {
   constructor(
+    private readonly elevenLabsVoiceSyncService: ElevenLabsVoiceSyncService,
     private readonly scenarioService: ScenarioService,
     private readonly scenarioSessionService: ScenarioSessionService,
     private readonly scenarioTenantService: ScenarioTenantService,
@@ -1060,6 +1065,18 @@ export class LearnController {
       "Filter by config gender (comma-separated). Use 'unset' to find voices " +
       'with no gender — those drop their language out of simulation creation.',
   })
+  @ApiOperation({
+    summary:
+      "Pull an ElevenLabs voice's creation type (IVC/PVC/Voice Design) so v3 compatibility is visible",
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_VOICE])
+  @Post('scenario-voices/:id/sync-elevenlabs')
+  async syncElevenLabsVoice(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<ElevenLabsVoiceSyncResult> {
+    return this.elevenLabsVoiceSyncService.syncVoice(id);
+  }
+
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_VOICES])
   @Get('scenario-voices')
   async getScenarioVoices(

@@ -30,6 +30,7 @@ import { SttConfigsRepository } from './repository/stt-configs.repository';
 import { SttConfigService } from './service/stt-config.service';
 import { LlmConfigsRepository } from './repository/llm-configs.repository';
 import { LlmConfigService } from './service/llm-config.service';
+import { ElevenLabsVoiceSyncService } from './service/elevenlabs-voice-sync.service';
 import { LanguagesRepository } from '../language/repository/languages.repository';
 import { SimulationCreditsController } from './controller/simulation-credits.controller';
 import { SimulationCreditsService } from './service/simulation-credits.service';
@@ -215,6 +216,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     SttConfigService,
     LlmConfigsRepository,
     LlmConfigService,
+    ElevenLabsVoiceSyncService,
     LanguagesRepository,
     SimulationCreditsService,
     SimulationCreditsRepository,
