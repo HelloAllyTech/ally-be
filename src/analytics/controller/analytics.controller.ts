@@ -18,6 +18,9 @@ import { CompetencyMapAnalyticsService } from '../service/competency-map-analyti
 import { CompletionRateAnalyticsService } from '../service/completion-rate-analytics.service';
 import { LanguageMixAnalyticsService } from '../service/language-mix-analytics.service';
 import { OrgHealthAnalyticsService } from '../service/org-health-analytics.service';
+import { OrgSessionDistributionAnalyticsService } from '../service/org-session-distribution-analytics.service';
+import { LearnerKpisAnalyticsService } from '../service/learner-kpis-analytics.service';
+import { ScenarioUsageAnalyticsService } from '../service/scenario-usage-analytics.service';
 import { QualityDistributionAnalyticsService } from '../service/quality-distribution-analytics.service';
 import { ScribeAdoptionAnalyticsService } from '../service/scribe-adoption-analytics.service';
 import { SkillGrowthAnalyticsService } from '../service/skill-growth-analytics.service';
@@ -122,6 +125,18 @@ import {
   OrgHealthResponseDto,
 } from '../dto/org-health-analytics.dto';
 import {
+  OrgSessionDistributionQueryDto,
+  OrgSessionDistributionResponseDto,
+} from '../dto/org-session-distribution-analytics.dto';
+import {
+  LearnerKpisQueryDto,
+  LearnerKpisResponseDto,
+} from '../dto/learner-kpis-analytics.dto';
+import {
+  ScenarioUsageQueryDto,
+  ScenarioUsageResponseDto,
+} from '../dto/scenario-usage-analytics.dto';
+import {
   ScribeAdoptionQueryDto,
   ScribeAdoptionResponseDto,
 } from '../dto/scribe-adoption-analytics.dto';
@@ -166,6 +181,9 @@ export class AnalyticsController {
     private readonly trackDropoffAnalyticsService: TrackDropoffAnalyticsService,
     private readonly coachingLoopAnalyticsService: CoachingLoopAnalyticsService,
     private readonly orgHealthAnalyticsService: OrgHealthAnalyticsService,
+    private readonly orgSessionDistributionAnalyticsService: OrgSessionDistributionAnalyticsService,
+    private readonly learnerKpisAnalyticsService: LearnerKpisAnalyticsService,
+    private readonly scenarioUsageAnalyticsService: ScenarioUsageAnalyticsService,
     private readonly scribeAdoptionAnalyticsService: ScribeAdoptionAnalyticsService,
   ) {}
 
@@ -579,6 +597,76 @@ export class AnalyticsController {
     @Query() query: OrgHealthQueryDto,
   ): Promise<OrgHealthResponseDto> {
     return this.orgHealthAnalyticsService.getOrgHealth(query);
+  }
+
+  @Get('org-session-distribution')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary:
+      'Orgs bucketed by avg session time and avg session frequency per learner (super-admin)',
+    description:
+      'How the whole customer base is shaped, not which specific org is ' +
+      'struggling (see org-health for that): all-time average minutes-played ' +
+      'per learner, and all-time average completed sessions per learner, each ' +
+      'bucketed into bands across every non-test org. Meaningful ONLY ' +
+      "platform-wide — a single org's average has no band without every " +
+      'other org to compare against. Suppressed (empty bands) below ' +
+      'minGroupSize orgs.',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Org session-time/frequency distribution retrieved successfully',
+    type: OrgSessionDistributionResponseDto,
+  })
+  async getOrgSessionDistribution(
+    @Query() query: OrgSessionDistributionQueryDto,
+  ): Promise<OrgSessionDistributionResponseDto> {
+    return this.orgSessionDistributionAnalyticsService.getDistribution(query);
+  }
+
+  @Get('learner-kpis')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'LEARNER-role-scoped headline KPIs (super-admin)',
+    description:
+      "The overview endpoint's totalUsers/activeUsers/simulationsCompleted " +
+      'count every account regardless of role, so an admin or counsellor ' +
+      'moves the same numbers a learner does. This is the LEARNER-only cut: ' +
+      'all-time total/active learners, all-time completed sessions ' +
+      'attributed to learners, and an all-time monthly learner-signup trend.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Learner-scoped KPIs retrieved successfully',
+    type: LearnerKpisResponseDto,
+  })
+  async getLearnerKpis(
+    @Query() query: LearnerKpisQueryDto,
+  ): Promise<LearnerKpisResponseDto> {
+    return this.learnerKpisAnalyticsService.getLearnerKpis(query);
+  }
+
+  @Get('scenario-usage')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Most/least-used scenarios, platform-wide (super-admin)',
+    description:
+      'Top and bottom scenarios by all-time completed-session count, across ' +
+      'every non-test tenant — the platform-wide counterpart of the ' +
+      'tenant-scoped "most used simulations" list on the Organization Metrics ' +
+      'dashboard. "Least-used" is among scenarios with >=1 completed ' +
+      'session; a never-completed scenario has no row to rank.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Scenario usage retrieved successfully',
+    type: ScenarioUsageResponseDto,
+  })
+  async getScenarioUsage(
+    @Query() query: ScenarioUsageQueryDto,
+  ): Promise<ScenarioUsageResponseDto> {
+    return this.scenarioUsageAnalyticsService.getScenarioUsage(query);
   }
 
   @Get('scribe-adoption')

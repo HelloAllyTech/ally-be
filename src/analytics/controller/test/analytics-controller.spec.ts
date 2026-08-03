@@ -18,6 +18,9 @@ import { CompetencyMapAnalyticsService } from '../../service/competency-map-anal
 import { TrackDropoffAnalyticsService } from '../../service/track-dropoff-analytics.service';
 import { CoachingLoopAnalyticsService } from '../../service/coaching-loop-analytics.service';
 import { OrgHealthAnalyticsService } from '../../service/org-health-analytics.service';
+import { OrgSessionDistributionAnalyticsService } from '../../service/org-session-distribution-analytics.service';
+import { LearnerKpisAnalyticsService } from '../../service/learner-kpis-analytics.service';
+import { ScenarioUsageAnalyticsService } from '../../service/scenario-usage-analytics.service';
 import { ScribeAdoptionAnalyticsService } from '../../service/scribe-adoption-analytics.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -152,6 +155,18 @@ describe('AnalyticsController', () => {
         {
           provide: OrgHealthAnalyticsService,
           useValue: { getOrgHealth: jest.fn() },
+        },
+        {
+          provide: OrgSessionDistributionAnalyticsService,
+          useValue: { getDistribution: jest.fn() },
+        },
+        {
+          provide: LearnerKpisAnalyticsService,
+          useValue: { getLearnerKpis: jest.fn() },
+        },
+        {
+          provide: ScenarioUsageAnalyticsService,
+          useValue: { getScenarioUsage: jest.fn() },
         },
         {
           provide: ScribeAdoptionAnalyticsService,

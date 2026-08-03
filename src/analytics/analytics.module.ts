@@ -30,6 +30,12 @@ import { CoachingLoopAnalyticsService } from './service/coaching-loop-analytics.
 import { CoachingLoopAnalyticsRepository } from './repository/coaching-loop-analytics.repository';
 import { OrgHealthAnalyticsService } from './service/org-health-analytics.service';
 import { OrgHealthAnalyticsRepository } from './repository/org-health-analytics.repository';
+import { OrgSessionDistributionAnalyticsService } from './service/org-session-distribution-analytics.service';
+import { OrgSessionDistributionAnalyticsRepository } from './repository/org-session-distribution-analytics.repository';
+import { LearnerKpisAnalyticsService } from './service/learner-kpis-analytics.service';
+import { LearnerKpisAnalyticsRepository } from './repository/learner-kpis-analytics.repository';
+import { ScenarioUsageAnalyticsService } from './service/scenario-usage-analytics.service';
+import { ScenarioUsageAnalyticsRepository } from './repository/scenario-usage-analytics.repository';
 import { ScribeAdoptionAnalyticsService } from './service/scribe-adoption-analytics.service';
 import { ScribeAdoptionAnalyticsRepository } from './repository/scribe-adoption-analytics.repository';
 import { PlatformAnalyticsService } from './service/platform-analytics.service';
@@ -97,6 +103,12 @@ import { TenantModule } from 'src/tenant/tenant.module';
     CoachingLoopAnalyticsRepository,
     OrgHealthAnalyticsService,
     OrgHealthAnalyticsRepository,
+    OrgSessionDistributionAnalyticsService,
+    OrgSessionDistributionAnalyticsRepository,
+    LearnerKpisAnalyticsService,
+    LearnerKpisAnalyticsRepository,
+    ScenarioUsageAnalyticsService,
+    ScenarioUsageAnalyticsRepository,
     ScribeAdoptionAnalyticsService,
     ScribeAdoptionAnalyticsRepository,
     PlatformAnalyticsService,
