@@ -32,8 +32,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 const OLD_MODEL = 'gemini-2.0-flash-exp';
 const NEW_MODEL = 'gemini-2.5-flash';
 
-export class MoveLanguagesOffExperimentalGemini1878000000000 implements MigrationInterface {
-  name = 'MoveLanguagesOffExperimentalGemini1878000000000';
+export class MoveLanguagesOffExperimentalGemini1881000000000 implements MigrationInterface {
+  name = 'MoveLanguagesOffExperimentalGemini1881000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await this.swapModel(queryRunner, OLD_MODEL, NEW_MODEL);

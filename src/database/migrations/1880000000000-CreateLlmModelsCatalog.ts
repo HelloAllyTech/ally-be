@@ -18,8 +18,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * follows `modelSupportsTemperature`: false for the o-series and gpt-5 families,
  * which reject a custom temperature, true otherwise.
  */
-export class CreateLlmModelsCatalog1877000000000 implements MigrationInterface {
-  name = 'CreateLlmModelsCatalog1877000000000';
+export class CreateLlmModelsCatalog1880000000000 implements MigrationInterface {
+  name = 'CreateLlmModelsCatalog1880000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

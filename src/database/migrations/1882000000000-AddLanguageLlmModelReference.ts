@@ -27,8 +27,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * 404 the Language Model tab for the window between the two. The table and its
  * routes stay, unused, and go in a later cleanup.
  */
-export class AddLanguageLlmModelReference1879000000000 implements MigrationInterface {
-  name = 'AddLanguageLlmModelReference1879000000000';
+export class AddLanguageLlmModelReference1882000000000 implements MigrationInterface {
+  name = 'AddLanguageLlmModelReference1882000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
