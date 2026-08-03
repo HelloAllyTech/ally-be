@@ -79,7 +79,7 @@ Module path = `src/<module>/entity/`.
 | `admin_tenants` | BaseWithoutTenant | `user_id`, `tenant_id`, `deleted_at` | Which users administer which tenants; unique `(user_id, tenant_id)` |
 | `tenants` | (custom) | `id` (uuid), `name` (uniq), `code` (uniq), `status` (`TenantStatus`: ACTIVE/INACTIVE/SUSPENDED), `metadata`, `settings` (jsonb), `logo_url`, `deleted_at` | The organization root entity |
 | `refresh_token` | TypeORM base | `id` (int), `token`, `expires_at`, `user_id`, `device_info` | Auth refresh tokens |
-| `groups` | (custom) | `id` (int), `name` | User groups (RBAC + content targeting) |
+| `groups` | (custom) | `id` (int), `name` | User groups (RBAC + content targeting). `name` holds a `UserRole` value for the nine RBAC roles: `CLIENT`, `COUNSELOR`, `ADMIN`, `LEARNER`, `SIMULATION_REVIEWER`, `SCRIBE_REVIEWER`, `MULTI_TENANT_ADMIN`, `SUPER_ADMIN`, `SUPER_DUPER_ADMIN`, plus `INTERNAL` (migration `1878000000000`) — a permission-for-permission clone of `SUPER_ADMIN` for Ally staff, who reach the console at `/admin` on the consumer app rather than the standalone admin dashboard. No unique constraint on `name`, so inserts guard with `NOT EXISTS` |
 | `permissions` | (custom) | `id` (int), `name` | Permission catalog |
 | `group_permissions` | (custom) | `group_id`, `permission_id` | Group → permission join |
 | `user_groups` | (custom) | `user_id`, `group_id` | User → group join |
