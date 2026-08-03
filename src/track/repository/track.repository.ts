@@ -7,6 +7,7 @@ import {
   TrackStatus,
 } from '../type/track.type';
 import { TrackEnrollment } from '../entity/track-enrollment.entity';
+import { AssignmentStatus } from 'src/common/type/common.type';
 
 export interface TrackWithEnrollment extends Track {
   enrollment?: TrackEnrollment;
@@ -33,6 +34,12 @@ export class TrackRepository extends Repository<Track> {
           '"trackTenant"."trackId" = track.id AND "trackTenant"."tenantId" = :tenantId AND "trackTenant"."deletedAt" IS NULL',
         )
         .setParameters({ tenantId: filters.tenantId });
+
+      if (filters.assignmentStatus === AssignmentStatus.ASSIGNED) {
+        query.andWhere('"trackTenant"."id" IS NOT NULL');
+      } else if (filters.assignmentStatus === AssignmentStatus.UNASSIGNED) {
+        query.andWhere('"trackTenant"."id" IS NULL');
+      }
     }
 
     if (filters?.status) {

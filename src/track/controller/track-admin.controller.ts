@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseEnumPipe,
   ParseUUIDPipe,
   Post,
   Put,
@@ -12,6 +13,7 @@ import {
 import {
   ApiBearerAuth,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiSecurity,
   ApiTags,
@@ -19,7 +21,7 @@ import {
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { SuccessResponse } from 'src/common/type/common.type';
+import { AssignmentStatus, SuccessResponse } from 'src/common/type/common.type';
 import { TrackService } from '../service/track.service';
 import { TrackTenantService } from '../service/track-tenant.service';
 import { TrackMediaService } from '../service/track-media.service';
@@ -52,6 +54,13 @@ export class TrackAdminController {
   ) {}
 
   @ApiOperation({ summary: 'List tracks' })
+  @ApiQuery({
+    name: 'assignmentStatus',
+    required: false,
+    enum: AssignmentStatus,
+    description:
+      'Filter by tenant assignment status (requires tenantId; ignored without it)',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_TRACKS])
   @Get('tracks')
   async getTracks(
@@ -60,6 +69,11 @@ export class TrackAdminController {
     @Query('limit') limit?: number,
     @Query('search') search?: string,
     @Query('tenantId', new ParseUUIDPipe({ optional: true })) tenantId?: string,
+    @Query(
+      'assignmentStatus',
+      new ParseEnumPipe(AssignmentStatus, { optional: true }),
+    )
+    assignmentStatus?: AssignmentStatus,
     @Query('sortBy') sortBy: TrackSortBy = TrackSortBy.UPDATED_AT,
     @Query('order') order: TrackSortOrder = TrackSortOrder.DESC,
   ) {
@@ -69,6 +83,7 @@ export class TrackAdminController {
       limit,
       search,
       tenantId,
+      assignmentStatus,
       sortBy,
       order,
     });
