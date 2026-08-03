@@ -118,3 +118,51 @@ export const getElevenLabsV3Warning = (
   }
   return null;
 };
+
+/** ElevenLabs never lists this in a voice's own model support, for any voice. */
+const ELEVENLABS_V3_MODEL = 'eleven_v3';
+/** The model that uses a Professional clone's fine-tune. */
+const ELEVENLABS_FIDELITY_MODEL = 'eleven_multilingual_v2';
+
+export interface ElevenLabsModelOptions {
+  /** Models to offer a picker for this voice. */
+  availableModels: string[];
+  /** A safe starting point, or null when there's nothing to prefer. */
+  recommendedModel: string | null;
+}
+
+/**
+ * Which models to offer for a voice, and which one to default to — both
+ * derived from what ElevenLabs told us, not chosen freehand.
+ *
+ * `availableModels` starts from the voice's own `high_quality_base_model_ids`
+ * (ElevenLabs' real, per-voice answer) and always appends v3: ElevenLabs
+ * confirmed that field "won't include v3 for any voice type today" because v3
+ * uses no per-voice fine-tune at all, not because v3 rejects the voice — the
+ * call still returns 200. Its risk is carried by `getElevenLabsV3Warning`, not
+ * by leaving it off this list.
+ *
+ * `recommendedModel` follows ElevenLabs' own migration guidance: where
+ * speaker fidelity to an existing Professional clone matters, stay on
+ * Multilingual v2 rather than v3 for now. So a PVC voice defaults to
+ * Multilingual v2 when ElevenLabs lists it as supported; anything else
+ * defaults to whatever ElevenLabs lists first — never to v3, since adopting
+ * it is a deliberate content decision (their words: "adopt v3 selectively …
+ * for content where the emotional range is the priority"), not a safe default.
+ */
+export const buildElevenLabsModelOptions = (
+  highQualityBaseModelIds: string[] | undefined | null,
+  voiceType: ElevenLabsVoiceType | string | null,
+): ElevenLabsModelOptions => {
+  const listed = (highQualityBaseModelIds ?? []).filter(Boolean);
+  const availableModels = listed.includes(ELEVENLABS_V3_MODEL)
+    ? listed
+    : [...listed, ELEVENLABS_V3_MODEL];
+
+  const recommendedModel =
+    voiceType === ElevenLabsVoiceType.PVC && listed.includes(ELEVENLABS_FIDELITY_MODEL)
+      ? ELEVENLABS_FIDELITY_MODEL
+      : (listed[0] ?? null);
+
+  return { availableModels, recommendedModel };
+};

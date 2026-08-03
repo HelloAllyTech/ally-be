@@ -6,6 +6,7 @@ import {
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import {
+  buildElevenLabsModelOptions,
   ELEVENLABS_CATEGORY_TO_VOICE_TYPE,
   ElevenLabsVoiceType,
   getElevenLabsV3Warning,
@@ -37,9 +38,67 @@ export interface ElevenLabsVoiceSyncResult {
   warning: string | null;
   /** Whether the row was updated. */
   persisted: boolean;
+  /** Models to offer for this voice, derived from ElevenLabs' own answer plus v3. */
+  availableModels: string[];
+  /** A safe starting model, or null when there's nothing to prefer. */
+  recommendedModel: string | null;
+}
+
+/**
+ * Outcome of looking up a voice id that has no scenario_voices row yet.
+ *
+ * Same facts as {@link ElevenLabsVoiceSyncResult} minus `warning` (the caller
+ * doesn't have a chosen model yet to warn against) and `persisted` (there is
+ * no row to write to) — plus `gender` and `language`, which a not-yet-saved
+ * voice benefits from autofilling.
+ */
+export interface ElevenLabsVoiceLookupResult {
+  /** The id that was looked up. */
+  voiceId: string;
+  resolvedVoiceId: string | null;
+  voiceIdMismatch: boolean;
+  category: string | null;
+  resolvedName: string | null;
+  voiceType: ElevenLabsVoiceType | null;
+  /** From ElevenLabs' `labels.gender`, present on 132 of 153 voices on this account. */
+  gender: string | null;
+  /** From ElevenLabs' `labels.language`, present on all voices on this account. */
+  language: string | null;
+  /** Models to offer for this voice, derived from ElevenLabs' own answer plus v3. */
+  availableModels: string[];
+  /** A safe starting model, or null when there's nothing to prefer. */
+  recommendedModel: string | null;
+}
+
+/**
+ * Outcome of syncing every ElevenLabs scenario_voices row in one pass.
+ *
+ * `mismatched` and `failed` are the two ways a stored id can be wrong: it
+ * resolves to some other voice, or it doesn't resolve at all. Everything else
+ * — the common case — is just a `voice_type` write, counted in `updated`.
+ */
+export interface ElevenLabsBulkSyncSummary {
+  /** ElevenLabs rows examined (rows with no voice_id are skipped, not counted). */
+  checked: number;
+  /** Rows whose voice_type changed. */
+  updated: number;
+  mismatched: Array<{
+    voiceId: string;
+    name: string;
+    storedVoiceId: string;
+    resolvedVoiceId: string;
+    resolvedName: string;
+  }>;
+  failed: Array<{
+    voiceId: string;
+    name: string;
+    storedVoiceId: string;
+    error: string;
+  }>;
 }
 
 const ELEVENLABS_API = 'https://api.elevenlabs.io/v1';
+const ELEVENLABS_API_V2 = 'https://api.elevenlabs.io/v2';
 
 /**
  * Pulls a voice's creation type from ElevenLabs so v3 compatibility stops being
@@ -101,6 +160,10 @@ export class ElevenLabsVoiceSyncService {
       ? (ELEVENLABS_CATEGORY_TO_VOICE_TYPE[category.toLowerCase()] ??
         ElevenLabsVoiceType.UNKNOWN)
       : null;
+    const { availableModels, recommendedModel } = buildElevenLabsModelOptions(
+      remote?.high_quality_base_model_ids,
+      voiceType,
+    );
 
     const result: ElevenLabsVoiceSyncResult = {
       storedVoiceId,
@@ -113,6 +176,8 @@ export class ElevenLabsVoiceSyncService {
       voiceType,
       warning: getElevenLabsV3Warning(config.model, voiceType),
       persisted: false,
+      availableModels,
+      recommendedModel,
     };
 
     if (persist && voiceType) {
@@ -134,10 +199,187 @@ export class ElevenLabsVoiceSyncService {
     return result;
   }
 
+  /**
+   * Look up a voice id before it has a scenario_voices row — for a new voice,
+   * as it's being typed in, rather than after saving. Nothing is persisted;
+   * there is nothing to persist to yet.
+   */
+  async lookupVoice(voiceId: string): Promise<ElevenLabsVoiceLookupResult> {
+    const trimmed = String(voiceId ?? '').trim();
+    if (!trimmed) {
+      throw new BadRequestException('voiceId is required.');
+    }
+
+    const apiKey = this.configService.voicePreview.elevenlabsApiKey;
+    if (!apiKey) {
+      throw new BadRequestException(
+        'ElevenLabs is not configured on this environment.',
+      );
+    }
+
+    const remote = await this.fetchVoice(trimmed, apiKey);
+    const category = remote?.category ?? null;
+    const resolvedVoiceId = remote?.voice_id ?? null;
+    const voiceType = category
+      ? (ELEVENLABS_CATEGORY_TO_VOICE_TYPE[category.toLowerCase()] ??
+        ElevenLabsVoiceType.UNKNOWN)
+      : null;
+    const { availableModels, recommendedModel } = buildElevenLabsModelOptions(
+      remote?.high_quality_base_model_ids,
+      voiceType,
+    );
+
+    return {
+      voiceId: trimmed,
+      resolvedVoiceId,
+      voiceIdMismatch: Boolean(resolvedVoiceId && resolvedVoiceId !== trimmed),
+      category,
+      resolvedName: remote?.name ?? null,
+      voiceType,
+      gender: remote?.labels?.gender ?? null,
+      language: remote?.labels?.language ?? null,
+      availableModels,
+      recommendedModel,
+    };
+  }
+
+  /**
+   * Sync every ElevenLabs scenario_voices row's voice_type in one pass.
+   *
+   * Fast path: `GET /v2/voices` lists the whole workspace — category included
+   * — in a couple of paginated calls, regardless of how many rows there are.
+   * Matching a stored id against that listing needs no per-voice request.
+   *
+   * Slow path: a stored id that isn't in the listing at all (7 of 77 in
+   * production — well-known public-library ids, not workspace voices) falls
+   * back to the single-voice sync, which is what can tell "resolves to a
+   * different voice" apart from "not a voice at all".
+   */
+  async bulkSyncAllVoices(): Promise<ElevenLabsBulkSyncSummary> {
+    const apiKey = this.configService.voicePreview.elevenlabsApiKey;
+    if (!apiKey) {
+      throw new BadRequestException(
+        'ElevenLabs is not configured on this environment.',
+      );
+    }
+
+    const listing = await this.fetchAllVoiceCategories(apiKey);
+    const rows = await this.scenarioVoicesRepository.find({
+      where: { provider: TtsProvider.ELEVENLABS },
+    });
+
+    const summary: ElevenLabsBulkSyncSummary = {
+      checked: 0,
+      updated: 0,
+      mismatched: [],
+      failed: [],
+    };
+
+    for (const row of rows) {
+      const config = (row.config ?? {}) as Record<string, any>;
+      const storedVoiceId = String(
+        config.voice_id ?? config.voiceId ?? '',
+      ).trim();
+      if (!storedVoiceId) continue;
+      summary.checked += 1;
+
+      const listed = listing.get(storedVoiceId);
+      if (listed) {
+        const voiceType = listed.category
+          ? (ELEVENLABS_CATEGORY_TO_VOICE_TYPE[listed.category.toLowerCase()] ??
+            ElevenLabsVoiceType.UNKNOWN)
+          : null;
+        if (voiceType && config.voice_type !== voiceType) {
+          await this.scenarioVoicesRepository.update(row.id, {
+            config: { ...config, voice_type: voiceType } as Record<string, any>,
+          });
+          summary.updated += 1;
+        }
+        continue;
+      }
+
+      try {
+        const result = await this.syncVoice(row.id);
+        if (result.persisted) summary.updated += 1;
+        if (result.voiceIdMismatch) {
+          summary.mismatched.push({
+            voiceId: row.id,
+            name: row.name,
+            storedVoiceId: result.storedVoiceId,
+            resolvedVoiceId: result.resolvedVoiceId ?? '',
+            resolvedName: result.resolvedName ?? '',
+          });
+        }
+      } catch (error) {
+        summary.failed.push({
+          voiceId: row.id,
+          name: row.name,
+          storedVoiceId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    if (summary.mismatched.length || summary.failed.length) {
+      this.logger.warn(
+        `[ELEVENLABS_SYNC] bulk: checked=${summary.checked} updated=${summary.updated} ` +
+          `mismatched=${summary.mismatched.length} failed=${summary.failed.length}`,
+      );
+    }
+
+    return summary;
+  }
+
+  /** Pages through the whole workspace once, keyed by voice_id. Free — this is a listing call, not a generation call. */
+  private async fetchAllVoiceCategories(
+    apiKey: string,
+  ): Promise<Map<string, { category: string; name: string }>> {
+    const map = new Map<string, { category: string; name: string }>();
+    let pageToken: string | undefined;
+
+    do {
+      const url = new URL(`${ELEVENLABS_API_V2}/voices`);
+      url.searchParams.set('page_size', '100');
+      if (pageToken) url.searchParams.set('next_page_token', pageToken);
+
+      const response = await fetch(url.toString(), {
+        headers: { 'xi-api-key': apiKey },
+      });
+      if (!response.ok) {
+        throw new BadRequestException(
+          `ElevenLabs returned ${response.status} listing voices.`,
+        );
+      }
+
+      const body = (await response.json()) as {
+        voices?: Array<{ voice_id?: string; category?: string; name?: string }>;
+        has_more?: boolean;
+        next_page_token?: string;
+      };
+      for (const voice of body.voices ?? []) {
+        if (voice.voice_id) {
+          map.set(voice.voice_id, {
+            category: voice.category ?? '',
+            name: voice.name ?? '',
+          });
+        }
+      }
+      pageToken = body.has_more ? body.next_page_token : undefined;
+    } while (pageToken);
+
+    return map;
+  }
+
   private async fetchVoice(
     voiceId: string,
     apiKey: string,
-  ): Promise<{ voice_id?: string; category?: string; name?: string } | null> {
+  ): Promise<{
+    voice_id?: string;
+    category?: string;
+    name?: string;
+    labels?: Record<string, string>;
+    high_quality_base_model_ids?: string[];
+  } | null> {
     try {
       const response = await fetch(`${ELEVENLABS_API}/voices/${voiceId}`, {
         headers: { 'xi-api-key': apiKey },

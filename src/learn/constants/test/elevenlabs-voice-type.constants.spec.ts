@@ -1,4 +1,5 @@
 import {
+  buildElevenLabsModelOptions,
   ELEVENLABS_CATEGORY_TO_VOICE_TYPE,
   ElevenLabsVoiceType,
   getElevenLabsV3Warning,
@@ -111,5 +112,62 @@ describe('getElevenLabsV3Warning', () => {
       getElevenLabsV3Warning('eleven_multilingual_v2', ElevenLabsVoiceType.PVC),
     ).toBeNull();
     expect(getElevenLabsV3Warning('eleven_flash_v2_5', null)).toBeNull();
+  });
+});
+
+describe('buildElevenLabsModelOptions', () => {
+  // ElevenLabs: "high_quality_base_model_ids... won't include v3 for any
+  // voice type today" — because it lists fine-tuned models and v3 uses none.
+  // Not a rejection of the voice (the call still returns 200), so it belongs
+  // in the offered list; getElevenLabsV3Warning carries the actual risk.
+  it('always appends v3, even when ElevenLabs listed nothing', () => {
+    const { availableModels } = buildElevenLabsModelOptions(
+      undefined,
+      ElevenLabsVoiceType.VOICE_DESIGN,
+    );
+    expect(availableModels).toEqual(['eleven_v3']);
+  });
+
+  it('does not duplicate v3 if ElevenLabs ever lists it', () => {
+    const { availableModels } = buildElevenLabsModelOptions(
+      ['eleven_v3', 'eleven_turbo_v2_5'],
+      ElevenLabsVoiceType.PREMADE,
+    );
+    expect(availableModels).toEqual(['eleven_v3', 'eleven_turbo_v2_5']);
+  });
+
+  // ElevenLabs' own migration guidance: stay on Multilingual v2 for voices
+  // where fidelity to an existing Professional clone matters.
+  it('recommends multilingual v2 for a PVC voice when ElevenLabs lists it', () => {
+    const { recommendedModel } = buildElevenLabsModelOptions(
+      ['eleven_turbo_v2_5', 'eleven_multilingual_v2'],
+      ElevenLabsVoiceType.PVC,
+    );
+    expect(recommendedModel).toBe('eleven_multilingual_v2');
+  });
+
+  it('never recommends v3 — adopting it is a deliberate content decision', () => {
+    const { recommendedModel } = buildElevenLabsModelOptions(
+      [],
+      ElevenLabsVoiceType.VOICE_DESIGN,
+    );
+    expect(recommendedModel).not.toBe('eleven_v3');
+    expect(recommendedModel).toBeNull();
+  });
+
+  it('falls back to whatever ElevenLabs lists first for a non-PVC voice', () => {
+    const { recommendedModel } = buildElevenLabsModelOptions(
+      ['eleven_flash_v2_5', 'eleven_turbo_v2_5'],
+      ElevenLabsVoiceType.IVC,
+    );
+    expect(recommendedModel).toBe('eleven_flash_v2_5');
+  });
+
+  it('does not recommend multilingual v2 for a PVC voice ElevenLabs never listed it for', () => {
+    const { recommendedModel } = buildElevenLabsModelOptions(
+      ['eleven_turbo_v2_5'],
+      ElevenLabsVoiceType.PVC,
+    );
+    expect(recommendedModel).toBe('eleven_turbo_v2_5');
   });
 });

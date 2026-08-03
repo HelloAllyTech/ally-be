@@ -1,4 +1,5 @@
 import { ElevenLabsVoiceSyncService } from '../../service/elevenlabs-voice-sync.service';
+import { ElevenLabsVoiceType } from '../../constants/elevenlabs-voice-type.constants';
 import { Test, TestingModule } from '@nestjs/testing';
 import { LearnController } from '../learn.controller';
 import { ScenarioService } from '../../service/scenario.service';
@@ -40,6 +41,7 @@ describe('LearnController', () => {
   let scenarioService: jest.Mocked<ScenarioService>;
   let scenarioSessionService: jest.Mocked<ScenarioSessionService>;
   let scenarioTenantService: jest.Mocked<ScenarioTenantService>;
+  let elevenLabsVoiceSyncService: jest.Mocked<ElevenLabsVoiceSyncService>;
 
   const mockTokenUser: TokenUser = {
     id: 123,
@@ -299,7 +301,11 @@ describe('LearnController', () => {
           // Reads a voice's creation type from ElevenLabs; the controller only
           // delegates, so a stub is enough here.
           provide: ElevenLabsVoiceSyncService,
-          useValue: { syncVoice: jest.fn() },
+          useValue: {
+            syncVoice: jest.fn(),
+            lookupVoice: jest.fn(),
+            bulkSyncAllVoices: jest.fn(),
+          },
         },
         {
           provide: LlmConfigService,
@@ -344,6 +350,7 @@ describe('LearnController', () => {
     scenarioService = module.get(ScenarioService);
     scenarioSessionService = module.get(ScenarioSessionService);
     scenarioTenantService = module.get(ScenarioTenantService);
+    elevenLabsVoiceSyncService = module.get(ElevenLabsVoiceSyncService);
   });
 
   afterEach(() => {
@@ -1728,6 +1735,47 @@ describe('LearnController', () => {
       await expect(
         controller.getBranchingInstructionDynamicShortcuts(),
       ).rejects.toThrow('Service error');
+    });
+  });
+
+  describe('lookupElevenLabsVoice', () => {
+    it('delegates to the sync service for a not-yet-saved voice id', async () => {
+      const result = {
+        voiceId: 'abc',
+        resolvedVoiceId: 'abc',
+        voiceIdMismatch: false,
+        category: 'generated',
+        resolvedName: 'Meenakshi',
+        voiceType: ElevenLabsVoiceType.VOICE_DESIGN,
+        gender: 'female',
+        language: 'ta',
+        availableModels: ['eleven_v3'],
+        recommendedModel: null,
+      };
+      elevenLabsVoiceSyncService.lookupVoice.mockResolvedValue(result);
+
+      await expect(controller.lookupElevenLabsVoice('abc')).resolves.toEqual(
+        result,
+      );
+      expect(elevenLabsVoiceSyncService.lookupVoice).toHaveBeenCalledWith(
+        'abc',
+      );
+    });
+  });
+
+  describe('bulkSyncElevenLabsVoices', () => {
+    it('delegates to the sync service for the whole workspace', async () => {
+      const summary = {
+        checked: 77,
+        updated: 5,
+        mismatched: [],
+        failed: [],
+      };
+      elevenLabsVoiceSyncService.bulkSyncAllVoices.mockResolvedValue(summary);
+
+      await expect(controller.bulkSyncElevenLabsVoices()).resolves.toEqual(
+        summary,
+      );
     });
   });
 });

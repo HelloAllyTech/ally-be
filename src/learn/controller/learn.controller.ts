@@ -44,6 +44,8 @@ import { DeleteScenarioEventsDto } from '../dto/delete-scenario-events.dto';
 import { ScenarioSortBy } from '../type/scenario.type';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import {
+  ElevenLabsBulkSyncSummary,
+  ElevenLabsVoiceLookupResult,
   ElevenLabsVoiceSyncResult,
   ElevenLabsVoiceSyncService,
 } from '../service/elevenlabs-voice-sync.service';
@@ -1075,6 +1077,28 @@ export class LearnController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<ElevenLabsVoiceSyncResult> {
     return this.elevenLabsVoiceSyncService.syncVoice(id);
+  }
+
+  @ApiOperation({
+    summary:
+      "Look up an ElevenLabs voice id before it's saved — resolves its creation type, gender, and language",
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_VOICE])
+  @Get('scenario-voices/elevenlabs-lookup')
+  async lookupElevenLabsVoice(
+    @Query('voiceId') voiceId: string,
+  ): Promise<ElevenLabsVoiceLookupResult> {
+    return this.elevenLabsVoiceSyncService.lookupVoice(voiceId);
+  }
+
+  @ApiOperation({
+    summary:
+      "Sync every ElevenLabs scenario voice's creation type from the workspace listing",
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_VOICE])
+  @Post('scenario-voices/sync-elevenlabs/bulk')
+  async bulkSyncElevenLabsVoices(): Promise<ElevenLabsBulkSyncSummary> {
+    return this.elevenLabsVoiceSyncService.bulkSyncAllVoices();
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_VOICES])

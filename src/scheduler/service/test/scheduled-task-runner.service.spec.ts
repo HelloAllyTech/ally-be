@@ -93,4 +93,14 @@ describe('ScheduledTaskRunnerService — leader guard', () => {
 
     expect(createQueryRunner).not.toHaveBeenCalled();
   });
+
+  it('runs monthly-interval tasks the same as any other interval', async () => {
+    await setup(true);
+    const handler = jest.fn().mockResolvedValue(undefined);
+    scheduledTaskRegistry.register('monthly', 'test-monthly-task', handler);
+
+    await service.runMonthlyTasks();
+
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
 });

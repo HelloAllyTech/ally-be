@@ -36,6 +36,13 @@ export class ScheduledTaskRunnerService {
     await this.runTasksForInterval('hourly');
   }
 
+  // 03:00 on the 1st of each month — for tasks with nothing to fire on that
+  // isn't already stale a day later (e.g. re-checking a third-party catalog).
+  @Cron(`0 0 3 1 * *`)
+  async runMonthlyTasks(): Promise<void> {
+    await this.runTasksForInterval('monthly');
+  }
+
   private async runTasksForInterval(interval: string): Promise<void> {
     const tasks = scheduledTaskRegistry.getHandlers(interval);
     if (tasks.length === 0) return;

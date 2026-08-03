@@ -31,6 +31,7 @@ import { SttConfigService } from './service/stt-config.service';
 import { LlmConfigsRepository } from './repository/llm-configs.repository';
 import { LlmConfigService } from './service/llm-config.service';
 import { ElevenLabsVoiceSyncService } from './service/elevenlabs-voice-sync.service';
+import { ElevenLabsVoiceSchedulerRegistrationService } from './service/elevenlabs-voice-scheduler-registration.service';
 import { LanguagesRepository } from '../language/repository/languages.repository';
 import { SimulationCreditsController } from './controller/simulation-credits.controller';
 import { SimulationCreditsService } from './service/simulation-credits.service';
@@ -217,6 +218,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     LlmConfigsRepository,
     LlmConfigService,
     ElevenLabsVoiceSyncService,
+    ElevenLabsVoiceSchedulerRegistrationService,
     LanguagesRepository,
     SimulationCreditsService,
     SimulationCreditsRepository,
