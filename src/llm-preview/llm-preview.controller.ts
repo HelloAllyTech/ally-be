@@ -30,6 +30,19 @@ export class LlmPreviewController {
    * lets someone see the registry, but making outbound billed calls belongs with
    * whoever can change it.
    */
+  @Post('model/:modelId')
+  @Version('1')
+  @ApiOperation({
+    summary: 'Run a one-line test completion against a catalog model',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  async generateForModel(
+    @Param('modelId', ParseUUIDPipe) modelId: string,
+  ): Promise<LlmPreviewResponse> {
+    return this.llmPreviewService.previewModel(modelId);
+  }
+
+  /** @deprecated llm_configs is being retired; use POST model/:modelId. */
   @Post('generate/:configId')
   @Version('1')
   @ApiOperation({

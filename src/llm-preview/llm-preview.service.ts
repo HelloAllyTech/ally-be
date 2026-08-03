@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { LlmConfigService } from 'src/learn/service/llm-config.service';
+import { LlmModelService } from 'src/llm/service/llm-model.service';
 import { LlmProviderFactory } from './providers/llm-provider.factory';
 import { LlmPreviewResult } from './providers/llm-provider.interface';
 
@@ -24,8 +25,38 @@ export interface LlmPreviewResponse extends LlmPreviewResult {
 export class LlmPreviewService {
   constructor(
     private readonly llmConfigService: LlmConfigService,
+    private readonly llmModelService: LlmModelService,
     private readonly providerFactory: LlmProviderFactory,
   ) {}
+
+  /**
+   * Test a catalog model against its provider.
+   *
+   * The catalog replaced llm_configs as the thing an admin edits, so this is
+   * the preview that matters now. A catalog row has no temperature — that is a
+   * per-prompt concern — so the call goes out with the provider's default.
+   */
+  async previewModel(modelId: string): Promise<LlmPreviewResponse> {
+    const row = (await this.llmModelService.getCatalog()).find(
+      (model) => model.id === modelId,
+    );
+    if (!row) {
+      throw new NotFoundException('Model not found');
+    }
+
+    const provider = this.providerFactory.createProvider(
+      row.provider,
+      row.model,
+    );
+    const result = await provider.complete(PREVIEW_PROMPT, PREVIEW_TIMEOUT_MS);
+
+    return {
+      ...result,
+      configName: row.label,
+      provider: row.provider,
+      model: row.model,
+    };
+  }
 
   async previewConfig(configId: string): Promise<LlmPreviewResponse> {
     const config = await this.llmConfigService.getConfigById(configId);

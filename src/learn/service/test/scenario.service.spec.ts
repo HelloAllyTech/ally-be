@@ -1,3 +1,4 @@
+import { LlmModelService } from 'src/llm/service/llm-model.service';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -67,6 +68,7 @@ jest.mock('src/common/execution/execution-manager', () => ({
 
 describe('ScenarioService', () => {
   let service: ScenarioService;
+  let mockLlmModelService: { getModels: jest.Mock };
   let repository: jest.Mocked<Repository<Scenarios>>;
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
   let scenarioEventsRepository: jest.Mocked<ScenarioEventsRepository>;
@@ -325,6 +327,7 @@ describe('ScenarioService', () => {
 
     (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(mockTenantId);
 
+    mockLlmModelService = { getModels: jest.fn().mockResolvedValue([]) };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         { provide: AuditLogService, useValue: { log: jest.fn() } },
@@ -444,6 +447,12 @@ describe('ScenarioService', () => {
         {
           provide: ScenarioTranslationNotificationService,
           useValue: { notifyProgress: jest.fn() },
+        },
+        {
+          // Autofill/enhance model list now reads the catalog rather than the
+          // in-code registry, so the service depends on it.
+          provide: LlmModelService,
+          useValue: mockLlmModelService,
         },
         {
           provide: PromptSharedService,
@@ -5880,11 +5889,36 @@ describe('ScenarioService', () => {
   });
 
   describe('getAvailableModels', () => {
-    it('sources from the universal registry, filtered to autofill providers (OpenAI + Anthropic, no Gemini)', async () => {
+    // The catalog is the source, not the in-code list: a model added in the
+    // admin dashboard has to surface here as well as in Prompt Management, or
+    // the drift the catalog exists to end simply reappears in a new place.
+    it('sources from the model catalog, filtered to autofill providers (OpenAI + Anthropic, no Gemini)', async () => {
+      mockLlmModelService.getModels.mockResolvedValue([
+        {
+          provider: 'openai',
+          model: 'gpt-4o',
+          label: 'GPT-4o',
+          supportsTemperature: true,
+        },
+        {
+          provider: 'anthropic',
+          model: 'claude-brand-new',
+          label: 'Claude Brand New',
+          supportsTemperature: true,
+        },
+        {
+          provider: 'gemini',
+          model: 'gemini-2.5-flash',
+          label: 'Gemini 2.5 Flash',
+          supportsTemperature: true,
+        },
+      ]);
+
       const result = await service.getAvailableModels();
       const providers = new Set(result.map((m) => m.provider));
 
-      expect(result.length).toBeGreaterThan(0);
+      // A model that exists only in the catalog reaches the autofill picker.
+      expect(result.map((m) => m.value)).toContain('claude-brand-new');
       expect(providers.has('openai')).toBe(true);
       expect(providers.has('anthropic')).toBe(true);
       // Gemini has no autofill client, so it must not appear here.
@@ -5892,6 +5926,14 @@ describe('ScenarioService', () => {
     });
 
     it('each entry carries value/label/provider/supportsTemperature', async () => {
+      mockLlmModelService.getModels.mockResolvedValue([
+        {
+          provider: 'openai',
+          model: 'gpt-4o',
+          label: 'GPT-4o',
+          supportsTemperature: true,
+        },
+      ]);
       const result = await service.getAvailableModels();
 
       for (const m of result) {

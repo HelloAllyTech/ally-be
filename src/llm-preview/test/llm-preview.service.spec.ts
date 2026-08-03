@@ -1,18 +1,32 @@
 import { NotFoundException } from '@nestjs/common';
 import { LlmPreviewService, PREVIEW_TIMEOUT_MS } from '../llm-preview.service';
 
-const buildService = (config: any, complete = jest.fn()) => {
+const buildService = (
+  config: any,
+  complete = jest.fn(),
+  catalog: any[] = [],
+) => {
   const llmConfigService = {
     getConfigById: jest.fn().mockResolvedValue(config),
+  };
+  const llmModelService = {
+    getCatalog: jest.fn().mockResolvedValue(catalog),
   };
   const providerFactory = {
     createProvider: jest.fn().mockReturnValue({ complete }),
   };
   const service = new LlmPreviewService(
     llmConfigService as any,
+    llmModelService as any,
     providerFactory as any,
   );
-  return { service, llmConfigService, providerFactory, complete };
+  return {
+    service,
+    llmConfigService,
+    llmModelService,
+    providerFactory,
+    complete,
+  };
 };
 
 describe('LlmPreviewService', () => {
@@ -113,6 +127,60 @@ describe('LlmPreviewService', () => {
       promptTokens: 8,
       completionTokens: 2,
       model: 'gemini-2.5-flash',
+    });
+  });
+});
+
+describe('LlmPreviewService — catalog model', () => {
+  const row = {
+    id: 'm1',
+    provider: 'gemini',
+    model: 'gemini-2.5-flash',
+    label: 'Gemini 2.5 Flash',
+  };
+
+  it('404s on a model that is not in the catalog', async () => {
+    const { service } = buildService(null, jest.fn(), []);
+    await expect(service.previewModel('nope')).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+
+  it('tests the catalog row and reports under its display name', async () => {
+    const { service, providerFactory } = buildService(
+      null,
+      jest.fn().mockResolvedValue({ ok: true, text: 'ok', latencyMs: 88 }),
+      [row],
+    );
+
+    await expect(service.previewModel('m1')).resolves.toMatchObject({
+      ok: true,
+      configName: 'Gemini 2.5 Flash',
+      provider: 'gemini',
+      model: 'gemini-2.5-flash',
+    });
+    // A catalog row carries no temperature — that is a per-prompt concern.
+    expect(providerFactory.createProvider).toHaveBeenCalledWith(
+      'gemini',
+      'gemini-2.5-flash',
+    );
+  });
+
+  it('returns a provider rejection as data, not an exception', async () => {
+    const { service } = buildService(
+      null,
+      jest.fn().mockResolvedValue({
+        ok: false,
+        text: '',
+        latencyMs: 30,
+        error: '404: model not found',
+      }),
+      [row],
+    );
+
+    await expect(service.previewModel('m1')).resolves.toMatchObject({
+      ok: false,
+      error: '404: model not found',
     });
   });
 });

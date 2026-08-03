@@ -45,8 +45,18 @@ export class LlmModelService {
    * must see what is actually stored, or it would offer to edit rows that do
    * not exist.
    */
-  async getCatalog(): Promise<LlmModels[]> {
-    return this.llmModelsRepository.listModels(false);
+  async getCatalog(runtime?: LlmRuntime): Promise<LlmModels[]> {
+    const rows = await this.llmModelsRepository.listModels(false);
+    if (!runtime) return rows;
+
+    // Filtering happens here, not in the client, so a picker can never offer a
+    // model the target runtime cannot build. ai-learn raises
+    // `Unsupported LLM provider` for anything outside its factory branches, so
+    // offering an Anthropic model as a language default would fail every
+    // session in that language.
+    return rows.filter((row) =>
+      runtimesForProvider(row.provider).includes(runtime),
+    );
   }
 
   async createModel(dto: CreateLlmModelDto): Promise<LlmModels> {

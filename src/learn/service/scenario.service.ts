@@ -32,6 +32,7 @@ import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { validateSimulationStates } from '../util/validate-simulation-states.util';
 import { buildGeneratedStates } from '../util/build-generated-states.util';
 
+import { LlmModelService } from 'src/llm/service/llm-model.service';
 import { ScenariosRepository } from '../repository/scenario.repository';
 
 import { ScenarioVoices } from '../entity/scenario-voices.entity';
@@ -162,7 +163,6 @@ import {
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
-  getLlmModels,
   LlmRuntime,
   LlmProviderName,
 } from 'src/llm/constants/llm-model-registry.constants';
@@ -193,6 +193,7 @@ export class ScenarioService {
   static REQUIRED_CONTEXT_FIELDS: any;
 
   constructor(
+    private readonly llmModelService: LlmModelService,
     private scenariosRepository: ScenariosRepository,
     private scenarioEventsRepository: ScenarioEventsRepository,
     private sessionEventSharedService: SessionEventSharedService,
@@ -3132,16 +3133,20 @@ export class ScenarioService {
       supportsTemperature: boolean;
     }[]
   > {
-    // Sourced from the universal LLM registry (single source of truth),
-    // filtered to the providers the autofill/enhance/copilot path can actually
-    // execute (OpenAI + Anthropic — no Gemini autofill client exists). This
-    // replaces the old per-provider PREFERRED_* lists so a model added to the
-    // registry surfaces here automatically.
+    // Sourced from the llm_models catalog (via LlmModelService, which falls
+    // back to the in-code list when the table is empty or unreadable), filtered
+    // to the providers the autofill/enhance/copilot path can actually execute
+    // (OpenAI + Anthropic — no Gemini autofill client exists).
+    //
+    // Reads the service rather than getLlmModels() directly: otherwise a model
+    // added to the catalog appears in Prompt Management but not here, which is
+    // exactly the drift the catalog exists to end.
     const AUTOFILL_PROVIDERS = new Set<LlmProviderName>([
       'openai',
       'anthropic',
     ]);
-    return getLlmModels(LlmRuntime.ALLY_BE)
+    const models = await this.llmModelService.getModels(LlmRuntime.ALLY_BE);
+    return models
       .filter((m) => AUTOFILL_PROVIDERS.has(m.provider))
       .map((m) => ({
         value: m.model,

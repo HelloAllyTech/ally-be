@@ -64,9 +64,15 @@ export class LlmController {
    */
   @Get('catalog')
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_LANGUAGES])
-  @ApiOperation({ summary: 'List every catalog row, including inactive ones.' })
-  async getCatalog(): Promise<LlmModels[]> {
-    return this.llmModelService.getCatalog();
+  @ApiOperation({
+    summary:
+      'List every catalog row, including inactive ones. Optionally filtered to models a runtime can execute.',
+  })
+  @ApiQuery({ name: 'runtime', required: false, enum: LlmRuntime })
+  async getCatalog(
+    @Query('runtime') runtime?: LlmRuntime,
+  ): Promise<LlmModels[]> {
+    return this.llmModelService.getCatalog(runtime);
   }
 
   @Post('catalog')
