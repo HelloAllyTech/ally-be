@@ -45,7 +45,15 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   // 2.5-pro is tiered: 1.25/10 for prompts <=200k tokens, 2.50/15 above; we
   // price at the <=200k tier (consistent with the v1 approximation note above).
   'gemini-2.5-pro': { inputPer1MUsd: 1.25, outputPer1MUsd: 10 },
-  // 2.0-flash retired 2026-06-01; kept to price historical token records.
+  // Required, not optional: every Indic language except Malayalam moved onto
+  // 2.5-flash in 1881000000000-MoveLanguagesOffExperimentalGemini. Their
+  // previous model, gemini-2.0-flash-exp, was priced by the longest-prefix
+  // match on 'gemini-2.0-flash' below — so those sessions HAD a cost. Without
+  // this entry the migration would have silently dropped them to $0, reading as
+  // "free" rather than "unknown".
+  'gemini-2.5-flash': { inputPer1MUsd: 0.3, outputPer1MUsd: 2.5 },
+  // 2.0-flash retired 2026-06-01; kept to price historical token records —
+  // including the -exp variant, which resolves here by prefix.
   'gemini-2.0-flash': { inputPer1MUsd: 0.1, outputPer1MUsd: 0.4 },
 };
 
