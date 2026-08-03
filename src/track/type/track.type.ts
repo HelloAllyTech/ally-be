@@ -1,3 +1,5 @@
+import { AssignmentStatus } from 'src/common/type/common.type';
+
 export enum TrackStatus {
   DRAFT = 'DRAFT',
   ACTIVE = 'ACTIVE',
@@ -44,6 +46,8 @@ export interface TrackFilterOptions {
   offset?: number;
   search?: string;
   tenantId?: string;
+  /** Only meaningful together with tenantId; ignored without it. */
+  assignmentStatus?: AssignmentStatus;
   sortBy?: TrackSortBy;
   order?: TrackSortOrder;
 }
