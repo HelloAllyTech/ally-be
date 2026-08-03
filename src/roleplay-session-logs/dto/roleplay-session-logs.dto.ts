@@ -314,6 +314,7 @@ export class RoleplaySessionLatencyDto {
   @ApiProperty({ nullable: true }) p50ResponseLatencyMs!: number | null;
   @ApiProperty({ nullable: true }) p95ResponseLatencyMs!: number | null;
   @ApiProperty({ nullable: true }) avgEouDelayMs!: number | null;
+  @ApiProperty({ nullable: true }) avgSttFinalizeMs!: number | null;
   @ApiProperty({ nullable: true }) avgLlmTtftMs!: number | null;
   @ApiProperty({ nullable: true }) avgTtsTtfbMs!: number | null;
   @ApiProperty({ nullable: true }) avgOrchestrationMs!: number | null;

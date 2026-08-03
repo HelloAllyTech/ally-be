@@ -455,8 +455,20 @@ describe('PlatformAnalyticsService', () => {
 
     it('includes the language breakdown alongside the bucketed trend', async () => {
       const byLanguage = [
-        { language: 'en', turns: 100, avgMs: 900, p95Ms: 1600 },
-        { language: 'hi-IN', turns: 40, avgMs: 1200, p95Ms: 2100 },
+        {
+          language: 'en',
+          turns: 100,
+          avgMs: 900,
+          p95Ms: 1600,
+          avgSttFinalizeMs: 250,
+        },
+        {
+          language: 'hi-IN',
+          turns: 40,
+          avgMs: 1200,
+          p95Ms: 2100,
+          avgSttFinalizeMs: null,
+        },
       ];
       repo.getVoiceLatencyByLanguage.mockResolvedValue(byLanguage);
 

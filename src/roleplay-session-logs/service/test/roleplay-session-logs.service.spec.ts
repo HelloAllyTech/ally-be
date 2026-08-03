@@ -117,6 +117,7 @@ describe('RoleplaySessionLogsService', () => {
     p50ResponseLatencyMs: null,
     p95ResponseLatencyMs: null,
     avgEouDelayMs: null,
+    avgSttFinalizeMs: null,
     avgLlmTtftMs: null,
     avgTtsTtfbMs: null,
     avgOrchestrationMs: null,

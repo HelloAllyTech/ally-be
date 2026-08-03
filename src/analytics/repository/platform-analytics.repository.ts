@@ -89,6 +89,13 @@ export interface VoiceLatencyByLanguageRow {
   avgMs: number;
   /** p95 voice-to-voice latency (ms). */
   p95Ms: number;
+  /**
+   * Mean pure STT finalization time (ms), from `sttFinalizeMs`
+   * (LiveKit EOUMetrics.transcription_delay) — isolates STT time from the
+   * broader `avgMs`/`p95Ms` end-to-end latency. Null when no turns in this
+   * window have the field populated (e.g. pre-rollout data).
+   */
+  avgSttFinalizeMs: number | null;
 }
 
 export interface StartLatencyBucketRow {
@@ -662,6 +669,7 @@ export class PlatformAnalyticsRepository {
           `(ORDER BY m."responseLatencyMs"))::int`,
         'p95Ms',
       )
+      .addSelect('round(avg(m."sttFinalizeMs"))::int', 'avgSttFinalizeMs')
       .from('scenario_session_turn_metrics', 'm')
       .innerJoin('scenario_sessions', 's', 's.id = m."scenarioSessionId"')
       .leftJoin(
@@ -681,6 +689,7 @@ export class PlatformAnalyticsRepository {
         turns: number;
         avgMs: number;
         p95Ms: number;
+        avgSttFinalizeMs: number | null;
       }>();
 
     return rows.map((r) => ({
@@ -688,6 +697,8 @@ export class PlatformAnalyticsRepository {
       turns: Number(r.turns) || 0,
       avgMs: Number(r.avgMs) || 0,
       p95Ms: Number(r.p95Ms) || 0,
+      avgSttFinalizeMs:
+        r.avgSttFinalizeMs != null ? Number(r.avgSttFinalizeMs) : null,
     }));
   }
 

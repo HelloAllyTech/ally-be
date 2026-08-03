@@ -778,6 +778,13 @@ export class VoiceLatencyByLanguageRowDto {
 
   @ApiProperty({ description: 'p95 voice-to-voice latency (ms)' })
   p95Ms!: number;
+
+  @ApiProperty({
+    description:
+      'Mean pure STT finalization time (ms), isolated from the broader avgMs/p95Ms end-to-end latency. Null when no turns in this window have it populated.',
+    nullable: true,
+  })
+  avgSttFinalizeMs!: number | null;
 }
 
 export class VoiceLatencyResponseDto {

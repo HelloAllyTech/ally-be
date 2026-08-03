@@ -62,6 +62,7 @@ export interface RoleplaySessionLatencyRow {
   p50ResponseLatencyMs: number | string | null;
   p95ResponseLatencyMs: number | string | null;
   avgEouDelayMs: number | string | null;
+  avgSttFinalizeMs: number | string | null;
   avgLlmTtftMs: number | string | null;
   avgTtsTtfbMs: number | string | null;
   avgOrchestrationMs: number | string | null;
@@ -608,6 +609,7 @@ export class RoleplaySessionLogsRepository {
         'p95ResponseLatencyMs',
       )
       .addSelect('round(avg(m."eouDelayMs"))::int', 'avgEouDelayMs')
+      .addSelect('round(avg(m."sttFinalizeMs"))::int', 'avgSttFinalizeMs')
       .addSelect('round(avg(m."llmTtftMs"))::int', 'avgLlmTtftMs')
       .addSelect('round(avg(m."ttsTtfbMs"))::int', 'avgTtsTtfbMs')
       .addSelect('round(avg(m."orchestrationMs"))::int', 'avgOrchestrationMs')
@@ -645,6 +647,7 @@ export class RoleplaySessionLogsRepository {
         p50ResponseLatencyMs: null,
         p95ResponseLatencyMs: null,
         avgEouDelayMs: null,
+        avgSttFinalizeMs: null,
         avgLlmTtftMs: null,
         avgTtsTtfbMs: null,
         avgOrchestrationMs: null,

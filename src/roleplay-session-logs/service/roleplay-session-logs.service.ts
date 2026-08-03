@@ -424,6 +424,7 @@ export class RoleplaySessionLogsService {
       p50ResponseLatencyMs: this.toNumberOrNull(r.p50ResponseLatencyMs),
       p95ResponseLatencyMs: this.toNumberOrNull(r.p95ResponseLatencyMs),
       avgEouDelayMs: this.toNumberOrNull(r.avgEouDelayMs),
+      avgSttFinalizeMs: this.toNumberOrNull(r.avgSttFinalizeMs),
       avgLlmTtftMs: this.toNumberOrNull(r.avgLlmTtftMs),
       avgTtsTtfbMs: this.toNumberOrNull(r.avgTtsTtfbMs),
       avgOrchestrationMs: this.toNumberOrNull(r.avgOrchestrationMs),
