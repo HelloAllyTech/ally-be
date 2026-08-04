@@ -1119,6 +1119,12 @@ export class LearnController {
     description:
       "ElevenLabs only. Returns the same catalog with each model marked recommended for THIS voice, so a picker can show the verdict without the admin first triggering a sync. Falls back to the plain catalog if the voice can't be read.",
   })
+  @ApiQuery({
+    name: 'field',
+    required: false,
+    description:
+      "Which config field the options are for, when a provider populates more than one. ElevenLabs takes `voice_id` for every voice in the workspace; omit it for that provider's model list, which is the default. No other provider has a second field.",
+  })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_VOICE])
   @Get('scenario-voices/tts-catalog')
   async getTtsCatalog(
@@ -1126,12 +1132,14 @@ export class LearnController {
     @Query('languageCode') languageCode?: string,
     @Query('voiceProvider') voiceProvider?: string,
     @Query('voiceId') voiceId?: string,
+    @Query('field') field?: string,
   ): Promise<TtsCatalogEntry[]> {
     return this.ttsCatalogService.getCatalog({
       provider,
       languageCode,
       voiceProvider,
       voiceId,
+      field,
     });
   }
 

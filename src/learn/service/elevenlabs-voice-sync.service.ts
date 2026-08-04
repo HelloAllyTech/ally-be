@@ -112,6 +112,19 @@ export interface ElevenLabsModelInfo {
   name: string;
 }
 
+/** One voice in the workspace, as a picker needs it. */
+export interface ElevenLabsVoiceInfo {
+  voiceId: string;
+  name: string;
+  /** ElevenLabs' `category`, which our voice types are derived from. */
+  category: string | null;
+  /** Their `labels.gender`, unnormalised — the caller decides what maps. */
+  gender: string | null;
+  /** Their `labels.language`; coarse (`en`, `hi`) and often understated. */
+  language: string | null;
+  accent: string | null;
+}
+
 const ELEVENLABS_API = 'https://api.elevenlabs.io/v1';
 const ELEVENLABS_API_V2 = 'https://api.elevenlabs.io/v2';
 
@@ -385,6 +398,74 @@ export class ElevenLabsVoiceSyncService {
    * speech-to-speech-only models (voice conversion), which this account can't
    * use to generate scenario audio from text.
    */
+  /**
+   * Every voice in the workspace, so a Voice ID field can be a picker instead
+   * of somewhere to paste an id copied out of ElevenLabs Studio.
+   *
+   * Same listing the bulk sync already walks, and it returns everything the
+   * account can use: voices cloned or designed here (105 professional and 27
+   * Voice Design of 153 when measured) plus ElevenLabs' 21 stock voices. So a
+   * voice created in Studio shows up on its own — no pasting, subject only to
+   * how long the catalog cache holds a previous answer.
+   *
+   * Deliberately unfiltered by language. `labels.language` is a single coarse
+   * code (`en`, `hi`) while these voices are largely multilingual, so filtering
+   * on it would hide voices that work — the same mistake Gemini's `en-US`-only
+   * labels invite.
+   */
+  async listWorkspaceVoices(): Promise<ElevenLabsVoiceInfo[]> {
+    const apiKey = this.configService.voicePreview.elevenlabsApiKey;
+    if (!apiKey) {
+      throw new BadRequestException(
+        'ElevenLabs is not configured on this environment.',
+      );
+    }
+
+    const voices: ElevenLabsVoiceInfo[] = [];
+    let pageToken: string | undefined;
+
+    do {
+      const url = new URL(`${ELEVENLABS_API_V2}/voices`);
+      url.searchParams.set('page_size', '100');
+      if (pageToken) url.searchParams.set('next_page_token', pageToken);
+
+      const response = await fetch(url.toString(), {
+        headers: { 'xi-api-key': apiKey },
+      });
+      if (!response.ok) {
+        throw new BadRequestException(
+          `ElevenLabs returned ${response.status} listing voices.`,
+        );
+      }
+
+      const body = (await response.json()) as {
+        voices?: Array<{
+          voice_id?: string;
+          name?: string;
+          category?: string;
+          labels?: Record<string, string>;
+        }>;
+        has_more?: boolean;
+        next_page_token?: string;
+      };
+
+      for (const voice of body.voices ?? []) {
+        if (!voice.voice_id) continue;
+        voices.push({
+          voiceId: voice.voice_id,
+          name: voice.name ?? voice.voice_id,
+          category: voice.category ?? null,
+          gender: voice.labels?.gender ?? null,
+          language: voice.labels?.language ?? null,
+          accent: voice.labels?.accent ?? null,
+        });
+      }
+      pageToken = body.has_more ? body.next_page_token : undefined;
+    } while (pageToken);
+
+    return voices;
+  }
+
   async listAvailableModels(): Promise<ElevenLabsModelInfo[]> {
     const apiKey = this.configService.voicePreview.elevenlabsApiKey;
     if (!apiKey) {

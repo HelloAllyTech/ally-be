@@ -61,6 +61,13 @@ export interface TtsCatalogParams {
    * this closes.
    */
   voiceId?: string;
+  /**
+   * Which config field the options are for, when a provider populates more than
+   * one. ElevenLabs has two: `model` (its model list, the default) and
+   * `voice_id` (every voice in the workspace). Everyone else has one, so
+   * omitting this keeps their existing behaviour.
+   */
+  field?: string;
 }
 
 /**
@@ -77,13 +84,25 @@ const HUME_MAX_PAGES = 50;
 /**
  * How long a fetched catalog is served before we ask the provider again.
  *
- * These lists move on a provider's release cadence — weeks or months — so the
- * window could be far longer. It is deliberately short because Hume's catalog
- * includes CUSTOM_VOICE, which an admin creates themselves and would expect to
- * see; 15 minutes bounds how long a voice they just made stays invisible while
- * still collapsing a session's worth of panel opens into one fetch.
+ * Model and stock-voice lists move on a provider's release cadence — weeks or
+ * months — so the window could be far longer than this.
  */
 const CATALOG_TTL_MS = 15 * 60 * 1000;
+
+/**
+ * The window for a list an admin actively adds to, which is a different problem.
+ *
+ * The whole point of picking a voice by name is not having to fetch its id from
+ * ElevenLabs Studio — so a voice created a minute ago being absent defeats the
+ * feature, not just the cache. Fifteen minutes made that the normal case:
+ * create a voice, come straight here, and it is not in the list.
+ *
+ * Thirty seconds because the fetch is the cost being managed, not the freshness:
+ * 154 voices over two pages measured ~1.8s, which is worth paying when someone
+ * opens the panel and not worth paying twice while they click between fields.
+ * Same reasoning covers Hume's CUSTOM_VOICE library.
+ */
+const USER_EDITABLE_CATALOG_TTL_MS = 30 * 1000;
 
 interface CachedCatalog {
   entries: TtsCatalogEntry[];
@@ -143,10 +162,18 @@ export class TtsCatalogService {
       // answer per voice once annotated, so a shared entry would hand one
       // voice's verdict to another.
       params.voiceId ?? '',
+      params.field ?? '',
     ].join('|');
 
+    // Lists an admin adds to themselves get the short window; a provider's own
+    // model or stock-voice list gets the long one.
+    const ttl =
+      params.field === 'voice_id' || params.voiceProvider === 'CUSTOM_VOICE'
+        ? USER_EDITABLE_CATALOG_TTL_MS
+        : CATALOG_TTL_MS;
+
     const cached = this.cache.get(key);
-    if (cached && Date.now() - cached.fetchedAt < CATALOG_TTL_MS) {
+    if (cached && Date.now() - cached.fetchedAt < ttl) {
       return cached.entries;
     }
 
@@ -171,7 +198,9 @@ export class TtsCatalogService {
   ): Promise<TtsCatalogEntry[]> {
     switch (provider) {
       case TtsProvider.ELEVENLABS:
-        return this.getElevenLabsCatalog(params.voiceId);
+        return params.field === 'voice_id'
+          ? this.getElevenLabsVoiceCatalog()
+          : this.getElevenLabsCatalog(params.voiceId);
       case TtsProvider.DEEPGRAM:
         return this.getDeepgramCatalog(params.languageCode);
       case TtsProvider.GOOGLE:
@@ -195,6 +224,38 @@ export class TtsCatalogService {
    * failing: an unlabelled picker is a missing annotation, an errored one is a
    * field the admin cannot use at all.
    */
+  /**
+   * The workspace's voices, so Voice ID can be picked by name rather than
+   * pasted as an id from ElevenLabs Studio.
+   *
+   * Labelled by name, with ElevenLabs' language and accent labels when they
+   * offer them, since names alone repeat and the ids are unreadable.
+   *
+   * Not labelled with how the voice was made. The studio already says that,
+   * in its own words, once a voice is chosen — putting it here would mean a
+   * second copy of those plain-English names living server-side, free to drift
+   * from the one the panel shows.
+   *
+   * `gender` rides along structurally so the picker can order by the gender
+   * being configured. 21 of 153 voices carry none, and those must stay offered.
+   */
+  private async getElevenLabsVoiceCatalog(): Promise<TtsCatalogEntry[]> {
+    const voices = await this.elevenLabsVoiceSyncService.listWorkspaceVoices();
+
+    return voices.map((voice) => {
+      const detail = [voice.language, voice.accent]
+        .map((part) => String(part ?? '').trim())
+        .filter(Boolean)
+        .join(' · ');
+
+      return {
+        value: voice.voiceId,
+        label: detail ? `${voice.name} (${detail})` : voice.name,
+        gender: toScenarioVoiceGender(voice.gender) ?? undefined,
+      };
+    });
+  }
+
   private async getElevenLabsCatalog(
     voiceId?: string,
   ): Promise<TtsCatalogEntry[]> {
