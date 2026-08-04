@@ -47,13 +47,34 @@ const GENDER_FIELD: VoiceConfigField = {
   type: 'string',
   options: Object.values(Gender),
 };
+
+/**
+ * Roughly how old the voice sounds, entered by hand.
+ *
+ * Nothing dispatches it — no TTS client reads `age` — so it exists to help a
+ * human choose and to order the studio's picker against a persona's age.
+ *
+ * Deliberately NO `options` here, unlike gender. The studio offers a fixed set
+ * to guide new entries, but this validator must not reject what is already
+ * stored: the only values in the wild came from a free-text Sarvam field, and
+ * blocking a save because a legacy row says something slightly different would
+ * make those voices uneditable. Guiding entry and gatekeeping data are separate
+ * jobs, and only the first belongs to a picker.
+ */
+const AGE_FIELD: VoiceConfigField = {
+  key: 'age',
+  required: false,
+  type: 'string',
+};
 export const VOICE_CONFIG_SCHEMA: Record<TtsProvider, VoiceConfigField[]> = {
   [TtsProvider.DEEPGRAM]: [
     GENDER_FIELD,
+    AGE_FIELD,
     { key: 'model', required: true, type: 'string' },
   ],
   [TtsProvider.ELEVENLABS]: [
     GENDER_FIELD,
+    AGE_FIELD,
     { key: 'model', required: true, type: 'string' },
     /**
      * How the voice was created, which decides whether eleven_v3 can use it.
@@ -75,18 +96,20 @@ export const VOICE_CONFIG_SCHEMA: Record<TtsProvider, VoiceConfigField[]> = {
   ],
   [TtsProvider.SARVAM]: [
     GENDER_FIELD,
+    AGE_FIELD,
     { key: 'model', required: true, type: 'string' },
     { key: 'speaker', required: true, type: 'string' },
-    { key: 'age', required: false, type: 'string' },
   ],
   [TtsProvider.GOOGLE]: [
     GENDER_FIELD,
+    AGE_FIELD,
     { key: 'voice_name', required: false, type: 'string' },
     { key: 'model_name', required: false, type: 'string' },
     { key: 'voice_cloning_key', required: false, type: 'string' },
   ],
   [TtsProvider.HUME]: [
     GENDER_FIELD,
+    AGE_FIELD,
     { key: 'voice_name', required: true, type: 'string' },
     { key: 'instant_mode', required: false, type: 'boolean' },
     {
