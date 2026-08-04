@@ -1,10 +1,14 @@
 import {
   IsDateString,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
   Matches,
+  Max,
+  Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 
 import { MAX_CUSTOM_RANGE_DAYS } from '../util/analytics-window.util';
@@ -826,6 +830,150 @@ export class VoiceLatencyResponseDto {
     type: [VoiceLatencyByLanguageRowDto],
   })
   byLanguage!: VoiceLatencyByLanguageRowDto[];
+}
+
+/**
+ * Shared per-session voice-pipeline latency fields — one row averages a
+ * single session's turns across every stage of the pipeline. Mirrors
+ * {@link RoleplaySessionLatencyRow} (roleplay-session-logs module) minus the
+ * deprecated `avgProsodyMs`/`prosodySkippedTurns` fields.
+ */
+export class VoiceLatencySessionStagesDto {
+  @ApiProperty({ description: 'Mean voice-to-voice latency (ms)' })
+  avgResponseLatencyMs!: number | null;
+
+  @ApiProperty({ description: 'Median (p50) voice-to-voice latency (ms)' })
+  p50ResponseLatencyMs!: number | null;
+
+  @ApiProperty({ description: 'p95 voice-to-voice latency (ms)' })
+  p95ResponseLatencyMs!: number | null;
+
+  @ApiProperty({ description: 'Mean end-of-utterance delay (ms)' })
+  avgEouDelayMs!: number | null;
+
+  @ApiProperty({ description: 'Mean pure STT finalization time (ms)' })
+  avgSttFinalizeMs!: number | null;
+
+  @ApiProperty({ description: 'Mean whole-graph-to-first-token time (ms)' })
+  avgLlmTtftMs!: number | null;
+
+  @ApiProperty({ description: 'Mean TTS time-to-first-byte (ms)' })
+  avgTtsTtfbMs!: number | null;
+
+  @ApiProperty({ description: 'Mean orchestration overhead (ms)' })
+  avgOrchestrationMs!: number | null;
+
+  @ApiProperty({ description: 'Mean main-LLM response generation time (ms)' })
+  avgLlmResponseMs!: number | null;
+
+  @ApiProperty({
+    description: 'Mean branching-instruction resolution time (ms)',
+  })
+  avgBranchingMs!: number | null;
+
+  @ApiProperty({ description: 'Mean knowledge-retrieval time (ms)' })
+  avgKnowledgeRetrievalMs!: number | null;
+
+  @ApiProperty({ description: 'Mean event-detection fan-out time (ms)' })
+  avgProcessEventsMs!: number | null;
+
+  @ApiProperty({ description: 'Mean behavior-detection time (ms)' })
+  avgBehaviorsMs!: number | null;
+
+  @ApiProperty({ description: 'Turns where the user interrupted the agent' })
+  interruptedTurns!: number;
+
+  @ApiProperty({ description: 'Turns where the main LLM call timed out' })
+  llmTimedOutTurns!: number;
+}
+
+export class VoiceLatencySessionsQueryDto extends AnalyticsWindowQueryDto {
+  @ApiProperty({ description: 'Restrict to sessions of this simulation' })
+  @Type(() => Number)
+  @IsInt()
+  scenarioId!: number;
+
+  @ApiProperty({
+    description: "Filter by the session's language value (e.g. en-IN, hi-IN)",
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @ApiProperty({ required: false, default: 25, minimum: 1, maximum: 200 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+
+  @ApiProperty({ required: false, default: 0, minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
+}
+
+export class VoiceLatencySessionsSummaryQueryDto extends AnalyticsWindowQueryDto {
+  @ApiProperty({ description: 'Restrict to sessions of this simulation' })
+  @Type(() => Number)
+  @IsInt()
+  scenarioId!: number;
+
+  @ApiProperty({
+    description: "Filter by the session's language value (e.g. en-IN, hi-IN)",
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  language?: string;
+}
+
+export class VoiceLatencySessionRowDto extends VoiceLatencySessionStagesDto {
+  @ApiProperty({ description: 'scenario_sessions.id (uuid)' })
+  scenarioSessionId!: string;
+
+  @ApiProperty({
+    description: 'Session start time (ISO), null if unavailable',
+    nullable: true,
+  })
+  occurredAt!: string | null;
+
+  @ApiProperty({ description: 'Turns aggregated into this session row' })
+  turnCount!: number;
+}
+
+export class ListVoiceLatencySessionsResponseDto {
+  @ApiProperty({ type: [VoiceLatencySessionRowDto] })
+  data!: VoiceLatencySessionRowDto[];
+
+  @ApiProperty({
+    description: 'Total sessions matching the filter (for pagination)',
+  })
+  total!: number;
+
+  @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
+}
+
+export class VoiceLatencySessionsSummaryResponseDto extends VoiceLatencySessionStagesDto {
+  @ApiProperty({ description: 'Distinct sessions matching the filter' })
+  sessionCount!: number;
+
+  @ApiProperty({ description: 'Turns aggregated across all matching sessions' })
+  turnCount!: number;
+
+  @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
 }
 
 export class StartLatencyQueryDto extends AnalyticsWindowQueryDto {

@@ -21,6 +21,10 @@ import {
   UserGrowthPointDto,
   VoiceLatencyQueryDto,
   VoiceLatencyResponseDto,
+  VoiceLatencySessionsQueryDto,
+  VoiceLatencySessionsSummaryQueryDto,
+  ListVoiceLatencySessionsResponseDto,
+  VoiceLatencySessionsSummaryResponseDto,
 } from '../dto/platform-analytics.dto';
 import {
   AnalyticsBucket,
@@ -575,6 +579,113 @@ export class PlatformAnalyticsService {
       targetMs: VOICE_LATENCY_TARGET_MS,
       points,
       byLanguage,
+    };
+  }
+
+  /** Coerces the raw (possibly string, per-pg-driver) stage aggregates to numbers. */
+  private static mapVoiceLatencyStages(row: {
+    avgResponseLatencyMs: number | string | null;
+    p50ResponseLatencyMs: number | string | null;
+    p95ResponseLatencyMs: number | string | null;
+    avgEouDelayMs: number | string | null;
+    avgSttFinalizeMs: number | string | null;
+    avgLlmTtftMs: number | string | null;
+    avgTtsTtfbMs: number | string | null;
+    avgOrchestrationMs: number | string | null;
+    avgLlmResponseMs: number | string | null;
+    avgBranchingMs: number | string | null;
+    avgKnowledgeRetrievalMs: number | string | null;
+    avgProcessEventsMs: number | string | null;
+    avgBehaviorsMs: number | string | null;
+    interruptedTurns: number | string;
+    llmTimedOutTurns: number | string;
+  }) {
+    const num = (v: number | string | null) => (v != null ? Number(v) : null);
+    return {
+      avgResponseLatencyMs: num(row.avgResponseLatencyMs),
+      p50ResponseLatencyMs: num(row.p50ResponseLatencyMs),
+      p95ResponseLatencyMs: num(row.p95ResponseLatencyMs),
+      avgEouDelayMs: num(row.avgEouDelayMs),
+      avgSttFinalizeMs: num(row.avgSttFinalizeMs),
+      avgLlmTtftMs: num(row.avgLlmTtftMs),
+      avgTtsTtfbMs: num(row.avgTtsTtfbMs),
+      avgOrchestrationMs: num(row.avgOrchestrationMs),
+      avgLlmResponseMs: num(row.avgLlmResponseMs),
+      avgBranchingMs: num(row.avgBranchingMs),
+      avgKnowledgeRetrievalMs: num(row.avgKnowledgeRetrievalMs),
+      avgProcessEventsMs: num(row.avgProcessEventsMs),
+      avgBehaviorsMs: num(row.avgBehaviorsMs),
+      interruptedTurns: Number(row.interruptedTurns) || 0,
+      llmTimedOutTurns: Number(row.llmTimedOutTurns) || 0,
+    };
+  }
+
+  /**
+   * Session-wise voice latency for one simulation, paginated, worst-first —
+   * the tool this session's ad-hoc Metabase latency-by-language/scenario
+   * investigation should have been able to reach for instead of hand-written
+   * SQL. See {@link getVoiceLatencySessionsSummary} for the accompanying
+   * whole-filtered-set average.
+   */
+  async getVoiceLatencySessions(
+    query: VoiceLatencySessionsQueryDto,
+  ): Promise<ListVoiceLatencySessionsResponseDto> {
+    const { scenarioId, language, limit = 25, offset = 0 } = query;
+    const window = resolveAnalyticsWindow(query, {
+      defaultRange: '90d',
+      defaultBucketFor: PlatformAnalyticsService.defaultBucketFor,
+    });
+    const { start: windowStart, endExclusive } = window;
+
+    const { rows, total } = await this.repo.getVoiceLatencyBySessions(
+      scenarioId,
+      language,
+      windowStart,
+      endExclusive,
+      limit,
+      offset,
+    );
+
+    return {
+      data: rows.map((r) => ({
+        scenarioSessionId: r.scenarioSessionId,
+        occurredAt: r.occurredAt,
+        turnCount: Number(r.turnCount) || 0,
+        ...PlatformAnalyticsService.mapVoiceLatencyStages(r),
+      })),
+      total,
+      window: describeWindow(window),
+    };
+  }
+
+  /**
+   * Overall average across every session matching the scenario(+language)
+   * filter — independent of {@link getVoiceLatencySessions}'s pagination, so
+   * paging through sessions never re-triggers (or misleadingly narrows) this
+   * number.
+   */
+  async getVoiceLatencySessionsSummary(
+    query: VoiceLatencySessionsSummaryQueryDto,
+  ): Promise<VoiceLatencySessionsSummaryResponseDto> {
+    const { scenarioId, language } = query;
+    const window = resolveAnalyticsWindow(query, {
+      defaultRange: '90d',
+      defaultBucketFor: PlatformAnalyticsService.defaultBucketFor,
+    });
+    const { start: windowStart, endExclusive } = window;
+
+    const row = await this.repo.getVoiceLatencySessionsSummary(
+      scenarioId,
+      language,
+      windowStart,
+      endExclusive,
+    );
+
+    return {
+      sessionCount: Number(row.sessionCount) || 0,
+      turnCount: Number(row.turnCount) || 0,
+      window: describeWindow(window),
+      ...PlatformAnalyticsService.mapVoiceLatencyStages(row),
     };
   }
 

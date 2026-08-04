@@ -63,6 +63,10 @@ import {
   TokenConsumptionResponseDto,
   VoiceLatencyQueryDto,
   VoiceLatencyResponseDto,
+  VoiceLatencySessionsQueryDto,
+  VoiceLatencySessionsSummaryQueryDto,
+  ListVoiceLatencySessionsResponseDto,
+  VoiceLatencySessionsSummaryResponseDto,
 } from '../dto/platform-analytics.dto';
 import {
   AnalyticsHighlightsQueryDto,
@@ -712,6 +716,50 @@ export class AnalyticsController {
     @Query() query: VoiceLatencyQueryDto,
   ): Promise<VoiceLatencyResponseDto> {
     return this.platformAnalyticsService.getVoiceLatency(query);
+  }
+
+  @Get('voice-latency/sessions')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Session-wise voice latency for one simulation (super-admin)',
+    description:
+      'One row per session (worst-first by avg response latency), averaging ' +
+      "that session's turns across every pipeline stage (EOU, STT finalize, " +
+      'LLM TTFT, process events, knowledge retrieval, TTS TTFB, behaviors). ' +
+      'Optionally narrowed further by `language`. See the sibling ' +
+      '`/voice-latency/sessions/summary` endpoint for the whole-filtered-set ' +
+      "average, independent of this endpoint's pagination.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Session-wise voice latency retrieved successfully',
+    type: ListVoiceLatencySessionsResponseDto,
+  })
+  async getVoiceLatencySessions(
+    @Query() query: VoiceLatencySessionsQueryDto,
+  ): Promise<ListVoiceLatencySessionsResponseDto> {
+    return this.platformAnalyticsService.getVoiceLatencySessions(query);
+  }
+
+  @Get('voice-latency/sessions/summary')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary:
+      'Session-wise voice latency summary for one simulation (super-admin)',
+    description:
+      'Overall average across every session matching the scenario(+language) ' +
+      'filter, over the full window (not just the current page of ' +
+      '`/voice-latency/sessions`).',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Voice latency summary retrieved successfully',
+    type: VoiceLatencySessionsSummaryResponseDto,
+  })
+  async getVoiceLatencySessionsSummary(
+    @Query() query: VoiceLatencySessionsSummaryQueryDto,
+  ): Promise<VoiceLatencySessionsSummaryResponseDto> {
+    return this.platformAnalyticsService.getVoiceLatencySessionsSummary(query);
   }
 
   @Get('agent-join-reliability')

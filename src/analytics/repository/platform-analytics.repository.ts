@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, ObjectLiteral, SelectQueryBuilder } from 'typeorm';
 import { ScenarioSessionEventStatus } from '../../learn/enum/scenario-session-status.enum';
 import {
   excludeTestTenants,
@@ -96,6 +96,44 @@ export interface VoiceLatencyByLanguageRow {
    * window have the field populated (e.g. pre-rollout data).
    */
   avgSttFinalizeMs: number | null;
+}
+
+/**
+ * Shared per-session voice-pipeline latency shape — used both for a single
+ * session-wise row (`getVoiceLatencyBySessions`, one row per session) and for
+ * the whole-filtered-set summary (`getVoiceLatencySessionsSummary`, one row
+ * total). Mirrors `RoleplaySessionLatencyRow`
+ * (roleplay-session-logs.repository.ts:59-78) minus the deprecated
+ * `avgProsodyMs`/`prosodySkippedTurns` fields — keep both in sync if
+ * `scenario_session_turn_metrics` gains/loses a column.
+ */
+export interface VoiceLatencySessionStagesRow {
+  avgResponseLatencyMs: number | string | null;
+  p50ResponseLatencyMs: number | string | null;
+  p95ResponseLatencyMs: number | string | null;
+  avgEouDelayMs: number | string | null;
+  avgSttFinalizeMs: number | string | null;
+  avgLlmTtftMs: number | string | null;
+  avgTtsTtfbMs: number | string | null;
+  avgOrchestrationMs: number | string | null;
+  avgLlmResponseMs: number | string | null;
+  avgBranchingMs: number | string | null;
+  avgKnowledgeRetrievalMs: number | string | null;
+  avgProcessEventsMs: number | string | null;
+  avgBehaviorsMs: number | string | null;
+  interruptedTurns: number | string;
+  llmTimedOutTurns: number | string;
+}
+
+export interface VoiceLatencySessionRow extends VoiceLatencySessionStagesRow {
+  scenarioSessionId: string;
+  occurredAt: string | null;
+  turnCount: number | string;
+}
+
+export interface VoiceLatencySessionsSummaryRow extends VoiceLatencySessionStagesRow {
+  sessionCount: number | string;
+  turnCount: number | string;
 }
 
 export interface StartLatencyBucketRow {
@@ -700,6 +738,228 @@ export class PlatformAnalyticsRepository {
       avgSttFinalizeMs:
         r.avgSttFinalizeMs != null ? Number(r.avgSttFinalizeMs) : null,
     }));
+  }
+
+  /**
+   * Shared filters for the session-wise voice-latency queries below (list,
+   * count, summary) so all three stay in lockstep — mirrors the
+   * `applyFilters` convention in roleplay-session-logs.repository.ts, extended
+   * to a list/count/summary triple instead of a list/count pair. Assumes the
+   * query builder already has `FROM scenario_session_turn_metrics m` and,
+   * when `language` is set, a `LEFT JOIN languages l ON l.id =
+   * NULLIF(ss.metadata->>'languageId','')::int` (via `ss` = `scenario_sessions`).
+   * `m."scenarioId"` is reliably populated at write time (unlike `m."language"`,
+   * which is largely unpopulated) so the scenario filter needs no join.
+   */
+  private applyVoiceLatencySessionFilters(
+    qb: SelectQueryBuilder<ObjectLiteral>,
+    filters: { scenarioId: number; language?: string; start: Date; end: Date },
+  ): void {
+    qb.where('m."scenarioId" = :scenarioId', {
+      scenarioId: filters.scenarioId,
+    })
+      .andWhere('m."occurredAt" >= :start', { start: filters.start })
+      .andWhere('m."occurredAt" < :end', { end: filters.end })
+      .andWhere(`m."source" = 'pipeline'`)
+      .andWhere(excludeTestTenants('m."tenant_id"'));
+    if (filters.language) {
+      qb.andWhere(`COALESCE(l."value", 'en') = :language`, {
+        language: filters.language,
+      });
+    }
+  }
+
+  /**
+   * Session-wise voice latency for one simulation: one row per session,
+   * averaging that session's turns across every pipeline stage. Sorted
+   * worst-first (`avgResponseLatencyMs DESC`) since this exists to help spot
+   * outlier sessions, not browse chronologically. The stage SELECT-list is
+   * copied from `RoleplaySessionLogsRepository.getLatencyBySession`
+   * (roleplay-session-logs.repository.ts:596-636) — that method computes the
+   * same breakdown for a single known session id; this one groups it across
+   * every session matching a scenario(+language) filter, paginated. Keep both
+   * in sync if `scenario_session_turn_metrics` gains/loses a column.
+   */
+  async getVoiceLatencyBySessions(
+    scenarioId: number,
+    language: string | undefined,
+    start: Date,
+    end: Date,
+    limit: number,
+    offset: number,
+  ): Promise<{ rows: VoiceLatencySessionRow[]; total: number }> {
+    const buildBase = () => {
+      const qb = this.dataSource
+        .createQueryBuilder()
+        .from('scenario_session_turn_metrics', 'm')
+        .innerJoin('scenario_sessions', 'ss', 'ss.id = m."scenarioSessionId"');
+      if (language) {
+        qb.leftJoin(
+          'languages',
+          'l',
+          `l.id = NULLIF(ss.metadata->>'languageId', '')::int`,
+        );
+      }
+      this.applyVoiceLatencySessionFilters(qb, {
+        scenarioId,
+        language,
+        start,
+        end,
+      });
+      return qb;
+    };
+
+    const rowsQb = buildBase()
+      .select('m."scenarioSessionId"', 'scenarioSessionId')
+      .addSelect('MIN(ss."startedAt")', 'occurredAt')
+      .addSelect('COUNT(*)::int', 'turnCount')
+      .addSelect(
+        'round(avg(m."responseLatencyMs"))::int',
+        'avgResponseLatencyMs',
+      )
+      .addSelect(
+        `round(percentile_cont(0.5) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p50ResponseLatencyMs',
+      )
+      .addSelect(
+        `round(percentile_cont(0.95) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p95ResponseLatencyMs',
+      )
+      .addSelect('round(avg(m."eouDelayMs"))::int', 'avgEouDelayMs')
+      .addSelect('round(avg(m."sttFinalizeMs"))::int', 'avgSttFinalizeMs')
+      .addSelect('round(avg(m."llmTtftMs"))::int', 'avgLlmTtftMs')
+      .addSelect('round(avg(m."ttsTtfbMs"))::int', 'avgTtsTtfbMs')
+      .addSelect('round(avg(m."orchestrationMs"))::int', 'avgOrchestrationMs')
+      .addSelect('round(avg(m."llmResponseMs"))::int', 'avgLlmResponseMs')
+      .addSelect('round(avg(m."branchingMs"))::int', 'avgBranchingMs')
+      .addSelect(
+        'round(avg(m."knowledgeRetrievalMs"))::int',
+        'avgKnowledgeRetrievalMs',
+      )
+      .addSelect('round(avg(m."processEventsMs"))::int', 'avgProcessEventsMs')
+      .addSelect('round(avg(m."behaviorsMs"))::int', 'avgBehaviorsMs')
+      .addSelect(
+        'COALESCE(SUM(CASE WHEN m."interrupted" THEN 1 ELSE 0 END), 0)::int',
+        'interruptedTurns',
+      )
+      .addSelect(
+        'COALESCE(SUM(CASE WHEN m."llmTimedOut" THEN 1 ELSE 0 END), 0)::int',
+        'llmTimedOutTurns',
+      )
+      .groupBy('m."scenarioSessionId"')
+      .orderBy('avg(m."responseLatencyMs")', 'DESC', 'NULLS LAST')
+      .addOrderBy('m."scenarioSessionId"', 'ASC')
+      .limit(limit)
+      .offset(offset);
+
+    const countQb = buildBase().select(
+      'COUNT(DISTINCT m."scenarioSessionId")::int',
+      'total',
+    );
+
+    const [rows, countRow] = await Promise.all([
+      rowsQb.getRawMany<VoiceLatencySessionRow>(),
+      countQb.getRawOne<{ total: number }>(),
+    ]);
+
+    return { rows, total: Number(countRow?.total) || 0 };
+  }
+
+  /**
+   * Overall average across EVERY session matching the scenario(+language)
+   * filter — deliberately a separate query from {@link getVoiceLatencyBySessions}
+   * rather than an aggregate of the current page, since the page is only a
+   * slice (25 of possibly hundreds of sessions) and averaging just that slice
+   * would silently misrepresent the scenario's real average. Per-turn
+   * weighted (each turn counted once), matching how every other latency
+   * aggregate in this file already averages — not an "average of per-session
+   * averages."
+   */
+  async getVoiceLatencySessionsSummary(
+    scenarioId: number,
+    language: string | undefined,
+    start: Date,
+    end: Date,
+  ): Promise<VoiceLatencySessionsSummaryRow> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .from('scenario_session_turn_metrics', 'm')
+      .innerJoin('scenario_sessions', 'ss', 'ss.id = m."scenarioSessionId"');
+    if (language) {
+      qb.leftJoin(
+        'languages',
+        'l',
+        `l.id = NULLIF(ss.metadata->>'languageId', '')::int`,
+      );
+    }
+    this.applyVoiceLatencySessionFilters(qb, {
+      scenarioId,
+      language,
+      start,
+      end,
+    });
+    qb.select('COUNT(DISTINCT m."scenarioSessionId")::int', 'sessionCount')
+      .addSelect('COUNT(*)::int', 'turnCount')
+      .addSelect(
+        'round(avg(m."responseLatencyMs"))::int',
+        'avgResponseLatencyMs',
+      )
+      .addSelect(
+        `round(percentile_cont(0.5) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p50ResponseLatencyMs',
+      )
+      .addSelect(
+        `round(percentile_cont(0.95) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p95ResponseLatencyMs',
+      )
+      .addSelect('round(avg(m."eouDelayMs"))::int', 'avgEouDelayMs')
+      .addSelect('round(avg(m."sttFinalizeMs"))::int', 'avgSttFinalizeMs')
+      .addSelect('round(avg(m."llmTtftMs"))::int', 'avgLlmTtftMs')
+      .addSelect('round(avg(m."ttsTtfbMs"))::int', 'avgTtsTtfbMs')
+      .addSelect('round(avg(m."orchestrationMs"))::int', 'avgOrchestrationMs')
+      .addSelect('round(avg(m."llmResponseMs"))::int', 'avgLlmResponseMs')
+      .addSelect('round(avg(m."branchingMs"))::int', 'avgBranchingMs')
+      .addSelect(
+        'round(avg(m."knowledgeRetrievalMs"))::int',
+        'avgKnowledgeRetrievalMs',
+      )
+      .addSelect('round(avg(m."processEventsMs"))::int', 'avgProcessEventsMs')
+      .addSelect('round(avg(m."behaviorsMs"))::int', 'avgBehaviorsMs')
+      .addSelect(
+        'COALESCE(SUM(CASE WHEN m."interrupted" THEN 1 ELSE 0 END), 0)::int',
+        'interruptedTurns',
+      )
+      .addSelect(
+        'COALESCE(SUM(CASE WHEN m."llmTimedOut" THEN 1 ELSE 0 END), 0)::int',
+        'llmTimedOutTurns',
+      );
+
+    const row = await qb.getRawOne<VoiceLatencySessionsSummaryRow>();
+    return (
+      row ?? {
+        sessionCount: 0,
+        turnCount: 0,
+        avgResponseLatencyMs: null,
+        p50ResponseLatencyMs: null,
+        p95ResponseLatencyMs: null,
+        avgEouDelayMs: null,
+        avgSttFinalizeMs: null,
+        avgLlmTtftMs: null,
+        avgTtsTtfbMs: null,
+        avgOrchestrationMs: null,
+        avgLlmResponseMs: null,
+        avgBranchingMs: null,
+        avgKnowledgeRetrievalMs: null,
+        avgProcessEventsMs: null,
+        avgBehaviorsMs: null,
+        interruptedTurns: 0,
+        llmTimedOutTurns: 0,
+      }
+    );
   }
 
   /**

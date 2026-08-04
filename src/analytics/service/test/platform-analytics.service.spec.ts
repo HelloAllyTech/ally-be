@@ -56,6 +56,28 @@ describe('PlatformAnalyticsService', () => {
       getCompletedSimsSince: jest.fn().mockResolvedValue(0),
       getVoiceLatencyByBucket: jest.fn().mockResolvedValue([]),
       getVoiceLatencyByLanguage: jest.fn().mockResolvedValue([]),
+      getVoiceLatencyBySessions: jest
+        .fn()
+        .mockResolvedValue({ rows: [], total: 0 }),
+      getVoiceLatencySessionsSummary: jest.fn().mockResolvedValue({
+        sessionCount: 0,
+        turnCount: 0,
+        avgResponseLatencyMs: null,
+        p50ResponseLatencyMs: null,
+        p95ResponseLatencyMs: null,
+        avgEouDelayMs: null,
+        avgSttFinalizeMs: null,
+        avgLlmTtftMs: null,
+        avgTtsTtfbMs: null,
+        avgOrchestrationMs: null,
+        avgLlmResponseMs: null,
+        avgBranchingMs: null,
+        avgKnowledgeRetrievalMs: null,
+        avgProcessEventsMs: null,
+        avgBehaviorsMs: null,
+        interruptedTurns: 0,
+        llmTimedOutTurns: 0,
+      }),
       getAgentJoinReliabilityByBucket: jest.fn().mockResolvedValue([]),
       getSuspectedFreezeByBucket: jest.fn().mockResolvedValue([]),
       getSessionOutcomeMix: jest
@@ -479,6 +501,142 @@ describe('PlatformAnalyticsService', () => {
         new Date('2024-06-13T00:00:00.000Z'),
       );
       expect(result.byLanguage).toEqual(byLanguage);
+    });
+  });
+
+  describe('getVoiceLatencySessions', () => {
+    it('resolves the default 90d window and forwards scenarioId/language/pagination', async () => {
+      await service.getVoiceLatencySessions({
+        scenarioId: 42,
+        language: 'ta-IN',
+        limit: 10,
+        offset: 20,
+      });
+
+      expect(repo.getVoiceLatencyBySessions).toHaveBeenCalledWith(
+        42,
+        'ta-IN',
+        new Date('2024-03-15T00:00:00.000Z'),
+        new Date('2024-06-13T00:00:00.000Z'),
+        10,
+        20,
+      );
+    });
+
+    it('defaults limit/offset when not provided', async () => {
+      await service.getVoiceLatencySessions({ scenarioId: 7 });
+
+      const [, , , , limit, offset] =
+        repo.getVoiceLatencyBySessions.mock.calls[0];
+      expect(limit).toBe(25);
+      expect(offset).toBe(0);
+    });
+
+    it('coerces raw string aggregates to numbers and passes through pagination total', async () => {
+      repo.getVoiceLatencyBySessions.mockResolvedValue({
+        rows: [
+          {
+            scenarioSessionId: 'sess-1',
+            occurredAt: '2024-06-01T00:00:00.000Z',
+            turnCount: '12',
+            avgResponseLatencyMs: '9680',
+            p50ResponseLatencyMs: '10037',
+            p95ResponseLatencyMs: '26305',
+            avgEouDelayMs: '1333',
+            avgSttFinalizeMs: null,
+            avgLlmTtftMs: '9680',
+            avgTtsTtfbMs: '1881',
+            avgOrchestrationMs: '31',
+            avgLlmResponseMs: '1200',
+            avgBranchingMs: '0',
+            avgKnowledgeRetrievalMs: '2413',
+            avgProcessEventsMs: '2554',
+            avgBehaviorsMs: '1534',
+            interruptedTurns: '1',
+            llmTimedOutTurns: '0',
+          },
+        ],
+        total: 1,
+      });
+
+      const result = await service.getVoiceLatencySessions({
+        scenarioId: 42,
+      });
+
+      expect(result.total).toBe(1);
+      expect(result.data[0]).toEqual({
+        scenarioSessionId: 'sess-1',
+        occurredAt: '2024-06-01T00:00:00.000Z',
+        turnCount: 12,
+        avgResponseLatencyMs: 9680,
+        p50ResponseLatencyMs: 10037,
+        p95ResponseLatencyMs: 26305,
+        avgEouDelayMs: 1333,
+        avgSttFinalizeMs: null,
+        avgLlmTtftMs: 9680,
+        avgTtsTtfbMs: 1881,
+        avgOrchestrationMs: 31,
+        avgLlmResponseMs: 1200,
+        avgBranchingMs: 0,
+        avgKnowledgeRetrievalMs: 2413,
+        avgProcessEventsMs: 2554,
+        avgBehaviorsMs: 1534,
+        interruptedTurns: 1,
+        llmTimedOutTurns: 0,
+      });
+    });
+  });
+
+  describe('getVoiceLatencySessionsSummary', () => {
+    it('resolves the default 90d window and forwards scenarioId/language', async () => {
+      await service.getVoiceLatencySessionsSummary({
+        scenarioId: 42,
+        language: 'kn-IN',
+      });
+
+      expect(repo.getVoiceLatencySessionsSummary).toHaveBeenCalledWith(
+        42,
+        'kn-IN',
+        new Date('2024-03-15T00:00:00.000Z'),
+        new Date('2024-06-13T00:00:00.000Z'),
+      );
+    });
+
+    it('coerces raw aggregates to numbers', async () => {
+      repo.getVoiceLatencySessionsSummary.mockResolvedValue({
+        sessionCount: '100',
+        turnCount: '450',
+        avgResponseLatencyMs: '12723',
+        p50ResponseLatencyMs: '10037',
+        p95ResponseLatencyMs: '26305',
+        avgEouDelayMs: '1333',
+        avgSttFinalizeMs: null,
+        avgLlmTtftMs: '9680',
+        avgTtsTtfbMs: '1881',
+        avgOrchestrationMs: '31',
+        avgLlmResponseMs: '1200',
+        avgBranchingMs: '0',
+        avgKnowledgeRetrievalMs: '2413',
+        avgProcessEventsMs: '2554',
+        avgBehaviorsMs: '1534',
+        interruptedTurns: '2',
+        llmTimedOutTurns: '1',
+      });
+
+      const result = await service.getVoiceLatencySessionsSummary({
+        scenarioId: 42,
+      });
+
+      expect(result).toMatchObject({
+        sessionCount: 100,
+        turnCount: 450,
+        avgResponseLatencyMs: 12723,
+        avgLlmTtftMs: 9680,
+        avgTtsTtfbMs: 1881,
+        avgSttFinalizeMs: null,
+        interruptedTurns: 2,
+        llmTimedOutTurns: 1,
+      });
     });
   });
 
