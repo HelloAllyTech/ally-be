@@ -323,16 +323,6 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description:
-      'Compress long non-English current-turn input (same language, preserved intent) before it is sent to the agent, reducing token cost. Defaults to false (opt-in) when unspecified.',
-    example: false,
-    required: false,
-  })
-  @IsOptional()
-  @IsBoolean()
-  inputCompressionEnabled?: boolean;
-
-  @ApiProperty({
-    description:
       "Enable continuous back-channeling — brief 'mm-hmm'-style listener affirmations played sparsely while the learner is still speaking on a long turn. Defaults to false (opt-in) when unspecified.",
     example: false,
     required: false,
