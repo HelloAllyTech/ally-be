@@ -2014,6 +2014,7 @@ export class ScenarioService {
     languageIds: string | undefined,
     options: Pagination,
     genders?: string,
+    ages?: string,
   ): Promise<ScenarioVoices[]> {
     return this.scenarioVoiceRepository.getScenarioVoices(
       searchName,
@@ -2021,6 +2022,7 @@ export class ScenarioService {
       languageIds,
       options,
       genders,
+      ages,
     );
   }
 

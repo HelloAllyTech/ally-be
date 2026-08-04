@@ -1072,6 +1072,14 @@ export class LearnController {
       "Filter by config gender (comma-separated). Use 'unset' to find voices " +
       'with no gender — those drop their language out of simulation creation.',
   })
+  @ApiQuery({
+    name: 'ages',
+    required: false,
+    type: String,
+    description:
+      "Filter by config age (comma-separated). Use 'unset' to find voices with " +
+      "no age — those cannot be ordered against a persona's age in the studio.",
+  })
   @ApiOperation({
     summary:
       "Pull an ElevenLabs voice's creation type (IVC/PVC/Voice Design) so v3 compatibility is visible",
@@ -1154,6 +1162,7 @@ export class LearnController {
     @Query('providers') providers?: string,
     @Query('languageIds') languageIds?: string,
     @Query('genders') genders?: string,
+    @Query('ages') ages?: string,
   ) {
     return this.scenarioService.getScenarioVoices(
       searchName,
@@ -1166,6 +1175,7 @@ export class LearnController {
         order,
       },
       genders,
+      ages,
     );
   }
 

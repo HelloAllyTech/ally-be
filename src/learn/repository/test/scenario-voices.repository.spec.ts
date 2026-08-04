@@ -60,6 +60,93 @@ describe('ScenarioVoicesRepository', () => {
     jest.clearAllMocks();
   });
 
+  describe('getScenarioVoices — gender and age filters', () => {
+    const whereClauses = () =>
+      (queryBuilder.andWhere as jest.Mock).mock.calls.map((call) =>
+        String(call[0]),
+      );
+    const whereParams = () =>
+      Object.assign(
+        {},
+        ...(queryBuilder.andWhere as jest.Mock).mock.calls.map(
+          (call) => call[1] ?? {},
+        ),
+      );
+
+    const run = (genders?: string, ages?: string) => {
+      (queryBuilder.getRawAndEntities as jest.Mock).mockResolvedValue({
+        entities: [],
+        raw: [],
+      });
+      return repository.getScenarioVoices(
+        undefined,
+        undefined,
+        undefined,
+        { limit: 10, offset: 0 },
+        genders,
+        ages,
+      );
+    };
+
+    it('matches a named gender case-insensitively', async () => {
+      await run('Male');
+      expect(whereClauses().join(' ')).toContain("config ->> 'gender'");
+      // Stored values are not reliably normalised, so both sides are lowered.
+      expect(whereParams().genderValues).toEqual(['male']);
+    });
+
+    /**
+     * `unset` is a sentinel, not a stored value — it is how an admin finds the
+     * rows still missing a field, which is the main reason to filter on these.
+     * A blank string counts as missing too: clearing the field in the panel
+     * removes the key, but a config edited as raw JSON can leave `""` behind,
+     * and an IS NULL test alone would hide those from the very filter meant to
+     * surface them.
+     */
+    it('treats unset as null OR blank, not merely SQL NULL', async () => {
+      await run('unset');
+      const clause = whereClauses().find((c) => c.includes("'gender'")) ?? '';
+      expect(clause).toContain('IS NULL');
+      expect(clause).toContain("= ''");
+      expect(whereParams().genderValues).toBeUndefined();
+    });
+
+    it('combines named genders with unset in one pass', async () => {
+      await run('male,unset');
+      const clause = whereClauses().find((c) => c.includes("'gender'")) ?? '';
+      expect(clause).toContain('IN (:...genderValues)');
+      expect(clause).toContain('IS NULL');
+      expect(whereParams().genderValues).toEqual(['male']);
+    });
+
+    it('filters on age the same way', async () => {
+      await run(undefined, 'adult,senior');
+      const clause = whereClauses().find((c) => c.includes("'age'")) ?? '';
+      expect(clause).toContain('IN (:...ageValues)');
+      expect(whereParams().ageValues).toEqual(['adult', 'senior']);
+    });
+
+    // Distinct parameter names per field, or the second filter would overwrite
+    // the first's bound values and silently return the wrong rows.
+    it('applies both at once without either clobbering the other', async () => {
+      await run('female', 'adult');
+      const params = whereParams();
+      expect(params.genderValues).toEqual(['female']);
+      expect(params.ageValues).toEqual(['adult']);
+    });
+
+    it('adds no clause when a filter is absent or blank', async () => {
+      await run(undefined, undefined);
+      expect(whereClauses().some((c) => c.includes("'gender'"))).toBe(false);
+      expect(whereClauses().some((c) => c.includes("'age'"))).toBe(false);
+
+      (queryBuilder.andWhere as jest.Mock).mockClear();
+      await run(' , ', '');
+      expect(whereClauses().some((c) => c.includes("'gender'"))).toBe(false);
+      expect(whereClauses().some((c) => c.includes("'age'"))).toBe(false);
+    });
+  });
+
   describe('getScenarioVoices', () => {
     it('should return scenario voices with default pagination and sorting', async () => {
       const mockVoices = [

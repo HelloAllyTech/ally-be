@@ -5,8 +5,15 @@ import { Pagination } from 'src/common/type/common.type';
 import { ScenarioVoiceSortBy } from '../enum/scenario-voice-sort-by.enum';
 import { Gender } from '../enum/gender.enum';
 
-/** Sentinel accepted by the `genders` filter to mean "gender is missing". */
+/**
+ * Sentinel accepted by the `genders` and `ages` filters to mean "this is
+ * missing", which is not a value any row stores.
+ *
+ * Shared by both because it means the same thing in both, and because an admin
+ * looking for gaps to fill wants the same word either way.
+ */
 export const UNSET_GENDER_FILTER = 'unset';
+export const UNSET_AGE_FILTER = UNSET_GENDER_FILTER;
 
 @Injectable()
 export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
@@ -20,6 +27,7 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
     languageIds: string | undefined,
     options: Pagination,
     genders?: string,
+    ages?: string,
   ): Promise<(ScenarioVoices & { languageLabel: string | null })[]> {
     const query = this.createQueryBuilder('scenarioVoice')
       .leftJoin('languages', 'la', 'la.id = scenarioVoice.languageId')
@@ -49,28 +57,17 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       });
     }
 
-    if (genders) {
-      const genderList = genders.split(',').map((g) => g.toLowerCase());
-      // `unset` is not a stored value — it is how the admin dashboard asks for
-      // the rows that are missing a gender, which are the ones that silently
-      // drop their language out of simulation creation.
-      const wantsUnset = genderList.includes(UNSET_GENDER_FILTER);
-      const namedGenders = genderList.filter((g) => g !== UNSET_GENDER_FILTER);
-
-      if (wantsUnset && namedGenders.length) {
-        query.andWhere(
-          `(LOWER(scenarioVoice.config ->> 'gender') IN (:...genders) OR scenarioVoice.config ->> 'gender' IS NULL)`,
-          { genders: namedGenders },
-        );
-      } else if (wantsUnset) {
-        query.andWhere(`scenarioVoice.config ->> 'gender' IS NULL`);
-      } else if (namedGenders.length) {
-        query.andWhere(
-          `LOWER(scenarioVoice.config ->> 'gender') IN (:...genders)`,
-          { genders: namedGenders },
-        );
-      }
-    }
+    // `unset` is not a stored value — it is how the admin dashboard asks for the
+    // rows missing this field. For gender those are the ones that silently drop
+    // their language out of simulation creation; for age they are the ones the
+    // studio's picker cannot order.
+    //
+    // A blank string counts as missing, not just SQL NULL. Clearing a field in
+    // the panel removes the key, but a config edited as raw JSON can leave `""`
+    // behind, and an `IS NULL` test alone would hide those from the very filter
+    // meant to find them.
+    this.applyConfigFilter(query, 'gender', genders);
+    this.applyConfigFilter(query, 'age', ages);
 
     this.applySorting(query, options);
     this.applyPagination(query, options);
@@ -80,6 +77,44 @@ export class ScenarioVoicesRepository extends Repository<ScenarioVoices> {
       ...entity,
       languageLabel: rows.raw[i]?.languageLabel ?? null,
     }));
+  }
+
+  /**
+   * Narrow on an optional `config` field that an admin fills in by hand.
+   *
+   * Case-insensitive because these values are not reliably normalised, and
+   * whitespace-tolerant for the same reason.
+   */
+  private applyConfigFilter(
+    query: SelectQueryBuilder<ScenarioVoices>,
+    key: 'gender' | 'age',
+    csv?: string,
+  ): void {
+    if (!csv) return;
+
+    const requested = csv
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean);
+    if (!requested.length) return;
+
+    const wantsUnset = requested.includes(UNSET_GENDER_FILTER);
+    const named = requested.filter((value) => value !== UNSET_GENDER_FILTER);
+
+    // Distinct parameter names per key, or a second call would clobber the first.
+    const param = `${key}Values`;
+    const stored = `LOWER(TRIM(scenarioVoice.config ->> '${key}'))`;
+    const isMissing = `(scenarioVoice.config ->> '${key}' IS NULL OR TRIM(scenarioVoice.config ->> '${key}') = '')`;
+
+    if (wantsUnset && named.length) {
+      query.andWhere(`(${stored} IN (:...${param}) OR ${isMissing})`, {
+        [param]: named,
+      });
+    } else if (wantsUnset) {
+      query.andWhere(isMissing);
+    } else {
+      query.andWhere(`${stored} IN (:...${param})`, { [param]: named });
+    }
   }
 
   private applySorting(
