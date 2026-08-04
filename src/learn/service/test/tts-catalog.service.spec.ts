@@ -20,6 +20,9 @@ describe('TtsCatalogService', () => {
   let fetchMock: jest.Mock;
 
   beforeEach(() => {
+    // The catalog cache is time-based, so its tests need to move the clock
+    // without waiting out a 15-minute TTL.
+    jest.useFakeTimers();
     configService = {
       voicePreview: { deepgramApiKey: 'dg-key', humeApiKey: 'hume-key' },
     };
@@ -35,6 +38,7 @@ describe('TtsCatalogService', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+    jest.useRealTimers();
   });
 
   it('rejects a provider with no catalog implementation', async () => {
@@ -260,6 +264,109 @@ describe('TtsCatalogService', () => {
     it('surfaces a non-200 from Hume', async () => {
       fetchMock.mockResolvedValue({ ok: false, status: 403 });
       await expect(service.getCatalog({ provider: 'HUME' })).rejects.toThrow(
+        BadRequestException,
+      );
+    });
+  });
+
+  describe('caching', () => {
+    const models = (id: string) => [{ modelId: id, name: id }];
+
+    it('serves a second call from cache instead of re-asking the provider', async () => {
+      elevenLabsVoiceSyncService.listAvailableModels.mockResolvedValue(
+        models('eleven_v3'),
+      );
+
+      await service.getCatalog({ provider: 'ELEVENLABS' });
+      await service.getCatalog({ provider: 'ELEVENLABS' });
+
+      // Measured uncached: ElevenLabs 0.6s, Deepgram 2.2s, Hume 3.9s per panel
+      // open, for lists that move on a provider's release cadence.
+      expect(
+        elevenLabsVoiceSyncService.listAvailableModels,
+      ).toHaveBeenCalledTimes(1);
+    });
+
+    it('caches per scope, so one language does not answer for another', async () => {
+      const deepgram = (name: string) => ({
+        ok: true,
+        json: async () => ({
+          tts: [
+            {
+              canonical_name: name,
+              languages: ['en'],
+              metadata: { accent: name },
+            },
+          ],
+        }),
+      });
+      fetchMock
+        .mockResolvedValueOnce(deepgram('aura-a-en'))
+        .mockResolvedValueOnce(deepgram('aura-b-en'));
+
+      const first = await service.getCatalog({
+        provider: 'DEEPGRAM',
+        languageCode: 'en-IN',
+      });
+      const second = await service.getCatalog({
+        provider: 'DEEPGRAM',
+        languageCode: 'en-GB',
+      });
+
+      expect(first).not.toEqual(second);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    /**
+     * The case the cache was written for. An expired Google credential made
+     * every catalog call 500; the studio's Voice name field silently degraded
+     * from a picker to a free-text box, and it read as a broken dropdown rather
+     * than a credential problem. A plain TTL would not have helped — the entry
+     * was cold, so it still called out and still failed.
+     */
+    it('serves the last good catalog when a refresh fails', async () => {
+      elevenLabsVoiceSyncService.listAvailableModels
+        .mockResolvedValueOnce(models('eleven_v3'))
+        .mockRejectedValue(new Error('invalid_grant: reauth related error'));
+
+      const warm = await service.getCatalog({ provider: 'ELEVENLABS' });
+      jest.advanceTimersByTime(16 * 60 * 1000);
+      const afterFailure = await service.getCatalog({ provider: 'ELEVENLABS' });
+
+      expect(afterFailure).toEqual(warm);
+      expect(
+        elevenLabsVoiceSyncService.listAvailableModels,
+      ).toHaveBeenCalledTimes(2);
+    });
+
+    it('re-asks the provider once the entry goes stale', async () => {
+      elevenLabsVoiceSyncService.listAvailableModels
+        .mockResolvedValueOnce(models('eleven_v3'))
+        .mockResolvedValueOnce(models('eleven_v4'));
+
+      await service.getCatalog({ provider: 'ELEVENLABS' });
+      jest.advanceTimersByTime(16 * 60 * 1000);
+      const refreshed = await service.getCatalog({ provider: 'ELEVENLABS' });
+
+      expect(refreshed).toEqual([{ value: 'eleven_v4', label: 'eleven_v4' }]);
+    });
+
+    it('still throws when the very first call fails, having nothing to fall back on', async () => {
+      // Showing an empty picker would claim the provider offers no voices.
+      elevenLabsVoiceSyncService.listAvailableModels.mockRejectedValue(
+        new Error('boom'),
+      );
+
+      await expect(
+        service.getCatalog({ provider: 'ELEVENLABS' }),
+      ).rejects.toThrow('boom');
+    });
+
+    it('does not cache the unsupported-provider rejection', async () => {
+      await expect(service.getCatalog({ provider: 'SARVAM' })).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.getCatalog({ provider: 'SARVAM' })).rejects.toThrow(
         BadRequestException,
       );
     });

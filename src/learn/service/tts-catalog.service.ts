@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import * as textToSpeech from '@google-cloud/text-to-speech';
 import { AppConfigService } from 'src/config/config.service';
+import { LoggerService } from 'src/logger/logger.service';
 import { TtsProvider } from '../enum/tts-provider.enum';
 import { ElevenLabsVoiceSyncService } from './elevenlabs-voice-sync.service';
 
@@ -35,6 +36,22 @@ const HUME_API = 'https://api.hume.ai/v0';
 const HUME_MAX_PAGES = 50;
 
 /**
+ * How long a fetched catalog is served before we ask the provider again.
+ *
+ * These lists move on a provider's release cadence — weeks or months — so the
+ * window could be far longer. It is deliberately short because Hume's catalog
+ * includes CUSTOM_VOICE, which an admin creates themselves and would expect to
+ * see; 15 minutes bounds how long a voice they just made stays invisible while
+ * still collapsing a session's worth of panel opens into one fetch.
+ */
+const CATALOG_TTL_MS = 15 * 60 * 1000;
+
+interface CachedCatalog {
+  entries: TtsCatalogEntry[];
+  fetchedAt: number;
+}
+
+/**
  * Every TTS provider's model/voice catalog, behind one contract.
  *
  * Each provider's fetch is genuinely different — different auth (API key vs
@@ -46,15 +63,70 @@ const HUME_MAX_PAGES = 50;
  */
 @Injectable()
 export class TtsCatalogService {
+  private readonly logger = LoggerService.getInstance(TtsCatalogService.name);
   private googleClient: textToSpeech.TextToSpeechClient | undefined;
+  /**
+   * Last good catalog per provider+scope. In-process rather than Redis on
+   * purpose: a few KB of read-only reference data, on an admin-only endpoint,
+   * where a per-instance copy costs one warm-up fetch and saves a network hop
+   * plus serialisation on every hit.
+   */
+  private readonly cache = new Map<string, CachedCatalog>();
 
   constructor(
     private readonly configService: AppConfigService,
     private readonly elevenLabsVoiceSyncService: ElevenLabsVoiceSyncService,
   ) {}
 
+  /**
+   * Cached, and — the point of the cache — falls back to the last good answer
+   * when the provider call fails.
+   *
+   * A plain TTL would not have helped the case this was written for: an expired
+   * Google credential made every call 500, the studio's Voice name field
+   * silently degraded from a picker to a free-text box, and it read as a broken
+   * dropdown rather than a credential problem. Serving a stale list keeps the
+   * picker working through an outage or a credential lapse, which is strictly
+   * better than showing nothing — these lists barely move, so a stale one is
+   * very likely still correct.
+   *
+   * Stale entries are kept indefinitely rather than expiring, precisely so the
+   * fallback is still there during a long outage. A failure with nothing cached
+   * still throws — there is nothing honest to show.
+   */
   async getCatalog(params: TtsCatalogParams): Promise<TtsCatalogEntry[]> {
-    switch (String(params.provider ?? '').toUpperCase()) {
+    const provider = String(params.provider ?? '').toUpperCase();
+    const key = [
+      provider,
+      params.languageCode ?? '',
+      params.voiceProvider ?? '',
+    ].join('|');
+
+    const cached = this.cache.get(key);
+    if (cached && Date.now() - cached.fetchedAt < CATALOG_TTL_MS) {
+      return cached.entries;
+    }
+
+    try {
+      const entries = await this.fetchCatalog(provider, params);
+      this.cache.set(key, { entries, fetchedAt: Date.now() });
+      return entries;
+    } catch (error) {
+      if (!cached) throw error;
+      const ageMinutes = Math.round((Date.now() - cached.fetchedAt) / 60000);
+      this.logger.warn(
+        `[TTS_CATALOG] ${provider} refresh failed; serving a catalog cached ${ageMinutes}m ago (${cached.entries.length} entries). ` +
+          `Reason: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return cached.entries;
+    }
+  }
+
+  private async fetchCatalog(
+    provider: string,
+    params: TtsCatalogParams,
+  ): Promise<TtsCatalogEntry[]> {
+    switch (provider) {
       case TtsProvider.ELEVENLABS:
         return this.getElevenLabsCatalog();
       case TtsProvider.DEEPGRAM:
