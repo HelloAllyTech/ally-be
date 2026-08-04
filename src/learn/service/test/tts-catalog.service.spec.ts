@@ -17,7 +17,10 @@ describe('TtsCatalogService', () => {
       humeApiKey: string | undefined;
     };
   };
-  let elevenLabsVoiceSyncService: { listAvailableModels: jest.Mock };
+  let elevenLabsVoiceSyncService: {
+    listAvailableModels: jest.Mock;
+    lookupVoice: jest.Mock;
+  };
   let fetchMock: jest.Mock;
 
   beforeEach(() => {
@@ -27,7 +30,10 @@ describe('TtsCatalogService', () => {
     configService = {
       voicePreview: { deepgramApiKey: 'dg-key', humeApiKey: 'hume-key' },
     };
-    elevenLabsVoiceSyncService = { listAvailableModels: jest.fn() };
+    elevenLabsVoiceSyncService = {
+      listAvailableModels: jest.fn(),
+      lookupVoice: jest.fn(),
+    };
     fetchMock = jest.fn();
     (global as any).fetch = fetchMock;
     mockListVoices.mockReset();
@@ -57,6 +63,114 @@ describe('TtsCatalogService', () => {
       const result = await service.getCatalog({ provider: 'ELEVENLABS' });
 
       expect(result).toEqual([{ value: 'eleven_v3', label: 'Eleven v3' }]);
+    });
+
+    /**
+     * The gap this closes: the bulk sync populates `voice_type` (and with it
+     * the v3 advisory) from the workspace listing, but the per-voice
+     * recommendation comes from `high_quality_base_model_ids`, which is never
+     * stored. So a production voice showed its v3 warning correctly while its
+     * model picker stayed unlabelled until someone re-synced it by hand.
+     */
+    it('annotates the catalog for a specific voice when given a voiceId', async () => {
+      elevenLabsVoiceSyncService.lookupVoice = jest.fn().mockResolvedValue({
+        modelOptions: [
+          {
+            value: 'eleven_multilingual_v2',
+            label: 'Eleven Multilingual v2',
+            recommended: true,
+          },
+          { value: 'eleven_v3', label: 'Eleven v3', recommended: false },
+          {
+            value: 'eleven_flash_v2_5',
+            label: 'Eleven Flash v2.5',
+            recommended: null,
+          },
+        ],
+      });
+
+      const result = await service.getCatalog({
+        provider: 'ELEVENLABS',
+        voiceId: 'LJk8s1oqYd18q18FQ9Eg',
+      });
+
+      expect(elevenLabsVoiceSyncService.lookupVoice).toHaveBeenCalledWith(
+        'LJk8s1oqYd18q18FQ9Eg',
+      );
+      expect(result.map((e) => [e.value, e.recommended])).toEqual([
+        ['eleven_multilingual_v2', true],
+        ['eleven_v3', false],
+        ['eleven_flash_v2_5', null],
+      ]);
+      // The annotated path is lookupVoice's own, which already fetches the
+      // account catalog — asking for it again would be a second round-trip.
+      expect(
+        elevenLabsVoiceSyncService.listAvailableModels,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('reuses the sync path so a picker and a sync cannot disagree', async () => {
+      // Same source of truth by construction, not by a second copy of the rule.
+      elevenLabsVoiceSyncService.lookupVoice = jest.fn().mockResolvedValue({
+        modelOptions: [
+          { value: 'eleven_v3', label: 'Eleven v3', recommended: false },
+        ],
+      });
+
+      const result = await service.getCatalog({
+        provider: 'ELEVENLABS',
+        voiceId: 'someVoiceId12345678',
+      });
+
+      expect(result).toEqual([
+        { value: 'eleven_v3', label: 'Eleven v3', recommended: false },
+      ]);
+    });
+
+    it('serves the plain catalog when the voice cannot be read', async () => {
+      // An unlabelled picker is a missing annotation; an errored one is a field
+      // the admin cannot use at all.
+      elevenLabsVoiceSyncService.lookupVoice = jest
+        .fn()
+        .mockRejectedValue(new Error('404 voice_not_found'));
+      elevenLabsVoiceSyncService.listAvailableModels.mockResolvedValue([
+        { modelId: 'eleven_v3', name: 'Eleven v3' },
+      ]);
+
+      const result = await service.getCatalog({
+        provider: 'ELEVENLABS',
+        voiceId: 'deletedFromWorkspace',
+      });
+
+      expect(result).toEqual([{ value: 'eleven_v3', label: 'Eleven v3' }]);
+    });
+
+    it('does not hand one voice a different voice cached verdict', async () => {
+      elevenLabsVoiceSyncService.lookupVoice = jest
+        .fn()
+        .mockResolvedValueOnce({
+          modelOptions: [
+            { value: 'eleven_v3', label: 'Eleven v3', recommended: false },
+          ],
+        })
+        .mockResolvedValueOnce({
+          modelOptions: [
+            { value: 'eleven_v3', label: 'Eleven v3', recommended: null },
+          ],
+        });
+
+      const pvc = await service.getCatalog({
+        provider: 'ELEVENLABS',
+        voiceId: 'voice-pvc',
+      });
+      const voiceDesign = await service.getCatalog({
+        provider: 'ELEVENLABS',
+        voiceId: 'voice-design',
+      });
+
+      expect(pvc[0].recommended).toBe(false);
+      expect(voiceDesign[0].recommended).toBeNull();
+      expect(elevenLabsVoiceSyncService.lookupVoice).toHaveBeenCalledTimes(2);
     });
   });
 

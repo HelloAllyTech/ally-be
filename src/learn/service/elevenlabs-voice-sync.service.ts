@@ -11,6 +11,7 @@ import {
   ElevenLabsModelOption,
   ElevenLabsVoiceType,
   getElevenLabsModelRecommendation,
+  isElevenLabsV3Model,
 } from '../constants/elevenlabs-voice-type.constants';
 import { toScenarioVoiceGender } from '../util/voice-gender.util';
 import { TtsProvider } from '../enum/tts-provider.enum';
@@ -427,6 +428,21 @@ export class ElevenLabsVoiceSyncService {
     availableModels: string[],
     recommendedModel: string | null,
   ): ElevenLabsModelOption[] {
+    // Everything we say about v3 rests on it using no per-voice fine-tune —
+    // true for 0 of 153 voices when measured, and ElevenLabs' own wording is
+    // that v3 "doesn't YET support Professional Voice Clones". The day that
+    // changes, v3 starts appearing here. The recommendation already defers to
+    // this signal; log it too, so the change surfaces rather than sitting
+    // behind an assumption nobody rechecks.
+    const listedV3 = availableModels.filter(isElevenLabsV3Model);
+    if (listedV3.length) {
+      this.logger.warn(
+        `[ELEVENLABS_V3] ElevenLabs now lists ${listedV3.join(', ')} among the fine-tuned models for a ` +
+          `${voiceType ?? 'unknown'} voice. v3 previously appeared for no voice at all, so the v3 advisory ` +
+          `and V3_COMPATIBLE_VOICE_TYPES should be re-checked against their current guidance.`,
+      );
+    }
+
     return catalog.map((model) => ({
       value: model.modelId,
       label: model.name,

@@ -24,6 +24,13 @@ export interface TtsCatalogEntry {
    * pickers go empty.
    */
   gender?: Gender;
+  /**
+   * Whether this model is the recommendation for the voice named by
+   * `TtsCatalogParams.voiceId` — `true` the pick, `false` flagged, `null` no
+   * signal either way. Only present when a voiceId was supplied, which is why
+   * a plain catalog carries no verdict rather than an implied one.
+   */
+  recommended?: boolean | null;
 }
 
 export interface TtsCatalogParams {
@@ -42,6 +49,18 @@ export interface TtsCatalogParams {
    * HumeTTSClient ("Default to HUME_AI if not specified").
    */
   voiceProvider?: string;
+  /**
+   * ElevenLabs only: annotate the catalog for this specific voice.
+   *
+   * The per-voice verdict comes from `high_quality_base_model_ids`, which is
+   * never stored on the row — it is ElevenLabs' data, and persisting a copy
+   * would go stale silently. So the only way a picker can show it is to ask for
+   * it at render time, which is what this is for. Without it the bulk sync
+   * populates `voice_type` (and with it the v3 advisory) but the picker stays
+   * unlabelled until someone triggers a sync by hand — which is exactly the gap
+   * this closes.
+   */
+  voiceId?: string;
 }
 
 /**
@@ -120,6 +139,10 @@ export class TtsCatalogService {
       provider,
       params.languageCode ?? '',
       params.voiceProvider ?? '',
+      // Part of the key: the same provider and language yield a different
+      // answer per voice once annotated, so a shared entry would hand one
+      // voice's verdict to another.
+      params.voiceId ?? '',
     ].join('|');
 
     const cached = this.cache.get(key);
@@ -148,7 +171,7 @@ export class TtsCatalogService {
   ): Promise<TtsCatalogEntry[]> {
     switch (provider) {
       case TtsProvider.ELEVENLABS:
-        return this.getElevenLabsCatalog();
+        return this.getElevenLabsCatalog(params.voiceId);
       case TtsProvider.DEEPGRAM:
         return this.getDeepgramCatalog(params.languageCode);
       case TtsProvider.GOOGLE:
@@ -162,7 +185,35 @@ export class TtsCatalogService {
     }
   }
 
-  private async getElevenLabsCatalog(): Promise<TtsCatalogEntry[]> {
+  /**
+   * With a voiceId, this is `lookupVoice`'s own `modelOptions` — deliberately
+   * the same call the studio's sync uses, so the verdict a picker shows and the
+   * verdict a sync shows cannot disagree. It already fetches the voice and the
+   * account catalog in parallel, so this costs one round-trip either way.
+   *
+   * A voice that can't be read falls back to the plain catalog rather than
+   * failing: an unlabelled picker is a missing annotation, an errored one is a
+   * field the admin cannot use at all.
+   */
+  private async getElevenLabsCatalog(
+    voiceId?: string,
+  ): Promise<TtsCatalogEntry[]> {
+    const trimmed = String(voiceId ?? '').trim();
+    if (trimmed) {
+      try {
+        const { modelOptions } =
+          await this.elevenLabsVoiceSyncService.lookupVoice(trimmed);
+        if (modelOptions.length) return modelOptions;
+      } catch (error) {
+        this.logger.warn(
+          `[TTS_CATALOG] Could not annotate the ElevenLabs catalog for voice ${trimmed}; ` +
+            `serving it unlabelled. Reason: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+        );
+      }
+    }
+
     const models = await this.elevenLabsVoiceSyncService.listAvailableModels();
     return models.map((model) => ({ value: model.modelId, label: model.name }));
   }

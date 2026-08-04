@@ -1108,22 +1108,30 @@ export class LearnController {
 
   @ApiOperation({
     summary:
-      "A TTS provider's account-wide model/voice catalog — not tied to any one voice",
+      "A TTS provider's account-wide model/voice catalog, annotated for one voice when `voiceId` is given",
   })
   @ApiQuery({ name: 'provider', required: true })
   @ApiQuery({ name: 'languageCode', required: false })
   @ApiQuery({ name: 'voiceProvider', required: false })
+  @ApiQuery({
+    name: 'voiceId',
+    required: false,
+    description:
+      "ElevenLabs only. Returns the same catalog with each model marked recommended for THIS voice, so a picker can show the verdict without the admin first triggering a sync. Falls back to the plain catalog if the voice can't be read.",
+  })
   @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_VOICE])
   @Get('scenario-voices/tts-catalog')
   async getTtsCatalog(
     @Query('provider') provider: string,
     @Query('languageCode') languageCode?: string,
     @Query('voiceProvider') voiceProvider?: string,
+    @Query('voiceId') voiceId?: string,
   ): Promise<TtsCatalogEntry[]> {
     return this.ttsCatalogService.getCatalog({
       provider,
       languageCode,
       voiceProvider,
+      voiceId,
     });
   }
 

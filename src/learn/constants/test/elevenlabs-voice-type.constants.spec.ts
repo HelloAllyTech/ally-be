@@ -3,6 +3,7 @@ import {
   ELEVENLABS_CATEGORY_TO_VOICE_TYPE,
   ElevenLabsVoiceType,
   isElevenLabsV3Model,
+  getElevenLabsModelRecommendation,
 } from '../elevenlabs-voice-type.constants';
 
 describe('ElevenLabs category mapping', () => {
@@ -105,5 +106,86 @@ describe('buildElevenLabsModelOptions', () => {
       ElevenLabsVoiceType.PVC,
     );
     expect(recommendedModel).toBe('eleven_turbo_v2_5');
+  });
+});
+
+describe('getElevenLabsModelRecommendation', () => {
+  const CATALOG_V3 = 'eleven_v3';
+
+  // Today: v3 appears in no voice's fine-tune list (0 of 153 measured), so the
+  // verdict falls back to voice type — flagged for a PVC, silent otherwise.
+  it('flags v3 for a PVC while ElevenLabs lists it for nobody', () => {
+    expect(
+      getElevenLabsModelRecommendation(
+        CATALOG_V3,
+        ElevenLabsVoiceType.PVC,
+        ['eleven_multilingual_v2'],
+        'eleven_multilingual_v2',
+      ),
+    ).toBe(false);
+  });
+
+  it('stays silent about v3 for a voice type it suits', () => {
+    expect(
+      getElevenLabsModelRecommendation(
+        CATALOG_V3,
+        ElevenLabsVoiceType.VOICE_DESIGN,
+        [],
+        null,
+      ),
+    ).toBeNull();
+  });
+
+  /**
+   * ElevenLabs' wording is that v3 "doesn't YET support Professional Voice
+   * Clones". When that changes, v3 should start appearing in a PVC voice's
+   * fine-tune list — and their data has to win over our hardcoded assumption,
+   * or we would go on flagging v3 for PVCs after it became the right choice,
+   * with nothing to reveal it.
+   */
+  it('stops flagging v3 for a PVC once ElevenLabs lists it for that voice', () => {
+    expect(
+      getElevenLabsModelRecommendation(
+        CATALOG_V3,
+        ElevenLabsVoiceType.PVC,
+        ['eleven_multilingual_v2', CATALOG_V3],
+        'eleven_multilingual_v2',
+      ),
+    ).toBeNull();
+  });
+
+  it('promotes v3 for a PVC if ElevenLabs makes it the recommendation outright', () => {
+    expect(
+      getElevenLabsModelRecommendation(
+        CATALOG_V3,
+        ElevenLabsVoiceType.PVC,
+        [CATALOG_V3],
+        CATALOG_V3,
+      ),
+    ).toBe(true);
+  });
+
+  // Absence of data is not a verdict: an empty list means ElevenLabs reported
+  // nothing for this voice, true of every Voice Design voice.
+  it('reports no verdict for a non-v3 model when the fine-tune list is empty', () => {
+    expect(
+      getElevenLabsModelRecommendation(
+        'eleven_turbo_v2_5',
+        ElevenLabsVoiceType.VOICE_DESIGN,
+        [],
+        null,
+      ),
+    ).toBeNull();
+  });
+
+  it('flags a non-v3 model ElevenLabs left out of a list it did populate', () => {
+    expect(
+      getElevenLabsModelRecommendation(
+        'eleven_turbo_v2',
+        ElevenLabsVoiceType.PVC,
+        ['eleven_multilingual_v2'],
+        'eleven_multilingual_v2',
+      ),
+    ).toBe(false);
   });
 });

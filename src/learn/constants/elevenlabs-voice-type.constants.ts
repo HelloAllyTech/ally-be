@@ -186,6 +186,13 @@ export const getElevenLabsModelRecommendation = (
 ): boolean | null => {
   if (modelId === recommendedModel) return true;
   if (isElevenLabsV3Model(modelId)) {
+    // ElevenLabs listing v3 among this voice's fine-tuned models is them
+    // saying it works, and that beats our own assumption — which is the part
+    // designed to go stale. Their wording is that v3 "doesn't YET support
+    // Professional Voice Clones", so the day they ship it, v3 should start
+    // appearing here and this stops flagging PVC voices on its own instead of
+    // contradicting them until someone notices.
+    if (availableModels.includes(modelId)) return null;
     return isElevenLabsV3CompatibleVoiceType(voiceType) ? null : false;
   }
   if (availableModels.length > 0 && !availableModels.includes(modelId)) {
