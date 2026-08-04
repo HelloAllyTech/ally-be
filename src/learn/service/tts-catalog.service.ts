@@ -31,6 +31,13 @@ export interface TtsCatalogParams {
   voiceProvider?: string;
 }
 
+/**
+ * A Google voice name that names its own language, e.g. `en-IN-Standard-A` or
+ * `ar-XA-Chirp3-HD-Achernar`. Case-insensitive because two real voices
+ * (`fil-ph-Neural2-A`, `fil-ph-Neural2-D`) lowercase their region.
+ */
+const LANGUAGE_PREFIXED_VOICE = /^[a-z]{2,3}-[a-z]{2}/i;
+
 const HUME_API = 'https://api.hume.ai/v0';
 /** Defensive cap on Hume pagination — real usage is 1-2 pages; this just bounds a runaway loop. */
 const HUME_MAX_PAGES = 50;
@@ -223,10 +230,41 @@ export class TtsCatalogService {
     // empty picker.
     const entries = matched.length ? matched : all;
 
-    return entries.map((voice) => ({
-      value: voice.name as string,
-      label: `${voice.name} (${(voice.ssmlGender ?? 'unspecified').toString().toLowerCase()})`,
-    }));
+    // Gemini's voices report `languageCodes: ["en-US"]` and nothing else, so
+    // the language filter above drops all 30 of them for every voice that
+    // isn't en-US — which is nearly all of ours. They are not really en-US
+    // only: the model synthesises many languages, the listing just has no way
+    // to say so (a returned Voice carries only languageCodes/name/ssmlGender/
+    // naturalSampleRateHertz — no model field, and the word "gemini" appears
+    // nowhere in the response). So add them back for every language.
+    //
+    // Identified by name shape rather than a hardcoded list, so a voice Google
+    // adds later appears on its own: Gemini names are bare ("Kore",
+    // "Achernar") while every other voice is "{lang}-{REGION}-...". The test
+    // is case-insensitive on purpose — `fil-ph-Neural2-A` and
+    // `fil-ph-Neural2-D` lowercase their region, and are the only two
+    // non-Gemini names that would otherwise slip through.
+    const seen = new Set(entries.map((voice) => voice.name));
+    const languageAgnostic = all.filter(
+      (voice) =>
+        !seen.has(voice.name) && !LANGUAGE_PREFIXED_VOICE.test(voice.name!),
+    );
+
+    const label = (voice: (typeof all)[number], suffix = '') =>
+      `${voice.name} (${(voice.ssmlGender ?? 'unspecified').toString().toLowerCase()}${suffix})`;
+
+    return [
+      ...entries.map((voice) => ({
+        value: voice.name as string,
+        label: label(voice),
+      })),
+      // Flagged, and last: for a Tamil or Marathi voice these are a deliberate
+      // choice, not one of the language's own voices.
+      ...languageAgnostic.map((voice) => ({
+        value: voice.name as string,
+        label: label(voice, ' · Gemini, any language'),
+      })),
+    ];
   }
 
   /**

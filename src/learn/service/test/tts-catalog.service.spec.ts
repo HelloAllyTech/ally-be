@@ -170,12 +170,23 @@ describe('TtsCatalogService', () => {
       ]);
     });
 
+    // Names here are language-prefixed like the real ones: a bare name is how
+    // a Gemini voice is recognised, so 'a'/'b' would be read as Gemini voices
+    // and re-added by the language-agnostic pass below.
     it('matches languageCodes exactly, since Google already tags regional variants', async () => {
       mockListVoices.mockResolvedValue([
         {
           voices: [
-            { name: 'a', languageCodes: ['en-IN'], ssmlGender: 'MALE' },
-            { name: 'b', languageCodes: ['fr-FR'], ssmlGender: 'MALE' },
+            {
+              name: 'en-IN-Standard-A',
+              languageCodes: ['en-IN'],
+              ssmlGender: 'MALE',
+            },
+            {
+              name: 'fr-FR-Standard-A',
+              languageCodes: ['fr-FR'],
+              ssmlGender: 'MALE',
+            },
           ],
         },
       ]);
@@ -185,13 +196,21 @@ describe('TtsCatalogService', () => {
         languageCode: 'en-IN',
       });
 
-      expect(result).toEqual([{ value: 'a', label: 'a (male)' }]);
+      expect(result).toEqual([
+        { value: 'en-IN-Standard-A', label: 'en-IN-Standard-A (male)' },
+      ]);
     });
 
     it('falls back to the full list when nothing matches the language', async () => {
       mockListVoices.mockResolvedValue([
         {
-          voices: [{ name: 'a', languageCodes: ['fr-FR'], ssmlGender: 'MALE' }],
+          voices: [
+            {
+              name: 'fr-FR-Standard-A',
+              languageCodes: ['fr-FR'],
+              ssmlGender: 'MALE',
+            },
+          ],
         },
       ]);
 
@@ -200,7 +219,87 @@ describe('TtsCatalogService', () => {
         languageCode: 'zz-ZZ',
       });
 
-      expect(result).toEqual([{ value: 'a', label: 'a (male)' }]);
+      expect(result).toEqual([
+        { value: 'fr-FR-Standard-A', label: 'fr-FR-Standard-A (male)' },
+      ]);
+    });
+
+    /**
+     * Gemini's 30 voices all report `languageCodes: ["en-US"]` and nothing
+     * else, so an exact language match drops every one of them for a Tamil,
+     * Marathi or en-IN voice — measured: en-US returns 30 of them, en-IN /
+     * ta-IN / mr-IN return 0. Without this an admin creating an Indian-language
+     * Google voice gets a strict dropdown with no Gemini name in it and no way
+     * to type one, because the catalog turns the field into a select.
+     */
+    it('offers Gemini voices for a language they do not claim to support', async () => {
+      mockListVoices.mockResolvedValue([
+        {
+          voices: [
+            {
+              name: 'ta-IN-Standard-A',
+              languageCodes: ['ta-IN'],
+              ssmlGender: 'FEMALE',
+            },
+            { name: 'Kore', languageCodes: ['en-US'], ssmlGender: 'FEMALE' },
+            { name: 'Charon', languageCodes: ['en-US'], ssmlGender: 'MALE' },
+          ],
+        },
+      ]);
+
+      const result = await service.getCatalog({
+        provider: 'GOOGLE',
+        languageCode: 'ta-IN',
+      });
+
+      expect(result).toEqual([
+        { value: 'ta-IN-Standard-A', label: 'ta-IN-Standard-A (female)' },
+        { value: 'Kore', label: 'Kore (female · Gemini, any language)' },
+        { value: 'Charon', label: 'Charon (male · Gemini, any language)' },
+      ]);
+    });
+
+    it('does not mistake a lowercase-region voice for a Gemini one', async () => {
+      // fil-ph-Neural2-A and -D are the only two real voices that lowercase
+      // their region, and are the reason the prefix test is case-insensitive.
+      mockListVoices.mockResolvedValue([
+        {
+          voices: [
+            {
+              name: 'fil-ph-Neural2-A',
+              languageCodes: ['fil-PH'],
+              ssmlGender: 'FEMALE',
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getCatalog({
+        provider: 'GOOGLE',
+        languageCode: 'ta-IN',
+      });
+
+      // Reached only by the no-match fallback, and never labelled Gemini.
+      expect(result).toEqual([
+        { value: 'fil-ph-Neural2-A', label: 'fil-ph-Neural2-A (female)' },
+      ]);
+    });
+
+    it('does not list a Gemini voice twice when the language is en-US', async () => {
+      mockListVoices.mockResolvedValue([
+        {
+          voices: [
+            { name: 'Kore', languageCodes: ['en-US'], ssmlGender: 'FEMALE' },
+          ],
+        },
+      ]);
+
+      const result = await service.getCatalog({
+        provider: 'GOOGLE',
+        languageCode: 'en-US',
+      });
+
+      expect(result).toEqual([{ value: 'Kore', label: 'Kore (female)' }]);
     });
 
     it('constructs the client lazily, once, not per call', async () => {

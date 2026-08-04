@@ -13,6 +13,18 @@ export class GoogleTTSProvider implements ITTSProvider {
   private readonly ssmlGender?: 'MALE' | 'FEMALE' | 'NEUTRAL';
   private readonly languageCode: string;
   /**
+   * Google's own `model_name`, passed straight through.
+   *
+   * Not optional for every voice: Gemini's voices ("Puck", "Kore" — bare names,
+   * no language prefix) are rejected outright without it, with
+   * `INVALID_ARGUMENT: This voice requires a model name to be specified.` The
+   * runtime already reads this key (ally-ai-learn's GoogleTTSClient), so a
+   * voice could be configured, saved, and used in a call while its preview
+   * button returned a 500 — the preview was building a different request from
+   * the one that actually plays.
+   */
+  private readonly modelName?: string;
+  /**
    * Resolved once here so a credential failure lands on an awaited promise.
    *
    * google-gax creates the gRPC stub lazily in the background; if ADC can't be
@@ -35,6 +47,7 @@ export class GoogleTTSProvider implements ITTSProvider {
     // Never let the stored promise be "unhandled" while nothing awaits it.
     this.ready.catch(() => undefined);
     this.voiceName = config.voice_name ?? config.voiceName;
+    this.modelName = config.model_name ?? config.modelName;
     this.languageCode = languageCode ?? 'en-US';
 
     const genderInput = config.gender?.toLowerCase();
@@ -50,6 +63,7 @@ export class GoogleTTSProvider implements ITTSProvider {
         languageCode: this.languageCode,
         ...(this.voiceName && { name: this.voiceName }),
         ...(this.ssmlGender && { ssmlGender: this.ssmlGender }),
+        ...(this.modelName && { modelName: this.modelName }),
       },
       audioConfig: {
         audioEncoding: 'MP3',
