@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { TtsCatalogService } from '../tts-catalog.service';
+import { Gender } from '../../enum/gender.enum';
 
 const mockListVoices = jest.fn();
 jest.mock('@google-cloud/text-to-speech', () => ({
@@ -166,6 +167,7 @@ describe('TtsCatalogService', () => {
         {
           value: 'en-IN-Chirp3-HD-Achernar',
           label: 'en-IN-Chirp3-HD-Achernar (female)',
+          gender: Gender.FEMALE,
         },
       ]);
     });
@@ -197,7 +199,11 @@ describe('TtsCatalogService', () => {
       });
 
       expect(result).toEqual([
-        { value: 'en-IN-Standard-A', label: 'en-IN-Standard-A (male)' },
+        {
+          value: 'en-IN-Standard-A',
+          label: 'en-IN-Standard-A (male)',
+          gender: Gender.MALE,
+        },
       ]);
     });
 
@@ -220,7 +226,11 @@ describe('TtsCatalogService', () => {
       });
 
       expect(result).toEqual([
-        { value: 'fr-FR-Standard-A', label: 'fr-FR-Standard-A (male)' },
+        {
+          value: 'fr-FR-Standard-A',
+          label: 'fr-FR-Standard-A (male)',
+          gender: Gender.MALE,
+        },
       ]);
     });
 
@@ -253,9 +263,21 @@ describe('TtsCatalogService', () => {
       });
 
       expect(result).toEqual([
-        { value: 'ta-IN-Standard-A', label: 'ta-IN-Standard-A (female)' },
-        { value: 'Kore', label: 'Kore (female · Gemini, any language)' },
-        { value: 'Charon', label: 'Charon (male · Gemini, any language)' },
+        {
+          value: 'ta-IN-Standard-A',
+          label: 'ta-IN-Standard-A (female)',
+          gender: Gender.FEMALE,
+        },
+        {
+          value: 'Kore',
+          label: 'Kore (female · Gemini, any language)',
+          gender: Gender.FEMALE,
+        },
+        {
+          value: 'Charon',
+          label: 'Charon (male · Gemini, any language)',
+          gender: Gender.MALE,
+        },
       ]);
     });
 
@@ -281,7 +303,11 @@ describe('TtsCatalogService', () => {
 
       // Reached only by the no-match fallback, and never labelled Gemini.
       expect(result).toEqual([
-        { value: 'fil-ph-Neural2-A', label: 'fil-ph-Neural2-A (female)' },
+        {
+          value: 'fil-ph-Neural2-A',
+          label: 'fil-ph-Neural2-A (female)',
+          gender: Gender.FEMALE,
+        },
       ]);
     });
 
@@ -299,7 +325,36 @@ describe('TtsCatalogService', () => {
         languageCode: 'en-US',
       });
 
-      expect(result).toEqual([{ value: 'Kore', label: 'Kore (female)' }]);
+      expect(result).toEqual([
+        { value: 'Kore', label: 'Kore (female)', gender: Gender.FEMALE },
+      ]);
+    });
+
+    it('leaves gender unset for a NEUTRAL voice rather than calling it non-binary', async () => {
+      // NEUTRAL is a real ssmlGender and is not one of ours. A consumer
+      // filtering by gender must treat this as "unknown" and keep showing it,
+      // not read the absence as "does not match".
+      mockListVoices.mockResolvedValue([
+        {
+          voices: [
+            {
+              name: 'en-US-Standard-Z',
+              languageCodes: ['en-US'],
+              ssmlGender: 'NEUTRAL',
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getCatalog({ provider: 'GOOGLE' });
+
+      expect(result).toEqual([
+        {
+          value: 'en-US-Standard-Z',
+          label: 'en-US-Standard-Z (neutral)',
+          gender: undefined,
+        },
+      ]);
     });
 
     it('constructs the client lazily, once, not per call', async () => {
@@ -326,7 +381,9 @@ describe('TtsCatalogService', () => {
 
       const result = await service.getCatalog({ provider: 'HUME' });
 
-      expect(result).toEqual([{ value: 'Priya', label: 'Priya (Female)' }]);
+      expect(result).toEqual([
+        { value: 'Priya', label: 'Priya (Female)', gender: Gender.FEMALE },
+      ]);
       expect(fetchMock.mock.calls[0][0]).toContain('provider=HUME_AI');
     });
 

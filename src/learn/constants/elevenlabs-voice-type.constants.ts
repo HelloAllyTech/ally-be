@@ -1,5 +1,3 @@
-import { Gender } from '../enum/gender.enum';
-
 /**
  * How an ElevenLabs voice was created, which is what decides whether
  * `eleven_v3` can use it.
@@ -49,32 +47,6 @@ export const ELEVENLABS_CATEGORY_TO_VOICE_TYPE: Record<
   premade: ElevenLabsVoiceType.PREMADE,
   generated: ElevenLabsVoiceType.VOICE_DESIGN,
   cloned: ElevenLabsVoiceType.UNKNOWN,
-};
-
-/**
- * ElevenLabs' `labels.gender` narrowed to a value our own schema accepts, or
- * null when it doesn't map.
- *
- * Their label is free text and ours is an enum, so the two are not the same
- * vocabulary: across 153 voices this account returns `male` (71), `female`
- * (60), nothing at all (21) — and `neutral` (1, "River"). Handing `neutral`
- * straight through autofills a value the Gender dropdown cannot display and
- * that both validators then reject, so the admin gets Save blocked over a
- * field they never touched.
- *
- * `neutral` is deliberately NOT mapped to `non-binary`. A gender-neutral voice
- * is a statement about how the audio sounds; non-binary is a statement about a
- * person's identity. Equating them would assert something ElevenLabs never
- * said, so an unmappable label leaves the field unset for a human to choose —
- * which the studio already flags as a non-blocking "no gender set" warning.
- */
-export const toScenarioVoiceGender = (label?: string | null): Gender | null => {
-  const normalized = String(label ?? '')
-    .trim()
-    .toLowerCase();
-  return (Object.values(Gender) as string[]).includes(normalized)
-    ? (normalized as Gender)
-    : null;
 };
 
 /**

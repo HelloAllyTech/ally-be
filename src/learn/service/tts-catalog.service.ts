@@ -2,7 +2,9 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import * as textToSpeech from '@google-cloud/text-to-speech';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
+import { Gender } from '../enum/gender.enum';
 import { TtsProvider } from '../enum/tts-provider.enum';
+import { toScenarioVoiceGender } from '../util/voice-gender.util';
 import { ElevenLabsVoiceSyncService } from './elevenlabs-voice-sync.service';
 
 /** One selectable entry in a provider's model/voice catalog. */
@@ -11,6 +13,17 @@ export interface TtsCatalogEntry {
   value: string;
   /** What the picker shows. */
   label: string;
+  /**
+   * This voice's gender, where the provider publishes one, so a client can
+   * narrow the picker to the gender being configured. Absent — not guessed —
+   * whenever the provider says nothing usable: Deepgram exposes no gender at
+   * all (its metadata is accent/age/color/display_name/image/sample/tags/
+   * use_cases), ElevenLabs' catalog is models rather than voices, and Google
+   * reports NEUTRAL for some voices, which is not one of ours. A consumer must
+   * therefore treat `undefined` as "unknown", not as "no match", or those
+   * pickers go empty.
+   */
+  gender?: Gender;
 }
 
 export interface TtsCatalogParams {
@@ -252,17 +265,23 @@ export class TtsCatalogService {
 
     const label = (voice: (typeof all)[number], suffix = '') =>
       `${voice.name} (${(voice.ssmlGender ?? 'unspecified').toString().toLowerCase()}${suffix})`;
+    // NEUTRAL is a real ssmlGender and is not one of ours, so it maps to
+    // undefined ("unknown") rather than being forced into non-binary.
+    const gender = (voice: (typeof all)[number]) =>
+      toScenarioVoiceGender(voice.ssmlGender?.toString()) ?? undefined;
 
     return [
       ...entries.map((voice) => ({
         value: voice.name as string,
         label: label(voice),
+        gender: gender(voice),
       })),
       // Flagged, and last: for a Tamil or Marathi voice these are a deliberate
       // choice, not one of the language's own voices.
       ...languageAgnostic.map((voice) => ({
         value: voice.name as string,
         label: label(voice, ' · Gemini, any language'),
+        gender: gender(voice),
       })),
     ];
   }
@@ -306,10 +325,13 @@ export class TtsCatalogService {
       };
       for (const voice of body.voices_page ?? []) {
         if (!voice.name) continue;
+        // Hume title-cases its tag ("Female"), so keep the raw string for the
+        // label and normalise separately for the filterable field.
         const gender = voice.tags?.GENDER?.[0];
         entries.push({
           value: voice.name,
           label: gender ? `${voice.name} (${gender})` : voice.name,
+          gender: toScenarioVoiceGender(gender) ?? undefined,
         });
       }
 

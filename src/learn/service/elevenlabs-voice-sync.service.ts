@@ -11,8 +11,8 @@ import {
   ElevenLabsModelOption,
   ElevenLabsVoiceType,
   getElevenLabsModelRecommendation,
-  toScenarioVoiceGender,
 } from '../constants/elevenlabs-voice-type.constants';
+import { toScenarioVoiceGender } from '../util/voice-gender.util';
 import { TtsProvider } from '../enum/tts-provider.enum';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
 
