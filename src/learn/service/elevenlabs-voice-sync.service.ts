@@ -8,8 +8,10 @@ import { LoggerService } from 'src/logger/logger.service';
 import {
   buildElevenLabsModelOptions,
   ELEVENLABS_CATEGORY_TO_VOICE_TYPE,
+  ElevenLabsModelOption,
   ElevenLabsVoiceType,
-  getElevenLabsV3Warning,
+  getElevenLabsModelRecommendation,
+  toScenarioVoiceGender,
 } from '../constants/elevenlabs-voice-type.constants';
 import { TtsProvider } from '../enum/tts-provider.enum';
 import { ScenarioVoicesRepository } from '../repository/scenario-voices.repository';
@@ -34,21 +36,25 @@ export interface ElevenLabsVoiceSyncResult {
   resolvedName: string | null;
   /** What we derived from `category`. */
   voiceType: ElevenLabsVoiceType | null;
-  /** Non-blocking v3 advisory, or null. */
-  warning: string | null;
   /** Whether the row was updated. */
   persisted: boolean;
   /** Models to offer for this voice, derived from ElevenLabs' own answer plus v3. */
   availableModels: string[];
   /** A safe starting model, or null when there's nothing to prefer. */
   recommendedModel: string | null;
+  /**
+   * The account-wide model catalog, each entry pre-labeled with whether
+   * ElevenLabs' own data recommends it for THIS voice. Computed once here so
+   * every consumer renders the same verdict rather than each keeping its own
+   * copy of the classification rule.
+   */
+  modelOptions: ElevenLabsModelOption[];
 }
 
 /**
  * Outcome of looking up a voice id that has no scenario_voices row yet.
  *
- * Same facts as {@link ElevenLabsVoiceSyncResult} minus `warning` (the caller
- * doesn't have a chosen model yet to warn against) and `persisted` (there is
+ * Same facts as {@link ElevenLabsVoiceSyncResult} minus `persisted` (there is
  * no row to write to) — plus `gender` and `language`, which a not-yet-saved
  * voice benefits from autofilling.
  */
@@ -68,6 +74,8 @@ export interface ElevenLabsVoiceLookupResult {
   availableModels: string[];
   /** A safe starting model, or null when there's nothing to prefer. */
   recommendedModel: string | null;
+  /** The account-wide catalog, each entry pre-labeled for THIS voice — see {@link ElevenLabsVoiceSyncResult.modelOptions}. */
+  modelOptions: ElevenLabsModelOption[];
 }
 
 /**
@@ -127,9 +135,16 @@ export class ElevenLabsVoiceSyncService {
     private readonly configService: AppConfigService,
   ) {}
 
+  /**
+   * `includeModelOptions: false` skips the account-wide catalog fetch, and with
+   * it the `modelOptions` the studio's picker needs. Only for a caller that
+   * reads none of it — `bulkSyncAllVoices` is after `voice_type` alone, and
+   * would otherwise re-fetch the same account-wide catalog once per voice and
+   * throw every copy away.
+   */
   async syncVoice(
     id: string,
-    persist = true,
+    { persist = true, includeModelOptions = true } = {},
   ): Promise<ElevenLabsVoiceSyncResult> {
     const voice = await this.scenarioVoicesRepository.findOne({
       where: { id },
@@ -159,7 +174,12 @@ export class ElevenLabsVoiceSyncService {
       );
     }
 
-    const remote = await this.fetchVoice(storedVoiceId, apiKey);
+    // Independent calls — the voice's own data and the account-wide catalog
+    // don't depend on each other, so fetch both at once rather than in series.
+    const [remote, catalog] = await Promise.all([
+      this.fetchVoice(storedVoiceId, apiKey),
+      includeModelOptions ? this.listAvailableModels() : Promise.resolve([]),
+    ]);
     const category = remote?.category ?? null;
     const resolvedVoiceId = remote?.voice_id ?? null;
     const voiceType = category
@@ -180,10 +200,15 @@ export class ElevenLabsVoiceSyncService {
       category,
       resolvedName: remote?.name ?? null,
       voiceType,
-      warning: getElevenLabsV3Warning(config.model, voiceType),
       persisted: false,
       availableModels,
       recommendedModel,
+      modelOptions: this.buildModelOptions(
+        catalog,
+        voiceType,
+        availableModels,
+        recommendedModel,
+      ),
     };
 
     if (persist && voiceType) {
@@ -223,7 +248,10 @@ export class ElevenLabsVoiceSyncService {
       );
     }
 
-    const remote = await this.fetchVoice(trimmed, apiKey);
+    const [remote, catalog] = await Promise.all([
+      this.fetchVoice(trimmed, apiKey),
+      this.listAvailableModels(),
+    ]);
     const category = remote?.category ?? null;
     const resolvedVoiceId = remote?.voice_id ?? null;
     const voiceType = category
@@ -242,10 +270,16 @@ export class ElevenLabsVoiceSyncService {
       category,
       resolvedName: remote?.name ?? null,
       voiceType,
-      gender: remote?.labels?.gender ?? null,
+      gender: toScenarioVoiceGender(remote?.labels?.gender),
       language: remote?.labels?.language ?? null,
       availableModels,
       recommendedModel,
+      modelOptions: this.buildModelOptions(
+        catalog,
+        voiceType,
+        availableModels,
+        recommendedModel,
+      ),
     };
   }
 
@@ -305,7 +339,11 @@ export class ElevenLabsVoiceSyncService {
       }
 
       try {
-        const result = await this.syncVoice(row.id);
+        // Only voice_type is read below, so don't pay for the account-wide
+        // catalog here — it is identical for every row in this loop.
+        const result = await this.syncVoice(row.id, {
+          includeModelOptions: false,
+        });
         if (result.persisted) summary.updated += 1;
         if (result.voiceIdMismatch) {
           summary.mismatched.push({
@@ -375,6 +413,30 @@ export class ElevenLabsVoiceSyncService {
         modelId: model.model_id as string,
         name: model.name ?? (model.model_id as string),
       }));
+  }
+
+  /**
+   * Applies THIS voice's verdict to the account-wide catalog. Kept as one
+   * small mapping step, separate from `listAvailableModels`, so the catalog
+   * fetch (shared with `TtsCatalogService`, voice-independent) stays free of
+   * per-voice logic — only this call site knows about a specific voice.
+   */
+  private buildModelOptions(
+    catalog: ElevenLabsModelInfo[],
+    voiceType: ElevenLabsVoiceType | null,
+    availableModels: string[],
+    recommendedModel: string | null,
+  ): ElevenLabsModelOption[] {
+    return catalog.map((model) => ({
+      value: model.modelId,
+      label: model.name,
+      recommended: getElevenLabsModelRecommendation(
+        model.modelId,
+        voiceType,
+        availableModels,
+        recommendedModel,
+      ),
+    }));
   }
 
   /** Pages through the whole workspace once, keyed by voice_id. Free — this is a listing call, not a generation call. */

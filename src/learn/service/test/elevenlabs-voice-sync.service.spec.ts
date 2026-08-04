@@ -38,16 +38,28 @@ describe('ElevenLabsVoiceSyncService', () => {
     jest.clearAllMocks();
   });
 
+  /**
+   * lookupVoice/syncVoice now fetch the voice AND the account-wide catalog
+   * in parallel (Promise.all) — a bare `mockResolvedValue` can't tell those
+   * two calls apart, so tests that need both dispatch by URL instead.
+   */
+  const mockFetchByUrl = (voiceResponse: any, modelsCatalog: any[] = []) => {
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.includes('/models')
+          ? { ok: true, json: async () => modelsCatalog }
+          : { ok: true, json: async () => voiceResponse },
+      ),
+    );
+  };
+
   describe('lookupVoice', () => {
     it('resolves a voice with no scenario_voices row, without touching the DB', async () => {
-      fetchMock.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          voice_id: 'abc',
-          category: 'generated',
-          name: 'Meenakshi',
-          labels: { gender: 'female', language: 'ta' },
-        }),
+      mockFetchByUrl({
+        voice_id: 'abc',
+        category: 'generated',
+        name: 'Meenakshi',
+        labels: { gender: 'female', language: 'ta' },
       });
 
       const result = await service.lookupVoice('abc');
@@ -66,25 +78,51 @@ describe('ElevenLabsVoiceSyncService', () => {
         // account-wide catalog from listAvailableModels).
         availableModels: [],
         recommendedModel: null,
+        modelOptions: [],
       });
       expect(repository.findOne).not.toHaveBeenCalled();
       expect(repository.update).not.toHaveBeenCalled();
     });
 
     it('passes through the fine-tune-supported models, and recommends multilingual v2 for a PVC voice', async () => {
-      fetchMock.mockResolvedValue({
-        ok: true,
-        json: async () => ({
+      mockFetchByUrl(
+        {
           voice_id: 'abc',
           category: 'professional',
           name: 'Raju',
           labels: {},
+          // Deliberately omits eleven_flash_v2_5 from the account-wide
+          // catalog below, so that model exercises the "genuinely not
+          // listed" (false) case distinctly from turbo_v2_5's "listed, just
+          // not THE recommendation" (null) case.
           high_quality_base_model_ids: [
             'eleven_turbo_v2_5',
             'eleven_multilingual_v2',
           ],
-        }),
-      });
+        },
+        [
+          {
+            model_id: 'eleven_turbo_v2_5',
+            name: 'Eleven Turbo v2.5',
+            can_do_text_to_speech: true,
+          },
+          {
+            model_id: 'eleven_multilingual_v2',
+            name: 'Eleven Multilingual v2',
+            can_do_text_to_speech: true,
+          },
+          {
+            model_id: 'eleven_flash_v2_5',
+            name: 'Eleven Flash v2.5',
+            can_do_text_to_speech: true,
+          },
+          {
+            model_id: 'eleven_v3',
+            name: 'Eleven v3',
+            can_do_text_to_speech: true,
+          },
+        ],
+      );
 
       const result = await service.lookupVoice('abc');
 
@@ -93,17 +131,77 @@ describe('ElevenLabsVoiceSyncService', () => {
         'eleven_multilingual_v2',
       ]);
       expect(result.recommendedModel).toBe('eleven_multilingual_v2');
+      // The catalog comes back pre-labeled: the recommendation is true;
+      // turbo_v2_5 is listed but isn't THE recommendation, so null, not a
+      // negative; flash_v2_5 is genuinely absent from the fine-tune list, so
+      // false; and v3 — never in that list for any voice — is judged by
+      // voice TYPE (PVC here), not by the list, so it's flagged too.
+      expect(result.modelOptions).toEqual([
+        {
+          value: 'eleven_turbo_v2_5',
+          label: 'Eleven Turbo v2.5',
+          recommended: null,
+        },
+        {
+          value: 'eleven_multilingual_v2',
+          label: 'Eleven Multilingual v2',
+          recommended: true,
+        },
+        {
+          value: 'eleven_flash_v2_5',
+          label: 'Eleven Flash v2.5',
+          recommended: false,
+        },
+        { value: 'eleven_v3', label: 'Eleven v3', recommended: false },
+      ]);
+    });
+
+    // The exact production bug this endpoint was refactored to fix (a real
+    // voice, "Meenakshi", Voice Design): an empty fine-tune list must not
+    // read as "every model failed a check", and v3 must be judged by voice
+    // type, not by that same empty list.
+    it('flags nothing when the voice is v3-compatible and ElevenLabs reported no fine-tune data at all', async () => {
+      mockFetchByUrl(
+        {
+          voice_id: 'iA7',
+          category: 'generated',
+          name: 'Meenakshi',
+          labels: {},
+        },
+        [
+          {
+            model_id: 'eleven_turbo_v2_5',
+            name: 'Eleven Turbo v2.5',
+            can_do_text_to_speech: true,
+          },
+          {
+            model_id: 'eleven_v3',
+            name: 'Eleven v3',
+            can_do_text_to_speech: true,
+          },
+        ],
+      );
+
+      const result = await service.lookupVoice('iA7');
+
+      expect(result.availableModels).toEqual([]);
+      expect(result.recommendedModel).toBeNull();
+      expect(result.modelOptions).toEqual([
+        {
+          value: 'eleven_turbo_v2_5',
+          label: 'Eleven Turbo v2.5',
+          recommended: null,
+        },
+        { value: 'eleven_v3', label: 'Eleven v3', recommended: null },
+      ]);
     });
 
     it('flags a mismatch when ElevenLabs resolves the id to a different voice', async () => {
-      fetchMock.mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          voice_id: 'eLDc7xhWxG2FElT3kUTj',
-          category: 'generated',
-          name: 'Janet',
-          labels: {},
-        }),
+      mockFetchByUrl({
+        voice_id: 'eLDc7xhWxG2FElT3kUTj',
+        category: 'generated',
+        name: 'Janet',
+        labels: {},
       });
 
       const result = await service.lookupVoice('21m00Tcm4TlvDq8ikWAM');
@@ -216,8 +314,45 @@ describe('ElevenLabsVoiceSyncService', () => {
         },
       ]);
       expect(summary.failed).toEqual([]);
-      // Listing (1) + exactly one fallback fetch — not one per row in the workspace.
+      // Listing (1) + the fallback's voice fetch (1). Bulk reads only
+      // voice_type, so it opts out of the account-wide catalog fetch —
+      // otherwise every fallback row would re-fetch the same catalog and
+      // discard it.
       expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not re-fetch the account-wide catalog once per fallback row', async () => {
+      // The catalog is identical for every row, and bulk reads only
+      // voice_type — modelOptions is discarded. Fetching it per row was pure
+      // waste that grew with the number of ids missing from the listing (7 of
+      // 77 in production), so the /models endpoint must not be touched here.
+      fetchMock
+        .mockResolvedValueOnce(voiceListingResponse([]))
+        .mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            voice_id: 'resolved-id',
+            category: 'professional',
+            name: 'Whoever',
+          }),
+        });
+      const rows = ['row-a', 'row-b', 'row-c'].map((id) => ({
+        id,
+        name: id,
+        provider: TtsProvider.ELEVENLABS,
+        config: { voice_id: `${id}-voice-id` },
+      }));
+      repository.find.mockResolvedValue(rows);
+      repository.findOne.mockImplementation(({ where }: any) =>
+        Promise.resolve(rows.find((r) => r.id === where.id)),
+      );
+
+      await service.bulkSyncAllVoices();
+
+      const modelsCalls = fetchMock.mock.calls.filter(([url]: any[]) =>
+        String(url).includes('/models'),
+      );
+      expect(modelsCalls).toHaveLength(0);
     });
 
     it('reports a truly bad id as failed, not mismatched', async () => {

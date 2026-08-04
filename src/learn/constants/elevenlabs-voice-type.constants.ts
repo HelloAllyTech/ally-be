@@ -1,3 +1,5 @@
+import { Gender } from '../enum/gender.enum';
+
 /**
  * How an ElevenLabs voice was created, which is what decides whether
  * `eleven_v3` can use it.
@@ -50,6 +52,32 @@ export const ELEVENLABS_CATEGORY_TO_VOICE_TYPE: Record<
 };
 
 /**
+ * ElevenLabs' `labels.gender` narrowed to a value our own schema accepts, or
+ * null when it doesn't map.
+ *
+ * Their label is free text and ours is an enum, so the two are not the same
+ * vocabulary: across 153 voices this account returns `male` (71), `female`
+ * (60), nothing at all (21) — and `neutral` (1, "River"). Handing `neutral`
+ * straight through autofills a value the Gender dropdown cannot display and
+ * that both validators then reject, so the admin gets Save blocked over a
+ * field they never touched.
+ *
+ * `neutral` is deliberately NOT mapped to `non-binary`. A gender-neutral voice
+ * is a statement about how the audio sounds; non-binary is a statement about a
+ * person's identity. Equating them would assert something ElevenLabs never
+ * said, so an unmappable label leaves the field unset for a human to choose —
+ * which the studio already flags as a non-blocking "no gender set" warning.
+ */
+export const toScenarioVoiceGender = (label?: string | null): Gender | null => {
+  const normalized = String(label ?? '')
+    .trim()
+    .toLowerCase();
+  return (Object.values(Gender) as string[]).includes(normalized)
+    ? (normalized as Gender)
+    : null;
+};
+
+/**
  * Voice types we stay silent about on v3.
  *
  * Not "types v3 can use a fine-tune from" — there are none. ElevenLabs
@@ -78,46 +106,27 @@ export const isElevenLabsV3Model = (model?: string | null): boolean =>
   /v3/i.test(String(model ?? ''));
 
 /**
- * Warning for a voice whose fine-tune v3 will not use — deliberately a warning,
- * not an error, and deliberately non-prescriptive.
+ * Whether v3 is a sound choice for a voice of this type — what
+ * `getElevenLabsModelRecommendation` defers to, so the per-voice model verdict
+ * this service returns is decided in one place.
  *
- * A same-voice A/B (fine-tuned v2 vs v3 fallback, identical Hindi sentence) was
- * perceptually identical, so the combination is *unsupported* rather than
- * demonstrably broken. Blocking the save would discard deliberate work on no
- * evidence of harm; staying silent is what let 23 production rows end up here
- * unnoticed.
- *
- * The wording stops short of recommending a model. v3 genuinely renders these
- * voices — we measured 200s and indistinguishable audio — so "keep it on v2"
- * would be advice the evidence does not support. What is certain is only that
- * the fine-tune goes unused.
- *
- * Written for a studio user, not an engineer: no "PVC", "fine-tune" or
- * "render". The reader configuring a voice cannot act on our vocabulary, only
- * on what will happen and what to do about it — which is why every message
- * ends in an instruction. An earlier draft said "eleven_v3 will not use this
- * PVC voice's fine-tuned model", which is precise and unreadable.
- *
- * Returns null when there is nothing to say.
+ * This file used to also own `getElevenLabsV3Warning`, which produced the
+ * studio's advisory text from the same rule. That copy was dead: it populated a
+ * `warning` field on the sync response that no client ever rendered, and it had
+ * already drifted (it still named a button the studio renamed). The studio
+ * keeps its own copy on purpose — the advisory has to appear the instant an
+ * admin flips the Model dropdown, and to work off the persisted `voice_type` of
+ * a voice nobody has re-synced, neither of which a server round-trip can do.
+ * The per-voice model verdict is the opposite case and correctly lives here: it
+ * needs ElevenLabs' `high_quality_base_model_ids`, which only this service can
+ * fetch.
  */
-export const getElevenLabsV3Warning = (
-  model?: string | null,
+export const isElevenLabsV3CompatibleVoiceType = (
   voiceType?: string | null,
-): string | null => {
-  if (!isElevenLabsV3Model(model)) return null;
-
-  const type = String(voiceType ?? '').trim();
-  if (!type) {
-    return 'We do not know how this voice was created, so we cannot say how it will sound on the v3 model. Click "Sync from ElevenLabs" to check.';
-  }
-  if (type === ElevenLabsVoiceType.UNKNOWN) {
-    return 'ElevenLabs did not tell us how this voice was created. Check in the ElevenLabs workspace whether it was trained from recordings — if it was, v3 will not sound as close to the original person.';
-  }
-  if (!V3_COMPATIBLE_VOICE_TYPES.includes(type as ElevenLabsVoiceType)) {
-    return 'This voice was custom-trained from real recordings. The v3 model cannot use that training — it will still speak, but it will not sound as close to the original person. Listen to it before you use it.';
-  }
-  return null;
-};
+): boolean =>
+  V3_COMPATIBLE_VOICE_TYPES.includes(
+    String(voiceType ?? '').trim() as ElevenLabsVoiceType,
+  );
 
 /** The model that uses a Professional clone's fine-tune. */
 const ELEVENLABS_FIDELITY_MODEL = 'eleven_multilingual_v2';
@@ -161,4 +170,54 @@ export const buildElevenLabsModelOptions = (
       : (listed[0] ?? null);
 
   return { availableModels: listed, recommendedModel };
+};
+
+/** One entry in a picker, with ElevenLabs' own verdict already applied. */
+export interface ElevenLabsModelOption {
+  value: string;
+  label: string;
+  /**
+   * true = the recommendation for this voice; false = flagged as not
+   * recommended; null = no signal either way — ElevenLabs told us nothing
+   * that distinguishes this model for this voice, so we don't invent one.
+   */
+  recommended: boolean | null;
+}
+
+/**
+ * Whether ONE model deserves a "not recommended" flag for a SPECIFIC voice —
+ * the single place this decision is made, so a UI rendering it doesn't need
+ * its own copy of the same rule (a duplicate copy is exactly what caused a
+ * real production voice, "Meenakshi", to have v3 wrongly flagged: the
+ * rendering layer's independent copy of this logic didn't agree with this
+ * one).
+ *
+ * Two things make "not recommended" a real claim rather than a guess:
+ *
+ * 1. v3 gets its own check, by voice TYPE, not by availableModels: ElevenLabs
+ *    confirmed `high_quality_base_model_ids` never lists v3, for ANY voice —
+ *    that's a fact about how v3 works, not a per-voice signal, so using it to
+ *    judge v3 would flag it for every voice, including ones it suits fine.
+ * 2. For every other model, absence from availableModels is only meaningful
+ *    when that list has real entries — ElevenLabs actively choosing some
+ *    models over others for this voice. An EMPTY list is not a verdict on
+ *    every model; it means no fine-tune data was reported at all (true for
+ *    every Voice Design voice — 0 of 27 in the account-wide sweep). Flagging
+ *    everything from an empty list would claim ElevenLabs said something it
+ *    never said.
+ */
+export const getElevenLabsModelRecommendation = (
+  modelId: string,
+  voiceType: ElevenLabsVoiceType | string | null,
+  availableModels: string[],
+  recommendedModel: string | null,
+): boolean | null => {
+  if (modelId === recommendedModel) return true;
+  if (isElevenLabsV3Model(modelId)) {
+    return isElevenLabsV3CompatibleVoiceType(voiceType) ? null : false;
+  }
+  if (availableModels.length > 0 && !availableModels.includes(modelId)) {
+    return false;
+  }
+  return null;
 };

@@ -1761,6 +1761,7 @@ describe('LearnController', () => {
         language: 'ta',
         availableModels: [],
         recommendedModel: null,
+        modelOptions: [],
       };
       elevenLabsVoiceSyncService.lookupVoice.mockResolvedValue(result);
 
