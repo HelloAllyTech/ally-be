@@ -32,6 +32,7 @@ import {
   UpdateSessionEventDto,
 } from '../dto/session-event.dto';
 import {
+  DEPRECATED_EVENT_DETECTION_TYPES,
   MAX_COMBINATION_EVENT_DEPTH,
   SYSTEM_EVENT_DETECTION_TYPES,
 } from '../constants/event.constant';
@@ -75,6 +76,15 @@ export class SessionEventService {
     const combinationExpressionEventIds = new Set<string>();
 
     for (const event of events) {
+      if (
+        event.detectionType &&
+        DEPRECATED_EVENT_DETECTION_TYPES.includes(event.detectionType)
+      ) {
+        throw new BadRequestException(
+          `${event.detectionType} events are deprecated and can no longer be created`,
+        );
+      }
+
       if (
         event.detectionType === SessionEventDetectionType.COMBINATION &&
         event.id

@@ -18,6 +18,7 @@ import { SttConfigsRepository } from '../../repository/stt-configs.repository';
 import { LlmConfigsRepository } from '../../repository/llm-configs.repository';
 import { LlmModelsRepository } from 'src/llm/repository/llm-models.repository';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
+import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { NotFoundException } from '@nestjs/common';
 import { Not, IsNull } from 'typeorm';
@@ -1629,6 +1630,141 @@ describe('ScenarioSharedService', () => {
       });
 
       expect(result.environment).toBe('development');
+    });
+
+    describe('deprecated event types excluded from metadata', () => {
+      const baseScenario = {
+        id: 1,
+        title: 'Test Scenario',
+        description: 'Test Description',
+        prompt: 'Act only as the client.',
+        metadata: {
+          voiceId: 'voice-1',
+          name: 'Alex',
+          age: 28,
+          gender: 'Male',
+          currentLocation: 'NYC',
+          openingStatements: ['Hi'],
+        },
+        behaviorInstructions: [],
+        difficultyLevel: 'EASY',
+      } as any;
+
+      beforeEach(() => {
+        scenarioVoiceRepository.findOne.mockResolvedValue({
+          id: 'voice-1',
+          name: 'Test Voice',
+          provider: 'deepgram',
+          config: {},
+        } as any);
+      });
+
+      it('excludes a directly-attached SENTENCE_SIMILARITY event from scenario.events', async () => {
+        const result = await service.createRoomMetadata({
+          scenario: { ...baseScenario, terminationEvents: [] },
+          sessionEvents: [
+            {
+              id: 'S1',
+              detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+              detectionData: { sentences: ['hello'] },
+            } as any,
+            {
+              id: 'SC1',
+              detectionType: SessionEventDetectionType.SCORE,
+              detectionData: { score: 5 },
+            } as any,
+          ],
+          languageDetails: null as any,
+          previousMemory: null,
+        });
+
+        const eventIds = result.scenario.events.map((e: any) => e.id);
+        expect(eventIds).not.toContain('S1');
+        expect(eventIds).toContain('SC1');
+        expect(result.scenario.triggerEvents).not.toContain('S1');
+      });
+
+      it('excludes a SEMANTIC_SIMILARITY event fetched only as a COMBINATION dependency, and degrades the combination gracefully', async () => {
+        sessionEventSharedService.findByIds.mockResolvedValue([
+          {
+            id: 'SM1',
+            detectionType: SessionEventDetectionType.SEMANTIC_SIMILARITY,
+            detectionData: { sentences: ['hello'] },
+          } as any,
+        ]);
+
+        const result = await service.createRoomMetadata({
+          scenario: { ...baseScenario, terminationEvents: [] },
+          sessionEvents: [
+            {
+              id: 'C1',
+              detectionType: SessionEventDetectionType.COMBINATION,
+              detectionData: {
+                expression: { type: 'IDENTIFIER', id: 'SM1' },
+              },
+            } as any,
+          ],
+          languageDetails: null as any,
+          previousMemory: null,
+        });
+
+        const eventIds = result.scenario.events.map((e: any) => e.id);
+        expect(eventIds).not.toContain('SM1');
+        // The combination event itself is still sent — it just resolves its
+        // SM1 dependency as absent (ai-learn's event_registry.get() -> None
+        // -> happened=False), the same graceful degradation already proven
+        // for any other missing/unknown dependency.
+        expect(eventIds).toContain('C1');
+      });
+
+      it('drops an autoTerminationEvent whose target is a deprecated-type event', async () => {
+        sessionEventSharedService.findByIds.mockResolvedValue([
+          {
+            id: 'S1',
+            detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+            detectionData: { sentences: ['stop now'] },
+          } as any,
+        ]);
+
+        const result = await service.createRoomMetadata({
+          scenario: {
+            ...baseScenario,
+            terminationEvents: [{ eventId: 'S1', message: 'Session ended' }],
+          },
+          sessionEvents: [],
+          languageDetails: null as any,
+          previousMemory: null,
+        });
+
+        expect(result.scenario.autoTerminationEvents).toEqual([]);
+        expect(result.scenario.events.map((e: any) => e.id)).not.toContain(
+          'S1',
+        );
+      });
+
+      it('keeps an autoTerminationEvent whose target is NOT a deprecated-type event', async () => {
+        sessionEventSharedService.findByIds.mockResolvedValue([
+          {
+            id: 'SC1',
+            detectionType: SessionEventDetectionType.SCORE,
+            detectionData: { score: 100 },
+          } as any,
+        ]);
+
+        const result = await service.createRoomMetadata({
+          scenario: {
+            ...baseScenario,
+            terminationEvents: [{ eventId: 'SC1', message: 'Session ended' }],
+          },
+          sessionEvents: [],
+          languageDetails: null as any,
+          previousMemory: null,
+        });
+
+        expect(result.scenario.autoTerminationEvents).toEqual([
+          { id: 'SC1', terminationMessage: 'Session ended' },
+        ]);
+      });
     });
   });
 

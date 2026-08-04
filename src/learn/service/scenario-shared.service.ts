@@ -37,7 +37,10 @@ import { SttConfigsRepository } from '../repository/stt-configs.repository';
 import { LlmConfigsRepository } from '../repository/llm-configs.repository';
 import { SessionEventDetectionType } from 'src/session-event/enum/session-event-detection.enum';
 import { extractEventIds } from 'src/session-event/util/session-event.util';
-import { MAX_COMBINATION_EVENT_DEPTH } from 'src/session-event/constants/event.constant';
+import {
+  DEPRECATED_EVENT_DETECTION_TYPES,
+  MAX_COMBINATION_EVENT_DEPTH,
+} from 'src/session-event/constants/event.constant';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { DEFAULT_LANGUAGE_CODE } from 'src/language/constants/language.constant';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
@@ -542,9 +545,22 @@ export class ScenarioSharedService {
 
     const triggerEvents = new Set<string>();
     const eventMap = new Map<string, SessionEvents>();
+    // SENTENCE_SIMILARITY/SEMANTIC_SIMILARITY are deprecated — excluded from
+    // the LiveKit room metadata payload entirely (not just blocked at
+    // creation), both to stop them firing for scenarios that already have
+    // them configured and to trim payload size (room metadata has a known
+    // 64KB LiveKit cap and history of blowing the dispatch window — see
+    // ROOM_METADATA_WARN_BYTES below). Tracked by id so auto-termination
+    // references to a now-excluded event can also be dropped, avoiding a
+    // dangling pointer (see autoTerminationEvents below).
+    const deprecatedEventIds = new Set<string>();
 
     // Add initial session events to the map
     sessionEvents.forEach((event) => {
+      if (DEPRECATED_EVENT_DETECTION_TYPES.includes(event.detectionType)) {
+        deprecatedEventIds.add(event.id);
+        return;
+      }
       triggerEvents.add(event.id);
       eventMap.set(event.id, event);
     });
@@ -553,7 +569,11 @@ export class ScenarioSharedService {
     const idsToProcess = new Set<string>();
     if (terminationEvents && terminationEvents?.length > 0) {
       terminationEvents.forEach((termEvent) => {
-        if (termEvent?.eventId && !eventMap.has(termEvent.eventId)) {
+        if (
+          termEvent?.eventId &&
+          !eventMap.has(termEvent.eventId) &&
+          !deprecatedEventIds.has(termEvent.eventId)
+        ) {
           idsToProcess.add(termEvent.eventId);
         }
       });
@@ -565,7 +585,7 @@ export class ScenarioSharedService {
         const detectionData = (event as any).data || event.detectionData;
         const dependentIds = extractEventIds(detectionData?.expression);
         dependentIds.forEach((id) => {
-          if (!eventMap.has(id)) {
+          if (!eventMap.has(id) && !deprecatedEventIds.has(id)) {
             idsToProcess.add(id);
           }
         });
@@ -586,6 +606,10 @@ export class ScenarioSharedService {
         await this.sessionEventSharedService.findByIds(idsToFetch);
 
       for (const event of fetchedEvents) {
+        if (DEPRECATED_EVENT_DETECTION_TYPES.includes(event.detectionType)) {
+          deprecatedEventIds.add(event.id);
+          continue;
+        }
         eventMap.set(event.id, event);
 
         // If the fetched event is also a combination, extract its dependencies
@@ -593,7 +617,7 @@ export class ScenarioSharedService {
           const detectionData = event.detectionData;
           const childIds = extractEventIds(detectionData?.expression);
           childIds.forEach((id) => {
-            if (!eventMap.has(id)) {
+            if (!eventMap.has(id) && !deprecatedEventIds.has(id)) {
               idsToProcess.add(id);
             }
           });
@@ -633,12 +657,20 @@ export class ScenarioSharedService {
       };
     });
 
-    const autoTerminationEvents = terminationEvents?.map((termEvent) => {
-      return {
-        id: termEvent?.eventId,
-        terminationMessage: termEvent?.message,
-      };
-    });
+    // Drop any termination reference whose target event was excluded above
+    // for being a deprecated type — otherwise ai-learn would receive a
+    // terminationEvent pointing at an id absent from `events` entirely.
+    const autoTerminationEvents = terminationEvents
+      ?.filter(
+        (termEvent) =>
+          !termEvent?.eventId || !deprecatedEventIds.has(termEvent.eventId),
+      )
+      .map((termEvent) => {
+        return {
+          id: termEvent?.eventId,
+          terminationMessage: termEvent?.message,
+        };
+      });
 
     const stateConfig = getScenarioStateConfigByDifficultyLevel(
       scenario.difficultyLevel as ScenarioDifficultyLevel,

@@ -159,7 +159,17 @@ describe('SessionEventService', () => {
     const mockUserId = 1;
 
     it('should create session events by calling createSessionEvents repository function', async () => {
-      const createEventDtos = [mockCreateSessionEventDto];
+      // SENTENCE_SIMILARITY/SEMANTIC_SIMILARITY are deprecated (can no longer
+      // be created, see the 'deprecated detection types' tests below) — this
+      // test is about the create plumbing generally (id/createdBy/updatedBy
+      // stamping), so it drops the type-specific detectionData rather than
+      // asserting on how a particular type's data gets remapped.
+      const createEventDto: CreateSessionEventDto = {
+        ...mockCreateSessionEventDto,
+        detectionType: SessionEventDetectionType.SCORE,
+        detectionData: undefined,
+      };
+      const createEventDtos = [createEventDto];
       const createdEvents = [mockSessionEvent];
 
       repository.findByIds.mockResolvedValue([]);
@@ -174,13 +184,36 @@ describe('SessionEventService', () => {
         expect.arrayContaining([
           expect.objectContaining({
             id: expect.any(String),
-            ...mockCreateSessionEventDto,
+            ...createEventDto,
             createdBy: mockUserId,
             updatedBy: mockUserId,
           }),
         ]),
       );
       expect(result).toEqual(createdEvents);
+    });
+
+    describe('deprecated detection types', () => {
+      it.each([
+        SessionEventDetectionType.SENTENCE_SIMILARITY,
+        SessionEventDetectionType.SEMANTIC_SIMILARITY,
+      ])(
+        'should throw BadRequestException when creating a %s event',
+        async (detectionType) => {
+          const createEventDto: CreateSessionEventDto = {
+            ...mockCreateSessionEventDto,
+            detectionType,
+          };
+
+          await expect(
+            service.createSessionEvents([createEventDto], mockUserId),
+          ).rejects.toThrow(BadRequestException);
+          await expect(
+            service.createSessionEvents([createEventDto], mockUserId),
+          ).rejects.toThrow(`${detectionType} events are deprecated`);
+          expect(repository.createSessionEvents).not.toHaveBeenCalled();
+        },
+      );
     });
 
     it('should throw BadRequestException when referenced event IDs are invalid', async () => {
@@ -205,7 +238,7 @@ describe('SessionEventService', () => {
         {
           id: eventAId,
           name: 'Event A',
-          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          detectionType: SessionEventDetectionType.SCORE,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -225,7 +258,7 @@ describe('SessionEventService', () => {
       it('should throw BadRequestException when detectionConfig startTime is null', async () => {
         const createEventDto: CreateSessionEventDto = {
           name: 'Test Event',
-          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          detectionType: SessionEventDetectionType.SCORE,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           detectionConfig: {
             startTime: null as any,
@@ -243,7 +276,7 @@ describe('SessionEventService', () => {
       it('should throw BadRequestException when startTime is greater than endTime', async () => {
         const createEventDto: CreateSessionEventDto = {
           name: 'Test Event',
-          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          detectionType: SessionEventDetectionType.SCORE,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           detectionConfig: {
             startTime: 100,
@@ -262,7 +295,7 @@ describe('SessionEventService', () => {
       it('should throw BadRequestException when minGapTime is less than 0', async () => {
         const createEventDto: CreateSessionEventDto = {
           name: 'Test Event',
-          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          detectionType: SessionEventDetectionType.SCORE,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           detectionConfig: {
             minGapTime: -5,
@@ -280,7 +313,7 @@ describe('SessionEventService', () => {
       it('should throw BadRequestException when maxOccurrences is less than 0', async () => {
         const createEventDto: CreateSessionEventDto = {
           name: 'Test Event',
-          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          detectionType: SessionEventDetectionType.SCORE,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           detectionConfig: {
             maxOccurrences: -1,
@@ -298,7 +331,10 @@ describe('SessionEventService', () => {
       it('should throw BadRequestException when minScore is greater than maxScore', async () => {
         const createEventDto: CreateSessionEventDto = {
           name: 'Test Event',
-          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          // SCORE's own detectionConfig mapping drops minScore/maxScore (see
+          // mapRequestToDbDetectionConfigByType) — TIME's preserves them, so
+          // it's the one that actually exercises this validation branch.
+          detectionType: SessionEventDetectionType.TIME,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           detectionConfig: {
             minScore: 90,
@@ -317,7 +353,7 @@ describe('SessionEventService', () => {
       it('should accept valid detectionConfig with proper values', async () => {
         const createEventDto: CreateSessionEventDto = {
           name: 'Test Event',
-          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          detectionType: SessionEventDetectionType.SCORE,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           detectionConfig: {
             startTime: 10,
@@ -2228,12 +2264,14 @@ describe('SessionEventService', () => {
       });
 
       it('should not validate non-combination events', async () => {
+        // SENTENCE_SIMILARITY is deprecated (can no longer be created) — SCORE
+        // is just another non-combination type, which is all this test needs.
         const createEventDto: CreateSessionEventDto = {
           name: 'Simple Event',
-          detectionType: SessionEventDetectionType.SENTENCE_SIMILARITY,
+          detectionType: SessionEventDetectionType.SCORE,
           visibilityType: SessionEventVisibilityType.ACTIVE,
           detectionData: {
-            sentences: ['test sentence'],
+            score: 5,
           },
         };
 
