@@ -251,6 +251,7 @@ describe('UserController', () => {
         roles: undefined,
         statuses: undefined,
         search: undefined,
+        includePlatformAdmins: false,
       });
       expect(result).toEqual(mockUserList);
     });
@@ -282,6 +283,7 @@ describe('UserController', () => {
         roles: 'ADMIN,USER',
         statuses: 'active',
         search: 'test',
+        includePlatformAdmins: false,
       });
       expect(result).toEqual(mockUserList);
     });
@@ -317,7 +319,43 @@ describe('UserController', () => {
         roles: undefined,
         statuses: undefined,
         search: undefined,
+        includePlatformAdmins: false,
       });
+    });
+
+    // The opt-in arrives as a query string, so only the literal "true" counts.
+    it('should forward the platform-admin opt-in only for "true"', async () => {
+      mockUserService.getAllUsers.mockResolvedValue({ data: [], count: 0 });
+
+      await controller.getAllUsers(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'true',
+      );
+      expect(mockUserService.getAllUsers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ includePlatformAdmins: true }),
+      );
+
+      await controller.getAllUsers(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        'yes',
+      );
+      expect(mockUserService.getAllUsers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ includePlatformAdmins: false }),
+      );
     });
   });
 
