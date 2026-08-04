@@ -157,6 +157,13 @@ export class UserController {
     type: String,
     description: 'search by name or email',
   })
+  @ApiQuery({
+    name: 'includePlatformAdmins',
+    required: false,
+    type: Boolean,
+    description:
+      'Include holders of a platform role (super admin / super duper admin / internal), who are excluded by default. Requires view:super-duper-admins.',
+  })
   @AuthPermissions([PERMISSIONS.VIEW_USERS])
   @Get()
   async getAllUsers(
@@ -168,6 +175,7 @@ export class UserController {
     @Query('roles') roles?: string,
     @Query('statuses') statuses?: string,
     @Query('search') search?: string,
+    @Query('includePlatformAdmins') includePlatformAdmins?: string,
   ): Promise<UserListResponseDto> {
     return this.userService.getAllUsers({
       limit,
@@ -178,6 +186,8 @@ export class UserController {
       roles,
       statuses,
       search,
+      // Query params arrive as strings; only the explicit opt-in counts.
+      includePlatformAdmins: includePlatformAdmins === 'true',
     });
   }
 

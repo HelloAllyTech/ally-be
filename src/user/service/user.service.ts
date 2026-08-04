@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Inject,
   forwardRef,
@@ -59,6 +60,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { ProfileImageUploadDto } from '../dto/profile-image-upload.dto';
 import { AdminTenantService } from './admin-tenant.service';
 import { PermissionsService } from '../../authorization/service/permissions.service';
+import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 
 @Injectable()
 export class UserService {
@@ -173,6 +175,12 @@ export class UserService {
       name: user.name,
       email: user.email,
       role,
+      // Every role held, because `role` above collapses them by a priority list
+      // that cannot express a multi-role account: a staffer holding
+      // [INTERNAL, LEARNER] collapses to LEARNER, and the admin console would
+      // then gate them as one. Clients gate on this array and fall back to
+      // `role` (see resolveAdminRole in ally-web's admin dashboard).
+      roles: roles.map((group) => group.name),
       tenantId: user.tenantId,
       phone: user.phone,
       status: user.status,
@@ -238,7 +246,29 @@ export class UserService {
       }
     }
 
-    const result = await this.userRepository.getAllUsers(filters, true);
+    // Platform-role holders (super admin / super duper admin / internal) are
+    // hidden from this list by default: it is a tenant's user list, and staff
+    // accounts are managed from the Super Admins tab. A super duper admin can
+    // opt them in so the roles on those accounts stay editable through the UI
+    // — nobody else can, so the flag is rejected rather than quietly dropped.
+    if (filters.includePlatformAdmins) {
+      const canManagePlatformAdmins = userId
+        ? (
+            await this.permissionsService.getUserPermissions(Number(userId))
+          ).includes(PERMISSIONS.VIEW_SUPER_DUPER_ADMINS)
+        : false;
+
+      if (!canManagePlatformAdmins) {
+        throw new ForbiddenException(
+          'You are not allowed to list platform admins',
+        );
+      }
+    }
+
+    const result = await this.userRepository.getAllUsers(
+      filters,
+      !filters.includePlatformAdmins,
+    );
     if (result.users.length === 0) {
       return { data: [], count: 0 };
     }

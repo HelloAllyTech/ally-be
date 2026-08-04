@@ -12,7 +12,7 @@ import { TenantService } from 'src/tenant/service/tenant.service';
 import { UserRepository } from 'src/user/repository/user.repository';
 import { GroupService } from 'src/authorization/service/group.service';
 import { SimulationCreditsService } from 'src/learn/service/simulation-credits.service';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { UserGroupService } from 'src/authorization/service/user-group.service';
 import { GroupRepository } from 'src/authorization/repository/group.repository';
 import { UserGroupRepository } from 'src/authorization/repository/user-group.repository';
@@ -23,6 +23,7 @@ import { S3Service } from 'src/aws/service/s3.service';
 import { ProfileImageUploadContentType } from 'src/user/enum/user.enum';
 import { AdminTenantService } from '../admin-tenant.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { DataSource } from 'typeorm';
 
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -186,6 +187,7 @@ describe('UserService', () => {
 
     mockPermissionsService = {
       isMultiTenantAdmin: jest.fn().mockResolvedValue(false),
+      getUserPermissions: jest.fn().mockResolvedValue([]),
     };
 
     // Transaction manager exposes per-entity repositories; getRepository is
@@ -348,6 +350,20 @@ describe('UserService', () => {
       ]);
       const result = await service.getMinimalUserInfo(mockUser);
       expect(result && result.role).toBe(UserRole.CLIENT);
+    });
+
+    // Clients gate the admin console on `roles`, because the collapsed `role`
+    // reports LEARNER for a staffer holding [INTERNAL, LEARNER].
+    it('should return every role held alongside the collapsed one', async () => {
+      mockGroupService.getUserRolesByUserId.mockResolvedValue([
+        { id: 1, name: UserRole.INTERNAL },
+        { id: 2, name: UserRole.LEARNER },
+      ]);
+      const result = await service.getMinimalUserInfo(mockUser);
+      expect(result && result.roles).toEqual([
+        UserRole.INTERNAL,
+        UserRole.LEARNER,
+      ]);
     });
   });
 
@@ -526,6 +542,55 @@ describe('UserService', () => {
         }),
         true,
       );
+    });
+
+    describe('includePlatformAdmins', () => {
+      beforeEach(() => {
+        mockUsersRepository.getAllUsers.mockResolvedValue({
+          users: [],
+          count: 0,
+        });
+      });
+
+      it('stops excluding platform admins for a super duper admin', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.VIEW_SUPER_DUPER_ADMINS,
+        ]);
+
+        await service.getAllUsers({ includePlatformAdmins: true });
+
+        expect(mockUsersRepository.getAllUsers).toHaveBeenCalledWith(
+          expect.objectContaining({ includePlatformAdmins: true }),
+          false,
+        );
+      });
+
+      it('rejects the flag for a caller who cannot manage the tier', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.VIEW_USERS,
+        ]);
+
+        await expect(
+          service.getAllUsers({ includePlatformAdmins: true }),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockUsersRepository.getAllUsers).not.toHaveBeenCalled();
+      });
+
+      it('keeps excluding them when the flag is absent', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+
+        await service.getAllUsers({});
+
+        expect(
+          mockPermissionsService.getUserPermissions,
+        ).not.toHaveBeenCalled();
+        expect(mockUsersRepository.getAllUsers).toHaveBeenCalledWith(
+          expect.anything(),
+          true,
+        );
+      });
     });
   });
 
