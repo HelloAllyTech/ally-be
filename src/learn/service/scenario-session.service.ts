@@ -41,6 +41,7 @@ import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity'
 import { ScenarioSessionTurnMetrics } from '../entity/scenario-session-turn-metrics.entity';
 import { ScenarioSessionStartMetrics } from '../entity/scenario-session-start-metrics.entity';
 import {
+  LearnSessionMemoryData,
   LearnStartMetricsData,
   LearnTurnMetricsData,
 } from '../interface/learn-message.interface';
@@ -2104,6 +2105,48 @@ export class ScenarioSessionService {
       },
     });
     await repo.save(row);
+  }
+
+  /**
+   * Persist the agent's end-of-session episodic memory (message_type
+   * "session_memory") onto the per-session details row. Atomic upsert against
+   * the unique scenarioSessionId index (migration 1869) — only sessionMemory
+   * (and tenantId on insert) is written, so it never clobbers the summary or
+   * evaluation columns regardless of arrival order relative to session end.
+   */
+  async addSessionMemory(
+    scenarioSession: ScenarioSessions,
+    memory: LearnSessionMemoryData,
+    receivedAt?: Date,
+  ): Promise<void> {
+    const sessionMemory: Record<string, any> = {
+      summary: memory.summary,
+      language: memory.language ?? null,
+      messageCount: memory.message_count ?? null,
+      summarizedMessageCount: memory.summarized_message_count ?? null,
+      receivedAt: (receivedAt ?? new Date()).toISOString(),
+    };
+    // The agent emits in two phases: the maintained summary immediately
+    // (guaranteed to beat its shutdown runway), then a higher-coverage
+    // "final compaction" upgrade when time allows. The ON CONFLICT ... WHERE
+    // guard keeps whichever write covers more messages, so out-of-order SQS
+    // delivery or a duplicate redrive can never replace an upgrade with the
+    // stale phase-1 payload. Insert path matches the details-row upsert
+    // convention (unique scenarioSessionId index, migration 1869).
+    await this.dataSource.query(
+      `INSERT INTO scenario_session_details ("scenarioSessionId", "tenant_id", "sessionMemory")
+       VALUES ($1, $2, $3::jsonb)
+       ON CONFLICT ("scenarioSessionId") DO UPDATE SET
+         "sessionMemory" = EXCLUDED."sessionMemory",
+         "updatedAt" = now()
+       WHERE COALESCE((scenario_session_details."sessionMemory"->>'summarizedMessageCount')::int, -1)
+         <= COALESCE((EXCLUDED."sessionMemory"->>'summarizedMessageCount')::int, 0)`,
+      [
+        scenarioSession.id,
+        scenarioSession.tenantId,
+        JSON.stringify(sessionMemory),
+      ],
+    );
   }
 
   /**

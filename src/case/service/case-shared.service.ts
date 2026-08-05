@@ -291,16 +291,27 @@ export class CaseSharedService {
       return null;
     }
 
-    // Get the scenario session details (contains the summary with cumulative_memory)
+    // Get the scenario session details. Two memory sources, by preference:
+    // 1. sessionMemory — the agent's own rolling summary, emitted over SQS at
+    //    session end (message_type "session_memory"). Exists even when
+    //    post-session feedback generation fails, and reflects what the live
+    //    persona actually tracked.
+    // 2. summary.feedback.cumulativeMemory — legacy fallback produced by the
+    //    ally-ai feedback pipeline (absent whenever feedback errored/skipped).
     const scenarioSessionDetails =
       await this.scenarioSharedService.getScenarioSessionDetailsByScenarioSessionId(
         previousScenarioSession.id,
       );
-    if (!scenarioSessionDetails?.summary) {
+    if (!scenarioSessionDetails) {
       this.logger.warn(
-        `Scenario session details or summary not found for scenarioSessionId: ${previousScenarioSession.id}`,
+        `Scenario session details not found for scenarioSessionId: ${previousScenarioSession.id}`,
       );
       return null;
+    }
+
+    const agentMemory = scenarioSessionDetails.sessionMemory?.summary;
+    if (typeof agentMemory === 'string' && agentMemory.trim()) {
+      return agentMemory.trim();
     }
 
     const cumulativeMemory =
@@ -308,7 +319,7 @@ export class CaseSharedService {
 
     if (!cumulativeMemory) {
       this.logger.warn(
-        `cumulative_memory not found in summary for scenarioSessionId: ${previousScenarioSession.id}`,
+        `No session memory or cumulative_memory found for scenarioSessionId: ${previousScenarioSession.id}`,
       );
     }
     return cumulativeMemory;

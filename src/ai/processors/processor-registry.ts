@@ -9,6 +9,7 @@ import { BehaviorInstructionProcessor } from 'src/learn/processor/behavior-instr
 import { TurnMetricsProcessor } from 'src/learn/processor/turn-metrics.processor';
 import { StartMetricsProcessor } from 'src/learn/processor/start-metrics.processor';
 import { LlmUsageProcessor } from 'src/learn/processor/llm-usage.processor';
+import { SessionMemoryProcessor } from 'src/learn/processor/session-memory.processor';
 
 @Injectable()
 export class ProcessorRegistry {
@@ -24,6 +25,7 @@ export class ProcessorRegistry {
     private readonly turnMetricsProcessor: TurnMetricsProcessor,
     private readonly startMetricsProcessor: StartMetricsProcessor,
     private readonly llmUsageProcessor: LlmUsageProcessor,
+    private readonly sessionMemoryProcessor: SessionMemoryProcessor,
   ) {
     this.registerProcessors();
   }
@@ -36,6 +38,7 @@ export class ProcessorRegistry {
     this.registerProcessor(this.turnMetricsProcessor);
     this.registerProcessor(this.startMetricsProcessor);
     this.registerProcessor(this.llmUsageProcessor);
+    this.registerProcessor(this.sessionMemoryProcessor);
 
     this.logger.info(`Registered ${this.processors.size} event processors`);
   }

@@ -29,6 +29,18 @@ export class ScenarioSessionDetails extends BaseEntity {
   @Column({ type: 'jsonb', nullable: true })
   summary?: Record<string, any>;
 
+  /**
+   * End-of-session episodic memory emitted by the ally-ai-learn agent
+   * (SQS message_type "session_memory"): the agent's maintained rolling
+   * conversation summary, written in the session language.
+   * {summary, language, messageCount, summarizedMessageCount, receivedAt}.
+   * Preferred over summary.feedback.cumulativeMemory as the case
+   * `previousMemory` source — it exists even when feedback generation
+   * fails, and reflects what the live agent actually tracked.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  sessionMemory?: Record<string, any>;
+
   // --- Actor-agent evaluation (LLM judge over the real-session transcript,
   // scored against the superadmin-configured agent test cases). Populated
   // asynchronously after the session ends via the evaluation webhook. ---

@@ -14,6 +14,22 @@ export interface LearnData {
   behavior_instruction?: LearnBehaviorInstructionData;
   turn_metrics?: LearnTurnMetricsData;
   start_metrics?: LearnStartMetricsData;
+  session_memory?: LearnSessionMemoryData;
+}
+
+/**
+ * End-of-session episodic memory emitted once per session by ally-ai-learn
+ * (message_type "session_memory"): the agent's maintained rolling
+ * conversation summary, written in the session language. When
+ * `summarized_message_count` < `message_count`, the final compaction was
+ * skipped or timed out and the last turns are only in the transcript rows.
+ */
+export interface LearnSessionMemoryData {
+  summary: string;
+  language?: string;
+  message_count?: number;
+  summarized_message_count?: number;
+  env?: string;
 }
 
 /**
