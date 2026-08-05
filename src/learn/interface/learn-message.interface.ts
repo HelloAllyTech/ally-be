@@ -30,6 +30,12 @@ export interface LearnSessionMemoryData {
   message_count?: number;
   summarized_message_count?: number;
   env?: string;
+  /**
+   * Machine-usable form of the summary ({situation, disclosures[],
+   * counsellor_actions[], emotional_arc, unresolved[]}). Optional — absent
+   * for memories produced before the structured summarizer.
+   */
+  structured?: Record<string, any>;
 }
 
 /**

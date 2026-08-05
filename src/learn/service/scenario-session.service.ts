@@ -2124,6 +2124,7 @@ export class ScenarioSessionService {
       language: memory.language ?? null,
       messageCount: memory.message_count ?? null,
       summarizedMessageCount: memory.summarized_message_count ?? null,
+      structured: memory.structured ?? null,
       receivedAt: (receivedAt ?? new Date()).toISOString(),
     };
     // The agent emits in two phases: the maintained summary immediately
