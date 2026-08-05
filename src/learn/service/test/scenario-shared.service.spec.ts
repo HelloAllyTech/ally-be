@@ -1307,6 +1307,8 @@ describe('ScenarioSharedService', () => {
         gender: 'Male',
         currentLocation: 'Chennai',
         openingStatements: ['Vanakkam'],
+        // The temporary per-sim canary gate — glossary tests opt in.
+        languageGlossaryEnabled: true,
       },
       terminationEvents: [],
       behaviorInstructions: [],
@@ -1343,6 +1345,45 @@ describe('ScenarioSharedService', () => {
       expect((result.scenario.promptData as any).languageGlossary).toContain(
         '## Core style',
       );
+    });
+
+    it('should skip the glossary entirely when the simulation has not opted in (default OFF)', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+      (scenarioTranslationsRepository as any).findOne = jest
+        .fn()
+        .mockResolvedValue(null);
+      const glossaryService = (service as any).languageGlossaryService;
+      glossaryService.resolveTier0Glossary = jest.fn();
+      glossaryService.resolveTier1Sections = jest.fn();
+      glossaryService.resolveGlossaryMeta = jest.fn();
+
+      const metadataWithoutToggle = { ...glossaryScenario.metadata };
+      delete (metadataWithoutToggle as any).languageGlossaryEnabled;
+      const result = await service.createRoomMetadata({
+        scenario: { ...glossaryScenario, metadata: metadataWithoutToggle },
+        sessionEvents: [],
+        languageDetails: {
+          id: 2,
+          value: 'ta-IN',
+          label: 'Tamil (India)',
+        } as any,
+        previousMemory: null,
+      });
+
+      expect(glossaryService.resolveTier0Glossary).not.toHaveBeenCalled();
+      expect(glossaryService.resolveTier1Sections).not.toHaveBeenCalled();
+      expect(glossaryService.resolveGlossaryMeta).not.toHaveBeenCalled();
+      const promptData = result.scenario.promptData as any;
+      expect(promptData.languageGlossary).toBeUndefined();
+      expect(promptData.glossarySections).toBeUndefined();
+      expect(promptData.glossaryMeta).toBeUndefined();
+      // The gate itself must not leak to the agent payload either.
+      expect(promptData.languageGlossaryEnabled).toBeUndefined();
     });
 
     it('should skip the glossary entirely for English sessions', async () => {

@@ -423,6 +423,9 @@ export class ScenarioSharedService {
     // carries the active language's value only (see create-scenario DTO).
     delete promptData.allowedFillerWords;
     delete promptData.languageCharacteristics;
+    // Server-side gate only — the agent keys off the glossary fields
+    // themselves, so don't ship the toggle.
+    delete promptData.languageGlossaryEnabled;
 
     // Human-readable language name (e.g. "Tamil (India)") — gives the LLM a far
     // stronger dialect signal than the bare BCP-47 code alone.
@@ -432,9 +435,17 @@ export class ScenarioSharedService {
 
     // Tier 0 language-glossary style card (LANGUAGE_GLOSSARY_DESIGN.md §5.1):
     // compiled from published always-sections, language-level, ~1-2k tokens.
-    // Publishing a section is the rollout gate — no published content, no block.
+    // Publishing a section is the per-language rollout gate — no published
+    // content, no block. `languageGlossaryEnabled` is a TEMPORARY
+    // per-simulation canary gate on top (default OFF, opt-in per sim) so the
+    // glossary can be tested sim-by-sim; remove it once rollout is proven.
     // English sessions skip entirely; a glossary failure never blocks a session.
-    if (languageDetails?.id && !languageDetails.value?.startsWith('en')) {
+    const languageGlossaryEnabled = metadata?.languageGlossaryEnabled === true;
+    if (
+      languageGlossaryEnabled &&
+      languageDetails?.id &&
+      !languageDetails.value?.startsWith('en')
+    ) {
       try {
         const glossary =
           await this.languageGlossaryService.resolveTier0Glossary(

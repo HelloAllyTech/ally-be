@@ -282,6 +282,16 @@ export class UpdateScenarioDto {
 
   @ApiProperty({
     description:
+      'Serve the per-language glossary (Tier 0 style card + retrieved sections) to sessions of this simulation. Temporary per-simulation canary gate for glossary rollout; defaults to false (opt-in) when unspecified.',
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  languageGlossaryEnabled?: boolean;
+
+  @ApiProperty({
+    description:
       'Enable comfort audio (a faint, constant room tone played on the background track) for this simulation so the line never sounds dead between turns. Gated by the global COMFORT_AUDIO_ENABLED kill-switch. Defaults to false (opt-in) when unspecified.',
     example: false,
     required: false,
