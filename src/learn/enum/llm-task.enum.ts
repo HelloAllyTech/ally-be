@@ -12,6 +12,9 @@
 export enum LlmTask {
   // Live conversational agent (ally-ai-learn) — highest volume.
   AGENT_TURN = 'agent_turn',
+  // Episodic-memory summarizer in ally-ai-learn (rolling-summary compaction
+  // during the session + the end-of-session final fold).
+  ROLLING_SUMMARY = 'rolling_summary',
 
   // ally-ai post-/in-session operations.
   NUDGE = 'nudge',
