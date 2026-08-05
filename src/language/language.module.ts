@@ -6,6 +6,7 @@ import { PromptVersion } from 'src/prompt/entity/prompt-version.entity';
 import { LanguageErrorAnnotation } from 'src/learn/entity/language-error-annotation.entity';
 import { Languages } from './entity/languages.entity';
 import { LanguageGlossarySection } from './entity/language-glossary-section.entity';
+import { GlossaryAdherenceReport } from './entity/glossary-adherence-report.entity';
 import { LanguagesRepository } from './repository/languages.repository';
 import { LanguageGlossaryRepository } from './repository/language-glossary.repository';
 import { SharedLanguageService } from './service/shared-language.service';
@@ -13,6 +14,7 @@ import { LanguageController } from './controller/language.controller';
 import { LanguageGlossaryController } from './controller/language-glossary.controller';
 import { LanguageService } from './service/language.service';
 import { LanguageGlossaryService } from './service/language-glossary.service';
+import { GlossaryAdherenceService } from './service/glossary-adherence.service';
 import { UserModule } from 'src/user/user.module';
 @Module({
   imports: [
@@ -22,6 +24,7 @@ import { UserModule } from 'src/user/user.module';
     TypeOrmModule.forFeature([
       Languages,
       LanguageGlossarySection,
+      GlossaryAdherenceReport,
       Prompt,
       PromptVersion,
       LanguageErrorAnnotation,
@@ -36,6 +39,7 @@ import { UserModule } from 'src/user/user.module';
     SharedLanguageService,
     LanguageService,
     LanguageGlossaryService,
+    GlossaryAdherenceService,
   ],
   exports: [SharedLanguageService, LanguageGlossaryService],
 })

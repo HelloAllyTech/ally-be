@@ -9,6 +9,7 @@ import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator'
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { UpsertGlossarySectionDto } from '../dto/glossary-section.dto';
 import { LanguageGlossaryService } from '../service/language-glossary.service';
+import { GlossaryAdherenceService } from '../service/glossary-adherence.service';
 
 @ApiTags('Language')
 @ApiBearerAuth()
@@ -18,7 +19,10 @@ import { LanguageGlossaryService } from '../service/language-glossary.service';
   version: '1',
 })
 export class LanguageGlossaryController {
-  constructor(private readonly glossaryService: LanguageGlossaryService) {}
+  constructor(
+    private readonly glossaryService: LanguageGlossaryService,
+    private readonly adherenceService: GlossaryAdherenceService,
+  ) {}
 
   @ApiOperation({
     summary: 'List glossary sections for a language (with token counts)',
@@ -77,6 +81,29 @@ export class LanguageGlossaryController {
   @Post('glossary/backfill')
   async backfillGlossaries(@Body() body?: { languageIds?: number[] }) {
     return this.glossaryService.backfillGlossaries(body?.languageIds);
+  }
+
+  @ApiOperation({
+    summary:
+      'Scan recent sessions of a language for glossary avoid-list violations',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Post(':id/glossary/adherence/backfill')
+  async backfillAdherence(
+    @Param('id') id: number,
+    @Body() body?: { sinceDays?: number; limit?: number },
+  ) {
+    return this.adherenceService.backfillLanguage(Number(id), body);
+  }
+
+  @ApiOperation({
+    summary:
+      'Glossary adherence rollup for a language (violation rates, top terms)',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_LANGUAGES])
+  @Get(':id/glossary/adherence')
+  async adherenceSummary(@Param('id') id: number) {
+    return this.adherenceService.languageSummary(Number(id));
   }
 
   @ApiOperation({
