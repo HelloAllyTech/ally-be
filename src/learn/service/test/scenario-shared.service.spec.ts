@@ -114,6 +114,8 @@ describe('ScenarioSharedService', () => {
     const mockLanguageGlossaryService = {
       // By default, no published glossary — sessions serve without it.
       resolveTier0Glossary: jest.fn().mockResolvedValue(''),
+      resolveTier1Sections: jest.fn().mockResolvedValue([]),
+      resolveGlossaryMeta: jest.fn().mockResolvedValue(null),
     };
 
     const mockCompetencyService = {
@@ -1472,6 +1474,87 @@ describe('ScenarioSharedService', () => {
       expect(
         (result.scenario.promptData as any).glossarySections,
       ).toBeUndefined();
+    });
+
+    it('should stamp glossary provenance on promptData.glossaryMeta for non-English sessions', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+      (scenarioTranslationsRepository as any).findOne = jest
+        .fn()
+        .mockResolvedValue(null);
+      const glossaryService = (service as any).languageGlossaryService;
+      glossaryService.resolveTier0Glossary = jest.fn().mockResolvedValue('');
+      glossaryService.resolveTier1Sections = jest.fn().mockResolvedValue([]);
+      glossaryService.resolveGlossaryMeta = jest.fn().mockResolvedValue({
+        versions: { core_style: 4, clinical_terms: 2 },
+        tier0Tokens: 381,
+      });
+
+      const result = await service.createRoomMetadata({
+        scenario: glossaryScenario,
+        sessionEvents: [],
+        languageDetails: {
+          id: 2,
+          value: 'ta-IN',
+          label: 'Tamil (India)',
+        } as any,
+        previousMemory: null,
+      });
+
+      expect(glossaryService.resolveGlossaryMeta).toHaveBeenCalledWith(2);
+      expect((result.scenario.promptData as any).glossaryMeta).toEqual({
+        versions: { core_style: 4, clinical_terms: 2 },
+        tier0Tokens: 381,
+      });
+    });
+
+    it('should omit glossaryMeta (and never block the session) when meta resolution fails or is empty', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+      (scenarioTranslationsRepository as any).findOne = jest
+        .fn()
+        .mockResolvedValue(null);
+      const glossaryService = (service as any).languageGlossaryService;
+      glossaryService.resolveTier0Glossary = jest.fn().mockResolvedValue('');
+      glossaryService.resolveTier1Sections = jest.fn().mockResolvedValue([]);
+      glossaryService.resolveGlossaryMeta = jest
+        .fn()
+        .mockRejectedValue(new Error('db down'));
+
+      const result = await service.createRoomMetadata({
+        scenario: glossaryScenario,
+        sessionEvents: [],
+        languageDetails: {
+          id: 2,
+          value: 'ta-IN',
+          label: 'Tamil (India)',
+        } as any,
+        previousMemory: null,
+      });
+
+      expect((result.scenario.promptData as any).glossaryMeta).toBeUndefined();
+
+      // Null meta (nothing published) also leaves the field absent.
+      glossaryService.resolveGlossaryMeta = jest.fn().mockResolvedValue(null);
+      const result2 = await service.createRoomMetadata({
+        scenario: glossaryScenario,
+        sessionEvents: [],
+        languageDetails: {
+          id: 2,
+          value: 'ta-IN',
+          label: 'Tamil (India)',
+        } as any,
+        previousMemory: null,
+      });
+      expect((result2.scenario.promptData as any).glossaryMeta).toBeUndefined();
     });
 
     it('should put active language characteristics on promptData.languageCharacteristics (trimmed string)', async () => {

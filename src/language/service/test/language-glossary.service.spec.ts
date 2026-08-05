@@ -198,6 +198,7 @@ describe('LanguageGlossaryService', () => {
       expect(out[0].title).toBe('Clinical terms');
       expect(out[0].retrievalHint).toBe('Retrieve when clinical.');
       expect(out[0].content).toContain('## Clinical terms');
+      expect(out[0].sectionCode).toBe('clinical_terms');
     });
   });
 
@@ -212,6 +213,41 @@ describe('LanguageGlossaryService', () => {
         6,
         GlossaryInjectionMode.ALWAYS,
       );
+    });
+  });
+
+  describe('resolveGlossaryMeta', () => {
+    it('returns null when the language has nothing published', async () => {
+      glossaryRepository.findPublishedByLanguage.mockResolvedValue([]);
+      expect(await service.resolveGlossaryMeta(6)).toBeNull();
+    });
+
+    it('maps published section versions across both tiers and counts Tier 0 tokens', async () => {
+      glossaryRepository.findPublishedByLanguage.mockResolvedValue([
+        makeSection({
+          sectionCode: 'core_style',
+          status: GlossarySectionStatus.PUBLISHED,
+          version: 4,
+        }),
+        makeSection({
+          sectionCode: 'clinical_terms',
+          injectionMode: GlossaryInjectionMode.RETRIEVED,
+          status: GlossarySectionStatus.PUBLISHED,
+          version: 2,
+        }),
+      ]);
+      const meta = await service.resolveGlossaryMeta(6);
+      // Unfiltered query: meta must cover both tiers, not just always-sections.
+      expect(glossaryRepository.findPublishedByLanguage).toHaveBeenCalledWith(
+        6,
+      );
+      expect(meta).toEqual({
+        versions: { core_style: 4, clinical_terms: 2 },
+        tier0Tokens: expect.any(Number),
+      });
+      // Tokens count the compiled always-set only — the retrieved section
+      // must not inflate the Tier 0 cost.
+      expect(meta!.tier0Tokens).toBeGreaterThan(0);
     });
   });
 

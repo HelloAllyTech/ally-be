@@ -201,9 +201,14 @@ export class LanguageGlossaryService {
    * tells the selector when to pull a section — glossary sections are
    * production resources (what the NEXT reply needs), not discussion topics.
    */
-  async resolveTier1Sections(
-    languageId: number,
-  ): Promise<{ title: string; content: string; retrievalHint?: string }[]> {
+  async resolveTier1Sections(languageId: number): Promise<
+    {
+      title: string;
+      content: string;
+      retrievalHint?: string;
+      sectionCode: string;
+    }[]
+  > {
     const sections = await this.glossaryRepository.findPublishedByLanguage(
       languageId,
       GlossaryInjectionMode.RETRIEVED,
@@ -213,8 +218,36 @@ export class LanguageGlossaryService {
         title: section.title,
         content: compileSection(section),
         retrievalHint: section.retrievalHint ?? undefined,
+        // Stable analytics key: title edits don't break per-section hit-rate
+        // joins, and it matches glossaryMeta.versions' keys.
+        sectionCode: section.sectionCode,
       }))
       .filter((s) => s.content.length > 0);
+  }
+
+  /**
+   * Glossary provenance for session analytics: the published section
+   * versions a session is being served (both tiers) plus the compiled
+   * Tier 0 token cost. Stamped into room metadata at session start and
+   * echoed back by the worker through start_metrics, so judge deltas can
+   * be grouped by the exact glossary a session ran with instead of by
+   * publish date. Null when the language has nothing published.
+   */
+  async resolveGlossaryMeta(languageId: number): Promise<{
+    versions: Record<string, number>;
+    tier0Tokens: number;
+  } | null> {
+    const sections =
+      await this.glossaryRepository.findPublishedByLanguage(languageId);
+    if (sections.length === 0) return null;
+    const versions: Record<string, number> = {};
+    for (const section of sections) {
+      versions[section.sectionCode] = section.version;
+    }
+    return {
+      versions,
+      tier0Tokens: countGlossaryTokens(compileTier0Glossary(sections)),
+    };
   }
 
   /**

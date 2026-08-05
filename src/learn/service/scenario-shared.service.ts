@@ -470,6 +470,24 @@ export class ScenarioSharedService {
           `[GLOSSARY] Tier 1 resolution failed for language ${languageDetails.id}; serving without glossary sections: ${error}`,
         );
       }
+
+      // Glossary provenance for analytics: published section versions (both
+      // tiers) + Tier 0 token cost. The worker echoes this through
+      // start_metrics, so judged outcomes join to the exact glossary a
+      // session ran with (sections publish incrementally — dates can't).
+      try {
+        const glossaryMeta =
+          await this.languageGlossaryService.resolveGlossaryMeta(
+            languageDetails.id,
+          );
+        if (glossaryMeta) {
+          promptData.glossaryMeta = glossaryMeta;
+        }
+      } catch (error) {
+        this.logger.warn(
+          `[GLOSSARY] meta resolution failed for language ${languageDetails.id}; serving without glossary provenance: ${error}`,
+        );
+      }
     }
 
     if (metadata?.languageId) {
