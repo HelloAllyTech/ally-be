@@ -56,3 +56,5 @@ gcloud/
 *.swp
 scan_report.*
 .secrets/
+# Scratch clone of the wiki, created by the wiki-pr flow (see AGENTS.md)
+.wiki-tmp/

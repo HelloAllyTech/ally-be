@@ -1,0 +1,48 @@
+# Which documentation covers which code.
+#
+# Read by the shared docs-guard workflow (helloallytech/.github) on every PR, and by
+# the weekly wiki reconciler. Adding a rule here is how you make a doc impossible to
+# forget. Spec: https://tech.helloally.ai/#/wiki/contributing/docs-system.md
+#
+# requires:
+#   <path>              a file in this repo — the PR must touch it
+#   wiki:<page>         a page in the wiki repo — the PR body must carry a Wiki-PR: trailer
+#
+# Escape hatch: add the `docs:skip` label, or a `Wiki-PR: none — <reason>` trailer.
+
+version: 1
+repo: ally-be
+
+rules:
+  - id: data-schema
+    watch:
+      - "src/**/entity/*.entity.ts"
+    requires: DATA_SCHEMA.md
+    why: >
+      DATA_SCHEMA.md is the platform-wide map of what data exists and where. An entity
+      change that skips it makes the map wrong for every repo that reads it.
+
+  - id: repo-page-architecture
+    watch:
+      - "src/app.module.ts"
+      - "src/**/*.gateway.ts"
+      - "src/main.ts"
+    requires: wiki:repos/ally-be.md
+    why: >
+      Module wiring and WebSocket gateways are the service's public shape; the repo page
+      describes it to every other repo and to agents that never open this codebase.
+
+  - id: prompt-conventions
+    watch:
+      - "src/prompts/**"
+    requires: docs/prompts-folder.md
+    why: Prompt folder layout and .meta.json conventions are documented, not discoverable.
+
+  - id: agent-entrypoints-in-sync
+    watch:
+      - "AGENTS.md"
+      - "CLAUDE.md"
+    requires: mirror
+    why: >
+      AGENTS.md and CLAUDE.md must stay byte-identical. `mirror` asserts equality rather
+      than requiring a companion edit.
