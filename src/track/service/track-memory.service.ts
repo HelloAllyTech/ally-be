@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Injectable } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { AppConfigService } from 'src/config/config.service';
@@ -12,14 +13,21 @@ import { TrackItemRepository } from '../repository/track-item.repository';
 import { TrackSectionRepository } from '../repository/track-section.repository';
 
 const PROMPT_CODE = 'track_memory_fold';
+const FACTS_PROMPT_CODE = 'track_memory_facts';
 const FOLD_TIMEOUT_MS = 30_000;
 const FOLD_MAX_TOKENS = 1024;
+const FACTS_MAX_TOKENS = 2048;
 /** Per-item source memory kept verbatim in enrollment.memory.items. */
 const ITEM_SUMMARY_MAX_CHARS = 2400;
 /** Consolidated summary bound (the LLM targets 1200; fallback is capped here). */
 const CONSOLIDATED_MAX_CHARS = 2500;
 /** Deterministic fallback folds only the most recent K item memories. */
 const FALLBACK_ITEM_COUNT = 3;
+/** Active learned facts kept per enrollment (newest win beyond the cap). */
+const MAX_ACTIVE_FACTS = 40;
+const FACT_MAX_CHARS = 160;
+/** Bound of the facts block appended to the injected previousMemory. */
+const FACTS_BLOCK_MAX_CHARS = 1600;
 
 interface TrackMemoryItemEntry {
   sessionId: string;
@@ -27,9 +35,24 @@ interface TrackMemoryItemEntry {
   updatedAt: string;
 }
 
+export interface TrackLearnedFact {
+  id: string;
+  fact: string;
+  status: 'active' | 'superseded';
+  sourceSessionId?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface TrackEnrollmentMemory {
   summary?: string;
   items: Record<string, TrackMemoryItemEntry>;
+  /**
+   * Semantic learned-facts list (option-1 store): atomic, durable client
+   * facts extracted from sessionMemory.structured.disclosures, individually
+   * supersedable so narrative re-summarization can never silently drop them.
+   */
+  facts?: TrackLearnedFact[];
   updatedAt?: string;
 }
 
@@ -77,10 +100,13 @@ export class TrackMemoryService {
     trackItemProgressId,
     scenarioSessionId,
     summary,
+    disclosures,
   }: {
     trackItemProgressId: string;
     scenarioSessionId: string;
     summary: string;
+    /** sessionMemory.structured.disclosures — the atomic facts source. */
+    disclosures?: string[];
   }): Promise<void> {
     try {
       if (!summary?.trim()) return;
@@ -111,14 +137,24 @@ export class TrackMemoryService {
       memory.summary = await this.consolidate(orderedSummaries, {
         trackEnrollmentId: enrollment.id,
       });
+      memory.facts = await this.consolidateFacts(
+        memory.facts ?? [],
+        disclosures ?? [],
+        scenarioSessionId,
+        { trackEnrollmentId: enrollment.id },
+      );
       memory.updatedAt = new Date().toISOString();
 
       await this.trackEnrollmentRepository.update(enrollment.id, {
         memory: memory as Record<string, any>,
       });
+      const activeFacts = (memory.facts ?? []).filter(
+        (f) => f.status === 'active',
+      ).length;
       this.logger.info(
         `[TRACK_MEMORY] folded session=${scenarioSessionId} into enrollment=${enrollment.id} ` +
-          `items=${Object.keys(memory.items).length} summary_chars=${memory.summary?.length ?? 0}`,
+          `items=${Object.keys(memory.items).length} summary_chars=${memory.summary?.length ?? 0} ` +
+          `facts=${activeFacts} active/${(memory.facts ?? []).length} total`,
       );
     } catch (error) {
       this.logger.error(
@@ -132,6 +168,9 @@ export class TrackMemoryService {
   /**
    * The consolidated memory a track item should open with, or null when the
    * enrollment has none yet (first conversation item / folds all failed).
+   * Composition: narrative summary + the active learned facts. Facts ride
+   * along even when the narrative eventually compresses them out — that is
+   * the whole point of the fact list.
    */
   async getConsolidatedMemory(
     trackItemProgressId: string,
@@ -143,11 +182,37 @@ export class TrackMemoryService {
     const enrollment = await this.trackEnrollmentRepository.findOne({
       where: { id: progress.trackEnrollmentId },
     });
-    const summary = (enrollment?.memory as TrackEnrollmentMemory | undefined)
-      ?.summary;
-    return typeof summary === 'string' && summary.trim()
-      ? summary.trim()
-      : null;
+    const memory = enrollment?.memory as TrackEnrollmentMemory | undefined;
+    const summary =
+      typeof memory?.summary === 'string' ? memory.summary.trim() : '';
+
+    let factsBlock = '';
+    const active = (memory?.facts ?? []).filter(
+      (f) => f.status === 'active' && f.fact?.trim(),
+    );
+    if (active.length > 0) {
+      const lines: string[] = [];
+      let budget = FACTS_BLOCK_MAX_CHARS;
+      // Newest last in storage; keep the newest facts when over budget.
+      for (const f of [...active].reverse()) {
+        const line = `- ${f.fact.trim()}`;
+        if (budget - line.length - 1 < 0) break;
+        budget -= line.length + 1;
+        lines.unshift(line);
+      }
+      factsBlock = `Facts you know about your own situation from earlier sessions:\n${lines.join('\n')}`;
+    }
+
+    const composed = [summary, factsBlock].filter(Boolean).join('\n\n');
+    if (composed) {
+      this.logger.info(
+        `[TRACK_MEMORY] read enrollment=${enrollment?.id} ` +
+          `summary_chars=${summary.length} facts_injected=${
+            factsBlock ? active.length : 0
+          } facts_block_chars=${factsBlock.length}`,
+      );
+    }
+    return composed || null;
   }
 
   /** Per-item source memories in track order (sections, then item order). */
@@ -178,6 +243,146 @@ export class TrackMemoryService {
       if (!known.has(id) && entry.summary) ordered.push(entry.summary);
     }
     return ordered;
+  }
+
+  /**
+   * Merge the latest session's disclosures into the learned-facts list:
+   * LLM dedupe/supersession with a deterministic append fallback. Existing
+   * facts are never dropped (only marked superseded); the LLM result is
+   * reconciled against the previous list so a hallucinated omission can't
+   * erase a fact.
+   */
+  private async consolidateFacts(
+    existing: TrackLearnedFact[],
+    disclosures: string[],
+    scenarioSessionId: string,
+    usageMetadata: Record<string, any>,
+  ): Promise<TrackLearnedFact[]> {
+    const newDisclosures = (disclosures ?? [])
+      .map((d) => (d ?? '').trim())
+      .filter(Boolean)
+      .map((d) => d.slice(0, FACT_MAX_CHARS));
+    if (newDisclosures.length === 0) return existing;
+
+    const now = new Date().toISOString();
+    const byId = new Map(existing.map((f) => [f.id, f]));
+
+    let updated: TrackLearnedFact[] | null = null;
+    try {
+      const template =
+        await this.promptSharedService.getPromptByCode(FACTS_PROMPT_CODE);
+      if (!template) throw new Error(`prompt '${FACTS_PROMPT_CODE}' not found`);
+      const prompt = renderTemplate(template, {
+        existingFacts: JSON.stringify(
+          existing.map(({ id, fact, status }) => ({ id, fact, status })),
+        ),
+        newDisclosures: newDisclosures.map((d) => `- ${d}`).join('\n'),
+      });
+
+      const response = await this.client.messages.create(
+        {
+          model: this.model,
+          max_tokens: FACTS_MAX_TOKENS,
+          messages: [{ role: 'user', content: prompt }],
+        },
+        { timeout: FOLD_TIMEOUT_MS },
+      );
+      const input = response.usage?.input_tokens ?? 0;
+      const output = response.usage?.output_tokens ?? 0;
+      void this.llmUsage.record({
+        provider: 'anthropic',
+        model: this.model,
+        task: LlmTask.TRACK_MEMORY_FOLD,
+        promptTokens: input,
+        completionTokens: output,
+        totalTokens: input + output,
+        metadata: { ...usageMetadata, stage: 'facts' },
+      });
+
+      const block = response.content[0];
+      const raw = (block?.type === 'text' ? block.text : '').trim();
+      const jsonStart = raw.indexOf('[');
+      const parsed = JSON.parse(
+        raw.slice(jsonStart, raw.lastIndexOf(']') + 1),
+      ) as Array<{ id?: string; fact?: string; status?: string }>;
+
+      updated = [];
+      const seenIds = new Set<string>();
+      for (const entry of parsed) {
+        const fact = (entry.fact ?? '').trim().slice(0, FACT_MAX_CHARS);
+        if (!fact) continue;
+        const status: TrackLearnedFact['status'] =
+          entry.status === 'superseded' ? 'superseded' : 'active';
+        const prior = entry.id ? byId.get(entry.id) : undefined;
+        if (prior) {
+          seenIds.add(prior.id);
+          updated.push({
+            ...prior,
+            fact,
+            status,
+            updatedAt:
+              fact !== prior.fact || status !== prior.status
+                ? now
+                : prior.updatedAt,
+          });
+        } else {
+          updated.push({
+            id: randomUUID(),
+            fact,
+            status,
+            sourceSessionId: scenarioSessionId,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      }
+      // Reconcile: any existing fact the LLM omitted is kept unchanged —
+      // omission must never delete memory.
+      for (const f of existing) {
+        if (!seenIds.has(f.id)) updated.push(f);
+      }
+    } catch (error) {
+      this.logger.warn(
+        `[TRACK_MEMORY] LLM facts consolidation failed, using append fallback: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      // Deterministic fallback: append disclosures not already present
+      // (normalized exact match), all active.
+      const normalized = new Set(
+        existing.map((f) => f.fact.toLowerCase().replace(/\s+/g, ' ').trim()),
+      );
+      updated = [...existing];
+      for (const d of newDisclosures) {
+        const key = d.toLowerCase().replace(/\s+/g, ' ').trim();
+        if (normalized.has(key)) continue;
+        normalized.add(key);
+        updated.push({
+          id: randomUUID(),
+          fact: d,
+          status: 'active',
+          sourceSessionId: scenarioSessionId,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    // Cap: keep every superseded entry (audit trail is cheap) but bound the
+    // ACTIVE list — beyond the cap the oldest actives get superseded.
+    const actives = updated.filter((f) => f.status === 'active');
+    if (actives.length > MAX_ACTIVE_FACTS) {
+      const toRetire = actives
+        .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
+        .slice(0, actives.length - MAX_ACTIVE_FACTS);
+      const retireIds = new Set(toRetire.map((f) => f.id));
+      updated = updated.map((f) =>
+        retireIds.has(f.id)
+          ? { ...f, status: 'superseded', updatedAt: now }
+          : f,
+      );
+    }
+    return updated;
   }
 
   /** LLM merge with a deterministic join fallback. */

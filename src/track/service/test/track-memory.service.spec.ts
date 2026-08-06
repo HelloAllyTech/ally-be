@@ -208,5 +208,129 @@ describe('TrackMemoryService', () => {
       });
       await expect(service.getConsolidatedMemory('tip-2')).resolves.toBeNull();
     });
+
+    it('appends active learned facts (superseded excluded) to the summary', async () => {
+      trackEnrollmentRepository.findOne.mockResolvedValue({
+        id: 'enr-1',
+        memory: {
+          summary: 'the fold',
+          items: {},
+          facts: [
+            { id: 'f1', fact: 'Works night shifts', status: 'active' },
+            { id: 'f2', fact: 'Feared losing job', status: 'superseded' },
+            { id: 'f3', fact: 'Son is 7 years old', status: 'active' },
+          ],
+        },
+      });
+      const composed = await service.getConsolidatedMemory('tip-2');
+      expect(composed).toContain('the fold');
+      expect(composed).toContain('- Works night shifts');
+      expect(composed).toContain('- Son is 7 years old');
+      expect(composed).not.toContain('Feared losing job');
+    });
+  });
+
+  describe('learned facts consolidation', () => {
+    const foldWith = async (existingFacts: any[], disclosures: string[]) => {
+      trackEnrollmentRepository.findOne.mockResolvedValue({
+        id: 'enr-1',
+        trackId: 't1',
+        memory: { items: {}, facts: existingFacts },
+      });
+      await service.foldSessionMemory({
+        trackItemProgressId: 'tip-2',
+        scenarioSessionId: 'sess-9',
+        summary: 'session summary',
+        disclosures,
+      });
+      const [, patch] = trackEnrollmentRepository.update.mock.calls[0];
+      return patch.memory.facts as any[];
+    };
+
+    it('LLM merge: keeps ids, supersedes, adds new facts with real ids', async () => {
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify([
+              { id: 'f1', fact: 'Works day shifts now', status: 'active' },
+              { id: 'f2', fact: 'Feared losing job', status: 'superseded' },
+              { id: 'new-1', fact: 'Son is 7 years old', status: 'active' },
+            ]),
+          },
+        ],
+        usage: { input_tokens: 10, output_tokens: 10 },
+      });
+      const facts = await foldWith(
+        [
+          { id: 'f1', fact: 'Works night shifts', status: 'active' },
+          { id: 'f2', fact: 'Feared losing job', status: 'active' },
+        ],
+        ['Son is 7 years old', 'Works day shifts now'],
+      );
+      const byFact = Object.fromEntries(facts.map((f) => [f.fact, f]));
+      expect(byFact['Works day shifts now'].id).toBe('f1'); // id preserved
+      expect(byFact['Feared losing job'].status).toBe('superseded');
+      const added = byFact['Son is 7 years old'];
+      expect(added.status).toBe('active');
+      expect(added.id).not.toBe('new-1'); // real uuid assigned
+      expect(added.sourceSessionId).toBe('sess-9');
+    });
+
+    it('reconciliation: facts the LLM omits are kept, never deleted', async () => {
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify([
+              { id: 'new-1', fact: 'A new fact', status: 'active' },
+            ]),
+          },
+        ],
+        usage: { input_tokens: 10, output_tokens: 10 },
+      });
+      const facts = await foldWith(
+        [{ id: 'f1', fact: 'Original fact', status: 'active' }],
+        ['A new fact'],
+      );
+      expect(facts.map((f) => f.fact)).toEqual(
+        expect.arrayContaining(['A new fact', 'Original fact']),
+      );
+    });
+
+    it('fallback on LLM failure: appends non-duplicate disclosures as active', async () => {
+      mockCreate.mockRejectedValue(new Error('llm down'));
+      const facts = await foldWith(
+        [{ id: 'f1', fact: 'Works night shifts', status: 'active' }],
+        ['works   NIGHT shifts', 'Son is 7 years old'],
+      );
+      expect(facts).toHaveLength(2); // duplicate skipped
+      expect(facts[1].fact).toBe('Son is 7 years old');
+      expect(facts[1].status).toBe('active');
+    });
+
+    it('no disclosures: facts untouched and no facts LLM call', async () => {
+      const existing = [{ id: 'f1', fact: 'A fact', status: 'active' }];
+      const facts = await foldWith(existing, []);
+      expect(facts).toEqual(existing);
+      expect(mockCreate).not.toHaveBeenCalled(); // single-item fold + no facts
+    });
+
+    it('caps active facts by superseding the oldest', async () => {
+      mockCreate.mockRejectedValue(new Error('llm down')); // use fallback path
+      const existing = Array.from({ length: 40 }, (_, i) => ({
+        id: `f${i}`,
+        fact: `Fact number ${i}`,
+        status: 'active',
+        createdAt: `2026-01-0${(i % 8) + 1}T00:00:00Z`,
+      }));
+      const facts = await foldWith(existing, ['Brand new fact 41']);
+      const actives = facts.filter((f) => f.status === 'active');
+      expect(actives).toHaveLength(40);
+      expect(facts.find((f) => f.fact === 'Brand new fact 41')?.status).toBe(
+        'active',
+      );
+      expect(facts.filter((f) => f.status === 'superseded')).toHaveLength(1);
+    });
   });
 });

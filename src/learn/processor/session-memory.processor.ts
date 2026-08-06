@@ -85,7 +85,11 @@ export class SessionMemoryProcessor extends BaseEventProcessor {
       // or through a nested case), fold this memory into the enrollment's
       // evolving learner memory. Detached and best-effort — folding must
       // never fail or delay the SQS message.
-      void this.foldIntoTrackMemory(scenarioSession, sessionMemory.summary);
+      void this.foldIntoTrackMemory(
+        scenarioSession,
+        sessionMemory.summary,
+        sessionMemory.structured,
+      );
     } catch (error) {
       this.logger.error(
         `Failed to process session memory for ${room_id}: ${
@@ -104,6 +108,7 @@ export class SessionMemoryProcessor extends BaseEventProcessor {
       caseSessionItemId?: string;
     },
     summary: string,
+    structured?: Record<string, any>,
   ): Promise<void> {
     try {
       let progressId = scenarioSession.trackItemProgressId ?? null;
@@ -120,10 +125,14 @@ export class SessionMemoryProcessor extends BaseEventProcessor {
         }
       }
       if (!progressId) return;
+      const disclosures = Array.isArray(structured?.disclosures)
+        ? structured!.disclosures.filter((d: unknown) => typeof d === 'string')
+        : undefined;
       await this.trackMemoryService.foldSessionMemory({
         trackItemProgressId: progressId,
         scenarioSessionId: scenarioSession.id,
         summary,
+        disclosures,
       });
     } catch (error) {
       this.logger.error(

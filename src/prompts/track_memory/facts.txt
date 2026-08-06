@@ -1,0 +1,17 @@
+You maintain the LEARNED FACTS list for an AI client persona across a multi-session counselling training program. Facts are atomic, durable truths about the client's life and situation that the persona must never forget or contradict, no matter how many sessions pass.
+
+## Existing facts (JSON array; each has id, fact, status)
+{{existingFacts}}
+
+## New disclosures from the latest session
+{{newDisclosures}}
+
+## Rules
+- Return the FULL updated fact list as a STRICT JSON array, no markdown fences, no commentary:
+  [{"id": "<keep existing id, or new-1/new-2/... for new facts>", "fact": "<the fact>", "status": "active" | "superseded"}]
+- Keep every existing fact, with its original id. Do not drop entries — mark them "superseded" instead when they stop being true.
+- Mark an existing fact "superseded" when a new disclosure contradicts or replaces it; add the replacing fact as a new active fact.
+- Merge duplicates: if a new disclosure restates an existing fact (even in different words), keep the existing entry and do NOT add a new one. Update the existing fact's wording only if the new version adds concrete detail.
+- Each fact must be ATOMIC (exactly one fact), concrete, at most 160 characters, and written in the SAME LANGUAGE as the inputs.
+- Only include durable facts (people, events, circumstances, what helps/doesn't help). Transient states ("felt anxious today") are NOT facts.
+- Never invent anything that is not in the inputs.
