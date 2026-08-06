@@ -176,10 +176,11 @@ export class UserService {
       email: user.email,
       role,
       // Every role held, because `role` above collapses them by a priority list
-      // that cannot express a multi-role account: a staffer holding
-      // [INTERNAL, LEARNER] collapses to LEARNER, and the admin console would
-      // then gate them as one. Clients gate on this array and fall back to
-      // `role` (see resolveAdminRole in ally-web's admin dashboard).
+      // that cannot express a multi-role account: a user holding
+      // [MULTI_TENANT_ADMIN, LEARNER] collapses to LEARNER, and the admin
+      // console would then gate them as one. Clients gate on this array and
+      // fall back to `role` (see resolveAdminRole in ally-web's admin
+      // dashboard).
       roles: roles.map((group) => group.name),
       tenantId: user.tenantId,
       phone: user.phone,

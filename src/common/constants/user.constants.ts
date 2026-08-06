@@ -8,28 +8,19 @@ export enum UserRole {
   SIMULATION_REVIEWER = 'SIMULATION_REVIEWER',
   SCRIBE_REVIEWER = 'SCRIBE_REVIEWER',
   MULTI_TENANT_ADMIN = 'MULTI_TENANT_ADMIN',
-  INTERNAL = 'INTERNAL',
 }
 
 /**
- * Platform-level super-admin roles. SUPER_DUPER_ADMIN and INTERNAL are both
- * peers of SUPER_ADMIN: they have identical access today and may gain extra
- * capabilities later. Any name-based SUPER_ADMIN check (role guards,
- * tenant-skip logic, user-list exclusion, etc.) should compare against this
- * list so all three roles behave identically — permission-gated code already
- * works for all of them because each is granted the same permissions as
- * SUPER_ADMIN.
- *
- * INTERNAL exists so Ally staff can be given the super-admin console without
- * being listed (or manageable) as a super admin. It is a *surface* distinction,
- * not a privilege one: the API access it confers is identical to SUPER_ADMIN,
- * and the only intended difference is where the holder signs in — the console
- * path-mounted on the consumer app rather than the standalone admin dashboard.
+ * Platform-level super-admin roles. SUPER_DUPER_ADMIN is a peer of SUPER_ADMIN:
+ * it has identical access today and may gain extra capabilities later. Any
+ * name-based SUPER_ADMIN check (role guards, tenant-skip logic, user-list
+ * exclusion, etc.) should compare against this list so both roles behave
+ * identically — permission-gated code already works for both because
+ * SUPER_DUPER_ADMIN is granted the same permissions as SUPER_ADMIN.
  */
 export const SUPER_ADMIN_ROLES: UserRole[] = [
   UserRole.SUPER_ADMIN,
   UserRole.SUPER_DUPER_ADMIN,
-  UserRole.INTERNAL,
 ];
 
 /**

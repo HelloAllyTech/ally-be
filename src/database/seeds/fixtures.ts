@@ -221,14 +221,6 @@ export const users: UserFixture[] = [
     tenantCode: TENANT_CODE,
   },
   {
-    // INTERNAL alongside LEARNER — the intended shape for Ally staff: a normal
-    // consumer-app account that can also open the admin console at /admin.
-    email: 'internal@helloally.ai',
-    name: 'Nikhil Menon',
-    roles: [UserRole.INTERNAL, UserRole.LEARNER],
-    tenantCode: TENANT_CODE,
-  },
-  {
     email: 'org-admin@example.com',
     name: 'Divya Shah',
     roles: [UserRole.ADMIN],

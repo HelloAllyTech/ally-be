@@ -434,20 +434,6 @@ const SUPER_DUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_PRODUCT_ROADMAP,
 ];
 
-// INTERNAL is a strict clone of SUPER_ADMIN — same permissions, no additions
-// and no subtractions (kept as a spread so additions to SUPER_ADMIN flow
-// through automatically). It exists to give Ally staff the super-admin console
-// through the consumer app at /admin without being listed or managed as a
-// super admin: the super-duper-admin management surface keys on the literal
-// SUPER_ADMIN / SUPER_DUPER_ADMIN roles, so INTERNAL holders never appear
-// there. It deliberately does NOT inherit the SUPER_DUPER_ADMIN extras.
-//
-// Because group_permissions rows are static once written, a new permission
-// added to SUPER_ADMIN_PERMISSIONS must be granted to the INTERNAL group in
-// the same migration that grants it to SUPER_ADMIN — the spread above is
-// TypeScript-only and does not back-fill the database.
-const INTERNAL_PERMISSIONS = [...SUPER_ADMIN_PERMISSIONS];
-
 const COUNSELOR_PERMISSIONS = [
   // Core counselor functions
   PERMISSIONS.VIEW_CHAT,
@@ -690,7 +676,6 @@ export {
   PERMISSIONS,
   SUPER_ADMIN_PERMISSIONS,
   SUPER_DUPER_ADMIN_PERMISSIONS,
-  INTERNAL_PERMISSIONS,
   COUNSELOR_PERMISSIONS,
   ADMIN_PERMISSIONS,
   MULTI_TENANT_ADMIN_PERMISSIONS,

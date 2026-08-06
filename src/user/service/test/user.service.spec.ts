@@ -353,15 +353,15 @@ describe('UserService', () => {
     });
 
     // Clients gate the admin console on `roles`, because the collapsed `role`
-    // reports LEARNER for a staffer holding [INTERNAL, LEARNER].
+    // reports LEARNER for a user holding [MULTI_TENANT_ADMIN, LEARNER].
     it('should return every role held alongside the collapsed one', async () => {
       mockGroupService.getUserRolesByUserId.mockResolvedValue([
-        { id: 1, name: UserRole.INTERNAL },
+        { id: 1, name: UserRole.MULTI_TENANT_ADMIN },
         { id: 2, name: UserRole.LEARNER },
       ]);
       const result = await service.getMinimalUserInfo(mockUser);
       expect(result && result.roles).toEqual([
-        UserRole.INTERNAL,
+        UserRole.MULTI_TENANT_ADMIN,
         UserRole.LEARNER,
       ]);
     });
