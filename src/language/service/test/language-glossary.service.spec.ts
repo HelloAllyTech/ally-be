@@ -432,6 +432,66 @@ describe('LanguageGlossaryService', () => {
         BadRequestException,
       );
     });
+
+    it('never removes or overwrites existing content/entries — only appends new proposals', async () => {
+      const existingSection = makeSection({
+        sectionCode: 'clinical_terms',
+        title: 'Clinical terms',
+        content: '- doctor: say "டாக்டர்" (avoid: "மருத்துவர்")',
+        status: GlossarySectionStatus.PUBLISHED,
+        injectionMode: GlossaryInjectionMode.RETRIEVED,
+        entries: [
+          {
+            id: 'e-accepted',
+            markdown: '- old accepted entry',
+            status: GlossaryEntryStatus.ACCEPTED,
+            provenance: { source: 'consolidation', annotationIds: ['a-old-1'] },
+          },
+          {
+            id: 'e-rejected',
+            markdown: '- old rejected entry',
+            status: GlossaryEntryStatus.REJECTED,
+            provenance: { source: 'consolidation', annotationIds: ['a-old-2'] },
+          },
+        ],
+      });
+      const originalContent = existingSection.content;
+      const originalEntriesSnapshot = existingSection.entries!.map((e) => ({
+        ...e,
+      }));
+
+      // The consumed-set (built from existing entries' provenance) must not
+      // swallow a genuinely new annotation just because OTHER annotations
+      // were already consumed.
+      glossaryRepository.findAllForLanguage.mockResolvedValue([
+        existingSection,
+      ]);
+      glossaryRepository.findSection.mockResolvedValue(existingSection);
+      annotationRepository.find.mockResolvedValue([annotation('a-new')]);
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      const result = await service.consolidateGlossary(6, 'admin');
+
+      expect(result.annotationsConsidered).toBe(1);
+      const saved = glossaryRepository.save.mock.calls.at(-1)[0];
+
+      // Untouched fields — consolidation never rewrites these on an
+      // existing section.
+      expect(saved.content).toBe(originalContent);
+      expect(saved.status).toBe(GlossarySectionStatus.PUBLISHED);
+      expect(saved.title).toBe('Clinical terms');
+      expect(saved.injectionMode).toBe(GlossaryInjectionMode.RETRIEVED);
+
+      // Pre-existing entries preserved, in original order, byte-for-byte.
+      expect(saved.entries).toHaveLength(3);
+      expect(saved.entries[0]).toEqual(originalEntriesSnapshot[0]);
+      expect(saved.entries[1]).toEqual(originalEntriesSnapshot[1]);
+
+      // The new proposal is appended after them, not inserted in place of
+      // anything.
+      expect(saved.entries[2].status).toBe(GlossaryEntryStatus.PROPOSED);
+      expect(saved.entries[2].markdown).toContain('டென்ஷன்');
+    });
   });
 
   describe('proposal review', () => {
