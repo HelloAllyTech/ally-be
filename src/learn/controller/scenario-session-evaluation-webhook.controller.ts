@@ -13,7 +13,7 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { IsNumber } from 'class-validator';
+import { IsNumber, IsObject, IsOptional } from 'class-validator';
 import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { ScenarioSessionEvaluationService } from '../service/scenario-session-evaluation.service';
 import { UpdateActorEvaluationDto } from '../dto/scenario-session-evaluation.dto';
@@ -23,6 +23,17 @@ class EndV2VSessionDto {
   @ApiProperty({ description: 'Counselor/owner user ID of the session' })
   @IsNumber()
   counselorId!: number;
+
+  @ApiProperty({
+    description:
+      'Tester-side run metrics ({maxExchanges, exchangesCompleted, ' +
+      'utterancesHeard, ttsFailures, endReason}) — persisted to ' +
+      'scenario_sessions.metadata.v2vMetrics as the v2v evaluation baseline',
+    required: false,
+  })
+  @IsOptional()
+  @IsObject()
+  metrics?: Record<string, any>;
 }
 
 /**
@@ -63,6 +74,9 @@ export class ScenarioSessionEvaluationWebhookController {
     @Param('id') id: string,
     @Body() body: EndV2VSessionDto,
   ): Promise<{ success: boolean }> {
+    if (body.metrics) {
+      await this.scenarioSessionService.recordV2VMetrics(id, body.metrics);
+    }
     await this.scenarioSessionService.endScenarioSession(id, body.counselorId);
     return { success: true };
   }

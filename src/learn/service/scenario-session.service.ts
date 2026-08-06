@@ -2108,6 +2108,24 @@ export class ScenarioSessionService {
   }
 
   /**
+   * Persist tester-side v2v run metrics ({maxExchanges, exchangesCompleted,
+   * utterancesHeard, ttsFailures, endReason}) onto the session's metadata
+   * (metadata.v2vMetrics) — the queryable evaluation baseline for automated
+   * v2v testing. jsonb merge so concurrent metadata writers are untouched.
+   */
+  async recordV2VMetrics(
+    scenarioSessionId: string,
+    metrics: Record<string, any>,
+  ): Promise<void> {
+    await this.dataSource.query(
+      `UPDATE scenario_sessions
+       SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('v2vMetrics', $2::jsonb)
+       WHERE id = $1`,
+      [scenarioSessionId, JSON.stringify(metrics)],
+    );
+  }
+
+  /**
    * Persist the agent's end-of-session episodic memory (message_type
    * "session_memory") onto the per-session details row. Atomic upsert against
    * the unique scenarioSessionId index (migration 1869) — only sessionMemory
