@@ -234,10 +234,14 @@ export const getActiveScenarioMandatoryFields = () => SCENARIO_MANDATORY_FIELDS;
 
 /**
  * Decide whether a session should be served the MULTILINGUAL (translated)
- * main-agent/branching bodies rather than the English source. True only when
- * the session's language is a non-source language AND the simulation explicitly
- * opted that language into MULTILINGUAL. Missing entry, GENERIC, English, or an
- * unknown language all fall back to English (the safe default).
+ * main-agent/branching bodies rather than the English source. MULTILINGUAL is
+ * now the DEFAULT for every non-source language (fail-and-fix-early rollout,
+ * validated via automated v2v baselines); an explicit 'GENERIC' entry is the
+ * per-language escape hatch, editable by SUPER_DUPER_ADMIN only (enforced in
+ * ScenarioService create/update). This is safe for untranslated content: the
+ * overlay serves the English body for any prompt without a translation, so
+ * the worst case equals the old default. English/unknown languages always
+ * serve the source prompts.
  */
 export const shouldServeMultilingual = (
   languageDetails: { id?: number; translationCode?: string } | null | undefined,
@@ -247,7 +251,7 @@ export const shouldServeMultilingual = (
   if (languageDetails.translationCode === DEFAULT_LANGUAGE_TRANSLATION_CODE) {
     return false;
   }
-  return variantByLanguage?.[String(languageDetails.id)] === 'MULTILINGUAL';
+  return variantByLanguage?.[String(languageDetails.id)] !== 'GENERIC';
 };
 
 /** A resolved registry row, reduced to what the agent actually consumes. */

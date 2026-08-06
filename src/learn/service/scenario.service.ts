@@ -629,10 +629,44 @@ export class ScenarioService {
     }
   }
 
+  /**
+   * The glossary and multilingual toggles are production kill-switches for
+   * default-ON language features — restricted to SUPER_DUPER_ADMIN. Other
+   * editors' updates silently preserve the stored values (create: drop, so
+   * the platform defaults apply). Lightweight group lookup, no cache: these
+   * writes are rare studio operations.
+   */
+  private async canEditLanguageRolloutToggles(
+    userId: number,
+  ): Promise<boolean> {
+    const rows = await this.dataSource.query(
+      `SELECT 1 FROM user_groups ug JOIN groups g ON g.id = ug."groupId"
+       WHERE ug."userId" = $1 AND g.name = 'SUPER_DUPER_ADMIN' LIMIT 1`,
+      [userId],
+    );
+    return rows.length > 0;
+  }
+
   async createScenarios(
     createScenariosDto: CreateScenariosDto,
     userId: number,
   ): Promise<Scenarios[]> {
+    if (
+      createScenariosDto.scenarios.some(
+        (sc) =>
+          sc.languageGlossaryEnabled !== undefined ||
+          sc.mainPromptVariantByLanguage !== undefined,
+      ) &&
+      !(await this.canEditLanguageRolloutToggles(userId))
+    ) {
+      this.logger.warn(
+        `User ${userId} lacks SUPER_DUPER_ADMIN; dropping language rollout toggles from scenario create`,
+      );
+      for (const sc of createScenariosDto.scenarios) {
+        delete sc.languageGlossaryEnabled;
+        delete sc.mainPromptVariantByLanguage;
+      }
+    }
     const createScenarioDtos = await executeInChunks(
       createScenariosDto.scenarios,
       10,
@@ -1306,6 +1340,27 @@ export class ScenarioService {
     // unchanged there.
     manager?: EntityManager,
   ): Promise<boolean> {
+    if (
+      (updateScenarioDto.languageGlossaryEnabled !== undefined ||
+        updateScenarioDto.mainPromptVariantByLanguage !== undefined) &&
+      !(await this.canEditLanguageRolloutToggles(userId))
+    ) {
+      // Preserve the STORED values rather than deleting: update rebuilds
+      // metadata from the dto, so a dropped key would erase a
+      // super-duper-admin's earlier setting (the version-publish path
+      // replays configs through here with the publisher's userId).
+      const existing = await this.scenariosRepository.findOne({
+        where: { id },
+      });
+      this.logger.warn(
+        `User ${userId} lacks SUPER_DUPER_ADMIN; preserving stored language rollout toggles on scenario ${id}`,
+      );
+      updateScenarioDto.languageGlossaryEnabled =
+        existing?.metadata?.languageGlossaryEnabled;
+      updateScenarioDto.mainPromptVariantByLanguage =
+        existing?.metadata?.mainPromptVariantByLanguage;
+    }
+
     // Drop stale states data BEFORE validation runs. The previous order
     // (validate → prune) rejected updates whenever a variant whose body
     // used to include {state_x_guidelines} had its placeholder removed

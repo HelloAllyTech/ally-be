@@ -436,11 +436,12 @@ export class ScenarioSharedService {
     // Tier 0 language-glossary style card (LANGUAGE_GLOSSARY_DESIGN.md §5.1):
     // compiled from published always-sections, language-level, ~1-2k tokens.
     // Publishing a section is the per-language rollout gate — no published
-    // content, no block. `languageGlossaryEnabled` is a TEMPORARY
-    // per-simulation canary gate on top (default OFF, opt-in per sim) so the
-    // glossary can be tested sim-by-sim; remove it once rollout is proven.
+    // content, no block. `languageGlossaryEnabled` is now DEFAULT ON
+    // (fail-and-fix-early rollout, validated via automated v2v baselines);
+    // an explicit false is the per-simulation escape hatch, editable by
+    // SUPER_DUPER_ADMIN only (enforced in ScenarioService create/update).
     // English sessions skip entirely; a glossary failure never blocks a session.
-    const languageGlossaryEnabled = metadata?.languageGlossaryEnabled === true;
+    const languageGlossaryEnabled = metadata?.languageGlossaryEnabled !== false;
     if (
       languageGlossaryEnabled &&
       languageDetails?.id &&

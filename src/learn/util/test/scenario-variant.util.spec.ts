@@ -12,10 +12,17 @@ describe('shouldServeMultilingual', () => {
     expect(shouldServeMultilingual(hindi, { '2': 'GENERIC' })).toBe(false);
   });
 
-  it('serves English when the language has no entry (default)', () => {
-    expect(shouldServeMultilingual(hindi, { '6': 'MULTILINGUAL' })).toBe(false);
-    expect(shouldServeMultilingual(hindi, {})).toBe(false);
-    expect(shouldServeMultilingual(hindi, undefined)).toBe(false);
+  it('serves MULTILINGUAL when the language has no entry (new default)', () => {
+    // Default-ON rollout: a missing entry now means multilingual; the
+    // per-prompt overlay still falls back to English for anything
+    // untranslated, so the worst case equals the old behavior.
+    expect(shouldServeMultilingual(hindi, { '6': 'MULTILINGUAL' })).toBe(true);
+    expect(shouldServeMultilingual(hindi, {})).toBe(true);
+    expect(shouldServeMultilingual(hindi, undefined)).toBe(true);
+  });
+
+  it('an explicit GENERIC entry opts the language out', () => {
+    expect(shouldServeMultilingual(hindi, { '2': 'GENERIC' })).toBe(false);
   });
 
   it('never serves multilingual for the source (English) language', () => {
@@ -32,12 +39,13 @@ describe('shouldServeMultilingual', () => {
     expect(shouldServeMultilingual({}, { '2': 'MULTILINGUAL' })).toBe(false);
   });
 
-  it('only honors the exact session language id', () => {
-    // Tamil session (id 6) opted in, but Hindi session must stay English.
-    const variant = { '6': 'MULTILINGUAL' as const };
+  it('only honors the exact session language id for opt-outs', () => {
+    // Tamil session (id 6) opted OUT, but Hindi session keeps the
+    // multilingual default.
+    const variant = { '6': 'GENERIC' as const };
     expect(
       shouldServeMultilingual({ id: 6, translationCode: 'ta' }, variant),
-    ).toBe(true);
-    expect(shouldServeMultilingual(hindi, variant)).toBe(false);
+    ).toBe(false);
+    expect(shouldServeMultilingual(hindi, variant)).toBe(true);
   });
 });
