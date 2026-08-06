@@ -2,8 +2,6 @@ import {
   IsString,
   IsNotEmpty,
   IsEnum,
-  ArrayNotEmpty,
-  IsArray,
   IsBoolean,
   IsNumber,
   IsOptional,
@@ -11,6 +9,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole, AppType } from 'src/common/constants/user.constants';
+import { IsAllowedRoles } from 'src/common/decorator/allowed-roles.decorator';
 
 export class LoginDto {
   @ApiProperty({
@@ -44,9 +43,7 @@ export class GenerateOtpV2Dto {
     description: 'Allowed roles for OTP generation',
     example: [UserRole.CLIENT, UserRole.COUNSELOR],
   })
-  @IsArray()
-  @IsEnum(UserRole, { each: true })
-  @ArrayNotEmpty()
+  @IsAllowedRoles()
   allowedRoles!: UserRole[];
 
   @ApiProperty({
@@ -82,9 +79,7 @@ export class VerifyOtpV2Dto {
     description: 'Allowed roles for OTP verification',
     example: [UserRole.CLIENT, UserRole.COUNSELOR],
   })
-  @IsArray()
-  @IsEnum(UserRole, { each: true })
-  @ArrayNotEmpty()
+  @IsAllowedRoles()
   allowedRoles!: UserRole[];
 }
 

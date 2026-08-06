@@ -1,14 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  ArrayNotEmpty,
-  IsArray,
-  IsEnum,
-  IsOptional,
-  IsString,
-  ValidateNested,
-} from 'class-validator';
+import { IsOptional, IsString, ValidateNested } from 'class-validator';
 import { UserRole } from 'src/common/constants/user.constants';
+import { IsAllowedRoles } from 'src/common/decorator/allowed-roles.decorator';
 
 export class AppleFullNameDto {
   @ApiProperty({ required: false, nullable: true, example: 'Ada' })
@@ -52,8 +46,6 @@ export class AppleSignInDto {
     description: 'Allowed roles for sign-in',
     example: [UserRole.CLIENT, UserRole.COUNSELOR],
   })
-  @IsArray()
-  @IsEnum(UserRole, { each: true })
-  @ArrayNotEmpty()
+  @IsAllowedRoles()
   allowedRoles!: UserRole[];
 }

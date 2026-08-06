@@ -1,13 +1,7 @@
-import {
-  IsEmail,
-  IsNotEmpty,
-  IsString,
-  IsArray,
-  IsEnum,
-  ArrayNotEmpty,
-} from 'class-validator';
+import { IsEmail, IsNotEmpty, IsString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from 'src/common/constants/user.constants';
+import { IsAllowedRoles } from 'src/common/decorator/allowed-roles.decorator';
 
 export class MagicLinkLoginRequestDto {
   @ApiProperty({
@@ -50,8 +44,6 @@ export class MagicLinkVerifyDto {
     description: 'Allowed roles for magic link verification',
     example: [UserRole.CLIENT, UserRole.COUNSELOR],
   })
-  @IsArray()
-  @IsEnum(UserRole, { each: true })
-  @ArrayNotEmpty()
+  @IsAllowedRoles()
   allowedRoles!: UserRole[];
 }
