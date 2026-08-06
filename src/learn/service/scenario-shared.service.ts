@@ -12,6 +12,7 @@ import { Pagination } from 'src/common/type/common.type';
 import { ScenarioSessionMessagesRepository } from '../repository/scenario-session-messages.repository';
 import { ScenarioSessionMessages } from '../entity/scenario-session-messages.entity';
 import { ScenarioSessionDetailsRepository } from '../repository/scenario-session-details.repository';
+import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionMessageTagsRepository } from '../repository/scenario-session-message-tags.repository';
 import { MessageTagMapping } from '../type/scenario-message-tag.type';
 import {
@@ -289,6 +290,48 @@ export class ScenarioSharedService {
     return this.scenarioSessionDetailsRepository.findOne({
       where: { scenarioSessionId },
     });
+  }
+
+  /**
+   * The two memory sources on a details row, by preference: the agent's own
+   * end-of-session memory (sessionMemory.summary, exists even when feedback
+   * generation failed) then the legacy feedback cumulativeMemory. Shared by
+   * the case and track previous-memory read paths.
+   */
+  extractSessionMemory(
+    details: ScenarioSessionDetails | null | undefined,
+  ): string | null {
+    const agentMemory = details?.sessionMemory?.summary;
+    if (typeof agentMemory === 'string' && agentMemory.trim()) {
+      return agentMemory.trim();
+    }
+    const cumulativeMemory = details?.summary?.feedback?.cumulativeMemory;
+    return typeof cumulativeMemory === 'string' && cumulativeMemory.trim()
+      ? cumulativeMemory.trim()
+      : null;
+  }
+
+  /**
+   * Track read path: memory of the learner's most recent ended session for
+   * one track item progress row (a replayed item resolves to the latest
+   * attempt that actually left a memory).
+   */
+  async getLatestSessionMemoryByTrackItemProgressId(
+    trackItemProgressId: string,
+  ): Promise<string | null> {
+    const sessions = await this.scenarioSessionRepository.find({
+      where: { trackItemProgressId, endedAt: Not(IsNull()) },
+      order: { endedAt: 'DESC' },
+      take: 3,
+    });
+    for (const session of sessions) {
+      const details = await this.getScenarioSessionDetailsByScenarioSessionId(
+        session.id,
+      );
+      const memory = this.extractSessionMemory(details);
+      if (memory) return memory;
+    }
+    return null;
   }
 
   async getSessionGlimpseByScenarioSessionId(

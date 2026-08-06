@@ -74,6 +74,7 @@ describe('ScenarioSharedService', () => {
 
     const mockScenarioSessionRepo = {
       findOne: jest.fn(),
+      find: jest.fn(),
     };
 
     const mockScenarioBehaviorInstructionRepository = {
@@ -2199,6 +2200,63 @@ describe('ScenarioSharedService', () => {
         },
       };
       expect(service.hasAllActiveScenarioMandatoryFields(scenario)).toBe(false);
+    });
+  });
+
+  describe('extractSessionMemory', () => {
+    it('prefers the agent sessionMemory summary', () => {
+      expect(
+        service.extractSessionMemory({
+          sessionMemory: { summary: '  agent memory  ' },
+          summary: { feedback: { cumulativeMemory: 'legacy memory' } },
+        } as any),
+      ).toBe('agent memory');
+    });
+
+    it('falls back to feedback cumulativeMemory', () => {
+      expect(
+        service.extractSessionMemory({
+          sessionMemory: { summary: '   ' },
+          summary: { feedback: { cumulativeMemory: 'legacy memory' } },
+        } as any),
+      ).toBe('legacy memory');
+    });
+
+    it('returns null when neither source exists', () => {
+      expect(service.extractSessionMemory({} as any)).toBeNull();
+      expect(service.extractSessionMemory(null)).toBeNull();
+    });
+  });
+
+  describe('getLatestSessionMemoryByTrackItemProgressId', () => {
+    it('returns the memory of the most recent ended session that has one', async () => {
+      scenarioSessionRepository.find.mockResolvedValue([
+        { id: 'sess-newest' },
+        { id: 'sess-older' },
+      ] as any);
+      scenarioSessionDetailsRepository.findOne
+        .mockResolvedValueOnce({ sessionMemory: { summary: '' } } as any)
+        .mockResolvedValueOnce({
+          sessionMemory: { summary: 'older attempt memory' },
+        } as any);
+
+      await expect(
+        service.getLatestSessionMemoryByTrackItemProgressId('tip-1'),
+      ).resolves.toBe('older attempt memory');
+      expect(scenarioSessionRepository.find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ trackItemProgressId: 'tip-1' }),
+          order: { endedAt: 'DESC' },
+          take: 3,
+        }),
+      );
+    });
+
+    it('returns null when no session left a memory', async () => {
+      scenarioSessionRepository.find.mockResolvedValue([] as any);
+      await expect(
+        service.getLatestSessionMemoryByTrackItemProgressId('tip-1'),
+      ).resolves.toBeNull();
     });
   });
 });

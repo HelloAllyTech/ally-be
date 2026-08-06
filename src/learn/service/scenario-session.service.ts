@@ -767,6 +767,12 @@ export class ScenarioSessionService {
         previousMemory = await this.caseSharedService.getPreviousCaseMemory(
           startScenarioSessionDto.caseSessionItemId,
         );
+      } else if (startScenarioSessionDto.trackItemProgressId) {
+        // Track read path: open with the memory of the nearest preceding
+        // conversation item (roleplay or case) in track order.
+        previousMemory = await this.getPreviousTrackMemory(
+          startScenarioSessionDto.trackItemProgressId,
+        );
       }
 
       // Prepare room metadata with events and dependencies
@@ -2656,6 +2662,48 @@ export class ScenarioSessionService {
       return reminders;
     }
     return [];
+  }
+
+  /**
+   * Track read path for episodic memory: resolve the memory a track roleplay
+   * should open with — the nearest preceding ROLEPLAY/CASE item (track
+   * order) that left a session memory. Candidates come from the track
+   * progression engine; each is resolved against session data here, first
+   * hit wins. Best-effort: any failure logs and returns null (a track
+   * roleplay must start even when memory lookup breaks).
+   */
+  private async getPreviousTrackMemory(
+    trackItemProgressId: string,
+  ): Promise<string | null> {
+    try {
+      const candidates =
+        await this.trackProgressService.getPreviousMemoryCandidates(
+          trackItemProgressId,
+        );
+      for (const candidate of candidates) {
+        let memory: string | null = null;
+        if (candidate.trackItemProgressId) {
+          memory =
+            await this.scenarioSharedService.getLatestSessionMemoryByTrackItemProgressId(
+              candidate.trackItemProgressId,
+            );
+        } else if (candidate.caseSessionId) {
+          memory =
+            await this.caseSharedService.getLatestSessionMemoryByCaseSessionId(
+              candidate.caseSessionId,
+            );
+        }
+        if (memory) return memory;
+      }
+      return null;
+    } catch (error) {
+      this.logger.error(
+        `getPreviousTrackMemory failed for ${trackItemProgressId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
   }
 
   /**

@@ -332,4 +332,43 @@ export class CaseSharedService {
       scenarioSessionId,
     );
   }
+
+  /**
+   * Track read path: when the item preceding a track roleplay is a CASE,
+   * its "previous memory" is the memory of the last (highest-order) case
+   * item in that case session that left one.
+   */
+  async getLatestSessionMemoryByCaseSessionId(
+    caseSessionId: string,
+  ): Promise<string | null> {
+    const sessionItems = await this.caseSessionItemRepository.find({
+      where: { caseSessionId },
+    });
+    if (!sessionItems.length) return null;
+
+    const caseItems = await this.caseItemRepository.find({
+      where: { id: In(sessionItems.map((si) => si.caseItemId)) },
+    });
+    const orderByCaseItemId = new Map(caseItems.map((ci) => [ci.id, ci.order]));
+    const orderedDesc = [...sessionItems].sort(
+      (a, b) =>
+        (orderByCaseItemId.get(b.caseItemId) ?? 0) -
+        (orderByCaseItemId.get(a.caseItemId) ?? 0),
+    );
+
+    for (const sessionItem of orderedDesc) {
+      const session =
+        await this.scenarioSharedService.getPreviousScenarioSessionByCaseSessionItemId(
+          sessionItem.id,
+        );
+      if (!session) continue;
+      const details =
+        await this.scenarioSharedService.getScenarioSessionDetailsByScenarioSessionId(
+          session.id,
+        );
+      const memory = this.scenarioSharedService.extractSessionMemory(details);
+      if (memory) return memory;
+    }
+    return null;
+  }
 }

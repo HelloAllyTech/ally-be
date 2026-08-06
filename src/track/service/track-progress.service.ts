@@ -12,7 +12,7 @@ import { TrackSection } from '../entity/track-section.entity';
 import { TrackTenant } from '../entity/track-tenant.entity';
 import { TrackItemProgressRepository } from '../repository/track-item-progress.repository';
 import { TrackItemRepository } from '../repository/track-item.repository';
-import { TrackItemProgressMeta } from '../type/track.type';
+import { TrackItemProgressMeta, TrackItemType } from '../type/track.type';
 
 export const TRACK_EVENTS = {
   ITEM_COMPLETED: 'track.item.completed',
@@ -97,6 +97,71 @@ export class TrackProgressService {
         'Track is not available for your organization',
       );
     }
+  }
+
+  /**
+   * Sources of "previous memory" for a track item, most-recent-first: the
+   * ROLEPLAY / CASE items that precede this one in track order, mapped to
+   * this learner's progress rows. The learn side resolves each candidate to
+   * an actual session memory (a candidate item may have been replayed or
+   * left no memory, so callers take the first that resolves). Capped — a
+   * long track only ever needs the nearest few conversation items.
+   */
+  async getPreviousMemoryCandidates(
+    trackItemProgressId: string,
+    limit = 5,
+  ): Promise<Array<{ trackItemProgressId?: string; caseSessionId?: string }>> {
+    const progress = await this.trackItemProgressRepository.findOne({
+      where: { id: trackItemProgressId },
+    });
+    if (!progress) return [];
+    const item = await this.trackItemRepository.findOne({
+      where: { id: progress.trackItemId },
+    });
+    if (!item) return [];
+
+    // Same ordered walk as completeItem: sections by order, items by order
+    // within their section.
+    const [sections, items, progressRows] = await Promise.all([
+      this.dataSource.getRepository(TrackSection).find({
+        where: { trackId: item.trackId },
+        order: { order: 'ASC' },
+      }),
+      this.trackItemRepository.find({ where: { trackId: item.trackId } }),
+      this.trackItemProgressRepository.find({
+        where: { trackEnrollmentId: progress.trackEnrollmentId },
+      }),
+    ]);
+    const orderedItems = sections.flatMap((section) =>
+      items
+        .filter((i) => i.trackSectionId === section.id)
+        .sort((a, b) => a.order - b.order),
+    );
+    const progressByItemId = new Map(
+      progressRows.map((row) => [row.trackItemId, row]),
+    );
+
+    const currentIndex = orderedItems.findIndex((i) => i.id === item.id);
+    if (currentIndex <= 0) return [];
+
+    const candidates: Array<{
+      trackItemProgressId?: string;
+      caseSessionId?: string;
+    }> = [];
+    for (let i = currentIndex - 1; i >= 0 && candidates.length < limit; i--) {
+      const prev = orderedItems[i];
+      const prevProgress = progressByItemId.get(prev.id);
+      if (!prevProgress) continue;
+      if (prev.type === TrackItemType.ROLEPLAY) {
+        candidates.push({ trackItemProgressId: prevProgress.id });
+      } else if (
+        prev.type === TrackItemType.CASE &&
+        prevProgress.caseSessionId
+      ) {
+        candidates.push({ caseSessionId: prevProgress.caseSessionId });
+      }
+    }
+    return candidates;
   }
 
   /**
