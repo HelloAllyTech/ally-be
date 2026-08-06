@@ -41,6 +41,10 @@ import { UserModule } from 'src/user/user.module';
     LanguageGlossaryService,
     GlossaryAdherenceService,
   ],
-  exports: [SharedLanguageService, LanguageGlossaryService],
+  exports: [
+    SharedLanguageService,
+    LanguageGlossaryService,
+    GlossaryAdherenceService,
+  ],
 })
 export class LanguageModule {}

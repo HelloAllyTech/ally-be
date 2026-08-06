@@ -36,6 +36,7 @@ import { ScenarioSessionMessageType } from '../enum/scenario-session-message.typ
 import { ScenarioSessionTagCategory } from '../enum/scenario-session-tag-category.enum';
 import { AiService } from 'src/ai/service/ai.service';
 import { ScenarioSessionEvaluationService } from './scenario-session-evaluation.service';
+import { GlossaryAdherenceService } from 'src/language/service/glossary-adherence.service';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { ScenarioSessionTurnMetrics } from '../entity/scenario-session-turn-metrics.entity';
@@ -174,6 +175,7 @@ export class ScenarioSessionService {
     private sharedLanguageService: SharedLanguageService,
     private sessionEventTranslationService: SessionEventTranslationService,
     private scenarioSessionEvaluationService: ScenarioSessionEvaluationService,
+    private readonly glossaryAdherenceService: GlossaryAdherenceService,
     private transcriptTranslationService: TranscriptTranslationService,
     // App-container handle used ONLY to resolve the Roleplay Studio v2
     // session service for engine=ROLEPLAY_V2 scenarios without importing
@@ -1168,6 +1170,28 @@ export class ScenarioSessionService {
     await this.scenarioSessionEvaluationService.triggerForSession(
       scenarioSession,
     );
+
+    // Glossary adherence: deterministic avoid-list scan of the agent
+    // transcript, auto-run per session so every run (human or v2v) leaves a
+    // one-shot quality scorecard row. Self-gating: returns null for English
+    // sessions, languages without a published glossary, or glossaries with
+    // no avoid-terms. Fire-and-forget — never blocks or fails session end.
+    void this.glossaryAdherenceService
+      .analyzeSession(scenarioSession.id)
+      .then((report) => {
+        if (report) {
+          this.logger.info(
+            `[GLOSSARY_ADHERENCE] session ${scenarioSession.id}: ` +
+              `${report.totalViolations} violation(s) across ` +
+              `${report.agentMessageCount} agent message(s)`,
+          );
+        }
+      })
+      .catch((error) => {
+        this.logger.warn(
+          `[GLOSSARY_ADHERENCE] scan failed for ${scenarioSession.id}: ${error}`,
+        );
+      });
 
     // Emit event for community leaderboard score update
     const durationMinutes = callDuration / (1000 * 60);

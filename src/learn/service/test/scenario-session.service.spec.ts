@@ -60,6 +60,7 @@ import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
 import { SimulationCapacityException } from 'src/learn/exception/simulation-capacity.exception';
 import { ScenarioSessionRecordingService } from '../scenario-session-recording.service';
 import { ScenarioSessionEvaluationService } from '../scenario-session-evaluation.service';
+import { GlossaryAdherenceService } from 'src/language/service/glossary-adherence.service';
 import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -544,6 +545,10 @@ describe('ScenarioSessionService', () => {
         {
           provide: ScenarioSessionEvaluationService,
           useValue: { triggerForSession: jest.fn() },
+        },
+        {
+          provide: GlossaryAdherenceService,
+          useValue: { analyzeSession: jest.fn().mockResolvedValue(null) },
         },
         {
           provide: TranscriptTranslationService,
