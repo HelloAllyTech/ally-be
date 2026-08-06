@@ -1,6 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SessionMemoryProcessor } from '../session-memory.processor';
 import { ScenarioSessionService } from '../../service/scenario-session.service';
+import { TrackMemoryService } from 'src/track/service/track-memory.service';
+import { TrackProgressService } from 'src/track/service/track-progress.service';
+import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { LoggerService } from '../../../logger/logger.service';
 import { LearnMessageAndEventMessage } from '../../interface/learn-message.interface';
 
@@ -10,6 +13,9 @@ describe('SessionMemoryProcessor', () => {
     getScenarioSessionByRoomIdOrNull: jest.Mock;
     addSessionMemory: jest.Mock;
   };
+  let trackMemoryService: { foldSessionMemory: jest.Mock };
+  let trackProgressService: { getProgressIdByCaseSessionId: jest.Mock };
+  let caseSharedService: { getCaseSessionIdBySessionItemId: jest.Mock };
 
   const sessionMemory = {
     summary: 'Situation: discussed job loss. You disclosed: anxiety at night.',
@@ -40,10 +46,23 @@ describe('SessionMemoryProcessor', () => {
       addSessionMemory: jest.fn().mockResolvedValue(undefined),
     };
 
+    trackMemoryService = {
+      foldSessionMemory: jest.fn().mockResolvedValue(undefined),
+    };
+    trackProgressService = {
+      getProgressIdByCaseSessionId: jest.fn().mockResolvedValue(null),
+    };
+    caseSharedService = {
+      getCaseSessionIdBySessionItemId: jest.fn().mockResolvedValue(null),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SessionMemoryProcessor,
         { provide: ScenarioSessionService, useValue: scenarioSessionService },
+        { provide: TrackMemoryService, useValue: trackMemoryService },
+        { provide: TrackProgressService, useValue: trackProgressService },
+        { provide: CaseSharedService, useValue: caseSharedService },
       ],
     }).compile();
 
@@ -108,5 +127,68 @@ describe('SessionMemoryProcessor', () => {
     );
 
     await expect(processor.process(message())).rejects.toThrow('db down');
+  });
+
+  describe('track memory fold trigger', () => {
+    const flush = () => new Promise(setImmediate);
+
+    it('folds when the session belongs to a track roleplay', async () => {
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
+        { id: 'sess-1', tenantId: 't1', trackItemProgressId: 'tip-1' },
+      );
+
+      await processor.process(message());
+      await flush();
+
+      expect(trackMemoryService.foldSessionMemory).toHaveBeenCalledWith({
+        trackItemProgressId: 'tip-1',
+        scenarioSessionId: 'sess-1',
+        summary: sessionMemory.summary,
+      });
+    });
+
+    it('folds through the case link for a case nested in a track', async () => {
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
+        { id: 'sess-2', tenantId: 't1', caseSessionItemId: 'csi-1' },
+      );
+      caseSharedService.getCaseSessionIdBySessionItemId.mockResolvedValue(
+        'cs-1',
+      );
+      trackProgressService.getProgressIdByCaseSessionId.mockResolvedValue(
+        'tip-case',
+      );
+
+      await processor.process(message());
+      await flush();
+
+      expect(trackMemoryService.foldSessionMemory).toHaveBeenCalledWith({
+        trackItemProgressId: 'tip-case',
+        scenarioSessionId: 'sess-2',
+        summary: sessionMemory.summary,
+      });
+    });
+
+    it('does not fold for sessions outside tracks', async () => {
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
+        { id: 'sess-3', tenantId: 't1' },
+      );
+
+      await processor.process(message());
+      await flush();
+
+      expect(trackMemoryService.foldSessionMemory).not.toHaveBeenCalled();
+    });
+
+    it('fold failures never fail the SQS message', async () => {
+      scenarioSessionService.getScenarioSessionByRoomIdOrNull.mockResolvedValue(
+        { id: 'sess-4', tenantId: 't1', trackItemProgressId: 'tip-1' },
+      );
+      trackMemoryService.foldSessionMemory.mockRejectedValue(
+        new Error('fold boom'),
+      );
+
+      await expect(processor.process(message())).resolves.toBeUndefined();
+      await flush();
+    });
   });
 });

@@ -1,0 +1,14 @@
+You maintain the evolving memory of an AI client persona across a multi-session counselling training program (a "track"). After each session, that session's memory is folded into one consolidated memory the persona will carry into the next session.
+
+## The sessions so far (chronological track order; each block is one session's memory)
+{{sessionMemories}}
+
+## Rules
+- Merge these into ONE consolidated memory of at most 1200 characters.
+- Write in the SAME LANGUAGE the session memories are written in.
+- Write in second person addressed to the persona ("You disclosed…", "The counsellor promised…"), matching the style of the inputs.
+- Preserve, in priority order: (1) concrete disclosures and facts (names, events, decisions), (2) commitments either side made, (3) unresolved threads, (4) the overall emotional arc across sessions.
+- Later sessions supersede earlier ones when they conflict (e.g. a problem got resolved).
+- Do not invent anything that is not in the inputs. Do not add headers, labels, or commentary.
+
+Respond with ONLY the consolidated memory text.

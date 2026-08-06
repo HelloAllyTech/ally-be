@@ -50,6 +50,7 @@ import { ConversationalGuardrailsService } from 'src/conversational-guardrails/s
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
 import { TrackProgressService } from 'src/track/service/track-progress.service';
+import { TrackMemoryService } from 'src/track/service/track-memory.service';
 import { ScenarioSharedService } from '../scenario-shared.service';
 import { RoomMetadataStoreService } from '../room-metadata-store.service';
 import { isEnglishLanguage } from '../../util/scenario.util';
@@ -520,6 +521,13 @@ describe('ScenarioSessionService', () => {
           useValue: {
             validateRoleplayStart: jest.fn(),
             handleRoleplayEnd: jest.fn(),
+          },
+        },
+        {
+          provide: TrackMemoryService,
+          useValue: {
+            getConsolidatedMemory: jest.fn().mockResolvedValue(null),
+            foldSessionMemory: jest.fn(),
           },
         },
         {

@@ -4,6 +4,9 @@ import { LearnMessageAndEventMessage } from '../interface/learn-message.interfac
 import { BaseEventProcessor } from 'src/ai/processors/base-processor.interface';
 import { LoggerService } from 'src/logger/logger.service';
 import { PROCESSOR_EVENT_TYPES } from 'src/ai/constants/processor.constants';
+import { TrackMemoryService } from 'src/track/service/track-memory.service';
+import { TrackProgressService } from 'src/track/service/track-progress.service';
+import { CaseSharedService } from 'src/case/service/case-shared.service';
 
 /**
  * Persists the agent's end-of-session episodic memory (message_type
@@ -19,7 +22,12 @@ export class SessionMemoryProcessor extends BaseEventProcessor {
     SessionMemoryProcessor.name,
   );
 
-  constructor(private readonly scenarioSessionService: ScenarioSessionService) {
+  constructor(
+    private readonly scenarioSessionService: ScenarioSessionService,
+    private readonly trackMemoryService: TrackMemoryService,
+    private readonly trackProgressService: TrackProgressService,
+    private readonly caseSharedService: CaseSharedService,
+  ) {
     super();
   }
 
@@ -72,6 +80,12 @@ export class SessionMemoryProcessor extends BaseEventProcessor {
             sessionMemory.message_count ?? '?'
           }`,
       );
+
+      // Track consolidation: when the session belongs to a track (directly
+      // or through a nested case), fold this memory into the enrollment's
+      // evolving learner memory. Detached and best-effort — folding must
+      // never fail or delay the SQS message.
+      void this.foldIntoTrackMemory(scenarioSession, sessionMemory.summary);
     } catch (error) {
       this.logger.error(
         `Failed to process session memory for ${room_id}: ${
@@ -79,6 +93,44 @@ export class SessionMemoryProcessor extends BaseEventProcessor {
         }`,
       );
       throw error;
+    }
+  }
+
+  /** Resolve the session's track progress row (roleplay or nested case) and fold. */
+  private async foldIntoTrackMemory(
+    scenarioSession: {
+      id: string;
+      trackItemProgressId?: string;
+      caseSessionItemId?: string;
+    },
+    summary: string,
+  ): Promise<void> {
+    try {
+      let progressId = scenarioSession.trackItemProgressId ?? null;
+      if (!progressId && scenarioSession.caseSessionItemId) {
+        const caseSessionId =
+          await this.caseSharedService.getCaseSessionIdBySessionItemId(
+            scenarioSession.caseSessionItemId,
+          );
+        if (caseSessionId) {
+          progressId =
+            await this.trackProgressService.getProgressIdByCaseSessionId(
+              caseSessionId,
+            );
+        }
+      }
+      if (!progressId) return;
+      await this.trackMemoryService.foldSessionMemory({
+        trackItemProgressId: progressId,
+        scenarioSessionId: scenarioSession.id,
+        summary,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Track memory fold failed for session ${scenarioSession.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 }

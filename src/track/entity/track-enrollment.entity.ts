@@ -32,6 +32,16 @@ export class TrackEnrollment extends BaseWithoutTenantEntity {
   @Column({ type: 'timestamp', nullable: true })
   lastActivityAt?: Date;
 
+  /**
+   * Consolidated episodic memory for this learner's journey through the
+   * track, folded from each conversation item's session memory
+   * (TrackMemoryService): { summary, items: { [trackItemId]: { sessionId,
+   * summary, updatedAt } }, updatedAt }. `summary` is what the next track
+   * roleplay opens with.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  memory?: Record<string, any>;
+
   @DeleteDateColumn()
   deletedAt?: Date;
 }

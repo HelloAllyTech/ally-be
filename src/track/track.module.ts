@@ -16,6 +16,7 @@ import { TrackProgressService } from './service/track-progress.service';
 import { TrackEnrollmentService } from './service/track-enrollment.service';
 import { TrackQuizService } from './service/track-quiz.service';
 import { TrackQuizLlmGraderService } from './service/track-quiz-llm-grader.service';
+import { TrackMemoryService } from './service/track-memory.service';
 import { TrackJournalService } from './service/track-journal.service';
 import { TrackRepository } from './repository/track.repository';
 import { TrackSectionRepository } from './repository/track-section.repository';
@@ -46,6 +47,7 @@ import { TrackJournalEntryRepository } from './repository/track-journal-entry.re
     TrackEnrollmentService,
     TrackQuizService,
     TrackQuizLlmGraderService,
+    TrackMemoryService,
     TrackJournalService,
     TrackRepository,
     TrackSectionRepository,
@@ -56,6 +58,6 @@ import { TrackJournalEntryRepository } from './repository/track-journal-entry.re
     TrackQuizAttemptRepository,
     TrackJournalEntryRepository,
   ],
-  exports: [TrackSharedService, TrackProgressService],
+  exports: [TrackSharedService, TrackProgressService, TrackMemoryService],
 })
 export class TrackModule {}

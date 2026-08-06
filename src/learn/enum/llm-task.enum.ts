@@ -15,6 +15,9 @@ export enum LlmTask {
   // Episodic-memory summarizer in ally-ai-learn (rolling-summary compaction
   // during the session + the end-of-session final fold).
   ROLLING_SUMMARY = 'rolling_summary',
+  // Track-level memory consolidation in ally-be: folds per-session memories
+  // into one evolving learner memory per track enrollment.
+  TRACK_MEMORY_FOLD = 'track_memory_fold',
 
   // ally-ai post-/in-session operations.
   NUDGE = 'nudge',

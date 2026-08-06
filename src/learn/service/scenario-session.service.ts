@@ -101,6 +101,7 @@ import {
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { CaseSessionService } from 'src/case/service/case-session.service';
 import { TrackProgressService } from 'src/track/service/track-progress.service';
+import { TrackMemoryService } from 'src/track/service/track-memory.service';
 import { CommonUtil } from 'src/common/util/common.util';
 import { ScenarioSharedService } from './scenario-shared.service';
 import { RoomMetadataStoreService } from './room-metadata-store.service';
@@ -165,6 +166,7 @@ export class ScenarioSessionService {
     private caseSharedService: CaseSharedService,
     private caseSessionService: CaseSessionService,
     private trackProgressService: TrackProgressService,
+    private trackMemoryService: TrackMemoryService,
     @InjectRepository(ScenarioSessionBehaviorInstructions)
     private scenarioSessionBehaviorInstructionsRepository: Repository<ScenarioSessionBehaviorInstructions>,
     private behaviorTranslationRepository: BehaviorTranslationRepository,
@@ -2684,6 +2686,16 @@ export class ScenarioSessionService {
     trackItemProgressId: string,
   ): Promise<string | null> {
     try {
+      // Prefer the enrollment's consolidated memory (the evolving fold over
+      // every conversation item so far); the per-item walk below is the
+      // fallback for enrollments that predate consolidation or whose folds
+      // all failed.
+      const consolidated =
+        await this.trackMemoryService.getConsolidatedMemory(
+          trackItemProgressId,
+        );
+      if (consolidated) return consolidated;
+
       const candidates =
         await this.trackProgressService.getPreviousMemoryCandidates(
           trackItemProgressId,
