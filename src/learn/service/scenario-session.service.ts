@@ -2772,7 +2772,12 @@ export class ScenarioSessionService {
     isTestSession: boolean;
     simulatedUserAgent: string;
   }> {
-    const { scenarioId, languageId, maxExchanges = 12 } = dto;
+    const {
+      scenarioId,
+      languageId,
+      maxExchanges = 12,
+      trackItemProgressId,
+    } = dto;
 
     const scenario = await this.scenarioService.getAdminScenario(scenarioId);
     if (!scenario) {
@@ -2782,6 +2787,26 @@ export class ScenarioSessionService {
     // Reuse the same validation as preview (status + mandatory fields check).
     await this.validatePreviewScenario(scenario);
     await this.validateGlobalSimulationCapacity();
+
+    // Optional: run the test as a track item, exercising the full track
+    // flow (unlock validation, previous-memory injection, completion and
+    // memory folding on end).
+    let trackPreviousMemory: string | null = null;
+    if (trackItemProgressId) {
+      const tenantId = ExecutionManager.getTenantId();
+      if (!tenantId) {
+        throw new BadRequestException(
+          'Tenant context required for track-item V2V tests',
+        );
+      }
+      await this.trackProgressService.validateRoleplayStart(
+        trackItemProgressId,
+        scenarioId,
+        { userId, tenantId },
+      );
+      trackPreviousMemory =
+        await this.getPreviousTrackMemory(trackItemProgressId);
+    }
 
     const { enLanguageDetails, languageDetails } =
       await this.getLanguageDetailsForScenarioSession(languageId);
@@ -2844,6 +2869,7 @@ export class ScenarioSessionService {
       scenario,
       sessionEvents,
       languageDetails,
+      previousMemory: trackPreviousMemory,
     });
 
     // Create a real session record so the run appears in session logs.
@@ -2852,6 +2878,7 @@ export class ScenarioSessionService {
         scenarioId,
         languageId,
         voiceId,
+        trackItemProgressId,
       });
 
     // Tag the session as a V2V test so it can be filtered downstream.

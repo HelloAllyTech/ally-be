@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, Min, Max } from 'class-validator';
+import { IsNumber, IsOptional, IsUUID, Min, Max } from 'class-validator';
 
 export class StartV2VTestSessionDto {
   @ApiProperty({ description: 'Scenario ID', example: 1 })
@@ -9,6 +9,16 @@ export class StartV2VTestSessionDto {
   @ApiProperty({ description: 'Language ID', example: 1 })
   @IsNumber()
   languageId!: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Run the test as this track item (the caller must be enrolled and the ' +
+      'item unlocked). The session then exercises the full track flow: ' +
+      'previous-memory injection, completion/unlock, and memory folding.',
+  })
+  @IsOptional()
+  @IsUUID()
+  trackItemProgressId?: string;
 
   @ApiPropertyOptional({
     description:
