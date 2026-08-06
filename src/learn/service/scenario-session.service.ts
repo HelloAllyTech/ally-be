@@ -767,6 +767,14 @@ export class ScenarioSessionService {
         previousMemory = await this.caseSharedService.getPreviousCaseMemory(
           startScenarioSessionDto.caseSessionItemId,
         );
+        if (!previousMemory) {
+          // First item of the case (or nothing inheritable within it): when
+          // the case is nested in a track, fall back to the track-level
+          // previous memory so the case doesn't open cold.
+          previousMemory = await this.getPreviousTrackMemoryForCaseItem(
+            startScenarioSessionDto.caseSessionItemId,
+          );
+        }
       } else if (startScenarioSessionDto.trackItemProgressId) {
         // Track read path: open with the memory of the nearest preceding
         // conversation item (roleplay or case) in track order.
@@ -2699,6 +2707,37 @@ export class ScenarioSessionService {
     } catch (error) {
       this.logger.error(
         `getPreviousTrackMemory failed for ${trackItemProgressId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Case-in-track fallback: a case session item whose case has no
+   * inheritable memory (typically the case's first item) inherits the track
+   * memory instead, resolved through the track_item_progress row that owns
+   * the case session. Null when the case isn't inside a track.
+   */
+  private async getPreviousTrackMemoryForCaseItem(
+    caseSessionItemId: string,
+  ): Promise<string | null> {
+    try {
+      const caseSessionId =
+        await this.caseSharedService.getCaseSessionIdBySessionItemId(
+          caseSessionItemId,
+        );
+      if (!caseSessionId) return null;
+      const progressId =
+        await this.trackProgressService.getProgressIdByCaseSessionId(
+          caseSessionId,
+        );
+      if (!progressId) return null;
+      return await this.getPreviousTrackMemory(progressId);
+    } catch (error) {
+      this.logger.error(
+        `getPreviousTrackMemoryForCaseItem failed for ${caseSessionItemId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

@@ -100,6 +100,21 @@ export class TrackProgressService {
   }
 
   /**
+   * The track item progress row a case session belongs to, if that case is
+   * being played inside a track. Lets the case flow fall back to track-level
+   * previous memory for the FIRST item of a nested case (which has no
+   * within-case memory to inherit).
+   */
+  async getProgressIdByCaseSessionId(
+    caseSessionId: string,
+  ): Promise<string | null> {
+    const progress = await this.trackItemProgressRepository.findOne({
+      where: { caseSessionId },
+    });
+    return progress?.id ?? null;
+  }
+
+  /**
    * Sources of "previous memory" for a track item, most-recent-first: the
    * ROLEPLAY / CASE items that precede this one in track order, mapped to
    * this learner's progress rows. The learn side resolves each candidate to

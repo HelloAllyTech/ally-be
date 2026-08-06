@@ -3529,4 +3529,84 @@ describe('ScenarioSessionService', () => {
       expect(sharedLanguageService.getLanguageValueById).not.toHaveBeenCalled();
     });
   });
+
+  describe('track previous-memory read path', () => {
+    const stubDeps = () => {
+      const svc = service as any;
+      svc.trackProgressService.getPreviousMemoryCandidates = jest.fn();
+      svc.trackProgressService.getProgressIdByCaseSessionId = jest.fn();
+      svc.scenarioSharedService.getLatestSessionMemoryByTrackItemProgressId =
+        jest.fn();
+      svc.caseSharedService.getLatestSessionMemoryByCaseSessionId = jest.fn();
+      svc.caseSharedService.getCaseSessionIdBySessionItemId = jest.fn();
+      return svc;
+    };
+
+    it('getPreviousTrackMemory returns the first candidate that resolves', async () => {
+      const svc = stubDeps();
+      svc.trackProgressService.getPreviousMemoryCandidates.mockResolvedValue([
+        { trackItemProgressId: 'tip-near' },
+        { caseSessionId: 'cs-far' },
+      ]);
+      svc.scenarioSharedService.getLatestSessionMemoryByTrackItemProgressId.mockResolvedValue(
+        null,
+      );
+      svc.caseSharedService.getLatestSessionMemoryByCaseSessionId.mockResolvedValue(
+        'case memory',
+      );
+
+      await expect(svc.getPreviousTrackMemory('tip-current')).resolves.toBe(
+        'case memory',
+      );
+      expect(
+        svc.scenarioSharedService.getLatestSessionMemoryByTrackItemProgressId,
+      ).toHaveBeenCalledWith('tip-near');
+    });
+
+    it('getPreviousTrackMemory swallows lookup failures', async () => {
+      const svc = stubDeps();
+      svc.trackProgressService.getPreviousMemoryCandidates.mockRejectedValue(
+        new Error('db down'),
+      );
+      await expect(
+        svc.getPreviousTrackMemory('tip-current'),
+      ).resolves.toBeNull();
+    });
+
+    it('getPreviousTrackMemoryForCaseItem resolves through the case session link', async () => {
+      const svc = stubDeps();
+      svc.caseSharedService.getCaseSessionIdBySessionItemId.mockResolvedValue(
+        'cs-1',
+      );
+      svc.trackProgressService.getProgressIdByCaseSessionId.mockResolvedValue(
+        'tip-case',
+      );
+      svc.trackProgressService.getPreviousMemoryCandidates.mockResolvedValue([
+        { trackItemProgressId: 'tip-prev' },
+      ]);
+      svc.scenarioSharedService.getLatestSessionMemoryByTrackItemProgressId.mockResolvedValue(
+        'track memory',
+      );
+
+      await expect(
+        svc.getPreviousTrackMemoryForCaseItem('csi-1'),
+      ).resolves.toBe('track memory');
+      expect(
+        svc.trackProgressService.getProgressIdByCaseSessionId,
+      ).toHaveBeenCalledWith('cs-1');
+    });
+
+    it('getPreviousTrackMemoryForCaseItem returns null when the case is not in a track', async () => {
+      const svc = stubDeps();
+      svc.caseSharedService.getCaseSessionIdBySessionItemId.mockResolvedValue(
+        'cs-1',
+      );
+      svc.trackProgressService.getProgressIdByCaseSessionId.mockResolvedValue(
+        null,
+      );
+      await expect(
+        svc.getPreviousTrackMemoryForCaseItem('csi-1'),
+      ).resolves.toBeNull();
+    });
+  });
 });

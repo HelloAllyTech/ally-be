@@ -334,6 +334,20 @@ export class CaseSharedService {
   }
 
   /**
+   * The case session a case session item belongs to. Unscoped lookup used by
+   * the track-memory fallback (permission was already enforced when the
+   * session start validated the item).
+   */
+  async getCaseSessionIdBySessionItemId(
+    caseSessionItemId: string,
+  ): Promise<string | null> {
+    const sessionItem = await this.caseSessionItemRepository.findOne({
+      where: { id: caseSessionItemId },
+    });
+    return sessionItem?.caseSessionId ?? null;
+  }
+
+  /**
    * Track read path: when the item preceding a track roleplay is a CASE,
    * its "previous memory" is the memory of the last (highest-order) case
    * item in that case session that left one.
