@@ -95,6 +95,33 @@ describe('Scenario Util', () => {
       });
     });
 
+    it('should map turnMaxEndpointingDelay into metadata when set', () => {
+      const userId = 111;
+      const scenario: CreateScenarioDto = {
+        title: 'Endpointing Override Scenario',
+        description: 'Test Description',
+        status: ScenarioStatus.DRAFT,
+        turnMaxEndpointingDelay: 1.5,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.turnMaxEndpointingDelay).toBe(1.5);
+    });
+
+    it('should leave turnMaxEndpointingDelay undefined when unset', () => {
+      const userId = 112;
+      const scenario: CreateScenarioDto = {
+        title: 'No Override Scenario',
+        description: 'Test Description',
+        status: ScenarioStatus.DRAFT,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, userId);
+
+      expect(result.metadata.turnMaxEndpointingDelay).toBeUndefined();
+    });
+
     it('should map create scenario DTO with minimal fields', () => {
       const userId = 456;
       const scenario: CreateScenarioDto = {

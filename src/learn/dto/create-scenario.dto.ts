@@ -333,6 +333,18 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description:
+      'Per-simulation override (seconds) for how long semantic turn-detection waits for a learner who seems mid-thought before giving up and replying anyway. When unset, falls back to the global platform default. Lower values reply faster but risk interrupting; higher values avoid interrupting but add perceived delay.',
+    example: 1.5,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  @Max(10)
+  turnMaxEndpointingDelay?: number;
+
+  @ApiProperty({
+    description:
       "Enable continuous back-channeling — brief 'mm-hmm'-style listener affirmations played sparsely while the learner is still speaking on a long turn. Defaults to false (opt-in) when unspecified.",
     example: false,
     required: false,
