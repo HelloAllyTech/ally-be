@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# ally-docs-guard — checks .docs-map.yml before a push to the default branch.
+# Canonical source: https://raw.githubusercontent.com/HelloAllyTech/.github/main/hooks/pre-push
+# Caches into .git/docs-guard/, refreshes daily, and never blocks on its own failures.
+set -u
+CACHE="$(git rev-parse --git-dir)/docs-guard/pre-push"
+if [ ! -f "$CACHE" ] || [ -n "$(find "$CACHE" -mmin +1440 2>/dev/null)" ]; then
+  mkdir -p "$(dirname "$CACHE")"
+  curl -fsSL --max-time 5 "https://raw.githubusercontent.com/HelloAllyTech/.github/main/hooks/pre-push" -o "$CACHE.tmp" 2>/dev/null \
+    && mv "$CACHE.tmp" "$CACHE" || rm -f "$CACHE.tmp"
+fi
+[ -f "$CACHE" ] || exit 0
+command -v bash >/dev/null 2>&1 || exit 0
+exec bash "$CACHE"
