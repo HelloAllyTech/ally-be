@@ -1213,6 +1213,43 @@ describe('ScenarioSharedService', () => {
       );
     });
 
+    it('should forward metadata.turnMaxEndpointingDelay onto promptData unchanged (plain pass-through, not explicitly deleted)', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+
+      const result = await service.createRoomMetadata({
+        scenario: {
+          id: 1,
+          title: 'Test Scenario',
+          description: 'Test Description',
+          prompt: 'Act only as the client in this simulation.',
+          metadata: {
+            voiceId: 'voice-1',
+            name: 'Alex',
+            age: 28,
+            gender: 'Male',
+            currentLocation: 'NYC',
+            openingStatements: ['Hi'],
+            turnMaxEndpointingDelay: 1.5,
+          },
+          terminationEvents: [],
+          behaviorInstructions: [],
+          difficultyLevel: 'EASY',
+        } as any,
+        sessionEvents: [],
+        languageDetails: null as any,
+        previousMemory: null,
+      });
+
+      expect((result.scenario.promptData as any).turnMaxEndpointingDelay).toBe(
+        1.5,
+      );
+    });
+
     it('should put languageDetails.label on promptData.languageLabel so the LLM gets a human-readable language name', async () => {
       scenarioVoiceRepository.findOne.mockResolvedValue({
         id: 'voice-1',
