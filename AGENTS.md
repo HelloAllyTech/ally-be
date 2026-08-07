@@ -6,18 +6,25 @@ This file is a **router**: find your task below, read what it points at, skip th
 Conventions with a canonical home are linked, never restated — if you find a rule written
 twice anywhere in this platform, that's a bug worth fixing.
 
-## Before you touch anything user-facing
+## Before you write an implementation plan
 
-Read [Product Best Practices](https://tech.helloally.ai/#/wiki/product/best-practices.md)
-and the one subsection that matches your change. Internal work — refactors, migrations,
-infra, tests — is exempt. Don't read the whole product section; the hub tells you which
-subsection applies.
+Call the stacks MCP's `search_chunks` tool with **2-3 queries** covering the task's main
+topics, incorporate what comes back, and cite chunk titles. The `stacks` server is declared
+in this repo's committed [`.mcp.json`](.mcp.json) and reads `STACKS_API_KEY` from the
+environment - setup, query technique and citation format:
+[Planning with Stacks](https://tech.helloally.ai/#/wiki/contributing/planning-with-stacks.md).
+Trivial mechanical changes (rename, dependency bump, typo) are exempt.
+
+Stacks **replaced** the wiki's Product Management Best Practices, deprecated 2026-08-07:
+nothing there is a gate, and Stacks wins on conflict. Those pages still record Ally-specific
+traps a general corpus won't have, so check them when a query comes back empty on something
+Ally-specific.
 
 ## What am I doing?
 
 | Task | Read first |
 |---|---|
-| Anything touching stored data | [`DATA_SCHEMA.md`](DATA_SCHEMA.md) — all 105 tables, plus Weaviate/Redis/SQS/S3. Start at its "Where do I find…?" index |
+| Anything touching stored data | [`DATA_SCHEMA.md`](DATA_SCHEMA.md) — every table, plus Weaviate/Redis/SQS/S3. Start at its "Where do I find…?" index |
 | Adding an API endpoint | Controller + service + DTO in `src/<domain>/`; register in that module. Swagger is generated |
 | Changing the DB schema | [`DATA_SCHEMA.md`](DATA_SCHEMA.md) §the affected domain, then the migration recipe below |
 | Auth, roles, permissions | **[Gotchas](https://tech.helloally.ai/#/wiki/memory.md) — this area has bitten us four times.** See the roles note below |
@@ -30,7 +37,7 @@ subsection applies.
 
 ## Repo shape
 
-- `src/<domain>/` — controllers, services, DTOs, `entity/*.entity.ts`. 43-ish feature modules.
+- `src/<domain>/` — controllers, services, DTOs, `entity/*.entity.ts`. One module per domain.
 - `src/database/migrations/` — TypeORM migrations. `synchronize: false`; config in `src/database/data-source.ts`.
 - `src/database/seeds/` — idempotent, safe to re-run.
 - `src/prompts/` — file-based prompts with optional `.meta.json` sidecars.
@@ -86,10 +93,11 @@ git clone --depth=1 https://github.com/helloallytech/helloallytech.github.io .wi
 ## Canonical docs
 
 The [Ally Developer Wiki](https://tech.helloally.ai) is the source of truth for platform
-architecture, SDLC rules, and product practice —
+architecture and SDLC rules (product practice now comes from Stacks) —
 [this repo's page](https://tech.helloally.ai/#/wiki/repos/ally-be.md) ·
 [architecture](https://tech.helloally.ai/#/wiki/platform/architecture.md) ·
 [contributing](https://tech.helloally.ai/#/wiki/contributing/guide.md) ·
+[planning with Stacks](https://tech.helloally.ai/#/wiki/contributing/planning-with-stacks.md) ·
 [how the docs system works](https://tech.helloally.ai/#/wiki/contributing/docs-system.md).
 
 > ⚠️ The wiki is **public**. Never add secrets, credentials, IP addresses, internal
