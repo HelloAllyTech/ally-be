@@ -1,133 +1,24 @@
-# Contributing Guidelines
+# Contributing to ally-be
 
-Thank you for contributing to this project! Please follow these guidelines to maintain consistency across the codebase.
+The contributing rules for **every** Ally repo are maintained in one place:
 
-## Git Conventions
+### 👉 [Contributing Guide — tech.helloally.ai](https://tech.helloally.ai/#/wiki/contributing/guide.md)
 
-### Branch Naming
+Branch naming, conventional commits, code standards, the PR process, and review
+expectations all live there. They used to be copied into each repo, the copies drifted,
+and the branch-naming rule ended up contradicting itself across three files — so there is
+now exactly one canonical statement of each rule.
 
-Branches should follow this naming convention:
-```
-<type>/<short-description>
-```
+| Looking for | Go to |
+|---|---|
+| Branch, commit and PR conventions | [Contributing Guide](https://tech.helloally.ai/#/wiki/contributing/guide.md) |
+| Local setup | [Developer Setup](https://tech.helloally.ai/#/wiki/contributing/dev-setup.md) · [README](README.md) |
+| Releasing | [Release Process](https://tech.helloally.ai/#/wiki/contributing/release-process.md) · [`.github/RELEASE_GUIDE.md`](.github/RELEASE_GUIDE.md) |
+| Where to start on a task | [`AGENTS.md`](AGENTS.md) — the router for this repo |
+| Why docs CI failed on your PR | [Documentation System](https://tech.helloally.ai/#/wiki/contributing/docs-system.md) · [`.docs-map.yml`](.docs-map.yml) |
 
-**Rules:**
-- Use **hyphens** to separate words in the description (not underscores)
-- Keep descriptions short and descriptive
-- Use lowercase letters
+## One repo-specific rule
 
-#### Branch Types
-
-| Type | Purpose |
-|------|---------|
-| `feat` | New feature implementation |
-| `fix` | Bug fixes |
-| `chore` | Maintenance tasks, dependency updates |
-| `refactor` | Code restructuring without changing functionality |
-| `docs` | Documentation updates |
-| `test` | Adding or updating tests |
-| `style` | Code formatting, missing semicolons, etc. |
-| `perf` | Performance improvements |
-| `build` | Build system or external dependency changes |
-| `ci` | CI/CD pipeline changes |
-| `revert` | Reverting previous commits |
-| `hotfix` | Critical fixes for production |
-
-#### Examples
-```
-feat/add-user-profile
-fix/login-error
-chore/update-dependencies
-refactor/auth-service
-docs/update-readme
-test/add-api-tests
-```
-
-### Commit Messages
-
-Follow the conventional commit format:
-```
-<type>: short summary
-```
-
-#### Guidelines
-
-- Use **imperative tone** (e.g., "add" not "added")
-- Keep the summary short and descriptive
-- First letter lowercase after the type
-- No period at the end
-
-#### Examples
-```
-feat: add user profile page
-fix: handle invalid token error
-refactor: optimize data fetching
-perf: improve image loading speed
-docs: update contribution guide
-test: add missing unit tests
-ci: update build pipeline
-style: fix code formatting
-chore: update dependencies to latest versions
-```
-
-### Pull Requests
-
-#### PR Title
-
-Use the same format as commit messages:
-```
-<type>: short summary
-```
-
-
-#### PR Description
-
-List your changes as clear bullet points:
-```markdown
-- Added user profile form and API integration
-- Updated validation for age and email
-- Fixed UI alignment in profile section
-```
-
-**Guidelines:**
-- Focus on **what** changed and **why** it matters
-- Keep points concise and actionable
-- Use past tense for completed work
-- Mention any breaking changes
-- Reference related issues if applicable
-
-#### Example PR
-
-**Title:**
-```
-feat: add user authentication system
-```
-
-**Description:**
-```markdown
-- Implemented JWT-based authentication
-- Added login and registration endpoints
-- Created middleware for protected routes
-- Updated user model with password hashing
-- Added authentication tests
-
-Closes #123
-```
-
-## Getting Started
-
-1. Fork the repository
-2. Create a new branch following the naming convention
-3. Make your changes
-4. Write clear commit messages
-5. Push your branch and create a pull request
-6. Wait for review and address any feedback
-
-## Code Review Process
-
-- All PRs require at least one approval
-- Address review comments promptly
-- Keep PRs focused and reasonably sized
-- Ensure all tests pass before requesting review
-
-Thank you for your contributions!
+Your PR must keep documentation in step with your code. [`.docs-map.yml`](.docs-map.yml)
+declares which docs cover which paths and CI enforces it. If a doc genuinely doesn't need
+to move, apply the `docs:skip` label — with a reason in the PR description.
