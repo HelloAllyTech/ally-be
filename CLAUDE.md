@@ -5,13 +5,10 @@
 > when you change architecture, workflows, or environment setup. The wiki is public:
 > never add secrets, IPs, internal hostnames, or cloud region details to it.
 >
-> **Before any user-facing change**, also read **Product Management Best Practices** —
-> https://tech.helloally.ai/#/wiki/product/best-practices.md — the hub of house rules plus
-> subsections (UI, Gamification, Data Visualisation, Prioritisation, User Personas, and more
-> over time). File new product judgement calls back into the matching subsection.
->
 > **Before writing an implementation plan**, search the Stacks corpus — see the next section, and
 > https://tech.helloally.ai/#/wiki/contributing/planning-with-stacks.md for setup and technique.
+> Stacks is where product guidance now comes from; the wiki's **Product Management Best
+> Practices** section was deprecated on 2026-08-07 and is kept for history only.
 
 ---
 
@@ -28,8 +25,12 @@ The `stacks` server is declared in this repo's committed `.mcp.json`; it reads y
 `STACKS_API_KEY` from the environment, so no key is ever committed. Setup, query technique and the
 citation format: https://tech.helloally.ai/#/wiki/contributing/planning-with-stacks.md
 
-Trivial mechanical changes (rename, dependency bump, typo) are exempt. Where Stacks guidance
-contradicts a practice already settled in the wiki, the wiki wins.
+Trivial mechanical changes (rename, dependency bump, typo) are exempt.
+
+Stacks **replaced** the wiki's `Product Management Best Practices` section, which was deprecated
+on 2026-08-07 and is kept for history only — nothing in it is a gate, and where it conflicts with
+Stacks, Stacks wins. It still records Ally-specific traps a general corpus won't have, so it is
+worth checking when a query comes back empty on something Ally-specific.
 
 ## What this repo is
 
