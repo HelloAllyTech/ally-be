@@ -1,0 +1,123 @@
+name: Docs guard
+
+# Keeps documentation in step with code. The rules live in .docs-map.yml at this repo's
+# root; the checker is shared, fetched at run time from helloallytech/.github so there is
+# still exactly one copy of it.
+#
+#   pull_request — the gate. Escape hatches: the `docs:skip` label, or a `Wiki-PR:`
+#                  trailer in the PR body.
+#   push         — most commits here never open a PR, so a PR-only guard would never see
+#                  them. It cannot block something already pushed, so it reports: a red
+#                  mark on the commit and a notification to whoever pushed it. Trailers
+#                  come from the commit message instead (`Wiki-PR:`, `Docs-Skip:`), and a
+#                  push that arrived via a merged PR is skipped so nothing is reported
+#                  twice.
+#
+# The pre-push hook runs the same checker before the push, which is the last point it can
+# still change what you do:
+#   curl -fsSL https://raw.githubusercontent.com/HelloAllyTech/.github/main/hooks/install.sh | bash
+#
+# Spec: https://tech.helloally.ai/#/wiki/contributing/docs-system.md
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  docs-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install --quiet pyyaml
+
+      - name: Fetch the shared checker
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 \
+            https://raw.githubusercontent.com/HelloAllyTech/.github/main/scripts/docs_guard.py \
+            -o docs_guard.py
+
+      # A push that arrived through a pull request was already checked as that PR.
+      # Reporting it again would flag every merge twice and teach people it cries wolf.
+      - name: Skip a push that already passed as a pull request
+        id: dedupe
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          merged="$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" \
+            --jq '[.[] | select(.merged_at != null)] | length' 2>/dev/null || echo 0)"
+          if [ "${merged:-0}" -gt 0 ]; then
+            echo "Arrived via a merged pull request — already guarded there."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Collect changed files
+        if: steps.dedupe.outputs.skip != 'true'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            BASE="$BASE_SHA"; HEAD="$HEAD_SHA"
+          else
+            HEAD="$GITHUB_SHA"
+            BASE="$PUSH_BEFORE"
+            # A first push, or a force-push, leaves `before` unreachable. Fall back to the
+            # head's parent so we check something real rather than the whole history.
+            if [ -z "${BASE:-}" ] || [ "${BASE//0/}" = "" ] \
+               || ! git rev-parse --verify --quiet "${BASE}^{commit}" >/dev/null; then
+              BASE="${HEAD}^"
+            fi
+          fi
+          git diff --name-only --diff-filter=d "$BASE" "$HEAD" > changed-files.txt
+          git log --format=%B "$BASE..$HEAD" > commit-messages.txt || true
+          echo "Changed files:"
+          sed 's/^/  /' changed-files.txt
+
+      - name: Capture the escape hatches
+        if: steps.dedupe.outputs.skip != 'true'
+        env:
+          # Via env, never interpolated into the script body — a PR description is
+          # attacker-controlled text and must not reach the shell as code.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "pull_request" ]; then
+            printf '%s' "${PR_BODY:-}" > pr-body.txt
+            printf '%s' "${PR_LABELS:-}" > pr-labels.txt
+          else
+            cp commit-messages.txt pr-body.txt
+            if grep -qiE '^[[:space:]]*Docs-Skip:[[:space:]]*\S' pr-body.txt; then
+              printf 'docs:skip' > pr-labels.txt
+            else
+              : > pr-labels.txt
+            fi
+          fi
+
+      - name: Run docs guard
+        if: steps.dedupe.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          python3 docs_guard.py \
+            --repo-root . \
+            --changed-files changed-files.txt \
+            --pr-body pr-body.txt \
+            --labels "$(cat pr-labels.txt)"
