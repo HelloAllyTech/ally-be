@@ -9,12 +9,27 @@
 > https://tech.helloally.ai/#/wiki/product/best-practices.md — the hub of house rules plus
 > subsections (UI, Gamification, Data Visualisation, Prioritisation, User Personas, and more
 > over time). File new product judgement calls back into the matching subsection.
+>
+> **Before writing an implementation plan**, search the Stacks corpus — see the next section, and
+> https://tech.helloally.ai/#/wiki/contributing/planning-with-stacks.md for setup and technique.
 
 ---
 
 # CLAUDE.md
 
 Guidance for Claude Code when working in **ally-be** — the Ally backend API.
+
+## Before you write an implementation plan
+
+**Call the stacks MCP's `search_chunks` tool with 2–3 queries covering the task's main topics, and
+incorporate relevant returned guidance, citing chunk titles.**
+
+The `stacks` server is declared in this repo's committed `.mcp.json`; it reads your
+`STACKS_API_KEY` from the environment, so no key is ever committed. Setup, query technique and the
+citation format: https://tech.helloally.ai/#/wiki/contributing/planning-with-stacks.md
+
+Trivial mechanical changes (rename, dependency bump, typo) are exempt. Where Stacks guidance
+contradicts a practice already settled in the wiki, the wiki wins.
 
 ## What this repo is
 

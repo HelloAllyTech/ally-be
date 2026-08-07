@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "stacks": {
+      "type": "http",
+      "url": "https://product-management-rag-mcp-orcin.vercel.app/api/mcp",
+      "headers": { "Authorization": "Bearer ${STACKS_API_KEY}" }
+    }
+  }
+}
