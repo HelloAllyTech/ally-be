@@ -1,0 +1,16 @@
+# Who reviews the documentation.
+#
+# GitHub auto-requests a review from these owners on any pull request touching a matching
+# path. It is advisory: it blocks nothing unless "Require review from Code Owners" is
+# switched on in branch protection, which it is not. The point is that a second person sees
+# a change to the pages other repos — and other agents — rely on.
+#
+# Which docs cover which code is a separate question, answered by .docs-map.yml. This file
+# only says who looks at the docs themselves.
+#
+# Spec: https://tech.helloally.ai/#/wiki/contributing/docs-system.md
+
+/*.md                        @HelloAllyTech/helloallydevs
+/.docs-map.yml               @HelloAllyTech/helloallydevs
+/.github/pull_request_template.md  @HelloAllyTech/helloallydevs
+/docs/                       @HelloAllyTech/helloallydevs
