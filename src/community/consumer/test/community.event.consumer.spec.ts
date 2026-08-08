@@ -5,7 +5,6 @@ import { CommunityEventConsumer } from '../community.event.consumer';
 import { UserDailyScoreRepository } from '../../repository/user-daily-score.repository';
 import { scorePoints } from '../../constant/community.constant';
 import { LeaderboardActionEvent } from 'src/learn/type/scenario-session-leaderboard-event.type';
-import { UserDailyScores } from '../../entity/user-daily-scores.entity';
 
 describe('CommunityEventConsumer', () => {
   let consumer: CommunityEventConsumer;
@@ -575,17 +574,15 @@ describe('CommunityEventConsumer', () => {
   });
 
   describe('handleScenarioSessionEnded', () => {
-    it('should upsert daily score and emit event', async () => {
+    it('should upsert daily score and emit event carrying the threshold crossing', async () => {
       const mockDate = new Date('2025-01-15');
       const mockDurationMinutes = 30;
-      const mockExistingEntry = {
-        userId: mockUserId,
-        tenantId: mockTenantId,
-        minutesPlayed: 10,
-      } as UserDailyScores;
 
-      userDailyScoreRepository.findOne.mockResolvedValue(mockExistingEntry);
-      userDailyScoreRepository.upsertDailyScore.mockResolvedValue(undefined);
+      userDailyScoreRepository.upsertDailyScore.mockResolvedValue({
+        businessDate: '2025-01-15',
+        minutesAfter: 30,
+        crossedActiveThreshold: true,
+      });
 
       await consumer.handleScenarioSessionEnded({
         userId: mockUserId,
@@ -594,13 +591,6 @@ describe('CommunityEventConsumer', () => {
         durationMinutes: mockDurationMinutes,
       });
 
-      expect(userDailyScoreRepository.findOne).toHaveBeenCalledWith({
-        where: {
-          userId: mockUserId,
-          tenantId: mockTenantId,
-          date: mockDate,
-        },
-      });
       expect(userDailyScoreRepository.upsertDailyScore).toHaveBeenCalledWith(
         mockUserId,
         mockTenantId,
@@ -611,50 +601,53 @@ describe('CommunityEventConsumer', () => {
         LeaderboardActionEvent.MINUTES_PLAYED_UPDATED,
         {
           userId: mockUserId,
-          userDateEntryBeforeUpdation: mockExistingEntry,
+          tenantId: mockTenantId,
+          businessDate: '2025-01-15',
+          crossedActiveThreshold: true,
         },
       );
     });
 
-    it('should emit event with undefined when no existing entry', async () => {
-      userDailyScoreRepository.findOne.mockResolvedValue(null);
-      userDailyScoreRepository.upsertDailyScore.mockResolvedValue(undefined);
+    it('should no longer pre-read the daily score row', async () => {
+      userDailyScoreRepository.upsertDailyScore.mockResolvedValue({
+        businessDate: '2025-01-15',
+        minutesAfter: 0.5,
+        crossedActiveThreshold: false,
+      });
+
+      await consumer.handleScenarioSessionEnded({
+        userId: mockUserId,
+        tenantId: mockTenantId,
+        date: new Date('2025-01-15'),
+        durationMinutes: 0.5,
+      });
+
+      // The pre-read computed the day in Node-local time while the upsert used
+      // the business timezone — two different answers for "which day is this".
+      expect(userDailyScoreRepository.findOne).not.toHaveBeenCalled();
+    });
+
+    it('should emit crossedActiveThreshold=false for a sub-minute session', async () => {
+      userDailyScoreRepository.upsertDailyScore.mockResolvedValue({
+        businessDate: '2025-01-15',
+        minutesAfter: 0.5,
+        crossedActiveThreshold: false,
+      });
 
       await consumer.handleScenarioSessionEnded({
         userId: mockUserId,
         tenantId: mockTenantId,
         date: new Date(),
-        durationMinutes: 15,
+        durationMinutes: 0.5,
       });
 
       expect(eventEmitter.emit).toHaveBeenCalledWith(
         LeaderboardActionEvent.MINUTES_PLAYED_UPDATED,
-        {
-          userId: mockUserId,
-          userDateEntryBeforeUpdation: null,
-        },
+        expect.objectContaining({ crossedActiveThreshold: false }),
       );
-    });
-
-    it('should handle database errors gracefully', async () => {
-      userDailyScoreRepository.findOne.mockRejectedValue(
-        new Error('Database error'),
-      );
-
-      await expect(
-        consumer.handleScenarioSessionEnded({
-          userId: mockUserId,
-          tenantId: mockTenantId,
-          date: new Date(),
-          durationMinutes: 15,
-        }),
-      ).resolves.not.toThrow();
-
-      expect(eventEmitter.emit).not.toHaveBeenCalled();
     });
 
     it('should handle upsert errors gracefully', async () => {
-      userDailyScoreRepository.findOne.mockResolvedValue(null);
       userDailyScoreRepository.upsertDailyScore.mockRejectedValue(
         new Error('Upsert failed'),
       );

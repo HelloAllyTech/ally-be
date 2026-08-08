@@ -34,6 +34,7 @@ describe('CommunityController', () => {
     rank: 1,
     minutesPlayed: 120,
     badgeCount: 5,
+    currentStreak: 4,
   };
 
   const mockLeaderboardData = [
@@ -46,6 +47,7 @@ describe('CommunityController', () => {
       rank: 2,
       minutesPlayed: 100,
       badgeCount: 3,
+      currentStreak: 4,
     },
   ];
 
@@ -281,6 +283,7 @@ describe('CommunityController', () => {
         rank: 5,
         minutesPlayed: 60,
         badgeCount: 3,
+        currentStreak: 4,
         window: LeaderboardView.LAST_WEEK,
         hideRankInCommunity: false,
       };
@@ -310,6 +313,7 @@ describe('CommunityController', () => {
         rank: 10,
         minutesPlayed: 200,
         badgeCount: 5,
+        currentStreak: 4,
         window: LeaderboardView.LAST_MONTH,
         hideRankInCommunity: false,
       };
@@ -339,6 +343,7 @@ describe('CommunityController', () => {
         rank: 25,
         minutesPlayed: 500,
         badgeCount: 10,
+        currentStreak: 4,
         window: LeaderboardView.LAST_YEAR,
         hideRankInCommunity: false,
       };
@@ -363,6 +368,7 @@ describe('CommunityController', () => {
         rank: 1,
         minutesPlayed: 1000,
         badgeCount: 20,
+        currentStreak: 4,
         window: LeaderboardView.ALL_TIME,
         hideRankInCommunity: false,
       };
@@ -418,6 +424,7 @@ describe('CommunityController', () => {
         rank: 50,
         minutesPlayed: 30,
         badgeCount: 1,
+        currentStreak: 4,
         window: LeaderboardView.LAST_WEEK,
         hideRankInCommunity: false,
       };
@@ -446,6 +453,7 @@ describe('CommunityController', () => {
         rank: 5,
         minutesPlayed: 60,
         badgeCount: 0,
+        currentStreak: 4,
         window: LeaderboardView.LAST_WEEK,
         hideRankInCommunity: false,
       };

@@ -22,6 +22,7 @@ describe('LeaderboardService', () => {
     rank: 1,
     minutesPlayed: 120,
     badgeCount: 5,
+    currentStreak: 4,
   };
 
   const mockLeaderboardData = [
@@ -34,6 +35,7 @@ describe('LeaderboardService', () => {
       rank: 2,
       minutesPlayed: 100,
       badgeCount: 3,
+      currentStreak: 4,
     },
     {
       userId: 3,
@@ -43,6 +45,7 @@ describe('LeaderboardService', () => {
       rank: 3,
       minutesPlayed: 80,
       badgeCount: 1,
+      currentStreak: 4,
     },
   ];
 
@@ -344,6 +347,7 @@ describe('LeaderboardService', () => {
         rank: 5,
         minutesPlayed: 60,
         badgeCount: 3,
+        currentStreak: 4,
       };
 
       userDailyScoreRepository.getUserRankWithDetails.mockResolvedValue(
@@ -411,6 +415,7 @@ describe('LeaderboardService', () => {
         rank: undefined, // rank is hidden
         minutesPlayed: 120,
         badgeCount: 3,
+        currentStreak: 4,
       });
 
       const result = await service.getMyRank(
@@ -470,6 +475,7 @@ describe('LeaderboardService', () => {
         rank: 10,
         minutesPlayed: 200,
         badgeCount: 5,
+        currentStreak: 4,
         hideRankInCommunity: false,
       };
 
@@ -507,6 +513,7 @@ describe('LeaderboardService', () => {
         rank: 25,
         minutesPlayed: 500,
         badgeCount: 10,
+        currentStreak: 4,
         hideRankInCommunity: false,
       };
 
@@ -544,6 +551,7 @@ describe('LeaderboardService', () => {
         rank: 1,
         minutesPlayed: 1000,
         badgeCount: 20,
+        currentStreak: 4,
         hideRankInCommunity: false,
       };
 
@@ -581,6 +589,7 @@ describe('LeaderboardService', () => {
         rank: 5,
         minutesPlayed: 60,
         badgeCount: 0,
+        currentStreak: 4,
       };
 
       userDailyScoreRepository.getUserRankWithDetails.mockResolvedValue(

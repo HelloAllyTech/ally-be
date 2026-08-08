@@ -1967,11 +1967,49 @@ export const badges: BadgeFixture[] = [
     count: 10,
     groupNames: [UserRole.LEARNER],
   },
+  // A streak is a sequenced mini-goal mechanic: it needs rungs the whole way up
+  // so the "next milestone" the UI shows never runs out. Keep this ladder in
+  // step with migration 1887000000000-SeedActiveDayStreakBadgeLadder.
   {
     name: 'Consistent Start',
     description: 'Build a 3-day active streak.',
     category: BadgeCategory.ACTIVE_DAY_STREAK,
     count: 3,
+    groupNames: [UserRole.LEARNER],
+  },
+  {
+    name: 'Week One',
+    description: 'Practise every day for a week.',
+    category: BadgeCategory.ACTIVE_DAY_STREAK,
+    count: 7,
+    groupNames: [UserRole.LEARNER],
+  },
+  {
+    name: 'Fortnight Focus',
+    description: 'Keep a 14-day active streak going.',
+    category: BadgeCategory.ACTIVE_DAY_STREAK,
+    count: 14,
+    groupNames: [UserRole.LEARNER],
+  },
+  {
+    name: 'Monthly Momentum',
+    description: 'Reach a 30-day active streak.',
+    category: BadgeCategory.ACTIVE_DAY_STREAK,
+    count: 30,
+    groupNames: [UserRole.LEARNER],
+  },
+  {
+    name: 'Two Month Steady',
+    description: 'Reach a 60-day active streak.',
+    category: BadgeCategory.ACTIVE_DAY_STREAK,
+    count: 60,
+    groupNames: [UserRole.LEARNER],
+  },
+  {
+    name: 'Century Streak',
+    description: 'Practise on 100 consecutive days.',
+    category: BadgeCategory.ACTIVE_DAY_STREAK,
+    count: 100,
     groupNames: [UserRole.LEARNER],
   },
   {

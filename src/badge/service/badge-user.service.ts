@@ -151,15 +151,22 @@ export class BadgeUserService {
     );
   }
 
-  async getMaxActiveDayStreakByUserId(userId: number): Promise<number> {
-    const userDayStreakMap =
-      await this.communitySharedService.getMaxActiveDaysPerUser(undefined, [
-        userId,
-      ]);
-    return (
-      userDayStreakMap?.find((dayStreak) => dayStreak?.userId === userId)
-        ?.maxStreak ?? 0
+  /**
+   * Longest consecutive-active-days run for one user, scoped to one tenant.
+   *
+   * The tenant is required: badges are awarded per tenant, so an un-scoped
+   * lookup would grant a badge in tenant A on the strength of practice in
+   * tenant B.
+   */
+  async getMaxActiveDayStreakByUserId(
+    userId: number,
+    tenantId: string,
+  ): Promise<number> {
+    const stats = await this.communitySharedService.getStreakStatsForUser(
+      userId,
+      tenantId,
     );
+    return stats.longestStreak;
   }
 
   async getGivenCommentsOrReactionsCount(

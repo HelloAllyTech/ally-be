@@ -9,7 +9,8 @@ describe('CommunitySharedService', () => {
   beforeEach(async () => {
     const mockUserDailyScoreRepository = {
       getTotalSimulationMinutesPerUser: jest.fn(),
-      getMaxActiveDaysPerUser: jest.fn(),
+      getStreakStatsForUsers: jest.fn(),
+      getUserStreaks: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -118,79 +119,115 @@ describe('CommunitySharedService', () => {
   });
 
   describe('getMaxActiveDaysPerUser', () => {
-    it('should return max active days per user with tenantIds', async () => {
-      const tenantIds = ['tenant-1', 'tenant-2'];
-      const mockResult = [
+    const streakRow = (userId: number, longestStreak: number) => ({
+      userId,
+      longestStreak,
+      currentStreak: 0,
+      streakStartDate: null,
+      lastActiveDate: null,
+      previousRunLength: null,
+      previousRunEndedOn: null,
+    });
+
+    it('should query each tenant separately so streaks stay tenant-scoped', async () => {
+      userDailyScoreRepository.getStreakStatsForUsers
+        .mockResolvedValueOnce([streakRow(1, 7), streakRow(2, 5)])
+        .mockResolvedValueOnce([streakRow(3, 4)]);
+
+      const result = await service.getMaxActiveDaysPerUser([
+        'tenant-1',
+        'tenant-2',
+      ]);
+
+      expect(
+        userDailyScoreRepository.getStreakStatsForUsers,
+      ).toHaveBeenCalledTimes(2);
+      expect(
+        userDailyScoreRepository.getStreakStatsForUsers,
+      ).toHaveBeenNthCalledWith(1, 'tenant-1', undefined, expect.any(String));
+      expect(
+        userDailyScoreRepository.getStreakStatsForUsers,
+      ).toHaveBeenNthCalledWith(2, 'tenant-2', undefined, expect.any(String));
+      expect(result).toEqual([
         { userId: 1, maxStreak: 7 },
         { userId: 2, maxStreak: 5 },
-      ];
-
-      userDailyScoreRepository.getMaxActiveDaysPerUser.mockResolvedValue(
-        mockResult,
-      );
-
-      const result = await service.getMaxActiveDaysPerUser(tenantIds);
-
-      expect(result).toEqual(mockResult);
-      expect(
-        userDailyScoreRepository.getMaxActiveDaysPerUser,
-      ).toHaveBeenCalledWith(tenantIds, undefined);
+        { userId: 3, maxStreak: 4 },
+      ]);
     });
 
-    it('should return max active days per user with userIds', async () => {
+    it('should forward the userIds filter to each tenant query', async () => {
       const userIds = [1, 2, 3];
-      const mockResult = [{ userId: 1, maxStreak: 10 }];
+      userDailyScoreRepository.getStreakStatsForUsers.mockResolvedValue([
+        streakRow(1, 10),
+      ]);
 
-      userDailyScoreRepository.getMaxActiveDaysPerUser.mockResolvedValue(
-        mockResult,
+      const result = await service.getMaxActiveDaysPerUser(
+        ['tenant-1'],
+        userIds,
       );
 
-      const result = await service.getMaxActiveDaysPerUser(undefined, userIds);
-
-      expect(result).toEqual(mockResult);
       expect(
-        userDailyScoreRepository.getMaxActiveDaysPerUser,
-      ).toHaveBeenCalledWith(undefined, userIds);
+        userDailyScoreRepository.getStreakStatsForUsers,
+      ).toHaveBeenCalledWith('tenant-1', userIds, expect.any(String));
+      expect(result).toEqual([{ userId: 1, maxStreak: 10 }]);
     });
 
-    it('should return max active days with both tenantIds and userIds', async () => {
-      const tenantIds = ['tenant-1'];
-      const userIds = [1, 2];
-      const mockResult = [
-        { userId: 1, maxStreak: 3 },
-        { userId: 2, maxStreak: 14 },
-      ];
+    it('should collapse a multi-tenant user to their best run, not the sum or a split', async () => {
+      userDailyScoreRepository.getStreakStatsForUsers
+        .mockResolvedValueOnce([streakRow(1, 6)])
+        .mockResolvedValueOnce([streakRow(1, 2)]);
 
-      userDailyScoreRepository.getMaxActiveDaysPerUser.mockResolvedValue(
-        mockResult,
+      const result = await service.getMaxActiveDaysPerUser(
+        ['tenant-1', 'tenant-2'],
+        [1],
       );
 
-      const result = await service.getMaxActiveDaysPerUser(tenantIds, userIds);
-
-      expect(result).toEqual(mockResult);
-      expect(
-        userDailyScoreRepository.getMaxActiveDaysPerUser,
-      ).toHaveBeenCalledWith(tenantIds, userIds);
+      // One row per user. Passing both tenants through a single un-scoped query
+      // duplicated the user's calendar days and split their islands, reporting
+      // a genuine six-day run as two.
+      expect(result).toEqual([{ userId: 1, maxStreak: 6 }]);
     });
 
-    it('should return empty array when no filters provided', async () => {
-      userDailyScoreRepository.getMaxActiveDaysPerUser.mockResolvedValue([]);
-
+    it('should return empty array without querying when no tenants provided', async () => {
       const result = await service.getMaxActiveDaysPerUser();
 
       expect(result).toEqual([]);
       expect(
-        userDailyScoreRepository.getMaxActiveDaysPerUser,
-      ).toHaveBeenCalledWith(undefined, undefined);
+        userDailyScoreRepository.getStreakStatsForUsers,
+      ).not.toHaveBeenCalled();
     });
 
     it('should propagate repository errors', async () => {
       const error = new Error('Database error');
-      userDailyScoreRepository.getMaxActiveDaysPerUser.mockRejectedValue(error);
+      userDailyScoreRepository.getStreakStatsForUsers.mockRejectedValue(error);
 
       await expect(
         service.getMaxActiveDaysPerUser(['tenant-1']),
       ).rejects.toThrow('Database error');
+    });
+  });
+
+  describe('getStreakStatsForUser', () => {
+    it('should delegate to the tenant-scoped single-user lookup', async () => {
+      const row = {
+        userId: 7,
+        currentStreak: 3,
+        longestStreak: 9,
+        streakStartDate: '2026-08-07',
+        lastActiveDate: '2026-08-09',
+        previousRunLength: 9,
+        previousRunEndedOn: '2026-07-05',
+      };
+      userDailyScoreRepository.getUserStreaks.mockResolvedValue(row);
+
+      const result = await service.getStreakStatsForUser(7, 'tenant-1');
+
+      expect(result).toEqual(row);
+      expect(userDailyScoreRepository.getUserStreaks).toHaveBeenCalledWith(
+        7,
+        'tenant-1',
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      );
     });
   });
 });

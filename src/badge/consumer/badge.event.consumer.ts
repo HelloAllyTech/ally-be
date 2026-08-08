@@ -93,16 +93,25 @@ export class BadgeEventConsumer {
   @OnEvent(LeaderboardActionEvent.MINUTES_PLAYED_UPDATED, { async: true })
   async handleMinutesPlayedUpdated({
     userId,
-    userDateEntryBeforeUpdation,
+    tenantId,
+    crossedActiveThreshold,
   }: MinutesPlayedUpdatedEventParams) {
     // Award simulation minutes badges for user
     await this.badgeAwardService.awardSimulationMinutesBadgeByUserId(userId);
 
-    // Skip active day streak badge award if a user-date entry already exists.
-    // This indicates the active day streak was already calculated for this date,
-    // so no new badges calculation should be done to optimize queries.
-    if (userDateEntryBeforeUpdation?.id) return;
-    await this.badgeAwardService.awardActiveDayStreakBadgeByUserId(userId);
+    // Evaluate streak badges only when THIS write pushed the day across the
+    // 1.00-minute active-day line. A day can only cross once, so this fires
+    // exactly once per active day — the optimisation the old guard intended.
+    //
+    // The old guard ("skip if a row already existed") was wrong: a sub-1-minute
+    // first session of the day creates a row without making the day active, so
+    // every later session that day returned early and the streak badge was
+    // never awarded.
+    if (!crossedActiveThreshold) return;
+    await this.badgeAwardService.awardActiveDayStreakBadgeByUserId(
+      userId,
+      tenantId,
+    );
   }
 
   @OnEvent(AuthorizationEvents.USER_ROLE_ASSIGNED, { async: true })

@@ -29,4 +29,6 @@ export interface UserRankResult {
   rank?: number;
   minutesPlayed: number;
   badgeCount: number;
+  /** All-time consecutive-active-days streak, not window-scoped. */
+  currentStreak: number;
 }

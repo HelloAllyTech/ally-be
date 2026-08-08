@@ -47,7 +47,7 @@ describe('UserDailyScoreRepository', () => {
 
   describe('upsertDailyScore', () => {
     it('should call query with correct parameters for upserting daily score', async () => {
-      mockQuery.mockResolvedValue(undefined);
+      mockQuery.mockResolvedValue([]);
 
       await repository.upsertDailyScore(mockUserId, mockTenantId, mockDate, 30);
 
@@ -56,42 +56,86 @@ describe('UserDailyScoreRepository', () => {
         expect.arrayContaining([
           mockUserId,
           mockTenantId,
-          expect.any(Date),
+          expect.any(String),
           30,
         ]),
       );
     });
 
-    it('should normalize date to remove time component', async () => {
-      const dateWithTime = new Date('2025-01-15T14:30:00Z');
-      mockQuery.mockResolvedValue(undefined);
+    it('should bucket the day in the business timezone, not UTC', async () => {
+      // 22:30 UTC on Jan 15 is 04:00 IST on Jan 16 — the user experienced this
+      // as a late-night Jan 16 session, so it must be credited to Jan 16.
+      const lateNightIst = new Date('2025-01-15T22:30:00Z');
+      mockQuery.mockResolvedValue([]);
 
       await repository.upsertDailyScore(
         mockUserId,
         mockTenantId,
-        dateWithTime,
+        lateNightIst,
         15,
       );
 
-      const queryCall = mockQuery.mock.calls[0];
-      const normalizedDate = queryCall[1][2];
-      // The date is normalized to YYYY-MM-DD format (ISO string split at 'T')
-      // This creates a new Date object from just the date portion
-      const expectedNormalizedDate = new Date(
-        dateWithTime.toISOString().split('T')[0],
-      );
-      expect(normalizedDate.getTime()).toBe(expectedNormalizedDate.getTime());
+      const [, params] = mockQuery.mock.calls[0];
+      expect(params[2]).toBe('2025-01-16');
+      expect(lateNightIst.toISOString().split('T')[0]).toBe('2025-01-15');
     });
 
     it('should handle zero minutes to add', async () => {
-      mockQuery.mockResolvedValue(undefined);
+      mockQuery.mockResolvedValue([]);
 
       await repository.upsertDailyScore(mockUserId, mockTenantId, mockDate, 0);
 
       expect(mockQuery).toHaveBeenCalledWith(
         expect.any(String),
-        expect.arrayContaining([mockUserId, mockTenantId, expect.any(Date), 0]),
+        expect.arrayContaining([
+          mockUserId,
+          mockTenantId,
+          expect.any(String),
+          0,
+        ]),
       );
+    });
+
+    it('should report the active-day threshold crossing from RETURNING', async () => {
+      mockQuery.mockResolvedValue([
+        {
+          businessDate: '2025-01-15',
+          minutesAfter: '1.00',
+          crossedActiveThreshold: true,
+        },
+      ]);
+
+      const result = await repository.upsertDailyScore(
+        mockUserId,
+        mockTenantId,
+        mockDate,
+        0.5,
+      );
+
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('RETURNING'),
+        expect.any(Array),
+      );
+      expect(result).toEqual({
+        businessDate: '2025-01-15',
+        minutesAfter: 1,
+        crossedActiveThreshold: true,
+      });
+    });
+
+    it('should default to not crossing when the driver returns no rows', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      const result = await repository.upsertDailyScore(
+        mockUserId,
+        mockTenantId,
+        mockDate,
+        30,
+      );
+
+      expect(result.crossedActiveThreshold).toBe(false);
+      expect(result.minutesAfter).toBe(0);
+      expect(result.businessDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });
 
     it('should handle database errors gracefully', async () => {
@@ -121,18 +165,18 @@ describe('UserDailyScoreRepository', () => {
       );
     });
 
-    it('should normalize date to current date without time component', async () => {
+    it("should bind today's business date as a plain YYYY-MM-DD string", async () => {
       mockQuery.mockResolvedValue(undefined);
 
       await repository.incrementTotalScore(mockUserId, mockTenantId, 0.25);
 
       const queryCall = mockQuery.mock.calls[0];
       const normalizedDate = queryCall[1][2];
-      // The date is a Date object created from YYYY-MM-DD string (midnight UTC)
-      expect(normalizedDate).toBeInstanceOf(Date);
-      expect(normalizedDate.getUTCHours()).toBe(0);
-      expect(normalizedDate.getUTCMinutes()).toBe(0);
-      expect(normalizedDate.getUTCSeconds()).toBe(0);
+      // A Date bound through node-postgres renders in the process timezone, so
+      // the day bucket must be a timezone-free string instead.
+      expect(typeof normalizedDate).toBe('string');
+      expect(normalizedDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(queryCall[0]).toContain('$3::date');
     });
 
     it('should handle database errors gracefully', async () => {
@@ -182,7 +226,7 @@ describe('UserDailyScoreRepository', () => {
         expect.arrayContaining([
           mockUserId,
           mockTenantId,
-          expect.any(Date),
+          expect.any(String),
           -0.5,
         ]),
       );
@@ -211,18 +255,16 @@ describe('UserDailyScoreRepository', () => {
       expect((mockDataSource as any).getRepository).toHaveBeenCalled();
     });
 
-    it('should normalize date to current date without time component', async () => {
+    it("should bind today's business date as a plain YYYY-MM-DD string", async () => {
       mockQuery.mockResolvedValue(undefined);
 
       await repository.decrementTotalScore(mockUserId, mockTenantId, 0.5);
 
       const queryCall = mockQuery.mock.calls[0];
       const normalizedDate = queryCall[1][2];
-      // decrementTotalScore uses a Date object (midnight UTC)
-      expect(normalizedDate).toBeInstanceOf(Date);
-      expect(normalizedDate.getUTCHours()).toBe(0);
-      expect(normalizedDate.getUTCMinutes()).toBe(0);
-      expect(normalizedDate.getUTCSeconds()).toBe(0);
+      expect(typeof normalizedDate).toBe('string');
+      expect(normalizedDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(queryCall[0]).toContain('$3::date');
     });
 
     it('should handle database errors gracefully', async () => {
@@ -254,6 +296,7 @@ describe('UserDailyScoreRepository', () => {
         rank: '1',
         minutesPlayed: '120',
         badgeCount: '5',
+        currentStreak: '4',
       },
       {
         userId: 2,
@@ -284,6 +327,7 @@ describe('UserDailyScoreRepository', () => {
         rank: 1,
         minutesPlayed: 120,
         badgeCount: 5,
+        currentStreak: 4,
       });
       expect(result.data[1].profileImageUrl).toBeUndefined(); // null converted to undefined
       expect(result.totalCount).toBe(2);
@@ -300,13 +344,15 @@ describe('UserDailyScoreRepository', () => {
         mockEndDate,
       );
 
-      // Default limit is 50, offset is 0
+      // Default limit is 50, offset is 0. The trailing param is the business
+      // date the streak CTE compares against, in place of CURRENT_DATE.
       expect(mockQuery).toHaveBeenCalledWith(expect.any(String), [
         mockTenantId,
         mockStartDate,
         mockEndDate,
         50,
         0,
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       ]);
     });
 
@@ -328,6 +374,7 @@ describe('UserDailyScoreRepository', () => {
         mockEndDate,
         10,
         20,
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
       ]);
     });
 
@@ -523,7 +570,13 @@ describe('UserDailyScoreRepository', () => {
     ];
 
     it('should return user rank when user has activity', async () => {
-      mockQuery.mockResolvedValue(mockRankResult);
+      mockQuery
+        .mockResolvedValueOnce(mockRankResult)
+        // Second call is the shared streak lookup, reused so "my rank" and the
+        // leaderboard row can never disagree.
+        .mockResolvedValueOnce([
+          { userId: 1, currentStreak: '4', longestStreak: '9' },
+        ]);
 
       const result = await repository.getUserRankWithDetails(
         mockUserId,
@@ -539,6 +592,7 @@ describe('UserDailyScoreRepository', () => {
         rank: 5,
         minutesPlayed: 60,
         badgeCount: 3,
+        currentStreak: 4,
       });
     });
 
@@ -807,104 +861,216 @@ describe('UserDailyScoreRepository', () => {
     });
   });
 
-  describe('getMaxActiveDaysPerUser', () => {
-    it('should return empty array when no tenantIds and no userIds provided', async () => {
-      const result = await repository.getMaxActiveDaysPerUser();
+  describe('getStreakStatsForUsers', () => {
+    const TODAY = '2026-08-09';
+
+    it('should return empty array without querying when tenantId is missing', async () => {
+      const result = await repository.getStreakStatsForUsers('', [1], TODAY);
 
       expect(result).toEqual([]);
       expect(mockQuery).not.toHaveBeenCalled();
     });
 
-    it('should query with userIds filter', async () => {
-      const userIds = [1, 2, 3];
-      mockQuery.mockResolvedValue([
-        { userId: 1, maxStreak: '7' },
-        { userId: 2, maxStreak: '5' },
-      ]);
-
-      const result = await repository.getMaxActiveDaysPerUser(
-        undefined,
-        userIds,
+    it('should return empty array without querying for an explicitly empty user list', async () => {
+      const result = await repository.getStreakStatsForUsers(
+        'tenant-1',
+        [],
+        TODAY,
       );
-
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('"minutesPlayed" >= 1.00'),
-        userIds,
-      );
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('"userId" IN'),
-        expect.any(Array),
-      );
-      expect(result).toEqual([
-        { userId: 1, maxStreak: 7 },
-        { userId: 2, maxStreak: 5 },
-      ]);
-    });
-
-    it('should query with tenantIds filter', async () => {
-      const tenantIds = ['tenant-1', 'tenant-2'];
-      mockQuery.mockResolvedValue([{ userId: 1, maxStreak: '10' }]);
-
-      const result = await repository.getMaxActiveDaysPerUser(tenantIds);
-
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('tenant_id IN'),
-        tenantIds,
-      );
-      expect(result).toEqual([{ userId: 1, maxStreak: 10 }]);
-    });
-
-    it('should parse maxStreak as integer', async () => {
-      mockQuery.mockResolvedValue([{ userId: 1, maxStreak: '15' }]);
-
-      const result = await repository.getMaxActiveDaysPerUser(['tenant-1']);
-
-      expect(result[0].maxStreak).toBe(15);
-    });
-
-    it('should handle invalid maxStreak with fallback to 0', async () => {
-      mockQuery.mockResolvedValue([
-        { userId: 1, maxStreak: 'invalid' },
-        { userId: 2, maxStreak: null },
-        { userId: 3, maxStreak: undefined },
-      ]);
-
-      const result = await repository.getMaxActiveDaysPerUser(['tenant-1']);
-
-      expect(result[0].maxStreak).toBe(0);
-      expect(result[1].maxStreak).toBe(0);
-      expect(result[2].maxStreak).toBe(0);
-    });
-
-    it('should return empty array when no matching records', async () => {
-      mockQuery.mockResolvedValue([]);
-
-      const result = await repository.getMaxActiveDaysPerUser(['tenant-1']);
 
       expect(result).toEqual([]);
+      expect(mockQuery).not.toHaveBeenCalled();
     });
 
-    it('should build correct SQL with island-gap detection for streaks', async () => {
+    it('should scope by tenant and bind the user list and business date', async () => {
       mockQuery.mockResolvedValue([]);
 
-      await repository.getMaxActiveDaysPerUser(['tenant-1']);
+      await repository.getStreakStatsForUsers('tenant-1', [1, 2], TODAY);
+
+      expect(mockQuery).toHaveBeenCalledWith(expect.any(String), [
+        'tenant-1',
+        [1, 2],
+        TODAY,
+      ]);
+      expect(mockQuery).toHaveBeenCalledWith(
+        expect.stringContaining('tenant_id = $1'),
+        expect.any(Array),
+      );
+    });
+
+    it('should bind null for the user list when scanning every user in the tenant', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repository.getStreakStatsForUsers('tenant-1', undefined, TODAY);
+
+      expect(mockQuery).toHaveBeenCalledWith(expect.any(String), [
+        'tenant-1',
+        null,
+        TODAY,
+      ]);
+    });
+
+    it('should de-duplicate active days so cross-tenant rows cannot split a run', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repository.getStreakStatsForUsers('tenant-1', [1], TODAY);
 
       expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('WITH active_days AS'),
+        expect.stringContaining('SELECT DISTINCT "userId", "date"::date'),
         expect.any(Array),
       );
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('islands AS'),
-        expect.any(Array),
+    });
+
+    it('should build the gaps-and-islands SQL over the active-day threshold', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repository.getStreakStatsForUsers('tenant-1', [1], TODAY);
+
+      const [sql] = mockQuery.mock.calls[0];
+      expect(sql).toContain('"minutesPlayed" >= 1.00');
+      expect(sql).toContain('WITH active_days AS');
+      expect(sql).toContain('islands AS');
+      expect(sql).toContain('runs AS');
+      expect(sql).toContain('ROW_NUMBER() OVER (PARTITION BY "userId"');
+    });
+
+    it('should derive the current streak from the caller-supplied business date, not CURRENT_DATE', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repository.getStreakStatsForUsers('tenant-1', [1], TODAY);
+
+      const [sql] = mockQuery.mock.calls[0];
+      expect(sql).toContain('last_day >= $3::date - 1');
+      expect(sql).not.toContain('CURRENT_DATE');
+    });
+
+    it('should map every streak statistic off the row', async () => {
+      mockQuery.mockResolvedValue([
+        {
+          userId: '7',
+          longestStreak: '9',
+          currentStreak: '3',
+          streakStartDate: '2026-08-07',
+          lastActiveDate: '2026-08-09',
+          previousRunLength: '9',
+          previousRunEndedOn: '2026-07-05',
+        },
+      ]);
+
+      const result = await repository.getStreakStatsForUsers(
+        'tenant-1',
+        [7],
+        TODAY,
       );
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('streak_length AS'),
-        expect.any(Array),
+
+      expect(result).toEqual([
+        {
+          userId: 7,
+          currentStreak: 3,
+          longestStreak: 9,
+          streakStartDate: '2026-08-07',
+          lastActiveDate: '2026-08-09',
+          previousRunLength: 9,
+          previousRunEndedOn: '2026-07-05',
+        },
+      ]);
+    });
+
+    it('should null out the optional dates when the user has no current or previous run', async () => {
+      mockQuery.mockResolvedValue([
+        {
+          userId: 7,
+          longestStreak: '0',
+          currentStreak: '0',
+          streakStartDate: null,
+          lastActiveDate: null,
+          previousRunLength: null,
+          previousRunEndedOn: null,
+        },
+      ]);
+
+      const [row] = await repository.getStreakStatsForUsers(
+        'tenant-1',
+        [7],
+        TODAY,
       );
-      expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('MAX(streak_length) as "maxStreak"'),
-        expect.any(Array),
+
+      expect(row).toEqual({
+        userId: 7,
+        currentStreak: 0,
+        longestStreak: 0,
+        streakStartDate: null,
+        lastActiveDate: null,
+        previousRunLength: null,
+        previousRunEndedOn: null,
+      });
+    });
+  });
+
+  describe('getUserStreaks', () => {
+    it('should return a zeroed row for a user with no active days', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      const result = await repository.getUserStreaks(
+        7,
+        'tenant-1',
+        '2026-08-09',
       );
+
+      expect(result).toEqual({
+        userId: 7,
+        currentStreak: 0,
+        longestStreak: 0,
+        streakStartDate: null,
+        lastActiveDate: null,
+        previousRunLength: null,
+        previousRunEndedOn: null,
+      });
+    });
+
+    it('should default the business date when the caller omits it', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repository.getUserStreaks(7, 'tenant-1');
+
+      const [, params] = mockQuery.mock.calls[0];
+      expect(params[0]).toBe('tenant-1');
+      expect(params[1]).toEqual([7]);
+      expect(params[2]).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+  });
+
+  describe('business-timezone day handling', () => {
+    it('should never let Postgres resolve the current date for any query in this repository', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repository.upsertDailyScore(1, 'tenant-1', new Date(), 5);
+      await repository.incrementTotalScore(1, 'tenant-1', 1);
+      await repository.getStreakStatsForUsers('tenant-1', [1], '2026-08-09');
+
+      // CURRENT_DATE resolves in the Postgres session timezone, which nothing
+      // in this repo sets. Every day boundary must come from the business
+      // timezone computed in Node instead.
+      for (const [sql] of mockQuery.mock.calls) {
+        expect(sql).not.toContain('CURRENT_DATE');
+      }
+    });
+
+    it('should bind the day as a YYYY-MM-DD string, never a Date', async () => {
+      mockQuery.mockResolvedValue([]);
+
+      await repository.upsertDailyScore(
+        1,
+        'tenant-1',
+        new Date('2026-08-08T22:30:00.000Z'),
+        5,
+      );
+
+      const [sql, params] = mockQuery.mock.calls[0];
+      // 22:30 UTC on Aug 8 is 04:00 IST on Aug 9 — the business day is Aug 9.
+      expect(params[2]).toBe('2026-08-09');
+      expect(typeof params[2]).toBe('string');
+      expect(sql).toContain('$3::date');
     });
   });
 });
