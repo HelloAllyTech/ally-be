@@ -441,10 +441,22 @@ export class BadgeAwardService {
     }
   }
 
-  async awardActiveDayStreakBadgeByUserId(userId: number): Promise<void> {
+  async awardActiveDayStreakBadgeByUserId(
+    userId: number,
+    tenantId: string,
+  ): Promise<void> {
     try {
+      if (!tenantId) {
+        this.logger.warn(
+          `Skipping active day streak badge award for user id=${userId}: no tenant in scope`,
+        );
+        return;
+      }
       const activeDayStreak =
-        await this.badgeUserService.getMaxActiveDayStreakByUserId(userId);
+        await this.badgeUserService.getMaxActiveDayStreakByUserId(
+          userId,
+          tenantId,
+        );
       if (!activeDayStreak) return;
 
       const unawardedAvailableActiveDayStreakBadges =

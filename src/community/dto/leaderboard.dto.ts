@@ -76,6 +76,13 @@ export class LeaderboardEntryDto {
 
   @ApiProperty({ description: 'Badge count' })
   badgeCount!: number;
+
+  @ApiProperty({
+    description:
+      'Current consecutive-active-days streak. Deliberately all-time, unlike minutesPlayed, which respects the leaderboard time window — a streak scoped to the window would be a different number from the one the user sees on their own dashboard.',
+    example: 4,
+  })
+  currentStreak!: number;
 }
 
 export class LeaderboardResponseDto {

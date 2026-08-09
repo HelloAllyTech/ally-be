@@ -5,6 +5,17 @@ import { Pagination } from 'src/common/type/common.type';
 import { LeaderboardEntryDto } from '../dto/leaderboard.dto';
 import { LeaderboardResult, UserRankResult } from '../type/leaderboard.type';
 import { scorePoints } from '../constant/community.constant';
+import { toBusinessDateString } from 'src/common/util/date.util';
+import { StreakStatsRow } from '../type/practice-streak.type';
+
+export interface UpsertDailyScoreResult {
+  /** The business-timezone calendar day (YYYY-MM-DD) this write landed on. */
+  businessDate: string;
+  /** Cumulative minutes played for that day after this write. */
+  minutesAfter: number;
+  /** True when THIS write pushed the day across the 1.00-minute active-day line. */
+  crossedActiveThreshold: boolean;
+}
 
 @Injectable()
 export class UserDailyScoreRepository extends Repository<UserDailyScores> {
@@ -16,37 +27,52 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
    * Upserts daily score for play time.
    * Awards: minutesToAdd points + 1 active day bonus (when minutesPlayed reaches >= 1)
    * Active day bonus is awarded only when cumulative minutesPlayed crosses the 1 minute threshold
+   *
+   * Returns whether this write crossed the active-day threshold. A day can only
+   * cross once, so callers can use it to trigger once-per-active-day work
+   * (streak badges) without a separate pre-read.
    */
   async upsertDailyScore(
     userId: number,
     tenantId: string,
     date: Date,
     minutesToAdd: number,
-  ): Promise<void> {
-    const normalizedDate = new Date(date.toISOString().split('T')[0]);
+  ): Promise<UpsertDailyScoreResult> {
+    const normalizedDate = toBusinessDateString(date);
 
-    await this.query(
+    const rows = await this.query(
       `
       INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
       VALUES (
-        uuid_generate_v4(), $1, $2, $3, $4, 
-        $4 + CASE WHEN $4 >= 1.00 THEN 1.00 ELSE 0.00 END, 
+        uuid_generate_v4(), $1, $2, $3::date, $4,
+        $4 + CASE WHEN $4 >= 1.00 THEN 1.00 ELSE 0.00 END,
         NOW(), NOW()
       )
       ON CONFLICT ("userId", "tenant_id", "date")
       DO UPDATE SET
         "minutesPlayed" = user_daily_scores."minutesPlayed" + $4,
-        "totalScore" = user_daily_scores."totalScore" + $4 + 
-          CASE 
-            WHEN user_daily_scores."minutesPlayed" < 1.00 
+        "totalScore" = user_daily_scores."totalScore" + $4 +
+          CASE
+            WHEN user_daily_scores."minutesPlayed" < 1.00
              AND user_daily_scores."minutesPlayed" + $4 >= 1.00
-            THEN ${scorePoints.ACTIVE_DAY_BONUS} 
-            ELSE 0 
+            THEN ${scorePoints.ACTIVE_DAY_BONUS}
+            ELSE 0
           END,
         "updatedAt" = NOW()
+      RETURNING
+        "date"::text AS "businessDate",
+        "minutesPlayed" AS "minutesAfter",
+        ("minutesPlayed" - $4 < 1.00 AND "minutesPlayed" >= 1.00) AS "crossedActiveThreshold"
       `,
       [userId, tenantId, normalizedDate, minutesToAdd],
     );
+
+    const row = rows?.[0] ?? {};
+    return {
+      businessDate: row.businessDate ?? normalizedDate,
+      minutesAfter: parseFloat(row.minutesAfter) || 0,
+      crossedActiveThreshold: row.crossedActiveThreshold === true,
+    };
   }
 
   /**
@@ -58,12 +84,12 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     tenantId: string,
     amount: number,
   ): Promise<void> {
-    const normalizedDate = new Date(new Date().toISOString().split('T')[0]);
+    const normalizedDate = toBusinessDateString();
 
     await this.query(
       `
       INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
-      VALUES (uuid_generate_v4(), $1, $2, $3, 0, $4, NOW(), NOW())
+      VALUES (uuid_generate_v4(), $1, $2, $3::date, 0, $4, NOW(), NOW())
       ON CONFLICT ("userId", "tenant_id", "date")
       DO UPDATE SET
         "totalScore" = user_daily_scores."totalScore" + $4,
@@ -84,7 +110,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     amount: number,
     em?: EntityManager,
   ): Promise<void> {
-    const normalizedDate = new Date(new Date().toISOString().split('T')[0]);
+    const normalizedDate = toBusinessDateString();
 
     const userDailyScoreRepo = em
       ? em.getRepository(UserDailyScores)
@@ -92,7 +118,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     await userDailyScoreRepo.query(
       `
       INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
-      VALUES (uuid_generate_v4(), $1, $2, $3, 0, $4, NOW(), NOW())
+      VALUES (uuid_generate_v4(), $1, $2, $3::date, 0, $4, NOW(), NOW())
       ON CONFLICT ("userId", "tenant_id", "date")
       DO UPDATE SET
         "totalScore" = user_daily_scores."totalScore" + $4,
@@ -111,6 +137,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
   ): Promise<LeaderboardResult> {
     const limit = pagination?.limit ?? 50;
     const offset = pagination?.offset ?? 0;
+    const businessToday = toBusinessDateString();
 
     const leaderboardData = await this.query(
       `
@@ -142,27 +169,70 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
           score,
           RANK() OVER (ORDER BY score DESC) as rank
         FROM aggregated_scores
+      ),
+      -- Narrow to the requested page BEFORE the streak CTEs. Streaks are
+      -- all-time, so without this the gaps-and-islands scan would run over every
+      -- learner's full history; joining against the page bounds it to at most
+      -- LIMIT users. Computing streaks per row instead would be an N+1.
+      page AS (
+        SELECT
+          rs."userId",
+          rs."minutesPlayed",
+          rs.rank,
+          u.name,
+          u."profileImageUrl",
+          u.status
+        FROM ranked_scores rs
+        JOIN users u ON u.id = rs."userId"
+        ORDER BY rs.rank ASC, u.name ASC, rs."userId" ASC
+        LIMIT $4 OFFSET $5
+      ),
+      active_days AS (
+        SELECT DISTINCT uds."userId", uds."date"::date AS active_day
+        FROM user_daily_scores uds
+        JOIN page p ON p."userId" = uds."userId"
+        WHERE uds.tenant_id = $1
+          AND uds."minutesPlayed" >= 1.00
+      ),
+      islands AS (
+        SELECT
+          "userId",
+          active_day,
+          active_day - (ROW_NUMBER() OVER (PARTITION BY "userId" ORDER BY active_day))::int AS island
+        FROM active_days
+      ),
+      runs AS (
+        SELECT "userId", COUNT(*)::int AS run_length, MAX(active_day) AS last_day
+        FROM islands
+        GROUP BY "userId", island
+      ),
+      streaks AS (
+        SELECT
+          "userId",
+          COALESCE(MAX(run_length) FILTER (WHERE last_day >= $6::date - 1), 0)::int AS current_streak
+        FROM runs
+        GROUP BY "userId"
       )
       SELECT
-        rs."userId",
-        rs."minutesPlayed",
-        rs.rank,
-        u.name,
-        u."profileImageUrl",
-        u.status,
-        COALESCE(bu.badge_count, 0) as "badgeCount"
-      FROM ranked_scores rs
-      JOIN users u ON u.id = rs."userId"
+        p."userId",
+        p."minutesPlayed",
+        p.rank,
+        p.name,
+        p."profileImageUrl",
+        p.status,
+        COALESCE(bu.badge_count, 0) as "badgeCount",
+        COALESCE(s.current_streak, 0) as "currentStreak"
+      FROM page p
       LEFT JOIN (
         SELECT "userId", COUNT(*) as badge_count
         FROM badge_users
         WHERE badge_users."deletedAt" IS NULL
         GROUP BY "userId"
-      ) bu ON bu."userId" = rs."userId"
-      ORDER BY rs.rank ASC, u.name ASC, rs."userId" ASC
-      LIMIT $4 OFFSET $5
+      ) bu ON bu."userId" = p."userId"
+      LEFT JOIN streaks s ON s."userId" = p."userId"
+      ORDER BY p.rank ASC, p.name ASC, p."userId" ASC
       `,
-      [tenantId, startDate, endDate, limit, offset],
+      [tenantId, startDate, endDate, limit, offset, businessToday],
     );
 
     const countResult = await this.query(
@@ -191,6 +261,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       rank: hideRankInCommunity ? undefined : parseInt(row.rank) || 0,
       minutesPlayed: parseInt(row.minutesPlayed) || 0,
       badgeCount: parseInt(row.badgeCount) || 0,
+      currentStreak: parseInt(row.currentStreak) || 0,
     }));
 
     return { data, totalCount };
@@ -259,6 +330,10 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       return null;
     }
 
+    // One user, so reuse the shared streak definition rather than duplicating
+    // the CTE here — the leaderboard row and "my rank" must never disagree.
+    const streaks = await this.getUserStreaks(userId, tenantId);
+
     const row = result[0];
     return {
       userId: row.userId,
@@ -268,6 +343,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       rank: hideRankInCommunity ? undefined : parseInt(row.rank) || 0,
       minutesPlayed: parseInt(row.minutesPlayed) || 0,
       badgeCount: parseInt(row.badgeCount) || 0,
+      currentStreak: streaks.currentStreak,
     };
   }
 
@@ -363,120 +439,141 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
   }
 
   /**
-   * Computes the current and longest consecutive-active-days streaks for a
-   * single user using the "gaps and islands" technique. An active day is one
-   * where minutesPlayed >= 1.00. The current streak is the island whose most
-   * recent day is today or yesterday (yesterday is allowed so the streak is not
-   * shown as broken before the user practices on the current day).
+   * Computes consecutive-active-days streak statistics for a set of users in a
+   * single tenant, using the "gaps and islands" technique. An active day is one
+   * where minutesPlayed >= 1.00.
+   *
+   * The current streak is the run whose most recent day is `businessToday` or the
+   * day before (the day before is allowed so the streak is not shown as broken
+   * before the user has practised on the current day).
+   *
+   * This is the single definition of "streak" — the API, the badge award path and
+   * the leaderboard all read it. It runs set-wide over `userIds`, so callers must
+   * never loop it per user.
+   *
+   * `businessToday` is a YYYY-MM-DD string computed in the business timezone by
+   * the caller. It replaces CURRENT_DATE deliberately: CURRENT_DATE resolves in
+   * the Postgres session timezone, which nothing in this repo sets.
    */
-  async getUserStreaks(
-    userId: number,
+  async getStreakStatsForUsers(
     tenantId: string,
-  ): Promise<{ currentStreak: number; longestStreak: number }> {
-    const result = await this.query(
+    userIds: number[] | undefined,
+    businessToday: string,
+  ): Promise<StreakStatsRow[]> {
+    if (!tenantId) {
+      return [];
+    }
+    // An explicitly empty list means "no users", which is different from
+    // undefined ("every user in the tenant").
+    if (userIds && !userIds.length) {
+      return [];
+    }
+
+    const rows = await this.query(
       `
       WITH active_days AS (
-        SELECT DISTINCT "date"::date AS active_day
+        SELECT DISTINCT "userId", "date"::date AS active_day
         FROM user_daily_scores
-        WHERE "userId" = $1
-          AND tenant_id = $2
+        WHERE tenant_id = $1
+          AND ($2::int[] IS NULL OR "userId" = ANY($2::int[]))
           AND "minutesPlayed" >= 1.00
       ),
       islands AS (
         SELECT
+          "userId",
           active_day,
-          active_day - (ROW_NUMBER() OVER (ORDER BY active_day))::int AS island
+          active_day - (ROW_NUMBER() OVER (PARTITION BY "userId" ORDER BY active_day))::int AS island
         FROM active_days
       ),
-      streaks AS (
+      runs AS (
         SELECT
-          COUNT(*) AS streak_length,
+          "userId",
+          island,
+          COUNT(*)::int   AS run_length,
+          MIN(active_day) AS first_day,
           MAX(active_day) AS last_day
         FROM islands
-        GROUP BY island
+        GROUP BY "userId", island
       )
       SELECT
-        COALESCE(MAX(streak_length), 0) AS "longestStreak",
-        COALESCE(
-          MAX(streak_length) FILTER (WHERE last_day >= CURRENT_DATE - 1),
-          0
-        ) AS "currentStreak"
-      FROM streaks
-      `,
-      [userId, tenantId],
-    );
-
-    const row = result[0] ?? {};
-    return {
-      currentStreak: parseInt(row.currentStreak) || 0,
-      longestStreak: parseInt(row.longestStreak) || 0,
-    };
-  }
-
-  async getMaxActiveDaysPerUser(
-    tenantIds?: string[],
-    userIds?: number[],
-  ): Promise<{ userId: number; maxStreak: number }[]> {
-    if (!tenantIds?.length && !userIds?.length) {
-      return [];
-    }
-
-    // Only count active days when minutesPlayed is greater than or equal to 1.00
-    const conditions: string[] = ['"minutesPlayed" >= 1.00'];
-    const params: any[] = [];
-    let paramIndex = 1;
-
-    if (userIds?.length) {
-      conditions.push(
-        `"userId" IN (${userIds.map(() => `$${paramIndex++}`).join(', ')})`,
-      );
-      params.push(...userIds);
-    }
-    if (tenantIds?.length) {
-      conditions.push(
-        `tenant_id IN (${tenantIds.map(() => `$${paramIndex++}`).join(', ')})`,
-      );
-      params.push(...tenantIds);
-    }
-
-    const whereClause = conditions.join(' AND ');
-    const maxStreakResult = await this.query(
-      `
-      WITH active_days AS (
-        SELECT 
-          "userId", 
-          "date" as active_day
-        FROM user_daily_scores
-        WHERE ${whereClause}
-      ),
-      islands AS (
-        SELECT 
-          "userId",
-          active_day,
-          active_day - (ROW_NUMBER() OVER (PARTITION BY "userId" ORDER BY active_day))::int as island
-        FROM active_days
-      ),
-      streak_length AS (
-        SELECT
-          "userId",
-          COUNT(*) as streak_length
-        FROM islands
-        GROUP BY 
-        "userId", 
-        island
-      )
-      SELECT 
         "userId",
-        MAX(streak_length) as "maxStreak"
-      FROM streak_length
+        COALESCE(MAX(run_length), 0)::int AS "longestStreak",
+        COALESCE(MAX(run_length) FILTER (WHERE last_day >= $3::date - 1), 0)::int AS "currentStreak",
+        to_char(MIN(first_day) FILTER (WHERE last_day >= $3::date - 1), 'YYYY-MM-DD') AS "streakStartDate",
+        to_char(MAX(last_day), 'YYYY-MM-DD') AS "lastActiveDate",
+        (ARRAY_AGG(run_length ORDER BY last_day DESC)
+           FILTER (WHERE last_day < $3::date - 1))[1] AS "previousRunLength",
+        to_char(MAX(last_day) FILTER (WHERE last_day < $3::date - 1), 'YYYY-MM-DD') AS "previousRunEndedOn"
+      FROM runs
       GROUP BY "userId"
       `,
-      params,
+      [tenantId, userIds ?? null, businessToday],
     );
 
-    return maxStreakResult.map((res: any) => ({
-      userId: res.userId,
-      maxStreak: parseInt(res.maxStreak) || 0,
+    return rows.map((row: any) => ({
+      userId: Number(row.userId),
+      currentStreak: parseInt(row.currentStreak) || 0,
+      longestStreak: parseInt(row.longestStreak) || 0,
+      streakStartDate: row.streakStartDate ?? null,
+      lastActiveDate: row.lastActiveDate ?? null,
+      previousRunLength: row.previousRunLength
+        ? parseInt(row.previousRunLength)
+        : null,
+      previousRunEndedOn: row.previousRunEndedOn ?? null,
     }));
+  }
+
+  /**
+   * Practice minutes a user has accumulated on one business day.
+   *
+   * Deliberately its own indexed single-row lookup rather than being read off
+   * the heatmap cells: the cells only cover today when groupBy is DAY and the
+   * requested range includes it, so deriving from them silently returns the
+   * wrong number for WEEK/MONTH or an explicit past `to`.
+   */
+  async getMinutesOnDate(
+    userId: number,
+    tenantId: string,
+    businessDate: string,
+  ): Promise<number> {
+    const rows = await this.query(
+      `
+      SELECT COALESCE("minutesPlayed", 0) AS minutes
+      FROM user_daily_scores
+      WHERE "userId" = $1 AND tenant_id = $2 AND "date" = $3::date
+      `,
+      [userId, tenantId, businessDate],
+    );
+
+    return parseFloat(rows?.[0]?.minutes) || 0;
+  }
+
+  /**
+   * Convenience wrapper over {@link getStreakStatsForUsers} for a single user.
+   * Users with no active days at all are absent from the query result, so this
+   * returns a zeroed row rather than undefined.
+   */
+  async getUserStreaks(
+    userId: number,
+    tenantId: string,
+    businessToday: string = toBusinessDateString(),
+  ): Promise<StreakStatsRow> {
+    const [row] = await this.getStreakStatsForUsers(
+      tenantId,
+      [userId],
+      businessToday,
+    );
+
+    return (
+      row ?? {
+        userId,
+        currentStreak: 0,
+        longestStreak: 0,
+        streakStartDate: null,
+        lastActiveDate: null,
+        previousRunLength: null,
+        previousRunEndedOn: null,
+      }
+    );
   }
 }

@@ -236,23 +236,21 @@ export class CommunityEventConsumer {
     durationMinutes,
   }: ScenarioSessionLeaderboardEndedEventParams): Promise<void> {
     try {
-      const userDateEntryBeforeUpdation =
-        await this.userDailyScoreRepository.findOne({
-          where: {
-            userId,
-            tenantId,
-            date,
-          },
-        });
-      await this.userDailyScoreRepository.upsertDailyScore(
-        userId,
-        tenantId,
-        date,
-        durationMinutes,
-      );
+      // No pre-read: upsertDailyScore reports the threshold crossing via
+      // RETURNING. The old findOne also computed the day in Node-local time,
+      // which disagreed with the upsert's business-timezone day.
+      const { businessDate, crossedActiveThreshold } =
+        await this.userDailyScoreRepository.upsertDailyScore(
+          userId,
+          tenantId,
+          date,
+          durationMinutes,
+        );
       this.eventEmitter.emit(LeaderboardActionEvent.MINUTES_PLAYED_UPDATED, {
         userId,
-        userDateEntryBeforeUpdation,
+        tenantId,
+        businessDate,
+        crossedActiveThreshold,
       } as MinutesPlayedUpdatedEventParams);
       this.logger.info(`Upserted minutes played score for user ${userId}`);
     } catch (error) {

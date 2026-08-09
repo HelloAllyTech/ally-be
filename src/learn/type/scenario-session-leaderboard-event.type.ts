@@ -1,5 +1,3 @@
-import { UserDailyScores } from 'src/community/entity/user-daily-scores.entity';
-
 export enum ScenarioSessionLeaderboardEvent {
   SCENARIO_SESSION_ENDED = 'SCENARIO_SESSION_ENDED',
 }
@@ -17,5 +15,13 @@ export enum LeaderboardActionEvent {
 
 export interface MinutesPlayedUpdatedEventParams {
   userId: number;
-  userDateEntryBeforeUpdation?: UserDailyScores;
+  tenantId: string;
+  /** Business-timezone calendar day (YYYY-MM-DD) the minutes were credited to. */
+  businessDate: string;
+  /**
+   * True when this write pushed the day across the 1.00-minute active-day line.
+   * A day can only cross once, so consumers can use it to run once-per-active-day
+   * work (streak badges) without a pre-read.
+   */
+  crossedActiveThreshold: boolean;
 }

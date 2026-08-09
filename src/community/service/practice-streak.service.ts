@@ -1,10 +1,24 @@
 import { Injectable } from '@nestjs/common';
 import { UserDailyScoreRepository } from '../repository/user-daily-score.repository';
-import { PracticeStreakResponseDto } from '../dto/practice-streak.dto';
+import {
+  PracticeStreakResponseDto,
+  PracticeStreakSummaryDto,
+} from '../dto/practice-streak.dto';
 import {
   PracticeStreakCell,
   PracticeStreakGroupBy,
+  StreakStatsRow,
 } from '../type/practice-streak.type';
+import {
+  BUSINESS_TIMEZONE,
+  toBusinessDateString,
+} from 'src/common/util/date.util';
+import {
+  ACTIVE_DAY_MINUTES,
+  DEFAULT_DAILY_GOAL_MINUTES,
+} from '../constant/community.constant';
+import { TenantService } from 'src/tenant/service/tenant.service';
+import { BadgeStreakMilestoneSharedService } from 'src/badge/service/badge-streak-milestone-shared.service';
 
 /** Number of buckets shown by default for each grouping. */
 const DEFAULT_BUCKET_COUNT: Record<PracticeStreakGroupBy, number> = {
@@ -26,7 +40,124 @@ const UNIT_BY_GROUP_BY: Record<
 export class PracticeStreakService {
   constructor(
     private readonly userDailyScoreRepository: UserDailyScoreRepository,
+    private readonly tenantService: TenantService,
+    private readonly badgeStreakMilestoneSharedService: BadgeStreakMilestoneSharedService,
   ) {}
+
+  /**
+   * Daily goal in minutes for a tenant. Clamped to the active-day minimum so a
+   * misconfigured tenant can never advertise a goal that fails to protect the
+   * streak.
+   */
+  private async resolveDailyGoalMinutes(tenantId: string): Promise<number> {
+    let configured: unknown;
+    try {
+      const tenant = await this.tenantService.findById(tenantId);
+      configured = tenant?.settings?.practiceStreak?.dailyGoalMinutes;
+    } catch {
+      configured = undefined;
+    }
+
+    const goal = Number(configured);
+    if (!Number.isFinite(goal) || goal <= 0) {
+      return DEFAULT_DAILY_GOAL_MINUTES;
+    }
+    return Math.max(goal, ACTIVE_DAY_MINUTES);
+  }
+
+  private wholeDaysBetween(fromDate: string, toDate: string): number {
+    const MS_PER_DAY = 24 * 60 * 60 * 1000;
+    const diff =
+      Date.parse(`${toDate}T00:00:00Z`) - Date.parse(`${fromDate}T00:00:00Z`);
+    return Math.max(1, Math.round(diff / MS_PER_DAY));
+  }
+
+  /**
+   * Turns the raw streak row plus today's minutes into the shape the UI renders.
+   */
+  private buildSummary(
+    streaks: StreakStatsRow,
+    minutesToday: number,
+    dailyGoalMinutes: number,
+    today: string,
+    nextMilestone: PracticeStreakSummaryDto['nextMilestone'],
+  ): PracticeStreakSummaryDto {
+    const roundedMinutesToday = Math.round(minutesToday * 100) / 100;
+    const practicedToday = roundedMinutesToday > 0;
+    const streakSecuredToday = roundedMinutesToday >= ACTIVE_DAY_MINUTES;
+
+    let streakEventToday: PracticeStreakSummaryDto['streakEventToday'];
+    if (!streakSecuredToday) {
+      streakEventToday = 'PENDING';
+    } else {
+      streakEventToday = streaks.currentStreak > 1 ? 'EXTENDED' : 'STARTED';
+    }
+
+    const previousRun =
+      streaks.previousRunLength && streaks.previousRunEndedOn
+        ? {
+            days: streaks.previousRunLength,
+            endedOn: streaks.previousRunEndedOn,
+            daysSinceEnded: this.wholeDaysBetween(
+              streaks.previousRunEndedOn,
+              today,
+            ),
+          }
+        : null;
+
+    return {
+      businessTimezone: BUSINESS_TIMEZONE,
+      today,
+      practicedToday,
+      streakSecuredToday,
+      minutesToday: roundedMinutesToday,
+      dailyGoalMinutes,
+      minutesToGoal:
+        Math.round(Math.max(0, dailyGoalMinutes - roundedMinutesToday) * 100) /
+        100,
+      atRisk: streaks.currentStreak > 0 && !streakSecuredToday,
+      currentStreak: streaks.currentStreak,
+      longestStreak: streaks.longestStreak,
+      streakStartDate: streaks.streakStartDate,
+      lastActiveDate: streaks.lastActiveDate,
+      previousRun,
+      nextMilestone,
+      streakEventToday,
+    };
+  }
+
+  /**
+   * Streak state without the heatmap cells — skips the generate_series bucket
+   * query entirely. This is what high-frequency callers (a persistent nav
+   * indicator, the post-session moment) should use.
+   */
+  async getPracticeStreakSummary(
+    userId: number,
+    tenantId: string,
+  ): Promise<PracticeStreakSummaryDto> {
+    const today = toBusinessDateString();
+
+    const [streaks, minutesToday, dailyGoalMinutes] = await Promise.all([
+      this.userDailyScoreRepository.getUserStreaks(userId, tenantId, today),
+      this.userDailyScoreRepository.getMinutesOnDate(userId, tenantId, today),
+      this.resolveDailyGoalMinutes(tenantId),
+    ]);
+
+    const nextMilestone =
+      await this.badgeStreakMilestoneSharedService.getNextMilestone(
+        userId,
+        tenantId,
+        streaks.currentStreak,
+      );
+
+    return this.buildSummary(
+      streaks,
+      minutesToday,
+      dailyGoalMinutes,
+      today,
+      nextMilestone,
+    );
+  }
 
   private toDateOnly(date: Date): Date {
     return new Date(
@@ -101,7 +232,7 @@ export class PracticeStreakService {
     const range = this.resolveRange(groupBy, from, to);
     const unit = UNIT_BY_GROUP_BY[groupBy];
 
-    const [buckets, streaks] = await Promise.all([
+    const [buckets, summary] = await Promise.all([
       this.userDailyScoreRepository.getPracticeMinutesByBucket(
         userId,
         tenantId,
@@ -109,7 +240,7 @@ export class PracticeStreakService {
         range.from,
         range.to,
       ),
-      this.userDailyScoreRepository.getUserStreaks(userId, tenantId),
+      this.getPracticeStreakSummary(userId, tenantId),
     ]);
 
     const cells: PracticeStreakCell[] = buckets.map((bucket) => ({
@@ -123,11 +254,10 @@ export class PracticeStreakService {
       100;
 
     return {
+      ...summary,
       groupBy,
       cells,
       totalMinutes,
-      currentStreak: streaks.currentStreak,
-      longestStreak: streaks.longestStreak,
     };
   }
 }

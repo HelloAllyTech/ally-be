@@ -1,6 +1,7 @@
 import {
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsInt,
   IsOptional,
   IsString,
@@ -25,4 +26,11 @@ export class UpdateUserPreferencesDto {
   @IsOptional()
   @IsString()
   ui_theme?: string;
+
+  // Per-user opt-out for the daily "your streak is at risk" email. Absent means
+  // opted in; only an explicit false suppresses the reminder (see
+  // StreakReminderService.getAtRiskRecipients).
+  @IsOptional()
+  @IsBoolean()
+  streak_reminder_enabled?: boolean;
 }

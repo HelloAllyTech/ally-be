@@ -14,6 +14,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import {
   GetPracticeStreakQueryDto,
   PracticeStreakResponseDto,
+  PracticeStreakSummaryDto,
 } from '../dto/practice-streak.dto';
 import { PracticeStreakGroupBy } from '../type/practice-streak.type';
 
@@ -48,6 +49,26 @@ export class PracticeStreakController {
       query.groupBy ?? PracticeStreakGroupBy.DAY,
       query.from,
       query.to,
+    );
+  }
+
+  @Get('summary')
+  @AuthPermissions([PERMISSIONS.VIEW_USER_RANK])
+  @ApiOperation({
+    summary:
+      'Get the current user streak state without the heatmap cells. Intended for high-frequency callers (persistent indicators, post-session) that do not need the full timeline.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Practice streak summary retrieved successfully',
+    type: PracticeStreakSummaryDto,
+  })
+  async getPracticeStreakSummary(
+    @CurrentUser() user: TokenUser,
+  ): Promise<PracticeStreakSummaryDto> {
+    return this.practiceStreakService.getPracticeStreakSummary(
+      user.id,
+      user.tenantId,
     );
   }
 }
