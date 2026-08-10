@@ -191,6 +191,50 @@ describe('GlossaryAdherenceService', () => {
     });
   });
 
+  describe('previewAdherence', () => {
+    const sessionRow = { id: 'sess-1', languageId: 9 };
+
+    it('returns the same scan as analyzeSession but never touches reportRepository', async () => {
+      dataSource.query
+        .mockResolvedValueOnce([sessionRow])
+        .mockResolvedValueOnce([{ content: 'എനിക്ക് ആശങ്ക ഉണ്ട്' }])
+        .mockResolvedValueOnce([{ versions: { core_style: 4 } }]);
+      glossaryRepository.findPublishedByLanguage.mockResolvedValue([
+        makeSection({ content: '- worry: say "ടെൻഷൻ" (avoid: "ആശങ്ക")' }),
+      ]);
+
+      const preview = await service.previewAdherence('sess-1');
+
+      expect(preview).toEqual({
+        agentMessageCount: 1,
+        totalViolations: 1,
+        violations: [
+          expect.objectContaining({ term: 'ആശങ്ക', sectionCode: 'core_style' }),
+        ],
+      });
+      // Read-only: no upsert, so the persisted table is never written.
+      expect(reportRepository.findOne).not.toHaveBeenCalled();
+      expect(reportRepository.create).not.toHaveBeenCalled();
+      expect(reportRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('returns null under the same conditions analyzeSession would (no language, no avoid-terms)', async () => {
+      dataSource.query.mockResolvedValueOnce([{ id: 's', languageId: null }]);
+      expect(await service.previewAdherence('s')).toBeNull();
+
+      dataSource.query.mockResolvedValueOnce([sessionRow]);
+      glossaryRepository.findPublishedByLanguage.mockResolvedValue([]);
+      expect(await service.previewAdherence('sess-1')).toBeNull();
+    });
+
+    it('404s on a missing session, same as analyzeSession', async () => {
+      dataSource.query.mockResolvedValueOnce([]);
+      await expect(service.previewAdherence('nope')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
   describe('backfillLanguage', () => {
     it('scans listed sessions, counting reports vs skips, never throwing', async () => {
       dataSource.query.mockResolvedValueOnce([{ id: 's1' }, { id: 's2' }]);

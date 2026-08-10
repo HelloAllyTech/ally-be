@@ -488,6 +488,91 @@ export class RoleplaySessionDriftDto {
   turns!: RoleplaySessionDriftTurnDto[];
 }
 
+/** One avoid-listed term found in the session's agent utterances. */
+export class RoleplaySessionGlossaryViolationDto {
+  @ApiProperty() term!: string;
+  @ApiProperty() sectionCode!: string;
+  @ApiProperty() count!: number;
+  @ApiProperty({ type: [String] }) examples!: string[];
+}
+
+/** Deterministic avoid-list scan of this session's agent transcript — no
+ * LLM, no hand labels; complements the LLM judge's style dimensions. */
+export class RoleplaySessionGlossaryAdherenceDto {
+  @ApiProperty() agentMessageCount!: number;
+  @ApiProperty() totalViolations!: number;
+  @ApiProperty({ type: [RoleplaySessionGlossaryViolationDto] })
+  violations!: RoleplaySessionGlossaryViolationDto[];
+}
+
+/** One Tier 1 glossary section's retrieval-hit count within the session. */
+export class RoleplaySessionGlossarySectionHitDto {
+  @ApiProperty() sectionCode!: string;
+  @ApiProperty() count!: number;
+}
+
+/**
+ * Language-glossary delivery + retrieval + adherence for this session
+ * (LANGUAGE_GLOSSARY_DESIGN.md §10). `active: false` means the session never
+ * received a glossary — either English, the language has nothing published,
+ * or the simulation's languageGlossaryEnabled canary gate was off.
+ */
+export class RoleplaySessionGlossaryDto {
+  @ApiProperty({
+    description:
+      'True when the worker echoed a Tier 0 style card or Tier 1 sections at session start',
+  })
+  active!: boolean;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Compiled Tier 0 style card length in characters',
+  })
+  tier0Chars!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Compiled Tier 0 style card token cost (o200k_base)',
+  })
+  tier0Tokens!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Number of Tier 1 retrieved sections shipped to the agent',
+  })
+  tier1SectionsShipped!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'sectionCode -> published version this session was served, from start_metrics provenance',
+  })
+  versions!: Record<string, number> | null;
+
+  @ApiProperty({
+    description:
+      "Pipeline turns (matches the session's Latency panel denominator)",
+  })
+  totalTurns!: number;
+
+  @ApiProperty({
+    description:
+      'Turns where a Tier 1 section was actually selected into context',
+  })
+  turnsWithGlossaryRetrieval!: number;
+
+  @ApiProperty({ type: [RoleplaySessionGlossarySectionHitDto] })
+  sectionHitCounts!: RoleplaySessionGlossarySectionHitDto[];
+
+  @ApiProperty({
+    type: RoleplaySessionGlossaryAdherenceDto,
+    nullable: true,
+    description:
+      "Avoid-list violation scan of this session's agent turns; null when the language defines no avoid-terms to check",
+  })
+  adherence!: RoleplaySessionGlossaryAdherenceDto | null;
+}
+
 export class RoleplaySessionScenarioVersionDto {
   @ApiProperty() id!: string;
   @ApiProperty({ nullable: true }) versionNumber!: number | null;
@@ -644,4 +729,13 @@ export class RoleplaySessionLogDetailDto extends RoleplaySessionLogRowDto {
 
   @ApiProperty({ type: [RoleplaySessionLogMessageDto] })
   transcript!: RoleplaySessionLogMessageDto[];
+
+  @ApiProperty({
+    type: RoleplaySessionGlossaryDto,
+    nullable: true,
+    description:
+      'Language-glossary delivery, retrieval, and adherence for this session; ' +
+      'null for English sessions or sessions predating the glossary instrumentation.',
+  })
+  languageGlossary!: RoleplaySessionGlossaryDto | null;
 }

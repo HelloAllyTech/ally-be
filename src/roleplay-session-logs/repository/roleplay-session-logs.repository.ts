@@ -77,6 +77,27 @@ export interface RoleplaySessionLatencyRow {
   prosodySkippedTurns: number | string;
 }
 
+/** One Tier 1 glossary section's retrieval-hit count within a session. */
+export interface RoleplaySessionGlossarySectionHitRow {
+  sectionCode: string;
+  count: number | string;
+}
+
+/**
+ * Session-level glossary delivery + retrieval activity, aggregated from the
+ * worker's echoed provenance (`scenario_session_start_metrics.metadata.glossary`)
+ * and per-turn Tier 1 selections (`scenario_session_turn_metrics.metadata.glossary_selected`).
+ */
+export interface RoleplaySessionGlossaryActivityRow {
+  /** Raw `{tier0_chars, tier1_sections, versions, tier0_tokens}` from the
+   * latest start_metrics row; null when this session never received a
+   * glossary (English, no published glossary, or predates this instrumentation). */
+  glossaryMeta: Record<string, any> | null;
+  totalTurns: number | string;
+  turnsWithGlossaryRetrieval: number | string;
+  sectionHitCounts: RoleplaySessionGlossarySectionHitRow[];
+}
+
 /**
  * Cross-tenant (platform-wide) reads of roleplay sessions for the super-admin
  * "Roleplay Session Logs" view. Uses a `DataSource`-backed query builder rather
@@ -662,6 +683,57 @@ export class RoleplaySessionLogsRepository {
         prosodySkippedTurns: 0,
       }
     );
+  }
+
+  /**
+   * Session-level glossary activity (LANGUAGE_GLOSSARY_DESIGN.md §10): what
+   * the worker echoed at session start (Tier 0/1 sizes and the exact section
+   * versions served) plus per-turn Tier 1 retrieval hits. `glossaryMeta` is
+   * null for English sessions, sessions whose language has no published
+   * glossary, or sessions that predate this instrumentation. `source =
+   * 'pipeline'` matches {@link getLatencyBySession}'s turn denominator.
+   */
+  async getGlossaryActivity(
+    id: string,
+  ): Promise<RoleplaySessionGlossaryActivityRow> {
+    const [startRows, turnsRows, sectionHitCounts] = await Promise.all([
+      this.dataSource.query<{ glossaryMeta: Record<string, any> | null }[]>(
+        `SELECT metadata->'glossary' AS "glossaryMeta"
+         FROM scenario_session_start_metrics
+         WHERE "scenarioSessionId" = $1
+         ORDER BY "createdAt" DESC
+         LIMIT 1`,
+        [id],
+      ),
+      this.dataSource.query<
+        { totalTurns: number; turnsWithGlossaryRetrieval: number }[]
+      >(
+        `SELECT
+           COUNT(*)::int AS "totalTurns",
+           COUNT(*) FILTER (
+             WHERE jsonb_array_length(COALESCE(metadata->'glossary_selected', '[]'::jsonb)) > 0
+           )::int AS "turnsWithGlossaryRetrieval"
+         FROM scenario_session_turn_metrics
+         WHERE "scenarioSessionId" = $1 AND source = 'pipeline'`,
+        [id],
+      ),
+      this.dataSource.query<RoleplaySessionGlossarySectionHitRow[]>(
+        `SELECT elem AS "sectionCode", COUNT(*)::int AS "count"
+         FROM scenario_session_turn_metrics m,
+              jsonb_array_elements_text(COALESCE(m.metadata->'glossary_selected', '[]'::jsonb)) AS elem
+         WHERE m."scenarioSessionId" = $1 AND m.source = 'pipeline'
+         GROUP BY elem
+         ORDER BY "count" DESC`,
+        [id],
+      ),
+    ]);
+
+    return {
+      glossaryMeta: startRows[0]?.glossaryMeta ?? null,
+      totalTurns: turnsRows[0]?.totalTurns ?? 0,
+      turnsWithGlossaryRetrieval: turnsRows[0]?.turnsWithGlossaryRetrieval ?? 0,
+      sectionHitCounts,
+    };
   }
 
   /** LiveKit egress recording pointer for a session, if one exists. */
