@@ -4,12 +4,14 @@ import { RoleplaySessionLogsRepository } from '../../repository/roleplay-session
 import { ScenarioSessionStatus } from '../../../learn/enum/scenario-session-status.enum';
 import { S3Service } from '../../../aws/service/s3.service';
 import { AppConfigService } from '../../../config/config.service';
+import { GlossaryAdherenceService } from '../../../language/service/glossary-adherence.service';
 
 describe('RoleplaySessionLogsService', () => {
   let service: RoleplaySessionLogsService;
   let repo: jest.Mocked<RoleplaySessionLogsRepository>;
   let s3Service: jest.Mocked<S3Service>;
   let configService: jest.Mocked<AppConfigService>;
+  let glossaryAdherenceService: jest.Mocked<GlossaryAdherenceService>;
 
   const baseRow = {
     id: 'sess-1',
@@ -54,6 +56,12 @@ describe('RoleplaySessionLogsService', () => {
       findLanguageJudgment: jest.fn().mockResolvedValue(null),
       findDriftJudgment: jest.fn().mockResolvedValue(null),
       findRunConfig: jest.fn().mockResolvedValue(null),
+      getGlossaryActivity: jest.fn().mockResolvedValue({
+        glossaryMeta: null,
+        totalTurns: 0,
+        turnsWithGlossaryRetrieval: 0,
+        sectionHitCounts: [],
+      }),
     } as unknown as jest.Mocked<RoleplaySessionLogsRepository>;
 
     s3Service = {
@@ -66,7 +74,16 @@ describe('RoleplaySessionLogsService', () => {
       scenarioSessionAudioStorage: { bucket: 'recordings-bucket' },
     } as unknown as jest.Mocked<AppConfigService>;
 
-    service = new RoleplaySessionLogsService(repo, s3Service, configService);
+    glossaryAdherenceService = {
+      previewAdherence: jest.fn().mockResolvedValue(null),
+    } as unknown as jest.Mocked<GlossaryAdherenceService>;
+
+    service = new RoleplaySessionLogsService(
+      repo,
+      s3Service,
+      configService,
+      glossaryAdherenceService,
+    );
   });
 
   const usageRows = [
@@ -293,6 +310,84 @@ describe('RoleplaySessionLogsService', () => {
         storageKey: 'recordings/room-1.ogg',
         egressId: 'EG_123',
         url: null,
+      });
+    });
+  });
+
+  describe('languageGlossary', () => {
+    it('returns null for a genuine non-glossary session (no activity, no adherence)', async () => {
+      repo.findOne.mockResolvedValue(baseRow);
+
+      const detail = await service.getById('sess-1');
+
+      expect(detail.languageGlossary).toBeNull();
+    });
+
+    it('assembles delivery + retrieval + adherence when the glossary was served', async () => {
+      repo.findOne.mockResolvedValue(baseRow);
+      (repo.getGlossaryActivity as jest.Mock).mockResolvedValue({
+        glossaryMeta: {
+          tier0_chars: 1147,
+          tier0_tokens: 381,
+          tier1_sections: 3,
+          versions: { core_style: 1, emotions: 1 },
+        },
+        totalTurns: 4,
+        turnsWithGlossaryRetrieval: 3,
+        sectionHitCounts: [{ sectionCode: 'emotions', count: 3 }],
+      });
+      glossaryAdherenceService.previewAdherence.mockResolvedValue({
+        agentMessageCount: 4,
+        totalViolations: 2,
+        violations: [
+          {
+            term: 'ആശങ്ക',
+            sectionCode: 'core_style',
+            count: 2,
+            examples: ['…ആശങ്ക…'],
+          },
+        ],
+      });
+
+      const detail = await service.getById('sess-1');
+
+      expect(detail.languageGlossary).toEqual({
+        active: true,
+        tier0Chars: 1147,
+        tier0Tokens: 381,
+        tier1SectionsShipped: 3,
+        versions: { core_style: 1, emotions: 1 },
+        totalTurns: 4,
+        turnsWithGlossaryRetrieval: 3,
+        sectionHitCounts: [{ sectionCode: 'emotions', count: 3 }],
+        adherence: {
+          agentMessageCount: 4,
+          totalViolations: 2,
+          violations: [expect.objectContaining({ term: 'ആശങ്ക', count: 2 })],
+        },
+      });
+      expect(glossaryAdherenceService.previewAdherence).toHaveBeenCalledWith(
+        'sess-1',
+      );
+    });
+
+    it('surfaces adherence even when the session predates start_metrics glossary provenance', async () => {
+      // Sessions before this instrumentation shipped have no `metadata.glossary`
+      // row (active=false), but a backfilled adherence scan can still exist —
+      // must not collapse to null just because delivery provenance is missing.
+      repo.findOne.mockResolvedValue(baseRow);
+      glossaryAdherenceService.previewAdherence.mockResolvedValue({
+        agentMessageCount: 2,
+        totalViolations: 0,
+        violations: [],
+      });
+
+      const detail = await service.getById('sess-1');
+
+      expect(detail.languageGlossary).toMatchObject({
+        active: false,
+        tier0Chars: null,
+        adherence: { agentMessageCount: 2, totalViolations: 0 },
       });
     });
   });

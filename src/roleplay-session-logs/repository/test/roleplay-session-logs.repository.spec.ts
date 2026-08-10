@@ -36,10 +36,14 @@ describe('RoleplaySessionLogsRepository', () => {
 
     const dataSource = {
       createQueryBuilder: jest.fn().mockReturnValue(builder),
+      query: jest.fn().mockResolvedValue([]),
     } as unknown as DataSource;
 
     repository = new RoleplaySessionLogsRepository(dataSource);
   });
+
+  /** The `dataSource.query` mock, typed for the raw-SQL glossary method. */
+  const rawQuery = () => (repository as any).dataSource.query as jest.Mock;
 
   afterEach(() => jest.clearAllMocks());
 
@@ -134,6 +138,45 @@ describe('RoleplaySessionLogsRepository', () => {
       const sql = predicates();
       expect(sql).toContain('ss.id = :id');
       expect(sql.some((s) => s.includes('tenant_id ='))).toBe(false);
+    });
+  });
+
+  describe('getGlossaryActivity', () => {
+    it('shapes the three raw queries into one activity row', async () => {
+      rawQuery()
+        .mockResolvedValueOnce([
+          { glossaryMeta: { tier0_chars: 1147, versions: { core_style: 1 } } },
+        ])
+        .mockResolvedValueOnce([
+          { totalTurns: 4, turnsWithGlossaryRetrieval: 3 },
+        ])
+        .mockResolvedValueOnce([{ sectionCode: 'emotions', count: 3 }]);
+
+      const row = await repository.getGlossaryActivity('sess-1');
+
+      expect(row).toEqual({
+        glossaryMeta: { tier0_chars: 1147, versions: { core_style: 1 } },
+        totalTurns: 4,
+        turnsWithGlossaryRetrieval: 3,
+        sectionHitCounts: [{ sectionCode: 'emotions', count: 3 }],
+      });
+      // Every query is scoped to this session's id.
+      for (const call of rawQuery().mock.calls) {
+        expect(call[1]).toEqual(['sess-1']);
+      }
+    });
+
+    it('defaults to a null/zero activity row when nothing is recorded', async () => {
+      rawQuery().mockResolvedValue([]);
+
+      const row = await repository.getGlossaryActivity('sess-1');
+
+      expect(row).toEqual({
+        glossaryMeta: null,
+        totalTurns: 0,
+        turnsWithGlossaryRetrieval: 0,
+        sectionHitCounts: [],
+      });
     });
   });
 });

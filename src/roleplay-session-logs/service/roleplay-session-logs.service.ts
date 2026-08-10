@@ -3,6 +3,7 @@ import {
   ListRoleplaySessionLogsQueryDto,
   ListRoleplaySessionLogsResponseDto,
   RoleplaySessionActorEvaluationDto,
+  RoleplaySessionGlossaryDto,
   RoleplaySessionLatencyDto,
   RoleplaySessionLogDetailDto,
   RoleplaySessionLogRowDto,
@@ -16,6 +17,7 @@ import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import { ScenarioSessionStatus } from '../../learn/enum/scenario-session-status.enum';
 import {
+  RoleplaySessionGlossaryActivityRow,
   RoleplaySessionLatencyRow,
   RoleplaySessionLogRawRow,
   RoleplaySessionLogsRepository,
@@ -25,6 +27,7 @@ import {
   AiServiceName,
   computeServiceCostUsd,
 } from '../../analytics/constants/llm-pricing.constants';
+import { GlossaryAdherenceService } from '../../language/service/glossary-adherence.service';
 
 /** Round a USD figure to cents, matching PlatformAnalyticsService. */
 const roundUsd = (n: number): number => Math.round(n * 100) / 100;
@@ -51,6 +54,7 @@ export class RoleplaySessionLogsService {
     private readonly roleplaySessionLogsRepository: RoleplaySessionLogsRepository,
     private readonly s3Service: S3Service,
     private readonly configService: AppConfigService,
+    private readonly glossaryAdherenceService: GlossaryAdherenceService,
   ) {}
 
   /** Cross-tenant, filtered, paginated list of genuine end-user roleplays. */
@@ -104,6 +108,8 @@ export class RoleplaySessionLogsService {
       languageJudgment,
       drift,
       runConfig,
+      glossaryActivity,
+      glossaryAdherence,
     ] = await Promise.all([
       this.roleplaySessionLogsRepository.findSummary(id),
       this.roleplaySessionLogsRepository.findEvents(id),
@@ -118,6 +124,9 @@ export class RoleplaySessionLogsService {
       this.roleplaySessionLogsRepository.findLanguageJudgment(id),
       this.roleplaySessionLogsRepository.findDriftJudgment(id),
       this.roleplaySessionLogsRepository.findRunConfig(id),
+      this.roleplaySessionLogsRepository.getGlossaryActivity(id),
+      // Read-only preview (no upsert) — see GlossaryAdherenceService.previewAdherence.
+      this.glossaryAdherenceService.previewAdherence(id),
     ]);
 
     // Suspected mid-session freeze: had a conversation and either the agent
@@ -204,6 +213,51 @@ export class RoleplaySessionLogsService {
         endSeconds: this.toNumberOrNull(m.endSeconds),
         createdAt: m.createdAt,
       })),
+      languageGlossary: this.buildLanguageGlossary(
+        glossaryActivity,
+        glossaryAdherence,
+      ),
+    };
+  }
+
+  /**
+   * Combines session-start provenance (Tier 0/1 delivery), per-turn Tier 1
+   * retrieval hits, and the read-only adherence preview into one DTO. Returns
+   * null only when there is nothing at all to show — a genuine non-glossary
+   * session (English, or the language has no avoid-terms and never shipped a
+   * glossary) — so an admin can tell "not applicable" apart from "broken".
+   */
+  private buildLanguageGlossary(
+    activity: RoleplaySessionGlossaryActivityRow,
+    adherence: {
+      agentMessageCount: number;
+      totalViolations: number;
+      violations: {
+        term: string;
+        sectionCode: string;
+        count: number;
+        examples: string[];
+      }[];
+    } | null,
+  ): RoleplaySessionGlossaryDto | null {
+    const meta = activity.glossaryMeta;
+    const active = meta !== null;
+    if (!active && !adherence) return null;
+
+    return {
+      active,
+      tier0Chars: meta?.tier0_chars ?? null,
+      tier0Tokens: meta?.tier0_tokens ?? null,
+      tier1SectionsShipped: meta?.tier1_sections ?? null,
+      versions: meta?.versions ?? null,
+      totalTurns: Number(activity.totalTurns) || 0,
+      turnsWithGlossaryRetrieval:
+        Number(activity.turnsWithGlossaryRetrieval) || 0,
+      sectionHitCounts: activity.sectionHitCounts.map((h) => ({
+        sectionCode: h.sectionCode,
+        count: Number(h.count) || 0,
+      })),
+      adherence,
     };
   }
 
