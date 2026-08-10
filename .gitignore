@@ -56,5 +56,16 @@ gcloud/
 *.swp
 scan_report.*
 .secrets/
+
+# .claude/ holds personal overrides *and* shared agent config. Ignore the
+# contents by default, then re-include the committed team pieces — the Stacks
+# skill and UserPromptSubmit hook only reach other engineers if they are
+# tracked. Re-include needs `.claude/*`, not `.claude/`: git will not descend
+# into an excluded directory to un-exclude anything inside it.
+.claude/*
+!.claude/settings.json
+!.claude/skills/
+!.claude/hooks/
+
 # Scratch clone of the wiki, created by the wiki-pr flow (see AGENTS.md)
 .wiki-tmp/
