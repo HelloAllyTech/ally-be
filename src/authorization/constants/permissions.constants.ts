@@ -269,6 +269,11 @@ const PERMISSIONS = {
   VIEW_SUPER_DUPER_ADMINS: 'view:super-duper-admins',
   EDIT_SUPER_DUPER_ADMINS: 'edit:super-duper-admins',
 
+  // === AWS LOGS ===
+  // Granted ONLY to SUPER_DUPER_ADMIN — CloudWatch logs can carry sensitive
+  // request data, so this stays as restricted as the SDA management surface.
+  VIEW_AWS_LOGS: 'view:aws-logs',
+
   // === RUNTIME I18N ===
   VIEW_I18N_TRANSLATIONS: 'view:admin:i18n-translations',
   EDIT_I18N_TRANSLATIONS: 'edit:admin:i18n-translations',
@@ -432,6 +437,7 @@ const SUPER_DUPER_ADMIN_PERMISSIONS = [
   // opportunity, the goal/owner taxonomy, split/merge, release notes, and pinning a
   // saved view for everyone. SUPER_ADMIN gets VIEW + VOTE only (see above).
   PERMISSIONS.EDIT_PRODUCT_ROADMAP,
+  PERMISSIONS.VIEW_AWS_LOGS,
 ];
 
 const COUNSELOR_PERMISSIONS = [

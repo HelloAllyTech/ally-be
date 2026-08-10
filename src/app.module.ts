@@ -60,6 +60,7 @@ import { RoleplayStudioModule } from './roleplay-studio/roleplay-studio.module';
 import { BlogModule } from './blog/blog.module';
 import { LabModule } from './lab/lab.module';
 import { ProductRoadmapModule } from './product-roadmap/product-roadmap.module';
+import { LogsModule } from './logs/logs.module';
 
 @Module({
   imports: [
@@ -123,6 +124,7 @@ import { ProductRoadmapModule } from './product-roadmap/product-roadmap.module';
     BlogModule,
     LabModule,
     ProductRoadmapModule,
+    LogsModule,
   ],
   controllers: [],
   providers: [

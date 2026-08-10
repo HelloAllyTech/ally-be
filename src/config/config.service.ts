@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TIME } from '../common/constants/time.constants';
 import { buildRoleplayV2Allowlist } from '../common/util/roleplay-v2-access.util';
+
+export type AwsLogServiceKey = 'ally-be' | 'ally-ai' | 'ally-ai-learn';
+
 @Injectable()
 export class AppConfigService {
   constructor(private configService: ConfigService) {}
@@ -113,6 +116,23 @@ export class AppConfigService {
       secretAccessKey: this.configService.get<string>('AWS_SECRET_ACCESS_KEY'),
       sessionToken: this.configService.get<string>('AWS_SESSION_TOKEN'),
       endpointUrl: this.configService.get<string>('AWS_ENDPOINT_URL'),
+    };
+  }
+
+  /**
+   * CloudWatch log group per service, for the super-duper-admin Logs viewer.
+   * Unset until infra supplies the real group names — callers must surface a
+   * clear "not configured" error rather than querying an empty group name.
+   */
+  get awsLogs() {
+    return {
+      logGroups: {
+        'ally-be': this.configService.get<string>('AWS_LOG_GROUP_ALLY_BE'),
+        'ally-ai': this.configService.get<string>('AWS_LOG_GROUP_ALLY_AI'),
+        'ally-ai-learn': this.configService.get<string>(
+          'AWS_LOG_GROUP_ALLY_AI_LEARN',
+        ),
+      } as Record<AwsLogServiceKey, string | undefined>,
     };
   }
 
