@@ -203,7 +203,7 @@ export class ScenarioPathService {
         order: item.order,
         messageTitle: item.messageTitle,
         messageContent: item.messageContent,
-        minimumScore: item.minimumScore ?? 0,
+        minimumScore: item.minimumScore,
       }));
     }
 

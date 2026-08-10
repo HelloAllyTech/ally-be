@@ -22,7 +22,9 @@ const row = (
 ): RoadmapDeliveryRow => ({ month, owner, type, opportunities, coins });
 
 const ownerCoins = (
-  result: { months: { month: string; owners: { owner: string; coins: number }[] }[] },
+  result: {
+    months: { month: string; owners: { owner: string; coins: number }[] }[];
+  },
   month: string,
   owner: string,
 ): number | undefined =>
@@ -78,7 +80,10 @@ describe('RoadmapDeliveryAnalyticsService', () => {
     // THE POINT: an axis of nothing but zeros reads as "we have shipped nothing
     // ever", which is a different claim from "nothing we shipped is dated". The
     // client needs an empty months list so it can show an empty state instead.
-    await setup([], [{ type: RoadmapOpportunityType.IDEA, opportunities: 173, coins: 604 }]);
+    await setup(
+      [],
+      [{ type: RoadmapOpportunityType.IDEA, opportunities: 173, coins: 604 }],
+    );
 
     const result = await service.getRoadmapDelivery();
 
@@ -99,7 +104,11 @@ describe('RoadmapDeliveryAnalyticsService', () => {
       '2026-07-01',
       '2026-08-01',
     ]);
-    expect(result.months[1]).toMatchObject({ coins: 0, opportunities: 0, owners: [] });
+    expect(result.months[1]).toMatchObject({
+      coins: 0,
+      opportunities: 0,
+      owners: [],
+    });
   });
 
   it('runs the axis through to the current month even with no release in it', async () => {
@@ -179,7 +188,9 @@ describe('RoadmapDeliveryAnalyticsService', () => {
 
     const result = await service.getRoadmapDelivery();
 
-    expect(ownerCoins(result, '2026-07-01', ROADMAP_DELIVERY_UNASSIGNED_LABEL)).toBe(12);
+    expect(
+      ownerCoins(result, '2026-07-01', ROADMAP_DELIVERY_UNASSIGNED_LABEL),
+    ).toBe(12);
     expect(result.months.find((m) => m.month === '2026-07-01')?.coins).toBe(52);
   });
 
@@ -236,8 +247,9 @@ describe('RoadmapDeliveryAnalyticsService', () => {
   });
 
   it('rolls the tail past the ceiling into one band, ranked all-time', async () => {
-    const owners = Array.from({ length: ROADMAP_DELIVERY_MAX_OWNERS + 2 }, (_, i) =>
-      row('2026-07-01', `Owner ${i}`, 100 - i),
+    const owners = Array.from(
+      { length: ROADMAP_DELIVERY_MAX_OWNERS + 2 },
+      (_, i) => row('2026-07-01', `Owner ${i}`, 100 - i),
     );
     await setup(owners);
 
@@ -248,7 +260,9 @@ describe('RoadmapDeliveryAnalyticsService', () => {
       ROADMAP_DELIVERY_OTHER_LABEL,
     );
     // The two weakest owners (coins 92 and 91) are the ones rolled up.
-    expect(ownerCoins(result, '2026-07-01', ROADMAP_DELIVERY_OTHER_LABEL)).toBe(183);
+    expect(ownerCoins(result, '2026-07-01', ROADMAP_DELIVERY_OTHER_LABEL)).toBe(
+      183,
+    );
     // Nothing is lost in the roll-up.
     expect(result.months[0].coins).toBe(
       owners.reduce((sum, o) => sum + o.coins, 0),

@@ -438,6 +438,7 @@ export class ScenarioPathSessionService {
     // Score less than minimum score -> cant make the session complete
     if (
       currentScenarioPathItem?.minimumScore !== undefined &&
+      currentScenarioPathItem?.minimumScore !== null &&
       (score ?? 0) < currentScenarioPathItem?.minimumScore
     ) {
       this.logger.info(
