@@ -4,6 +4,7 @@ import { AnalyticsService } from '../../service/analytics.service';
 import { CohortAnalyticsService } from '../../service/cohort-analytics.service';
 import { UsageLevelAnalyticsService } from '../../service/usage-level-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../../service/roleplay-volume-analytics.service';
+import { RoadmapDeliveryAnalyticsService } from '../../service/roadmap-delivery-analytics.service';
 import { HighlightsAnalyticsService } from '../../service/highlights-analytics.service';
 import { PlatformAnalyticsService } from '../../service/platform-analytics.service';
 import { ScribeAnalyticsService } from '../../service/scribe-analytics.service';
@@ -99,6 +100,10 @@ describe('AnalyticsController', () => {
         {
           provide: RoleplayVolumeAnalyticsService,
           useValue: { getRoleplayVolume: jest.fn() },
+        },
+        {
+          provide: RoadmapDeliveryAnalyticsService,
+          useValue: { getRoadmapDelivery: jest.fn() },
         },
         {
           provide: PlatformAnalyticsService,
