@@ -1,9 +1,8 @@
 {
   "mcpServers": {
     "stacks": {
-      "type": "http",
-      "url": "https://product-management-rag-mcp-orcin.vercel.app/api/mcp",
-      "headers": { "Authorization": "Bearer ${STACKS_API_KEY}" }
+      "command": "bash",
+      "args": ["-c", "exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/stacks-bridge.mjs\""]
     }
   }
 }
