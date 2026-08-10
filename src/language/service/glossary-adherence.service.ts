@@ -290,4 +290,38 @@ export class GlossaryAdherenceService {
     );
     return { ...totals, topTerms };
   }
+
+  /**
+   * Rollup across every language with at least one scanned session — the
+   * dashboard's landing view (analogous to the Language-quality tab's
+   * all-languages table). Languages never backfilled are simply absent, not
+   * shown as zero: `glossary_adherence_reports` is populated only by an
+   * explicit backfill run, so an absent language usually means "not scanned
+   * yet", not "clean".
+   */
+  async languageSummaryOverview(): Promise<
+    {
+      languageId: number;
+      languageLabel: string;
+      languageValue: string;
+      sessionCount: number;
+      totalViolations: number;
+      avgViolationsPerSession: number;
+      cleanSessions: number;
+    }[]
+  > {
+    return this.dataSource.query(
+      `SELECT r."languageId" AS "languageId",
+              l.label AS "languageLabel",
+              l.value AS "languageValue",
+              count(*)::int AS "sessionCount",
+              COALESCE(sum(r."totalViolations"), 0)::int AS "totalViolations",
+              COALESCE(round(avg(r."totalViolations"), 2), 0)::float AS "avgViolationsPerSession",
+              count(*) FILTER (WHERE r."totalViolations" = 0)::int AS "cleanSessions"
+       FROM glossary_adherence_reports r
+       JOIN languages l ON l.id = r."languageId"
+       GROUP BY r."languageId", l.label, l.value
+       ORDER BY "totalViolations" DESC`,
+    );
+  }
 }

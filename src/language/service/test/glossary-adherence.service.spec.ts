@@ -248,4 +248,77 @@ describe('GlossaryAdherenceService', () => {
       expect(analyze).toHaveBeenCalledTimes(2);
     });
   });
+
+  describe('languageSummary', () => {
+    it('combines the totals row with the top-terms rows for one language', async () => {
+      dataSource.query
+        .mockResolvedValueOnce([
+          {
+            sessionCount: 16,
+            totalViolations: 44,
+            avgViolationsPerSession: 2.75,
+            cleanSessions: 5,
+          },
+        ])
+        .mockResolvedValueOnce([
+          { term: 'ആശങ്ക', sectionCode: 'core_style', count: 20 },
+          { term: 'വളരെ', sectionCode: 'core_style', count: 18 },
+        ]);
+
+      const summary = await service.languageSummary(9);
+
+      expect(summary).toEqual({
+        sessionCount: 16,
+        totalViolations: 44,
+        avgViolationsPerSession: 2.75,
+        cleanSessions: 5,
+        topTerms: [
+          { term: 'ആശങ്ക', sectionCode: 'core_style', count: 20 },
+          { term: 'വളരെ', sectionCode: 'core_style', count: 18 },
+        ],
+      });
+      expect(dataSource.query.mock.calls[0][1]).toEqual([9]);
+      expect(dataSource.query.mock.calls[1][1]).toEqual([9]);
+    });
+  });
+
+  describe('languageSummaryOverview', () => {
+    it('returns one row per language with any scanned sessions, ordered by violations', async () => {
+      const rows = [
+        {
+          languageId: 9,
+          languageLabel: 'Malayalam (India)',
+          languageValue: 'ml-IN',
+          sessionCount: 16,
+          totalViolations: 44,
+          avgViolationsPerSession: 2.75,
+          cleanSessions: 5,
+        },
+        {
+          languageId: 2,
+          languageLabel: 'Hindi (India)',
+          languageValue: 'hi-IN',
+          sessionCount: 1,
+          totalViolations: 0,
+          avgViolationsPerSession: 0,
+          cleanSessions: 1,
+        },
+      ];
+      dataSource.query.mockResolvedValueOnce(rows);
+
+      const overview = await service.languageSummaryOverview();
+
+      expect(overview).toEqual(rows);
+      // No language filter — a single unparameterised query across all rows.
+      expect(dataSource.query).toHaveBeenCalledTimes(1);
+      expect(dataSource.query.mock.calls[0][0]).toContain(
+        'GROUP BY r."languageId"',
+      );
+    });
+
+    it('returns an empty array when nothing has been scanned yet', async () => {
+      dataSource.query.mockResolvedValueOnce([]);
+      expect(await service.languageSummaryOverview()).toEqual([]);
+    });
+  });
 });

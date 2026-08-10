@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException } from '@nestjs/common';
 import { ParticipantInfo_Kind } from '@livekit/protocol';
 import { DataSource, Repository } from 'typeorm';
 import { AiService } from 'src/ai/service/ai.service';

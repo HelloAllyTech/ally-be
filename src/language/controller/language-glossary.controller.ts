@@ -98,6 +98,16 @@ export class LanguageGlossaryController {
 
   @ApiOperation({
     summary:
+      'Glossary adherence rollup across every language with scanned sessions',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_LANGUAGES])
+  @Get('glossary/adherence/overview')
+  async adherenceOverview() {
+    return this.adherenceService.languageSummaryOverview();
+  }
+
+  @ApiOperation({
+    summary:
       'Glossary adherence rollup for a language (violation rates, top terms)',
   })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_LANGUAGES])
