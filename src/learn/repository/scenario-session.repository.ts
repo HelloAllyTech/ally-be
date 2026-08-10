@@ -12,6 +12,12 @@ import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity'
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { SessionEventVisibilityType } from 'src/session-event/enum/session-event-visibility-type.enum';
 import { ScenarioSessionSortBy } from '../enum/scenario-session-sort-by.enum';
+import {
+  ScenarioSessionEventStatus,
+  ScenarioSessionStatus,
+} from '../enum/scenario-session-status.enum';
+import { countableSessionPredicate } from 'src/analytics/util/session-eligibility.util';
+import { ScenarioCompletionSummary } from '../interface/scenario-completion.interface';
 
 type CreateScenarioSessionDto = StartScenarioSessionRequestDto & {
   voiceId?: string;
@@ -226,5 +232,63 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     const totalScore = parseFloat(totalScoreResult?.totalScore) || 0;
 
     return totalScore;
+  }
+
+  /**
+   * How many times this user has *completed* each of the given scenarios, and
+   * when they last did. Powers the "already completed" indicator on the learner
+   * catalog and scenario detail page.
+   *
+   * "Completed" is the analytics definition — `status = ENDED` AND
+   * `eventStatus = COMPLETED`, i.e. the roleplay reached its natural end and
+   * produced a score — not the looser `status = ENDED` that
+   * `getScenarioSessions` defaults to, which also counts dropped calls. There
+   * is no ABANDONED status to filter on, so this pairing is the only signal.
+   * Keeping it aligned with analytics means the badge reconciles with the
+   * dashboards.
+   *
+   * `tenant_id` is a varchar on scenario_sessions (BaseEntity) written from
+   * ExecutionManager.getTenantId() at creation, so it compares to the request
+   * tenant with a plain bind — do not join it against the uuid tenant columns.
+   */
+  async getCompletionsForUser(params: {
+    userId: number;
+    tenantId: string;
+    scenarioIds: number[];
+  }): Promise<Map<number, ScenarioCompletionSummary>> {
+    const completions = new Map<number, ScenarioCompletionSummary>();
+    if (!params.userId || !params.tenantId || !params.scenarioIds?.length) {
+      return completions;
+    }
+
+    const rows = await this.createQueryBuilder('s')
+      .select('s.scenarioId', 'scenario_id')
+      .addSelect('COUNT(*)::int', 'attempt_count')
+      .addSelect('MAX(s.endedAt)', 'last_completed_at')
+      .where('s.counselorId = :userId', { userId: params.userId })
+      .andWhere('s.tenantId = :tenantId', { tenantId: params.tenantId })
+      .andWhere('s.status = :status', { status: ScenarioSessionStatus.ENDED })
+      .andWhere('s.eventStatus = :eventStatus', {
+        eventStatus: ScenarioSessionEventStatus.COMPLETED,
+      })
+      .andWhere('s.scenarioId IN (:...scenarioIds)', {
+        scenarioIds: params.scenarioIds,
+      })
+      .andWhere(countableSessionPredicate('s'))
+      .groupBy('s.scenarioId')
+      .getRawMany<{
+        scenario_id: number;
+        attempt_count: number;
+        last_completed_at: Date | null;
+      }>();
+
+    rows.forEach((row) => {
+      completions.set(Number(row.scenario_id), {
+        attemptCount: Number(row.attempt_count),
+        lastCompletedAt: row.last_completed_at,
+      });
+    });
+
+    return completions;
   }
 }

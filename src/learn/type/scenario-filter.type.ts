@@ -29,4 +29,11 @@ export type GetScenarioByIdOptions = {
   em?: EntityManager;
   isPublic?: boolean;
   languageCode?: string;
+  /**
+   * Attach the requesting learner's completion record (see
+   * ScenarioCompletionSummary). Only set by authenticated handlers — the
+   * @Public() detail endpoint has no user or tenant in context, so leaving
+   * this false keeps that path working exactly as before.
+   */
+  includeCompletion?: boolean;
 };
