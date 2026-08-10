@@ -66,7 +66,6 @@ import { ScenarioSessionTurnMetrics } from '../../learn/entity/scenario-session-
 import { ScenarioSessionStartMetrics } from '../../learn/entity/scenario-session-start-metrics.entity';
 import { ScenarioSessionTags } from '../../learn/entity/scenario-session-tags.entity';
 import { ScenarioSessionMessageTags } from '../../learn/entity/scenario-session-message-tags.entity';
-import { ScenarioSessionReflectionPromptResponse } from '../../learn/entity/scenario-session-reflection-prompt-response.entity';
 import { ScenarioSessionBehaviorInstructions } from '../../learn/entity/scenario-session-behavior-instructions.entity';
 import { Track } from '../../track/entity/track.entity';
 import { TrackSection } from '../../track/entity/track-section.entity';
@@ -159,7 +158,6 @@ export const SEED_ENTITIES = [
   ScenarioSessionStartMetrics,
   ScenarioSessionTags,
   ScenarioSessionMessageTags,
-  ScenarioSessionReflectionPromptResponse,
   ScenarioSessionBehaviorInstructions,
   Track,
   TrackSection,

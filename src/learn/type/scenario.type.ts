@@ -34,6 +34,12 @@ export enum ChecklistType {
 export interface ScenarioExperienceMetadata {
   experienceMode: ExperienceMode;
   checklistType: ChecklistType;
+  /**
+   * Gates the checklist on the learner's post-session summary only. Absent or
+   * false means hidden; the in-session checklist panel is driven by
+   * `experienceMode` alone and ignores this flag.
+   */
+  summaryChecklistEnabled?: boolean;
 }
 
 export interface ChecklistItem {

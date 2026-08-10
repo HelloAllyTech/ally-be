@@ -12,7 +12,6 @@ import { ScenarioSessionStartMetrics } from '../../../learn/entity/scenario-sess
 import { ScenarioSessionTags } from '../../../learn/entity/scenario-session-tags.entity';
 import { ScenarioSessionMessageTags } from '../../../learn/entity/scenario-session-message-tags.entity';
 import { ScenarioSessionTagCategory } from '../../../learn/enum/scenario-session-tag-category.enum';
-import { ScenarioSessionReflectionPromptResponse } from '../../../learn/entity/scenario-session-reflection-prompt-response.entity';
 import { ScenarioSessionBehaviorInstructions } from '../../../learn/entity/scenario-session-behavior-instructions.entity';
 import { ScenarioBehaviorInstruction } from '../../../learn/entity/scenario-behavior-instruction.entity';
 import { Scenarios } from '../../../learn/entity/scenarios.entity';
@@ -38,7 +37,6 @@ const SESSION_TAGS = [
 
 // Fixed (not random) so re-running the seed against the same session stays
 // idempotent — promptId is a uuid column with no backing catalog table.
-const REFLECTION_PROMPT_ID = '11111111-1111-4111-8111-111111111111';
 
 function feedbackForScore(score: number): {
   rating: number;
@@ -82,7 +80,6 @@ export async function seedSessions(ds: DataSource): Promise<void> {
   const startMetricsRepo = getRepo(ds, ScenarioSessionStartMetrics);
   const tagRepo = getRepo(ds, ScenarioSessionTags);
   const messageTagRepo = getRepo(ds, ScenarioSessionMessageTags);
-  const reflectionRepo = getRepo(ds, ScenarioSessionReflectionPromptResponse);
   const behaviorInstructionRepo = getRepo(ds, ScenarioBehaviorInstruction);
   const sessionBehaviorInstructionRepo = getRepo(
     ds,
@@ -237,7 +234,6 @@ export async function seedSessions(ds: DataSource): Promise<void> {
       );
       await seedRecording(recordingRepo, session, counselor.tenantId);
       await seedFeedback(feedbackRepo, session, fixture, counselor.tenantId);
-      await seedReflection(reflectionRepo, session, counselor.tenantId);
       await seedChatThread(
         chatRepo,
         chatMessageRepo,
@@ -420,22 +416,6 @@ async function seedFeedback(
     repo,
     { scenarioSessionId: session.id },
     { rating, feedback, tags, tenantId },
-  );
-}
-
-async function seedReflection(
-  repo: Repository<ScenarioSessionReflectionPromptResponse>,
-  session: ScenarioSessions,
-  tenantId: string,
-): Promise<void> {
-  await upsert(
-    repo,
-    { scenarioSessionId: session.id, promptId: REFLECTION_PROMPT_ID },
-    {
-      response:
-        'I noticed I wanted to jump to reassurance whenever things got quiet — next time I want to practice sitting with the silence a little longer.',
-      tenantId,
-    },
   );
 }
 

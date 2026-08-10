@@ -44,6 +44,7 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'languageCharacteristics',
   'experienceMode',
   'checklistType',
+  'summaryChecklistEnabled',
   'timerMode',
   'maxTimeValue',
   'optGuardrails',
@@ -170,6 +171,9 @@ export const mapCreateScenarioRequestToEntity = (
       experienceMode: scenario.experienceMode,
       ...(scenario.experienceMode === ExperienceMode.CHECKLIST && {
         checklistType: scenario.checklistType || ChecklistType.GUIDED,
+        // Opt-in per roleplay: a new checklist scenario never shows the
+        // checklist on the learner's summary until an author turns it on.
+        summaryChecklistEnabled: scenario.summaryChecklistEnabled === true,
       }),
       timerMode: scenario.timerMode,
       ...(scenario.timerMode === true && {
