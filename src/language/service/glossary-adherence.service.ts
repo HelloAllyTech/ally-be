@@ -116,14 +116,18 @@ export class GlossaryAdherenceService {
   }
 
   /**
-   * Scan one session's agent transcript against its language's avoid-lists.
-   * Returns null (no report) when the session has no language, the language
-   * has no published glossary, or the glossary defines no avoid-terms —
-   * nothing measurable in each case.
+   * Shared scan: session's language + published avoid-terms + agent
+   * transcript + provenance. Returns null when the session has no language,
+   * the language has no published glossary, or the glossary defines no
+   * avoid-terms — nothing measurable in each case. Pure read — no writes.
    */
-  async analyzeSession(
-    scenarioSessionId: string,
-  ): Promise<GlossaryAdherenceReport | null> {
+  private async computeAdherence(scenarioSessionId: string): Promise<{
+    languageId: number;
+    glossaryVersions: Record<string, number>;
+    agentMessageCount: number;
+    totalViolations: number;
+    violations: GlossaryAdherenceViolation[];
+  } | null> {
     const [session] = await this.dataSource.query(
       `SELECT id, NULLIF(metadata->>'languageId', '')::int AS "languageId"
        FROM scenario_sessions WHERE id = $1::uuid`,
@@ -163,17 +167,59 @@ export class GlossaryAdherenceService {
       metricsRow?.versions ??
       Object.fromEntries(sections.map((s) => [s.sectionCode, s.version]));
 
-    const report = this.reportRepository.create({
-      ...((await this.reportRepository.findOne({
-        where: { scenarioSessionId },
-      })) ?? { scenarioSessionId }),
+    return {
       languageId: session.languageId,
       glossaryVersions,
       agentMessageCount: messages.length,
       totalViolations: violations.reduce((sum, v) => sum + v.count, 0),
       violations,
+    };
+  }
+
+  /**
+   * Scan one session's agent transcript against its language's avoid-lists
+   * and persist (upsert) the result. Used by the explicit backfill job — the
+   * write makes the language-level rollup (`languageSummary`) materialized
+   * and cheap to query repeatedly.
+   */
+  async analyzeSession(
+    scenarioSessionId: string,
+  ): Promise<GlossaryAdherenceReport | null> {
+    const computed = await this.computeAdherence(scenarioSessionId);
+    if (!computed) return null;
+
+    const report = this.reportRepository.create({
+      ...((await this.reportRepository.findOne({
+        where: { scenarioSessionId },
+      })) ?? { scenarioSessionId }),
+      languageId: computed.languageId,
+      glossaryVersions: computed.glossaryVersions,
+      agentMessageCount: computed.agentMessageCount,
+      totalViolations: computed.totalViolations,
+      violations: computed.violations,
     });
     return this.reportRepository.save(report);
+  }
+
+  /**
+   * Read-only adherence preview for a single session — the same scan as
+   * {@link analyzeSession}, without the upsert. Backs the Roleplay Session
+   * Log detail view, so opening a session's page never writes to the DB;
+   * `glossary_adherence_reports` stays populated only by the explicit
+   * backfill (which feeds the language-level rollup).
+   */
+  async previewAdherence(scenarioSessionId: string): Promise<{
+    agentMessageCount: number;
+    totalViolations: number;
+    violations: GlossaryAdherenceViolation[];
+  } | null> {
+    const computed = await this.computeAdherence(scenarioSessionId);
+    if (!computed) return null;
+    return {
+      agentMessageCount: computed.agentMessageCount,
+      totalViolations: computed.totalViolations,
+      violations: computed.violations,
+    };
   }
 
   /**
