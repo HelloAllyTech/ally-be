@@ -86,6 +86,8 @@ describe('Scenario Util', () => {
           showScoreMeter: scenario.showScoreMeter,
           experienceMode: ExperienceMode.CHECKLIST,
           checklistType: ChecklistType.GUIDED,
+          // Not set on the DTO, so the summary checklist stays opted out.
+          summaryChecklistEnabled: false,
           timerMode: true,
           maxTimeValue: '1:30:00',
           optGuardrails: scenario.optGuardrails,
@@ -245,6 +247,55 @@ describe('Scenario Util', () => {
 
       expect(result.metadata.experienceMode).toBe(ExperienceMode.CHECKLIST);
       expect(result.metadata.checklistType).toBe(ChecklistType.GUIDED);
+    });
+
+    it('should default summaryChecklistEnabled to false when the DTO omits it', () => {
+      const scenario: CreateScenarioDto = {
+        title: 'Checklist scenario without the summary opt-in',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        experienceMode: ExperienceMode.CHECKLIST,
+        checklistType: ChecklistType.GUIDED,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, 211);
+
+      expect(result.metadata.summaryChecklistEnabled).toBe(false);
+    });
+
+    it('should carry summaryChecklistEnabled through when the DTO opts in', () => {
+      const scenario: CreateScenarioDto = {
+        title: 'Checklist scenario with the summary opt-in',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        experienceMode: ExperienceMode.CHECKLIST,
+        checklistType: ChecklistType.GUIDED,
+        summaryChecklistEnabled: true,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, 212);
+
+      expect(result.metadata.summaryChecklistEnabled).toBe(true);
+    });
+
+    it('should not include summaryChecklistEnabled when experienceMode is FEEDBACK', () => {
+      const scenario: CreateScenarioDto = {
+        title: 'Feedback scenario',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        experienceMode: ExperienceMode.FEEDBACK,
+        summaryChecklistEnabled: true,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, 213);
+
+      expect(result.metadata.summaryChecklistEnabled).toBeUndefined();
     });
 
     it('should not include checklistType when experienceMode is FEEDBACK', () => {

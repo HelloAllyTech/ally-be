@@ -111,13 +111,6 @@ import { BehaviorTranslationRepository } from '../repository/behavior-translatio
 import { ScenarioBehaviorInstructionTranslationRepository } from '../repository/scenario-behavior-instruction-translation.repository';
 import { ScenarioSessionEventChecklistResponseDto } from '../dto/scenario-session-event-checklist-response.dto';
 import { ScenarioEventsRepository } from '../repository/scenario-events.repository';
-import {
-  ReflectionPromptItemDto,
-  ScenarioSessionReflectionPromptsResponseDto,
-} from '../dto/scenario-session-reflection-prompts-response.dto';
-import { UpdateReflectionPromptResponseDto } from '../dto/reflection-prompts-request.dto';
-import { ScenarioSessionReflectionPromptResponse } from '../entity/scenario-session-reflection-prompt-response.entity';
-import { SCENARIO_SESSION_REFLECTION_PROMPTS } from '../constants/scenario-session-reflection-prompt.constants';
 import { ScenariosRepository } from '../repository/scenario.repository';
 import { getActiveSessionDurationSeconds } from 'src/review/util/review.util';
 import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
@@ -150,8 +143,6 @@ export class ScenarioSessionService {
     private scenarioSessionFeedbacksRepository: Repository<ScenarioSessionFeedbacks>,
     @InjectRepository(ScenarioSessionLifecycleEvent)
     private scenarioSessionLifecycleEventRepository: Repository<ScenarioSessionLifecycleEvent>,
-    @InjectRepository(ScenarioSessionReflectionPromptResponse)
-    private scenarioSessionReflectionPromptResponseRepository: Repository<ScenarioSessionReflectionPromptResponse>,
     private dataSource: DataSource,
     private aiService: AiService,
     private scenarioTenantService: ScenarioTenantService,
@@ -271,115 +262,6 @@ export class ScenarioSessionService {
   ): Promise<ScenarioSessionSkillsResponseDto> {
     return this.scenarioSharedService.getScenarioSessionSkills(
       scenarioSessionId,
-    );
-  }
-
-  async getReflectionPrompts(
-    scenarioSessionId: string,
-  ): Promise<ScenarioSessionReflectionPromptsResponseDto> {
-    const tenantId = ExecutionManager.getTenantId();
-    const scenarioSession = await this.scenarioSessionRepository.findOne({
-      where: {
-        id: scenarioSessionId,
-        tenantId,
-      },
-    });
-
-    if (!scenarioSession) {
-      throw new NotFoundException('Scenario session not found');
-    }
-
-    const reflectionPromptResult =
-      await this.scenarioSessionReflectionPromptResponseRepository.find({
-        where: { scenarioSessionId },
-      });
-
-    const reflectionPrompts: ReflectionPromptItemDto[] =
-      reflectionPromptResult.map((reflectionPrompt) => ({
-        id: reflectionPrompt.id,
-        promptId: reflectionPrompt.promptId,
-        prompt:
-          SCENARIO_SESSION_REFLECTION_PROMPTS.get(reflectionPrompt.promptId) ??
-          '',
-        response: reflectionPrompt.response,
-      }));
-
-    return { reflectionPrompts };
-  }
-
-  async createReflectionPromptRecordsForSession(
-    scenarioSessionId: string,
-    tenantId: string,
-  ): Promise<void> {
-    const existing =
-      await this.scenarioSessionReflectionPromptResponseRepository.find({
-        where: { scenarioSessionId },
-      });
-
-    if (!existing.length) {
-      const randomPrompts = this.pickRandomUniquePrompts(2);
-      const toCreate = randomPrompts.map((prompt) =>
-        this.scenarioSessionReflectionPromptResponseRepository.create({
-          scenarioSessionId,
-          promptId: prompt.promptId,
-          response: undefined,
-          tenantId,
-        }),
-      );
-      await this.scenarioSessionReflectionPromptResponseRepository.save(
-        toCreate,
-      );
-    }
-  }
-
-  private pickRandomUniquePrompts(count: number) {
-    const prompts = Array.from(
-      SCENARIO_SESSION_REFLECTION_PROMPTS.entries(),
-    ).map(([promptId, prompt]) => ({ promptId, prompt }));
-    const selected: { promptId: string; prompt: string }[] = [];
-    const maxCount = Math.min(count, prompts.length);
-    while (selected.length < maxCount) {
-      const index = Math.floor(Math.random() * prompts.length);
-      const [picked] = prompts.splice(index, 1);
-      selected.push(picked);
-    }
-    return selected;
-  }
-
-  async updateReflectionPromptResponse(
-    scenarioSessionId: string,
-    reflectionPromptId: string,
-    updateReflectionPrompt: UpdateReflectionPromptResponseDto,
-  ): Promise<ScenarioSessionReflectionPromptResponse> {
-    const tenantId = ExecutionManager.getTenantId();
-    const scenarioSession = await this.scenarioSessionRepository.findOne({
-      where: {
-        id: scenarioSessionId,
-        tenantId,
-      },
-    });
-
-    if (!scenarioSession) {
-      throw new NotFoundException('Scenario session not found');
-    }
-
-    const reflectionPrompt =
-      await this.scenarioSessionReflectionPromptResponseRepository.findOne({
-        where: {
-          id: reflectionPromptId,
-          scenarioSessionId,
-        },
-      });
-
-    if (!reflectionPrompt) {
-      throw new NotFoundException(
-        `No response found for prompt ${reflectionPromptId}`,
-      );
-    }
-
-    reflectionPrompt.response = updateReflectionPrompt.response;
-    return this.scenarioSessionReflectionPromptResponseRepository.save(
-      reflectionPrompt,
     );
   }
 
@@ -1328,11 +1210,6 @@ export class ScenarioSessionService {
       startedAt,
       metadata: updatedMetadata,
     });
-
-    await this.createReflectionPromptRecordsForSession(
-      scenarioSessionId,
-      scenarioSession.tenantId,
-    );
 
     const caseSessionItemId = scenarioSession.caseSessionItemId;
     let previousMemory: string | null = null;
@@ -2611,7 +2488,14 @@ export class ScenarioSessionService {
 
     const experienceMode = scenario.metadata?.experienceMode;
 
-    if (experienceMode !== ExperienceMode.CHECKLIST) {
+    // This endpoint feeds the learner's post-session summary only — the
+    // in-session checklist panel is served from the LiveKit room metadata — so
+    // the summary opt-in is enforced here as well as in the UI. Absent means
+    // off, which keeps every roleplay authored before the toggle existed dark.
+    if (
+      experienceMode !== ExperienceMode.CHECKLIST ||
+      scenario.metadata?.summaryChecklistEnabled !== true
+    ) {
       return { eventChecklist: [] };
     }
 

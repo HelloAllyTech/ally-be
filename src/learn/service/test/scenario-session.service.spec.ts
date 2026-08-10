@@ -20,7 +20,6 @@ import { ScenarioSessionMessages } from 'src/learn/entity/scenario-session-messa
 import { ScenarioSessionMessageType } from 'src/learn/enum/scenario-session-message.type.enum';
 import { ScenarioSessionFeedbacks } from 'src/learn/entity/scenario-session-feedbacks.entity';
 import { ScenarioSessionLifecycleEvent } from 'src/learn/entity/scenario-session-lifecycle-event.entity';
-import { ScenarioSessionReflectionPromptResponse } from 'src/learn/entity/scenario-session-reflection-prompt-response.entity';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import { ScenarioSessionStatus } from 'src/learn/enum/scenario-session-status.enum';
 import {
@@ -87,9 +86,6 @@ describe('ScenarioSessionService', () => {
   let aiService: jest.Mocked<AiService>;
   let scenarioSessionFeedbacksRepository: jest.Mocked<
     Repository<ScenarioSessionFeedbacks>
-  >;
-  let scenarioSessionReflectionPromptResponseRepository: jest.Mocked<
-    Repository<ScenarioSessionReflectionPromptResponse>
   >;
   let dataSource: jest.Mocked<DataSource>;
   let permissionValidatorService: jest.Mocked<PermissionValidator>;
@@ -234,13 +230,6 @@ describe('ScenarioSessionService', () => {
     };
 
     const mockFeedbackRepo = {
-      findOne: jest.fn(),
-      create: jest.fn(),
-      save: jest.fn(),
-    };
-
-    const mockScenarioSessionReflectionPromptResponseRepo = {
-      find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn(),
       create: jest.fn(),
       save: jest.fn(),
@@ -442,10 +431,6 @@ describe('ScenarioSessionService', () => {
           useValue: { insert: jest.fn() },
         },
         {
-          provide: getRepositoryToken(ScenarioSessionReflectionPromptResponse),
-          useValue: mockScenarioSessionReflectionPromptResponseRepo,
-        },
-        {
           provide: getRepositoryToken(ScenarioSessionEvents),
           useValue: mockSessionEventsRepo,
         },
@@ -576,9 +561,6 @@ describe('ScenarioSessionService', () => {
     aiService = module.get(AiService);
     scenarioSessionFeedbacksRepository = module.get(
       getRepositoryToken(ScenarioSessionFeedbacks),
-    );
-    scenarioSessionReflectionPromptResponseRepository = module.get(
-      getRepositoryToken(ScenarioSessionReflectionPromptResponse),
     );
     dataSource = module.get(DataSource);
     permissionValidatorService = module.get(PermissionValidator);
@@ -1866,190 +1848,6 @@ describe('ScenarioSessionService', () => {
     });
   });
 
-  describe('getReflectionPrompts', () => {
-    it('should return reflection prompts for the session', async () => {
-      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
-      const promptId = '0ee957a5-36d3-49be-886f-a8c72242388e';
-      const mockRows = [
-        {
-          id: 'response-row-1',
-          promptId,
-          response: 'My reflection answer',
-        },
-      ];
-      scenarioSessionReflectionPromptResponseRepository.find.mockResolvedValue(
-        mockRows as ScenarioSessionReflectionPromptResponse[],
-      );
-
-      const result = await service.getReflectionPrompts(mockScenarioSessionId);
-
-      expect(scenarioSessionRepository.findOne).toHaveBeenCalledWith({
-        where: { id: mockScenarioSessionId, tenantId: mockTenantId },
-      });
-      expect(
-        scenarioSessionReflectionPromptResponseRepository.find,
-      ).toHaveBeenCalledWith({
-        where: { scenarioSessionId: mockScenarioSessionId },
-      });
-      expect(result.reflectionPrompts).toHaveLength(1);
-      expect(result.reflectionPrompts[0].id).toBe('response-row-1');
-      expect(result.reflectionPrompts[0].promptId).toBe(promptId);
-      expect(result.reflectionPrompts[0].response).toBe('My reflection answer');
-      expect(result.reflectionPrompts[0].prompt).toBe(
-        'What do you think the client needed most in the moment you shifted to problem-solving?',
-      );
-    });
-
-    it('should throw NotFoundException when scenario session not found', async () => {
-      scenarioSessionRepository.findOne.mockResolvedValue(null);
-
-      await expect(
-        service.getReflectionPrompts(mockScenarioSessionId),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(
-        scenarioSessionReflectionPromptResponseRepository.find,
-      ).not.toHaveBeenCalled();
-    });
-
-    it('should return empty array when no reflection prompt records exist', async () => {
-      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
-      scenarioSessionReflectionPromptResponseRepository.find.mockResolvedValue(
-        [],
-      );
-
-      const result = await service.getReflectionPrompts(mockScenarioSessionId);
-
-      expect(result.reflectionPrompts).toEqual([]);
-    });
-
-    it('should use empty string for prompt when promptId not in constants', async () => {
-      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
-      const unknownPromptId = '00000000-0000-0000-0000-000000000000';
-      const mockRows = [
-        {
-          id: 'response-row-1',
-          promptId: unknownPromptId,
-          response: 'Some answer',
-        },
-      ];
-      scenarioSessionReflectionPromptResponseRepository.find.mockResolvedValue(
-        mockRows as ScenarioSessionReflectionPromptResponse[],
-      );
-
-      const result = await service.getReflectionPrompts(mockScenarioSessionId);
-
-      expect(result.reflectionPrompts[0].prompt).toBe('');
-      expect(result.reflectionPrompts[0].promptId).toBe(unknownPromptId);
-    });
-  });
-
-  describe('createReflectionPromptRecordsForSession', () => {
-    it('should create 2 reflection prompt records for the session', async () => {
-      scenarioSessionReflectionPromptResponseRepository.create.mockImplementation(
-        (entity: any) => entity as any,
-      );
-      scenarioSessionReflectionPromptResponseRepository.save.mockResolvedValue(
-        [] as any,
-      );
-
-      await service.createReflectionPromptRecordsForSession(
-        mockScenarioSessionId,
-        mockTenantId,
-      );
-
-      expect(
-        scenarioSessionReflectionPromptResponseRepository.create,
-      ).toHaveBeenCalledTimes(2);
-      expect(
-        scenarioSessionReflectionPromptResponseRepository.save,
-      ).toHaveBeenCalledTimes(1);
-
-      const saveArg = scenarioSessionReflectionPromptResponseRepository.save
-        .mock.calls[0][0] as any[];
-      expect(saveArg).toHaveLength(2);
-      saveArg.forEach((item: any) => {
-        expect(item).toMatchObject({
-          scenarioSessionId: mockScenarioSessionId,
-          tenantId: mockTenantId,
-          response: undefined,
-        });
-        expect(item.promptId).toBeDefined();
-        expect(typeof item.promptId).toBe('string');
-      });
-    });
-  });
-
-  describe('updateReflectionPromptResponse', () => {
-    const reflectionPromptId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
-    const dto = { response: 'Updated response text' };
-
-    it('should update and return the reflection prompt response', async () => {
-      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
-      const existingRow = {
-        id: reflectionPromptId,
-        promptId: '0ee957a5-36d3-49be-886f-a8c72242388e',
-        scenarioSessionId: mockScenarioSessionId,
-        response: 'old',
-      };
-      const savedRow = { ...existingRow, response: dto.response };
-      scenarioSessionReflectionPromptResponseRepository.findOne.mockResolvedValue(
-        existingRow as ScenarioSessionReflectionPromptResponse,
-      );
-      scenarioSessionReflectionPromptResponseRepository.save.mockResolvedValue(
-        savedRow as ScenarioSessionReflectionPromptResponse,
-      );
-
-      const result = await service.updateReflectionPromptResponse(
-        mockScenarioSessionId,
-        reflectionPromptId,
-        dto,
-      );
-
-      expect(result.response).toBe(dto.response);
-      expect(
-        scenarioSessionReflectionPromptResponseRepository.save,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({ response: dto.response }),
-      );
-    });
-
-    it('should throw NotFoundException when scenario session not found', async () => {
-      scenarioSessionRepository.findOne.mockResolvedValue(null);
-
-      await expect(
-        service.updateReflectionPromptResponse(
-          mockScenarioSessionId,
-          reflectionPromptId,
-          dto,
-        ),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(
-        scenarioSessionReflectionPromptResponseRepository.findOne,
-      ).not.toHaveBeenCalled();
-    });
-
-    it('should throw NotFoundException when reflection prompt not found', async () => {
-      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
-      scenarioSessionReflectionPromptResponseRepository.findOne.mockResolvedValue(
-        null,
-      );
-
-      await expect(
-        service.updateReflectionPromptResponse(
-          mockScenarioSessionId,
-          reflectionPromptId,
-          dto,
-        ),
-      ).rejects.toThrow(NotFoundException);
-
-      expect(
-        scenarioSessionReflectionPromptResponseRepository.save,
-      ).not.toHaveBeenCalled();
-    });
-  });
-
   describe('previewScenario', () => {
     it('should create preview scenario session successfully', async () => {
       const previewDto = { scenarioId: mockScenarioId, languageId: 1 };
@@ -3026,7 +2824,13 @@ describe('ScenarioSessionService', () => {
     });
   });
   describe('getScenarioSessionEventChecklist', () => {
-    const setupSessionAndScenarioMocks = (experienceMode: ExperienceMode) => {
+    // The summary checklist is opt-in per roleplay; these cases exercise the
+    // translation behaviour, so they default to opted in and the gate itself is
+    // covered separately below.
+    const setupSessionAndScenarioMocks = (
+      experienceMode: ExperienceMode,
+      summaryChecklistEnabled = true,
+    ) => {
       permissionValidatorService.validatePermissions.mockResolvedValue(false);
       scenarioSessionRepository.findOne.mockResolvedValue(
         mockScenarioSession as any,
@@ -3037,7 +2841,7 @@ describe('ScenarioSessionService', () => {
       );
       scenariosRepository.findOne.mockResolvedValue({
         id: mockScenarioId,
-        metadata: { experienceMode },
+        metadata: { experienceMode, summaryChecklistEnabled },
       } as any);
     };
 
@@ -3056,6 +2860,44 @@ describe('ScenarioSessionService', () => {
 
     it('should return empty checklist when experience mode is NONE', async () => {
       setupSessionAndScenarioMocks(ExperienceMode.NONE);
+
+      const result = await service.getScenarioSessionEventChecklist(
+        mockScenarioSessionId,
+        mockCounselorId,
+        {},
+      );
+
+      expect(result).toEqual({ eventChecklist: [] });
+      expect(scenarioEventsRepository.getEventChecklist).not.toHaveBeenCalled();
+    });
+
+    it('should return empty checklist when CHECKLIST mode has not opted into the summary checklist', async () => {
+      setupSessionAndScenarioMocks(ExperienceMode.CHECKLIST, false);
+
+      const result = await service.getScenarioSessionEventChecklist(
+        mockScenarioSessionId,
+        mockCounselorId,
+        {},
+      );
+
+      expect(result).toEqual({ eventChecklist: [] });
+      expect(scenarioEventsRepository.getEventChecklist).not.toHaveBeenCalled();
+    });
+
+    it('should return empty checklist when summaryChecklistEnabled is absent from metadata', async () => {
+      permissionValidatorService.validatePermissions.mockResolvedValue(false);
+      scenarioSessionRepository.findOne.mockResolvedValue(
+        mockScenarioSession as any,
+      );
+      scenarioSessionFeedbacksRepository.findOne.mockResolvedValue(null);
+      reviewSharedService.getReviewByScenarioSessionId.mockResolvedValue(
+        null as any,
+      );
+      // Every roleplay authored before the toggle existed looks like this.
+      scenariosRepository.findOne.mockResolvedValue({
+        id: mockScenarioId,
+        metadata: { experienceMode: ExperienceMode.CHECKLIST },
+      } as any);
 
       const result = await service.getScenarioSessionEventChecklist(
         mockScenarioSessionId,

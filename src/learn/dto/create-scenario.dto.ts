@@ -553,6 +553,16 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description:
+      "Show the checklist on the learner's post-session summary. Opt-in per roleplay and OFF by default; the in-session checklist panel is unaffected.",
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  summaryChecklistEnabled?: boolean;
+
+  @ApiProperty({
+    description:
       'Timer mode for the scenario, to show timer during the session.',
     example: true,
     required: false,
