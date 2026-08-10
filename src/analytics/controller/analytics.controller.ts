@@ -27,6 +27,7 @@ import { SkillGrowthAnalyticsService } from '../service/skill-growth-analytics.s
 import { TrackDropoffAnalyticsService } from '../service/track-dropoff-analytics.service';
 import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
+import { RoadmapDeliveryAnalyticsService } from '../service/roadmap-delivery-analytics.service';
 import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
 import { LanguageAnalyticsService } from '../service/language-analytics.service';
 import { LanguageJudgeService } from '../service/language-judge.service';
@@ -84,6 +85,7 @@ import {
   RoleplayVolumeQueryDto,
   RoleplayVolumeResponseDto,
 } from '../dto/roleplay-volume-analytics.dto';
+import { RoadmapDeliveryResponseDto } from '../dto/roadmap-delivery-analytics.dto';
 import {
   ScribeAnalyticsQueryDto,
   ScribeOverviewResponseDto,
@@ -172,6 +174,7 @@ export class AnalyticsController {
     private readonly cohortAnalyticsService: CohortAnalyticsService,
     private readonly usageLevelAnalyticsService: UsageLevelAnalyticsService,
     private readonly roleplayVolumeAnalyticsService: RoleplayVolumeAnalyticsService,
+    private readonly roadmapDeliveryAnalyticsService: RoadmapDeliveryAnalyticsService,
     private readonly platformAnalyticsService: PlatformAnalyticsService,
     private readonly scribeAnalyticsService: ScribeAnalyticsService,
     private readonly languageJudgeService: LanguageJudgeService,
@@ -333,6 +336,42 @@ export class AnalyticsController {
     @Query() query: RoleplayVolumeQueryDto,
   ): Promise<RoleplayVolumeResponseDto> {
     return this.roleplayVolumeAnalyticsService.getRoleplayVolume(query);
+  }
+
+  @Get('roadmap-delivery')
+  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @ApiOperation({
+    summary: 'Coins shipped per month by owner (super-admin)',
+    description:
+      'Of the demand our own team voted for on the internal product roadmap, how ' +
+      'much did we ship, when, and by whom. Each released opportunity — both ' +
+      "`idea` and `bug` — is weighted by its COINS, i.e. the board's " +
+      '`priorityScore`: the sum over every voter and every monthly period, not ' +
+      'just the release month, because an opportunity accrues backing while it ' +
+      'waits and shipping it satisfies all of it. That makes a bar a measure of ' +
+      'demand satisfied rather than of throughput, where a count would weigh a ' +
+      '3-coin nicety like a 90-coin blocker. Bucketed on `releasedAt` by ' +
+      "calendar month and split by owner (the linked account's current name, " +
+      'else the legacy migrated string, else an Unassigned band), with the tail ' +
+      'past `maxOwners` rolled into one band on an ALL-TIME ranking so no band ' +
+      'moves when the reader filters. Both type splits come back in the one pass ' +
+      'so the client switches between them without a refetch. ALL-TIME and ' +
+      'MONTH-GRAINED by design — no `range`/`bucket`/`from`/`to`: the roadmap is ' +
+      'a slow log where a quarter can hold a handful of releases. No `tenantId` ' +
+      "either: the roadmap tables carry no tenant because the board is Ally's " +
+      'own backlog. Crucially, `releasedAt` is stamped only on the TRANSITION ' +
+      'into `released` and was never backfilled, so a large share of released ' +
+      'rows have no date; those are excluded from `months` and reported in ' +
+      '`undated` rather than dated from a proxy column, and a client MUST show ' +
+      'that figure or the plotted total reads as the whole history.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Roadmap delivery retrieved successfully',
+    type: RoadmapDeliveryResponseDto,
+  })
+  async getRoadmapDelivery(): Promise<RoadmapDeliveryResponseDto> {
+    return this.roadmapDeliveryAnalyticsService.getRoadmapDelivery();
   }
 
   /* ------------------------------------------------------------------------ */

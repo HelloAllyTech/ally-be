@@ -10,6 +10,10 @@ import { UsageLevelAnalyticsService } from './service/usage-level-analytics.serv
 import { UsageLevelAnalyticsRepository } from './repository/usage-level-analytics.repository';
 import { RoleplayVolumeAnalyticsService } from './service/roleplay-volume-analytics.service';
 import { RoleplayVolumeAnalyticsRepository } from './repository/roleplay-volume-analytics.repository';
+// Analytics → Product management tab: reads the internal product roadmap rather
+// than learner activity, so it is neither tenant-scoped nor windowed.
+import { RoadmapDeliveryAnalyticsService } from './service/roadmap-delivery-analytics.service';
+import { RoadmapDeliveryAnalyticsRepository } from './repository/roadmap-delivery-analytics.repository';
 // Testing-tab endpoints: candidates for the leadership Highlights tab, kept on a
 // separate admin tab until they have proved they change a decision.
 import { ActivationAnalyticsService } from './service/activation-analytics.service';
@@ -85,6 +89,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     UsageLevelAnalyticsRepository,
     RoleplayVolumeAnalyticsService,
     RoleplayVolumeAnalyticsRepository,
+    RoadmapDeliveryAnalyticsService,
+    RoadmapDeliveryAnalyticsRepository,
     ActivationAnalyticsService,
     ActivationAnalyticsRepository,
     CompletionRateAnalyticsService,
