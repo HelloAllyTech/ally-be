@@ -460,6 +460,8 @@ describe('LearnController', () => {
             'coverVideoUrl',
             'status',
           ],
+          // Authenticated detail attaches the learner's own completion record.
+          includeCompletion: true,
         },
         'mr',
       );

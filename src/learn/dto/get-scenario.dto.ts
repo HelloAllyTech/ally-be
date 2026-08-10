@@ -3,6 +3,7 @@ import { Scenarios } from '../entity/scenarios.entity';
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 import { BehaviorInstructionWithBehaviorsDto } from './behavior-instruction-response.dto';
 import { CompetencyResponseDto } from './competency.dto';
+import { ScenarioCompletionSummary } from '../interface/scenario-completion.interface';
 
 class TerminationEventDto {
   eventId?: string;
@@ -74,6 +75,18 @@ export class GetScenarioDto extends Scenarios {
     label: string;
     value: string;
   }> | null;
+
+  @ApiPropertyOptional({
+    description:
+      "The requesting learner's completion record for this scenario, or null if they have never completed it. Only populated on authenticated endpoints.",
+    type: 'object',
+    nullable: true,
+    properties: {
+      attemptCount: { type: 'number' },
+      lastCompletedAt: { type: 'string', format: 'date-time' },
+    },
+  })
+  completion?: ScenarioCompletionSummary | null;
 }
 
 export class GetScenarioDtoWithPagination {

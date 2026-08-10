@@ -116,9 +116,12 @@ describe('ScenarioSessionRepository', () => {
       offset: jest.fn().mockReturnThis(),
       select: jest.fn().mockReturnThis(),
       setParameters: jest.fn().mockReturnThis(),
+      addSelect: jest.fn().mockReturnThis(),
+      groupBy: jest.fn().mockReturnThis(),
       getMany: jest.fn(),
       getOne: jest.fn(),
       getRawOne: jest.fn(),
+      getRawMany: jest.fn(),
       withDeleted: jest.fn().mockReturnThis(),
     } as any;
 
@@ -725,5 +728,115 @@ describe('ScenarioSessionRepository', () => {
 
       expect(result).toBe(0);
     });
+  });
+
+  describe('getCompletionsForUser', () => {
+    const callWith = (
+      overrides: Partial<
+        Parameters<ScenarioSessionRepository['getCompletionsForUser']>[0]
+      > = {},
+    ) =>
+      repository.getCompletionsForUser({
+        userId: mockCounselorId,
+        tenantId: mockTenantId,
+        scenarioIds: [mockScenarioId, 2],
+        ...overrides,
+      });
+
+    it('maps each row to an attempt count and last completed date', async () => {
+      const lastCompletedAt = new Date('2026-08-09T12:00:00Z');
+      mockQueryBuilder.getRawMany.mockResolvedValue([
+        {
+          scenario_id: mockScenarioId,
+          attempt_count: 3,
+          last_completed_at: lastCompletedAt,
+        },
+      ]);
+
+      const result = await callWith();
+
+      expect(result.get(mockScenarioId)).toEqual({
+        attemptCount: 3,
+        lastCompletedAt,
+      });
+      // Scenarios with no completed session are simply absent from the map.
+      expect(result.has(2)).toBe(false);
+    });
+
+    it('coerces string aggregates coming back from pg', async () => {
+      mockQueryBuilder.getRawMany.mockResolvedValue([
+        {
+          scenario_id: '7' as unknown as number,
+          attempt_count: '2' as unknown as number,
+          last_completed_at: null,
+        },
+      ]);
+
+      const result = await callWith({ scenarioIds: [7] });
+
+      expect(result.get(7)).toEqual({ attemptCount: 2, lastCompletedAt: null });
+    });
+
+    it('counts only sessions that both ENDED and completed', async () => {
+      mockQueryBuilder.getRawMany.mockResolvedValue([]);
+
+      await callWith();
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        's.status = :status',
+        { status: ScenarioSessionStatus.ENDED },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        's.eventStatus = :eventStatus',
+        { eventStatus: ScenarioSessionEventStatus.COMPLETED },
+      );
+    });
+
+    it('excludes preview and seed rooms', async () => {
+      mockQueryBuilder.getRawMany.mockResolvedValue([]);
+
+      await callWith();
+
+      const predicates = (
+        mockQueryBuilder.andWhere as jest.Mock
+      ).mock.calls.map(([sql]) => sql);
+      expect(
+        predicates.some(
+          (sql: string) =>
+            typeof sql === 'string' &&
+            sql.includes("NOT LIKE 'preview-%'") &&
+            sql.includes("NOT LIKE 'seed-room-%'"),
+        ),
+      ).toBe(true);
+    });
+
+    it('scopes to the requesting user and tenant', async () => {
+      mockQueryBuilder.getRawMany.mockResolvedValue([]);
+
+      await callWith();
+
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        's.counselorId = :userId',
+        { userId: mockCounselorId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        's.tenantId = :tenantId',
+        { tenantId: mockTenantId },
+      );
+    });
+
+    it.each([
+      ['no scenario ids', { scenarioIds: [] }],
+      ['no user', { userId: 0 }],
+      ['no tenant', { tenantId: '' }],
+    ])(
+      'short-circuits with %s and never queries',
+      async (_label, overrides) => {
+        const result = await callWith(overrides as any);
+
+        expect(result.size).toBe(0);
+        expect(mockQueryBuilder.getRawMany).not.toHaveBeenCalled();
+      },
+    );
   });
 });

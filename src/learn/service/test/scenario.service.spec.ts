@@ -33,6 +33,7 @@ import {
 import { ScenarioEventsRepository } from 'src/learn/repository/scenario-events.repository';
 import { ScenarioVoicesRepository } from 'src/learn/repository/scenario-voices.repository';
 import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
+import { ScenarioSessionRepository } from 'src/learn/repository/scenario-session.repository';
 import { ScenarioService } from '../scenario.service';
 import { ScenarioTranslationNotificationService } from '../scenario-translation-notification.service';
 import { ScenarioTenants } from 'src/learn/entity/scenario-tenants.entity';
@@ -71,6 +72,7 @@ describe('ScenarioService', () => {
   let mockLlmModelService: { getModels: jest.Mock };
   let repository: jest.Mocked<Repository<Scenarios>>;
   let scenariosRepository: jest.Mocked<ScenariosRepository>;
+  let scenarioSessionRepository: jest.Mocked<ScenarioSessionRepository>;
   let scenarioEventsRepository: jest.Mocked<ScenarioEventsRepository>;
   let sessionEventSharedService: jest.Mocked<SessionEventSharedService>;
   let sessionEventTranslationService: jest.Mocked<SessionEventTranslationService>;
@@ -466,12 +468,21 @@ describe('ScenarioService', () => {
             getPromptLlmConfig: jest.fn().mockResolvedValue({}),
           },
         },
+        {
+          // Powers the per-learner "already completed" decoration. Default: the
+          // user has completed nothing, so `completion` is null everywhere.
+          provide: ScenarioSessionRepository,
+          useValue: {
+            getCompletionsForUser: jest.fn().mockResolvedValue(new Map()),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<ScenarioService>(ScenarioService);
     repository = module.get(getRepositoryToken(Scenarios));
     scenariosRepository = module.get(ScenariosRepository);
+    scenarioSessionRepository = module.get(ScenarioSessionRepository);
     scenarioEventsRepository = module.get(ScenarioEventsRepository);
     sessionEventSharedService = module.get(SessionEventSharedService);
     sessionEventTranslationService = module.get(SessionEventTranslationService);
@@ -1589,6 +1600,52 @@ describe('ScenarioService', () => {
       expect(sharedLanguageService.getLanguagesByIds).toHaveBeenCalledWith([
         1, 2,
       ]);
+    });
+
+    it("attaches the requesting learner's completion to each scenario", async () => {
+      const currentUserId = 42;
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(currentUserId);
+      const lastCompletedAt = new Date('2026-08-09T12:00:00Z');
+      const other = { ...mockScenario, id: 999, status: ScenarioStatus.ACTIVE };
+      scenariosRepository.getScenarios.mockResolvedValue({
+        data: [{ ...mockScenario, status: ScenarioStatus.ACTIVE }, other],
+        count: 2,
+      } as any);
+      scenarioSessionRepository.getCompletionsForUser.mockResolvedValue(
+        new Map([[mockScenario.id, { attemptCount: 2, lastCompletedAt }]]),
+      );
+
+      const result = await service.getScenariosV2();
+
+      expect(result.data[0].completion).toEqual({
+        attemptCount: 2,
+        lastCompletedAt,
+      });
+      // Never-completed scenarios get an explicit null, not undefined, so the
+      // client can rely on the field always being present.
+      expect(result.data[1].completion).toBeNull();
+      expect(
+        scenarioSessionRepository.getCompletionsForUser,
+      ).toHaveBeenCalledWith({
+        userId: currentUserId,
+        tenantId: mockTenantId,
+        scenarioIds: [mockScenario.id, 999],
+      });
+    });
+
+    it('still returns the catalog when the completion lookup fails', async () => {
+      scenariosRepository.getScenarios.mockResolvedValue({
+        data: [{ ...mockScenario, status: ScenarioStatus.ACTIVE }],
+        count: 1,
+      } as any);
+      scenarioSessionRepository.getCompletionsForUser.mockRejectedValue(
+        new Error('pg exploded'),
+      );
+
+      const result = await service.getScenariosV2();
+
+      expect(result.count).toBe(1);
+      expect(result.data[0].completion).toBeNull();
     });
 
     it('should apply translations when languageCode is provided', async () => {

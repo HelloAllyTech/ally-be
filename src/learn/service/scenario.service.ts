@@ -93,6 +93,8 @@ import {
 } from '../type/scenario-filter.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { GetScenarioResponse } from '../interface/session.interface';
+import { ScenarioCompletionSummary } from '../interface/scenario-completion.interface';
+import { ScenarioSessionRepository } from '../repository/scenario-session.repository';
 import { TriggerWarningsService } from './trigger-warnings.service';
 import { ScenarioTranslationsRepository } from '../repository/scenario-translations.repository';
 import { GoogleTranslationsService } from 'src/common/service/google-translation.service';
@@ -222,6 +224,7 @@ export class ScenarioService {
     private readonly auditLogService: AuditLogService,
     private readonly scenarioTranslationNotificationService: ScenarioTranslationNotificationService,
     private readonly promptSharedService: PromptSharedService,
+    private readonly scenarioSessionRepository: ScenarioSessionRepository,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -298,7 +301,41 @@ export class ScenarioService {
       );
     }
 
+    const completions = await this.getCompletionsForCurrentUser(
+      tenantId,
+      data.map((scenario) => scenario.id),
+    );
+    data.forEach((scenario) => {
+      scenario.completion = completions.get(scenario.id) ?? null;
+    });
+
     return { data, count };
+  }
+
+  /**
+   * The current request user's completion records for `scenarioIds`, keyed by
+   * scenario id. Never throws: a missing user id (or a failing query) degrades
+   * to "no completions", so the catalog still renders — the badge is
+   * decoration, not something worth 500ing a page load over.
+   */
+  private async getCompletionsForCurrentUser(
+    tenantId: string,
+    scenarioIds: number[],
+  ): Promise<Map<number, ScenarioCompletionSummary>> {
+    try {
+      const userId = Number(ExecutionManager.getUserId());
+      if (!userId || Number.isNaN(userId)) return new Map();
+      return await this.scenarioSessionRepository.getCompletionsForUser({
+        userId,
+        tenantId,
+        scenarioIds,
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to load scenario completions: ${(error as Error)?.message}`,
+      );
+      return new Map();
+    }
   }
 
   /**
@@ -471,6 +508,15 @@ export class ScenarioService {
         delete triggerWarning.translations;
       });
     }
+
+    if (options?.includeCompletion) {
+      const tenantId = ExecutionManager.getTenantId();
+      const completions = tenantId
+        ? await this.getCompletionsForCurrentUser(tenantId, [scenario.id])
+        : new Map<number, ScenarioCompletionSummary>();
+      scenario.completion = completions.get(scenario.id) ?? null;
+    }
+
     return scenario;
   }
 

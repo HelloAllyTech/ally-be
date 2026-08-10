@@ -260,6 +260,9 @@ export class LearnController {
           'coverVideoUrl',
           'status',
         ],
+        // Authenticated learner detail — safe to attach their own completion
+        // record. The @Public() sibling below deliberately does not.
+        includeCompletion: true,
       },
       languageCode,
     );
