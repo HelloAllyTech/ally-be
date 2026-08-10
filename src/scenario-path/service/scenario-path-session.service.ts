@@ -17,7 +17,6 @@ import { ScenarioPathSharedService } from './scenario-path-shared.service';
 import { ScenarioPathSessionItemRepository } from '../repository/scenario-path-session-item.repository';
 import { ScenarioPathSession } from '../entity/scenario-path-session.entity';
 import { ScenarioPathSessionItem } from '../entity/scenario-path-session-item.entity';
-import { AppConfigService } from 'src/config/config.service';
 import { GetUpcomingScenarioPathItemResponseDto } from '../dto/get-scenario-path.dto';
 import { LoggerService } from 'src/logger/logger.service';
 import { SessionItemStatus } from 'src/common/type/common.type';
@@ -38,7 +37,6 @@ export class ScenarioPathSessionService {
     private readonly scenarioPathSharedService: ScenarioPathSharedService,
     private readonly scenarioPathSessionItemRepository: ScenarioPathSessionItemRepository,
     private readonly dataSource: DataSource,
-    private readonly configService: AppConfigService,
     private readonly sharedLanguageService: SharedLanguageService,
   ) {}
 
@@ -385,7 +383,6 @@ export class ScenarioPathSessionService {
   async handleEndScenarioPathSession({
     scenarioPathSessionItemId,
     score,
-    callDuration = 0,
   }: {
     scenarioPathSessionItemId: string;
     score?: number;
@@ -394,16 +391,6 @@ export class ScenarioPathSessionService {
     const userId = ExecutionManager.getUserId();
     if (!userId) {
       throw new UnauthorizedException('Unauthorized access');
-    }
-    const callDurationInSeconds = (callDuration ?? 0) / 1000;
-    const callDurationRequiredForCompletionInSeconds =
-      this.configService.simulationPath
-        .simulationPathItemMinDurationForCompletion ?? 0;
-    if (callDurationInSeconds < callDurationRequiredForCompletionInSeconds) {
-      this.logger.info(
-        `Call duration ${callDurationInSeconds} is less than required ${callDurationRequiredForCompletionInSeconds} for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
-      );
-      return;
     }
 
     const currentScenarioPathSessionItem =

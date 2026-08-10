@@ -923,23 +923,8 @@ describe('ScenarioPathSessionService', () => {
       completedScenarios: 0,
     };
 
-    it('should return early if call duration is less than required', async () => {
-      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
-      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 10;
-
-      const result = await service.handleEndScenarioPathSession({
-        scenarioPathSessionItemId: 'session-item-1',
-        score: 80,
-        callDuration: 5000,
-      });
-
-      expect(result).toBeUndefined();
-      expect(scenarioPathSessionItemRepository.findOne).not.toHaveBeenCalled();
-    });
-
     it('should return early if score is less than minimum score', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
-      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
       scenarioPathSessionItemRepository.findOne.mockResolvedValue(
         mockSessionItem as any,
       );
@@ -958,7 +943,6 @@ describe('ScenarioPathSessionService', () => {
 
     it('should complete session item and create next item when next path item exists', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
-      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
       scenarioPathSessionItemRepository.findOne
         .mockResolvedValueOnce(mockSessionItem as any)
         .mockResolvedValueOnce(null);
@@ -1010,7 +994,6 @@ describe('ScenarioPathSessionService', () => {
 
     it('should complete entire path session when no next path item exists', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
-      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
       scenarioPathSessionItemRepository.findOne.mockResolvedValue(
         mockSessionItem as any,
       );
@@ -1069,7 +1052,6 @@ describe('ScenarioPathSessionService', () => {
 
     it('should throw BadRequestException when session item not found', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
-      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
       scenarioPathSessionItemRepository.findOne.mockResolvedValue(null);
 
       await expect(
@@ -1083,7 +1065,6 @@ describe('ScenarioPathSessionService', () => {
 
     it('should throw BadRequestException when path item not found', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
-      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
       scenarioPathSessionItemRepository.findOne.mockResolvedValue(
         mockSessionItem as any,
       );
@@ -1100,7 +1081,6 @@ describe('ScenarioPathSessionService', () => {
 
     it('should throw BadRequestException when path session not found', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
-      mockConfigService.simulationPath.simulationPathItemMinDurationForCompletion = 0;
       scenarioPathSessionItemRepository.findOne.mockResolvedValue(
         mockSessionItem as any,
       );
