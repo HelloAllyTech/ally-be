@@ -570,8 +570,12 @@ export class ScenarioSessionService {
       scenario.terminationEvents = terminationEvents;
     }
 
-    // Determine voiceId from scenario metadata languageVoices
-    const voiceId = scenario?.metadata?.languageVoices?.[languageId];
+    // Determine voiceId from scenario metadata languageVoices. Fall back to
+    // English when the caller doesn't specify a language (e.g. course/track
+    // players with no language picker) — matches the English fallback
+    // `isOtherLanguage` already applies above.
+    const voiceId =
+      scenario?.metadata?.languageVoices?.[languageId ?? enLanguageDetails?.id];
 
     if (!voiceId) {
       throw new BadRequestException('Voice not found');
@@ -2199,8 +2203,11 @@ export class ScenarioSessionService {
       scenario.terminationEvents = terminationEvents;
     }
 
-    // Determine voiceId from scenario metadata languageVoices
-    const voiceId = scenario?.metadata?.languageVoices?.[languageId];
+    // Determine voiceId from scenario metadata languageVoices. Fall back to
+    // English when the caller doesn't specify a language, matching the
+    // English fallback `isOtherLanguage` already applies above.
+    const voiceId =
+      scenario?.metadata?.languageVoices?.[languageId ?? enLanguageDetails?.id];
 
     if (!voiceId) {
       throw new BadRequestException('Voice ID not found for scenario');
@@ -2734,7 +2741,10 @@ export class ScenarioSessionService {
       );
     }
 
-    const voiceId = scenario?.metadata?.languageVoices?.[languageId];
+    // Fall back to English when the caller doesn't specify a language,
+    // matching the English fallback `isOtherLanguage` already applies above.
+    const voiceId =
+      scenario?.metadata?.languageVoices?.[languageId ?? enLanguageDetails?.id];
     if (!voiceId) {
       throw new BadRequestException(
         'Voice ID not found for scenario + language',

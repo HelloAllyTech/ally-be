@@ -1969,6 +1969,73 @@ describe('ScenarioSessionService', () => {
         }),
       );
     });
+    it('should default to the English voice when languageId is omitted', async () => {
+      const previewDto = { scenarioId: mockScenarioId };
+      const mockScenarioWithMetadata = {
+        ...mockScenario,
+        title: 'Test Scenario',
+        description: 'Test Description',
+        coverImageUrl: 'https://example.com/cover.jpg',
+        status: ScenarioStatus.DRAFT,
+        difficultyLevel: ScenarioDifficultyLevel.EASY,
+        competencyId: '123e4567-e89b-12d3-a456-426614174000',
+        metadata: {
+          name: 'Test Client',
+          age: 25,
+          gender: 'female',
+          currentLocation: 'New York',
+          context: 'Context',
+          openingStatements: ['Opening'],
+          // Keyed by the mocked enLanguageDetails.id (1) — no entry for
+          // `undefined`, so this only resolves via the English fallback.
+          languageVoices: { 1: 'voice-123' },
+          experienceMode: ExperienceMode.FEEDBACK,
+          checklistType: ChecklistType.GUIDED,
+          timerMode: true,
+          maxTimeValue: '1:20:00',
+          stateInstructions: [],
+          behaviorInstructions: [],
+          characterProfileText: 'Test character profile',
+          stateNames: [],
+        },
+        isGlobal: false,
+        isPublic: false,
+      };
+      const mockVoice = {
+        id: 'voice-123',
+        name: 'Test Voice',
+        voiceId: 'openai-voice-id',
+        provider: 'openai',
+      };
+      const mockTokenResponse = {
+        token: 'access-token-123',
+        roomName: 'preview-room',
+        serverUrl: 'https://livekit.example.com',
+      };
+
+      scenarioService.getAdminScenario.mockResolvedValue(
+        mockScenarioWithMetadata,
+      );
+      scenarioService.getScenarioVoice.mockResolvedValue(mockVoice as any);
+      sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      scenarioSharedService.createRoomMetadata.mockResolvedValue({
+        scenario: mockScenarioWithMetadata,
+      } as any);
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue(mockTokenResponse);
+
+      const result = await service.previewScenario(
+        previewDto as any,
+        mockUserId,
+      );
+
+      expect(result.accessToken).toEqual(mockTokenResponse);
+      expect((mockScenarioWithMetadata.metadata as any).voiceId).toBe(
+        'voice-123',
+      );
+    });
     it('should use default voice ID from languageVoices when not set in metadata', async () => {
       const mockStateInstructions = [
         {
@@ -2472,6 +2539,86 @@ describe('ScenarioSessionService', () => {
         'Agent',
         expect.any(String),
       );
+    });
+
+    it('should default to the English voice when languageId is omitted (e.g. course/track player)', async () => {
+      const startDto = {
+        scenarioId: mockScenarioId,
+        ttl: 3600,
+        // No languageId — course/track players don't offer a language picker.
+      };
+      const mockStateInstructions = [
+        {
+          stateId: '1',
+          name: 'Resistant',
+          instruction: 'Express mild doubt about if talking is helping',
+          dialogues: ['I highly doubt if this is helping'],
+        },
+      ];
+      const mockScenarioWithMetadata = {
+        ...mockScenario,
+        difficultyLevel: ScenarioDifficultyLevel.EASY,
+        metadata: {
+          title: 'Test Scenario',
+          description: 'Test Description',
+          voiceId: 'test-voice',
+          // Keyed by the mocked enLanguageDetails.id (1) — no entry for
+          // `undefined`, so this only resolves via the English fallback.
+          languageVoices: { 1: 'voice-123' },
+          stateInstructions: mockStateInstructions,
+        },
+        isGlobal: false,
+      };
+      const mockVoice = {
+        id: 'voice-123',
+        name: 'Test Voice',
+        voiceId: 'openai-voice-id',
+        provider: 'openai',
+      };
+      const mockCreatedSession = {
+        ...mockScenarioSession,
+        id: 'new-session-id',
+        roomId: 'new-room-id',
+      };
+      const mockTokenResponse = {
+        token: 'access-token-123',
+        roomName: 'new-room-id',
+        serverUrl: 'https://livekit.example.com',
+      };
+      scenarioService.getAdminScenario.mockResolvedValue(
+        mockScenarioWithMetadata as any,
+      );
+      scenarioService.getScenarioVoice.mockResolvedValue(mockVoice as any);
+      scenarioTenantService.getScenarioTenant.mockResolvedValue({
+        id: 1,
+        scenarioId: mockScenarioId,
+        tenantId: mockTenantId,
+      } as any);
+      sessionEventSharedService.getSessionEventsByScenarioId.mockResolvedValue(
+        mockSessionEvents,
+      );
+      sessionEventSharedService.findByIds.mockResolvedValue([]);
+      scenarioSessionRepository.getScenarioSessions.mockResolvedValue([]);
+      simulationCreditsService.getSimulationCredits.mockResolvedValue({
+        consumedCredits: 0,
+        creditLimit: 100,
+      } as any);
+      scenarioSessionRepository.createScenarioSession.mockResolvedValue(
+        mockCreatedSession,
+      );
+      scenarioSharedService.createRoomMetadata.mockResolvedValue({
+        scenario: mockScenarioWithMetadata,
+      } as any);
+      livekitService.createRoom.mockResolvedValue({} as any);
+      livekitService.generateAccessToken.mockResolvedValue(mockTokenResponse);
+
+      const result = await service.startScenarioSession(
+        mockCounselorId,
+        startDto as any,
+      );
+
+      expect(result).toBeDefined();
+      expect(result.scenarioSession).toEqual(mockCreatedSession);
     });
 
     it('should surface reminders and description from scenario metadata for an English session', async () => {
