@@ -121,6 +121,7 @@ import { SharedLanguageService } from 'src/language/service/shared-language.serv
 import { SessionEventTranslationService } from 'src/session-event/service/session-event-translation.service';
 import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
 import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
+import { SimulationStateDto } from '../dto/simulation-state.dto';
 import { ModuleRef } from '@nestjs/core';
 import { ScenarioEngine } from '../enum/scenario-engine.enum';
 import { RoleplaySessionService } from 'src/roleplay-studio/service/roleplay-session.service';
@@ -700,6 +701,7 @@ export class ScenarioSessionService {
       const stateNames: StateNames[] = this.getStateNames(
         scenario?.metadata?.currentState,
         scenario?.metadata?.stateNames,
+        scenario?.metadata?.states,
       );
       // Reminders are only shown to the learner when remindersEnabled is on for the scenario
       const reminders = this.getReminders(
@@ -2252,6 +2254,7 @@ export class ScenarioSessionService {
     const stateNames: StateNames[] = this.getStateNames(
       scenario?.metadata?.currentState,
       scenario?.metadata?.stateNames,
+      scenario?.metadata?.states,
     );
 
     // Fetch-pointer metadata when enabled (see startScenarioSession).
@@ -2546,8 +2549,23 @@ export class ScenarioSessionService {
     return { eventChecklist: eventChecklistDto };
   }
 
-  getStateNames(currentState?: boolean, stateNames?: StateNames[]) {
-    if (currentState && stateNames?.length) {
+  getStateNames(
+    currentState?: boolean,
+    stateNames?: StateNames[],
+    states?: SimulationStateDto[],
+  ) {
+    if (!currentState) return [];
+    // `states` (hasStates main-agent prompts, edited via StatesEditor) carries
+    // the real names for skills built on the newer states structure. Prefer
+    // it over the legacy `stateNames` — which StatesEditor never populates —
+    // so those skills don't fall back to the generic "State 1" defaults.
+    if (states?.length) {
+      return states.map((state) => ({
+        name: state.name,
+        stateId: state.id,
+      }));
+    }
+    if (stateNames?.length) {
       return stateNames.map((stateName: StateNames) => {
         return {
           name: stateName.name,
