@@ -9,6 +9,17 @@ import { LoggerService } from '../../logger/logger.service';
 import { NotificationErrorType } from '../../notification/type/notification.error.type';
 import { ENDPOINTS } from '../constants/endpoints.constants';
 import {
+  CrisisCheckRequest,
+  CrisisCheckResponse,
+  KnowledgeAnswerRequest,
+  KnowledgeAnswerResponse,
+  KnowledgeChunkBulkUpsertRequest,
+  KnowledgeChunkBulkUpsertResponse,
+  KnowledgeChunkDeleteResponse,
+  KnowledgeChunkSearchRequest,
+  KnowledgeChunkSearchResponse,
+} from '../dto/knowledge.dto';
+import {
   AddReferenceDocumentRequest,
   Chat,
   DeleteReferenceDocumentRequest,
@@ -258,6 +269,121 @@ export class AiService {
     );
   }
 
+  // ── WhatsApp Q&A knowledge corpus ──────────────────────────────────────────
+  // ally-ai owns the `KnowledgeChunk` collection; ally-be's Postgres is the system of record.
+  // Every call here passes an EXPLICIT timeout for the same reason as the roadmap block above:
+  // makeRequest defaults to 5 minutes, which is far longer than any of these paths can afford.
+
+  /**
+   * Index a batch of chunks (64 at a time; a 300-page PDF is ~500 chunks ≈ 8 calls).
+   *
+   * 120s: each call embeds up to 64 passages in one OpenAI request and then writes them, and it
+   * runs inside the ingest SQS consumer rather than on a user-facing path. Still bounded well
+   * under the consumer's visibility timeout so a hang cannot cause a redelivery mid-write.
+   *
+   * Returns per-chunk succeeded/failed — never throws for a per-item problem — so the caller can
+   * advance indexedChunkCount and retry only what actually failed.
+   */
+  async bulkUpsertKnowledgeChunks(request: KnowledgeChunkBulkUpsertRequest) {
+    return this.makeRequest<
+      KnowledgeChunkBulkUpsertResponse,
+      KnowledgeChunkBulkUpsertRequest
+    >(
+      ENDPOINTS.KNOWLEDGE_CHUNK_BULK_UPSERT,
+      request,
+      true,
+      'post',
+      undefined,
+      false,
+      120_000,
+    );
+  }
+
+  /**
+   * Remove every chunk of one document. MANDATORY before writing a new chunk version.
+   *
+   * Skipping it leaves the previous generation retrievable, which after an edit means the bot can
+   * answer with — and cite — text the document no longer contains.
+   */
+  async deleteKnowledgeChunksByDocument(documentId: string) {
+    return this.makeRequest<KnowledgeChunkDeleteResponse, undefined>(
+      `${ENDPOINTS.KNOWLEDGE_CHUNK_DELETE_BY_DOCUMENT}/${documentId}`,
+      undefined,
+      true,
+      'delete',
+      undefined,
+      false,
+      30_000,
+    );
+  }
+
+  /** Retrieval only, no LLM. Backs the admin retrieval console. */
+  async searchKnowledgeChunks(request: KnowledgeChunkSearchRequest) {
+    return this.makeRequest<
+      KnowledgeChunkSearchResponse,
+      KnowledgeChunkSearchRequest
+    >(
+      ENDPOINTS.KNOWLEDGE_CHUNK_SEARCH,
+      request,
+      true,
+      'post',
+      undefined,
+      false,
+      30_000,
+      // The query is a worker's question on the WhatsApp path.
+      true,
+    );
+  }
+
+  /**
+   * Answer a worker's question from the corpus, or decline.
+   *
+   * 25s, and that number is load-bearing rather than cautious: this runs inside the WhatsApp
+   * inbound SQS consumer, whose visibility timeout is 60s. Left at the 5-minute default, a slow
+   * ally-ai would outlive the visibility window, SQS would redeliver the message, and the worker
+   * would be answered twice — the worst failure mode this pipeline has.
+   *
+   * redactBody=true: the payload is the worker's question.
+   */
+  async answerKnowledgeQuestion(request: KnowledgeAnswerRequest) {
+    return this.makeRequest<KnowledgeAnswerResponse, KnowledgeAnswerRequest>(
+      ENDPOINTS.KNOWLEDGE_AGENT_ANSWER,
+      request,
+      true,
+      'post',
+      undefined,
+      false,
+      25_000,
+      true,
+    );
+  }
+
+  /**
+   * The LLM crisis classifier — the second layer of the safety net.
+   *
+   * Run CONCURRENTLY with `answerKnowledgeQuestion`, so it adds no latency to the ordinary reference
+   * question, which is what the overwhelming majority of messages are. A positive verdict discards
+   * the answer that came back alongside it.
+   *
+   * 15s rather than the answer call's 25s: this is one small-model classification, and the pair runs
+   * inside the same SQS visibility window. A classifier that hangs must not be what pushes the whole
+   * message past it — and a timeout here is survivable, because ally-be's keyword rules already ran.
+   *
+   * redactBody=true: the payload is the worker's message.
+   */
+  async checkWhatsAppCrisis(request: CrisisCheckRequest) {
+    return this.makeRequest<CrisisCheckResponse, CrisisCheckRequest>(
+      ENDPOINTS.KNOWLEDGE_AGENT_CRISIS_CHECK,
+      request,
+      true,
+      'post',
+      undefined,
+      false,
+      15_000,
+      true,
+    );
+  }
+
   /** Backfill/reindex batches. 60s because a batch embeds up to 64 items in one call. */
   async bulkUpsertRoadmapOpportunities(
     request: RoadmapOpportunityBulkUpsertRequest,
@@ -482,6 +608,14 @@ export class AiService {
     // scribe save) must pass something far below the 5-minute default, so an
     // unhealthy AI service degrades the feature instead of hanging the save.
     timeoutMs?: number,
+    // Suppress the debug body log for payloads that carry PII/PHI.
+    //
+    // The `AI Request BODY` line below serialises the whole request at debug level. For most
+    // endpoints that is a useful trace; for the WhatsApp knowledge agent the payload is a mental
+    // healthcare worker's question, and a LOG_LEVEL=debug deploy would write it to CloudWatch
+    // outside the designated audit logger. Callers on those paths pass redactBody=true, which
+    // logs the size only. Opt-IN rather than opt-out so existing endpoints keep their traces.
+    redactBody = false,
   ): Promise<R> {
     const requestTimeout = timeoutMs ?? this.maxTimeout;
     const execId = uuidv4();
@@ -505,10 +639,17 @@ export class AiService {
           `method=${method} | isLearnService=${isLearnService} | ` +
           `dataSize=${dataSize}B | timeout=${requestTimeout}ms | startTime=${startTime}`,
       );
-      this.logger.debug(
-        `AI Request BODY | execId=${execId} | endpoint=${endpoint} | ` +
-          `data=${JSON.stringify(data)}`,
-      );
+      if (redactBody) {
+        this.logger.debug(
+          `AI Request BODY | execId=${execId} | endpoint=${endpoint} | ` +
+            `data=[redacted ${dataSize}B — this endpoint carries PII/PHI]`,
+        );
+      } else {
+        this.logger.debug(
+          `AI Request BODY | execId=${execId} | endpoint=${endpoint} | ` +
+            `data=${JSON.stringify(data)}`,
+        );
+      }
       // set timeout for alert threshold
       timeoutId = setTimeout(() => {
         this.logger.warn(

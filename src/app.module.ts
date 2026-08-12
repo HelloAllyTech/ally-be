@@ -46,6 +46,8 @@ import { CaseModule } from './case/case.module';
 import { TrackModule } from './track/track.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
 import { ComfortAudioModule } from './comfort-audio/comfort-audio.module';
+import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
+import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { ScenarioReportModule } from './scenario-report/scenario-report.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 import { AppVersionModule } from './app-version/app-version.module';
@@ -110,6 +112,8 @@ import { LogsModule } from './logs/logs.module';
     ConversationalGuardrailsModule,
     ScenarioCoverImageLibraryModule,
     ComfortAudioModule,
+    KnowledgeBaseModule,
+    WhatsAppModule,
     ScenarioReportModule,
     SchedulerModule,
     AppVersionModule,

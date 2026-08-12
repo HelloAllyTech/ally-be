@@ -212,6 +212,49 @@ export class AppConfigService {
         queueUrl: this.configService.get<string>('SQS_LAB_RUN_QUEUE_URL'),
         dlqUrl: this.configService.get<string>('SQS_LAB_RUN_DLQ_URL'),
       },
+      knowledgeBase: {
+        ingestQueueUrl: this.configService.get<string>(
+          'SQS_KB_INGEST_QUEUE_URL',
+        ),
+        ingestDlqUrl: this.configService.get<string>('SQS_KB_INGEST_DLQ_URL'),
+      },
+      whatsapp: {
+        inboundQueueUrl: this.configService.get<string>(
+          'SQS_WHATSAPP_INBOUND_QUEUE_URL',
+        ),
+        inboundDlqUrl: this.configService.get<string>(
+          'SQS_WHATSAPP_INBOUND_DLQ_URL',
+        ),
+      },
+    };
+  }
+
+  /**
+   * WhatsApp Business Cloud API credentials.
+   *
+   * All optional so the service boots without them — the bot is off until configured, and the
+   * settings row's `enabled` flag is the actual switch. `appSecret` missing makes the webhook fail
+   * CLOSED rather than accept unsigned requests.
+   */
+  get whatsapp() {
+    return {
+      /** Verifies the webhook-registration handshake (hub.verify_token). Chosen by us. */
+      verifyToken: this.configService.get<string>('WHATSAPP_VERIFY_TOKEN'),
+      /** Meta app secret; keys the X-Hub-Signature-256 HMAC. */
+      appSecret: this.configService.get<string>('WHATSAPP_APP_SECRET'),
+      /** The sending number's id, not the number itself. */
+      phoneNumberId: this.configService.get<string>('WHATSAPP_PHONE_NUMBER_ID'),
+      accessToken: this.configService.get<string>('WHATSAPP_ACCESS_TOKEN'),
+      graphApiVersion: this.configService.get<string>(
+        'WHATSAPP_GRAPH_API_VERSION',
+        'v21.0',
+      ),
+      /**
+       * Environment discriminator, following the LiveKit webhook precedent. One WhatsApp number
+       * can only point at one webhook URL, so when staging and production share a number this is
+       * what stops both replying to the same worker.
+       */
+      environment: this.configService.get<string>('WHATSAPP_ENVIRONMENT'),
     };
   }
   get s3() {

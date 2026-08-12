@@ -31,13 +31,17 @@ describe('LLM model registry', () => {
       expect(models).toContain('gemini-2.5-pro');
     });
 
-    it('ally-ai runs OpenAI + Gemini, but not Anthropic', () => {
+    it('ally-ai runs OpenAI + Gemini + Anthropic', () => {
+      // Anthropic gained ALLY_AI for the WhatsApp knowledge agent, whose answer model is
+      // admin-selectable per prompt. Before that, selecting Claude for an ally-ai prompt silently
+      // fell back to the default provider because the picker filtered it out. ally-ai grew the raw
+      // `anthropic` SDK (app/core/llm/dispatch.py) in the same change.
       const providers = new Set(
         getLlmModels(LlmRuntime.ALLY_AI).map((m) => m.provider),
       );
       expect(providers.has('openai')).toBe(true);
       expect(providers.has('gemini')).toBe(true);
-      expect(providers.has('anthropic')).toBe(false);
+      expect(providers.has('anthropic')).toBe(true);
     });
 
     it('ally-be runs OpenAI + Gemini + Anthropic', () => {
@@ -49,9 +53,12 @@ describe('LLM model registry', () => {
       expect(providers.has('anthropic')).toBe(true);
     });
 
-    it('anthropic models are only offered for ally-be', () => {
+    it('anthropic models are offered for ally-be and ally-ai, never the voice runtime', () => {
+      // The exclusion that still matters: ally-ai-learn's factory has no Anthropic branch, so
+      // offering Claude there would let an admin pick a model the voice agent cannot run.
       const claude = LLM_MODEL_REGISTRY.find((m) => m.provider === 'anthropic');
-      expect(claude?.runtimes).toEqual([LlmRuntime.ALLY_BE]);
+      expect(claude?.runtimes).toEqual([LlmRuntime.ALLY_AI, LlmRuntime.ALLY_BE]);
+      expect(claude?.runtimes).not.toContain(LlmRuntime.AI_LEARN);
     });
 
     it('no filter returns the full registry', () => {

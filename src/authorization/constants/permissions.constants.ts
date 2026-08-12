@@ -274,6 +274,28 @@ const PERMISSIONS = {
   // request data, so this stays as restricted as the SDA management surface.
   VIEW_AWS_LOGS: 'view:aws-logs',
 
+  // === WHATSAPP Q&A KNOWLEDGE BASE ===
+  // Granted ONLY to SUPER_DUPER_ADMIN. The corpus is what the bot tells mental
+  // healthcare workers, so write access is the ability to change clinical
+  // guidance at scale — and archive/delete is the ability to silently remove it.
+  VIEW_KNOWLEDGE_BASE: 'view:knowledge-base',
+  EDIT_KNOWLEDGE_BASE: 'edit:knowledge-base',
+  UPLOAD_KNOWLEDGE_BASE: 'upload:knowledge-base',
+  EDIT_KNOWLEDGE_BASE_ARCHIVE: 'edit:knowledge-base:archive',
+
+  // === WHATSAPP Q&A BOT ===
+  // Also SUPER_DUPER_ADMIN only. `:conversations` is the most sensitive of these — message bodies
+  // are mental healthcare workers' clinical questions alongside their phone numbers.
+  VIEW_WHATSAPP_BOT: 'view:whatsapp-bot',
+  EDIT_WHATSAPP_BOT: 'edit:whatsapp-bot',
+  VIEW_WHATSAPP_BOT_TEMPLATES: 'view:whatsapp-bot:templates',
+  EDIT_WHATSAPP_BOT_TEMPLATES: 'edit:whatsapp-bot:templates',
+  VIEW_WHATSAPP_BOT_CONVERSATIONS: 'view:whatsapp-bot:conversations',
+  EDIT_WHATSAPP_BOT_CONVERSATIONS: 'edit:whatsapp-bot:conversations',
+  VIEW_WHATSAPP_BOT_UNANSWERED: 'view:whatsapp-bot:unanswered',
+  EDIT_WHATSAPP_BOT_UNANSWERED: 'edit:whatsapp-bot:unanswered',
+  VIEW_WHATSAPP_BOT_ANALYTICS: 'view:whatsapp-bot:analytics',
+
   // === RUNTIME I18N ===
   VIEW_I18N_TRANSLATIONS: 'view:admin:i18n-translations',
   EDIT_I18N_TRANSLATIONS: 'edit:admin:i18n-translations',
@@ -438,6 +460,22 @@ const SUPER_DUPER_ADMIN_PERMISSIONS = [
   // saved view for everyone. SUPER_ADMIN gets VIEW + VOTE only (see above).
   PERMISSIONS.EDIT_PRODUCT_ROADMAP,
   PERMISSIONS.VIEW_AWS_LOGS,
+  // WhatsApp Q&A knowledge corpus. SDA-only rather than shared with SUPER_ADMIN for the same
+  // reason as VIEW_AWS_LOGS: this is clinical guidance served to workers, and an unreviewed edit
+  // reaches every worker who asks a related question.
+  PERMISSIONS.VIEW_KNOWLEDGE_BASE,
+  PERMISSIONS.EDIT_KNOWLEDGE_BASE,
+  PERMISSIONS.UPLOAD_KNOWLEDGE_BASE,
+  PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE,
+  PERMISSIONS.VIEW_WHATSAPP_BOT,
+  PERMISSIONS.EDIT_WHATSAPP_BOT,
+  PERMISSIONS.VIEW_WHATSAPP_BOT_TEMPLATES,
+  PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES,
+  PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS,
+  PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS,
+  PERMISSIONS.VIEW_WHATSAPP_BOT_UNANSWERED,
+  PERMISSIONS.EDIT_WHATSAPP_BOT_UNANSWERED,
+  PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS,
 ];
 
 const COUNSELOR_PERMISSIONS = [

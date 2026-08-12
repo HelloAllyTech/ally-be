@@ -32,8 +32,9 @@ describe('LlmModelService', () => {
   });
 
   it('joins runtimes from the in-code matrix, not from the row', async () => {
-    // Anthropic is ally-be-only because ai-learn has no Anthropic branch. A DB
-    // row cannot widen that, which is the whole point of keeping it in code.
+    // Anthropic runs on ally-be and ally-ai but NOT ai-learn, whose factory has no Anthropic
+    // branch. The row here claims `runtimes: 'anything'` and is ignored — a DB row cannot widen
+    // what a runtime can actually execute, which is the whole point of keeping the matrix in code.
     const service = buildService(
       jest.fn().mockResolvedValue([
         row({
@@ -46,7 +47,7 @@ describe('LlmModelService', () => {
 
     const [model] = await service.getModels();
 
-    expect(model.runtimes).toEqual([LlmRuntime.ALLY_BE]);
+    expect(model.runtimes).toEqual([LlmRuntime.ALLY_AI, LlmRuntime.ALLY_BE]);
   });
 
   it('filters to a requested runtime', async () => {
