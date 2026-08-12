@@ -19,5 +19,23 @@
     "strictFunctionTypes": true,
     "strictPropertyInitialization": true,
     "skipLibCheck": true
-  }
+  },
+  "//": [
+    "`include` is explicit and MUST stay limited to src/.",
+    "",
+    "There is no `rootDir`, so tsc infers one from the common ancestor of every input file.",
+    "While that was only ever src/, the output was dist/<domain>/... — which is what the entity",
+    "globs in src/database/data-source.ts ('dist/*/entity/*.entity.js') are written against.",
+    "",
+    "Adding a single .ts file anywhere outside src/ (a build script, a codegen helper) moves that",
+    "inferred root up to the repo root, and every emitted path gains a `src/` segment. Nothing",
+    "fails to compile — the app starts, /api/health returns 200, migrations run — but the entity",
+    "glob silently matches zero files and every request that touches an entity dies with",
+    "EntityMetadataNotFoundError. Adding scripts/ did exactly that.",
+    "",
+    "Keep dev-only tooling out of the build. scripts/ runs through `ts-node -T`, which does not",
+    "need to be in the project's include set."
+  ],
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
 }
