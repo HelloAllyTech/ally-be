@@ -10,8 +10,12 @@ import {
   BucketCountRow,
   TenantAnalyticsRepository,
 } from '../repository/tenant-analytics.repository';
+import {
+  generateBucketLabels,
+  isoDate,
+  resolveAnalyticsWindow,
+} from '../util/analytics-window.util';
 
-const MS_PER_DAY = 86_400_000;
 const MS_PER_MINUTE = 60_000;
 /** Round to 1 decimal place — enough precision for an "avg X per Y" tile. */
 const round1 = (n: number): number => Math.round(n * 10) / 10;
@@ -19,42 +23,17 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 const MOST_USED_SIMULATIONS_LIMIT = 5;
 
 /**
- * UTC calendar math mirroring PlatformAnalyticsService: `date_trunc` on the
- * tz-naive timestamp columns is pure calendar math, so the repository's
- * yyyy-mm-dd keys line up with this UTC-generated axis regardless of the Node
- * timezone.
+ * Bucket granularity per preset — the dashboard's existing axis, kept as an
+ * explicit map so `resolveAnalyticsWindow` reproduces it exactly. `all` is
+ * bucketed by month by the util itself (a daily axis over years of history is
+ * a thousand unreadable ticks).
  */
-function startOfUtcDay(d: Date): Date {
-  return new Date(
-    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-  );
-}
-
-function addDays(d: Date, n: number): Date {
-  return new Date(d.getTime() + n * MS_PER_DAY);
-}
-
-function addMonths(d: Date, n: number): Date {
-  return new Date(
-    Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + n, d.getUTCDate()),
-  );
-}
-
-function startOfUtcMonth(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
-}
-
-/** ISO week start (Monday 00:00 UTC), matching Postgres `date_trunc('week')`. */
-function startOfUtcWeekMonday(d: Date): Date {
-  const day = startOfUtcDay(d);
-  const dow = day.getUTCDay(); // 0=Sun .. 6=Sat
-  const offset = (dow + 6) % 7; // days since Monday
-  return addDays(day, -offset);
-}
-
-function isoDate(d: Date): string {
-  return d.toISOString().slice(0, 10);
-}
+const DEFAULT_BUCKET_FOR: Record<AnalyticsRange, AnalyticsBucket> = {
+  '30d': 'day',
+  '90d': 'week',
+  '12m': 'month',
+  all: 'month',
+};
 
 @Injectable()
 export class TenantAnalyticsService {
@@ -74,22 +53,27 @@ export class TenantAnalyticsService {
     tenantId: string,
     range: AnalyticsRange,
   ): Promise<OrganizationMetricsResponseDto> {
-    const now = new Date();
-    const todayStart = startOfUtcDay(now);
-    const endExclusive = addDays(todayStart, 1);
+    // `all` runs from this tenant's own first row, measured rather than
+    // guessed — and measured per tenant, so an organization that joined last
+    // month doesn't get an axis stretching back to the platform's first
+    // account. Only queried for that range; the presets are pure calendar math.
+    const allTimeStart =
+      range === 'all'
+        ? await this.repo.getTenantDataFloor(tenantId)
+        : undefined;
 
-    let windowStart: Date;
-    let bucket: AnalyticsBucket;
-    if (range === '30d') {
-      windowStart = addDays(todayStart, -29);
-      bucket = 'day';
-    } else if (range === '90d') {
-      windowStart = addDays(todayStart, -89);
-      bucket = 'week';
-    } else {
-      windowStart = startOfUtcMonth(addMonths(todayStart, -11));
-      bucket = 'month';
-    }
+    const {
+      start: windowStart,
+      endExclusive,
+      bucket,
+    } = resolveAnalyticsWindow(
+      { range },
+      {
+        defaultRange: '30d',
+        defaultBucketFor: (r) => DEFAULT_BUCKET_FOR[r],
+        allTimeStart,
+      },
+    );
 
     this.logger.info(
       `Building organization metrics tenant=${tenantId} range=${range} ` +
@@ -148,7 +132,7 @@ export class TenantAnalyticsService {
       ),
     ]);
 
-    const axis = this.buildBucketAxis(windowStart, endExclusive, bucket);
+    const axis = generateBucketLabels(windowStart, endExclusive, bucket);
 
     const avgSessionsPerActiveLearner =
       engagementTotals.activeLearners > 0
@@ -189,31 +173,6 @@ export class TenantAnalyticsService {
       ),
       mostUsedSimulations,
     };
-  }
-
-  /** Every bucket start (yyyy-mm-dd) covering [start, end). */
-  private buildBucketAxis(
-    start: Date,
-    end: Date,
-    bucket: AnalyticsBucket,
-  ): string[] {
-    const axis: string[] = [];
-    let cursor =
-      bucket === 'day'
-        ? startOfUtcDay(start)
-        : bucket === 'week'
-          ? startOfUtcWeekMonday(start)
-          : startOfUtcMonth(start);
-    while (cursor < end) {
-      axis.push(isoDate(cursor));
-      cursor =
-        bucket === 'day'
-          ? addDays(cursor, 1)
-          : bucket === 'week'
-            ? addDays(cursor, 7)
-            : startOfUtcMonth(addMonths(cursor, 1));
-    }
-    return axis;
   }
 
   private zeroFill(

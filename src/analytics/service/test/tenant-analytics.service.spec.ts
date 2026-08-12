@@ -45,6 +45,9 @@ describe('TenantAnalyticsService', () => {
         .fn()
         .mockResolvedValue({ learnerCount: 0, avgDays: null }),
       getMostUsedSimulations: jest.fn().mockResolvedValue([]),
+      getTenantDataFloor: jest
+        .fn()
+        .mockResolvedValue(new Date('2024-02-20T00:00:00.000Z')),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -174,6 +177,34 @@ describe('TenantAnalyticsService', () => {
       { scenarioId: 1, title: 'Difficult Conversation', sessionCount: 9 },
       { scenarioId: 2, title: 'De-escalation', sessionCount: 4 },
     ]);
+  });
+
+  it("runs range='all' from the tenant's own data floor, bucketed by month", async () => {
+    const result = await service.getOrganizationMetrics(TENANT_ID, 'all');
+
+    expect(repo.getTenantDataFloor).toHaveBeenCalledWith(TENANT_ID);
+    expect(result.range).toBe('all');
+    expect(result.bucket).toBe('month');
+    expect(repo.getCompletedSimulationsByBucket).toHaveBeenCalledWith(
+      TENANT_ID,
+      new Date('2024-02-20T00:00:00.000Z'),
+      new Date('2024-06-13T00:00:00.000Z'),
+      'month',
+    );
+    // Feb (the floor's month) through Jun (today's month), gap-free.
+    expect(result.simulationsCompletedTrend.map((p) => p.bucket)).toEqual([
+      '2024-02-01',
+      '2024-03-01',
+      '2024-04-01',
+      '2024-05-01',
+      '2024-06-01',
+    ]);
+  });
+
+  it('only measures the data floor for the all-time range', async () => {
+    await service.getOrganizationMetrics(TENANT_ID, '12m');
+
+    expect(repo.getTenantDataFloor).not.toHaveBeenCalled();
   });
 
   it('carries through newLearnersOnboarded and totalRegisteredLearners in the summary', async () => {
