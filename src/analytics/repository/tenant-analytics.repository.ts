@@ -4,6 +4,7 @@ import {
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
 } from '../../learn/enum/scenario-session-status.enum';
+import { startOfUtcDay } from '../util/analytics-window.util';
 import { AnalyticsBucket } from './platform-analytics.repository';
 
 export interface BucketCountRow {
@@ -340,6 +341,38 @@ export class TenantAnalyticsRepository {
       learnerCount: Number(row?.learnerCount) || 0,
       avgDays: row?.avgDays != null ? Number(row.avgDays) : null,
     };
+  }
+
+  /**
+   * The tenant's first row — where an all-time window starts for this
+   * organization.
+   *
+   * Deliberately tenant-scoped rather than reusing `getPlatformDataFloor`: a
+   * tenant that joined last month must not get an axis stretching back to the
+   * platform's first account, which would prepend years of empty buckets to
+   * charts that have no data there. `users` because nothing in an organization
+   * predates its first account, and `scenario_sessions` as a lower bound in
+   * case a migrated session does. Returns today (UTC day start) for a tenant
+   * with no rows at all — an empty window over an empty organization is the
+   * honest answer, and renders as the designed empty state.
+   */
+  async getTenantDataFloor(tenantId: string): Promise<Date> {
+    const rows = await this.dataSource.query<{ floor: Date | string | null }[]>(
+      `
+      SELECT LEAST(
+        (SELECT MIN(u."createdAt") FROM users u WHERE u."tenant_id" = $1),
+        (SELECT MIN(s."createdAt") FROM scenario_sessions s WHERE s."tenant_id" = $1)
+      ) AS floor
+      `,
+      [tenantId],
+    );
+
+    const floor = rows[0]?.floor;
+    if (!floor) return startOfUtcDay(new Date());
+
+    const parsed = floor instanceof Date ? floor : new Date(floor);
+    if (Number.isNaN(parsed.getTime())) return startOfUtcDay(new Date());
+    return startOfUtcDay(parsed);
   }
 
   /**
