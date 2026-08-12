@@ -55,16 +55,34 @@ export class ConversationalGuardrailsService {
   }
 
   // TEMPORARY: latency-testing exclusion for one scenario only (id 373) —
-  // skips even the mandatory SYSTEM guardrail (STT Coherence Guard), which
-  // is otherwise always injected regardless of the scenario's own
-  // `optGuardrails` toggle (that toggle is currently unread here and gates
-  // nothing — separate, real bug, not fixed by this exclusion). Scoped to
-  // this one scenario ID so no other scenario's behavior changes. Remove
-  // once the latency test concludes.
+  // skips even the mandatory SYSTEM guardrail (STT Coherence Guard). Scoped
+  // to this one scenario ID so no other scenario's behavior changes. Remove
+  // once the latency test concludes. Independent of `optGuardrails` below —
+  // that toggle intentionally never reaches the mandatory guard; this is a
+  // separate, narrower carve-out for the one scenario under test.
   private static readonly LATENCY_TEST_EXCLUDED_SCENARIO_IDS: ReadonlySet<number> =
     new Set([373]);
 
-  async getRandomGuardrailsForSession(scenarioId?: number) {
+  /**
+   * @param scenarioId Used only for the temporary scenario-373 latency-test
+   *   exclusion above.
+   * @param optGuardrails The scenario's "Conversational Guardrails" toggle
+   *   (`scenario.metadata.optGuardrails`). Previously read nowhere in this
+   *   service, so turning it off had no effect at all — real bug, now fixed:
+   *   `false` skips USER (author-configured) guardrail sampling. `undefined`
+   *   (scenarios created before this field existed) and `true` both sample
+   *   normally, so no existing scenario's behavior changes.
+   *
+   *   The mandatory SYSTEM guardrail (STT Coherence Guard) is deliberately
+   *   NOT gated by this — it's the platform's documented, non-disableable
+   *   mitigation for STT mis-transcription (see its `mandatory` column
+   *   comment). Whether it should ever be skippable is an open product
+   *   decision, not resolved by this fix.
+   */
+  async getRandomGuardrailsForSession(
+    scenarioId?: number,
+    optGuardrails?: boolean,
+  ) {
     const excludeSystemGuardrail =
       scenarioId !== undefined &&
       ConversationalGuardrailsService.LATENCY_TEST_EXCLUDED_SCENARIO_IDS.has(
@@ -75,9 +93,11 @@ export class ConversationalGuardrailsService {
       ? []
       : await this.guardrailsRepository.getSystemGuardrails();
     const userGuardrails =
-      await this.guardrailsRepository.getRandomUserGuardrails(
-        Math.max(MAX_GUARDRAILS_PER_SESSION - systemGuardrails.length, 0),
-      );
+      optGuardrails === false
+        ? []
+        : await this.guardrailsRepository.getRandomUserGuardrails(
+            Math.max(MAX_GUARDRAILS_PER_SESSION - systemGuardrails.length, 0),
+          );
 
     // Guardrails are not translated: the classifier judges the utterance
     // against the boundary regardless of language, and the branching prompt

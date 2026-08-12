@@ -757,6 +757,7 @@ export class ScenarioSharedService {
     const guardrails =
       await this.conversationalGuardrailsService.getRandomGuardrailsForSession(
         scenario.id,
+        metadata?.optGuardrails,
       );
 
     const prompts = await this.getPromptsForScenarioSession(

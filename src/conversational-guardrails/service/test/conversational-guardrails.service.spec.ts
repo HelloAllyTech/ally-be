@@ -272,5 +272,57 @@ describe('ConversationalGuardrailsService', () => {
       expect(result.prompt).toBe('');
       expect(result.items).toEqual([]);
     });
+
+    it('should skip user guardrail sampling when optGuardrails is false, but still fetch system guardrails', async () => {
+      guardrailsRepository.getSystemGuardrails.mockResolvedValue([
+        mockSystemGuardrail,
+      ]);
+
+      const result = await service.getRandomGuardrailsForSession(
+        undefined,
+        false,
+      );
+
+      expect(
+        guardrailsRepository.getRandomUserGuardrails,
+      ).not.toHaveBeenCalled();
+      expect(result.items).toEqual([
+        {
+          helperDialogue: mockSystemGuardrail.helperDialogue,
+          actorDialogue: mockSystemGuardrail.actorDialogue,
+          kind: 'SYSTEM',
+          detectorType: 'COHERENCE',
+        },
+      ]);
+    });
+
+    it.each([true, undefined])(
+      'should sample user guardrails as normal when optGuardrails is %s',
+      async (optGuardrails) => {
+        guardrailsRepository.getRandomUserGuardrails.mockResolvedValue(
+          mockGuardrails,
+        );
+
+        const result = await service.getRandomGuardrailsForSession(
+          undefined,
+          optGuardrails,
+        );
+
+        expect(guardrailsRepository.getRandomUserGuardrails).toHaveBeenCalled();
+        expect(result.items).toHaveLength(2);
+      },
+    );
+
+    it('should exclude the system guardrail only for the scenario-373 latency-test scenario', async () => {
+      guardrailsRepository.getSystemGuardrails.mockResolvedValue([
+        mockSystemGuardrail,
+      ]);
+
+      const excluded = await service.getRandomGuardrailsForSession(373);
+      expect(excluded.items).toEqual([]);
+
+      const other = await service.getRandomGuardrailsForSession(374);
+      expect(other.items).toHaveLength(1);
+    });
   });
 });
