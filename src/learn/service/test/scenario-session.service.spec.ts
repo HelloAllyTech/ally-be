@@ -3383,6 +3383,38 @@ describe('ScenarioSessionService', () => {
         mockScenario.metadata.stateInstructions,
       );
     });
+
+    it('should derive names from `states` (hasStates prompts) instead of the legacy stateNames fallback', () => {
+      const stateNames = service.getStateNames(
+        true,
+        [
+          { stateId: '1', name: 'State 1' },
+          { stateId: '2', name: 'State 2' },
+        ],
+        [
+          {
+            id: 'state-a',
+            name: 'Opening rapport',
+            guidelines: 'Be warm',
+            scoreLower: null,
+            scoreUpper: 50,
+            ragEnabled: false,
+          },
+          {
+            id: 'state-b',
+            name: 'De-escalation',
+            guidelines: 'Stay calm',
+            scoreLower: 50,
+            scoreUpper: null,
+            ragEnabled: false,
+          },
+        ],
+      );
+      expect(stateNames).toEqual([
+        { name: 'Opening rapport', stateId: 'state-a' },
+        { name: 'De-escalation', stateId: 'state-b' },
+      ]);
+    });
   });
 
   describe('getReminders', () => {
