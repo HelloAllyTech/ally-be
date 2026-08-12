@@ -54,9 +54,26 @@ export class ConversationalGuardrailsService {
     return this.guardrailsRepository.save(guardrail);
   }
 
-  async getRandomGuardrailsForSession() {
-    const systemGuardrails =
-      await this.guardrailsRepository.getSystemGuardrails();
+  // TEMPORARY: latency-testing exclusion for one scenario only (id 373) —
+  // skips even the mandatory SYSTEM guardrail (STT Coherence Guard), which
+  // is otherwise always injected regardless of the scenario's own
+  // `optGuardrails` toggle (that toggle is currently unread here and gates
+  // nothing — separate, real bug, not fixed by this exclusion). Scoped to
+  // this one scenario ID so no other scenario's behavior changes. Remove
+  // once the latency test concludes.
+  private static readonly LATENCY_TEST_EXCLUDED_SCENARIO_IDS: ReadonlySet<number> =
+    new Set([373]);
+
+  async getRandomGuardrailsForSession(scenarioId?: number) {
+    const excludeSystemGuardrail =
+      scenarioId !== undefined &&
+      ConversationalGuardrailsService.LATENCY_TEST_EXCLUDED_SCENARIO_IDS.has(
+        scenarioId,
+      );
+
+    const systemGuardrails = excludeSystemGuardrail
+      ? []
+      : await this.guardrailsRepository.getSystemGuardrails();
     const userGuardrails =
       await this.guardrailsRepository.getRandomUserGuardrails(
         Math.max(MAX_GUARDRAILS_PER_SESSION - systemGuardrails.length, 0),

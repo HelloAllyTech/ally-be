@@ -57,7 +57,10 @@ describe('LLM model registry', () => {
       // The exclusion that still matters: ally-ai-learn's factory has no Anthropic branch, so
       // offering Claude there would let an admin pick a model the voice agent cannot run.
       const claude = LLM_MODEL_REGISTRY.find((m) => m.provider === 'anthropic');
-      expect(claude?.runtimes).toEqual([LlmRuntime.ALLY_AI, LlmRuntime.ALLY_BE]);
+      expect(claude?.runtimes).toEqual([
+        LlmRuntime.ALLY_AI,
+        LlmRuntime.ALLY_BE,
+      ]);
       expect(claude?.runtimes).not.toContain(LlmRuntime.AI_LEARN);
     });
 
