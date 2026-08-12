@@ -19,6 +19,7 @@ import { TrackEnrollmentRepository } from '../repository/track-enrollment.reposi
 import { TrackItemProgressRepository } from '../repository/track-item-progress.repository';
 import { TrackJournalEntryRepository } from '../repository/track-journal-entry.repository';
 import { TrackQuizAttemptRepository } from '../repository/track-quiz-attempt.repository';
+import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import {
   ArticleContent,
   JournalContent,
@@ -48,6 +49,7 @@ export class TrackEnrollmentService {
     private readonly trackSharedService: TrackSharedService,
     private readonly trackProgressService: TrackProgressService,
     private readonly caseSessionService: CaseSessionService,
+    private readonly scenarioSharedService: ScenarioSharedService,
   ) {}
 
   async getTracksForLearner(options: {
@@ -207,13 +209,21 @@ export class TrackEnrollmentService {
     await this.touchEnrollment(progress.trackEnrollmentId);
 
     switch (item.type) {
-      case TrackItemType.ROLEPLAY:
+      case TrackItemType.ROLEPLAY: {
+        const lastScenarioSessionId =
+          progress.status === SessionItemStatus.COMPLETED
+            ? await this.scenarioSharedService.getLatestScenarioSessionIdByTrackItemProgressId(
+                progress.id,
+              )
+            : null;
         return {
           type: item.type,
           trackItemProgressId: progress.id,
           scenarioId: item.scenarioId,
           completionCriteria: item.completionCriteria ?? null,
+          lastScenarioSessionId,
         };
+      }
 
       case TrackItemType.CASE: {
         let caseSession =

@@ -334,6 +334,21 @@ export class ScenarioSharedService {
     return null;
   }
 
+  /**
+   * Track read path: id of the learner's most recent ended session for one
+   * track item progress row, so a completed roleplay item can link straight
+   * to its full session log (a replay resolves to the latest attempt).
+   */
+  async getLatestScenarioSessionIdByTrackItemProgressId(
+    trackItemProgressId: string,
+  ): Promise<string | null> {
+    const session = await this.scenarioSessionRepository.findOne({
+      where: { trackItemProgressId, endedAt: Not(IsNull()) },
+      order: { endedAt: 'DESC' },
+    });
+    return session?.id ?? null;
+  }
+
   async getSessionGlimpseByScenarioSessionId(
     scenarioSessionId: string,
   ): Promise<string | null> {
