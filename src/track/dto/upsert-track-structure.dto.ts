@@ -21,7 +21,6 @@ export class UpsertTrackItemCompletionCriteriaDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
-  @Max(100)
   minScore?: number;
 
   @ApiPropertyOptional({ description: 'Minimum call duration s (ROLEPLAY)' })
