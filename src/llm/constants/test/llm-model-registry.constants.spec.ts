@@ -70,7 +70,14 @@ describe('provider × runtime matrix', () => {
   // ai-learn's app/llms/factory.py has no Anthropic branch. If that changes,
   // this test should be updated deliberately — not discovered in production.
   it('keeps Anthropic out of the voice runtime', () => {
-    expect(PROVIDER_RUNTIME_MATRIX.anthropic).toEqual([LlmRuntime.ALLY_BE]);
+    // ALLY_AI was added for the WhatsApp knowledge agent (admin-selectable answer model, backed by
+    // the raw `anthropic` SDK in ally-ai's app/core/llm/dispatch.py). AI_LEARN deliberately still
+    // is not here — that factory has no Anthropic branch, so offering Claude for a voice prompt
+    // would let an admin pick a model the agent cannot run.
+    expect(PROVIDER_RUNTIME_MATRIX.anthropic).toEqual([
+      LlmRuntime.ALLY_AI,
+      LlmRuntime.ALLY_BE,
+    ]);
     expect(
       getLlmModels(LlmRuntime.AI_LEARN).some((m) => m.provider === 'anthropic'),
     ).toBe(false);

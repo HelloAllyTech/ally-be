@@ -55,7 +55,11 @@ export interface LlmModelInfo {
 export const PROVIDER_RUNTIME_MATRIX: Record<LlmProviderName, LlmRuntime[]> = {
   openai: [LlmRuntime.AI_LEARN, LlmRuntime.ALLY_AI, LlmRuntime.ALLY_BE],
   gemini: [LlmRuntime.AI_LEARN, LlmRuntime.ALLY_AI, LlmRuntime.ALLY_BE],
-  anthropic: [LlmRuntime.ALLY_BE],
+  // ALLY_AI added for the WhatsApp knowledge agent, which needs Claude selectable per prompt.
+  // Without it the admin model picker filters Claude out for any ally-ai prompt and an admin who
+  // selects it silently gets the default provider instead — a failure with no error anywhere.
+  // ally-ai gained the raw `anthropic` SDK (app/core/llm/dispatch.py) at the same time.
+  anthropic: [LlmRuntime.ALLY_AI, LlmRuntime.ALLY_BE],
   // Self-hosted runtimes. Only the voice agent can reach them —
   // ally-ai-learn's factory has OLLAMA and VLLM branches pointing at
   // OLLAMA_BASE_URL / the vLLM endpoint, which live alongside that worker.

@@ -397,6 +397,60 @@ export class S3Service {
     return { presignedUrl, imageUrl };
   }
 
+  /**
+   * Download an object into memory as a Buffer.
+   *
+   * Added for knowledge-base ingest, which needs the bytes of an uploaded PDF/DOCX/EPUB after the
+   * browser has PUT them straight to S3 via a presigned URL. Every other read path here is a
+   * presign or a stream, and fetching the public HTTPS URL instead would only work while the
+   * bucket happens to be public-read — a fragile thing for an ingest pipeline to depend on.
+   *
+   * Buffers rather than streams on purpose: the parsers (pdfjs, mammoth, jszip) all take a whole
+   * buffer, and the upload cap is already enforced at 50 MB, so peak memory is bounded by the same
+   * limit an admin was allowed to upload.
+   */
+  async getObjectBuffer(params: {
+    bucket: string;
+    key: string;
+  }): Promise<Buffer> {
+    const response = await this.s3.send(
+      new GetObjectCommand({ Bucket: params.bucket, Key: params.key }),
+    );
+    const body = response.Body;
+    if (!body) {
+      throw new BadRequestException(
+        `S3 object ${params.key} returned no content`,
+      );
+    }
+    // transformToByteArray is the SDK v3 helper on the streaming body; it works the same in Node
+    // and avoids hand-rolling a stream-to-buffer collector.
+    const bytes = await body.transformToByteArray();
+    return Buffer.from(bytes);
+  }
+
+  /**
+   * Split one of our own object URLs back into bucket and key.
+   *
+   * The knowledge-base stores the public URL on the row (matching comfort-audio), but ingest needs
+   * the key to read the object back. Kept next to deleteS3Image, which parses the same shape.
+   */
+  parseS3Url(url: string): { bucket: string; key: string } | null {
+    const match = /^https:\/\/([^.]+)\.s3\.[^.]+\.amazonaws\.com\/(.+)$/.exec(
+      url,
+    );
+    if (match) return { bucket: match[1], key: decodeURIComponent(match[2]) };
+
+    // LocalStack (and path-style S3) serve http://host:port/bucket/key instead.
+    const pathStyle = /^https?:\/\/[^/]+\/([^/]+)\/(.+)$/.exec(url);
+    if (pathStyle) {
+      return {
+        bucket: pathStyle[1],
+        key: decodeURIComponent(pathStyle[2]),
+      };
+    }
+    return null;
+  }
+
   async deleteS3Image(bucket: string, imageUrl: string) {
     const s3ImageUrlPattern =
       /^https:\/\/[^.]+\.s3\.[^.]+\.amazonaws\.com\/(.+)$/;

@@ -37,4 +37,16 @@ export const ENDPOINTS = {
   ROADMAP_OPPORTUNITY_SEARCH: 'api/v1/roadmap-opportunities/search',
   ROADMAP_OPPORTUNITY_BULK_UPSERT: 'api/v1/roadmap-opportunities/bulk-upsert',
   ROADMAP_OPPORTUNITY_IDS: 'api/v1/roadmap-opportunities/ids',
+
+  // ── WhatsApp Q&A knowledge corpus ─────────────────────────────────────────
+  // Same ownership rule as the roadmap collection above: ally-ai owns the `KnowledgeChunk`
+  // Weaviate collection, ally-be's Postgres (kb_documents + kb_document_chunks) stays the
+  // system of record, and the vector store is a DERIVED index. The Weaviate object uuid IS
+  // the kb_document_chunks.id, which is what lets a citation resolve back to an exact passage.
+  KNOWLEDGE_CHUNK_BULK_UPSERT: 'api/v1/knowledge-chunks/bulk-upsert',
+  KNOWLEDGE_CHUNK_SEARCH: 'api/v1/knowledge-chunks/search',
+  KNOWLEDGE_CHUNK_DELETE_BY_DOCUMENT: 'api/v1/knowledge-chunks/document',
+  KNOWLEDGE_CHUNK_IDS: 'api/v1/knowledge-chunks/ids',
+  KNOWLEDGE_AGENT_ANSWER: 'api/v1/knowledge-agent/answer',
+  KNOWLEDGE_AGENT_CRISIS_CHECK: 'api/v1/knowledge-agent/crisis-check',
 } as const;

@@ -47,8 +47,25 @@ async function bootstrap() {
       nestLevelsByLevel[logLevel] || nestLevelsByLevel[defaultLevel],
     );
 
-    // Add body parser configuration for larger payloads
-    app.use(express.json({ limit: '1mb' }));
+    // Add body parser configuration for larger payloads.
+    //
+    // The `verify` callback stashes the EXACT bytes express parsed. Provider webhooks sign the raw
+    // body (Meta sends X-Hub-Signature-256 = HMAC-SHA256 over it), and re-serialising the parsed
+    // object does not reproduce those bytes — key order and whitespace differ, so the HMAC never
+    // matches. Reading the stream inside the handler does not work either: this middleware has
+    // already consumed it, so an `for await (const chunk of req)` there yields nothing.
+    //
+    // Applied globally rather than per-route because express.json is registered here for every
+    // path; scoping it would mean registering a second parser ahead of this one. The cost is one
+    // retained Buffer per request, bounded by the 1mb limit.
+    app.use(
+      express.json({
+        limit: '1mb',
+        verify: (req: Request & { rawBody?: Buffer }, _res, buf: Buffer) => {
+          req.rawBody = buf;
+        },
+      }),
+    );
     app.use(express.urlencoded({ limit: '1mb', extended: true }));
 
     // Serve dynamic-i18n published files at /i18n/* (manifest + versioned bundles).

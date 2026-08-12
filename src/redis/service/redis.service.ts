@@ -89,6 +89,18 @@ export class RedisService {
     return this.redis.hincrby(fullKey, field, increment);
   }
 
+  /**
+   * Set a TTL on an existing key.
+   *
+   * Added for the WhatsApp rate limiter, which needs `hincrBy` (atomic, so two messages arriving
+   * together cannot both read the same count) followed by an expiry on first write. Without an
+   * expire the counter hashes would accumulate one key per phone number forever.
+   */
+  async expire(key: string, ttlSeconds: number): Promise<void> {
+    const fullKey = this.getFullKey(key);
+    await this.redis.expire(fullKey, ttlSeconds);
+  }
+
   // Get all fields from a Redis hash
   async hgetAll(key: string): Promise<Record<string, string>> {
     const fullKey = this.getFullKey(key);

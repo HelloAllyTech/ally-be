@@ -279,6 +279,50 @@ published runs, and reusable **question sets**. System-wide (no tenant); gated b
 
 ---
 
+### 3.11 WhatsApp Q&A bot & knowledge base (`whatsapp`, `knowledge-base`)
+
+A WhatsApp number mental healthcare workers can ask questions of, answered from a vetted corpus with
+passage-level citations — or declined honestly when the corpus does not cover the question. Two
+modules: `knowledge-base` owns the corpus (upload → extract → chunk → index), `whatsapp` owns the
+channel (webhook → dedupe → rate limit → consent → templates → retrieval → send). System-wide, no
+tenant. Gated by `view|edit:knowledge-base`, `upload:knowledge-base`, `view|edit:whatsapp-bot`,
+`…:templates`, `…:conversations`, `…:unanswered` and `view:whatsapp-bot:analytics`; the
+`:conversations` pair is **SUPER_DUPER_ADMIN only**, because those rows hold workers' clinical
+questions next to their phone numbers. Tables in migrations `1892000000000`–`1892000000002`,
+permissions in `1892000000007`/`1892000000009`, seeds in `1892000000008`, tooltips in
+`1892000000010`.
+
+Three things about this domain that are not visible from the columns:
+
+- **`kb_document_chunks.id` IS the Weaviate object UUID** (collection `KnowledgeChunk`, §4). Postgres
+  is the system of record; the vector index is derived. Chunk text is immutable for a given
+  `(document_id, chunk_version, chunk_index)` — an edit bumps the version, writes new rows with new
+  UUIDs and deletes the old vectors, so a citation can never resolve to text that has since changed.
+- **Nothing is hard-deleted.** Archiving hides a document from retrieval while its chunks stay, so
+  citations already recorded in the conversation log still resolve. `DELETE /documents/:id` answers
+  409 and points at archive.
+- **Message bodies and phone numbers age out; counts do not.** Both the manual per-contact erasure and
+  the hourly retention sweep blank `wa_messages.body`, `wa_unanswered_questions.question_text` and
+  `wa_contacts.phone_e164` in place rather than deleting rows — deleting them would shrink historical
+  usage figures every month as the window rolled.
+
+| Table | Base | Key columns | Notes |
+|-------|------|-------------|-------|
+| `kb_documents` | BaseWithoutTenant | `id` (uuid), `title`, `source_type` (paste/pdf/docx/epub/url), `source_url`, `file_url`/`file_name`/`content_type`/`size_bytes` (nullable), `raw_text` (full extracted text — chunk offsets index into this, so re-chunking never re-parses), `language`, `tags` (text[]), `status` (pending/extracting/chunking/indexing/indexed/failed), `status_message` (the admin-visible reason), `chunk_count`/`indexed_chunk_count`, `content_hash` (sha256 of `raw_text` — unchanged means no re-index), `chunk_version`, `archived_at` (nullable) | Status is richer than `reference_documents.uploadStatus` because extraction can fail independently of indexing and an admin must tell those apart |
+| `kb_document_chunks` | BaseWithoutTenant | `id` (uuid — **equals the Weaviate object UUID**), `document_id` (uuid, idx), `chunk_index`, `text`, `char_start`/`char_end` (offsets into `kb_documents.raw_text`), `page_from`/`page_to` (PDF), `section_path` (e.g. `Chapter 3 > Risk assessment`), `token_count`, `text_hash`, `upload_status` (pending/success/failed), `chunk_version`, **uniq(`document_id`, `chunk_version`, `chunk_index`)** | ~400-token chunks, 60-token overlap; sections are hard boundaries so a chunk never spans two chapters |
+| `wa_contacts` | BaseWithoutTenant | `id` (uuid), `phone_e164` (**uniq**), `phone_last4` (derived, for list display), `consent_status` (pending/granted/opted_out), `consent_granted_at`/`opted_out_at`, `first_seen_at`/`last_seen_at`, `message_count`, `locale`, `blocked_at`/`blocked_reason` | `phone_e164` is identifiable data on mental healthcare workers: masked to last 4 in every API read except one logged reveal endpoint, and blanked to `erased:<id>` past the retention window |
+| `wa_conversations` | BaseWithoutTenant | `id` (uuid), `contact_id` (uuid, idx), `started_at`/`last_message_at`, `message_count`, `last_language` | WhatsApp has no session concept, so one is defined: `conversationIdleMinutes` (default 1440) of silence closes the thread |
+| `wa_messages` | BaseWithoutTenant | `id` (uuid), `conversation_id`/`contact_id` (uuid, idx each), `direction` (inbound/outbound), `provider_message_id` (**uniq** — the dedupe key), `body`, `language`, `handled_by` (template/rag/crisis/consent/declined/clarified/error/rate_limited/unsupported_media), `template_id`, `citations` (jsonb), `retrieval_meta` (jsonb — includes the provider and model that ACTUALLY ran), `latency_ms`, `status` (received/queued/processing/sent/failed/discarded), `error_message`, `in_reply_to_id`; idx (`conversation_id`, `createdAt`) | The unique `provider_message_id` is what makes dedupe correct: SQS is at-least-once *and* Meta retries independently. `retrieval_meta` carries the real model because `prompt_versions` stores only prompt text, so a model swap would otherwise be invisible |
+| `wa_keyword_templates` | BaseWithoutTenant | `id` (uuid), `kind` (crisis/command/consent/faq), `name`, `match_type` (exact/contains/regex/any_of), `patterns` (text[]), `language_code` (null = all), `priority` (crisis 0–99, consent 100–199, command 200–299, faq 300+), `response_text` (supports `{helpline_numbers}`), `bypass_rag`, `terminal`, `active`, `mandatory`, `archived_at` | One ordered pass, first match wins, `terminal` stops everything. `mandatory` rows (crisis, STOP/START, consent) are editable but cannot be deleted or disabled |
+| `wa_unanswered_questions` | BaseWithoutTenant | `id` (uuid), `message_id` (**uniq**), `conversation_id`, `question_text`, `language`, `reason` (no_hits/below_threshold/model_declined/error), `top_similarity`, `hit_count`, `status` (open/triaged/answered/dismissed), `assigned_to`, `resolution_note`, `linked_document_id`, `resolved_by`/`resolved_at` | Its own table rather than a view over `wa_messages`, because it carries admin workflow state that must outlive message-body retention. `clarify` outcomes are deliberately excluded — a vague question is not a corpus gap |
+
+Bot configuration is **not** a table: it is one `global_settings` row, `name='whatsapp_bot'`, holding
+the kill switch, consent and reply copy, rate limits, retrieval thresholds, `retentionDays` and
+`crisisClassifierEnabled`. Defaults are merged per field, so a row written before a setting existed
+picks the default up rather than leaving it undefined.
+
+---
+
 ## 4. Weaviate (vector DB — `ally-ai`)
 
 Defined in `ally-ai/app/core/vector_db/constants.py`; migrations in `ally-ai/app/migrations/`.
@@ -288,9 +332,11 @@ Each "collection" stores objects + their embeddings for semantic search / RAG.
 |------------|------------|---------|
 | `Conversation` | `chat_id` (int), `message` (text), `role` (text), `timestamp` (date) | Embedded conversation turns for semantic recall within the AI agent. Mirrors a subset of Postgres `messages`/session messages, keyed by `chat_id` |
 | `ReferenceDocument` | `heading` (text), `content` (text), `category` (text), `tags` (text[]), `tenant_id` (text) | Embedded knowledge-base docs for RAG. Mirror of Postgres `reference_documents`, scoped by `tenant_id` |
+| `KnowledgeChunk` | `document_id`, `document_title` (denormalised), `chunk_index`, **`text`**, `char_start`/`char_end`, `page_from`/`page_to`, `section_path`, `source_url`, `language`, `tags` (text[]), `token_count`, `text_hash`, `embedding_model`/`embedded_at` | Chunked corpus for the WhatsApp Q&A bot (§3.11). Object UUID **is** `kb_document_chunks.id`. Stores `text`, unlike `RoadmapOpportunity` — the retrieve→generate loop runs inside ally-ai in one call, so without it every question would need a back-call to ally-be. **No `tenant_id` on purpose**: a future private per-tenant corpus is a NEW collection, not a filter bolted onto a shared one |
 | `MigrationHistory` | `version`, `name`, `description`, `status`, `created_at`, `completed_at` | Internal — tracks applied Weaviate migrations |
 
-**Cross-store link:** `Conversation.chat_id` ↔ `chats.id`; `ReferenceDocument` ↔ `reference_documents`
+**Cross-store link:** `KnowledgeChunk` object UUID ≡ `kb_document_chunks.id` (the one place the two
+stores share a key rather than matching on content); `Conversation.chat_id` ↔ `chats.id`; `ReferenceDocument` ↔ `reference_documents`
 (by content/tenant). There is no DB-enforced FK across stores — consistency is application-managed.
 
 ---
@@ -327,6 +373,11 @@ Each "collection" stores objects + their embeddings for semantic search / RAG.
 | A real client chat/call + transcript | `chats`, `messages`, `call_details` |
 | Daily activity / engagement for analytics | `user_daily_scores`, `badge_users` |
 | Analytics dashboard config | `dashboards` (current), `dashboard` (legacy) |
+| What the WhatsApp bot can answer from | `kb_documents`, `kb_document_chunks` (+ Weaviate `KnowledgeChunk`) |
+| What a worker asked the bot and what it replied | `wa_conversations`, `wa_messages` (bodies blanked past `retentionDays`) |
+| Why the bot declined a question | `wa_unanswered_questions` — `reason` + `top_similarity`/`hit_count` |
+| The bot's crisis / opt-out / command replies | `wa_keyword_templates` (`mandatory` rows cannot be deleted or disabled) |
+| The bot's thresholds, copy and kill switch | `global_settings` row `name='whatsapp_bot'` — not a table |
 | LLM prompts driving the agent | `prompts`, `prompts_versions` (Postgres); guardrails in `conversational_guardrails` |
 | AI Lab skills / variables / values | `lab_skills`, `lab_variables`, `lab_values` |
 | Semantic search / RAG content | Weaviate `Conversation`, `ReferenceDocument` |
