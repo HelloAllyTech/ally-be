@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { AnalyticsRange } from '../dto/platform-analytics.dto';
 import {
+  LearnerUsageQueryDto,
+  LearnerUsageResponseDto,
+  LearnerUsageRowDto,
+  LearnerUsageStatus,
   OrganizationMetricsResponseDto,
   OrganizationMetricsTrendPointDto,
 } from '../dto/tenant-analytics.dto';
@@ -17,10 +21,21 @@ import {
 } from '../util/analytics-window.util';
 
 const MS_PER_MINUTE = 60_000;
+const MS_PER_DAY = 86_400_000;
 /** Round to 1 decimal place — enough precision for an "avg X per Y" tile. */
 const round1 = (n: number): number => Math.round(n * 10) / 10;
 /** Top-N cap for the most-used-simulations ranked list. */
 const MOST_USED_SIMULATIONS_LIMIT = 5;
+/** Default page size for the per-learner usage table. */
+const DEFAULT_LEARNER_USAGE_LIMIT = 25;
+
+/**
+ * Learner-usage status thresholds, in days since the last roleplay session.
+ * A first cut, easy to retune once we see how tenant admins actually read
+ * the table — not derived from any product spec.
+ */
+const ACTIVE_WITHIN_DAYS = 14;
+const AT_RISK_WITHIN_DAYS = 30;
 
 /**
  * Bucket granularity per preset — the dashboard's existing axis, kept as an
@@ -173,6 +188,88 @@ export class TenantAnalyticsService {
       ),
       mostUsedSimulations,
     };
+  }
+
+  /**
+   * Per-learner usage table for one tenant. Unlike every other method in this
+   * service, this deliberately returns identifiable, row-level data (name,
+   * email) rather than an aggregate — that's the point of the feature (spot
+   * *which* learners aren't using Ally), not an oversight of the aggregation
+   * conventions used elsewhere in this file.
+   */
+  async getLearnerUsage(
+    tenantId: string,
+    query: LearnerUsageQueryDto,
+  ): Promise<LearnerUsageResponseDto> {
+    const range: AnalyticsRange = query.range ?? '30d';
+    const allTimeStart =
+      range === 'all'
+        ? await this.repo.getTenantDataFloor(tenantId)
+        : undefined;
+    const { start, endExclusive } = resolveAnalyticsWindow(
+      { range },
+      { defaultRange: '30d', defaultBucketFor: () => 'month', allTimeStart },
+    );
+
+    const limit = query.limit ?? DEFAULT_LEARNER_USAGE_LIMIT;
+    const offset = query.offset ?? 0;
+
+    const { rows, count } = await this.repo.getLearnerUsageRows(
+      tenantId,
+      start,
+      endExclusive,
+      {
+        search: query.search,
+        sortBy: query.sortBy,
+        order: query.order,
+        limit,
+        offset,
+      },
+    );
+
+    const now = new Date();
+    const data: LearnerUsageRowDto[] = rows.map((r) => {
+      const daysSinceLastActivity = r.lastPracticeSessionAt
+        ? Math.floor(
+            (now.getTime() - r.lastPracticeSessionAt.getTime()) / MS_PER_DAY,
+          )
+        : null;
+
+      let status: LearnerUsageStatus;
+      if (daysSinceLastActivity == null) status = 'never_started';
+      else if (daysSinceLastActivity <= ACTIVE_WITHIN_DAYS) status = 'active';
+      else if (daysSinceLastActivity <= AT_RISK_WITHIN_DAYS) status = 'at_risk';
+      else status = 'dormant';
+
+      return {
+        id: r.id,
+        name: r.name,
+        email: r.email,
+        signupDate: r.signupDate,
+        lastPracticeSessionAt: r.lastPracticeSessionAt,
+        daysSinceLastActivity,
+        status,
+        roleplaySessionsStarted: r.roleplaySessionsStarted,
+        roleplaySessionsCompleted: r.roleplaySessionsCompleted,
+        roleplayCompletionRatePct:
+          r.roleplaySessionsStarted > 0
+            ? round1(
+                (r.roleplaySessionsCompleted / r.roleplaySessionsStarted) * 100,
+              )
+            : null,
+        avgScore: r.avgScore != null ? round1(r.avgScore) : null,
+        totalPracticeMinutes: round1(r.totalDurationMs / MS_PER_MINUTE),
+        coursesAssigned: r.coursesAssigned,
+        coursesStarted: r.coursesStarted,
+        coursesCompleted: r.coursesCompleted,
+        courseCompletionRatePct:
+          r.coursesAssigned > 0
+            ? round1((r.coursesCompleted / r.coursesAssigned) * 100)
+            : null,
+      };
+    });
+
+    return { range, data, count };
   }
 
   private zeroFill(

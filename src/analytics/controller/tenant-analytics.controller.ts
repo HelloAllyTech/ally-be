@@ -19,6 +19,8 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { EnableAnalyticsDto } from '../dto/enable-analytics.dto';
 import {
+  LearnerUsageQueryDto,
+  LearnerUsageResponseDto,
   OrganizationMetricsQueryDto,
   OrganizationMetricsResponseDto,
 } from '../dto/tenant-analytics.dto';
@@ -58,6 +60,28 @@ export class TenantAnalyticsController {
       tenantId,
       query.range ?? '30d',
     );
+  }
+
+  /**
+   * Per-learner usage table for the caller's own tenant. Same JWT-scoped
+   * tenant + permission gate as `organization-metrics` — a tenant admin can
+   * only ever see their own organization's learners.
+   */
+  @Get('learner-usage')
+  @ApiOperation({
+    summary:
+      "Per-learner usage table (name, activity recency, roleplay + course progress) for the caller's tenant",
+  })
+  @ApiResponse({ status: 200, type: LearnerUsageResponseDto })
+  @AuthPermissions([PERMISSIONS.VIEW_ORGANIZATION_METRICS])
+  async getLearnerUsage(
+    @Query() query: LearnerUsageQueryDto,
+  ): Promise<LearnerUsageResponseDto> {
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new ForbiddenException('No tenant in the auth context');
+    }
+    return this.tenantAnalyticsService.getLearnerUsage(tenantId, query);
   }
 
   @Patch('dashboards')
