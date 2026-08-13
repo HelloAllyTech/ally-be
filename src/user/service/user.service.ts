@@ -729,21 +729,34 @@ export class UserService {
 
   /**
    * Determines the user role based on available roles.
-   * Priority: SUPER_DUPER_ADMIN > SUPER_ADMIN > ADMIN > COUNSELOR > first
-   * available role.
+   * Priority: PLATFORM_ADMIN > SUPER_DUPER_ADMIN > SUPER_ADMIN > ADMIN >
+   * COUNSELOR > first available role.
    *
-   * The super-admin tiers must outrank ADMIN/COUNSELOR: a user can hold both a
-   * super-admin group and ADMIN, and collapsing them to ADMIN would hide the
-   * super-admin surfaces that gate on this single role (e.g. the admin
-   * dashboard's isSuperAdminRole nav check).
+   * This is a legacy, display-only collapse for GET /users/me's single `role`
+   * field — never gate authorization logic on it (see the `roles` array
+   * instead). SUPER_DUPER_ADMIN/SUPER_ADMIN/MULTI_TENANT_ADMIN are checked
+   * below PLATFORM_ADMIN only for accounts not yet migrated by
+   * CreatePlatformAdminRole1895000000001.
+   *
+   * The platform-tier roles must outrank ADMIN/COUNSELOR: a user can hold
+   * both a platform-tier group and ADMIN, and collapsing them to ADMIN would
+   * hide the platform-tier surfaces that gate on this single role.
    */
   private determineUserRole(roles: Group[]): string {
+    if (roles.some((role) => role.name === UserRole.PLATFORM_ADMIN)) {
+      return UserRole.PLATFORM_ADMIN;
+    }
+
     if (roles.some((role) => role.name === UserRole.SUPER_DUPER_ADMIN)) {
       return UserRole.SUPER_DUPER_ADMIN;
     }
 
     if (roles.some((role) => role.name === UserRole.SUPER_ADMIN)) {
       return UserRole.SUPER_ADMIN;
+    }
+
+    if (roles.some((role) => role.name === UserRole.MULTI_TENANT_ADMIN)) {
+      return UserRole.MULTI_TENANT_ADMIN;
     }
 
     if (roles.some((role) => role.name === UserRole.ADMIN)) {

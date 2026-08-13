@@ -16,8 +16,10 @@ import {
   ApiResponse,
   ApiQuery,
 } from '@nestjs/swagger';
-import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { CompetencyService } from '../service/competency.service';
 import {
   CreateCompetencyDto,
@@ -89,7 +91,10 @@ export class CompetencyController {
       "Include the requester's own custom competencies alongside the global " +
       'ones (defaults to false — custom competencies are otherwise hidden).',
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @RequireFeatureToggle(FeatureToggleKey.COMPETENCIES, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_SCENARIO],
+  })
   @Get()
   async getAllCompetencies(
     @CurrentUser() tokenUser: TokenUser,
@@ -121,7 +126,10 @@ export class CompetencyController {
     description: 'Competency created successfully',
     type: CreateCompetencyResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @RequireFeatureToggle(FeatureToggleKey.COMPETENCIES, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_SCENARIO],
+  })
   @Post()
   async createCompetency(
     @CurrentUser() tokenUser: TokenUser,
@@ -139,7 +147,10 @@ export class CompetencyController {
     description: 'Competency updated successfully',
     type: CompetencyResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @RequireFeatureToggle(FeatureToggleKey.COMPETENCIES, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_SCENARIO],
+  })
   @Put(':id')
   async updateCompetency(
     @CurrentUser() tokenUser: TokenUser,
@@ -158,7 +169,10 @@ export class CompetencyController {
     status: 200,
     description: 'Competency deleted successfully',
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @RequireFeatureToggle(FeatureToggleKey.COMPETENCIES, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_SCENARIO],
+  })
   @Delete(':id')
   async deleteCompetency(
     @CurrentUser() tokenUser: TokenUser,
@@ -175,7 +189,10 @@ export class CompetencyController {
     description: 'Competency behaviours retrieved successfully',
     type: CompetencyBehavioursResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @RequireFeatureToggle(FeatureToggleKey.COMPETENCIES, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_SCENARIO],
+  })
   @Get(':id/behaviours')
   async getCompetencyBehaviours(
     @Param('id') id: string,
@@ -191,7 +208,10 @@ export class CompetencyController {
     description: 'Competency behaviours updated successfully',
     type: CompetencyBehavioursResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @RequireFeatureToggle(FeatureToggleKey.COMPETENCIES, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_SCENARIO],
+  })
   @Put(':id/behaviours')
   async setCompetencyBehaviours(
     @Param('id') id: string,

@@ -84,7 +84,7 @@ describe('AdminTenantService', () => {
       );
     });
 
-    it('should throw BadRequestException if user is not MULTI_TENANT_ADMIN', async () => {
+    it('should throw BadRequestException if user is not PLATFORM_ADMIN', async () => {
       mockUserRepository.findOne.mockResolvedValue(mockUser);
       mockGroupService.getUserRolesByUserId.mockResolvedValue([
         { name: UserRole.CLIENT },
@@ -97,7 +97,7 @@ describe('AdminTenantService', () => {
     it('should throw NotFoundException if tenant not found', async () => {
       mockUserRepository.findOne.mockResolvedValue(mockUser);
       mockGroupService.getUserRolesByUserId.mockResolvedValue([
-        { name: UserRole.MULTI_TENANT_ADMIN },
+        { name: UserRole.PLATFORM_ADMIN },
       ]);
       mockTenantService.findById.mockResolvedValue(null);
       await expect(service.assignTenants(dto)).rejects.toThrow(
@@ -111,7 +111,7 @@ describe('AdminTenantService', () => {
 
       mockUserRepository.findOne.mockResolvedValue(mockUser);
       mockGroupService.getUserRolesByUserId.mockResolvedValue([
-        { name: UserRole.MULTI_TENANT_ADMIN },
+        { name: UserRole.PLATFORM_ADMIN },
       ]);
       mockTenantService.findById.mockResolvedValue(mockTenant);
 
@@ -145,7 +145,7 @@ describe('AdminTenantService', () => {
     it('should be idempotent if mappings already active', async () => {
       mockUserRepository.findOne.mockResolvedValue(mockUser);
       mockGroupService.getUserRolesByUserId.mockResolvedValue([
-        { name: UserRole.MULTI_TENANT_ADMIN },
+        { name: UserRole.PLATFORM_ADMIN },
       ]);
       mockTenantService.findById.mockResolvedValue(mockTenant);
 

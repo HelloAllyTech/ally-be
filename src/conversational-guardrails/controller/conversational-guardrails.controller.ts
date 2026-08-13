@@ -15,8 +15,10 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { ConversationalGuardrailsService } from '../service/conversational-guardrails.service';
 import { CreateConversationalGuardrailDto } from '../dto/create-conversational-guardrails.dto';
 import { UpdateConversationalGuardrailDto } from '../dto/update-conversational-guardrails.dto';
@@ -31,7 +33,10 @@ export class ConversationalGuardrailsController {
   ) {}
 
   @Get()
-  @AuthPermissions([PERMISSIONS.VIEW_GUARDRAILS])
+  @RequireFeatureToggle(FeatureToggleKey.MANAGE_GUARDRAILS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_GUARDRAILS],
+  })
   @ApiOperation({
     summary: 'Get all guardrails with optional search and pagination',
   })
@@ -58,14 +63,20 @@ export class ConversationalGuardrailsController {
   }
 
   @Post()
-  @AuthPermissions([PERMISSIONS.EDIT_GUARDRAILS])
+  @RequireFeatureToggle(FeatureToggleKey.MANAGE_GUARDRAILS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_GUARDRAILS],
+  })
   @ApiOperation({ summary: 'Create a new guardrail' })
   async createGuardrail(@Body() createDto: CreateConversationalGuardrailDto) {
     return this.guardrailsService.createGuardrail(createDto);
   }
 
   @Put(':id')
-  @AuthPermissions([PERMISSIONS.EDIT_GUARDRAILS])
+  @RequireFeatureToggle(FeatureToggleKey.MANAGE_GUARDRAILS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_GUARDRAILS],
+  })
   @ApiOperation({ summary: 'Update a guardrail' })
   async updateGuardrail(
     @Param('id') id: string,

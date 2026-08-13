@@ -8,5 +8,6 @@ import { LogsService } from './logs.service';
   imports: [AwsModule, AppConfigModule],
   controllers: [AwsLogsController],
   providers: [LogsService],
+  exports: [LogsService],
 })
 export class LogsModule {}

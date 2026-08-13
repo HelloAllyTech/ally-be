@@ -9,6 +9,7 @@ import { NotFoundException } from 'src/exception/custom.exception';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { UserService } from 'src/user/service/user.service';
 import { AppConfigService } from 'src/config/config.service';
+import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
 
 describe('TooltipController', () => {
   let controller: TooltipController;
@@ -40,7 +41,7 @@ describe('TooltipController', () => {
         },
         {
           provide: PermissionsService,
-          useValue: { checkPermission: jest.fn() },
+          useValue: { checkPermission: jest.fn(), getUserRoles: jest.fn() },
         },
         {
           provide: UserService,
@@ -49,6 +50,10 @@ describe('TooltipController', () => {
         {
           provide: AppConfigService,
           useValue: {},
+        },
+        {
+          provide: FeatureToggleService,
+          useValue: { hasToggle: jest.fn().mockResolvedValue(true) },
         },
       ],
     }).compile();

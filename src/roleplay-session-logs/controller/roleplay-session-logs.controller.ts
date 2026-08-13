@@ -6,7 +6,8 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthRoles } from '../../auth/decorators/auth-roles.decorator';
+import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { SUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import { RoleplaySessionLogsService } from '../service/roleplay-session-logs.service';
 import {
@@ -25,7 +26,9 @@ export class RoleplaySessionLogsController {
   ) {}
 
   @Get()
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ROLEPLAY_SESSION_LOGS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'List all roleplay sessions across all orgs (super-admin)',
     description:
@@ -43,7 +46,9 @@ export class RoleplaySessionLogsController {
   }
 
   @Get(':id')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ROLEPLAY_SESSION_LOGS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Get a single roleplay session detail (super-admin)',
     description:

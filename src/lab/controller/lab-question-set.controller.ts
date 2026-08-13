@@ -14,8 +14,10 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthPermissions } from '../../auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { SUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import { LabQuestionSetService } from '../service/lab-question-set.service';
 import {
   ArchiveQuestionSetDto,
@@ -32,21 +34,30 @@ export class LabQuestionSetController {
   constructor(private readonly setService: LabQuestionSetService) {}
 
   @Get()
-  @AuthPermissions([PERMISSIONS.VIEW_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_AI_LAB],
+  })
   @ApiOperation({ summary: 'List reusable human-eval question sets' })
   list(@Query() query: ListQuestionSetsQueryDto) {
     return this.setService.list(query);
   }
 
   @Get(':id')
-  @AuthPermissions([PERMISSIONS.VIEW_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_AI_LAB],
+  })
   @ApiOperation({ summary: 'Get one question set with its questions' })
   getById(@Param('id') id: string) {
     return this.setService.getById(id);
   }
 
   @Post()
-  @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_AI_LAB],
+  })
   @ApiOperation({
     summary: 'Create a draft question set (optionally with initial questions)',
   })
@@ -55,7 +66,10 @@ export class LabQuestionSetController {
   }
 
   @Patch(':id')
-  @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_AI_LAB],
+  })
   @ApiOperation({
     summary:
       'Edit a draft question set (name/description/full question list) — rejected once published',
@@ -65,7 +79,10 @@ export class LabQuestionSetController {
   }
 
   @Post(':id/publish')
-  @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_AI_LAB],
+  })
   @ApiOperation({
     summary: 'Publish (lock) a question set — requires at least one question',
   })
@@ -74,7 +91,10 @@ export class LabQuestionSetController {
   }
 
   @Patch(':id/archive')
-  @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_AI_LAB],
+  })
   @ApiOperation({
     summary:
       'Archive/unarchive a published set (hides it from the run-publish picker; reversible)',
@@ -84,7 +104,10 @@ export class LabQuestionSetController {
   }
 
   @Delete(':id')
-  @AuthPermissions([PERMISSIONS.DELETE_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.DELETE_AI_LAB],
+  })
   @ApiOperation({
     summary:
       'Delete a draft question set (published sets must be archived instead)',

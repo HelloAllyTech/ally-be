@@ -38,7 +38,6 @@ import { SimulationCreditsController } from './controller/simulation-credits.con
 import { SimulationCreditsService } from './service/simulation-credits.service';
 import { SimulationCreditsRepository } from './repository/simulation-credits.repository';
 import { SimulationCredits } from 'src/learn/entity/simulation-credits.entity';
-import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { UserModule } from 'src/user/user.module';
 import { AwsModule } from 'src/aws/aws.module';
 import { ScenarioEventsRepository } from './repository/scenario-events.repository';
@@ -224,7 +223,6 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     LanguagesRepository,
     SimulationCreditsService,
     SimulationCreditsRepository,
-    PermissionValidator,
     ScenarioEventsRepository,
     ScenarioSharedService,
     RoomMetadataStoreService,

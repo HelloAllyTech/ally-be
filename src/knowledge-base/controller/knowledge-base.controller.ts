@@ -17,8 +17,10 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthPermissions } from '../../auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import {
   CreateKbDocumentDto,
   CreateKbUploadUrlDto,
@@ -49,7 +51,10 @@ export class KnowledgeBaseController {
   constructor(private readonly knowledgeBaseService: KnowledgeBaseService) {}
 
   @Post('documents/upload-url')
-  @AuthPermissions([PERMISSIONS.UPLOAD_KNOWLEDGE_BASE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.UPLOAD_KNOWLEDGE_BASE],
+  })
   @ApiOperation({
     summary: 'Presigned S3 PUT for a corpus document (pdf/docx/epub)',
     description:
@@ -68,7 +73,10 @@ export class KnowledgeBaseController {
   }
 
   @Post('documents')
-  @AuthPermissions([PERMISSIONS.EDIT_KNOWLEDGE_BASE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
+  })
   @ApiOperation({
     summary: 'Create a document and queue it for indexing',
     description:
@@ -81,7 +89,10 @@ export class KnowledgeBaseController {
   }
 
   @Get('documents')
-  @AuthPermissions([PERMISSIONS.VIEW_KNOWLEDGE_BASE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
+  })
   @ApiOperation({ summary: 'List corpus documents' })
   @ApiResponse({ status: 200, type: GetKbDocumentsResponseDto })
   list(
@@ -91,7 +102,10 @@ export class KnowledgeBaseController {
   }
 
   @Get('stats')
-  @AuthPermissions([PERMISSIONS.VIEW_KNOWLEDGE_BASE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
+  })
   @ApiOperation({ summary: 'Corpus totals by status, for the stats strip' })
   @ApiResponse({ status: 200, type: KbStatsResponseDto })
   stats(): Promise<KbStatsResponseDto> {
@@ -99,7 +113,10 @@ export class KnowledgeBaseController {
   }
 
   @Post('search')
-  @AuthPermissions([PERMISSIONS.VIEW_KNOWLEDGE_BASE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
+  })
   @ApiOperation({
     summary: 'Retrieval preview — no LLM call',
     description:
@@ -113,7 +130,10 @@ export class KnowledgeBaseController {
   // ORDER MATTERS: 'chunks/:chunkId' must stay above 'documents/:id' patterns that could also
   // match a two-segment path. Kept adjacent so the ordering is visible rather than incidental.
   @Get('chunks/:chunkId')
-  @AuthPermissions([PERMISSIONS.VIEW_KNOWLEDGE_BASE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
+  })
   @ApiOperation({
     summary: 'Resolve one chunk',
     description:
@@ -124,7 +144,10 @@ export class KnowledgeBaseController {
   }
 
   @Get('documents/:id')
-  @AuthPermissions([PERMISSIONS.VIEW_KNOWLEDGE_BASE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
+  })
   @ApiOperation({ summary: 'One document, with its ingest status' })
   @ApiResponse({ status: 200, type: KbDocumentResponseDto })
   get(@Param('id', ParseUUIDPipe) id: string): Promise<KbDocumentResponseDto> {
@@ -132,7 +155,10 @@ export class KnowledgeBaseController {
   }
 
   @Get('documents/:id/chunks')
-  @AuthPermissions([PERMISSIONS.VIEW_KNOWLEDGE_BASE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
+  })
   @ApiOperation({
     summary: 'A document chunks — what the bot can actually see',
   })
@@ -149,7 +175,10 @@ export class KnowledgeBaseController {
   }
 
   @Patch('documents/:id')
-  @AuthPermissions([PERMISSIONS.EDIT_KNOWLEDGE_BASE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
+  })
   @ApiOperation({
     summary: 'Update metadata only',
     description: 'Title, tags and language. Never triggers a re-index.',
@@ -163,7 +192,10 @@ export class KnowledgeBaseController {
   }
 
   @Put('documents/:id/content')
-  @AuthPermissions([PERMISSIONS.EDIT_KNOWLEDGE_BASE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
+  })
   @ApiOperation({
     summary: 'Replace a pasted document body and re-index',
     description:
@@ -180,7 +212,10 @@ export class KnowledgeBaseController {
   }
 
   @Post('documents/:id/reindex')
-  @AuthPermissions([PERMISSIONS.EDIT_KNOWLEDGE_BASE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
+  })
   @ApiOperation({
     summary:
       'Re-chunk and re-index; also the Retry action for a failed document',
@@ -193,7 +228,10 @@ export class KnowledgeBaseController {
   }
 
   @Post('documents/:id/archive')
-  @AuthPermissions([PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE],
+  })
   @ApiOperation({
     summary: 'Archive: stop retrieving it, keep its rows',
     description:
@@ -208,7 +246,10 @@ export class KnowledgeBaseController {
   }
 
   @Post('documents/:id/unarchive')
-  @AuthPermissions([PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE],
+  })
   @ApiOperation({
     summary: 'Unarchive and re-index (archiving removed the vectors)',
   })
@@ -220,7 +261,10 @@ export class KnowledgeBaseController {
   }
 
   @Delete('documents/:id')
-  @AuthPermissions([PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE])
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE],
+  })
   @ApiOperation({
     summary: 'Refused — always 409, pointing at archive',
     description:

@@ -1,7 +1,8 @@
 import { Reflector } from '@nestjs/core';
 import { RoleplaySessionLogsController } from '../roleplay-session-logs.controller';
 import { RoleplaySessionLogsService } from '../../service/roleplay-session-logs.service';
-import { ROLES_KEY } from '../../../auth/decorators/roles.decorator';
+import { FEATURE_TOGGLE_KEY } from '../../../auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from '../../../authorization/constants/admin-feature-toggle.constants';
 import { SUPER_ADMIN_ROLES } from '../../../common/constants/user.constants';
 
 describe('RoleplaySessionLogsController', () => {
@@ -17,13 +18,19 @@ describe('RoleplaySessionLogsController', () => {
     controller = new RoleplaySessionLogsController(service);
   });
 
-  it('guards both endpoints with the super-admin roles', () => {
+  it('guards both endpoints with the roleplay session logs feature toggle, with a super-admin legacy fallback', () => {
     const reflector = new Reflector();
-    const listRoles = reflector.get(ROLES_KEY, controller.list);
-    const detailRoles = reflector.get(ROLES_KEY, controller.getById);
+    const listOptions = reflector.get(FEATURE_TOGGLE_KEY, controller.list);
+    const detailOptions = reflector.get(FEATURE_TOGGLE_KEY, controller.getById);
 
-    expect(listRoles).toEqual(SUPER_ADMIN_ROLES);
-    expect(detailRoles).toEqual(SUPER_ADMIN_ROLES);
+    expect(listOptions).toEqual({
+      featureKey: FeatureToggleKey.ROLEPLAY_SESSION_LOGS,
+      legacyRoles: SUPER_ADMIN_ROLES,
+    });
+    expect(detailOptions).toEqual({
+      featureKey: FeatureToggleKey.ROLEPLAY_SESSION_LOGS,
+      legacyRoles: SUPER_ADMIN_ROLES,
+    });
   });
 
   it('delegates list to the service', async () => {

@@ -4,6 +4,7 @@ import { ConversationalGuardrailsService } from '../../service/conversational-gu
 import { ConversationalGuardrails } from '../../entity/conversational-guardrails.entity';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
+import { FeatureToggleGuard } from '../../../auth/guards/feature-toggle.guard';
 
 describe('ConversationalGuardrailsController', () => {
   let controller: ConversationalGuardrailsController;
@@ -42,6 +43,8 @@ describe('ConversationalGuardrailsController', () => {
       .overrideGuard(JwtAuthGuard)
       .useValue({ canActivate: () => true })
       .overrideGuard(PermissionsGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(FeatureToggleGuard)
       .useValue({ canActivate: () => true })
       .compile();
 

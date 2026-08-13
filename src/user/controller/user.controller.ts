@@ -58,6 +58,10 @@ import {
   AssignAdminTenantsDto,
   RemoveAdminTenantsDto,
 } from '../dto/admin-tenant.dto';
+import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
+import { SetFeatureTogglesDto } from 'src/authorization/dto/admin-feature-toggle.dto';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 
 @Controller('v1/users')
 @ApiTags('Users')
@@ -69,6 +73,7 @@ export class UserController {
     private userService: UserService,
     private groupService: GroupService,
     private adminTenantService: AdminTenantService,
+    private featureToggleService: FeatureToggleService,
   ) {}
 
   @Get('me')
@@ -79,6 +84,51 @@ export class UserController {
       return null;
     }
     return this.userService.getMinimalUserInfo(user);
+  }
+
+  @ApiOperation({
+    summary: "Get the current user's enabled feature toggle keys",
+  })
+  @Get('me/feature-toggles')
+  @UseGuards(JwtAuthGuard)
+  async getMyFeatureToggles(@CurrentUser() tokenUser: TokenUser) {
+    return this.featureToggleService.getEnabledKeys(Number(tokenUser.id));
+  }
+
+  @ApiOperation({
+    summary: "Get a platform admin's full feature toggle state",
+    description:
+      'Every registered key, defaulting to disabled for keys with no row yet. ' +
+      'Requires the admin_user_management toggle.',
+  })
+  @Get(':userId/feature-toggles')
+  @RequireFeatureToggle(FeatureToggleKey.ADMIN_USER_MANAGEMENT)
+  async getFeatureTogglesForUser(
+    @Param('userId', ParseIntPipe) userId: number,
+  ) {
+    return this.featureToggleService.getTogglesForUser(userId);
+  }
+
+  @ApiOperation({
+    summary: "Flip one or more of a platform admin's feature toggles",
+    description:
+      'Batch upsert, one call per save — never a wholesale replace of the full toggle set. ' +
+      'Requires the admin_user_management toggle. Rejects disabling the last remaining ' +
+      'admin_user_management holder, and disabling your own.',
+  })
+  @Patch(':userId/feature-toggles')
+  @RequireFeatureToggle(FeatureToggleKey.ADMIN_USER_MANAGEMENT)
+  async setFeatureTogglesForUser(
+    @Param('userId', ParseIntPipe) userId: number,
+    @Body() dto: SetFeatureTogglesDto,
+    @CurrentUser() tokenUser: TokenUser,
+  ): Promise<SuccessResponse> {
+    await this.featureToggleService.setToggles(
+      userId,
+      dto.toggles,
+      Number(tokenUser.id),
+    );
+    return { success: true };
   }
 
   @AuthRoles(UserRole.COUNSELOR)
@@ -337,15 +387,19 @@ export class UserController {
   }
 
   // =====================================================================
-  // MULTI_TENANT_ADMIN — Tenant Mapping (Super Admin only)
+  // Tenant allowlist — restricting a PLATFORM_ADMIN to specific tenants
+  // (decision #2 of the role collapse: orthogonal to feature toggles, but
+  // editing the restriction itself is gated by its own toggle).
   // =====================================================================
 
   @ApiOperation({
-    summary: 'Assign tenants to a MULTI_TENANT_ADMIN user (Super Admin only)',
+    summary: 'Restrict a platform admin to specific tenants',
   })
   @ApiResponse({ status: 200, description: 'Tenants assigned successfully' })
   @Post('admin-tenants')
-  @AuthPermissions([PERMISSIONS.EDIT_MULTI_TENANT_ADMINS])
+  @RequireFeatureToggle(FeatureToggleKey.MULTI_TENANT_ALLOWLIST_MANAGEMENT, {
+    permissions: [PERMISSIONS.EDIT_MULTI_TENANT_ADMINS],
+  })
   async assignAdminTenants(
     @Body() dto: AssignAdminTenantsDto,
   ): Promise<SuccessResponse> {
@@ -353,12 +407,13 @@ export class UserController {
   }
 
   @ApiOperation({
-    summary:
-      'Remove tenant mappings from a MULTI_TENANT_ADMIN user (Super Admin only)',
+    summary: 'Remove tenant restrictions from a platform admin',
   })
   @ApiResponse({ status: 200, description: 'Tenants removed successfully' })
   @Delete('admin-tenants')
-  @AuthPermissions([PERMISSIONS.EDIT_MULTI_TENANT_ADMINS])
+  @RequireFeatureToggle(FeatureToggleKey.MULTI_TENANT_ALLOWLIST_MANAGEMENT, {
+    permissions: [PERMISSIONS.EDIT_MULTI_TENANT_ADMINS],
+  })
   async removeAdminTenants(
     @Body() dto: RemoveAdminTenantsDto,
   ): Promise<SuccessResponse> {
@@ -366,12 +421,13 @@ export class UserController {
   }
 
   @ApiOperation({
-    summary:
-      'Get all tenants assigned to a MULTI_TENANT_ADMIN user (Super Admin only)',
+    summary: 'Get all tenants a platform admin is restricted to',
   })
   @ApiResponse({ status: 200, description: 'List of assigned tenants' })
   @Get(':userId/admin-tenants')
-  @AuthPermissions([PERMISSIONS.VIEW_MULTI_TENANT_ADMINS])
+  @RequireFeatureToggle(FeatureToggleKey.MULTI_TENANT_ALLOWLIST_MANAGEMENT, {
+    permissions: [PERMISSIONS.VIEW_MULTI_TENANT_ADMINS],
+  })
   async getAdminTenants(@Param('userId', ParseIntPipe) userId: number) {
     return this.adminTenantService.getTenantsForAdmin(userId);
   }

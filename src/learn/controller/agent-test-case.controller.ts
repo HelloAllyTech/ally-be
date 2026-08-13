@@ -16,8 +16,10 @@ import {
   ApiResponse,
   ApiQuery,
 } from '@nestjs/swagger';
-import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { AgentTestCaseService } from '../service/agent-test-case.service';
 import {
   CreateAgentTestCaseDto,
@@ -76,7 +78,10 @@ export class AgentTestCaseController {
     enum: SortOrder,
     description: 'Sort order',
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @RequireFeatureToggle(FeatureToggleKey.AGENT_TEST_CASES, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_SCENARIO],
+  })
   @Get()
   async getAllAgentTestCases(
     @Query('search') search?: string,
@@ -100,7 +105,10 @@ export class AgentTestCaseController {
     description: 'Agent test case created successfully',
     type: AgentTestCaseResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @RequireFeatureToggle(FeatureToggleKey.AGENT_TEST_CASES, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_SCENARIO],
+  })
   @Post()
   async createAgentTestCase(
     @CurrentUser() tokenUser: TokenUser,
@@ -115,7 +123,10 @@ export class AgentTestCaseController {
     description: 'Agent test case updated successfully',
     type: AgentTestCaseResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @RequireFeatureToggle(FeatureToggleKey.AGENT_TEST_CASES, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_SCENARIO],
+  })
   @Put(':id')
   async updateAgentTestCase(
     @Param('id') id: string,
@@ -129,7 +140,10 @@ export class AgentTestCaseController {
     status: 200,
     description: 'Agent test case deleted successfully',
   })
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @RequireFeatureToggle(FeatureToggleKey.AGENT_TEST_CASES, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_SCENARIO],
+  })
   @Delete(':id')
   async deleteAgentTestCase(@Param('id') id: string): Promise<void> {
     return this.agentTestCaseService.deleteAgentTestCase(id);

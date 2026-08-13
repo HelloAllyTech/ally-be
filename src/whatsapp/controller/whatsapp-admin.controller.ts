@@ -16,8 +16,10 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthPermissions } from '../../auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import {
   CreateWaTemplateDto,
   PreviewAskDto,
@@ -43,7 +45,10 @@ export class WhatsAppAdminController {
   // ── templates ─────────────────────────────────────────────────────────
 
   @Get('templates')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT_TEMPLATES])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_TEMPLATES],
+  })
   @ApiOperation({
     summary: 'List keyword templates in evaluation order',
     description:
@@ -58,7 +63,10 @@ export class WhatsAppAdminController {
   }
 
   @Post('templates')
-  @AuthPermissions([PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES],
+  })
   @ApiOperation({ summary: 'Create a keyword template' })
   @ApiResponse({ status: 400, description: 'No patterns, or an invalid regex' })
   createTemplate(@Body() dto: CreateWaTemplateDto) {
@@ -66,7 +74,10 @@ export class WhatsAppAdminController {
   }
 
   @Patch('templates/:id')
-  @AuthPermissions([PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES],
+  })
   @ApiOperation({
     summary: 'Update a template',
     description:
@@ -84,7 +95,10 @@ export class WhatsAppAdminController {
   }
 
   @Post('templates/:id/archive')
-  @AuthPermissions([PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES],
+  })
   @ApiOperation({ summary: 'Archive a template' })
   @ApiResponse({
     status: 403,
@@ -95,7 +109,10 @@ export class WhatsAppAdminController {
   }
 
   @Post('templates/reorder')
-  @AuthPermissions([PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES],
+  })
   @ApiOperation({
     summary: 'Rewrite priorities from an ordered id list',
     description:
@@ -107,7 +124,10 @@ export class WhatsAppAdminController {
   }
 
   @Post('templates/test')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT_TEMPLATES])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_TEMPLATES],
+  })
   @ApiOperation({
     summary: 'Which rule would match this text — sends nothing',
     description:
@@ -121,14 +141,20 @@ export class WhatsAppAdminController {
   // ── settings ──────────────────────────────────────────────────────────
 
   @Get('settings')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT],
+  })
   @ApiOperation({ summary: 'The bot settings blob' })
   getSettings() {
     return this.adminService.getSettings();
   }
 
   @Put('settings')
-  @AuthPermissions([PERMISSIONS.EDIT_WHATSAPP_BOT])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT],
+  })
   @ApiOperation({
     summary: 'Update settings',
     description:
@@ -142,7 +168,10 @@ export class WhatsAppAdminController {
   }
 
   @Get('settings/provider-health')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT],
+  })
   @ApiOperation({
     summary: 'Whether the provider is configured',
     description:
@@ -156,7 +185,10 @@ export class WhatsAppAdminController {
   // ── preview console ───────────────────────────────────────────────────
 
   @Post('preview/ask')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT],
+  })
   @ApiOperation({
     summary:
       'Ask a question and see the exact reply — no send, no rows written',

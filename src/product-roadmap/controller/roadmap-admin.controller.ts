@@ -24,9 +24,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 import {
   AiDraftDto,
@@ -92,7 +95,10 @@ export class RoadmapAdminController {
     return this.taxonomyService.listGoals();
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Get('product-goals/usage')
   @ApiOperation({
     summary: 'Opportunity count per goal, so a delete shows its cost first',
@@ -101,7 +107,10 @@ export class RoadmapAdminController {
     return this.taxonomyService.getGoalUsage();
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Post('product-goals')
   createGoal(
     @CurrentUser() user: TokenUser,
@@ -110,7 +119,10 @@ export class RoadmapAdminController {
     return this.taxonomyService.createGoal(user.id, dto.name);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Patch('product-goals/:id')
   @ApiOperation({
     summary: 'Rename a goal',
@@ -126,7 +138,10 @@ export class RoadmapAdminController {
     return this.taxonomyService.renameGoal(user.id, id, dto.name);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Put('product-goals/order')
   reorderGoals(
     @CurrentUser() user: TokenUser,
@@ -135,7 +150,10 @@ export class RoadmapAdminController {
     return this.taxonomyService.reorderGoals(user.id, dto.ids);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Delete('product-goals/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
@@ -170,13 +188,19 @@ export class RoadmapAdminController {
     return this.taxonomyService.listOwners();
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Get('opportunity-owners/usage')
   ownerUsage() {
     return this.taxonomyService.getOwnerUsage();
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Post('opportunity-owners')
   createOwner(
     @CurrentUser() user: TokenUser,
@@ -185,7 +209,10 @@ export class RoadmapAdminController {
     return this.taxonomyService.createOwner(user.id, dto.name);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Patch('opportunity-owners/:id')
   renameOwner(
     @CurrentUser() user: TokenUser,
@@ -195,7 +222,10 @@ export class RoadmapAdminController {
     return this.taxonomyService.renameOwner(user.id, id, dto.name);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Put('opportunity-owners/order')
   reorderOwners(
     @CurrentUser() user: TokenUser,
@@ -204,7 +234,10 @@ export class RoadmapAdminController {
     return this.taxonomyService.reorderOwners(user.id, dto.ids);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Delete('opportunity-owners/:id')
   @ApiOperation({
     summary: 'Delete an owner',
@@ -276,7 +309,10 @@ export class RoadmapAdminController {
     return this.releaseNoteService.list(query);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Post('release-notes')
   createReleaseNote(
     @CurrentUser() user: TokenUser,
@@ -285,7 +321,10 @@ export class RoadmapAdminController {
     return this.releaseNoteService.create(user.id, dto);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Patch('release-notes/:id')
   updateReleaseNote(
     @CurrentUser() user: TokenUser,
@@ -295,7 +334,10 @@ export class RoadmapAdminController {
     return this.releaseNoteService.update(user.id, id, dto);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Delete('release-notes/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   removeReleaseNote(
@@ -356,7 +398,10 @@ export class RoadmapAdminController {
     return { text: await this.aiService.summariseTranscript(dto.transcript) };
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Post('ai/generate-claude-prompt')
   @ApiOperation({
     summary: 'Generate a Claude Code implementation prompt from an opportunity',
@@ -377,7 +422,10 @@ export class RoadmapAdminController {
     };
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Post('ai/release-notes')
   @ApiOperation({
     summary: 'Draft release notes from released opportunities',
@@ -393,7 +441,10 @@ export class RoadmapAdminController {
 
   // ── vector-index repair ───────────────────────────────────────────────────
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Post('admin/reindex')
   @ApiOperation({
     summary: 'Re-index opportunities into Weaviate',
@@ -406,7 +457,10 @@ export class RoadmapAdminController {
     return this.vectorService.reindexAll(force === 'true');
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Post('admin/vectors/prune')
   @ApiOperation({
     summary: 'Delete vectors whose opportunity no longer exists',
@@ -423,7 +477,10 @@ export class RoadmapAdminController {
   }
   // ── one-off Supabase migration ────────────────────────────────────────────
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Post('admin/import')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')

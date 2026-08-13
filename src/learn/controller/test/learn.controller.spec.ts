@@ -20,6 +20,7 @@ import {
 } from '../../enum/scenario-session-status.enum';
 import { Reflector } from '@nestjs/core';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
 import { UserService } from 'src/user/service/user.service';
 import { AppConfigService } from 'src/config/config.service';
 import { DeleteCoverImageDto } from '../../dto/delete-cover-image.dto';
@@ -351,6 +352,10 @@ describe('LearnController', () => {
               termsAndAgreement: false,
             },
           },
+        },
+        {
+          provide: FeatureToggleService,
+          useValue: { hasToggle: jest.fn().mockResolvedValue(true) },
         },
       ],
     }).compile();

@@ -29,7 +29,10 @@ import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.decorator';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import {
   CreateBadgeDto,
   CreateBadgeResponseDto,
@@ -74,7 +77,10 @@ export class BadgeController {
     description: 'Badge created successfully',
     type: CreateBadgeResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
+  })
   @Post()
   async createBadge(
     @Body() createBadgeDto: CreateBadgeDto,
@@ -89,7 +95,10 @@ export class BadgeController {
     description: 'Badges created successfully',
     type: CreateBadgesBatchResponseDto,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
+  })
   @Post('/batch')
   async createBadgesBatch(
     @Body() createBadgesBatchDto: CreateBadgesBatchDto,
@@ -244,6 +253,14 @@ export class BadgeController {
     description: 'Returns all badges in the system',
     type: AdminBadgeListResponseDto,
   })
+  // TODO(platform-admin-collapse): VIEW_ADMIN_BADGES is also granted to the
+  // tenant-scoped ADMIN role (see ADMIN_PERMISSIONS in permissions.constants.ts,
+  // which grants it so a tenant admin can browse the global catalog when
+  // assigning badges to their org). Gating this route with
+  // FeatureToggleKey.USER_BADGES + a SUPER_DUPER_ADMIN-only legacyRoles
+  // fallback would 403 every tenant ADMIN calling this endpoint today — left
+  // untouched pending a route split (platform-wide admin listing vs. the
+  // tenant-scoped assignment picker) that this sweep is not scoped to do.
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_BADGES])
   @Get()
   async getAllBadges(
@@ -268,6 +285,12 @@ export class BadgeController {
     status: 200,
     description: 'Badge added to tenants successfully',
   })
+  // TODO(platform-admin-collapse): this OR's the SDA-exclusive
+  // EDIT_ADMIN_BADGES against EDIT_BADGE_TENANT, which is also granted to the
+  // tenant-scoped ADMIN role for assigning existing badges to their own
+  // tenant (ADMIN_PERMISSIONS in permissions.constants.ts). Layering a
+  // FeatureToggleKey.USER_BADGES check on top would 403 tenant ADMIN's
+  // legitimate own-tenant assignment flow, so this route is left untouched.
   @TenantScopedPermissions(
     [PERMISSIONS.EDIT_ADMIN_BADGES, PERMISSIONS.EDIT_BADGE_TENANT],
     {},
@@ -319,6 +342,10 @@ export class BadgeController {
     description: 'Returns all badges assigned to the tenant',
     type: TenantBadgeListResponseDto,
   })
+  // TODO(platform-admin-collapse): VIEW_ADMIN_BADGES_FOR_SETTING is also
+  // granted to the tenant-scoped ADMIN role (ADMIN_PERMISSIONS in
+  // permissions.constants.ts) for viewing their own tenant's assigned
+  // badges — left untouched for the same reason as addBadgeToTenants above.
   @TenantScopedPermissions([PERMISSIONS.VIEW_ADMIN_BADGES_FOR_SETTING])
   @Get('/tenants/:tenantId')
   async getBadgesForTenant(
@@ -344,6 +371,8 @@ export class BadgeController {
     status: 200,
     description: 'Badge removed from tenants successfully',
   })
+  // TODO(platform-admin-collapse): same sharing with the tenant-scoped ADMIN
+  // role as addBadgeToTenants above — left untouched.
   @TenantScopedPermissions(
     [PERMISSIONS.EDIT_ADMIN_BADGES, PERMISSIONS.EDIT_BADGE_TENANT],
     {},
@@ -365,7 +394,10 @@ export class BadgeController {
   }
 
   @ApiOperation({ summary: 'Get presigned URL for badge image' })
-  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
+  })
   @Post('badge-image-url')
   async getPresignedUrlForScenarioCoverImage(
     @Body() badgeImageUploadRequestDto: BadgeImageUploadRequestDto,
@@ -376,7 +408,10 @@ export class BadgeController {
   }
 
   @ApiOperation({ summary: 'Delete badge image' })
-  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
+  })
   @ApiBody({ type: DeleteBadgeImageDto })
   @Delete('badge-image')
   async deleteBadgeImage(@Body() deleteBadgeImageDto: DeleteBadgeImageDto) {
@@ -395,7 +430,10 @@ export class BadgeController {
     description: 'Badge updated successfully',
     type: Boolean,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
+  })
   @Patch(':badgeId')
   async updateBadge(
     @Param('badgeId', ParseUUIDPipe) badgeId: string,
@@ -410,7 +448,10 @@ export class BadgeController {
     description: 'Badges deleted successfully',
     type: Boolean,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
+  })
   @Delete('batch')
   async deleteBadgesBatch(
     @Body() deleteBadgesBatchDto: DeleteBadgesBatchDto,
@@ -429,7 +470,10 @@ export class BadgeController {
     description: 'Badge deleted successfully',
     type: Boolean,
   })
-  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
+  })
   @Delete(':badgeId')
   async deleteBadge(
     @Param('badgeId', ParseUUIDPipe) badgeId: string,
@@ -438,7 +482,10 @@ export class BadgeController {
   }
 
   @ApiOperation({ summary: 'Make translations for badges' })
-  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_BADGES])
+  @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
+  })
   @Post('make-translations')
   async makeTranslationsForBadges(): Promise<boolean> {
     return this.badgeService.makeTranslationsForBadges();

@@ -23,6 +23,7 @@ import { ChangeUserRolesDto } from 'src/user/dto/group.dto';
 import { GroupService } from '../service/group.service';
 import { ApiServiceAuthGuard } from 'src/auth/decorators/api-auth.decorator';
 import { ValidatePermissionsDto } from '../dto/validate-permissions.dto';
+import { FEATURE_TOGGLES } from '../constants/admin-feature-toggle.constants';
 
 @ApiTags('Authorization')
 @Controller('v1/authorization')
@@ -101,5 +102,24 @@ export class AuthorizationController {
   @AuthPermissions([PERMISSIONS.VIEW_USER_ROLES])
   async getAllRoles() {
     return this.groupService.getAllRoles();
+  }
+
+  @ApiOperation({
+    summary: 'Get the feature-toggle registry',
+    description:
+      'The full list of per-admin-user feature toggle keys, labels and descriptions. ' +
+      'The single source of truth ally-web reads to build its admin nav and the ' +
+      'Admin User Management toggle editor, instead of keeping a second, hand-mirrored copy.',
+  })
+  @ApiResponse({ status: 200, description: 'The feature toggle registry' })
+  @HttpCode(HttpStatus.OK)
+  @Get('feature-toggles/registry')
+  @UseGuards(JwtAuthGuard)
+  getFeatureToggleRegistry() {
+    return FEATURE_TOGGLES.map(({ key, label, description }) => ({
+      key,
+      label,
+      description,
+    }));
   }
 }
