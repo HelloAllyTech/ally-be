@@ -21,6 +21,7 @@ import { RateLimitModule } from './rate-limit/rate-limit.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { AnalyticsAgentModule } from './analytics-agent/analytics-agent.module';
 import { AnalyticsSuggestionsModule } from './analytics-suggestions/analytics-suggestions.module';
+import { BugHunterModule } from './bug-hunter/bug-hunter.module';
 import { ExecutionContextMiddleware } from './common/execution/execution-context.middleware';
 import { TenantModule } from './tenant/tenant.module';
 import { CommonModule } from './common/common.module';
@@ -88,6 +89,7 @@ import { LogsModule } from './logs/logs.module';
     AnalyticsModule,
     AnalyticsAgentModule,
     AnalyticsSuggestionsModule,
+    BugHunterModule,
     TenantModule,
     CommonModule,
     SettingsModule,
