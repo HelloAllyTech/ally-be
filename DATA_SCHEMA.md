@@ -101,7 +101,7 @@ tenants/groups.
 | `scenario_translations` | BaseWithoutTenant | `scenario_id`, `language_id`, `metadata` | Uniq `(scenario_id, language_id)` |
 | `scenario_tenants` | BaseWithoutTenant | `scenario_id`, `tenant_id`, `deleted_at` | Scenario→tenant visibility |
 | `scenario_voices` | BaseWithoutTenant | `name`, `provider`, `config` (jsonb), `language_id`, `active` | TTS voice catalog |
-| `scenario_characters` | BaseWithoutTenant | `name` (idx), `age`, `gender`, `gender_identity`, `sexual_orientation`, `profession`, `current_location`, `character_profile_text`, cover media | Simulated client personas |
+| `scenario_characters` | BaseWithoutTenant | `name` (idx), `age`, `gender`, `gender_identity`, `sexual_orientation`, `profession`, `current_location`, `character_profile_text`, cover media, `voice_id` (uuid, loose FK → `scenario_voices.id`), `language_characteristics`, `linguistic_style_samples` (jsonb string[]), `knowledge_sources` (jsonb `{id,title,text}[]`) | Simulated client personas. Not FK-linked to `scenarios` — Studio v1 still duplicates persona fields onto scenario metadata rather than referencing this table |
 | `scenario_cover_image_library` | BaseWithoutTenant | `image_url`, `created_by` | Reusable cover images |
 | `behaviors` | BaseWithoutTenant | `id` (uuid), `name`, `created_by` | Skills/behaviors to demonstrate |
 | `behavior_translations` | BaseWithoutTenant | `behavior_id`, `language_id`, `name` | Uniq `(behavior_id, language_id)` |
