@@ -33,8 +33,11 @@ export class AdminTenantService {
   ) {}
 
   /**
-   * Assigns one or more tenants to a MULTI_TENANT_ADMIN user.
-   * Super admin only.
+   * Assigns one or more tenants to a PLATFORM_ADMIN user, restricting them to
+   * that set (see `hasAnyTenantMappings` — presence of any row at all is what
+   * makes a platform admin tenant-restricted; this is orthogonal to which
+   * feature toggles they hold). Requires the admin_user_management toggle
+   * (enforced at the controller).
    *
    * Strategy:
    *   - If a mapping was previously soft-deleted → restore it (set deletedAt = null).
@@ -50,14 +53,15 @@ export class AdminTenantService {
       throw new NotFoundException(`User with ID ${userId} not found`);
     }
 
-    // Validate user is MULTI_TENANT_ADMIN
+    // Validate user is a platform admin — a tenant allowlist only makes sense
+    // as a restriction on someone who otherwise has platform-wide reach.
     const roles = await this.groupService.getUserRolesByUserId(userId);
-    const isMultiTenantAdmin = roles.some(
-      (r) => r.name === UserRole.MULTI_TENANT_ADMIN,
+    const isPlatformAdmin = roles.some(
+      (r) => r.name === UserRole.PLATFORM_ADMIN,
     );
-    if (!isMultiTenantAdmin) {
+    if (!isPlatformAdmin) {
       throw new BadRequestException(
-        `User ${userId} does not have the ${UserRole.MULTI_TENANT_ADMIN} role`,
+        `User ${userId} does not have the ${UserRole.PLATFORM_ADMIN} role`,
       );
     }
 
@@ -139,7 +143,21 @@ export class AdminTenantService {
   }
 
   /**
-   * Returns all tenants currently mapped to a MULTI_TENANT_ADMIN user.
+   * Presence-of-rows check replacing the old role-name-keyed
+   * `isMultiTenantAdmin` gate: ANY platform admin with at least one active
+   * tenant mapping is treated as tenant-restricted, regardless of which
+   * feature toggles they hold. Absence of rows means unrestricted (sees every
+   * tenant) — the same behaviour a plain SUPER_ADMIN/SUPER_DUPER_ADMIN has
+   * today, generalized to "any platform admin can optionally be
+   * tenant-restricted."
+   */
+  async hasAnyTenantMappings(userId: number): Promise<boolean> {
+    const mappings = await this.adminTenantRepository.findByUserId(userId);
+    return mappings.length > 0;
+  }
+
+  /**
+   * Returns all tenants currently mapped to a tenant-restricted platform admin.
    */
   async getTenantsForAdmin(userId: number) {
     const user = await this.userRepository.findOne({ where: { id: userId } });

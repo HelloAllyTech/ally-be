@@ -16,6 +16,10 @@ import { RedisModule } from '../redis/redis.module';
 import { User } from 'src/user/entity/user.entity';
 import { PermissionValidator } from './service/permission-validator.service';
 import { UserModule } from '../user/user.module';
+import { AdminFeatureToggle } from './entity/admin-feature-toggle.entity';
+import { AdminFeatureToggleRepository } from './repository/admin-feature-toggle.repository';
+import { FeatureToggleService } from './service/feature-toggle.service';
+import { AdminTenant } from 'src/user/entity/admin-tenant.entity';
 
 @Global()
 @Module({
@@ -26,6 +30,13 @@ import { UserModule } from '../user/user.module';
       UserGroup,
       GroupPermission,
       Permission,
+      AdminFeatureToggle,
+      // Plain entity, registered here (not just in UserModule) so
+      // PermissionsService.isMultiTenantAdmin can query admin_tenants
+      // directly via a Repository — importing AdminTenantService itself
+      // would pull in a circular require chain with UserModule and break
+      // Nest's decorator metadata resolution at boot.
+      AdminTenant,
     ]),
     RedisModule,
     forwardRef(() => UserModule),
@@ -40,6 +51,8 @@ import { UserModule } from '../user/user.module';
     UserGroupRepository,
     GroupPermissionsRepository,
     PermissionValidator,
+    AdminFeatureToggleRepository,
+    FeatureToggleService,
   ],
   exports: [
     PermissionsService,
@@ -49,6 +62,8 @@ import { UserModule } from '../user/user.module';
     PermissionValidator,
     UserGroupRepository,
     GroupRepository,
+    FeatureToggleService,
+    AdminFeatureToggleRepository,
   ],
 })
 export class AuthorizationModule {}

@@ -3,8 +3,8 @@ import { AwsLogsController } from '../aws-logs.controller';
 import { LogsService } from '../logs.service';
 import { AwsLogsQueryDto, AwsLogStreamsQueryDto } from '../dto/aws-logs.dto';
 
-jest.mock('../../auth/decorators/auth-permissions.decorator', () => ({
-  AuthPermissions: () => () => {},
+jest.mock('../../auth/decorators/feature-toggle.decorator', () => ({
+  RequireFeatureToggle: () => () => {},
 }));
 
 describe('AwsLogsController', () => {

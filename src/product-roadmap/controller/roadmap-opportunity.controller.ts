@@ -20,9 +20,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 import {
   CreateOpportunityDto,
@@ -128,7 +131,10 @@ export class RoadmapOpportunityController {
     return this.opportunityService.create(user.id, dto);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Patch('opportunities/:id')
   @ApiOperation({
     summary: 'Update an opportunity',
@@ -146,7 +152,10 @@ export class RoadmapOpportunityController {
     return this.opportunityService.update(user.id, id, dto);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Delete('opportunities/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({
@@ -184,7 +193,10 @@ export class RoadmapOpportunityController {
     );
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Post('opportunities/:id/split')
   @ApiOperation({
     summary: 'Split an opportunity, redistributing coins by weight',
@@ -200,7 +212,10 @@ export class RoadmapOpportunityController {
     return this.splitMergeService.split(user.id, id, dto.parts);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Post('opportunities/merge')
   @ApiOperation({
     summary: 'Merge opportunities, rolling coins up per (user, period)',

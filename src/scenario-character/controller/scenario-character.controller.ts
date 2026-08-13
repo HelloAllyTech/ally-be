@@ -19,8 +19,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ScenarioCharacterService } from '../service/scenario-character.service';
-import { AuthPermissions } from '../../auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import { ScenarioCharacter } from '../entity/scenario-character.entity';
 import {
   ScenarioCharacterSortBy,
@@ -83,7 +85,10 @@ export class ScenarioCharacterController {
     description: 'Sort order (default: DESC)',
   })
   @Get()
-  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_CHARACTER])
+  @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_SCENARIO_CHARACTER],
+  })
   async getScenarioCharacters(
     @Query('search') search?: string,
     @Query('limit') limit?: number,
@@ -107,7 +112,10 @@ export class ScenarioCharacterController {
     type: ScenarioCharacterResponseDto,
   })
   @Post()
-  @AuthPermissions([PERMISSIONS.CREATE_SCENARIO_CHARACTER])
+  @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.CREATE_SCENARIO_CHARACTER],
+  })
   async createScenarioCharacter(
     @Body() scenarioCharacterDto: ScenarioCharacterRequestDto,
   ): Promise<ScenarioCharacterResponseDto> {
@@ -116,7 +124,10 @@ export class ScenarioCharacterController {
     );
   }
 
-  @AuthPermissions([PERMISSIONS.VIEW_SCENARIO_CHARACTER])
+  @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_SCENARIO_CHARACTER],
+  })
   @ApiOperation({ summary: 'Get a scenario character by ID' })
   @ApiResponse({
     status: 200,
@@ -136,7 +147,10 @@ export class ScenarioCharacterController {
     return this.scenarioCharacterService.getScenarioCharacterById(id);
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO_CHARACTER])
+  @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_SCENARIO_CHARACTER],
+  })
   @ApiOperation({ summary: 'Update an existing scenario character' })
   @ApiResponse({
     status: 200,
@@ -160,7 +174,10 @@ export class ScenarioCharacterController {
     );
   }
 
-  @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_CHARACTER])
+  @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.DELETE_SCENARIO_CHARACTER],
+  })
   @ApiOperation({ summary: 'Delete multiple scenario characters' })
   @ApiBody({ type: DeleteScenarioCharactersDto })
   @ApiResponse({
@@ -177,7 +194,10 @@ export class ScenarioCharacterController {
     );
   }
 
-  @AuthPermissions([PERMISSIONS.DELETE_SCENARIO_CHARACTER])
+  @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.DELETE_SCENARIO_CHARACTER],
+  })
   @ApiOperation({ summary: 'Delete a scenario character' })
   @ApiResponse({
     status: 200,

@@ -28,7 +28,9 @@ import { Reflector } from '@nestjs/core';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
+import { FeatureToggleGuard } from '../../../auth/guards/feature-toggle.guard';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { FeatureToggleService } from '../../../authorization/service/feature-toggle.service';
 import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
 import { UserService } from '../../../user/service/user.service';
 import {
@@ -222,6 +224,12 @@ describe('AnalyticsController', () => {
             canActivate: jest.fn().mockResolvedValue(true),
           },
         },
+        {
+          provide: FeatureToggleService,
+          useValue: {
+            hasToggle: jest.fn().mockResolvedValue(true),
+          },
+        },
       ],
     })
       .overrideGuard(RolesGuard)
@@ -233,6 +241,10 @@ describe('AnalyticsController', () => {
         canActivate: jest.fn().mockResolvedValue(true),
       })
       .overrideGuard(JwtAuthGuard)
+      .useValue({
+        canActivate: jest.fn().mockResolvedValue(true),
+      })
+      .overrideGuard(FeatureToggleGuard)
       .useValue({
         canActivate: jest.fn().mockResolvedValue(true),
       })

@@ -13,8 +13,10 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthPermissions } from '../../auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { SUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import { LabRunService } from '../service/lab-run.service';
 import { LabEvalService } from '../service/lab-eval.service';
 import { LabAutoEvalService } from '../service/lab-auto-eval.service';
@@ -36,7 +38,10 @@ export class LabRunController {
   ) {}
 
   @Get()
-  @AuthPermissions([PERMISSIONS.VIEW_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_AI_LAB],
+  })
   @ApiOperation({ summary: 'List AI Lab runs (one row per skill execution)' })
   list(@Query() query: LabListQueryDto) {
     return this.runService.list(query);
@@ -44,7 +49,10 @@ export class LabRunController {
 
   // Declared before ':id' routes so 'assignments/...' never binds as an id.
   @Delete('assignments/:assignmentId')
-  @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_AI_LAB],
+  })
   @ApiOperation({
     summary: 'Remove an (unsubmitted) evaluator assignment from a run',
   })
@@ -53,14 +61,20 @@ export class LabRunController {
   }
 
   @Get(':id')
-  @AuthPermissions([PERMISSIONS.VIEW_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_AI_LAB],
+  })
   @ApiOperation({ summary: 'Get one AI Lab run by ID' })
   getById(@Param('id') id: string): Promise<LabRun> {
     return this.runService.getById(id);
   }
 
   @Post()
-  @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_AI_LAB],
+  })
   @ApiOperation({
     summary: 'Run a single skill with its variable values substituted in',
   })
@@ -69,7 +83,10 @@ export class LabRunController {
   }
 
   @Post(':id/publish')
-  @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_AI_LAB],
+  })
   @ApiOperation({
     summary:
       'Publish a completed run for human evaluation with its questions (>= 1)',
@@ -79,21 +96,30 @@ export class LabRunController {
   }
 
   @Get(':id/questions')
-  @AuthPermissions([PERMISSIONS.VIEW_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_AI_LAB],
+  })
   @ApiOperation({ summary: 'Evaluation questions attached to a published run' })
   questions(@Param('id') id: string) {
     return this.evalService.getQuestions(id);
   }
 
   @Get(':id/assignments')
-  @AuthPermissions([PERMISSIONS.VIEW_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_AI_LAB],
+  })
   @ApiOperation({ summary: 'Evaluator assignments of a published run' })
   assignments(@Param('id') id: string) {
     return this.evalService.listAssignments(id);
   }
 
   @Post(':id/assignments')
-  @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_AI_LAB],
+  })
   @ApiOperation({
     summary: 'Assign a published run to evaluators (add-only, idempotent)',
   })
@@ -102,7 +128,10 @@ export class LabRunController {
   }
 
   @Get(':id/results')
-  @AuthPermissions([PERMISSIONS.VIEW_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_AI_LAB],
+  })
   @ApiOperation({
     summary:
       'Aggregated human-eval results (per question + record level) for a published run',
@@ -112,14 +141,20 @@ export class LabRunController {
   }
 
   @Get(':id/auto-evaluations')
-  @AuthPermissions([PERMISSIONS.VIEW_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_AI_LAB],
+  })
   @ApiOperation({ summary: 'Automated (LLM-judge) evaluations of a run' })
   autoEvaluations(@Param('id') id: string) {
     return this.autoEvalService.listForRun(id);
   }
 
   @Post(':id/auto-evaluations')
-  @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_AI_LAB],
+  })
   @ApiOperation({
     summary:
       "Score a completed run's output against a rubric with an LLM judge",
@@ -129,7 +164,10 @@ export class LabRunController {
   }
 
   @Delete(':id')
-  @AuthPermissions([PERMISSIONS.DELETE_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.DELETE_AI_LAB],
+  })
   @ApiOperation({ summary: 'Delete an AI Lab run from the log' })
   delete(@Param('id') id: string): Promise<{ success: boolean }> {
     return this.runService.delete(id);

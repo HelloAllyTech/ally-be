@@ -11,6 +11,9 @@ import {
 } from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { Public } from 'src/auth/decorators/auth.metadata';
 import { UpdateLegalContentDto } from '../dto/legal-content.dto';
 import { LEGAL_CONTENT_NAMES } from '../constants/settings.constants';
@@ -346,7 +349,10 @@ export class SettingsController {
     status: 403,
     description: 'Forbidden - only super admin can update',
   })
-  @AuthPermissions([PERMISSIONS.SYSTEM_ACCESS])
+  @RequireFeatureToggle(FeatureToggleKey.SETTINGS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.SYSTEM_ACCESS],
+  })
   updateTerms(@Body() body: UpdateLegalContentDto) {
     return this.service.updateLegalContent(
       LEGAL_CONTENT_NAMES.TERMS,
@@ -362,7 +368,10 @@ export class SettingsController {
     status: 403,
     description: 'Forbidden - only super admin can update',
   })
-  @AuthPermissions([PERMISSIONS.SYSTEM_ACCESS])
+  @RequireFeatureToggle(FeatureToggleKey.SETTINGS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.SYSTEM_ACCESS],
+  })
   updatePrivacy(@Body() body: UpdateLegalContentDto) {
     return this.service.updateLegalContent(
       LEGAL_CONTENT_NAMES.PRIVACY,

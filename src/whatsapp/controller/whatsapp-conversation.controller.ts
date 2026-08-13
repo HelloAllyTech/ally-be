@@ -15,8 +15,10 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthPermissions } from '../../auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import {
   WaHandledBy,
   WaUnansweredReason,
@@ -46,7 +48,10 @@ export class WhatsAppConversationController {
   // ── conversations ─────────────────────────────────────────────────────
 
   @Get('conversations')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS],
+  })
   @ApiOperation({
     summary: 'List conversation threads (phone numbers masked)',
     description:
@@ -80,7 +85,10 @@ export class WhatsAppConversationController {
   }
 
   @Get('conversations/languages')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS],
+  })
   @ApiOperation({
     summary: 'Distinct languages present in the conversation log',
     description:
@@ -93,7 +101,10 @@ export class WhatsAppConversationController {
   }
 
   @Get('conversations/:id')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS],
+  })
   @ApiOperation({
     summary: 'One thread with its messages, citations and retrieval metadata',
     description:
@@ -105,7 +116,10 @@ export class WhatsAppConversationController {
   }
 
   @Get('citations/:chunkId')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS],
+  })
   @ApiOperation({
     summary: 'Resolve a citation to the exact passage that was quoted',
     description:
@@ -117,7 +131,10 @@ export class WhatsAppConversationController {
   }
 
   @Post('contacts/:id/reveal')
-  @AuthPermissions([PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS],
+  })
   @ApiOperation({
     summary: 'Return one contact full phone number',
     description:
@@ -129,7 +146,10 @@ export class WhatsAppConversationController {
   }
 
   @Post('contacts/:id/block')
-  @AuthPermissions([PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS],
+  })
   @ApiOperation({
     summary: 'Block a number',
     description:
@@ -144,14 +164,20 @@ export class WhatsAppConversationController {
   }
 
   @Post('contacts/:id/unblock')
-  @AuthPermissions([PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS],
+  })
   @ApiOperation({ summary: 'Unblock a number' })
   unblock(@Param('id', ParseUUIDPipe) id: string) {
     return this.conversationService.setContactBlocked(id, false);
   }
 
   @Post('contacts/:id/erase')
-  @AuthPermissions([PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS],
+  })
   @ApiOperation({
     summary: 'Erase a contact message content and number, keeping counts',
     description:
@@ -165,7 +191,10 @@ export class WhatsAppConversationController {
   // ── unanswered queue ──────────────────────────────────────────────────
 
   @Get('unanswered')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT_UNANSWERED])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_UNANSWERED],
+  })
   @ApiOperation({
     summary: 'Questions the corpus could not answer',
     description:
@@ -195,7 +224,10 @@ export class WhatsAppConversationController {
   }
 
   @Patch('unanswered/:id')
-  @AuthPermissions([PERMISSIONS.EDIT_WHATSAPP_BOT_UNANSWERED])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_UNANSWERED],
+  })
   @ApiOperation({ summary: 'Triage, assign, annotate or resolve a gap' })
   @ApiResponse({ status: 404, description: 'No such question' })
   updateUnanswered(
@@ -212,7 +244,10 @@ export class WhatsAppConversationController {
   }
 
   @Post('unanswered/:id/create-document')
-  @AuthPermissions([PERMISSIONS.EDIT_WHATSAPP_BOT_UNANSWERED])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_UNANSWERED],
+  })
   @ApiOperation({
     summary:
       'Close the loop: write the answer as a corpus document and resolve the gap',
@@ -230,7 +265,10 @@ export class WhatsAppConversationController {
   // ── analytics ─────────────────────────────────────────────────────────
 
   @Get('analytics/overview')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS],
+  })
   @ApiOperation({
     summary: 'Headline counts, outcome mix and reply latency',
     description:
@@ -242,14 +280,20 @@ export class WhatsAppConversationController {
   }
 
   @Get('analytics/timeseries')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS],
+  })
   @ApiOperation({ summary: 'Daily outcome counts for the trend chart' })
   timeseries(@Query('from') from?: string, @Query('to') to?: string) {
     return this.conversationService.timeseries(from, to);
   }
 
   @Get('analytics/languages')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS],
+  })
   @ApiOperation({
     summary: 'Language mix with decline rate per language',
     description:
@@ -262,7 +306,10 @@ export class WhatsAppConversationController {
   }
 
   @Get('analytics/corpus-coverage')
-  @AuthPermissions([PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS])
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS],
+  })
   @ApiOperation({
     summary: 'Citations per document, including documents never cited',
     description:

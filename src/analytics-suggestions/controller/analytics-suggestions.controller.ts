@@ -16,7 +16,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 import {
@@ -57,7 +58,9 @@ export class AnalyticsSuggestionsController {
   ) {}
 
   @Post('generate')
-  @AuthRoles(...SUPER_DUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary:
       'Generate product suggestions from an analytics window (super-duper-admin)',
@@ -91,7 +94,9 @@ export class AnalyticsSuggestionsController {
   }
 
   @Get()
-  @AuthRoles(...SUPER_DUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'List suggestions (super-duper-admin)',
     description:
@@ -110,7 +115,9 @@ export class AnalyticsSuggestionsController {
   }
 
   @Post(':id/accept')
-  @AuthRoles(...SUPER_DUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary:
       'Accept a suggestion and file it on the roadmap (super-duper-admin)',
@@ -135,7 +142,9 @@ export class AnalyticsSuggestionsController {
   }
 
   @Post(':id/reject')
-  @AuthRoles(...SUPER_DUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Reject a suggestion (super-duper-admin)',
     description:

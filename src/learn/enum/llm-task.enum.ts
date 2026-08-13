@@ -65,6 +65,13 @@ export enum LlmTask {
   // TTS (text-to-speech) tasks.
   AGENT_TTS = 'agent_tts', // live agent voice (per turn)
 
+  // Bug Hunter: any LLM call inside the autonomous find-and-fix pipeline
+  // (finder classification, adversarial verify, fix drafting, doc sync).
+  // One label across every stage — see BugHunterService.snapshotCostUsd,
+  // which sums llm_usage by this task tagged with metadata.runId to cost a
+  // run, not by stage within it.
+  BUG_HUNTER = 'bug_hunter',
+
   // Fallback for an un-mapped sender task (never drop a usage row).
   UNKNOWN = 'unknown',
 }

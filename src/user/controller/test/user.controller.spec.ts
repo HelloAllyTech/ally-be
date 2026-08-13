@@ -25,12 +25,14 @@ import {
   AssignAdminTenantsDto,
   RemoveAdminTenantsDto,
 } from '../../dto/admin-tenant.dto';
+import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
 
 describe('UserController', () => {
   let controller: UserController;
   let mockUserService: any;
   let mockGroupService: any;
   let mockAdminTenantService: any;
+  let mockFeatureToggleService: any;
 
   const mockTokenUser: TokenUser = {
     id: 1,
@@ -94,12 +96,20 @@ describe('UserController', () => {
       getTenantsForAdmin: jest.fn(),
     };
 
+    mockFeatureToggleService = {
+      getEnabledKeys: jest.fn(),
+      hasToggle: jest.fn(),
+      getTogglesForUser: jest.fn(),
+      setToggles: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       controllers: [UserController],
       providers: [
         { provide: UserService, useValue: mockUserService },
         { provide: GroupService, useValue: mockGroupService },
         { provide: AdminTenantService, useValue: mockAdminTenantService },
+        { provide: FeatureToggleService, useValue: mockFeatureToggleService },
         { provide: Reflector, useValue: { get: jest.fn() } },
         {
           provide: PermissionsService,

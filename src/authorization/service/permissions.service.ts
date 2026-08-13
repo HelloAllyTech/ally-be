@@ -1,9 +1,6 @@
-import {
-  ForbiddenException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
-import { UserRole } from 'src/common/constants/user.constants';
+import { ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GroupService } from 'src/authorization/service/group.service';
 import { GroupPermissionsService } from './group-permissions.service';
@@ -13,6 +10,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { PermissionOperator } from '../type/authorization-event.type';
 import { LoggerService } from 'src/logger/logger.service';
+import { AdminTenant } from 'src/user/entity/admin-tenant.entity';
 
 @Injectable()
 export class PermissionsService {
@@ -22,6 +20,17 @@ export class PermissionsService {
     private readonly cache: RedisService,
     private readonly groupPermissionsService: GroupPermissionsService,
     private readonly userGroupService: UserGroupService,
+    // Repository, not AdminTenantService: importing anything from
+    // src/user/service/* here (even a plain type import, even resolved lazily
+    // via ModuleRef) participates in an existing circular require chain
+    // between AuthorizationModule and UserModule and breaks Nest's decorator
+    // metadata resolution at boot (confirmed empirically — not caught by
+    // isolated unit-test TestingModules, only by an actual app bootstrap).
+    // A plain entity has no service dependencies of its own, so it carries no
+    // such risk; AdminTenant is registered in AuthorizationModule's own
+    // TypeOrmModule.forFeature for this purpose.
+    @InjectRepository(AdminTenant)
+    private readonly adminTenantRepository: Repository<AdminTenant>,
   ) {}
 
   async getUserRoles(userId: number): Promise<string[]> {
@@ -43,9 +52,27 @@ export class PermissionsService {
     return roleNames;
   }
 
+  /**
+   * Historically a role-name check ("does this user hold MULTI_TENANT_ADMIN").
+   * Post role-collapse (PLATFORM_ADMIN replaces SUPER_ADMIN/SUPER_DUPER_ADMIN/
+   * MULTI_TENANT_ADMIN — see CreatePlatformAdminRole1895000000001), there is no
+   * role name left to check, so this is now a presence-of-rows check: any
+   * platform admin with at least one `admin_tenants` mapping is treated as
+   * tenant-restricted, and every one of this method's ~14 call sites (ownership
+   * scoping in scenario/session-event/badge/roleplay services, plus the
+   * tenant-allowlist filter in UserService.getAllUsers) gets that behaviour for
+   * free without needing its own change. This exactly preserves current
+   * effective access for already-migrated accounts: today only
+   * MULTI_TENANT_ADMIN holders have `admin_tenants` rows, so nothing changes
+   * for them, and the same ownership-scoping/tenant-allowlist restriction now
+   * generalizes to any future platform admin who is deliberately tenant-
+   * restricted (see AdminTenantService.assignTenants).
+   */
   async isMultiTenantAdmin(userId: number): Promise<boolean> {
-    const roles = await this.getUserRoles(userId);
-    return roles.includes(UserRole.MULTI_TENANT_ADMIN);
+    const count = await this.adminTenantRepository.count({
+      where: { userId, deletedAt: IsNull() },
+    });
+    return count > 0;
   }
 
   async validatePermissions(
