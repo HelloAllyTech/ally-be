@@ -39,6 +39,48 @@ export interface SimulationUsageRow {
   sessionCount: number;
 }
 
+export interface LearnerUsageRow {
+  id: number;
+  name: string;
+  email: string;
+  signupDate: Date;
+  /** All-time (not window-scoped) — see {@link TenantAnalyticsRepository.getLearnerUsageRows}. */
+  lastPracticeSessionAt: Date | null;
+  roleplaySessionsStarted: number;
+  roleplaySessionsCompleted: number;
+  avgScore: number | null;
+  totalDurationMs: number;
+  coursesAssigned: number;
+  coursesStarted: number;
+  coursesCompleted: number;
+}
+
+export interface LearnerUsageOptions {
+  search?: string;
+  sortBy?: string;
+  order?: 'ASC' | 'DESC';
+  limit: number;
+  offset: number;
+}
+
+/** Whitelisted sort targets — never interpolate the client's `sortBy` directly into SQL. */
+const LEARNER_USAGE_SORT_COLUMNS: Record<string, string> = {
+  name: '"name"',
+  email: '"email"',
+  signupDate: '"signupDate"',
+  lastPracticeSessionAt: '"lastPracticeSessionAt"',
+  roleplaySessionsStarted: '"roleplaySessionsStarted"',
+  roleplaySessionsCompleted: '"roleplaySessionsCompleted"',
+  avgScore: '"avgScore"',
+  // Public sort key matches the response field name (`totalPracticeMinutes`,
+  // ms->minutes is a monotonic transform done in the service layer) rather
+  // than this internal SQL alias.
+  totalPracticeMinutes: '"totalDurationMs"',
+  coursesAssigned: '"coursesAssigned"',
+  coursesStarted: '"coursesStarted"',
+  coursesCompleted: '"coursesCompleted"',
+};
+
 /**
  * Tenant-scoped organization-metrics queries for the tenant-admin dashboard.
  * Mirrors the conventions of PlatformAnalyticsRepository (raw counts, dates as
@@ -415,5 +457,137 @@ export class TenantAnalyticsRepository {
       title: r.title ?? `Scenario #${r.scenarioId}`,
       sessionCount: Number(r.sessionCount) || 0,
     }));
+  }
+
+  /**
+   * One row per LEARNER-role, non-suspended user in the tenant, for the
+   * per-learner usage table on the tenant-admin dashboard.
+   *
+   * `lastPracticeSessionAt`, `coursesAssigned/Started/Completed` are
+   * deliberately all-time (not bounded by `start`/`end`) — recency-of-use and
+   * course progress are standing state, not per-window activity counts.
+   * `roleplaySessionsStarted/Completed`, `avgScore`, and the duration behind
+   * `totalDurationMs` ARE bounded by `[start, end)`, using the same
+   * `status = ENDED AND eventStatus = COMPLETED` completed-session
+   * definition as {@link getSessionEngagementTotals}, so this table's numbers
+   * reconcile with the "avg practice minutes per learner" KPI above it.
+   * `roleplaySessionsStarted` counts by `startedAt` while `...Completed` counts
+   * by `COALESCE(endedAt, createdAt)` — a session straddling the window
+   * boundary can in principle show as completed without showing as started
+   * that period; accepted as the same timestamp-field caveat already present
+   * elsewhere in this file.
+   */
+  async getLearnerUsageRows(
+    tenantId: string,
+    start: Date,
+    end: Date,
+    opts: LearnerUsageOptions,
+  ): Promise<{ rows: LearnerUsageRow[]; count: number }> {
+    const sortColumn =
+      LEARNER_USAGE_SORT_COLUMNS[opts.sortBy ?? ''] ??
+      '"lastPracticeSessionAt"';
+    const order = opts.order ?? 'ASC';
+    const nulls = order === 'ASC' ? 'NULLS FIRST' : 'NULLS LAST';
+    const searchPattern = opts.search ? `%${opts.search}%` : null;
+
+    const rows = await this.dataSource.query<
+      (LearnerUsageRow & { totalCount: string })[]
+    >(
+      `
+      WITH learners AS (
+        SELECT u.id, u.name, u.email, u."createdAt" AS "signupDate"
+        FROM users u
+        WHERE u."tenant_id" = $1
+          AND u.status != 'SUSPENDED'
+          AND EXISTS (
+                SELECT 1 FROM user_groups ug
+                JOIN groups g ON g.id = ug."groupId"
+                WHERE ug."userId" = u.id AND g.name = 'LEARNER'
+              )
+      ),
+      roleplay_window AS (
+        SELECT
+          s."counselorId" AS user_id,
+          COUNT(*) FILTER (
+            WHERE s."startedAt" >= $2 AND s."startedAt" < $3
+          ) AS started,
+          COUNT(*) FILTER (
+            WHERE s.status = 'ENDED' AND s."eventStatus" = 'COMPLETED'
+              AND COALESCE(s."endedAt", s."createdAt") >= $2
+              AND COALESCE(s."endedAt", s."createdAt") < $3
+          ) AS completed,
+          SUM(d."callDuration") FILTER (
+            WHERE s.status = 'ENDED' AND s."eventStatus" = 'COMPLETED'
+              AND COALESCE(s."endedAt", s."createdAt") >= $2
+              AND COALESCE(s."endedAt", s."createdAt") < $3
+          ) AS "durationMs",
+          AVG(d."compositeScore") FILTER (
+            WHERE s.status = 'ENDED' AND s."eventStatus" = 'COMPLETED'
+              AND COALESCE(s."endedAt", s."createdAt") >= $2
+              AND COALESCE(s."endedAt", s."createdAt") < $3
+          ) AS "avgScore"
+        FROM scenario_sessions s
+        LEFT JOIN scenario_session_details d ON d."scenarioSessionId" = s.id
+        WHERE s."tenant_id" = $1
+        GROUP BY s."counselorId"
+      ),
+      roleplay_lifetime AS (
+        SELECT s."counselorId" AS user_id,
+          MAX(COALESCE(s."startedAt", s."createdAt")) AS "lastPracticeSessionAt"
+        FROM scenario_sessions s
+        WHERE s."tenant_id" = $1
+        GROUP BY s."counselorId"
+      ),
+      courses AS (
+        SELECT te."userId" AS user_id,
+          COUNT(*) AS assigned,
+          COUNT(*) FILTER (WHERE te."startedAt" IS NOT NULL) AS started,
+          COUNT(*) FILTER (WHERE te."completedAt" IS NOT NULL) AS completed
+        FROM track_enrollments te
+        WHERE te."tenantId"::text = $1 AND te."deletedAt" IS NULL
+        GROUP BY te."userId"
+      ),
+      joined AS (
+        SELECT
+          l.id, l.name, l.email, l."signupDate",
+          rl."lastPracticeSessionAt" AS "lastPracticeSessionAt",
+          COALESCE(rw.started, 0)::int AS "roleplaySessionsStarted",
+          COALESCE(rw.completed, 0)::int AS "roleplaySessionsCompleted",
+          rw."avgScore"::float AS "avgScore",
+          COALESCE(rw."durationMs", 0)::bigint AS "totalDurationMs",
+          COALESCE(c.assigned, 0)::int AS "coursesAssigned",
+          COALESCE(c.started, 0)::int AS "coursesStarted",
+          COALESCE(c.completed, 0)::int AS "coursesCompleted"
+        FROM learners l
+        LEFT JOIN roleplay_window rw ON rw.user_id = l.id
+        LEFT JOIN roleplay_lifetime rl ON rl.user_id = l.id
+        LEFT JOIN courses c ON c.user_id = l.id
+      )
+      SELECT *, COUNT(*) OVER ()::int AS "totalCount"
+      FROM joined
+      WHERE ($4::text IS NULL OR name ILIKE $4 OR email ILIKE $4)
+      ORDER BY ${sortColumn} ${order} ${nulls}
+      LIMIT $5 OFFSET $6
+      `,
+      [tenantId, start, end, searchPattern, opts.limit, opts.offset],
+    );
+
+    return {
+      rows: rows.map((r) => ({
+        id: Number(r.id),
+        name: r.name,
+        email: r.email,
+        signupDate: r.signupDate,
+        lastPracticeSessionAt: r.lastPracticeSessionAt,
+        roleplaySessionsStarted: Number(r.roleplaySessionsStarted) || 0,
+        roleplaySessionsCompleted: Number(r.roleplaySessionsCompleted) || 0,
+        avgScore: r.avgScore != null ? Number(r.avgScore) : null,
+        totalDurationMs: Number(r.totalDurationMs) || 0,
+        coursesAssigned: Number(r.coursesAssigned) || 0,
+        coursesStarted: Number(r.coursesStarted) || 0,
+        coursesCompleted: Number(r.coursesCompleted) || 0,
+      })),
+      count: rows.length > 0 ? Number(rows[0].totalCount) : 0,
+    };
   }
 }
