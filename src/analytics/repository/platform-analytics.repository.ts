@@ -79,6 +79,16 @@ export interface VoiceLatencyBucketRow {
   p50Ms: number;
   /** p95 voice-to-voice latency (ms) in the bucket. */
   p95Ms: number;
+  /**
+   * Mean LLM time-to-first-token (ms) in the bucket. Live-instrumentation
+   * only — null for 'transcript' (backfilled) buckets, which have no way to
+   * derive it from message timings alone.
+   */
+  avgLlmTtftMs: number | null;
+  /** Median (p50) LLM time-to-first-token (ms) in the bucket. Null as above. */
+  p50LlmTtftMs: number | null;
+  /** p95 LLM time-to-first-token (ms) in the bucket. Null as above. */
+  p95LlmTtftMs: number | null;
 }
 
 export interface VoiceLatencyByLanguageRow {
@@ -630,6 +640,21 @@ export class PlatformAnalyticsRepository {
           `(ORDER BY m."responseLatencyMs"))::int`,
         'p95Ms',
       )
+      // llmTtftMs is live-instrumentation only, so 'transcript' buckets are
+      // all-NULL for this column — avg()/percentile_cont() over an all-NULL
+      // group already return NULL, matching the existing
+      // null-when-unpopulated convention (see avgSttFinalizeMs below).
+      .addSelect('round(avg(m."llmTtftMs"))::int', 'avgLlmTtftMs')
+      .addSelect(
+        `round(percentile_cont(0.5) WITHIN GROUP ` +
+          `(ORDER BY m."llmTtftMs"))::int`,
+        'p50LlmTtftMs',
+      )
+      .addSelect(
+        `round(percentile_cont(0.95) WITHIN GROUP ` +
+          `(ORDER BY m."llmTtftMs"))::int`,
+        'p95LlmTtftMs',
+      )
       .from('scenario_session_turn_metrics', 'm');
     if (language) {
       // turn_metrics.language is largely unpopulated, so filter by the SESSION's
@@ -664,7 +689,15 @@ export class PlatformAnalyticsRepository {
         avgMs: number;
         p50Ms: number;
         p95Ms: number;
+        avgLlmTtftMs: number | null;
+        p50LlmTtftMs: number | null;
+        p95LlmTtftMs: number | null;
       }>();
+
+    // llmTtft* are left as null (not coerced to 0) when unpopulated for the
+    // bucket — same "no meaningful zero" rule as the rest of this file.
+    const toNullableNumber = (v: number | null): number | null =>
+      v == null ? null : Number(v);
 
     return rows.map((r) => ({
       bucket: r.bucket,
@@ -673,6 +706,9 @@ export class PlatformAnalyticsRepository {
       avgMs: Number(r.avgMs) || 0,
       p50Ms: Number(r.p50Ms) || 0,
       p95Ms: Number(r.p95Ms) || 0,
+      avgLlmTtftMs: toNullableNumber(r.avgLlmTtftMs),
+      p50LlmTtftMs: toNullableNumber(r.p50LlmTtftMs),
+      p95LlmTtftMs: toNullableNumber(r.p95LlmTtftMs),
     }));
   }
 

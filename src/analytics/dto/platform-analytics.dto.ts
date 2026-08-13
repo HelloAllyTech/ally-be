@@ -766,6 +766,27 @@ export class VoiceLatencyPointDto {
 
   @ApiProperty({ description: 'p95 voice-to-voice latency (ms)' })
   p95Ms!: number;
+
+  @ApiProperty({
+    description:
+      'Mean LLM time-to-first-token (ms). Live-instrumentation only — null ' +
+      "for 'transcript' buckets, which have no way to derive it from " +
+      'message timings alone.',
+    nullable: true,
+  })
+  avgLlmTtftMs!: number | null;
+
+  @ApiProperty({
+    description: 'Median (p50) LLM time-to-first-token (ms). Null as above.',
+    nullable: true,
+  })
+  p50LlmTtftMs!: number | null;
+
+  @ApiProperty({
+    description: 'p95 LLM time-to-first-token (ms). Null as above.',
+    nullable: true,
+  })
+  p95LlmTtftMs!: number | null;
 }
 
 export class VoiceLatencyByLanguageRowDto {

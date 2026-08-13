@@ -445,6 +445,9 @@ describe('PlatformAnalyticsService', () => {
           avgMs: 4858,
           p50Ms: 4200,
           p95Ms: 8046,
+          avgLlmTtftMs: 1200,
+          p50LlmTtftMs: 1100,
+          p95LlmTtftMs: 2400,
         },
         {
           bucket: '2024-06-10',
@@ -453,6 +456,9 @@ describe('PlatformAnalyticsService', () => {
           avgMs: 4421,
           p50Ms: 4000,
           p95Ms: 6597,
+          avgLlmTtftMs: null,
+          p50LlmTtftMs: null,
+          p95LlmTtftMs: null,
         },
       ];
       repo.getVoiceLatencyByBucket.mockResolvedValue(points);
