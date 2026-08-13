@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsNotEmpty,
   IsString,
   IsOptional,
@@ -10,13 +12,20 @@ import {
   IsEnum,
   MinLength,
   IsUrl,
+  IsUUID,
+  ValidateNested,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ScenarioCharacterSortBy,
   ScenarioCharacterSortOrder,
 } from '../enum/scenario-character.enum';
 import { TrimStringTransform } from 'src/common/util/string-transform.util';
+import { CharacterKnowledgeSourceDto } from './character-knowledge-source.dto';
+import {
+  MAX_CHARACTER_KNOWLEDGE_SOURCES_COUNT,
+  MAX_CHARACTER_LINGUISTIC_STYLE_SAMPLES_COUNT,
+} from '../constants/scenario-character.constants';
 
 export class ScenarioCharacterRequestDto {
   @ApiProperty({ description: 'Scenario character name' })
@@ -102,6 +111,53 @@ export class ScenarioCharacterRequestDto {
   @IsString()
   @MaxLength(2500)
   characterProfileText?: string;
+
+  @ApiProperty({
+    description:
+      'ID of the voice (from the scenario voice library) assigned to this character',
+    required: false,
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsOptional()
+  @IsUUID()
+  voiceId?: string;
+
+  @ApiProperty({
+    description:
+      'Free-text style guidance for this character (e.g. dialect, register, code-mixing norms)',
+    required: false,
+    example: 'Speaks simple, colloquial Chennai Tamil; code-mixes with English.',
+  })
+  @IsOptional()
+  @Transform(TrimStringTransform)
+  @IsString()
+  @MaxLength(1000)
+  languageCharacteristics?: string;
+
+  @ApiProperty({
+    description: "Sample utterances demonstrating the character's speech pattern",
+    required: false,
+    example: ['Aiyo, enna panna?', 'Sari sari, ippo varen.'],
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_CHARACTER_LINGUISTIC_STYLE_SAMPLES_COUNT)
+  @IsString({ each: true })
+  @MaxLength(300, { each: true })
+  linguisticStyleSamples?: string[];
+
+  @ApiProperty({
+    description: 'Knowledge sources this character can draw on',
+    required: false,
+    type: [CharacterKnowledgeSourceDto],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_CHARACTER_KNOWLEDGE_SOURCES_COUNT)
+  @ValidateNested({ each: true })
+  @Type(() => CharacterKnowledgeSourceDto)
+  knowledgeSources?: CharacterKnowledgeSourceDto[];
 }
 
 export class GetScenarioCharacterQueryDto {
@@ -199,6 +255,34 @@ export class ScenarioCharacterResponseDto {
     required: false,
   })
   characterProfileText?: string;
+
+  @ApiProperty({
+    description:
+      'ID of the voice (from the scenario voice library) assigned to this character',
+    required: false,
+  })
+  voiceId?: string;
+
+  @ApiProperty({
+    description:
+      'Free-text style guidance for this character (e.g. dialect, register, code-mixing norms)',
+    required: false,
+  })
+  languageCharacteristics?: string;
+
+  @ApiProperty({
+    description: "Sample utterances demonstrating the character's speech pattern",
+    required: false,
+    type: [String],
+  })
+  linguisticStyleSamples?: string[];
+
+  @ApiProperty({
+    description: 'Knowledge sources this character can draw on',
+    required: false,
+    type: [CharacterKnowledgeSourceDto],
+  })
+  knowledgeSources?: CharacterKnowledgeSourceDto[];
 
   @ApiProperty({ description: 'Created at' })
   createdAt!: Date;

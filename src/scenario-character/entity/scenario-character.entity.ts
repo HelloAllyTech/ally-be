@@ -1,5 +1,6 @@
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm';
+import { CharacterKnowledgeSource } from '../type/character-knowledge-source.type';
 
 @Entity('scenario_characters')
 export class ScenarioCharacter extends BaseWithoutTenantEntity {
@@ -41,6 +42,30 @@ export class ScenarioCharacter extends BaseWithoutTenantEntity {
     nullable: true,
   })
   characterProfileText?: string;
+
+  // Loose FK to scenario_voices.id (no DB constraint, matching repo
+  // convention — see Scenario.roleplaySpecId). Null if this character has
+  // no assigned voice.
+  @Column({ name: 'voice_id', type: 'uuid', nullable: true })
+  voiceId?: string;
+
+  @Column({
+    name: 'language_characteristics',
+    type: 'varchar',
+    length: 1000,
+    nullable: true,
+  })
+  languageCharacteristics?: string;
+
+  @Column({
+    name: 'linguistic_style_samples',
+    type: 'jsonb',
+    nullable: true,
+  })
+  linguisticStyleSamples?: string[];
+
+  @Column({ name: 'knowledge_sources', type: 'jsonb', nullable: true })
+  knowledgeSources?: CharacterKnowledgeSource[];
 
   @Column({ name: 'created_by' })
   createdBy!: number;
