@@ -18,9 +18,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 import {
   CreateCommentDto,
@@ -157,7 +160,10 @@ export class RoadmapCollaborationController {
     );
   }
 
-  @AuthPermissions([PERMISSIONS.EDIT_PRODUCT_ROADMAP])
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
   @Put('views/:id/pin')
   @ApiOperation({
     summary: 'Pin or unpin a view for everyone',

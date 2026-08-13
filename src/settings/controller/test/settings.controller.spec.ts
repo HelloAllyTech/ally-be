@@ -6,6 +6,7 @@ import { SettingsService } from '../../service/settings.service';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { PermissionsGuard } from '../../../auth/guards/permissions.guard';
 import { JwtAuthGuard } from '../../../auth/guards/jwt-auth.guard';
+import { FeatureToggleGuard } from '../../../auth/guards/feature-toggle.guard';
 import { ChatTypes } from '../../../common/constants/chat.constants';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
 import { PERMISSIONS } from '../../../authorization/constants/permissions.constants';
@@ -64,6 +65,8 @@ describe('SettingsController', () => {
       .overrideGuard(PermissionsGuard)
       .useValue(allowGuard)
       .overrideGuard(JwtAuthGuard)
+      .useValue(allowGuard)
+      .overrideGuard(FeatureToggleGuard)
       .useValue(allowGuard)
       .compile();
 

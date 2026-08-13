@@ -14,8 +14,10 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthPermissions } from '../../auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { SUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import { LabVariableService } from '../service/lab-variable.service';
 import {
   CreateLabVariableDto,
@@ -32,7 +34,10 @@ export class LabVariableController {
   constructor(private readonly variableService: LabVariableService) {}
 
   @Get()
-  @AuthPermissions([PERMISSIONS.VIEW_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_AI_LAB],
+  })
   @ApiOperation({ summary: 'List AI Lab variables' })
   list(
     @Query() query: LabListQueryDto,
@@ -41,21 +46,30 @@ export class LabVariableController {
   }
 
   @Get(':id')
-  @AuthPermissions([PERMISSIONS.VIEW_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_AI_LAB],
+  })
   @ApiOperation({ summary: 'Get one AI Lab variable by ID' })
   getById(@Param('id') id: string): Promise<LabVariable> {
     return this.variableService.getById(id);
   }
 
   @Post()
-  @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_AI_LAB],
+  })
   @ApiOperation({ summary: 'Create an AI Lab variable (name must be unique)' })
   create(@Body() dto: CreateLabVariableDto): Promise<LabVariable> {
     return this.variableService.create(dto);
   }
 
   @Patch(':id')
-  @AuthPermissions([PERMISSIONS.EDIT_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_AI_LAB],
+  })
   @ApiOperation({ summary: 'Update an AI Lab variable' })
   update(
     @Param('id') id: string,
@@ -65,7 +79,10 @@ export class LabVariableController {
   }
 
   @Delete(':id')
-  @AuthPermissions([PERMISSIONS.DELETE_AI_LAB])
+  @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.DELETE_AI_LAB],
+  })
   @ApiOperation({
     summary: 'Delete an AI Lab variable (cascades to its values)',
   })

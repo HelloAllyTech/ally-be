@@ -79,10 +79,11 @@ Module path = `src/<module>/entity/`.
 | `admin_tenants` | BaseWithoutTenant | `user_id`, `tenant_id`, `deleted_at` | Which users administer which tenants; unique `(user_id, tenant_id)` |
 | `tenants` | (custom) | `id` (uuid), `name` (uniq), `code` (uniq), `status` (`TenantStatus`: ACTIVE/INACTIVE/SUSPENDED), `metadata`, `settings` (jsonb), `logo_url`, `deleted_at` | The organization root entity |
 | `refresh_token` | TypeORM base | `id` (int), `token`, `expires_at`, `user_id`, `device_info` | Auth refresh tokens |
-| `groups` | (custom) | `id` (int), `name` | User groups (RBAC + content targeting). `name` holds a `UserRole` value for the nine RBAC roles: `CLIENT`, `COUNSELOR`, `ADMIN`, `LEARNER`, `SIMULATION_REVIEWER`, `SCRIBE_REVIEWER`, `MULTI_TENANT_ADMIN`, `SUPER_ADMIN`, `SUPER_DUPER_ADMIN`. (A tenth, `INTERNAL`, was added by migration `1878000000000` and removed again by `1885000000000` along with the `/admin` console surface it existed for.) No unique constraint on `name`, so inserts guard with `NOT EXISTS` |
+| `groups` | (custom) | `id` (int), `name` | User groups (RBAC + content targeting). `name` holds a `UserRole` value for ten RBAC roles: `CLIENT`, `COUNSELOR`, `ADMIN`, `LEARNER`, `SIMULATION_REVIEWER`, `SCRIBE_REVIEWER`, `MULTI_TENANT_ADMIN`, `SUPER_ADMIN`, `SUPER_DUPER_ADMIN`, `PLATFORM_ADMIN`. (An earlier tenth, `INTERNAL`, was added by migration `1878000000000` and removed again by `1885000000000` along with the `/admin` console surface it existed for.) `PLATFORM_ADMIN` (migration `1895000000001`) is the single consolidated platform-tier role replacing `SUPER_ADMIN`/`SUPER_DUPER_ADMIN`/`MULTI_TENANT_ADMIN` — those three groups and their `user_groups`/`group_permissions` rows are kept, unreferenced by new code, for rollback safety during the rollout window; a later cleanup migration removes them. `PLATFORM_ADMIN`'s `group_permissions` is the union of all three (in practice, identical to `SUPER_DUPER_ADMIN`'s — verified to already be a superset). No unique constraint on `name`, so inserts guard with `NOT EXISTS` |
 | `permissions` | (custom) | `id` (int), `name` | Permission catalog |
 | `group_permissions` | (custom) | `group_id`, `permission_id` | Group → permission join |
 | `user_groups` | (custom) | `user_id`, `group_id` | User → group join |
+| `admin_feature_toggles` | BaseWithoutTenant | `id` (uuid), `user_id`, `feature_key`, `enabled`, `updated_by` (nullable) | Per-platform-admin-user feature toggles — the fine-grained replacement for the old SUPER_ADMIN/SUPER_DUPER_ADMIN/MULTI_TENANT_ADMIN tier split (migration `1895000000000`). One row per `(user_id, feature_key)`; a missing row means disabled (`FeatureToggleGuard` fails closed). Registry of valid keys: `src/authorization/constants/admin-feature-toggle.constants.ts`. Editable only by users holding the `admin_user_management` toggle |
 | `global_settings` | BaseWithoutTenant | `name` (uniq), `value` (jsonb), `created_by`, `updated_by` | Platform-wide settings |
 | `preference` | BaseEntity | `name` (`PreferenceName`), `related_id`, `related_entity`, `value` (jsonb) | Generic per-entity preferences |
 | `languages` | BaseWithoutTenant | `id` (int), `value` (uniq), `label`, `active`, `translation_code`, `llm_provider_config`, `stt_provider_config` (jsonb) | i18n + per-language LLM/STT config |
@@ -321,6 +322,32 @@ the kill switch, consent and reply copy, rate limits, retrieval thresholds, `ret
 `crisisClassifierEnabled`. Defaults are merged per field, so a row written before a setting existed
 picks the default up rather than leaving it undefined.
 
+### 3.12 Bug Hunter (`bug-hunter`)
+
+The autonomous find-and-fix agent's kill switch, run history and event transcript. The actual
+finding/fixing logic is an external Claude Code pipeline (`.claude/workflows/bug-hunt.mjs` in the
+workspace root) that authenticates and reports every step back over `POST /v1/bug-hunter/runs`
+`.../report` `.../close` — this module owns none of that logic itself, only the state. Findings the
+agent surfaces for review, and human-reported bugs it reads, both live in `analytics_suggestions`
+(§3.8, `suggested_type='bug'`) and `roadmap_opportunities` (`type='bug'`) respectively — no separate
+ledger table.
+
+Off by default: `bug_hunter_settings` is a singleton row (`id` pinned to 1 by a CHECK constraint),
+seeded `enabled=false` by the introducing migration. Both trigger paths (nightly cron, on-demand)
+call `POST /v1/bug-hunter/runs`, which reads this row before doing anything else; a disabled call
+gets a `bug_hunt_runs` row stamped `status='skipped_disabled'` and nothing further runs.
+
+| Table | Base | Key columns | Notes |
+|-------|------|-------------|-------|
+| `bug_hunter_settings` | BaseWithoutTenant | `id` (smallint, **CHECK id=1** — singleton), `enabled` (bool, default false), `updated_by` (int, nullable) | The kill switch. Flipping it also writes a `bug_hunt_events` row (`stage='settings_changed'`, `run_id` NULL) so on/off history sits in the same timeline as run activity |
+| `bug_hunt_runs` | BaseWithoutTenant | `id` (uuid), `trigger` (`scheduled`/`manual`), `repo`, `status` (`running`/`completed`/`failed`/`skipped_disabled`), `finished_at`, `found_count`/`auto_merged_count`/`pr_opened_count`/`dismissed_count`, `total_token_cost_usd` (numeric, snapshotted from `llm_usage` at close — not the source of truth), `metadata` (jsonb) | One row per (repo, trigger) sweep — a five-repo nightly run is five rows, never merged into one |
+| `bug_hunt_events` | BaseWithoutTenant | `id` (uuid), `run_id` (uuid, nullable FK → `bug_hunt_runs` ON DELETE CASCADE), `repo`, `stage` (`finder_result`/`verify`/`fix_attempt`/`test_written`/`doc_updated`/`pr_opened`/`merged`/`escalated`/`error`/`skipped_disabled`/`settings_changed`), `summary` (text), `payload` (jsonb — structured detail only, **never raw log/PII content**), `suggestion_id` (uuid, nullable FK → `analytics_suggestions` ON DELETE SET NULL) | **Append-only** transcript, modeled on `copilot_messages` (§3.9). Deliberately not `audit_logs` (§3.8) — that table is a HIPAA compliance log with its own taxonomy; this is unrelated operational telemetry |
+
+Cost is read, not stored twice: every LLM call inside the pipeline calls `LlmUsageService.record()`
+tagged `task=LlmTask.BUG_HUNTER` and `metadata.runId`, so `llm_usage` (§3.8) stays the one source of
+truth for token cost and `bug_hunt_runs.total_token_cost_usd` is just a snapshot taken at close time
+for the admin tab's run-history table to render without a join.
+
 ---
 
 ## 4. Weaviate (vector DB — `ally-ai`)
@@ -363,6 +390,7 @@ stores share a key rather than matching on content); `Conversation.chat_id` ↔ 
 |---------|---------|
 | A user / their org | `users`, `tenants`, `admin_tenants` |
 | Who can do/see what | `groups`, `permissions`, `group_permissions`, `user_groups`, `*_tenants`, `*_groups` join tables |
+| Which admin tabs/features a platform admin can see | `admin_feature_toggles` |
 | A training simulation run + its score | `scenario_sessions` (+ `_details`, `_messages`, `_events`, `_feedbacks`) |
 | Per-turn AI latency / performance | `scenario_session_turn_metrics` |
 | A Roleplay Studio v2 spec / its versions | `roleplay_specs`, `roleplay_spec_versions`, `roleplay_spec_tenants` |

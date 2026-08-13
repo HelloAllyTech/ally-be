@@ -6,7 +6,8 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import {
   AnalyticsAgentCatalogResponseDto,
@@ -34,7 +35,9 @@ export class AnalyticsAgentController {
   constructor(private readonly analyticsAgentService: AnalyticsAgentService) {}
 
   @Post('ask')
-  @AuthRoles(...SUPER_DUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_AGENT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Ask an analytics question in English (super-duper-admin)',
     description:
@@ -63,7 +66,9 @@ export class AnalyticsAgentController {
   }
 
   @Get('catalog')
-  @AuthRoles(...SUPER_DUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_AGENT, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Tables and columns the agent can read (super-duper-admin)',
     description:

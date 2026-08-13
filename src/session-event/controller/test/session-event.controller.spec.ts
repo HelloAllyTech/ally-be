@@ -10,6 +10,7 @@ import {
   UpdateSessionEventDto,
 } from '../../dto/session-event.dto';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
+import { FeatureToggleService } from '../../../authorization/service/feature-toggle.service';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { UserService } from '../../../user/service/user.service';
 import { AppConfigService } from '../../../config/config.service';
@@ -151,6 +152,10 @@ describe('SessionEventController', () => {
         {
           provide: RolesGuard,
           useValue: mockRolesGuard,
+        },
+        {
+          provide: FeatureToggleService,
+          useValue: { hasToggle: jest.fn().mockResolvedValue(true) },
         },
       ],
     })

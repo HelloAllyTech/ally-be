@@ -158,6 +158,8 @@ import {
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import {
   UserRole,
   SUPER_ADMIN_ROLES,
@@ -195,7 +197,9 @@ export class AnalyticsController {
   ) {}
 
   @Get('overview')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Platform analytics overview (super-admin)',
     description:
@@ -220,7 +224,9 @@ export class AnalyticsController {
   }
 
   @Get('highlights')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Leadership highlights (super-admin)',
     description:
@@ -248,7 +254,9 @@ export class AnalyticsController {
   }
 
   @Get('cohort-retention')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Monthly learner cohort retention (super-admin)',
     description:
@@ -275,7 +283,9 @@ export class AnalyticsController {
   }
 
   @Get('usage-levels')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Monthly learner usage-level mix (super-admin)',
     description:
@@ -307,7 +317,9 @@ export class AnalyticsController {
   }
 
   @Get('roleplay-volume')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Learners by lifetime completed roleplays (super-admin)',
     description:
@@ -339,7 +351,9 @@ export class AnalyticsController {
   }
 
   @Get('roadmap-delivery')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Coins shipped per month by owner (super-admin)',
     description:
@@ -385,7 +399,9 @@ export class AnalyticsController {
   /* ------------------------------------------------------------------------ */
 
   @Get('activation')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Activation: practising learners, funnel, time to first practice',
     description:
@@ -416,7 +432,9 @@ export class AnalyticsController {
   }
 
   @Get('completion-rate')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Started vs completed roleplays per period (super-admin)',
     description:
@@ -440,7 +458,9 @@ export class AnalyticsController {
   }
 
   @Get('language-mix')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Completed sessions by language per period (super-admin)',
     description:
@@ -466,7 +486,9 @@ export class AnalyticsController {
   }
 
   @Get('skill-growth')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Composite score by Nth completed session (super-admin)',
     description:
@@ -498,7 +520,9 @@ export class AnalyticsController {
   }
 
   @Get('quality-distribution')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary:
       'Quality percentiles and satisfaction mix per period (super-admin)',
@@ -531,7 +555,9 @@ export class AnalyticsController {
   }
 
   @Get('competency-map')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary:
       'Practice volume against median score per competency (super-admin)',
@@ -561,7 +587,9 @@ export class AnalyticsController {
   }
 
   @Get('track-dropoff')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Track item completion by format (super-admin)',
     description:
@@ -588,7 +616,9 @@ export class AnalyticsController {
   }
 
   @Get('coaching-loop')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Review sharing and turnaround per period (super-admin)',
     description:
@@ -614,7 +644,9 @@ export class AnalyticsController {
   }
 
   @Get('org-health')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Per-organisation activity, recency and credit use (super-admin)',
     description:
@@ -643,7 +675,9 @@ export class AnalyticsController {
   }
 
   @Get('org-session-distribution')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary:
       'Orgs bucketed by avg session time and avg session frequency per learner (super-admin)',
@@ -669,7 +703,9 @@ export class AnalyticsController {
   }
 
   @Get('learner-kpis')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'LEARNER-role-scoped headline KPIs (super-admin)',
     description:
@@ -691,7 +727,9 @@ export class AnalyticsController {
   }
 
   @Get('scenario-usage')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Most/least-used scenarios, platform-wide (super-admin)',
     description:
@@ -713,7 +751,9 @@ export class AnalyticsController {
   }
 
   @Get('scribe-adoption')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Orgs and counsellors using Scribe per period (super-admin)',
     description:
@@ -737,7 +777,9 @@ export class AnalyticsController {
   }
 
   @Get('voice-latency')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Voice-to-voice latency trend (super-admin)',
     description:
@@ -758,7 +800,9 @@ export class AnalyticsController {
   }
 
   @Get('voice-latency/sessions')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Session-wise voice latency for one simulation (super-admin)',
     description:
@@ -781,7 +825,9 @@ export class AnalyticsController {
   }
 
   @Get('voice-latency/sessions/summary')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary:
       'Session-wise voice latency summary for one simulation (super-admin)',
@@ -802,7 +848,9 @@ export class AnalyticsController {
   }
 
   @Get('agent-join-reliability')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Agent-join reliability trend (super-admin)',
     description:
@@ -823,7 +871,9 @@ export class AnalyticsController {
   }
 
   @Get('start-latency')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Simulation start-latency trend (super-admin)',
     description:
@@ -846,7 +896,9 @@ export class AnalyticsController {
   }
 
   @Get('conversation-drift')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Conversation drift analytics (super-admin)',
     description:
@@ -873,7 +925,9 @@ export class AnalyticsController {
   }
 
   @Get('token-consumption')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'AI token consumption by model & task (super-admin)',
     description:
@@ -889,7 +943,9 @@ export class AnalyticsController {
   }
 
   @Get('scribe/overview')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Scribe-session analytics overview (super-admin)',
     description:
@@ -906,7 +962,9 @@ export class AnalyticsController {
   }
 
   @Get('scribe/summary-failures')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Scribe summary-generation failure analytics (super-admin)',
     description:
@@ -923,7 +981,9 @@ export class AnalyticsController {
   }
 
   @Post('conversation-drift/backfill')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Re-run the drift backfill over the last N days (super-admin)',
     description:
@@ -941,7 +1001,9 @@ export class AnalyticsController {
   }
 
   @Get('conversation-drift/backfill/:jobId')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({ summary: 'Drift backfill job status (super-admin)' })
   @ApiResponse({ status: 200, type: DriftBackfillJobDto })
   async driftBackfillStatus(
@@ -951,7 +1013,9 @@ export class AnalyticsController {
   }
 
   @Get('language-quality')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Language-quality evaluation dashboard (super-admin)',
     description:
@@ -969,7 +1033,9 @@ export class AnalyticsController {
   }
 
   @Get('language-quality/reference')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'The pinned reference experiment (super-admin)',
     description:
@@ -981,7 +1047,9 @@ export class AnalyticsController {
   }
 
   @Post('language-quality/reference')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Pin a reference experiment (super-admin)',
     description:
@@ -997,7 +1065,9 @@ export class AnalyticsController {
   }
 
   @Post('language-quality/backfill')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Run the language-quality judge backfill (super-admin)',
     description:
@@ -1020,7 +1090,9 @@ export class AnalyticsController {
   }
 
   @Get('language-quality/backfill/:jobId')
-  @AuthRoles(...SUPER_ADMIN_ROLES)
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
   @ApiOperation({
     summary: 'Language-quality backfill job status (super-admin)',
   })

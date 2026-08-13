@@ -1,9 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { PermissionsService } from '../permissions.service';
 import { RedisService } from '../../../redis/service/redis.service';
 import { GroupService } from '../group.service';
 import { GroupPermissionsService } from '../group-permissions.service';
 import { UserGroupService } from '../user-group.service';
+import { AdminTenant } from 'src/user/entity/admin-tenant.entity';
 
 describe('PermissionsService', () => {
   let service: PermissionsService;
@@ -11,6 +13,7 @@ describe('PermissionsService', () => {
   let groupService: jest.Mocked<GroupService>;
   let groupPermissionsService: jest.Mocked<GroupPermissionsService>;
   let userGroupService: jest.Mocked<UserGroupService>;
+  let adminTenantRepository: { count: jest.Mock };
 
   const mockUserRoles = [
     {
@@ -69,6 +72,10 @@ describe('PermissionsService', () => {
       getUserGroups: jest.fn(),
     };
 
+    const mockAdminTenantRepository = {
+      count: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PermissionsService,
@@ -88,6 +95,10 @@ describe('PermissionsService', () => {
           provide: UserGroupService,
           useValue: mockUserGroupService,
         },
+        {
+          provide: getRepositoryToken(AdminTenant),
+          useValue: mockAdminTenantRepository,
+        },
       ],
     }).compile();
 
@@ -96,6 +107,7 @@ describe('PermissionsService', () => {
     groupService = module.get(GroupService);
     groupPermissionsService = module.get(GroupPermissionsService);
     userGroupService = module.get(UserGroupService);
+    adminTenantRepository = mockAdminTenantRepository;
   });
 
   afterEach(() => {
@@ -187,27 +199,23 @@ describe('PermissionsService', () => {
   describe('isMultiTenantAdmin', () => {
     const userId = 123;
 
-    it('should return true if user has MULTI_TENANT_ADMIN role', async () => {
-      redisService.get.mockResolvedValue(
-        JSON.stringify(['MULTI_TENANT_ADMIN']),
-      );
+    // Post role-collapse (PLATFORM_ADMIN replaces SUPER_ADMIN/SUPER_DUPER_ADMIN/
+    // MULTI_TENANT_ADMIN), this is a presence-of-rows check against
+    // admin_tenants directly, not a role-name check — see the method's doc
+    // comment in permissions.service.ts.
+    it('should return true if the user has any admin_tenants mapping', async () => {
+      adminTenantRepository.count.mockResolvedValue(1);
 
       const result = await service.isMultiTenantAdmin(userId);
 
       expect(result).toBe(true);
-      expect(redisService.get).toHaveBeenCalledWith(`user:roles:${userId}`);
+      expect(adminTenantRepository.count).toHaveBeenCalledWith({
+        where: { userId, deletedAt: expect.anything() },
+      });
     });
 
-    it('should return false if user does not have MULTI_TENANT_ADMIN role', async () => {
-      redisService.get.mockResolvedValue(JSON.stringify(['LEARNER', 'ADMIN']));
-
-      const result = await service.isMultiTenantAdmin(userId);
-
-      expect(result).toBe(false);
-    });
-
-    it('should return false if user has no roles', async () => {
-      redisService.get.mockResolvedValue(JSON.stringify([]));
+    it('should return false if the user has no admin_tenants mapping', async () => {
+      adminTenantRepository.count.mockResolvedValue(0);
 
       const result = await service.isMultiTenantAdmin(userId);
 

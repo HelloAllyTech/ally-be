@@ -6,8 +6,10 @@ import {
   ApiSecurity,
   ApiTags,
 } from '@nestjs/swagger';
-import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
+import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { LogsService } from './logs.service';
 import {
   AwsLogsQueryDto,
@@ -30,7 +32,10 @@ export class AwsLogsController {
 
   @ApiOperation({ summary: 'Search CloudWatch log events for a service' })
   @ApiResponse({ status: 200, type: AwsLogsResponseDto })
-  @AuthPermissions([PERMISSIONS.VIEW_AWS_LOGS])
+  @RequireFeatureToggle(FeatureToggleKey.LOGS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_AWS_LOGS],
+  })
   @Get()
   getLogEvents(@Query() query: AwsLogsQueryDto): Promise<AwsLogsResponseDto> {
     return this.logsService.getLogEvents(query);
@@ -38,7 +43,10 @@ export class AwsLogsController {
 
   @ApiOperation({ summary: 'List recent CloudWatch log streams for a service' })
   @ApiResponse({ status: 200, type: AwsLogStreamsResponseDto })
-  @AuthPermissions([PERMISSIONS.VIEW_AWS_LOGS])
+  @RequireFeatureToggle(FeatureToggleKey.LOGS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.VIEW_AWS_LOGS],
+  })
   @Get('streams')
   listLogStreams(
     @Query() query: AwsLogStreamsQueryDto,

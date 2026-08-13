@@ -13,6 +13,8 @@ import { AdminTenantRepository } from './repository/admin-tenant.repository';
 import { AdminTenantService } from './service/admin-tenant.service';
 import { SuperDuperAdminController } from './controller/super-duper-admin.controller';
 import { SuperDuperAdminService } from './service/super-duper-admin.service';
+import { PlatformAdminController } from './controller/platform-admin.controller';
+import { PlatformAdminService } from './service/platform-admin.service';
 import { UserPreferencesRepository } from './repository/user-prefernces.repository';
 import { AwsModule } from 'src/aws/aws.module';
 
@@ -22,7 +24,7 @@ import { AwsModule } from 'src/aws/aws.module';
     QueueModule,
     forwardRef(() => LearnModule),
     forwardRef(() => TenantModule),
-    AuthorizationModule,
+    forwardRef(() => AuthorizationModule),
     AwsModule,
   ],
   providers: [
@@ -31,9 +33,17 @@ import { AwsModule } from 'src/aws/aws.module';
     UserPreferencesRepository,
     AdminTenantRepository,
     AdminTenantService,
+    // Kept alongside PlatformAdminService, unreferenced by any new UI, for
+    // rollback safety during the role-collapse rollout — see
+    // CreatePlatformAdminRole1895000000001.
     SuperDuperAdminService,
+    PlatformAdminService,
   ],
-  controllers: [UserController, SuperDuperAdminController],
+  controllers: [
+    UserController,
+    SuperDuperAdminController,
+    PlatformAdminController,
+  ],
   exports: [
     UserService,
     UserRepository,

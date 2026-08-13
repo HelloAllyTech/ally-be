@@ -8,6 +8,15 @@ export enum UserRole {
   SIMULATION_REVIEWER = 'SIMULATION_REVIEWER',
   SCRIBE_REVIEWER = 'SCRIBE_REVIEWER',
   MULTI_TENANT_ADMIN = 'MULTI_TENANT_ADMIN',
+  /**
+   * The single platform-tier role, replacing SUPER_ADMIN / SUPER_DUPER_ADMIN /
+   * MULTI_TENANT_ADMIN (kept, unreferenced by new code, for rollback safety —
+   * see CreatePlatformAdminRole1895000000001). Fine-grained access is
+   * per-user feature toggles (admin_feature_toggles), not sub-tiers of this
+   * role. Named PLATFORM_ADMIN rather than ADMIN because ADMIN already means
+   * something different: a tenant-scoped org admin.
+   */
+  PLATFORM_ADMIN = 'PLATFORM_ADMIN',
 }
 
 /**
