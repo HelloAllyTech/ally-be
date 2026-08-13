@@ -19,6 +19,8 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { EnableAnalyticsDto } from '../dto/enable-analytics.dto';
 import {
+  CourseUsageQueryDto,
+  CourseUsageResponseDto,
   LearnerUsageQueryDto,
   LearnerUsageResponseDto,
   OrganizationMetricsQueryDto,
@@ -82,6 +84,27 @@ export class TenantAnalyticsController {
       throw new ForbiddenException('No tenant in the auth context');
     }
     return this.tenantAnalyticsService.getLearnerUsage(tenantId, query);
+  }
+
+  /**
+   * Per-course (Track 2.0) usage table for the caller's own tenant. Same
+   * JWT-scoped tenant + permission gate as `organization-metrics`.
+   */
+  @Get('course-usage')
+  @ApiOperation({
+    summary:
+      "Per-course usage table (assigned/started/completion + timing) for the caller's tenant",
+  })
+  @ApiResponse({ status: 200, type: CourseUsageResponseDto })
+  @AuthPermissions([PERMISSIONS.VIEW_ORGANIZATION_METRICS])
+  async getCourseUsage(
+    @Query() query: CourseUsageQueryDto,
+  ): Promise<CourseUsageResponseDto> {
+    const tenantId = ExecutionManager.getTenantId();
+    if (!tenantId) {
+      throw new ForbiddenException('No tenant in the auth context');
+    }
+    return this.tenantAnalyticsService.getCourseUsage(tenantId, query);
   }
 
   @Patch('dashboards')
