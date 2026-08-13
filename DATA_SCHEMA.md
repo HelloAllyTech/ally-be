@@ -104,6 +104,8 @@ tenants/groups.
 | `scenario_voices` | BaseWithoutTenant | `name`, `provider`, `config` (jsonb), `language_id`, `active` | TTS voice catalog |
 | `scenario_characters` | BaseWithoutTenant | `name` (idx), `age`, `gender`, `gender_identity`, `sexual_orientation`, `profession`, `current_location`, `character_profile_text`, cover media, `voice_id` (uuid, loose FK → `scenario_voices.id`), `language_characteristics`, `linguistic_style_samples` (jsonb string[]), `knowledge_sources` (jsonb `{id,title,text}[]`) | Simulated client personas. Not FK-linked to `scenarios` — Studio v1 still duplicates persona fields onto scenario metadata rather than referencing this table |
 | `scenario_cover_image_library` | BaseWithoutTenant | `image_url`, `created_by` | Reusable cover images |
+| `character_interview_sessions` | BaseWithoutTenant | `status` (ACTIVE/COMPLETED), `lastMessageSeq` (atomic per-session message counter), `draftCharacter` (jsonb — the generated profile, `ScenarioCharacterRequestDto` shape), `metadata`, `createdBy` (idx)/`updatedBy`, `deletedAt` | One character-library interview-agent conversation (modeled on `copilot_sessions`, §3.9). COMPLETED once the agent calls `save_character_draft`; the human reviews `draftCharacter` in the character form and saving there creates the `scenario_characters` row |
+| `character_interview_messages` | BaseWithoutTenant | `sessionId`, `seq` (uniq `(sessionId, seq)`, gapless), `role` (user/assistant), `content` (text), `toolCalls`/`toolResults`/`metadata` (jsonb), `createdBy` | **Append-only** interview transcript (no soft delete), replayable into the Anthropic history like `copilot_messages` |
 | `behaviors` | BaseWithoutTenant | `id` (uuid), `name`, `created_by` | Skills/behaviors to demonstrate |
 | `behavior_translations` | BaseWithoutTenant | `behavior_id`, `language_id`, `name` | Uniq `(behavior_id, language_id)` |
 | `competencies` | BaseWithoutTenant | `id` (uuid), `name` | Higher-order skill groupings |
@@ -395,6 +397,7 @@ stores share a key rather than matching on content); `Conversation.chat_id` ↔ 
 | Per-turn AI latency / performance | `scenario_session_turn_metrics` |
 | A Roleplay Studio v2 spec / its versions | `roleplay_specs`, `roleplay_spec_versions`, `roleplay_spec_tenants` |
 | Copilot spec-authoring conversations | `copilot_sessions`, `copilot_messages` |
+| Character-library interview-agent conversations | `character_interview_sessions`, `character_interview_messages` |
 | v2 director telemetry (state path, unlocks, rubric) | `roleplay_director_events`, `roleplay_rubric_scores` |
 | Simulation start latency (time to first word) | `scenario_session_start_metrics` |
 | Learner progress through curriculum | `scenario_path_sessions` / `_items`, `case_sessions` / `_items` |
