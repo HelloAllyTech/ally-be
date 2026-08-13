@@ -81,6 +81,53 @@ const LEARNER_USAGE_SORT_COLUMNS: Record<string, string> = {
   coursesCompleted: '"coursesCompleted"',
 };
 
+export interface CourseUsageRow {
+  id: string;
+  title: string;
+  status: 'ACTIVE' | 'ARCHIVED';
+  totalItems: number;
+  /** Tenant-wide learner headcount — same value on every row, see {@link TenantAnalyticsRepository.getCourseUsageRows}. */
+  learnersAssigned: number;
+  learnersStarted: number;
+  /** Superset of learnersCompleted100 — includes full completers. */
+  learnersAtLeast50: number;
+  learnersCompleted100: number;
+  /** Days from startedAt to completedAt, over 100%-completers only; null when none have completed. */
+  avgCompletionDays: number | null;
+  medianCompletionDays: number | null;
+  /** Avg `track_item_progress.score` for this tenant's enrolled learners; null when nothing is scored. */
+  avgScore: number | null;
+  /** Enrolled, not yet 100%, with lastActivityAt within 14 days. */
+  inProgressActive: number;
+  /** Enrolled, not yet 100%, stalled (lastActivityAt older than 14 days or never). */
+  inProgressStalled: number;
+  lastEnrollmentAt: Date | null;
+}
+
+export interface CourseUsageOptions {
+  search?: string;
+  sortBy?: string;
+  order?: 'ASC' | 'DESC';
+  limit: number;
+  offset: number;
+}
+
+/** Same 14-day threshold as the learner-usage table's "active" status. */
+const COURSE_IN_PROGRESS_ACTIVE_WITHIN_DAYS = 14;
+
+const COURSE_USAGE_SORT_COLUMNS: Record<string, string> = {
+  title: '"title"',
+  status: '"status"',
+  totalItems: '"totalItems"',
+  learnersStarted: '"learnersStarted"',
+  learnersAtLeast50: '"learnersAtLeast50"',
+  learnersCompleted100: '"learnersCompleted100"',
+  avgCompletionDays: '"avgCompletionDays"',
+  medianCompletionDays: '"medianCompletionDays"',
+  avgScore: '"avgScore"',
+  lastEnrollmentAt: '"lastEnrollmentAt"',
+};
+
 /**
  * Tenant-scoped organization-metrics queries for the tenant-admin dashboard.
  * Mirrors the conventions of PlatformAnalyticsRepository (raw counts, dates as
@@ -586,6 +633,157 @@ export class TenantAnalyticsRepository {
         coursesAssigned: Number(r.coursesAssigned) || 0,
         coursesStarted: Number(r.coursesStarted) || 0,
         coursesCompleted: Number(r.coursesCompleted) || 0,
+      })),
+      count: rows.length > 0 ? Number(rows[0].totalCount) : 0,
+    };
+  }
+
+  /**
+   * One row per Track 2.0 course visible to the tenant (ACTIVE or ARCHIVED,
+   * joined through `track_tenants`), for the per-course usage table on the
+   * tenant-admin dashboard. Zero-enrollment courses still produce a row
+   * (LEFT JOIN, driven from the course list, not from enrollments).
+   *
+   * Deliberately all-time throughout — a course's lifetime performance, not
+   * scoped to the dashboard's period toggle, matching the per-learner usage
+   * table's treatment of its own course columns.
+   *
+   * `learnersAssigned` is the tenant's total learner headcount, not a
+   * per-course assignment count — Track 2.0 has no per-learner "assigned but
+   * not started" event (enrolling sets `startedAt` immediately), so every
+   * active catalog course is implicitly available to every learner in a
+   * tenant that has it enabled.
+   */
+  async getCourseUsageRows(
+    tenantId: string,
+    opts: CourseUsageOptions,
+  ): Promise<{ rows: CourseUsageRow[]; count: number }> {
+    const sortColumn =
+      COURSE_USAGE_SORT_COLUMNS[opts.sortBy ?? ''] ?? '"learnersStarted"';
+    const order = opts.order ?? 'ASC';
+    const nulls = order === 'ASC' ? 'NULLS FIRST' : 'NULLS LAST';
+    const searchPattern = opts.search ? `%${opts.search}%` : null;
+
+    const rows = await this.dataSource.query<
+      (CourseUsageRow & { totalCount: string })[]
+    >(
+      `
+      WITH tenant_learner_count AS (
+        SELECT COUNT(*)::int AS cnt
+        FROM users u
+        WHERE u."tenant_id" = $1
+          AND u.status != 'SUSPENDED'
+          AND EXISTS (
+                SELECT 1 FROM user_groups ug
+                JOIN groups g ON g.id = ug."groupId"
+                WHERE ug."userId" = u.id AND g.name = 'LEARNER'
+              )
+      ),
+      courses AS (
+        SELECT t.id, t.title, t.status, t."totalItems"
+        FROM tracks t
+        INNER JOIN track_tenants tt
+          ON tt."trackId" = t.id AND tt."tenantId"::text = $1 AND tt."deletedAt" IS NULL
+        WHERE t."deletedAt" IS NULL AND t.status IN ('ACTIVE', 'ARCHIVED')
+      ),
+      tenant_enrollments AS (
+        SELECT te.id, te."trackId", te."startedAt", te."completedAt",
+               te."completedItems", te."lastActivityAt"
+        FROM track_enrollments te
+        INNER JOIN users u ON te."userId" = u.id
+        WHERE u."tenant_id" = $1
+          AND u.status != 'SUSPENDED'
+          AND te."deletedAt" IS NULL
+          AND EXISTS (
+                SELECT 1 FROM user_groups ug
+                JOIN groups g ON g.id = ug."groupId"
+                WHERE ug."userId" = u.id AND g.name = 'LEARNER'
+              )
+      ),
+      enrollment_stats AS (
+        SELECT
+          e."trackId",
+          COUNT(*)::int AS started,
+          COUNT(*) FILTER (
+            WHERE c."totalItems" > 0
+              AND e."completedItems"::float / c."totalItems" >= 0.5
+          )::int AS "atLeast50",
+          COUNT(*) FILTER (WHERE e."completedAt" IS NOT NULL)::int AS completed100,
+          AVG(
+            EXTRACT(EPOCH FROM (e."completedAt" - e."startedAt")) / 86400.0
+          ) FILTER (WHERE e."completedAt" IS NOT NULL) AS "avgCompletionDays",
+          percentile_cont(0.5) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (e."completedAt" - e."startedAt")) / 86400.0
+          ) FILTER (WHERE e."completedAt" IS NOT NULL) AS "medianCompletionDays",
+          COUNT(*) FILTER (
+            WHERE e."completedAt" IS NULL
+              AND e."lastActivityAt" >= now() - make_interval(days => ${COURSE_IN_PROGRESS_ACTIVE_WITHIN_DAYS})
+          )::int AS "inProgressActive",
+          COUNT(*) FILTER (
+            WHERE e."completedAt" IS NULL
+              AND (
+                e."lastActivityAt" IS NULL
+                OR e."lastActivityAt" < now() - make_interval(days => ${COURSE_IN_PROGRESS_ACTIVE_WITHIN_DAYS})
+              )
+          )::int AS "inProgressStalled",
+          MAX(e."startedAt") AS "lastEnrollmentAt"
+        FROM tenant_enrollments e
+        INNER JOIN courses c ON c.id = e."trackId"
+        GROUP BY e."trackId"
+      ),
+      score_stats AS (
+        SELECT te2."trackId", AVG(tip.score) AS "avgScore"
+        FROM track_item_progress tip
+        INNER JOIN tenant_enrollments te2 ON te2.id = tip."trackEnrollmentId"
+        WHERE tip.score IS NOT NULL AND tip."deletedAt" IS NULL
+        GROUP BY te2."trackId"
+      ),
+      joined AS (
+        SELECT
+          c.id, c.title, c.status, c."totalItems",
+          (SELECT cnt FROM tenant_learner_count) AS "learnersAssigned",
+          COALESCE(es.started, 0) AS "learnersStarted",
+          COALESCE(es."atLeast50", 0) AS "learnersAtLeast50",
+          COALESCE(es.completed100, 0) AS "learnersCompleted100",
+          es."avgCompletionDays",
+          es."medianCompletionDays",
+          ss."avgScore",
+          COALESCE(es."inProgressActive", 0) AS "inProgressActive",
+          COALESCE(es."inProgressStalled", 0) AS "inProgressStalled",
+          es."lastEnrollmentAt"
+        FROM courses c
+        LEFT JOIN enrollment_stats es ON es."trackId" = c.id
+        LEFT JOIN score_stats ss ON ss."trackId" = c.id
+      )
+      SELECT *, COUNT(*) OVER ()::int AS "totalCount"
+      FROM joined
+      WHERE ($2::text IS NULL OR title ILIKE $2)
+      ORDER BY ${sortColumn} ${order} ${nulls}
+      LIMIT $3 OFFSET $4
+      `,
+      [tenantId, searchPattern, opts.limit, opts.offset],
+    );
+
+    return {
+      rows: rows.map((r) => ({
+        id: r.id,
+        title: r.title,
+        status: r.status,
+        totalItems: Number(r.totalItems) || 0,
+        learnersAssigned: Number(r.learnersAssigned) || 0,
+        learnersStarted: Number(r.learnersStarted) || 0,
+        learnersAtLeast50: Number(r.learnersAtLeast50) || 0,
+        learnersCompleted100: Number(r.learnersCompleted100) || 0,
+        avgCompletionDays:
+          r.avgCompletionDays != null ? Number(r.avgCompletionDays) : null,
+        medianCompletionDays:
+          r.medianCompletionDays != null
+            ? Number(r.medianCompletionDays)
+            : null,
+        avgScore: r.avgScore != null ? Number(r.avgScore) : null,
+        inProgressActive: Number(r.inProgressActive) || 0,
+        inProgressStalled: Number(r.inProgressStalled) || 0,
+        lastEnrollmentAt: r.lastEnrollmentAt,
       })),
       count: rows.length > 0 ? Number(rows[0].totalCount) : 0,
     };

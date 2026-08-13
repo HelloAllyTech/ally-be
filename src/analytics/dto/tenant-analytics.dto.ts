@@ -284,3 +284,160 @@ export class LearnerUsageResponseDto {
   })
   count!: number;
 }
+
+/**
+ * Per-course usage table (tenant-admin dashboard): one row per Track 2.0
+ * course visible to the tenant. Deliberately all-time throughout — see
+ * {@link TenantAnalyticsRepository.getCourseUsageRows} for why.
+ */
+
+export const COURSE_USAGE_SORT_FIELDS = [
+  'title',
+  'status',
+  'totalItems',
+  'learnersStarted',
+  'learnersAtLeast50',
+  'learnersCompleted100',
+  'avgCompletionDays',
+  'medianCompletionDays',
+  'avgScore',
+  'lastEnrollmentAt',
+] as const;
+export type CourseUsageSortField = (typeof COURSE_USAGE_SORT_FIELDS)[number];
+
+export class CourseUsageQueryDto {
+  @ApiProperty({
+    description: 'Case-insensitive match against course title',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiProperty({
+    enum: COURSE_USAGE_SORT_FIELDS,
+    default: 'learnersStarted',
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(COURSE_USAGE_SORT_FIELDS)
+  sortBy?: CourseUsageSortField;
+
+  @ApiProperty({ enum: ['ASC', 'DESC'], default: 'ASC', required: false })
+  @IsOptional()
+  @IsIn(['ASC', 'DESC'])
+  order?: 'ASC' | 'DESC';
+
+  @ApiProperty({ required: false, default: 25, minimum: 1, maximum: 200 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(200)
+  limit?: number;
+
+  @ApiProperty({ required: false, default: 0, minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
+}
+
+export class CourseUsageRowDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() title!: string;
+  @ApiProperty({ enum: ['ACTIVE', 'ARCHIVED'] }) status!: 'ACTIVE' | 'ARCHIVED';
+  @ApiProperty() totalItems!: number;
+
+  @ApiProperty({
+    description:
+      'Tenant\'s total learner headcount (all-time) — not a per-course assignment count. Track 2.0 has no per-learner "assigned but not started" event, so every active catalog course is implicitly available to every learner in a tenant that has it enabled.',
+  })
+  learnersAssigned!: number;
+
+  @ApiProperty({
+    description: 'Distinct learners who have enrolled (all-time)',
+  })
+  learnersStarted!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'learnersAtLeast50 / learnersStarted as a percentage; null when nothing was started',
+  })
+  startedRatePct!: number | null;
+
+  @ApiProperty({
+    description:
+      'Learners with completedItems / totalItems >= 50% (includes full completers)',
+  })
+  learnersAtLeast50!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'learnersAtLeast50 / learnersStarted as a percentage; null when nothing was started',
+  })
+  completion50PlusRatePct!: number | null;
+
+  @ApiProperty({ description: 'Learners who reached 100% completion' })
+  learnersCompleted100!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'learnersCompleted100 / learnersStarted as a percentage; null when nothing was started',
+  })
+  completion100RatePct!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Avg days from startedAt to completedAt, over 100%-completers only; null when none have completed',
+  })
+  avgCompletionDays!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Median days from startedAt to completedAt, over 100%-completers only; null when none have completed',
+  })
+  medianCompletionDays!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Avg score across graded items for this course; null when nothing is scored',
+  })
+  avgScore!: number | null;
+
+  @ApiProperty({
+    description:
+      'Enrolled, not yet 100% complete, with activity in the last 14 days',
+  })
+  inProgressActive!: number;
+
+  @ApiProperty({
+    description:
+      'Enrolled, not yet 100% complete, with no activity in the last 14 days (or never active beyond enrollment)',
+  })
+  inProgressStalled!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Most recent enrollment date (all-time); null if never enrolled',
+  })
+  lastEnrollmentAt!: Date | null;
+}
+
+export class CourseUsageResponseDto {
+  @ApiProperty({ type: [CourseUsageRowDto] })
+  data!: CourseUsageRowDto[];
+
+  @ApiProperty({
+    description: 'Total courses matching the filter (for pagination)',
+  })
+  count!: number;
+}

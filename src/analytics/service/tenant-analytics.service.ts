@@ -2,6 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { AnalyticsRange } from '../dto/platform-analytics.dto';
 import {
+  CourseUsageQueryDto,
+  CourseUsageResponseDto,
+  CourseUsageRowDto,
   LearnerUsageQueryDto,
   LearnerUsageResponseDto,
   LearnerUsageRowDto,
@@ -270,6 +273,61 @@ export class TenantAnalyticsService {
     });
 
     return { range, data, count };
+  }
+
+  /**
+   * Per-course usage table for one tenant: one row per Track 2.0 course
+   * visible to the tenant, all-time. See {@link TenantAnalyticsRepository.getCourseUsageRows}
+   * for why "assigned" means the tenant's learner headcount rather than a
+   * per-course assignment count.
+   */
+  async getCourseUsage(
+    tenantId: string,
+    query: CourseUsageQueryDto,
+  ): Promise<CourseUsageResponseDto> {
+    const limit = query.limit ?? DEFAULT_LEARNER_USAGE_LIMIT;
+    const offset = query.offset ?? 0;
+
+    const { rows, count } = await this.repo.getCourseUsageRows(tenantId, {
+      search: query.search,
+      sortBy: query.sortBy,
+      order: query.order,
+      limit,
+      offset,
+    });
+
+    const data: CourseUsageRowDto[] = rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      status: r.status,
+      totalItems: r.totalItems,
+      learnersAssigned: r.learnersAssigned,
+      learnersStarted: r.learnersStarted,
+      startedRatePct:
+        r.learnersAssigned > 0
+          ? round1((r.learnersStarted / r.learnersAssigned) * 100)
+          : null,
+      learnersAtLeast50: r.learnersAtLeast50,
+      completion50PlusRatePct:
+        r.learnersStarted > 0
+          ? round1((r.learnersAtLeast50 / r.learnersStarted) * 100)
+          : null,
+      learnersCompleted100: r.learnersCompleted100,
+      completion100RatePct:
+        r.learnersStarted > 0
+          ? round1((r.learnersCompleted100 / r.learnersStarted) * 100)
+          : null,
+      avgCompletionDays:
+        r.avgCompletionDays != null ? round1(r.avgCompletionDays) : null,
+      medianCompletionDays:
+        r.medianCompletionDays != null ? round1(r.medianCompletionDays) : null,
+      avgScore: r.avgScore != null ? round1(r.avgScore) : null,
+      inProgressActive: r.inProgressActive,
+      inProgressStalled: r.inProgressStalled,
+      lastEnrollmentAt: r.lastEnrollmentAt,
+    }));
+
+    return { data, count };
   }
 
   private zeroFill(
