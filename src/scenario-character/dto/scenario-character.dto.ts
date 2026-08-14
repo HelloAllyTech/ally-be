@@ -126,7 +126,8 @@ export class ScenarioCharacterRequestDto {
     description:
       'Free-text style guidance for this character (e.g. dialect, register, code-mixing norms)',
     required: false,
-    example: 'Speaks simple, colloquial Chennai Tamil; code-mixes with English.',
+    example:
+      'Speaks simple, colloquial Chennai Tamil; code-mixes with English.',
   })
   @IsOptional()
   @Transform(TrimStringTransform)
@@ -135,7 +136,8 @@ export class ScenarioCharacterRequestDto {
   languageCharacteristics?: string;
 
   @ApiProperty({
-    description: "Sample utterances demonstrating the character's speech pattern",
+    description:
+      "Sample utterances demonstrating the character's speech pattern",
     required: false,
     example: ['Aiyo, enna panna?', 'Sari sari, ippo varen.'],
     type: [String],
@@ -271,7 +273,8 @@ export class ScenarioCharacterResponseDto {
   languageCharacteristics?: string;
 
   @ApiProperty({
-    description: "Sample utterances demonstrating the character's speech pattern",
+    description:
+      "Sample utterances demonstrating the character's speech pattern",
     required: false,
     type: [String],
   })
