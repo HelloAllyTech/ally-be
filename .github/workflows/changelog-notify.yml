@@ -1,0 +1,40 @@
+name: Changelog notify
+
+# Fires on every push to the release branch and notifies HelloAllyTech/ally-changelog so
+# it can add an entry to the running journal used to prep external release notes. Logic
+# lives in HelloAllyTech/.github's scripts/changelog-notify.sh — fetched at runtime so
+# there is one copy of it, not six (same pattern docs.yml uses for docs_guard.py).
+#
+# Spec: https://github.com/HelloAllyTech/ally-changelog
+
+on:
+  push:
+    branches: [master] # infra uses [main] instead — see that repo's copy of this file
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch the shared notifier
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 \
+            https://raw.githubusercontent.com/HelloAllyTech/.github/main/scripts/changelog-notify.sh \
+            -o changelog-notify.sh
+          chmod +x changelog-notify.sh
+
+      - name: Notify ally-changelog
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          AFTER_SHA: ${{ github.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          CHANGELOG_DISPATCH_TOKEN: ${{ secrets.CHANGELOG_DISPATCH_TOKEN }}
+        run: ./changelog-notify.sh
