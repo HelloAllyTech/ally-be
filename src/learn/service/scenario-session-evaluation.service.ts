@@ -41,11 +41,32 @@ export class ScenarioSessionEvaluationService {
 
   /**
    * Kick off the actor evaluation for a just-ended session. No-op (logged) when
-   * there are no configured goals or no transcript. Never throws.
+   * there are no configured goals, no transcript, or the session has already
+   * been evaluated. Never throws.
    */
   async triggerForSession(scenarioSession: ScenarioSessions): Promise<void> {
     try {
       const sessionId = scenarioSession.id;
+
+      // Idempotency: `end-of-session` arrives over SQS and can be redelivered,
+      // which would re-run a full-transcript LLM judge on a session we have
+      // already scored. Mirrors the drift judge's `onlyUnjudged` guard.
+      // FAILED is deliberately NOT skipped — a failed evaluation stays
+      // retriggerable so a superadmin/backfill can retry it.
+      const existing = await this.scenarioSessionDetailsRepository.findOne({
+        where: { scenarioSessionId: sessionId },
+        select: { id: true, evaluationStatus: true },
+      });
+      if (
+        existing?.evaluationStatus === ActorEvaluationStatus.IN_PROGRESS ||
+        existing?.evaluationStatus === ActorEvaluationStatus.COMPLETED
+      ) {
+        this.logger.info(
+          `Skipping actor evaluation for ${sessionId}: already ` +
+            `${existing.evaluationStatus}.`,
+        );
+        return;
+      }
 
       const { data: goals } =
         await this.agentTestCaseService.getAgentTestCases();

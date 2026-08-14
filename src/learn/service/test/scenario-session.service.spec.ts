@@ -60,6 +60,7 @@ import { ScenariosRepository } from 'src/learn/repository/scenario.repository';
 import { SimulationCapacityException } from 'src/learn/exception/simulation-capacity.exception';
 import { ScenarioSessionRecordingService } from '../scenario-session-recording.service';
 import { ScenarioSessionEvaluationService } from '../scenario-session-evaluation.service';
+import { ScenarioSessionDetailsRepository } from '../../repository/scenario-session-details.repository';
 import { GlossaryAdherenceService } from 'src/language/service/glossary-adherence.service';
 import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
 
@@ -88,6 +89,7 @@ describe('ScenarioSessionService', () => {
     Repository<ScenarioSessionFeedbacks>
   >;
   let dataSource: jest.Mocked<DataSource>;
+  let scenarioSessionDetailsRepository: { findOne: jest.Mock };
   let permissionValidatorService: jest.Mocked<PermissionValidator>;
   let simulationCreditsService: jest.Mocked<SimulationCreditsService>;
   let scenarioTenantService: jest.Mocked<ScenarioTenantService>;
@@ -248,6 +250,12 @@ describe('ScenarioSessionService', () => {
     const mockScenarioSessionDetailsRepo = {
       create: jest.fn(),
       save: jest.fn(),
+    };
+
+    // Read side of the summary idempotency guard: default to "no details row
+    // yet" so the normal end-session path still generates a summary.
+    const mockScenarioSessionDetailsRepository = {
+      findOne: jest.fn().mockResolvedValue(null),
     };
 
     const mockScenarioSessionBehaviorInstructionsRepo = {
@@ -540,6 +548,10 @@ describe('ScenarioSessionService', () => {
           useValue: { triggerForSession: jest.fn() },
         },
         {
+          provide: ScenarioSessionDetailsRepository,
+          useValue: mockScenarioSessionDetailsRepository,
+        },
+        {
           provide: GlossaryAdherenceService,
           useValue: { analyzeSession: jest.fn().mockResolvedValue(null) },
         },
@@ -563,6 +575,9 @@ describe('ScenarioSessionService', () => {
       getRepositoryToken(ScenarioSessionFeedbacks),
     );
     dataSource = module.get(DataSource);
+    scenarioSessionDetailsRepository = module.get(
+      ScenarioSessionDetailsRepository,
+    );
     permissionValidatorService = module.get(PermissionValidator);
     simulationCreditsService = module.get(SimulationCreditsService);
     scenarioTenantService = module.get(ScenarioTenantService);
@@ -1648,6 +1663,67 @@ describe('ScenarioSessionService', () => {
       );
 
       mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
+    });
+
+    // endScenarioSession has several unguarded entry points (learner-facing
+    // controller, /end-v2v webhook, auto-termination), so a retry used to
+    // re-run a full transcript evaluation on a session that already had
+    // feedback.
+    it('skips summary generation when feedback already exists', async () => {
+      scenarioSessionDetailsRepository.findOne.mockResolvedValue({
+        id: 'details-1',
+        summary: { feedback: { positives: [] } },
+      });
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+      await new Promise((r) => setImmediate(r));
+
+      expect(aiService.getScenarioSessionEvaluation).not.toHaveBeenCalled();
+      expect(aiService.getScenarioSessionSummary).not.toHaveBeenCalled();
+      // The guard must short-circuit before the transcript is even read.
+      expect(scenarioSessionMessagesRepository.find).not.toHaveBeenCalled();
+    });
+
+    // A row holding only `errorMessage` (no messages / too short / AI failed)
+    // stays retriable — that is what the "Please try again" copy promises.
+    it('regenerates when the stored summary is an error placeholder', async () => {
+      scenarioSessionDetailsRepository.findOne.mockResolvedValue({
+        id: 'details-1',
+        summary: {
+          errorMessage: 'Failed to generate summary. Please try again.',
+        },
+      });
+      scenarioSessionMessagesRepository.find.mockResolvedValue([
+        {
+          id: 1,
+          senderId: mockCounselorId,
+          content: 'hello',
+          startSeconds: 0,
+          endSeconds: 2,
+          tenantId: mockTenantId,
+        },
+      ] as unknown as ScenarioSessionMessages[]);
+      aiService.getScenarioSessionSummary.mockResolvedValue({} as any);
+      dataSource.transaction.mockImplementation(async (cb: any) =>
+        cb({ getRepository: () => ({ upsert: jest.fn() }) }),
+      );
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+      await new Promise((r) => setImmediate(r));
+
+      expect(scenarioSessionMessagesRepository.find).toHaveBeenCalled();
     });
   });
 

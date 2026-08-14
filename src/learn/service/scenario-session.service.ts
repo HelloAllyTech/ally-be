@@ -38,6 +38,7 @@ import { AiService } from 'src/ai/service/ai.service';
 import { ScenarioSessionEvaluationService } from './scenario-session-evaluation.service';
 import { GlossaryAdherenceService } from 'src/language/service/glossary-adherence.service';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
+import { ScenarioSessionDetailsRepository } from '../repository/scenario-session-details.repository';
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { ScenarioSessionTurnMetrics } from '../entity/scenario-session-turn-metrics.entity';
 import { ScenarioSessionStartMetrics } from '../entity/scenario-session-start-metrics.entity';
@@ -169,6 +170,7 @@ export class ScenarioSessionService {
     private sharedLanguageService: SharedLanguageService,
     private sessionEventTranslationService: SessionEventTranslationService,
     private scenarioSessionEvaluationService: ScenarioSessionEvaluationService,
+    private scenarioSessionDetailsRepository: ScenarioSessionDetailsRepository,
     private readonly glossaryAdherenceService: GlossaryAdherenceService,
     private transcriptTranslationService: TranscriptTranslationService,
     // App-container handle used ONLY to resolve the Roleplay Studio v2
@@ -1281,6 +1283,26 @@ export class ScenarioSessionService {
     if (!tenantId) {
       this.logger.error(
         'getScenarioSessionSummaryFromAI: tenantId not found in execution context',
+      );
+      return;
+    }
+
+    // Idempotency: endScenarioSession has several unguarded entry points (the
+    // learner-facing controller, the /end-v2v webhook, auto-termination), so a
+    // client retry or redelivered event would otherwise re-run a full
+    // transcript evaluation over a session that already has feedback.
+    // Only a SUCCESSFUL summary blocks a rerun — a row holding just
+    // `errorMessage` (no messages / too short / AI failed) stays retriable,
+    // which is what the "Please try again" copy promises the learner.
+    const existingDetails = await this.scenarioSessionDetailsRepository.findOne(
+      {
+        where: { scenarioSessionId, tenantId },
+        select: { id: true, summary: true },
+      },
+    );
+    if (existingDetails?.summary?.feedback) {
+      this.logger.info(
+        `Skipping summary generation for ${scenarioSessionId}: feedback already generated.`,
       );
       return;
     }
