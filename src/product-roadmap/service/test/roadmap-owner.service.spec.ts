@@ -5,6 +5,7 @@ import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 
 import { User } from 'src/user/entity/user.entity';
+import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
 
 import { RoadmapOpportunityService } from '../roadmap-opportunity.service';
 import { RoadmapOpportunityRepository } from '../../repository/roadmap-opportunity.repository';
@@ -68,6 +69,10 @@ describe('RoadmapOpportunityService — owners', () => {
           useValue: { indexQuietly: jest.fn(), removeQuietly: jest.fn() },
         },
         { provide: RoadmapNotificationService, useValue: { emit: jest.fn() } },
+        {
+          provide: getRepositoryToken(BugFinding),
+          useValue: { create: jest.fn(), save: jest.fn() },
+        },
       ],
     }).compile();
 

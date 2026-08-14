@@ -8,9 +8,17 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { User } from 'src/user/entity/user.entity';
 import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
+import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
+import {
+  BugFindingSource,
+  BugFindingStatus,
+} from 'src/bug-hunter/enum/bug-finding.enum';
 
 import { RoadmapOpportunity } from '../entity/roadmap-opportunity.entity';
-import { RoadmapOpportunityStage } from '../enum/roadmap-opportunity.enum';
+import {
+  RoadmapOpportunityStage,
+  RoadmapOpportunityType,
+} from '../enum/roadmap-opportunity.enum';
 import {
   RoadmapOpportunityRepository,
   RoadmapOpportunityRow,
@@ -48,6 +56,8 @@ export class RoadmapOpportunityService {
     private readonly vectorService: RoadmapVectorService,
     private readonly notifications: RoadmapNotificationService,
     @InjectRepository(User) private readonly userRepository: Repository<User>,
+    @InjectRepository(BugFinding)
+    private readonly bugFindingRepository: Repository<BugFinding>,
   ) {}
 
   async list(
@@ -96,6 +106,31 @@ export class RoadmapOpportunityService {
     // Best-effort and awaited: the row is already committed, so a vector failure cannot roll
     // it back, but awaiting means the very next duplicate check sees this opportunity.
     await this.vectorService.indexQuietly(saved.id);
+
+    // Bug Hunter's comprehensive findings table is a complete bug inbox — a human report
+    // needs a row there the moment it's filed, not only once a hunt run gets around to
+    // triaging it. Best-effort: a failure here must never fail the roadmap write that
+    // already committed. See BugHunterModule's doc for why this is a raw repository
+    // injection rather than a call into BugHunterModule (avoids a circular import).
+    if (dto.type === RoadmapOpportunityType.BUG) {
+      try {
+        await this.bugFindingRepository.save(
+          this.bugFindingRepository.create({
+            source: BugFindingSource.REPORTED_BUG,
+            title: saved.description.slice(0, 200),
+            description: saved.description,
+            reportedBugId: saved.id,
+            status: BugFindingStatus.NEW,
+          }),
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Failed to create a Bug Hunter finding for opportunity ${saved.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
 
     const response = await this.findOne(userId, saved.id);
     this.notifications.emit({

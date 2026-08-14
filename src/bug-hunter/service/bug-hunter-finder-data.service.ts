@@ -2,11 +2,8 @@ import { Injectable } from '@nestjs/common';
 
 import { LogsService } from 'src/logs/logs.service';
 import { AwsLogServiceKey } from 'src/config/config.service';
-import { RoadmapOpportunityRepository } from 'src/product-roadmap/repository/roadmap-opportunity.repository';
-import {
-  RoadmapOpportunityStage,
-  RoadmapOpportunityType,
-} from 'src/product-roadmap/enum/roadmap-opportunity.enum';
+
+import { BugFindingRepository } from '../repository/bug-finding.repository';
 
 /** Repos with a CloudWatch log group. Frontend repos have no server-side log group to query. */
 const AWS_LOG_SERVICE_KEYS: AwsLogServiceKey[] = [
@@ -24,7 +21,9 @@ export interface ProdLogFinding {
 }
 
 export interface ReportedBugFinding {
+  /** The BugFinding row's own id — reportedBugId (below) is the roadmap opportunity it came from. */
   id: string;
+  reportedBugId: string;
   description: string;
   createdAt: Date;
 }
@@ -43,7 +42,7 @@ export interface ReportedBugFinding {
 export class BugHunterFinderDataService {
   constructor(
     private readonly logsService: LogsService,
-    private readonly opportunityRepository: RoadmapOpportunityRepository,
+    private readonly findingRepository: BugFindingRepository,
   ) {}
 
   /**
@@ -70,24 +69,17 @@ export class BugHunterFinderDataService {
   }
 
   /**
-   * Human-reported bugs still awaiting triage, platform-wide (roadmap items
-   * have no repo field, so the finder itself judges which are about the repo
-   * it's scanning). Only `stage=new` — anything already prioritised, in
-   * development, released, or archived is either already being worked or a
-   * closed question, and re-flagging it would just duplicate work under a
-   * different "author."
+   * Human-reported bugs still at BugFindingStatus.NEW, platform-wide (a
+   * BugFinding row has no repo yet until this finder judges which one it's
+   * about — see BugFinding.repo's doc). Every row here was created the moment
+   * the bug was filed on the roadmap (RoadmapOpportunityService.create), not
+   * by this finder — this is a read of that queue, not its source of truth.
    */
   async getReportedBugs(): Promise<ReportedBugFinding[]> {
-    const rows = await this.opportunityRepository.find({
-      where: {
-        type: RoadmapOpportunityType.BUG,
-        stage: RoadmapOpportunityStage.NEW,
-      },
-      order: { createdAt: 'DESC' },
-      take: 50,
-    });
+    const rows = await this.findingRepository.listNewReportedBugs();
     return rows.map((row) => ({
       id: row.id,
+      reportedBugId: row.reportedBugId as string,
       description: row.description,
       createdAt: row.createdAt,
     }));

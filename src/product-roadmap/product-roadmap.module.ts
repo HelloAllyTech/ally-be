@@ -5,6 +5,7 @@ import { AiModule } from 'src/ai/ai.module';
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { User } from 'src/user/entity/user.entity';
+import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
 
 import { RoadmapAllocation } from './entity/roadmap-allocation.entity';
 import { RoadmapInterviewNote } from './entity/roadmap-interview-note.entity';
@@ -93,6 +94,9 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
       // Read-only: resolving createdBy ints to an email/name for responses. createdBy has no
       // FK, so this is a join done in the mapper rather than by the ORM.
       User,
+      // Written (not just read) by RoadmapOpportunityService.create() when type=bug — see
+      // there. Just the entity, not BugHunterModule, to avoid the circular-import trap.
+      BugFinding,
     ]),
     // AiService — the Weaviate client for duplicate detection.
     AiModule,

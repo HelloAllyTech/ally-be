@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { BugHunterSettings } from '../entity/bug-hunter-settings.entity';
+import { BugHunterMode } from '../enum/bug-finding.enum';
 
 const SINGLETON_ID = 1;
 
@@ -10,16 +11,16 @@ export class BugHunterSettingsRepository extends Repository<BugHunterSettings> {
     super(BugHunterSettings, dataSource.createEntityManager());
   }
 
-  /** The one row, seeded `enabled=false` by the introducing migration. */
+  /** The one row, seeded `mode=off` by the introducing migration. */
   getSettings(): Promise<BugHunterSettings> {
     return this.findOneOrFail({ where: { id: SINGLETON_ID } });
   }
 
-  async setEnabled(
-    enabled: boolean,
+  async setMode(
+    mode: BugHunterMode,
     updatedBy: number,
   ): Promise<BugHunterSettings> {
-    await this.update(SINGLETON_ID, { enabled, updatedBy });
+    await this.update(SINGLETON_ID, { mode, updatedBy });
     return this.getSettings();
   }
 }

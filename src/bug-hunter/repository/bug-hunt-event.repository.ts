@@ -13,6 +13,11 @@ export class BugHuntEventRepository extends Repository<BugHuntEvent> {
     return this.find({ where: { runId }, order: { createdAt: 'ASC' } });
   }
 
+  /** Every event reported about one specific finding, across however many runs touched it — the drawer's timeline. */
+  listForFinding(findingId: string): Promise<BugHuntEvent[]> {
+    return this.find({ where: { findingId }, order: { createdAt: 'ASC' } });
+  }
+
   /**
    * New events since a given row, for the SSE stream's poll loop — see
    * BugHunterController.streamRun. `createdAt` alone can tie under load, so
