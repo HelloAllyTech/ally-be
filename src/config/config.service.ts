@@ -562,6 +562,24 @@ export class AppConfigService {
     };
   }
 
+  get characterInterview() {
+    return {
+      // Character-library interview agent model. Same family as the copilot
+      // default so there is one model to upgrade.
+      model: this.configService.get<string>(
+        'CHARACTER_INTERVIEW_MODEL',
+        'claude-sonnet-4-6',
+      ),
+      // Hard cap on tool-use round-trips per interview turn. A normal turn is
+      // 1-2 (commentary + ask_question); the final turn legitimately chains
+      // get_voices + a validation-retried save_character_draft.
+      maxToolIterations: this.configService.get<number>(
+        'CHARACTER_INTERVIEW_MAX_TOOL_ITERATIONS',
+        8,
+      ),
+    };
+  }
+
   get gemini() {
     return {
       // Prefer an explicit GEMINI_API_KEY; fall back to the standard

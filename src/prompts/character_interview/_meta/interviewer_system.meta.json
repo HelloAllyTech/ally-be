@@ -1,0 +1,5 @@
+{
+  "name": "Character Interviewer — System",
+  "description": "System prompt for the Character Library interview agent: runs a ~20-25 question deep-dive interview (identity, life context, inner life, history, speech style, voice pick), every question as an option card with a custom answer, then distils the answers into a complete character draft the admin reviews in the character form.",
+  "category": "Character Library"
+}
