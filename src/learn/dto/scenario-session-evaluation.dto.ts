@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsObject, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsObject, IsOptional, IsString } from 'class-validator';
 
 /**
  * Webhook payload from ai-learn carrying the goal-based actor evaluation of a
@@ -22,6 +22,20 @@ export class UpdateActorEvaluationDto {
   @IsOptional()
   @IsObject()
   metrics?: Record<string, number>;
+
+  @ApiProperty({
+    required: false,
+    type: [String],
+    description:
+      'Titles of goals the conversation gave no occasion to demonstrate. ' +
+      'These stay in `metrics` but are excluded from the composite, so a ' +
+      'goal the scenario never exercised cannot drag the score down.',
+    example: ['De-escalate an acute-risk caller'],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  not_applicable?: string[];
 
   @ApiProperty({
     required: false,

@@ -49,7 +49,24 @@ export class ScenarioSessionDetails extends BaseEntity {
   @Column({ type: 'jsonb', nullable: true })
   metrics?: Record<string, number>;
 
-  /** round(mean(metrics values)); the headline actor-quality number. */
+  /**
+   * Titles of goals the conversation gave no occasion to demonstrate, as
+   * judged per session. Agent test cases are configured globally, so a session
+   * is scored against goals it may never have had a chance to exercise;
+   * without this, those goals dragged `compositeScore` down and the dilution
+   * varied with whatever the superadmin happened to have configured.
+   *
+   * Every goal stays present in `metrics` (Roleplay Logs shows the full
+   * rubric); these titles are the subset excluded from the composite. Null on
+   * rows judged before this existed — treat as "all goals applicable".
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  notApplicableGoals?: string[];
+
+  /**
+   * round(mean(scores of APPLICABLE metrics)); the headline actor-quality
+   * number. Null when no goal was applicable.
+   */
   @Column({ type: 'int', nullable: true })
   compositeScore?: number;
 

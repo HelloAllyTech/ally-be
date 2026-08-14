@@ -365,7 +365,9 @@ export class RoleplaySessionAgentTestCaseDto {
 export class RoleplaySessionActorEvaluationDto {
   @ApiProperty({
     nullable: true,
-    description: 'round(mean(metrics)); null until the evaluation completes',
+    description:
+      'round(mean(scores of applicable metrics)); null until the evaluation ' +
+      'completes, or when no goal was applicable to this session',
   })
   compositeScore!: number | null;
 
@@ -376,6 +378,16 @@ export class RoleplaySessionActorEvaluationDto {
     description: 'Goal/metric name -> 0-100 score',
   })
   metrics!: Record<string, number> | null;
+
+  @ApiProperty({
+    type: [String],
+    description:
+      'Titles from `metrics` that the conversation gave no occasion to ' +
+      'demonstrate. Their scores are excluded from compositeScore — render ' +
+      'them as N/A, not as a low score. Empty for rows judged before ' +
+      'applicability existed.',
+  })
+  notApplicableGoals!: string[];
 
   @ApiProperty({ nullable: true, description: 'Human-readable judge feedback' })
   markdown!: string | null;

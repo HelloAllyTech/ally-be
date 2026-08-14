@@ -227,20 +227,25 @@ export class ScenarioSessionEvaluationService {
 
   /**
    * Persist an evaluation result from the ai-learn webhook. Computes the
-   * composite as round(mean(metrics)) so a real session is scored on the same
-   * 0-100 scale as Copilot/practice runs.
+   * composite as round(mean(APPLICABLE metrics)) so a real session is scored on
+   * the same 0-100 scale as Copilot/practice runs.
    */
   async applyResult(
     scenarioSessionId: string,
     payload: UpdateActorEvaluationDto,
   ): Promise<void> {
     const metrics = payload.metrics ?? null;
-    const composite = this.computeComposite(metrics);
+    const notApplicable = payload.not_applicable ?? [];
+    const composite = this.computeComposite(metrics, notApplicable);
 
     const updated = await this.scenarioSessionDetailsRepository.update(
       { scenarioSessionId },
       {
         metrics: metrics ?? undefined,
+        // Persist [] as well as a populated list: "the judge considered
+        // applicability and found none inapplicable" is a different fact from
+        // "this row predates applicability", which is null.
+        notApplicableGoals: payload.not_applicable ?? undefined,
         compositeScore: composite ?? undefined,
         evaluationMarkdown: payload.report_markdown ?? undefined,
         evaluationStatus: payload.status,
@@ -264,12 +269,29 @@ export class ScenarioSessionEvaluationService {
     }
   }
 
-  /** round(mean of finite numeric metric values), or null when none. */
+  /**
+   * round(mean of finite numeric scores for APPLICABLE goals), or null when
+   * none.
+   *
+   * Goals the conversation gave no occasion to demonstrate are excluded: the
+   * agent test cases are global, so scoring a session against a goal it never
+   * had a chance to exercise used to pull the mean down by however many
+   * irrelevant goals happened to be configured.
+   *
+   * If the judge marked EVERY goal inapplicable, the result is null rather
+   * than a score — "we could not judge this session" is the honest answer, and
+   * a null keeps it out of the analytics rather than seeding a fake number.
+   */
   private computeComposite(
     metrics: Record<string, number> | null,
+    notApplicable: string[] = [],
   ): number | null {
     if (!metrics) return null;
-    const values = Object.values(metrics).filter((v) => Number.isFinite(v));
+    const excluded = new Set(notApplicable);
+    const values = Object.entries(metrics)
+      .filter(([title]) => !excluded.has(title))
+      .map(([, v]) => v)
+      .filter((v) => Number.isFinite(v));
     if (!values.length) return null;
     return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
   }

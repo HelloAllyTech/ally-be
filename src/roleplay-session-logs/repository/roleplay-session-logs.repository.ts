@@ -35,6 +35,8 @@ export interface RoleplaySessionLogRawRow {
   voiceId?: string | null;
   compositeScore?: number | string | null;
   evalMetrics?: Record<string, number> | null;
+  /** Goal titles excluded from the composite as inapplicable; null pre-feature. */
+  notApplicableGoals?: string[] | null;
   evaluationMarkdown?: string | null;
   evaluationStatus?: string | null;
   evaluatedAt?: Date | null;
@@ -318,6 +320,7 @@ export class RoleplaySessionLogsRepository {
       .addSelect(`ss.metadata->>'voiceId'`, 'voiceId')
       .addSelect('d."compositeScore"', 'compositeScore')
       .addSelect('d."metrics"', 'evalMetrics')
+      .addSelect('d."notApplicableGoals"', 'notApplicableGoals')
       .addSelect('d."evaluationMarkdown"', 'evaluationMarkdown')
       .addSelect('d."evaluationStatus"', 'evaluationStatus')
       .addSelect('d."evaluatedAt"', 'evaluatedAt')

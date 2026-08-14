@@ -127,6 +127,101 @@ describe('ScenarioSessionEvaluationService — triggerForSession idempotency', (
   });
 });
 
+describe('ScenarioSessionEvaluationService — applyResult applicability', () => {
+  const make = () => {
+    const detailsRepo = {
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+    };
+    const service = new ScenarioSessionEvaluationService(
+      detailsRepo as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    return { service, detailsRepo };
+  };
+
+  const patchOf = (detailsRepo: { update: jest.Mock }) =>
+    detailsRepo.update.mock.calls[0][1];
+
+  // The agent test cases are global, so a session gets scored against goals it
+  // never had occasion to exercise. Those used to drag the mean down by
+  // however many irrelevant goals happened to be configured.
+  it('excludes inapplicable goals from the composite', async () => {
+    const { service, detailsRepo } = make();
+
+    await service.applyResult('sess-1', {
+      status: ActorEvaluationStatus.COMPLETED,
+      metrics: { 'Build rapport': 90, 'De-escalate acute risk': 10 },
+      not_applicable: ['De-escalate acute risk'],
+    } as any);
+
+    // 90 alone, not mean(90, 10) = 50.
+    expect(patchOf(detailsRepo).compositeScore).toBe(90);
+  });
+
+  it('keeps every goal in metrics so the full rubric stays visible', async () => {
+    const { service, detailsRepo } = make();
+
+    await service.applyResult('sess-1', {
+      status: ActorEvaluationStatus.COMPLETED,
+      metrics: { 'Build rapport': 90, 'De-escalate acute risk': 10 },
+      not_applicable: ['De-escalate acute risk'],
+    } as any);
+
+    expect(patchOf(detailsRepo).metrics).toEqual({
+      'Build rapport': 90,
+      'De-escalate acute risk': 10,
+    });
+    expect(patchOf(detailsRepo).notApplicableGoals).toEqual([
+      'De-escalate acute risk',
+    ]);
+  });
+
+  // Pre-applicability payloads must score exactly as they did before.
+  it('averages everything when the judge sends no applicability', async () => {
+    const { service, detailsRepo } = make();
+
+    await service.applyResult('sess-1', {
+      status: ActorEvaluationStatus.COMPLETED,
+      metrics: { a: 90, b: 10 },
+    } as any);
+
+    expect(patchOf(detailsRepo).compositeScore).toBe(50);
+    // undefined, not [] — nothing was asserted about applicability, so the
+    // column stays null rather than claiming the judge found none.
+    expect(patchOf(detailsRepo).notApplicableGoals).toBeUndefined();
+  });
+
+  // "The judge considered applicability and found none inapplicable" is a
+  // different fact from "this row predates applicability".
+  it('persists an empty list distinctly from an absent one', async () => {
+    const { service, detailsRepo } = make();
+
+    await service.applyResult('sess-1', {
+      status: ActorEvaluationStatus.COMPLETED,
+      metrics: { a: 80 },
+      not_applicable: [],
+    } as any);
+
+    expect(patchOf(detailsRepo).notApplicableGoals).toEqual([]);
+  });
+
+  // A score here would be a fabrication — nothing was actually assessed.
+  it('scores null when every goal was inapplicable', async () => {
+    const { service, detailsRepo } = make();
+
+    await service.applyResult('sess-1', {
+      status: ActorEvaluationStatus.COMPLETED,
+      metrics: { a: 10, b: 20 },
+      not_applicable: ['a', 'b'],
+    } as any);
+
+    expect(patchOf(detailsRepo).compositeScore).toBeUndefined();
+  });
+});
+
 describe('ScenarioSessionEvaluationService — runCatchup', () => {
   const makeSessions = (count: number) =>
     Array.from(

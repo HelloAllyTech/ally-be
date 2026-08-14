@@ -455,6 +455,11 @@ export class RoleplaySessionLogsService {
     return {
       compositeScore,
       metrics,
+      // Null on rows judged before applicability existed; [] is the honest
+      // rendering for those — every goal counted toward their composite.
+      notApplicableGoals: Array.isArray(r.notApplicableGoals)
+        ? r.notApplicableGoals
+        : [],
       markdown: r.evaluationMarkdown ?? null,
       status,
       evaluatedAt: r.evaluatedAt ?? null,
