@@ -291,4 +291,55 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
 
     return completions;
   }
+
+  /**
+   * Ended sessions that have a transcript but were never picked up by the actor
+   * goal judge — the input to the catch-up task.
+   *
+   * The judge only fires from `handleEndScenarioSessionEvent`, i.e. off the
+   * agent's `end-of-session` SQS message. When the agent never joins, dies
+   * mid-session, or the worker gives up reconnecting, that message never
+   * arrives and the session is silently never scored, while the learner summary
+   * (driven by the separate client/REST end path) still runs.
+   *
+   * `evaluationStatus IS NULL` means "never triggered". FAILED is deliberately
+   * excluded: the judge did run, and auto-retrying a permanently failing
+   * session every tick would burn tokens forever. FAILED stays retriggerable by
+   * hand.
+   *
+   * Runs from the scheduler, outside any request context, so this deliberately
+   * spans tenants — it is not a tenant-scoped read. Each row carries its own
+   * `tenantId`, which is what the downstream trigger uses for its queries and
+   * its details upsert.
+   */
+  async findSessionsMissingActorEvaluation(params: {
+    endedAfter: Date;
+    endedBefore: Date;
+    limit: number;
+  }): Promise<ScenarioSessions[]> {
+    return (
+      this.createQueryBuilder('s')
+        .leftJoin(ScenarioSessionDetails, 'd', 'd."scenarioSessionId" = s.id')
+        .where('s.status = :status', {
+          status: ScenarioSessionStatus.ENDED,
+        })
+        .andWhere('s.endedAt >= :endedAfter', { endedAfter: params.endedAfter })
+        .andWhere('s.endedAt <= :endedBefore', {
+          endedBefore: params.endedBefore,
+        })
+        .andWhere('d."evaluationStatus" IS NULL')
+        // A session with no transcript has nothing to judge; the trigger would
+        // skip it anyway, so filter here rather than spend a batch slot on it.
+        .andWhere(
+          `EXISTS (
+           SELECT 1 FROM scenario_session_messages m
+           WHERE m."scenarioSessionId" = s.id
+         )`,
+        )
+        // Oldest first so a backlog drains in order instead of starving.
+        .orderBy('s.endedAt', 'ASC')
+        .limit(params.limit)
+        .getMany()
+    );
+  }
 }

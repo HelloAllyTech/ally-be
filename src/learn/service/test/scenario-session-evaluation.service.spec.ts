@@ -17,6 +17,7 @@ describe('ScenarioSessionEvaluationService — upsertDetails', () => {
       {} as any,
       {} as any,
       {} as any,
+      {} as any,
     );
     return { service, detailsRepo };
   };
@@ -75,6 +76,7 @@ describe('ScenarioSessionEvaluationService — triggerForSession idempotency', (
       messagesRepo as any,
       testCaseService as any,
       aiService as any,
+      {} as any,
     );
     return { service, aiService, testCaseService };
   };
@@ -122,5 +124,109 @@ describe('ScenarioSessionEvaluationService — triggerForSession idempotency', (
     await service.triggerForSession(session);
 
     expect(testCaseService.getAgentTestCases).not.toHaveBeenCalled();
+  });
+});
+
+describe('ScenarioSessionEvaluationService — runCatchup', () => {
+  const makeSessions = (count: number) =>
+    Array.from(
+      { length: count },
+      (_, i) =>
+        ({
+          id: `sess-${i}`,
+          tenantId: 'tenant-1',
+          counselorId: 7,
+        }) as unknown as ScenarioSessions,
+    );
+
+  const make = (
+    found: ScenarioSessions[] | Error,
+    detailsFindOne: unknown = null,
+  ) => {
+    const sessionRepo = {
+      findSessionsMissingActorEvaluation: jest.fn(() =>
+        found instanceof Error ? Promise.reject(found) : Promise.resolve(found),
+      ),
+    };
+    const detailsRepo = {
+      findOne: jest.fn().mockResolvedValue(detailsFindOne),
+      upsert: jest.fn().mockResolvedValue(undefined),
+    };
+    const messagesRepo = {
+      find: jest
+        .fn()
+        .mockResolvedValue([{ senderId: 7, content: 'hello', id: 1 }]),
+    };
+    const testCaseService = {
+      getAgentTestCases: jest
+        .fn()
+        .mockResolvedValue({ data: [{ id: 'g1', title: 'Build rapport' }] }),
+    };
+    const aiService = {
+      triggerActorGoalEvaluation: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new ScenarioSessionEvaluationService(
+      detailsRepo as any,
+      messagesRepo as any,
+      testCaseService as any,
+      aiService as any,
+      sessionRepo as any,
+    );
+    return { service, sessionRepo, aiService };
+  };
+
+  it('triggers an evaluation for every session the end-of-session path missed', async () => {
+    const { service, aiService } = make(makeSessions(3));
+
+    const result = await service.runCatchup();
+
+    expect(result).toEqual({ found: 3, triggered: 3 });
+    expect(aiService.triggerActorGoalEvaluation).toHaveBeenCalledTimes(3);
+  });
+
+  // Sessions that ended seconds ago may still have an `end-of-session` message
+  // in flight; only genuinely missed ones should be swept.
+  it('scans a 24h window ending at a 15-minute grace cutoff, capped at 50', async () => {
+    const { service, sessionRepo } = make([]);
+
+    await service.runCatchup();
+
+    const [params] = sessionRepo.findSessionsMissingActorEvaluation.mock
+      .calls[0] as unknown as [
+      { endedAfter: Date; endedBefore: Date; limit: number },
+    ];
+    expect(params.limit).toBe(50);
+    const graceMs = Date.now() - params.endedBefore.getTime();
+    expect(graceMs).toBeGreaterThanOrEqual(15 * 60 * 1000);
+    expect(graceMs).toBeLessThan(16 * 60 * 1000);
+    const windowMs = params.endedBefore.getTime() - params.endedAfter.getTime();
+    expect(windowMs).toBe(24 * 60 * 60 * 1000 - 15 * 60 * 1000);
+  });
+
+  // Runs from the shared scheduler, so a DB hiccup must not take the tick down.
+  it('never throws when the scan fails', async () => {
+    const { service, aiService } = make(new Error('DB down'));
+
+    await expect(service.runCatchup()).resolves.toEqual({
+      found: 0,
+      triggered: 0,
+    });
+    expect(aiService.triggerActorGoalEvaluation).not.toHaveBeenCalled();
+  });
+
+  // The trigger re-checks the same guard, so a row that got evaluated between
+  // the scan and the trigger is still not double-spent.
+  it('does not spend on a session evaluated between scan and trigger', async () => {
+    const { service, aiService } = make(makeSessions(2), {
+      evaluationStatus: ActorEvaluationStatus.COMPLETED,
+    });
+
+    // `triggered` counts real dispatches, so the log/return can't claim work
+    // that the trigger's own guard skipped.
+    await expect(service.runCatchup()).resolves.toEqual({
+      found: 2,
+      triggered: 0,
+    });
+    expect(aiService.triggerActorGoalEvaluation).not.toHaveBeenCalled();
   });
 });

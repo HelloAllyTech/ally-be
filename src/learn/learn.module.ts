@@ -102,6 +102,7 @@ import { AgentTestCase } from './entity/agent-test-case.entity';
 import { AgentTestCaseRepository } from './repository/agent-test-case.repository';
 import { AgentTestCaseService } from './service/agent-test-case.service';
 import { ScenarioSessionEvaluationService } from './service/scenario-session-evaluation.service';
+import { ActorEvaluationCatchupSchedulerRegistrationService } from './service/actor-evaluation-catchup-scheduler-registration.service';
 import { ScenarioSessionEvaluationWebhookController } from './controller/scenario-session-evaluation-webhook.controller';
 import { RoomMetadataWebhookController } from './controller/room-metadata-webhook.controller';
 import { LearnRoomMetadata } from './entity/learn-room-metadata.entity';
@@ -256,6 +257,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     AgentTestCaseService,
     AgentTestCaseRepository,
     ScenarioSessionEvaluationService,
+    ActorEvaluationCatchupSchedulerRegistrationService,
     BehaviorTranslationRepository,
     ScenarioBehaviorInstructionTranslationRepository,
     BehaviorInstructionTranslationService,
