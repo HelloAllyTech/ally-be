@@ -1,20 +1,18 @@
 import { BugHunterFinderDataService } from '../bug-hunter-finder-data.service';
-import {
-  RoadmapOpportunityStage,
-  RoadmapOpportunityType,
-} from 'src/product-roadmap/enum/roadmap-opportunity.enum';
 
 describe('BugHunterFinderDataService', () => {
   let service: BugHunterFinderDataService;
   let logsService: { getLogEvents: jest.Mock };
-  let opportunityRepository: { find: jest.Mock };
+  let findingRepository: { listNewReportedBugs: jest.Mock };
 
   beforeEach(() => {
     logsService = { getLogEvents: jest.fn() };
-    opportunityRepository = { find: jest.fn().mockResolvedValue([]) };
+    findingRepository = {
+      listNewReportedBugs: jest.fn().mockResolvedValue([]),
+    };
     service = new BugHunterFinderDataService(
       logsService as any,
-      opportunityRepository as any,
+      findingRepository as any,
     );
   });
 
@@ -51,23 +49,17 @@ describe('BugHunterFinderDataService', () => {
   });
 
   describe('getReportedBugs', () => {
-    it('reads only type=bug, stage=new roadmap items', async () => {
+    it('reads the NEW, source=reported_bug BugFinding rows', async () => {
       await service.getReportedBugs();
 
-      expect(opportunityRepository.find).toHaveBeenCalledWith(
-        expect.objectContaining({
-          where: {
-            type: RoadmapOpportunityType.BUG,
-            stage: RoadmapOpportunityStage.NEW,
-          },
-        }),
-      );
+      expect(findingRepository.listNewReportedBugs).toHaveBeenCalled();
     });
 
-    it('maps rows to the finder-facing shape', async () => {
-      opportunityRepository.find.mockResolvedValue([
+    it('maps rows to the finder-facing shape, exposing both the finding id and the roadmap opportunity id', async () => {
+      findingRepository.listNewReportedBugs.mockResolvedValue([
         {
-          id: 'opp-1',
+          id: 'finding-1',
+          reportedBugId: 'opp-1',
           description: 'Login button does nothing on Safari',
           createdAt: new Date('2026-08-01'),
         },
@@ -77,7 +69,8 @@ describe('BugHunterFinderDataService', () => {
 
       expect(result).toEqual([
         {
-          id: 'opp-1',
+          id: 'finding-1',
+          reportedBugId: 'opp-1',
           description: 'Login button does nothing on Safari',
           createdAt: new Date('2026-08-01'),
         },

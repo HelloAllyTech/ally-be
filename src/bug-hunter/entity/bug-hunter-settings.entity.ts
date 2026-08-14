@@ -1,5 +1,6 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import { BugHunterMode } from '../enum/bug-finding.enum';
 
 /**
  * The bug-hunter kill switch. A SINGLETON row — `id` is pinned to 1 by a CHECK
@@ -7,19 +8,20 @@ import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.e
  * settings" a `findOne()` with no WHERE clause rather than a query over a
  * table that could theoretically hold zero or many rows.
  *
- * `enabled` defaults to `false`. Both trigger paths (nightly cron, on-demand)
- * read this before doing anything else — see BugHunterService.checkEnabled.
- * There is no separate "pause vs. disable" state: off means off for every
- * trigger, which is the whole point of a kill switch a SUPER_DUPER_ADMIN can
- * trust at a glance.
+ * `mode` defaults to OFF (migration 1898000000000 replaced the original plain
+ * `enabled` boolean with this three-way switch — see BugHunterMode). Both
+ * trigger paths (nightly cron, on-demand) read this before doing anything
+ * else — see BugHunterService.checkEnabled. OFF still means off for every
+ * trigger, exactly as before; MANUAL and AI both let discovery run and differ
+ * only in whether the fix stage needs an admin's approval first.
  */
 @Entity('bug_hunter_settings')
 export class BugHunterSettings extends BaseWithoutTenantEntity {
   @PrimaryColumn({ type: 'smallint', default: 1 })
   id!: number;
 
-  @Column({ type: 'boolean', default: false })
-  enabled!: boolean;
+  @Column({ enum: BugHunterMode, default: BugHunterMode.OFF })
+  mode!: BugHunterMode;
 
   /** Integer users.id with NO foreign key, per ally-be convention. Null until the first toggle. */
   @Column({ type: 'int', nullable: true })

@@ -23,6 +23,7 @@ import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 @Entity('bug_hunt_events')
 @Index('idx_bug_hunt_events_run_id', ['runId'])
 @Index('idx_bug_hunt_events_created_at', ['createdAt'])
+@Index('idx_bug_hunt_events_finding_id', ['findingId'])
 export class BugHuntEvent extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -47,4 +48,8 @@ export class BugHuntEvent extends BaseWithoutTenantEntity {
   /** Set when this event corresponds to an AnalyticsSuggestion row (the PR-review track). */
   @Column({ type: 'uuid', nullable: true })
   suggestionId?: string | null;
+
+  /** Set when this event is about one specific BugFinding — lets the drawer show a per-finding timeline. */
+  @Column({ name: 'finding_id', type: 'uuid', nullable: true })
+  findingId?: string | null;
 }

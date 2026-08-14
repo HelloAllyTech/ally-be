@@ -17,6 +17,7 @@ import { BugHuntEventRepository } from '../repository/bug-hunt-event.repository'
 import { BugHunterSettingsRepository } from '../repository/bug-hunter-settings.repository';
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
+import { BugHunterMode } from '../enum/bug-finding.enum';
 
 /**
  * Owns the kill switch, the run lifecycle, and the event transcript.
@@ -50,39 +51,39 @@ export class BugHunterService {
    * Flips the switch and logs it as a timeline event with `runId = null`, so
    * the on/off history is visible in the same place as run activity — a
    * SUPER_DUPER_ADMIN reviewing "why did nothing run last night" sees the
-   * toggle flip right next to the skipped run it explains.
+   * mode change right next to the skipped run it explains.
    */
-  async setEnabled(
-    enabled: boolean,
+  async setMode(
+    mode: BugHunterMode,
     updatedBy: number,
   ): Promise<BugHunterSettings> {
-    const settings = await this.settingsRepository.setEnabled(
-      enabled,
-      updatedBy,
-    );
+    const settings = await this.settingsRepository.setMode(mode, updatedBy);
     await this.eventRepository.save(
       this.eventRepository.create({
         runId: null,
         stage: BugHuntEventStage.SETTINGS_CHANGED,
-        summary: `Bug Hunter turned ${enabled ? 'ON' : 'OFF'} by user ${updatedBy}`,
-        payload: { enabled, updatedBy },
+        summary: `Bug Hunter mode set to ${mode.toUpperCase()} by user ${updatedBy}`,
+        payload: { mode, updatedBy },
       }),
     );
     return settings;
   }
 
   /**
-   * Both trigger paths call this FIRST. Off means off for every trigger — no
+   * Both trigger paths call this FIRST. OFF means off for every trigger — no
    * "scheduled paused but manual still works" — so a run that finds the
    * switch off does zero further work: it records exactly one event and
-   * exits without spending any tokens.
+   * exits without spending any tokens. MANUAL and AI both return the mode so
+   * the pipeline knows, once Discover/Verify are done, whether a
+   * verify-confirmed finding may go straight to the Fix stage (AI) or must
+   * wait at PENDING_APPROVAL for an admin (MANUAL) — see bug-hunt.mjs.
    */
   async requireEnabledOrRecordSkip(
     trigger: BugHuntTrigger,
     repo: string,
-  ): Promise<boolean> {
+  ): Promise<BugHunterMode | null> {
     const settings = await this.getSettings();
-    if (settings.enabled) return true;
+    if (settings.mode !== BugHunterMode.OFF) return settings.mode;
 
     const run = await this.runRepository.save(
       this.runRepository.create({
@@ -100,7 +101,7 @@ export class BugHunterService {
         summary: 'Bug Hunter is off — run skipped with zero token spend.',
       }),
     );
-    return false;
+    return null;
   }
 
   // ── run lifecycle ────────────────────────────────────────────────────────
@@ -136,6 +137,11 @@ export class BugHunterService {
     return this.eventRepository.listSince(runId, afterCreatedAt);
   }
 
+  /** Every event reported about one finding, across however many runs — the drawer's timeline. */
+  listEventsForFinding(findingId: string): Promise<BugHuntEvent[]> {
+    return this.eventRepository.listForFinding(findingId);
+  }
+
   /**
    * Appends one transcript row. `runId` must belong to a RUNNING run — a
    * pipeline reporting into a run that already closed almost always means two
@@ -149,6 +155,7 @@ export class BugHunterService {
     summary: string;
     payload?: Record<string, any>;
     suggestionId?: string;
+    findingId?: string;
   }): Promise<BugHuntEvent> {
     const run = await this.getRun(params.runId);
     if (run.status !== BugHuntRunStatus.RUNNING) {
@@ -165,6 +172,7 @@ export class BugHunterService {
         summary: params.summary,
         payload: params.payload,
         suggestionId: params.suggestionId,
+        findingId: params.findingId,
       }),
     );
 

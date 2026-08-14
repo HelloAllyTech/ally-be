@@ -5,13 +5,14 @@ import { BugHunterSettings } from '../../entity/bug-hunter-settings.entity';
 import { BugHuntRun } from '../../entity/bug-hunt-run.entity';
 import { BugHuntRunStatus, BugHuntTrigger } from '../../enum/bug-hunt-run.enum';
 import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
+import { BugHunterMode } from '../../enum/bug-finding.enum';
 
 const settingsRow = (
   overrides: Partial<BugHunterSettings> = {},
 ): BugHunterSettings =>
   ({
     id: 1,
-    enabled: false,
+    mode: BugHunterMode.OFF,
     updatedBy: null,
     createdAt: new Date('2026-08-01T00:00:00.000Z'),
     updatedAt: new Date('2026-08-01T00:00:00.000Z'),
@@ -38,7 +39,7 @@ const runRow = (overrides: Partial<BugHuntRun> = {}): BugHuntRun =>
 
 describe('BugHunterService', () => {
   let service: BugHunterService;
-  let settingsRepository: { getSettings: jest.Mock; setEnabled: jest.Mock };
+  let settingsRepository: { getSettings: jest.Mock; setMode: jest.Mock };
   let runRepository: {
     create: jest.Mock;
     save: jest.Mock;
@@ -70,7 +71,7 @@ describe('BugHunterService', () => {
 
     settingsRepository = {
       getSettings: jest.fn().mockResolvedValue(settingsRow()),
-      setEnabled: jest.fn(),
+      setMode: jest.fn(),
     };
     runRepository = {
       create: jest.fn((partial) => partial),
@@ -112,24 +113,24 @@ describe('BugHunterService', () => {
   });
 
   describe('the kill switch defaults off', () => {
-    it('reports disabled when no one has ever flipped it', async () => {
+    it('reports off when no one has ever flipped it', async () => {
       const settings = await service.getSettings();
-      expect(settings.enabled).toBe(false);
+      expect(settings.mode).toBe(BugHunterMode.OFF);
     });
   });
 
   describe('requireEnabledOrRecordSkip', () => {
     it('refuses to run and records a skipped_disabled run when the switch is off', async () => {
       settingsRepository.getSettings.mockResolvedValue(
-        settingsRow({ enabled: false }),
+        settingsRow({ mode: BugHunterMode.OFF }),
       );
 
-      const allowed = await service.requireEnabledOrRecordSkip(
+      const mode = await service.requireEnabledOrRecordSkip(
         BugHuntTrigger.SCHEDULED,
         'ally-be',
       );
 
-      expect(allowed).toBe(false);
+      expect(mode).toBeNull();
       // Spends nothing: no run left RUNNING, exactly one event recorded.
       expect(runRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({ status: BugHuntRunStatus.SKIPPED_DISABLED }),
@@ -140,49 +141,66 @@ describe('BugHunterService', () => {
       );
     });
 
-    it('allows the run to proceed when the switch is on, without recording a skip', async () => {
+    it('allows the run to proceed in AI mode, without recording a skip', async () => {
       settingsRepository.getSettings.mockResolvedValue(
-        settingsRow({ enabled: true }),
+        settingsRow({ mode: BugHunterMode.AI }),
       );
 
-      const allowed = await service.requireEnabledOrRecordSkip(
+      const mode = await service.requireEnabledOrRecordSkip(
         BugHuntTrigger.MANUAL,
         'ally-web',
       );
 
-      expect(allowed).toBe(true);
+      expect(mode).toBe(BugHunterMode.AI);
       expect(runRepository.save).not.toHaveBeenCalled();
       expect(eventRepository.save).not.toHaveBeenCalled();
     });
 
-    it('refuses an on-demand run just as strictly as a scheduled one', async () => {
+    it('allows the run to proceed in Manual mode too, without recording a skip', async () => {
       settingsRepository.getSettings.mockResolvedValue(
-        settingsRow({ enabled: false }),
+        settingsRow({ mode: BugHunterMode.MANUAL }),
       );
 
-      const allowed = await service.requireEnabledOrRecordSkip(
+      const mode = await service.requireEnabledOrRecordSkip(
+        BugHuntTrigger.SCHEDULED,
+        'ally-web',
+      );
+
+      expect(mode).toBe(BugHunterMode.MANUAL);
+      expect(runRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('refuses an on-demand run just as strictly as a scheduled one', async () => {
+      settingsRepository.getSettings.mockResolvedValue(
+        settingsRow({ mode: BugHunterMode.OFF }),
+      );
+
+      const mode = await service.requireEnabledOrRecordSkip(
         BugHuntTrigger.MANUAL,
         'ally-ai',
       );
 
-      expect(allowed).toBe(false);
+      expect(mode).toBeNull();
     });
   });
 
-  describe('setEnabled', () => {
+  describe('setMode', () => {
     it('flips the switch and logs it to the timeline with no runId', async () => {
-      settingsRepository.setEnabled.mockResolvedValue(
-        settingsRow({ enabled: true, updatedBy: 42 }),
+      settingsRepository.setMode.mockResolvedValue(
+        settingsRow({ mode: BugHunterMode.AI, updatedBy: 42 }),
       );
 
-      await service.setEnabled(true, 42);
+      await service.setMode(BugHunterMode.AI, 42);
 
-      expect(settingsRepository.setEnabled).toHaveBeenCalledWith(true, 42);
+      expect(settingsRepository.setMode).toHaveBeenCalledWith(
+        BugHunterMode.AI,
+        42,
+      );
       expect(eventRepository.save).toHaveBeenCalledWith(
         expect.objectContaining({
           runId: null,
           stage: BugHuntEventStage.SETTINGS_CHANGED,
-          payload: { enabled: true, updatedBy: 42 },
+          payload: { mode: BugHunterMode.AI, updatedBy: 42 },
         }),
       );
     });
