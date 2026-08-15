@@ -40,6 +40,40 @@ export const SUPER_ADMIN_ROLES: UserRole[] = [
  */
 export const SUPER_DUPER_ADMIN_ROLES: UserRole[] = [UserRole.SUPER_DUPER_ADMIN];
 
+/**
+ * Platform-tier groups that the generic role picker must never grant or revoke.
+ *
+ * PLATFORM_ADMIN is owned by the dedicated Ally admins screen
+ * (POST/DELETE /v1/platform-admins), which also writes the per-user feature
+ * toggles that decide what an admin can actually reach. Granting it through
+ * `POST /v1/authorization/change-roles` instead produces an admin with the full
+ * platform permission set and *no* toggles, because the toggle backfill only
+ * ever ran inside CreatePlatformAdminRole1895000000001.
+ *
+ * The other three are the retired tiers that same migration collapsed. Their
+ * `groups` and `group_permissions` rows were deliberately left in place for
+ * rollback safety, so assigning one still grants real, fully-permissioned
+ * access — to an account the Ally admins screen cannot see, since that screen
+ * lists PLATFORM_ADMIN holders.
+ *
+ * changeUserRoles therefore treats the two directions differently. Asking to
+ * grant one is an explicit request it cannot honour correctly, so it 400s and
+ * names the right endpoint. Not mentioning one the account already holds is
+ * not a request to revoke it — the picker can't see these groups — so they are
+ * left alone; otherwise an app-role change on a platform admin's account would
+ * strip their access as collateral.
+ *
+ * Only `changeUserRoles` is constrained. `assignRole` is the single-role path
+ * that platform-admin.service itself calls to grant PLATFORM_ADMIN, so guarding
+ * it would break the very screen this constant protects.
+ */
+export const PLATFORM_MANAGED_ROLES: UserRole[] = [
+  UserRole.PLATFORM_ADMIN,
+  UserRole.SUPER_ADMIN,
+  UserRole.SUPER_DUPER_ADMIN,
+  UserRole.MULTI_TENANT_ADMIN,
+];
+
 export enum AppType {
   APP = 'APP',
   ADMIN = 'ADMIN',

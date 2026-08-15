@@ -133,6 +133,23 @@ describe('GroupService', () => {
       expect(result).toEqual([]);
       expect(groupRepo.getAll).toHaveBeenCalled();
     });
+
+    // The retired tiers still sit in `groups` for rollback safety, so an
+    // unfiltered list would invite every client to offer access this service's
+    // own change-roles path refuses to write.
+    it('should omit the platform-managed tiers', async () => {
+      groupRepo.getAll.mockResolvedValue([
+        { id: 1, name: 'ADMIN' },
+        { id: 7, name: 'SUPER_ADMIN' },
+        { id: 8, name: 'SUPER_DUPER_ADMIN' },
+        { id: 9, name: 'PLATFORM_ADMIN' },
+        { id: 6, name: 'MULTI_TENANT_ADMIN' },
+      ] as Group[]);
+
+      const result = await service.getAllRoles();
+
+      expect(result.map((group) => group.name)).toEqual(['ADMIN']);
+    });
   });
 
   describe('getGroupNames', () => {
@@ -403,6 +420,64 @@ describe('GroupService', () => {
   });
 
   describe('changeUserRoles', () => {
+    beforeEach(() => {
+      // Most cases are ordinary app-role accounts holding no platform tier.
+      groupRepo.findUserRoleByUserId.mockResolvedValue([]);
+    });
+
+    it('should reject granting a platform tier, naming the right endpoint', async () => {
+      userRepository.findOne.mockResolvedValue({ id: 1 } as User);
+      groupRepo.getAll.mockResolvedValue([
+        { id: 1, name: 'ADMIN' },
+        { id: 9, name: 'PLATFORM_ADMIN' },
+      ] as Group[]);
+
+      await expect(
+        service.changeUserRoles({ userId: 1, groupIds: [1, 9] }),
+      ).rejects.toThrow('/v1/platform-admins');
+      expect(userGroupRepo.save).not.toHaveBeenCalled();
+    });
+
+    // The retired tiers still carry live permissions, so they are no more
+    // assignable than the role that replaced them.
+    it('should reject granting a retired tier', async () => {
+      userRepository.findOne.mockResolvedValue({ id: 1 } as User);
+      groupRepo.getAll.mockResolvedValue([
+        { id: 8, name: 'SUPER_DUPER_ADMIN' },
+      ] as Group[]);
+
+      await expect(
+        service.changeUserRoles({ userId: 1, groupIds: [8] }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    // The picker can't show a platform tier, so its absence from the payload
+    // is not a request to revoke it — otherwise an app-role change would strip
+    // an Ally admin's access as collateral.
+    it('should keep a held platform tier the payload omits', async () => {
+      userRepository.findOne.mockResolvedValue({ id: 1 } as User);
+      groupRepo.getAll.mockResolvedValue([
+        { id: 2, name: 'COUNSELOR' },
+      ] as Group[]);
+      groupRepo.findUserRoleByUserId.mockResolvedValue([
+        { id: 9, name: 'PLATFORM_ADMIN' },
+        { id: 1, name: 'ADMIN' },
+      ] as Group[]);
+      userGroupRepo.find.mockResolvedValue([
+        { id: 10, userId: 1, groupId: 9 },
+        { id: 11, userId: 1, groupId: 1 },
+      ] as any);
+      userGroupRepo.save.mockResolvedValue({} as any);
+
+      await service.changeUserRoles({ userId: 1, groupIds: [2] });
+
+      // ADMIN dropped as asked; PLATFORM_ADMIN left alone.
+      expect(userGroupRepo.remove).toHaveBeenCalledTimes(1);
+      expect(userGroupRepo.remove).toHaveBeenCalledWith(
+        expect.objectContaining({ groupId: 1 }),
+      );
+    });
+
     it('should throw NotFoundException when user not found', async () => {
       userRepository.findOne.mockResolvedValue(null);
 
