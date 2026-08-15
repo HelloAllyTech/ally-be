@@ -18,6 +18,7 @@ import { UserRepository } from 'src/user/repository/user.repository';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AuthorizationEvents } from '../type/authorization-event.type';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
+import { PLATFORM_MANAGED_ROLES } from 'src/common/constants/user.constants';
 
 @Injectable()
 export class GroupService {
@@ -31,8 +32,21 @@ export class GroupService {
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
+  /**
+   * The roles a client may offer in a role picker.
+   *
+   * Filtered rather than raw: the retired tier groups still sit in `groups`
+   * for rollback safety, so an unfiltered list invites every client to render
+   * — and assign — access this endpoint's counterpart refuses to write. See
+   * PLATFORM_MANAGED_ROLES.
+   */
   async getAllRoles(): Promise<Group[]> {
-    return this.groupRepository.getAll();
+    const groups = await this.groupRepository.getAll();
+    return groups.filter((group) => !this.isPlatformManagedGroup(group.name));
+  }
+
+  private isPlatformManagedGroup(name: string): boolean {
+    return (PLATFORM_MANAGED_ROLES as string[]).includes(name);
   }
 
   async getGroupNames(groupIds: number[]): Promise<string[]> {
@@ -166,6 +180,31 @@ export class GroupService {
     if (groups.length !== changeUserRolesDto.groupIds.length) {
       throw new NotFoundException(`One or more roles not found`);
     }
+
+    // Asking for a platform tier here is a request this endpoint cannot honour
+    // correctly, so say so instead of writing a half-configured admin.
+    const requestedPlatformGroups = groups.filter((group) =>
+      this.isPlatformManagedGroup(group.name),
+    );
+    if (requestedPlatformGroups.length > 0) {
+      throw new BadRequestException(
+        `${requestedPlatformGroups
+          .map((group) => group.name)
+          .join(
+            ', ',
+          )} cannot be assigned here — manage platform admins via /v1/platform-admins`,
+      );
+    }
+
+    // Read the account's own groups by name rather than looking the platform
+    // groups up globally: only the ones this user actually holds matter here.
+    const heldGroups = await this.groupRepository.findUserRoleByUserId(
+      changeUserRolesDto.userId,
+    );
+    const heldPlatformGroupIds = heldGroups
+      .filter((group) => this.isPlatformManagedGroup(group.name))
+      .map((group) => group.id);
+
     try {
       // Get current user-group mappings
       const currentUserGroups = await this.userGroupRepository.find({
@@ -176,8 +215,14 @@ export class GroupService {
       const groupIdsToAdd = changeUserRolesDto.groupIds.filter(
         (id) => !currentGroupIds.includes(id),
       );
+      // A platform tier the account already holds is invisible to this picker,
+      // so its absence from the payload is not a request to revoke it. Without
+      // this, changing an Ally admin's app role silently strips their admin
+      // access.
       const groupIdsToRemove = currentGroupIds.filter(
-        (id) => !changeUserRolesDto.groupIds.includes(id),
+        (id) =>
+          !changeUserRolesDto.groupIds.includes(id) &&
+          !heldPlatformGroupIds.includes(id),
       );
 
       await this.dataSource.transaction(async () => {
