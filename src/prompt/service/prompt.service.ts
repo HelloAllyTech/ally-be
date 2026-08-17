@@ -142,6 +142,13 @@ export class PromptsService {
       updateData.hasStates = updatePromptDto.hasStates;
     }
 
+    // Studio-picker visibility. Purely a future-selection concern: flipping it
+    // touches no version, no translation and no runtime resolution path, so
+    // scenarios already pointing at this promptCode are unaffected.
+    if (updatePromptDto.visibleInStudio !== undefined) {
+      updateData.visibleInStudio = updatePromptDto.visibleInStudio;
+    }
+
     if (updatePromptDto.usesBlocks !== undefined) {
       updateData.usesBlocks = updatePromptDto.usesBlocks;
     }
@@ -443,6 +450,11 @@ export class PromptsService {
         defaultPrompt: source.defaultPrompt,
         useDashboardOverride: true,
         isObsolete: false,
+        // A new variant is offered in the studio picker immediately. Hiding is
+        // an explicit, deliberate act — never the starting state — so an admin
+        // duplicating a prompt doesn't have to go find a switch to make their
+        // new variant selectable.
+        visibleInStudio: true,
         kind: source.kind,
         promptType: source.promptType,
         hasStates: newHasStates,
@@ -574,6 +586,10 @@ export class PromptsService {
         //   - `promptType` / `hasStates` are only overwritten when the
         //     payload explicitly carries them (backfilled values stay
         //     intact when older sync sources omit them).
+        //
+        //   - `visibleInStudio` is deliberately absent and must stay absent.
+        //     It's an admin decision made in prompt management, not a file
+        //     fact; adding it here would un-hide a skill on every redeploy.
         const updatePayload: Partial<Prompt> = {
           defaultPrompt: item.prompt,
           name: item.name,
@@ -700,7 +716,10 @@ export class PromptsService {
     // Forces the admin to switch those scenarios off this variant before
     // removing it, avoiding silent fallback to the default prompt on the
     // next session run.
-    const usage = await this.countScenarioUsage(prompt.promptCode);
+    const usage = await this.countScenarioUsage(
+      prompt.promptCode,
+      prompt.promptType,
+    );
     if (usage > 0) {
       throw new ConflictException(
         `Cannot delete: variant is used by ${usage} simulation` +
@@ -713,22 +732,39 @@ export class PromptsService {
   }
 
   /**
-   * Count active scenarios whose selected main-agent prompt code matches the
-   * given promptCode. Used to gate deletion of duplicated variants and to
-   * surface usage info in the studio side panel.
-   *
-   * `selectedMainPromptCode` lives inside scenarios.metadata (jsonb), not as
-   * its own column — the query reads it via the ->> operator. Soft-deleted
-   * scenarios (deletedAt IS NOT NULL) are excluded since they can't be
-   * reactivated through the dashboard.
+   * Which `scenarios.metadata` key holds a reference to a prompt of this type.
+   * `main_agent` variants are selected via the studio's Skill Version picker,
+   * `transcript_evaluator` variants via the report page's evaluator picker —
+   * two different jsonb keys, so a type-blind count would report zero usage
+   * for every evaluator variant and wrongly present it as unused.
    */
-  private async countScenarioUsage(promptCode: string): Promise<number> {
+  private scenarioMetadataKeyFor(promptType?: string | null): string {
+    return promptType === 'transcript_evaluator'
+      ? 'selectedEvaluatorPromptCode'
+      : 'selectedMainPromptCode';
+  }
+
+  /**
+   * Count active scenarios referencing the given promptCode through the
+   * metadata key that matches its promptType. Used to gate deletion of
+   * duplicated variants and to surface usage info in the studio side panel
+   * (both the delete tooltip and the "Show in Studio" warning).
+   *
+   * The reference lives inside scenarios.metadata (jsonb), not as its own
+   * column — the query reads it via the ->> operator. Soft-deleted scenarios
+   * (deletedAt IS NOT NULL) are excluded since they can't be reactivated
+   * through the dashboard.
+   */
+  private async countScenarioUsage(
+    promptCode: string,
+    promptType?: string | null,
+  ): Promise<number> {
     const rows: Array<{ count: string }> = await this.dataSource.query(
       `SELECT COUNT(*)::text AS count
          FROM scenarios
-        WHERE metadata->>'selectedMainPromptCode' = $1
+        WHERE metadata->>($2::text) = $1
           AND "deletedAt" IS NULL`,
-      [promptCode],
+      [promptCode, this.scenarioMetadataKeyFor(promptType)],
     );
     return Number(rows[0]?.count ?? 0);
   }
@@ -736,7 +772,8 @@ export class PromptsService {
   /**
    * Returns the in-use count + a small sample of referencing scenarios so
    * the studio can show "Used by N simulations" diagnostics next to the
-   * Delete button. Capped at 10 to keep the payload bounded.
+   * Delete button and under the "Show in Studio" switch. Capped at 10 to keep
+   * the payload bounded.
    */
   async getPromptUsage(id: string): Promise<{
     count: number;
@@ -746,17 +783,20 @@ export class PromptsService {
     if (!prompt) {
       throw new NotFoundException('Prompt not found');
     }
-    const count = await this.countScenarioUsage(prompt.promptCode);
+    const count = await this.countScenarioUsage(
+      prompt.promptCode,
+      prompt.promptType,
+    );
     if (count === 0) return { count: 0, scenarios: [] };
     const scenarios: Array<{ id: number; title: string }> =
       await this.dataSource.query(
         `SELECT id, title
            FROM scenarios
-          WHERE metadata->>'selectedMainPromptCode' = $1
+          WHERE metadata->>($2::text) = $1
             AND "deletedAt" IS NULL
           ORDER BY id DESC
           LIMIT 10`,
-        [prompt.promptCode],
+        [prompt.promptCode, this.scenarioMetadataKeyFor(prompt.promptType)],
       );
     return { count, scenarios };
   }

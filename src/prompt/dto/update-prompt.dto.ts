@@ -61,6 +61,18 @@ export class UpdatePromptDto {
 
   @ApiProperty({
     description:
+      'Whether the studio pickers offer this variant as a choice. Setting it ' +
+      'false hides the variant from the Skill Version / evaluator dropdowns ' +
+      'for NEW selections only — scenarios already referencing its promptCode ' +
+      'keep running on it unchanged, since no runtime path reads this flag.',
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  visibleInStudio?: boolean;
+
+  @ApiProperty({
+    description:
       'When true, this prompt declares a States section; the studio shows ' +
       'the state editor and runtime substitutes the matched state’s ' +
       'guidelines into {state_x_guidelines} and gates RAG per state.',
