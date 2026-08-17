@@ -13,17 +13,19 @@ import {
   VideoContent,
 } from '../type/track.type';
 import { QuizContent } from '../type/quiz.type';
+import { AnnotationContent } from '../type/annotation.type';
 
 export type TrackItemContent =
   | QuizContent
   | ArticleContent
   | VideoContent
-  | JournalContent;
+  | JournalContent
+  | AnnotationContent;
 
 /**
  * Hybrid polymorphism: DB-backed content types keep a typed reference column
  * (scenarioId for ROLEPLAY, caseId for CASE); inline-authored content
- * (QUIZ/ARTICLE/VIDEO/JOURNAL) lives in the `content` JSONB.
+ * (QUIZ/ARTICLE/VIDEO/JOURNAL/ANNOTATED_ARTIFACT) lives in the `content` JSONB.
  * Item ids are stable across content edits — learner progress rows point here.
  */
 @Entity('track_items')

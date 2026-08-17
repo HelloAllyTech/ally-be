@@ -20,6 +20,15 @@ import {
   TrueFalseQuestion,
 } from '../type/quiz.type';
 import {
+  AnnotationArtifactKind,
+  AnnotationContent,
+  AnnotationRevealKey,
+  AnnotationSwatch,
+  markKey,
+} from '../type/annotation.type';
+import {
+  TRACK_MAX_ANNOTATION_LABELS,
+  TRACK_MAX_ANNOTATION_UNITS,
   TRACK_MAX_ITEMS_PER_SECTION,
   TRACK_MAX_QUIZ_QUESTIONS,
   TRACK_MAX_SECTIONS,
@@ -123,6 +132,12 @@ export function validateTrackItem(item: UpsertTrackItemDto): void {
         item.title,
       );
       return;
+    case TrackItemType.ANNOTATED_ARTIFACT:
+      validateAnnotationContent(
+        item.content as AnnotationContent | undefined,
+        item.title,
+      );
+      return;
     default:
       fail(`Unknown component type: ${item.type}`);
   }
@@ -166,6 +181,107 @@ function validateJournalContent(
     if (!prompt.prompt || !prompt.prompt.trim()) {
       fail(`Journal component "${title}" has an empty prompt.`);
     }
+  }
+}
+
+export function validateAnnotationContent(
+  content: AnnotationContent | undefined,
+  title: string,
+): void {
+  const label = `Annotation component "${title}"`;
+  if (!content?.settings) {
+    fail(`${label} is missing settings.`);
+  }
+  if (!Object.values(AnnotationArtifactKind).includes(content.kind)) {
+    fail(`${label} has an invalid artifact kind.`);
+  }
+
+  const { units, labels, targets, settings } = content;
+
+  if (!units || units.length === 0) {
+    fail(`${label} must have at least one line to annotate.`);
+  }
+  if (units.length > TRACK_MAX_ANNOTATION_UNITS) {
+    fail(`${label} can have at most ${TRACK_MAX_ANNOTATION_UNITS} lines.`);
+  }
+  const unitIds = new Set<string>();
+  for (const unit of units) {
+    if (!unit.id) fail(`${label}: a line is missing its id.`);
+    if (unitIds.has(unit.id)) fail(`${label}: duplicate line id ${unit.id}.`);
+    unitIds.add(unit.id);
+    if (!unit.text || !unit.text.trim()) {
+      fail(`${label}: a line has no text.`);
+    }
+  }
+
+  if (!labels || labels.length === 0) {
+    fail(`${label} must have at least one label.`);
+  }
+  if (labels.length > TRACK_MAX_ANNOTATION_LABELS) {
+    fail(`${label} can have at most ${TRACK_MAX_ANNOTATION_LABELS} labels.`);
+  }
+  const labelIds = new Set<string>();
+  for (const item of labels) {
+    if (!item.id) fail(`${label}: a label is missing its id.`);
+    if (labelIds.has(item.id)) fail(`${label}: duplicate label id ${item.id}.`);
+    labelIds.add(item.id);
+    if (!item.text || !item.text.trim()) {
+      fail(`${label}: a label has no text.`);
+    }
+    if (!Object.values(AnnotationSwatch).includes(item.color)) {
+      fail(`${label}: label "${item.text}" has an invalid colour.`);
+    }
+  }
+
+  if (!targets || targets.length === 0) {
+    fail(`${label} must mark at least one line as part of the answer.`);
+  }
+  const targetKeys = new Set<string>();
+  for (const target of targets) {
+    if (!unitIds.has(target.unitId)) {
+      fail(`${label}: an answer references a line that no longer exists.`);
+    }
+    if (!labelIds.has(target.labelId)) {
+      fail(`${label}: an answer references a label that no longer exists.`);
+    }
+    const key = markKey(target.unitId, target.labelId);
+    if (targetKeys.has(key)) {
+      fail(`${label}: the same line is marked twice with the same label.`);
+    }
+    targetKeys.add(key);
+    if (
+      target.points !== undefined &&
+      (typeof target.points !== 'number' || target.points <= 0)
+    ) {
+      fail(`${label}: answer points must be a positive number.`);
+    }
+  }
+
+  if (
+    typeof settings.passScore !== 'number' ||
+    settings.passScore < 0 ||
+    settings.passScore > 100
+  ) {
+    fail(`${label}: passScore must be between 0 and 100.`);
+  }
+  if (
+    settings.maxAttempts !== undefined &&
+    settings.maxAttempts !== null &&
+    (!Number.isInteger(settings.maxAttempts) || settings.maxAttempts < 1)
+  ) {
+    fail(`${label}: maxAttempts must be a positive integer.`);
+  }
+  if (
+    typeof settings.falsePositivePenalty !== 'number' ||
+    settings.falsePositivePenalty < 0
+  ) {
+    fail(`${label}: the wrong-mark penalty cannot be negative.`);
+  }
+  if (
+    settings.revealKey !== undefined &&
+    !Object.values(AnnotationRevealKey).includes(settings.revealKey)
+  ) {
+    fail(`${label}: invalid answer-reveal setting.`);
   }
 }
 
@@ -396,10 +512,44 @@ export function computeStructuralSignature(
           scenarioId: item.scenarioId ?? null,
           caseId: item.caseId ?? null,
           quiz: quizStructuralSignature(item),
+          annotation: annotationStructuralSignature(item),
           completionCriteria: item.completionCriteria ?? null,
         })),
     }));
   return JSON.stringify(signature);
+}
+
+/**
+ * Structural for an annotation: the id sets (removing a line orphans stored
+ * marks), the whole answer key, and anything that changes the score. Prose —
+ * line text, label wording, swatches, target notes, the intro, the reveal
+ * setting — stays content-safe, so fixing a typo in a transcript mid-course is
+ * allowed while deleting the line is not.
+ */
+function annotationStructuralSignature(item: UpsertTrackItemDto): unknown {
+  if (item.type !== TrackItemType.ANNOTATED_ARTIFACT || !item.content) {
+    return null;
+  }
+  const annotation = item.content as AnnotationContent;
+  return {
+    kind: annotation.kind,
+    unitIds: (annotation.units ?? []).map((unit) => unit.id),
+    labelIds: (annotation.labels ?? []).map((label) => label.id),
+    targets: (annotation.targets ?? [])
+      .map((target) => ({
+        unitId: target.unitId,
+        labelId: target.labelId,
+        points: target.points ?? 1,
+      }))
+      .sort((a, b) =>
+        markKey(a.unitId, a.labelId).localeCompare(
+          markKey(b.unitId, b.labelId),
+        ),
+      ),
+    passScore: annotation.settings?.passScore,
+    maxAttempts: annotation.settings?.maxAttempts ?? null,
+    falsePositivePenalty: annotation.settings?.falsePositivePenalty ?? 0,
+  };
 }
 
 function quizStructuralSignature(item: UpsertTrackItemDto): unknown {

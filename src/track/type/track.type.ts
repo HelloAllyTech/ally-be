@@ -13,6 +13,7 @@ export enum TrackItemType {
   ARTICLE = 'ARTICLE',
   VIDEO = 'VIDEO',
   JOURNAL = 'JOURNAL',
+  ANNOTATED_ARTIFACT = 'ANNOTATED_ARTIFACT',
 }
 
 export enum TrackProgressionMode {
@@ -84,7 +85,8 @@ export interface JournalContent {
  * read; the rest are ignored:
  *  - ROLEPLAY/CASE → minScore (+ minDurationSeconds for ROLEPLAY, falling back
  *    to config.simulationPath.simulationPathItemMinDurationForCompletion)
- *  - QUIZ  → passScore (kept in sync with content.settings.passScore on save)
+ *  - QUIZ / ANNOTATED_ARTIFACT → passScore (kept in sync with
+ *    content.settings.passScore on save)
  *  - VIDEO → watchPct
  *  - ARTICLE → minReadSeconds (0 = mark-as-read only)
  */
