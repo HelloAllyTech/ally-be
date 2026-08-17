@@ -36,6 +36,7 @@ import {
   RoadmapUserRefDto,
 } from '../dto/roadmap-response.dto';
 import { currentPeriodKey } from '../util/roadmap-period.util';
+import { effectiveMonthOf, isMonthPinned } from '../util/roadmap-month.util';
 import { RoadmapVectorService } from './roadmap-vector.service';
 import { RoadmapNotificationService } from './roadmap-notification.service';
 
@@ -188,6 +189,21 @@ export class RoadmapOpportunityService {
       patch.releasedAt = this.resolveReleasedAt(existing, dto.stage);
     }
 
+    if (dto.plannedMonth !== undefined) {
+      // A shipped card's lane is a fact, not a plan — the same rule the board enforces on drag,
+      // checked here so the drawer cannot route around it. Evaluated against the stage the row
+      // is ENDING UP in, so scheduling and releasing in one PATCH is judged on the outcome.
+      const nextStage = patch.stage ?? existing.stage;
+      const nextReleasedAt =
+        patch.releasedAt !== undefined ? patch.releasedAt : existing.releasedAt;
+      if (isMonthPinned(nextStage, nextReleasedAt)) {
+        throw new UnprocessableEntityException(
+          'A released opportunity sits in the month it shipped. Change its stage first to plan it into a different month.',
+        );
+      }
+      patch.plannedMonth = dto.plannedMonth ?? null;
+    }
+
     await this.opportunityRepository.update(id, patch);
 
     // Re-embed only when the embedded text or its scoping goal actually changed. A prd- or
@@ -275,8 +291,13 @@ export class RoadmapOpportunityService {
     };
   }
 
-  /** Attach creator identity, resolving Ally users in ONE query rather than per row. */
-  private async toResponseList(
+  /**
+   * Attach creator identity, resolving Ally users in ONE query rather than per row.
+   *
+   * Public because the month board maps the same rows into the same shape — one opportunity must
+   * not serialise differently depending on which layout asked for it.
+   */
+  async toResponseList(
     rows: RoadmapOpportunityRow[],
   ): Promise<OpportunityResponseDto[]> {
     const users = await this.resolveUsers(rows.map((r) => r.createdBy));
@@ -293,6 +314,16 @@ export class RoadmapOpportunityService {
       prd: row.prd ?? null,
       claudePrompt: row.claudePrompt ?? null,
       releasedAt: row.releasedAt ?? null,
+      plannedMonth: row.plannedMonth ?? null,
+      boardPosition: Number(row.boardPosition ?? 0),
+      // Derived here rather than trusted from the row, so the single-opportunity read (which has
+      // no lane context) reports the same month as the board.
+      effectiveMonth: effectiveMonthOf(
+        row.stage,
+        row.releasedAt,
+        row.plannedMonth,
+      ),
+      monthPinned: isMonthPinned(row.stage, row.releasedAt),
       priorityScore: Number(row.priorityScore ?? 0),
       myCoins: Number(row.myCoins ?? 0),
       commentCount: Number(row.commentCount ?? 0),

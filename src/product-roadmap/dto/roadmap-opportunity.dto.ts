@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsEnum,
   IsInt,
@@ -8,15 +9,27 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Matches,
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import {
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
 } from '../enum/roadmap-opportunity.enum';
-import { ROADMAP_LIMITS } from '../constants/product-roadmap.constants';
+import {
+  ROADMAP_BOARD_DEFAULTS,
+  ROADMAP_LIMITS,
+} from '../constants/product-roadmap.constants';
+
+/**
+ * 'YYYY-MM'. Mirrors CHK_roadmap_opps_planned_month, so a bad month is a friendly 400 here and
+ * an impossible row there.
+ */
+const MONTH_KEY_REGEX = /^\d{4}-(0[1-9]|1[0-2])$/;
+const MONTH_KEY_MESSAGE = "must be a month key in 'YYYY-MM' form, e.g. 2026-09";
 
 /**
  * Comma-separated OR repeated query params both arrive here; normalise to an array so
@@ -48,7 +61,16 @@ const toIntArray = ({ value }: { value: unknown }): unknown => {
   });
 };
 
-export class ListOpportunitiesQueryDto {
+/**
+ * Every filter the board understands, shared by BOTH layouts.
+ *
+ * Extracted rather than duplicated so the table and the month board cannot drift apart: the
+ * filter chips are rendered once on the frontend and sent to whichever endpoint is active, and a
+ * field that existed on only one of these would silently stop filtering when the user flipped
+ * the layout toggle. Sorting and pagination are NOT here — those are layout-specific (the month
+ * board orders by lane position and pages by month, not by offset).
+ */
+export class RoadmapOpportunityFiltersDto {
   @ApiPropertyOptional({
     description: 'Case-insensitive substring of the description',
   })
@@ -115,7 +137,9 @@ export class ListOpportunitiesQueryDto {
   @IsInt()
   @Min(0)
   priorityMax?: number;
+}
 
+export class ListOpportunitiesQueryDto extends RoadmapOpportunityFiltersDto {
   @ApiPropertyOptional({
     enum: ['priority', 'createdAt', 'releasedAt', 'myCoins', 'description'],
     default: 'priority',
@@ -229,6 +253,96 @@ export class UpdateOpportunityDto {
   @IsString()
   @MaxLength(ROADMAP_LIMITS.CLAUDE_PROMPT_MAX)
   claudePrompt?: string | null;
+
+  /**
+   * Plan this into a month, as 'YYYY-MM'. Explicit null moves it back to Unscheduled.
+   *
+   * Rejected with 422 once the opportunity has actually shipped — a released card's lane is its
+   * release month, which is a fact rather than a plan. The board enforces the same rule on drag,
+   * via isMonthPinned; this path exists so the drawer can schedule something without a drag.
+   */
+  @ApiPropertyOptional({
+    nullable: true,
+    description: "Planned month as 'YYYY-MM'; null moves it to Unscheduled",
+  })
+  @IsOptional()
+  @Matches(MONTH_KEY_REGEX, { message: `plannedMonth ${MONTH_KEY_MESSAGE}` })
+  plannedMonth?: string | null;
+}
+
+/**
+ * The month board read. Same filters as the table, but windowed by month instead of paginated by
+ * offset — a lane has to be COMPLETE to be honest, and an offset window would fill the first
+ * lane and leave the rest looking empty.
+ */
+export class MonthBoardQueryDto extends RoadmapOpportunityFiltersDto {
+  @ApiPropertyOptional({
+    description:
+      "First month lane, 'YYYY-MM'. Defaults to one month before the current month.",
+  })
+  @IsOptional()
+  @Matches(MONTH_KEY_REGEX, { message: `from ${MONTH_KEY_MESSAGE}` })
+  from?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Last month lane, 'YYYY-MM'. Defaults to four months after the current month.",
+  })
+  @IsOptional()
+  @Matches(MONTH_KEY_REGEX, { message: `to ${MONTH_KEY_MESSAGE}` })
+  to?: string;
+
+  @ApiPropertyOptional({
+    default: ROADMAP_BOARD_DEFAULTS.LANE_LIMIT,
+    description:
+      'Cards returned per lane. Each lane reports its true total regardless, so a truncated ' +
+      'lane can say how many it is hiding rather than pretending to be complete.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  laneLimit?: number;
+}
+
+/**
+ * Drop a card into a lane.
+ *
+ * `orderedIds` is the FULL resulting order of the destination lane, not a delta — the same
+ * whole-array-overwrite shape as PUT views/tab-order and PUT product-goals/order. A delta
+ * ("insert after X") reads as cheaper but needs the server to reconstruct the lane it was
+ * computed against, and two people dragging in the same lane would interleave into an order
+ * neither of them saw. An absolute order is idempotent and the last write plainly wins.
+ *
+ * Stale ids are tolerated, not rejected: an id that is no longer in this lane is skipped rather
+ * than 409'd, because the alternative is a drag that fails because somebody else moved an
+ * unrelated card while this one was mid-air.
+ */
+export class MoveOpportunityDto {
+  @ApiProperty()
+  @IsUUID()
+  opportunityId!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Destination lane as 'YYYY-MM'; null is the Unscheduled lane. Must be sent explicitly.",
+  })
+  @ValidateIf((o: MoveOpportunityDto) => o.month !== null)
+  @IsString()
+  @Matches(MONTH_KEY_REGEX, { message: `month ${MONTH_KEY_MESSAGE}` })
+  month!: string | null;
+
+  @ApiProperty({
+    type: [String],
+    description: "Every card id in the destination lane, in its new top-to-bottom order",
+  })
+  @IsArray()
+  @ArrayMaxSize(ROADMAP_BOARD_DEFAULTS.MAX_LANE_IDS)
+  // Plain @IsUUID, matching MergeOpportunitiesDto: migrated ids come from the source database
+  // and a version assertion would reject legitimate historical rows.
+  @IsUUID(undefined, { each: true })
+  orderedIds!: string[];
 }
 
 export class SplitPartDto {

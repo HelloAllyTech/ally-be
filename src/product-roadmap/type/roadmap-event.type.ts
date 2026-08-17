@@ -57,5 +57,9 @@ export type RoadmapEvent =
         | 'owners'
         | 'views'
         | 'interviews'
-        | 'releaseNotes';
+        | 'releaseNotes'
+        // A month-board drag rewrites one card's month and up to a whole lane's positions in one
+        // transaction. Tier 2 rather than a delta: the client already applied the move
+        // optimistically, and everyone else needs the lane refetched, not N position events.
+        | 'board';
     };

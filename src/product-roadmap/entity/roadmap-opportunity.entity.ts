@@ -33,6 +33,9 @@ import {
 @Index('idx_roadmap_opps_created_by', ['createdBy'], {
   where: '"deletedAt" IS NULL',
 })
+@Index('idx_roadmap_opps_month_board', ['plannedMonth', 'boardPosition'], {
+  where: '"deletedAt" IS NULL',
+})
 export class RoadmapOpportunity extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -107,6 +110,40 @@ export class RoadmapOpportunity extends BaseWithoutTenantEntity {
    */
   @Column({ type: 'timestamp', nullable: true })
   releasedAt?: Date | null;
+
+  // ── month board ──────────────────────────────────────────────────────────────
+
+  /**
+   * The month somebody PLANNED this into, as 'YYYY-MM' (CHECK-constrained to the same shape as
+   * roadmap_allocations."periodKey"). NULL means the Unscheduled lane.
+   *
+   * This is an intention, not an outcome — which is why it is a separate column from
+   * `releasedAt` rather than a reuse of it. Once a row ships, the board stops showing it here
+   * and shows it under its release month instead (effectiveMonthOf), so a slipped plan leaves a
+   * visible trail: planned for March, shipped in May. Overwriting plannedMonth on release would
+   * erase exactly the discrepancy the board exists to surface.
+   *
+   * Deliberately NOT a date: a month has no day, and storing the 1st invites somebody to render
+   * it as a deadline. It is also not an FK to a `roadmap_months` table — a month needs no
+   * attributes, and a lane with no cards should cost nothing to exist.
+   */
+  @Column({ type: 'varchar', length: 7, nullable: true })
+  plannedMonth?: string | null;
+
+  /**
+   * Manual rank WITHIN a lane, ascending. Not globally meaningful — two cards in different
+   * months routinely share a position.
+   *
+   * DEFAULT 0 is what makes this shippable without a backfill: every existing row starts tied,
+   * and the board's ORDER BY falls through to priorityScore DESC, so on day one every lane is
+   * already sorted by coins. Dragging progressively replaces that with a human ordering, lane by
+   * lane, and nothing has to be migrated for the board to look right.
+   *
+   * Gaps and duplicates are harmless — the ORDER BY has deterministic tiebreaks — so a reorder
+   * rewrites one lane's positions rather than trying to maintain a globally sparse sequence.
+   */
+  @Column({ type: 'int', default: 0 })
+  boardPosition!: number;
 
   // ── Weaviate reconciliation state (see RoadmapEmbeddingStatus) ────────────────
   @Column({
