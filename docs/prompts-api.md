@@ -20,7 +20,9 @@ Base path: **`/api/v1/prompts`**
 | GET | `/api/v1/prompts/by-codes?codes=code1,code2` | Bearer (VIEW_PROMPT) | Get prompt **content** by codes (e.g. for ally-ai-learn). Returns `Record<promptCode, content>`. |
 | POST | `/api/v1/prompts` | Bearer (EDIT_PROMPT) | Create new prompts (bulk). |
 | POST | `/api/v1/prompts/sync` | **x-api-key** (AI key) | Sync from payload (used by deployment/ally-ai-learn). Add new prompts; for existing, updates only `defaultPrompt`, `name`, `description`. |
-| PUT | `/api/v1/prompts/:id` | Bearer (EDIT_PROMPT) | Update a prompt (name, description, content, useDashboardOverride). Creating a new version only when content is updated and useDashboardOverride is true. |
+| GET | `/api/v1/prompts/by-type/:promptType` | Bearer (VIEW_PROMPT) | List the variants of one `promptType` (e.g. `main_agent`) for the studio pickers. Includes variants with `visibleInStudio=false` — see below. |
+| PUT | `/api/v1/prompts/:id` | Bearer (EDIT_PROMPT) | Update a prompt (name, description, content, useDashboardOverride, visibleInStudio). Creating a new version only when content is updated and useDashboardOverride is true. |
+| GET | `/api/v1/prompts/:id/usage` | Bearer (VIEW_PROMPT) | Count + sample (≤10) of scenarios referencing this prompt. The `scenarios.metadata` key searched follows `promptType`: `selectedEvaluatorPromptCode` for `transcript_evaluator`, `selectedMainPromptCode` otherwise. |
 | POST | `/api/v1/prompts/:id/revert` | Bearer (EDIT_PROMPT) | Revert prompt to codebase default (copies `defaultPrompt` into a new version and sets it as current). |
 
 ## Authentication
@@ -75,6 +77,37 @@ Other services (e.g. learn, translation) resolve content by **promptCode** via `
 - If **useDashboardOverride = false:** content is read from the **folder** `src/prompts/` (or from `defaultPrompt` depending on implementation). So after a deploy, folder content wins for non-override prompts.
 
 This keeps dashboard edits safe on deploy while still allowing "use codebase" per prompt.
+
+## Studio visibility (`visibleInStudio`)
+
+A per-prompt switch, edited in the admin's prompt side panel ("Studio availability"), that
+controls whether the studio's variant pickers **offer** this prompt:
+
+- `main_agent` variants → the Skill Version dropdown on Create/Edit Simulation.
+- `transcript_evaluator` variants → the evaluator dropdown on the report section.
+
+It is a **future-visibility switch, not a capability toggle**, and the distinction is the whole
+design:
+
+- **No runtime path reads it.** A scenario carries its choice in
+  `metadata.selectedMainPromptCode` / `metadata.selectedEvaluatorPromptCode`; session start
+  resolves that code directly. Hiding a variant therefore cannot affect a roleplay already using
+  it — it keeps running on the same prompt, with the same version and translations.
+- **`by-type` still returns hidden rows.** Most readers of that list resolve an
+  *already-selected* code to its name, states and `availableVariables`. Filtering server-side
+  would make a hidden-but-in-use variant unresolvable and degrade the editor for exactly the
+  scenarios hiding is meant to leave alone. Only the two pickers that offer a choice filter, and
+  each keeps the variant its own form is currently on, labelled `(hidden)`, so saving can never
+  silently reassign a simulation to a different skill.
+- **`DEFAULT true`, no backfill, and `POST /sync` never writes it.** Existing prompts stay
+  visible, new duplicates start visible, and a redeploy can't un-hide an admin's decision.
+- **Distinct from `isObsolete`,** which is owned by the file-sync lifecycle (the `.txt`
+  disappeared) and gates deletion. Hiding a variant must not make it deletable.
+
+There is deliberately no guard against hiding the default variant or hiding every variant: with
+nothing on offer the picker says so, leaves the field unset, and the runtime falls back to the
+default `main_agent` prompt. `GET /:id/usage` backs the panel's "N simulations already using it
+keep running on it" line — the switch warns, it never blocks.
 
 ## See also
 
