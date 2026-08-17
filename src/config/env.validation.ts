@@ -140,6 +140,16 @@ export const validationSchema = Joi.object({
   // Local dev: when true, allow frontend to trigger agent dispatch (bypasses webhook)
   ALLOW_DIRECT_AGENT_DISPATCH: Joi.boolean().default(false),
 
+  // Bug Hunter fix sessions — dispatching GitHub Actions on the admin's behalf.
+  // All optional: with no token, the Bug Hunter tab still works and only the
+  // "Start fix session" / "Release to production" buttons refuse (503), which
+  // is the correct behaviour on any environment that shouldn't be writing into
+  // CI at all (local, dev).
+  GITHUB_TOKEN: Joi.string().optional(),
+  GITHUB_ORG: Joi.string().default('HelloAllyTech'),
+  /** Publicly reachable base URL a GitHub-hosted runner can call this API back on. */
+  PUBLIC_API_BASE_URL: Joi.string().uri().optional(),
+
   // Voice Preview (TTS provider API keys)
   DEEPGRAM_API_KEY: Joi.string().optional(),
   ELEVENLABS_API_KEY: Joi.string().optional(),

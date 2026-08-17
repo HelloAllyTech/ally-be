@@ -53,10 +53,7 @@ describe('BugHunterService', () => {
     listForRun: jest.Mock;
     listSince: jest.Mock;
   };
-  let notificationService: {
-    notifyBugHunterEscalation: jest.Mock;
-    notifyBugHunterRunSummary: jest.Mock;
-  };
+  let notificationService: { notify: jest.Mock };
   let dataSource: { createQueryBuilder: jest.Mock };
 
   // Mutated by `update()` and read back by `findOne()`, so closeRun's
@@ -89,10 +86,7 @@ describe('BugHunterService', () => {
       listForRun: jest.fn().mockResolvedValue([]),
       listSince: jest.fn(),
     };
-    notificationService = {
-      notifyBugHunterEscalation: jest.fn(),
-      notifyBugHunterRunSummary: jest.fn(),
-    };
+    notificationService = { notify: jest.fn() };
     const qb = {
       select: jest.fn().mockReturnThis(),
       addSelect: jest.fn().mockReturnThis(),
@@ -221,16 +215,14 @@ describe('BugHunterService', () => {
       expect(eventRepository.save).not.toHaveBeenCalled();
     });
 
-    it('notifies Slack when the stage is escalated', async () => {
+    it('raises an action-needed notification when the stage is escalated', async () => {
       await service.appendEvent({
         runId: 'run-1',
         stage: BugHuntEventStage.ESCALATED,
         summary: 'local tests still red after 2 attempts',
       });
 
-      expect(
-        notificationService.notifyBugHunterEscalation,
-      ).toHaveBeenCalledWith(
+      expect(notificationService.notify).toHaveBeenCalledWith(
         expect.objectContaining({ runId: 'run-1', repo: 'ally-be' }),
       );
     });
@@ -242,9 +234,7 @@ describe('BugHunterService', () => {
         summary: 'lint violation in foo.ts:12',
       });
 
-      expect(
-        notificationService.notifyBugHunterEscalation,
-      ).not.toHaveBeenCalled();
+      expect(notificationService.notify).not.toHaveBeenCalled();
     });
   });
 
@@ -259,12 +249,10 @@ describe('BugHunterService', () => {
     it('stays quiet on a clean, empty, completed run', async () => {
       await service.closeRun('run-1', BugHuntRunStatus.COMPLETED, totals);
 
-      expect(
-        notificationService.notifyBugHunterRunSummary,
-      ).not.toHaveBeenCalled();
+      expect(notificationService.notify).not.toHaveBeenCalled();
     });
 
-    it('always posts a summary for a failed run, even with zero findings', async () => {
+    it('always notifies for a failed run, even with zero findings', async () => {
       await service.closeRun(
         'run-1',
         BugHuntRunStatus.FAILED,
@@ -272,31 +260,34 @@ describe('BugHunterService', () => {
         'lint runner crashed',
       );
 
-      expect(
-        notificationService.notifyBugHunterRunSummary,
-      ).toHaveBeenCalledWith(
-        expect.objectContaining({ status: BugHuntRunStatus.FAILED }),
+      // A failed run is a PROBLEM, not INFO — the level is what decides
+      // whether this reads as noise in the inbox.
+      expect(notificationService.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          level: 'problem',
+          title: expect.stringMatching(/run failed/i),
+        }),
       );
     });
 
-    it('posts a summary when the run found at least one bug', async () => {
+    it('notifies when the run found at least one bug', async () => {
       await service.closeRun('run-1', BugHuntRunStatus.COMPLETED, {
         ...totals,
         foundCount: 2,
         prOpenedCount: 2,
       });
 
-      expect(notificationService.notifyBugHunterRunSummary).toHaveBeenCalled();
+      expect(notificationService.notify).toHaveBeenCalled();
     });
 
-    it('posts a summary when any event in the run escalated, even if the run itself completed', async () => {
+    it('notifies when any event in the run escalated, even if the run itself completed', async () => {
       eventRepository.listForRun.mockResolvedValue([
         { stage: BugHuntEventStage.ESCALATED },
       ]);
 
       await service.closeRun('run-1', BugHuntRunStatus.COMPLETED, totals);
 
-      expect(notificationService.notifyBugHunterRunSummary).toHaveBeenCalled();
+      expect(notificationService.notify).toHaveBeenCalled();
     });
   });
 });

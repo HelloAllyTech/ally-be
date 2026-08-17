@@ -1,0 +1,816 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
+
+import { LoggerService } from 'src/logger/logger.service';
+import { AppConfigService } from 'src/config/config.service';
+
+import { BugHunterNotificationService } from './bug-hunter-notification.service';
+import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
+
+import { BugFinding } from '../entity/bug-finding.entity';
+import { BugFindingRepository } from '../repository/bug-finding.repository';
+import { BugHunterService } from './bug-hunter.service';
+import { BugFindingService } from './bug-finding.service';
+import { GithubActionsService } from './github-actions.service';
+import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
+import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
+import {
+  BUG_FINDING_FIX_SESSION_START_STATUSES,
+  BugFindingStatus,
+  BugHunterMode,
+} from '../enum/bug-finding.enum';
+import {
+  BUG_FIX_SESSION_DEFAULT_REF,
+  BUG_FIX_SESSION_DISPATCH_TIMEOUT_MS,
+  BUG_FIX_SESSION_REPOS,
+  BUG_FIX_SESSION_WORKFLOW_FILE,
+  BUG_RELEASE_TIMEOUT_MS,
+  resolveReleaseTarget,
+} from '../constants/bug-fix-session.constants';
+
+/**
+ * The on-demand path: one admin, one bug, one click.
+ *
+ * Everything else in Bug Hunter is a repo-wide sweep that discovers bugs and
+ * then decides what to do with them. This service is the other direction — the
+ * bug is already known (usually because a human filed it), and an admin wants
+ * it fixed *now* rather than whenever the next sweep runs. It does two things:
+ *
+ *  - `start` dispatches a Claude Code fix session for exactly one finding.
+ *    The session skips Discover and Verify (pointless for a bug someone has
+ *    already confirmed) and runs the Fix phase alone, ending at merged.
+ *  - `release` takes a merged fix the last mile, dispatching that deployable's
+ *    production-release workflow.
+ *
+ * ## Why those are two buttons and not one
+ *
+ * The fix half is autonomous: an agent writes a failing regression test, makes
+ * it pass, keeps the suite green and merges. The release half deploys to
+ * production — for `ally-be` that means running DB migrations against the
+ * production database and rolling ECS. Making that second half automatic would
+ * put an LLM-authored diff into production with no human between, and the
+ * platform's release workflows are `workflow_dispatch`-only today precisely
+ * because a person decides. So the split is the product: the agent goes as far
+ * as master unattended, and one admin click — recorded in `released_by` —
+ * promotes it. That is also the staged-autonomy shape Stacks describes in
+ * "Progressive Delegation: Staged Autonomy Growth" and the human gate in
+ * "Deployment Gates: Automated and Manual Quality Checks".
+ */
+@Injectable()
+export class BugFixSessionService {
+  private readonly logger = LoggerService.getInstance(
+    BugFixSessionService.name,
+  );
+
+  constructor(
+    private readonly findingRepository: BugFindingRepository,
+    private readonly bugFindingService: BugFindingService,
+    private readonly bugHunterService: BugHunterService,
+    private readonly github: GithubActionsService,
+    private readonly notificationService: BugHunterNotificationService,
+    private readonly configService: AppConfigService,
+  ) {}
+
+  // ── start a fix session ──────────────────────────────────────────────────
+
+  /**
+   * Dispatches a fix session for one finding.
+   *
+   * `repo` is only needed when the finding doesn't already know its own — the
+   * headline case, since a human-reported bug arrives as free text with no
+   * repo attached until a finder judges which codebase it's about. Rather than
+   * have the backend guess from the description, the admin picks it in the
+   * confirmation dialog: this decides which repository an autonomous agent is
+   * about to write to, which is not a guess worth making on their behalf.
+   */
+  async start(
+    findingId: string,
+    userId: number,
+    repoOverride?: string,
+  ): Promise<BugFinding> {
+    const settings = await this.bugHunterService.getSettings();
+    if (settings.mode === BugHunterMode.OFF) {
+      throw new ForbiddenException(
+        'Bug Hunter is OFF. Switch it to Manual or AI before starting a fix session.',
+      );
+    }
+
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (!BUG_FINDING_FIX_SESSION_START_STATUSES.includes(finding.status)) {
+      throw new ForbiddenException(this.explainUnstartable(finding.status));
+    }
+
+    const repo = repoOverride ?? finding.repo;
+    if (!repo) {
+      throw new BadRequestException(
+        'This bug has no repo yet — choose which repo the fix session should run in.',
+      );
+    }
+    if (!BUG_FIX_SESSION_REPOS.includes(repo as never)) {
+      throw new BadRequestException(
+        `"${repo}" is not set up for fix sessions. Supported: ${BUG_FIX_SESSION_REPOS.join(', ')}.`,
+      );
+    }
+
+    await this.dispatchFix(finding, repo, userId);
+    return this.bugFindingService.getOne(finding.id);
+  }
+
+  /**
+   * Opens a run and dispatches a fix session for one finding in one repo.
+   *
+   * Shared by the admin's own "Start fix session" and by the orchestrator
+   * starting the next step of a plan — `startedBy` is the user id in the first
+   * case and null in the second, which is the only difference between them and
+   * shows up only in the event summary.
+   */
+  private async dispatchFix(
+    finding: BugFinding,
+    repo: string,
+    startedBy: number | null,
+  ): Promise<void> {
+    // The run row exists before the dispatch so the workflow has a run id to
+    // report every step against from its very first call — and so a dispatch
+    // that fails still leaves a visible, closed-out record of the attempt
+    // rather than nothing at all.
+    const run = await this.bugHunterService.startRun(
+      BugHuntTrigger.FIX_SESSION,
+      repo,
+    );
+
+    let dispatchedAt: Date;
+    try {
+      dispatchedAt = await this.github.dispatchWorkflow({
+        repo,
+        workflow: BUG_FIX_SESSION_WORKFLOW_FILE,
+        ref: BUG_FIX_SESSION_DEFAULT_REF,
+        inputs: {
+          finding_id: finding.id,
+          run_id: run.id,
+          repo,
+          api_base_url: this.configService.publicApiBaseUrl,
+        },
+      });
+    } catch (error) {
+      await this.bugHunterService.closeRun(
+        run.id,
+        BugHuntRunStatus.FAILED,
+        {
+          foundCount: 0,
+          autoMergedCount: 0,
+          prOpenedCount: 0,
+          dismissedCount: 0,
+        },
+        error instanceof Error ? error.message : String(error),
+      );
+      throw error;
+    }
+
+    await this.findingRepository.update(finding.id, {
+      status: BugFindingStatus.QUEUED,
+      runId: run.id,
+      repo,
+      dispatchedAt,
+      sessionRunUrl: null,
+    });
+    await this.bugHunterService.appendEvent({
+      runId: run.id,
+      repo,
+      findingId: finding.id,
+      stage: startedBy
+        ? BugHuntEventStage.SESSION_DISPATCHED
+        : BugHuntEventStage.STEP_STARTED,
+      summary: startedBy
+        ? `Fix session started by user ${startedBy} for "${finding.title}".`
+        : `Step ${(finding.stepIndex ?? 0) + 1} of the plan started in ${repo}.`,
+      payload: { startedBy, repo, workflow: BUG_FIX_SESSION_WORKFLOW_FILE },
+    });
+  }
+
+  // ── coordinated multi-repo plans ─────────────────────────────────────────
+
+  /**
+   * Turns a fix agent's "this spans more than one repo" report into a plan Bug
+   * Hunter drives itself.
+   *
+   * The shape is planner-executor (Stacks: "Planner-Executor Agent
+   * Architecture"): the first session is the planner — it has already read the
+   * bug and one codebase and is best placed to say what has to change where —
+   * and each child is an executor with a single repo and a single job. Keeping
+   * the plan as rows rather than in one long-lived agent is what makes it
+   * inspectable and resumable: you can see which step failed, and a step can
+   * be retried on its own.
+   *
+   * **The order is the contract.** Steps run one at a time and release in the
+   * same order, because a frontend live before the backend field it reads is
+   * precisely the production break this feature exists to avoid. The planner
+   * is told to order by dependency, not convenience.
+   *
+   * Idempotent: a workflow that retries this call gets the existing plan back
+   * rather than a second set of children.
+   */
+  async recordPlan(
+    findingId: string,
+    steps: { repo: string; summary: string }[],
+  ): Promise<BugFinding[]> {
+    const parent = await this.bugFindingService.getOne(findingId);
+
+    const existing = await this.findingRepository.listChildren(parent.id);
+    if (existing.length) return existing;
+
+    if (steps.length < 2) {
+      throw new BadRequestException(
+        'A plan needs at least two steps — a single-repo fix does not need one.',
+      );
+    }
+    const unsupported = steps.find(
+      (step) => !BUG_FIX_SESSION_REPOS.includes(step.repo as never),
+    );
+    if (unsupported) {
+      throw new BadRequestException(
+        `"${unsupported.repo}" is not set up for fix sessions. Supported: ${BUG_FIX_SESSION_REPOS.join(', ')}.`,
+      );
+    }
+
+    const children: BugFinding[] = [];
+    for (const [index, step] of steps.entries()) {
+      children.push(
+        await this.findingRepository.save(
+          this.findingRepository.create({
+            parentFindingId: parent.id,
+            stepIndex: index,
+            stepSummary: step.summary,
+            repo: step.repo,
+            source: parent.source,
+            title: `${parent.title} — ${step.repo}`,
+            description: `${step.summary}\n\nPart of: ${parent.description}`,
+            evidence: parent.evidence,
+            severity: parent.severity,
+            proven: parent.proven,
+            // Re-judged per repo by that step's own agent; inheriting the
+            // parent's flag would let a backend-only guarded path block an
+            // unrelated frontend step from merging.
+            touchesGuardedPath: false,
+            // Only the first step runs now; the rest wait their turn.
+            status:
+              index === 0 ? BugFindingStatus.NEW : BugFindingStatus.BLOCKED,
+          }),
+        ),
+      );
+    }
+
+    await this.findingRepository.update(parent.id, {
+      status: BugFindingStatus.COORDINATING,
+    });
+    await this.bugHunterService.appendFindingEvent({
+      findingId: parent.id,
+      repo: parent.repo,
+      stage: BugHuntEventStage.PLAN_CREATED,
+      summary: `Needs ${steps.length} repos: ${steps.map((s) => s.repo).join(' → ')}.`,
+      payload: { steps },
+    });
+    await this.notificationService.notify({
+      level: BugHunterNotificationLevel.INFO,
+      title: `Fixing "${parent.title}" across ${steps.length} repos`,
+      body: `Bug Hunter will work through ${steps.map((s) => s.repo).join(' → ')} in that order, then release them in the same order once you approve.`,
+      findingId: parent.id,
+      repo: parent.repo,
+    });
+
+    await this.dispatchFix(children[0], children[0].repo!, null);
+    return this.findingRepository.listChildren(parent.id);
+  }
+
+  // ── release to production ────────────────────────────────────────────────
+
+  /**
+   * Dispatches the production release for a merged fix.
+   *
+   * The version is always the next PATCH on whatever tag is currently newest
+   * on the remote — never a stored counter. Every one of these release
+   * workflows rejects a tag that isn't strictly newer than the latest existing
+   * one, so anything derived from local state would break the first time
+   * somebody cut a release by hand.
+   */
+  async release(findingId: string, userId: number): Promise<BugFinding> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (
+      finding.status !== BugFindingStatus.MERGED &&
+      finding.status !== BugFindingStatus.RELEASE_FAILED
+    ) {
+      throw new ForbiddenException(
+        finding.status === BugFindingStatus.RELEASING
+          ? 'A release for this fix is already running.'
+          : finding.status === BugFindingStatus.RELEASED
+            ? 'This fix is already released to production.'
+            : `Only a merged fix can be released — this one is ${finding.status}.`,
+      );
+    }
+
+    const children = await this.findingRepository.listChildren(finding.id);
+
+    // A coordinated fix releases as a sequence, from one click: this dispatches
+    // step 1 only, and the reconcile task starts each later step once the one
+    // before it is green in production. Ordering is the whole reason the plan
+    // exists — a frontend deployed before the backend field it reads is the
+    // break this is designed to prevent — so the steps are never fired
+    // together, however much faster that would be.
+    if (children.length) {
+      const first = children.find(
+        (child) => child.status !== BugFindingStatus.RELEASED,
+      );
+      if (!first) {
+        throw new ForbiddenException('Every step is already released.');
+      }
+      await this.findingRepository.update(finding.id, {
+        status: BugFindingStatus.RELEASING,
+        releasedBy: userId,
+        releasedAt: null,
+      });
+      await this.dispatchRelease(first, userId);
+      return this.bugFindingService.getOne(finding.id);
+    }
+
+    await this.dispatchRelease(finding, userId);
+    return this.bugFindingService.getOne(finding.id);
+  }
+
+  /** Dispatches the production release for one deployable — a standalone finding, or one step of a plan. */
+  private async dispatchRelease(
+    finding: BugFinding,
+    userId: number,
+  ): Promise<void> {
+    const target = resolveReleaseTarget(finding.repo, finding.file);
+    if (!target) {
+      throw new BadRequestException(this.explainUnreleasable(finding));
+    }
+
+    const releaseTag = await this.github.nextPatchTag(
+      target.repo,
+      target.tagPrefix,
+    );
+    const dispatchedAt = await this.github.dispatchWorkflow({
+      repo: target.repo,
+      workflow: target.workflow,
+      ref: BUG_FIX_SESSION_DEFAULT_REF,
+      inputs: { version_tag: releaseTag },
+    });
+
+    await this.findingRepository.update(finding.id, {
+      status: BugFindingStatus.RELEASING,
+      releaseTag,
+      releaseRunId: null,
+      releaseRunUrl: null,
+      releasedBy: userId,
+      releasedAt: null,
+      dispatchedAt,
+    });
+    await this.bugHunterService.appendFindingEvent({
+      findingId: finding.id,
+      repo: finding.repo,
+      stage: BugHuntEventStage.RELEASE_DISPATCHED,
+      summary: `Release ${releaseTag} of ${target.label} dispatched by user ${userId}.`,
+      payload: { userId, releaseTag, workflow: target.workflow },
+    });
+  }
+
+  /**
+   * Whether the "Release to production" button should be offered, and if not,
+   * why — so the drawer can explain rather than just hide a control the admin
+   * is looking for.
+   */
+  async releasability(finding: BugFinding): Promise<{
+    releasable: boolean;
+    target: string | null;
+    reason: string | null;
+  }> {
+    if (
+      finding.status !== BugFindingStatus.MERGED &&
+      finding.status !== BugFindingStatus.RELEASE_FAILED
+    ) {
+      return { releasable: false, target: null, reason: null };
+    }
+    if (!this.github.isConfigured) {
+      return {
+        releasable: false,
+        target: null,
+        reason:
+          'Releases are not configured on this environment (no GitHub token).',
+      };
+    }
+
+    // A coordinated fix is releasable only if EVERY step is, and the confirm
+    // dialog names the whole sequence — an admin approving this is approving
+    // several production deploys, not one, and should see that before they
+    // click.
+    const steps = await this.findingRepository.listChildren(finding.id);
+    if (steps.length) {
+      const targets = steps.map((step) => ({
+        step,
+        target: resolveReleaseTarget(step.repo, step.file),
+      }));
+      const unmappable = targets.find((entry) => !entry.target);
+      if (unmappable) {
+        return {
+          releasable: false,
+          target: null,
+          reason: `Step ${(unmappable.step.stepIndex ?? 0) + 1}: ${this.explainUnreleasable(unmappable.step)}`,
+        };
+      }
+      const pending = targets.filter(
+        (entry) => entry.step.status !== BugFindingStatus.RELEASED,
+      );
+      return {
+        releasable: true,
+        target: pending.map((entry) => entry.target!.label).join(' → '),
+        reason: null,
+      };
+    }
+
+    const target = resolveReleaseTarget(finding.repo, finding.file);
+    return target
+      ? { releasable: true, target: target.label, reason: null }
+      : {
+          releasable: false,
+          target: null,
+          reason: this.explainUnreleasable(finding),
+        };
+  }
+
+  // ── reconcile (scheduled) ────────────────────────────────────────────────
+
+  /**
+   * Closes the loop on both dispatches, since neither tells us anything at the
+   * moment it is made: `workflow_dispatch` returns 204 with no run id.
+   *
+   * Runs on the 5-minute tick. Everything it does is idempotent and derived
+   * from GitHub's own state, so a missed tick or a double-run costs nothing.
+   */
+  async reconcile(): Promise<void> {
+    if (!this.github.isConfigured) return;
+    await this.reconcileQueuedSessions();
+    await this.reconcileReleases();
+    // Order matters: the two passes above settle each step's own status from
+    // GitHub, and these two then read those settled statuses to decide what to
+    // start next. Running them first would advance a plan on stale state.
+    await this.advancePlans();
+    await this.advanceReleaseSequences();
+  }
+
+  /**
+   * Drives each coordinated fix through its plan: when the current step is
+   * merged, start the next one; when they are all merged, the parent becomes
+   * releasable; when one gets stuck, the whole plan stops there.
+   *
+   * Stopping the plan on a stuck step is deliberate. The steps are ordered by
+   * dependency, so carrying on past a failed one would build the later repos
+   * against something that never landed.
+   */
+  private async advancePlans(): Promise<void> {
+    const parents = await this.findingRepository.listCoordinatingParents();
+
+    for (const parent of parents) {
+      try {
+        const steps = await this.findingRepository.listChildren(parent.id);
+        if (!steps.length) continue;
+
+        const stuck = steps.find(
+          (step) =>
+            step.status === BugFindingStatus.FAILED ||
+            step.status === BugFindingStatus.NEEDS_INPUT ||
+            step.status === BugFindingStatus.DISMISSED,
+        );
+        if (stuck) {
+          await this.haltPlan(parent, stuck);
+          continue;
+        }
+
+        if (steps.every((step) => step.status === BugFindingStatus.MERGED)) {
+          await this.findingRepository.update(parent.id, {
+            status: BugFindingStatus.MERGED,
+          });
+          await this.notificationService.notify({
+            level: BugHunterNotificationLevel.ACTION_NEEDED,
+            title: `Ready to release: ${parent.title}`,
+            body: `All ${steps.length} steps are merged (${steps.map((s) => s.repo).join(' → ')}). Releasing deploys them to production in that order — open the bug to approve.`,
+            findingId: parent.id,
+            repo: parent.repo,
+          });
+          continue;
+        }
+
+        // Nothing in flight but not finished either: the step before is merged,
+        // so the next blocked one is now unblocked.
+        const inFlight = steps.some((step) =>
+          [
+            BugFindingStatus.QUEUED,
+            BugFindingStatus.FIXING,
+            BugFindingStatus.PR_OPENED,
+          ].includes(step.status),
+        );
+        if (inFlight) continue;
+
+        const next = steps.find(
+          (step) => step.status === BugFindingStatus.BLOCKED,
+        );
+        if (next?.repo) await this.dispatchFix(next, next.repo, null);
+      } catch (error) {
+        this.logger.warn(
+          `Could not advance plan for finding ${parent.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  /** A plan that cannot continue: the parent takes on the stuck step's meaning and the admin is told which step and why. */
+  private async haltPlan(parent: BugFinding, stuck: BugFinding): Promise<void> {
+    const needsAnswer = stuck.status === BugFindingStatus.NEEDS_INPUT;
+    await this.findingRepository.update(parent.id, {
+      status: needsAnswer
+        ? BugFindingStatus.NEEDS_INPUT
+        : BugFindingStatus.FAILED,
+      escalationQuestion: stuck.escalationQuestion ?? parent.escalationQuestion,
+    });
+    await this.notificationService.notify({
+      level: needsAnswer
+        ? BugHunterNotificationLevel.ACTION_NEEDED
+        : BugHunterNotificationLevel.PROBLEM,
+      title: needsAnswer
+        ? `Stuck on step ${(stuck.stepIndex ?? 0) + 1} (${stuck.repo}): ${parent.title}`
+        : `Step ${(stuck.stepIndex ?? 0) + 1} (${stuck.repo}) failed: ${parent.title}`,
+      body: needsAnswer
+        ? (stuck.escalationQuestion ??
+          'The step is waiting on an answer before it can continue.')
+        : `The remaining steps are on hold — they depend on this one. Nothing from this plan has been released.`,
+      findingId: parent.id,
+      repo: stuck.repo,
+    });
+  }
+
+  /**
+   * Walks a coordinated fix's releases, one repo at a time, only starting each
+   * once the one before it is green in production.
+   *
+   * A red step stops the sequence where it is. That leaves the plan
+   * half-deployed, which sounds bad and is in fact the safe outcome: the steps
+   * are ordered so that everything already live works without what follows it.
+   */
+  private async advanceReleaseSequences(): Promise<void> {
+    const parents = await this.findingRepository.listReleasingParents();
+
+    for (const parent of parents) {
+      try {
+        const steps = await this.findingRepository.listChildren(parent.id);
+        if (!steps.length) continue;
+
+        const failed = steps.find(
+          (step) => step.status === BugFindingStatus.RELEASE_FAILED,
+        );
+        if (failed) {
+          await this.findingRepository.update(parent.id, {
+            status: BugFindingStatus.RELEASE_FAILED,
+          });
+          await this.notificationService.notify({
+            level: BugHunterNotificationLevel.PROBLEM,
+            title: `Release stopped at step ${(failed.stepIndex ?? 0) + 1} (${failed.repo}): ${parent.title}`,
+            body: `Steps before it are live; the rest are on hold. Every step is merged to master either way — retry the release once ${failed.repo}'s pipeline is green.`,
+            findingId: parent.id,
+            repo: failed.repo,
+          });
+          continue;
+        }
+
+        if (steps.some((step) => step.status === BugFindingStatus.RELEASING)) {
+          continue;
+        }
+
+        const next = steps.find(
+          (step) => step.status !== BugFindingStatus.RELEASED,
+        );
+        if (next) {
+          await this.dispatchRelease(next, parent.releasedBy ?? 0);
+          continue;
+        }
+
+        await this.findingRepository.update(parent.id, {
+          status: BugFindingStatus.RELEASED,
+          releasedAt: new Date(),
+        });
+        await this.notificationService.notify({
+          level: BugHunterNotificationLevel.INFO,
+          title: `Live in production: ${parent.title}`,
+          body: `All ${steps.length} steps released in order — ${steps.map((s) => `${s.repo} ${s.releaseTag ?? ''}`.trim()).join(', ')}.`,
+          findingId: parent.id,
+          repo: parent.repo,
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Could not advance release sequence for finding ${parent.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  /**
+   * QUEUED means dispatched-but-not-yet-heard-from. Two jobs: attach the run
+   * URL once GitHub registers the run (so the drawer can link to it), and
+   * time out a session that never reported in at all — a runner that died on
+   * boot would otherwise leave the finding QUEUED forever, looking to an
+   * admin exactly like one that is still working.
+   */
+  private async reconcileQueuedSessions(): Promise<void> {
+    const queued = await this.findingRepository.find({
+      where: { status: BugFindingStatus.QUEUED },
+    });
+
+    for (const finding of queued) {
+      try {
+        if (!finding.sessionRunUrl && finding.repo && finding.dispatchedAt) {
+          const run = await this.github.findRunSince({
+            repo: finding.repo,
+            workflow: BUG_FIX_SESSION_WORKFLOW_FILE,
+            since: finding.dispatchedAt,
+          });
+          if (run) {
+            await this.findingRepository.update(finding.id, {
+              sessionRunUrl: run.htmlUrl,
+            });
+          }
+        }
+
+        const age = finding.dispatchedAt
+          ? Date.now() - finding.dispatchedAt.getTime()
+          : Number.POSITIVE_INFINITY;
+        if (age <= BUG_FIX_SESSION_DISPATCH_TIMEOUT_MS) continue;
+
+        await this.findingRepository.update(finding.id, {
+          status: BugFindingStatus.FAILED,
+        });
+        await this.bugHunterService.appendFindingEvent({
+          findingId: finding.id,
+          repo: finding.repo,
+          stage: BugHuntEventStage.ERROR,
+          summary:
+            'The fix session was dispatched but never reported in. Marked failed — start a new session to retry.',
+          payload: { dispatchedAt: finding.dispatchedAt },
+        });
+      } catch (error) {
+        // One stuck finding must never stop the rest of the tick.
+        this.logger.warn(
+          `Could not reconcile queued fix session ${finding.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  /** RELEASING → RELEASED / RELEASE_FAILED, read from the GitHub run's own conclusion. */
+  private async reconcileReleases(): Promise<void> {
+    const releasing = await this.findingRepository.find({
+      where: { status: BugFindingStatus.RELEASING },
+    });
+
+    for (const finding of releasing) {
+      try {
+        const target = resolveReleaseTarget(finding.repo, finding.file);
+        if (!target) continue;
+
+        let runId = finding.releaseRunId;
+        if (!runId && finding.dispatchedAt) {
+          const found = await this.github.findRunSince({
+            repo: target.repo,
+            workflow: target.workflow,
+            since: finding.dispatchedAt,
+          });
+          if (found) {
+            runId = found.id;
+            await this.findingRepository.update(finding.id, {
+              releaseRunId: found.id,
+              releaseRunUrl: found.htmlUrl,
+            });
+          }
+        }
+
+        const run = runId ? await this.github.getRun(target.repo, runId) : null;
+
+        if (run?.status === 'completed') {
+          await this.settleRelease(
+            finding,
+            run.conclusion === 'success',
+            run.htmlUrl,
+            run.conclusion,
+          );
+          continue;
+        }
+
+        // Still running, or we never managed to identify the run. Either way,
+        // stop waiting once the window is past — an unresolved release is
+        // reported as failed rather than left mid-flight, because "merged but
+        // not deployed" is the state an admin must act on.
+        const age = finding.dispatchedAt
+          ? Date.now() - finding.dispatchedAt.getTime()
+          : Number.POSITIVE_INFINITY;
+        if (age > BUG_RELEASE_TIMEOUT_MS) {
+          await this.settleRelease(
+            finding,
+            false,
+            finding.releaseRunUrl,
+            run ? 'timed out' : 'no matching GitHub Actions run found',
+          );
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Could not reconcile release for finding ${finding.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  private async settleRelease(
+    finding: BugFinding,
+    succeeded: boolean,
+    runUrl: string | null | undefined,
+    detail: string | null,
+  ): Promise<void> {
+    await this.findingRepository.update(finding.id, {
+      status: succeeded
+        ? BugFindingStatus.RELEASED
+        : BugFindingStatus.RELEASE_FAILED,
+      ...(succeeded ? { releasedAt: new Date() } : {}),
+      ...(runUrl ? { releaseRunUrl: runUrl } : {}),
+    });
+    await this.bugHunterService.appendFindingEvent({
+      findingId: finding.id,
+      repo: finding.repo,
+      stage: succeeded
+        ? BugHuntEventStage.RELEASED
+        : BugHuntEventStage.RELEASE_FAILED,
+      summary: succeeded
+        ? `Released to production as ${finding.releaseTag}.`
+        : `Release ${finding.releaseTag} failed (${detail ?? 'unknown'}). The fix is merged to master but is NOT deployed.`,
+      payload: { releaseTag: finding.releaseTag, runUrl, detail },
+    });
+    // A step inside a plan stays quiet: advanceReleaseSequences speaks once for
+    // the whole sequence, and one notification per repo would bury that.
+    if (finding.parentFindingId) return;
+
+    await this.notificationService.notify({
+      level: succeeded
+        ? BugHunterNotificationLevel.INFO
+        : BugHunterNotificationLevel.PROBLEM,
+      title: succeeded
+        ? `Live in production: ${finding.title}`
+        : `Release failed: ${finding.title}`,
+      body: succeeded
+        ? `Released as ${finding.releaseTag} in ${finding.repo}.`
+        : `Release ${finding.releaseTag} of ${finding.repo} went red (${detail ?? 'unknown'}). The fix is merged to master but is NOT deployed.`,
+      findingId: finding.id,
+      repo: finding.repo,
+    });
+  }
+
+  // ── message helpers ──────────────────────────────────────────────────────
+
+  private explainUnstartable(status: BugFindingStatus): string {
+    switch (status) {
+      case BugFindingStatus.QUEUED:
+      case BugFindingStatus.FIXING:
+        return 'A fix session is already running for this bug.';
+      case BugFindingStatus.MERGED:
+      case BugFindingStatus.RELEASING:
+      case BugFindingStatus.RELEASED:
+        return 'This bug is already fixed — releasing it is the next step, not fixing it again.';
+      case BugFindingStatus.RELEASE_FAILED:
+        return 'The fix is merged; only its release failed. Retry the release rather than starting a new fix session.';
+      case BugFindingStatus.DISMISSED:
+      case BugFindingStatus.REJECTED:
+        return `This bug was ${status} — reopen it before starting a fix session.`;
+      default:
+        return `Can't start a fix session from status ${status}.`;
+    }
+  }
+
+  private explainUnreleasable(finding: BugFinding): string {
+    if (finding.repo === 'ally-web') {
+      return (
+        'This fix could not be matched to one of the three ally-web apps ' +
+        `(file: ${finding.file ?? 'unknown'}). A change in libs/ ships in all ` +
+        'three, so release each affected app manually from GitHub Actions.'
+      );
+    }
+    if (finding.repo === 'ally-mobile') {
+      return 'ally-mobile releases through App Store / Play Store builds, which cannot be dispatched from here.';
+    }
+    return `No production-release workflow is configured for "${finding.repo ?? 'unknown repo'}".`;
+  }
+}

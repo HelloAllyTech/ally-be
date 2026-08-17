@@ -10,13 +10,19 @@ import { BugHuntRun } from './entity/bug-hunt-run.entity';
 import { BugHuntEvent } from './entity/bug-hunt-event.entity';
 import { BugHunterSettings } from './entity/bug-hunter-settings.entity';
 import { BugFinding } from './entity/bug-finding.entity';
+import { BugHunterNotification } from './entity/bug-hunter-notification.entity';
 import { BugHuntRunRepository } from './repository/bug-hunt-run.repository';
 import { BugHuntEventRepository } from './repository/bug-hunt-event.repository';
 import { BugHunterSettingsRepository } from './repository/bug-hunter-settings.repository';
 import { BugFindingRepository } from './repository/bug-finding.repository';
+import { BugHunterNotificationRepository } from './repository/bug-hunter-notification.repository';
 import { BugHunterService } from './service/bug-hunter.service';
 import { BugFindingService } from './service/bug-finding.service';
 import { BugHunterFinderDataService } from './service/bug-hunter-finder-data.service';
+import { BugFixSessionService } from './service/bug-fix-session.service';
+import { GithubActionsService } from './service/github-actions.service';
+import { BugHunterNotificationService } from './service/bug-hunter-notification.service';
+import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-session-scheduler-registration.service';
 
 /**
  * Bug Hunter: the kill switch, the comprehensive findings table, run history,
@@ -43,6 +49,7 @@ import { BugHunterFinderDataService } from './service/bug-hunter-finder-data.ser
       BugHuntEvent,
       BugHunterSettings,
       BugFinding,
+      BugHunterNotification,
     ]),
     NotificationModule,
     LogsModule,
@@ -53,10 +60,15 @@ import { BugHunterFinderDataService } from './service/bug-hunter-finder-data.ser
     BugHuntEventRepository,
     BugHunterSettingsRepository,
     BugFindingRepository,
+    BugHunterNotificationRepository,
     BugHunterService,
     BugFindingService,
     BugHunterFinderDataService,
+    GithubActionsService,
+    BugHunterNotificationService,
+    BugFixSessionService,
+    BugFixSessionSchedulerRegistrationService,
   ],
-  exports: [BugHunterService, BugFindingService],
+  exports: [BugHunterService, BugFindingService, BugHunterNotificationService],
 })
 export class BugHunterModule {}

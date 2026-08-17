@@ -114,6 +114,68 @@ export class BugFinding extends BaseWithoutTenantEntity {
   @Column({ name: 'decided_at', type: 'timestamp', nullable: true })
   decidedAt?: Date | null;
 
+  // ── coordinated multi-repo fixes (migration 1900000000000) ──────────────────
+
+  /**
+   * Set on a CHILD step, pointing at the bug it is one part of.
+   *
+   * A fix session only ever has one repo checked out, so a bug needing changes
+   * in two repos becomes a parent plus one child per repo. The parent is the
+   * bug as a human reported it; the children are the units of work. Children
+   * are created by `BugFixSessionService.recordPlan` from a plan the first fix
+   * agent reported, never by a finder.
+   */
+  @Column({ name: 'parent_finding_id', type: 'uuid', nullable: true })
+  parentFindingId?: string | null;
+
+  /**
+   * A child's position in its parent's plan, 0-based. THE ORDER IS THE POINT:
+   * steps run one at a time in this order and release in this order, because
+   * shipping a frontend before the backend field it reads exists is exactly
+   * the production break this whole feature is trying to avoid. Null on a
+   * parent and on any standalone finding.
+   */
+  @Column({ name: 'step_index', type: 'int', nullable: true })
+  stepIndex?: number | null;
+
+  /** What this step has to change, in the planning agent's words — shown as the plan in the parent's drawer. */
+  @Column({ name: 'step_summary', type: 'text', nullable: true })
+  stepSummary?: string | null;
+
+  // ── on-demand fix session + release to production (migration 1899000000000) ──
+
+  /**
+   * When the most recent dispatch — fix session or release — was accepted by
+   * GitHub. `POST .../workflows/{file}/dispatches` returns 204 with no body,
+   * so until the reconcile task resolves an actual run id this timestamp is
+   * the only thing identifying which Actions run was ours.
+   */
+  @Column({ name: 'dispatched_at', type: 'timestamp', nullable: true })
+  dispatchedAt?: Date | null;
+
+  /** Link to the GitHub Actions run doing the fixing, once resolved — the drawer's "watch it work" link. */
+  @Column({ name: 'session_run_url', type: 'text', nullable: true })
+  sessionRunUrl?: string | null;
+
+  /** The version tag this fix shipped under, e.g. `v1.4.2` or `admin-v2.1.0`. */
+  @Column({ name: 'release_tag', type: 'text', nullable: true })
+  releaseTag?: string | null;
+
+  /** GitHub Actions run id for the production-release workflow. `bigint` → string in JS. */
+  @Column({ name: 'release_run_id', type: 'bigint', nullable: true })
+  releaseRunId?: string | null;
+
+  @Column({ name: 'release_run_url', type: 'text', nullable: true })
+  releaseRunUrl?: string | null;
+
+  /** The admin who pressed "Release to production" — the human gate on an LLM-authored diff reaching prod. Integer users.id, no FK. */
+  @Column({ name: 'released_by', type: 'int', nullable: true })
+  releasedBy?: number | null;
+
+  /** When the release workflow finished green, NOT when it was dispatched. */
+  @Column({ name: 'released_at', type: 'timestamp', nullable: true })
+  releasedAt?: Date | null;
+
   /** Free-form: verify-vote tally, fix-attempt count, etc. */
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any> | null;

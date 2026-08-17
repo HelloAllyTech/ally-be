@@ -26,10 +26,13 @@ import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 import { BugHunterService } from '../service/bug-hunter.service';
 import { BugFindingService } from '../service/bug-finding.service';
+import { BugFixSessionService } from '../service/bug-fix-session.service';
+import { BugHunterNotificationService } from '../service/bug-hunter-notification.service';
 import { BugHunterSettings } from '../entity/bug-hunter-settings.entity';
 import { BugHuntRun } from '../entity/bug-hunt-run.entity';
 import { BugHuntEvent } from '../entity/bug-hunt-event.entity';
 import { BugFinding } from '../entity/bug-finding.entity';
+import { BugHunterNotification } from '../entity/bug-hunter-notification.entity';
 import {
   BugHunterSettingsDto,
   BugHuntEventDto,
@@ -42,6 +45,11 @@ import {
   ListBugFindingsResponseDto,
   UpdateBugHunterSettingsDto,
   AnswerBugFindingDto,
+  StartBugFixSessionDto,
+  BugFixStepDto,
+  BugHunterNotificationDto,
+  ListBugHunterNotificationsQueryDto,
+  ListBugHunterNotificationsResponseDto,
 } from '../dto/bug-hunter.dto';
 import {
   BUG_HUNT_SSE_PING_INTERVAL_MS,
@@ -69,6 +77,8 @@ export class BugHunterController {
   constructor(
     private readonly bugHunterService: BugHunterService,
     private readonly bugFindingService: BugFindingService,
+    private readonly bugFixSessionService: BugFixSessionService,
+    private readonly notificationService: BugHunterNotificationService,
   ) {}
 
   @Get('settings')
@@ -143,7 +153,81 @@ export class BugHunterController {
   ): Promise<BugFindingDetailDto> {
     const finding = await this.bugFindingService.getOne(id);
     const events = await this.bugHunterService.listEventsForFinding(id);
-    return { ...toFindingDto(finding), events: events.map(toEventDto) };
+    return this.toFindingDetailDto(finding, events);
+  }
+
+  @Post('findings/:id/fix-session')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary:
+      'Start a fix session for one bug — the on-demand path (super-duper-admin)',
+    description:
+      'Dispatches a Claude Code fix session in the target repo for exactly ' +
+      'this finding: it skips Discover and Verify (the bug is already known) ' +
+      'and runs the Fix phase alone — regression test, minimal fix, green ' +
+      'suite, PR, merge. Refused while Bug Hunter is OFF, and refused if a ' +
+      'session is already in flight. `repo` is required only when the finding ' +
+      "doesn't already have one. This does NOT deploy: releasing the merged " +
+      'fix is a separate, explicitly human step — see POST .../release.',
+  })
+  @ApiResponse({ status: 200, type: BugFindingDto })
+  async startFixSession(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: StartBugFixSessionDto,
+    @CurrentUser() user: TokenUser,
+  ): Promise<BugFindingDto> {
+    return toFindingDto(
+      await this.bugFixSessionService.start(id, user.id, body.repo),
+    );
+  }
+
+  @Post('findings/:id/release')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Release a merged fix to production (super-duper-admin)',
+    description:
+      "Dispatches the deployable's production-release workflow at the next " +
+      'patch version — for ally-be that means a production DB migration and an ' +
+      'ECS rollout, for the frontends an S3/CloudFront deploy. This is the ' +
+      'human gate on an LLM-authored diff reaching production, so the ' +
+      'triggering admin is recorded in `releasedBy`. Valid from MERGED, or ' +
+      'from RELEASE_FAILED to retry. The outcome is reconciled from the ' +
+      'GitHub run a few minutes later, not known at call time.',
+  })
+  @ApiResponse({ status: 200, type: BugFindingDto })
+  async releaseFinding(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: TokenUser,
+  ): Promise<BugFindingDto> {
+    return toFindingDto(await this.bugFixSessionService.release(id, user.id));
+  }
+
+  /**
+   * The drawer needs to know not just the finding but whether the release
+   * button applies to it — a judgement that depends on repo/file mapping and
+   * on whether this environment has GitHub credentials at all, neither of
+   * which the client can work out for itself.
+   */
+  private async toFindingDetailDto(
+    finding: BugFinding,
+    events: BugHuntEvent[],
+  ): Promise<BugFindingDetailDto> {
+    const [{ releasable, target, reason }, steps] = await Promise.all([
+      this.bugFixSessionService.releasability(finding),
+      this.bugFindingService.listSteps(finding.id),
+    ]);
+    return {
+      ...toFindingDto(finding),
+      events: events.map(toEventDto),
+      steps: steps.map(toStepDto),
+      releasable,
+      releaseTarget: target,
+      releaseBlockedReason: reason,
+    };
   }
 
   @Post('findings/:id/approve')
@@ -204,6 +288,62 @@ export class BugHunterController {
     return toFindingDto(
       await this.bugFindingService.recordAnswer(id, body.answer, user.id),
     );
+  }
+
+  @Get('notifications')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary:
+      "Bug Hunter's inbox — everything it wants to tell you (super-duper-admin)",
+    description:
+      'The only channel Bug Hunter speaks on. It used to post escalations, run ' +
+      'summaries and release outcomes to Slack; all of that lands here instead, ' +
+      'so there is one place to look. Newest first, read and unread together. ' +
+      '`unreadCount` drives the badge.',
+  })
+  @ApiResponse({ status: 200, type: ListBugHunterNotificationsResponseDto })
+  async listNotifications(
+    @Query() query: ListBugHunterNotificationsQueryDto,
+  ): Promise<ListBugHunterNotificationsResponseDto> {
+    const { items, unreadCount } = await this.notificationService.list(
+      query.limit ?? 50,
+      query.unreadOnly ?? false,
+    );
+    return { items: items.map(toNotificationDto), unreadCount };
+  }
+
+  @Post('notifications/:id/read')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Mark one notification read (super-duper-admin)',
+    description:
+      'Read is per-notification, not per-admin: a handful of people work this ' +
+      'same queue, and something one of them has dealt with should stop ' +
+      'shouting at the rest. Re-reading keeps the first reader on record.',
+  })
+  @ApiResponse({ status: 200, type: BugHunterNotificationDto })
+  async markNotificationRead(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: TokenUser,
+  ): Promise<BugHunterNotificationDto> {
+    return toNotificationDto(
+      await this.notificationService.markRead(id, user.id),
+    );
+  }
+
+  @Post('notifications/read-all')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({ summary: 'Clear the badge (super-duper-admin)' })
+  async markAllNotificationsRead(
+    @CurrentUser() user: TokenUser,
+  ): Promise<{ unreadCount: number }> {
+    return this.notificationService.markAllRead(user.id);
   }
 
   @Get('runs')
@@ -328,6 +468,11 @@ export function toFindingDto(row: BugFinding): BugFindingDto {
     escalationAnsweredAt: row.escalationAnsweredAt ?? null,
     decidedBy: row.decidedBy ?? null,
     decidedAt: row.decidedAt ?? null,
+    sessionRunUrl: row.sessionRunUrl ?? null,
+    releaseTag: row.releaseTag ?? null,
+    releaseRunUrl: row.releaseRunUrl ?? null,
+    releasedBy: row.releasedBy ?? null,
+    releasedAt: row.releasedAt ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -345,6 +490,37 @@ export function toRunDto(row: BugHuntRun): BugHuntRunDto {
     prOpenedCount: row.prOpenedCount,
     dismissedCount: row.dismissedCount,
     totalTokenCostUsd: row.totalTokenCostUsd,
+    createdAt: row.createdAt,
+  };
+}
+
+export function toStepDto(row: BugFinding): BugFixStepDto {
+  return {
+    id: row.id,
+    stepIndex: row.stepIndex ?? 0,
+    repo: row.repo ?? null,
+    stepSummary: row.stepSummary ?? null,
+    status: row.status,
+    prUrl: row.prUrl ?? null,
+    releaseTag: row.releaseTag ?? null,
+    sessionRunUrl: row.sessionRunUrl ?? null,
+    releaseRunUrl: row.releaseRunUrl ?? null,
+  };
+}
+
+export function toNotificationDto(
+  row: BugHunterNotification,
+): BugHunterNotificationDto {
+  return {
+    id: row.id,
+    findingId: row.findingId ?? null,
+    runId: row.runId ?? null,
+    repo: row.repo ?? null,
+    level: row.level,
+    title: row.title,
+    body: row.body ?? null,
+    readAt: row.readAt ?? null,
+    readBy: row.readBy ?? null,
     createdAt: row.createdAt,
   };
 }
