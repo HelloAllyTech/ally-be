@@ -5,6 +5,7 @@ import {
   Get,
   Param,
   ParseEnumPipe,
+  ParseIntPipe,
   ParseUUIDPipe,
   Post,
   Put,
@@ -40,6 +41,14 @@ import {
   TrackMediaUploadRequestDto,
   TrackMediaUploadResponseDto,
 } from '../dto/track-media-upload.dto';
+import {
+  MarkTrackTranslationReviewedDto,
+  SetTrackLanguagesDto,
+  SetTrackTranslationMediaDto,
+  TranslateTrackDto,
+  UpdateTrackTranslationFieldsDto,
+} from '../dto/track-translation.dto';
+import { TrackTranslationService } from '../service/track-translation.service';
 import { TrackSortBy, TrackSortOrder } from '../type/track.type';
 
 @ApiTags('Learn Tracks (Admin)')
@@ -51,6 +60,7 @@ export class TrackAdminController {
     private readonly trackService: TrackService,
     private readonly trackTenantService: TrackTenantService,
     private readonly trackMediaService: TrackMediaService,
+    private readonly trackTranslationService: TrackTranslationService,
   ) {}
 
   @ApiOperation({ summary: 'List tracks' })
@@ -109,13 +119,6 @@ export class TrackAdminController {
     return this.trackMediaService.deleteMedia(dto);
   }
 
-  @ApiOperation({ summary: 'Backfill translations for all tracks' })
-  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_TRACK])
-  @Post('tracks/make-translations')
-  async makeTranslationsForTracks(): Promise<boolean> {
-    return this.trackService.makeTranslationsForTracks();
-  }
-
   @ApiOperation({
     summary: 'Get track by id with full section/component tree',
   })
@@ -157,6 +160,140 @@ export class TrackAdminController {
     @Body() dto: UpsertTrackStructureDto,
   ): Promise<SuccessResponse> {
     return this.trackService.upsertStructure(id, dto);
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Translations
+   *
+   * All of these sit on EDIT_ADMIN_TRACK: whoever owns a course's content owns
+   * its translations, including publishing them.
+   * ---------------------------------------------------------------- */
+
+  @ApiOperation({
+    summary:
+      "The course's languages with per-language review state, plus every language available to add",
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_TRACK])
+  @Get('tracks/:id/translations')
+  async listTrackTranslations(@Param('id', ParseUUIDPipe) id: string) {
+    return this.trackTranslationService.listForTrack(id);
+  }
+
+  @ApiOperation({
+    summary:
+      'Set the languages this course should be available in. Newly added languages start translating immediately.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_TRACK])
+  @Put('tracks/:id/translations')
+  async setTrackLanguages(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetTrackLanguagesDto,
+  ) {
+    return this.trackTranslationService.setLanguages(id, dto.languageIds);
+  }
+
+  @ApiOperation({
+    summary:
+      'Run translation. Returns immediately — progress arrives on the /tracks/translations socket.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_TRACK])
+  @Post('tracks/:id/translations/translate')
+  async translateTrack(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: TranslateTrackDto,
+  ) {
+    return this.trackTranslationService.translate(id, dto.languageIds);
+  }
+
+  @ApiOperation({
+    summary:
+      'The course in one language: every translatable string beside its English source',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_TRACK])
+  @Get('tracks/:id/translations/:languageId')
+  async getTrackTranslation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('languageId', ParseIntPipe) languageId: number,
+  ) {
+    return this.trackTranslationService.getEditorView(id, languageId);
+  }
+
+  @ApiOperation({
+    summary:
+      'Save trainer edits. An edit counts as reviewed and is never overwritten by a later translation run.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_TRACK])
+  @Put('tracks/:id/translations/:languageId/fields')
+  async updateTrackTranslationFields(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('languageId', ParseIntPipe) languageId: number,
+    @Body() dto: UpdateTrackTranslationFieldsDto,
+  ) {
+    return this.trackTranslationService.updateFields(id, languageId, dto.edits);
+  }
+
+  @ApiOperation({
+    summary:
+      'Confirm machine output as-is. With no fields named, confirms everything awaiting review.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_TRACK])
+  @Post('tracks/:id/translations/:languageId/review')
+  async reviewTrackTranslation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('languageId', ParseIntPipe) languageId: number,
+    @Body() dto: MarkTrackTranslationReviewedDto,
+  ) {
+    return this.trackTranslationService.markReviewed(
+      id,
+      languageId,
+      dto.fields,
+    );
+  }
+
+  @ApiOperation({
+    summary: 'Set or clear a localised media URL for a video component',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_TRACK])
+  @Put('tracks/:id/translations/:languageId/media')
+  async setTrackTranslationMedia(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('languageId', ParseIntPipe) languageId: number,
+    @Body() dto: SetTrackTranslationMediaDto,
+  ): Promise<SuccessResponse> {
+    await this.trackTranslationService.setMediaUrl(
+      id,
+      languageId,
+      dto.trackItemId,
+      dto.url ?? null,
+    );
+    return { success: true };
+  }
+
+  @ApiOperation({
+    summary:
+      'Make this language available to learners. Rejected while any scoring field is unconfirmed.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_TRACK])
+  @Post('tracks/:id/translations/:languageId/publish')
+  async publishTrackTranslation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('languageId', ParseIntPipe) languageId: number,
+  ) {
+    return this.trackTranslationService.publish(id, languageId);
+  }
+
+  @ApiOperation({
+    summary:
+      'Take this language off the shelf. Learners mid-course fall back to English.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_ADMIN_TRACK])
+  @Post('tracks/:id/translations/:languageId/unpublish')
+  async unpublishTrackTranslation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('languageId', ParseIntPipe) languageId: number,
+  ): Promise<SuccessResponse> {
+    await this.trackTranslationService.unpublish(id, languageId);
+    return { success: true };
   }
 
   @ApiOperation({ summary: 'Delete track' })

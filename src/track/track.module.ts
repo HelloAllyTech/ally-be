@@ -28,6 +28,12 @@ import { TrackItemProgressRepository } from './repository/track-item-progress.re
 import { TrackQuizAttemptRepository } from './repository/track-quiz-attempt.repository';
 import { TrackAnnotationAttemptRepository } from './repository/track-annotation-attempt.repository';
 import { TrackJournalEntryRepository } from './repository/track-journal-entry.repository';
+import { TrackTranslationRepository } from './repository/track-translation.repository';
+import { TrackTranslationService } from './service/track-translation.service';
+import { TrackTranslationJobService } from './service/track-translation-job.service';
+import { TrackTranslationNotificationService } from './service/track-translation-notification.service';
+import { TrackLocalizationService } from './service/track-localization.service';
+import { TrackTranslationGateway } from './gateway/track-translation.gateway';
 
 @Module({
   imports: [
@@ -61,7 +67,18 @@ import { TrackJournalEntryRepository } from './repository/track-journal-entry.re
     TrackQuizAttemptRepository,
     TrackAnnotationAttemptRepository,
     TrackJournalEntryRepository,
+    TrackTranslationRepository,
+    TrackTranslationService,
+    TrackTranslationJobService,
+    TrackTranslationNotificationService,
+    TrackLocalizationService,
+    TrackTranslationGateway,
   ],
-  exports: [TrackSharedService, TrackProgressService, TrackMemoryService],
+  exports: [
+    TrackSharedService,
+    TrackProgressService,
+    TrackMemoryService,
+    TrackLocalizationService,
+  ],
 })
 export class TrackModule {}

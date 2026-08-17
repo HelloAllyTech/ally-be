@@ -35,6 +35,30 @@ export type TranslationProgressEvent =
 export type TranslationProgressCallback = (
   event: TranslationProgressEvent,
 ) => void;
+
+/** One string to translate, identified by a caller-owned key. */
+export interface KeyedTranslationEntry {
+  /** The caller's identifier. Never shown to the model. */
+  key: string;
+  text: string;
+  /**
+   * What the string is for, e.g. `HTML`, `SHORT_ANSWER`, `BLANK_TEMPLATE`.
+   * Drives both the model's per-field instructions and post-hoc validation.
+   */
+  kind?: string;
+  /** Background handed to the model but never translated or echoed. */
+  context?: string;
+}
+
+export interface KeyedTranslationOptions {
+  /** Compiled per-language glossary/style card injected into the prompt. */
+  glossary?: string;
+  /** DB prompt code to use instead of the course-content default. */
+  promptCode?: string;
+  batchSize?: number;
+  maxCharsPerBatch?: number;
+  onBatch?: (translated: number, total: number) => void;
+}
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
   DEFAULT_OPENAI_TRANSLATION_SYSTEM_PROMPT_TEMPLATE,
@@ -43,6 +67,8 @@ import {
   DEFAULT_OPENAI_SESSION_EVENT_TRANSLATION_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_TEXT_TRANSLATION_PROMPT_TEMPLATE,
   DEFAULT_OPENAI_TOOLTIP_TRANSLATION_PROMPT_TEMPLATE,
+  DEFAULT_OPENAI_TRACK_CONTENT_TRANSLATION_PROMPT_TEMPLATE,
+  OPENAI_TRACK_CONTENT_TRANSLATION_PROMPT_CODE,
 } from 'src/common/constants/openai-translations.constants';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
@@ -653,6 +679,257 @@ IMPORTANT:
     }
 
     return translatedResult;
+  }
+
+  /* ------------------------------------------------------------------
+   * Keyed-string translation (course content)
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Translates a flat set of keyed strings into ONE language.
+   *
+   * Differs from {@link translateObjectToLanguages} in two ways that matter for
+   * assessed content:
+   *
+   * 1. **It never silently falls back to English.** `translateObjectToLanguages`
+   *    returns the untouched source object when the model errors, the response
+   *    is unparseable, or validation fails — indistinguishable, to the caller,
+   *    from a successful translation. Storing that as "the Hindi version" would
+   *    publish English to Hindi learners. Here, a failure throws.
+   * 2. **The model never sees the caller's structure.** Keys are aliased to
+   *    opaque `f<n>` handles, so no id, answer key or array shape is exposed to
+   *    the model, and results can only ever be read back by key.
+   *
+   * Per-field integrity is checked before returning: `BLANK_TEMPLATE` fields
+   * must come back with every placeholder intact, and `HTML` fields with their
+   * tag sequence unchanged.
+   */
+  async translateKeyedStrings(
+    entries: KeyedTranslationEntry[],
+    targetLanguageCode: string,
+    options?: KeyedTranslationOptions,
+  ): Promise<Record<string, string>> {
+    if (!entries.length) return {};
+
+    const normalizedCode = this.resolveBaseLanguageCode(targetLanguageCode);
+    const languageName =
+      LANGUAGE_NAME_MAP[normalizedCode] ?? targetLanguageCode.trim();
+    const toneGuidance = LANGUAGE_TONE_GUIDELINES[normalizedCode] ?? '';
+
+    const promptCode =
+      options?.promptCode ?? OPENAI_TRACK_CONTENT_TRANSLATION_PROMPT_CODE;
+    const promptTemplate =
+      (await this.promptSharedService.getPromptByCode(promptCode)) ??
+      DEFAULT_OPENAI_TRACK_CONTENT_TRANSLATION_PROMPT_TEMPLATE;
+
+    const batches = this.batchKeyedEntries(
+      entries,
+      options?.batchSize ?? 25,
+      options?.maxCharsPerBatch ?? 9000,
+    );
+
+    const result: Record<string, string> = {};
+    let done = 0;
+
+    for (const batch of batches) {
+      const translated = await this.translateKeyedBatch(batch, {
+        languageName,
+        toneGuidance,
+        glossary: options?.glossary,
+        promptTemplate,
+        targetLanguageCode,
+      });
+      Object.assign(result, translated);
+      done += batch.length;
+      options?.onBatch?.(done, entries.length);
+    }
+
+    return result;
+  }
+
+  /**
+   * Splits entries so no single request carries too many fields or too much
+   * text. A batch that is too large degrades quality field-by-field long before
+   * it hits a token limit — long option lists start coming back paraphrased.
+   */
+  private batchKeyedEntries(
+    entries: KeyedTranslationEntry[],
+    maxEntries: number,
+    maxChars: number,
+  ): KeyedTranslationEntry[][] {
+    const batches: KeyedTranslationEntry[][] = [];
+    let current: KeyedTranslationEntry[] = [];
+    let chars = 0;
+
+    for (const entry of entries) {
+      const size = entry.text.length + (entry.context?.length ?? 0);
+      // A single oversized field (a long article body) gets its own request
+      // rather than being split — splitting HTML mid-document breaks tags.
+      if (
+        current.length &&
+        (current.length >= maxEntries || chars + size > maxChars)
+      ) {
+        batches.push(current);
+        current = [];
+        chars = 0;
+      }
+      current.push(entry);
+      chars += size;
+    }
+    if (current.length) batches.push(current);
+    return batches;
+  }
+
+  private async translateKeyedBatch(
+    batch: KeyedTranslationEntry[],
+    context: {
+      languageName: string;
+      toneGuidance: string;
+      glossary?: string;
+      promptTemplate: string;
+      targetLanguageCode: string;
+    },
+  ): Promise<Record<string, string>> {
+    // Opaque aliases: the model sees `f1`, never `content.questions[q3].prompt`.
+    const byAlias = new Map<string, KeyedTranslationEntry>();
+    batch.forEach((entry, index) => byAlias.set(`f${index + 1}`, entry));
+
+    let pending = [...byAlias.keys()];
+    const collected: Record<string, string> = {};
+    let lastError = '';
+
+    // One retry, narrowed to whatever is still missing or failed validation.
+    for (let attempt = 0; attempt < 2 && pending.length; attempt += 1) {
+      const payload = pending.map((alias) => {
+        const entry = byAlias.get(alias)!;
+        return {
+          key: alias,
+          kind: entry.kind ?? 'PROSE',
+          text: entry.text,
+          ...(entry.context ? { context: entry.context } : {}),
+        };
+      });
+
+      const prompt = this.renderTemplate(context.promptTemplate, {
+        languageName: context.languageName,
+        toneGuidance: context.toneGuidance,
+        glossary: context.glossary ?? '',
+        blankToken: '{{blankId}}',
+        inputJson: JSON.stringify(payload, null, 2),
+      });
+
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = await this.completeJson(prompt, context.targetLanguageCode);
+      } catch (error) {
+        lastError = (error as Error).message;
+        this.logger.warn(
+          `[OpenAITranslationsService] Keyed batch attempt ${attempt + 1} failed for ${context.targetLanguageCode}: ${lastError}`,
+        );
+        continue;
+      }
+
+      const stillPending: string[] = [];
+      for (const alias of pending) {
+        const entry = byAlias.get(alias)!;
+        const value = parsed[alias];
+        if (typeof value !== 'string' || value.trim() === '') {
+          stillPending.push(alias);
+          continue;
+        }
+        const problem = this.validateKeyedTranslation(entry, value);
+        if (problem) {
+          lastError = `${entry.key}: ${problem}`;
+          stillPending.push(alias);
+          continue;
+        }
+        collected[entry.key] = value.trim();
+      }
+      pending = stillPending;
+    }
+
+    if (pending.length) {
+      const paths = pending.map((alias) => byAlias.get(alias)!.key);
+      throw new Error(
+        `Translation to ${context.languageName} failed for ${paths.length} field(s): ` +
+          `${paths.slice(0, 5).join(', ')}${paths.length > 5 ? ', …' : ''}` +
+          (lastError ? ` (last error: ${lastError})` : ''),
+      );
+    }
+
+    return collected;
+  }
+
+  /** One JSON-mode completion. Throws rather than falling back to the source. */
+  private async completeJson(
+    systemPrompt: string,
+    targetLanguageCode: string,
+  ): Promise<Record<string, unknown>> {
+    const response = await this.client.chat.completions.create({
+      model: this.model,
+      temperature: this.getTemperatureForLanguage(targetLanguageCode),
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: systemPrompt },
+      ] as unknown as ChatCompletionMessageParam[],
+    });
+
+    this.recordUsage(response.usage, LlmTask.TRANSLATE_OBJECT, {
+      language: targetLanguageCode,
+    });
+
+    const content = response.choices?.[0]?.message?.content?.trim();
+    if (!content) throw new Error('empty response from the model');
+
+    const parsed = JSON.parse(content) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('response was not a JSON object');
+    }
+    return parsed as Record<string, unknown>;
+  }
+
+  /**
+   * Structural integrity of one translated field. Returns a reason string when
+   * the translation must be rejected, or `undefined` when it is usable.
+   */
+  private validateKeyedTranslation(
+    entry: KeyedTranslationEntry,
+    translated: string,
+  ): string | undefined {
+    if (entry.kind === 'BLANK_TEMPLATE') {
+      const tokens = entry.text.match(/\{\{\s*\w+\s*\}\}/g) ?? [];
+      const missing = tokens.filter((token) => !translated.includes(token));
+      if (missing.length) {
+        return `dropped blank placeholder(s) ${missing.join(', ')}`;
+      }
+    }
+
+    if (entry.kind === 'HTML') {
+      const tagNames = (value: string) =>
+        (value.match(/<\/?([a-zA-Z][\w-]*)[^>]*>/g) ?? []).map((tag) =>
+          tag.replace(/<\/?([a-zA-Z][\w-]*)[^>]*>/, (_, name: string) =>
+            name.toLowerCase(),
+          ),
+        );
+      const source = tagNames(entry.text);
+      const output = tagNames(translated);
+      if (source.join('|') !== output.join('|')) {
+        return `HTML tag sequence changed (${source.length} tags in, ${output.length} out)`;
+      }
+    }
+
+    if (entry.kind === 'SHORT_ANSWER') {
+      // A marking key that comes back as a sentence will never match what a
+      // learner types into a one-word blank.
+      const wordRatio =
+        translated.split(/\s+/).length /
+        Math.max(entry.text.split(/\s+/).length, 1);
+      if (wordRatio > 3 && translated.split(/\s+/).length > 4) {
+        return 'marking key came back as a phrase rather than an answer';
+      }
+    }
+
+    return undefined;
   }
 
   /** Best-effort token-usage capture from an OpenAI chat-completion response. */
