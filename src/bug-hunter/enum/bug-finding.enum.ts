@@ -38,6 +38,21 @@ export enum BugFindingSeverity {
  *   NEEDS_INPUT → FIXING       (an admin answered; the pipeline resumed)
  *   FIXING → PR_OPENED | MERGED | DISMISSED | FAILED
  *
+ * Plus the on-demand fix-session path (BugFixSessionService), which an admin
+ * drives one bug at a time from the drawer:
+ *
+ *   NEW | PENDING_APPROVAL | APPROVED | PR_OPENED | FAILED | NEEDS_INPUT
+ *      → QUEUED              (admin pressed "Start fix session"; GitHub
+ *                              Actions dispatch accepted, workflow not yet in)
+ *   QUEUED → FIXING           (the dispatched workflow reported in)
+ *   MERGED → RELEASING        (admin pressed "Release to production")
+ *   RELEASING → RELEASED | RELEASE_FAILED   (reconciled from the GitHub run)
+ *
+ * RELEASE_FAILED is deliberately distinct from FAILED: FAILED means the fix
+ * agent gave up and nothing landed, whereas RELEASE_FAILED means the fix IS
+ * merged to master and only the deploy went red — a completely different thing
+ * for an admin to act on, and re-releasable once CI is green.
+ *
  * NEW is also the resting state for a human-reported bug from the moment it's
  * filed until a hunt run triages it — see the source doc above.
  */
@@ -45,14 +60,59 @@ export enum BugFindingStatus {
   NEW = 'new',
   PENDING_APPROVAL = 'pending_approval',
   APPROVED = 'approved',
+  QUEUED = 'queued',
   FIXING = 'fixing',
   NEEDS_INPUT = 'needs_input',
+  /** A child step whose turn hasn't come yet — an earlier repo in the plan has to land first. */
+  BLOCKED = 'blocked',
+  /** A parent whose plan is being worked through, one repo at a time. Never a leaf's status. */
+  COORDINATING = 'coordinating',
   PR_OPENED = 'pr_opened',
   MERGED = 'merged',
+  RELEASING = 'releasing',
+  RELEASED = 'released',
+  RELEASE_FAILED = 'release_failed',
   DISMISSED = 'dismissed',
   REJECTED = 'rejected',
   FAILED = 'failed',
 }
+
+/**
+ * A parent's status is derived from its children, never set directly by a fix
+ * agent — see BugFixSessionService.syncParent. These are the only values a
+ * coordinated parent ever holds.
+ */
+export const BUG_FINDING_PARENT_STATUSES: BugFindingStatus[] = [
+  BugFindingStatus.COORDINATING,
+  BugFindingStatus.MERGED,
+  BugFindingStatus.RELEASING,
+  BugFindingStatus.RELEASED,
+  BugFindingStatus.RELEASE_FAILED,
+  BugFindingStatus.FAILED,
+  BugFindingStatus.NEEDS_INPUT,
+];
+
+/**
+ * Statuses an admin may start a fix session from.
+ *
+ * Deliberately broad — a NEW human-reported bug is the headline case (the
+ * whole point of the button is that a human already knows this is a real bug
+ * and doesn't want to wait for a nightly sweep to rediscover it), and FAILED /
+ * PR_OPENED are here so a stalled attempt can be retried without a fresh
+ * discovery pass. Excluded: MERGED and everything downstream of it (already
+ * fixed — releasing is the next step, not fixing), DISMISSED/REJECTED (a human
+ * or the verifier already said no; re-opening should be a deliberate separate
+ * act), and QUEUED/FIXING/RELEASING (a session is already in flight — see
+ * BugFixSessionService.start's double-dispatch guard).
+ */
+export const BUG_FINDING_FIX_SESSION_START_STATUSES: BugFindingStatus[] = [
+  BugFindingStatus.NEW,
+  BugFindingStatus.PENDING_APPROVAL,
+  BugFindingStatus.APPROVED,
+  BugFindingStatus.NEEDS_INPUT,
+  BugFindingStatus.PR_OPENED,
+  BugFindingStatus.FAILED,
+];
 
 /** Statuses a client may filter the table by, plus the "show everything" option. */
 export const BUG_FINDING_STATUS_FILTERS = [

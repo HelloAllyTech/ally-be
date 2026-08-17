@@ -6,8 +6,10 @@ import {
 import { DataSource } from 'typeorm';
 
 import { LoggerService } from 'src/logger/logger.service';
-import { NotificationService } from 'src/notification/service/notification.service';
 import { computeCostUsd } from 'src/analytics/constants/llm-pricing.constants';
+
+import { BugHunterNotificationService } from './bug-hunter-notification.service';
+import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
 
 import { BugHuntRun } from '../entity/bug-hunt-run.entity';
 import { BugHuntEvent } from '../entity/bug-hunt-event.entity';
@@ -37,7 +39,7 @@ export class BugHunterService {
     private readonly settingsRepository: BugHunterSettingsRepository,
     private readonly runRepository: BugHuntRunRepository,
     private readonly eventRepository: BugHuntEventRepository,
-    private readonly notificationService: NotificationService,
+    private readonly notificationService: BugHunterNotificationService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -177,11 +179,13 @@ export class BugHunterService {
     );
 
     if (params.stage === BugHuntEventStage.ESCALATED) {
-      await this.notificationService.notifyBugHunterEscalation({
+      await this.notificationService.notify({
+        level: BugHunterNotificationLevel.ACTION_NEEDED,
+        title: `Bug Hunter is stuck on ${run.repo}`,
+        body: params.summary,
+        findingId: params.findingId,
         runId: run.id,
         repo: run.repo,
-        summary: params.summary,
-        payload: params.payload,
       });
     }
 
@@ -189,10 +193,41 @@ export class BugHunterService {
   }
 
   /**
+   * Appends an event about one finding that is NOT tied to a live run.
+   *
+   * `appendEvent` above deliberately refuses to write into a closed run, which
+   * is right for pipeline reporting but wrong for the release lifecycle: an
+   * admin presses "Release to production" hours or days after the run that
+   * produced the fix has closed, and the reconcile task lands `released` later
+   * still. Those events carry `runId = null` and a `findingId`, exactly like
+   * `SETTINGS_CHANGED` does, so the drawer's per-finding timeline still reads
+   * continuously while no closed run is retroactively edited.
+   */
+  appendFindingEvent(params: {
+    findingId: string;
+    repo?: string | null;
+    stage: BugHuntEventStage;
+    summary: string;
+    payload?: Record<string, any>;
+  }): Promise<BugHuntEvent> {
+    return this.eventRepository.save(
+      this.eventRepository.create({
+        runId: null,
+        repo: params.repo ?? null,
+        stage: params.stage,
+        summary: params.summary,
+        payload: params.payload,
+        findingId: params.findingId,
+      }),
+    );
+  }
+
+  /**
    * Closes a run: stamps totals, snapshots cost from `llm_usage`, and — for
-   * anything other than a clean success with zero findings — posts a Slack
-   * summary. A healthy, empty night stays quiet by design (see the plan's
-   * "pull, not push" note); FAILED and any run with escalations always post.
+   * anything other than a clean success with zero findings — posts a summary
+   * to the Bug Hunter inbox. A healthy, empty night stays quiet by design (see
+   * the plan's "pull, not push" note); FAILED and any run with escalations
+   * always post.
    */
   async closeRun(
     id: string,
@@ -225,12 +260,18 @@ export class BugHunterService {
     const noteworthy =
       status === BugHuntRunStatus.FAILED || escalated || totals.foundCount > 0;
     if (noteworthy) {
-      await this.notificationService.notifyBugHunterRunSummary({
+      await this.notificationService.notify({
+        level:
+          status === BugHuntRunStatus.FAILED
+            ? BugHunterNotificationLevel.PROBLEM
+            : BugHunterNotificationLevel.INFO,
+        title:
+          status === BugHuntRunStatus.FAILED
+            ? `Run failed on ${closed.repo}`
+            : `Found ${totals.foundCount} bug${totals.foundCount === 1 ? '' : 's'} in ${closed.repo}`,
+        body: `Auto-merged ${totals.autoMergedCount} · PRs awaiting review ${totals.prOpenedCount} · Dismissed ${totals.dismissedCount} · Est. cost $${closed.totalTokenCostUsd}`,
         runId: closed.id,
         repo: closed.repo,
-        status: closed.status,
-        ...totals,
-        totalTokenCostUsd: closed.totalTokenCostUsd,
       });
     }
 

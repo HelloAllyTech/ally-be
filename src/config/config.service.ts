@@ -25,6 +25,33 @@ export class AppConfigService {
     return this.configService.get<string>('API_KEY', '');
   }
 
+  /**
+   * PAT (or GitHub App installation token) used to dispatch Bug Hunter fix
+   * sessions and production releases. Empty on environments that should not
+   * write into CI — every caller checks `GithubActionsService.isConfigured`
+   * and refuses cleanly rather than failing mid-dispatch.
+   */
+  get githubToken(): string {
+    return this.configService.get<string>('GITHUB_TOKEN', '');
+  }
+
+  get githubOrg(): string {
+    return this.configService.get<string>('GITHUB_ORG', 'HelloAllyTech');
+  }
+
+  /**
+   * Base URL a GitHub-hosted runner can reach this API on, handed to the
+   * fix-session workflow so it can report progress back. Falls back to the
+   * local port purely so a dev environment fails with an obvious connection
+   * error instead of a confusing undefined-URL one.
+   */
+  get publicApiBaseUrl(): string {
+    return this.configService.get<string>(
+      'PUBLIC_API_BASE_URL',
+      `http://localhost:${this.port}`,
+    );
+  }
+
   get isDevelopment(): boolean {
     return this.nodeEnv === 'development';
   }

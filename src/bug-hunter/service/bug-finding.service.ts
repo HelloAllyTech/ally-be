@@ -4,8 +4,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { NotificationService } from 'src/notification/service/notification.service';
-
+import { BugHunterNotificationService } from './bug-hunter-notification.service';
+import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
 import { BugFinding } from '../entity/bug-finding.entity';
 import {
   BugFindingRepository,
@@ -44,7 +44,7 @@ export interface RawFinding {
 export class BugFindingService {
   constructor(
     private readonly findingRepository: BugFindingRepository,
-    private readonly notificationService: NotificationService,
+    private readonly notificationService: BugHunterNotificationService,
   ) {}
 
   async getOne(id: string): Promise<BugFinding> {
@@ -65,6 +65,11 @@ export class BugFindingService {
 
   listApprovedForRepo(repo: string): Promise<BugFinding[]> {
     return this.findingRepository.listApprovedForRepo(repo);
+  }
+
+  /** A coordinated fix's ordered steps — empty for an ordinary single-repo bug. */
+  listSteps(parentFindingId: string): Promise<BugFinding[]> {
+    return this.findingRepository.listChildren(parentFindingId);
   }
 
   /**
@@ -149,9 +154,10 @@ export class BugFindingService {
    * refute, fixing on fix-start, pr_opened/merged/failed on fix-finish, and
    * needs_input + a question on genuine escalation.
    *
-   * Escalating fires the same Slack notification as a run-level escalation
-   * (see BugHunterService.appendEvent) — only once per distinct question, so
-   * a later run re-polling an already-asked finding doesn't re-notify.
+   * Escalating raises the same action-needed notification in the Bug Hunter
+   * inbox as a run-level escalation (see BugHunterService.appendEvent) — only
+   * once per distinct question, so a later run re-polling an already-asked
+   * finding doesn't re-notify.
    */
   async setStatus(
     id: string,
@@ -176,11 +182,13 @@ export class BugFindingService {
       patch.escalationQuestion &&
       patch.escalationQuestion !== before.escalationQuestion;
     if (isNewEscalation) {
-      await this.notificationService.notifyBugHunterEscalation({
-        runId: after.runId ?? 'unknown',
-        repo: after.repo ?? 'unknown',
-        summary: `Needs input on "${after.title}": ${patch.escalationQuestion}`,
-        payload: { findingId: after.id },
+      await this.notificationService.notify({
+        level: BugHunterNotificationLevel.ACTION_NEEDED,
+        title: `Needs your answer: ${after.title}`,
+        body: patch.escalationQuestion,
+        findingId: after.id,
+        runId: after.runId,
+        repo: after.repo,
       });
     }
 

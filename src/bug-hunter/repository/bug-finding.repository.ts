@@ -10,6 +10,10 @@ const OPEN_STATUSES: BugFindingStatus[] = [
   BugFindingStatus.NEW,
   BugFindingStatus.PENDING_APPROVAL,
   BugFindingStatus.APPROVED,
+  // A dispatched-but-not-yet-started fix session is as open as one already
+  // running — a sweep that rediscovers the bug in the meantime must touch that
+  // row, not open a second one alongside it.
+  BugFindingStatus.QUEUED,
   BugFindingStatus.FIXING,
   BugFindingStatus.NEEDS_INPUT,
   BugFindingStatus.PR_OPENED,
@@ -75,10 +79,42 @@ export class BugFindingRepository extends Repository<BugFinding> {
     });
   }
 
+  /** A coordinated fix's steps, always in plan order — the order IS the contract. */
+  listChildren(parentFindingId: string): Promise<BugFinding[]> {
+    return this.find({
+      where: { parentFindingId },
+      order: { stepIndex: 'ASC' },
+    });
+  }
+
+  /** Every parent whose plan is still being worked through — the orchestrator's queue. */
+  listCoordinatingParents(): Promise<BugFinding[]> {
+    return this.find({
+      where: { status: BugFindingStatus.COORDINATING },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
+  /** Parents mid-release, whose steps are being deployed one at a time. */
+  listReleasingParents(): Promise<BugFinding[]> {
+    return this.createQueryBuilder('f')
+      .where('f.status = :status', { status: BugFindingStatus.RELEASING })
+      .andWhere(
+        'EXISTS (SELECT 1 FROM bug_findings c WHERE c.parent_finding_id = f.id)',
+      )
+      .orderBy('f."createdAt"', 'ASC')
+      .getMany();
+  }
+
   async listPaginated(
     filter: ListBugFindingsFilter,
   ): Promise<{ items: BugFinding[]; count: number }> {
-    const qb = this.createQueryBuilder('f').orderBy('f."createdAt"', 'DESC');
+    // Child steps are deliberately absent from the main table: a coordinated
+    // fix should read as ONE bug there, and its steps belong in that bug's own
+    // drawer rather than as three near-identical rows next to it.
+    const qb = this.createQueryBuilder('f')
+      .where('f.parentFindingId IS NULL')
+      .orderBy('f."createdAt"', 'DESC');
     if (filter.status)
       qb.andWhere('f.status = :status', { status: filter.status });
     if (filter.source)

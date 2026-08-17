@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -12,6 +13,7 @@ import {
 import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
 
 import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
+import { AppConfigService } from 'src/config/config.service';
 
 import { BugHunterService } from '../service/bug-hunter.service';
 import { BugFindingService, RawFinding } from '../service/bug-finding.service';
@@ -24,10 +26,13 @@ import {
   BugHuntRunDetailDto,
   BugHuntEventDto,
   BugFindingDto,
+  RecordBugFixPlanDto,
 } from '../dto/bug-hunter.dto';
+import { BugFixSessionService } from '../service/bug-fix-session.service';
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import { BugFindingStatus } from '../enum/bug-finding.enum';
 import { toEventDto, toRunDto, toFindingDto } from './bug-hunter.controller';
+import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
 
 /**
  * The Bug Hunter MACHINE surface — start/report/close plus the findings
@@ -52,6 +57,8 @@ export class BugHunterPipelineController {
     private readonly bugHunterService: BugHunterService,
     private readonly bugFindingService: BugFindingService,
     private readonly finderDataService: BugHunterFinderDataService,
+    private readonly bugFixSessionService: BugFixSessionService,
+    private readonly configService: AppConfigService,
   ) {}
 
   @Get('pipeline/prod-logs')
@@ -84,6 +91,70 @@ export class BugHunterPipelineController {
   ): Promise<{ items: BugFindingDto[] }> {
     const items = await this.bugFindingService.listApprovedForRepo(repo);
     return { items: items.map(toFindingDto) };
+  }
+
+  @Get('pipeline/findings/:id')
+  @ApiOperation({
+    summary:
+      'The one finding a dispatched fix session was started for (pipeline only)',
+    description:
+      'A fix session is handed only its finding id as a workflow input — it ' +
+      'reads the bug itself, plus any escalation answer already on record ' +
+      'from a previous attempt, from here.',
+  })
+  async getFindingForPipeline(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<BugFindingDto> {
+    return toFindingDto(await this.bugFindingService.getOne(id));
+  }
+
+  @Get('pipeline/findings/:id/fix-prompt')
+  @ApiOperation({
+    summary:
+      'The full fix-session protocol for this finding, as plain text (pipeline only)',
+    description:
+      "Each repo's `bug-fix-session.yml` fetches this and hands it straight " +
+      'to Claude Code, which is what keeps those four workflow files thin and ' +
+      'genuinely identical instead of four drifting copies of the same ' +
+      'protocol. The prompt is finding-specific: it embeds the bug, the repo ' +
+      'commands, any answer an admin already gave, and whether merging is ' +
+      'permitted (it is not, for a guarded path). Returns `text/plain` — the ' +
+      'runner pipes it, it is not JSON for a client to parse.',
+  })
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  async getFixPrompt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('runId') runId: string,
+    @Query('repo') repo?: string,
+  ): Promise<string> {
+    const finding = await this.bugFindingService.getOne(id);
+    return buildFixSessionPrompt({
+      finding,
+      repo: repo ?? finding.repo ?? '',
+      runId,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+    });
+  }
+
+  @Post('pipeline/findings/:id/plan')
+  @ApiOperation({
+    summary:
+      'Report that this bug spans several repos, as an ordered plan (pipeline only)',
+    description:
+      'A fix session only has one repo checked out, so on finding that a ' +
+      'complete fix needs work elsewhere it reports the plan here instead of ' +
+      'landing half of it. Bug Hunter turns each step into its own finding and ' +
+      'drives them one at a time, then releases them in the same order. ' +
+      '**`steps` must be in dependency order** — the step that has to ship ' +
+      'first comes first. Idempotent: a retry returns the existing plan rather ' +
+      'than creating a second set of steps.',
+  })
+  async recordPlan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RecordBugFixPlanDto,
+  ): Promise<{ steps: BugFindingDto[] }> {
+    const steps = await this.bugFixSessionService.recordPlan(id, body.steps);
+    return { steps: steps.map(toFindingDto) };
   }
 
   @Post('runs')

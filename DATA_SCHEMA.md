@@ -326,29 +326,108 @@ picks the default up rather than leaving it undefined.
 
 ### 3.12 Bug Hunter (`bug-hunter`)
 
-The autonomous find-and-fix agent's kill switch, run history and event transcript. The actual
-finding/fixing logic is an external Claude Code pipeline (`.claude/workflows/bug-hunt.mjs` in the
-workspace root) that authenticates and reports every step back over `POST /v1/bug-hunter/runs`
-`.../report` `.../close` — this module owns none of that logic itself, only the state. Findings the
-agent surfaces for review, and human-reported bugs it reads, both live in `analytics_suggestions`
-(§3.8, `suggested_type='bug'`) and `roadmap_opportunities` (`type='bug'`) respectively — no separate
-ledger table.
+The autonomous find-and-fix agent's kill switch, comprehensive bug table, run history and event
+transcript. The actual finding/fixing logic is an external Claude Code pipeline
+(`.claude/workflows/bug-hunt.mjs` for a repo-wide sweep, `.claude/workflows/bug-fix-session.mjs` for
+one bug, both in the workspace root) that authenticates and reports every step back over
+`POST /v1/bug-hunter/runs` `.../report` `.../close` — this module owns none of that logic itself,
+only the state.
 
 Off by default: `bug_hunter_settings` is a singleton row (`id` pinned to 1 by a CHECK constraint),
-seeded `enabled=false` by the introducing migration. Both trigger paths (nightly cron, on-demand)
-call `POST /v1/bug-hunter/runs`, which reads this row before doing anything else; a disabled call
-gets a `bug_hunt_runs` row stamped `status='skipped_disabled'` and nothing further runs.
+seeded `mode='off'`. Every trigger path calls `POST /v1/bug-hunter/runs`, which reads this row before
+doing anything else; a disabled call gets a `bug_hunt_runs` row stamped `status='skipped_disabled'`
+and nothing further runs.
 
 | Table | Base | Key columns | Notes |
 |-------|------|-------------|-------|
-| `bug_hunter_settings` | BaseWithoutTenant | `id` (smallint, **CHECK id=1** — singleton), `enabled` (bool, default false), `updated_by` (int, nullable) | The kill switch. Flipping it also writes a `bug_hunt_events` row (`stage='settings_changed'`, `run_id` NULL) so on/off history sits in the same timeline as run activity |
-| `bug_hunt_runs` | BaseWithoutTenant | `id` (uuid), `trigger` (`scheduled`/`manual`), `repo`, `status` (`running`/`completed`/`failed`/`skipped_disabled`), `finished_at`, `found_count`/`auto_merged_count`/`pr_opened_count`/`dismissed_count`, `total_token_cost_usd` (numeric, snapshotted from `llm_usage` at close — not the source of truth), `metadata` (jsonb) | One row per (repo, trigger) sweep — a five-repo nightly run is five rows, never merged into one |
-| `bug_hunt_events` | BaseWithoutTenant | `id` (uuid), `run_id` (uuid, nullable FK → `bug_hunt_runs` ON DELETE CASCADE), `repo`, `stage` (`finder_result`/`verify`/`fix_attempt`/`test_written`/`doc_updated`/`pr_opened`/`merged`/`escalated`/`error`/`skipped_disabled`/`settings_changed`), `summary` (text), `payload` (jsonb — structured detail only, **never raw log/PII content**), `suggestion_id` (uuid, nullable FK → `analytics_suggestions` ON DELETE SET NULL) | **Append-only** transcript, modeled on `copilot_messages` (§3.9). Deliberately not `audit_logs` (§3.8) — that table is a HIPAA compliance log with its own taxonomy; this is unrelated operational telemetry |
+| `bug_hunter_settings` | BaseWithoutTenant | `id` (smallint, **CHECK id=1** — singleton), `mode` (`off`/`manual`/`ai`, default `off`), `updated_by` (int, nullable) | The kill switch. Flipping it also writes a `bug_hunt_events` row (`stage='settings_changed'`, `run_id` NULL) so on/off history sits in the same timeline as run activity |
+| `bug_findings` | BaseWithoutTenant | `id` (uuid), `run_id` (uuid, nullable FK → `bug_hunt_runs` ON DELETE SET NULL), `repo`, `source` (`test_failure`/`lint_error`/`code_review`/`production_log`/`reported_bug`/`analytics_suggestion`), `title`/`description`/`file`/`evidence`, `severity`, `proven`, `touches_guarded_path`, `reported_bug_id` (uuid, nullable FK → `roadmap_opportunities` ON DELETE SET NULL), `dedupe_key`, `status`, `pr_url`, escalation `question`/`answer`/`answered_by`/`answered_at`, `decided_by`/`decided_at`, **fix-session + release:** `dispatched_at`, `session_run_url`, `release_tag`, `release_run_id` (bigint), `release_run_url`, `released_by` (int), `released_at`, **coordinated fixes:** `parent_finding_id` (uuid, nullable self-FK ON DELETE CASCADE), `step_index` (int), `step_summary`, `metadata` (jsonb) | One row per bug from any source — the comprehensive table the admin tab renders. A row can exist before any run has looked at it: `RoadmapOpportunityService.create` inserts one (`source='reported_bug'`, `status='new'`) the moment a human files a bug. `(repo, dedupe_key)` is what stops a still-open bug getting a second row across nights |
+| `bug_hunt_runs` | BaseWithoutTenant | `id` (uuid), `trigger` (`scheduled`/`manual`/`fix_session`), `repo`, `status` (`running`/`completed`/`failed`/`skipped_disabled`), `finished_at`, `found_count`/`auto_merged_count`/`pr_opened_count`/`dismissed_count`, `total_token_cost_usd` (numeric, snapshotted from `llm_usage` at close — not the source of truth), `metadata` (jsonb) | One row per (repo, trigger) sweep — a five-repo nightly run is five rows, never merged into one. `trigger='fix_session'` is the on-demand single-bug variant; its totals only ever sum to one finding |
+| `bug_hunt_events` | BaseWithoutTenant | `id` (uuid), `run_id` (uuid, nullable FK → `bug_hunt_runs` ON DELETE CASCADE), `finding_id` (uuid, nullable FK → `bug_findings` ON DELETE SET NULL), `repo`, `stage` (`finder_result`/`verify`/`fix_attempt`/`test_written`/`doc_updated`/`pr_opened`/`merged`/`escalated`/`error`/`skipped_disabled`/`settings_changed`/`session_dispatched`/`release_dispatched`/`released`/`release_failed`/`plan_created`/`step_started`), `summary` (text), `payload` (jsonb — structured detail only, **never raw log/PII content**), `suggestion_id` (uuid, nullable FK → `analytics_suggestions` ON DELETE SET NULL) | **Append-only** transcript, modeled on `copilot_messages` (§3.9). Deliberately not `audit_logs` (§3.8) — that table is a HIPAA compliance log with its own taxonomy; this is unrelated operational telemetry. Release-lifecycle rows carry `run_id` NULL (like `settings_changed`) because they land long after the producing run closed |
+
+| `bug_hunter_notifications` | BaseWithoutTenant | `id` (uuid), `finding_id` (uuid, nullable FK → `bug_findings` ON DELETE CASCADE), `run_id` (uuid, nullable FK → `bug_hunt_runs` ON DELETE SET NULL), `repo`, `level` (`info`/`problem`/`action_needed`), `title`, `body`, `read_at`, `read_by` (int) | Bug Hunter's **only** outbound channel, rendered as an inbox in the admin tab. It used to post escalations, run summaries and release outcomes to Slack via NotificationService; those three methods were deleted in migration 1900000000000's change. NOT the platform `notifications` domain — those address one end user and drive email/push, these address whoever is minding Bug Hunter and never leave the tab. Read is per-notification, not per-admin: several people work the same queue |
+
+**A bug that needs more than one repo becomes a parent plus ordered children.**
+A fix session only ever has one repo checked out, so on finding that a complete
+fix spans repos the agent reports a plan instead of landing half of it; each step
+becomes its own `bug_findings` row under `parent_finding_id`, and
+`(parent_finding_id, step_index)` is UNIQUE. **The order is the contract**: steps
+are fixed one at a time and released one at a time in `step_index` order, because
+a frontend live before the backend field it reads is the production break the
+whole design exists to prevent. Child rows are excluded from the main findings
+list (`parent_finding_id IS NULL`) so a coordinated fix reads as one bug, with its
+steps in that bug's drawer. The parent's status is derived from its children by
+`BugFixSessionService`, never set by a fix agent.
+
+**`bug_findings.status` is the whole lifecycle**, and its CHECK constraint is the authority:
+`new` → `pending_approval` → `approved` (Manual mode's admin gate) or straight to `fixing` (AI mode);
+`queued` → `fixing` on the on-demand path; then `pr_opened` → `merged` → `releasing` → `released`,
+with `dismissed`/`rejected`/`failed`/`release_failed` as the unhappy ends. `blocked`
+is a plan step whose turn hasn't come; `coordinating` is a parent working through
+its plan. `release_failed` is
+deliberately distinct from `failed`: the former means the fix IS on master and only the deploy went
+red, which is a completely different thing for an admin to act on.
+
+**Two dispatches, reconciled not awaited.** "Start fix session" and "Release to production" both fire
+a GitHub `workflow_dispatch`, which answers 204 with **no run id** — so `dispatched_at` is the only
+correlation key at the moment of the call, and the `bug-fix-session-reconcile` 5-minute scheduled
+task is what later resolves the run, attaches its URL, and settles `releasing` into
+`released`/`release_failed` from the run's own conclusion. Nothing in the request path waits on CI.
 
 Cost is read, not stored twice: every LLM call inside the pipeline calls `LlmUsageService.record()`
 tagged `task=LlmTask.BUG_HUNTER` and `metadata.runId`, so `llm_usage` (§3.8) stays the one source of
 truth for token cost and `bug_hunt_runs.total_token_cost_usd` is just a snapshot taken at close time
 for the admin tab's run-history table to render without a join.
+
+---
+
+### 3.13 Product Roadmap (`product-roadmap`)
+
+Coin-voted idea and bug board, migrated from a standalone Supabase app (migration `1871000000000`
+onward). **Not multi-tenant** — this is Ally's own internal roadmap, so every table here extends
+`BaseWithoutTenant` and carries no `tenantId`.
+
+Two things about this domain surprise people. First, **there is no `priorityScore` column**: the score
+is `SUM(coins)` computed as a SQL aggregate on every read, because the code most likely to get the
+arithmetic wrong is split/merge (which moves hundreds of allocation rows in one transaction) and a
+wrong counter can't be recovered without a rebuild job. If it ever needs to be faster the next step is
+a MATERIALIZED VIEW, never a counter. Second, **`productGoal` and `owner` are FKs BY NAME**
+(`ON UPDATE CASCADE`), not by id, because saved-view state filters on names — swapping in ids would
+make eight migrated views silently match nothing.
+
+| Table | Base | Key columns | Notes |
+|-------|------|-------------|-------|
+| `roadmap_opportunities` | BaseWithoutTenant | `id` (uuid), `description` (text, CHECK ≤1000 & non-blank), `type` (`idea`/`bug`), `stage` (`new`/`prioritised`/`under_development`/`released`/`archived`), `productGoal` (text, FK **by name** → `roadmap_product_goals.name` ON UPDATE CASCADE ON DELETE RESTRICT), `owner` (text, nullable, legacy FK by name ON DELETE SET NULL), `ownerUserId` (int, nullable FK → `users` ON DELETE SET NULL), `prd`/`claudePrompt` (text, CHECK ≤20000), `releasedAt`, **month board:** `plannedMonth` (varchar(7), nullable, CHECK `^[0-9]{4}-(0[1-9]\|1[0-2])$`), `boardPosition` (int, default 0), **Weaviate state:** `embeddingStatus`/`embeddingAttempts`/`embeddedAt`/`textHash`, `createdBy`/`updatedBy` (int), `deletedAt` | The atomic unit. **Soft delete**, which is why a delete MUST also remove the vector — Postgres filters `deletedAt IS NULL`, Weaviate has no idea, and a missed delete makes duplicate detection propose a deleted row forever. `releasedAt` is stamped only on the *transition* into `released` and never re-stamped; ~173 of 280 migrated released rows have it NULL because the source trigger behaved the same way, and **nothing may backfill it** |
+| `roadmap_allocations` | BaseWithoutTenant | `id` (uuid), `userId` (int), `opportunityId` (uuid FK ON DELETE CASCADE), `periodKey` (varchar(7), CHECK `^[0-9]{4}-(0[1-9]\|1[0-2])$`), `coins` (int, CHECK 0–100). UNIQUE `(userId, opportunityId, periodKey)` | One person's coins on one opportunity in one month. No `deletedAt` — `coins=0` deletes the row. `periodKey` is **server-computed in UTC and never accepted from a client**: the source let any period be written, which was unbounded score inflation since the score sums every period forever. The 100-coin monthly cap is enforced twice, by `roadmap_enforce_monthly_cap()` (migration `1871000000001`) and by the service |
+| `roadmap_product_goals` | BaseWithoutTenant | `id` (uuid), `name` (text UNIQUE), `position` (int, default 0) | FK target, so no soft delete |
+| `roadmap_opportunity_owners` | BaseWithoutTenant | `id` (uuid), `name` (text UNIQUE), `position` (int, default 0) | Legacy taxonomy. New assignments use `ownerUserId` and must be an Ally super-admin |
+| `roadmap_opportunity_comments` | BaseWithoutTenant | `id` (uuid), `opportunityId` (uuid), `body` (text, CHECK ≤500), `createdBy`/`updatedBy`, `deletedAt` | |
+| `roadmap_interview_notes` | BaseWithoutTenant | `id` (uuid), `title`, `interviewee`, `transcript`, `summary`, `createdBy`/`updatedBy`, `deletedAt` | LLM-summarised user interviews |
+| `roadmap_release_notes` | BaseWithoutTenant | `id` (uuid), `title` (nullable), `content` (text), `opportunityIds` (uuid[], default `'{}'`), `createdBy`/`updatedBy`, `deletedAt` | The uuid[] is a deliberate denormalised snapshot, not a join table — a published note should keep saying what it was generated from even after those opportunities change |
+| `roadmap_saved_views` | BaseWithoutTenant | `id` (uuid), `name`, `state` (jsonb), `pinned` (bool), `createdBy`/`updatedBy`, `deletedAt` | Read visibility is row-level: your own, plus anything pinned. `state` includes the board `layout`, so a saved view remembers whether it was a table or a month board |
+| `roadmap_user_tab_order` | BaseWithoutTenant | `id` (uuid), `userId` (int UNIQUE), `viewIds` (uuid[], default `'{}'`) | Per-user tab order, intentionally tolerant of stale and missing ids |
+| `roadmap_user_map` | — | `sourceUserId` (uuid PK), `sourceEmail`, `sourceEmailLower` (UNIQUE), `sourceRole`, `allyUserId` (int), `createdByMigration` (bool) | Supabase→Ally identity crosswalk from the import |
+
+**Month boards: a card's lane is `plannedMonth`, until it ships.** `plannedMonth` is an intention and
+`releasedAt` is an outcome, so they are separate columns and the board derives the lane it shows —
+release month once `stage='released'` with a non-NULL `releasedAt`, otherwise `plannedMonth`, otherwise
+the Unscheduled lane. That rule lives in exactly two places, `effectiveMonthOf()` in
+`util/roadmap-month.util.ts` for the write path and API response, and `EFFECTIVE_MONTH_SQL` in
+`repository/roadmap-opportunity.repository.ts` for grouping the read; **change both together**.
+Collapsing them into one field would erase the discrepancy the board exists to surface — planned for
+March, shipped in May. A shipped card therefore can't be dragged to another month (422), only
+reordered within its release month.
+
+`boardPosition` ships with **no backfill on purpose**: DEFAULT 0 leaves every row tied and the board's
+ORDER BY falls through to `priorityScore DESC`, so every lane is already coin-sorted on day one and
+dragging progressively replaces that with a human order, lane by lane. Gaps and duplicate positions are
+harmless — the ORDER BY has deterministic tiebreaks — so a reorder rewrites one lane rather than
+maintaining a globally sparse sequence.
+
+> ⚠️ **`CHECK` constraints on `roadmap_opportunities` are hand-written and TypeORM cannot see them.**
+> `migration:generate` will not produce `CHK_roadmap_opps_stage` or `CHK_roadmap_opps_planned_month`,
+> and running it against this table proposes dropping them. Adding a `stage` value or changing the
+> month format means dropping and recreating the constraint in a hand-written migration.
 
 ---
 
@@ -404,6 +483,8 @@ stores share a key rather than matching on content); `Conversation.chat_id` ↔ 
 | A real client chat/call + transcript | `chats`, `messages`, `call_details` |
 | Daily activity / engagement for analytics | `user_daily_scores`, `badge_users` |
 | Analytics dashboard config | `dashboards` (current), `dashboard` (legacy) |
+| An internal roadmap idea or bug + its coin votes | `roadmap_opportunities`, `roadmap_allocations` (score is `SUM(coins)`, never a column) |
+| Which month an idea or bug is planned for | `roadmap_opportunities.plannedMonth` + `boardPosition` — but the lane shown is `effectiveMonthOf()`, which prefers `releasedAt` once shipped |
 | What the WhatsApp bot can answer from | `kb_documents`, `kb_document_chunks` (+ Weaviate `KnowledgeChunk`) |
 | What a worker asked the bot and what it replied | `wa_conversations`, `wa_messages` (bodies blanked past `retentionDays`) |
 | Why the bot declined a question | `wa_unanswered_questions` — `reason` + `top_similarity`/`hit_count` |

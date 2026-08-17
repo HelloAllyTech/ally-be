@@ -1,0 +1,144 @@
+# Bug Hunter — on-demand fix session
+#
+# Dispatched by ally-be when a SUPER_DUPER_ADMIN presses "Start fix session" on
+# a bug in the admin console's Bug Hunter tab. Fixes exactly one already-known
+# bug: regression test first, minimal fix, full suite green, PR, and — unless
+# the change touches a guarded path (migrations, auth, payments) — merge to
+# master.
+#
+# This file is deliberately thin and identical in every repo that has it. The
+# whole protocol lives in ally-be (`src/bug-hunter/constants/bug-fix-prompt.ts`)
+# and is fetched at run time, so it cannot drift between the four copies of
+# this workflow and a change to it takes effect on the next dispatch rather
+# than after four PRs.
+#
+# It does NOT deploy. Promoting the merged fix to production is a separate,
+# explicitly human click in the same admin tab, which dispatches
+# production-release.yaml.
+#
+# Required repository secrets:
+#   ANTHROPIC_API_KEY  — for Claude Code
+#   ALLY_BE_API_KEY    — ally-be's platform API_KEY, for the pipeline endpoints
+#                        (same key ally-ai / ally-ai-learn already use inbound)
+#   BUG_HUNTER_GH_TOKEN — a token that may push branches, open PRs and merge
+#                        here. NOT the default GITHUB_TOKEN: a PR opened with
+#                        that token does not trigger other workflows, so CI
+#                        would never run on the fix.
+# Required repository variable:
+#   ALLY_BE_API_URL    — base URL of ally-be, e.g. https://api.example.com
+
+name: Bug Hunter — Fix Session
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      finding_id:
+        required: true
+        type: string
+        description: "bug_findings.id this session is for"
+      run_id:
+        required: true
+        type: string
+        description: "bug_hunt_runs.id to report progress against"
+      repo:
+        required: true
+        type: string
+        description: "Repo slug, e.g. ally-be (used to pick test/lint commands)"
+      api_base_url:
+        required: true
+        type: string
+        description: "Base URL of ally-be, for the pipeline callbacks"
+
+concurrency:
+  # One session per bug. A double-click in the admin tab, or a retry while the
+  # first attempt is still running, must not put two agents in the same repo
+  # racing to fix and merge the same thing.
+  group: bug-fix-session-${{ inputs.finding_id }}
+  cancel-in-progress: false
+
+jobs:
+  fix:
+    name: Fix one bug
+    runs-on: ubuntu-22.04
+    # Generous but bounded: the protocol includes a 20-minute wait for an admin
+    # to answer an escalated product question, on top of a full test suite run.
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ secrets.BUG_HUNTER_GH_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure git identity
+        run: |
+          git config user.name "ally-bug-hunter[bot]"
+          git config user.email "bug-hunter@helloally.ai"
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Fetch the fix protocol for this bug
+        id: prompt
+        env:
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -euo pipefail
+          # ally-be builds the prompt: it embeds this bug, this repo's test and
+          # lint commands, any answer an admin already gave on a previous
+          # attempt, and whether merging is permitted for this finding.
+          curl -sSf \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/findings/${{ inputs.finding_id }}/fix-prompt?runId=${{ inputs.run_id }}&repo=${{ inputs.repo }}" \
+            -o /tmp/fix-prompt.txt
+          test -s /tmp/fix-prompt.txt
+          echo "Fetched $(wc -c < /tmp/fix-prompt.txt) bytes of protocol."
+
+      - name: Run the fix session
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+          GH_TOKEN: ${{ secrets.BUG_HUNTER_GH_TOKEN }}
+        run: |
+          set -euo pipefail
+          claude -p "$(cat /tmp/fix-prompt.txt)" \
+            --permission-mode acceptEdits \
+            --allowedTools "Bash,Read,Write,Edit,Glob,Grep" \
+            --max-turns 120 \
+            --output-format text
+
+      - name: Report a runner-level failure
+        # The protocol has ally-be told about every outcome it can reach by
+        # itself. This covers the ones it cannot: the runner dying, npm ci
+        # failing, the API key being wrong. Without it the finding would sit at
+        # QUEUED until the reconcile task timed it out 30 minutes later with no
+        # explanation of what went wrong.
+        if: failure()
+        env:
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ inputs.api_base_url }}/api/v1/bug-hunter/runs/${{ inputs.run_id }}/report" \
+            -d "{\"repo\":\"${{ inputs.repo }}\",\"stage\":\"error\",\"summary\":\"The fix session runner failed before finishing. See the GitHub Actions run for details.\",\"findingId\":\"${{ inputs.finding_id }}\",\"payload\":{\"runUrl\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}}" || true
+          curl -sS -X PATCH \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/findings/${{ inputs.finding_id }}" \
+            -d '{"status":"failed"}' || true
