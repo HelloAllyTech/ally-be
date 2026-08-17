@@ -27,6 +27,24 @@ export class OpportunityResponseDto {
   @ApiPropertyOptional({ nullable: true }) claudePrompt?: string | null;
   @ApiPropertyOptional({ nullable: true }) releasedAt?: Date | null;
 
+  /** The month somebody planned this into, 'YYYY-MM'. Null means Unscheduled. */
+  @ApiPropertyOptional({ nullable: true }) plannedMonth?: string | null;
+
+  /** Manual rank within its lane, ascending. Only meaningful against its own lane. */
+  @ApiProperty() boardPosition!: number;
+
+  /**
+   * The lane the card actually appears in — its release month once shipped, else plannedMonth.
+   * Derived, never stored; sent so the client never has to re-implement the rule.
+   */
+  @ApiPropertyOptional({ nullable: true }) effectiveMonth?: string | null;
+
+  /**
+   * True when the lane is a fact rather than a plan, so the card must not be dragged. The client
+   * uses this to make the card undraggable instead of letting a drop fail with a 422.
+   */
+  @ApiProperty() monthPinned!: boolean;
+
   /** SUM(coins) over ALL users and ALL periods. Computed in SQL, never stored. */
   @ApiProperty() priorityScore!: number;
   /** The CALLER's coins on this opportunity in the CURRENT period only. */
@@ -52,6 +70,89 @@ export class GetOpportunitiesResponseDto {
 
   /** Server-computed 'YYYY-MM'. The client must never derive this itself. */
   @ApiProperty() periodKey!: string;
+}
+
+export class MonthLaneDto {
+  @ApiProperty({
+    nullable: true,
+    description: "'YYYY-MM', or null for the Unscheduled lane",
+  })
+  month!: string | null;
+
+  @ApiProperty({ type: [OpportunityResponseDto] })
+  items!: OpportunityResponseDto[];
+
+  /**
+   * How many cards this lane holds in total, which is NOT items.length when laneLimit truncates
+   * it. Sent so a truncated lane can say "showing 50 of 63" — a lane that silently stops at its
+   * limit is a board that lies about what is planned.
+   */
+  @ApiProperty() total!: number;
+}
+
+export class MonthBoardBoundsDto {
+  @ApiProperty({
+    nullable: true,
+    description: 'Earliest month any opportunity sits in; null when none are scheduled',
+  })
+  earliest!: string | null;
+
+  @ApiProperty({ nullable: true }) latest!: string | null;
+}
+
+export class MonthBoardResponseDto {
+  @ApiProperty({
+    type: [MonthLaneDto],
+    description:
+      'One entry per month in the requested window, INCLUDING empty months — a gap in a plan is ' +
+      'information, and collapsing empty lanes would make March look adjacent to June.',
+  })
+  months!: MonthLaneDto[];
+
+  @ApiProperty({
+    type: MonthLaneDto,
+    description:
+      'Everything with no month. Always present and always returned whole, because this is the ' +
+      'lane people drag OUT of and hiding it would make the board unusable on first load.',
+  })
+  unscheduled!: MonthLaneDto;
+
+  @ApiProperty({ type: MonthBoardBoundsDto })
+  bounds!: MonthBoardBoundsDto;
+
+  @ApiProperty({ description: "First month lane in this response, 'YYYY-MM'" })
+  from!: string;
+
+  @ApiProperty({ description: "Last month lane in this response, 'YYYY-MM'" })
+  to!: string;
+
+  /** Unfiltered MAX(priorityScore) — same stable-scale contract as the table's maxScore. */
+  @ApiProperty() maxScore!: number;
+
+  /** Server-computed 'YYYY-MM' coin period. The client must never derive this itself. */
+  @ApiProperty() periodKey!: string;
+
+  @ApiProperty({
+    description:
+      'True when the board hit its global row bound and some lanes are incomplete beyond their ' +
+      'reported totals. Surfaced rather than swallowed.',
+  })
+  truncated!: boolean;
+}
+
+export class MonthBoardMoveResponseDto {
+  @ApiProperty() opportunityId!: string;
+  @ApiProperty({ nullable: true }) plannedMonth!: string | null;
+  @ApiProperty({ nullable: true }) effectiveMonth!: string | null;
+
+  @ApiProperty({
+    type: [String],
+    description:
+      'The ids whose position was actually rewritten, in their new order. Excludes ids the ' +
+      'client sent that no longer belong to this lane, so a stale drag is visible as a short list ' +
+      'rather than a silent success.',
+  })
+  reordered!: string[];
 }
 
 export class CoinBudgetDto {

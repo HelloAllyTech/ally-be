@@ -33,6 +33,31 @@ export const ROADMAP_LIST_DEFAULTS = {
 } as const;
 
 /**
+ * Month board tuning.
+ *
+ * The default window is asymmetric on purpose. One month back is enough to see what just
+ * shipped without turning the board into an archive; four forward is about as far as this team
+ * actually commits, and a board of empty lanes reads as a plan nobody has made. The window is a
+ * READ concern only — nothing stops a card being planned into a month outside it, and the
+ * response reports `bounds` so the UI can say so rather than silently hiding the card.
+ *
+ * MAX_ROWS is a safety bound, not a product limit: at a few hundred opportunities the whole
+ * board fits comfortably, and if it is ever hit the response says so via `truncated` instead of
+ * quietly dropping lanes.
+ */
+export const ROADMAP_BOARD_DEFAULTS = {
+  WINDOW_MONTHS_BACK: 1,
+  WINDOW_MONTHS_FORWARD: 4,
+  /** How far a prev/next click moves the window. */
+  WINDOW_STEP_MONTHS: 3,
+  LANE_LIMIT: 50,
+  MAX_LANE_LIMIT: 200,
+  MAX_ROWS: 1000,
+  /** Cap on one reorder payload, so a lane rewrite cannot be unbounded. */
+  MAX_LANE_IDS: 500,
+} as const;
+
+/**
  * Duplicate detection, ported from the standalone app's /api/ai/duplicates route.
  * Vector top-N then an LLM confirmation pass that returns at most MAX_CONFIRMED.
  *

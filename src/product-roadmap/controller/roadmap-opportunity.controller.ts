@@ -31,6 +31,8 @@ import {
   CreateOpportunityDto,
   ListOpportunitiesQueryDto,
   MergeOpportunitiesDto,
+  MonthBoardQueryDto,
+  MoveOpportunityDto,
   SetAllocationDto,
   SplitOpportunityDto,
   UpdateOpportunityDto,
@@ -38,6 +40,8 @@ import {
 import {
   CoinBudgetDto,
   GetOpportunitiesResponseDto,
+  MonthBoardMoveResponseDto,
+  MonthBoardResponseDto,
   OpportunityResponseDto,
   RoadmapFacetsDto,
   SetAllocationResponseDto,
@@ -45,6 +49,7 @@ import {
 import { RoadmapOpportunityService } from '../service/roadmap-opportunity.service';
 import { RoadmapAllocationService } from '../service/roadmap-allocation.service';
 import { RoadmapSplitMergeService } from '../service/roadmap-split-merge.service';
+import { RoadmapBoardService } from '../service/roadmap-board.service';
 
 /**
  * The board itself.
@@ -63,6 +68,7 @@ export class RoadmapOpportunityController {
     private readonly opportunityService: RoadmapOpportunityService,
     private readonly allocationService: RoadmapAllocationService,
     private readonly splitMergeService: RoadmapSplitMergeService,
+    private readonly boardService: RoadmapBoardService,
   ) {}
 
   @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
@@ -80,6 +86,48 @@ export class RoadmapOpportunityController {
     @Query() query: ListOpportunitiesQueryDto,
   ): Promise<GetOpportunitiesResponseDto> {
     return this.opportunityService.list(user.id, query);
+  }
+
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @Get('board')
+  @ApiOperation({
+    summary: 'The month board: the same opportunities, grouped into month lanes',
+    description:
+      'A card sits in the month it was PLANNED into, except once it has shipped, when it sits in ' +
+      'the month it actually shipped — so a slipped plan stays visible instead of being ' +
+      'rewritten. Windowed by month rather than paginated by offset, because a lane has to be ' +
+      'complete to be honest. Every month in the window is returned including empty ones, each ' +
+      'lane reports its true total even when laneLimit truncates it, and unscheduled cards are ' +
+      'always in scope. Accepts every filter the table accepts.',
+  })
+  @ApiResponse({ status: 200, type: MonthBoardResponseDto })
+  board(
+    @CurrentUser() user: TokenUser,
+    @Query() query: MonthBoardQueryDto,
+  ): Promise<MonthBoardResponseDto> {
+    return this.boardService.getBoard(user.id, query);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Put('board/lane')
+  @ApiOperation({
+    summary: 'Move a card into a month lane and set that lane’s order',
+    description:
+      'Idempotent: orderedIds is the full resulting order of the destination lane, not a delta, ' +
+      'so two people dragging in one lane cannot interleave into an order neither of them saw. ' +
+      'Ids that no longer belong to the lane are skipped rather than rejected, and the response ' +
+      'lists what was actually reordered. Moving a RELEASED card out of its release month is a ' +
+      '422 — reordering it within that month is allowed. Manage-gated, matching PATCH.',
+  })
+  @ApiResponse({ status: 200, type: MonthBoardMoveResponseDto })
+  moveOnBoard(
+    @CurrentUser() user: TokenUser,
+    @Body() dto: MoveOpportunityDto,
+  ): Promise<MonthBoardMoveResponseDto> {
+    return this.boardService.move(user.id, dto);
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])

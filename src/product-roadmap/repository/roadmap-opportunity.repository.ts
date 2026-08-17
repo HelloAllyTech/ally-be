@@ -1,8 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { RoadmapOpportunity } from '../entity/roadmap-opportunity.entity';
 import { RoadmapEmbeddingStatus } from '../enum/roadmap-opportunity.enum';
-import { ROADMAP_LIST_DEFAULTS } from '../constants/product-roadmap.constants';
+import {
+  ROADMAP_BOARD_DEFAULTS,
+  ROADMAP_LIST_DEFAULTS,
+} from '../constants/product-roadmap.constants';
 
 /** A row as projected by listOpportunities — the entity plus three computed columns. */
 export interface RoadmapOpportunityRow extends RoadmapOpportunity {
@@ -16,6 +19,28 @@ export interface RoadmapOpportunityRow extends RoadmapOpportunity {
    */
   ownerDisplay: string | null;
 }
+
+/** A board row: the list projection plus the lane it belongs to, resolved in SQL. */
+export interface RoadmapBoardRow extends RoadmapOpportunityRow {
+  effectiveMonth: string | null;
+}
+
+/**
+ * The lane a card belongs to, in SQL.
+ *
+ * MUST stay equivalent to effectiveMonthOf() in roadmap-month.util.ts — that one serves the
+ * write path and the API response, this one groups and windows the read. They are duplicated
+ * rather than unified because the alternative is a generated column or a view, and either would
+ * put the rule somewhere `migration:generate` can silently rewrite it.
+ *
+ * to_char on a `timestamp without time zone` reads the stored value with no conversion, which is
+ * what makes this agree with currentPeriodKey(): both end up on the UTC month.
+ */
+const EFFECTIVE_MONTH_SQL = `CASE
+  WHEN opp."stage" = 'released' AND opp."releasedAt" IS NOT NULL
+    THEN to_char(opp."releasedAt", 'YYYY-MM')
+  ELSE opp."plannedMonth"
+END`;
 
 export interface ListOpportunitiesOptions {
   /** Caller's Ally users.id — scopes the myCoins projection. */
@@ -40,6 +65,22 @@ export interface ListOpportunitiesOptions {
   order?: 'ASC' | 'DESC';
   limit?: number;
   offset?: number;
+}
+
+export interface ListBoardOptions
+  extends Omit<ListOpportunitiesOptions, 'sortBy' | 'order' | 'limit' | 'offset'> {
+  /** Inclusive month window, 'YYYY-MM'. Resolved by the service, never defaulted here. */
+  from: string;
+  to: string;
+}
+
+export interface ListBoardResult {
+  rows: RoadmapBoardRow[];
+  /** Exact card count per lane, keyed by month (null = Unscheduled). */
+  totals: Map<string | null, number>;
+  maxScore: number;
+  /** True when the global row cap bit and some lanes hold fewer rows than their total. */
+  truncated: boolean;
 }
 
 export interface ListOpportunitiesResult {
@@ -95,50 +136,8 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
       offset = 0,
     } = options;
 
-    const qb = this.createQueryBuilder('opp')
-      .select('opp.*')
-      .addSelect('COALESCE(alloc.score, 0)::int', 'priorityScore')
-      .addSelect('COALESCE(mine.coins, 0)::int', 'myCoins')
-      .addSelect('COALESCE(cmt.cnt, 0)::int', 'commentCount')
-      .addSelect('COALESCE(owner_user.name, opp."owner")', 'ownerDisplay')
-      .leftJoin(
-        `(SELECT a."opportunityId", SUM(a.coins)::int AS score
-            FROM roadmap_allocations a
-           GROUP BY a."opportunityId")`,
-        'alloc',
-        'alloc."opportunityId" = opp.id',
-      )
-      .leftJoin('users', 'owner_user', 'owner_user.id = opp."ownerUserId"')
-      .leftJoin(
-        'roadmap_allocations',
-        'mine',
-        'mine."opportunityId" = opp.id AND mine."userId" = :userId AND mine."periodKey" = :periodKey',
-        { userId, periodKey },
-      )
-      .leftJoin(
-        `(SELECT c."opportunityId", COUNT(*) AS cnt
-            FROM roadmap_opportunity_comments c
-           WHERE c."deletedAt" IS NULL
-           GROUP BY c."opportunityId")`,
-        'cmt',
-        'cmt."opportunityId" = opp.id',
-      )
-      .where('opp."deletedAt" IS NULL');
-
+    const qb = this.projectedQuery(userId, periodKey);
     this.applyFilters(qb, options);
-
-    // HAVING-style filters on the projected aggregate must go through the raw expression,
-    // since "priorityScore" is not a column.
-    if (options.priorityMin !== undefined) {
-      qb.andWhere('COALESCE(alloc.score, 0) >= :priorityMin', {
-        priorityMin: options.priorityMin,
-      });
-    }
-    if (options.priorityMax !== undefined) {
-      qb.andWhere('COALESCE(alloc.score, 0) <= :priorityMax', {
-        priorityMax: options.priorityMax,
-      });
-    }
 
     const count = await qb.getCount();
 
@@ -154,6 +153,177 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
       .getRawMany<RoadmapOpportunityRow>();
 
     return { items, count, maxScore: await this.getMaxScore() };
+  }
+
+  /**
+   * The month board read: every card in the requested month window, plus everything unscheduled.
+   *
+   * WHY NO OFFSET. The table paginates by offset because a flat list can be read in pages. A
+   * lane cannot: filling the first 50 rows of an offset window would stuff January and leave
+   * February through May looking like nobody has planned anything. So the board bounds by MONTH
+   * (a small, meaningful window the user steps through) and takes a global row cap purely as a
+   * safety net.
+   *
+   * Ordering puts unscheduled FIRST (NULLS FIRST) on purpose: it is the lane people drag out of,
+   * so if the row cap ever bites it must bite a future month rather than the backlog. Truncation
+   * is reported, never swallowed — lane totals come from a separate exact aggregate, so a capped
+   * lane still knows how many cards it is hiding.
+   *
+   * Backed by idx_roadmap_opps_month_board.
+   */
+  async listBoard(options: ListBoardOptions): Promise<ListBoardResult> {
+    const { userId, periodKey, from, to } = options;
+
+    const qb = this.projectedQuery(userId, periodKey);
+    this.applyFilters(qb, options);
+    this.applyMonthWindow(qb, from, to);
+
+    const rows = await qb
+      .addSelect(EFFECTIVE_MONTH_SQL, 'effectiveMonth')
+      .orderBy(EFFECTIVE_MONTH_SQL, 'ASC', 'NULLS FIRST')
+      .addOrderBy('opp."boardPosition"', 'ASC')
+      // Falls through to coins while a lane has never been hand-ordered — this is what lets
+      // boardPosition ship with DEFAULT 0 and no backfill and still look sorted on day one.
+      .addOrderBy('"priorityScore"', 'DESC')
+      .addOrderBy('opp."createdAt"', 'DESC')
+      .addOrderBy('opp.id', 'ASC')
+      .limit(ROADMAP_BOARD_DEFAULTS.MAX_ROWS + 1)
+      .getRawMany<RoadmapBoardRow>();
+
+    const truncated = rows.length > ROADMAP_BOARD_DEFAULTS.MAX_ROWS;
+    if (truncated) rows.length = ROADMAP_BOARD_DEFAULTS.MAX_ROWS;
+
+    return {
+      rows,
+      totals: await this.getLaneTotals(options),
+      maxScore: await this.getMaxScore(),
+      truncated,
+    };
+  }
+
+  /**
+   * Exact per-lane counts, independent of the row cap and of laneLimit.
+   *
+   * Separate query rather than counting the fetched rows: a lane that shows 50 of 63 has to know
+   * about the 13, and counting what we happened to fetch would make the number agree with the
+   * truncation instead of with the database.
+   */
+  private async getLaneTotals(
+    options: ListBoardOptions,
+  ): Promise<Map<string | null, number>> {
+    const qb = this.projectedQuery(options.userId, options.periodKey);
+    this.applyFilters(qb, options);
+    this.applyMonthWindow(qb, options.from, options.to);
+
+    const rows = await qb
+      .select(EFFECTIVE_MONTH_SQL, 'month')
+      .addSelect('COUNT(*)::int', 'total')
+      .groupBy(EFFECTIVE_MONTH_SQL)
+      .getRawMany<{ month: string | null; total: number }>();
+
+    return new Map(rows.map((r) => [r.month, Number(r.total)]));
+  }
+
+  /**
+   * Earliest and latest month holding any opportunity at all.
+   *
+   * Deliberately UNFILTERED, by the same argument as maxScore: this drives whether the window's
+   * prev/next arrows are live, and arrows that appeared and vanished as you typed in the search
+   * box would be unusable. Unscheduled rows are excluded — they have no month to bound.
+   */
+  async getMonthBounds(): Promise<{
+    earliest: string | null;
+    latest: string | null;
+  }> {
+    const [row] = await this.dataSource.query<
+      { earliest: string | null; latest: string | null }[]
+    >(
+      `SELECT MIN(m) AS earliest, MAX(m) AS latest
+         FROM (SELECT CASE
+                        WHEN opp."stage" = 'released' AND opp."releasedAt" IS NOT NULL
+                          THEN to_char(opp."releasedAt", 'YYYY-MM')
+                        ELSE opp."plannedMonth"
+                      END AS m
+                 FROM roadmap_opportunities opp
+                WHERE opp."deletedAt" IS NULL) s
+        WHERE m IS NOT NULL`,
+    );
+    return { earliest: row?.earliest ?? null, latest: row?.latest ?? null };
+  }
+
+  /**
+   * Rewrite one lane's manual order in a single statement.
+   *
+   * `unnest(...) WITH ORDINALITY` turns the client's array into (id, position) pairs, so a
+   * 60-card lane is one UPDATE rather than 60 — the taxonomy reorder loops one query per row, but
+   * it deals in a handful of goals, not a lane.
+   *
+   * The lane predicate is what makes a stale drag safe: an id the client thought was here but
+   * which somebody else has since moved simply does not match, so it keeps its own lane's
+   * position instead of being pulled into this one. `IS NOT DISTINCT FROM` rather than `=` because
+   * the Unscheduled lane's month is NULL, and `= NULL` would make every unscheduled reorder a
+   * silent no-op.
+   *
+   * Returns the ids it actually touched, so the caller can report a short list rather than
+   * claiming success for cards it did not move.
+   *
+   * Takes an EntityManager so the move that precedes it shares one transaction: the lane
+   * predicate reads the row's month, so committing the move separately would leave a window where
+   * the card is in its new lane holding its old lane's position.
+   */
+  async reorderLane(
+    orderedIds: string[],
+    month: string | null,
+    updatedBy: number,
+    manager: EntityManager = this.manager,
+  ): Promise<string[]> {
+    if (orderedIds.length === 0) return [];
+
+    const result = await manager.query<
+      [{ id: string }[], number] | { id: string }[]
+    >(
+      `UPDATE roadmap_opportunities AS o
+          SET "boardPosition" = v.pos,
+              "updatedBy"     = $3
+         FROM (SELECT id, (ord - 1)::int AS pos
+                 FROM unnest($1::uuid[]) WITH ORDINALITY AS t(id, ord)) AS v
+        WHERE o.id = v.id
+          AND o."deletedAt" IS NULL
+          AND (CASE
+                 WHEN o."stage" = 'released' AND o."releasedAt" IS NOT NULL
+                   THEN to_char(o."releasedAt", 'YYYY-MM')
+                 ELSE o."plannedMonth"
+               END) IS NOT DISTINCT FROM $2
+      RETURNING o.id`,
+      [orderedIds, month, updatedBy],
+    );
+
+    // ⚠️ For an UPDATE ... RETURNING, TypeORM's `query()` resolves to the TUPLE
+    // [rows, affectedRowCount], not to rows. Mapping the tuple directly yields
+    // [undefined, undefined], so `reordered` came back empty for every successful drag while the
+    // positions were in fact written correctly — a silent wrong answer, not a crash. Same trap the
+    // copilot's appendMessage hit; normalise before touching it.
+    const rows = Array.isArray(result[0])
+      ? (result[0] as { id: string }[])
+      : (result as { id: string }[]);
+
+    const touched = new Set(rows.map((r) => r.id));
+    // Returned in the CLIENT's order, not the database's — the caller is echoing back the order
+    // it just applied, and RETURNING order is not defined.
+    return orderedIds.filter((id) => touched.has(id));
+  }
+
+  private applyMonthWindow(
+    qb: ReturnType<RoadmapOpportunityRepository['createQueryBuilder']>,
+    from: string,
+    to: string,
+  ): void {
+    // Month keys are 'YYYY-MM', so lexicographic BETWEEN IS chronological — no date casting.
+    // Unscheduled rows are always in scope: they are the lane you drag out of.
+    qb.andWhere(
+      `(${EFFECTIVE_MONTH_SQL} IS NULL OR ${EFFECTIVE_MONTH_SQL} BETWEEN :monthFrom AND :monthTo)`,
+      { monthFrom: from, monthTo: to },
+    );
   }
 
   /** Unfiltered MAX(priorityScore) — see ListOpportunitiesResult.maxScore. */
@@ -240,6 +410,47 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
       .getMany();
   }
 
+  /**
+   * The shared projection: the entity plus priorityScore, myCoins, commentCount and the resolved
+   * owner name. Extracted so the table and the month board read the SAME columns — a card that
+   * showed a different score depending on which layout you were looking at would be worse than
+   * either layout being wrong.
+   */
+  private projectedQuery(
+    userId: number,
+    periodKey: string,
+  ): ReturnType<RoadmapOpportunityRepository['createQueryBuilder']> {
+    return this.createQueryBuilder('opp')
+      .select('opp.*')
+      .addSelect('COALESCE(alloc.score, 0)::int', 'priorityScore')
+      .addSelect('COALESCE(mine.coins, 0)::int', 'myCoins')
+      .addSelect('COALESCE(cmt.cnt, 0)::int', 'commentCount')
+      .addSelect('COALESCE(owner_user.name, opp."owner")', 'ownerDisplay')
+      .leftJoin(
+        `(SELECT a."opportunityId", SUM(a.coins)::int AS score
+            FROM roadmap_allocations a
+           GROUP BY a."opportunityId")`,
+        'alloc',
+        'alloc."opportunityId" = opp.id',
+      )
+      .leftJoin('users', 'owner_user', 'owner_user.id = opp."ownerUserId"')
+      .leftJoin(
+        'roadmap_allocations',
+        'mine',
+        'mine."opportunityId" = opp.id AND mine."userId" = :userId AND mine."periodKey" = :periodKey',
+        { userId, periodKey },
+      )
+      .leftJoin(
+        `(SELECT c."opportunityId", COUNT(*) AS cnt
+            FROM roadmap_opportunity_comments c
+           WHERE c."deletedAt" IS NULL
+           GROUP BY c."opportunityId")`,
+        'cmt',
+        'cmt."opportunityId" = opp.id',
+      )
+      .where('opp."deletedAt" IS NULL');
+  }
+
   private applyFilters(
     qb: ReturnType<RoadmapOpportunityRepository['createQueryBuilder']>,
     o: ListOpportunitiesOptions,
@@ -285,6 +496,19 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
     if (o.releasedTo) {
       qb.andWhere('opp."releasedAt" <= :releasedTo', {
         releasedTo: o.releasedTo,
+      });
+    }
+
+    // HAVING-style filters on the projected aggregate must go through the raw expression,
+    // since "priorityScore" is not a column.
+    if (o.priorityMin !== undefined) {
+      qb.andWhere('COALESCE(alloc.score, 0) >= :priorityMin', {
+        priorityMin: o.priorityMin,
+      });
+    }
+    if (o.priorityMax !== undefined) {
+      qb.andWhere('COALESCE(alloc.score, 0) <= :priorityMax', {
+        priorityMax: o.priorityMax,
       });
     }
   }

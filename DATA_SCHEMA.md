@@ -408,7 +408,11 @@ make eight migrated views silently match nothing.
 | `roadmap_user_tab_order` | BaseWithoutTenant | `id` (uuid), `userId` (int UNIQUE), `viewIds` (uuid[], default `'{}'`) | Per-user tab order, intentionally tolerant of stale and missing ids |
 | `roadmap_user_map` | — | `sourceUserId` (uuid PK), `sourceEmail`, `sourceEmailLower` (UNIQUE), `sourceRole`, `allyUserId` (int), `createdByMigration` (bool) | Supabase→Ally identity crosswalk from the import |
 
-**Month boards: a card's lane is `plannedMonth`, until it ships.** `plannedMonth` is an intention and
+**Month boards** (`plannedMonth`, `boardPosition`, `CHK_roadmap_opps_planned_month` and
+`idx_roadmap_opps_month_board`) are added by migration `1902000000000`, read by
+`GET /v1/product-roadmap/board` and written by `PUT /v1/product-roadmap/board/lane`.
+
+**A card's lane is `plannedMonth`, until it ships.** `plannedMonth` is an intention and
 `releasedAt` is an outcome, so they are separate columns and the board derives the lane it shows —
 release month once `stage='released'` with a non-NULL `releasedAt`, otherwise `plannedMonth`, otherwise
 the Unscheduled lane. That rule lives in exactly two places, `effectiveMonthOf()` in
