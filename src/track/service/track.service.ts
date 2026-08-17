@@ -29,6 +29,12 @@ import {
 } from '../type/track.type';
 import { QuizContent } from '../type/quiz.type';
 import {
+  AnnotationContent,
+  AnnotationRevealKey,
+} from '../type/annotation.type';
+import {
+  TRACK_DEFAULT_ANNOTATION_FALSE_POSITIVE_PENALTY,
+  TRACK_DEFAULT_ANNOTATION_PASS_SCORE,
   TRACK_DEFAULT_QUIZ_PASS_SCORE,
   TRACK_DEFAULT_VIDEO_WATCH_PCT,
   TRACK_REQUIRED_FIELDS_FOR_PUBLISH,
@@ -545,7 +551,10 @@ export class TrackService {
     }
   }
 
-  /** Fill in completion-criteria defaults and keep quiz passScore mirrored. */
+  /**
+   * Fill in completion-criteria defaults and keep the graded components'
+   * passScore mirrored onto completionCriteria.
+   */
   private applyContentDefaults(sections: UpsertTrackSectionDto[]): void {
     for (const section of sections) {
       for (const item of section.items) {
@@ -556,6 +565,25 @@ export class TrackService {
           item.completionCriteria = {
             ...item.completionCriteria,
             passScore: quiz.settings.passScore,
+          };
+        }
+        if (item.type === TrackItemType.ANNOTATED_ARTIFACT && item.content) {
+          const annotation = item.content as AnnotationContent;
+          annotation.settings = {
+            ...annotation.settings,
+            passScore:
+              annotation.settings?.passScore ??
+              TRACK_DEFAULT_ANNOTATION_PASS_SCORE,
+            falsePositivePenalty:
+              annotation.settings?.falsePositivePenalty ??
+              TRACK_DEFAULT_ANNOTATION_FALSE_POSITIVE_PENALTY,
+            revealKey:
+              annotation.settings?.revealKey ??
+              AnnotationRevealKey.AFTER_PASS_OR_LAST_ATTEMPT,
+          };
+          item.completionCriteria = {
+            ...item.completionCriteria,
+            passScore: annotation.settings.passScore,
           };
         }
         if (item.type === TrackItemType.VIDEO) {

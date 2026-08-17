@@ -18,8 +18,10 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { TrackEnrollmentService } from '../service/track-enrollment.service';
 import { TrackQuizService } from '../service/track-quiz.service';
 import { TrackJournalService } from '../service/track-journal.service';
+import { TrackAnnotationService } from '../service/track-annotation.service';
 import { VideoProgressDto } from '../dto/video-progress.dto';
 import { SubmitQuizAttemptDto } from '../dto/submit-quiz-attempt.dto';
+import { SubmitAnnotationAttemptDto } from '../dto/submit-annotation-attempt.dto';
 import { SaveJournalDraftsDto } from '../dto/journal-entry.dto';
 
 @ApiTags('Learn Tracks')
@@ -31,6 +33,7 @@ export class TrackLearnerController {
     private readonly trackEnrollmentService: TrackEnrollmentService,
     private readonly trackQuizService: TrackQuizService,
     private readonly trackJournalService: TrackJournalService,
+    private readonly trackAnnotationService: TrackAnnotationService,
   ) {}
 
   @ApiOperation({ summary: 'List tracks available to the learner' })
@@ -132,6 +135,19 @@ export class TrackLearnerController {
     @Param('attemptId', ParseUUIDPipe) attemptId: string,
   ) {
     return this.trackQuizService.regradeAttempt(itemId, attemptId);
+  }
+
+  @ApiOperation({
+    summary:
+      'Submit annotation marks; server grades against the key and returns per-mark verdicts',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_TRACK])
+  @Post('tracks/items/:itemId/annotation-attempts')
+  async submitAnnotationAttempt(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: SubmitAnnotationAttemptDto,
+  ) {
+    return this.trackAnnotationService.submitAttempt(itemId, dto.marks);
   }
 
   @ApiOperation({ summary: 'Autosave journal drafts' })

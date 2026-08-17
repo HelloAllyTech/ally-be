@@ -19,6 +19,7 @@ import { TrackEnrollmentRepository } from '../repository/track-enrollment.reposi
 import { TrackItemProgressRepository } from '../repository/track-item-progress.repository';
 import { TrackJournalEntryRepository } from '../repository/track-journal-entry.repository';
 import { TrackQuizAttemptRepository } from '../repository/track-quiz-attempt.repository';
+import { TrackAnnotationAttemptRepository } from '../repository/track-annotation-attempt.repository';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import {
   ArticleContent,
@@ -28,9 +29,14 @@ import {
   VideoContent,
 } from '../type/track.type';
 import { QuizContent } from '../type/quiz.type';
+import { AnnotationContent } from '../type/annotation.type';
 import { TrackSharedService, TrackWithStructure } from './track-shared.service';
 import { TrackProgressService } from './track-progress.service';
 import { sanitizeQuizForLearner } from './track-quiz.sanitizer';
+import {
+  buildAnnotationAttemptView,
+  sanitizeAnnotationForLearner,
+} from './track-annotation.sanitizer';
 
 @Injectable()
 export class TrackEnrollmentService {
@@ -46,6 +52,7 @@ export class TrackEnrollmentService {
     private readonly trackItemProgressRepository: TrackItemProgressRepository,
     private readonly trackJournalEntryRepository: TrackJournalEntryRepository,
     private readonly trackQuizAttemptRepository: TrackQuizAttemptRepository,
+    private readonly trackAnnotationAttemptRepository: TrackAnnotationAttemptRepository,
     private readonly trackSharedService: TrackSharedService,
     private readonly trackProgressService: TrackProgressService,
     private readonly caseSessionService: CaseSessionService,
@@ -280,6 +287,32 @@ export class TrackEnrollmentService {
         };
       }
 
+      case TrackItemType.ANNOTATED_ARTIFACT: {
+        const annotation = item.content as AnnotationContent;
+        const attemptsUsed =
+          await this.trackAnnotationAttemptRepository.countByProgressId(
+            progress.id,
+          );
+        // A learner reopening a finished annotation is almost always coming
+        // back for the author's notes, so the last graded attempt ships with
+        // the payload rather than making them re-mark to see it.
+        const lastAttempt = attemptsUsed
+          ? await this.trackAnnotationAttemptRepository.findLatestByProgressId(
+              progress.id,
+            )
+          : null;
+        return {
+          type: item.type,
+          trackItemProgressId: progress.id,
+          annotation: sanitizeAnnotationForLearner(annotation),
+          attemptsUsed,
+          maxAttempts: annotation.settings.maxAttempts ?? null,
+          lastResult: lastAttempt
+            ? buildAnnotationAttemptView(lastAttempt, annotation, attemptsUsed)
+            : null,
+        };
+      }
+
       case TrackItemType.ARTICLE: {
         if (!progress.meta?.articleFirstOpenedAt) {
           await this.trackItemProgressRepository.update(progress.id, {
@@ -504,6 +537,16 @@ export class TrackEnrollmentService {
       case TrackItemType.JOURNAL: {
         const journal = item.content as JournalContent | undefined;
         return { promptCount: journal?.prompts?.length ?? 0 };
+      }
+      case TrackItemType.ANNOTATED_ARTIFACT: {
+        const annotation = item.content as AnnotationContent | undefined;
+        // Deliberately no target count — see sanitizeAnnotationForLearner.
+        return {
+          kind: annotation?.kind ?? null,
+          unitCount: annotation?.units?.length ?? 0,
+          labelCount: annotation?.labels?.length ?? 0,
+          passScore: annotation?.settings?.passScore ?? null,
+        };
       }
       default:
         return null;
