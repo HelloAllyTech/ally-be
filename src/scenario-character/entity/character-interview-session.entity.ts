@@ -42,6 +42,16 @@ export class CharacterInterviewSession extends BaseWithoutTenantEntity {
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any>;
 
+  /**
+   * Owning tenant, or NULL when a platform admin ran the interview. Carried
+   * for cost attribution and for the per-tenant session caps in
+   * CharacterInterviewSessionService — a session is still private to its
+   * creator regardless.
+   */
+  @Index('idx_character_interview_sessions_tenant_id')
+  @Column({ name: 'tenant_id', type: 'varchar', nullable: true })
+  tenantId?: string | null;
+
   @Column({ type: 'int' })
   createdBy!: number;
 

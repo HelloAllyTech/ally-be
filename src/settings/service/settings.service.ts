@@ -645,6 +645,75 @@ export class SettingsService {
     return { success: true };
   }
 
+  /**
+   * Org-level switch that lets a tenant's own ADMINs reach the Character
+   * Library and its interview agent, scoped to characters they create. OFF
+   * until a platform admin turns it on for that org — see
+   * PreferenceName.CHARACTER_LIBRARY_ENABLED.
+   */
+  async getCharacterLibraryEnabled(tenantId?: string): Promise<boolean> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    const rawTenantId = hasSystemAccess
+      ? (tenantId ?? ExecutionManager.getTenantId())
+      : ExecutionManager.getTenantId();
+    if (!rawTenantId) return false;
+    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+
+    const preference = await this.preferenceService.getPreference(
+      PreferenceName.CHARACTER_LIBRARY_ENABLED,
+      resolvedTenantId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+
+    if (!preference?.value) return false;
+    return (
+      (preference.value as CustomFieldsEnabledPreferenceValue).enabled ?? false
+    );
+  }
+
+  async updateCharacterLibraryEnabled(
+    tenantId: string,
+    enabled: boolean,
+  ): Promise<{ success: boolean }> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    // Only a platform admin may grant this — a tenant admin must not be able to
+    // switch on their own access.
+    const scopedTenantId = hasSystemAccess
+      ? tenantId
+      : ExecutionManager.getTenantId();
+    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
+    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+
+    const existing = await this.preferenceService.getPreference(
+      PreferenceName.CHARACTER_LIBRARY_ENABLED,
+      resolvedId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+    if (existing) {
+      await this.preferenceService.updatePreference(existing.id, { enabled });
+    } else {
+      await this.preferenceService.createPreference({
+        name: PreferenceName.CHARACTER_LIBRARY_ENABLED,
+        relatedId: resolvedId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { enabled },
+        tenantId: ExecutionManager.getTenantId(),
+      });
+    }
+    return { success: true };
+  }
+
   async getScribeNoteCreationEnabled(tenantId?: string): Promise<boolean> {
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');

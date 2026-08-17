@@ -67,6 +67,17 @@ export class ScenarioCharacter extends BaseWithoutTenantEntity {
   @Column({ name: 'knowledge_sources', type: 'jsonb', nullable: true })
   knowledgeSources?: CharacterKnowledgeSource[];
 
+  /**
+   * Owning tenant, or NULL for an Ally-owned character visible to every
+   * platform admin and to nobody else. A tenant admin's characters are stamped
+   * with their tenant and are readable only within it — see
+   * ScenarioCharacterRepository.getScenarioCharactersQuery. Deliberately not on
+   * BaseEntity (which makes tenant_id NOT NULL): the global rows need NULL.
+   */
+  @Index('idx_scenario_characters_tenant_id')
+  @Column({ name: 'tenant_id', type: 'varchar', nullable: true })
+  tenantId?: string | null;
+
   @Column({ name: 'created_by' })
   createdBy!: number;
 

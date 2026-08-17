@@ -11,6 +11,7 @@ import {
 } from '../../dto/session-event.dto';
 import { PermissionsService } from '../../../authorization/service/permissions.service';
 import { FeatureToggleService } from '../../../authorization/service/feature-toggle.service';
+import { TenantFeatureService } from '../../../authorization/service/tenant-feature.service';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
 import { UserService } from '../../../user/service/user.service';
 import { AppConfigService } from '../../../config/config.service';
@@ -156,6 +157,12 @@ describe('SessionEventController', () => {
         {
           provide: FeatureToggleService,
           useValue: { hasToggle: jest.fn().mockResolvedValue(true) },
+        },
+        {
+          // FeatureToggleGuard's org-level branch. Off here — every route in
+          // this suite grants via the per-user toggle above.
+          provide: TenantFeatureService,
+          useValue: { isEnabledForTenant: jest.fn().mockResolvedValue(false) },
         },
       ],
     })

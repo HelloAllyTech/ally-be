@@ -5,7 +5,7 @@ import { FeatureToggleGuard } from '../guards/feature-toggle.guard';
 import { RequirePermissions } from './permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import { UserRole } from 'src/common/constants/user.constants';
+import { PreferenceName, UserRole } from 'src/common/constants/user.constants';
 
 export const FEATURE_TOGGLE_KEY = 'feature-toggle';
 
@@ -19,6 +19,18 @@ export interface FeatureToggleOptions {
    * legacy branch" step in the role-collapse rollout plan.
    */
   legacyRoles?: UserRole[];
+  /**
+   * Org-level escape hatch: a caller whose *tenant* has this preference switched
+   * on also passes, without a per-user toggle row. This is how a surface built
+   * for platform admins is opened to a tenant's own admins — `admin_feature_toggles`
+   * only ever has rows for PLATFORM_ADMIN accounts, so without this a tenant
+   * admin holding the right permission would still 403.
+   *
+   * Unlike `legacyRoles` this is permanent, not a rollout window. It never
+   * widens *what* the caller may do: PermissionsGuard has already run, so the
+   * per-role permission set still decides read vs. write.
+   */
+  tenantPreference?: PreferenceName;
 }
 
 /**
@@ -39,7 +51,11 @@ export interface FeatureToggleOptions {
  */
 export function RequireFeatureToggle(
   featureKey: FeatureToggleKey,
-  options: { legacyRoles?: UserRole[]; permissions?: string[] } = {},
+  options: {
+    legacyRoles?: UserRole[];
+    permissions?: string[];
+    tenantPreference?: PreferenceName;
+  } = {},
 ) {
   const permissions = options.permissions ?? [PERMISSIONS.SYSTEM_ACCESS];
   return applyDecorators(
@@ -48,6 +64,7 @@ export function RequireFeatureToggle(
     SetMetadata(FEATURE_TOGGLE_KEY, {
       featureKey,
       legacyRoles: options.legacyRoles,
+      tenantPreference: options.tenantPreference,
     } as FeatureToggleOptions),
   );
 }

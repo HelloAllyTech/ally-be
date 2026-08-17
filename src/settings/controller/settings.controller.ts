@@ -182,6 +182,47 @@ export class SettingsController {
     return this.service.getCustomFieldsEnabled(tenantId);
   }
 
+  @Get('character-library-enabled')
+  @ApiOperation({
+    summary:
+      'Whether the Character Library is enabled for the org (own org unless the caller has SYSTEM_ACCESS)',
+  })
+  @ApiQuery({ name: 'tenantId', required: false, type: String })
+  @ApiResponse({ status: 200 })
+  // Authenticated-only on purpose: the answer is a single boolean about the
+  // caller's OWN org (the service pins a non-SYSTEM_ACCESS caller to their JWT
+  // tenant), and the admin sidebar has to ask it before it knows whether the
+  // user has any character permissions at all.
+  @AuthPermissions([])
+  getCharacterLibraryEnabled(@Query('tenantId') tenantId?: string) {
+    return this.service.getCharacterLibraryEnabled(tenantId);
+  }
+
+  @Put('character-library-enabled')
+  @ApiOperation({
+    summary:
+      'Enable or disable the Character Library for an org (platform admin only)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        tenantId: { type: 'string' },
+        enabled: { type: 'boolean' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200 })
+  @AuthPermissions([PERMISSIONS.EDIT_GLOBAL_SETTINGS])
+  updateCharacterLibraryEnabled(
+    @Body() body: { tenantId: string; enabled: boolean },
+  ) {
+    return this.service.updateCharacterLibraryEnabled(
+      body.tenantId,
+      body.enabled,
+    );
+  }
+
   @Put('custom-fields-enabled')
   @ApiOperation({
     summary: 'Enable or disable the custom fields feature (superadmin only)',

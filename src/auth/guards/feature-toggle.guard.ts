@@ -7,6 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
+import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
 import {
   FEATURE_TOGGLE_KEY,
   FeatureToggleOptions,
@@ -35,6 +36,7 @@ export class FeatureToggleGuard implements CanActivate {
     private readonly reflector: Reflector,
     private readonly featureToggleService: FeatureToggleService,
     private readonly permissionsService: PermissionsService,
+    private readonly tenantFeatureService: TenantFeatureService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -68,12 +70,28 @@ export class FeatureToggleGuard implements CanActivate {
       user.id,
       options.featureKey,
     );
-    if (!hasToggle) {
-      throw new ForbiddenException(
-        `Missing required feature access: ${options.featureKey}`,
-      );
+    if (hasToggle) {
+      return true;
     }
 
-    return true;
+    // Org-level branch: no per-user toggle row, but the caller's tenant has the
+    // feature switched on. This is the only way a non-PLATFORM_ADMIN reaches a
+    // toggle-gated surface — admin_feature_toggles has no rows for them.
+    // PermissionsGuard already ran, so what they can DO here is still bounded by
+    // their role's permissions.
+    if (options.tenantPreference) {
+      const enabledForTenant =
+        await this.tenantFeatureService.isEnabledForTenant(
+          options.tenantPreference,
+          user.tenantId,
+        );
+      if (enabledForTenant) {
+        return true;
+      }
+    }
+
+    throw new ForbiddenException(
+      `Missing required feature access: ${options.featureKey}`,
+    );
   }
 }
