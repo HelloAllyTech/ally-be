@@ -27,6 +27,8 @@ describe('PromptsService', () => {
   let promptsRepository: PromptsRepository;
   let promptVersionRepository: PromptVersionRepository;
   let translatePrompt: jest.Mock;
+  /** Raw-SQL escape hatch used by the scenario-usage queries. */
+  let dataSourceQuery: jest.Mock;
 
   const mockUserId = '123';
   const mockPromptId = '123e4567-e89b-12d3-a456-426614174000';
@@ -70,6 +72,7 @@ describe('PromptsService', () => {
 
     const mockDataSource = {
       transaction: jest.fn().mockImplementation(async (cb: any) => await cb()),
+      query: (dataSourceQuery = jest.fn().mockResolvedValue([{ count: '0' }])),
     } as unknown as DataSource;
 
     const module: TestingModule = await Test.createTestingModule({
@@ -702,6 +705,113 @@ describe('PromptsService', () => {
       (promptsRepository.getPrompts as jest.Mock).mockRejectedValue(error);
 
       await expect(service.getPrompts()).rejects.toThrow('Database error');
+    });
+  });
+
+  describe('visibleInStudio', () => {
+    it('persists the flag when the DTO carries it', async () => {
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue(mockPrompt);
+      (promptsRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+
+      await service.updatePrompt(mockPromptId, { visibleInStudio: false });
+
+      expect(promptsRepository.update).toHaveBeenCalledWith(
+        mockPromptId,
+        expect.objectContaining({ visibleInStudio: false }),
+      );
+    });
+
+    it('leaves the flag alone when the DTO omits it', async () => {
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue(mockPrompt);
+      (promptsRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+
+      await service.updatePrompt(mockPromptId, { name: 'Renamed' });
+
+      const [, updateData] = (promptsRepository.update as jest.Mock).mock
+        .calls[0];
+      expect(updateData).not.toHaveProperty('visibleInStudio');
+    });
+
+    it('creates a new variant visible, so it is selectable immediately', async () => {
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue({
+        ...mockPrompt,
+        promptType: 'main_agent',
+      });
+      (promptVersionRepository.findOne as jest.Mock).mockResolvedValue(
+        mockPromptVersion,
+      );
+      (promptsRepository.create as jest.Mock).mockImplementation(
+        (data: unknown) => data,
+      );
+      (promptsRepository.save as jest.Mock).mockImplementation(
+        async (data: object) => ({ ...data, id: 'new-id' }),
+      );
+      (promptVersionRepository.create as jest.Mock).mockImplementation(
+        (data: unknown) => data,
+      );
+      (promptVersionRepository.save as jest.Mock).mockResolvedValue(
+        mockPromptVersion,
+      );
+      (promptsRepository.update as jest.Mock).mockResolvedValue({
+        affected: 1,
+      });
+
+      await service.duplicatePrompt(mockPromptId);
+
+      expect(promptsRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ visibleInStudio: true }),
+      );
+    });
+  });
+
+  describe('getPromptUsage — metadata key by promptType', () => {
+    it('counts main_agent references via selectedMainPromptCode', async () => {
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue({
+        ...mockPrompt,
+        promptType: 'main_agent',
+      });
+      dataSourceQuery.mockResolvedValue([{ count: '0' }]);
+
+      await service.getPromptUsage(mockPromptId);
+
+      expect(dataSourceQuery).toHaveBeenCalledWith(expect.any(String), [
+        mockPrompt.promptCode,
+        'selectedMainPromptCode',
+      ]);
+    });
+
+    it('counts transcript_evaluator references via selectedEvaluatorPromptCode', async () => {
+      // Without the type-aware key an evaluator variant always reported zero
+      // usage, so the studio would claim nothing depended on it.
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue({
+        ...mockPrompt,
+        promptType: 'transcript_evaluator',
+      });
+      dataSourceQuery.mockResolvedValue([{ count: '2' }]);
+
+      const result = await service.getPromptUsage(mockPromptId);
+
+      expect(dataSourceQuery).toHaveBeenCalledWith(expect.any(String), [
+        mockPrompt.promptCode,
+        'selectedEvaluatorPromptCode',
+      ]);
+      expect(result.count).toBe(2);
+    });
+
+    it('falls back to selectedMainPromptCode for an untyped prompt', async () => {
+      (promptsRepository.findOne as jest.Mock).mockResolvedValue(mockPrompt);
+      dataSourceQuery.mockResolvedValue([{ count: '0' }]);
+
+      await service.getPromptUsage(mockPromptId);
+
+      expect(dataSourceQuery).toHaveBeenCalledWith(expect.any(String), [
+        mockPrompt.promptCode,
+        'selectedMainPromptCode',
+      ]);
     });
   });
 });
