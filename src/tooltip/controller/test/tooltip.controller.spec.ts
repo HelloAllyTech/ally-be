@@ -10,6 +10,7 @@ import { PermissionsService } from 'src/authorization/service/permissions.servic
 import { UserService } from 'src/user/service/user.service';
 import { AppConfigService } from 'src/config/config.service';
 import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
+import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
 
 describe('TooltipController', () => {
   let controller: TooltipController;
@@ -54,6 +55,12 @@ describe('TooltipController', () => {
         {
           provide: FeatureToggleService,
           useValue: { hasToggle: jest.fn().mockResolvedValue(true) },
+        },
+        {
+          // FeatureToggleGuard's org-level branch. Off here — every route in
+          // this suite grants via the per-user toggle above.
+          provide: TenantFeatureService,
+          useValue: { isEnabledForTenant: jest.fn().mockResolvedValue(false) },
         },
       ],
     }).compile();

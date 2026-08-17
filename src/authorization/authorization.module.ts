@@ -19,6 +19,7 @@ import { UserModule } from '../user/user.module';
 import { AdminFeatureToggle } from './entity/admin-feature-toggle.entity';
 import { AdminFeatureToggleRepository } from './repository/admin-feature-toggle.repository';
 import { FeatureToggleService } from './service/feature-toggle.service';
+import { TenantFeatureService } from './service/tenant-feature.service';
 import { AdminTenant } from 'src/user/entity/admin-tenant.entity';
 
 @Global()
@@ -53,6 +54,7 @@ import { AdminTenant } from 'src/user/entity/admin-tenant.entity';
     PermissionValidator,
     AdminFeatureToggleRepository,
     FeatureToggleService,
+    TenantFeatureService,
   ],
   exports: [
     PermissionsService,
@@ -64,6 +66,7 @@ import { AdminTenant } from 'src/user/entity/admin-tenant.entity';
     GroupRepository,
     FeatureToggleService,
     AdminFeatureToggleRepository,
+    TenantFeatureService,
   ],
 })
 export class AuthorizationModule {}

@@ -1,8 +1,13 @@
-import { NotFoundException, UnauthorizedException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { In } from 'typeorm';
 import { ScenarioCharacterService } from '../scenario-character.service';
 import { ScenarioCharacterRepository } from '../../repository/scenario-character.repository';
+import { CharacterLibraryAccessService } from '../character-library-access.service';
 import { ScenarioCharacter } from '../../entity/scenario-character.entity';
 import {
   ScenarioCharacterSortBy,
@@ -38,12 +43,27 @@ describe('ScenarioCharacterService', () => {
 
   const mockRepo = {
     getScenarioCharactersQuery: jest.fn(),
+    getCreatorAttribution: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
     findOne: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
   };
+
+  // Default every test to a platform caller (SYSTEM_ACCESS): sees the whole
+  // library, creates Ally-owned characters. Tenant-scoped cases override it.
+  const mockAccessService = { resolveScope: jest.fn() };
+  const asPlatform = () =>
+    mockAccessService.resolveScope.mockResolvedValue({
+      isPlatform: true,
+      tenantId: null,
+    });
+  const asTenant = (tenantId: string) =>
+    mockAccessService.resolveScope.mockResolvedValue({
+      isPlatform: false,
+      tenantId,
+    });
 
   beforeEach(async () => {
     jest.resetAllMocks();
@@ -58,10 +78,19 @@ describe('ScenarioCharacterService', () => {
       providers: [
         ScenarioCharacterService,
         { provide: ScenarioCharacterRepository, useValue: mockRepo },
+        {
+          provide: CharacterLibraryAccessService,
+          useValue: mockAccessService,
+        },
       ],
     }).compile();
 
     service = module.get<ScenarioCharacterService>(ScenarioCharacterService);
+    asPlatform();
+    mockRepo.getCreatorAttribution.mockResolvedValue({
+      usersById: new Map(),
+      tenantNamesById: new Map(),
+    });
   });
 
   describe('getScenarioCharacters', () => {
@@ -78,8 +107,53 @@ describe('ScenarioCharacterService', () => {
         offset: 0,
         sortBy: ScenarioCharacterSortBy.CREATED_AT,
         sortOrder: ScenarioCharacterSortOrder.DESC,
+        tenantId: null,
       });
-      expect(res).toEqual(result);
+      expect(res.count).toBe(1);
+      expect(res.characters[0]).toEqual(
+        expect.objectContaining({ id: mockCharacter.id }),
+      );
+    });
+
+    it('scopes the query to the caller tenant and skips owner attribution', async () => {
+      asTenant('tenant-a');
+      mockRepo.getScenarioCharactersQuery.mockResolvedValue({
+        characters: [mockCharacter],
+        count: 1,
+      });
+
+      const res = await service.getScenarioCharacters({ limit: 10, offset: 0 });
+
+      expect(mockRepo.getScenarioCharactersQuery).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-a' }),
+      );
+      // "who created this" is platform-only — a tenant sees one org's rows.
+      expect(mockRepo.getCreatorAttribution).not.toHaveBeenCalled();
+      expect(res.characters).toEqual([mockCharacter]);
+    });
+
+    it('decorates a platform caller results with creator and org names', async () => {
+      mockRepo.getScenarioCharactersQuery.mockResolvedValue({
+        characters: [{ ...mockCharacter, tenantId: 'tenant-a' }],
+        count: 1,
+      });
+      mockRepo.getCreatorAttribution.mockResolvedValue({
+        usersById: new Map([[100, 'Riya Nair']]),
+        tenantNamesById: new Map([['tenant-a', 'Acme Helpline']]),
+      });
+
+      const res = await service.getScenarioCharacters({});
+
+      expect(mockRepo.getCreatorAttribution).toHaveBeenCalledWith(
+        [100],
+        ['tenant-a'],
+      );
+      expect(res.characters[0]).toEqual(
+        expect.objectContaining({
+          createdByName: 'Riya Nair',
+          tenantName: 'Acme Helpline',
+        }),
+      );
     });
   });
 
@@ -118,11 +192,25 @@ describe('ScenarioCharacterService', () => {
 
       expect(mockRepo.create).toHaveBeenCalledWith({
         ...createDto,
+        tenantId: null,
         createdBy: 42,
         updatedBy: 42,
       });
       expect(mockRepo.save).toHaveBeenCalledWith(created);
       expect(res).toEqual(created);
+    });
+
+    it("stamps a tenant caller's own tenant on the new character", async () => {
+      asTenant('tenant-a');
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(7);
+      mockRepo.create.mockReturnValue(mockCharacter as ScenarioCharacter);
+      mockRepo.save.mockResolvedValue(mockCharacter as ScenarioCharacter);
+
+      await service.createScenarioCharacter(createDto);
+
+      expect(mockRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'tenant-a' }),
+      );
     });
 
     it('returns saved character', async () => {
@@ -157,6 +245,30 @@ describe('ScenarioCharacterService', () => {
       await expect(
         service.getScenarioCharacterById('non-existent'),
       ).rejects.toThrow('Scenario character with ID non-existent not found');
+    });
+
+    it("403s a tenant caller naming another org's character", async () => {
+      asTenant('tenant-a');
+      mockRepo.findOne.mockResolvedValue({
+        ...mockCharacter,
+        tenantId: 'tenant-b',
+      } as ScenarioCharacter);
+
+      await expect(
+        service.getScenarioCharacterById('char-uuid-1'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('403s a tenant caller naming an Ally-owned global character', async () => {
+      asTenant('tenant-a');
+      mockRepo.findOne.mockResolvedValue({
+        ...mockCharacter,
+        tenantId: null,
+      } as ScenarioCharacter);
+
+      await expect(
+        service.getScenarioCharacterById('char-uuid-1'),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
@@ -237,6 +349,18 @@ describe('ScenarioCharacterService', () => {
 
       const res = await service.deleteScenarioCharacters(ids);
       expect(res).toBe(true);
+    });
+
+    it('narrows the bulk delete to the caller tenant', async () => {
+      asTenant('tenant-a');
+      mockRepo.delete.mockResolvedValue({ affected: 1 });
+
+      await service.deleteScenarioCharacters(['char-uuid-1']);
+
+      expect(mockRepo.delete).toHaveBeenCalledWith({
+        id: In(['char-uuid-1']),
+        tenantId: 'tenant-a',
+      });
     });
   });
 });

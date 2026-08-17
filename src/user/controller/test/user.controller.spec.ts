@@ -26,6 +26,7 @@ import {
   RemoveAdminTenantsDto,
 } from '../../dto/admin-tenant.dto';
 import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
+import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
 
 describe('UserController', () => {
   let controller: UserController;
@@ -110,6 +111,11 @@ describe('UserController', () => {
         { provide: GroupService, useValue: mockGroupService },
         { provide: AdminTenantService, useValue: mockAdminTenantService },
         { provide: FeatureToggleService, useValue: mockFeatureToggleService },
+        {
+          // FeatureToggleGuard's org-level branch — irrelevant to these routes.
+          provide: TenantFeatureService,
+          useValue: { isEnabledForTenant: jest.fn().mockResolvedValue(false) },
+        },
         { provide: Reflector, useValue: { get: jest.fn() } },
         {
           provide: PermissionsService,

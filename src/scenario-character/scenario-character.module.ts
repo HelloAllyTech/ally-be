@@ -8,6 +8,7 @@ import { CharacterInterviewMessage } from './entity/character-interview-message.
 import { ScenarioCharacterController } from './controller/scenario-character.controller';
 import { CharacterInterviewController } from './controller/character-interview.controller';
 import { ScenarioCharacterService } from './service/scenario-character.service';
+import { CharacterLibraryAccessService } from './service/character-library-access.service';
 import { CharacterInterviewSessionService } from './service/character-interview-session.service';
 import { CharacterInterviewToolsService } from './service/character-interview-tools.service';
 import { CharacterInterviewOrchestratorService } from './service/character-interview-orchestrator.service';
@@ -29,6 +30,7 @@ import { CharacterInterviewMessageRepository } from './repository/character-inte
   controllers: [ScenarioCharacterController, CharacterInterviewController],
   providers: [
     ScenarioCharacterService,
+    CharacterLibraryAccessService,
     ScenarioCharacterRepository,
     CharacterInterviewSessionService,
     CharacterInterviewToolsService,
