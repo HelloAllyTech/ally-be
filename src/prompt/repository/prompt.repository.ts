@@ -43,6 +43,7 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.isObsolete', 'isObsolete')
       .addSelect('prompt.kind', 'kind')
       .addSelect('prompt.promptType', 'promptType')
+      .addSelect('prompt.visibleInStudio', 'visibleInStudio')
       .addSelect('prompt.translationEnabled', 'translationEnabled')
       .addSelect(
         `CAST((SELECT COUNT(*) FROM prompt_translations pt WHERE pt."promptId" = prompt.id AND pt.status = 'ready') AS integer)`,
@@ -61,6 +62,14 @@ export class PromptsRepository extends Repository<Prompt> {
   /**
    * List prompts filtered by promptType (e.g. 'main_agent' to populate the
    * studio variant picker). Returns the same shape as getPrompts().
+   *
+   * Deliberately does NOT filter on `visibleInStudio`: most callers of this
+   * list resolve a scenario's *already-selected* promptCode to its name,
+   * states and availableVariables (see useIsPlaceholderUsed,
+   * MainPromptVariantPicker, ReportSection in ally-web). Filtering here would
+   * make a hidden-but-in-use variant unresolvable and silently degrade the
+   * editor for the very scenarios hiding is supposed to leave alone. The two
+   * pickers that offer a *choice* filter on the flag client-side instead.
    */
   getPromptsByType(promptType: string): Promise<PromptResponse[]> {
     return this.createQueryBuilder('prompt')
@@ -81,6 +90,7 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.isObsolete', 'isObsolete')
       .addSelect('prompt.kind', 'kind')
       .addSelect('prompt.promptType', 'promptType')
+      .addSelect('prompt.visibleInStudio', 'visibleInStudio')
       .addSelect('prompt.translationEnabled', 'translationEnabled')
       .addSelect(
         `CAST((SELECT COUNT(*) FROM prompt_translations pt WHERE pt."promptId" = prompt.id AND pt.status = 'ready') AS integer)`,
@@ -133,6 +143,7 @@ export class PromptsRepository extends Repository<Prompt> {
       .addSelect('prompt.isObsolete', 'isObsolete')
       .addSelect('prompt.kind', 'kind')
       .addSelect('prompt.promptType', 'promptType')
+      .addSelect('prompt.visibleInStudio', 'visibleInStudio')
       .addSelect('prompt.translationEnabled', 'translationEnabled')
       .addSelect(
         `CAST((SELECT COUNT(*) FROM prompt_translations pt WHERE pt."promptId" = prompt.id AND pt.status = 'ready') AS integer)`,

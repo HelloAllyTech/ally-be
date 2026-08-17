@@ -48,6 +48,21 @@ export class Prompt extends BaseWithoutTenantEntity {
   @Column({ type: 'boolean', default: false })
   isObsolete!: boolean;
 
+  /**
+   * Whether this prompt is offered as a choice in the studio's variant
+   * pickers (Skill Version for `main_agent`, the evaluator picker for
+   * `transcript_evaluator`). A future-visibility switch, NOT a capability
+   * toggle: scenarios already pointing at this promptCode keep resolving and
+   * running on it, because no runtime path reads this flag. `by-type` still
+   * returns hidden rows so the studio can resolve a hidden-but-in-use
+   * variant's name / states / variables; only the pickers filter.
+   *
+   * Optional in TS for test ergonomics; the DB column is NOT NULL DEFAULT
+   * true, so reads always materialize a boolean.
+   */
+  @Column({ type: 'boolean', default: true })
+  visibleInStudio?: boolean;
+
   @Column({ type: 'varchar', nullable: true })
   kind?: string;
 

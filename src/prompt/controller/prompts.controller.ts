@@ -161,6 +161,12 @@ export class PromptsController {
   @ApiOperation({
     summary:
       'List prompt variants by promptType (e.g. main_agent) for the studio picker',
+    description:
+      'Includes variants with visibleInStudio=false. Hiding a variant only ' +
+      'removes it from the pickers’ selectable options (enforced ' +
+      'client-side); the row must still be returned so the studio can resolve ' +
+      'the name, states and available variables of a hidden-but-still-in-use ' +
+      'variant on scenarios that already reference it.',
   })
   @AuthPermissions([PERMISSIONS.VIEW_PROMPT])
   @Get('by-type/:promptType')

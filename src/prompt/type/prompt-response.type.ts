@@ -20,6 +20,12 @@ export type PromptResponse = {
   kind?: string;
   /** Role/category in the agent pipeline: 'main_agent' | 'branching' | 'multilingual'. */
   promptType?: string;
+  /**
+   * Whether the studio pickers offer this variant as a choice. False = hidden
+   * from new selections only; scenarios already on it are unaffected, and this
+   * row is still returned here so the studio can resolve its metadata.
+   */
+  visibleInStudio?: boolean;
   /** Opt-in: this English source is auto-translated (main_agent/branching only). */
   translationEnabled?: boolean;
   /** Count of languages whose translation is currently `ready` (for a coverage badge). */
@@ -51,6 +57,8 @@ export type PromptDetailResponse = {
   isObsolete?: boolean;
   kind?: string;
   promptType?: string;
+  /** Whether the studio pickers offer this variant as a choice (see PromptResponse). */
+  visibleInStudio?: boolean;
   hasStates?: boolean;
   usesBlocks?: string[];
   /** Prompt-level LLM provider override ('openai' | 'gemini' | 'anthropic'). */
