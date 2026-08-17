@@ -265,7 +265,9 @@ describe('BugHunterService', () => {
       expect(notificationService.notify).toHaveBeenCalledWith(
         expect.objectContaining({
           level: 'problem',
-          title: expect.stringMatching(/run failed/i),
+          // Bug Hunter speaks in the first person in its own inbox — see
+          // constants/bug-hunter-voice.ts.
+          title: expect.stringMatching(/my run on .+ failed/i),
         }),
       );
     });
