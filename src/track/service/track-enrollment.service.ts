@@ -32,6 +32,9 @@ import { QuizContent } from '../type/quiz.type';
 import { AnnotationContent } from '../type/annotation.type';
 import { TrackSharedService, TrackWithStructure } from './track-shared.service';
 import { TrackProgressService } from './track-progress.service';
+import { TrackLocalizationService } from './track-localization.service';
+import { TrackTranslation } from '../entity/track-translation.entity';
+import { TrackTranslationFallbackReason } from '../type/track-translation.type';
 import { sanitizeQuizForLearner } from './track-quiz.sanitizer';
 import {
   buildAnnotationAttemptView,
@@ -57,6 +60,7 @@ export class TrackEnrollmentService {
     private readonly trackProgressService: TrackProgressService,
     private readonly caseSessionService: CaseSessionService,
     private readonly scenarioSharedService: ScenarioSharedService,
+    private readonly trackLocalizationService: TrackLocalizationService,
   ) {}
 
   async getTracksForLearner(options: {
@@ -73,13 +77,27 @@ export class TrackEnrollmentService {
       offset: options.offset,
     });
 
+    // Two queries for the whole page, rather than two per course.
+    const index = await this.trackLocalizationService.buildPublishedIndex(
+      result.data.map((track) => track.id),
+    );
+
     return {
       data: result.data.map((track) => {
-        const translated = this.applyTranslation(track, options.languageCode);
+        // An enrolled learner's saved choice wins; otherwise the app language
+        // they are browsing in, when the course is published in it.
+        const preferred =
+          track.enrollment?.languageCode ?? options.languageCode ?? null;
+        const translation = index.get(track.id, preferred);
+        const translated = this.trackLocalizationService.localizeTrack(
+          track as any,
+          translation,
+        );
         return {
           id: track.id,
           title: translated.title,
           description: translated.description,
+          languageCode: translation ? preferred : null,
           coverImageUrl: track.coverImageUrl,
           totalItems: track.totalItems,
           estimatedDurationMinutes: track.estimatedDurationMinutes,
@@ -121,7 +139,23 @@ export class TrackEnrollmentService {
       progressRows.map((row) => [row.trackItemId, row]),
     );
 
-    const translated = this.applyTranslation(structure, languageCode);
+    // The saved per-course choice wins over the app language, and both lose to
+    // reality: an unpublished language reads in English.
+    const resolvedLanguage =
+      await this.trackLocalizationService.resolveLearnerLanguage(
+        trackId,
+        enrollment?.languageCode,
+        languageCode,
+      );
+    const [translation, languages] = await Promise.all([
+      this.trackLocalizationService.resolvePublished(trackId, resolvedLanguage),
+      this.trackLocalizationService.listLearnerLanguages(trackId),
+    ]);
+    const translated = this.trackLocalizationService.localizeTrack(
+      structure as any,
+      translation,
+    );
+
     return {
       id: structure.id,
       title: translated.title,
@@ -134,20 +168,108 @@ export class TrackEnrollmentService {
       trackEnrollmentId: enrollment?.id ?? null,
       completedItems: enrollment?.completedItems ?? 0,
       completedAt: enrollment?.completedAt ?? null,
-      sections: structure.sections.map((section) => ({
-        id: section.id,
-        title: section.title,
-        description: section.description,
-        order: section.order,
-        items: section.items.map((item) =>
-          this.toLearnerItem(item, progressByItemId.get(item.id)),
-        ),
-      })),
+      /** What the learner is reading now, and what else they can switch to. */
+      languageCode: resolvedLanguage,
+      availableLanguages: languages,
+      sections: structure.sections.map((section) => {
+        const localizedSection = this.trackLocalizationService.localizeSection(
+          section as any,
+          translation,
+        );
+        return {
+          id: section.id,
+          title: localizedSection.title,
+          description: localizedSection.description,
+          order: section.order,
+          items: section.items.map((item) =>
+            this.toLearnerItem(
+              this.trackLocalizationService.localizeItem(item, translation),
+              progressByItemId.get(item.id),
+              this.fallbackReasonFor(item, translation),
+            ),
+          ),
+        };
+      }),
     };
   }
 
+  /**
+   * Why an item will read in English despite the learner picking another
+   * language, or null when it reads in their language. Surfaced per item so a
+   * learner meets "this lesson is in English" on the card rather than as a
+   * surprise once the video starts.
+   */
+  private fallbackReasonFor(
+    item: TrackItem,
+    translation: TrackTranslation | null,
+  ): TrackTranslationFallbackReason | null {
+    if (!translation) return null;
+    if (
+      item.type === TrackItemType.VIDEO &&
+      !this.trackLocalizationService.hasLocalisedMedia(item, translation)
+    ) {
+      return TrackTranslationFallbackReason.VIDEO_NOT_LOCALISED;
+    }
+    if (item.type === TrackItemType.CASE) {
+      return TrackTranslationFallbackReason.CASE_NOT_TRANSLATED;
+    }
+    return null;
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Language choice
+   * ---------------------------------------------------------------- */
+
+  /** Languages this course is published in, for the learner's picker. */
+  async getTrackLanguages(trackId: string) {
+    const languages =
+      await this.trackLocalizationService.listLearnerLanguages(trackId);
+    const enrollment = await this.trackEnrollmentRepository.findByTrackAndUser(
+      trackId,
+      this.requireUserId(),
+    );
+    return {
+      languages,
+      selectedLanguageCode: enrollment?.languageCode ?? null,
+    };
+  }
+
+  /**
+   * Persists the learner's language for this course.
+   *
+   * Requires enrollment, because the choice lives on the enrollment row — and
+   * because it is the language their answers will be marked in. Switching
+   * mid-course is safe: progress rows are keyed by item id, which does not
+   * change with language.
+   */
+  async setTrackLanguage(trackId: string, languageCode: string) {
+    const userId = this.requireUserId();
+    const enrollment = await this.trackEnrollmentRepository.findByTrackAndUser(
+      trackId,
+      userId,
+    );
+    if (!enrollment) {
+      throw new BadRequestException(
+        'Enroll in this course before choosing a language for it.',
+      );
+    }
+
+    const languages =
+      await this.trackLocalizationService.listLearnerLanguages(trackId);
+    if (!languages.some((option) => option.languageCode === languageCode)) {
+      throw new BadRequestException(
+        'This course is not available in that language.',
+      );
+    }
+
+    await this.trackEnrollmentRepository.update(enrollment.id, {
+      languageCode,
+    });
+    return { languageCode };
+  }
+
   /** Idempotent enrollment: creates the enrollment + ALL progress rows. */
-  async enroll(trackId: string) {
+  async enroll(trackId: string, appLanguageCode?: string) {
     const userId = this.requireUserId();
     const tenantId = ExecutionManager.getTenantId();
 
@@ -170,6 +292,17 @@ export class TrackEnrollmentService {
       throw new BadRequestException('This track has no content yet');
     }
 
+    // Seed the per-course language from the app language they enrolled in, so
+    // a Hindi-UI learner opening a Hindi-published course starts in Hindi
+    // without touching the picker. Falls back to English when the course is not
+    // published in their app language.
+    const initialLanguage =
+      await this.trackLocalizationService.resolveLearnerLanguage(
+        trackId,
+        null,
+        appLanguageCode,
+      );
+
     const enrollmentId = await this.dataSource.transaction(async (manager) => {
       const enrollmentRepo = manager.getRepository(TrackEnrollment);
       const progressRepo = manager.getRepository(TrackItemProgress);
@@ -177,6 +310,7 @@ export class TrackEnrollmentService {
         trackId,
         userId,
         tenantId,
+        languageCode: initialLanguage,
         startedAt: new Date(),
         lastActivityAt: new Date(),
       });
@@ -206,7 +340,8 @@ export class TrackEnrollmentService {
    * payload the player renders.
    */
   async startItem(trackItemId: string) {
-    const { item, progress } = await this.getPermittedItemProgress(trackItemId);
+    const { item, sourceItem, progress, languageCode } =
+      await this.getPermittedItemProgress(trackItemId);
 
     if (!progress.startedAt) {
       await this.trackItemProgressRepository.update(progress.id, {
@@ -223,12 +358,22 @@ export class TrackEnrollmentService {
                 progress.id,
               )
             : null;
+        const scenarioTranslated =
+          await this.trackLocalizationService.hasScenarioTranslation(
+            item.scenarioId,
+            languageCode,
+          );
         return {
           type: item.type,
           trackItemProgressId: progress.id,
           scenarioId: item.scenarioId,
           completionCriteria: item.completionCriteria ?? null,
           lastScenarioSessionId,
+          /** The roleplay runs in the scenario's own translated language, which
+           *  is translated separately from the course. */
+          languageFallbackReason: scenarioTranslated
+            ? null
+            : TrackTranslationFallbackReason.SCENARIO_NOT_TRANSLATED,
         };
       }
 
@@ -333,6 +478,7 @@ export class TrackEnrollmentService {
 
       case TrackItemType.VIDEO: {
         const video = item.content as VideoContent;
+        const sourceVideo = sourceItem.content as VideoContent | undefined;
         return {
           type: item.type,
           trackItemProgressId: progress.id,
@@ -341,6 +487,15 @@ export class TrackEnrollmentService {
           durationSeconds: video.durationSeconds ?? null,
           requiredWatchPct: item.completionCriteria?.watchPct ?? 90,
           maxWatchedPct: progress.meta?.maxWatchedPct ?? 0,
+          /**
+           * A video is a file, not text — it is only in the learner's language
+           * if the trainer supplied a localised cut. `localizeItem` swaps the
+           * URL when they did, so an unchanged URL means English.
+           */
+          languageFallbackReason:
+            languageCode && video.url === sourceVideo?.url
+              ? TrackTranslationFallbackReason.VIDEO_NOT_LOCALISED
+              : null,
         };
       }
 
@@ -443,16 +598,30 @@ export class TrackEnrollmentService {
       progressRows.map((row) => [row.trackItemId, row]),
     );
 
+    const translation = await this.trackLocalizationService.resolvePublished(
+      trackId,
+      enrollment.languageCode,
+    );
+
     for (const section of structure.sections) {
       for (const item of section.items) {
         const progress = progressByItemId.get(item.id);
         if (progress && progress.status === SessionItemStatus.UNLOCKED) {
+          const localizedSection =
+            this.trackLocalizationService.localizeSection(
+              section as any,
+              translation,
+            );
           return {
             trackCompleted: false,
             nextItem: {
-              ...this.toLearnerItem(item, progress),
+              ...this.toLearnerItem(
+                this.trackLocalizationService.localizeItem(item, translation),
+                progress,
+                this.fallbackReasonFor(item, translation),
+              ),
               sectionId: section.id,
-              sectionTitle: section.title,
+              sectionTitle: localizedSection.title,
             },
           };
         }
@@ -464,10 +633,26 @@ export class TrackEnrollmentService {
   /**
    * Shared gate for all learner item endpoints: the item must exist, the
    * caller must be enrolled, and the row must be UNLOCKED or COMPLETED.
+   *
+   * The returned `item` is **localised to the learner's enrolled language**.
+   * Every learner content and grading path funnels through here, which is what
+   * makes translation safe for assessed components: a Hindi learner's
+   * fill-blank answer is compared against the Hindi `acceptedAnswers` they were
+   * shown, and an open-ended answer is graded against the Hindi rubric.
+   *
+   * The language comes from the enrollment row, never from the request. A
+   * client cannot ask to be marked in a language other than the one it
+   * rendered, and it cannot dodge a translation by omitting a query param.
+   *
+   * `sourceItem` is the untranslated row, for callers that need the authored
+   * values (nothing may write to it — item ids anchor progress rows).
    */
   async getPermittedItemProgress(trackItemId: string): Promise<{
     item: TrackItem;
+    sourceItem: TrackItem;
     progress: TrackItemProgress;
+    enrollment: TrackEnrollment;
+    languageCode: string | null;
   }> {
     const userId = this.requireUserId();
     const item = await this.dataSource
@@ -494,16 +679,35 @@ export class TrackEnrollmentService {
         'This component is locked. Complete the previous one to unlock it.',
       );
     }
-    return { item, progress };
+
+    const translation = await this.trackLocalizationService.resolvePublished(
+      item.trackId,
+      enrollment.languageCode,
+    );
+
+    return {
+      item: this.trackLocalizationService.localizeItem(item, translation),
+      sourceItem: item,
+      progress,
+      enrollment,
+      languageCode: translation ? (enrollment.languageCode ?? null) : null,
+    };
   }
 
-  private toLearnerItem(item: TrackItem, progress?: TrackItemProgress) {
+  private toLearnerItem(
+    item: TrackItem,
+    progress?: TrackItemProgress,
+    fallbackReason: TrackTranslationFallbackReason | null = null,
+  ) {
     return {
       id: item.id,
       type: item.type,
       order: item.order,
       title: item.title,
       description: item.description,
+      /** Non-null when this component reads in English despite the chosen
+       *  language — the card shows the learner why. */
+      languageFallbackReason: fallbackReason,
       scenarioId: item.scenarioId ?? null,
       caseId: item.caseId ?? null,
       completionCriteria: item.completionCriteria ?? null,
@@ -572,20 +776,6 @@ export class TrackEnrollmentService {
         'This track is not available for your organization',
       );
     }
-  }
-
-  private applyTranslation(
-    entity: { title?: string; description?: string; translations?: any },
-    languageCode?: string,
-  ): { title?: string; description?: string } {
-    if (!languageCode || !entity.translations?.[languageCode]) {
-      return { title: entity.title, description: entity.description };
-    }
-    const translation = entity.translations[languageCode];
-    return {
-      title: translation.title ?? entity.title,
-      description: translation.description ?? entity.description,
-    };
   }
 
   private requireUserId(): number {

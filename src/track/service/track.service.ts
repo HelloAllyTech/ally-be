@@ -7,9 +7,6 @@ import {
 import { DataSource, In, QueryFailedError } from 'typeorm';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { SuccessResponse } from 'src/common/type/common.type';
-import { OpenAITranslationsService } from 'src/common/service/openai-translation.service';
-import { SharedLanguageService } from 'src/language/service/shared-language.service';
-import { ELIGBLE_APP_LANGUAGES } from 'src/common/constants/translation.constants';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { ScenarioStatus } from 'src/learn/type/scenario.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
@@ -25,7 +22,6 @@ import {
   TrackFilterOptions,
   TrackItemType,
   TrackStatus,
-  TrackTranslations,
 } from '../type/track.type';
 import { QuizContent } from '../type/quiz.type';
 import {
@@ -55,6 +51,7 @@ import {
 } from './track-structure.validator';
 import { sanitizeDeep } from '../util/sanitize-structure.util';
 import { TrackSharedService, TrackWithStructure } from './track-shared.service';
+import { TrackTranslationService } from './track-translation.service';
 
 @Injectable()
 export class TrackService {
@@ -68,8 +65,7 @@ export class TrackService {
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly caseSharedService: CaseSharedService,
     private readonly tenantService: TenantService,
-    private readonly openaiTranslationsService: OpenAITranslationsService,
-    private readonly sharedLanguageService: SharedLanguageService,
+    private readonly trackTranslationService: TrackTranslationService,
   ) {}
 
   async getTracks(filters?: TrackFilterOptions) {
@@ -128,10 +124,8 @@ export class TrackService {
     if (track.isGlobal) {
       await this.syncGlobalTenants(track.id, true);
     }
-    void this.createTrackTranslations(track.id, {
-      title: track.title,
-      description: track.description,
-    });
+    // No translation on create: a new course has no languages selected and no
+    // content yet. Translation starts when the trainer picks its languages.
     this.logger.info(`Track ${track.id} created`);
     return this.toSummary(track);
   }
@@ -189,17 +183,10 @@ export class TrackService {
       await this.syncGlobalTenants(id, updateTrackDto.isGlobal);
     }
 
-    if (
-      this.checkIfTranslationRequired(track, {
-        title: updateTrackDto.title,
-        description: updateTrackDto.description,
-      })
-    ) {
-      void this.createTrackTranslations(id, {
-        title: updateTrackDto.title,
-        description: updateTrackDto.description,
-      });
-    }
+    // Re-anchor every language against the new English: unedited fields
+    // re-translate, hand-edited ones are flagged for the trainer, and a
+    // language only loses its published status if a scoring field moved.
+    await this.syncTranslationsToSource(id);
 
     const updated = await this.trackRepository.findOne({ where: { id } });
     this.logger.info(`Track ${id} updated`);
@@ -354,6 +341,10 @@ export class TrackService {
       throw err;
     }
 
+    // Structure edits are the big source change: a reworded question, a new
+    // option, a deleted section all move or orphan translations.
+    await this.syncTranslationsToSource(id);
+
     this.logger.info(`Track ${id} structure saved (${totalItems} items)`);
     return { success: true };
   }
@@ -444,22 +435,24 @@ export class TrackService {
     });
   }
 
-  async makeTranslationsForTracks(): Promise<boolean> {
-    const tracks = await this.trackRepository.find({
-      select: ['id', 'title', 'description'],
-    });
-    for (const track of tracks) {
-      const translations =
-        await this.openaiTranslationsService.translateObjectToLanguages(
-          { title: track.title, description: track.description },
-          ELIGBLE_APP_LANGUAGES,
-          'openai_translation_speech_reexpression_user',
-        );
-      if (translations) {
-        await this.trackRepository.update(track.id, { translations } as any);
-      }
+  /**
+   * Re-anchors every selected language after the English source changed.
+   *
+   * Awaited rather than fired off, so a trainer who saves and immediately
+   * reloads the translations panel sees the new review state instead of a stale
+   * one. The LLM work it may kick off is itself asynchronous.
+   *
+   * Never allowed to fail a source save: the course edit is what the trainer
+   * asked for, and a translation bookkeeping problem must not roll it back.
+   */
+  private async syncTranslationsToSource(trackId: string): Promise<void> {
+    try {
+      await this.trackTranslationService.handleSourceChanged(trackId);
+    } catch (error) {
+      this.logger.error(
+        `Track ${trackId}: failed to sync translations after a source edit: ${(error as Error).message}`,
+      );
     }
-    return true;
   }
 
   private async validateTrackForPublish(
@@ -653,53 +646,5 @@ export class TrackService {
     } else {
       await tenantRepo.delete({ trackId, tenantId: In(tenantIds) });
     }
-  }
-
-  private async createTrackTranslations(
-    trackId: string,
-    trackData: TrackTranslations,
-  ): Promise<void> {
-    try {
-      if (!trackData.title && !trackData.description) return;
-      const validLanguageIds =
-        await this.scenarioSharedService.getUniqueLanguagesFromScenarioTranslations();
-      if (!validLanguageIds || validLanguageIds.length === 0) return;
-
-      let languageCodes =
-        await this.sharedLanguageService.getValidLanguageCodes(
-          validLanguageIds,
-        );
-      languageCodes = languageCodes?.filter((languageCode) =>
-        ELIGBLE_APP_LANGUAGES.includes(languageCode),
-      );
-      if (!languageCodes || languageCodes.length === 0) return;
-
-      const translations =
-        await this.openaiTranslationsService.translateObjectToLanguages(
-          trackData,
-          languageCodes,
-          'openai_translation_speech_reexpression_user',
-        );
-      if (translations) {
-        await this.trackRepository.update(trackId, { translations } as any);
-      }
-    } catch (error) {
-      this.logger.error(
-        `Failed to create translations for track ${trackId}: ${error}`,
-      );
-    }
-  }
-
-  private checkIfTranslationRequired(
-    oldData: TrackTranslations,
-    newData: TrackTranslations,
-  ): boolean {
-    const { title, description } = newData;
-    if (title === undefined && description === undefined) return false;
-    return (
-      title?.trim().toLowerCase() !== oldData.title?.trim().toLowerCase() ||
-      description?.trim().toLowerCase() !==
-        oldData.description?.trim().toLowerCase()
-    );
   }
 }

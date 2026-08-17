@@ -33,6 +33,20 @@ export class TrackEnrollment extends BaseWithoutTenantEntity {
   lastActivityAt?: Date;
 
   /**
+   * The learner's chosen language for THIS course (a `languages.translationCode`
+   * such as `hi`), so reading one course in Hindi does not mean switching the
+   * whole app to Hindi. Null / `en` = the English source.
+   *
+   * This is also the only language grading trusts. Quiz fill-blank answers are
+   * marked by string comparison and open-ended answers are graded against a
+   * rubric, both of which are translated — so a submission is always marked
+   * against the language stored here, never one named by the request, which a
+   * client could otherwise mismatch against what it actually rendered.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  languageCode?: string | null;
+
+  /**
    * Consolidated episodic memory for this learner's journey through the
    * track, folded from each conversation item's session memory
    * (TrackMemoryService): { summary, items: { [trackItemId]: { sessionId,

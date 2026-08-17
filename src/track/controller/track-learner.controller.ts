@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import {
@@ -23,6 +24,10 @@ import { VideoProgressDto } from '../dto/video-progress.dto';
 import { SubmitQuizAttemptDto } from '../dto/submit-quiz-attempt.dto';
 import { SubmitAnnotationAttemptDto } from '../dto/submit-annotation-attempt.dto';
 import { SaveJournalDraftsDto } from '../dto/journal-entry.dto';
+import {
+  EnrollTrackDto,
+  SetTrackLanguageDto,
+} from '../dto/track-translation.dto';
 
 @ApiTags('Learn Tracks')
 @ApiBearerAuth()
@@ -69,8 +74,37 @@ export class TrackLearnerController {
   @ApiOperation({ summary: 'Enroll in a track (idempotent)' })
   @AuthPermissions([PERMISSIONS.EDIT_TRACK])
   @Post('tracks/:trackId/enroll')
-  async enroll(@Param('trackId', ParseUUIDPipe) trackId: string) {
-    return this.trackEnrollmentService.enroll(trackId);
+  async enroll(
+    @Param('trackId', ParseUUIDPipe) trackId: string,
+    @Body() dto?: EnrollTrackDto,
+  ) {
+    // The app language seeds the course's language when it is published in it.
+    return this.trackEnrollmentService.enroll(trackId, dto?.languageCode);
+  }
+
+  @ApiOperation({
+    summary: 'Languages this course is published in, plus the learner’s choice',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_TRACK])
+  @Get('tracks/:trackId/languages')
+  async getTrackLanguages(@Param('trackId', ParseUUIDPipe) trackId: string) {
+    return this.trackEnrollmentService.getTrackLanguages(trackId);
+  }
+
+  @ApiOperation({
+    summary:
+      'Choose the language for this course. Persists on the enrollment and is the language answers are marked in.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_TRACK])
+  @Put('tracks/:trackId/language')
+  async setTrackLanguage(
+    @Param('trackId', ParseUUIDPipe) trackId: string,
+    @Body() dto: SetTrackLanguageDto,
+  ) {
+    return this.trackEnrollmentService.setTrackLanguage(
+      trackId,
+      dto.languageCode,
+    );
   }
 
   @ApiOperation({ summary: 'Next unlocked component in the track' })

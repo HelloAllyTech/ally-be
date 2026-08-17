@@ -191,7 +191,71 @@ Input JSON:
 {{inputJson}}
 `;
 
+/**
+ * Course (track) content translation.
+ *
+ * Fields arrive as an opaque `{f1: {...}}` map rather than the real course
+ * structure: the model never sees a question id, an option id or an answer key,
+ * so it cannot reshape the course — the caller reads results back by key and
+ * splices them into the authored structure itself. `kind` tells the model what
+ * each string is for, because a fill-blank accepted answer and an article body
+ * need opposite treatment.
+ */
+export const DEFAULT_OPENAI_TRACK_CONTENT_TRANSLATION_PROMPT_TEMPLATE = `
+You are a native {{languageName}} speaker localising a counsellor-training
+course. The learners are practising counsellors who will read this content and
+be assessed on it.
+
+Re-express each string as natural, idiomatic {{languageName}} — the way a
+{{languageName}}-speaking trainer would actually write it. Do not translate
+word-for-word.
+
+{{toneGuidance}}
+{{glossary}}
+════════════════════════════════════════════════════
+🧾 PER-FIELD RULES — obey the "kind" on each field
+════════════════════════════════════════════════════
+- TITLE / LABEL: keep it as short as the English. No added explanation.
+- DESCRIPTION / PROSE: natural {{languageName}} prose, same register.
+- HTML: translate only the visible text. Every tag, attribute, entity and
+  self-closing marker must survive byte-for-byte. Never add or remove markup.
+- BLANK_TEMPLATE: placeholders of the form <blankToken> mark the gaps the
+  learner fills in. Reproduce every placeholder exactly, unchanged and
+  untranslated, and place them where they read naturally in {{languageName}}.
+- SHORT_ANSWER: this is a marking key — the exact word or phrase a learner must
+  type to be marked correct. Give the single most natural {{languageName}}
+  equivalent. No alternatives, no punctuation, no explanation, no parentheses.
+- RUBRIC: read by an automated grader, not the learner. Preserve the precise
+  assessment criteria; do not soften or generalise them.
+- SPEAKER: a person's name or role in a transcript. Transliterate names into
+  the {{languageName}} script; translate role words ("Counsellor", "Caller").
+
+════════════════════════════════════════════════════
+🧠 GENERAL RULES
+════════════════════════════════════════════════════
+1. Translate EVERY field you are given. Never omit a key.
+2. Return the SAME keys you were given, unchanged.
+3. "context" is background only — never translate it, never echo it.
+4. Preserve the meaning exactly. This content is assessed; an invented detail
+   becomes a wrong answer.
+5. Keep clinical and safeguarding terminology precise. Where a technical term
+   has no settled {{languageName}} equivalent, keep the English term rather
+   than coining a new one.
+6. Never add commentary, notes, or translator's remarks.
+
+════════════════════════════════════════════════════
+🧾 OUTPUT
+════════════════════════════════════════════════════
+Return ONLY a valid JSON object mapping each field key to its translated
+string, e.g. {"f1": "...", "f2": "..."}. No markdown, no commentary.
+
+Fields to translate:
+{{inputJson}}
+`;
+
 // Prompt code identifiers used to fetch templates from DB
+export const OPENAI_TRACK_CONTENT_TRANSLATION_PROMPT_CODE =
+  'openai_track_content_translation';
 export const OPENAI_TRANSLATION_SYSTEM_PROMPT_CODE =
   'openai_translation_code_mixed_system';
 export const OPENAI_TRANSLATION_USER_PROMPT_CODE =
