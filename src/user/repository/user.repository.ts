@@ -194,7 +194,17 @@ export class UserRepository extends Repository<User> {
   }
 
   // Platform-level lookup (deliberately NOT tenant-pinned — super-admin tiers
-  // span tenants): all users holding the given role, newest first.
+  // span tenants): all users holding the given role, newest account first.
+  //
+  // Two different dates come back, and callers rendering one must not label it
+  // as the other: `createdAt` is when the *account* was created, while
+  // `roleGrantedAt` (`user_groups."createdAt"`) is when this role was granted.
+  // For an audit surface — "when did this person get admin access?" — only
+  // `roleGrantedAt` answers the question; an admin whose account dates from
+  // March but who was granted the role in August reads as March under
+  // `createdAt`, which sent one investigation down the wrong path. See
+  // BackfillPlatformAdminGrantDates1901000000000 for the accuracy ceiling on
+  // pre-rollout PLATFORM_ADMIN grants.
   async getUsersWithRole(role: UserRole, search?: string) {
     const query = this.createQueryBuilder('user')
       .select('user.id', 'id')
@@ -202,6 +212,7 @@ export class UserRepository extends Repository<User> {
       .addSelect('user.email', 'email')
       .addSelect('user.status', 'status')
       .addSelect('user.createdAt', 'createdAt')
+      .addSelect('userGroup.createdAt', 'roleGrantedAt')
       .innerJoin(UserGroup, 'userGroup', 'userGroup.userId = user.id')
       .innerJoin(Group, 'group', 'group.id = userGroup.groupId')
       .where('group.name = :role', { role })
