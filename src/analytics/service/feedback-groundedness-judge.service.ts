@@ -5,8 +5,10 @@ import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
 import {
+  JUDGE_HTTP_TIMEOUT_MS,
   resolveJudgeConcurrency,
   runWithConcurrency,
+  withJudgeSlot,
 } from '../util/judge-concurrency.util';
 import { GroundednessBackfillJobDto } from '../dto/platform-analytics.dto';
 import {
@@ -86,6 +88,7 @@ export class FeedbackGroundednessJudgeService {
       processed: 0,
       judged: 0,
       skipped: 0,
+      failed: 0,
       claimsJudged: 0,
       claimsUngrounded: 0,
       error: null,
@@ -164,6 +167,7 @@ export class FeedbackGroundednessJudgeService {
               (e as Error).message
             }`,
           );
+          job.failed += 1;
           job.processed += 1;
           await this.saveJob(job);
         }
@@ -191,14 +195,18 @@ export class FeedbackGroundednessJudgeService {
     rubric: string | null,
   ): Promise<JudgeResult> {
     const { apiUrl, outboundApiKey } = this.config.ai;
-    const res = await axios.post(
-      `${apiUrl}/api/v1/feedback-groundedness/judge`,
-      { transcript, claims, language, rubric },
-      {
-        headers: { 'x-api-key': outboundApiKey },
-        // One Gemini call over a whole transcript plus every claim.
-        timeout: 120_000,
-      },
+    // Held inside the GLOBAL judge slot: the ceiling has to span every
+    // backfill at once, not just this job's own pool.
+    const res = await withJudgeSlot(() =>
+      axios.post(
+        `${apiUrl}/api/v1/feedback-groundedness/judge`,
+        { transcript, claims, language, rubric },
+        {
+          headers: { 'x-api-key': outboundApiKey },
+          // One Gemini call over a whole transcript plus every claim.
+          timeout: JUDGE_HTTP_TIMEOUT_MS,
+        },
+      ),
     );
     const d = res.data as {
       judge_model: string;

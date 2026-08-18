@@ -20,12 +20,20 @@ Each returns a job id immediately and runs asynchronously; poll the matching sta
 `sinceDays: 90` is three months. Start here — see "Extending the window" for why this does not
 paint you into a corner.
 
-`concurrency` is how many sessions are judged in parallel (default 5, capped at 20). Serial, a
-90-day window took the better part of two days, which made an ordinary deploy interrupting it the
-expected path rather than an edge case; at 5 it is closer to nine hours. The cap is not
-arbitrary — a backfill shares a Gemini rate limit and a single core-ai task with live traffic, and
-past a point more concurrency just converts throughput into 429s and sessions the next run has to
-redo.
+`concurrency` is how many sessions ONE backfill judges in parallel (default 5, capped at 20).
+Above it sits a GLOBAL ceiling of 3 judge calls in flight across every backfill at once, and that
+is the limit that actually binds. Three jobs at 5 each once put 15 concurrent calls into the
+single core-ai task, pegged it at 100% CPU (2% at rest) and pushed every call past its timeout — a
+full run that judged nothing. The global ceiling is a constant, not an API parameter, on purpose:
+it describes what the judge can absorb, which is not a caller's decision to make.
+
+Because of it, running all three backfills at once is fine — they share the three slots rather
+than opening fifteen.
+
+**Read `failed`, not just `processed`.** `processed` counts attempts, so a run where every call
+times out still reaches `processed === total` and reports `done`. `judged` and `failed` are what
+say whether anything was written. Expect roughly 6-7 hours for ~1,200 sessions: a 59s median
+through 3 slots.
 
 ```bash
 TOKEN=<super-admin JWT>

@@ -69,3 +69,77 @@ export function resolveJudgeConcurrency(requested?: number | null): number {
   }
   return Math.max(1, Math.min(Math.trunc(requested), MAX_JUDGE_CONCURRENCY));
 }
+
+/**
+ * How long ally-be waits for a judge call to ally-ai.
+ *
+ * Measured in production over 27 completed judge calls: median 59s, max 234s,
+ * and 4 of 27 already past the old 120s ceiling while core-ai sat idle. Every
+ * one of those was a Gemini call we paid for, threw away, and counted as
+ * `processed` — the failure was invisible because the counter did not
+ * distinguish it from work that succeeded.
+ *
+ * 600s is headroom over the observed tail, not a target. It is not a fix for
+ * the underlying shape: a synchronous HTTP request for work that takes minutes
+ * is the wrong transport, and if backfills become routine the honest answer is
+ * a queue or Gemini's batch API. Raising this again is a signal to do that
+ * instead.
+ */
+export const JUDGE_HTTP_TIMEOUT_MS = 600_000;
+
+/**
+ * A GLOBAL ceiling on judge calls in flight, across every backfill at once.
+ *
+ * The per-job `concurrency` cannot bound load on a shared resource: three jobs
+ * at 5 each meant 15 concurrent calls into one core-ai task, which pegged it at
+ * 100% CPU (2% at rest) and inflated every call past its timeout — a full run
+ * that judged nothing. A per-job limit only ever describes one job's appetite;
+ * this describes what the judge can actually absorb.
+ *
+ * Held here rather than written down as "run them one at a time", because an
+ * operational rule that must be remembered is one that will eventually be
+ * forgotten at 2am.
+ */
+const globalJudgeSlots = {
+  limit: 3,
+  inUse: 0,
+  waiting: [] as Array<() => void>,
+};
+
+/**
+ * Run `fn` holding one of the global judge slots.
+ *
+ * Release HANDS THE SLOT OVER to the next waiter rather than decrementing and
+ * waking it: decrementing first opens a window between the wake-up and the
+ * waiter actually resuming, and a fresh caller arriving in that window sees a
+ * free slot and takes it — so the limit is briefly exceeded by however many
+ * callers barge in. Transferring ownership keeps `inUse` honest at every
+ * instant.
+ */
+export async function withJudgeSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (globalJudgeSlots.inUse < globalJudgeSlots.limit) {
+    globalJudgeSlots.inUse += 1;
+  } else {
+    // Resuming means the slot is already ours — `inUse` was never given back.
+    await new Promise<void>((resolve) => globalJudgeSlots.waiting.push(resolve));
+  }
+
+  try {
+    return await fn();
+  } finally {
+    const next = globalJudgeSlots.waiting.shift();
+    if (next) {
+      next();
+    } else {
+      globalJudgeSlots.inUse -= 1;
+    }
+  }
+}
+
+/** Test seam: judge calls in flight right now, across every backfill. */
+export function judgeSlotsInUse(): number {
+  return globalJudgeSlots.inUse;
+}
+
+/** Test seam: the global ceiling, so a test cannot drift from the constant. */
+export const GLOBAL_JUDGE_SLOT_LIMIT = globalJudgeSlots.limit;

@@ -1,8 +1,11 @@
 import {
   DEFAULT_JUDGE_CONCURRENCY,
+  GLOBAL_JUDGE_SLOT_LIMIT,
+  judgeSlotsInUse,
   MAX_JUDGE_CONCURRENCY,
   resolveJudgeConcurrency,
   runWithConcurrency,
+  withJudgeSlot,
 } from '../judge-concurrency.util';
 
 /**
@@ -107,5 +110,71 @@ describe('resolveJudgeConcurrency', () => {
 
   it('honours a sane request', () => {
     expect(resolveJudgeConcurrency(8)).toBe(8);
+  });
+});
+
+/**
+ * The global slot limiter is what the per-job pool could not be: a ceiling on
+ * everything hitting the judge at once. Three backfills at concurrency 5 each
+ * put 15 calls into one core-ai task, pegged it at 100% CPU and pushed every
+ * call past its timeout — a full run that judged nothing.
+ */
+describe('withJudgeSlot', () => {
+  it('never lets more than the global limit run at once', async () => {
+    let inFlight = 0;
+    let peak = 0;
+
+    // Three "jobs" pushing hard at the same time, as happened in production.
+    await Promise.all(
+      Array.from({ length: 30 }, () =>
+        withJudgeSlot(async () => {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+          await new Promise((r) => setTimeout(r, 2));
+          inFlight -= 1;
+        }),
+      ),
+    );
+
+    expect(peak).toBe(GLOBAL_JUDGE_SLOT_LIMIT);
+  });
+
+  it('does not let a fresh caller barge past a waiter', async () => {
+    // The bug this guards: releasing by decrementing and then waking a waiter
+    // leaves a window where a new arrival sees a free slot and takes it, so the
+    // limit is exceeded by however many callers arrive in that window.
+    let inFlight = 0;
+    let peak = 0;
+    const run = () =>
+      withJudgeSlot(async () => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((r) => setTimeout(r, 5));
+        inFlight -= 1;
+      });
+
+    const first = Array.from({ length: GLOBAL_JUDGE_SLOT_LIMIT + 2 }, run);
+    // Arrive late, exactly while the first batch is releasing.
+    await new Promise((r) => setTimeout(r, 4));
+    const late = Array.from({ length: 4 }, run);
+
+    await Promise.all([...first, ...late]);
+    expect(peak).toBe(GLOBAL_JUDGE_SLOT_LIMIT);
+  });
+
+  it('releases the slot when the call throws', async () => {
+    await expect(
+      withJudgeSlot(async () => {
+        throw new Error('judge timed out');
+      }),
+    ).rejects.toThrow('judge timed out');
+
+    // A leaked slot would silently shrink the ceiling for the rest of the run;
+    // enough timeouts and the backfill would stall at zero throughput.
+    expect(judgeSlotsInUse()).toBe(0);
+  });
+
+  it('returns the call result', async () => {
+    await expect(withJudgeSlot(async () => 'judged')).resolves.toBe('judged');
   });
 });

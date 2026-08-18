@@ -5,8 +5,10 @@ import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
 import {
+  JUDGE_HTTP_TIMEOUT_MS,
   resolveJudgeConcurrency,
   runWithConcurrency,
+  withJudgeSlot,
 } from '../util/judge-concurrency.util';
 import { DriftBackfillJobDto } from '../dto/platform-analytics.dto';
 import {
@@ -82,6 +84,7 @@ export class DriftJudgeService {
       judged: 0,
       drifted: 0,
       skipped: 0,
+      failed: 0,
       error: null,
     };
     await this.saveJob(job);
@@ -161,6 +164,7 @@ export class DriftJudgeService {
           this.logger.error(
             `drift backfill: session ${s.id} failed: ${(e as Error).message}`,
           );
+          job.failed += 1;
           job.processed += 1;
           await this.saveJob(job);
         }
@@ -185,14 +189,18 @@ export class DriftJudgeService {
     rubric: string | null,
   ): Promise<JudgeResult> {
     const { apiUrl, outboundApiKey } = this.config.ai;
-    const res = await axios.post(
-      `${apiUrl}/api/v1/drift/judge`,
-      { transcript, persona, language, rubric },
-      {
-        headers: { 'x-api-key': outboundApiKey },
-        // The judge is a single Gemini call over a whole transcript — allow time.
-        timeout: 120_000,
-      },
+    // Held inside the GLOBAL judge slot: the ceiling has to span every
+    // backfill at once, not just this job's own pool.
+    const res = await withJudgeSlot(() =>
+      axios.post(
+        `${apiUrl}/api/v1/drift/judge`,
+        { transcript, persona, language, rubric },
+        {
+          headers: { 'x-api-key': outboundApiKey },
+          // The judge is a single Gemini call over a whole transcript — allow time.
+          timeout: JUDGE_HTTP_TIMEOUT_MS,
+        },
+      ),
     );
     const d = res.data as {
       judge_model: string;

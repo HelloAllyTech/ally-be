@@ -5,8 +5,10 @@ import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
 import {
+  JUDGE_HTTP_TIMEOUT_MS,
   resolveJudgeConcurrency,
   runWithConcurrency,
+  withJudgeSlot,
 } from '../util/judge-concurrency.util';
 import { LanguageBackfillJobDto } from '../dto/platform-analytics.dto';
 import { DriftJudgeRepository } from '../repository/drift-judge.repository';
@@ -84,6 +86,7 @@ export class LanguageJudgeService {
       judged: 0,
       errorAnnotations: 0,
       skipped: 0,
+      failed: 0,
       error: null,
     };
     await this.saveJob(job);
@@ -168,6 +171,7 @@ export class LanguageJudgeService {
           this.logger.error(
             `language backfill: session ${s.id} failed: ${(e as Error).message}`,
           );
+          job.failed += 1;
           job.processed += 1;
           await this.saveJob(job);
         }
@@ -191,33 +195,37 @@ export class LanguageJudgeService {
     rubric: string | null,
   ): Promise<JudgeResult> {
     const { apiUrl, outboundApiKey } = this.config.ai;
-    const res = await axios.post(
-      `${apiUrl}/api/v1/language-quality/judge`,
-      {
-        transcript,
-        persona: s.persona ?? '',
-        language: s.language,
-        // FR19: per-language declarative config from languages.evalConfig;
-        // the judge renders absent values as "unknown".
-        language_eval_config: {
-          language_label: s.language_label ?? undefined,
-          target_variety: s.eval_config?.targetVariety ?? undefined,
-          diglossia: s.eval_config?.diglossia ?? undefined,
-          code_switch_partners: s.eval_config?.codeSwitchPartners ?? [],
+    // Held inside the GLOBAL judge slot: the ceiling has to span every
+    // backfill at once, not just this job's own pool.
+    const res = await withJudgeSlot(() =>
+      axios.post(
+        `${apiUrl}/api/v1/language-quality/judge`,
+        {
+          transcript,
+          persona: s.persona ?? '',
+          language: s.language,
+          // FR19: per-language declarative config from languages.evalConfig;
+          // the judge renders absent values as "unknown".
+          language_eval_config: {
+            language_label: s.language_label ?? undefined,
+            target_variety: s.eval_config?.targetVariety ?? undefined,
+            diglossia: s.eval_config?.diglossia ?? undefined,
+            code_switch_partners: s.eval_config?.codeSwitchPartners ?? [],
+          },
+          scenario_style_config: {
+            register_directive_configured: s.register_directive_configured,
+            style_exemplars_configured: s.style_exemplars_configured,
+            allowed_fillers: s.allowed_fillers ?? [],
+            engine: s.engine ?? undefined,
+          },
+          rubric,
         },
-        scenario_style_config: {
-          register_directive_configured: s.register_directive_configured,
-          style_exemplars_configured: s.style_exemplars_configured,
-          allowed_fillers: s.allowed_fillers ?? [],
-          engine: s.engine ?? undefined,
+        {
+          headers: { 'x-api-key': outboundApiKey },
+          // Single Gemini call over a whole transcript — allow time.
+          timeout: JUDGE_HTTP_TIMEOUT_MS,
         },
-        rubric,
-      },
-      {
-        headers: { 'x-api-key': outboundApiKey },
-        // Single Gemini call over a whole transcript — allow time.
-        timeout: 120_000,
-      },
+      ),
     );
     const d = res.data as {
       judge_model: string;

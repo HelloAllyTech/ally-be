@@ -425,6 +425,15 @@ export class GroundednessBackfillJobDto {
   })
   claimsUngrounded!: number;
   @ApiProperty({ nullable: true }) error!: string | null;
+  @ApiProperty({
+    description:
+      'Sessions whose judge call errored or timed out. Separate from ' +
+      '`processed`, which counts attempts: a run where every call times out ' +
+      'still reaches processed === total and reports "done", which is exactly ' +
+      'how a backfill that judged nothing went unnoticed for ten minutes.',
+  })
+  failed!: number;
+
 }
 
 export class DriftBackfillJobDto {
@@ -437,6 +446,15 @@ export class DriftBackfillJobDto {
   @ApiProperty() drifted!: number;
   @ApiProperty() skipped!: number;
   @ApiProperty({ required: false, nullable: true }) error?: string | null;
+  @ApiProperty({
+    description:
+      'Sessions whose judge call errored or timed out. Separate from ' +
+      '`processed`, which counts attempts: a run where every call times out ' +
+      'still reaches processed === total and reports "done", which is exactly ' +
+      'how a backfill that judged nothing went unnoticed for ten minutes.',
+  })
+  failed!: number;
+
 }
 
 export class LanguageQualityQueryDto {
@@ -763,6 +781,15 @@ export class LanguageBackfillJobDto {
   errorAnnotations!: number;
   @ApiProperty() skipped!: number;
   @ApiProperty({ required: false, nullable: true }) error?: string | null;
+  @ApiProperty({
+    description:
+      'Sessions whose judge call errored or timed out. Separate from ' +
+      '`processed`, which counts attempts: a run where every call times out ' +
+      'still reaches processed === total and reports "done", which is exactly ' +
+      'how a backfill that judged nothing went unnoticed for ten minutes.',
+  })
+  failed!: number;
+
 }
 
 export class AgentJoinReliabilityQueryDto extends AnalyticsWindowQueryDto {}

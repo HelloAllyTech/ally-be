@@ -1225,6 +1225,7 @@ export class AnalyticsController {
         judged: 0,
         errorAnnotations: 0,
         skipped: 0,
+        failed: 0,
         error: 'job not found (expired or unknown)',
       };
     }

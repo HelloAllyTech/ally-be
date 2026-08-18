@@ -221,6 +221,7 @@ export class PlatformAnalyticsService {
         judged: 0,
         drifted: 0,
         skipped: 0,
+        failed: 0,
         error: 'job not found',
       };
     }
