@@ -410,8 +410,10 @@ function walkItem(item: TrackItem, visit: FieldVisitor): void {
       break;
 
     case TrackItemType.GAME:
-      // The game itself is a canvas of sprites with no words in it; the only
-      // thing a learner reads is the author's framing line.
+      // The only words a game carries as *content* are the author's framing
+      // line. A bundle that draws chrome of its own — the memory deck has a
+      // move counter and an end-of-round card — gets that copy from the
+      // client's own i18n, so there is nothing here to send a translator.
       visitField(
         {
           path: 'content.intro',
