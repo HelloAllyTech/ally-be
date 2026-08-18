@@ -75,6 +75,7 @@ export function effectiveMonthOf(
   releasedAt: Date | null | undefined,
   plannedMonth: string | null | undefined,
 ): string | null {
-  if (isMonthPinned(stage, releasedAt)) return monthKeyOf(new Date(releasedAt!));
+  if (isMonthPinned(stage, releasedAt))
+    return monthKeyOf(new Date(releasedAt!));
   return plannedMonth ?? null;
 }

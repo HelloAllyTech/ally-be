@@ -20,9 +20,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * (prompts whose .txt disappeared) and gates deletion — overloading it would
  * mean an admin hiding a variant made it deletable.
  */
-export class AddVisibleInStudioToPrompts1903000000000
-  implements MigrationInterface
-{
+export class AddVisibleInStudioToPrompts1903000000000 implements MigrationInterface {
   name = 'AddVisibleInStudioToPrompts1903000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

@@ -81,12 +81,7 @@ export class RoadmapBoardService {
       months: monthKeyRange(from, to).map((month) =>
         this.lane(month, byMonth.get(month) ?? [], totals, laneLimit),
       ),
-      unscheduled: this.lane(
-        null,
-        byMonth.get(null) ?? [],
-        totals,
-        laneLimit,
-      ),
+      unscheduled: this.lane(null, byMonth.get(null) ?? [], totals, laneLimit),
       bounds: await this.opportunityRepository.getMonthBounds(),
       from,
       to,
@@ -153,7 +148,8 @@ export class RoadmapBoardService {
 
     return {
       opportunityId: dto.opportunityId,
-      plannedMonth: pinnedMonth === null ? dto.month : existing.plannedMonth ?? null,
+      plannedMonth:
+        pinnedMonth === null ? dto.month : (existing.plannedMonth ?? null),
       effectiveMonth: pinnedMonth ?? dto.month,
       reordered,
     };

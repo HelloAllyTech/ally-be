@@ -79,7 +79,9 @@ describe('monthKeyRange', () => {
 
 describe('isMonthPinned', () => {
   it('pins only a released opportunity that actually has a release timestamp', () => {
-    expect(isMonthPinned(RELEASED, new Date('2026-05-04T00:00:00Z'))).toBe(true);
+    expect(isMonthPinned(RELEASED, new Date('2026-05-04T00:00:00Z'))).toBe(
+      true,
+    );
   });
 
   it('does not pin an unreleased opportunity even if one somehow carries a timestamp', () => {
@@ -131,12 +133,12 @@ describe('effectiveMonthOf', () => {
     // EFFECTIVE_MONTH_SQL uses to_char on a timestamp without time zone, i.e. no conversion.
     // If this function drifted onto local time, a card released late on the last day of a month
     // would appear in a different lane than the one the grouping query put it in.
-    expect(effectiveMonthOf(RELEASED, new Date('2026-05-31T23:30:00Z'), null)).toBe(
-      '2026-05',
-    );
-    expect(effectiveMonthOf(RELEASED, new Date('2026-06-01T00:30:00Z'), null)).toBe(
-      '2026-06',
-    );
+    expect(
+      effectiveMonthOf(RELEASED, new Date('2026-05-31T23:30:00Z'), null),
+    ).toBe('2026-05');
+    expect(
+      effectiveMonthOf(RELEASED, new Date('2026-06-01T00:30:00Z'), null),
+    ).toBe('2026-06');
   });
 });
 
@@ -150,7 +152,16 @@ describe('isValidMonthKey', () => {
   });
 
   it('rejects malformed keys, matching CHK_roadmap_opps_planned_month', () => {
-    for (const bad of ['2026-13', '2026-00', '2026-0', '26-01', '2026-1', '2026/01', '', 'x']) {
+    for (const bad of [
+      '2026-13',
+      '2026-00',
+      '2026-0',
+      '26-01',
+      '2026-1',
+      '2026/01',
+      '',
+      'x',
+    ]) {
       expect(isValidMonthKey(bad)).toBe(false);
     }
   });
