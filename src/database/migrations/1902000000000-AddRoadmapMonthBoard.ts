@@ -42,7 +42,9 @@ export class AddRoadmapMonthBoard1902000000000 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP INDEX IF EXISTS "idx_roadmap_opps_month_board"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "idx_roadmap_opps_month_board"`,
+    );
     await queryRunner.query(`
       ALTER TABLE "roadmap_opportunities"
         DROP CONSTRAINT IF EXISTS "CHK_roadmap_opps_planned_month"
