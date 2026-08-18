@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -1096,11 +1097,29 @@ export class AnalyticsController {
           judgePromptVersion: body.judgePromptVersion,
         }
       : null;
+    // Lean mode needs BOTH versions: the one to copy forward from, and the one
+    // to write. Without a target version there is nothing to pin the new rows
+    // to, so it is rejected rather than guessed at.
+    const leanFromVersion =
+      body.lean && unjudgedForVersion
+        ? {
+            judgeModel: body.judgeModel ?? 'gemini-2.5-pro',
+            judgePromptVersion: body.leanFromPromptVersion ?? 'v1',
+          }
+        : null;
+    if (body.lean && !unjudgedForVersion) {
+      throw new BadRequestException(
+        'lean backfill requires judgePromptVersion: it names the version the ' +
+          'topped-up rows are written under, which is what the dashboard pins.',
+      );
+    }
+
     return this.platformAnalyticsService.startDriftBackfill(
       body.sinceDays ?? 90,
       Boolean(unjudgedForVersion),
       unjudgedForVersion,
       body.concurrency,
+      leanFromVersion,
     );
   }
 

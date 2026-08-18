@@ -200,12 +200,17 @@ export class PlatformAnalyticsService {
       judgePromptVersion: string;
     } | null,
     concurrency?: number | null,
+    leanFromVersion?: {
+      judgeModel: string;
+      judgePromptVersion: string;
+    } | null,
   ): Promise<DriftBackfillJobDto> {
     return this.driftJudge.startBackfill(
       sinceDays,
       onlyUnjudged,
       unjudgedForVersion,
       concurrency,
+      leanFromVersion,
     );
   }
 

@@ -366,6 +366,30 @@ export class StartDriftBackfillDto {
       'throughput into sessions a later re-run has to redo.',
   })
   concurrency?: number;
+  @ApiProperty({
+    required: false,
+    default: false,
+    description:
+      'LEAN BACKFILL. Judge only the labels the current rubric ADDED, copying ' +
+      "every other field forward from the session's existing judgment under " +
+      '`leanFromPromptVersion`. Roughly a quarter of the cost: the transcript ' +
+      'still goes up (input is an eighth the price) but the response carries ' +
+      'six labels instead of the full per-turn record.\n\n' +
+      'Only valid when the rubric change ADDED labels and redefined none — ' +
+      'copying forward a value whose meaning changed would be silently wrong. ' +
+      'Never use for sessions judged for the first time; they need a full run.',
+  })
+  lean?: boolean;
+
+  @ApiProperty({
+    required: false,
+    default: 'v1',
+    description:
+      'Which existing judgment the lean pass copies forward. Sessions without ' +
+      'a judgment under this version are excluded from the run — there would ' +
+      'be nothing to top up.',
+  })
+  leanFromPromptVersion?: string;
 }
 
 export class StartGroundednessBackfillDto {
@@ -433,7 +457,6 @@ export class GroundednessBackfillJobDto {
       'how a backfill that judged nothing went unnoticed for ten minutes.',
   })
   failed!: number;
-
 }
 
 export class DriftBackfillJobDto {
@@ -454,7 +477,6 @@ export class DriftBackfillJobDto {
       'how a backfill that judged nothing went unnoticed for ten minutes.',
   })
   failed!: number;
-
 }
 
 export class LanguageQualityQueryDto {
@@ -789,7 +811,6 @@ export class LanguageBackfillJobDto {
       'how a backfill that judged nothing went unnoticed for ten minutes.',
   })
   failed!: number;
-
 }
 
 export class AgentJoinReliabilityQueryDto extends AnalyticsWindowQueryDto {}

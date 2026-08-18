@@ -121,7 +121,9 @@ export async function withJudgeSlot<T>(fn: () => Promise<T>): Promise<T> {
     globalJudgeSlots.inUse += 1;
   } else {
     // Resuming means the slot is already ours — `inUse` was never given back.
-    await new Promise<void>((resolve) => globalJudgeSlots.waiting.push(resolve));
+    await new Promise<void>((resolve) =>
+      globalJudgeSlots.waiting.push(resolve),
+    );
   }
 
   try {

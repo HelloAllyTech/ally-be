@@ -105,6 +105,16 @@ export class DriftJudgeRepository {
      *
      * Omitted = the old version-agnostic behaviour, for a first-time backfill.
      */
+    /**
+     * Lean backfill only: require a judgment under THIS version to already
+     * exist. The lean pass copies an existing row forward and fills in the
+     * added labels, so a session with nothing to copy would silently produce
+     * no row at all — it must be excluded from the run, not attempted.
+     */
+    judgedForVersion?: {
+      judgeModel: string;
+      judgePromptVersion: string;
+    } | null;
     unjudgedForVersion?: {
       judgeModel: string;
       judgePromptVersion: string;
@@ -156,6 +166,15 @@ export class DriftJudgeRepository {
                    WHERE j."scenarioSessionId" = s.id)`;
       }
     }
+    if (opts.judgedForVersion) {
+      sql += ` AND EXISTS (
+                 SELECT 1 FROM turn_drift_judgment j
+                 WHERE j."scenarioSessionId" = s.id
+                   AND j."judgeModel" = ${p(opts.judgedForVersion.judgeModel)}
+                   AND j."judgePromptVersion" = ${p(
+                     opts.judgedForVersion.judgePromptVersion,
+                   )})`;
+    }
     sql += ` ORDER BY s."createdAt" DESC`;
     if (opts.limit) sql += ` LIMIT ${p(opts.limit)}`;
     return this.dataSource.query(sql, params);
@@ -204,6 +223,107 @@ export class DriftJudgeRepository {
     }
     const first = Object.values(pv)[0];
     return first != null ? String(first) : null;
+  }
+
+  /**
+   * Top up an ALREADY-JUDGED session with the labels the v2 rubric added.
+   *
+   * The backfill counterpart to `upsertJudgments`: instead of writing a fresh
+   * judgment, it copies the existing row's v1 fields into a row stamped with
+   * the new judge version and fills in the six added labels. One row per turn
+   * carrying everything, so the dashboard keeps pinning a single
+   * (judgeModel, judgePromptVersion) pair and never reads across rubrics.
+   *
+   * Copying the old values forward is only sound because v2 ADDED sections to
+   * the rubric and changed no existing definition — verified against the prompt
+   * diff. The day a rubric edit changes what an existing label MEANS, this path
+   * is invalid for that label and the session needs a full re-judge; there is
+   * no way for this code to detect that, so it is written down here.
+   *
+   * Provenance goes in `metadata`, because a row that looks fully v2-judged but
+   * whose older fields came from an earlier pass is a trap for whoever audits
+   * this in six months.
+   */
+  async mergeLeanLabels(
+    sessionId: string,
+    perTurn: Array<{
+      turn_index: number;
+      role_inversion?: boolean | null;
+      offered_solution?: boolean | null;
+      solutions_offered?: number | null;
+      resistance_briefed?: boolean | null;
+      introduced_new_information?: boolean | null;
+      stuck_is_appropriate?: boolean | null;
+      reasoning?: string | null;
+    }>,
+    sourceVersion: { judgeModel: string; judgePromptVersion: string },
+    targetVersion: { judgeModel: string; judgePromptVersion: string },
+  ): Promise<number> {
+    let merged = 0;
+    for (const t of perTurn) {
+      const res = await this.dataSource.query(
+        `INSERT INTO turn_drift_judgment (
+           "tenant_id", "scenarioSessionId", "turnIndex", "coherence",
+           "topicLabel", "inCharacter", "counselorUtteranceGarbled",
+           "sttErrorType", "aiReplyFailureMode", "rootAttribution",
+           "reasoning", "userText", "aiText", "language", "scenarioId",
+           "llmProvider", "llmModel", "occurredAt", "promptVersion",
+           "sessionDrifted", "firstDriftTurn", "scenarioVersionId",
+           "judgeModel", "judgePromptVersion", "metadata",
+           "roleInversion", "offeredSolution", "solutionsOffered",
+           "resistanceBriefed", "introducedNewInformation", "stuckIsAppropriate"
+         )
+         SELECT src."tenant_id", src."scenarioSessionId", src."turnIndex",
+                src."coherence", src."topicLabel", src."inCharacter",
+                src."counselorUtteranceGarbled", src."sttErrorType",
+                src."aiReplyFailureMode", src."rootAttribution",
+                src."reasoning", src."userText", src."aiText", src."language",
+                src."scenarioId", src."llmProvider", src."llmModel",
+                src."occurredAt", src."promptVersion", src."sessionDrifted",
+                src."firstDriftTurn", src."scenarioVersionId",
+                $4, $5,
+                COALESCE(src."metadata", '{}'::jsonb) || jsonb_build_object(
+                  'labelsBackfill', jsonb_build_object(
+                    'from', jsonb_build_object(
+                      'judgeModel', src."judgeModel",
+                      'judgePromptVersion', src."judgePromptVersion"),
+                    'labelsOnly', true)),
+                $6, $7, $8, $9, $10, $11
+           FROM turn_drift_judgment src
+          WHERE src."scenarioSessionId" = $1
+            AND src."turnIndex" = $2
+            AND src."judgeModel" = $3
+            AND src."judgePromptVersion" = $12
+         ON CONFLICT ("scenarioSessionId", "turnIndex", "judgeModel", "judgePromptVersion")
+         DO UPDATE SET
+           "roleInversion" = EXCLUDED."roleInversion",
+           "offeredSolution" = EXCLUDED."offeredSolution",
+           "solutionsOffered" = EXCLUDED."solutionsOffered",
+           "resistanceBriefed" = EXCLUDED."resistanceBriefed",
+           "introducedNewInformation" = EXCLUDED."introducedNewInformation",
+           "stuckIsAppropriate" = EXCLUDED."stuckIsAppropriate",
+           "metadata" = EXCLUDED."metadata",
+           "updatedAt" = now()`,
+        [
+          sessionId,
+          t.turn_index,
+          sourceVersion.judgeModel,
+          targetVersion.judgeModel,
+          targetVersion.judgePromptVersion,
+          t.role_inversion ?? null,
+          t.offered_solution ?? null,
+          t.solutions_offered ?? null,
+          t.resistance_briefed ?? null,
+          t.introduced_new_information ?? null,
+          t.stuck_is_appropriate ?? null,
+          sourceVersion.judgePromptVersion,
+        ],
+      );
+      // `?? null` on every label, never `?? false`: a turn the judge declined
+      // to label must leave the denominator, not enter the numerator.
+      merged += Array.isArray(res) ? 0 : 1;
+    }
+    return merged;
   }
 
   /** Upsert all per-turn judgments for a session (idempotent on the unique key). */
