@@ -23,8 +23,9 @@ describe('JudgeBacklogDrainService', () => {
   ) => {
     const store = new Map<string, string>();
     if (opts.state) {
-      store.set('judge:backlog:drift', JSON.stringify(opts.state));
-      store.set('judge:backlog:groundedness', JSON.stringify(opts.state));
+      for (const family of ['drift', 'groundedness', 'language']) {
+        store.set(`judge:backlog:${family}`, JSON.stringify(opts.state));
+      }
     }
 
     const analytics = {
@@ -37,11 +38,16 @@ describe('JudgeBacklogDrainService', () => {
       getJob: jest.fn().mockResolvedValue(undefined),
       startBackfill: jest.fn().mockResolvedValue({ jobId: 'new-ground-job' }),
     };
+    const language = {
+      getJob: jest.fn().mockResolvedValue(undefined),
+      startBackfill: jest.fn().mockResolvedValue({ jobId: 'new-lang-job' }),
+    };
     const rows = opts.eligible === false ? [] : [{ id: 's1' }];
     const driftRepo = { selectSessions: jest.fn().mockResolvedValue(rows) };
     const groundednessRepo = {
       selectSessions: jest.fn().mockResolvedValue(rows),
     };
+    const languageRepo = { selectSessions: jest.fn().mockResolvedValue(rows) };
     const redis = {
       get: jest.fn(async (k: string) => store.get(k) ?? null),
       set: jest.fn(async (k: string, v: string) => {
@@ -52,11 +58,13 @@ describe('JudgeBacklogDrainService', () => {
     const service = new JudgeBacklogDrainService(
       analytics as never,
       groundedness as never,
+      language as never,
       driftRepo as never,
       groundednessRepo as never,
+      languageRepo as never,
       redis as never,
     );
-    return { service, analytics, groundedness, driftRepo, store };
+    return { service, analytics, groundedness, language, driftRepo, store };
   };
 
   const tick = async (service: JudgeBacklogDrainService) => {
@@ -112,11 +120,28 @@ describe('JudgeBacklogDrainService', () => {
   });
 
   it('stops on its own once the backlog is empty', async () => {
-    const { service, analytics, groundedness } = build({ eligible: false });
+    const { service, analytics, groundedness, language } = build({
+      eligible: false,
+    });
     await tick(service);
 
     expect(analytics.startDriftBackfill).not.toHaveBeenCalled();
     expect(groundedness.startBackfill).not.toHaveBeenCalled();
+    expect(language.startBackfill).not.toHaveBeenCalled();
+  });
+
+  it('re-judges language into v2, which is what the dashboard pins to', async () => {
+    // Language has no lean path: its annotations are DELETEd and re-INSERTed
+    // per session, so the whole rubric is re-emitted. Without this, the live
+    // catch-up keeps writing v2 for NEW sessions only, the dashboard pins to
+    // v2, and 1,776 annotations of history under v1 stay invisible.
+    const { service, language } = build();
+    await tick(service);
+
+    expect(language.startBackfill).toHaveBeenCalledWith(30, true, {
+      judgeModel: 'gemini-2.5-pro',
+      judgePromptVersion: 'v2',
+    });
   });
 
   it('gives up after repeated runs that judge nothing while failing', async () => {

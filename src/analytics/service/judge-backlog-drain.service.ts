@@ -4,8 +4,10 @@ import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
 import { PlatformAnalyticsService } from './platform-analytics.service';
 import { FeedbackGroundednessJudgeService } from './feedback-groundedness-judge.service';
+import { LanguageJudgeService } from './language-judge.service';
 import { DriftJudgeRepository } from '../repository/drift-judge.repository';
 import { FeedbackGroundednessRepository } from '../repository/feedback-groundedness.repository';
+import { LanguageJudgeRepository } from '../repository/language-judge.repository';
 
 /**
  * Drains the judge backlog on its own, so backfilling stops being something a
@@ -41,6 +43,25 @@ const GROUNDEDNESS_TARGET = {
 };
 
 /**
+ * Language is a FULL re-judge, not a lean top-up, and that is not an oversight.
+ *
+ * The language judge writes a session row plus a set of annotations, and
+ * re-judging DELETEs and re-INSERTs that set — error sets can shrink, so an
+ * upsert would strand rows that the new rubric no longer finds. There is no
+ * per-turn row to top up the way drift has, so obtaining the widened
+ * dialect_lexicon means re-emitting every dimension.
+ *
+ * It is also why this matters more than it looks: the live catch-up judges NEW
+ * sessions under v2 continuously, so the dashboard pins language to v2 and
+ * shows the handful of sessions judged since that deploy — 1,776 annotations of
+ * real history sit under v1, invisible, until the backlog is re-judged into v2.
+ */
+const LANGUAGE_TARGET = {
+  judgeModel: 'gemini-2.5-pro',
+  judgePromptVersion: 'v2',
+};
+
+/**
  * Consecutive unproductive runs before this stops trying.
  *
  * A drainer that restarts a failing job forever is a way to spend money on
@@ -61,8 +82,10 @@ export class JudgeBacklogDrainService implements OnModuleInit {
   constructor(
     private readonly analytics: PlatformAnalyticsService,
     private readonly groundedness: FeedbackGroundednessJudgeService,
+    private readonly language: LanguageJudgeService,
     private readonly driftRepo: DriftJudgeRepository,
     private readonly groundednessRepo: FeedbackGroundednessRepository,
+    private readonly languageRepo: LanguageJudgeRepository,
     private readonly redis: RedisService,
   ) {}
 
@@ -70,6 +93,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
     scheduledTaskRegistry.register('30min', 'judge-backlog-drain', async () => {
       await this.drainDrift();
       await this.drainGroundedness();
+      await this.drainLanguage();
     });
   }
 
@@ -183,6 +207,43 @@ export class JudgeBacklogDrainService implements OnModuleInit {
     this.logger.debug(
       `[backlog] drift lean top-up started job=${job.jobId} ` +
         `strikes=${next.unproductive}`,
+    );
+  }
+
+  private async drainLanguage(): Promise<void> {
+    const state = await this.readState('language');
+    const lastJob = state.jobId
+      ? await this.language.getJob(state.jobId).catch(() => undefined)
+      : undefined;
+
+    const { start, next } = await this.shouldStart('language', lastJob, state);
+    if (!start) {
+      await this.writeState('language', next);
+      return;
+    }
+
+    const eligible = await this.languageRepo.selectSessions({
+      sinceDays: BACKLOG_WINDOW_DAYS,
+      onlyUnjudged: true,
+      unjudgedForVersion: LANGUAGE_TARGET,
+      limit: 1,
+    });
+    if (eligible.length === 0) {
+      await this.writeState('language', { unproductive: 0 });
+      return;
+    }
+
+    const job = await this.language.startBackfill(
+      BACKLOG_WINDOW_DAYS,
+      true,
+      LANGUAGE_TARGET,
+    );
+    await this.writeState('language', {
+      jobId: job.jobId,
+      unproductive: next.unproductive,
+    });
+    this.logger.debug(
+      `[backlog] language re-judge started job=${job.jobId} strikes=${next.unproductive}`,
     );
   }
 

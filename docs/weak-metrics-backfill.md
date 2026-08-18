@@ -50,7 +50,15 @@ curl -X POST "$API/conversation-drift/backfill" \
   -d '{"sinceDays": 90, "judgePromptVersion": "v2", "judgeModel": "gemini-2.5-pro", "concurrency": 5}'
 ```
 
-**2. Language re-judge** — picks up the widened `dialect_lexicon` rubric.
+**2. Language re-judge** — picks up the widened `dialect_lexicon` rubric. Unlike drift there is
+no lean path: the judge writes a session row plus a set of annotations and re-judging DELETEs and
+re-INSERTs that set, because an error set can SHRINK and an upsert would strand rows the new
+rubric no longer finds. So obtaining one widened dimension means re-emitting all of them.
+
+This matters more than the one dimension suggests. The live catch-up judges NEW sessions under v2
+continuously, so the dashboard — which pins each family to its most recently written version —
+pins language to v2 and shows only the sessions judged since that deploy. 1,776 annotations of
+real history sit under v1 and stay invisible until the backlog is re-judged into v2.
 
 ```bash
 curl -X POST "$API/language-quality/backfill" \
@@ -76,8 +84,9 @@ curl "$API/conversation-drift/backfill/<jobId>" -H "Authorization: Bearer $TOKEN
 ## You should not need to run these by hand
 
 A scheduled task drains the backlog on its own (`JudgeBacklogDrainService`, on the shared
-30-minute scheduler). Each tick asks one question per judge family — is a run in flight, and is
-anything still eligible — and starts a run only when the answer is no-and-yes. It needs no token,
+30-minute scheduler), for all three families: drift (lean top-up), groundedness, and language.
+Each tick asks one question per family — is a run in flight, and is anything still eligible — and
+starts a run only when the answer is no-and-yes. It needs no token,
 survives deploys (a killed job is simply restarted next tick), and stops by itself when the
 backlog empties, because the selectors exclude everything already judged.
 
