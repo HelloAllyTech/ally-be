@@ -17,6 +17,7 @@ import { TrackEnrollmentService } from './service/track-enrollment.service';
 import { TrackQuizService } from './service/track-quiz.service';
 import { TrackQuizLlmGraderService } from './service/track-quiz-llm-grader.service';
 import { TrackAnnotationService } from './service/track-annotation.service';
+import { TrackGameService } from './service/track-game.service';
 import { TrackMemoryService } from './service/track-memory.service';
 import { TrackJournalService } from './service/track-journal.service';
 import { TrackRepository } from './repository/track.repository';
@@ -56,6 +57,7 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     TrackQuizService,
     TrackQuizLlmGraderService,
     TrackAnnotationService,
+    TrackGameService,
     TrackMemoryService,
     TrackJournalService,
     TrackRepository,

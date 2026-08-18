@@ -14,6 +14,7 @@ export enum TrackItemType {
   VIDEO = 'VIDEO',
   JOURNAL = 'JOURNAL',
   ANNOTATED_ARTIFACT = 'ANNOTATED_ARTIFACT',
+  GAME = 'GAME',
 }
 
 export enum TrackProgressionMode {
@@ -89,6 +90,7 @@ export interface JournalContent {
  *    content.settings.passScore on save)
  *  - VIDEO → watchPct
  *  - ARTICLE → minReadSeconds (0 = mark-as-read only)
+ *  - GAME → nothing; games never gate progression (see game.type.ts)
  */
 export interface TrackItemCompletionCriteria {
   minScore?: number;
@@ -102,4 +104,8 @@ export interface TrackItemProgressMeta {
   maxWatchedPct?: number;
   articleFirstOpenedAt?: string;
   articleReadAt?: string;
+  /** GAME: the learner's best score so far. Shown back to them, never graded. */
+  bestGameScore?: number;
+  /** GAME: how many runs they have finished, for the same reason. */
+  gamePlayCount?: number;
 }

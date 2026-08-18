@@ -35,6 +35,7 @@ import { TrackProgressService } from './track-progress.service';
 import { TrackLocalizationService } from './track-localization.service';
 import { TrackTranslation } from '../entity/track-translation.entity';
 import { TrackTranslationFallbackReason } from '../type/track-translation.type';
+import { GameContent } from '../type/game.type';
 import { sanitizeQuizForLearner } from './track-quiz.sanitizer';
 import {
   buildAnnotationAttemptView,
@@ -458,6 +459,30 @@ export class TrackEnrollmentService {
         };
       }
 
+      case TrackItemType.GAME: {
+        const game = item.content as GameContent;
+        /**
+         * Completing on open is what makes a game skippable. Progression is
+         * SEQUENTIAL, so an item that is never completed leaves everything
+         * after it LOCKED — a learner who bounced off the game would be stuck
+         * behind it. Opening it is the whole requirement; playing, replaying
+         * and walking away are all equally fine.
+         */
+        const completion = await this.trackProgressService.completeItem(
+          progress.id,
+          {},
+        );
+        return {
+          type: item.type,
+          trackItemProgressId: progress.id,
+          gameKey: game.gameKey,
+          intro: game.intro ?? null,
+          bestScore: progress.meta?.bestGameScore ?? null,
+          playCount: progress.meta?.gamePlayCount ?? 0,
+          completion,
+        };
+      }
+
       case TrackItemType.ARTICLE: {
         if (!progress.meta?.articleFirstOpenedAt) {
           await this.trackItemProgressRepository.update(progress.id, {
@@ -741,6 +766,10 @@ export class TrackEnrollmentService {
       case TrackItemType.JOURNAL: {
         const journal = item.content as JournalContent | undefined;
         return { promptCount: journal?.prompts?.length ?? 0 };
+      }
+      case TrackItemType.GAME: {
+        const game = item.content as GameContent | undefined;
+        return { gameKey: game?.gameKey ?? null };
       }
       case TrackItemType.ANNOTATED_ARTIFACT: {
         const annotation = item.content as AnnotationContent | undefined;

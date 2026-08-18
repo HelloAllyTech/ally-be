@@ -20,10 +20,12 @@ import { TrackEnrollmentService } from '../service/track-enrollment.service';
 import { TrackQuizService } from '../service/track-quiz.service';
 import { TrackJournalService } from '../service/track-journal.service';
 import { TrackAnnotationService } from '../service/track-annotation.service';
+import { TrackGameService } from '../service/track-game.service';
 import { VideoProgressDto } from '../dto/video-progress.dto';
 import { SubmitQuizAttemptDto } from '../dto/submit-quiz-attempt.dto';
 import { SubmitAnnotationAttemptDto } from '../dto/submit-annotation-attempt.dto';
 import { SaveJournalDraftsDto } from '../dto/journal-entry.dto';
+import { GameResultDto } from '../dto/game-result.dto';
 import {
   EnrollTrackDto,
   SetTrackLanguageDto,
@@ -39,6 +41,7 @@ export class TrackLearnerController {
     private readonly trackQuizService: TrackQuizService,
     private readonly trackJournalService: TrackJournalService,
     private readonly trackAnnotationService: TrackAnnotationService,
+    private readonly trackGameService: TrackGameService,
   ) {}
 
   @ApiOperation({ summary: 'List tracks available to the learner' })
@@ -182,6 +185,21 @@ export class TrackLearnerController {
     @Body() dto: SubmitAnnotationAttemptDto,
   ) {
     return this.trackAnnotationService.submitAttempt(itemId, dto.marks);
+  }
+
+  @ApiOperation({
+    summary: "Record a finished game run as the learner's personal best",
+    description:
+      'Scoreboard only — a game component completes when it is opened, so ' +
+      'this never unlocks, gates or grades anything.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_TRACK])
+  @Post('tracks/items/:itemId/game-result')
+  async recordGameResult(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: GameResultDto,
+  ) {
+    return this.trackGameService.recordResult(itemId, dto.score);
   }
 
   @ApiOperation({ summary: 'Autosave journal drafts' })

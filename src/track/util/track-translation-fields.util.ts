@@ -9,6 +9,7 @@ import {
 } from '../type/track.type';
 import { QuizContent, QuizQuestion, QuizQuestionType } from '../type/quiz.type';
 import { AnnotationContent } from '../type/annotation.type';
+import { GameContent } from '../type/game.type';
 import {
   TranslatableField,
   TranslatableFieldKind,
@@ -406,6 +407,20 @@ function walkItem(item: TrackItem, visit: FieldVisitor): void {
 
     case TrackItemType.JOURNAL:
       walkJournalContent(item.content as JournalContent, visit);
+      break;
+
+    case TrackItemType.GAME:
+      // The game itself is a canvas of sprites with no words in it; the only
+      // thing a learner reads is the author's framing line.
+      visitField(
+        {
+          path: 'content.intro',
+          kind: TranslatableFieldKind.PROSE,
+          get: () => (item.content as GameContent).intro,
+          set: (value) => ((item.content as GameContent).intro = value),
+        },
+        visit,
+      );
       break;
 
     case TrackItemType.VIDEO:

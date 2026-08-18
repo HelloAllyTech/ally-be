@@ -26,6 +26,7 @@ import {
   AnnotationSwatch,
   markKey,
 } from '../type/annotation.type';
+import { GameContent, TrackGameKey } from '../type/game.type';
 import {
   TRACK_MAX_ANNOTATION_LABELS,
   TRACK_MAX_ANNOTATION_UNITS,
@@ -138,6 +139,9 @@ export function validateTrackItem(item: UpsertTrackItemDto): void {
         item.title,
       );
       return;
+    case TrackItemType.GAME:
+      validateGameContent(item.content as GameContent | undefined, item.title);
+      return;
     default:
       fail(`Unknown component type: ${item.type}`);
   }
@@ -181,6 +185,27 @@ function validateJournalContent(
     if (!prompt.prompt || !prompt.prompt.trim()) {
       fail(`Journal component "${title}" has an empty prompt.`);
     }
+  }
+}
+
+/**
+ * A game carries no answer key and no threshold, so the only thing that can be
+ * wrong is the game itself — an unknown key would leave the learner staring at
+ * an empty frame.
+ */
+export function validateGameContent(
+  content: GameContent | undefined,
+  title: string,
+): void {
+  const label = `Game component "${title}"`;
+  if (!content?.gameKey) {
+    fail(`${label} must have a game selected.`);
+  }
+  if (!Object.values(TrackGameKey).includes(content.gameKey)) {
+    fail(`${label} refers to a game that is not available.`);
+  }
+  if (content.intro !== undefined && typeof content.intro !== 'string') {
+    fail(`${label}: intro must be text.`);
   }
 }
 
@@ -513,6 +538,7 @@ export function computeStructuralSignature(
           caseId: item.caseId ?? null,
           quiz: quizStructuralSignature(item),
           annotation: annotationStructuralSignature(item),
+          game: gameStructuralSignature(item),
           completionCriteria: item.completionCriteria ?? null,
         })),
     }));
@@ -550,6 +576,15 @@ function annotationStructuralSignature(item: UpsertTrackItemDto): unknown {
     maxAttempts: annotation.settings?.maxAttempts ?? null,
     falsePositivePenalty: annotation.settings?.falsePositivePenalty ?? 0,
   };
+}
+
+/**
+ * Swapping which game an item runs mid-course changes what the learner is
+ * looking at, so it is structural. The intro is prose and stays content-safe.
+ */
+function gameStructuralSignature(item: UpsertTrackItemDto): unknown {
+  if (item.type !== TrackItemType.GAME || !item.content) return null;
+  return { gameKey: (item.content as GameContent).gameKey };
 }
 
 function quizStructuralSignature(item: UpsertTrackItemDto): unknown {
