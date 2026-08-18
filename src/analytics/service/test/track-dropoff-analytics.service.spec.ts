@@ -65,6 +65,7 @@ describe('TrackDropoffAnalyticsService', () => {
       TrackItemType.ARTICLE,
       TrackItemType.VIDEO,
       TrackItemType.JOURNAL,
+      TrackItemType.ANNOTATED_ARTIFACT,
     ]);
     expect(result.minGroupSize).toBe(MIN_TRACK_GROUP_SIZE);
     expect(result.scoping).toEqual({ tenantId: null, unscopedSections: [] });
