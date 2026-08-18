@@ -195,8 +195,16 @@ export class PlatformAnalyticsService {
   async startDriftBackfill(
     sinceDays = 90,
     onlyUnjudged = false,
+    unjudgedForVersion?: {
+      judgeModel: string;
+      judgePromptVersion: string;
+    } | null,
   ): Promise<DriftBackfillJobDto> {
-    return this.driftJudge.startBackfill(sinceDays, onlyUnjudged);
+    return this.driftJudge.startBackfill(
+      sinceDays,
+      onlyUnjudged,
+      unjudgedForVersion,
+    );
   }
 
   /** Backfill job status for UI progress polling (Redis-backed job registry). */

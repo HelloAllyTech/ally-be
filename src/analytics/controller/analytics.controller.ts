@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  NotFoundException,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -30,6 +31,12 @@ import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analy
 import { RoadmapDeliveryAnalyticsService } from '../service/roadmap-delivery-analytics.service';
 import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
 import { LanguageAnalyticsService } from '../service/language-analytics.service';
+import {
+  WeakMetricsQueryDto,
+  WeakMetricsResponseDto,
+} from '../dto/weak-metrics.dto';
+import { WeakMetricsAnalyticsService } from '../service/weak-metrics-analytics.service';
+import { FeedbackGroundednessJudgeService } from '../service/feedback-groundedness-judge.service';
 import { LanguageJudgeService } from '../service/language-judge.service';
 import { PlatformAnalyticsService } from '../service/platform-analytics.service';
 import { ScribeAnalyticsService } from '../service/scribe-analytics.service';
@@ -57,6 +64,8 @@ import {
   LanguageQualityResponseDto,
   SetLanguageEvalReferenceDto,
   StartDriftBackfillDto,
+  StartGroundednessBackfillDto,
+  GroundednessBackfillJobDto,
   StartLanguageBackfillDto,
   StartLatencyQueryDto,
   StartLatencyResponseDto,
@@ -181,6 +190,8 @@ export class AnalyticsController {
     private readonly scribeAnalyticsService: ScribeAnalyticsService,
     private readonly languageJudgeService: LanguageJudgeService,
     private readonly languageAnalyticsService: LanguageAnalyticsService,
+    private readonly weakMetricsAnalyticsService: WeakMetricsAnalyticsService,
+    private readonly feedbackGroundednessJudgeService: FeedbackGroundednessJudgeService,
     private readonly activationAnalyticsService: ActivationAnalyticsService,
     private readonly completionRateAnalyticsService: CompletionRateAnalyticsService,
     private readonly languageMixAnalyticsService: LanguageMixAnalyticsService,
@@ -980,6 +991,85 @@ export class AnalyticsController {
     return this.scribeAnalyticsService.getSummaryFailures(query);
   }
 
+  @Get('weak-performing-metrics')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Weak performing metrics dashboard (super-admin)',
+    description:
+      'The five simulator-quality metrics under active repair — actor ' +
+      'responsiveness, conversational progression & resolution, language ' +
+      'realism, feedback groundedness and actor clienthood — as trends over ' +
+      'one shared filter tuple.\n\n' +
+      'Judge labels and deterministic measures are combined, but never mixed: ' +
+      'the judges contribute only booleans, enum labels and counts, and every ' +
+      'rate, weight and correlation is computed in SQL or in the service. ' +
+      'Each series carries its own state (measured / partial / none) and the ' +
+      'caveat needed to read it honestly — several are deliberately partial ' +
+      'and a bare number would be over-read.\n\n' +
+      'Always segment: three findings in this data turned out to be ' +
+      'composition artefacts rather than regressions, so language, model and ' +
+      'scenario filters are part of the metric, not decoration.',
+  })
+  @ApiResponse({ status: 200, type: WeakMetricsResponseDto })
+  async getWeakPerformingMetrics(
+    @Query() query: WeakMetricsQueryDto,
+  ): Promise<WeakMetricsResponseDto> {
+    return this.weakMetricsAnalyticsService.getWeakMetrics(query);
+  }
+
+  @Post('feedback-groundedness/backfill')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Judge whether post-session feedback is true (super-admin)',
+    description:
+      'Runs the feedback-groundedness judge over stored feedback: each claim ' +
+      'is checked against the session transcript and labelled supported, ' +
+      'unsupported, contradicted or misattributed.\n\n' +
+      'This is the only metric that measures whether the number a learner is ' +
+      'graded by is CORRECT — delivery and score discrimination were already ' +
+      'measurable, truth was not.\n\n' +
+      'The longest and most expensive of the three backfills (a Gemini call ' +
+      'per session over a full transcript, ~2,673 sessions for a year). ' +
+      'Confirm judge token-usage emission is switched on first, or the spend ' +
+      'is invisible until it is billed. Pass judgePromptVersion to make the ' +
+      'run resumable — re-issuing skips whatever already landed.',
+  })
+  @ApiResponse({ status: 202, type: GroundednessBackfillJobDto })
+  async startGroundednessBackfill(
+    @Body() body: StartGroundednessBackfillDto,
+  ): Promise<GroundednessBackfillJobDto> {
+    const unjudgedForVersion = body.judgePromptVersion
+      ? {
+          judgeModel: body.judgeModel ?? 'gemini-2.5-pro',
+          judgePromptVersion: body.judgePromptVersion,
+        }
+      : null;
+    return this.feedbackGroundednessJudgeService.startBackfill(
+      body.sinceDays ?? 365,
+      unjudgedForVersion,
+    );
+  }
+
+  @Get('feedback-groundedness/backfill/:jobId')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({ summary: 'Groundedness backfill job status (super-admin)' })
+  @ApiResponse({ status: 200, type: GroundednessBackfillJobDto })
+  async groundednessBackfillStatus(
+    @Param('jobId') jobId: string,
+  ): Promise<GroundednessBackfillJobDto> {
+    const job = await this.feedbackGroundednessJudgeService.getJob(jobId);
+    if (!job) {
+      throw new NotFoundException(`Backfill job ${jobId} not found`);
+    }
+    return job;
+  }
+
   @Post('conversation-drift/backfill')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
     legacyRoles: SUPER_ADMIN_ROLES,
@@ -995,8 +1085,20 @@ export class AnalyticsController {
   async startDriftBackfill(
     @Body() body: StartDriftBackfillDto,
   ): Promise<DriftBackfillJobDto> {
+    // A rubric version turns this into a RE-judge: only sessions without rows
+    // under that version are picked up, so it skips work already done and is
+    // safe to re-issue after a failure. Without one it keeps the original
+    // meaning — judge whatever has never been judged at all.
+    const unjudgedForVersion = body.judgePromptVersion
+      ? {
+          judgeModel: body.judgeModel ?? 'gemini-2.5-pro',
+          judgePromptVersion: body.judgePromptVersion,
+        }
+      : null;
     return this.platformAnalyticsService.startDriftBackfill(
       body.sinceDays ?? 90,
+      Boolean(unjudgedForVersion),
+      unjudgedForVersion,
     );
   }
 
@@ -1081,11 +1183,21 @@ export class AnalyticsController {
   async startLanguageBackfill(
     @Body() body: StartLanguageBackfillDto,
   ): Promise<LanguageBackfillJobDto> {
-    // rejudge=true re-runs already-judged sessions (rubric/metric iteration);
-    // default only judges new ones.
+    // Three modes, in increasing cost:
+    //  - default              judge sessions never judged by any rubric
+    //  - judgePromptVersion   judge sessions not yet judged by THAT rubric
+    //                         (the re-judge path; resumable, skips done work)
+    //  - rejudge=true         re-run everything, including already-judged
+    const unjudgedForVersion = body.judgePromptVersion
+      ? {
+          judgeModel: body.judgeModel ?? 'gemini-2.5-pro',
+          judgePromptVersion: body.judgePromptVersion,
+        }
+      : null;
     return this.languageJudgeService.startBackfill(
       body.sinceDays ?? 90,
-      !body.rejudge,
+      unjudgedForVersion ? true : !body.rejudge,
+      unjudgedForVersion,
     );
   }
 

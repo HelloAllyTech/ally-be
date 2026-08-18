@@ -58,6 +58,15 @@ import { DriftJudgeRepository } from './repository/drift-judge.repository';
 import { LanguageJudgeRepository } from './repository/language-judge.repository';
 import { LanguageAnalyticsRepository } from './repository/language-analytics.repository';
 import { LanguageAnalyticsService } from './service/language-analytics.service';
+// Analytics -> Weak performing metrics tab: the five simulator-quality metrics
+// under active repair, read from the judge tables plus deterministic measures
+// over transcripts and turn metrics.
+import { WeakMetricsAnalyticsService } from './service/weak-metrics-analytics.service';
+import { WeakMetricsAnalyticsRepository } from './repository/weak-metrics-analytics.repository';
+// Feedback-groundedness judge: the only metric that checks whether the number
+// a learner is graded by is actually true of their session.
+import { FeedbackGroundednessJudgeService } from './service/feedback-groundedness-judge.service';
+import { FeedbackGroundednessRepository } from './repository/feedback-groundedness.repository';
 import { MetabaseService } from './service/metabase.service';
 import { AppConfigModule } from '../config/config.module';
 import { ProviderFactory } from '../factory/provider.factory';
@@ -81,6 +90,10 @@ import { TenantModule } from 'src/tenant/tenant.module';
   controllers: [AnalyticsController, TenantAnalyticsController],
   providers: [
     AnalyticsService,
+    WeakMetricsAnalyticsService,
+    WeakMetricsAnalyticsRepository,
+    FeedbackGroundednessJudgeService,
+    FeedbackGroundednessRepository,
     HighlightsAnalyticsService,
     HighlightsAnalyticsRepository,
     CohortAnalyticsService,

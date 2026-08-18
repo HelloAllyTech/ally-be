@@ -64,6 +64,10 @@ export class LanguageJudgeService {
   async startBackfill(
     sinceDays = 90,
     onlyUnjudged = false,
+    unjudgedForVersion?: {
+      judgeModel: string;
+      judgePromptVersion: string;
+    } | null,
   ): Promise<LanguageBackfillJobDto> {
     const jobId = randomUUID();
     const job: LanguageBackfillJobDto = {
@@ -78,7 +82,7 @@ export class LanguageJudgeService {
     };
     await this.saveJob(job);
     // Fire-and-forget: the HTTP request returns immediately with the job id.
-    void this.runJob(job, sinceDays, onlyUnjudged);
+    void this.runJob(job, sinceDays, onlyUnjudged, unjudgedForVersion);
     this.logger.debug(
       `language backfill queued job=${jobId} sinceDays=${sinceDays} onlyUnjudged=${onlyUnjudged}`,
     );
@@ -94,12 +98,17 @@ export class LanguageJudgeService {
     job: LanguageBackfillJobDto,
     sinceDays: number,
     onlyUnjudged: boolean,
+    unjudgedForVersion?: {
+      judgeModel: string;
+      judgePromptVersion: string;
+    } | null,
   ): Promise<void> {
     try {
       const rubric = await this.repo.fetchRubric();
       const sessions = await this.repo.selectSessions({
         sinceDays,
         onlyUnjudged,
+        unjudgedForVersion,
       });
       job.status = 'running';
       job.total = sessions.length;

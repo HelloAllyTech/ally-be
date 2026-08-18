@@ -38,6 +38,16 @@ rules:
     requires: docs/prompts-folder.md
     why: Prompt folder layout and .meta.json conventions are documented, not discoverable.
 
+  - id: weak-metrics-definitions
+    watch:
+      - "src/analytics/repository/weak-metrics-analytics.repository.ts"
+    requires: docs/weak-metrics-queries.md
+    why: >
+      That repository holds both the metric definitions and the deterministic thresholds
+      the dashboard reads. The query cookbook restates them so analysts can run them by
+      hand — and a cookbook that has drifted from the dashboard is worse than none,
+      because both look authoritative.
+
   - id: agent-entrypoints-in-sync
     watch:
       - "AGENTS.md"

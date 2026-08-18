@@ -66,9 +66,43 @@ describe('DriftJudgeRepository.upsertJudgments', () => {
     const [sql, params] = query.mock.calls[0];
     // The column must be written and aligned to the last positional param.
     expect(sql).toContain('"scenarioVersionId"');
-    expect(params).toHaveLength(24);
+    expect(params).toHaveLength(30);
     expect(params[14]).toBe(7); // scenarioId ($15)
     expect(params[23]).toBe('ver-abc'); // scenarioVersionId ($24)
+  });
+
+  it('writes the v2 labels, and null for the ones the judge omitted', async () => {
+    await repository.upsertJudgments(
+      session,
+      [
+        {
+          ...perTurn[0],
+          role_inversion: true,
+          offered_solution: false,
+          solutions_offered: 3,
+          introduced_new_information: false,
+          // stuck_is_appropriate deliberately absent — a judge that did not
+          // answer must land as null, never as a clean `false`, or "not
+          // observed" becomes indistinguishable from "correctly moved on".
+          resistance_briefed: true,
+        },
+      ],
+      { drifted: false, first_drift_turn: null },
+      'gemini-2.5-pro',
+      'v2',
+      { 0: 'ai text' },
+      { 0: 'user text' },
+    );
+
+    const [sql, params] = query.mock.calls[0];
+    expect(sql).toContain('"roleInversion"');
+    expect(sql).toContain('"resistanceBriefed"');
+    expect(params[24]).toBe(true); // roleInversion
+    expect(params[25]).toBe(false); // offeredSolution
+    expect(params[26]).toBe(3); // solutionsOffered
+    expect(params[27]).toBe(false); // introducedNewInformation
+    expect(params[28]).toBeNull(); // stuckIsAppropriate — omitted by the judge
+    expect(params[29]).toBe(true); // resistanceBriefed
   });
 
   it('passes null when the session has no version (pre-versioning sessions)', async () => {

@@ -1005,4 +1005,207 @@ export class RoleplaySessionLogsRepository {
 
     return row ?? null;
   }
+
+  /**
+   * Per-session read of the five weak-performing metrics.
+   *
+   * The dashboard tab aggregates these across sessions; this is the same
+   * measures for ONE session, so a reader who spots a bad bucket on the tab can
+   * open a session and see the turns behind it. Single write path, two read
+   * surfaces — same arrangement as the language/drift panels above.
+   *
+   * Everything here is counting: the judge labels were assigned when the
+   * session was judged, and nothing in this query asks a model for anything.
+   * Rates are left to the caller so an empty session renders as "no data"
+   * rather than as a clean 0%.
+   */
+  async findWeakMetrics(
+    id: string,
+    params: {
+      rePromptGapSeconds: number;
+      stasisJaccard: number;
+      stasisMinWordLength: number;
+    },
+  ): Promise<{
+    judgedTurns: number;
+    repetitionTurns: number;
+    longestRepeatRun: number;
+    roleSlipTurns: number;
+    roleInversionTurns: number;
+    clienthoodLabelledTurns: number;
+    solutionsOffered: number;
+    resistanceBriefed: boolean | null;
+    inappropriateStasisTurns: number;
+    progressionLabelledTurns: number;
+    unresponsiveTurns: number;
+    outOfCharacterTurns: number;
+    staleAiPairs: number;
+    comparableAiPairs: number;
+    counselorTurns: number;
+    rePrompts: number;
+    aiTurns: number;
+    counsellorDirectedQuestions: number;
+    understandingWeighted: number;
+    registerWeighted: number;
+    colloquialWeighted: number;
+    lexiconWeighted: number;
+    languageTurnsJudged: number;
+    feedbackQuotes: number;
+    feedbackQuotesUnmatched: number;
+    positives: number;
+    improvements: number;
+    hasSkillCoverage: boolean;
+    interruptedTurns: number;
+    pipelineTurns: number;
+  } | null> {
+    const rows = await this.dataSource.query(
+      `WITH drift AS (
+         SELECT j."turnIndex" AS ti,
+                (j."aiReplyFailureMode" = 'repetition') AS rep,
+                (j."aiReplyFailureMode" = 'role_slip') AS slip,
+                (j."aiReplyFailureMode" IN ('wrong_intent','context_lockin')) AS unresponsive,
+                (j."inCharacter" IS FALSE) AS ooc,
+                -- v2 labels. NULL on a session judged before the v2 rubric, which
+                -- is why each has its own labelled-turn denominator below: an
+                -- unlabelled turn must not dilute the rate toward zero.
+                j."roleInversion" AS inversion,
+                j."solutionsOffered" AS solutions,
+                j."resistanceBriefed" AS resistant,
+                j."introducedNewInformation" AS new_info,
+                j."stuckIsAppropriate" AS stuck_ok
+           FROM turn_drift_judgment j
+          WHERE j."scenarioSessionId" = $1
+       ), islands AS (
+         SELECT ti, rep, ti - ROW_NUMBER() OVER (PARTITION BY rep ORDER BY ti) AS grp
+           FROM drift
+       ), runs AS (
+         SELECT COUNT(*) AS run_len FROM islands WHERE rep GROUP BY grp
+       ), ai AS (
+         SELECT m."createdAt" AS ts, m.content,
+                ROW_NUMBER() OVER (ORDER BY m."createdAt", m.id) AS rn,
+                ARRAY(
+                  SELECT DISTINCT w FROM unnest(
+                    regexp_split_to_array(
+                      lower(regexp_replace(m.content, '[^[:alnum:][:space:]]', '', 'g')),
+                      '\\s+')
+                  ) w WHERE length(w) > $4
+                ) AS ws
+           FROM scenario_session_messages m
+          WHERE m."scenarioSessionId" = $1 AND m."senderId" = -1
+            AND length(btrim(m.content)) > 40
+       ), ai_all AS (
+         -- Every AI turn, unfiltered. The ai CTE above drops turns under 40
+         -- chars so the stasis comparison is not dominated by one-word replies;
+         -- the question-rate denominator must not inherit that, or this panel
+         -- and the dashboard would report different rates for the same session.
+         SELECT m.content
+           FROM scenario_session_messages m
+          WHERE m."scenarioSessionId" = $1 AND m."senderId" = -1
+       ), ai_pairs AS (
+         SELECT a.ws, LEAD(a.ws) OVER (ORDER BY a.rn) AS next_ws FROM ai a
+       ), sim AS (
+         SELECT CASE WHEN array_length(ws,1) > 2 AND array_length(next_ws,1) > 2
+                  THEN (SELECT COUNT(*) FROM unnest(ws) x WHERE x = ANY(next_ws))::numeric
+                       / GREATEST(array_length(ws,1), array_length(next_ws,1))
+                  ELSE NULL END AS jaccard
+           FROM ai_pairs
+       ), ordered AS (
+         SELECT (m."senderId" = -1) AS is_ai, m."startSeconds" AS ss, m."endSeconds" AS es,
+                ROW_NUMBER() OVER (ORDER BY COALESCE(m."startSeconds",0), m."createdAt", m.id) AS rn
+           FROM scenario_session_messages m
+          WHERE m."scenarioSessionId" = $1 AND m."startSeconds" IS NOT NULL
+       ), paired AS (
+         SELECT o.*, LEAD(o.is_ai) OVER (ORDER BY o.rn) AS next_is_ai,
+                LEAD(o.ss) OVER (ORDER BY o.rn) AS next_ss
+           FROM ordered o
+       ), lang AS (
+         SELECT
+           SUM(CASE a."severity" WHEN 'minor' THEN 1 WHEN 'major' THEN 5
+                                 WHEN 'critical' THEN 10 ELSE 1 END)
+             FILTER (WHERE a."dimension" = 'understanding' AND a."conditionedOut" = false) AS understanding,
+           SUM(CASE a."severity" WHEN 'minor' THEN 1 WHEN 'major' THEN 5
+                                 WHEN 'critical' THEN 10 ELSE 1 END)
+             FILTER (WHERE a."dimension" = 'register') AS register,
+           SUM(CASE a."severity" WHEN 'minor' THEN 1 WHEN 'major' THEN 5
+                                 WHEN 'critical' THEN 10 ELSE 1 END)
+             FILTER (WHERE a."dimension" = 'colloquialness') AS colloquial,
+           SUM(CASE a."severity" WHEN 'minor' THEN 1 WHEN 'major' THEN 5
+                                 WHEN 'critical' THEN 10 ELSE 1 END)
+             FILTER (WHERE a."dimension" = 'dialect_lexicon') AS lexicon
+           FROM language_error_annotations a WHERE a."scenarioSessionId" = $1
+       ), lang_den AS (
+         SELECT COALESCE(SUM(s."turnsJudged"), 0) AS turns
+           FROM language_judgment_sessions s WHERE s."scenarioSessionId" = $1
+       ), fb AS (
+         SELECT d.summary->'feedback' AS feedback FROM scenario_session_details d
+          WHERE d."scenarioSessionId" = $1 AND d.summary ? 'feedback' LIMIT 1
+       ), fb_items AS (
+         SELECT item FROM fb, LATERAL (
+           SELECT jsonb_array_elements_text(fb.feedback->'positives') AS item
+           UNION ALL
+           SELECT jsonb_array_elements_text(fb.feedback->'improvements')
+         ) x WHERE jsonb_typeof(fb.feedback) = 'object'
+       ), fb_quotes AS (
+         SELECT (regexp_matches(item, '"([^"]{25,})"', 'g'))[1] AS quote FROM fb_items
+       ), body AS (
+         SELECT lower(string_agg(m.content, ' ')) AS txt
+           FROM scenario_session_messages m WHERE m."scenarioSessionId" = $1
+       ), tm AS (
+         SELECT COUNT(*) FILTER (WHERE t."interrupted") AS interrupted,
+                COUNT(*) AS total
+           FROM scenario_session_turn_metrics t
+          WHERE t."scenarioSessionId" = $1 AND t.source = 'pipeline'
+       )
+       SELECT
+         (SELECT COUNT(*) FROM drift)::int AS "judgedTurns",
+         (SELECT COUNT(*) FILTER (WHERE rep) FROM drift)::int AS "repetitionTurns",
+         COALESCE((SELECT MAX(run_len) FROM runs), 0)::int AS "longestRepeatRun",
+         (SELECT COUNT(*) FILTER (WHERE slip) FROM drift)::int AS "roleSlipTurns",
+         (SELECT COUNT(*) FILTER (WHERE inversion IS TRUE) FROM drift)::int
+           AS "roleInversionTurns",
+         (SELECT COUNT(*) FILTER (WHERE inversion IS NOT NULL) FROM drift)::int
+           AS "clienthoodLabelledTurns",
+         COALESCE((SELECT SUM(solutions) FROM drift), 0)::int AS "solutionsOffered",
+         (SELECT bool_or(resistant) FROM drift) AS "resistanceBriefed",
+         (SELECT COUNT(*) FILTER (WHERE new_info IS FALSE AND stuck_ok IS FALSE)
+            FROM drift)::int AS "inappropriateStasisTurns",
+         (SELECT COUNT(*) FILTER (WHERE new_info IS NOT NULL) FROM drift)::int
+           AS "progressionLabelledTurns",
+         (SELECT COUNT(*) FILTER (WHERE unresponsive) FROM drift)::int AS "unresponsiveTurns",
+         (SELECT COUNT(*) FILTER (WHERE ooc) FROM drift)::int AS "outOfCharacterTurns",
+         (SELECT COUNT(*) FILTER (WHERE jaccard >= $3) FROM sim)::int AS "staleAiPairs",
+         (SELECT COUNT(*) FILTER (WHERE jaccard IS NOT NULL) FROM sim)::int AS "comparableAiPairs",
+         (SELECT COUNT(*) FILTER (WHERE NOT is_ai) FROM paired)::int AS "counselorTurns",
+         (SELECT COUNT(*) FILTER (
+            WHERE NOT is_ai AND next_is_ai IS FALSE AND (next_ss - es) > $2
+          ) FROM paired)::int AS "rePrompts",
+         (SELECT COUNT(*) FROM ai_all)::int AS "aiTurns",
+         (SELECT COUNT(*) FROM ai_all
+           WHERE content LIKE '%?%' AND content ~* '\\y(you|your|yourself)\\y'
+         )::int AS "counsellorDirectedQuestions",
+         COALESCE((SELECT understanding FROM lang), 0)::int AS "understandingWeighted",
+         COALESCE((SELECT register FROM lang), 0)::int AS "registerWeighted",
+         COALESCE((SELECT colloquial FROM lang), 0)::int AS "colloquialWeighted",
+         COALESCE((SELECT lexicon FROM lang), 0)::int AS "lexiconWeighted",
+         (SELECT turns FROM lang_den)::int AS "languageTurnsJudged",
+         (SELECT COUNT(*) FROM fb_quotes)::int AS "feedbackQuotes",
+         (SELECT COUNT(*) FROM fb_quotes q
+           WHERE NOT EXISTS (
+             SELECT 1 FROM body b WHERE b.txt IS NOT NULL
+               AND position(lower(q.quote) IN b.txt) > 0)
+         )::int AS "feedbackQuotesUnmatched",
+         COALESCE((SELECT jsonb_array_length(feedback->'positives') FROM fb), 0)::int AS positives,
+         COALESCE((SELECT jsonb_array_length(feedback->'improvements') FROM fb), 0)::int AS improvements,
+         COALESCE((SELECT (feedback ? 'skillCoverage') FROM fb), false) AS "hasSkillCoverage",
+         COALESCE((SELECT interrupted FROM tm), 0)::int AS "interruptedTurns",
+         COALESCE((SELECT total FROM tm), 0)::int AS "pipelineTurns"`,
+      [
+        id,
+        params.rePromptGapSeconds,
+        params.stasisJaccard,
+        params.stasisMinWordLength,
+      ],
+    );
+    return rows?.[0] ?? null;
+  }
 }

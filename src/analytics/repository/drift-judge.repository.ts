@@ -43,6 +43,15 @@ export interface PerTurnJudgment {
   ai_reply_failure_mode: string;
   root_attribution: string;
   reasoning: string;
+  // v2 labels. Optional because a v1 judge response omits them entirely, and
+  // because a judge that drops one should degrade to "not observed" rather
+  // than failing the whole session.
+  role_inversion?: boolean | null;
+  offered_solution?: boolean | null;
+  solutions_offered?: number | null;
+  introduced_new_information?: boolean | null;
+  stuck_is_appropriate?: boolean | null;
+  resistance_briefed?: boolean | null;
 }
 
 export interface SessionRollup {
@@ -84,6 +93,22 @@ export class DriftJudgeRepository {
     language?: string | null;
     onlyUnjudged?: boolean;
     limit?: number | null;
+    /**
+     * Scope "already judged" to ONE judge version.
+     *
+     * Without this, `onlyUnjudged` means "has any judgment row at all", which
+     * makes a re-judge under a new rubric a no-op over exactly the sessions
+     * worth re-judging — every one of them already has v1 rows. Passing the
+     * target version instead selects sessions not yet judged UNDER THAT
+     * VERSION, which also makes the run resumable: re-issue it after a failure
+     * and it picks up where it stopped rather than starting over.
+     *
+     * Omitted = the old version-agnostic behaviour, for a first-time backfill.
+     */
+    unjudgedForVersion?: {
+      judgeModel: string;
+      judgePromptVersion: string;
+    } | null;
   }): Promise<DriftSessionRow[]> {
     const params: unknown[] = [];
     const p = (v: unknown) => {
@@ -116,10 +141,21 @@ export class DriftJudgeRepository {
       sql += ` AND COALESCE(l.value, 'en') = ${p(opts.language)}`;
     if (opts.sinceDays != null)
       sql += ` AND s."createdAt" >= now() - make_interval(days => ${p(opts.sinceDays)})`;
-    if (opts.onlyUnjudged)
-      sql += ` AND NOT EXISTS (
-                 SELECT 1 FROM turn_drift_judgment j
-                 WHERE j."scenarioSessionId" = s.id)`;
+    if (opts.onlyUnjudged) {
+      if (opts.unjudgedForVersion) {
+        sql += ` AND NOT EXISTS (
+                   SELECT 1 FROM turn_drift_judgment j
+                   WHERE j."scenarioSessionId" = s.id
+                     AND j."judgeModel" = ${p(opts.unjudgedForVersion.judgeModel)}
+                     AND j."judgePromptVersion" = ${p(
+                       opts.unjudgedForVersion.judgePromptVersion,
+                     )})`;
+      } else {
+        sql += ` AND NOT EXISTS (
+                   SELECT 1 FROM turn_drift_judgment j
+                   WHERE j."scenarioSessionId" = s.id)`;
+      }
+    }
     sql += ` ORDER BY s."createdAt" DESC`;
     if (opts.limit) sql += ` LIMIT ${p(opts.limit)}`;
     return this.dataSource.query(sql, params);
@@ -190,10 +226,13 @@ export class DriftJudgeRepository {
            "reasoning", "userText", "aiText", "language", "scenarioId",
            "llmProvider", "llmModel", "occurredAt",
            "promptVersion", "sessionDrifted", "firstDriftTurn",
-           "judgeModel", "judgePromptVersion", "scenarioVersionId"
+           "judgeModel", "judgePromptVersion", "scenarioVersionId",
+           "roleInversion", "offeredSolution", "solutionsOffered",
+           "introducedNewInformation", "stuckIsAppropriate", "resistanceBriefed"
          ) VALUES (
            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-           $16, $17, $18, $19, $20, $21, $22, $23, $24
+           $16, $17, $18, $19, $20, $21, $22, $23, $24,
+           $25, $26, $27, $28, $29, $30
          )
          ON CONFLICT ("scenarioSessionId", "turnIndex", "judgeModel", "judgePromptVersion")
          DO UPDATE SET
@@ -213,6 +252,12 @@ export class DriftJudgeRepository {
            "promptVersion" = EXCLUDED."promptVersion",
            "sessionDrifted" = EXCLUDED."sessionDrifted",
            "firstDriftTurn" = EXCLUDED."firstDriftTurn",
+           "roleInversion" = EXCLUDED."roleInversion",
+           "offeredSolution" = EXCLUDED."offeredSolution",
+           "solutionsOffered" = EXCLUDED."solutionsOffered",
+           "introducedNewInformation" = EXCLUDED."introducedNewInformation",
+           "stuckIsAppropriate" = EXCLUDED."stuckIsAppropriate",
+           "resistanceBriefed" = EXCLUDED."resistanceBriefed",
            "updatedAt" = now()`,
         [
           session.tenant_id,
@@ -239,6 +284,14 @@ export class DriftJudgeRepository {
           judgeModel,
           judgePromptVersion,
           session.scenario_version_id,
+          // `?? null` rather than `?? false`: a judge that did not answer must
+          // land as "not observed", never as a clean negative.
+          t.role_inversion ?? null,
+          t.offered_solution ?? null,
+          t.solutions_offered ?? null,
+          t.introduced_new_information ?? null,
+          t.stuck_is_appropriate ?? null,
+          t.resistance_briefed ?? null,
         ],
       );
     }

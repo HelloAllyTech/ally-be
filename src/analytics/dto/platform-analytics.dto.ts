@@ -338,6 +338,71 @@ export class StartDriftBackfillDto {
       'Judge sessions created in the last N days (default 90 = ~3 months).',
   })
   sinceDays?: number;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Judge only sessions not yet judged under this rubric version (e.g. ' +
+      '"v2"). Without it, "already judged" means any version — which turns a ' +
+      're-judge into a no-op, because the sessions worth re-judging are ' +
+      'precisely the ones that already carry rows from the old rubric.',
+  })
+  judgePromptVersion?: string;
+
+  @ApiProperty({
+    required: false,
+    default: 'gemini-2.5-pro',
+    description: 'Judge model the version above belongs to.',
+  })
+  judgeModel?: string;
+}
+
+export class StartGroundednessBackfillDto {
+  @ApiProperty({
+    required: false,
+    default: 365,
+    description:
+      'Judge feedback from sessions created in the last N days. Defaults to a ' +
+      'year — stored feedback reaches back to Sep 2025, and this metric is ' +
+      'worth the full history.',
+  })
+  sinceDays?: number;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Judge only sessions not yet judged under this rubric version. Makes ' +
+      'the run resumable: re-issue after a failure and it skips what landed.',
+  })
+  judgePromptVersion?: string;
+
+  @ApiProperty({ required: false, default: 'gemini-2.5-pro' })
+  judgeModel?: string;
+}
+
+export class GroundednessBackfillJobDto {
+  @ApiProperty() jobId!: string;
+  @ApiProperty({ description: 'queued | running | done | error' })
+  status!: string;
+  @ApiProperty({ description: 'Sessions selected for this run' })
+  total!: number;
+  @ApiProperty() processed!: number;
+  @ApiProperty({ description: 'Sessions whose feedback was judged' })
+  judged!: number;
+  @ApiProperty({
+    description:
+      'Sessions skipped — no checkable claims, or no transcript to check ' +
+      'them against. Not counted as judged: "0 ungrounded" on a session with ' +
+      'no feedback would read as perfect feedback.',
+  })
+  skipped!: number;
+  @ApiProperty() claimsJudged!: number;
+  @ApiProperty({
+    description:
+      'Claims the transcript did not bear out (any non-supported verdict)',
+  })
+  claimsUngrounded!: number;
+  @ApiProperty({ nullable: true }) error!: string | null;
 }
 
 export class DriftBackfillJobDto {
@@ -641,6 +706,17 @@ export class StartLanguageBackfillDto {
       'iteration). Default false = only unjudged sessions.',
   })
   rejudge?: boolean;
+  @ApiProperty({
+    required: false,
+    description:
+      'Judge only sessions not yet judged under this rubric version (e.g. ' +
+      '"v2"). Without it a re-judge is a no-op: every session worth ' +
+      're-judging already carries rows from the old rubric.',
+  })
+  judgePromptVersion?: string;
+
+  @ApiProperty({ required: false, default: 'gemini-2.5-pro' })
+  judgeModel?: string;
 }
 
 export class LanguageBackfillJobDto {

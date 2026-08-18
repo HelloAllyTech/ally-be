@@ -585,6 +585,66 @@ export class RoleplaySessionGlossaryDto {
   adherence!: RoleplaySessionGlossaryAdherenceDto | null;
 }
 
+/**
+ * One weak-performing metric, as it stands for THIS session.
+ *
+ * Deliberately carries raw counts rather than only a rate: on a single session
+ * the denominators are small enough that "1 of 3 turns" and "33%" are very
+ * different statements, and only the first tells a reader whether to trust it.
+ */
+export class RoleplaySessionWeakMetricDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() label!: string;
+
+  @ApiProperty({ description: 'Which of the five metrics this belongs to' })
+  group!: string;
+
+  @ApiProperty() numerator!: number;
+  @ApiProperty() denominator!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'numerator / denominator; null when the denominator is 0',
+  })
+  value!: number | null;
+
+  @ApiProperty({ description: "'percent' | 'per100turns' | 'ratio' | 'count'" })
+  unit!: string;
+
+  @ApiProperty({
+    description: 'measured | partial | none — how far to trust this line',
+  })
+  state!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Why this session tripped the metric, when it did',
+  })
+  detail!: string | null;
+}
+
+/**
+ * The Weak performing metrics panel: the same five metrics the analytics tab
+ * trends, evaluated for one session so a bad bucket on the tab can be opened
+ * and read turn by turn.
+ *
+ * `available: false` means the session was never judged — the deterministic
+ * measures still populate, but the judge-derived ones are absent rather than
+ * zero, and the panel says so instead of implying a clean session.
+ */
+export class RoleplaySessionWeakMetricsDto {
+  @ApiProperty({
+    description: 'Deterministic-parameter version these numbers were cut with',
+  })
+  metricsVersion!: string;
+
+  @ApiProperty({ description: 'False when this session has no judge rows' })
+  judged!: boolean;
+
+  @ApiProperty({ type: [RoleplaySessionWeakMetricDto] })
+  metrics!: RoleplaySessionWeakMetricDto[];
+}
+
 export class RoleplaySessionScenarioVersionDto {
   @ApiProperty() id!: string;
   @ApiProperty({ nullable: true }) versionNumber!: number | null;
@@ -668,6 +728,17 @@ export class RoleplaySessionLogDetailDto extends RoleplaySessionLogRowDto {
       'same rows the analytics Language tab aggregates.',
   })
   languageQuality!: RoleplaySessionLanguageQualityDto | null;
+
+  @ApiProperty({
+    type: RoleplaySessionWeakMetricsDto,
+    nullable: true,
+    description:
+      'Weak performing metrics for this session — the same five the analytics ' +
+      'tab trends, cut for one session so a bad bucket can be opened and read ' +
+      'turn by turn. Never null in practice: the deterministic measures ' +
+      'populate even for an unjudged session, which is flagged by `judged`.',
+  })
+  weakMetrics!: RoleplaySessionWeakMetricsDto | null;
 
   @ApiProperty({ nullable: true, description: 'Post-session summary (jsonb)' })
   summary!: Record<string, any> | null;

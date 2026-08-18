@@ -76,6 +76,45 @@ export class TurnDriftJudgment extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   reasoning?: string;
 
+  // v2 judge labels (Weak Performing Metrics) --------------------------------
+  //
+  // Booleans and one count, never a score: the judge answers yes/no/how-many
+  // and every rate is computed at read time, so re-weighting a metric never
+  // means re-judging the corpus.
+  //
+  // All nullable, and null on every v1 row. The dashboard pins to one
+  // (judgeModel, judgePromptVersion), so v1 and v2 rows are never averaged
+  // together — a null here means "this row predates the label", not "false".
+
+  /** AI asked the counselor about the counselor, or gave them advice. */
+  @Column({ type: 'boolean', nullable: true })
+  roleInversion?: boolean;
+
+  /** AI proposed a solution for its own problem, unprompted. */
+  @Column({ type: 'boolean', nullable: true })
+  offeredSolution?: boolean;
+
+  /** How many distinct solutions the AI offered this turn (0 when none). */
+  @Column({ type: 'int', nullable: true })
+  solutionsOffered?: number;
+
+  /** Turn added something the client had not already said. */
+  @Column({ type: 'boolean', nullable: true })
+  introducedNewInformation?: boolean;
+
+  /**
+   * Only meaningful when `introducedNewInformation` is false: was holding the
+   * same position CORRECT portrayal given the brief? Null when the turn
+   * advanced. This is what stops the progression metric from punishing a
+   * client who rightly refuses to yield to a weak intervention.
+   */
+  @Column({ type: 'boolean', nullable: true })
+  stuckIsAppropriate?: boolean;
+
+  /** The brief calls for resistance — same answer for every turn in a session. */
+  @Column({ type: 'boolean', nullable: true })
+  resistanceBriefed?: boolean;
+
   // Evidence (reconstructed from messages, NOT emitted by the judge) -------
   @Column({ type: 'text', nullable: true })
   userText?: string;

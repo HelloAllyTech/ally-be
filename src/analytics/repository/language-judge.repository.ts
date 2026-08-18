@@ -94,6 +94,15 @@ export class LanguageJudgeRepository {
     language?: string | null;
     onlyUnjudged?: boolean;
     limit?: number | null;
+    /**
+     * Scope "already judged" to ONE rubric version — same reasoning as the
+     * drift judge's selector: without it a re-judge skips exactly the sessions
+     * worth re-judging, because they all carry rows from the old rubric.
+     */
+    unjudgedForVersion?: {
+      judgeModel: string;
+      judgePromptVersion: string;
+    } | null;
   }): Promise<LanguageSessionRow[]> {
     const params: unknown[] = [];
     const p = (v: unknown) => {
@@ -144,10 +153,21 @@ export class LanguageJudgeRepository {
       sql += ` AND COALESCE(l.value, 'en') = ${p(opts.language)}`;
     if (opts.sinceDays != null)
       sql += ` AND s."createdAt" >= now() - make_interval(days => ${p(opts.sinceDays)})`;
-    if (opts.onlyUnjudged)
-      sql += ` AND NOT EXISTS (
-                 SELECT 1 FROM language_judgment_sessions j
-                 WHERE j."scenarioSessionId" = s.id)`;
+    if (opts.onlyUnjudged) {
+      if (opts.unjudgedForVersion) {
+        sql += ` AND NOT EXISTS (
+                   SELECT 1 FROM language_judgment_sessions j
+                   WHERE j."scenarioSessionId" = s.id
+                     AND j."judgeModel" = ${p(opts.unjudgedForVersion.judgeModel)}
+                     AND j."judgePromptVersion" = ${p(
+                       opts.unjudgedForVersion.judgePromptVersion,
+                     )})`;
+      } else {
+        sql += ` AND NOT EXISTS (
+                   SELECT 1 FROM language_judgment_sessions j
+                   WHERE j."scenarioSessionId" = s.id)`;
+      }
+    }
     sql += ` ORDER BY s."createdAt" DESC`;
     if (opts.limit) sql += ` LIMIT ${p(opts.limit)}`;
     return this.dataSource.query(sql, params);

@@ -11,7 +11,13 @@ import {
   RoleplaySessionOutcome,
   RoleplaySessionRecordingDto,
   RoleplaySessionUsageDto,
+  RoleplaySessionWeakMetricDto,
+  RoleplaySessionWeakMetricsDto,
 } from '../dto/roleplay-session-logs.dto';
+import {
+  WEAK_METRICS_PARAMS,
+  WEAK_METRICS_VERSION,
+} from '../../analytics/repository/weak-metrics-analytics.repository';
 import { S3Service } from '../../aws/service/s3.service';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
@@ -107,6 +113,7 @@ export class RoleplaySessionLogsService {
       freezeSignals,
       languageJudgment,
       drift,
+      weakMetricsRaw,
       runConfig,
       glossaryActivity,
       glossaryAdherence,
@@ -123,6 +130,11 @@ export class RoleplaySessionLogsService {
       this.roleplaySessionLogsRepository.getFreezeSignals(id),
       this.roleplaySessionLogsRepository.findLanguageJudgment(id),
       this.roleplaySessionLogsRepository.findDriftJudgment(id),
+      this.roleplaySessionLogsRepository.findWeakMetrics(id, {
+        rePromptGapSeconds: WEAK_METRICS_PARAMS.rePromptGapSeconds,
+        stasisJaccard: WEAK_METRICS_PARAMS.stasisJaccard,
+        stasisMinWordLength: WEAK_METRICS_PARAMS.stasisMinWordLength,
+      }),
       this.roleplaySessionLogsRepository.findRunConfig(id),
       this.roleplaySessionLogsRepository.getGlossaryActivity(id),
       // Read-only preview (no upsert) — see GlossaryAdherenceService.previewAdherence.
@@ -166,6 +178,7 @@ export class RoleplaySessionLogsService {
       actorEvaluation: this.buildActorEvaluation(row),
       runConfig,
       drift,
+      weakMetrics: this.buildWeakMetrics(weakMetricsRaw),
       languageQuality: languageJudgment
         ? {
             judgeModel: languageJudgment.session.judgeModel,
@@ -441,6 +454,284 @@ export class RoleplaySessionLogsService {
    * Builds the actor-evaluation block from the session-detail eval columns.
    * Returns null when the session was never evaluated (no status + no metrics).
    */
+  /**
+   * Assemble the Weak performing metrics panel from raw per-session counts.
+   *
+   * Rates are formed here rather than in SQL so that a zero denominator becomes
+   * `null` — on a single session, "no AI turns to judge" and "no errors in the
+   * AI turns" are opposite readings and must not both render as 0%.
+   *
+   * `state` travels with each line for the same reason it does on the analytics
+   * tab: several of these are honest-but-partial, and a reader who does not
+   * know which will over-read them. barge-in in particular reads 0 because
+   * nothing writes the flag, not because nobody interrupted.
+   */
+  private buildWeakMetrics(
+    raw: Awaited<
+      ReturnType<RoleplaySessionLogsRepository['findWeakMetrics']>
+    > | null,
+  ): RoleplaySessionWeakMetricsDto | null {
+    if (!raw) return null;
+
+    const n = (v: unknown) => Number(v ?? 0);
+    const rate = (num: number, den: number) => (den > 0 ? num / den : null);
+
+    const judged = n(raw.judgedTurns) > 0;
+    const langTurns = n(raw.languageTurnsJudged);
+    const longestRun = n(raw.longestRepeatRun);
+    const stalePairs = n(raw.staleAiPairs);
+
+    const metric = (
+      id: string,
+      label: string,
+      group: string,
+      numerator: number,
+      denominator: number,
+      unit: string,
+      state: string,
+      detail: string | null = null,
+    ): RoleplaySessionWeakMetricDto => ({
+      id,
+      label,
+      group,
+      numerator,
+      denominator,
+      value: rate(numerator, denominator),
+      unit,
+      state,
+      detail,
+    });
+
+    const metrics: RoleplaySessionWeakMetricDto[] = [
+      // --- Actor responsiveness -------------------------------------------
+      metric(
+        'understanding',
+        'Comprehension errors per 100 turns',
+        'responsiveness',
+        n(raw.understandingWeighted),
+        langTurns,
+        'per100turns',
+        langTurns > 0 ? 'measured' : 'none',
+        langTurns > 0 ? null : 'Session not language-judged',
+      ),
+      metric(
+        'unresponsive_turns',
+        'Turns misreading intent or stuck on old context',
+        'responsiveness',
+        n(raw.unresponsiveTurns),
+        n(raw.judgedTurns),
+        'percent',
+        judged ? 'measured' : 'none',
+        judged ? null : 'Session not drift-judged',
+      ),
+      metric(
+        're_prompt',
+        'Learner had to re-prompt',
+        'responsiveness',
+        n(raw.rePrompts),
+        n(raw.counselorTurns),
+        'percent',
+        n(raw.counselorTurns) > 0 ? 'measured' : 'none',
+        n(raw.counselorTurns) > 0
+          ? `Counsellor spoke again after >${WEAK_METRICS_PARAMS.rePromptGapSeconds}s of silence`
+          : 'No turn timings recorded for this session',
+      ),
+      // The flag is written by the live worker and cannot be backfilled, so a
+      // zero is ambiguous on a single session — no barge-in, or a session that
+      // predates the deploy — and the panel says so instead of picking one. Any
+      // recorded interruption resolves it, which is why the state is derived
+      // rather than hard-coded: a fixed 'none' would keep every future session
+      // blank, since the panel renders a not-measured metric as "—".
+      metric(
+        'barge_in',
+        'Turns interrupted by the learner',
+        'responsiveness',
+        n(raw.interruptedTurns),
+        n(raw.pipelineTurns),
+        'percent',
+        n(raw.interruptedTurns) > 0 ? 'measured' : 'partial',
+        n(raw.interruptedTurns) > 0
+          ? 'Turns the learner produced by cutting the actor off'
+          : 'Zero here means either no barge-in or a session recorded before the flag shipped',
+      ),
+
+      // --- Conversational progression -------------------------------------
+      metric(
+        'repetition_turns',
+        'Turns repeating an earlier turn',
+        'progression',
+        n(raw.repetitionTurns),
+        n(raw.judgedTurns),
+        'percent',
+        judged ? 'measured' : 'none',
+        longestRun >= WEAK_METRICS_PARAMS.loopRunLength
+          ? `Longest run: ${longestRun} consecutive repeats — this session was looping`
+          : longestRun > 0
+            ? `Longest run: ${longestRun} consecutive repeats`
+            : null,
+      ),
+      metric(
+        'inappropriate_stasis',
+        'Turns that failed to advance, excluding correct resistance',
+        'progression',
+        n(raw.inappropriateStasisTurns),
+        n(raw.progressionLabelledTurns),
+        'percent',
+        n(raw.progressionLabelledTurns) > 0 ? 'measured' : 'none',
+        n(raw.progressionLabelledTurns) > 0
+          ? 'A client rightly refusing to yield to a weak intervention is excluded'
+          : 'Session judged before the v2 rubric — re-judge to populate',
+      ),
+      metric(
+        'semantic_stasis',
+        'Consecutive AI turns going in circles',
+        'progression',
+        stalePairs,
+        n(raw.comparableAiPairs),
+        'percent',
+        n(raw.comparableAiPairs) >= WEAK_METRICS_PARAMS.stasisMinComparablePairs
+          ? 'partial'
+          : 'none',
+        n(raw.comparableAiPairs) < WEAK_METRICS_PARAMS.stasisMinComparablePairs
+          ? 'Too few comparable AI turns to test'
+          : `Pairs sharing >=${WEAK_METRICS_PARAMS.stasisJaccard * 100}% of content words`,
+      ),
+      metric(
+        'out_of_character',
+        'Coherent but out-of-character turns',
+        'progression',
+        n(raw.outOfCharacterTurns),
+        n(raw.judgedTurns),
+        'percent',
+        judged ? 'measured' : 'none',
+        'A veto, not a target — tightening the metrics above must not push this up',
+      ),
+
+      // --- Language realism ------------------------------------------------
+      metric(
+        'register',
+        'Too formal for spoken register, per 100 turns',
+        'language_realism',
+        n(raw.registerWeighted),
+        langTurns,
+        'per100turns',
+        langTurns > 0 ? 'measured' : 'none',
+      ),
+      metric(
+        'colloquialness',
+        'Translationese, per 100 turns',
+        'language_realism',
+        n(raw.colloquialWeighted),
+        langTurns,
+        'per100turns',
+        langTurns > 0 ? 'measured' : 'none',
+      ),
+      metric(
+        'dialect_lexicon',
+        'Wrong or odd word meanings, per 100 turns',
+        'language_realism',
+        n(raw.lexiconWeighted),
+        langTurns,
+        'per100turns',
+        'none',
+        'Treat as unmeasured — the detector fires on almost nothing while partners call this blocking',
+      ),
+
+      // --- Feedback groundedness -------------------------------------------
+      metric(
+        'quote_match',
+        'Feedback quotes not found in the transcript',
+        'feedback_groundedness',
+        n(raw.feedbackQuotesUnmatched),
+        n(raw.feedbackQuotes),
+        'percent',
+        n(raw.feedbackQuotes) > 0 ? 'partial' : 'none',
+        n(raw.feedbackQuotes) > 0
+          ? 'Deterministic string match — catches fabricated citations only'
+          : 'No quoted spans in this feedback',
+      ),
+      metric(
+        'criticism_ratio',
+        'Criticisms per compliment',
+        'feedback_groundedness',
+        n(raw.improvements),
+        n(raw.positives),
+        'ratio',
+        n(raw.positives) > 0 ? 'measured' : 'none',
+      ),
+      metric(
+        'scored_while_looping',
+        'Scored despite a looping transcript',
+        'feedback_groundedness',
+        raw.hasSkillCoverage && longestRun >= WEAK_METRICS_PARAMS.loopRunLength
+          ? 1
+          : 0,
+        raw.hasSkillCoverage ? 1 : 0,
+        'count',
+        judged && raw.hasSkillCoverage ? 'measured' : 'none',
+        raw.hasSkillCoverage && longestRun >= WEAK_METRICS_PARAMS.loopRunLength
+          ? 'This learner was scored on a session where the actor was looping'
+          : null,
+      ),
+
+      // --- Actor clienthood -------------------------------------------------
+      metric(
+        'role_inversion',
+        'Turns where the actor took the counsellor’s chair',
+        'clienthood',
+        n(raw.roleInversionTurns),
+        n(raw.clienthoodLabelledTurns),
+        'percent',
+        n(raw.clienthoodLabelledTurns) > 0 ? 'measured' : 'none',
+        n(raw.clienthoodLabelledTurns) > 0
+          ? null
+          : 'Session judged before the v2 rubric — re-judge to populate',
+      ),
+      metric(
+        'over_compliance',
+        'Solutions the actor offered for its own problem',
+        'clienthood',
+        n(raw.solutionsOffered),
+        // Count metric: the denominator is the threshold it is read against, so
+        // the card shows "4 of 2 allowed" rather than a meaningless percentage.
+        WEAK_METRICS_PARAMS.solutionOfferThreshold,
+        'count',
+        n(raw.clienthoodLabelledTurns) > 0 ? 'measured' : 'none',
+        raw.resistanceBriefed === false
+          ? 'Brief does not call for resistance — offering ideas is in character here'
+          : n(raw.solutionsOffered) > WEAK_METRICS_PARAMS.solutionOfferThreshold
+            ? `Over the real-patient ceiling of ${WEAK_METRICS_PARAMS.solutionOfferThreshold}`
+            : null,
+      ),
+      metric(
+        'role_slip',
+        'Turns flagged role_slip (legacy proxy)',
+        'clienthood',
+        n(raw.roleSlipTurns),
+        n(raw.judgedTurns),
+        'percent',
+        judged ? 'partial' : 'none',
+        'Superseded by role inversion above — also absorbs "too formal" and pronoun errors',
+      ),
+      metric(
+        'counsellor_directed_questions',
+        'AI turns questioning the counsellor',
+        'clienthood',
+        n(raw.counsellorDirectedQuestions),
+        n(raw.aiTurns),
+        'percent',
+        'partial',
+        'Regex proxy, English patterns only — over-counts legitimate client questions',
+      ),
+    ];
+
+    return {
+      metricsVersion: WEAK_METRICS_VERSION,
+      judged,
+      metrics,
+    };
+  }
+
   private buildActorEvaluation(
     r: RoleplaySessionLogRawRow,
   ): RoleplaySessionActorEvaluationDto | null {

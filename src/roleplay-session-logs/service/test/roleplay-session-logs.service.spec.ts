@@ -55,6 +55,9 @@ describe('RoleplaySessionLogsService', () => {
       }),
       findLanguageJudgment: jest.fn().mockResolvedValue(null),
       findDriftJudgment: jest.fn().mockResolvedValue(null),
+      // Weak performing metrics panel: null = no rows for this session, which
+      // the service renders as an absent panel rather than a clean one.
+      findWeakMetrics: jest.fn().mockResolvedValue(null),
       findRunConfig: jest.fn().mockResolvedValue(null),
       getGlossaryActivity: jest.fn().mockResolvedValue({
         glossaryMeta: null,

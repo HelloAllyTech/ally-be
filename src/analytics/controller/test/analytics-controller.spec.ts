@@ -10,6 +10,8 @@ import { PlatformAnalyticsService } from '../../service/platform-analytics.servi
 import { ScribeAnalyticsService } from '../../service/scribe-analytics.service';
 import { LanguageJudgeService } from '../../service/language-judge.service';
 import { LanguageAnalyticsService } from '../../service/language-analytics.service';
+import { WeakMetricsAnalyticsService } from '../../service/weak-metrics-analytics.service';
+import { FeedbackGroundednessJudgeService } from '../../service/feedback-groundedness-judge.service';
 import { ActivationAnalyticsService } from '../../service/activation-analytics.service';
 import { CompletionRateAnalyticsService } from '../../service/completion-rate-analytics.service';
 import { LanguageMixAnalyticsService } from '../../service/language-mix-analytics.service';
@@ -122,6 +124,14 @@ describe('AnalyticsController', () => {
         {
           provide: LanguageAnalyticsService,
           useValue: { getLanguageQuality: jest.fn() },
+        },
+        {
+          provide: WeakMetricsAnalyticsService,
+          useValue: { getWeakMetrics: jest.fn() },
+        },
+        {
+          provide: FeedbackGroundednessJudgeService,
+          useValue: { startBackfill: jest.fn(), getJob: jest.fn() },
         },
         // Testing-tab services. Stubbed rather than exercised here: this suite
         // covers the dashboard/permission surface, and each of these has its own
