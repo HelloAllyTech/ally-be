@@ -101,13 +101,19 @@ export class JudgeBacklogDrainService implements OnModuleInit {
     return `judge:backlog:${family}`;
   }
 
-  private async readState(
-    family: string,
-  ): Promise<{ jobId?: string; unproductive: number }> {
+  private async readState(family: string): Promise<{
+    jobId?: string;
+    unproductive: number;
+    lastProcessed?: number;
+  }> {
     const raw = await this.redis.get(this.stateKey(family));
     if (!raw) return { unproductive: 0 };
     try {
-      return JSON.parse(raw) as { jobId?: string; unproductive: number };
+      return JSON.parse(raw) as {
+        jobId?: string;
+        unproductive: number;
+        lastProcessed?: number;
+      };
     } catch {
       return { unproductive: 0 };
     }
@@ -115,7 +121,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
 
   private async writeState(
     family: string,
-    state: { jobId?: string; unproductive: number },
+    state: { jobId?: string; unproductive: number; lastProcessed?: number },
   ): Promise<void> {
     // No TTL: the breaker count has to outlive a job's own hour-long TTL, or a
     // failing family would reset itself to zero strikes and loop forever.
@@ -130,19 +136,41 @@ export class JudgeBacklogDrainService implements OnModuleInit {
    */
   private async shouldStart(
     family: string,
-    lastJob: { status: string; judged: number; failed: number } | undefined,
-    state: { jobId?: string; unproductive: number },
+    lastJob:
+      | { status: string; judged: number; failed: number; processed: number }
+      | undefined,
+    state: { jobId?: string; unproductive: number; lastProcessed?: number },
   ): Promise<{
     start: boolean;
-    next: { jobId?: string; unproductive: number };
+    next: { jobId?: string; unproductive: number; lastProcessed?: number };
   }> {
     if (
       lastJob &&
       (lastJob.status === 'running' || lastJob.status === 'queued')
     ) {
-      // Still working. Long runs are normal here; a second job would just
-      // contend for the same judge slots.
-      return { start: false, next: state };
+      // "running" is not proof of life. A deploy kills the process holding the
+      // loop WITHOUT updating the record, so a dead job reads as running until
+      // its own TTL expires an hour later — which is exactly the case this
+      // service exists to cover, and it silently did nothing about it.
+      //
+      // Progress is the real signal: a live job advances `processed` well
+      // inside a tick (a judge call is ~60s median), so a run that has not
+      // moved since the previous tick is held by a process that is gone.
+      const advanced = lastJob.processed > (state.lastProcessed ?? -1);
+      if (advanced) {
+        return {
+          start: false,
+          next: { ...state, lastProcessed: lastJob.processed },
+        };
+      }
+      this.logger.warn(
+        `[backlog] ${family} job ${state.jobId} reports running but has not ` +
+          `advanced past ${lastJob.processed} since the last tick — treating ` +
+          `it as dead and starting a fresh run.`,
+      );
+      // Fall through and start again. Restarting is safe: the selectors skip
+      // everything already judged, so a run that was in fact alive would only
+      // repeat work it had not yet reached.
     }
 
     if (state.unproductive >= MAX_UNPRODUCTIVE_RUNS) {
@@ -203,6 +231,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
     await this.writeState('drift', {
       jobId: job.jobId,
       unproductive: next.unproductive,
+      lastProcessed: undefined,
     });
     this.logger.debug(
       `[backlog] drift lean top-up started job=${job.jobId} ` +
@@ -241,6 +270,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
     await this.writeState('language', {
       jobId: job.jobId,
       unproductive: next.unproductive,
+      lastProcessed: undefined,
     });
     this.logger.debug(
       `[backlog] language re-judge started job=${job.jobId} strikes=${next.unproductive}`,
@@ -280,6 +310,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
     await this.writeState('groundedness', {
       jobId: job.jobId,
       unproductive: next.unproductive,
+      lastProcessed: undefined,
     });
     this.logger.debug(
       `[backlog] groundedness started job=${job.jobId} strikes=${next.unproductive}`,

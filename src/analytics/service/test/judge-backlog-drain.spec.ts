@@ -16,9 +16,14 @@ import { scheduledTaskRegistry } from '../../../scheduler/registry/scheduled-tas
 describe('JudgeBacklogDrainService', () => {
   const build = (
     opts: {
-      driftJob?: { status: string; judged: number; failed: number };
+      driftJob?: {
+        status: string;
+        judged: number;
+        failed: number;
+        processed: number;
+      };
       eligible?: boolean;
-      state?: { jobId?: string; unproductive: number };
+      state?: { jobId?: string; unproductive: number; lastProcessed?: number };
     } = {},
   ) => {
     const store = new Map<string, string>();
@@ -92,8 +97,8 @@ describe('JudgeBacklogDrainService', () => {
 
   it('does not stack a second job while one is running', async () => {
     const { service, analytics } = build({
-      driftJob: { status: 'running', judged: 10, failed: 0 },
-      state: { jobId: 'in-flight', unproductive: 0 },
+      driftJob: { status: 'running', judged: 10, failed: 0, processed: 10 },
+      state: { jobId: 'in-flight', unproductive: 0, lastProcessed: 5 },
     });
     await tick(service);
 
@@ -105,8 +110,8 @@ describe('JudgeBacklogDrainService', () => {
     // backlog is still there. Restarting is exactly what a person had to do by
     // hand before, token and all.
     const { service, analytics } = build({
-      driftJob: { status: 'running', judged: 40, failed: 0 },
-      state: { jobId: 'gone', unproductive: 0 },
+      driftJob: { status: 'running', judged: 40, failed: 0, processed: 40 },
+      state: { jobId: 'gone', unproductive: 0, lastProcessed: 5 },
     });
     const { service: s2, analytics: a2 } = build({
       driftJob: undefined,
@@ -148,7 +153,7 @@ describe('JudgeBacklogDrainService', () => {
     // The 426-of-426 failure mode: a broken judge, a backlog that never
     // shrinks, and a drainer that would otherwise restart it forever.
     const { service, analytics } = build({
-      driftJob: { status: 'done', judged: 0, failed: 426 },
+      driftJob: { status: 'done', judged: 0, failed: 426, processed: 426 },
       state: { jobId: 'broken', unproductive: 3 },
     });
     await tick(service);
@@ -158,7 +163,7 @@ describe('JudgeBacklogDrainService', () => {
 
   it('counts a strike but keeps trying below the limit', async () => {
     const { service, analytics, store } = build({
-      driftJob: { status: 'done', judged: 0, failed: 12 },
+      driftJob: { status: 'done', judged: 0, failed: 12, processed: 12 },
       state: { jobId: 'bad', unproductive: 1 },
     });
     await tick(service);
@@ -169,12 +174,48 @@ describe('JudgeBacklogDrainService', () => {
 
   it('clears strikes after a run that judged something', async () => {
     const { service, store } = build({
-      driftJob: { status: 'done', judged: 300, failed: 4 },
+      driftJob: { status: 'done', judged: 300, failed: 4, processed: 304 },
       state: { jobId: 'good', unproductive: 2 },
     });
     await tick(service);
 
     // A few failures among real work is normal; only judging NOTHING counts.
     expect(JSON.parse(store.get('judge:backlog:drift')!).unproductive).toBe(0);
+  });
+
+  /**
+   * The case the drainer exists for, and the one it originally got wrong.
+   *
+   * A deploy kills the process holding the loop WITHOUT updating the job
+   * record, so Redis keeps saying "running" until its own hour-long TTL
+   * expires. In production the 19:00 tick skipped both stalled families for
+   * exactly this reason, leaving them dead for an hour while reporting healthy.
+   * Progress, not status, is what proves a job is alive.
+   */
+  it('restarts a job that says running but has stopped advancing', async () => {
+    const { service, analytics } = build({
+      driftJob: { status: 'running', judged: 40, failed: 0, processed: 40 },
+      // Same processed count the previous tick recorded — nothing moved in 30
+      // minutes, and a live job advances within ~60s.
+      state: { jobId: 'killed-by-deploy', unproductive: 0, lastProcessed: 40 },
+    });
+    await tick(service);
+
+    expect(analytics.startDriftBackfill).toHaveBeenCalled();
+  });
+
+  it('leaves a job alone while it is still advancing', async () => {
+    const { service, analytics, store } = build({
+      driftJob: { status: 'running', judged: 60, failed: 0, processed: 60 },
+      state: { jobId: 'alive', unproductive: 0, lastProcessed: 40 },
+    });
+    await tick(service);
+
+    expect(analytics.startDriftBackfill).not.toHaveBeenCalled();
+    // The new high-water mark is remembered, or the next tick would see no
+    // movement and kill a perfectly healthy run.
+    expect(JSON.parse(store.get('judge:backlog:drift')!).lastProcessed).toBe(
+      60,
+    );
   });
 });
