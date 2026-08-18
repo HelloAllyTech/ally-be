@@ -1,0 +1,111 @@
+# Running the weak-metrics backfills
+
+Three judges populate the Weak Performing Metrics tab with history. They are **HTTP endpoints on
+ally-be**, not console commands — there is no shell script to run and nothing to exec into. Call
+them with a super-admin token, from Swagger (`https://api.helloally.ai/api-docs`) or curl.
+
+Each returns a job id immediately and runs asynchronously; poll the matching status endpoint.
+
+## Order
+
+1. **ally-ai must be deployed first.** All three call it, and the groundedness judge only exists
+   from v1.12.0.
+2. **ally-be must have run migrations 1902/1903**, or the v2 label columns and the claim table
+   are not there to write into.
+3. Then run the three below. They are independent of each other and can overlap, but they share
+   the same Gemini quota, so serially is calmer.
+
+## The three calls
+
+`sinceDays: 90` is three months. Start here — see "Extending the window" for why this does not
+paint you into a corner.
+
+`concurrency` is how many sessions are judged in parallel (default 5, capped at 20). Serial, a
+90-day window took the better part of two days, which made an ordinary deploy interrupting it the
+expected path rather than an edge case; at 5 it is closer to nine hours. The cap is not
+arbitrary — a backfill shares a Gemini rate limit and a single core-ai task with live traffic, and
+past a point more concurrency just converts throughput into 429s and sessions the next run has to
+redo.
+
+```bash
+TOKEN=<super-admin JWT>
+API=https://api.helloally.ai/api/v1/analytics
+```
+
+**1. Drift re-judge** — the v2 clienthood and progression labels. `judgePromptVersion` is what
+makes this a *re*-judge: without it, "already judged" means judged by any rubric, and the run
+is a no-op because every session already carries v1 rows.
+
+```bash
+curl -X POST "$API/conversation-drift/backfill" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"sinceDays": 90, "judgePromptVersion": "v2", "judgeModel": "gemini-2.5-pro", "concurrency": 5}'
+```
+
+**2. Language re-judge** — picks up the widened `dialect_lexicon` rubric.
+
+```bash
+curl -X POST "$API/language-quality/backfill" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"sinceDays": 90, "judgePromptVersion": "v2", "judgeModel": "gemini-2.5-pro", "concurrency": 5}'
+```
+
+**3. Feedback groundedness** — the new judge; nothing has been judged yet, so this is a first
+run rather than a re-judge. The longest of the three: one Gemini call per session.
+
+```bash
+curl -X POST "$API/feedback-groundedness/backfill" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"sinceDays": 90, "judgePromptVersion": "v1", "judgeModel": "gemini-2.5-pro", "concurrency": 5}'
+```
+
+Poll any of them:
+
+```bash
+curl "$API/conversation-drift/backfill/<jobId>" -H "Authorization: Bearer $TOKEN"
+```
+
+## Extending the window later
+
+Re-issuing the same call with a larger `sinceDays` **adds the older sessions and re-judges
+nothing**. Every selector excludes sessions that already carry rows for that
+`(judgeModel, judgePromptVersion)` pair, so the work already paid for is skipped:
+
+```bash
+# Later: reach back a year. Only the sessions between 90 days and a year get judged.
+-d '{"sinceDays": 365, "judgePromptVersion": "v2", "judgeModel": "gemini-2.5-pro"}'
+```
+
+The same property makes an interrupted run resumable — if a backfill dies halfway, re-issue the
+identical call and it continues from where it stopped. There is no separate resume mode and no
+state to clean up first.
+
+**Always pass `judgePromptVersion`.** It is what scopes "already judged", and it is also what
+the dashboard pins to when reading. A run without it judges under whatever the service's current
+default is, which is how two rubric versions end up averaged into one line.
+
+## Start narrow
+
+Run 30 days before 90. It finishes in a few hours instead of overnight, puts real data on the tab
+the same day, and gives you a measured cost per session before committing to the larger window.
+Extending afterwards is free of rework — the selectors skip everything already judged, so the
+90-day run only picks up the sessions between 30 and 90 days old.
+
+## What to expect after 90 days
+
+Three months puts roughly six monthly buckets on the drift-derived series and fewer on the
+language ones (that judge started in July). Below five buckets the tab renders columns with a
+"compared, not trended" caption rather than a line — a line through two points asserts a
+direction the data cannot support.
+
+Judge spend for a 90-day window is the low end of the estimate range; the full-history version
+was $40–$248 depending on the thinking-token multiplier, and batch mode halves it. Worth running
+a ~20-session pilot first with `limit` if you want the real multiplier measured before
+committing to a longer window.
+
+## The one thing this cannot backfill
+
+Barge-in and per-turn simulation state are written by the live worker and have no historical
+source. Their history starts at the ally-ai-learn deploy. The barge-in series stays "not
+measured" until the first interruption is recorded, then flips to charted on its own — no
+follow-up deploy, and the pre-deploy zeroes are dropped rather than drawn as a step change.

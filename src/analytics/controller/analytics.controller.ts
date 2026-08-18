@@ -1051,6 +1051,7 @@ export class AnalyticsController {
     return this.feedbackGroundednessJudgeService.startBackfill(
       body.sinceDays ?? 365,
       unjudgedForVersion,
+      body.concurrency,
     );
   }
 
@@ -1099,6 +1100,7 @@ export class AnalyticsController {
       body.sinceDays ?? 90,
       Boolean(unjudgedForVersion),
       unjudgedForVersion,
+      body.concurrency,
     );
   }
 
@@ -1198,6 +1200,7 @@ export class AnalyticsController {
       body.sinceDays ?? 90,
       unjudgedForVersion ? true : !body.rejudge,
       unjudgedForVersion,
+      body.concurrency,
     );
   }
 

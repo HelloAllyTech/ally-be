@@ -355,6 +355,17 @@ export class StartDriftBackfillDto {
     description: 'Judge model the version above belongs to.',
   })
   judgeModel?: string;
+  @ApiProperty({
+    required: false,
+    default: 5,
+    description:
+      'Sessions judged in parallel (1-20). The default of 5 turns a ~46-hour ' +
+      'serial run over a 90-day window into roughly nine. Capped because a ' +
+      'backfill is background work sharing a Gemini rate limit and one ' +
+      'core-ai task with the live paths, and a 429 storm just converts ' +
+      'throughput into sessions a later re-run has to redo.',
+  })
+  concurrency?: number;
 }
 
 export class StartGroundednessBackfillDto {
@@ -378,6 +389,17 @@ export class StartGroundednessBackfillDto {
 
   @ApiProperty({ required: false, default: 'gemini-2.5-pro' })
   judgeModel?: string;
+  @ApiProperty({
+    required: false,
+    default: 5,
+    description:
+      'Sessions judged in parallel (1-20). The default of 5 turns a ~46-hour ' +
+      'serial run over a 90-day window into roughly nine. Capped because a ' +
+      'backfill is background work sharing a Gemini rate limit and one ' +
+      'core-ai task with the live paths, and a 429 storm just converts ' +
+      'throughput into sessions a later re-run has to redo.',
+  })
+  concurrency?: number;
 }
 
 export class GroundednessBackfillJobDto {
@@ -717,6 +739,17 @@ export class StartLanguageBackfillDto {
 
   @ApiProperty({ required: false, default: 'gemini-2.5-pro' })
   judgeModel?: string;
+  @ApiProperty({
+    required: false,
+    default: 5,
+    description:
+      'Sessions judged in parallel (1-20). The default of 5 turns a ~46-hour ' +
+      'serial run over a 90-day window into roughly nine. Capped because a ' +
+      'backfill is background work sharing a Gemini rate limit and one ' +
+      'core-ai task with the live paths, and a 429 storm just converts ' +
+      'throughput into sessions a later re-run has to redo.',
+  })
+  concurrency?: number;
 }
 
 export class LanguageBackfillJobDto {

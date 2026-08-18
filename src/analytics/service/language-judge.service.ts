@@ -4,6 +4,10 @@ import { randomUUID } from 'crypto';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
+import {
+  resolveJudgeConcurrency,
+  runWithConcurrency,
+} from '../util/judge-concurrency.util';
 import { LanguageBackfillJobDto } from '../dto/platform-analytics.dto';
 import { DriftJudgeRepository } from '../repository/drift-judge.repository';
 import {
@@ -68,7 +72,9 @@ export class LanguageJudgeService {
       judgeModel: string;
       judgePromptVersion: string;
     } | null,
+    requestedConcurrency?: number | null,
   ): Promise<LanguageBackfillJobDto> {
+    const concurrency = resolveJudgeConcurrency(requestedConcurrency);
     const jobId = randomUUID();
     const job: LanguageBackfillJobDto = {
       jobId,
@@ -82,7 +88,13 @@ export class LanguageJudgeService {
     };
     await this.saveJob(job);
     // Fire-and-forget: the HTTP request returns immediately with the job id.
-    void this.runJob(job, sinceDays, onlyUnjudged, unjudgedForVersion);
+    void this.runJob(
+      job,
+      sinceDays,
+      onlyUnjudged,
+      unjudgedForVersion ?? null,
+      concurrency,
+    );
     this.logger.debug(
       `language backfill queued job=${jobId} sinceDays=${sinceDays} onlyUnjudged=${onlyUnjudged}`,
     );
@@ -98,10 +110,11 @@ export class LanguageJudgeService {
     job: LanguageBackfillJobDto,
     sinceDays: number,
     onlyUnjudged: boolean,
-    unjudgedForVersion?: {
+    unjudgedForVersion: {
       judgeModel: string;
       judgePromptVersion: string;
     } | null,
+    concurrency: number,
   ): Promise<void> {
     try {
       const rubric = await this.repo.fetchRubric();
@@ -113,7 +126,9 @@ export class LanguageJudgeService {
       job.status = 'running';
       job.total = sessions.length;
       await this.saveJob(job);
-      for (const s of sessions) {
+      // Independent per session, so run a bounded pool rather than one at a
+      // time — the LLM call dominates each iteration.
+      await runWithConcurrency(sessions, concurrency, async (s) => {
         try {
           const { transcript, aiText, userText } =
             await this.driftRepo.buildTranscript(s.id);
@@ -121,7 +136,7 @@ export class LanguageJudgeService {
             job.skipped += 1;
             job.processed += 1;
             await this.saveJob(job);
-            continue;
+            return;
           }
           const judged = await this.judgeViaAi(transcript, s, rubric);
           // Objective metrics (FR2). Script fidelity is pure code; round-trip
@@ -156,7 +171,7 @@ export class LanguageJudgeService {
           job.processed += 1;
           await this.saveJob(job);
         }
-      }
+      });
       job.status = 'done';
       await this.saveJob(job);
     } catch (e) {
