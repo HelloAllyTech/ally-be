@@ -5,7 +5,11 @@ import {
 } from '@nestjs/common';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
-import { needsYourAnswer } from '../constants/bug-hunter-voice';
+import {
+  needsYourAnswer,
+  STALE_ESCALATION_DIGEST_TITLE,
+  stillWaitingOnAnswers,
+} from '../constants/bug-hunter-voice';
 import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
 import { BugFinding } from '../entity/bug-finding.entity';
 import {
@@ -27,6 +31,12 @@ export interface RawFinding {
   severity?: BugFindingSeverity;
   proven: boolean;
   touchesGuardedPath: boolean;
+  /**
+   * The function, class, route, component or endpoint the bug sits on. Optional
+   * because not every finder can name one (a prod-log cluster often cannot), but
+   * supplying it is what makes dedup precise rather than prose-dependent.
+   */
+  symbol?: string;
   /** Present only for source=reported_bug — the pre-existing NEW row created at roadmap-intake time. */
   reportedBugId?: string;
 }
@@ -115,14 +125,49 @@ export class BugFindingService {
 
       const dedupeKey = BugFindingRepository.dedupeKey(
         finding.file,
+        finding.source,
+        finding.symbol,
         finding.description,
       );
-      const existingOpen = await this.findingRepository.findOpenByDedupeKey(
+      let existingOpen = await this.findingRepository.findOpenByDedupeKey(
         repo,
         dedupeKey,
       );
+
+      // Transition path. A row stored before its finder learned to emit
+      // `symbol` is keyed on the description fingerprint, so once the finder
+      // DOES supply one the precise key above cannot match it — and we would
+      // open a second row for a bug we already have. That is the very
+      // duplication this key was reworked to stop, so when a symbol is present
+      // and missed, fall back to the symbol-less key before inserting.
+      //
+      // Only ever in this direction: a finding that supplies no symbol must not
+      // adopt a symbol-keyed row, because the fingerprint is the fuzzy half and
+      // letting it claim precise rows would merge distinct bugs.
+      if (!existingOpen && finding.symbol?.trim()) {
+        existingOpen = await this.findingRepository.findOpenByDedupeKey(
+          repo,
+          BugFindingRepository.dedupeKey(
+            finding.file,
+            finding.source,
+            null,
+            finding.description,
+          ),
+        );
+      }
+
       if (existingOpen) {
-        await this.findingRepository.update(existingOpen.id, { runId });
+        // Adopt the sharper identity when this run supplied one: record the
+        // symbol and re-key the row, so the next sweep matches on the first
+        // lookup instead of re-walking this transition every night. Never
+        // overwrite a symbol we already have with nothing.
+        const adoptSymbol = Boolean(finding.symbol?.trim());
+        await this.findingRepository.update(existingOpen.id, {
+          runId,
+          ...(adoptSymbol && !existingOpen.symbol
+            ? { symbol: finding.symbol, dedupeKey }
+            : {}),
+        });
         results.push(await this.getOne(existingOpen.id));
         continue;
       }
@@ -135,6 +180,7 @@ export class BugFindingService {
           title: finding.description.slice(0, 200),
           description: finding.description,
           file: finding.file,
+          symbol: finding.symbol ?? null,
           evidence: finding.evidence ?? null,
           severity: finding.severity ?? null,
           proven: finding.proven,
@@ -148,6 +194,61 @@ export class BugFindingService {
     }
 
     return results;
+  }
+
+  /**
+   * Raises one notification when questions have gone unanswered long enough
+   * that nothing is moving on those bugs.
+   *
+   * ## Why this is needed at all
+   *
+   * The inbox is pull-only by design: no email, no push, and Slack was removed
+   * deliberately. That is fine for a question asked during an on-demand fix
+   * session, where an admin has just pressed a button and is probably still
+   * looking at the tab — that path waits for an answer. It is not fine for an
+   * unattended sweep at 2am, which asks and moves on. Without this, such a
+   * question sits at NEEDS_INPUT unread indefinitely, and the bug silently
+   * stops progressing with nobody aware that it is waiting on them.
+   *
+   * Runs hourly but speaks at most once a day (see `existsWithTitleSince`), and
+   * says nothing at all when there is nothing waiting — the inbox's own rule is
+   * that a quiet, successful night produces no message.
+   */
+  async raiseStaleEscalationDigest(
+    staleAfterMs: number,
+    quietPeriodMs: number,
+    now = new Date(),
+  ): Promise<{ notified: boolean; staleCount: number }> {
+    const stale = await this.findingRepository.listStaleNeedsInput(
+      new Date(now.getTime() - staleAfterMs),
+    );
+    if (stale.length === 0) return { notified: false, staleCount: 0 };
+
+    // Already said this today. Repeating it daily is a nudge; repeating it
+    // hourly is what turns an inbox into wallpaper.
+    const alreadySaid = await this.notificationService.wasRaisedSince(
+      STALE_ESCALATION_DIGEST_TITLE,
+      new Date(now.getTime() - quietPeriodMs),
+    );
+    if (alreadySaid) return { notified: false, staleCount: stale.length };
+
+    // listStaleNeedsInput orders oldest-first, so the head is the worst case.
+    const oldest = stale[0].updatedAt ?? now;
+    const oldestDays = Math.floor(
+      (now.getTime() - new Date(oldest).getTime()) / 86_400_000,
+    );
+
+    await this.notificationService.notify({
+      level: BugHunterNotificationLevel.ACTION_NEEDED,
+      // No findingId: this is about several bugs at once, and pinning it to one
+      // of them would make the inbox row open the wrong drawer.
+      findingId: null,
+      ...stillWaitingOnAnswers(
+        stale.map((finding) => finding.title),
+        oldestDays,
+      ),
+    });
+    return { notified: true, staleCount: stale.length };
   }
 
   /**

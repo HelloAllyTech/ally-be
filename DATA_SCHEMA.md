@@ -343,7 +343,7 @@ and nothing further runs.
 | Table | Base | Key columns | Notes |
 |-------|------|-------------|-------|
 | `bug_hunter_settings` | BaseWithoutTenant | `id` (smallint, **CHECK id=1** — singleton), `mode` (`off`/`manual`/`ai`, default `off`), `updated_by` (int, nullable) | The kill switch. Flipping it also writes a `bug_hunt_events` row (`stage='settings_changed'`, `run_id` NULL) so on/off history sits in the same timeline as run activity |
-| `bug_findings` | BaseWithoutTenant | `id` (uuid), `run_id` (uuid, nullable FK → `bug_hunt_runs` ON DELETE SET NULL), `repo`, `source` (`test_failure`/`lint_error`/`code_review`/`production_log`/`reported_bug`/`analytics_suggestion`), `title`/`description`/`file`/`evidence`, `severity`, `proven`, `touches_guarded_path`, `reported_bug_id` (uuid, nullable FK → `roadmap_opportunities` ON DELETE SET NULL), `dedupe_key`, `status`, `pr_url`, escalation `question`/`answer`/`answered_by`/`answered_at`, `decided_by`/`decided_at`, **fix-session + release:** `dispatched_at`, `session_run_url`, `release_tag`, `release_run_id` (bigint), `release_run_url`, `released_by` (int), `released_at`, **coordinated fixes:** `parent_finding_id` (uuid, nullable self-FK ON DELETE CASCADE), `step_index` (int), `step_summary`, `metadata` (jsonb) | One row per bug from any source — the comprehensive table the admin tab renders. A row can exist before any run has looked at it: `RoadmapOpportunityService.create` inserts one (`source='reported_bug'`, `status='new'`) the moment a human files a bug. `(repo, dedupe_key)` is what stops a still-open bug getting a second row across nights |
+| `bug_findings` | BaseWithoutTenant | `id` (uuid), `run_id` (uuid, nullable FK → `bug_hunt_runs` ON DELETE SET NULL), `repo`, `source` (`test_failure`/`lint_error`/`code_review`/`production_log`/`reported_bug`/`analytics_suggestion`), `title`/`description`/`file`/`symbol`, `evidence`, `severity`, `proven`, `touches_guarded_path`, `reported_bug_id` (uuid, nullable FK → `roadmap_opportunities` ON DELETE SET NULL), `dedupe_key`, `status`, `pr_url`, escalation `question`/`answer`/`answered_by`/`answered_at`, `decided_by`/`decided_at`, **fix-session + release:** `dispatched_at`, `session_run_url`, `release_tag`, `release_run_id` (bigint), `release_run_url`, `released_by` (int), `released_at`, **coordinated fixes:** `parent_finding_id` (uuid, nullable self-FK ON DELETE CASCADE), `step_index` (int), `step_summary`, `metadata` (jsonb) | One row per bug from any source — the comprehensive table the admin tab renders. A row can exist before any run has looked at it: `RoadmapOpportunityService.create` inserts one (`source='reported_bug'`, `status='new'`) the moment a human files a bug. `(repo, dedupe_key)` is what stops a still-open bug getting a second row across nights. **`dedupe_key` is built from `file` + `source` + `symbol`, never from the raw `description`** (migration `1910000000000`): the description is LLM-written, so hashing it meant the same bug worded differently on a later night hashed differently and opened a duplicate — the sweep manufactured its own reviewer noise. `symbol` (the function/class/route/component) is the stable half; where a finder supplies none, a normalised *fingerprint* of the description is used instead, which still collapses rewordings without merging two distinct bugs in one file. A finding that arrives WITH a symbol and misses also retries the symbol-less key, so rows stored before their finder learned to emit one are adopted and re-keyed rather than duplicated once at the transition |
 | `bug_hunt_runs` | BaseWithoutTenant | `id` (uuid), `trigger` (`scheduled`/`manual`/`fix_session`), `repo`, `status` (`running`/`completed`/`failed`/`skipped_disabled`), `finished_at`, `found_count`/`auto_merged_count`/`pr_opened_count`/`dismissed_count`, `total_token_cost_usd` (numeric, snapshotted from `llm_usage` at close — not the source of truth), `metadata` (jsonb) | One row per (repo, trigger) sweep — a five-repo nightly run is five rows, never merged into one. `trigger='fix_session'` is the on-demand single-bug variant; its totals only ever sum to one finding |
 | `bug_hunt_events` | BaseWithoutTenant | `id` (uuid), `run_id` (uuid, nullable FK → `bug_hunt_runs` ON DELETE CASCADE), `finding_id` (uuid, nullable FK → `bug_findings` ON DELETE SET NULL), `repo`, `stage` (`finder_result`/`verify`/`fix_attempt`/`test_written`/`doc_updated`/`pr_opened`/`merged`/`escalated`/`error`/`skipped_disabled`/`settings_changed`/`session_dispatched`/`release_dispatched`/`released`/`release_failed`/`plan_created`/`step_started`), `summary` (text), `payload` (jsonb — structured detail only, **never raw log/PII content**), `suggestion_id` (uuid, nullable FK → `analytics_suggestions` ON DELETE SET NULL) | **Append-only** transcript, modeled on `copilot_messages` (§3.9). Deliberately not `audit_logs` (§3.8) — that table is a HIPAA compliance log with its own taxonomy; this is unrelated operational telemetry. Release-lifecycle rows carry `run_id` NULL (like `settings_changed`) because they land long after the producing run closed |
 
@@ -369,6 +369,28 @@ is a plan step whose turn hasn't come; `coordinating` is a parent working throug
 its plan. `release_failed` is
 deliberately distinct from `failed`: the former means the fix IS on master and only the deploy went
 red, which is a completely different thing for an admin to act on.
+
+**Sweeps are now actually triggered.** Until migration `1910000000000`'s change nothing started
+one: `bug_hunt_runs.trigger='scheduled'` was a valid value with no producer anywhere, there was no
+`schedule:` workflow, and the only route that opened a run was api-key-only — a sweep happened solely
+when someone ran `.claude/workflows/bug-hunt.mjs` by hand in a Claude Code session. That script is a
+Claude Code *Workflow* (it uses `agent()`/`parallel()`/`budget` primitives), so a GitHub runner cannot
+execute it, which is why the gap existed. There are now two executors over **one** definition: the
+interactive script, and `bug-hunt-sweep.yml` in each repo, which fetches its protocol from
+`GET pipeline/sweep-prompt` and hands it to Claude Code exactly as `bug-fix-session.yml` does with the
+fix protocol. `POST /v1/bug-hunter/runs/trigger` (human, toggle-gated) opens the run then dispatches,
+so the tab shows it immediately; the nightly cron opens its own. Test/lint commands and per-repo
+fixability live once in `bug-hunt-repos.constants.ts` and are served over
+`GET pipeline/repo-commands` — they previously existed twice, in `bug-hunt.mjs` and
+`bug-fix-prompt.ts`, and had already drifted by an entry.
+
+**An unanswered question no longer rots silently.** The inbox is pull-only by design, so a question a
+2am sweep asks would otherwise sit unread indefinitely with the finding stuck at `needs_input` and
+nobody aware it is waiting on them. An hourly `bug-hunter-stale-escalation-digest` task raises ONE
+`action_needed` notification covering every question unanswered for more than four hours, at most once
+a day, and nothing at all when none are waiting. Only an on-demand fix session waits for an answer
+inline — there an admin has just pressed a button and is probably still watching; a sweep asks and
+moves on.
 
 **Two dispatches, reconciled not awaited.** "Start fix session" and "Release to production" both fire
 a GitHub `workflow_dispatch`, which answers 204 with **no run id** — so `dispatched_at` is the only

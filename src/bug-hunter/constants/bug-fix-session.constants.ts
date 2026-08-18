@@ -15,6 +15,14 @@ export const BUG_FIX_SESSION_WORKFLOW_FILE = 'bug-fix-session.yml';
 /** Branch the fix-session workflow is dispatched against. All Ally repos ship from `master`. */
 export const BUG_FIX_SESSION_DEFAULT_REF = 'master';
 
+/**
+ * The repo-wide sweep workflow, dispatched by the admin tab's "Start a sweep"
+ * button and by each repo's own nightly cron. Same filename in every repo, and
+ * as thin as `bug-fix-session.yml` for the same reason: it fetches its protocol
+ * from `GET pipeline/sweep-prompt` rather than carrying a copy.
+ */
+export const BUG_HUNT_SWEEP_WORKFLOW_FILE = 'bug-hunt-sweep.yml';
+
 /** Repos a fix session may be dispatched for — i.e. those carrying `bug-fix-session.yml`. */
 export const BUG_FIX_SESSION_REPOS = [
   'ally-be',

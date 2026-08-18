@@ -54,6 +54,55 @@ export const needsYourAnswer = (
   body: question ?? undefined,
 });
 
+/**
+ * Constant title, because the stale-question digest is deduplicated by matching
+ * on it: raising one is conditional on no digest having gone out in the last
+ * day, and there is no metadata column on the notifications table to mark them
+ * with. Changing this string starts a fresh dedup window — harmless, but worth
+ * knowing.
+ */
+export const STALE_ESCALATION_DIGEST_TITLE =
+  "I'm still waiting on answers before I can carry on";
+
+/**
+ * One or more questions have gone unanswered long enough that nothing is moving
+ * on those bugs.
+ *
+ * This exists because the inbox is pull-only by design — no email, no push,
+ * Slack deliberately removed — so a question asked at 2am during an unattended
+ * sweep would otherwise sit unread indefinitely, with the finding stuck at
+ * NEEDS_INPUT and no one aware. A sweep does not wait for an answer (only an
+ * on-demand fix session does, since an admin just pressed the button and is
+ * probably still there), which is exactly why the unanswered ones need
+ * something to resurface them.
+ *
+ * Deliberately ONE message covering all of them rather than one per finding:
+ * the reader's problem is "what is blocked on me", not "here are nine rows",
+ * and nine action_needed notifications would bury the badge they are meant to
+ * light up.
+ */
+export const stillWaitingOnAnswers = (
+  findingTitles: string[],
+  oldestDays: number,
+): BugHunterMessage => {
+  const count = findingTitles.length;
+  const age =
+    oldestDays >= 1
+      ? `The oldest has been waiting ${oldestDays} ${oldestDays === 1 ? 'day' : 'days'}.`
+      : 'The oldest has been waiting since earlier today.';
+  return {
+    title: STALE_ESCALATION_DIGEST_TITLE,
+    body: [
+      count === 1
+        ? 'There is one bug I stopped on because I need a decision from you:'
+        : `There are ${count} bugs I stopped on because I need a decision from you:`,
+      ...findingTitles.map((title) => `• ${title}`),
+      age,
+      'Open any of them to read the question and answer it. I will pick the answer up on my next run.',
+    ].join('\n'),
+  };
+};
+
 /** A hunt run escalated: it has stopped mid-sweep and wants a human. */
 export const stuckOnRepo = (
   repo: string,

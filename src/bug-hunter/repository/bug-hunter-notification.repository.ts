@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, IsNull, Repository } from 'typeorm';
+import { DataSource, IsNull, MoreThan, Repository } from 'typeorm';
 
 import { BugHunterNotification } from '../entity/bug-hunter-notification.entity';
 
@@ -29,6 +29,21 @@ export class BugHunterNotificationRepository extends Repository<BugHunterNotific
       this.count({ where: { readAt: IsNull() } }),
     ]);
     return { items, unreadCount };
+  }
+
+  /**
+   * Whether a notification with this exact title has been raised since `since`.
+   *
+   * Used to keep the stale-question digest to once a day. Matching on title is
+   * crude, but this table has no metadata column to mark a digest with, and
+   * adding one for a single boolean would be a migration for nothing. The title
+   * is a constant (`STALE_ESCALATION_DIGEST_TITLE`) precisely so this holds.
+   */
+  async existsWithTitleSince(title: string, since: Date): Promise<boolean> {
+    const count = await this.count({
+      where: { title, createdAt: MoreThan(since) },
+    });
+    return count > 0;
   }
 
   markAllRead(userId: number): Promise<unknown> {

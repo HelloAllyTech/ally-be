@@ -24,6 +24,25 @@ export const BUG_HUNT_ESCALATION_ANSWER_TIMEOUT_MS = 20 * 60 * 1000;
 /** How often the fix agent re-checks for an answer during the wait above. */
 export const BUG_HUNT_ESCALATION_POLL_INTERVAL_MS = 60 * 1000;
 
+/**
+ * How long a question may go unanswered before the digest mentions it.
+ *
+ * Four hours, not twenty minutes: the point is to catch neglect, not
+ * impatience. An admin who has not looked at the tab for an afternoon has not
+ * neglected anything, and a digest that fires the moment a sweep asks
+ * something would just duplicate the per-finding notification that already
+ * went out at that moment.
+ */
+export const BUG_HUNT_STALE_ESCALATION_AFTER_MS = 4 * 60 * 60 * 1000;
+
+/**
+ * Minimum gap between two stale-question digests. The task runs hourly so it
+ * notices promptly, but speaks at most once a day — repeating it hourly is what
+ * turns an inbox into wallpaper, which is the same reasoning that keeps the
+ * inbox collapsed by default.
+ */
+export const BUG_HUNT_STALE_ESCALATION_QUIET_MS = 24 * 60 * 60 * 1000;
+
 /** Prompt codes under src/prompts/bug_hunter/ — see toPromptCode('bug_hunter', <stem>). */
 export const BUG_HUNTER_PROMPT_CODES = {
   CLASSIFY_REPO: 'bug_hunter_classify_repo',

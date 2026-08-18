@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -33,6 +34,8 @@ import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import { BugFindingStatus } from '../enum/bug-finding.enum';
 import { toEventDto, toRunDto, toFindingDto } from './bug-hunter.controller';
 import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
+import { BUG_HUNT_REPOS } from '../constants/bug-hunt-repos.constants';
+import { buildSweepPrompt } from '../constants/bug-hunt-sweep-prompt';
 
 /**
  * The Bug Hunter MACHINE surface — start/report/close plus the findings
@@ -106,6 +109,64 @@ export class BugHunterPipelineController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<BugFindingDto> {
     return toFindingDto(await this.bugFindingService.getOne(id));
+  }
+
+  @Get('pipeline/repo-commands')
+  @ApiOperation({
+    summary:
+      'Test/lint commands and fixability for every repo Bug Hunter knows (pipeline only)',
+    description:
+      'The single definition of this map. It used to exist twice — once in ' +
+      '`.claude/workflows/bug-hunt.mjs` and once in `bug-fix-prompt.ts` — and ' +
+      'the two had already drifted by an entry. The workflow script now fetches ' +
+      'it from here instead of carrying its own copy.',
+  })
+  getRepoCommands(): {
+    repos: Record<string, { test: string; lint: string; fixable: boolean }>;
+  } {
+    return { repos: BUG_HUNT_REPOS };
+  }
+
+  @Get('pipeline/sweep-prompt')
+  @ApiOperation({
+    summary: 'The full repo-wide sweep protocol, as plain text (pipeline only)',
+    description:
+      'The unattended executor for a sweep. `.claude/workflows/bug-hunt.mjs` ' +
+      'is a Claude Code Workflow script and cannot run on a GitHub runner, ' +
+      'which is why nothing used to trigger a sweep automatically. ' +
+      '`bug-hunt-sweep.yml` fetches this and hands it to Claude Code, exactly ' +
+      'as `bug-fix-session.yml` already does with the fix protocol. The prompt ' +
+      'embeds the mode, because MANUAL stops at pending_approval and AI carries ' +
+      'on into Fix. Returns `text/plain` — the runner pipes it.',
+  })
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  async getSweepPrompt(
+    @Query('repo') repo: string,
+    @Query('runId') runId: string,
+    @Query('deep') deep?: string,
+  ): Promise<string> {
+    // Validate here so an unknown repo is a 400 the runner can report clearly.
+    // buildSweepPrompt also throws, but as a defensive invariant — surfacing
+    // that as a 500 would read to an admin as a Bug Hunter outage rather than a
+    // bad workflow input.
+    if (!BUG_HUNT_REPOS[repo]) {
+      throw new BadRequestException(
+        `Bug Hunter is not configured for "${repo}". Known repos: ${Object.keys(
+          BUG_HUNT_REPOS,
+        ).join(', ')}.`,
+      );
+    }
+    // Read the live mode rather than trusting a workflow input: the switch may
+    // have moved between the dispatch and the runner actually starting, and the
+    // mode decides whether this sweep is allowed to fix anything.
+    const settings = await this.bugHunterService.getSettings();
+    return buildSweepPrompt({
+      repo,
+      runId,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      mode: settings.mode,
+      deep: deep === 'true',
+    });
   }
 
   @Get('pipeline/findings/:id/fix-prompt')

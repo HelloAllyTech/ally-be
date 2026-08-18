@@ -33,13 +33,160 @@ export class BugFindingRepository extends Repository<BugFinding> {
     super(BugFinding, dataSource.createEntityManager());
   }
 
-  /** `repo::normalized(file+description)`, hashed — stable across runs so a still-open bug never gets a second row. */
-  static dedupeKey(file: string, description: string): string {
-    const normalized = `${file}::${description}`
-      .toLowerCase()
-      .replace(/\s+/g, ' ')
-      .trim();
+  /**
+   * Hashed identity for "this is the same bug" — stable across runs so a
+   * still-open finding never gets a second row.
+   *
+   * Keyed on the code coordinate plus the finder class, NOT on the finder's
+   * prose. `description` is LLM-generated: it used to be hashed directly, so
+   * the same bug described differently on a later night produced a different
+   * key and a duplicate row. The sweep was manufacturing its own noise.
+   *
+   * `symbol` (function/class/route/component) is the stable discriminator.
+   * When a finder does not supply one we fall back to a normalised
+   * *fingerprint* of the description rather than its raw text — that still
+   * collapses rewordings, while keeping two genuinely different bugs in the
+   * same file apart. Dropping description entirely would collapse every
+   * code-review finding in a large file into one row, which is worse than the
+   * bug being fixed here.
+   *
+   * `repo` is deliberately not hashed in: it stays a separate, indexed WHERE
+   * clause in findOpenByDedupeKey, so the same bug in two repos reads as two
+   * findings without needing two hashes.
+   */
+  static dedupeKey(
+    file: string | null | undefined,
+    source: string,
+    symbol?: string | null,
+    description?: string | null,
+  ): string {
+    const norm = (v: string) => v.toLowerCase().replace(/\s+/g, ' ').trim();
+    const discriminator = symbol?.trim()
+      ? norm(symbol)
+      : BugFindingRepository.descriptionFingerprint(description ?? '');
+    const normalized = `${norm(file ?? '')}::${norm(source)}::${discriminator}`;
     return createHash('sha256').update(normalized).digest('hex');
+  }
+
+  /**
+   * A prose-insensitive fingerprint of a finding description, used only when
+   * the finder gave us no `symbol`.
+   *
+   * Strips the parts an LLM varies between runs while describing the same
+   * defect — digits (line numbers, counts), quoted literals, punctuation and
+   * common filler words — then sorts the surviving tokens so word order stops
+   * mattering. Two descriptions of one bug converge; descriptions of two
+   * different bugs keep different token sets.
+   *
+   * Not exact, and not meant to be: this is the fallback path. Finders that
+   * emit `symbol` bypass it entirely and dedupe precisely.
+   */
+  static descriptionFingerprint(description: string): string {
+    const STOPWORDS = new Set([
+      'the',
+      'a',
+      'an',
+      'is',
+      'are',
+      'was',
+      'were',
+      'be',
+      'been',
+      'being',
+      'in',
+      'on',
+      'at',
+      'to',
+      'for',
+      'of',
+      'with',
+      'and',
+      'or',
+      'but',
+      'if',
+      'then',
+      'than',
+      'that',
+      'this',
+      'these',
+      'those',
+      'it',
+      'its',
+      'as',
+      'by',
+      'from',
+      'not',
+      'no',
+      'never',
+      'always',
+      'should',
+      'would',
+      'will',
+      'can',
+      'could',
+      'may',
+      'might',
+      'must',
+      'does',
+      'do',
+      'did',
+      'has',
+      'have',
+      'had',
+      'when',
+      'which',
+      'while',
+      'because',
+      'so',
+      'there',
+      // Structural filler: once digits are stripped, "line 88" and "at file
+      // foo" leave behind words that say nothing about WHICH bug this is.
+      'line',
+      'lines',
+      'file',
+      'column',
+      'col',
+      'code',
+      'method',
+      'function',
+      'here',
+      'also',
+      'currently',
+      'instead',
+      'rather',
+      'actually',
+    ]);
+
+    /**
+     * Crude suffix stripping, not real stemming. Exists for one reason: the
+     * commonest way two descriptions of one bug differ is verb form —
+     * "retries"/"retry", "resets"/"reset", "leaking"/"leaks". A full stemmer
+     * would be a dependency and far more aggression than this needs.
+     */
+    const stem = (t: string): string => {
+      if (t.length > 4 && t.endsWith('ies')) return `${t.slice(0, -3)}y`;
+      for (const suffix of ['ing', 'ed', 'es', 's']) {
+        if (t.length > suffix.length + 2 && t.endsWith(suffix)) {
+          return t.slice(0, -suffix.length);
+        }
+      }
+      return t;
+    };
+
+    const tokens = description
+      .toLowerCase()
+      // Quoted literals vary in quoting style between runs; keep the words.
+      .replace(/["'`]/g, ' ')
+      // Line/column numbers and counts are the single most-varied part.
+      .replace(/\d+/g, ' ')
+      .replace(/[^a-z\s]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length > 2 && !STOPWORDS.has(t))
+      .map(stem);
+
+    // Sorted + de-duplicated: word order and repetition must not change identity.
+    const unique = Array.from(new Set(tokens)).sort();
+    return unique.join(' ');
   }
 
   /** The open row for this exact bug in this repo, if one already exists — see class-level OPEN_STATUSES. */
@@ -57,6 +204,24 @@ export class BugFindingRepository extends Repository<BugFinding> {
   /** The NEW, not-yet-triaged row for a human-reported bug — see RoadmapOpportunityService.create. */
   findByReportedBugId(reportedBugId: string): Promise<BugFinding | null> {
     return this.findOne({ where: { reportedBugId } });
+  }
+
+  /**
+   * Findings stuck at NEEDS_INPUT with a question nobody has answered, last
+   * touched before `before`.
+   *
+   * Drives the stale-question digest. The `before` cutoff is what stops a
+   * question asked ten minutes ago being reported as neglected — an admin may
+   * simply not have looked yet.
+   */
+  listStaleNeedsInput(before: Date): Promise<BugFinding[]> {
+    return this.createQueryBuilder('f')
+      .where('f.status = :status', { status: BugFindingStatus.NEEDS_INPUT })
+      .andWhere('f.escalationQuestion IS NOT NULL')
+      .andWhere('f.escalationAnswer IS NULL')
+      .andWhere('f."updatedAt" < :before', { before })
+      .orderBy('f."updatedAt"', 'ASC')
+      .getMany();
   }
 
   /** Human-reported bugs still at NEW — the reported-bugs finder's read queue (see BugHunterFinderDataService). */

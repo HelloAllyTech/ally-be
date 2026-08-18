@@ -44,7 +44,16 @@ describe('buildFixSessionPrompt', () => {
   });
 
   it('throws rather than emitting a prompt with no way to verify a fix', () => {
-    expect(() => build({}, 'ally-mobile')).toThrow(/no test\/lint commands/i);
+    expect(() => build({}, 'not-an-ally-repo')).toThrow(
+      /no test\/lint commands/i,
+    );
+  });
+
+  it('refuses ally-mobile, which can be swept but never fixed from here', () => {
+    // It IS in the shared repo map — a sweep should still record bugs there —
+    // but it has no fix-session workflow and releases through App Store / Play
+    // Store builds, so a fix protocol would end in a step it cannot perform.
+    expect(() => build({}, 'ally-mobile')).toThrow(/swept but not fixed/i);
   });
 
   // ── merge policy ─────────────────────────────────────────────────────────
