@@ -22,6 +22,12 @@
 export enum TrackGameKey {
   /** The Chromium offline T-Rex runner. Jump the cactus, don't die. */
   TREX_RUNNER = 'TREX_RUNNER',
+  /** Tic-tac-toe against the machine. Nine squares, a minute at most. */
+  TIC_TAC_TOE = 'TIC_TAC_TOE',
+  /** Sixteen cards, eight pairs. Flip two at a time and remember where they were. */
+  MEMORY_MATCH = 'MEMORY_MATCH',
+  /** A peg-and-link puzzle. Walk the cub to the star, turning the grid to reach it. */
+  CUB_N_PUP = 'CUB_N_PUP',
 }
 
 export interface GameContent {
