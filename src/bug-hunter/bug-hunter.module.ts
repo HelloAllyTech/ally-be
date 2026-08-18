@@ -3,6 +3,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { NotificationModule } from 'src/notification/notification.module';
 import { LogsModule } from 'src/logs/logs.module';
+import { PromptModule } from 'src/prompt/prompt.module';
+import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 
 import { BugHunterController } from './controller/bug-hunter.controller';
 import { BugHunterPipelineController } from './controller/bug-hunter-pipeline.controller';
@@ -20,6 +22,7 @@ import { BugHunterService } from './service/bug-hunter.service';
 import { BugFindingService } from './service/bug-finding.service';
 import { BugHunterFinderDataService } from './service/bug-hunter-finder-data.service';
 import { BugFixSessionService } from './service/bug-fix-session.service';
+import { BugHunterRepoClassifierService } from './service/bug-hunter-repo-classifier.service';
 import { GithubActionsService } from './service/github-actions.service';
 import { BugHunterNotificationService } from './service/bug-hunter-notification.service';
 import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-session-scheduler-registration.service';
@@ -53,6 +56,8 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
     ]),
     NotificationModule,
     LogsModule,
+    PromptModule,
+    LlmUsageModule,
   ],
   controllers: [BugHunterController, BugHunterPipelineController],
   providers: [
@@ -67,6 +72,7 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
     GithubActionsService,
     BugHunterNotificationService,
     BugFixSessionService,
+    BugHunterRepoClassifierService,
     BugFixSessionSchedulerRegistrationService,
   ],
   exports: [BugHunterService, BugFindingService, BugHunterNotificationService],

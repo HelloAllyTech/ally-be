@@ -1,0 +1,5 @@
+{
+  "name": "Bug Hunter — Classify Repo",
+  "description": "Triages a human-reported bug (no repo attached yet) to the codebase whose fix session should run it.",
+  "category": "Bug Hunter"
+}

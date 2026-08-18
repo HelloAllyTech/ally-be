@@ -23,3 +23,11 @@ export const BUG_HUNT_ESCALATION_ANSWER_TIMEOUT_MS = 20 * 60 * 1000;
 
 /** How often the fix agent re-checks for an answer during the wait above. */
 export const BUG_HUNT_ESCALATION_POLL_INTERVAL_MS = 60 * 1000;
+
+/** Prompt codes under src/prompts/bug_hunter/ — see toPromptCode('bug_hunter', <stem>). */
+export const BUG_HUNTER_PROMPT_CODES = {
+  CLASSIFY_REPO: 'bug_hunter_classify_repo',
+} as const;
+
+/** Max tokens for the repo-classification call — a one-sentence-rationale JSON reply. */
+export const BUG_HUNTER_CLASSIFY_REPO_MAX_TOKENS = 300;
