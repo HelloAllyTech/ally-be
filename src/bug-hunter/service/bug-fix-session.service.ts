@@ -8,6 +8,16 @@ import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
+import {
+  findingReleased,
+  findingReleaseFailed,
+  planCreated,
+  planReadyToRelease,
+  planReleased,
+  planReleaseStopped,
+  planStepFailed,
+  planStepNeedsAnswer,
+} from '../constants/bug-hunter-voice';
 import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
 
 import { BugFinding } from '../entity/bug-finding.entity';
@@ -274,8 +284,10 @@ export class BugFixSessionService {
     });
     await this.notificationService.notify({
       level: BugHunterNotificationLevel.INFO,
-      title: `Fixing "${parent.title}" across ${steps.length} repos`,
-      body: `Bug Hunter will work through ${steps.map((s) => s.repo).join(' → ')} in that order, then release them in the same order once you approve.`,
+      ...planCreated(
+        parent.title,
+        steps.map((s) => s.repo),
+      ),
       findingId: parent.id,
       repo: parent.repo,
     });
@@ -494,8 +506,10 @@ export class BugFixSessionService {
           });
           await this.notificationService.notify({
             level: BugHunterNotificationLevel.ACTION_NEEDED,
-            title: `Ready to release: ${parent.title}`,
-            body: `All ${steps.length} steps are merged (${steps.map((s) => s.repo).join(' → ')}). Releasing deploys them to production in that order — open the bug to approve.`,
+            ...planReadyToRelease(
+              parent.title,
+              steps.map((s) => s.repo),
+            ),
             findingId: parent.id,
             repo: parent.repo,
           });
@@ -540,13 +554,14 @@ export class BugFixSessionService {
       level: needsAnswer
         ? BugHunterNotificationLevel.ACTION_NEEDED
         : BugHunterNotificationLevel.PROBLEM,
-      title: needsAnswer
-        ? `Stuck on step ${(stuck.stepIndex ?? 0) + 1} (${stuck.repo}): ${parent.title}`
-        : `Step ${(stuck.stepIndex ?? 0) + 1} (${stuck.repo}) failed: ${parent.title}`,
-      body: needsAnswer
-        ? (stuck.escalationQuestion ??
-          'The step is waiting on an answer before it can continue.')
-        : `The remaining steps are on hold — they depend on this one. Nothing from this plan has been released.`,
+      ...(needsAnswer
+        ? planStepNeedsAnswer(
+            parent.title,
+            stuck.stepIndex,
+            stuck.repo,
+            stuck.escalationQuestion,
+          )
+        : planStepFailed(parent.title, stuck.stepIndex, stuck.repo)),
       findingId: parent.id,
       repo: stuck.repo,
     });
@@ -577,8 +592,7 @@ export class BugFixSessionService {
           });
           await this.notificationService.notify({
             level: BugHunterNotificationLevel.PROBLEM,
-            title: `Release stopped at step ${(failed.stepIndex ?? 0) + 1} (${failed.repo}): ${parent.title}`,
-            body: `Steps before it are live; the rest are on hold. Every step is merged to master either way — retry the release once ${failed.repo}'s pipeline is green.`,
+            ...planReleaseStopped(parent.title, failed.stepIndex, failed.repo),
             findingId: parent.id,
             repo: failed.repo,
           });
@@ -603,8 +617,7 @@ export class BugFixSessionService {
         });
         await this.notificationService.notify({
           level: BugHunterNotificationLevel.INFO,
-          title: `Live in production: ${parent.title}`,
-          body: `All ${steps.length} steps released in order — ${steps.map((s) => `${s.repo} ${s.releaseTag ?? ''}`.trim()).join(', ')}.`,
+          ...planReleased(parent.title, steps),
           findingId: parent.id,
           repo: parent.repo,
         });
@@ -768,12 +781,14 @@ export class BugFixSessionService {
       level: succeeded
         ? BugHunterNotificationLevel.INFO
         : BugHunterNotificationLevel.PROBLEM,
-      title: succeeded
-        ? `Live in production: ${finding.title}`
-        : `Release failed: ${finding.title}`,
-      body: succeeded
-        ? `Released as ${finding.releaseTag} in ${finding.repo}.`
-        : `Release ${finding.releaseTag} of ${finding.repo} went red (${detail ?? 'unknown'}). The fix is merged to master but is NOT deployed.`,
+      ...(succeeded
+        ? findingReleased(finding.title, finding.releaseTag, finding.repo)
+        : findingReleaseFailed(
+            finding.title,
+            finding.releaseTag,
+            finding.repo,
+            detail ?? null,
+          )),
       findingId: finding.id,
       repo: finding.repo,
     });

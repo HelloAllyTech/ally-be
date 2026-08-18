@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
+import { needsYourAnswer } from '../constants/bug-hunter-voice';
 import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
 import { BugFinding } from '../entity/bug-finding.entity';
 import {
@@ -184,8 +185,7 @@ export class BugFindingService {
     if (isNewEscalation) {
       await this.notificationService.notify({
         level: BugHunterNotificationLevel.ACTION_NEEDED,
-        title: `Needs your answer: ${after.title}`,
-        body: patch.escalationQuestion,
+        ...needsYourAnswer(after.title, patch.escalationQuestion),
         findingId: after.id,
         runId: after.runId,
         repo: after.repo,

@@ -9,6 +9,11 @@ import { LoggerService } from 'src/logger/logger.service';
 import { computeCostUsd } from 'src/analytics/constants/llm-pricing.constants';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
+import {
+  runFailed,
+  runFoundBugs,
+  stuckOnRepo,
+} from '../constants/bug-hunter-voice';
 import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
 
 import { BugHuntRun } from '../entity/bug-hunt-run.entity';
@@ -181,8 +186,7 @@ export class BugHunterService {
     if (params.stage === BugHuntEventStage.ESCALATED) {
       await this.notificationService.notify({
         level: BugHunterNotificationLevel.ACTION_NEEDED,
-        title: `Bug Hunter is stuck on ${run.repo}`,
-        body: params.summary,
+        ...stuckOnRepo(run.repo, params.summary),
         findingId: params.findingId,
         runId: run.id,
         repo: run.repo,
@@ -265,11 +269,9 @@ export class BugHunterService {
           status === BugHuntRunStatus.FAILED
             ? BugHunterNotificationLevel.PROBLEM
             : BugHunterNotificationLevel.INFO,
-        title:
-          status === BugHuntRunStatus.FAILED
-            ? `Run failed on ${closed.repo}`
-            : `Found ${totals.foundCount} bug${totals.foundCount === 1 ? '' : 's'} in ${closed.repo}`,
-        body: `Auto-merged ${totals.autoMergedCount} · PRs awaiting review ${totals.prOpenedCount} · Dismissed ${totals.dismissedCount} · Est. cost $${closed.totalTokenCostUsd}`,
+        ...(status === BugHuntRunStatus.FAILED
+          ? runFailed(closed.repo, totals, closed.totalTokenCostUsd)
+          : runFoundBugs(closed.repo, totals, closed.totalTokenCostUsd)),
         runId: closed.id,
         repo: closed.repo,
       });
