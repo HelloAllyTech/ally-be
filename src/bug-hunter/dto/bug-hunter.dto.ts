@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMinSize,
   IsArray,
@@ -93,6 +93,13 @@ export class BugFindingDto {
 
   @ApiProperty({ nullable: true })
   file!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Function/class/route/component the finding sits on. Part of the dedupe key.',
+  })
+  symbol!: string | null;
 
   @ApiProperty({ nullable: true })
   evidence!: string | null;
@@ -327,6 +334,25 @@ export class StartBugFixSessionDto {
   @IsOptional()
   @IsString()
   repo?: string;
+}
+
+export class TriggerBugHuntSweepDto {
+  @ApiProperty({
+    description:
+      'Repo to sweep. Must be one Bug Hunter is configured for — see GET pipeline/repo-commands.',
+    example: 'ally-be',
+  })
+  @IsString()
+  repo!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Read the whole repo rather than only the last day of commits. Much more expensive, so it is off by default.',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  deep?: boolean;
 }
 
 export class ListBugFindingsQueryDto {

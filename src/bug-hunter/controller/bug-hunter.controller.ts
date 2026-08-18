@@ -24,6 +24,7 @@ import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
+import { BugHuntSweepService } from '../service/bug-hunt-sweep.service';
 import { BugHunterService } from '../service/bug-hunter.service';
 import { BugFindingService } from '../service/bug-finding.service';
 import { BugFixSessionService } from '../service/bug-fix-session.service';
@@ -38,6 +39,7 @@ import {
   BugHuntEventDto,
   BugHuntRunDetailDto,
   BugHuntRunDto,
+  TriggerBugHuntSweepDto,
   BugFindingDto,
   BugFindingDetailDto,
   ListBugHuntRunsResponseDto,
@@ -75,6 +77,7 @@ import {
 @ApiSecurity('access-token')
 export class BugHunterController {
   constructor(
+    private readonly bugHuntSweepService: BugHuntSweepService,
     private readonly bugHunterService: BugHunterService,
     private readonly bugFindingService: BugFindingService,
     private readonly bugFixSessionService: BugFixSessionService,
@@ -347,6 +350,44 @@ export class BugHunterController {
     return this.notificationService.markAllRead(user.id);
   }
 
+  @Post('runs/trigger')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Start a repo-wide sweep now (super-duper-admin)',
+    description:
+      'The missing half of the kill switch. Until this existed there was no ' +
+      'way for a human to ask for a sweep at all: the trigger enum had a ' +
+      '`scheduled` value with no producer, no cron existed, and the only ' +
+      "route that started a run was api-key-only. Dispatches that repo's " +
+      '`bug-hunt-sweep.yml`, which fetches the protocol from ' +
+      '`GET pipeline/sweep-prompt`. Refused with a recorded `skipped_disabled` ' +
+      'run while Bug Hunter is OFF, so pressing it off-duty leaves an audit ' +
+      'trail rather than doing nothing visible. `deep` reads the whole repo ' +
+      'instead of the last day of commits — far more expensive, so it is ' +
+      'opt-in per sweep.',
+  })
+  @ApiResponse({ status: 200, type: BugHuntRunDto })
+  async triggerSweep(
+    @Body() body: TriggerBugHuntSweepDto,
+    @CurrentUser() user: TokenUser,
+  ): Promise<BugHuntRunDto | { skipped: true; reason: string }> {
+    const run = await this.bugHuntSweepService.trigger(
+      body.repo,
+      user.id,
+      body.deep ?? false,
+    );
+    if (!run) {
+      return {
+        skipped: true,
+        reason:
+          'Bug Hunter is off duty. Switch it to Checks-with-you or Works-solo first.',
+      };
+    }
+    return toRunDto(run);
+  }
+
   @Get('runs')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
     legacyRoles: SUPER_DUPER_ADMIN_ROLES,
@@ -456,6 +497,7 @@ export function toFindingDto(row: BugFinding): BugFindingDto {
     title: row.title,
     description: row.description,
     file: row.file ?? null,
+    symbol: row.symbol ?? null,
     evidence: row.evidence ?? null,
     severity: row.severity ?? null,
     proven: row.proven,

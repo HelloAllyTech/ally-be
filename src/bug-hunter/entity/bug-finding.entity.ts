@@ -26,6 +26,12 @@ import {
  * analytics-suggestion rows, which dedupe by `reportedBugId` / the backfill
  * migration instead.
  *
+ * The key is built from `file` + `source` + `symbol` (falling back to a
+ * normalised fingerprint of the description). It deliberately does NOT hash
+ * the raw description: that text is LLM-generated, so hashing it meant the
+ * same bug worded differently opened a duplicate row — see migration
+ * 1910000000000.
+ *
  * The CHECK constraints live in migration 1898000000000 only — TypeORM cannot
  * express them and `migration:generate` would propose dropping them. Never
  * generate migrations against this table.
@@ -80,7 +86,15 @@ export class BugFinding extends BaseWithoutTenantEntity {
   @Column({ name: 'reported_bug_id', type: 'uuid', nullable: true })
   reportedBugId?: string | null;
 
-  /** `repo + normalized(file + description)`, hashed. Null for sources that dedupe another way — see class doc. */
+  /**
+   * Function, class, route, component or endpoint this finding sits on — the
+   * stable half of the dedupe key. Null when the finder did not supply one, in
+   * which case dedup falls back to a normalised description fingerprint.
+   */
+  @Column({ type: 'text', nullable: true })
+  symbol?: string | null;
+
+  /** `hash(file + source + symbol-or-description-fingerprint)`. Null for sources that dedupe another way — see class doc. */
   @Column({ name: 'dedupe_key', type: 'text', nullable: true })
   dedupeKey?: string | null;
 

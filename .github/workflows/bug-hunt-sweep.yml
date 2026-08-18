@@ -1,0 +1,204 @@
+# Bug Hunter — repo-wide sweep
+#
+# The unattended sweep. Runs the four finders (test/lint, code review,
+# production logs, human-reported bugs), verifies what is unproven, and — in AI
+# mode — fixes what survives, auto-merging at most a handful of genuinely
+# trivial fixes and leaving the rest as PRs.
+#
+# ## Why this workflow exists
+#
+# The sweep has always been `.claude/workflows/bug-hunt.mjs`, a Claude Code
+# *Workflow* script. Those use `agent()` / `parallel()` / `budget` primitives
+# that only exist inside a Claude Code session, so a GitHub runner cannot
+# execute one. The consequence was that nothing ever triggered a sweep:
+# `BugHuntTrigger.SCHEDULED` was a valid enum value with no producer anywhere,
+# and the only route that started a run was api-key-only. A bug hunter that
+# depends on someone remembering to run it by hand is not a bug hunter.
+#
+# Like `bug-fix-session.yml`, this file is deliberately thin and identical in
+# every repo. The protocol lives in ally-be
+# (`src/bug-hunter/constants/bug-hunt-sweep-prompt.ts`) and is fetched at run
+# time, so it cannot drift between copies and a change takes effect on the next
+# run rather than after five PRs.
+#
+# It does NOT deploy, and it never tags a release. Promoting anything to
+# production stays an explicitly human click in the admin tab.
+#
+# Required repository secrets:
+#   ANTHROPIC_API_KEY   — for Claude Code
+#   ALLY_BE_API_KEY     — ally-be's platform API_KEY, for the pipeline endpoints
+#   BUG_HUNTER_GH_TOKEN — may push branches, open PRs and merge here. NOT the
+#                         default GITHUB_TOKEN: a PR opened with that token does
+#                         not trigger other workflows, so CI would never run on
+#                         the fix.
+# Required repository variable:
+#   ALLY_BE_API_URL     — base URL of ally-be, e.g. https://api.example.com
+
+name: Bug Hunter — Sweep
+
+permissions:
+  contents: write
+  pull-requests: write
+
+on:
+  # Nightly, staggered per repo so five sweeps do not hit ally-be's pipeline
+  # endpoints and the Anthropic API in the same minute. ally-be: 02:15 UTC.
+  schedule:
+    - cron: "15 2 * * *"
+
+  workflow_dispatch:
+    inputs:
+      run_id:
+        required: false
+        type: string
+        description: >
+          bug_hunt_runs.id to report against. Supplied when ally-be dispatched
+          this (the admin pressed "Start a sweep"), so the tab shows a run
+          immediately. Left empty by the cron, which opens its own run below.
+      repo:
+        required: false
+        type: string
+        description: "Repo slug, e.g. ally-be. Defaults to this repository's name."
+      deep:
+        required: false
+        type: string
+        default: "false"
+        description: >
+          "true" reads the whole repo instead of the last day of commits. Much
+          more expensive — the nightly cron leaves this false and a human opts
+          in per sweep.
+      api_base_url:
+        required: false
+        type: string
+        description: "Base URL of ally-be. Defaults to the ALLY_BE_API_URL variable."
+
+concurrency:
+  # One sweep per repo. A cron firing while a human-triggered sweep is still
+  # running would put two agents in the same checkout opening PRs for the same
+  # findings.
+  group: bug-hunt-sweep-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    name: Sweep for bugs
+    runs-on: ubuntu-22.04
+    # A full suite plus four finders plus fixes. Bounded well above the fix
+    # session's 60, because a sweep may fix several findings in one run.
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ secrets.BUG_HUNTER_GH_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure git identity
+        run: |
+          git config user.name "ally-bug-hunter[bot]"
+          git config user.email "bug-hunter@helloally.ai"
+
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+
+      - name: Resolve inputs
+        id: cfg
+        env:
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+          FALLBACK_API_URL: ${{ vars.ALLY_BE_API_URL }}
+        run: |
+          set -euo pipefail
+          REPO="${{ inputs.repo }}"
+          [ -n "$REPO" ] || REPO="${GITHUB_REPOSITORY##*/}"
+          API="${{ inputs.api_base_url }}"
+          [ -n "$API" ] || API="$FALLBACK_API_URL"
+          test -n "$API" || { echo "::error::No ally-be base URL — set the ALLY_BE_API_URL variable."; exit 1; }
+
+          RUN_ID="${{ inputs.run_id }}"
+          if [ -z "$RUN_ID" ]; then
+            # The scheduled path. ally-be opens the run for a human-triggered
+            # sweep so the tab can show it straight away; a cron has to open its
+            # own. `trigger` is what tells the two apart in the run history.
+            RESPONSE=$(curl -sS -X POST "$API/api/v1/bug-hunter/runs" \
+              -H "Content-Type: application/json" \
+              -H "x-api-key: $ALLY_BE_API_KEY" \
+              -d "{\"trigger\":\"scheduled\",\"repo\":\"$REPO\"}")
+            RUN_ID=$(printf '%s' "$RESPONSE" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("runId") or "")')
+            MODE=$(printf '%s' "$RESPONSE" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("mode") or "")')
+            if [ -z "$RUN_ID" ]; then
+              # Bug Hunter is OFF. ally-be has already recorded a
+              # skipped_disabled run; there is nothing to do and this is not a
+              # failure.
+              echo "Bug Hunter is off duty (mode=${MODE:-off}). Nothing to sweep."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          echo "repo=$REPO" >> "$GITHUB_OUTPUT"
+          echo "api=$API" >> "$GITHUB_OUTPUT"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "Sweeping $REPO as run $RUN_ID."
+
+      - name: Fetch the sweep protocol
+        if: steps.cfg.outputs.skip != 'true'
+        env:
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -euo pipefail
+          # ally-be builds the prompt: it embeds this repo's test and lint
+          # commands, the live mode (MANUAL stops at pending_approval, AI carries
+          # on into Fix), and the merge cap.
+          curl -sSf \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/sweep-prompt?repo=${{ steps.cfg.outputs.repo }}&runId=${{ steps.cfg.outputs.run_id }}&deep=${{ inputs.deep || 'false' }}" \
+            -o /tmp/sweep-prompt.txt
+          test -s /tmp/sweep-prompt.txt
+          echo "Fetched $(wc -c < /tmp/sweep-prompt.txt) bytes of protocol."
+
+      - name: Run the sweep
+        if: steps.cfg.outputs.skip != 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+          GH_TOKEN: ${{ secrets.BUG_HUNTER_GH_TOKEN }}
+        run: |
+          set -euo pipefail
+          claude -p "$(cat /tmp/sweep-prompt.txt)" \
+            --permission-mode acceptEdits \
+            --allowedTools "Bash,Read,Write,Edit,Glob,Grep" \
+            --max-turns 300 \
+            --output-format text
+
+      - name: Report a runner-level failure
+        # The protocol has the agent close its own run for every outcome it can
+        # reach. This covers the ones it cannot: the runner dying, npm ci
+        # failing, a bad API key. Without it the run sits RUNNING forever and
+        # looks to an admin like a sweep still working.
+        if: failure() && steps.cfg.outputs.skip != 'true'
+        env:
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -eu
+          curl -sS -X POST \
+            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/report" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            -d "{\"repo\":\"${{ steps.cfg.outputs.repo }}\",\"stage\":\"error\",\"summary\":\"The sweep runner failed before the agent could close the run — see the GitHub Actions log.\"}" || true
+          curl -sS -X POST \
+            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/close" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            -d '{"status":"failed","foundCount":0,"autoMergedCount":0,"prOpenedCount":0,"dismissedCount":0}' || true

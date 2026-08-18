@@ -18,6 +18,7 @@ import { BugHuntEventRepository } from './repository/bug-hunt-event.repository';
 import { BugHunterSettingsRepository } from './repository/bug-hunter-settings.repository';
 import { BugFindingRepository } from './repository/bug-finding.repository';
 import { BugHunterNotificationRepository } from './repository/bug-hunter-notification.repository';
+import { BugHuntSweepService } from './service/bug-hunt-sweep.service';
 import { BugHunterService } from './service/bug-hunter.service';
 import { BugFindingService } from './service/bug-finding.service';
 import { BugHunterFinderDataService } from './service/bug-hunter-finder-data.service';
@@ -61,6 +62,7 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
   ],
   controllers: [BugHunterController, BugHunterPipelineController],
   providers: [
+    BugHuntSweepService,
     BugHuntRunRepository,
     BugHuntEventRepository,
     BugHunterSettingsRepository,

@@ -83,6 +83,11 @@ export class BugHunterNotificationService {
     return this.repository.listRecent(limit, unreadOnly);
   }
 
+  /** Whether this exact message has already gone out since `since` — see the digest's dedup note. */
+  wasRaisedSince(title: string, since: Date): Promise<boolean> {
+    return this.repository.existsWithTitleSince(title, since);
+  }
+
   async markRead(id: string, userId: number): Promise<BugHunterNotification> {
     const notification = await this.repository.findOne({ where: { id } });
     if (!notification) {

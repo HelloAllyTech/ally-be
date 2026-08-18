@@ -1,0 +1,93 @@
+# Tests — the PR gate.
+#
+# Until this existed, NO Ally repo ran its tests on a pull request. ally-be's
+# suite ran only as a step inside `main.yaml`, which is `workflow_dispatch`-only
+# (its `push: [master]` trigger is commented out), so the 344 spec files here
+# were exercised on a manual deploy and nowhere else. Bug Hunter's nightly sweep
+# had quietly become the de-facto CI, and Bug Hunter's own fix PRs merged with no
+# check at all — which is why `bug-fix-session.yml` uses a dedicated
+# BUG_HUNTER_GH_TOKEN rather than the default GITHUB_TOKEN: specifically so that
+# CI would run on the fix. There was no CI to trigger.
+#
+# Deliberately separate from `main.yaml` rather than adding `pull_request` to it:
+# that workflow is a deploy pipeline (prepare-env → test → build → deploy), and
+# pointing it at pull requests would ship every PR.
+#
+# NOTE ON ENFORCEMENT: adding this file makes the checks run and report, but does
+# not make them mandatory — that is a branch-protection setting. Landed that way
+# on purpose, so a suite that turns out to be red on master blocks nobody while
+# it is being fixed. Mark "test" and "lint" as required checks once they are
+# green.
+
+name: Tests
+
+on:
+  pull_request:
+    branches: [master]
+  # Also on master, so the branch's own health is visible rather than inferred
+  # from whichever PR last ran.
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push supersedes the run in flight for the same ref — nobody needs the
+  # result for a commit that has already been replaced.
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Jest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Same flags main.yaml uses. --detectOpenHandles matters here: this suite
+      # leaks handles (a worker has to be force-exited locally too), and without
+      # --forceExit the job would hang until the timeout rather than reporting.
+      - name: Run tests
+        run: npm run test -- --forceExit --detectOpenHandles
+
+  lint:
+    name: Lint & format
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # REPORT-ONLY, deliberately. Lint had never run in CI in any Ally repo, so
+      # its first run surfaced accumulated debt rather than anything this change
+      # introduced — here, 9 prettier violations (roadmap month-board work + migrations 1902/1903).
+      # A check that is red on every PR from day one is a check people learn to
+      # ignore, which would defeat the point of adding it. So this reports and
+      # does not fail, and the violation count goes into the job summary where it
+      # stays visible. Remove continue-on-error once the debt is cleared; that is
+      # the moment to make this a required check alongside the test job.
+      - name: Lint
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Typecheck
+        run: npx tsc --noEmit -p tsconfig.json

@@ -1,28 +1,11 @@
 import { BugFinding } from '../entity/bug-finding.entity';
 import { BUG_FIX_SESSION_REPOS } from './bug-fix-session.constants';
+import { repoCommands } from './bug-hunt-repos.constants';
 import {
   BUG_HUNT_ESCALATION_ANSWER_TIMEOUT_MS,
   BUG_HUNT_ESCALATION_POLL_INTERVAL_MS,
   BUG_HUNT_MAX_FIX_ATTEMPTS,
 } from './bug-hunter.constants';
-
-/**
- * Test and lint commands per repo — the two gates a fix must leave green.
- *
- * Duplicated from `.claude/workflows/bug-hunt.mjs`'s REPO_COMMANDS on purpose:
- * that file is a workspace-root script this service cannot import, and the two
- * lists are read at completely different times (a nightly sweep vs. a
- * dispatched session). Keep them in step if a repo's commands change.
- */
-const REPO_COMMANDS: Record<string, { test: string; lint: string }> = {
-  'ally-be': { test: 'npm test', lint: 'npm run lint' },
-  'ally-web': { test: 'npm test', lint: 'npm run lint' },
-  'ally-ai': { test: 'poetry run pytest tests/ -v', lint: 'poetry run flake8' },
-  'ally-ai-learn': {
-    test: 'poetry run python -m pytest tests/ -v',
-    lint: 'poetry run flake8',
-  },
-};
 
 export interface FixPromptContext {
   finding: BugFinding;
@@ -64,9 +47,22 @@ export function buildFixSessionPrompt({
   runId,
   apiBaseUrl,
 }: FixPromptContext): string {
-  const commands = REPO_COMMANDS[repo];
+  const commands = repoCommands(repo);
   if (!commands) {
     throw new Error(`No test/lint commands configured for repo "${repo}"`);
+  }
+  // The shared repo map covers everything Bug Hunter can SWEEP, which is a
+  // wider set than what it can fix: ally-mobile has no fix-session workflow and
+  // releases through App Store / Play Store builds, so there is nothing for a
+  // merged change to land into. Refuse here rather than emit a protocol whose
+  // final steps cannot be carried out. (This guard used to be implicit — the
+  // fix prompt kept its own four-repo copy of the commands and ally-mobile
+  // simply wasn't in it. Now that the map is shared, the rule has to be said
+  // out loud.)
+  if (!commands.fixable) {
+    throw new Error(
+      `Repo "${repo}" can be swept but not fixed from here — it has no fix-session workflow`,
+    );
   }
 
   const authHeader = '-H "x-api-key: $ALLY_BE_API_KEY"';
