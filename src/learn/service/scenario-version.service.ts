@@ -161,7 +161,24 @@ export class ScenarioVersionService {
           'Only draft versions can be edited. Branch this version into a new draft to make changes.',
         );
       }
-      version.config = { ...dto.config, status: ScenarioStatus.DRAFT };
+      const config: Record<string, any> = {
+        ...dto.config,
+        status: ScenarioStatus.DRAFT,
+      };
+      // The Advanced Settings events table writes a placeholder row with a
+      // blank id the instant "Add Event" is clicked, before an event is
+      // picked from the dropdown. The client is supposed to filter those out
+      // before autosaving, but if one slips through anyway (closed early,
+      // request race), persisting it permanently disables "Add Event" for
+      // this scenario — the button refuses to add another row while any
+      // existing row has a blank id. Drop them here so a stray client bug
+      // can't wedge the draft.
+      if (Array.isArray(config.mappedEvents)) {
+        config.mappedEvents = config.mappedEvents.filter(
+          (event: any) => typeof event?.id === 'string' && event.id !== '',
+        );
+      }
+      version.config = config;
     }
     if (dto.name !== undefined) {
       version.name = dto.name;
