@@ -237,10 +237,15 @@ export class RoadmapOpportunityService {
       patch.releasedAt = this.resolveReleasedAt(existing, dto.stage);
     }
 
-    if (dto.plannedMonth !== undefined) {
+    if (
+      dto.plannedMonth !== undefined &&
+      dto.plannedMonth !== (existing.plannedMonth ?? null)
+    ) {
       // A shipped card's lane is a fact, not a plan — the same rule the board enforces on drag,
       // checked here so the drawer cannot route around it. Evaluated against the stage the row
-      // is ENDING UP in, so scheduling and releasing in one PATCH is judged on the outcome.
+      // is ENDING UP in, so scheduling and releasing in one PATCH is judged on the outcome. Only
+      // guards an actual change: the drawer always resends the existing plannedMonth alongside an
+      // unrelated stage edit, and that carried-over value must not trip this check.
       const nextStage = patch.stage ?? existing.stage;
       const nextReleasedAt =
         patch.releasedAt !== undefined ? patch.releasedAt : existing.releasedAt;
