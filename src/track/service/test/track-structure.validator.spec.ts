@@ -29,6 +29,16 @@ function baseSections(): UpsertTrackSectionDto[] {
   ];
 }
 
+function gameItem(overrides: Record<string, any> = {}) {
+  return {
+    type: TrackItemType.GAME,
+    order: 1,
+    title: 'Breather',
+    content: { gameKey: 'TREX_RUNNER', intro: 'Shake that call off.' },
+    ...overrides,
+  };
+}
+
 function quizItem(overrides: Record<string, any> = {}) {
   return {
     type: TrackItemType.QUIZ,
@@ -182,5 +192,64 @@ describe('computeStructuralSignature', () => {
     expect(computeStructuralSignature(after)).toEqual(
       computeStructuralSignature(before),
     );
+  });
+
+  it('changes when the game an item runs is swapped', () => {
+    const before: UpsertTrackSectionDto[] = [
+      { id: 's1', title: 'S', order: 1, items: [{ ...gameItem(), id: 'i1' }] },
+    ];
+    const after = JSON.parse(JSON.stringify(before));
+    after[0].items[0].content.gameKey = 'SOMETHING_ELSE';
+    expect(computeStructuralSignature(after)).not.toEqual(
+      computeStructuralSignature(before),
+    );
+  });
+
+  it('is stable when only the game intro changes', () => {
+    const before: UpsertTrackSectionDto[] = [
+      { id: 's1', title: 'S', order: 1, items: [{ ...gameItem(), id: 'i1' }] },
+    ];
+    const after = JSON.parse(JSON.stringify(before));
+    after[0].items[0].content.intro = 'Reworded framing.';
+    expect(computeStructuralSignature(after)).toEqual(
+      computeStructuralSignature(before),
+    );
+  });
+});
+
+describe('validateTrackStructure - game', () => {
+  const wrap = (item: any): UpsertTrackSectionDto[] => [
+    { title: 'S', order: 1, items: [item] },
+  ];
+
+  it('accepts a game with a known key', () => {
+    expect(() => validateTrackStructure(wrap(gameItem()))).not.toThrow();
+  });
+
+  it('accepts a game with no intro at all', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(gameItem({ content: { gameKey: 'TREX_RUNNER' } })),
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects a game with no game selected', () => {
+    expect(() =>
+      validateTrackStructure(wrap(gameItem({ content: {} }))),
+    ).toThrow(BadRequestException);
+  });
+
+  it('rejects a game key the learner app cannot serve', () => {
+    expect(() =>
+      validateTrackStructure(wrap(gameItem({ content: { gameKey: 'PONG' } }))),
+    ).toThrow(BadRequestException);
+  });
+
+  it('never carries a completion threshold — games do not gate', () => {
+    // Guards the product rule in game.type.ts: an author cannot smuggle a
+    // score gate in through completionCriteria, because nothing reads it.
+    const item = gameItem({ completionCriteria: { minScore: 500 } });
+    expect(() => validateTrackStructure(wrap(item))).not.toThrow();
   });
 });
