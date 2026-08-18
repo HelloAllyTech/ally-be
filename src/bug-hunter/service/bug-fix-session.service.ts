@@ -25,6 +25,10 @@ import { BugFindingRepository } from '../repository/bug-finding.repository';
 import { BugHunterService } from './bug-hunter.service';
 import { BugFindingService } from './bug-finding.service';
 import { GithubActionsService } from './github-actions.service';
+import {
+  BugHunterRepoClassifierService,
+  RepoClassification,
+} from './bug-hunter-repo-classifier.service';
 import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import {
@@ -82,6 +86,7 @@ export class BugFixSessionService {
     private readonly github: GithubActionsService,
     private readonly notificationService: BugHunterNotificationService,
     private readonly configService: AppConfigService,
+    private readonly repoClassifier: BugHunterRepoClassifierService,
   ) {}
 
   // ── start a fix session ──────────────────────────────────────────────────
@@ -89,12 +94,16 @@ export class BugFixSessionService {
   /**
    * Dispatches a fix session for one finding.
    *
-   * `repo` is only needed when the finding doesn't already know its own — the
-   * headline case, since a human-reported bug arrives as free text with no
-   * repo attached until a finder judges which codebase it's about. Rather than
-   * have the backend guess from the description, the admin picks it in the
-   * confirmation dialog: this decides which repository an autonomous agent is
-   * about to write to, which is not a guess worth making on their behalf.
+   * `repoOverride` remains for the pipeline/API surface, but the admin-facing
+   * flow no longer supplies it: when a human-reported bug arrives with no
+   * repo attached yet, Bug Hunter classifies which codebase it's about itself
+   * (`BugHunterRepoClassifierService`) rather than blocking on an admin
+   * picking one from a list — see the classifier's own doc for why that
+   * guess is safe to make (a validated allowlist, same guardrail as
+   * RoadmapAiService.classifyGoal) and BugFindingDrawer for the UI history
+   * this replaces. A bug the classifier can't place — too vague, spans
+   * repos, or is ally-mobile-only, which has no dispatchable workflow — still
+   * fails loudly rather than dispatching a guess to the wrong repo.
    */
   async start(
     findingId: string,
@@ -113,16 +122,37 @@ export class BugFixSessionService {
       throw new ForbiddenException(this.explainUnstartable(finding.status));
     }
 
-    const repo = repoOverride ?? finding.repo;
+    let repo = repoOverride ?? finding.repo;
+    let classification: RepoClassification | null = null;
+    if (!repo) {
+      classification = await this.repoClassifier.classifyRepo(
+        finding.description,
+        finding.evidence,
+      );
+      repo = classification.repo ?? undefined;
+    }
+
     if (!repo) {
       throw new BadRequestException(
-        'This bug has no repo yet — choose which repo the fix session should run in.',
+        classification?.notDispatchable === 'ally-mobile'
+          ? 'This looks like an ally-mobile bug, which releases through App Store / Play Store builds and has no fix session to dispatch here — it needs to be fixed manually.'
+          : "I couldn't tell which repo this bug belongs to from its description — it may need more detail, or it may span more than one repo. File it more specifically, or fix it manually.",
       );
     }
     if (!BUG_FIX_SESSION_REPOS.includes(repo as never)) {
       throw new BadRequestException(
         `"${repo}" is not set up for fix sessions. Supported: ${BUG_FIX_SESSION_REPOS.join(', ')}.`,
       );
+    }
+
+    if (classification?.repo) {
+      await this.bugHunterService.appendFindingEvent({
+        findingId: finding.id,
+        repo,
+        stage: BugHuntEventStage.FINDER_RESULT,
+        summary: `Classified this as ${repo} (${classification.rationale || 'no rationale given'}).`,
+        payload: { classifiedRepo: repo, rationale: classification.rationale },
+      });
     }
 
     await this.dispatchFix(finding, repo, userId);

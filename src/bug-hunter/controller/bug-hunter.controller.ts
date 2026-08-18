@@ -168,9 +168,10 @@ export class BugHunterController {
       'this finding: it skips Discover and Verify (the bug is already known) ' +
       'and runs the Fix phase alone — regression test, minimal fix, green ' +
       'suite, PR, merge. Refused while Bug Hunter is OFF, and refused if a ' +
-      'session is already in flight. `repo` is required only when the finding ' +
-      "doesn't already have one. This does NOT deploy: releasing the merged " +
-      'fix is a separate, explicitly human step — see POST .../release.',
+      'session is already in flight. `repo` is an override for the pipeline; ' +
+      'the admin-facing flow omits it and Bug Hunter classifies which repo ' +
+      'a repo-less finding belongs to itself. This does NOT deploy: releasing ' +
+      'the merged fix is a separate, explicitly human step — see POST .../release.',
   })
   @ApiResponse({ status: 200, type: BugFindingDto })
   async startFixSession(

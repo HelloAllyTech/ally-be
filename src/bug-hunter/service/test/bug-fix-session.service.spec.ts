@@ -65,6 +65,7 @@ describe('BugFixSessionService', () => {
     nextPatchTag: jest.Mock;
   };
   let notificationService: { notify: jest.Mock };
+  let repoClassifier: { classifyRepo: jest.Mock };
 
   beforeEach(() => {
     findingRepository = {
@@ -93,6 +94,13 @@ describe('BugFixSessionService', () => {
       nextPatchTag: jest.fn(),
     };
     notificationService = { notify: jest.fn() };
+    repoClassifier = {
+      classifyRepo: jest.fn().mockResolvedValue({
+        repo: null,
+        notDispatchable: null,
+        rationale: '',
+      }),
+    };
 
     service = new BugFixSessionService(
       findingRepository as never,
@@ -101,6 +109,7 @@ describe('BugFixSessionService', () => {
       github as never,
       notificationService as never,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
+      repoClassifier as never,
     );
   });
 
@@ -165,12 +174,70 @@ describe('BugFixSessionService', () => {
       expect(github.dispatchWorkflow).not.toHaveBeenCalled();
     });
 
-    it('needs a repo when the finding has none — the reported-bug case', async () => {
+    it('classifies the repo itself when the finding has none — the reported-bug case', async () => {
       bugFindingService.getOne.mockResolvedValue(findingRow({ repo: null }));
+      repoClassifier.classifyRepo.mockResolvedValue({
+        repo: 'ally-web',
+        notDispatchable: null,
+        rationale: 'Terms modal is a browser screen.',
+      });
+
+      await service.start('finding-1', 42);
+
+      expect(repoClassifier.classifyRepo).toHaveBeenCalledWith(
+        'The external emergency-services link renders unstyled.',
+        null,
+      );
+      expect(github.dispatchWorkflow).toHaveBeenCalledWith(
+        expect.objectContaining({ repo: 'ally-web' }),
+      );
+      expect(findingRepository.update).toHaveBeenCalledWith(
+        'finding-1',
+        expect.objectContaining({ repo: 'ally-web' }),
+      );
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'finding-1',
+          repo: 'ally-web',
+          stage: BugHuntEventStage.FINDER_RESULT,
+        }),
+      );
+    });
+
+    it('does not call the classifier when the finding already has a repo', async () => {
+      bugFindingService.getOne.mockResolvedValue(findingRow());
+
+      await service.start('finding-1', 42);
+
+      expect(repoClassifier.classifyRepo).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the classifier cannot place the bug in any repo', async () => {
+      bugFindingService.getOne.mockResolvedValue(findingRow({ repo: null }));
+      repoClassifier.classifyRepo.mockResolvedValue({
+        repo: null,
+        notDispatchable: null,
+        rationale: '',
+      });
 
       await expect(service.start('finding-1', 42)).rejects.toBeInstanceOf(
         BadRequestException,
       );
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+    });
+
+    it('refuses with a specific message when the classifier recognizes an ally-mobile bug', async () => {
+      bugFindingService.getOne.mockResolvedValue(findingRow({ repo: null }));
+      repoClassifier.classifyRepo.mockResolvedValue({
+        repo: null,
+        notDispatchable: 'ally-mobile',
+        rationale: 'Native terms screen.',
+      });
+
+      await expect(service.start('finding-1', 42)).rejects.toThrow(
+        /ally-mobile/i,
+      );
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
     });
 
     it('accepts an admin-supplied repo for an untriaged finding and stores it', async () => {
@@ -553,6 +620,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       github,
       notificationService,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
+      { classifyRepo: jest.fn() } as never,
     );
   });
 

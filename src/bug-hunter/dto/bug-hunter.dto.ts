@@ -322,7 +322,7 @@ export class StartBugFixSessionDto {
   @ApiProperty({
     required: false,
     description:
-      'Which repo the session should run in. Required only when the finding has no repo yet — the usual case for a freshly reported bug, which arrives as free text with no codebase attached.',
+      'Override for which repo the session should run in. Not sent by the admin dashboard — when the finding has no repo yet (the usual case for a freshly reported bug), Bug Hunter classifies it itself rather than asking the caller to.',
   })
   @IsOptional()
   @IsString()
