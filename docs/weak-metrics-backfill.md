@@ -73,6 +73,26 @@ Poll any of them:
 curl "$API/conversation-drift/backfill/<jobId>" -H "Authorization: Bearer $TOKEN"
 ```
 
+## You should not need to run these by hand
+
+A scheduled task drains the backlog on its own (`JudgeBacklogDrainService`, on the shared
+30-minute scheduler). Each tick asks one question per judge family — is a run in flight, and is
+anything still eligible — and starts a run only when the answer is no-and-yes. It needs no token,
+survives deploys (a killed job is simply restarted next tick), and stops by itself when the
+backlog empties, because the selectors exclude everything already judged.
+
+That is the fix for what these calls used to require: a super-admin token that expires every
+fifteen minutes, a laptop left awake, and someone remembering to re-issue the call after every
+deploy killed the run halfway.
+
+It gives up rather than burning money on a broken judge: three consecutive runs that judge
+NOTHING while failing trip a breaker, and it logs loudly instead of restarting forever. A run that
+judges 300 and fails 4 is normal and clears the count. Fix the cause and restart the service to
+reset it.
+
+The calls below remain the way to do something the schedule does not: a different window, a
+different rubric version, or a full re-judge.
+
 ## Extending the window later
 
 Re-issuing the same call with a larger `sinceDays` **adds the older sessions and re-judges
