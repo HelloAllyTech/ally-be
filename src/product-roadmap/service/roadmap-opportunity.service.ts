@@ -16,6 +16,7 @@ import {
 
 import { RoadmapOpportunity } from '../entity/roadmap-opportunity.entity';
 import {
+  RoadmapOpportunitySource,
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
 } from '../enum/roadmap-opportunity.enum';
@@ -23,7 +24,9 @@ import {
   RoadmapOpportunityRepository,
   RoadmapOpportunityRow,
 } from '../repository/roadmap-opportunity.repository';
+import { CONSUMER_BUG_REPORT_PRODUCT_GOAL } from '../constants/product-roadmap.constants';
 import {
+  CreateConsumerBugReportDto,
   CreateOpportunityDto,
   ListOpportunitiesQueryDto,
   UpdateOpportunityDto,
@@ -90,9 +93,20 @@ export class RoadmapOpportunityService {
     return (await this.toResponseList([row]))[0];
   }
 
+  /**
+   * `extra` carries the fields the staff-facing CreateOpportunityDto has no reason to
+   * expose — see createConsumerBugReport, its only other caller. Left undefined, every
+   * field defaults exactly to what the pre-existing staff path always wrote (source
+   * 'staff', tenantId/reporterContext null), so this is a no-op change for that caller.
+   */
   async create(
     userId: number,
     dto: CreateOpportunityDto,
+    extra?: {
+      source?: RoadmapOpportunitySource;
+      tenantId?: string | null;
+      reporterContext?: Record<string, any> | null;
+    },
   ): Promise<OpportunityResponseDto> {
     const saved = await this.opportunityRepository.save(
       this.opportunityRepository.create({
@@ -101,6 +115,9 @@ export class RoadmapOpportunityService {
         productGoal: dto.productGoal,
         createdBy: userId,
         updatedBy: userId,
+        source: extra?.source ?? RoadmapOpportunitySource.STAFF,
+        tenantId: extra?.tenantId ?? null,
+        reporterContext: extra?.reporterContext ?? null,
       }),
     );
 
@@ -140,6 +157,37 @@ export class RoadmapOpportunityService {
       opportunity: response,
     });
     return response;
+  }
+
+  /**
+   * POST /product-roadmap/bug-reports — a logged-in consumer app user (web/mobile/helpline)
+   * filing a bug, through the exact same create() pipeline a staff-filed bug uses (vector
+   * indexing, the Bug Hunter inbox row, the realtime notify). Only what differs from the
+   * staff path is made explicit here: `type` is forced to BUG, `productGoal` is the fixed
+   * consumer bucket (see CONSUMER_BUG_REPORT_PRODUCT_GOAL), and `source`/`tenantId`/
+   * `reporterContext` are stamped so admins can tell a consumer report apart from a staff
+   * one. Returns the minimal one-time confirmation, not the full opportunity — a consumer
+   * has no further use for roadmap-internal fields like productGoal or boardPosition.
+   */
+  async createConsumerBugReport(
+    userId: number,
+    tenantId: string | null,
+    dto: CreateConsumerBugReportDto,
+  ): Promise<{ id: string; stage: RoadmapOpportunityStage }> {
+    const created = await this.create(
+      userId,
+      {
+        description: dto.description,
+        type: RoadmapOpportunityType.BUG,
+        productGoal: CONSUMER_BUG_REPORT_PRODUCT_GOAL,
+      },
+      {
+        source: RoadmapOpportunitySource.CONSUMER,
+        tenantId,
+        reporterContext: dto.context ?? null,
+      },
+    );
+    return { id: created.id, stage: created.stage };
   }
 
   /**
@@ -327,6 +375,7 @@ export class RoadmapOpportunityService {
       priorityScore: Number(row.priorityScore ?? 0),
       myCoins: Number(row.myCoins ?? 0),
       commentCount: Number(row.commentCount ?? 0),
+      source: row.source,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       creator: users.get(row.createdBy) ?? this.unknownUser(row.createdBy),

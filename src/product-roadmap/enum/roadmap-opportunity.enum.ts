@@ -44,3 +44,14 @@ export enum RoadmapEmbeddingStatus {
   FAILED = 'failed',
   SKIPPED = 'skipped',
 }
+
+/**
+ * Who filed the opportunity, for admin-side filtering only — this has no bearing on
+ * permissions or on the create pipeline (both paths run through
+ * RoadmapOpportunityService.create). Default is STAFF so every pre-existing row and the
+ * staff-facing `/opportunities` endpoint need no change.
+ */
+export enum RoadmapOpportunitySource {
+  STAFF = 'staff',
+  CONSUMER = 'consumer',
+}

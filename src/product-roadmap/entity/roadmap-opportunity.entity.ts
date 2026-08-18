@@ -8,6 +8,7 @@ import {
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 import {
   RoadmapEmbeddingStatus,
+  RoadmapOpportunitySource,
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
 } from '../enum/roadmap-opportunity.enum';
@@ -36,6 +37,7 @@ import {
 @Index('idx_roadmap_opps_month_board', ['plannedMonth', 'boardPosition'], {
   where: '"deletedAt" IS NULL',
 })
+@Index('idx_roadmap_opps_source', ['source'], { where: '"deletedAt" IS NULL' })
 export class RoadmapOpportunity extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -163,10 +165,43 @@ export class RoadmapOpportunity extends BaseWithoutTenantEntity {
   @Column({ type: 'text', nullable: true })
   textHash?: string | null;
 
+  // ── consumer bug reports (added alongside the /bug-reports endpoint) ─────────
+  /**
+   * Who filed this — 'staff' (the existing admin `/opportunities` path, and every
+   * pre-existing row) or 'consumer' (the logged-in-app-user `/bug-reports` path). Admin-side
+   * filtering only; never gates the create pipeline, which both paths share.
+   */
+  @Column({
+    enum: RoadmapOpportunitySource,
+    default: RoadmapOpportunitySource.STAFF,
+  })
+  source!: RoadmapOpportunitySource;
+
+  /**
+   * The reporting consumer's tenant, informational only — this does NOT make the entity
+   * tenant-scoped (there is still no tenant-filtered read path). NULL for every staff-filed
+   * row. varchar to match the platform's `tenant_id` convention (see BaseEntity), which is a
+   * free-form id rather than a uuid FK — see the `scenario_sessions.tenant_id` join note in
+   * DATA_SCHEMA.md.
+   */
+  @Column({ name: 'tenant_id', type: 'varchar', nullable: true })
+  tenantId?: string | null;
+
+  /**
+   * Auto-captured client context for a consumer bug report: screen/route, app version,
+   * device/OS, client timestamp. Populated entirely from what the client sends — see
+   * CreateConsumerBugReportDto.context — never inferred server-side beyond the User-Agent
+   * fallback in the controller. Admin-visible only, alongside `description`; never runs
+   * through crisis-content detection.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  reporterContext?: Record<string, any> | null;
+
   // ── audit ────────────────────────────────────────────────────────────────────
   // Integer users.id with NO foreign key, per ally-be convention. A removed Ally user
   // therefore leaves an unresolvable createdBy; response mappers fall back to a placeholder
-  // rather than leaking a bare id.
+  // rather than leaking a bare id. Also doubles as the reporter id for a consumer bug report
+  // — the same `users` table backs every role, so no separate identity column is needed.
   @Column({ type: 'int' })
   createdBy!: number;
 

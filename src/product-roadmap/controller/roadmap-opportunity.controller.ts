@@ -11,6 +11,7 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -23,11 +24,15 @@ import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator'
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
+import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
+import { RateLimit } from 'src/rate-limit/decorator/rate-limit.decorator';
 
+import { CONSUMER_BUG_REPORT_RATE_LIMIT } from '../constants/product-roadmap.constants';
 import {
+  CreateConsumerBugReportDto,
   CreateOpportunityDto,
   ListOpportunitiesQueryDto,
   MergeOpportunitiesDto,
@@ -39,6 +44,7 @@ import {
 } from '../dto/roadmap-opportunity.dto';
 import {
   CoinBudgetDto,
+  ConsumerBugReportResponseDto,
   GetOpportunitiesResponseDto,
   MonthBoardMoveResponseDto,
   MonthBoardResponseDto,
@@ -91,7 +97,8 @@ export class RoadmapOpportunityController {
   @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
   @Get('board')
   @ApiOperation({
-    summary: 'The month board: the same opportunities, grouped into month lanes',
+    summary:
+      'The month board: the same opportunities, grouped into month lanes',
     description:
       'A card sits in the month it was PLANNED into, except once it has shipped, when it sits in ' +
       'the month it actually shipped — so a slipped plan stays visible instead of being ' +
@@ -177,6 +184,43 @@ export class RoadmapOpportunityController {
     @Body() dto: CreateOpportunityDto,
   ): Promise<OpportunityResponseDto> {
     return this.opportunityService.create(user.id, dto);
+  }
+
+  /**
+   * The consumer counterpart of `create` above: any logged-in app user (web/mobile/
+   * helpline), not just SUPER_ADMIN/SUPER_DUPER_ADMIN staff — deliberately a separate route
+   * on a plain JwtAuthGuard rather than widening vote:admin:product-roadmap to consumer
+   * accounts. Goes through the exact same RoadmapOpportunityService.create() pipeline as
+   * the staff path (Bug Hunter inbox row, vector indexing), so it needs no bespoke
+   * follow-up work to show up anywhere staff bugs already do.
+   */
+  @UseGuards(JwtAuthGuard)
+  @RateLimit({
+    key: 'userId',
+    name: 'consumerBugReport',
+    limit: CONSUMER_BUG_REPORT_RATE_LIMIT.LIMIT,
+    ttl: CONSUMER_BUG_REPORT_RATE_LIMIT.TTL_MS,
+    errorMessage: 'Too many bug reports. Please try again later.',
+  })
+  @Post('bug-reports')
+  @ApiOperation({
+    summary: 'File a bug report as a logged-in consumer app user',
+    description:
+      'Lands directly on the internal roadmap as a `bug`-type opportunity, tagged ' +
+      "source='consumer', through the same pipeline a staff-filed bug uses. No severity " +
+      'or category picker — the description is the answer to a single guided prompt. Not ' +
+      'run through any crisis-content safety pipeline: this is a plain admin-visible field.',
+  })
+  @ApiResponse({ status: 201, type: ConsumerBugReportResponseDto })
+  createBugReport(
+    @CurrentUser() user: TokenUser,
+    @Body() dto: CreateConsumerBugReportDto,
+  ): Promise<ConsumerBugReportResponseDto> {
+    return this.opportunityService.createConsumerBugReport(
+      user.id,
+      user.tenantId ?? null,
+      dto,
+    );
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {

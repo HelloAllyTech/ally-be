@@ -51,6 +51,8 @@ export interface ListOpportunitiesOptions {
   search?: string;
   type?: string[];
   stage?: string[];
+  /** Who filed it — 'staff' or 'consumer'. Admin-side filtering only, see the entity docblock. */
+  source?: string[];
   productGoal?: string[];
   owner?: string[];
   createdBy?: number[];
@@ -67,8 +69,10 @@ export interface ListOpportunitiesOptions {
   offset?: number;
 }
 
-export interface ListBoardOptions
-  extends Omit<ListOpportunitiesOptions, 'sortBy' | 'order' | 'limit' | 'offset'> {
+export interface ListBoardOptions extends Omit<
+  ListOpportunitiesOptions,
+  'sortBy' | 'order' | 'limit' | 'offset'
+> {
   /** Inclusive month window, 'YYYY-MM'. Resolved by the service, never defaulted here. */
   from: string;
   to: string;
@@ -464,6 +468,8 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
       qb.andWhere('opp."type" IN (:...type)', { type: o.type });
     if (o.stage?.length)
       qb.andWhere('opp."stage" IN (:...stage)', { stage: o.stage });
+    if (o.source?.length)
+      qb.andWhere('opp."source" IN (:...source)', { source: o.source });
     if (o.productGoal?.length) {
       qb.andWhere('opp."productGoal" IN (:...productGoal)', {
         productGoal: o.productGoal,

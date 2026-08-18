@@ -1,3 +1,5 @@
+import { TIME } from 'src/common/constants/time.constants';
+
 /**
  * Product Roadmap limits and tuning. Every length limit here has a matching CHECK
  * constraint in migration 1871000000000 — the DTO gives a friendly 400, the CHECK makes a
@@ -10,6 +12,30 @@
  * roadmap_enforce_monthly_cap() and RoadmapAllocationService.
  */
 export const COINS_PER_MONTH = 100;
+
+/**
+ * The `productGoal` a consumer bug report is filed under. `productGoal` is a required
+ * text FK-by-name into `roadmap_product_goals` (see the entity) and the consumer flow
+ * deliberately has no goal/category picker (product decision — see
+ * CreateConsumerBugReportDto), so something has to be chosen server-side. 'Reliability &
+ * Trust' already exists in the seeded taxonomy (migration 1871000000002) and is the closest
+ * semantic fit for an unclassified bug; staff can always re-triage the goal from the drawer
+ * like any other opportunity.
+ */
+export const CONSUMER_BUG_REPORT_PRODUCT_GOAL = 'Reliability & Trust';
+
+/**
+ * Per-user throttle on POST /product-roadmap/bug-reports, keyed by `userId` (not IP, since
+ * every caller is authenticated) via CustomThrottlerGuard. 8/hour is generous enough for a
+ * genuinely frustrated user filing a few reports in a session while still bounding a
+ * scripted-spam or retry-loop client — there is no product-defined cadence for this today
+ * (Stacks search turned up nothing Ally-specific), so this is a judgement call, easy to
+ * retune later since it is not read anywhere else.
+ */
+export const CONSUMER_BUG_REPORT_RATE_LIMIT = {
+  LIMIT: 8,
+  TTL_MS: TIME.HOUR_IN_MS,
+} as const;
 
 export const ROADMAP_LIMITS = {
   DESCRIPTION_MAX: 1000,

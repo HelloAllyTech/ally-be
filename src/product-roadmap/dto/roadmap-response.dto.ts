@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  RoadmapOpportunitySource,
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
 } from '../enum/roadmap-opportunity.enum';
@@ -51,10 +52,25 @@ export class OpportunityResponseDto {
   @ApiProperty() myCoins!: number;
   @ApiProperty() commentCount!: number;
 
+  /** Who filed it — 'staff' (admin /opportunities) or 'consumer' (/bug-reports). Admin display only. */
+  @ApiProperty({ enum: RoadmapOpportunitySource })
+  source!: RoadmapOpportunitySource;
+
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
   @ApiPropertyOptional({ type: RoadmapUserRefDto, nullable: true })
   creator?: RoadmapUserRefDto | null;
+}
+
+/**
+ * The confirmation returned to a consumer who filed a bug report — one-time only, by
+ * design (see CreateConsumerBugReportDto's docblock): no "my reports" listing, no full
+ * OpportunityResponseDto, since the consumer has no further use for the roadmap fields.
+ */
+export class ConsumerBugReportResponseDto {
+  @ApiProperty() id!: string;
+  @ApiProperty({ enum: RoadmapOpportunityStage })
+  stage!: RoadmapOpportunityStage;
 }
 
 export class GetOpportunitiesResponseDto {
@@ -93,7 +109,8 @@ export class MonthLaneDto {
 export class MonthBoardBoundsDto {
   @ApiProperty({
     nullable: true,
-    description: 'Earliest month any opportunity sits in; null when none are scheduled',
+    description:
+      'Earliest month any opportunity sits in; null when none are scheduled',
   })
   earliest!: string | null;
 

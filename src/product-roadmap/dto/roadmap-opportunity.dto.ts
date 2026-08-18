@@ -6,6 +6,7 @@ import {
   IsEnum,
   IsInt,
   IsISO8601,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -14,8 +15,10 @@ import {
   Min,
   MinLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import {
+  RoadmapOpportunitySource,
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
 } from '../enum/roadmap-opportunity.enum';
@@ -91,6 +94,14 @@ export class RoadmapOpportunityFiltersDto {
   @IsArray()
   @IsEnum(RoadmapOpportunityStage, { each: true })
   stage?: RoadmapOpportunityStage[];
+
+  /** Who filed it — 'staff' (the admin /opportunities path) or 'consumer' (/bug-reports). */
+  @ApiPropertyOptional({ enum: RoadmapOpportunitySource, isArray: true })
+  @IsOptional()
+  @Transform(toArray)
+  @IsArray()
+  @IsEnum(RoadmapOpportunitySource, { each: true })
+  source?: RoadmapOpportunitySource[];
 
   @ApiPropertyOptional({
     description: 'Product goal NAMES (not ids)',
@@ -187,6 +198,75 @@ export class CreateOpportunityDto {
   @IsString()
   @MinLength(1)
   productGoal!: string;
+}
+
+/**
+ * Auto-captured client context for a consumer bug report, sent verbatim by the app —
+ * ally-be does not infer any of this beyond a User-Agent fallback in the controller.
+ * Stored as-is in `roadmap_opportunities.reporterContext` (jsonb), admin-visible only.
+ * Every field is optional: an app that cannot determine one just omits it.
+ */
+export class ReporterContextDto {
+  @ApiPropertyOptional({
+    description: 'Screen or route name the report was filed from',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  screen?: string;
+
+  @ApiPropertyOptional({ description: 'Calling app version/build string' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  appVersion?: string;
+
+  @ApiPropertyOptional({ description: 'Device model, e.g. "iPhone 15"' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  device?: string;
+
+  @ApiPropertyOptional({ description: 'OS name/version, e.g. "iOS 18.1"' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  os?: string;
+
+  @ApiPropertyOptional({
+    description: "The client's local timestamp, ISO 8601",
+  })
+  @IsOptional()
+  @IsISO8601()
+  clientTimestamp?: string;
+}
+
+/**
+ * A bug report filed by a logged-in consumer app user (web/mobile/helpline) — POST
+ * /product-roadmap/bug-reports. Deliberately NOT CreateOpportunityDto: `type` is always
+ * forced to BUG server-side and every staff-oriented field (productGoal, owner, prd,
+ * claudePrompt, …) is irrelevant here, so accepting them would just be dead input a
+ * consumer client could never legitimately send.
+ *
+ * No severity/category picker by design — this is the answer to one guided prompt
+ * ("What were you trying to do?"), not a support ticket form.
+ */
+export class CreateConsumerBugReportDto {
+  @ApiProperty({
+    maxLength: ROADMAP_LIMITS.DESCRIPTION_MAX,
+    description: 'Free text answer to "What were you trying to do?"',
+  })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(ROADMAP_LIMITS.DESCRIPTION_MAX)
+  description!: string;
+
+  @ApiPropertyOptional({ type: ReporterContextDto })
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ReporterContextDto)
+  context?: ReporterContextDto;
 }
 
 /**
@@ -335,7 +415,8 @@ export class MoveOpportunityDto {
 
   @ApiProperty({
     type: [String],
-    description: "Every card id in the destination lane, in its new top-to-bottom order",
+    description:
+      'Every card id in the destination lane, in its new top-to-bottom order',
   })
   @IsArray()
   @ArrayMaxSize(ROADMAP_BOARD_DEFAULTS.MAX_LANE_IDS)
