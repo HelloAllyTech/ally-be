@@ -52,7 +52,10 @@ import {
 } from '../util/analytics-window.util';
 
 /** Voice-to-voice latency target (ms) — the reference line on the trend. */
-const VOICE_LATENCY_TARGET_MS = 1500;
+const VOICE_LATENCY_TARGET_MS = 4000;
+
+/** LLM time-to-first-token target (ms) — the reference line on the trend. */
+const LLM_TTFT_TARGET_MS = 1500;
 
 /** Simulation start-latency target (ms) — the reference line on the trend. */
 const START_LATENCY_TARGET_MS = 4000;
@@ -593,6 +596,7 @@ export class PlatformAnalyticsService {
       window: describeWindow(window),
       bucket,
       targetMs: VOICE_LATENCY_TARGET_MS,
+      llmTtftTargetMs: LLM_TTFT_TARGET_MS,
       points,
       byLanguage,
     };

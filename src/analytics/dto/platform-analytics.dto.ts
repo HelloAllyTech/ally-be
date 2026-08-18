@@ -988,9 +988,14 @@ export class VoiceLatencyResponseDto {
   bucket!: string;
 
   @ApiProperty({
-    description: 'Latency target line for reference (ms)',
+    description: 'Voice-to-voice latency target line for reference (ms)',
   })
   targetMs!: number;
+
+  @ApiProperty({
+    description: 'LLM time-to-first-token target line for reference (ms)',
+  })
+  llmTtftTargetMs!: number;
 
   @ApiProperty({
     description:

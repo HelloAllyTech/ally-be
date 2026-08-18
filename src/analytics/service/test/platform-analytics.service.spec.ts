@@ -475,7 +475,8 @@ describe('PlatformAnalyticsService', () => {
       expect(result).toMatchObject({
         range: '90d',
         bucket: 'week',
-        targetMs: 1500,
+        targetMs: 4000,
+        llmTtftTargetMs: 1500,
         points,
         byLanguage: [],
       });
