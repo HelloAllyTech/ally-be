@@ -207,8 +207,29 @@ export class WeakMetricsResponseDto {
   })
   parameters!: Record<string, number>;
 
-  @ApiProperty({ nullable: true }) judgeModel!: string | null;
-  @ApiProperty({ nullable: true }) judgePromptVersion!: string | null;
+  @ApiProperty({
+    nullable: true,
+    description: 'Drift judge pin. Kept for compatibility — see judgeVersions.',
+  })
+  judgeModel!: string | null;
+
+  @ApiProperty({ nullable: true })
+  judgePromptVersion!: string | null;
+
+  @ApiProperty({
+    type: 'object',
+    additionalProperties: true,
+    description:
+      'The pinned judge version PER FAMILY. Three judges write the tables behind ' +
+      'this tab and they version independently, so one number cannot describe ' +
+      'all of them — reporting a single version was how the language series ' +
+      "came to be read through the drift judge's version.",
+  })
+  judgeVersions!: {
+    drift: { judgeModel: string; judgePromptVersion: string } | null;
+    language: { judgeModel: string; judgePromptVersion: string } | null;
+    groundedness: { judgeModel: string; judgePromptVersion: string } | null;
+  };
 
   @ApiProperty({ description: 'Bucket granularity applied' })
   bucket!: string;

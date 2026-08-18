@@ -25,24 +25,40 @@ Prod access: `docker exec` into the core container and use its own DB env — se
 Break one of these and you will get a number that looks like a finding and isn't. All four have
 already produced a false finding in this data.
 
-**1. Pin the judge version.** Judge output lives at `(judgeModel, judgePromptVersion)`. A
-re-judge under a new rubric does not replace the old rows, it coexists with them, so an
-unpinned query averages two different definitions of the same word. v2-only labels
-(`roleInversion`, `solutionsOffered`, `stuckIsAppropriate`, …) are NULL on v1 rows — count them
-with `COUNT(*) FILTER (WHERE col)` over a `WHERE col IS NOT NULL` denominator, never
-`COALESCE(col, false)`.
+**1. Pin the judge version — PER JUDGE FAMILY.** Judge output lives at
+`(judgeModel, judgePromptVersion)`. A re-judge under a new rubric does not replace the old rows,
+it coexists with them, so an unpinned query averages two different definitions of the same word.
+v2-only labels (`roleInversion`, `solutionsOffered`, `stuckIsAppropriate`, …) are NULL on v1
+rows — count them with `COUNT(*) FILTER (WHERE col)` over a `WHERE col IS NOT NULL` denominator,
+never `COALESCE(col, false)`.
+
+**The three judges version independently.** Drift went to v2 when the clienthood labels were
+added, language when the `dialect_lexicon` rubric was widened, groundedness is on its first
+rubric. "v2" in one table has nothing to do with "v2" in another. Carrying one version across
+tables is not a shortcut — the dashboard did exactly that and read the language series through
+drift's pin, returning 6 annotations out of 1,782.
 
 ```sql
--- Always start here: what versions exist, over what period, at what volume.
-SELECT "judgeModel", "judgePromptVersion",
-       COUNT(*) AS turns,
-       COUNT(DISTINCT "scenarioSessionId") AS sessions,
-       MIN("occurredAt")::date AS from_date,
-       MAX("occurredAt")::date AS to_date,
-       COUNT(*) FILTER (WHERE "roleInversion" IS NOT NULL) AS has_v2_labels
-  FROM turn_drift_judgment
- GROUP BY 1, 2 ORDER BY 3 DESC;
+-- Always start here: what versions exist per family, over what period, at what volume.
+SELECT 'drift' AS family, "judgeModel", "judgePromptVersion",
+       COUNT(*) AS rows, COUNT(DISTINCT "scenarioSessionId") AS sessions,
+       MIN("occurredAt")::date AS from_date, MAX("occurredAt")::date AS to_date
+  FROM turn_drift_judgment GROUP BY 1, 2, 3
+UNION ALL
+SELECT 'language', "judgeModel", "judgePromptVersion",
+       COUNT(*), COUNT(DISTINCT "scenarioSessionId"),
+       MIN("occurredAt")::date, MAX("occurredAt")::date
+  FROM language_judgment_sessions GROUP BY 1, 2, 3
+UNION ALL
+SELECT 'groundedness', "judgeModel", "judgePromptVersion",
+       COUNT(*), COUNT(DISTINCT "scenarioSessionId"),
+       MIN("occurredAt")::date, MAX("occurredAt")::date
+  FROM feedback_claim_judgment GROUP BY 1, 2, 3
+ ORDER BY 1, 4 DESC;
 ```
+
+The dashboard resolves each family's pin as the most recently WRITTEN row (`ORDER BY updatedAt`),
+not the highest-sorting version string — versions are opaque labels, not sortable values.
 
 **2. Exclude test tenants**, or internal QA traffic lands in the number. No table below carries
 a tenant column, so reach it through the session:
@@ -98,6 +114,12 @@ Three things worth knowing about these tables:
   sessions predate the metadata, and any prompt-version filter excludes them.
 - **`language_judgment_sessions` is the denominator.** A clean session has a row there and no
   annotations. Without joining it, "no errors" and "never judged" are indistinguishable.
+- **Some drift rows were topped up rather than judged whole.** A row whose
+  `metadata` carries a `labelsBackfill` key had its v1 fields COPIED forward and only the added
+  labels judged — the cheap backfill path. The labels are as trustworthy as any other (same
+  rubric, same model); the older fields on that row came from the earlier run. Filter on
+  `metadata ? 'labelsBackfill'` to tell them apart, e.g. when checking whether a rate differs
+  between topped-up history and fully judged live sessions.
 - **Judgment rows carry the text.** `turn_drift_judgment.userText`/`aiText` and
   `language_error_annotations.evidenceQuote` mean you can read the actual turns behind a rate
   without going back to the transcript. Do that before forming a hypothesis — a rate tells you

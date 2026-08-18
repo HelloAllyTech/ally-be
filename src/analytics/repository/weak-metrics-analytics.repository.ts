@@ -126,15 +126,31 @@ export const WEAK_METRICS_VERSION = 'v1';
 export class WeakMetricsAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  /** Most recent judge version carrying rows — what the dashboard pins to. */
-  async latestDriftJudgeVersion(): Promise<{
-    judgeModel: string;
-    judgePromptVersion: string;
-  } | null> {
+  /**
+   * Most recent judge version per judge FAMILY.
+   *
+   * Three judges write here and they version independently: drift went to v2
+   * when the clienthood labels were added, language when the dialect_lexicon
+   * rubric was widened, groundedness is on its first rubric. There was never a
+   * reason those numbers should refer to the same thing.
+   *
+   * A single pin across all three was a real bug, not a simplification. It
+   * resolved to drift's version and then filtered the OTHER tables by it, so
+   * the language series read the 6 annotations that happened to be v2 and
+   * ignored 1,776 under v1 — and a groundedness backfill would have written
+   * rows nothing could read, because those land under the groundedness judge's
+   * own version.
+   *
+   * Ordered by `updatedAt` rather than by version string: versions are opaque
+   * labels, not sortable values, and "latest" means most recently written.
+   */
+  private async latestVersionIn(
+    table: string,
+  ): Promise<{ judgeModel: string; judgePromptVersion: string } | null> {
     const rows = await this.dataSource.query(
       `SELECT j."judgeModel" AS judge_model,
               j."judgePromptVersion" AS judge_prompt_version
-         FROM turn_drift_judgment j
+         FROM ${table} j
         WHERE ${excludeTestTenants('j."tenant_id"')}
         ORDER BY j."updatedAt" DESC LIMIT 1`,
     );
@@ -143,6 +159,19 @@ export class WeakMetricsAnalyticsRepository {
       judgeModel: rows[0].judge_model,
       judgePromptVersion: rows[0].judge_prompt_version,
     };
+  }
+
+  async latestDriftJudgeVersion() {
+    return this.latestVersionIn('turn_drift_judgment');
+  }
+
+  /** Denominator table, not the annotations: a clean session has a row here and no annotations. */
+  async latestLanguageJudgeVersion() {
+    return this.latestVersionIn('language_judgment_sessions');
+  }
+
+  async latestGroundednessJudgeVersion() {
+    return this.latestVersionIn('feedback_claim_judgment');
   }
 
   /**

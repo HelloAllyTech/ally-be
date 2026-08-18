@@ -194,18 +194,45 @@ export class WeakMetricsAnalyticsService {
     const bucket =
       query.bucket === WeakMetricsBucket.WEEK ? 'week' : ('month' as const);
 
-    const judge = await this.repo.latestDriftJudgeVersion();
+    // One pin PER JUDGE FAMILY. They version independently — drift went to v2
+    // for the clienthood labels, language for the dialect_lexicon rubric,
+    // groundedness is on its first — so a single pin applied to all three read
+    // the language series through drift's version and returned 6 annotations
+    // out of 1,782, and would have made a groundedness backfill unreadable.
+    const [judge, languageJudge, groundednessJudge] = await Promise.all([
+      this.repo.latestDriftJudgeVersion(),
+      this.repo.latestLanguageJudgeVersion(),
+      this.repo.latestGroundednessJudgeVersion(),
+    ]);
 
+    const base: Omit<WeakMetricsFilters, 'judgeModel' | 'judgePromptVersion'> =
+      {
+        start,
+        bucket,
+        language: query.language ?? null,
+        llmModel: query.llmModel ?? null,
+        scenarioId: query.scenarioId ?? null,
+        scenarioVersionId: query.scenarioVersionId ?? null,
+        promptVersion: query.promptVersion ?? null,
+      };
+
+    // `f` stays the drift-pinned tuple: it is what the transcript- and
+    // turn-metric-derived queries take too, and those carry no judge version at
+    // all, so pinning them to anything is harmless.
     const f: WeakMetricsFilters = {
-      start,
-      bucket,
-      language: query.language ?? null,
-      llmModel: query.llmModel ?? null,
-      scenarioId: query.scenarioId ?? null,
-      scenarioVersionId: query.scenarioVersionId ?? null,
-      promptVersion: query.promptVersion ?? null,
+      ...base,
       judgeModel: judge?.judgeModel ?? null,
       judgePromptVersion: judge?.judgePromptVersion ?? null,
+    };
+    const fLang: WeakMetricsFilters = {
+      ...base,
+      judgeModel: languageJudge?.judgeModel ?? null,
+      judgePromptVersion: languageJudge?.judgePromptVersion ?? null,
+    };
+    const fGround: WeakMetricsFilters = {
+      ...base,
+      judgeModel: groundednessJudge?.judgeModel ?? null,
+      judgePromptVersion: groundednessJudge?.judgePromptVersion ?? null,
     };
 
     const [
@@ -234,7 +261,7 @@ export class WeakMetricsAnalyticsService {
       worstScenarios,
       filterOptions,
     ] = await Promise.all([
-      this.repo.understandingWeightedTrend(f),
+      this.repo.understandingWeightedTrend(fLang),
       this.repo.unresponsiveTurnTrend(f),
       this.repo.rePromptTrend(f),
       this.repo.bargeInTrend(f),
@@ -242,12 +269,12 @@ export class WeakMetricsAnalyticsService {
       this.repo.sessionLoopRateTrend(f),
       this.repo.semanticStasisTrend(f),
       this.repo.resolutionTrend(f),
-      this.repo.realismWeightedTrend(f, 'register'),
-      this.repo.realismWeightedTrend(f, 'colloquialness'),
-      this.repo.realismWeightedTrend(f, 'dialect_lexicon'),
+      this.repo.realismWeightedTrend(fLang, 'register'),
+      this.repo.realismWeightedTrend(fLang, 'colloquialness'),
+      this.repo.realismWeightedTrend(fLang, 'dialect_lexicon'),
       this.repo.quoteMatchTrend(f),
-      this.repo.groundednessTrend(f),
-      this.repo.falseNegativeFeedbackTrend(f),
+      this.repo.groundednessTrend(fGround),
+      this.repo.falseNegativeFeedbackTrend(fGround),
       this.repo.feedbackToneTrend(f),
       this.repo.unhealthyScoredTrend(f),
       this.repo.scoreVsLengthPairs(f),
@@ -587,6 +614,11 @@ export class WeakMetricsAnalyticsService {
       parameters: { ...WEAK_METRICS_PARAMS },
       judgeModel: judge?.judgeModel ?? null,
       judgePromptVersion: judge?.judgePromptVersion ?? null,
+      judgeVersions: {
+        drift: judge,
+        language: languageJudge,
+        groundedness: groundednessJudge,
+      },
       bucket,
       start: start.toISOString(),
       groups,
