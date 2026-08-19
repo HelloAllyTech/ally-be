@@ -28,6 +28,7 @@ import { ScribeAdoptionAnalyticsService } from '../service/scribe-adoption-analy
 import { SkillGrowthAnalyticsService } from '../service/skill-growth-analytics.service';
 import { TrackDropoffAnalyticsService } from '../service/track-dropoff-analytics.service';
 import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.service';
+import { CertificationAnalyticsService } from '../service/certification-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsService } from '../service/roadmap-delivery-analytics.service';
 import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
@@ -91,6 +92,10 @@ import {
   UsageLevelQueryDto,
   UsageLevelResponseDto,
 } from '../dto/usage-level-analytics.dto';
+import {
+  CertificationQueryDto,
+  CertificationResponseDto,
+} from '../dto/certification-analytics.dto';
 import {
   RoleplayVolumeQueryDto,
   RoleplayVolumeResponseDto,
@@ -185,6 +190,7 @@ export class AnalyticsController {
     private readonly highlightsAnalyticsService: HighlightsAnalyticsService,
     private readonly cohortAnalyticsService: CohortAnalyticsService,
     private readonly usageLevelAnalyticsService: UsageLevelAnalyticsService,
+    private readonly certificationAnalyticsService: CertificationAnalyticsService,
     private readonly roleplayVolumeAnalyticsService: RoleplayVolumeAnalyticsService,
     private readonly roadmapDeliveryAnalyticsService: RoadmapDeliveryAnalyticsService,
     private readonly platformAnalyticsService: PlatformAnalyticsService,
@@ -292,6 +298,44 @@ export class AnalyticsController {
     @Query() query: CohortRetentionQueryDto,
   ): Promise<CohortRetentionResponseDto> {
     return this.cohortAnalyticsService.getCohortRetention(query);
+  }
+
+  @Get('certification')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Ally Certification attainment — the hero metric (super-admin)',
+    description:
+      'Distinct learners who have accumulated enough LIFETIME roleplay ' +
+      'practice to hold an Ally Certification level, by the month they earned ' +
+      'it and cumulatively over time, plus where the rest of the population ' +
+      'stands against the threshold. L1 is 5,000 minutes. Minutes come from ' +
+      'user_daily_scores.minutesPlayed — the sanctioned roleplay-activity ' +
+      'source, net of paused time, and the same column the practice-minutes ' +
+      'chart reads, so the two cannot disagree about what a minute is. The ' +
+      'population is LEARNER-group accounts in non-test tenants. A learner is ' +
+      'counted ONCE, in the month their running total first reached the ' +
+      'threshold, so the monthly bars and the cumulative line say different ' +
+      'things rather than one thing twice; the cumulative line is monotonic ' +
+      'because a level is never lost. ALL-TIME and month-grained by design — ' +
+      'this endpoint takes no `range`/`bucket`/`from`/`to`, because the ' +
+      'threshold is a lifetime total and a window would change the metric ' +
+      'rather than narrow it. The current month is flagged `partial`: more ' +
+      'learners can still cross into it. `pipeline` bands the not-yet-' +
+      'certified population by how far along it is — the leading indicator ' +
+      'the crossings cannot be, since at this threshold a level takes many ' +
+      'months to earn. `tenantId` narrows both the population and the activity.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Certification attainment retrieved successfully',
+    type: CertificationResponseDto,
+  })
+  async getCertification(
+    @Query() query: CertificationQueryDto,
+  ): Promise<CertificationResponseDto> {
+    return this.certificationAnalyticsService.getCertification(query);
   }
 
   @Get('usage-levels')

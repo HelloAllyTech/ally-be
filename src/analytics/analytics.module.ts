@@ -8,6 +8,8 @@ import { CohortAnalyticsService } from './service/cohort-analytics.service';
 import { CohortAnalyticsRepository } from './repository/cohort-analytics.repository';
 import { UsageLevelAnalyticsService } from './service/usage-level-analytics.service';
 import { UsageLevelAnalyticsRepository } from './repository/usage-level-analytics.repository';
+import { CertificationAnalyticsService } from './service/certification-analytics.service';
+import { CertificationAnalyticsRepository } from './repository/certification-analytics.repository';
 import { RoleplayVolumeAnalyticsService } from './service/roleplay-volume-analytics.service';
 import { RoleplayVolumeAnalyticsRepository } from './repository/roleplay-volume-analytics.repository';
 // Analytics → Product management tab: reads the internal product roadmap rather
@@ -101,6 +103,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     CohortAnalyticsRepository,
     UsageLevelAnalyticsService,
     UsageLevelAnalyticsRepository,
+    CertificationAnalyticsService,
+    CertificationAnalyticsRepository,
     RoleplayVolumeAnalyticsService,
     RoleplayVolumeAnalyticsRepository,
     RoadmapDeliveryAnalyticsService,
