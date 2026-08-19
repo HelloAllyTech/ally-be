@@ -172,6 +172,33 @@ export class GithubActionsService {
     }
   }
 
+  /**
+   * Cancels a running workflow — `POST /actions/runs/{run_id}/cancel`. This is
+   * the actual compute/token saving behind "Stop fix session": the workflow's
+   * `timeout-minutes: 60` cap otherwise runs to completion regardless of the
+   * finding's own status in our DB.
+   *
+   * GitHub 409s cancelling a run that has already completed (or is already
+   * cancelling); callers should treat that as fine, not fatal — see
+   * `BugFixSessionService.cancelFixSession`, which must land the finding at
+   * CANCELLED either way.
+   */
+  async cancelRun(repo: string, runId: string): Promise<void> {
+    this.requireConfigured();
+    try {
+      await axios.post(
+        this.url(repo, `actions/runs/${runId}/cancel`),
+        undefined,
+        { headers: this.headers, timeout: 15_000 },
+      );
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not cancel run ${runId} in ${repo}`,
+      );
+    }
+  }
+
   async getRun(repo: string, runId: string): Promise<WorkflowRun | null> {
     this.requireConfigured();
     try {

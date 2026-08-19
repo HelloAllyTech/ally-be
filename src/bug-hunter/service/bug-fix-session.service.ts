@@ -159,6 +159,89 @@ export class BugFixSessionService {
     return this.bugFindingService.getOne(finding.id);
   }
 
+  // ── stop a fix session ───────────────────────────────────────────────────
+
+  /**
+   * The manual kill switch: an admin watching a session that is clearly stuck
+   * or looping stops it themselves rather than waiting out the workflow's
+   * `timeout-minutes: 60` cap.
+   *
+   * Two things happen, and the second must happen even if the first can't:
+   *
+   *  1. Cancel the actual GitHub Actions run — real compute/token savings,
+   *     not just a DB flag. If the reconcile loop hasn't resolved
+   *     `sessionRunId` yet (the session was dispatched moments ago), one
+   *     best-effort `findRunSince` call tries to resolve it right now rather
+   *     than waiting for the next 5-minute tick — same reasoning as
+   *     `reconcileQueuedSessions`. If GitHub still can't be reached, or
+   *     refuses the cancel (409 for a run that already finished a moment
+   *     before the click landed), that failure is logged and swallowed:
+   *     the point of this action is to stop the finding progressing further
+   *     in OUR pipeline, which does not depend on GitHub's cancel succeeding.
+   *  2. Mark the finding CANCELLED, with who and when — the audit trail a
+   *     human override always needs (see `releasedBy`/`releasedAt` for the
+   *     same pattern on the release gate). Distinct from FAILED so the table
+   *     reads "a human stopped this" rather than "the agent gave up".
+   *
+   * Nothing else needs to be told to stop watching this finding: the
+   * escalation-answer poll and every reconcile pass are keyed off status
+   * (QUEUED/FIXING/NEEDS_INPUT), so a status that has moved to CANCELLED
+   * simply stops matching those queries on the very next read — see
+   * `reconcileQueuedSessions`/`reconcilePrOpenedFindings`'s `WHERE status =`
+   * filters and `advancePlans`'s stuck-step check for a cancelled child.
+   */
+  async cancelFixSession(
+    findingId: string,
+    actorUserId: number,
+  ): Promise<BugFinding> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (
+      finding.status !== BugFindingStatus.QUEUED &&
+      finding.status !== BugFindingStatus.FIXING
+    ) {
+      throw new ForbiddenException(
+        `Finding ${findingId} is ${finding.status} — only a queued or in-progress fix session can be stopped.`,
+      );
+    }
+
+    let runId = finding.sessionRunId ?? null;
+    if (!runId && finding.repo && finding.dispatchedAt) {
+      const run = await this.github.findRunSince({
+        repo: finding.repo,
+        workflow: BUG_FIX_SESSION_WORKFLOW_FILE,
+        since: finding.dispatchedAt,
+      });
+      if (run) runId = run.id;
+    }
+
+    if (runId && finding.repo) {
+      try {
+        await this.github.cancelRun(finding.repo, runId);
+      } catch (error) {
+        this.logger.warn(
+          `Could not cancel GitHub Actions run ${runId} for finding ${findingId} — marking it cancelled locally regardless: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    await this.findingRepository.update(findingId, {
+      status: BugFindingStatus.CANCELLED,
+      sessionRunId: runId,
+      cancelledBy: actorUserId,
+      cancelledAt: new Date(),
+    });
+    await this.bugHunterService.appendFindingEvent({
+      findingId,
+      repo: finding.repo,
+      stage: BugHuntEventStage.CANCELLED,
+      summary: `Fix session cancelled by user ${actorUserId}.`,
+      payload: { cancelledBy: actorUserId, runId },
+    });
+    return this.bugFindingService.getOne(findingId);
+  }
+
   /**
    * Opens a run and dispatches a fix session for one finding in one repo.
    *
@@ -215,6 +298,7 @@ export class BugFixSessionService {
       repo,
       dispatchedAt,
       sessionRunUrl: null,
+      sessionRunId: null,
     });
     await this.bugHunterService.appendEvent({
       runId: run.id,
@@ -524,7 +608,12 @@ export class BugFixSessionService {
           (step) =>
             step.status === BugFindingStatus.FAILED ||
             step.status === BugFindingStatus.NEEDS_INPUT ||
-            step.status === BugFindingStatus.DISMISSED,
+            step.status === BugFindingStatus.DISMISSED ||
+            // An admin cancelling one step must stop the whole plan here —
+            // without this, the next tick would read the cancelled step as
+            // neither stuck nor in-flight and dispatch the step after it,
+            // silently overriding the cancellation.
+            step.status === BugFindingStatus.CANCELLED,
         );
         if (stuck) {
           await this.haltPlan(parent, stuck);
@@ -575,12 +664,30 @@ export class BugFixSessionService {
   /** A plan that cannot continue: the parent takes on the stuck step's meaning and the admin is told which step and why. */
   private async haltPlan(parent: BugFinding, stuck: BugFinding): Promise<void> {
     const needsAnswer = stuck.status === BugFindingStatus.NEEDS_INPUT;
+    const cancelled = stuck.status === BugFindingStatus.CANCELLED;
     await this.findingRepository.update(parent.id, {
       status: needsAnswer
         ? BugFindingStatus.NEEDS_INPUT
-        : BugFindingStatus.FAILED,
+        : cancelled
+          ? BugFindingStatus.CANCELLED
+          : BugFindingStatus.FAILED,
       escalationQuestion: stuck.escalationQuestion ?? parent.escalationQuestion,
     });
+
+    // A cancelled step was a deliberate admin action, not something to alert
+    // the same admin about — record it in the timeline and stay quiet, unlike
+    // the other two halts which raise an inbox notification.
+    if (cancelled) {
+      await this.bugHunterService.appendFindingEvent({
+        findingId: parent.id,
+        repo: stuck.repo,
+        stage: BugHuntEventStage.CANCELLED,
+        summary: `Step ${(stuck.stepIndex ?? 0) + 1} (${stuck.repo}) was cancelled — the plan stops here.`,
+        payload: { cancelledStepId: stuck.id, cancelledBy: stuck.cancelledBy },
+      });
+      return;
+    }
+
     await this.notificationService.notify({
       level: needsAnswer
         ? BugHunterNotificationLevel.ACTION_NEEDED
@@ -685,6 +792,7 @@ export class BugFixSessionService {
           if (run) {
             await this.findingRepository.update(finding.id, {
               sessionRunUrl: run.htmlUrl,
+              sessionRunId: run.id,
             });
           }
         }

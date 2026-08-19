@@ -32,4 +32,6 @@ export enum BugHuntEventStage {
   PLAN_CREATED = 'plan_created',
   /** The orchestrator dispatched the next step of a plan. */
   STEP_STARTED = 'step_started',
+  /** An admin pressed "Stop fix session" — see BugFixSessionService.cancelFixSession. */
+  CANCELLED = 'cancelled',
 }

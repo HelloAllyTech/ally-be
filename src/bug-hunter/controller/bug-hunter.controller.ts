@@ -187,6 +187,36 @@ export class BugHunterController {
     );
   }
 
+  @Post('findings/:id/cancel-fix-session')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Stop a running fix session (super-duper-admin)',
+    description:
+      "The manual kill switch: a session the workflow's `timeout-minutes: " +
+      '60` cap would otherwise let run to completion. Cancels the actual ' +
+      'GitHub Actions run — real compute/token savings, not just a status ' +
+      'change — and marks the finding CANCELLED, which is deliberately ' +
+      'distinct from FAILED (the agent gave up on its own) so the table ' +
+      'shows a human stopped this one. Valid only from QUEUED or FIXING. ' +
+      'Best-effort on the GitHub side: if the run id has not been resolved ' +
+      'yet, or GitHub refuses the cancel (e.g. the run finished a moment ' +
+      'before the click landed), the finding still lands at CANCELLED — ' +
+      'the point is to stop it progressing further here, which does not ' +
+      "depend on GitHub's cancel succeeding. Like FAILED, a cancelled bug " +
+      'can have a fresh fix session started for it.',
+  })
+  @ApiResponse({ status: 200, type: BugFindingDto })
+  async cancelFixSession(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: TokenUser,
+  ): Promise<BugFindingDto> {
+    return toFindingDto(
+      await this.bugFixSessionService.cancelFixSession(id, user.id),
+    );
+  }
+
   @Post('findings/:id/release')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
     legacyRoles: SUPER_DUPER_ADMIN_ROLES,
@@ -512,10 +542,13 @@ export function toFindingDto(row: BugFinding): BugFindingDto {
     decidedBy: row.decidedBy ?? null,
     decidedAt: row.decidedAt ?? null,
     sessionRunUrl: row.sessionRunUrl ?? null,
+    sessionRunId: row.sessionRunId ?? null,
     releaseTag: row.releaseTag ?? null,
     releaseRunUrl: row.releaseRunUrl ?? null,
     releasedBy: row.releasedBy ?? null,
     releasedAt: row.releasedAt ?? null,
+    cancelledBy: row.cancelledBy ?? null,
+    cancelledAt: row.cancelledAt ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

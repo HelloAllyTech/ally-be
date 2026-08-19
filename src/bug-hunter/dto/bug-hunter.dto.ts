@@ -149,6 +149,13 @@ export class BugFindingDto {
 
   @ApiProperty({
     nullable: true,
+    description:
+      'GitHub Actions run id for the fix session, once resolved. What "Stop fix session" cancels.',
+  })
+  sessionRunId!: string | null;
+
+  @ApiProperty({
+    nullable: true,
     description: 'e.g. `v1.4.2` or `admin-v2.1.0`.',
   })
   releaseTag!: string | null;
@@ -168,6 +175,15 @@ export class BugFindingDto {
       'When the release workflow finished green — not when it was dispatched.',
   })
   releasedAt!: Date | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'The admin who pressed "Stop fix session".',
+  })
+  cancelledBy!: number | null;
+
+  @ApiProperty({ nullable: true })
+  cancelledAt!: Date | null;
 
   @ApiProperty()
   createdAt!: Date;

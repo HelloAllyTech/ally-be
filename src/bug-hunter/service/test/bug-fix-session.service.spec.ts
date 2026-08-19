@@ -28,11 +28,14 @@ const findingRow = (overrides: Partial<BugFinding> = {}): BugFinding =>
     prUrl: null,
     dispatchedAt: null,
     sessionRunUrl: null,
+    sessionRunId: null,
     releaseTag: null,
     releaseRunId: null,
     releaseRunUrl: null,
     releasedBy: null,
     releasedAt: null,
+    cancelledBy: null,
+    cancelledAt: null,
     createdAt: DISPATCHED_AT,
     updatedAt: DISPATCHED_AT,
     ...overrides,
@@ -64,6 +67,7 @@ describe('BugFixSessionService', () => {
     getRun: jest.Mock;
     getPullRequest: jest.Mock;
     nextPatchTag: jest.Mock;
+    cancelRun: jest.Mock;
   };
   let notificationService: { notify: jest.Mock };
   let repoClassifier: { classifyRepo: jest.Mock };
@@ -94,6 +98,7 @@ describe('BugFixSessionService', () => {
       getRun: jest.fn(),
       getPullRequest: jest.fn(),
       nextPatchTag: jest.fn(),
+      cancelRun: jest.fn().mockResolvedValue(undefined),
     };
     notificationService = { notify: jest.fn() };
     repoClassifier = {
@@ -282,6 +287,108 @@ describe('BugFixSessionService', () => {
     });
   });
 
+  // ── cancelFixSession ─────────────────────────────────────────────────────
+
+  describe('cancelFixSession', () => {
+    it('cancels the GitHub run and marks the finding CANCELLED', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        findingRow({ status: BugFindingStatus.FIXING, sessionRunId: '99' }),
+      );
+
+      await service.cancelFixSession('finding-1', 42);
+
+      expect(github.cancelRun).toHaveBeenCalledWith('ally-be', '99');
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.CANCELLED,
+        sessionRunId: '99',
+        cancelledBy: 42,
+        cancelledAt: expect.any(Date),
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'finding-1',
+          stage: BugHuntEventStage.CANCELLED,
+          payload: { cancelledBy: 42, runId: '99' },
+        }),
+      );
+    });
+
+    it('resolves the run id itself when the reconcile loop has not yet — the just-dispatched case', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        findingRow({
+          status: BugFindingStatus.QUEUED,
+          sessionRunId: null,
+          dispatchedAt: DISPATCHED_AT,
+        }),
+      );
+      github.findRunSince.mockResolvedValue({
+        id: '123',
+        htmlUrl: 'https://github.com/run/123',
+      });
+
+      await service.cancelFixSession('finding-1', 42);
+
+      expect(github.findRunSince).toHaveBeenCalledWith({
+        repo: 'ally-be',
+        workflow: 'bug-fix-session.yml',
+        since: DISPATCHED_AT,
+      });
+      expect(github.cancelRun).toHaveBeenCalledWith('ally-be', '123');
+      expect(findingRepository.update).toHaveBeenCalledWith(
+        'finding-1',
+        expect.objectContaining({
+          status: BugFindingStatus.CANCELLED,
+          sessionRunId: '123',
+        }),
+      );
+    });
+
+    it('still lands at CANCELLED when no run id can be found at all', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        findingRow({
+          status: BugFindingStatus.QUEUED,
+          sessionRunId: null,
+          dispatchedAt: DISPATCHED_AT,
+        }),
+      );
+      github.findRunSince.mockResolvedValue(null);
+
+      await service.cancelFixSession('finding-1', 42);
+
+      expect(github.cancelRun).not.toHaveBeenCalled();
+      expect(findingRepository.update).toHaveBeenCalledWith(
+        'finding-1',
+        expect.objectContaining({ status: BugFindingStatus.CANCELLED }),
+      );
+    });
+
+    it('still lands at CANCELLED even when GitHub refuses the cancel', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        findingRow({ status: BugFindingStatus.FIXING, sessionRunId: '99' }),
+      );
+      github.cancelRun.mockRejectedValue(new Error('409 already completed'));
+
+      await service.cancelFixSession('finding-1', 42);
+
+      expect(findingRepository.update).toHaveBeenCalledWith(
+        'finding-1',
+        expect.objectContaining({ status: BugFindingStatus.CANCELLED }),
+      );
+    });
+
+    it('refuses to cancel a finding that has no session running', async () => {
+      bugFindingService.getOne.mockResolvedValue(
+        findingRow({ status: BugFindingStatus.MERGED }),
+      );
+
+      await expect(
+        service.cancelFixSession('finding-1', 42),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(github.cancelRun).not.toHaveBeenCalled();
+      expect(findingRepository.update).not.toHaveBeenCalled();
+    });
+  });
+
   // ── release ──────────────────────────────────────────────────────────────
 
   describe('release', () => {
@@ -384,6 +491,7 @@ describe('BugFixSessionService', () => {
 
       expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
         sessionRunUrl: 'https://github.com/run/99',
+        sessionRunId: '99',
       });
     });
 
@@ -819,6 +927,34 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
         expect.objectContaining({
           level: 'action_needed',
           title: expect.stringMatching(/ready to release/i),
+        }),
+      );
+    });
+
+    it('halts the whole plan when a step is cancelled, rather than dispatching the next one', async () => {
+      findingRepository.listCoordinatingParents.mockResolvedValue([
+        coordinating(),
+      ]);
+      findingRepository.listChildren.mockResolvedValue([
+        step(0, { status: BugFindingStatus.CANCELLED, cancelledBy: 42 }),
+        step(1, { status: BugFindingStatus.BLOCKED }),
+      ]);
+
+      await service.reconcile();
+
+      expect(findingRepository.update).toHaveBeenCalledWith(
+        'finding-1',
+        expect.objectContaining({ status: BugFindingStatus.CANCELLED }),
+      );
+      // The point of cancelling one step is that nothing else runs after it —
+      // dispatching step 1 anyway would silently override the cancellation.
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+      // Self-inflicted, not something to alert the same admin about.
+      expect(notificationService.notify).not.toHaveBeenCalled();
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'finding-1',
+          stage: BugHuntEventStage.CANCELLED,
         }),
       );
     });
