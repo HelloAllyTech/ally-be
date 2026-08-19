@@ -4,6 +4,10 @@ import {
   excludeTestTenants,
   excludeTestTenantsBySession,
 } from '../util/test-tenant.util';
+import {
+  languageCheckEligibleSql,
+  offLanguageSql,
+} from '../util/off-language.util';
 
 /**
  * Slice tuple for the Weak Performing Metrics tab. Every query in here accepts
@@ -662,6 +666,51 @@ export class WeakMetricsAnalyticsRepository {
          FROM scenario_sessions ss
         WHERE ${where}
         GROUP BY 1 ORDER BY 1`,
+      params,
+    );
+  }
+
+  /**
+   * Turns the actor rendered with NO target-script content — a Hindi session
+   * answered in English, or in romanised Hindi.
+   *
+   * Judge-INDEPENDENT and deterministic, which is the point: it covers every
+   * session ever recorded the moment it ships, needs no backfill, and costs
+   * nothing to recompute if the rule changes.
+   *
+   * It exists because two mechanisms that should have caught this did not.
+   * Script fidelity tolerates Latin by design so code-switching is not punished,
+   * so a 100% English turn scores a perfect 1.0 — hi-IN read 99.3% over a
+   * corpus containing whole English turns. The `codeswitch` judge dimension
+   * fired once in 429 hi-IN turns.
+   *
+   * Only turns with enough letters to have MADE a language choice are counted,
+   * and only a total absence of the target script counts as a failure: heavy
+   * code-mixing is how people actually speak and a proportional threshold would
+   * flag it.
+   */
+  async offLanguageTurnTrend(f: WeakMetricsFilters): Promise<TrendPoint[]> {
+    const params: unknown[] = [f.start];
+    const sessionFilter = this.sessionScopedFilter(
+      'm."scenarioSessionId"',
+      f,
+      params,
+    );
+    const lang = `COALESCE(l.value, 'en')`;
+    return this.dataSource.query(
+      `SELECT to_char(date_trunc('${f.bucket}', m."createdAt"), 'YYYY-MM-DD') AS bucket,
+              COUNT(*) FILTER (WHERE ${offLanguageSql('m.content', lang)})::float AS numerator,
+              COUNT(*)::float AS denominator
+         FROM scenario_session_messages m
+         JOIN scenario_sessions s ON s.id = m."scenarioSessionId"
+         LEFT JOIN languages l ON l.id = NULLIF(s.metadata->>'languageId', '')::int
+        WHERE m."senderId" = -1
+          AND m."createdAt" >= $1
+          AND ${excludeTestTenantsBySession('m."scenarioSessionId"')}
+          AND ${languageCheckEligibleSql('m.content', lang)}
+          ${sessionFilter}
+        GROUP BY 1 HAVING COUNT(*) > 0
+        ORDER BY 1`,
       params,
     );
   }

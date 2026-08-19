@@ -68,6 +68,7 @@ describe('weak metrics judge pinning', () => {
       'overComplianceTrend',
       'inappropriateStasisTrend',
       'counsellorDirectedQuestionTrend',
+      'offLanguageTurnTrend',
     ]) {
       repo[m] = trend(m);
     }

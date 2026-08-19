@@ -247,6 +247,7 @@ export class WeakMetricsAnalyticsService {
       register,
       colloquial,
       lexicon,
+      offLanguage,
       quoteMatch,
       groundedness,
       falseNegativeFeedback,
@@ -272,6 +273,7 @@ export class WeakMetricsAnalyticsService {
       this.repo.realismWeightedTrend(fLang, 'register'),
       this.repo.realismWeightedTrend(fLang, 'colloquialness'),
       this.repo.realismWeightedTrend(fLang, 'dialect_lexicon'),
+      this.repo.offLanguageTurnTrend(f),
       this.repo.quoteMatchTrend(f),
       this.repo.groundednessTrend(fGround),
       this.repo.falseNegativeFeedbackTrend(fGround),
@@ -446,6 +448,28 @@ export class WeakMetricsAnalyticsService {
             'per100turns',
             WeakMetricState.MEASURED,
             colloquial,
+          ),
+          // Deterministic and judge-independent, so it covers all history the
+          // moment it ships. It sits beside the judged dimensions because a
+          // reader asking "does the actor talk like a real person" needs to
+          // know it sometimes does not talk in the right LANGUAGE at all.
+          this.series(
+            'off_language',
+            'Turns not in the session language at all',
+            'percent',
+            WeakMetricState.MEASURED,
+            offLanguage,
+            {
+              caveat:
+                'Deterministic: an actor turn containing NO character of the ' +
+                'session script — English, or the right language romanised. ' +
+                'Only turns long enough to have made a language choice count, ' +
+                'and code-mixing is not flagged: "maybe मैं overthink कर रही हूँ" ' +
+                'is how people speak. Script fidelity misses these because it ' +
+                'tolerates Latin by design, and the codeswitch judge fired once ' +
+                'in 429 hi-IN turns. Concentrated in openings stored in the ' +
+                'wrong script, so check the scenario before blaming the model.',
+            },
           ),
           this.series(
             'dialect_lexicon',

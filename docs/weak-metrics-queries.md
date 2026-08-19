@@ -93,7 +93,7 @@ quality. Before believing a trend, run the [mix check](#did-the-metric-move-or-d
 | Actor responsiveness (comprehension) | `language_error_annotations` + `language_judgment_sessions` | language, scenarioId, scenarioVersionId, llmModel, promptVersion, voiceId, judge version |
 | Actor responsiveness (barge-in) | `scenario_session_turn_metrics` | language, llmModel, scenarioId, env — **no** promptVersion |
 | Progression & resolution | `turn_drift_judgment`, `scenario_session_messages`, `scenario_session_events`, `scenario_session_turn_metrics.metadata` | as above per table |
-| Language realism | `language_error_annotations` | dimension, category, severity, layer, `evidenceQuote` |
+| Language realism | `language_error_annotations`, plus `scenario_session_messages` for the deterministic off-language check | dimension, category, severity, layer, `evidenceQuote` |
 | Feedback groundedness | `feedback_claim_judgment` + `scenario_session_details` | claimKind, verdict, quote accuracy |
 | Actor clienthood | `turn_drift_judgment` (v2 labels) | + `userText`/`aiText` for reading the actual turn |
 
@@ -257,6 +257,41 @@ its opening state either never earned score, or the actor never let it.
 
 `stateId IS NULL` with a `stateCount` present means branching mode, which resolves no scored
 state — distinct from an older build that reported no state at all (no `stateCount` key).
+
+### Turns not in the session language at all
+
+Deterministic, judge-independent, and the reason it exists: script fidelity tolerates Latin by
+design so code-switching is not punished, which means a 100% English turn scores a perfect 1.0 —
+hi-IN reported 99.3% over a corpus containing whole English turns. The `codeswitch` judge
+dimension fired once in 429 hi-IN turns.
+
+Only a TOTAL absence of the target script counts. Code-mixing is normal speech
+("maybe मैं overthink कर रही हूँ") and a proportional threshold would flag it.
+
+```sql
+WITH ranges(lang, lo, hi) AS (VALUES
+  ('hi',2304,2431),('mr',2304,2431),('ta',2944,3071),('kn',3200,3327),
+  ('ml',3328,3455),('te',3072,3199),('bn',2432,2559),('gu',2688,2815),
+  ('pa',2560,2687),('or',2816,2943),('ur',1536,1791)),
+ai AS (
+  SELECT m.content, lower(split_part(COALESCE(l.value,'en'),'-',1)) AS lang
+    FROM scenario_session_messages m
+    JOIN scenario_sessions s ON s.id = m."scenarioSessionId"
+    LEFT JOIN languages l ON l.id = NULLIF(s.metadata->>'languageId','')::int
+   WHERE m."senderId" = -1 AND s."createdAt" >= $1
+     AND s."roomId" NOT LIKE 'preview-%')
+SELECT ai.lang,
+       COUNT(*) AS eligible_turns,
+       COUNT(*) FILTER (WHERE ai.content !~ ('[' || chr(r.lo) || '-' || chr(r.hi) || ']'))
+         AS off_language_turns
+  FROM ai JOIN ranges r ON r.lang = ai.lang
+ WHERE length(regexp_replace(ai.content,'[^[:alpha:]]','','g')) >= 15
+ GROUP BY 1 ORDER BY 2 DESC;
+```
+
+Drop the `GROUP BY` and select `content` to read the offending turns. When this fires, check the
+SCENARIO before the model: 11 of the first 16 production hits were one opening line stored in
+Roman script, repeated across sessions.
 
 ### Feedback groundedness
 
