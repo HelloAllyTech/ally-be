@@ -3,6 +3,7 @@ import { AnalyticsController } from '../analytics.controller';
 import { AnalyticsService } from '../../service/analytics.service';
 import { CohortAnalyticsService } from '../../service/cohort-analytics.service';
 import { UsageLevelAnalyticsService } from '../../service/usage-level-analytics.service';
+import { CertificationAnalyticsService } from '../../service/certification-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../../service/roleplay-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsService } from '../../service/roadmap-delivery-analytics.service';
 import { HighlightsAnalyticsService } from '../../service/highlights-analytics.service';
@@ -100,6 +101,10 @@ describe('AnalyticsController', () => {
         {
           provide: UsageLevelAnalyticsService,
           useValue: { getUsageLevels: jest.fn() },
+        },
+        {
+          provide: CertificationAnalyticsService,
+          useValue: { getCertification: jest.fn() },
         },
         {
           provide: RoleplayVolumeAnalyticsService,
