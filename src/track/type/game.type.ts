@@ -30,6 +30,13 @@ export enum TrackGameKey {
   CUB_N_PUP = 'CUB_N_PUP',
   /** Grow by eating, don't eat yourself. The walls wrap, so there's no wall to lose to. */
   SNAKE = 'SNAKE',
+  /**
+   * Water a plant and grow it to bloom. Soil moisture is a band that decays,
+   * not a bar that fills: overwatering floods the pot and costs a leaf, and the
+   * band narrows as the plant grows. The four plants are four different bands,
+   * so the learner's choice changes how it plays rather than how it looks.
+   */
+  SPROUT = 'SPROUT',
 }
 
 export interface GameContent {
