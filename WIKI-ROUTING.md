@@ -56,7 +56,7 @@ Fetch as `https://tech.helloally.ai/#/wiki/<path>`, or raw Markdown at `https://
 
 ## Agent memory
 
-- `memory.md` (1934w) — Hard-won gotchas — read before touching auth, roles, permissions, migrations, or shared frontend modules. Each…
+- `memory.md` (2258w) — Hard-won gotchas — read before touching auth, roles, permissions, migrations, or shared frontend modules. Each…
 
 ## Skills
 
@@ -75,4 +75,4 @@ Fetch as `https://tech.helloally.ai/#/wiki/<path>`, or raw Markdown at `https://
 - `index.md` — human navigation catalog — ROUTING.md supersedes it for agents
 - `log.md` — append-only history — read only when auditing what changed
 
-_42 pages, 59,937 words total. Loading all of it would cost roughly 79,916 tokens — which is the entire reason this index exists._
+_42 pages, 60,687 words total. Loading all of it would cost roughly 80,916 tokens — which is the entire reason this index exists._
