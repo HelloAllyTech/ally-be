@@ -944,6 +944,16 @@ export class VoiceLatencyPointDto {
     nullable: true,
   })
   p95LlmTtftMs!: number | null;
+
+  @ApiProperty({
+    description:
+      'Prompt-cache hit rate (%), ratio-of-sums per bucket ' +
+      '(sum(cachedTokens) / sum(promptTokens)). Live-instrumentation only ' +
+      "— null for 'transcript' buckets and for turns predating this being " +
+      'instrumented.',
+    nullable: true,
+  })
+  avgCacheHitRatePct!: number | null;
 }
 
 export class VoiceLatencyByLanguageRowDto {

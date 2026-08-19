@@ -89,6 +89,13 @@ export interface VoiceLatencyBucketRow {
   p50LlmTtftMs: number | null;
   /** p95 LLM time-to-first-token (ms) in the bucket. Null as above. */
   p95LlmTtftMs: number | null;
+  /**
+   * Prompt-cache hit rate (%) in the bucket, ratio-of-sums
+   * (sum(cachedTokens) / sum(promptTokens)). Live-instrumentation only —
+   * null for 'transcript' buckets and for turns predating this being
+   * instrumented.
+   */
+  avgCacheHitRatePct: number | null;
 }
 
 export interface VoiceLatencyByLanguageRow {
@@ -655,6 +662,17 @@ export class PlatformAnalyticsRepository {
           `(ORDER BY m."llmTtftMs"))::int`,
         'p95LlmTtftMs',
       )
+      // Ratio-of-sums, not average-of-ratios: avoids a handful of
+      // tiny-promptTokens turns (e.g. a session's first turn, always 0%
+      // since nothing is cached yet) skewing the bucket average. NULL when
+      // unpopulated (transcript buckets, or before this was instrumented) —
+      // sum() over an all-NULL group already returns NULL, same convention
+      // as avgLlmTtftMs above.
+      .addSelect(
+        `round(100.0 * sum(m."cachedTokens")::numeric / ` +
+          `NULLIF(sum(m."promptTokens"), 0))::float`,
+        'avgCacheHitRatePct',
+      )
       .from('scenario_session_turn_metrics', 'm');
     if (language) {
       // turn_metrics.language is largely unpopulated, so filter by the SESSION's
@@ -692,6 +710,7 @@ export class PlatformAnalyticsRepository {
         avgLlmTtftMs: number | null;
         p50LlmTtftMs: number | null;
         p95LlmTtftMs: number | null;
+        avgCacheHitRatePct: number | null;
       }>();
 
     // llmTtft* are left as null (not coerced to 0) when unpopulated for the
@@ -709,6 +728,7 @@ export class PlatformAnalyticsRepository {
       avgLlmTtftMs: toNullableNumber(r.avgLlmTtftMs),
       p50LlmTtftMs: toNullableNumber(r.p50LlmTtftMs),
       p95LlmTtftMs: toNullableNumber(r.p95LlmTtftMs),
+      avgCacheHitRatePct: toNullableNumber(r.avgCacheHitRatePct),
     }));
   }
 

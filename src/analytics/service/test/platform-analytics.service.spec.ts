@@ -448,6 +448,7 @@ describe('PlatformAnalyticsService', () => {
           avgLlmTtftMs: 1200,
           p50LlmTtftMs: 1100,
           p95LlmTtftMs: 2400,
+          avgCacheHitRatePct: 78,
         },
         {
           bucket: '2024-06-10',
@@ -459,6 +460,7 @@ describe('PlatformAnalyticsService', () => {
           avgLlmTtftMs: null,
           p50LlmTtftMs: null,
           p95LlmTtftMs: null,
+          avgCacheHitRatePct: null,
         },
       ];
       repo.getVoiceLatencyByBucket.mockResolvedValue(points);

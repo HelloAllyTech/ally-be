@@ -72,6 +72,9 @@ export interface LearnTurnMetricsData {
   stt_finalize_ms?: number;
   llm_ttft_ms?: number;
   tts_ttfb_ms?: number;
+  /** Raw provider prompt-cache counts for this turn's LLM call — same fields/semantics as LlmUsageEventData below. */
+  prompt_tokens?: number;
+  cached_tokens?: number;
   orchestration_ms?: number;
   llm_response_ms?: number;
   /** @deprecated Speech prosody removed; ally-ai-learn no longer emits this. */

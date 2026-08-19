@@ -2021,6 +2021,8 @@ export class ScenarioSessionService {
       eouDelayMs: metrics.eou_delay_ms,
       sttFinalizeMs: metrics.stt_finalize_ms,
       llmTtftMs: metrics.llm_ttft_ms,
+      promptTokens: metrics.prompt_tokens,
+      cachedTokens: metrics.cached_tokens,
       ttsTtfbMs: metrics.tts_ttfb_ms,
       orchestrationMs: metrics.orchestration_ms,
       llmResponseMs: metrics.llm_response_ms,

@@ -55,6 +55,18 @@ export class ScenarioSessionTurnMetrics extends BaseEntity {
   @Column({ nullable: true })
   llmTtftMs?: number;
 
+  /**
+   * Raw provider prompt-cache counts for this turn's generate_response LLM
+   * call. Kept as raw counts, not a pre-computed rate, so the aggregation
+   * method (ratio-of-sums vs. average-of-ratios) stays a query-time
+   * decision — see PlatformAnalyticsRepository.getVoiceLatencyByBucket.
+   */
+  @Column({ nullable: true })
+  promptTokens?: number;
+
+  @Column({ nullable: true })
+  cachedTokens?: number;
+
   /** TTS time-to-first-byte (LiveKit metrics). */
   @Column({ nullable: true })
   ttsTtfbMs?: number;
