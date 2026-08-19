@@ -333,7 +333,11 @@ describe('BugHunterService', () => {
       // (50000/1e6)*3 + (2000/1e6)*15 = 0.15 + 0.03 = 0.18
       expect(runRepository.update).toHaveBeenCalledWith(
         'run-1',
-        expect.objectContaining({ totalTokenCostUsd: '0.1800' }),
+        expect.objectContaining({
+          totalTokenCostUsd: '0.1800',
+          totalInputTokens: 50000,
+          totalOutputTokens: 2000,
+        }),
       );
       expect(currentRun.metadata).toEqual(
         expect.objectContaining({ cliReportedCostUsd: 0.18 }),

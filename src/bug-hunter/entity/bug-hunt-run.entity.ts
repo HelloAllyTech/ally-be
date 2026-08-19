@@ -51,6 +51,18 @@ export class BugHuntRun extends BaseWithoutTenantEntity {
   @Column({ type: 'numeric', precision: 10, scale: 4, default: 0 })
   totalTokenCostUsd!: string;
 
+  /**
+   * Raw token counts backing `totalTokenCostUsd`, snapshotted the same way and
+   * at the same time (migration `1912000000000`). Nullable: runs closed before
+   * this column existed have a cost snapshot but no token breakdown, and are
+   * never backfilled — the run-history table just shows "—" for them.
+   */
+  @Column({ type: 'int', nullable: true })
+  totalInputTokens?: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  totalOutputTokens?: number | null;
+
   /** Free-form run context: budget cap, repos-in-scope for a multi-repo trigger, error message on FAILED. */
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any> | null;

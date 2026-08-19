@@ -248,13 +248,15 @@ export class BugHunterService {
     errorMessage?: string,
   ): Promise<BugHuntRun> {
     const run = await this.getRun(id);
-    const totalTokenCostUsd = await this.snapshotCostUsd(id);
+    const usage = await this.snapshotUsage(id);
 
     await this.runRepository.update(id, {
       status,
       finishedAt: new Date(),
       ...totals,
-      totalTokenCostUsd: totalTokenCostUsd.toFixed(4),
+      totalTokenCostUsd: usage.costUsd.toFixed(4),
+      totalInputTokens: usage.totalInputTokens,
+      totalOutputTokens: usage.totalOutputTokens,
       ...(errorMessage
         ? { metadata: { ...run.metadata, errorMessage } as Record<string, any> }
         : {}),
@@ -287,8 +289,9 @@ export class BugHunterService {
    * Attaches a run's REAL per-model token usage — reported by the GitHub
    * Actions runner after `claude -p --output-format json` finishes — as
    * `llm_usage` rows tagged `LlmTask.BUG_HUNTER` + `metadata.runId`, then
-   * re-derives `totalTokenCostUsd` from `snapshotCostUsd` so this stays the
-   * only function that turns `llm_usage` rows into that column.
+   * re-derives `totalTokenCostUsd`/`totalInputTokens`/`totalOutputTokens` from
+   * `snapshotUsage` so this stays the only function that turns `llm_usage`
+   * rows into those columns.
    *
    * Deliberately does NOT require `RUNNING` status the way `appendEvent`
    * does: this always arrives after the pipeline's own `/close` call already
@@ -326,9 +329,11 @@ export class BugHunterService {
           ),
       );
 
-      const totalTokenCostUsd = await this.snapshotCostUsd(runId);
+      const usage = await this.snapshotUsage(runId);
       await this.runRepository.update(runId, {
-        totalTokenCostUsd: totalTokenCostUsd.toFixed(4),
+        totalTokenCostUsd: usage.costUsd.toFixed(4),
+        totalInputTokens: usage.totalInputTokens,
+        totalOutputTokens: usage.totalOutputTokens,
         metadata: {
           ...run.metadata,
           ...(params.cliReportedCostUsd != null
@@ -346,13 +351,17 @@ export class BugHunterService {
   }
 
   /**
-   * Sums estimated USD cost from `llm_usage` rows tagged for this run
-   * (`metadata->>'runId'`), grouped by model so each model's own rate applies
-   * — mirrors PlatformAnalyticsRepository's by-name query-builder pattern
-   * over `llm_usage` rather than pulling in the whole LlmUsageRepository for
-   * one grouped sum.
+   * Sums estimated USD cost and raw token counts from `llm_usage` rows tagged
+   * for this run (`metadata->>'runId'`), grouped by model so each model's own
+   * rate applies to the cost side — mirrors PlatformAnalyticsRepository's
+   * by-name query-builder pattern over `llm_usage` rather than pulling in the
+   * whole LlmUsageRepository for one grouped sum.
    */
-  private async snapshotCostUsd(runId: string): Promise<number> {
+  private async snapshotUsage(runId: string): Promise<{
+    costUsd: number;
+    totalInputTokens: number;
+    totalOutputTokens: number;
+  }> {
     try {
       const rows: {
         model: string;
@@ -371,23 +380,32 @@ export class BugHunterService {
         .groupBy('lu.model')
         .getRawMany();
 
-      return rows.reduce((sum, row) => {
-        const { costUsd } = computeCostUsd(
-          row.model,
-          Number(row.promptTokens),
-          Number(row.completionTokens),
-        );
-        return sum + costUsd;
-      }, 0);
+      return rows.reduce(
+        (totals, row) => {
+          const promptTokens = Number(row.promptTokens);
+          const completionTokens = Number(row.completionTokens);
+          const { costUsd } = computeCostUsd(
+            row.model,
+            promptTokens,
+            completionTokens,
+          );
+          return {
+            costUsd: totals.costUsd + costUsd,
+            totalInputTokens: totals.totalInputTokens + promptTokens,
+            totalOutputTokens: totals.totalOutputTokens + completionTokens,
+          };
+        },
+        { costUsd: 0, totalInputTokens: 0, totalOutputTokens: 0 },
+      );
     } catch (error) {
       // Best-effort, same contract as LlmUsageService.record: cost visibility
       // must never fail a run close.
       this.logger.warn(
-        `Failed to snapshot bug-hunt cost for run ${runId}: ${
+        `Failed to snapshot bug-hunt usage for run ${runId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
-      return 0;
+      return { costUsd: 0, totalInputTokens: 0, totalOutputTokens: 0 };
     }
   }
 }

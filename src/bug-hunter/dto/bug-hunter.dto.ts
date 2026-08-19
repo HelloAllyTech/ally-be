@@ -452,6 +452,20 @@ export class BugHuntRunDto {
   })
   totalTokenCostUsd!: string;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Raw input token count backing totalTokenCostUsd. Null for runs closed before this was tracked.',
+  })
+  totalInputTokens!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Raw output token count backing totalTokenCostUsd. Null for runs closed before this was tracked.',
+  })
+  totalOutputTokens!: number | null;
+
   @ApiProperty()
   createdAt!: Date;
 }
