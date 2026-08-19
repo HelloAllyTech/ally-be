@@ -225,7 +225,9 @@ describe('CertificationAnalyticsService', () => {
       const result = await service.getCertification({});
 
       expect(result.certified).toBe(0);
-      expect(result.months.every((m) => m.cumulativeCertified === 0)).toBe(true);
+      expect(result.months.every((m) => m.cumulativeCertified === 0)).toBe(
+        true,
+      );
       expect(result.pipeline.reduce((sum, b) => sum + b.learners, 0)).toBe(120);
       expect(result.nearestMinutes).toBe(4800);
     });
