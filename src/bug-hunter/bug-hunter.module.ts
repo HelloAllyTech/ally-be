@@ -5,6 +5,7 @@ import { NotificationModule } from 'src/notification/notification.module';
 import { LogsModule } from 'src/logs/logs.module';
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
+import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
 
 import { BugHunterController } from './controller/bug-hunter.controller';
 import { BugHunterPipelineController } from './controller/bug-hunter-pipeline.controller';
@@ -44,7 +45,12 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
  * `@InjectRepository` in RoadmapOpportunityService too (see its `create()`),
  * the same cross-domain-entity pattern that file already uses for `User` —
  * importing this whole module there would risk the circular-import trap this
- * codebase has been bitten by before (see ally-be/CLAUDE.md's gotchas).
+ * codebase has been bitten by before (see ally-be/CLAUDE.md's gotchas). The
+ * same trick runs in the other direction too: `RoadmapOpportunity` is
+ * registered here, just the entity and not ProductRoadmapModule, so
+ * `BugFixSessionService` can release the linked roadmap opportunity the
+ * moment a reported bug's finding merges (see its
+ * `releaseLinkedRoadmapOpportunity`).
  */
 @Module({
   imports: [
@@ -54,6 +60,7 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
       BugHunterSettings,
       BugFinding,
       BugHunterNotification,
+      RoadmapOpportunity,
     ]),
     NotificationModule,
     LogsModule,

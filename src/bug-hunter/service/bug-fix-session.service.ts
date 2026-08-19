@@ -3,9 +3,14 @@ import {
   ForbiddenException,
   Injectable,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
+import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
+import { RoadmapOpportunityStage } from 'src/product-roadmap/enum/roadmap-opportunity.enum';
+import { BUG_HUNTER_AGENT_ROADMAP_OWNER } from '../constants/bug-fix-session.constants';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import {
@@ -87,6 +92,8 @@ export class BugFixSessionService {
     private readonly notificationService: BugHunterNotificationService,
     private readonly configService: AppConfigService,
     private readonly repoClassifier: BugHunterRepoClassifierService,
+    @InjectRepository(RoadmapOpportunity)
+    private readonly roadmapOpportunityRepository: Repository<RoadmapOpportunity>,
   ) {}
 
   // ── start a fix session ──────────────────────────────────────────────────
@@ -622,6 +629,7 @@ export class BugFixSessionService {
           await this.findingRepository.update(parent.id, {
             status: BugFindingStatus.MERGED,
           });
+          await this.releaseLinkedRoadmapOpportunity(parent);
           await this.notificationService.notify({
             level: BugHunterNotificationLevel.ACTION_NEEDED,
             ...planReadyToRelease(
@@ -850,6 +858,7 @@ export class BugFixSessionService {
         await this.findingRepository.update(finding.id, {
           status: BugFindingStatus.MERGED,
         });
+        await this.releaseLinkedRoadmapOpportunity(finding);
         await this.bugHunterService.appendFindingEvent({
           findingId: finding.id,
           repo: finding.repo,
@@ -864,6 +873,47 @@ export class BugFixSessionService {
           }`,
         );
       }
+    }
+  }
+
+  /**
+   * Closes the loop the other direction: a reported bug's roadmap card
+   * shouldn't sit at whatever stage it was filed in once the fix that
+   * addresses it has actually merged.
+   *
+   * `reportedBugId` is only ever set on a finding created from a roadmap bug
+   * report (`RoadmapOpportunityService.create`) — a repo-wide sweep finding
+   * has none, and for a coordinated multi-repo plan only the PARENT carries
+   * it, never the per-repo steps, so this is a no-op for both. Best-effort,
+   * like the roadmap side's own reciprocal write: the finding's MERGED status
+   * is already committed by the time this runs, so a failure here must never
+   * undo it or stop the rest of the reconcile tick.
+   */
+  private async releaseLinkedRoadmapOpportunity(
+    finding: BugFinding,
+  ): Promise<void> {
+    if (!finding.reportedBugId) return;
+
+    try {
+      const opportunity = await this.roadmapOpportunityRepository.findOne({
+        where: { id: finding.reportedBugId },
+      });
+      if (!opportunity) return;
+
+      await this.roadmapOpportunityRepository.update(finding.reportedBugId, {
+        stage: RoadmapOpportunityStage.RELEASED,
+        owner: BUG_HUNTER_AGENT_ROADMAP_OWNER,
+        ownerUserId: null,
+        ...(opportunity.stage !== RoadmapOpportunityStage.RELEASED
+          ? { releasedAt: new Date() }
+          : {}),
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Could not release linked roadmap opportunity ${finding.reportedBugId} for finding ${finding.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 

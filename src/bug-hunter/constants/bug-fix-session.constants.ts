@@ -16,6 +16,14 @@ export const BUG_FIX_SESSION_WORKFLOW_FILE = 'bug-fix-session.yml';
 export const BUG_FIX_SESSION_DEFAULT_REF = 'master';
 
 /**
+ * `roadmap_opportunities.owner` written when a reported bug's linked finding
+ * merges (see `BugFixSessionService.releaseLinkedRoadmapOpportunity`). Must
+ * already exist in `roadmap_opportunity_owners` — see the FK-by-name note on
+ * `RoadmapOpportunity.owner` — which is why migration 1913000000000 seeds it.
+ */
+export const BUG_HUNTER_AGENT_ROADMAP_OWNER = 'Bug Hunter Agent';
+
+/**
  * The repo-wide sweep workflow, dispatched by the admin tab's "Start a sweep"
  * button and by each repo's own nightly cron. Same filename in every repo, and
  * as thin as `bug-fix-session.yml` for the same reason: it fetches its protocol
