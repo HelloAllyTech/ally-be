@@ -208,6 +208,72 @@ export class WeakMetricFilterOptionsDto {
   scenarios!: Array<{ id: number; title: string | null }>;
 }
 
+export class WeakMetricTurnBandDto {
+  @ApiProperty({
+    description: "Band key — a quartile ('q1'..'q4') or a flag value",
+  })
+  band!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Lowest observed value in this band. Measured from the filtered data, ' +
+      'not a fixed threshold, so the edges move with the product instead of ' +
+      'going stale. Null for a yes/no condition.',
+  })
+  lo!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Highest observed value in this band',
+  })
+  hi!: number | null;
+
+  @ApiProperty() turns!: number;
+  @ApiProperty({ description: 'Turns in this band a judge faulted' })
+  faults!: number;
+  @ApiProperty({ description: 'faults / turns' }) rate!: number;
+}
+
+export class WeakMetricTurnFactorDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() label!: string;
+  @ApiProperty() description!: string;
+
+  @ApiProperty({
+    description: "How to format a band edge: 'ms', 'count' or 'flag'",
+  })
+  unit!: string;
+
+  @ApiProperty({
+    description:
+      'Worst band rate minus best band rate. How much this condition ' +
+      'DISCRIMINATES — the ordering key, because a factor whose bands all sit ' +
+      'at the same rate is telling you nothing.',
+  })
+  spread!: number;
+
+  @ApiProperty({ type: [WeakMetricTurnBandDto] })
+  bands!: WeakMetricTurnBandDto[];
+}
+
+export class WeakMetricTurnConditionsDto {
+  @ApiProperty({ description: 'Judged turns with turn metrics behind them' })
+  totalTurns!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Overall fault rate, for comparison',
+  })
+  baselineRate!: number | null;
+
+  @ApiProperty({
+    type: [WeakMetricTurnFactorDto],
+    description: 'Most discriminating first',
+  })
+  factors!: WeakMetricTurnFactorDto[];
+}
+
 export class WeakMetricsResponseDto {
   @ApiProperty({
     description:
@@ -265,6 +331,16 @@ export class WeakMetricsResponseDto {
       'scenarios, and an English one is among the worst.',
   })
   worstScenarios!: WeakMetricScenarioRowDto[];
+
+  @ApiProperty({
+    type: WeakMetricTurnConditionsDto,
+    description:
+      'What was measurably different about the turns a judge faulted. Unlike ' +
+      'every other cut here this compares turns against other turns in the ' +
+      'SAME sessions, so a shift in traffic mix cannot move it. Association ' +
+      'only — a slow turn may be slow BECAUSE the input was hard.',
+  })
+  turnConditions!: WeakMetricTurnConditionsDto;
 
   @ApiProperty({
     nullable: true,

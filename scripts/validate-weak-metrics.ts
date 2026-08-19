@@ -57,9 +57,18 @@ async function main() {
     ['sessionLoopRateTrend', () => repo.sessionLoopRateTrend(f)],
     ['semanticStasisTrend', () => repo.semanticStasisTrend(f)],
     ['resolutionTrend', () => repo.resolutionTrend(f)],
-    ['realismWeightedTrend(register)', () => repo.realismWeightedTrend(f, 'register')],
-    ['realismWeightedTrend(colloquialness)', () => repo.realismWeightedTrend(f, 'colloquialness')],
-    ['realismWeightedTrend(dialect_lexicon)', () => repo.realismWeightedTrend(f, 'dialect_lexicon')],
+    [
+      'realismWeightedTrend(register)',
+      () => repo.realismWeightedTrend(f, 'register'),
+    ],
+    [
+      'realismWeightedTrend(colloquialness)',
+      () => repo.realismWeightedTrend(f, 'colloquialness'),
+    ],
+    [
+      'realismWeightedTrend(dialect_lexicon)',
+      () => repo.realismWeightedTrend(f, 'dialect_lexicon'),
+    ],
     ['briefOverrideBreakdown', () => repo.briefOverrideBreakdown(f)],
     ['fabricatedQuoteTrend', () => repo.fabricatedQuoteTrend(f)],
     ['groundednessTrend', () => repo.groundednessTrend(f)],
@@ -71,7 +80,10 @@ async function main() {
     ['roleInversionTrend', () => repo.roleInversionTrend(f)],
     ['overComplianceTrend', () => repo.overComplianceTrend(f)],
     ['inappropriateStasisTrend', () => repo.inappropriateStasisTrend(f)],
-    ['counsellorDirectedQuestionTrend', () => repo.counsellorDirectedQuestionTrend(f)],
+    [
+      'counsellorDirectedQuestionTrend',
+      () => repo.counsellorDirectedQuestionTrend(f),
+    ],
     ['roleSlipByScenario', () => repo.roleSlipByScenario(f, 1)],
     ['filterOptions', () => repo.filterOptions(f.start)],
   ];
@@ -107,7 +119,9 @@ async function main() {
       }
     }
   }
-  console.log(failures === 0 ? '  all queries executed' : `  ${failures} failures`);
+  console.log(
+    failures === 0 ? '  all queries executed' : `  ${failures} failures`,
+  );
 
   // --- Pass 2: logical, against a hand-checked fixture ---------------------
   console.log('\n=== Pass 2: aggregations reproduce known answers ===');
@@ -136,7 +150,11 @@ async function main() {
     numerator: number;
     denominator: number;
   }>;
-  check('repetition turns 4 of 10', [Number(rep[0].numerator), Number(rep[0].denominator)], [4, 10]);
+  check(
+    'repetition turns 4 of 10',
+    [Number(rep[0].numerator), Number(rep[0].denominator)],
+    [4, 10],
+  );
 
   const loop = (await repo.sessionLoopRateTrend(g)) as Array<{
     numerator: number;
@@ -152,7 +170,11 @@ async function main() {
     numerator: number;
     denominator: number;
   }>;
-  check('role_slip 1 of 10', [Number(slip[0].numerator), Number(slip[0].denominator)], [1, 10]);
+  check(
+    'role_slip 1 of 10',
+    [Number(slip[0].numerator), Number(slip[0].denominator)],
+    [1, 10],
+  );
 
   // Language: one `register` annotation at major (weight 5) + one at minor
   // (weight 1) = 6, over 10 judged turns.
@@ -194,7 +216,11 @@ async function main() {
     numerator: number;
     denominator: number;
   }>;
-  check('tone 3 improvements / 2 positives', [Number(tone[0].numerator), Number(tone[0].denominator)], [3, 2]);
+  check(
+    'tone 3 improvements / 2 positives',
+    [Number(tone[0].numerator), Number(tone[0].denominator)],
+    [3, 2],
+  );
 
   // --- v2 judge labels --------------------------------------------------
   //
@@ -232,6 +258,78 @@ async function main() {
     [1, 1],
   );
 
+  // ---- turn conditions ----------------------------------------------------
+  //
+  // The (session, turnIndex) join. Ten turns carry metrics; six of them were
+  // faulted by a judge — LOOP turn 1 by a language annotation, LOOP turns 2-5
+  // and CLEAN turn 1 by a drift failure mode. Every other turn has metrics and
+  // no verdict against it, so a join that matched loosely (on session alone,
+  // say) would fault all ten and this would catch it.
+  //
+  // Scoped to the fixture's scenario. Unlike the trend queries, this one reads
+  // `scenario_session_turn_metrics`, which a developer's local database is
+  // likely to hold from unrelated work — and stray rows judged under a
+  // DIFFERENT language version silently join the population when the pin below
+  // is varied, which is exactly the number this section asserts on. Scenario 96
+  // is the fixture's; nothing else uses it.
+  const tcPin = { judgeModel: 'gemini-2.5-pro', judgePromptVersion: 'v1' };
+  const tcFilter = { ...g, scenarioId: 96 };
+  const tc = (await repo.turnConditionBreakdown(tcFilter, tcPin)) as Array<{
+    factor: string;
+    turns: number;
+    faults: number;
+  }>;
+  const sumOf = (factor: string, key: 'turns' | 'faults') =>
+    tc
+      .filter((r) => r.factor === factor)
+      .reduce((a, r) => a + Number(r[key]), 0);
+
+  check(
+    'turn conditions band all 10 metric-carrying turns',
+    sumOf('responseLatencyMs', 'turns'),
+    10,
+  );
+  check(
+    'turn conditions fault exactly the 6 judged-bad turns',
+    sumOf('responseLatencyMs', 'faults'),
+    6,
+  );
+
+  // Quartiles must actually split rather than collapsing into one band.
+  check(
+    'latency splits into four bands',
+    tc.filter((r) => r.factor === 'responseLatencyMs').length,
+    4,
+  );
+
+  // Both sides of each yes/no condition survive the GROUP BY.
+  check(
+    'interrupted keeps both branches',
+    tc.filter((r) => r.factor === 'interrupted').length,
+    2,
+  );
+  check(
+    'knowledge retrieval keeps both branches',
+    tc.filter((r) => r.factor === 'knowledgeRetrieval').length,
+    2,
+  );
+
+  // The language pin has to bind independently of the drift pin. Pointed at a
+  // version the annotations were not written under, the one language-derived
+  // fault must drop out and the five drift ones must stay — if the pin were
+  // ignored, or shared with drift, this would still read 6.
+  const tcWrongLang = (await repo.turnConditionBreakdown(tcFilter, {
+    judgeModel: 'gemini-2.5-pro',
+    judgePromptVersion: 'v2',
+  })) as Array<{ factor: string; faults: number }>;
+  check(
+    'language pin binds inside the join (annotation fault drops)',
+    tcWrongLang
+      .filter((r) => r.factor === 'responseLatencyMs')
+      .reduce((a, r) => a + Number(r.faults), 0),
+    5,
+  );
+
   // Language filter must actually bind: ta-IN has no fixture rows.
   const filteredRep = (await repo.repetitionTurnTrend({
     ...g,
@@ -243,7 +341,11 @@ async function main() {
     ...g,
     language: 'en-IN',
   })) as Array<{ numerator: number }>;
-  check('language filter binds (en-IN keeps rows)', Number(enRep[0]?.numerator), 4);
+  check(
+    'language filter binds (en-IN keeps rows)',
+    Number(enRep[0]?.numerator),
+    4,
+  );
 
   // ---- prompt version -----------------------------------------------------
   //
@@ -291,14 +393,16 @@ async function main() {
   // left it showing platform-wide numbers. A filter that quietly does nothing
   // is worse than one that empties a chart — nothing on screen says the
   // selection was dropped.
-  const everySeries: Array<[string, (f: WeakMetricsFilters) => Promise<unknown>]> = [
-    ['resolutionTrend', ff => repo.resolutionTrend(ff)],
-    ['rePromptTrend', ff => repo.rePromptTrend(ff)],
-    ['semanticStasisTrend', ff => repo.semanticStasisTrend(ff)],
-    ['feedbackToneTrend', ff => repo.feedbackToneTrend(ff)],
-    ['offLanguageTurnTrend', ff => repo.offLanguageTurnTrend(ff)],
-    ['unhealthyScoredTrend', ff => repo.unhealthyScoredTrend(ff)],
-    ['bargeInTrend', ff => repo.bargeInTrend(ff)],
+  const everySeries: Array<
+    [string, (f: WeakMetricsFilters) => Promise<unknown>]
+  > = [
+    ['resolutionTrend', (ff) => repo.resolutionTrend(ff)],
+    ['rePromptTrend', (ff) => repo.rePromptTrend(ff)],
+    ['semanticStasisTrend', (ff) => repo.semanticStasisTrend(ff)],
+    ['feedbackToneTrend', (ff) => repo.feedbackToneTrend(ff)],
+    ['offLanguageTurnTrend', (ff) => repo.offLanguageTurnTrend(ff)],
+    ['unhealthyScoredTrend', (ff) => repo.unhealthyScoredTrend(ff)],
+    ['bargeInTrend', (ff) => repo.bargeInTrend(ff)],
   ];
   for (const [name, run] of everySeries) {
     // The fixture is entirely en-IN, so a language nothing matches must empty
@@ -323,17 +427,31 @@ async function main() {
       : `\n${failures} CHECK(S) FAILED\n`,
   );
   process.exit(failures === 0 ? 0 : 1);
-
 }
 
 async function cleanup(ds: DataSource) {
   const ids = `('${SESSION_LOOP}','${SESSION_CLEAN}')`;
-  await ds.query(`DELETE FROM turn_drift_judgment WHERE "scenarioSessionId" IN ${ids}`);
-  await ds.query(`DELETE FROM language_error_annotations WHERE "scenarioSessionId" IN ${ids}`);
-  await ds.query(`DELETE FROM language_judgment_sessions WHERE "scenarioSessionId" IN ${ids}`);
-  await ds.query(`DELETE FROM scenario_session_messages WHERE "scenarioSessionId" IN ${ids}`);
-  await ds.query(`DELETE FROM scenario_session_details WHERE "scenarioSessionId" IN ${ids}`);
-  await ds.query(`DELETE FROM feedback_claim_judgment WHERE "scenarioSessionId" IN ${ids}`);
+  await ds.query(
+    `DELETE FROM turn_drift_judgment WHERE "scenarioSessionId" IN ${ids}`,
+  );
+  await ds.query(
+    `DELETE FROM language_error_annotations WHERE "scenarioSessionId" IN ${ids}`,
+  );
+  await ds.query(
+    `DELETE FROM language_judgment_sessions WHERE "scenarioSessionId" IN ${ids}`,
+  );
+  await ds.query(
+    `DELETE FROM scenario_session_messages WHERE "scenarioSessionId" IN ${ids}`,
+  );
+  await ds.query(
+    `DELETE FROM scenario_session_details WHERE "scenarioSessionId" IN ${ids}`,
+  );
+  await ds.query(
+    `DELETE FROM feedback_claim_judgment WHERE "scenarioSessionId" IN ${ids}`,
+  );
+  await ds.query(
+    `DELETE FROM scenario_session_turn_metrics WHERE "scenarioSessionId" IN ${ids}`,
+  );
   await ds.query(`DELETE FROM scenario_sessions WHERE id IN ${ids}`);
 }
 
@@ -397,7 +515,16 @@ async function seed(ds: DataSource) {
     [SESSION_CLEAN, 2, null, null, null, null, null, null],
     [SESSION_CLEAN, 3, null, null, null, null, null, null],
   ];
-  for (const [sid, ti, mode, inv, newInfo, stuckOk, sols, resist] of driftRows) {
+  for (const [
+    sid,
+    ti,
+    mode,
+    inv,
+    newInfo,
+    stuckOk,
+    sols,
+    resist,
+  ] of driftRows) {
     await ds.query(
       `INSERT INTO turn_drift_judgment
          (id, "scenarioSessionId", "turnIndex", "aiReplyFailureMode", "inCharacter",
@@ -408,6 +535,51 @@ async function seed(ds: DataSource) {
        VALUES (gen_random_uuid(), $1, $2, $3, true, 'en-IN', 96, 'gpt-4o-mini',
                $4, 'gemini-2.5-pro', 'v1', $5, $4, $4, $6, $7, $8, $9, $10, '7')`,
       [sid, ti, mode, at, TENANT, inv, newInfo, stuckOk, sols, resist],
+    );
+  }
+
+  // Turn metrics — the other half of the (session, turnIndex) join. One row per
+  // judged turn, so the conditions panel has something to band. Values are
+  // spread evenly rather than realistically: the point is that ntile() splits
+  // them and that each row lands on the right turn, not that 100ms is plausible.
+  //
+  // `interrupted` and the retrieval time are set so BOTH sides of each yes/no
+  // condition exist — a fixture where a flag is always false cannot tell a
+  // working GROUP BY from one that dropped a branch.
+  const turnMetrics: Array<[string, number, number, boolean, number]> = [
+    // sessionId, turnIndex, responseLatencyMs, interrupted, knowledgeRetrievalMs
+    [SESSION_LOOP, 0, 100, false, 0],
+    [SESSION_LOOP, 1, 200, false, 0],
+    [SESSION_LOOP, 2, 300, false, 900],
+    [SESSION_LOOP, 3, 400, true, 900],
+    [SESSION_LOOP, 4, 500, false, 900],
+    [SESSION_LOOP, 5, 600, false, 900],
+    [SESSION_CLEAN, 0, 700, false, 0],
+    [SESSION_CLEAN, 1, 800, false, 0],
+    [SESSION_CLEAN, 2, 900, true, 900],
+    [SESSION_CLEAN, 3, 1000, false, 900],
+  ];
+  for (const [sid, ti, latency, interrupted, retrieval] of turnMetrics) {
+    await ds.query(
+      `INSERT INTO scenario_session_turn_metrics
+         (id, "scenarioSessionId", "roomId", "turnIndex", "responseLatencyMs",
+          "eouDelayMs", "responseChars", "knowledgeRetrievalMs", interrupted,
+          language, "scenarioId", "llmModel", "occurredAt", tenant_id,
+          "createdAt", "updatedAt")
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, 'en-IN', 96,
+               'gpt-4o-mini', $9, $10, $9, $9)`,
+      [
+        sid,
+        `validate-${sid.slice(0, 8)}`,
+        ti,
+        latency,
+        latency * 2,
+        latency / 10,
+        retrieval,
+        interrupted,
+        at,
+        TENANT,
+      ],
     );
   }
 
@@ -451,9 +623,24 @@ async function seed(ds: DataSource) {
 
   // Transcript. The AI turns carry the phrase the "matched" feedback quote cites.
   const msgs: Array<[number, string, number, number]> = [
-    [-1, 'I have been feeling completely overwhelmed by everything at home lately.', 0, 5],
-    [1, 'That sounds really difficult. Tell me more about what happens at home.', 6, 11],
-    [-1, 'It is the same thing every single day and nothing ever seems to change.', 12, 18],
+    [
+      -1,
+      'I have been feeling completely overwhelmed by everything at home lately.',
+      0,
+      5,
+    ],
+    [
+      1,
+      'That sounds really difficult. Tell me more about what happens at home.',
+      6,
+      11,
+    ],
+    [
+      -1,
+      'It is the same thing every single day and nothing ever seems to change.',
+      12,
+      18,
+    ],
   ];
   for (const [sender, content, ss, es] of msgs) {
     await ds.query(
@@ -513,7 +700,7 @@ async function seed(ds: DataSource) {
   }
 }
 
-main().catch(e => {
+main().catch((e) => {
   console.error(e);
   process.exit(1);
 });

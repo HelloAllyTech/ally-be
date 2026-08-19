@@ -47,6 +47,16 @@ describe('weak metrics judge pinning', () => {
         }),
       scoreVsLengthPairs: jest.fn().mockResolvedValue([]),
       roleSlipByScenario: jest.fn().mockResolvedValue([]),
+      // Records the LANGUAGE pin it was handed, not the drift one — the panel
+      // reads annotations, so pinning it to drift would repeat the bug this
+      // whole spec exists to catch.
+      turnConditionBreakdown: jest
+        .fn()
+        .mockImplementation((f: unknown, langPin: unknown) => {
+          seen['turnConditions'] = f;
+          seen['turnConditions:langPin'] = langPin;
+          return Promise.resolve([]);
+        }),
       filterOptions: jest.fn().mockResolvedValue({
         languages: [],
         models: [],
@@ -105,6 +115,18 @@ describe('weak metrics judge pinning', () => {
 
     expect(pinOf(seen.repetition)).toEqual(versions.drift);
     expect(pinOf(seen.roleSlip)).toEqual(versions.drift);
+  });
+
+  it('hands the turn-conditions panel BOTH pins, one per family', async () => {
+    // The panel counts a turn as faulted if either judge flagged it, so it
+    // needs both versions. Passing only the drift pair would silently read the
+    // annotations through the wrong rubric — the exact failure the rest of this
+    // spec exists to prevent, just in a query that touches two tables at once.
+    const { service, seen } = build();
+    await service.getWeakMetrics({});
+
+    expect(pinOf(seen.turnConditions)).toEqual(versions.drift);
+    expect(seen['turnConditions:langPin']).toEqual(versions.language);
   });
 
   it('reports all three versions rather than one that speaks for all', async () => {

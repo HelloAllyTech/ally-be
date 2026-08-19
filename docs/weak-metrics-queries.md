@@ -75,7 +75,7 @@ Keep using the helper in code; it is inlined here only so a paste-and-run query 
 
 **3. Keep numerator and denominator separate; never average pre-divided rates.** Monthly rates
 averaged across buckets weight a 40-session month like a 4,000-session one. Every query below
-returns `numerator, denominator` and divides once at the end. A zero denominator is *no data* —
+returns `numerator, denominator` and divides once at the end. A zero denominator is _no data_ —
 it must not render as 0%.
 
 **4. Segment, or you are measuring traffic mix.** Three headline findings in this data turned out
@@ -88,14 +88,15 @@ quality. Before believing a trend, run the [mix check](#did-the-metric-move-or-d
 
 ## Where each metric lives
 
-| Metric | Table(s) | Slice columns present |
-|---|---|---|
-| Actor responsiveness (comprehension) | `language_error_annotations` + `language_judgment_sessions` | language, scenarioId, scenarioVersionId, llmModel, promptVersion, voiceId, judge version |
-| Actor responsiveness (barge-in) | `scenario_session_turn_metrics` | language, llmModel, scenarioId, env — **no** promptVersion |
-| Progression & resolution | `turn_drift_judgment`, `scenario_session_messages`, `scenario_session_events`, `scenario_session_turn_metrics.metadata` | as above per table |
-| Language realism | `language_error_annotations`, plus `scenario_session_messages` for the deterministic off-language check | dimension, category, severity, layer, `evidenceQuote` |
-| Feedback groundedness | `feedback_claim_judgment` + `scenario_session_details` | claimKind, verdict, `quotesTranscript`, `quoteIsAccurate` |
-| Actor clienthood | `turn_drift_judgment` (v2 labels) | + `userText`/`aiText` for reading the actual turn |
+| Metric                               | Table(s)                                                                                                                | Slice columns present                                                                    |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Actor responsiveness (comprehension) | `language_error_annotations` + `language_judgment_sessions`                                                             | language, scenarioId, scenarioVersionId, llmModel, promptVersion, voiceId, judge version |
+| Actor responsiveness (barge-in)      | `scenario_session_turn_metrics`                                                                                         | language, llmModel, scenarioId, env — **no** promptVersion                               |
+| Progression & resolution             | `turn_drift_judgment`, `scenario_session_messages`, `scenario_session_events`, `scenario_session_turn_metrics.metadata` | as above per table                                                                       |
+| Language realism                     | `language_error_annotations`, plus `scenario_session_messages` for the deterministic off-language check                 | dimension, category, severity, layer, `evidenceQuote`                                    |
+| Feedback groundedness                | `feedback_claim_judgment` + `scenario_session_details`                                                                  | claimKind, verdict, `quotesTranscript`, `quoteIsAccurate`                                |
+| Actor clienthood                     | `turn_drift_judgment` (v2 labels)                                                                                       | + `userText`/`aiText` for reading the actual turn                                        |
+| Turn conditions                      | `scenario_session_turn_metrics` joined to both judge tables on `(scenarioSessionId, turnIndex)`                         | latency, EOU delay, reply length, interrupted, retrieval — **per turn**, not per session |
 
 Three things worth knowing about these tables:
 
@@ -172,7 +173,7 @@ Note `COALESCE("occurredAt", "createdAt")`: `occurredAt` is the session's real t
 
 The turn-level repetition rate averages looping sessions away — a session that repeats six times
 in forty turns is 15% and invisible next to healthy traffic. What users complain about is the
-*session*, so count sessions containing a run of 3+ consecutive repeats. Gaps-and-islands:
+_session_, so count sessions containing a run of 3+ consecutive repeats. Gaps-and-islands:
 
 ```sql
 WITH turns AS (
@@ -207,7 +208,7 @@ which is why the run-length test exists.
 `interrupted` means **this turn was produced by the learner cutting the actor off** — not "this
 reply was truncated" (the record ships when the agent starts speaking; LiveKit reports the
 interruption when playback ends). Written by the live worker only, so it cannot be backfilled:
-every bucket before that deploy is a true zero out of a full denominator, i.e. *not recorded*.
+every bucket before that deploy is a true zero out of a full denominator, i.e. _not recorded_.
 
 ```sql
 SELECT to_char(date_trunc('month', tm."occurredAt"), 'YYYY-MM-DD') AS bucket,
@@ -362,9 +363,68 @@ SELECT j."scenarioId", sc.title,
 
 ---
 
+## What was different about the turns that went wrong
+
+Every other cut on this page compares **populations** — one language against another, one model
+against the next. That shape is hostage to traffic mix, and mix is what has misread this tab
+repeatedly: "Tamil" turned out to mean `gpt-4.1-mini`; an August improvement turned out to be
+Tamil leaving the denominator; a spike turned out to be a cohort reaching module 4 of a
+curriculum.
+
+Both judge tables and `scenario_session_turn_metrics` carry `turnIndex`, so a verdict about a
+turn joins **exactly** to the record of how that turn was produced. That lets you compare turns
+against other turns in the _same sessions_ — same model, same scenario, same language, same
+learner, same day. A shift in who was using the product cannot move the answer.
+
+```sql
+-- Fault rate by response-latency quartile. Bands come from the data, not from
+-- a threshold someone picked once, so they stay meaningful as latency changes.
+WITH turns AS (
+  SELECT m."responseLatencyMs" AS latency,
+         (EXISTS (SELECT 1 FROM language_error_annotations a
+                   WHERE a."scenarioSessionId" = m."scenarioSessionId"
+                     AND a."turnIndex" = m."turnIndex"
+                     AND a."conditionedOut" = false
+                     AND a."judgePromptVersion" = 'v2')
+          OR EXISTS (SELECT 1 FROM turn_drift_judgment d
+                   WHERE d."scenarioSessionId" = m."scenarioSessionId"
+                     AND d."turnIndex" = m."turnIndex"
+                     AND d."aiReplyFailureMode" NOT IN ('none')
+                     AND d."judgePromptVersion" = 'v2')) AS faulted
+    FROM scenario_session_turn_metrics m
+   WHERE COALESCE(m."occurredAt", m."createdAt") >= now() - interval '30 days'
+     AND EXISTS (SELECT 1 FROM language_judgment_sessions ls
+                  WHERE ls."scenarioSessionId" = m."scenarioSessionId"
+                    AND ls."judgePromptVersion" = 'v2')
+)
+SELECT ntile(4) OVER (ORDER BY latency) AS quartile,
+       MIN(latency) AS lo, MAX(latency) AS hi,
+       COUNT(*) AS turns,
+       ROUND(100.0 * COUNT(*) FILTER (WHERE faulted) / COUNT(*), 1) AS fault_pct
+  FROM turns WHERE latency IS NOT NULL
+ GROUP BY quartile ORDER BY quartile;
+```
+
+Swap `responseLatencyMs` for `eouDelayMs`, `responseChars`, `interrupted` or
+`knowledgeRetrievalMs` to band a different condition. `turnConditionBreakdown()` in the
+repository runs all of them at once and is what the tab's panel reads.
+
+### Three things to hold onto before acting on it
+
+- **Association, not cause.** A slow turn may be slow _because_ the input was hard, which is also
+  why it was misunderstood. The arrow can run either way. This finds where to look; reading the
+  transcripts is what settles it.
+- **A turn counts as faulted if EITHER judge flagged it**, each at its own family's pin. That is
+  deliberately generous, and it does not bias the comparison — the bands are read against each
+  other, so the outcome only has to be applied consistently.
+- **Turn metrics start 2026-06-10.** Anything judged from before then joins to nothing, the same
+  boundary that leaves those sessions without an `llmModel`.
+
+---
+
 ## Testing a hypothesis
 
-The dashboard shows you *that* something moved. These two queries are what turn a movement into
+The dashboard shows you _that_ something moved. These two queries are what turn a movement into
 a decision.
 
 ### Two cohorts, side by side
@@ -392,13 +452,13 @@ SELECT j."promptVersion" AS cohort,
 ```
 
 Two cohorts rarely carry the same traffic. Add `j."llmModel"` (or language) to the `GROUP BY`
-and check the difference survives *within* each model before attributing it to the cohort — if
+and check the difference survives _within_ each model before attributing it to the cohort — if
 it doesn't, you found a mix difference, not an effect. Watch the denominators: at a few hundred
 turns a two-point difference is noise, and this data has no significance test attached.
 
 ### Did the metric move, or did the traffic?
 
-Run this whenever a trend line steps. If a segment's *share* moved in the same month the metric
+Run this whenever a trend line steps. If a segment's _share_ moved in the same month the metric
 moved, the metric probably didn't:
 
 ```sql

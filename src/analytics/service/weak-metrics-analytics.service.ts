@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   TrendPoint,
+  TurnConditionRow,
   WEAK_METRICS_PARAMS,
   WEAK_METRICS_VERSION,
   WeakMetricsAnalyticsRepository,
@@ -31,6 +32,52 @@ import {
  * `dialect_lexicon` line means the detector is blind, not that the problem is
  * solved — so the caveat travels with the data instead of living in a doc.
  */
+/**
+ * Copy for the turn-level conditions, kept beside the ids the repository emits
+ * so a factor cannot appear on the tab without someone having written what it
+ * means. `unit` tells the client how to format a band edge — milliseconds and
+ * character counts do not read the same way.
+ */
+const TURN_FACTOR_COPY: Record<
+  string,
+  { label: string; description: string; unit: 'ms' | 'count' | 'flag' }
+> = {
+  responseLatencyMs: {
+    label: 'How long the actor took to reply',
+    description:
+      'Wall-clock time from the learner finishing to the reply starting.',
+    unit: 'ms',
+  },
+  eouDelayMs: {
+    label: 'How long we waited before deciding the learner had finished',
+    description:
+      'End-of-utterance delay. Too short cuts the learner off; too long stalls.',
+    unit: 'ms',
+  },
+  responseChars: {
+    label: "How long the actor's reply was",
+    description: 'Characters in the reply the actor produced.',
+    unit: 'count',
+  },
+  interrupted: {
+    label: 'Whether the learner interrupted',
+    description: 'The learner spoke over the actor mid-reply.',
+    unit: 'flag',
+  },
+  knowledgeRetrieval: {
+    label: 'Whether knowledge retrieval ran',
+    description: 'The turn went to the knowledge base before answering.',
+    unit: 'flag',
+  },
+};
+
+/**
+ * A factor needs this many judged turns behind it before it is worth showing.
+ * Below it the quartiles are a handful of turns each and the spread is noise
+ * dressed as a finding.
+ */
+const MIN_TURNS_PER_FACTOR = 100;
+
 @Injectable()
 export class WeakMetricsAnalyticsService {
   constructor(private readonly repo: WeakMetricsAnalyticsRepository) {}
@@ -172,6 +219,90 @@ export class WeakMetricsAnalyticsService {
    * turns move the score enormously and everything past thirty barely moves it,
    * so a linear fit understates how much of the score is just session length.
    */
+  /**
+   * Group the repository's flat band rows into factors, and order them by how
+   * much they actually DISCRIMINATE — the gap between the worst band and the
+   * best.
+   *
+   * Ordering by spread rather than by name is the whole point of the panel. A
+   * factor whose bands all sit at the same rate tells you nothing and should
+   * sink; the one where the top band faults three times as often as the bottom
+   * is where to look next. Sorting alphabetically would bury it.
+   */
+  private turnConditions(rows: TurnConditionRow[] | undefined): {
+    totalTurns: number;
+    baselineRate: number | null;
+    factors: Array<{
+      id: string;
+      label: string;
+      description: string;
+      unit: string;
+      spread: number;
+      bands: Array<{
+        band: string;
+        lo: number | null;
+        hi: number | null;
+        turns: number;
+        faults: number;
+        rate: number;
+      }>;
+    }>;
+  } {
+    const byFactor = new Map<string, TurnConditionRow[]>();
+    for (const r of rows ?? []) {
+      const list = byFactor.get(r.factor) ?? [];
+      list.push(r);
+      byFactor.set(r.factor, list);
+    }
+
+    const factors = [...byFactor.entries()]
+      .filter(([id]) => TURN_FACTOR_COPY[id])
+      .map(([id, list]) => {
+        const bands = [...list]
+          .sort((a, b) => Number(a.bandOrder) - Number(b.bandOrder))
+          .map((r) => {
+            const turns = Number(r.turns ?? 0);
+            const faults = Number(r.faults ?? 0);
+            return {
+              band: r.band,
+              lo: r.lo === null || r.lo === undefined ? null : Number(r.lo),
+              hi: r.hi === null || r.hi === undefined ? null : Number(r.hi),
+              turns,
+              faults,
+              rate: turns > 0 ? faults / turns : 0,
+            };
+          });
+        const rates = bands.map((b) => b.rate);
+        return {
+          id,
+          ...TURN_FACTOR_COPY[id],
+          spread: rates.length ? Math.max(...rates) - Math.min(...rates) : 0,
+          bands,
+        };
+      })
+      .filter(
+        (fac) =>
+          fac.bands.reduce((a, b) => a + b.turns, 0) >= MIN_TURNS_PER_FACTOR,
+      )
+      .sort((a, b) => b.spread - a.spread);
+
+    // Every factor bands the SAME turns, so any one of them carries the
+    // baseline. Latency is used when present because it is the least likely to
+    // be null on a turn that was recorded at all.
+    const basis =
+      factors.find((fac) => fac.id === 'responseLatencyMs') ?? factors[0];
+    const totalTurns = basis ? basis.bands.reduce((a, b) => a + b.turns, 0) : 0;
+    const totalFaults = basis
+      ? basis.bands.reduce((a, b) => a + b.faults, 0)
+      : 0;
+
+    return {
+      totalTurns,
+      baselineRate: totalTurns > 0 ? totalFaults / totalTurns : null,
+      factors,
+    };
+  }
+
   private correlate(
     pairs: Array<{ score: number; turns: number }>,
   ): number | null {
@@ -270,6 +401,7 @@ export class WeakMetricsAnalyticsService {
       inappropriateStasis,
       counsellorQuestions,
       worstScenarios,
+      turnConditions,
       filterOptions,
     ] = await Promise.all([
       this.repo.understandingWeightedTrend(fLang),
@@ -296,6 +428,15 @@ export class WeakMetricsAnalyticsService {
       this.repo.inappropriateStasisTrend(f),
       this.repo.counsellorDirectedQuestionTrend(f),
       this.repo.roleSlipByScenario(f),
+      this.repo.turnConditionBreakdown(
+        f,
+        languageJudge
+          ? {
+              judgeModel: languageJudge.judgeModel,
+              judgePromptVersion: languageJudge.judgePromptVersion,
+            }
+          : null,
+      ),
       this.repo.filterOptions(start),
     ]);
 
@@ -717,6 +858,7 @@ export class WeakMetricsAnalyticsService {
             ? Number(r.numerator) / Number(r.denominator)
             : 0,
       })),
+      turnConditions: this.turnConditions(turnConditions),
       scoreLengthCorrelation: this.correlate(scorePairs),
       filterOptions: {
         languages: filterOptions.languages,

@@ -46,6 +46,31 @@ export interface BreakdownRow {
 }
 
 /**
+ * One band of one turn-level condition, with how often a judge faulted the
+ * turns inside it.
+ *
+ * `lo`/`hi` are the observed range of the banded metric, so a reader sees
+ * "5.8-9.2s" rather than "Q3" — the band edges are measured from the filtered
+ * data, not hard-coded, so they move with the product instead of going stale.
+ * Binary conditions leave them null.
+ */
+export interface TurnConditionRow {
+  factor: string;
+  band: string;
+  bandOrder: number;
+  lo: number | null;
+  hi: number | null;
+  turns: number;
+  faults: number;
+}
+
+/** A judge family's version pin. */
+export interface JudgePin {
+  judgeModel: string;
+  judgePromptVersion: string;
+}
+
+/**
  * A session's main-agent prompt version, read from
  * `scenario_sessions.metadata->'promptVersions'` — a map of prompt code to
  * version, since a session renders several prompts.
@@ -1257,6 +1282,155 @@ export class WeakMetricsAnalyticsRepository {
         ORDER BY (COUNT(*) FILTER (WHERE j."aiReplyFailureMode" = 'role_slip'))::numeric
                  / NULLIF(COUNT(*), 0) DESC
         LIMIT 25`,
+      params,
+    );
+  }
+
+  // =========================================================================
+  // 6. WHAT WAS DIFFERENT ABOUT THE TURNS THAT WENT WRONG
+  // =========================================================================
+
+  /**
+   * Every other cut on this tab compares POPULATIONS — Tamil against English,
+   * one model against another, one scenario against the next. That shape is
+   * hostage to traffic mix, and mix is what has misread this tab repeatedly:
+   * "Tamil" turned out to mean gpt-4.1-mini, an August "improvement" turned out
+   * to be Tamil leaving the denominator, and a spike turned out to be a cohort
+   * reaching module 4 of a curriculum.
+   *
+   * This compares turns against OTHER TURNS IN THE SAME SESSIONS. Same model,
+   * same scenario, same language, same learner, same day — so a shift in who
+   * was using the product cannot move the answer. That is a categorically
+   * stronger kind of evidence than anything else here, and it is available only
+   * because both judge tables and `scenario_session_turn_metrics` carry
+   * `turnIndex`, so a verdict about a turn joins exactly to the record of how
+   * that turn was produced. No timestamp alignment, no inference.
+   *
+   * A turn counts as faulted if EITHER judge flagged it, each read at its own
+   * family's pin. That is a deliberately generous definition and it does not
+   * bias the result: the panel reads the bands against each other, so the
+   * outcome only has to be applied consistently, not perfectly.
+   *
+   * Bands come from `ntile(4)` over the filtered data rather than from
+   * thresholds someone chose once. Fixed cut-offs would silently stop meaning
+   * anything the moment latency improved, and nobody would notice.
+   *
+   * CAUSATION IS NOT ESTABLISHED HERE and the caller must say so. A slow turn
+   * may be slow BECAUSE the input was hard, which is also why it was
+   * misunderstood — the arrow can run either way. This finds where to look.
+   */
+  async turnConditionBreakdown(
+    f: WeakMetricsFilters,
+    langPin: JudgePin | null,
+  ): Promise<TurnConditionRow[]> {
+    const params: unknown[] = [];
+    const p = (v: unknown) => {
+      params.push(v);
+      return `$${params.length}`;
+    };
+
+    // The turn-metrics row carries language, llmModel and scenarioId directly,
+    // but not scenarioVersionId or promptVersion — those reach it through the
+    // session, the same way every other session-scoped filter on this tab does.
+    let where = `COALESCE(m."occurredAt", m."createdAt") >= ${p(f.start)}
+      AND ${excludeTestTenants('m."tenant_id"')}`;
+    for (const [column, value] of [
+      ['language', f.language],
+      ['llmModel', f.llmModel],
+      ['scenarioId', f.scenarioId],
+    ] as Array<[string, unknown]>) {
+      if (value !== null && value !== undefined && value !== '') {
+        where += ` AND m."${column}" = ${p(value)}`;
+      }
+    }
+    where += this.sessionScopedFilter(
+      'm."scenarioSessionId"',
+      { ...f, language: null, llmModel: null, scenarioId: null },
+      params,
+    );
+
+    // A turn is only in the denominator if its session was actually judged.
+    // Without this the panel would count turns nobody looked at as clean ones,
+    // which is the same "absence read as a zero" mistake the series states
+    // exist to prevent.
+    const driftPinned =
+      f.judgeModel && f.judgePromptVersion
+        ? `AND d."judgeModel" = ${p(f.judgeModel)}
+           AND d."judgePromptVersion" = ${p(f.judgePromptVersion)}`
+        : '';
+    const langPinned = langPin
+      ? `AND a."judgeModel" = ${p(langPin.judgeModel)}
+         AND a."judgePromptVersion" = ${p(langPin.judgePromptVersion)}`
+      : '';
+    const langSessionPinned = langPin
+      ? `AND ls."judgeModel" = ${p(langPin.judgeModel)}
+         AND ls."judgePromptVersion" = ${p(langPin.judgePromptVersion)}`
+      : '';
+
+    return this.dataSource.query(
+      `WITH turns AS (
+         SELECT m."responseLatencyMs"    AS latency,
+                m."responseChars"        AS chars,
+                m."eouDelayMs"           AS eou,
+                m."knowledgeRetrievalMs" AS retrieval,
+                m."interrupted"          AS interrupted,
+                (EXISTS (
+                   SELECT 1 FROM language_error_annotations a
+                    WHERE a."scenarioSessionId" = m."scenarioSessionId"
+                      AND a."turnIndex" = m."turnIndex"
+                      AND a."conditionedOut" = false
+                      ${langPinned})
+                 OR EXISTS (
+                   SELECT 1 FROM turn_drift_judgment d
+                    WHERE d."scenarioSessionId" = m."scenarioSessionId"
+                      AND d."turnIndex" = m."turnIndex"
+                      AND d."aiReplyFailureMode" IS NOT NULL
+                      AND d."aiReplyFailureMode" <> 'none'
+                      ${driftPinned})
+                ) AS faulted
+           FROM scenario_session_turn_metrics m
+          WHERE ${where}
+            AND (EXISTS (
+                   SELECT 1 FROM language_judgment_sessions ls
+                    WHERE ls."scenarioSessionId" = m."scenarioSessionId"
+                      ${langSessionPinned})
+              OR EXISTS (
+                   SELECT 1 FROM turn_drift_judgment dj
+                    WHERE dj."scenarioSessionId" = m."scenarioSessionId"
+                      ${driftPinned.replace(/\bd\./g, 'dj.')}))
+       ),
+       lat  AS (SELECT ntile(4) OVER (ORDER BY latency) AS q, latency AS v, faulted
+                  FROM turns WHERE latency IS NOT NULL),
+       chr  AS (SELECT ntile(4) OVER (ORDER BY chars)   AS q, chars   AS v, faulted
+                  FROM turns WHERE chars IS NOT NULL),
+       eou  AS (SELECT ntile(4) OVER (ORDER BY eou)     AS q, eou     AS v, faulted
+                  FROM turns WHERE eou IS NOT NULL)
+       SELECT 'responseLatencyMs' AS factor, q::int AS "bandOrder", 'q'||q AS band,
+              MIN(v)::float AS lo, MAX(v)::float AS hi,
+              COUNT(*)::float AS turns,
+              COUNT(*) FILTER (WHERE faulted)::float AS faults
+         FROM lat GROUP BY q
+       UNION ALL
+       SELECT 'responseChars', q::int, 'q'||q, MIN(v)::float, MAX(v)::float,
+              COUNT(*)::float, COUNT(*) FILTER (WHERE faulted)::float
+         FROM chr GROUP BY q
+       UNION ALL
+       SELECT 'eouDelayMs', q::int, 'q'||q, MIN(v)::float, MAX(v)::float,
+              COUNT(*)::float, COUNT(*) FILTER (WHERE faulted)::float
+         FROM eou GROUP BY q
+       UNION ALL
+       SELECT 'interrupted', CASE WHEN interrupted THEN 2 ELSE 1 END,
+              CASE WHEN interrupted THEN 'yes' ELSE 'no' END, NULL, NULL,
+              COUNT(*)::float, COUNT(*) FILTER (WHERE faulted)::float
+         FROM turns WHERE interrupted IS NOT NULL GROUP BY interrupted
+       UNION ALL
+       -- Retrieval time is bimodal: a few milliseconds when it did not run,
+       -- roughly a second when it did. 100ms separates the two cleanly.
+       SELECT 'knowledgeRetrieval', CASE WHEN retrieval > 100 THEN 2 ELSE 1 END,
+              CASE WHEN retrieval > 100 THEN 'fired' ELSE 'skipped' END, NULL, NULL,
+              COUNT(*)::float, COUNT(*) FILTER (WHERE faulted)::float
+         FROM turns WHERE retrieval IS NOT NULL GROUP BY (retrieval > 100)
+        ORDER BY 1, 2`,
       params,
     );
   }
