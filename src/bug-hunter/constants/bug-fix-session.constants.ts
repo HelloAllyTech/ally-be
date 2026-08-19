@@ -17,7 +17,7 @@ export const BUG_FIX_SESSION_DEFAULT_REF = 'master';
 
 /**
  * `roadmap_opportunities.owner` written when a reported bug's linked finding
- * merges (see `BugFixSessionService.releaseLinkedRoadmapOpportunity`). Must
+ * merges (see the shared `releaseLinkedRoadmapOpportunity` util). Must
  * already exist in `roadmap_opportunity_owners` — see the FK-by-name note on
  * `RoadmapOpportunity.owner` — which is why migration 1913000000000 seeds it.
  */
