@@ -10,9 +10,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * points. Nullable, never backfilled: a run closed before this migration has
  * a cost snapshot with no token breakdown behind it.
  */
-export class AddBugHuntRunTokenCounts1912000000000
-  implements MigrationInterface
-{
+export class AddBugHuntRunTokenCounts1912000000000 implements MigrationInterface {
   name = 'AddBugHuntRunTokenCounts1912000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
