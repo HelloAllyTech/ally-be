@@ -45,6 +45,8 @@ export enum BugFindingSeverity {
  *      → QUEUED              (admin pressed "Start fix session"; GitHub
  *                              Actions dispatch accepted, workflow not yet in)
  *   QUEUED → FIXING           (the dispatched workflow reported in)
+ *   QUEUED | FIXING → CANCELLED   (admin pressed "Stop fix session" — see
+ *                                   BugFixSessionService.cancelFixSession)
  *   MERGED → RELEASING        (admin pressed "Release to production")
  *   RELEASING → RELEASED | RELEASE_FAILED   (reconciled from the GitHub run)
  *
@@ -52,6 +54,13 @@ export enum BugFindingSeverity {
  * agent gave up and nothing landed, whereas RELEASE_FAILED means the fix IS
  * merged to master and only the deploy went red — a completely different thing
  * for an admin to act on, and re-releasable once CI is green.
+ *
+ * CANCELLED is likewise deliberately distinct from FAILED: FAILED means the
+ * agent itself gave up, CANCELLED means a human stopped it on purpose — the
+ * manual kill switch for a session that is clearly stuck or looping, so it
+ * stops burning tokens/compute for the rest of its 60-minute cap rather than
+ * running to the timeout. Same retry story as FAILED — see
+ * BUG_FINDING_FIX_SESSION_START_STATUSES.
  *
  * NEW is also the resting state for a human-reported bug from the moment it's
  * filed until a hunt run triages it — see the source doc above.
@@ -75,6 +84,8 @@ export enum BugFindingStatus {
   DISMISSED = 'dismissed',
   REJECTED = 'rejected',
   FAILED = 'failed',
+  /** An admin stopped a running fix session. Distinct from FAILED: a human decision, not the agent giving up — see BugFixSessionService.cancelFixSession. */
+  CANCELLED = 'cancelled',
 }
 
 /**
@@ -90,6 +101,10 @@ export const BUG_FINDING_PARENT_STATUSES: BugFindingStatus[] = [
   BugFindingStatus.RELEASE_FAILED,
   BugFindingStatus.FAILED,
   BugFindingStatus.NEEDS_INPUT,
+  // A parent takes this on when one of its steps is cancelled mid-plan — see
+  // BugFixSessionService.haltPlan. A parent itself is never QUEUED/FIXING
+  // (only a leaf step is), so it can only ever arrive here via a stuck child.
+  BugFindingStatus.CANCELLED,
 ];
 
 /**
@@ -99,10 +114,12 @@ export const BUG_FINDING_PARENT_STATUSES: BugFindingStatus[] = [
  * whole point of the button is that a human already knows this is a real bug
  * and doesn't want to wait for a nightly sweep to rediscover it), and FAILED /
  * PR_OPENED are here so a stalled attempt can be retried without a fresh
- * discovery pass. Excluded: MERGED and everything downstream of it (already
- * fixed — releasing is the next step, not fixing), DISMISSED/REJECTED (a human
- * or the verifier already said no; re-opening should be a deliberate separate
- * act), and QUEUED/FIXING/RELEASING (a session is already in flight — see
+ * discovery pass. CANCELLED is here for the same reason as FAILED: a human
+ * stopped a stuck session, but the bug still needs fixing. Excluded: MERGED
+ * and everything downstream of it (already fixed — releasing is the next
+ * step, not fixing), DISMISSED/REJECTED (a human or the verifier already said
+ * no; re-opening should be a deliberate separate act), and
+ * QUEUED/FIXING/RELEASING (a session is already in flight — see
  * BugFixSessionService.start's double-dispatch guard).
  */
 export const BUG_FINDING_FIX_SESSION_START_STATUSES: BugFindingStatus[] = [
@@ -112,6 +129,7 @@ export const BUG_FINDING_FIX_SESSION_START_STATUSES: BugFindingStatus[] = [
   BugFindingStatus.NEEDS_INPUT,
   BugFindingStatus.PR_OPENED,
   BugFindingStatus.FAILED,
+  BugFindingStatus.CANCELLED,
 ];
 
 /** Statuses a client may filter the table by, plus the "show everything" option. */

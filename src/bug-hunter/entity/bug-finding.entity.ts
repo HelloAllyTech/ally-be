@@ -171,6 +171,18 @@ export class BugFinding extends BaseWithoutTenantEntity {
   @Column({ name: 'session_run_url', type: 'text', nullable: true })
   sessionRunUrl?: string | null;
 
+  /**
+   * GitHub Actions run id for the fix-session workflow, once resolved —
+   * mirrors `releaseRunId`. `bigint` → string in JS. Null until the reconcile
+   * task correlates the dispatch to a run (`workflow_dispatch` returns 204
+   * with no run id — see GithubActionsService's class doc), which is also the
+   * window during which "Stop fix session" must resolve one itself before it
+   * can call `GithubActionsService.cancelRun` — see
+   * BugFixSessionService.cancelFixSession.
+   */
+  @Column({ name: 'session_run_id', type: 'bigint', nullable: true })
+  sessionRunId?: string | null;
+
   /** The version tag this fix shipped under, e.g. `v1.4.2` or `admin-v2.1.0`. */
   @Column({ name: 'release_tag', type: 'text', nullable: true })
   releaseTag?: string | null;
@@ -189,6 +201,15 @@ export class BugFinding extends BaseWithoutTenantEntity {
   /** When the release workflow finished green, NOT when it was dispatched. */
   @Column({ name: 'released_at', type: 'timestamp', nullable: true })
   releasedAt?: Date | null;
+
+  // ── manual kill switch (migration 1911000000000) ─────────────────────────
+
+  /** The admin who pressed "Stop fix session" — the human override on a session that's clearly stuck or looping. Integer users.id, no FK. */
+  @Column({ name: 'cancelled_by', type: 'int', nullable: true })
+  cancelledBy?: number | null;
+
+  @Column({ name: 'cancelled_at', type: 'timestamp', nullable: true })
+  cancelledAt?: Date | null;
 
   /** Free-form: verify-vote tally, fix-attempt count, etc. */
   @Column({ type: 'jsonb', nullable: true })
