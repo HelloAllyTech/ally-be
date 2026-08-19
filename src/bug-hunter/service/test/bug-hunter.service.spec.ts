@@ -6,6 +6,7 @@ import { BugHuntRun } from '../../entity/bug-hunt-run.entity';
 import { BugHuntRunStatus, BugHuntTrigger } from '../../enum/bug-hunt-run.enum';
 import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
 import { BugHunterMode } from '../../enum/bug-finding.enum';
+import { LlmTask } from '../../../learn/enum/llm-task.enum';
 
 const settingsRow = (
   overrides: Partial<BugHunterSettings> = {},
@@ -55,6 +56,7 @@ describe('BugHunterService', () => {
   };
   let notificationService: { notify: jest.Mock };
   let dataSource: { createQueryBuilder: jest.Mock };
+  let llmUsageService: { record: jest.Mock };
 
   // Mutated by `update()` and read back by `findOne()`, so closeRun's
   // "fetch → update → re-fetch" sequence sees its own write, the way the real
@@ -96,6 +98,7 @@ describe('BugHunterService', () => {
       getRawMany: jest.fn().mockResolvedValue([]),
     };
     dataSource = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
+    llmUsageService = { record: jest.fn().mockResolvedValue(undefined) };
 
     service = new BugHunterService(
       settingsRepository as any,
@@ -103,6 +106,7 @@ describe('BugHunterService', () => {
       eventRepository as any,
       notificationService as any,
       dataSource as any,
+      llmUsageService as any,
     );
   });
 
@@ -290,6 +294,99 @@ describe('BugHunterService', () => {
       await service.closeRun('run-1', BugHuntRunStatus.COMPLETED, totals);
 
       expect(notificationService.notify).toHaveBeenCalled();
+    });
+  });
+
+  describe('recordActualCost', () => {
+    it('writes one llm_usage row per model, tagged with this run, and re-derives totalTokenCostUsd', async () => {
+      currentRun = runRow({ status: BugHuntRunStatus.COMPLETED });
+      dataSource.createQueryBuilder().getRawMany.mockResolvedValue([
+        {
+          model: 'claude-sonnet-4-6',
+          promptTokens: '50000',
+          completionTokens: '2000',
+        },
+      ]);
+
+      await service.recordActualCost('run-1', {
+        modelUsage: [
+          {
+            model: 'claude-sonnet-4-6',
+            inputTokens: 50000,
+            outputTokens: 2000,
+          },
+        ],
+        cliReportedCostUsd: 0.18,
+      });
+
+      expect(llmUsageService.record).toHaveBeenCalledTimes(1);
+      expect(llmUsageService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'anthropic',
+          model: 'claude-sonnet-4-6',
+          task: LlmTask.BUG_HUNTER,
+          promptTokens: 50000,
+          completionTokens: 2000,
+          metadata: { runId: 'run-1' },
+        }),
+      );
+      // (50000/1e6)*3 + (2000/1e6)*15 = 0.15 + 0.03 = 0.18
+      expect(runRepository.update).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({ totalTokenCostUsd: '0.1800' }),
+      );
+      expect(currentRun.metadata).toEqual(
+        expect.objectContaining({ cliReportedCostUsd: 0.18 }),
+      );
+    });
+
+    it('skips model entries with zero tokens on both sides', async () => {
+      await service.recordActualCost('run-1', {
+        modelUsage: [
+          { model: 'claude-sonnet-4-6', inputTokens: 0, outputTokens: 0 },
+        ],
+      });
+
+      expect(llmUsageService.record).not.toHaveBeenCalled();
+    });
+
+    it('attaches cost to an already-closed run without throwing', async () => {
+      currentRun = runRow({ status: BugHuntRunStatus.COMPLETED });
+
+      await expect(
+        service.recordActualCost('run-1', {
+          modelUsage: [
+            { model: 'claude-sonnet-4-6', inputTokens: 100, outputTokens: 50 },
+          ],
+        }),
+      ).resolves.toBeUndefined();
+
+      expect(runRepository.update).toHaveBeenCalled();
+    });
+
+    it('swallows a failure from LlmUsageService.record instead of throwing', async () => {
+      llmUsageService.record.mockRejectedValue(new Error('insert failed'));
+
+      await expect(
+        service.recordActualCost('run-1', {
+          modelUsage: [
+            { model: 'claude-sonnet-4-6', inputTokens: 100, outputTokens: 50 },
+          ],
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it('is a no-op-safe call when modelUsage is empty', async () => {
+      await expect(
+        service.recordActualCost('run-1', { modelUsage: [] }),
+      ).resolves.toBeUndefined();
+
+      expect(llmUsageService.record).not.toHaveBeenCalled();
+      // Still re-snapshots and updates, harmlessly, to 0.
+      expect(runRepository.update).toHaveBeenCalledWith(
+        'run-1',
+        expect.objectContaining({ totalTokenCostUsd: '0.0000' }),
+      );
     });
   });
 });

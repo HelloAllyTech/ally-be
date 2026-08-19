@@ -7,6 +7,8 @@ import { DataSource } from 'typeorm';
 
 import { LoggerService } from 'src/logger/logger.service';
 import { computeCostUsd } from 'src/analytics/constants/llm-pricing.constants';
+import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { LlmTask } from 'src/learn/enum/llm-task.enum';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import {
@@ -46,6 +48,7 @@ export class BugHunterService {
     private readonly eventRepository: BugHuntEventRepository,
     private readonly notificationService: BugHunterNotificationService,
     private readonly dataSource: DataSource,
+    private readonly llmUsageService: LlmUsageService,
   ) {}
 
   // ── kill switch ──────────────────────────────────────────────────────────
@@ -278,6 +281,68 @@ export class BugHunterService {
     }
 
     return closed;
+  }
+
+  /**
+   * Attaches a run's REAL per-model token usage — reported by the GitHub
+   * Actions runner after `claude -p --output-format json` finishes — as
+   * `llm_usage` rows tagged `LlmTask.BUG_HUNTER` + `metadata.runId`, then
+   * re-derives `totalTokenCostUsd` from `snapshotCostUsd` so this stays the
+   * only function that turns `llm_usage` rows into that column.
+   *
+   * Deliberately does NOT require `RUNNING` status the way `appendEvent`
+   * does: this always arrives after the pipeline's own `/close` call already
+   * closed the run, so attaching cost to an already-closed run is the normal
+   * case, not a race to guard against. Best-effort, same contract as
+   * `LlmUsageService.record` — a CI cost-reporting step must never fail the
+   * runner's job.
+   */
+  async recordActualCost(
+    runId: string,
+    params: {
+      modelUsage: {
+        model: string;
+        inputTokens: number;
+        outputTokens: number;
+      }[];
+      cliReportedCostUsd?: number;
+    },
+  ): Promise<void> {
+    try {
+      const run = await this.getRun(runId);
+
+      await Promise.all(
+        (params.modelUsage || [])
+          .filter((m) => m.inputTokens > 0 || m.outputTokens > 0)
+          .map((m) =>
+            this.llmUsageService.record({
+              provider: 'anthropic',
+              model: m.model,
+              task: LlmTask.BUG_HUNTER,
+              promptTokens: m.inputTokens,
+              completionTokens: m.outputTokens,
+              metadata: { runId },
+            }),
+          ),
+      );
+
+      const totalTokenCostUsd = await this.snapshotCostUsd(runId);
+      await this.runRepository.update(runId, {
+        totalTokenCostUsd: totalTokenCostUsd.toFixed(4),
+        metadata: {
+          ...run.metadata,
+          ...(params.cliReportedCostUsd != null
+            ? { cliReportedCostUsd: params.cliReportedCostUsd }
+            : {}),
+        } as Record<string, any>,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to record actual bug-hunt cost for run ${runId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   /**
