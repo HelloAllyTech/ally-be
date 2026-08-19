@@ -2051,7 +2051,13 @@ export class ScenarioSessionService {
         ...(metrics.max_tokens != null && { maxTokens: metrics.max_tokens }),
       },
     });
-    await repo.save(row);
+    // Idempotent against SQS redelivery. This queue is at-least-once and the
+    // processor rethrows on failure, so the same turn can arrive twice; the
+    // unique index on (scenarioSessionId, turnIndex, source) turns the second
+    // arrival into a no-op instead of a duplicate row that would double-count
+    // the turn in every latency aggregate. DO NOTHING rather than an error also
+    // keeps a redelivery from failing the message and looping it.
+    await repo.createQueryBuilder().insert().values(row).orIgnore().execute();
   }
 
   /**

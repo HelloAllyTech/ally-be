@@ -3537,16 +3537,43 @@ describe('ScenarioSessionService', () => {
       events_detected: 1,
     };
 
-    let mockRepo: { create: jest.Mock; save: jest.Mock };
+    let mockRepo: { create: jest.Mock; createQueryBuilder: jest.Mock };
+    let insertBuilder: {
+      insert: jest.Mock;
+      values: jest.Mock;
+      orIgnore: jest.Mock;
+      execute: jest.Mock;
+    };
 
     beforeEach(() => {
+      // The write goes through an INSERT ... ON CONFLICT DO NOTHING rather than
+      // save(), so a redelivery of the same turn off the at-least-once queue is
+      // a no-op instead of a duplicate row. The chain is stubbed rather than the
+      // repository so the assertions below still read the row that was built.
+      insertBuilder = {
+        insert: jest.fn(() => insertBuilder),
+        values: jest.fn(() => insertBuilder),
+        orIgnore: jest.fn(() => insertBuilder),
+        execute: jest.fn().mockResolvedValue(undefined),
+      };
       mockRepo = {
         create: jest.fn((row) => row),
-        save: jest.fn().mockResolvedValue(undefined),
+        createQueryBuilder: jest.fn(() => insertBuilder),
       };
       (dataSource.getRepository as jest.Mock) = jest
         .fn()
         .mockReturnValue(mockRepo);
+    });
+
+    it('inserts with ON CONFLICT DO NOTHING so a redelivered turn is a no-op', async () => {
+      // The queue is at-least-once and the processor rethrows on failure, so the
+      // same turn can arrive twice. Without orIgnore() the second arrival either
+      // duplicated the row (before the unique index) or threw and looped the
+      // message (after it). Both corrupt the latency aggregates.
+      await service.addTurnMetrics(session, metrics);
+
+      expect(insertBuilder.orIgnore).toHaveBeenCalled();
+      expect(insertBuilder.execute).toHaveBeenCalledTimes(1);
     });
 
     it('maps the payload onto a ScenarioSessionTurnMetrics row and saves it', async () => {
@@ -3581,7 +3608,7 @@ describe('ScenarioSessionService', () => {
         scenarioId: 42,
         occurredAt,
       });
-      expect(mockRepo.save).toHaveBeenCalledWith(created);
+      expect(insertBuilder.values).toHaveBeenCalledWith(created);
     });
 
     it('falls back to the session scenarioId when the metric omits it', async () => {

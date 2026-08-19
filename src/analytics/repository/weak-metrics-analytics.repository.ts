@@ -1332,7 +1332,19 @@ export class WeakMetricsAnalyticsRepository {
     // The turn-metrics row carries language, llmModel and scenarioId directly,
     // but not scenarioVersionId or promptVersion — those reach it through the
     // session, the same way every other session-scoped filter on this tab does.
+    // `source = 'pipeline'` is load-bearing, not hygiene. A third of this table
+    // is transcript-backfilled rows whose "latency" is reconstructed from message
+    // timestamps rather than measured voice-to-voice, and its distribution is
+    // materially different (p50 7,462ms vs 5,259ms; p95 19,355ms vs 12,753ms as
+    // of 2026-08-20). Pooling them moved the >8.7s share of judged turns from
+    // 20.05% to 27.80% AND shifted the ntile(4) band edges, so the band
+    // thresholds this panel reports were themselves artefacts of the mix. 392
+    // turns carry one row of each source and were counted twice, with the two
+    // rows disagreeing by as much as 10 seconds on the same turn. `bargeInTrend`
+    // below already filters for its own reasons; platform-analytics splits by
+    // source deliberately. This panel is the one that did neither.
     let where = `COALESCE(m."occurredAt", m."createdAt") >= ${p(f.start)}
+      AND m.source = 'pipeline'
       AND ${excludeTestTenants('m."tenant_id"')}`;
     for (const [column, value] of [
       ['language', f.language],

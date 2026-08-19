@@ -11,6 +11,16 @@ import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
  * Append-only and wide-by-design (one column per stage) so Metabase can chart
  * percentiles / stacked component breakdowns without pivoting an EAV table.
  */
+// One row per (session, turn, source). The write path is a blind insert behind
+// an at-least-once SQS queue whose processor rethrows on failure, so without
+// this a redelivery silently doubled a turn and every aggregate over it. The
+// `source` column is part of the key on purpose: live and transcript-derived
+// rows for the same turn are two different measurements and both are kept.
+@Index(
+  'scenario_session_turn_metrics_session_turn_source_uq',
+  ['scenarioSessionId', 'turnIndex', 'source'],
+  { unique: true },
+)
 @Index('scenario_session_turn_metrics_session_id_idx', ['scenarioSessionId'])
 @Index('scenario_session_turn_metrics_occurred_at_idx', ['occurredAt'])
 @Index('scenario_session_turn_metrics_scenario_id_idx', ['scenarioId'])
