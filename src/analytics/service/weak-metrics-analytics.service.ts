@@ -93,7 +93,11 @@ export class WeakMetricsAnalyticsService {
     label: string,
     unit: string,
     rows: TrendPoint[],
-    opts: { caveat?: string | null; lowerIsBetter?: boolean } = {},
+    opts: {
+      caveat?: string | null;
+      lowerIsBetter?: boolean;
+      description?: string;
+    } = {},
   ): WeakMetricSeriesDto {
     const points = this.toPoints(rows);
     const firstRecorded = points.findIndex((p) => p.numerator > 0);
@@ -116,7 +120,11 @@ export class WeakMetricsAnalyticsService {
     unit: string,
     state: WeakMetricState,
     rows: TrendPoint[],
-    opts: { caveat?: string | null; lowerIsBetter?: boolean } = {},
+    opts: {
+      caveat?: string | null;
+      lowerIsBetter?: boolean;
+      description?: string;
+    } = {},
   ): WeakMetricSeriesDto {
     const points = this.toPoints(rows);
     const withValues = points.filter((p) => p.value !== null);
@@ -126,6 +134,7 @@ export class WeakMetricsAnalyticsService {
       unit,
       state,
       lowerIsBetter: opts.lowerIsBetter ?? true,
+      description: opts.description ?? '',
       caveat: opts.caveat ?? null,
       points,
       latest: withValues.length
@@ -300,11 +309,13 @@ export class WeakMetricsAnalyticsService {
         series: [
           this.series(
             'understanding',
-            'Comprehension errors per 100 turns',
+            'Comprehension errors',
             'per100turns',
             WeakMetricState.MEASURED,
             understanding,
             {
+              description:
+                'Severity-weighted misunderstandings per 100 judged turns.',
               caveat:
                 'Severity-weighted (minor 1 / major 5 / critical 10). Errors on ' +
                 'garbled input are excluded — that is the STT’s fault, not the actor’s.',
@@ -312,18 +323,24 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'unresponsive_turns',
-            'Turns misreading intent or locked on old context',
+            'Misread intent',
             'percent',
             WeakMetricState.MEASURED,
             unresponsive,
+            {
+              description:
+                'Turns that answered the wrong thing, or stayed stuck on older context.',
+            },
           ),
           this.series(
             're_prompt',
-            'Learner had to re-prompt',
+            'Learner re-prompts',
             'percent',
             WeakMetricState.MEASURED,
             rePrompt,
             {
+              description:
+                'The learner spoke again after the actor went quiet, rather than being answered.',
               caveat:
                 `Counsellor speaks again after >${WEAK_METRICS_PARAMS.rePromptGapSeconds}s ` +
                 'of silence. The naive version (no AI turn after) reads 35-59% ' +
@@ -331,21 +348,17 @@ export class WeakMetricsAnalyticsService {
                 'so no data before Apr 2026.',
             },
           ),
-          this.instrumentedFrom(
-            'barge_in',
-            'Turns interrupted by the learner',
-            'percent',
-            bargeIn,
-            {
-              caveat:
-                'Share of turns the learner produced by cutting the actor off — a ' +
-                'high rate means the actor is talking past them. The one metric ' +
-                'here that cannot be backfilled: the flag is written by the live ' +
-                'worker, so history starts at that deploy and earlier buckets are ' +
-                'dropped rather than drawn as zeroes.',
-              lowerIsBetter: true,
-            },
-          ),
+          this.instrumentedFrom('barge_in', 'Barge-ins', 'percent', bargeIn, {
+            description:
+              'Turns the learner produced by cutting the actor off mid-sentence.',
+            caveat:
+              'Share of turns the learner produced by cutting the actor off — a ' +
+              'high rate means the actor is talking past them. The one metric ' +
+              'here that cannot be backfilled: the flag is written by the live ' +
+              'worker, so history starts at that deploy and earlier buckets are ' +
+              'dropped rather than drawn as zeroes.',
+            lowerIsBetter: true,
+          }),
         ],
       },
       {
@@ -356,11 +369,13 @@ export class WeakMetricsAnalyticsService {
         series: [
           this.series(
             'repetition_turns',
-            'Turns repeating an earlier turn',
+            'Repeated turns',
             'percent',
             WeakMetricState.MEASURED,
             repetition,
             {
+              description:
+                'Actor turns that repeat something the actor already said.',
               caveat:
                 'Segment by model or this misleads: repetition differs 6.6x ' +
                 'between models, so an unsegmented spike is usually traffic mix.',
@@ -368,11 +383,13 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'session_loop_rate',
-            `Sessions with a run of ${WEAK_METRICS_PARAMS.loopRunLength}+ consecutive repeats`,
+            'Looping sessions',
             'percent',
             WeakMetricState.MEASURED,
             sessionLoop,
             {
+              description:
+                'Sessions containing a run of three or more repeats in a row.',
               caveat:
                 'The line that matches what users report. The turn rate above ' +
                 'averages looping sessions away.',
@@ -380,11 +397,13 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'inappropriate_stasis',
-            'Turns that failed to advance, excluding correct resistance',
+            'Stuck turns',
             'percent',
             WeakMetricState.MEASURED,
             inappropriateStasis,
             {
+              description:
+                'Turns that added nothing AND should have moved — correct resistance excluded.',
               caveat:
                 'The appropriate-stuckness exclusion, made real by the v2 judge: turns ' +
                 'that added nothing AND should have moved. A client rightly refusing to ' +
@@ -394,11 +413,13 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'semantic_stasis',
-            'Sessions going in circles (judge-independent)',
+            'Circling sessions',
             'percent',
             WeakMetricState.PARTIAL,
             stasis,
             {
+              description:
+                'Sessions where consecutive actor turns keep reusing the same words.',
               caveat:
                 `Consecutive AI turns sharing >=${WEAK_METRICS_PARAMS.stasisJaccard * 100}% ` +
                 'of content words. Exists because the judge label under-detects — ' +
@@ -408,11 +429,13 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'resolution',
-            'Sessions reaching a terminal state',
+            'Resolved sessions',
             'percent',
             WeakMetricState.NONE,
             resolution,
             {
+              description:
+                'Sessions that reached the end of their scripted arc.',
               caveat:
                 'No resolved/unresolved/ruptured classification exists. This shows ' +
                 'auto-termination only, which fires a handful of times a month ' +
@@ -431,11 +454,13 @@ export class WeakMetricsAnalyticsService {
         series: [
           this.series(
             'register',
-            'Too formal for spoken register, per 100 turns',
+            'Over-formal speech',
             'per100turns',
             WeakMetricState.MEASURED,
             register,
             {
+              description:
+                'Bookish or written-register phrasing where the brief called for spoken.',
               caveat:
                 'Score against the brief, never absolutely — some personas ' +
                 'genuinely are formal. The brief-override share is what separates ' +
@@ -444,10 +469,14 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'colloquialness',
-            'Translationese / literal-translation stilt, per 100 turns',
+            'Translationese',
             'per100turns',
             WeakMetricState.MEASURED,
             colloquial,
+            {
+              description:
+                'Literal, translated-sounding phrasing no native speaker would produce.',
+            },
           ),
           // Deterministic and judge-independent, so it covers all history the
           // moment it ships. It sits beside the judged dimensions because a
@@ -455,11 +484,13 @@ export class WeakMetricsAnalyticsService {
           // know it sometimes does not talk in the right LANGUAGE at all.
           this.series(
             'off_language',
-            'Turns not in the session language at all',
+            'Wrong language',
             'percent',
             WeakMetricState.MEASURED,
             offLanguage,
             {
+              description:
+                'Actor turns with no character of the session script — English, or romanised.',
               caveat:
                 'Deterministic: an actor turn containing NO character of the ' +
                 'session script — English, or the right language romanised. ' +
@@ -473,11 +504,13 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'dialect_lexicon',
-            'Wrong or odd word meanings, per 100 turns',
+            'Wrong word meanings',
             'per100turns',
             WeakMetricState.MEASURED,
             lexicon,
             {
+              description:
+                'Words used with a meaning or regional variety they do not carry.',
               caveat:
                 'Counted ONLY over languages with a non-Latin script. English ' +
                 'has no regional variety to get wrong, and it is two thirds of ' +
@@ -498,11 +531,13 @@ export class WeakMetricsAnalyticsService {
         series: [
           this.series(
             'groundedness',
-            'Feedback claims the transcript does not bear out',
+            'Ungrounded feedback',
             'percent',
             WeakMetricState.MEASURED,
             groundedness,
             {
+              description:
+                'Feedback claims the transcript does not support, contradicts, or misattributes.',
               caveat:
                 'Judge verdict per claim: unsupported, contradicted or ' +
                 'misattributed against the transcript. Reads empty until the ' +
@@ -511,11 +546,13 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'feedback_false_negatives',
-            'Learners marked down for work they actually did',
+            'Unfair criticism',
             'percent',
             WeakMetricState.MEASURED,
             falseNegativeFeedback,
             {
+              description:
+                'Learners told to improve at something the transcript shows them doing.',
               caveat:
                 'Improvement claims the transcript CONTRADICTS — the harmful half. ' +
                 'Separated from the rate above because an unearned compliment is a ' +
@@ -525,11 +562,13 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'fabricated_quotes',
-            'Feedback quotes that are not in the transcript',
+            'Fabricated quotes',
             'percent',
             WeakMetricState.MEASURED,
             fabricatedQuotes,
             {
+              description:
+                'Feedback that cites the transcript and cites it wrongly.',
               caveat:
                 'Claims that CITE the transcript and cite it wrongly, over ' +
                 'claims that cite at all — a claim making no citation cannot ' +
@@ -543,11 +582,13 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'unhealthy_scored',
-            'Scored sessions that were actually looping',
+            'Scored while looping',
             'percent',
             WeakMetricState.MEASURED,
             unhealthyScored,
             {
+              description:
+                'Sessions given a skill score although the actor was stuck in a loop.',
               caveat:
                 'The interaction users described as the most damaging: the actor ' +
                 'loops, then the learner is marked down for it. Gating scoring on ' +
@@ -556,11 +597,13 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'criticism_ratio',
-            'Criticisms per compliment',
+            'Criticism ratio',
             'ratio',
             WeakMetricState.MEASURED,
             tone,
             {
+              description:
+                'How many improvements the learner receives per compliment.',
               caveat:
                 'Improvements ÷ positives. Has exceeded 1.0 every month on record. ' +
                 'Widening the score range without moving this makes the harm worse.',
@@ -577,11 +620,13 @@ export class WeakMetricsAnalyticsService {
         series: [
           this.series(
             'role_inversion',
-            'Turns where the actor took the counsellor’s chair',
+            'Role inversion',
             'percent',
             WeakMetricState.MEASURED,
             roleInversion,
             {
+              description:
+                'Turns where the actor advised the counsellor, or asked about them.',
               caveat:
                 'The judge label (v2): the actor asked about the counsellor or advised ' +
                 'them. A client asking "what should I do?" is not inversion. Denominator ' +
@@ -591,11 +636,13 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'over_compliance',
-            'Sessions where the actor solved its own problem',
+            'Over-compliance',
             'percent',
             WeakMetricState.MEASURED,
             overCompliance,
             {
+              description:
+                'Sessions where a resistant client solved its own problem unprompted.',
               caveat:
                 `Sessions offering more than ${WEAK_METRICS_PARAMS.solutionOfferThreshold} ` +
                 'solutions unprompted — a real client offers one or two. Scoped to briefs ' +
@@ -606,11 +653,13 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'role_slip',
-            'Turns flagged role_slip (legacy proxy)',
+            'Role slip (legacy)',
             'percent',
             WeakMetricState.PARTIAL,
             roleSlip,
             {
+              description:
+                'The older, broader label this metric used before role inversion existed.',
               caveat:
                 'Superseded by role inversion above. Kept because it is the only line ' +
                 'with history before the v2 judge: it also absorbs "too formal", "took ' +
@@ -620,11 +669,13 @@ export class WeakMetricsAnalyticsService {
           ),
           this.series(
             'counsellor_directed_questions',
-            'AI turns questioning the counsellor (regex proxy)',
+            'Questions at the counsellor',
             'percent',
             WeakMetricState.PARTIAL,
             counsellorQuestions,
             {
+              description:
+                'Actor turns that put a question to the counsellor about the counsellor.',
               caveat:
                 'Deterministic proxy, English patterns only, and it over-counts — a ' +
                 'client may legitimately ask "what should I do?". It ships beside the ' +

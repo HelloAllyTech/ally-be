@@ -117,11 +117,21 @@ export class WeakMetricSeriesDto {
   })
   lowerIsBetter!: boolean;
 
+  @ApiProperty({
+    description:
+      'One plain line saying what this counts. The label is a name to scan ' +
+      'for; this is the sentence that makes it unambiguous without opening ' +
+      'anything.',
+  })
+  description!: string;
+
   @ApiPropertyOptional({
     nullable: true,
     description:
-      'The caveat a reader must hold to read this series honestly. Rendered ' +
-      'next to the chart, not hidden in a tooltip.',
+      'The caveat a reader must hold to read this series honestly — how it is ' +
+      'weighted, what it excludes, where it under-detects. Reference material ' +
+      'rather than the headline, so the UI puts it behind a tooltip: as body ' +
+      'text on every card it crowded out the numbers it was meant to qualify.',
   })
   caveat?: string | null;
 
