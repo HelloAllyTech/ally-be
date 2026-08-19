@@ -157,8 +157,18 @@ export class LanguageJudgeRepository {
       params.push(v);
       return `$${params.length}`;
     };
+    // A session with no AI turns has nothing for this judge to read. It used to
+    // be selected anyway and discarded inside the loop, which was merely
+    // wasteful while a run took the whole backlog — the run skipped it and
+    // carried on. Once runs are chunked it is fatal: skipping writes no
+    // judgment row, so `onlyUnjudged` returns the same sessions next tick and
+    // the backfill spins on them forever. Twenty-five such sessions sat at the
+    // head of the queue and stalled the language family completely.
     let sql = `${SESSION_PROJECTION}
-      WHERE ${countableSessionPredicate('s')}`;
+      WHERE ${countableSessionPredicate('s')}
+        AND EXISTS (SELECT 1 FROM scenario_session_messages m
+                     WHERE m."scenarioSessionId" = s.id
+                       AND m."senderId" = -1)`;
     if (opts.language)
       sql += ` AND COALESCE(l.value, 'en') = ${p(opts.language)}`;
     if (opts.sinceDays != null)

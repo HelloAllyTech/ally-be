@@ -23,6 +23,7 @@ import {
   WeakMetricsAnalyticsRepository,
   WeakMetricsFilters,
 } from '../src/analytics/repository/weak-metrics-analytics.repository';
+import { LanguageJudgeRepository } from '../src/analytics/repository/language-judge.repository';
 
 const TENANT = 'weakmetrics-validate';
 const SESSION_LOOP = '11111111-1111-4111-8111-111111111111';
@@ -39,6 +40,7 @@ async function main() {
   });
   await ds.initialize();
   const repo = new WeakMetricsAnalyticsRepository(ds);
+  const languageRepo = new LanguageJudgeRepository(ds);
 
   const f: WeakMetricsFilters = {
     start: new Date('2025-01-01T00:00:00Z'),
@@ -256,6 +258,32 @@ async function main() {
     'over-compliance 1 resistant session of 1',
     [Number(over[0].numerator), Number(over[0].denominator)],
     [1, 1],
+  );
+
+  // ---- backfill selector --------------------------------------------------
+  //
+  // The selector must not hand back sessions the judge cannot read. Skipping
+  // them inside the run was survivable while a run took the whole backlog; once
+  // runs are chunked it is fatal, because a skipped session gets no judgment
+  // row and so comes back in the very next chunk — the language family span
+  // two hours re-skipping the same twenty-five sessions and judged nothing.
+  //
+  // SESSION_LOOP has transcript messages, SESSION_CLEAN has none, so the pair
+  // pins both halves: the readable one is offered, the unreadable one is not.
+  const selectable = (await languageRepo.selectSessions({
+    sinceDays: 3650,
+    onlyUnjudged: false,
+  })) as Array<{ id: string }>;
+  const selectableIds = selectable.map((r) => r.id);
+  check(
+    'selector offers a session that has AI turns',
+    selectableIds.includes(SESSION_LOOP),
+    true,
+  );
+  check(
+    'selector skips a session with no AI turns (would spin a chunk forever)',
+    selectableIds.includes(SESSION_CLEAN),
+    false,
   );
 
   // ---- turn conditions ----------------------------------------------------
