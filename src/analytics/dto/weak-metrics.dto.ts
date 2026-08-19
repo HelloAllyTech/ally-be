@@ -113,9 +113,16 @@ export class WeakMetricSeriesDto {
   state!: WeakMetricState;
 
   @ApiProperty({
-    description: 'Whether lower is better — drives arrow direction in the UI',
+    nullable: true,
+    description:
+      'Whether lower is better — drives the improving/worsening wording. NULL ' +
+      'means the metric has no good direction and movement must be reported ' +
+      'without a verdict. Barge-in is the case that forced this: interruption ' +
+      'is ordinary conversation, and its rate is flat at ~2.5-2.8% across every ' +
+      'actor turn length above 100 characters, dropping only on turns too short ' +
+      'to interrupt. It measures opportunity, not quality.',
   })
-  lowerIsBetter!: boolean;
+  lowerIsBetter!: boolean | null;
 
   @ApiProperty({
     description:

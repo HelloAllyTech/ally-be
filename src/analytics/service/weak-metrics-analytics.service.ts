@@ -95,7 +95,7 @@ export class WeakMetricsAnalyticsService {
     rows: TrendPoint[],
     opts: {
       caveat?: string | null;
-      lowerIsBetter?: boolean;
+      lowerIsBetter?: boolean | null;
       description?: string;
     } = {},
   ): WeakMetricSeriesDto {
@@ -122,7 +122,7 @@ export class WeakMetricsAnalyticsService {
     rows: TrendPoint[],
     opts: {
       caveat?: string | null;
-      lowerIsBetter?: boolean;
+      lowerIsBetter?: boolean | null;
       description?: string;
     } = {},
   ): WeakMetricSeriesDto {
@@ -133,7 +133,8 @@ export class WeakMetricsAnalyticsService {
       label,
       unit,
       state,
-      lowerIsBetter: opts.lowerIsBetter ?? true,
+      lowerIsBetter:
+        opts.lowerIsBetter === undefined ? true : opts.lowerIsBetter,
       description: opts.description ?? '',
       caveat: opts.caveat ?? null,
       points,
@@ -352,11 +353,14 @@ export class WeakMetricsAnalyticsService {
             description:
               'Turns the learner produced by cutting the actor off mid-sentence.',
             caveat:
-              'Share of turns the learner produced by cutting the actor off — a ' +
-              'high rate means the actor is talking past them. The one metric ' +
-              'here that cannot be backfilled: the flag is written by the live ' +
-              'worker, so history starts at that deploy and earlier buckets are ' +
-              'dropped rather than drawn as zeroes.',
+              'NO GOOD DIRECTION — do not read a rise as a regression. ' +
+              'Interruption is ordinary conversation, and the rate is flat at ' +
+              '2.5-2.8% across every actor turn length above 100 characters, ' +
+              'dropping to 0.3% only on turns too short to interrupt. It ' +
+              'tracks how much opportunity there was to cut in, not whether ' +
+              'the actor deserved it. Useful as context on a session, not as ' +
+              'a quality verdict. The flag is written by the live worker, so ' +
+              'history starts at that deploy.',
             lowerIsBetter: true,
           }),
         ],
