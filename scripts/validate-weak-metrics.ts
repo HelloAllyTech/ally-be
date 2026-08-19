@@ -61,7 +61,7 @@ async function main() {
     ['realismWeightedTrend(colloquialness)', () => repo.realismWeightedTrend(f, 'colloquialness')],
     ['realismWeightedTrend(dialect_lexicon)', () => repo.realismWeightedTrend(f, 'dialect_lexicon')],
     ['briefOverrideBreakdown', () => repo.briefOverrideBreakdown(f)],
-    ['quoteMatchTrend', () => repo.quoteMatchTrend(f)],
+    ['fabricatedQuoteTrend', () => repo.fabricatedQuoteTrend(f)],
     ['groundednessTrend', () => repo.groundednessTrend(f)],
     ['falseNegativeFeedbackTrend', () => repo.falseNegativeFeedbackTrend(f)],
     ['feedbackToneTrend', () => repo.feedbackToneTrend(f)],
@@ -177,12 +177,17 @@ async function main() {
     [10, 10],
   );
 
-  // Quote-match: 2 quoted spans, 1 of which is absent from the transcript.
-  const qm = (await repo.quoteMatchTrend(g)) as Array<{
+  // Fabricated citations: of the claims that CITE the transcript, how many
+  // cite it wrongly. A claim with no quote is not in the denominator at all.
+  const fq = (await repo.fabricatedQuoteTrend(g)) as Array<{
     numerator: number;
     denominator: number;
   }>;
-  check('quote match: 1 unmatched of 2', [Number(qm[0].numerator), Number(qm[0].denominator)], [1, 2]);
+  check(
+    'fabricated quotes: 1 inaccurate of 2 quoting claims (non-quoting excluded)',
+    [Number(fq[0]?.numerator ?? -1), Number(fq[0]?.denominator ?? -1)],
+    [1, 2],
+  );
 
   // Tone: 3 improvements over 2 positives.
   const tone = (await repo.feedbackToneTrend(g)) as Array<{
@@ -296,6 +301,7 @@ async function main() {
       : `\n${failures} CHECK(S) FAILED\n`,
   );
   process.exit(failures === 0 ? 0 : 1);
+
 }
 
 async function cleanup(ds: DataSource) {
@@ -305,6 +311,7 @@ async function cleanup(ds: DataSource) {
   await ds.query(`DELETE FROM language_judgment_sessions WHERE "scenarioSessionId" IN ${ids}`);
   await ds.query(`DELETE FROM scenario_session_messages WHERE "scenarioSessionId" IN ${ids}`);
   await ds.query(`DELETE FROM scenario_session_details WHERE "scenarioSessionId" IN ${ids}`);
+  await ds.query(`DELETE FROM feedback_claim_judgment WHERE "scenarioSessionId" IN ${ids}`);
   await ds.query(`DELETE FROM scenario_sessions WHERE id IN ${ids}`);
 }
 
@@ -460,6 +467,28 @@ async function seed(ds: DataSource) {
      VALUES ($1, $2::jsonb, $3, $4, $4)`,
     [SESSION_LOOP, JSON.stringify(summary), TENANT, at],
   );
+
+  // Groundedness claims. Three quote the transcript and one of those quotes is
+  // wrong; a fourth makes no citation at all and must stay OUT of the
+  // fabricated-quote denominator — a claim that cites nothing cannot fabricate.
+  const claims: Array<[string, number, string, boolean, boolean | null]> = [
+    // claimKind, claimIndex, verdict, quotesTranscript, quoteIsAccurate
+    ['improvement', 0, 'contradicted', true, false],
+    ['improvement', 1, 'supported', true, true],
+    ['positive', 0, 'supported', false, null],
+  ];
+  for (const [kind, idx, verdict, quotes, accurate] of claims) {
+    await ds.query(
+      `INSERT INTO feedback_claim_judgment
+         (id, "scenarioSessionId", "claimKind", "claimIndex", "verdict",
+          "quotesTranscript", "quoteIsAccurate", "claimText", language,
+          "scenarioId", "llmModel", "occurredAt", "judgeModel",
+          "judgePromptVersion", tenant_id, "createdAt", "updatedAt")
+       VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'fixture claim',
+               'en-IN', 96, 'gpt-4o-mini', $7, 'gemini-2.5-pro', 'v1', $8, $7, $7)`,
+      [SESSION_LOOP, kind, idx, verdict, quotes, accurate, at, TENANT],
+    );
+  }
 }
 
 main().catch(e => {

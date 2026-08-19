@@ -61,7 +61,7 @@ describe('weak metrics judge pinning', () => {
       'sessionLoopRateTrend',
       'semanticStasisTrend',
       'resolutionTrend',
-      'quoteMatchTrend',
+      'fabricatedQuoteTrend',
       'feedbackToneTrend',
       'unhealthyScoredTrend',
       'roleInversionTrend',

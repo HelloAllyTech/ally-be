@@ -248,7 +248,7 @@ export class WeakMetricsAnalyticsService {
       colloquial,
       lexicon,
       offLanguage,
-      quoteMatch,
+      fabricatedQuotes,
       groundedness,
       falseNegativeFeedback,
       tone,
@@ -274,7 +274,7 @@ export class WeakMetricsAnalyticsService {
       this.repo.realismWeightedTrend(fLang, 'colloquialness'),
       this.repo.realismWeightedTrend(fLang, 'dialect_lexicon'),
       this.repo.offLanguageTurnTrend(f),
-      this.repo.quoteMatchTrend(f),
+      this.repo.fabricatedQuoteTrend(fGround),
       this.repo.groundednessTrend(fGround),
       this.repo.falseNegativeFeedbackTrend(fGround),
       this.repo.feedbackToneTrend(f),
@@ -475,13 +475,17 @@ export class WeakMetricsAnalyticsService {
             'dialect_lexicon',
             'Wrong or odd word meanings, per 100 turns',
             'per100turns',
-            WeakMetricState.NONE,
+            WeakMetricState.MEASURED,
             lexicon,
             {
               caveat:
-                'Treat as UNMEASURED. Two partner orgs name this as their blocking ' +
-                'issue while the detector fires on almost nothing — that is a rubric ' +
-                'failure, not a low incidence. Fix the rubric before reading this line.',
+                'Counted ONLY over languages with a non-Latin script. English ' +
+                'has no regional variety to get wrong, and it is two thirds of ' +
+                'the corpus — dividing by it made this read near-zero and look ' +
+                'blind. Scoped, it runs about 2 per 100 turns in Tamil and ' +
+                'Kannada. Hindi reads ~0 because the Devanagari genuinely is ' +
+                'clean; what Hindi actually gets wrong is answering in the wrong ' +
+                'language entirely, which the series above measures.',
             },
           ),
         ],
@@ -520,21 +524,21 @@ export class WeakMetricsAnalyticsService {
             },
           ),
           this.series(
-            'quote_match',
-            'Feedback quotes not found in the transcript (sample)',
+            'fabricated_quotes',
+            'Feedback quotes that are not in the transcript',
             'percent',
-            WeakMetricState.NONE,
-            quoteMatch,
+            WeakMetricState.MEASURED,
+            fabricatedQuotes,
             {
               caveat:
-                'A SAMPLE, not a rate — do not read it as the fabrication rate. ' +
-                'Only double-quoted spans are extractable: of 14,752 feedback items ' +
-                'just 172 use double quotes while 6,736 use single quotes, and single ' +
-                'quotes cannot be parsed because the apostrophe is the same character ' +
-                '("client’s" opens a span). So this sees ~2.5% of quoting feedback. ' +
-                'The fix is upstream — have feedback emit a structured evidenceQuote ' +
-                'field instead of prose with embedded quotation marks; then the check ' +
-                'becomes exact.',
+                'Claims that CITE the transcript and cite it wrongly, over ' +
+                'claims that cite at all — a claim making no citation cannot ' +
+                'fabricate one. This replaces the old quote-match scrape, which ' +
+                'regex-extracted double-quoted spans from prose and could see ' +
+                'about 2.5% of quoting feedback, because the apostrophe in ' +
+                '"client\'s" makes single quotes unparseable. The judge checks ' +
+                'every claim instead, which is the upstream fix that caveat ' +
+                'asked for.',
             },
           ),
           this.series(

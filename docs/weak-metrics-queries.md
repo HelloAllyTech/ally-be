@@ -94,7 +94,7 @@ quality. Before believing a trend, run the [mix check](#did-the-metric-move-or-d
 | Actor responsiveness (barge-in) | `scenario_session_turn_metrics` | language, llmModel, scenarioId, env — **no** promptVersion |
 | Progression & resolution | `turn_drift_judgment`, `scenario_session_messages`, `scenario_session_events`, `scenario_session_turn_metrics.metadata` | as above per table |
 | Language realism | `language_error_annotations`, plus `scenario_session_messages` for the deterministic off-language check | dimension, category, severity, layer, `evidenceQuote` |
-| Feedback groundedness | `feedback_claim_judgment` + `scenario_session_details` | claimKind, verdict, quote accuracy |
+| Feedback groundedness | `feedback_claim_judgment` + `scenario_session_details` | claimKind, verdict, `quotesTranscript`, `quoteIsAccurate` |
 | Actor clienthood | `turn_drift_judgment` (v2 labels) | + `userText`/`aiText` for reading the actual turn |
 
 Three things worth knowing about these tables:
@@ -292,6 +292,26 @@ SELECT ai.lang,
 Drop the `GROUP BY` and select `content` to read the offending turns. When this fires, check the
 SCENARIO before the model: 11 of the first 16 production hits were one opening line stored in
 Roman script, repeated across sessions.
+
+### Fabricated citations
+
+Claims that CITE the transcript and cite it wrongly, over claims that cite at all. A claim making
+no citation cannot fabricate one, so it is not in the denominator.
+
+This replaced a regex scrape over feedback prose that could only see double-quoted spans — about
+2.5% of quoting feedback, because the apostrophe in `client's` makes single quotes unparseable.
+The judge checks every claim instead.
+
+```sql
+SELECT to_char(date_trunc('month', COALESCE(c."occurredAt", c."createdAt")), 'YYYY-MM-DD') AS bucket,
+       COUNT(*) FILTER (WHERE c."quoteIsAccurate" IS FALSE) AS fabricated,
+       COUNT(*) AS quoting_claims
+  FROM feedback_claim_judgment c
+ WHERE COALESCE(c."occurredAt", c."createdAt") >= $1
+   AND c."judgeModel" = $2 AND c."judgePromptVersion" = $3
+   AND c."quotesTranscript" IS TRUE
+ GROUP BY 1 ORDER BY 1;
+```
 
 ### Feedback groundedness
 
