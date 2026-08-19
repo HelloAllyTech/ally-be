@@ -676,6 +676,20 @@ export class WeakMetricsAnalyticsRepository {
       params.push(f.promptVersion);
       where += ` AND ${mainPromptVersionSql('ss')} = $${params.length}`;
     }
+    // Language and model were missing entirely: this query filtered scenario,
+    // scenario version and prompt version straight off the session row and
+    // silently ignored the other two, so picking Hindi left it showing
+    // platform-wide numbers. A filter that does nothing is worse than one that
+    // empties the chart — nothing on screen says the selection was dropped.
+    //
+    // Scenario/version/prompt stay on the session row above (more accurate than
+    // reaching through turn metrics, which would drop a session that has none);
+    // the helper supplies only the two that were absent.
+    where += this.sessionScopedFilter(
+      'ss.id',
+      { ...f, scenarioId: null, scenarioVersionId: null, promptVersion: null },
+      params,
+    );
     return this.dataSource.query(
       `SELECT to_char(date_trunc('${f.bucket}', ss."startedAt"), 'YYYY-MM-DD') AS bucket,
               COUNT(*) FILTER (WHERE EXISTS (

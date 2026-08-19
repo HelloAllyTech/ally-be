@@ -285,6 +285,28 @@ async function main() {
   })) as unknown[];
   check('promptVersion excludes on a feedback series', pvToneMiss.length, 0);
 
+  // Every series must actually honour the language filter. resolutionTrend
+  // shipped without one: it filtered scenario, version and prompt straight off
+  // the session row and silently ignored language and model, so picking Hindi
+  // left it showing platform-wide numbers. A filter that quietly does nothing
+  // is worse than one that empties a chart — nothing on screen says the
+  // selection was dropped.
+  const everySeries: Array<[string, (f: WeakMetricsFilters) => Promise<unknown>]> = [
+    ['resolutionTrend', ff => repo.resolutionTrend(ff)],
+    ['rePromptTrend', ff => repo.rePromptTrend(ff)],
+    ['semanticStasisTrend', ff => repo.semanticStasisTrend(ff)],
+    ['feedbackToneTrend', ff => repo.feedbackToneTrend(ff)],
+    ['offLanguageTurnTrend', ff => repo.offLanguageTurnTrend(ff)],
+    ['unhealthyScoredTrend', ff => repo.unhealthyScoredTrend(ff)],
+    ['bargeInTrend', ff => repo.bargeInTrend(ff)],
+  ];
+  for (const [name, run] of everySeries) {
+    // The fixture is entirely en-IN, so a language nothing matches must empty
+    // every one of these. Any that comes back populated is ignoring the filter.
+    const rows = (await run({ ...g, language: 'zz-ZZ' })) as unknown[];
+    check(`${name} honours the language filter`, rows.length, 0);
+  }
+
   const pvOptions = await repo.filterOptions(g.start);
   check(
     'prompt versions are offered from judged data',
