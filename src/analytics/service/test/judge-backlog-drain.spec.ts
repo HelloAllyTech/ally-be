@@ -96,7 +96,7 @@ describe('JudgeBacklogDrainService', () => {
       // The lean source: top up rows judged under v1 rather than re-judging.
       { judgeModel: 'gemini-2.5-pro', judgePromptVersion: 'v1' },
       // Chunk: one tick's worth, not the whole backlog.
-      25,
+      80,
     );
   });
 
@@ -153,7 +153,7 @@ describe('JudgeBacklogDrainService', () => {
       true,
       { judgeModel: 'gemini-2.5-pro', judgePromptVersion: 'v2' },
       undefined,
-      25,
+      80,
     );
   });
 
@@ -241,9 +241,9 @@ describe('JudgeBacklogDrainService', () => {
       // "the first number" would pick up the 150-day window instead, which is
       // how this test failed the first time it was written.
       const chunkOf = (call: unknown[]) => call[call.length - 1];
-      expect(chunkOf(analytics.startDriftBackfill.mock.calls[0])).toBe(25);
-      expect(chunkOf(groundedness.startBackfill.mock.calls[0])).toBe(25);
-      expect(chunkOf(language.startBackfill.mock.calls[0])).toBe(25);
+      expect(chunkOf(analytics.startDriftBackfill.mock.calls[0])).toBe(80);
+      expect(chunkOf(groundedness.startBackfill.mock.calls[0])).toBe(80);
+      expect(chunkOf(language.startBackfill.mock.calls[0])).toBe(80);
     });
   });
 

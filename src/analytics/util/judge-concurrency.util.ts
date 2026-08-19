@@ -101,7 +101,19 @@ export const JUDGE_HTTP_TIMEOUT_MS = 600_000;
  * forgotten at 2am.
  */
 const globalJudgeSlots = {
-  limit: 3,
+  // Six, because this ceiling is PER PROCESS and ally-be runs two tasks — the
+  // service actually puts twice this number in flight. Paired with core-ai
+  // running two tasks, twelve concurrent calls land as six per task, which is
+  // exactly the per-task pressure core-ai already absorbed at limit 3 on one
+  // task. Throughput doubles; what any single judge task has to survive does
+  // not change.
+  //
+  // Raise this only alongside core-ai's task count, and watch the `failed`
+  // counters on the next tick: past this point the binding constraint stops
+  // being core-ai's CPU and becomes the Gemini rate limit shared with the live
+  // paths, where the failure mode is a 429 storm that converts throughput into
+  // sessions a later run has to redo.
+  limit: 6,
   inUse: 0,
   waiting: [] as Array<() => void>,
 };

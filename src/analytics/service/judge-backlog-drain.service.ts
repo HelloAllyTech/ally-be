@@ -68,16 +68,17 @@ const BACKLOG_WINDOW_DAYS = 150;
  * two ticks, so a restart cost up to an hour of progress. Three deploys in one
  * morning cost roughly three hours.
  *
- * Sized so a tick's work lands just inside the tick. Three families share one
- * global ceiling of three concurrent judge calls at roughly a minute each, so
- * the platform clears about ninety sessions per half hour however the work is
- * divided — 25 per family fills the tick without overrunning it.
+ * Sized so a tick's work lands just inside the tick. At 25 it did not: core-ai
+ * finished the chunk in about fifteen minutes and then sat at 1% CPU for the
+ * rest of the half hour, so half of every tick was spent idle. 80 fills the
+ * window at the raised judge ceiling instead of leaving it empty.
  *
  * A chunk that dies costs only the sessions in flight, because the selectors
- * already exclude everything judged: the next tick just asks for the next 25.
- * Nothing has to notice the death for that to work.
+ * already exclude everything judged: the next tick just asks for the next 80.
+ * Nothing has to notice the death for that to work, which is why this can be
+ * raised for throughput without giving back the restart-resilience it bought.
  */
-const BACKLOG_CHUNK = 25;
+const BACKLOG_CHUNK = 80;
 
 /**
  * Round-trip WER is topped up in bigger chunks because it does not compete for
