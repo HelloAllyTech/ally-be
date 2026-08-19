@@ -28,6 +28,8 @@ export enum TrackGameKey {
   MEMORY_MATCH = 'MEMORY_MATCH',
   /** A peg-and-link puzzle. Walk the cub to the star, turning the grid to reach it. */
   CUB_N_PUP = 'CUB_N_PUP',
+  /** Grow by eating, don't eat yourself. The walls wrap, so there's no wall to lose to. */
+  SNAKE = 'SNAKE',
 }
 
 export interface GameContent {
