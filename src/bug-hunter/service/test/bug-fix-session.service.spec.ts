@@ -5,7 +5,11 @@ import { BugFinding } from '../../entity/bug-finding.entity';
 import { BugFindingStatus, BugHunterMode } from '../../enum/bug-finding.enum';
 import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
 import { BugHuntRunStatus, BugHuntTrigger } from '../../enum/bug-hunt-run.enum';
-import { resolveReleaseTarget } from '../../constants/bug-fix-session.constants';
+import {
+  BUG_HUNTER_AGENT_ROADMAP_OWNER,
+  resolveReleaseTarget,
+} from '../../constants/bug-fix-session.constants';
+import { RoadmapOpportunityStage } from 'src/product-roadmap/enum/roadmap-opportunity.enum';
 
 const DISPATCHED_AT = new Date('2026-08-17T10:00:00.000Z');
 
@@ -71,6 +75,7 @@ describe('BugFixSessionService', () => {
   };
   let notificationService: { notify: jest.Mock };
   let repoClassifier: { classifyRepo: jest.Mock };
+  let roadmapOpportunityRepository: { findOne: jest.Mock; update: jest.Mock };
 
   beforeEach(() => {
     findingRepository = {
@@ -107,6 +112,10 @@ describe('BugFixSessionService', () => {
         rationale: '',
       }),
     };
+    roadmapOpportunityRepository = {
+      findOne: jest.fn().mockResolvedValue(null),
+      update: jest.fn(),
+    };
 
     service = new BugFixSessionService(
       findingRepository as never,
@@ -116,6 +125,7 @@ describe('BugFixSessionService', () => {
       notificationService as never,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
       repoClassifier as never,
+      roadmapOpportunityRepository as never,
     );
   });
 
@@ -555,6 +565,137 @@ describe('BugFixSessionService', () => {
       );
     });
 
+    it('releases the linked roadmap opportunity when a merged finding carries a reportedBugId', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+                reportedBugId: 'opportunity-1',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        htmlUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+        mergedAt: new Date('2026-08-19T12:00:00.000Z'),
+      });
+      roadmapOpportunityRepository.findOne.mockResolvedValue({
+        id: 'opportunity-1',
+        stage: RoadmapOpportunityStage.NEW,
+      });
+
+      await service.reconcile();
+
+      expect(roadmapOpportunityRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 'opportunity-1' },
+      });
+      expect(roadmapOpportunityRepository.update).toHaveBeenCalledWith(
+        'opportunity-1',
+        {
+          stage: RoadmapOpportunityStage.RELEASED,
+          owner: BUG_HUNTER_AGENT_ROADMAP_OWNER,
+          ownerUserId: null,
+          releasedAt: expect.any(Date),
+        },
+      );
+    });
+
+    it('does not re-stamp releasedAt when the linked opportunity is already RELEASED', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+                reportedBugId: 'opportunity-1',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        htmlUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+        mergedAt: new Date('2026-08-19T12:00:00.000Z'),
+      });
+      roadmapOpportunityRepository.findOne.mockResolvedValue({
+        id: 'opportunity-1',
+        stage: RoadmapOpportunityStage.RELEASED,
+      });
+
+      await service.reconcile();
+
+      expect(roadmapOpportunityRepository.update).toHaveBeenCalledWith(
+        'opportunity-1',
+        {
+          stage: RoadmapOpportunityStage.RELEASED,
+          owner: BUG_HUNTER_AGENT_ROADMAP_OWNER,
+          ownerUserId: null,
+        },
+      );
+    });
+
+    it('does not touch the roadmap opportunity when the merged finding has no reportedBugId', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+                reportedBugId: null,
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        htmlUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+        mergedAt: new Date('2026-08-19T12:00:00.000Z'),
+      });
+
+      await service.reconcile();
+
+      expect(roadmapOpportunityRepository.findOne).not.toHaveBeenCalled();
+      expect(roadmapOpportunityRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('still persists the finding as MERGED when the roadmap-opportunity update fails', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+                reportedBugId: 'opportunity-1',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        htmlUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+        mergedAt: new Date('2026-08-19T12:00:00.000Z'),
+      });
+      roadmapOpportunityRepository.findOne.mockRejectedValue(
+        new Error('connection reset'),
+      );
+
+      await expect(service.reconcile()).resolves.toBeUndefined();
+
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.MERGED,
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: BugHuntEventStage.MERGED }),
+      );
+    });
+
     it('leaves a PR_OPENED finding alone while the PR is still open', async () => {
       findingRepository.find.mockImplementation(({ where }: any) =>
         where.status === BugFindingStatus.PR_OPENED
@@ -764,6 +905,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
   let bugHunterService: any;
   let github: any;
   let notificationService: any;
+  let roadmapOpportunityRepository: any;
 
   const step = (index: number, overrides: Partial<BugFinding> = {}) =>
     findingRow({
@@ -804,6 +946,10 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       nextPatchTag: jest.fn().mockResolvedValue('v1.0.1'),
     };
     notificationService = { notify: jest.fn() };
+    roadmapOpportunityRepository = {
+      findOne: jest.fn().mockResolvedValue(null),
+      update: jest.fn(),
+    };
 
     service = new BugFixSessionService(
       findingRepository,
@@ -813,6 +959,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       notificationService,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
       { classifyRepo: jest.fn() } as never,
+      roadmapOpportunityRepository as never,
     );
   });
 
@@ -947,6 +1094,31 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
         expect.objectContaining({
           level: 'action_needed',
           title: expect.stringMatching(/ready to release/i),
+        }),
+      );
+    });
+
+    it('releases the linked roadmap opportunity when the coordinated parent merges', async () => {
+      const parent = { ...coordinating(), reportedBugId: 'opportunity-1' };
+      findingRepository.listCoordinatingParents.mockResolvedValue([parent]);
+      findingRepository.listChildren.mockResolvedValue([
+        step(0, { status: BugFindingStatus.MERGED }),
+        step(1, { status: BugFindingStatus.MERGED }),
+      ]);
+      roadmapOpportunityRepository.findOne.mockResolvedValue({
+        id: 'opportunity-1',
+        stage: RoadmapOpportunityStage.NEW,
+      });
+
+      await service.reconcile();
+
+      expect(roadmapOpportunityRepository.update).toHaveBeenCalledWith(
+        'opportunity-1',
+        expect.objectContaining({
+          stage: RoadmapOpportunityStage.RELEASED,
+          owner: BUG_HUNTER_AGENT_ROADMAP_OWNER,
+          ownerUserId: null,
+          releasedAt: expect.any(Date),
         }),
       );
     });
