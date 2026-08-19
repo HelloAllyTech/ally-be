@@ -14,11 +14,18 @@ export interface WorkflowRun {
   createdAt: Date;
 }
 
+/** The subset of a GitHub pull request this module cares about. */
+export interface PullRequestInfo {
+  merged: boolean;
+  htmlUrl: string;
+  mergedAt: Date | null;
+}
+
 /**
- * A deliberately small GitHub REST client — four calls, nothing more.
+ * A deliberately small GitHub REST client — five calls, nothing more.
  *
  * Bug Hunter is the only caller, so this lives in the module rather than
- * `src/github/`: pulling in Octokit for four endpoints would add a dependency
+ * `src/github/`: pulling in Octokit for five endpoints would add a dependency
  * (and its ESM/CJS interop problem — see ally-be/CLAUDE.md) to earn nothing.
  * Everything here uses the same plain `axios` the AI service already uses for
  * its outbound calls.
@@ -126,6 +133,38 @@ export class GithubActionsService {
       // a "watch it work" link, and must never fail the caller's own work.
       this.logger.warn(
         `Could not list runs for ${params.workflow} in ${params.repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * A pull request's current merge state, straight from GitHub — the check
+   * nothing else in this module performs. `merged` is only ever true once
+   * GitHub itself reports it, whichever way the PR was actually merged (the
+   * fix agent's own `gh pr merge --admin`, or a human merging it by hand in
+   * GitHub's review UI, which this module otherwise never hears about).
+   */
+  async getPullRequest(
+    repo: string,
+    number: number,
+  ): Promise<PullRequestInfo | null> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.get(this.url(repo, `pulls/${number}`), {
+        headers: this.headers,
+        timeout: 15_000,
+      });
+      return {
+        merged: Boolean(data?.merged),
+        htmlUrl: data?.html_url,
+        mergedAt: data?.merged_at ? new Date(data.merged_at) : null,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Could not read PR #${number} in ${repo}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

@@ -494,8 +494,9 @@ export class BugFixSessionService {
   async reconcile(): Promise<void> {
     if (!this.github.isConfigured) return;
     await this.reconcileQueuedSessions();
+    await this.reconcilePrOpenedFindings();
     await this.reconcileReleases();
-    // Order matters: the two passes above settle each step's own status from
+    // Order matters: the three passes above settle each step's own status from
     // GitHub, and these two then read those settled statuses to decide what to
     // start next. Running them first would advance a plan on stale state.
     await this.advancePlans();
@@ -713,6 +714,57 @@ export class BugFixSessionService {
         );
       }
     }
+  }
+
+  /**
+   * PR_OPENED → MERGED, read from the PR's own merge state.
+   *
+   * `pr_opened` is written once, self-reported by the fix agent the moment it
+   * decides a guarded-path diff needs human review rather than merging it
+   * itself (see `bug-fix-prompt.ts`'s Fix step). Nothing else ever asks GitHub
+   * again after that — so a PR a human later merges by hand, through GitHub's
+   * own review UI rather than the agent's `gh pr merge --admin`, stays stuck
+   * here forever without this pass.
+   */
+  private async reconcilePrOpenedFindings(): Promise<void> {
+    const opened = await this.findingRepository.find({
+      where: { status: BugFindingStatus.PR_OPENED },
+    });
+
+    for (const finding of opened) {
+      try {
+        const prNumber = finding.prUrl
+          ? BugFixSessionService.prNumberFrom(finding.prUrl)
+          : null;
+        if (!finding.repo || !prNumber) continue;
+
+        const pr = await this.github.getPullRequest(finding.repo, prNumber);
+        if (!pr?.merged) continue;
+
+        await this.findingRepository.update(finding.id, {
+          status: BugFindingStatus.MERGED,
+        });
+        await this.bugHunterService.appendFindingEvent({
+          findingId: finding.id,
+          repo: finding.repo,
+          stage: BugHuntEventStage.MERGED,
+          summary: `${finding.prUrl} was merged.`,
+          payload: { prUrl: finding.prUrl, mergedAt: pr.mergedAt },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Could not reconcile PR status for finding ${finding.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  /** Pulls the PR number out of a GitHub PR URL — `.../pull/123` → `123`. */
+  private static prNumberFrom(prUrl: string): number | null {
+    const match = /\/pull\/(\d+)/.exec(prUrl);
+    return match ? Number(match[1]) : null;
   }
 
   /** RELEASING → RELEASED / RELEASE_FAILED, read from the GitHub run's own conclusion. */

@@ -62,6 +62,7 @@ describe('BugFixSessionService', () => {
     dispatchWorkflow: jest.Mock;
     findRunSince: jest.Mock;
     getRun: jest.Mock;
+    getPullRequest: jest.Mock;
     nextPatchTag: jest.Mock;
   };
   let notificationService: { notify: jest.Mock };
@@ -91,6 +92,7 @@ describe('BugFixSessionService', () => {
       dispatchWorkflow: jest.fn().mockResolvedValue(DISPATCHED_AT),
       findRunSince: jest.fn(),
       getRun: jest.fn(),
+      getPullRequest: jest.fn(),
       nextPatchTag: jest.fn(),
     };
     notificationService = { notify: jest.fn() };
@@ -403,6 +405,80 @@ describe('BugFixSessionService', () => {
       expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
         status: BugFindingStatus.FAILED,
       });
+    });
+
+    it('flips a PR_OPENED finding to MERGED once GitHub reports it merged — the human-review-merge case', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        htmlUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+        mergedAt: new Date('2026-08-19T12:00:00.000Z'),
+      });
+
+      await service.reconcile();
+
+      expect(github.getPullRequest).toHaveBeenCalledWith('ally-web', 842);
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.MERGED,
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'finding-1',
+          stage: BugHuntEventStage.MERGED,
+        }),
+      );
+    });
+
+    it('leaves a PR_OPENED finding alone while the PR is still open', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: false,
+        htmlUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+        mergedAt: null,
+      });
+
+      await service.reconcile();
+
+      expect(findingRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('does not call GitHub for a PR_OPENED finding with no PR link yet', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                prUrl: null,
+              }),
+            ]
+          : [],
+      );
+
+      await service.reconcile();
+
+      expect(github.getPullRequest).not.toHaveBeenCalled();
+      expect(findingRepository.update).not.toHaveBeenCalled();
     });
 
     it('settles a green release as RELEASED and notifies', async () => {
