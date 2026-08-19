@@ -46,6 +46,9 @@ describe('JudgeBacklogDrainService', () => {
     const language = {
       getJob: jest.fn().mockResolvedValue(undefined),
       startBackfill: jest.fn().mockResolvedValue({ jobId: 'new-lang-job' }),
+      topUpRoundTripWer: jest
+        .fn()
+        .mockResolvedValue({ attempted: 0, measured: 0 }),
     };
     const rows = opts.eligible === false ? [] : [{ id: 's1' }];
     const driftRepo = { selectSessions: jest.fn().mockResolvedValue(rows) };
@@ -92,6 +95,8 @@ describe('JudgeBacklogDrainService', () => {
       undefined,
       // The lean source: top up rows judged under v1 rather than re-judging.
       { judgeModel: 'gemini-2.5-pro', judgePromptVersion: 'v1' },
+      // Chunk: one tick's worth, not the whole backlog.
+      25,
     );
   });
 
@@ -143,10 +148,13 @@ describe('JudgeBacklogDrainService', () => {
     const { service, language } = build();
     await tick(service);
 
-    expect(language.startBackfill).toHaveBeenCalledWith(150, true, {
-      judgeModel: 'gemini-2.5-pro',
-      judgePromptVersion: 'v2',
-    });
+    expect(language.startBackfill).toHaveBeenCalledWith(
+      150,
+      true,
+      { judgeModel: 'gemini-2.5-pro', judgePromptVersion: 'v2' },
+      undefined,
+      25,
+    );
   });
 
   it('gives up after repeated runs that judge nothing while failing', async () => {
@@ -217,5 +225,49 @@ describe('JudgeBacklogDrainService', () => {
     expect(JSON.parse(store.get('judge:backlog:drift')!).lastProcessed).toBe(
       60,
     );
+  });
+
+  it('bounds every family to a chunk instead of the whole backlog', () => {
+    // The restart-resilience property, asserted as arithmetic rather than as
+    // behaviour: an unbounded run takes hours, so a deploy kills it mid-flight
+    // and the service has to work out that a job claiming to be "running" is
+    // held by a process that no longer exists. Three deploys in one morning
+    // cost about three hours that way. A bounded run finishes inside the tick,
+    // and an interrupted one costs only the sessions in flight because the
+    // selectors already skip everything judged.
+    const { service, analytics, groundedness, language } = build();
+    return tick(service).then(() => {
+      // The chunk is the LAST argument in all three signatures. Reaching for
+      // "the first number" would pick up the 150-day window instead, which is
+      // how this test failed the first time it was written.
+      const chunkOf = (call: unknown[]) => call[call.length - 1];
+      expect(chunkOf(analytics.startDriftBackfill.mock.calls[0])).toBe(25);
+      expect(chunkOf(groundedness.startBackfill.mock.calls[0])).toBe(25);
+      expect(chunkOf(language.startBackfill.mock.calls[0])).toBe(25);
+    });
+  });
+
+  it('tops up round-trip WER on every tick', async () => {
+    // It is deliberately not part of judging — a TTS+ASR round trip held a
+    // judging worker for three minutes whenever the vendor was slow, on a field
+    // that renders as "not measured" either way. So it needs its own step, or
+    // it simply never runs.
+    const { service, language } = build();
+    await tick(service);
+
+    expect(language.topUpRoundTripWer).toHaveBeenCalledWith(
+      { judgeModel: 'gemini-2.5-pro', judgePromptVersion: 'v2' },
+      40,
+    );
+  });
+
+  it('does not let a speech-vendor failure sink the tick', async () => {
+    // The top-up runs last, but a throw there would still surface as an
+    // unhandled rejection on the scheduler and obscure three families that
+    // completed fine.
+    const { service, language } = build();
+    language.topUpRoundTripWer.mockRejectedValue(new Error('sarvam is down'));
+
+    await expect(tick(service)).resolves.not.toThrow();
   });
 });

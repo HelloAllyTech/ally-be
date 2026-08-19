@@ -207,6 +207,8 @@ export class PlatformAnalyticsService {
       judgeModel: string;
       judgePromptVersion: string;
     } | null,
+    /** Chunk size — see DriftJudgeService.startBackfill. */
+    limit?: number | null,
   ): Promise<DriftBackfillJobDto> {
     return this.driftJudge.startBackfill(
       sinceDays,
@@ -214,6 +216,7 @@ export class PlatformAnalyticsService {
       unjudgedForVersion,
       concurrency,
       leanFromVersion,
+      limit,
     );
   }
 

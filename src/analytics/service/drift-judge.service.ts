@@ -101,6 +101,15 @@ export class DriftJudgeService {
       judgeModel: string;
       judgePromptVersion: string;
     } | null,
+    /**
+     * Cap on how many sessions this run takes on.
+     *
+     * The drainer passes a chunk size so a run finishes well inside one tick.
+     * That is what makes a restart cheap: the selector already skips anything
+     * already judged, so an interrupted chunk costs only the sessions in
+     * flight, and the next tick simply picks up the next batch.
+     */
+    limit?: number | null,
   ): Promise<DriftBackfillJobDto> {
     const concurrency = resolveJudgeConcurrency(requestedConcurrency);
     const jobId = randomUUID();
@@ -124,6 +133,7 @@ export class DriftJudgeService {
       unjudgedForVersion ?? null,
       concurrency,
       leanFromVersion ?? null,
+      limit ?? null,
     );
     this.logger.debug(
       `drift backfill queued job=${jobId} sinceDays=${sinceDays} ` +
@@ -151,6 +161,7 @@ export class DriftJudgeService {
       judgeModel: string;
       judgePromptVersion: string;
     } | null,
+    limit: number | null,
   ): Promise<void> {
     try {
       const rubric = await this.repo.fetchRubric();
@@ -161,6 +172,7 @@ export class DriftJudgeService {
         // Lean mode has nothing to copy forward for a session that was never
         // judged, so those are excluded from the run rather than attempted.
         judgedForVersion: leanFromVersion,
+        limit,
       });
       job.status = 'running';
       job.total = sessions.length;

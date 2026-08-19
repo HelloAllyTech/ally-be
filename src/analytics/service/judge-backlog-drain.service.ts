@@ -18,11 +18,18 @@ import { LanguageJudgeRepository } from '../repository/language-judge.repository
  * newly added judge, which until now was a manual API call holding a token that
  * expires every fifteen minutes — and which any deploy killed halfway through.
  *
- * SHAPE: "ensure a run is in flight until the backlog is empty", not "start a
- * backfill every tick". A tick that finds a job already running does nothing.
- * That matters because the jobs are long — hours — and stacking a new one every
- * thirty minutes would multiply concurrent judge calls against a service that
- * has already been taken down once by exactly that.
+ * SHAPE: each tick takes on a BOUNDED CHUNK of the backlog and finishes inside
+ * the tick. Runs used to swallow the whole backlog — hours — which made every
+ * deploy expensive: the process died mid-run, the job record still said
+ * "running", and the service had to infer the death across two ticks before it
+ * could start again. Chunking removes the question rather than answering it
+ * faster. An interrupted chunk costs only the sessions in flight, because the
+ * selectors already exclude everything judged, and the next tick simply asks
+ * for the next chunk.
+ *
+ * A tick that still finds a run in flight does nothing, so an overrunning chunk
+ * cannot stack concurrent judge calls against a service that has already been
+ * taken down once by exactly that.
  *
  * It stops on its own. Each family's selector excludes sessions already judged
  * under the target version, so when the backlog empties the tick finds nothing
@@ -50,6 +57,33 @@ import { LanguageJudgeRepository } from '../repository/language-judge.repository
  * full drift judge, which is a separate pass, not a wider window.
  */
 const BACKLOG_WINDOW_DAYS = 150;
+
+/**
+ * How many sessions one tick takes on, per family.
+ *
+ * This is what makes the drainer survive a restart, and it replaces detection
+ * with arithmetic. A run used to take the WHOLE backlog — hours — so a deploy
+ * killed it mid-flight and the service then had to work out that a job
+ * reporting "running" was held by a process that no longer existed. That took
+ * two ticks, so a restart cost up to an hour of progress. Three deploys in one
+ * morning cost roughly three hours.
+ *
+ * Sized so a tick's work lands just inside the tick. Three families share one
+ * global ceiling of three concurrent judge calls at roughly a minute each, so
+ * the platform clears about ninety sessions per half hour however the work is
+ * divided — 25 per family fills the tick without overrunning it.
+ *
+ * A chunk that dies costs only the sessions in flight, because the selectors
+ * already exclude everything judged: the next tick just asks for the next 25.
+ * Nothing has to notice the death for that to work.
+ */
+const BACKLOG_CHUNK = 25;
+
+/**
+ * Round-trip WER is topped up in bigger chunks because it does not compete for
+ * the judge ceiling — it is a speech-vendor round trip, bounded separately.
+ */
+const ROUND_TRIP_CHUNK = 40;
 
 /**
  * The judge versions the backlog is measured against. These are the values a
@@ -115,6 +149,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
       await this.drainDrift();
       await this.drainGroundedness();
       await this.drainLanguage();
+      await this.drainRoundTripWer();
     });
   }
 
@@ -248,6 +283,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
       DRIFT_TARGET,
       undefined,
       DRIFT_SOURCE,
+      BACKLOG_CHUNK,
     );
     await this.writeState('drift', {
       jobId: job.jobId,
@@ -287,6 +323,8 @@ export class JudgeBacklogDrainService implements OnModuleInit {
       BACKLOG_WINDOW_DAYS,
       true,
       LANGUAGE_TARGET,
+      undefined,
+      BACKLOG_CHUNK,
     );
     await this.writeState('language', {
       jobId: job.jobId,
@@ -327,6 +365,8 @@ export class JudgeBacklogDrainService implements OnModuleInit {
     const job = await this.groundedness.startBackfill(
       BACKLOG_WINDOW_DAYS,
       GROUNDEDNESS_TARGET,
+      undefined,
+      BACKLOG_CHUNK,
     );
     await this.writeState('groundedness', {
       jobId: job.jobId,
@@ -336,5 +376,38 @@ export class JudgeBacklogDrainService implements OnModuleInit {
     this.logger.debug(
       `[backlog] groundedness started job=${job.jobId} strikes=${next.unproductive}`,
     );
+  }
+
+  /**
+   * Fill in round-trip WER for judgments that were written without it.
+   *
+   * Kept out of the judging loop and given its own step because it is the only
+   * measurement here that talks to a speech vendor: a TTS call plus an ASR call
+   * per sampled utterance. Inline, a timeout held a judging worker for three
+   * minutes on 37% of sessions — throughput spent on a field that renders as
+   * "not measured" either way.
+   *
+   * No job record and no staleness handling, because it needs none: the
+   * selector only ever returns rows that are still NULL, so an interrupted run
+   * is simply a shorter one and the next tick asks again.
+   */
+  private async drainRoundTripWer(): Promise<void> {
+    try {
+      const { attempted, measured } = await this.language.topUpRoundTripWer(
+        LANGUAGE_TARGET,
+        ROUND_TRIP_CHUNK,
+      );
+      if (attempted > 0) {
+        this.logger.debug(
+          `[backlog] round-trip WER topped up ${measured}/${attempted}`,
+        );
+      }
+    } catch (e) {
+      // Never let a speech-vendor problem stop the judging families that ran
+      // before it on this tick.
+      this.logger.warn(
+        `[backlog] round-trip WER top-up failed: ${(e as Error).message}`,
+      );
+    }
   }
 }

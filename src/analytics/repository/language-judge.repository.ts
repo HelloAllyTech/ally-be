@@ -62,6 +62,54 @@ export interface LanguageJudgeAiResult {
  * Single write path, two read surfaces: these rows are read raw per session by
  * Roleplay Session Logs and aggregated by the analytics dashboard.
  */
+/**
+ * The session projection both selectors need.
+ *
+ * Extracted rather than copied: the round-trip top-up reads the SAME session
+ * shape as the judging selector, and two hand-maintained copies of a
+ * thirty-line projection diverge the first time a column is added to one of
+ * them. The `WHERE` differs per caller and is appended by each.
+ */
+const SESSION_PROJECTION = `
+      SELECT s.id,
+             s.tenant_id        AS tenant_id,
+             s."scenarioId"     AS scenario_id,
+             s."scenarioVersionId" AS scenario_version_id,
+             COALESCE(l.value, 'en') AS language,
+             l.label            AS language_label,
+             l."evalConfig"     AS eval_config,
+             v.provider         AS tts_provider,
+             v.config           AS tts_voice_config,
+             NULLIF(s.metadata->>'voiceId', '') AS voice_id,
+             v.name             AS voice_name,
+             sc.prompt          AS persona,
+             sc.engine          AS engine,
+             s.metadata->'promptVersions' AS prompt_versions,
+             s."createdAt"      AS occurred_at,
+             (sc.metadata->'languageCharacteristics'->>(s.metadata->>'languageId'))
+               IS NOT NULL AS register_directive_configured,
+             (sc.metadata->'linguisticStyleSamples'->(s.metadata->>'languageId'))
+               IS NOT NULL AS style_exemplars_configured,
+             (SELECT array_agg(f)
+                FROM jsonb_array_elements_text(
+                  COALESCE(sc.metadata->'allowedFillerWords'
+                             ->(s.metadata->>'languageId'), '[]'::jsonb)) f
+             ) AS allowed_fillers,
+             (SELECT mode() WITHIN GROUP (ORDER BY m."llmProvider")
+                FROM scenario_session_turn_metrics m
+                WHERE m."scenarioSessionId" = s.id
+                  AND m."llmProvider" IS NOT NULL) AS llm_provider,
+             (SELECT mode() WITHIN GROUP (ORDER BY m."llmModel")
+                FROM scenario_session_turn_metrics m
+                WHERE m."scenarioSessionId" = s.id
+                  AND m."llmModel" IS NOT NULL) AS llm_model
+      FROM scenario_sessions s
+      LEFT JOIN languages l
+        ON l.id = NULLIF(s.metadata->>'languageId', '')::int
+      LEFT JOIN scenario_voices v
+        ON v.id::text = NULLIF(s.metadata->>'voiceId', '')
+      LEFT JOIN scenarios sc ON sc.id = s."scenarioId"`;
+
 @Injectable()
 export class LanguageJudgeRepository {
   constructor(private readonly dataSource: DataSource) {}
@@ -109,45 +157,7 @@ export class LanguageJudgeRepository {
       params.push(v);
       return `$${params.length}`;
     };
-    let sql = `
-      SELECT s.id,
-             s.tenant_id        AS tenant_id,
-             s."scenarioId"     AS scenario_id,
-             s."scenarioVersionId" AS scenario_version_id,
-             COALESCE(l.value, 'en') AS language,
-             l.label            AS language_label,
-             l."evalConfig"     AS eval_config,
-             v.provider         AS tts_provider,
-             v.config           AS tts_voice_config,
-             NULLIF(s.metadata->>'voiceId', '') AS voice_id,
-             v.name             AS voice_name,
-             sc.prompt          AS persona,
-             sc.engine          AS engine,
-             s.metadata->'promptVersions' AS prompt_versions,
-             s."createdAt"      AS occurred_at,
-             (sc.metadata->'languageCharacteristics'->>(s.metadata->>'languageId'))
-               IS NOT NULL AS register_directive_configured,
-             (sc.metadata->'linguisticStyleSamples'->(s.metadata->>'languageId'))
-               IS NOT NULL AS style_exemplars_configured,
-             (SELECT array_agg(f)
-                FROM jsonb_array_elements_text(
-                  COALESCE(sc.metadata->'allowedFillerWords'
-                             ->(s.metadata->>'languageId'), '[]'::jsonb)) f
-             ) AS allowed_fillers,
-             (SELECT mode() WITHIN GROUP (ORDER BY m."llmProvider")
-                FROM scenario_session_turn_metrics m
-                WHERE m."scenarioSessionId" = s.id
-                  AND m."llmProvider" IS NOT NULL) AS llm_provider,
-             (SELECT mode() WITHIN GROUP (ORDER BY m."llmModel")
-                FROM scenario_session_turn_metrics m
-                WHERE m."scenarioSessionId" = s.id
-                  AND m."llmModel" IS NOT NULL) AS llm_model
-      FROM scenario_sessions s
-      LEFT JOIN languages l
-        ON l.id = NULLIF(s.metadata->>'languageId', '')::int
-      LEFT JOIN scenario_voices v
-        ON v.id::text = NULLIF(s.metadata->>'voiceId', '')
-      LEFT JOIN scenarios sc ON sc.id = s."scenarioId"
+    let sql = `${SESSION_PROJECTION}
       WHERE ${countableSessionPredicate('s')}`;
     if (opts.language)
       sql += ` AND COALESCE(l.value, 'en') = ${p(opts.language)}`;
@@ -171,6 +181,54 @@ export class LanguageJudgeRepository {
     sql += ` ORDER BY s."createdAt" DESC`;
     if (opts.limit) sql += ` LIMIT ${p(opts.limit)}`;
     return this.dataSource.query(sql, params);
+  }
+
+  /**
+   * Judgments that went out without a round-trip WER, newest first.
+   *
+   * The metric is filled in after the judgment rather than during it, so this
+   * is the worklist for that second pass. Scoped to one rubric version because
+   * a judgment carries its WER on its own row — an older version's rows are a
+   * different population, not a backlog.
+   *
+   * Newest first so the numbers a reader is most likely to be looking at fill
+   * in before the archive does.
+   */
+  async selectJudgmentsMissingRoundTrip(
+    pin: { judgeModel: string; judgePromptVersion: string },
+    limit: number,
+  ): Promise<Array<{ judgmentId: string; session: LanguageSessionRow }>> {
+    const rows: Array<LanguageSessionRow & { judgment_id: string }> =
+      await this.dataSource.query(
+        `${SESSION_PROJECTION}
+           JOIN language_judgment_sessions j ON j."scenarioSessionId" = s.id
+          WHERE j."judgeModel" = $1
+            AND j."judgePromptVersion" = $2
+            AND j."roundTripWerPct" IS NULL
+          ORDER BY j."createdAt" DESC
+          LIMIT $3`,
+        [pin.judgeModel, pin.judgePromptVersion, limit],
+      );
+    return rows.map(({ judgment_id, ...session }) => ({
+      judgmentId: judgment_id,
+      session,
+    }));
+  }
+
+  /**
+   * Write a round-trip WER onto an existing judgment.
+   *
+   * Targeted at the judgment row rather than upserting the whole judgment: the
+   * annotations are already written and re-running the upsert would churn them
+   * for one nullable number.
+   */
+  async updateRoundTripWer(judgmentId: string, pct: number): Promise<void> {
+    await this.dataSource.query(
+      `UPDATE language_judgment_sessions
+          SET "roundTripWerPct" = $2, "updatedAt" = now()
+        WHERE id = $1`,
+      [judgmentId, pct],
+    );
   }
 
   /** Headline prompt version: prefer the main agent prompt, else any. */

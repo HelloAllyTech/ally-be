@@ -94,6 +94,24 @@ That is the fix for what these calls used to require: a super-admin token that e
 fifteen minutes, a laptop left awake, and someone remembering to re-issue the call after every
 deploy killed the run halfway.
 
+**Each tick takes a bounded chunk** (`BACKLOG_CHUNK`, 25 sessions per family), not the whole
+backlog. That is what makes a deploy cheap. An unbounded run took hours, so a restart killed it
+mid-flight, the job record still read "running", and the service had to _infer_ the death across
+two ticks before starting again — up to an hour of lost progress per deploy, and three deploys in
+one morning cost about three hours. A chunk finishes inside its tick, and an interrupted one costs
+only the sessions in flight, because the selectors already exclude everything judged. The next tick
+simply asks for the next 25. Nothing has to notice the death.
+
+The chunk is sized to the ceiling, not to the backlog: three families share one global limit of
+three concurrent judge calls at roughly a minute each, so the platform clears about ninety sessions
+per half hour however the work is divided.
+
+**Round-trip WER is topped up separately** (`ROUND_TRIP_CHUNK`), not measured during judging. It is
+a TTS call plus an ASR call per sampled utterance against a speech vendor — inline, a timeout held
+a judging worker for three minutes on 37% of sessions, spent on a field that renders as "not
+measured" either way. The top-up selects only judgments whose `roundTripWerPct` is still NULL, so it
+needs no job record and no staleness handling: an interrupted run is just a shorter one.
+
 **Its window is 150 days** (`BACKLOG_WINDOW_DAYS`). It was 30, which turned out to be deciding
 what the dashboard could be _asked_: Tamil runs entirely on `gpt-4.1-mini` and every other
 language on `gpt-4o-mini`, so "Tamil is worse" and "4.1-mini is worse" were one population and

@@ -78,6 +78,15 @@ export class FeedbackGroundednessJudgeService {
       judgePromptVersion: string;
     } | null,
     requestedConcurrency?: number | null,
+    /**
+     * Cap on how many sessions this run takes on.
+     *
+     * The drainer passes a chunk size so a run finishes well inside one tick.
+     * That is what makes a restart cheap: the selector already skips anything
+     * already judged, so an interrupted chunk costs only the sessions in
+     * flight, and the next tick simply picks up the next batch.
+     */
+    limit?: number | null,
   ): Promise<GroundednessBackfillJobDto> {
     const concurrency = resolveJudgeConcurrency(requestedConcurrency);
     const jobId = randomUUID();
@@ -94,7 +103,13 @@ export class FeedbackGroundednessJudgeService {
       error: null,
     };
     await this.saveJob(job);
-    void this.runJob(job, sinceDays, unjudgedForVersion ?? null, concurrency);
+    void this.runJob(
+      job,
+      sinceDays,
+      unjudgedForVersion ?? null,
+      concurrency,
+      limit ?? null,
+    );
     this.logger.debug(
       `groundedness backfill queued job=${jobId} sinceDays=${sinceDays} ` +
         `version=${unjudgedForVersion?.judgePromptVersion ?? 'any'}`,
@@ -110,12 +125,14 @@ export class FeedbackGroundednessJudgeService {
       judgePromptVersion: string;
     } | null,
     concurrency: number,
+    limit: number | null,
   ): Promise<void> {
     try {
       const rubric = await this.repo.fetchRubric();
       const sessions = await this.repo.selectSessions({
         sinceDays,
         unjudgedForVersion,
+        limit,
       });
       job.status = 'running';
       job.total = sessions.length;
