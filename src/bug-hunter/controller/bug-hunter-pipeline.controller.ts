@@ -305,6 +305,33 @@ export class BugHunterPipelineController {
     );
   }
 
+  @Post('runs/:id/cost')
+  @ApiOperation({
+    summary:
+      "Attach this run's real per-model token usage from `claude -p --output-format json` (pipeline only)",
+    description:
+      'Called by the GitHub Actions runner after the sweep/fix-session ' +
+      'agent finishes, always AFTER the agent already closed this run via ' +
+      '/close — attaching cost to an already-closed run is the normal case. ' +
+      'Writes one `llm_usage` row per model and re-derives `totalTokenCostUsd`.',
+  })
+  async recordCost(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body()
+    body: {
+      modelUsage: {
+        model: string;
+        inputTokens: number;
+        outputTokens: number;
+      }[];
+      cliReportedCostUsd?: number;
+    },
+  ): Promise<{ totalTokenCostUsd: string }> {
+    await this.bugHunterService.recordActualCost(id, body);
+    const run = await this.bugHunterService.getRun(id);
+    return { totalTokenCostUsd: run.totalTokenCostUsd };
+  }
+
   @Post('runs/:id/close')
   @ApiOperation({
     summary: 'Close a run with final totals (pipeline only)',

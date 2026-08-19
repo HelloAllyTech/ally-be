@@ -120,7 +120,28 @@ jobs:
             --permission-mode acceptEdits \
             --allowedTools "Bash,Read,Write,Edit,Glob,Grep" \
             --max-turns 120 \
-            --output-format text
+            --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
+
+      - name: Report actual token cost
+        # Best-effort: the fix protocol's own /close call already closed this
+        # run — this just attaches the real per-model token usage `claude -p
+        # --output-format json` reported, so "Est. cost" in the admin tab
+        # stops reading $0 for every run. Must never fail the job over a
+        # cost-reporting hiccup, and must still run when the session itself
+        # failed — partial spend is still real spend.
+        if: always()
+        env:
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -uo pipefail
+          if [ -s /tmp/claude-result.json ]; then
+            MODEL_USAGE=$(jq -c '[(.modelUsage // {}) | to_entries[] | {model: .key, inputTokens: (.value.inputTokens // 0), outputTokens: (.value.outputTokens // 0)}]' /tmp/claude-result.json 2>/dev/null || echo '[]')
+            CLI_COST=$(jq -r '.total_cost_usd // 0' /tmp/claude-result.json 2>/dev/null || echo 0)
+            curl -sS -X POST "${{ inputs.api_base_url }}/api/v1/bug-hunter/runs/${{ inputs.run_id }}/cost" \
+              -H "Content-Type: application/json" \
+              -H "x-api-key: $ALLY_BE_API_KEY" \
+              -d "{\"modelUsage\":${MODEL_USAGE},\"cliReportedCostUsd\":${CLI_COST}}" || true
+          fi
 
       - name: Report a runner-level failure
         # The protocol has ally-be told about every outcome it can reach by
