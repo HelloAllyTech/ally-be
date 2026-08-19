@@ -566,6 +566,7 @@ export function toRunDto(row: BugHuntRun): BugHuntRunDto {
     prOpenedCount: row.prOpenedCount,
     dismissedCount: row.dismissedCount,
     totalTokenCostUsd: row.totalTokenCostUsd,
+    cliReportedCostUsd: (row.metadata?.cliReportedCostUsd as number) ?? null,
     totalInputTokens: row.totalInputTokens ?? null,
     totalOutputTokens: row.totalOutputTokens ?? null,
     createdAt: row.createdAt,

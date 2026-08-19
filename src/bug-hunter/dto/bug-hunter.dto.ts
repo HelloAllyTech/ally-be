@@ -448,9 +448,17 @@ export class BugHuntRunDto {
   dismissedCount!: number;
 
   @ApiProperty({
-    description: 'USD, snapshotted from llm_usage at close time.',
+    description:
+      'USD, snapshotted from llm_usage at close time. Cache-blind (see cliReportedCostUsd) — an approximation, not a billed amount.',
   })
   totalTokenCostUsd!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      "USD, from the Claude Code CLI's own total_cost_usd for this run — prices prompt-cache reads/writes at their real discounted rate, so this is closer to what the Anthropic console shows. Null for runs closed before this was captured, or if the CLI never reported one.",
+  })
+  cliReportedCostUsd!: number | null;
 
   @ApiProperty({
     nullable: true,
