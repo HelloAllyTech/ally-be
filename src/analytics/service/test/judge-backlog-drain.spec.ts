@@ -86,7 +86,7 @@ describe('JudgeBacklogDrainService', () => {
     await tick(service);
 
     expect(analytics.startDriftBackfill).toHaveBeenCalledWith(
-      30,
+      150,
       true,
       { judgeModel: 'gemini-2.5-pro', judgePromptVersion: 'v2' },
       undefined,
@@ -143,7 +143,7 @@ describe('JudgeBacklogDrainService', () => {
     const { service, language } = build();
     await tick(service);
 
-    expect(language.startBackfill).toHaveBeenCalledWith(30, true, {
+    expect(language.startBackfill).toHaveBeenCalledWith(150, true, {
       judgeModel: 'gemini-2.5-pro',
       judgePromptVersion: 'v2',
     });

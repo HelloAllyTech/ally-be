@@ -28,7 +28,28 @@ import { LanguageJudgeRepository } from '../repository/language-judge.repository
  * under the target version, so when the backlog empties the tick finds nothing
  * eligible and starts nothing. No end date to set, and no cleanup to remember.
  */
-const BACKLOG_WINDOW_DAYS = 30;
+/**
+ * How far back the drainer will reach.
+ *
+ * Was 30 days, which quietly decided what the dashboard could be asked. Tamil
+ * runs entirely on gpt-4.1-mini and every other language on gpt-4o-mini, so
+ * "Tamil is worse" and "4.1-mini is worse" were the same population and could
+ * not be told apart. The only sessions that break that tie are the same Tamil
+ * cohort's April-May runs, from before the model was pinned — 30 days put them
+ * out of reach.
+ *
+ * 150 days covers the platform's first non-English traffic. Raising it is
+ * self-limiting rather than open-ended: every selector skips sessions already
+ * judged under the target version, so the window only decides how much history
+ * is eligible ONCE. When the backlog empties the tick finds nothing and starts
+ * nothing, and it stays that way.
+ *
+ * Note what this does NOT reach. The drift family runs as a lean top-up that
+ * copies an existing v1 row forward, so it can only extend to sessions that
+ * already carry v1 drift labels — roughly July onward. Older sessions need a
+ * full drift judge, which is a separate pass, not a wider window.
+ */
+const BACKLOG_WINDOW_DAYS = 150;
 
 /**
  * The judge versions the backlog is measured against. These are the values a

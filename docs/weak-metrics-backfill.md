@@ -41,7 +41,7 @@ API=https://api.helloally.ai/api/v1/analytics
 ```
 
 **1. Drift re-judge** — the v2 clienthood and progression labels. `judgePromptVersion` is what
-makes this a *re*-judge: without it, "already judged" means judged by any rubric, and the run
+makes this a _re_-judge: without it, "already judged" means judged by any rubric, and the run
 is a no-op because every session already carries v1 rows.
 
 ```bash
@@ -93,6 +93,25 @@ backlog empties, because the selectors exclude everything already judged.
 That is the fix for what these calls used to require: a super-admin token that expires every
 fifteen minutes, a laptop left awake, and someone remembering to re-issue the call after every
 deploy killed the run halfway.
+
+**Its window is 150 days** (`BACKLOG_WINDOW_DAYS`). It was 30, which turned out to be deciding
+what the dashboard could be _asked_: Tamil runs entirely on `gpt-4.1-mini` and every other
+language on `gpt-4o-mini`, so "Tamil is worse" and "4.1-mini is worse" were one population and
+could not be separated. The sessions that break that tie are the same cohort's April-May runs,
+from before the model was pinned, and 30 days put them out of reach.
+
+Widening is a one-off cost, not a standing one — the selectors skip everything already judged, so
+the window only decides how much history becomes eligible once.
+
+Two limits worth knowing before reading a backfilled chart:
+
+- **Drift does not reach as far as language.** It runs as a lean top-up over an existing v1 row,
+  so it can only extend to sessions that already carry v1 drift labels (roughly July onward).
+  Older sessions need a full drift judge — a separate pass, not a wider window.
+- **Sessions before 2026-06-10 have no `llmModel`.** Turn metrics start there, and that column is
+  the judge's only source for the model. Backfilled rows older than that carry a NULL model and
+  cannot be segmented by it, which is the single most explanatory cut we have. Treat unattributed
+  rows as their own bucket rather than blending them into a model-segmented view.
 
 It gives up rather than burning money on a broken judge: three consecutive runs that judge
 NOTHING while failing trip a breaker, and it logs loudly instead of restarting forever. A run that
