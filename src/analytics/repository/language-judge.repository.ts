@@ -68,10 +68,13 @@ export interface LanguageJudgeAiResult {
  * Extracted rather than copied: the round-trip top-up reads the SAME session
  * shape as the judging selector, and two hand-maintained copies of a
  * thirty-line projection diverge the first time a column is added to one of
- * them. The `WHERE` differs per caller and is appended by each.
+ * them. The `WHERE` differs per caller and is appended by each; a caller that
+ * joins another table passes its own columns in `extraSelect` (with a trailing
+ * comma) — appending them after the fact is impossible, the select list ends
+ * thirty lines above the `FROM`.
  */
-const SESSION_PROJECTION = `
-      SELECT s.id,
+const sessionProjection = (extraSelect = '') => `
+      SELECT ${extraSelect}s.id,
              s.tenant_id        AS tenant_id,
              s."scenarioId"     AS scenario_id,
              s."scenarioVersionId" AS scenario_version_id,
@@ -164,7 +167,7 @@ export class LanguageJudgeRepository {
     // judgment row, so `onlyUnjudged` returns the same sessions next tick and
     // the backfill spins on them forever. Twenty-five such sessions sat at the
     // head of the queue and stalled the language family completely.
-    let sql = `${SESSION_PROJECTION}
+    let sql = `${sessionProjection()}
       WHERE ${countableSessionPredicate('s')}
         AND EXISTS (SELECT 1 FROM scenario_session_messages m
                      WHERE m."scenarioSessionId" = s.id
@@ -210,7 +213,7 @@ export class LanguageJudgeRepository {
   ): Promise<Array<{ judgmentId: string; session: LanguageSessionRow }>> {
     const rows: Array<LanguageSessionRow & { judgment_id: string }> =
       await this.dataSource.query(
-        `${SESSION_PROJECTION}
+        `${sessionProjection('j.id AS judgment_id, ')}
            JOIN language_judgment_sessions j ON j."scenarioSessionId" = s.id
           WHERE j."judgeModel" = $1
             AND j."judgePromptVersion" = $2
