@@ -11,7 +11,10 @@ import { RoadmapAllocationRepository } from '../../repository/roadmap-allocation
 import { RoadmapNotificationService } from '../roadmap-notification.service';
 import { RoadmapAllocation } from '../../entity/roadmap-allocation.entity';
 import { RoadmapOpportunity } from '../../entity/roadmap-opportunity.entity';
-import { RoadmapOpportunityStage } from '../../enum/roadmap-opportunity.enum';
+import {
+  RoadmapOpportunityStage,
+  RoadmapOpportunityType,
+} from '../../enum/roadmap-opportunity.enum';
 
 const OPP_ID = '11111111-1111-1111-1111-111111111111';
 const USER = 7;
@@ -36,9 +39,10 @@ describe('RoadmapAllocationService', () => {
   const givenExistingAllocation = (
     coins: number | null,
     stage = RoadmapOpportunityStage.NEW,
+    type = RoadmapOpportunityType.IDEA,
   ) =>
     manager.findOne.mockImplementation(async (entity: unknown) => {
-      if (entity === RoadmapOpportunity) return { id: OPP_ID, stage };
+      if (entity === RoadmapOpportunity) return { id: OPP_ID, stage, type };
       return coins === null ? null : { id: 'alloc-1', coins };
     });
 
@@ -233,6 +237,32 @@ describe('RoadmapAllocationService', () => {
       await expect(service.setCoins(USER, OPP_ID, 5)).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+  });
+
+  describe('the bug-type rule', () => {
+    it('rejects a vote on a bug opportunity with 409, even in the new stage', async () => {
+      givenExistingAllocation(
+        null,
+        RoadmapOpportunityStage.NEW,
+        RoadmapOpportunityType.BUG,
+      );
+
+      await expect(service.setCoins(USER, OPP_ID, 5)).rejects.toBeInstanceOf(
+        ConflictException,
+      );
+      expect(manager.save).not.toHaveBeenCalled();
+    });
+
+    it('allows a vote on a new, non-bug opportunity', async () => {
+      givenExistingAllocation(
+        null,
+        RoadmapOpportunityStage.NEW,
+        RoadmapOpportunityType.IDEA,
+      );
+      await expect(service.setCoins(USER, OPP_ID, 5)).resolves.toMatchObject({
+        coins: 5,
+      });
     });
   });
 

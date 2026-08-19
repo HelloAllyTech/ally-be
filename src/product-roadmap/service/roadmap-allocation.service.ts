@@ -9,7 +9,10 @@ import { LoggerService } from 'src/logger/logger.service';
 
 import { RoadmapAllocation } from '../entity/roadmap-allocation.entity';
 import { RoadmapOpportunity } from '../entity/roadmap-opportunity.entity';
-import { RoadmapOpportunityStage } from '../enum/roadmap-opportunity.enum';
+import {
+  RoadmapOpportunityStage,
+  RoadmapOpportunityType,
+} from '../enum/roadmap-opportunity.enum';
 import { RoadmapAllocationRepository } from '../repository/roadmap-allocation.repository';
 import {
   COINS_PER_MONTH,
@@ -90,6 +93,16 @@ export class RoadmapAllocationService {
           throw new ConflictException(
             `Coins can only be allocated to opportunities in the "new" stage; ` +
               `this one is "${opportunity.stage}". Existing votes are kept.`,
+          );
+        }
+
+        // Bug reports aren't coin-voted — they're triaged and fixed, not prioritised by
+        // popularity. This only blocks NEW allocations going forward; coins already
+        // allocated to a bug opportunity (e.g. migrated from the source app, or from
+        // before this rule) are left in place.
+        if (opportunity.type === RoadmapOpportunityType.BUG) {
+          throw new ConflictException(
+            `Coins can't be allocated to bug reports. Existing votes are kept.`,
           );
         }
 
