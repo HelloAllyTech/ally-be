@@ -49,13 +49,6 @@ describe('buildFixSessionPrompt', () => {
     );
   });
 
-  it('refuses ally-mobile, which can be swept but never fixed from here', () => {
-    // It IS in the shared repo map — a sweep should still record bugs there —
-    // but it has no fix-session workflow and releases through App Store / Play
-    // Store builds, so a fix protocol would end in a step it cannot perform.
-    expect(() => build({}, 'ally-mobile')).toThrow(/swept but not fixed/i);
-  });
-
   // ── merge policy ─────────────────────────────────────────────────────────
 
   it('tells an ordinary fix to merge, and not to deploy', () => {
@@ -70,6 +63,17 @@ describe('buildFixSessionPrompt', () => {
 
     expect(prompt).toMatch(/Do NOT merge/);
     expect(prompt).not.toContain('gh pr merge --admin');
+  });
+
+  it('never merges an ally-mobile fix, guarded path or not', () => {
+    // ally-mobile IS fixable — Bug Hunter opens a PR there — but this pipeline
+    // only runs Jest, which cannot verify the native/on-device behaviour that
+    // actually ships, so a human always merges it.
+    const prompt = build({ touchesGuardedPath: false }, 'ally-mobile');
+
+    expect(prompt).toMatch(/Do NOT merge/);
+    expect(prompt).not.toContain('gh pr merge --admin');
+    expect(prompt).toMatch(/ally-mobile fixes always stay a reviewed PR/i);
   });
 
   // ── cross-repo guard ─────────────────────────────────────────────────────

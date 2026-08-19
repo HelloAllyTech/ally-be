@@ -16,16 +16,13 @@ import {
 } from '../constants/bug-hunter.constants';
 
 export interface RepoClassification {
-  /** A dispatchable repo, or null if the model couldn't tell or named ally-mobile. */
+  /** A dispatchable repo, or null if the model couldn't tell. */
   repo: string | null;
-  /** Set only when the model recognized this as an ally-mobile bug — not dispatchable from here. */
-  notDispatchable: string | null;
   rationale: string;
 }
 
 const UNCLASSIFIED: RepoClassification = {
   repo: null,
-  notDispatchable: null,
   rationale: '',
 };
 
@@ -34,11 +31,10 @@ const UNCLASSIFIED: RepoClassification = {
  * starting a fix session is never asked to guess a codebase from free text
  * themselves — see BugFixSessionService.start.
  *
- * Same shape as RoadmapAiService.classifyGoal, including its guardrail:
- * an unvalidated model answer never becomes the repo a fix session dispatches
+ * Same shape as RoadmapAiService.classifyGoal, including its guardrail: an
+ * unvalidated model answer never becomes the repo a fix session dispatches
  * to. `repo` is null whenever the model's answer isn't a live entry in
- * BUG_FIX_SESSION_REPOS — including when it correctly says "ally-mobile",
- * which is a real repo but has no dispatchable fix-session workflow.
+ * BUG_FIX_SESSION_REPOS.
  */
 @Injectable()
 export class BugHunterRepoClassifierService {
@@ -114,7 +110,6 @@ export class BugHunterRepoClassifierService {
     const cleaned = stripMarkdownFences(raw);
     let parsed: {
       repo?: string | null;
-      notDispatchable?: string | null;
       confidence?: number;
       rationale?: string;
     } | null = null;
@@ -146,7 +141,6 @@ export class BugHunterRepoClassifierService {
 
     return {
       repo,
-      notDispatchable: repo ? null : (parsed.notDispatchable ?? null),
       rationale: parsed.rationale ?? '',
     };
   }

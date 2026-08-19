@@ -101,9 +101,9 @@ export class BugFixSessionService {
    * picking one from a list — see the classifier's own doc for why that
    * guess is safe to make (a validated allowlist, same guardrail as
    * RoadmapAiService.classifyGoal) and BugFindingDrawer for the UI history
-   * this replaces. A bug the classifier can't place — too vague, spans
-   * repos, or is ally-mobile-only, which has no dispatchable workflow — still
-   * fails loudly rather than dispatching a guess to the wrong repo.
+   * this replaces. A bug the classifier can't place — too vague, or spans
+   * repos — still fails loudly rather than dispatching a guess to the wrong
+   * repo.
    */
   async start(
     findingId: string,
@@ -134,9 +134,7 @@ export class BugFixSessionService {
 
     if (!repo) {
       throw new BadRequestException(
-        classification?.notDispatchable === 'ally-mobile'
-          ? 'This looks like an ally-mobile bug, which releases through App Store / Play Store builds and has no fix session to dispatch here — it needs to be fixed manually.'
-          : "I couldn't tell which repo this bug belongs to from its description — it may need more detail, or it may span more than one repo. File it more specifically, or fix it manually.",
+        "I couldn't tell which repo this bug belongs to from its description — it may need more detail, or it may span more than one repo. File it more specifically, or fix it manually.",
       );
     }
     if (!BUG_FIX_SESSION_REPOS.includes(repo as never)) {

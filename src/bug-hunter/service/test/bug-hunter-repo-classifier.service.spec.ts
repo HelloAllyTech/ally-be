@@ -52,7 +52,6 @@ describe('BugHunterRepoClassifierService', () => {
     mockMessagesCreate.mockResolvedValue(
       textResponse({
         repo: 'ally-web',
-        notDispatchable: null,
         confidence: 0.9,
         rationale: 'Terms modal is a browser screen.',
       }),
@@ -63,7 +62,6 @@ describe('BugHunterRepoClassifierService', () => {
     );
 
     expect(result.repo).toBe('ally-web');
-    expect(result.notDispatchable).toBeNull();
     expect(llmUsage.record).toHaveBeenCalledWith(
       expect.objectContaining({ task: 'bug_hunter' }),
     );
@@ -79,11 +77,10 @@ describe('BugHunterRepoClassifierService', () => {
     expect(result.repo).toBeNull();
   });
 
-  it('surfaces ally-mobile as not dispatchable rather than a repo to fix in', async () => {
+  it('recognizes ally-mobile as a dispatchable repo, like any other', async () => {
     mockMessagesCreate.mockResolvedValue(
       textResponse({
-        repo: null,
-        notDispatchable: 'ally-mobile',
+        repo: 'ally-mobile',
         rationale: 'Native app screen.',
       }),
     );
@@ -92,8 +89,7 @@ describe('BugHunterRepoClassifierService', () => {
       'The native app crashes on login.',
     );
 
-    expect(result.repo).toBeNull();
-    expect(result.notDispatchable).toBe('ally-mobile');
+    expect(result.repo).toBe('ally-mobile');
   });
 
   it('degrades to unclassified rather than throwing when the model call fails', async () => {
@@ -103,7 +99,6 @@ describe('BugHunterRepoClassifierService', () => {
 
     expect(result).toEqual({
       repo: null,
-      notDispatchable: null,
       rationale: '',
     });
   });
