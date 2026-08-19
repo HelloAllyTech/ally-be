@@ -47,7 +47,10 @@ export interface SweepPromptContext {
  * `BUG_HUNT_MAX_AUTO_MERGES_PER_RUN` genuinely trivial fixes and leaves
  * everything else as a PR for review. A fix session, by contrast, merges any
  * green fix — because there an admin asked for that bug by name. Guarded paths
- * never merge on either path.
+ * never merge on either path, and neither does `ally-mobile`: this pipeline
+ * only runs Jest, which cannot verify the native/on-device behaviour that
+ * actually ships, so every ally-mobile fix — trivial or not — stays a PR for
+ * a human to merge.
  */
 export function buildSweepPrompt(ctx: SweepPromptContext): string {
   const { repo, runId, apiBaseUrl, mode, deep } = ctx;
@@ -79,6 +82,9 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
   // comprehensive table is only useful if it keeps finding bugs regardless of
   // who is allowed to fix them.
   const gated = mode === BugHunterMode.MANUAL;
+  // ally-mobile writes code and opens PRs like any other fixable repo, but
+  // never merges — see the class doc's merge-policy note.
+  const neverMerges = repo === 'ally-mobile';
 
   return [
     `You are running a repo-wide bug sweep on the "${repo}" repo, checked out at master in your current working directory. Read this repo's CLAUDE.md before you change anything. Bug Hunter is in ${mode.toUpperCase()} mode.`,
@@ -139,11 +145,19 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
           `  g. Commit, push a branch, open a PR with "gh pr create" describing the bug, the evidence, the fix and the test. PATCH to {"status":"pr_opened"} with "prUrl", and report pr_opened.`,
           ``,
           `### Merging — the sweep is deliberately stricter than an on-demand fix`,
-          `Nobody asked for these fixes, so most of them stay PRs. You may merge at most ${BUG_HUNT_MAX_AUTO_MERGES_PER_RUN} of them in this entire run, and ONLY ones that are all of:`,
-          `  - fully green on both gates,`,
-          `  - touchesGuardedPath=false — never a migration, auth/permission, payment or other security-sensitive change, whatever the diff size,`,
-          `  - genuinely trivial: a lint/type-only fix, or a single-file change plus its test.`,
-          `Count them as you go and stop at the cap even if more would qualify. Do not merge something borderline just because you were told you could — a PR left for review costs a reviewer five minutes, and a bad merge costs far more. To merge: "gh pr merge --admin", then PATCH to {"status":"merged"} and report merged.`,
+          neverMerges
+            ? `Never merge here, however trivial the fix looks. This repo's pipeline only runs Jest, which cannot verify the native/on-device behaviour that actually ships, and a released mobile build is a frozen contract real users stay on for a long time. Every fix you open in ally-mobile stays a PR for a human to merge — do not run "gh pr merge" at all.`
+            : `Nobody asked for these fixes, so most of them stay PRs. You may merge at most ${BUG_HUNT_MAX_AUTO_MERGES_PER_RUN} of them in this entire run, and ONLY ones that are all of:`,
+          neverMerges ? '' : `  - fully green on both gates,`,
+          neverMerges
+            ? ''
+            : `  - touchesGuardedPath=false — never a migration, auth/permission, payment or other security-sensitive change, whatever the diff size,`,
+          neverMerges
+            ? ''
+            : `  - genuinely trivial: a lint/type-only fix, or a single-file change plus its test.`,
+          neverMerges
+            ? ''
+            : `Count them as you go and stop at the cap even if more would qualify. Do not merge something borderline just because you were told you could — a PR left for review costs a reviewer five minutes, and a bad merge costs far more. To merge: "gh pr merge --admin", then PATCH to {"status":"merged"} and report merged.`,
           `Never tag a release and never deploy. Promoting anything to production is a separate decision an admin makes in the Bug Hunter tab.`,
           ``,
         ]

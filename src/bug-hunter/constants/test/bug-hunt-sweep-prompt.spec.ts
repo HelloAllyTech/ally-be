@@ -115,25 +115,23 @@ describe('buildSweepPrompt', () => {
     });
   });
 
-  describe('a repo that can be swept but not fixed', () => {
-    const mobile = () => build({ repo: 'ally-mobile' });
+  describe('ally-mobile: fixable, but never merged', () => {
+    const mobile = (
+      over: Partial<Parameters<typeof buildSweepPrompt>[0]> = {},
+    ) => build({ repo: 'ally-mobile', ...over });
 
-    it('still runs the finders — recording the bug is the job there', () => {
+    it('still runs the finders and the fix phase, unlike a genuinely unfixable repo', () => {
       expect(mobile()).toMatch(/TEST\/LINT/);
-      expect(mobile()).toMatch(/PRODUCTION LOGS/);
+      expect(mobile()).toMatch(/Apply the MINIMAL fix/);
+      expect(mobile()).toContain('pipeline/approved-findings');
     });
 
-    it('forbids writing code, branching or opening a PR', () => {
-      expect(mobile()).toMatch(
-        /Do NOT write code, open a branch, or open a PR/i,
-      );
-    });
-
-    it('omits the fix steps and the merge policy entirely', () => {
+    it('forbids merging, however trivial the fix', () => {
       const p = mobile();
-      expect(p).not.toMatch(/gh pr merge/);
-      expect(p).not.toMatch(/Apply the MINIMAL fix/);
-      expect(p).not.toContain('pipeline/approved-findings');
+      expect(p).toMatch(/Never merge here/i);
+      expect(p).not.toContain('gh pr merge --admin');
+      expect(p).not.toMatch(/you may merge at most/i);
+      expect(p).not.toMatch(/genuinely trivial/i);
     });
 
     it('still closes the run', () => {

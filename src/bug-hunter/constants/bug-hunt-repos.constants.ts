@@ -25,10 +25,9 @@ export interface BugHuntRepoConfig {
   lint: string;
   /**
    * False when the repo can be swept for bugs but no fix can be dispatched to
-   * it — it carries no `bug-fix-session.yml`. `ally-mobile` is the case: it
-   * releases through App Store / Play Store builds, so there is nothing for a
-   * fix session to land into. Sweeping it is still worth doing: the finding
-   * gets recorded for a human even though the agent cannot act on it.
+   * it — it carries no `bug-fix-session.yml`. Sweeping a non-fixable repo is
+   * still worth doing: the finding gets recorded for a human even though the
+   * agent cannot act on it.
    */
   fixable: boolean;
 }
@@ -46,7 +45,11 @@ export const BUG_HUNT_REPOS: Record<string, BugHuntRepoConfig> = {
     lint: 'poetry run flake8',
     fixable: true,
   },
-  'ally-mobile': { test: 'npm test', lint: 'npm run lint', fixable: false },
+  // Fixable, but never auto-merged — see buildFixSessionPrompt's merge-policy
+  // doc: this pipeline only runs Jest, which cannot verify the native /
+  // on-device behaviour a mobile fix actually ships. A fix session opens a PR
+  // for a human to merge; it does not land on its own.
+  'ally-mobile': { test: 'npm test', lint: 'npm run lint', fixable: true },
 };
 
 /** Every repo a sweep may run against. */

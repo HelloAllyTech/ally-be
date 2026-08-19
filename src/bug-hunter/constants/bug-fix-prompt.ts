@@ -33,13 +33,19 @@ export interface FixPromptContext {
  *
  * The nightly sweep auto-merges at most three trivial fixes and leaves the
  * rest for review, because nobody asked for any of them. Here an admin asked
- * for this bug by name, so a green fix lands. The carve-out is
- * `touchesGuardedPath` — migrations, auth/permission gating, payments, other
- * security-sensitive services — which stays a reviewed PR no matter who
- * pressed the button. That carve-out has a second effect worth knowing: an
- * unmerged fix never reaches MERGED, so the "Release to production" button
- * never appears for it, and a guarded-path change cannot reach production down
- * this path at all.
+ * for this bug by name, so a green fix lands. Two carve-outs stay a reviewed
+ * PR no matter who pressed the button: `touchesGuardedPath` (migrations,
+ * auth/permission gating, payments, other security-sensitive services), and
+ * `ally-mobile` unconditionally — this pipeline only runs Jest, so a green
+ * suite here proves nothing about the native/on-device behaviour that
+ * actually ships, and ally-mobile's CLAUDE.md gotchas (frozen released
+ * builds, Indic glyphs silently missing on some ROMs, native changes needing
+ * a rebuild rather than a reload to even test) are exactly the kind of
+ * "unresolved, high-consequence, hard-to-verify-automatically" case that
+ * belongs in front of a human rather than auto-merged. Either carve-out has a
+ * second effect worth knowing: an unmerged fix never reaches MERGED, so the
+ * "Release to production" button never appears for it, and it cannot reach
+ * production down this path at all.
  */
 export function buildFixSessionPrompt({
   finding,
@@ -51,14 +57,10 @@ export function buildFixSessionPrompt({
   if (!commands) {
     throw new Error(`No test/lint commands configured for repo "${repo}"`);
   }
-  // The shared repo map covers everything Bug Hunter can SWEEP, which is a
-  // wider set than what it can fix: ally-mobile has no fix-session workflow and
-  // releases through App Store / Play Store builds, so there is nothing for a
-  // merged change to land into. Refuse here rather than emit a protocol whose
-  // final steps cannot be carried out. (This guard used to be implicit — the
-  // fix prompt kept its own four-repo copy of the commands and ally-mobile
-  // simply wasn't in it. Now that the map is shared, the rule has to be said
-  // out loud.)
+  // The shared repo map covers everything Bug Hunter can SWEEP, which can be a
+  // wider set than what it can fix — a repo with no `bug-fix-session.yml` at
+  // all has nothing to dispatch this prompt into. Refuse here rather than emit
+  // a protocol whose final steps cannot be carried out.
   if (!commands.fixable) {
     throw new Error(
       `Repo "${repo}" can be swept but not fixed from here — it has no fix-session workflow`,
@@ -93,7 +95,11 @@ export function buildFixSessionPrompt({
     BUG_HUNT_ESCALATION_ANSWER_TIMEOUT_MS / 60_000,
   );
   const pollSeconds = Math.round(BUG_HUNT_ESCALATION_POLL_INTERVAL_MS / 1000);
-  const allowMerge = !finding.touchesGuardedPath;
+  // ally-mobile never auto-merges, guarded path or not: this pipeline only
+  // runs Jest, so a green suite here does not prove the native/on-device
+  // behaviour that actually ships is fixed — see the class doc above.
+  const mobileNeverMerges = repo === 'ally-mobile';
+  const allowMerge = !finding.touchesGuardedPath && !mobileNeverMerges;
 
   return [
     `You are fixing ONE confirmed bug in the "${repo}" repo, checked out at master in your current working directory, at an admin's explicit request. This bug is already known to be real — do not re-litigate whether it is worth fixing. Read this repo's CLAUDE.md before you change anything.`,
@@ -128,7 +134,9 @@ export function buildFixSessionPrompt({
     `8. Commit, push a branch, and open a PR with "gh pr create" whose description states the bug, the evidence, the fix, and the regression test that proves it. Run ${report('pr_opened', 'opened a PR with the fix and its regression test')}, then PATCH the finding to status "pr_opened" with the PR URL in a "prUrl" field.`,
     allowMerge
       ? `9. Merge it. An admin explicitly asked for this fix, so a green fix lands rather than queueing: run "gh pr merge --admin", then ${report('merged', 'merged the fix to master')}, then ${patch({ status: 'merged' })}, and finish with outcome "merged". Merge ONLY if step 5 was fully green AND your diff is genuinely limited to this bug — if it turned out to need a wider change than the bug described, leave the PR open, finish with outcome "pr_opened", and say so. Do NOT tag a release or deploy anything: promoting this to production is a separate decision an admin makes in the Bug Hunter tab.`
-      : `9. Do NOT merge. This fix touches a guarded path (migrations, auth/permission gating, payments, or another security-sensitive service), which stays a reviewed PR regardless of who asked for it. Leave the PR open and finish with outcome "pr_opened", naming in your summary which guarded area it touches so the reviewer knows where to look.`,
+      : mobileNeverMerges
+        ? `9. Do NOT merge. ally-mobile fixes always stay a reviewed PR: this pipeline only runs Jest, which cannot prove a native/on-device fix actually works, and a released mobile build is a frozen contract real users stay on for a long time. Leave the PR open and finish with outcome "pr_opened".`
+        : `9. Do NOT merge. This fix touches a guarded path (migrations, auth/permission gating, payments, or another security-sensitive service), which stays a reviewed PR regardless of who asked for it. Leave the PR open and finish with outcome "pr_opened", naming in your summary which guarded area it touches so the reviewer knows where to look.`,
     `10. Finally, close the run: curl -sS -X POST "${closeUrl}" -H "Content-Type: application/json" ${authHeader} -d '{"status":"completed","foundCount":1,"autoMergedCount":<1 if you merged else 0>,"prOpenedCount":<1 if you left a PR open or escalated else 0>,"dismissedCount":<1 if you dismissed or failed else 0>}'. Do this exactly once, whatever the outcome — a run left open looks to an admin like a session still working.`,
     ``,
     `Report progress throughout with POST ${reportUrl} (JSON body {repo, stage, summary, payload, findingId}, header ${authHeader}). Valid stages: fix_attempt, test_written, doc_updated, pr_opened, merged, escalated, error.`,

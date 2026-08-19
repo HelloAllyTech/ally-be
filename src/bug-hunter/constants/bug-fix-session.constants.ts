@@ -23,12 +23,18 @@ export const BUG_FIX_SESSION_DEFAULT_REF = 'master';
  */
 export const BUG_HUNT_SWEEP_WORKFLOW_FILE = 'bug-hunt-sweep.yml';
 
-/** Repos a fix session may be dispatched for — i.e. those carrying `bug-fix-session.yml`. */
+/**
+ * Repos a fix session may be dispatched for — i.e. those carrying
+ * `bug-fix-session.yml`. `ally-mobile` is fixable (opens a PR) but never
+ * auto-merges and never appears in `RELEASE_TARGETS` below — see
+ * `buildFixSessionPrompt`'s merge-policy doc.
+ */
 export const BUG_FIX_SESSION_REPOS = [
   'ally-be',
   'ally-web',
   'ally-ai',
   'ally-ai-learn',
+  'ally-mobile',
 ] as const;
 
 export type BugFixSessionRepo = (typeof BUG_FIX_SESSION_REPOS)[number];
@@ -43,8 +49,10 @@ export type BugFixSessionRepo = (typeof BUG_FIX_SESSION_REPOS)[number];
  * NOT auto-resolvable, since it ships in all three.
  *
  * `ally-mobile` is absent: it releases through App Store / Play Store build
- * workflows, not a dispatchable production-release pipeline, so a fix there
- * can never be released from this button.
+ * workflows, not a dispatchable production-release pipeline, so a merged fix
+ * there can never be released from this button — regardless, it never merges
+ * on its own anyway (see `BUG_FIX_SESSION_REPOS` above), so a human handles
+ * both the merge and the eventual app-store release manually.
  */
 export interface ReleaseTarget {
   repo: string;
