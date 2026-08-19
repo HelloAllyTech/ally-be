@@ -355,6 +355,41 @@ export class StartDriftBackfillDto {
     description: 'Judge model the version above belongs to.',
   })
   judgeModel?: string;
+  @ApiProperty({
+    required: false,
+    default: 5,
+    description:
+      'Sessions judged in parallel (1-20). The default of 5 turns a ~46-hour ' +
+      'serial run over a 90-day window into roughly nine. Capped because a ' +
+      'backfill is background work sharing a Gemini rate limit and one ' +
+      'core-ai task with the live paths, and a 429 storm just converts ' +
+      'throughput into sessions a later re-run has to redo.',
+  })
+  concurrency?: number;
+  @ApiProperty({
+    required: false,
+    default: false,
+    description:
+      'LEAN BACKFILL. Judge only the labels the current rubric ADDED, copying ' +
+      "every other field forward from the session's existing judgment under " +
+      '`leanFromPromptVersion`. Roughly a quarter of the cost: the transcript ' +
+      'still goes up (input is an eighth the price) but the response carries ' +
+      'six labels instead of the full per-turn record.\n\n' +
+      'Only valid when the rubric change ADDED labels and redefined none — ' +
+      'copying forward a value whose meaning changed would be silently wrong. ' +
+      'Never use for sessions judged for the first time; they need a full run.',
+  })
+  lean?: boolean;
+
+  @ApiProperty({
+    required: false,
+    default: 'v1',
+    description:
+      'Which existing judgment the lean pass copies forward. Sessions without ' +
+      'a judgment under this version are excluded from the run — there would ' +
+      'be nothing to top up.',
+  })
+  leanFromPromptVersion?: string;
 }
 
 export class StartGroundednessBackfillDto {
@@ -378,6 +413,17 @@ export class StartGroundednessBackfillDto {
 
   @ApiProperty({ required: false, default: 'gemini-2.5-pro' })
   judgeModel?: string;
+  @ApiProperty({
+    required: false,
+    default: 5,
+    description:
+      'Sessions judged in parallel (1-20). The default of 5 turns a ~46-hour ' +
+      'serial run over a 90-day window into roughly nine. Capped because a ' +
+      'backfill is background work sharing a Gemini rate limit and one ' +
+      'core-ai task with the live paths, and a 429 storm just converts ' +
+      'throughput into sessions a later re-run has to redo.',
+  })
+  concurrency?: number;
 }
 
 export class GroundednessBackfillJobDto {
@@ -403,6 +449,14 @@ export class GroundednessBackfillJobDto {
   })
   claimsUngrounded!: number;
   @ApiProperty({ nullable: true }) error!: string | null;
+  @ApiProperty({
+    description:
+      'Sessions whose judge call errored or timed out. Separate from ' +
+      '`processed`, which counts attempts: a run where every call times out ' +
+      'still reaches processed === total and reports "done", which is exactly ' +
+      'how a backfill that judged nothing went unnoticed for ten minutes.',
+  })
+  failed!: number;
 }
 
 export class DriftBackfillJobDto {
@@ -415,6 +469,14 @@ export class DriftBackfillJobDto {
   @ApiProperty() drifted!: number;
   @ApiProperty() skipped!: number;
   @ApiProperty({ required: false, nullable: true }) error?: string | null;
+  @ApiProperty({
+    description:
+      'Sessions whose judge call errored or timed out. Separate from ' +
+      '`processed`, which counts attempts: a run where every call times out ' +
+      'still reaches processed === total and reports "done", which is exactly ' +
+      'how a backfill that judged nothing went unnoticed for ten minutes.',
+  })
+  failed!: number;
 }
 
 export class LanguageQualityQueryDto {
@@ -717,6 +779,17 @@ export class StartLanguageBackfillDto {
 
   @ApiProperty({ required: false, default: 'gemini-2.5-pro' })
   judgeModel?: string;
+  @ApiProperty({
+    required: false,
+    default: 5,
+    description:
+      'Sessions judged in parallel (1-20). The default of 5 turns a ~46-hour ' +
+      'serial run over a 90-day window into roughly nine. Capped because a ' +
+      'backfill is background work sharing a Gemini rate limit and one ' +
+      'core-ai task with the live paths, and a 429 storm just converts ' +
+      'throughput into sessions a later re-run has to redo.',
+  })
+  concurrency?: number;
 }
 
 export class LanguageBackfillJobDto {
@@ -730,6 +803,14 @@ export class LanguageBackfillJobDto {
   errorAnnotations!: number;
   @ApiProperty() skipped!: number;
   @ApiProperty({ required: false, nullable: true }) error?: string | null;
+  @ApiProperty({
+    description:
+      'Sessions whose judge call errored or timed out. Separate from ' +
+      '`processed`, which counts attempts: a run where every call times out ' +
+      'still reaches processed === total and reports "done", which is exactly ' +
+      'how a backfill that judged nothing went unnoticed for ten minutes.',
+  })
+  failed!: number;
 }
 
 export class AgentJoinReliabilityQueryDto extends AnalyticsWindowQueryDto {}
@@ -907,9 +988,14 @@ export class VoiceLatencyResponseDto {
   bucket!: string;
 
   @ApiProperty({
-    description: 'Latency target line for reference (ms)',
+    description: 'Voice-to-voice latency target line for reference (ms)',
   })
   targetMs!: number;
+
+  @ApiProperty({
+    description: 'LLM time-to-first-token target line for reference (ms)',
+  })
+  llmTtftTargetMs!: number;
 
   @ApiProperty({
     description:

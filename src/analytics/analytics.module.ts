@@ -46,6 +46,7 @@ import { PlatformAnalyticsService } from './service/platform-analytics.service';
 import { ScribeAnalyticsService } from './service/scribe-analytics.service';
 import { DriftJudgeService } from './service/drift-judge.service';
 import { DriftBackfillSchedulerRegistrationService } from './service/drift-backfill-scheduler-registration.service';
+import { JudgeBacklogDrainService } from './service/judge-backlog-drain.service';
 import { LanguageJudgeService } from './service/language-judge.service';
 import { LanguageBackfillSchedulerRegistrationService } from './service/language-backfill-scheduler-registration.service';
 import { PlatformAnalyticsRepository } from './repository/platform-analytics.repository';
@@ -135,6 +136,7 @@ import { TenantModule } from 'src/tenant/tenant.module';
     DriftJudgeService,
     DriftJudgeRepository,
     DriftBackfillSchedulerRegistrationService,
+    JudgeBacklogDrainService,
     LanguageJudgeService,
     LanguageJudgeRepository,
     LanguageBackfillSchedulerRegistrationService,

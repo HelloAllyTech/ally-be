@@ -4,6 +4,12 @@ import { randomUUID } from 'crypto';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
+import {
+  JUDGE_HTTP_TIMEOUT_MS,
+  resolveJudgeConcurrency,
+  runWithConcurrency,
+  withJudgeSlot,
+} from '../util/judge-concurrency.util';
 import { GroundednessBackfillJobDto } from '../dto/platform-analytics.dto';
 import {
   ClaimJudgment,
@@ -71,7 +77,9 @@ export class FeedbackGroundednessJudgeService {
       judgeModel: string;
       judgePromptVersion: string;
     } | null,
+    requestedConcurrency?: number | null,
   ): Promise<GroundednessBackfillJobDto> {
+    const concurrency = resolveJudgeConcurrency(requestedConcurrency);
     const jobId = randomUUID();
     const job: GroundednessBackfillJobDto = {
       jobId,
@@ -80,12 +88,13 @@ export class FeedbackGroundednessJudgeService {
       processed: 0,
       judged: 0,
       skipped: 0,
+      failed: 0,
       claimsJudged: 0,
       claimsUngrounded: 0,
       error: null,
     };
     await this.saveJob(job);
-    void this.runJob(job, sinceDays, unjudgedForVersion);
+    void this.runJob(job, sinceDays, unjudgedForVersion ?? null, concurrency);
     this.logger.debug(
       `groundedness backfill queued job=${jobId} sinceDays=${sinceDays} ` +
         `version=${unjudgedForVersion?.judgePromptVersion ?? 'any'}`,
@@ -96,10 +105,11 @@ export class FeedbackGroundednessJudgeService {
   private async runJob(
     job: GroundednessBackfillJobDto,
     sinceDays: number,
-    unjudgedForVersion?: {
+    unjudgedForVersion: {
       judgeModel: string;
       judgePromptVersion: string;
     } | null,
+    concurrency: number,
   ): Promise<void> {
     try {
       const rubric = await this.repo.fetchRubric();
@@ -111,7 +121,8 @@ export class FeedbackGroundednessJudgeService {
       job.total = sessions.length;
       await this.saveJob(job);
 
-      for (const s of sessions) {
+      // Independent per session; the LLM call dominates, so run a bounded pool.
+      await runWithConcurrency(sessions, concurrency, async (s) => {
         try {
           const [claims, transcript] = await Promise.all([
             this.repo.buildClaims(s.id),
@@ -125,7 +136,7 @@ export class FeedbackGroundednessJudgeService {
             job.skipped += 1;
             job.processed += 1;
             await this.saveJob(job);
-            continue;
+            return;
           }
 
           const judged = await this.judgeViaAi(
@@ -156,10 +167,11 @@ export class FeedbackGroundednessJudgeService {
               (e as Error).message
             }`,
           );
+          job.failed += 1;
           job.processed += 1;
           await this.saveJob(job);
         }
-      }
+      });
 
       job.status = 'done';
       await this.saveJob(job);
@@ -183,14 +195,18 @@ export class FeedbackGroundednessJudgeService {
     rubric: string | null,
   ): Promise<JudgeResult> {
     const { apiUrl, outboundApiKey } = this.config.ai;
-    const res = await axios.post(
-      `${apiUrl}/api/v1/feedback-groundedness/judge`,
-      { transcript, claims, language, rubric },
-      {
-        headers: { 'x-api-key': outboundApiKey },
-        // One Gemini call over a whole transcript plus every claim.
-        timeout: 120_000,
-      },
+    // Held inside the GLOBAL judge slot: the ceiling has to span every
+    // backfill at once, not just this job's own pool.
+    const res = await withJudgeSlot(() =>
+      axios.post(
+        `${apiUrl}/api/v1/feedback-groundedness/judge`,
+        { transcript, claims, language, rubric },
+        {
+          headers: { 'x-api-key': outboundApiKey },
+          // One Gemini call over a whole transcript plus every claim.
+          timeout: JUDGE_HTTP_TIMEOUT_MS,
+        },
+      ),
     );
     const d = res.data as {
       judge_model: string;

@@ -4,6 +4,10 @@ import {
   excludeTestTenants,
   excludeTestTenantsBySession,
 } from '../util/test-tenant.util';
+import {
+  languageCheckEligibleSql,
+  offLanguageSql,
+} from '../util/off-language.util';
 
 /**
  * Slice tuple for the Weak Performing Metrics tab. Every query in here accepts
@@ -68,6 +72,26 @@ function mainPromptVersionSql(sessionAlias: string): string {
   )`;
 }
 
+/**
+ * Languages whose script is NOT Latin — the only ones where "wrong regional
+ * variety" or "wrong word sense" is a question that can be asked. Mirrors the
+ * keys of TARGET_SCRIPT_RANGES in off-language.util.ts.
+ */
+const NON_LATIN_SCRIPT_LANGS = [
+  'hi',
+  'mr',
+  'bn',
+  'as',
+  'pa',
+  'gu',
+  'or',
+  'ta',
+  'te',
+  'kn',
+  'ml',
+  'ur',
+];
+
 /** Severity -> weight. Applied HERE, never asked of the judge. */
 const SEVERITY_WEIGHT_SQL = `CASE a."severity"
   WHEN 'minor' THEN 1 WHEN 'major' THEN 5 WHEN 'critical' THEN 10 ELSE 1 END`;
@@ -126,15 +150,31 @@ export const WEAK_METRICS_VERSION = 'v1';
 export class WeakMetricsAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  /** Most recent judge version carrying rows — what the dashboard pins to. */
-  async latestDriftJudgeVersion(): Promise<{
-    judgeModel: string;
-    judgePromptVersion: string;
-  } | null> {
+  /**
+   * Most recent judge version per judge FAMILY.
+   *
+   * Three judges write here and they version independently: drift went to v2
+   * when the clienthood labels were added, language when the dialect_lexicon
+   * rubric was widened, groundedness is on its first rubric. There was never a
+   * reason those numbers should refer to the same thing.
+   *
+   * A single pin across all three was a real bug, not a simplification. It
+   * resolved to drift's version and then filtered the OTHER tables by it, so
+   * the language series read the 6 annotations that happened to be v2 and
+   * ignored 1,776 under v1 — and a groundedness backfill would have written
+   * rows nothing could read, because those land under the groundedness judge's
+   * own version.
+   *
+   * Ordered by `updatedAt` rather than by version string: versions are opaque
+   * labels, not sortable values, and "latest" means most recently written.
+   */
+  private async latestVersionIn(
+    table: string,
+  ): Promise<{ judgeModel: string; judgePromptVersion: string } | null> {
     const rows = await this.dataSource.query(
       `SELECT j."judgeModel" AS judge_model,
               j."judgePromptVersion" AS judge_prompt_version
-         FROM turn_drift_judgment j
+         FROM ${table} j
         WHERE ${excludeTestTenants('j."tenant_id"')}
         ORDER BY j."updatedAt" DESC LIMIT 1`,
     );
@@ -143,6 +183,19 @@ export class WeakMetricsAnalyticsRepository {
       judgeModel: rows[0].judge_model,
       judgePromptVersion: rows[0].judge_prompt_version,
     };
+  }
+
+  async latestDriftJudgeVersion() {
+    return this.latestVersionIn('turn_drift_judgment');
+  }
+
+  /** Denominator table, not the annotations: a clean session has a row here and no annotations. */
+  async latestLanguageJudgeVersion() {
+    return this.latestVersionIn('language_judgment_sessions');
+  }
+
+  async latestGroundednessJudgeVersion() {
+    return this.latestVersionIn('feedback_claim_judgment');
   }
 
   /**
@@ -637,6 +690,51 @@ export class WeakMetricsAnalyticsRepository {
     );
   }
 
+  /**
+   * Turns the actor rendered with NO target-script content — a Hindi session
+   * answered in English, or in romanised Hindi.
+   *
+   * Judge-INDEPENDENT and deterministic, which is the point: it covers every
+   * session ever recorded the moment it ships, needs no backfill, and costs
+   * nothing to recompute if the rule changes.
+   *
+   * It exists because two mechanisms that should have caught this did not.
+   * Script fidelity tolerates Latin by design so code-switching is not punished,
+   * so a 100% English turn scores a perfect 1.0 — hi-IN read 99.3% over a
+   * corpus containing whole English turns. The `codeswitch` judge dimension
+   * fired once in 429 hi-IN turns.
+   *
+   * Only turns with enough letters to have MADE a language choice are counted,
+   * and only a total absence of the target script counts as a failure: heavy
+   * code-mixing is how people actually speak and a proportional threshold would
+   * flag it.
+   */
+  async offLanguageTurnTrend(f: WeakMetricsFilters): Promise<TrendPoint[]> {
+    const params: unknown[] = [f.start];
+    const sessionFilter = this.sessionScopedFilter(
+      'm."scenarioSessionId"',
+      f,
+      params,
+    );
+    const lang = `COALESCE(l.value, 'en')`;
+    return this.dataSource.query(
+      `SELECT to_char(date_trunc('${f.bucket}', m."createdAt"), 'YYYY-MM-DD') AS bucket,
+              COUNT(*) FILTER (WHERE ${offLanguageSql('m.content', lang)})::float AS numerator,
+              COUNT(*)::float AS denominator
+         FROM scenario_session_messages m
+         JOIN scenario_sessions s ON s.id = m."scenarioSessionId"
+         LEFT JOIN languages l ON l.id = NULLIF(s.metadata->>'languageId', '')::int
+        WHERE m."senderId" = -1
+          AND m."createdAt" >= $1
+          AND ${excludeTestTenantsBySession('m."scenarioSessionId"')}
+          AND ${languageCheckEligibleSql('m.content', lang)}
+          ${sessionFilter}
+        GROUP BY 1 HAVING COUNT(*) > 0
+        ORDER BY 1`,
+      params,
+    );
+  }
+
   // =========================================================================
   // 3. LANGUAGE REALISM
   // =========================================================================
@@ -659,6 +757,18 @@ export class WeakMetricsAnalyticsRepository {
     const annWhere = this.judgmentWhere('a', f, params);
     params.push(dimension);
     const dimParam = `$${params.length}`;
+    // dialect_lexicon asks whether a word carries the right MEANING in the
+    // configured regional variety. English has no such variety to get wrong, so
+    // en-IN turns can only ever contribute to the denominator — and they are two
+    // thirds of the corpus. Dividing by them made a working detector read as
+    // broken: near-zero globally, while it fires at 2.06 and 2.36 per 100 turns
+    // for Tamil and Kannada, the languages our partners actually use.
+    const nonLatinOnly =
+      dimension === 'dialect_lexicon'
+        ? ` AND lower(split_part(COALESCE(%ALIAS%."language", 'en'), '-', 1)) IN (${NON_LATIN_SCRIPT_LANGS.map(
+            (l) => `'${l}'`,
+          ).join(',')})`
+        : '';
     const denParams: unknown[] = [];
     const shiftedSessWhere = this.shiftPlaceholders(
       this.judgmentWhere('s', f, denParams),
@@ -672,12 +782,14 @@ export class WeakMetricsAnalyticsRepository {
                 COUNT(*) AS annotations
            FROM language_error_annotations a
           WHERE ${annWhere} AND a."dimension" = ${dimParam}
+                ${nonLatinOnly.replace('%ALIAS%', 'a')}
           GROUP BY 1
        ), den AS (
          SELECT ${this.bucketExpr('s', f)} AS bucket,
                 SUM(s."turnsJudged") AS turns
            FROM language_judgment_sessions s
           WHERE ${shiftedSessWhere}
+                ${nonLatinOnly.replace('%ALIAS%', 's')}
           GROUP BY 1
        )
        SELECT to_char(den.bucket, 'YYYY-MM-DD') AS bucket,
@@ -720,80 +832,33 @@ export class WeakMetricsAnalyticsRepository {
   // =========================================================================
 
   /**
-   * Quote-match rate — a fabricated-citation check that needs no judge: a
-   * quoted span appearing nowhere in the session's messages was not said.
+   * Fabricated citations: feedback claims whose quote is not actually in the
+   * transcript, over claims that quote at all.
    *
-   * ---------------------------------------------------------------------
-   * SEVERELY UNDER-SAMPLED. Do not present the rate as the fabrication rate.
-   * ---------------------------------------------------------------------
+   * This REPLACES the quote-match scrape, which regex-extracted double-quoted
+   * spans from feedback prose and could therefore see about 2.5% of quoting
+   * feedback — single quotes are unparseable because the apostrophe in
+   * "client's" opens a span. Its own caveat said the fix was upstream: have the
+   * check run where the claim and the transcript are both structured. That is
+   * what the groundedness judge does, on every claim rather than a sample.
    *
-   * Measured against production over 12 months: of 14,752 feedback items,
-   * only **172 quote with double quotes** while **6,736 use single quotes**.
-   * This query reads the double-quoted spans only, so it sees ~2.5% of the
-   * quoting feedback — a slice with no reason to be representative.
-   *
-   * Single quotes cannot simply be added. In English prose the apostrophe is
-   * the same character, so `'([^']{25,})'` spans from one possessive to the
-   * next and yields garbage: sampling production returned fragments like
-   * "s feelings of hopelessness" and "s okay to feel anxious", opened by the
-   * apostrophe in "client's" / "it's". High recall, unusable precision.
-   *
-   * The real fix is upstream and belongs with the groundedness judge: have
-   * feedback generation emit its evidence as a structured field
-   * (`{claim, evidenceQuote}`) instead of prose with quotation marks embedded.
-   * Then this check becomes exact and total rather than a lossy scrape.
-   *
-   * Until then the series ships as state `none` — a fabricated-citation
-   * SAMPLE, not a rate. Short spans (<25 chars) are ignored either way: a
-   * three-word quote matches the transcript by accident.
+   * Denominator is claims that CARRY a quote, not all claims: a claim making no
+   * citation cannot fabricate one, and counting it would dilute the rate with
+   * cases the metric has nothing to say about.
    */
-  async quoteMatchTrend(f: WeakMetricsFilters): Promise<TrendPoint[]> {
-    const params: unknown[] = [f.start];
-    let scenarioFilter = '';
-    if (f.scenarioId) {
-      params.push(f.scenarioId);
-      scenarioFilter += ` AND ss."scenarioId" = $${params.length}`;
-    }
-    if (f.scenarioVersionId) {
-      params.push(f.scenarioVersionId);
-      scenarioFilter += ` AND ss."scenarioVersionId" = $${params.length}::uuid`;
-    }
-    if (f.promptVersion) {
-      params.push(f.promptVersion);
-      scenarioFilter += ` AND ${mainPromptVersionSql('ss')} = $${params.length}`;
-    }
-
+  async fabricatedQuoteTrend(f: WeakMetricsFilters): Promise<TrendPoint[]> {
+    const params: unknown[] = [];
+    const where = this.judgmentWhere('c', f, params, {
+      promptVersionVia: 'session',
+    });
     return this.dataSource.query(
-      `WITH fb AS (
-         SELECT d."scenarioSessionId" AS sid, d."createdAt" AS ts, item AS text
-           FROM scenario_session_details d
-           JOIN scenario_sessions ss ON ss.id = d."scenarioSessionId"
-          CROSS JOIN LATERAL (
-            SELECT jsonb_array_elements_text(d.summary->'feedback'->'positives') AS item
-            UNION ALL
-            SELECT jsonb_array_elements_text(d.summary->'feedback'->'improvements')
-          ) items
-          WHERE d."createdAt" >= $1
-            AND d.summary->'feedback' ? 'positives'
-            AND ${excludeTestTenants('d."tenant_id"')}
-            ${scenarioFilter}
-       ), quotes AS (
-         SELECT fb.sid, fb.ts,
-                (regexp_matches(fb.text, '"([^"]{25,})"', 'g'))[1] AS quote
-           FROM fb
-       ), transcript AS (
-         SELECT m."scenarioSessionId" AS sid,
-                lower(string_agg(m.content, ' ')) AS body
-           FROM scenario_session_messages m
-          GROUP BY 1
-       )
-       SELECT to_char(date_trunc('${f.bucket}', q.ts), 'YYYY-MM-DD') AS bucket,
-              COUNT(*) FILTER (
-                WHERE t.body IS NULL OR position(lower(q.quote) IN t.body) = 0
-              )::float AS numerator,
+      `SELECT to_char(${this.bucketExpr('c', f)}, 'YYYY-MM-DD') AS bucket,
+              COUNT(*) FILTER (WHERE c."quoteIsAccurate" IS FALSE)::float AS numerator,
               COUNT(*)::float AS denominator
-         FROM quotes q LEFT JOIN transcript t ON t.sid = q.sid
-        GROUP BY 1 ORDER BY 1`,
+         FROM feedback_claim_judgment c
+        WHERE ${where} AND c."quotesTranscript" IS TRUE
+        GROUP BY 1 HAVING COUNT(*) > 0
+        ORDER BY 1`,
       params,
     );
   }

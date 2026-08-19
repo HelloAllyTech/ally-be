@@ -25,24 +25,40 @@ Prod access: `docker exec` into the core container and use its own DB env — se
 Break one of these and you will get a number that looks like a finding and isn't. All four have
 already produced a false finding in this data.
 
-**1. Pin the judge version.** Judge output lives at `(judgeModel, judgePromptVersion)`. A
-re-judge under a new rubric does not replace the old rows, it coexists with them, so an
-unpinned query averages two different definitions of the same word. v2-only labels
-(`roleInversion`, `solutionsOffered`, `stuckIsAppropriate`, …) are NULL on v1 rows — count them
-with `COUNT(*) FILTER (WHERE col)` over a `WHERE col IS NOT NULL` denominator, never
-`COALESCE(col, false)`.
+**1. Pin the judge version — PER JUDGE FAMILY.** Judge output lives at
+`(judgeModel, judgePromptVersion)`. A re-judge under a new rubric does not replace the old rows,
+it coexists with them, so an unpinned query averages two different definitions of the same word.
+v2-only labels (`roleInversion`, `solutionsOffered`, `stuckIsAppropriate`, …) are NULL on v1
+rows — count them with `COUNT(*) FILTER (WHERE col)` over a `WHERE col IS NOT NULL` denominator,
+never `COALESCE(col, false)`.
+
+**The three judges version independently.** Drift went to v2 when the clienthood labels were
+added, language when the `dialect_lexicon` rubric was widened, groundedness is on its first
+rubric. "v2" in one table has nothing to do with "v2" in another. Carrying one version across
+tables is not a shortcut — the dashboard did exactly that and read the language series through
+drift's pin, returning 6 annotations out of 1,782.
 
 ```sql
--- Always start here: what versions exist, over what period, at what volume.
-SELECT "judgeModel", "judgePromptVersion",
-       COUNT(*) AS turns,
-       COUNT(DISTINCT "scenarioSessionId") AS sessions,
-       MIN("occurredAt")::date AS from_date,
-       MAX("occurredAt")::date AS to_date,
-       COUNT(*) FILTER (WHERE "roleInversion" IS NOT NULL) AS has_v2_labels
-  FROM turn_drift_judgment
- GROUP BY 1, 2 ORDER BY 3 DESC;
+-- Always start here: what versions exist per family, over what period, at what volume.
+SELECT 'drift' AS family, "judgeModel", "judgePromptVersion",
+       COUNT(*) AS rows, COUNT(DISTINCT "scenarioSessionId") AS sessions,
+       MIN("occurredAt")::date AS from_date, MAX("occurredAt")::date AS to_date
+  FROM turn_drift_judgment GROUP BY 1, 2, 3
+UNION ALL
+SELECT 'language', "judgeModel", "judgePromptVersion",
+       COUNT(*), COUNT(DISTINCT "scenarioSessionId"),
+       MIN("occurredAt")::date, MAX("occurredAt")::date
+  FROM language_judgment_sessions GROUP BY 1, 2, 3
+UNION ALL
+SELECT 'groundedness', "judgeModel", "judgePromptVersion",
+       COUNT(*), COUNT(DISTINCT "scenarioSessionId"),
+       MIN("occurredAt")::date, MAX("occurredAt")::date
+  FROM feedback_claim_judgment GROUP BY 1, 2, 3
+ ORDER BY 1, 4 DESC;
 ```
+
+The dashboard resolves each family's pin as the most recently WRITTEN row (`ORDER BY updatedAt`),
+not the highest-sorting version string — versions are opaque labels, not sortable values.
 
 **2. Exclude test tenants**, or internal QA traffic lands in the number. No table below carries
 a tenant column, so reach it through the session:
@@ -77,8 +93,8 @@ quality. Before believing a trend, run the [mix check](#did-the-metric-move-or-d
 | Actor responsiveness (comprehension) | `language_error_annotations` + `language_judgment_sessions` | language, scenarioId, scenarioVersionId, llmModel, promptVersion, voiceId, judge version |
 | Actor responsiveness (barge-in) | `scenario_session_turn_metrics` | language, llmModel, scenarioId, env — **no** promptVersion |
 | Progression & resolution | `turn_drift_judgment`, `scenario_session_messages`, `scenario_session_events`, `scenario_session_turn_metrics.metadata` | as above per table |
-| Language realism | `language_error_annotations` | dimension, category, severity, layer, `evidenceQuote` |
-| Feedback groundedness | `feedback_claim_judgment` + `scenario_session_details` | claimKind, verdict, quote accuracy |
+| Language realism | `language_error_annotations`, plus `scenario_session_messages` for the deterministic off-language check | dimension, category, severity, layer, `evidenceQuote` |
+| Feedback groundedness | `feedback_claim_judgment` + `scenario_session_details` | claimKind, verdict, `quotesTranscript`, `quoteIsAccurate` |
 | Actor clienthood | `turn_drift_judgment` (v2 labels) | + `userText`/`aiText` for reading the actual turn |
 
 Three things worth knowing about these tables:
@@ -98,6 +114,12 @@ Three things worth knowing about these tables:
   sessions predate the metadata, and any prompt-version filter excludes them.
 - **`language_judgment_sessions` is the denominator.** A clean session has a row there and no
   annotations. Without joining it, "no errors" and "never judged" are indistinguishable.
+- **Some drift rows were topped up rather than judged whole.** A row whose
+  `metadata` carries a `labelsBackfill` key had its v1 fields COPIED forward and only the added
+  labels judged — the cheap backfill path. The labels are as trustworthy as any other (same
+  rubric, same model); the older fields on that row came from the earlier run. Filter on
+  `metadata ? 'labelsBackfill'` to tell them apart, e.g. when checking whether a rate differs
+  between topped-up history and fully judged live sessions.
 - **Judgment rows carry the text.** `turn_drift_judgment.userText`/`aiText` and
   `language_error_annotations.evidenceQuote` mean you can read the actual turns behind a rate
   without going back to the transcript. Do that before forming a hypothesis — a rate tells you
@@ -235,6 +257,61 @@ its opening state either never earned score, or the actor never let it.
 
 `stateId IS NULL` with a `stateCount` present means branching mode, which resolves no scored
 state — distinct from an older build that reported no state at all (no `stateCount` key).
+
+### Turns not in the session language at all
+
+Deterministic, judge-independent, and the reason it exists: script fidelity tolerates Latin by
+design so code-switching is not punished, which means a 100% English turn scores a perfect 1.0 —
+hi-IN reported 99.3% over a corpus containing whole English turns. The `codeswitch` judge
+dimension fired once in 429 hi-IN turns.
+
+Only a TOTAL absence of the target script counts. Code-mixing is normal speech
+("maybe मैं overthink कर रही हूँ") and a proportional threshold would flag it.
+
+```sql
+WITH ranges(lang, lo, hi) AS (VALUES
+  ('hi',2304,2431),('mr',2304,2431),('ta',2944,3071),('kn',3200,3327),
+  ('ml',3328,3455),('te',3072,3199),('bn',2432,2559),('gu',2688,2815),
+  ('pa',2560,2687),('or',2816,2943),('ur',1536,1791)),
+ai AS (
+  SELECT m.content, lower(split_part(COALESCE(l.value,'en'),'-',1)) AS lang
+    FROM scenario_session_messages m
+    JOIN scenario_sessions s ON s.id = m."scenarioSessionId"
+    LEFT JOIN languages l ON l.id = NULLIF(s.metadata->>'languageId','')::int
+   WHERE m."senderId" = -1 AND s."createdAt" >= $1
+     AND s."roomId" NOT LIKE 'preview-%')
+SELECT ai.lang,
+       COUNT(*) AS eligible_turns,
+       COUNT(*) FILTER (WHERE ai.content !~ ('[' || chr(r.lo) || '-' || chr(r.hi) || ']'))
+         AS off_language_turns
+  FROM ai JOIN ranges r ON r.lang = ai.lang
+ WHERE length(regexp_replace(ai.content,'[^[:alpha:]]','','g')) >= 15
+ GROUP BY 1 ORDER BY 2 DESC;
+```
+
+Drop the `GROUP BY` and select `content` to read the offending turns. When this fires, check the
+SCENARIO before the model: 11 of the first 16 production hits were one opening line stored in
+Roman script, repeated across sessions.
+
+### Fabricated citations
+
+Claims that CITE the transcript and cite it wrongly, over claims that cite at all. A claim making
+no citation cannot fabricate one, so it is not in the denominator.
+
+This replaced a regex scrape over feedback prose that could only see double-quoted spans — about
+2.5% of quoting feedback, because the apostrophe in `client's` makes single quotes unparseable.
+The judge checks every claim instead.
+
+```sql
+SELECT to_char(date_trunc('month', COALESCE(c."occurredAt", c."createdAt")), 'YYYY-MM-DD') AS bucket,
+       COUNT(*) FILTER (WHERE c."quoteIsAccurate" IS FALSE) AS fabricated,
+       COUNT(*) AS quoting_claims
+  FROM feedback_claim_judgment c
+ WHERE COALESCE(c."occurredAt", c."createdAt") >= $1
+   AND c."judgeModel" = $2 AND c."judgePromptVersion" = $3
+   AND c."quotesTranscript" IS TRUE
+ GROUP BY 1 ORDER BY 1;
+```
 
 ### Feedback groundedness
 

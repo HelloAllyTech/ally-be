@@ -50,7 +50,7 @@ const EXPECTED_SERIES: Record<string, string[]> = {
   feedback_groundedness: [
     'groundedness',
     'feedback_false_negatives',
-    'quote_match',
+    'fabricated_quotes',
     'unhealthy_scored',
     'criticism_ratio',
   ],

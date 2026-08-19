@@ -52,7 +52,10 @@ import {
 } from '../util/analytics-window.util';
 
 /** Voice-to-voice latency target (ms) — the reference line on the trend. */
-const VOICE_LATENCY_TARGET_MS = 1500;
+const VOICE_LATENCY_TARGET_MS = 4000;
+
+/** LLM time-to-first-token target (ms) — the reference line on the trend. */
+const LLM_TTFT_TARGET_MS = 1500;
 
 /** Simulation start-latency target (ms) — the reference line on the trend. */
 const START_LATENCY_TARGET_MS = 4000;
@@ -199,11 +202,18 @@ export class PlatformAnalyticsService {
       judgeModel: string;
       judgePromptVersion: string;
     } | null,
+    concurrency?: number | null,
+    leanFromVersion?: {
+      judgeModel: string;
+      judgePromptVersion: string;
+    } | null,
   ): Promise<DriftBackfillJobDto> {
     return this.driftJudge.startBackfill(
       sinceDays,
       onlyUnjudged,
       unjudgedForVersion,
+      concurrency,
+      leanFromVersion,
     );
   }
 
@@ -219,6 +229,7 @@ export class PlatformAnalyticsService {
         judged: 0,
         drifted: 0,
         skipped: 0,
+        failed: 0,
         error: 'job not found',
       };
     }
@@ -585,6 +596,7 @@ export class PlatformAnalyticsService {
       window: describeWindow(window),
       bucket,
       targetMs: VOICE_LATENCY_TARGET_MS,
+      llmTtftTargetMs: LLM_TTFT_TARGET_MS,
       points,
       byLanguage,
     };

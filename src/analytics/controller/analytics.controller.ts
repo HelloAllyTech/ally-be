@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -1051,6 +1052,7 @@ export class AnalyticsController {
     return this.feedbackGroundednessJudgeService.startBackfill(
       body.sinceDays ?? 365,
       unjudgedForVersion,
+      body.concurrency,
     );
   }
 
@@ -1095,10 +1097,29 @@ export class AnalyticsController {
           judgePromptVersion: body.judgePromptVersion,
         }
       : null;
+    // Lean mode needs BOTH versions: the one to copy forward from, and the one
+    // to write. Without a target version there is nothing to pin the new rows
+    // to, so it is rejected rather than guessed at.
+    const leanFromVersion =
+      body.lean && unjudgedForVersion
+        ? {
+            judgeModel: body.judgeModel ?? 'gemini-2.5-pro',
+            judgePromptVersion: body.leanFromPromptVersion ?? 'v1',
+          }
+        : null;
+    if (body.lean && !unjudgedForVersion) {
+      throw new BadRequestException(
+        'lean backfill requires judgePromptVersion: it names the version the ' +
+          'topped-up rows are written under, which is what the dashboard pins.',
+      );
+    }
+
     return this.platformAnalyticsService.startDriftBackfill(
       body.sinceDays ?? 90,
       Boolean(unjudgedForVersion),
       unjudgedForVersion,
+      body.concurrency,
+      leanFromVersion,
     );
   }
 
@@ -1198,6 +1219,7 @@ export class AnalyticsController {
       body.sinceDays ?? 90,
       unjudgedForVersion ? true : !body.rejudge,
       unjudgedForVersion,
+      body.concurrency,
     );
   }
 
@@ -1222,6 +1244,7 @@ export class AnalyticsController {
         judged: 0,
         errorAnnotations: 0,
         skipped: 0,
+        failed: 0,
         error: 'job not found (expired or unknown)',
       };
     }

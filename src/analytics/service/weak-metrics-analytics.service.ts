@@ -194,18 +194,45 @@ export class WeakMetricsAnalyticsService {
     const bucket =
       query.bucket === WeakMetricsBucket.WEEK ? 'week' : ('month' as const);
 
-    const judge = await this.repo.latestDriftJudgeVersion();
+    // One pin PER JUDGE FAMILY. They version independently — drift went to v2
+    // for the clienthood labels, language for the dialect_lexicon rubric,
+    // groundedness is on its first — so a single pin applied to all three read
+    // the language series through drift's version and returned 6 annotations
+    // out of 1,782, and would have made a groundedness backfill unreadable.
+    const [judge, languageJudge, groundednessJudge] = await Promise.all([
+      this.repo.latestDriftJudgeVersion(),
+      this.repo.latestLanguageJudgeVersion(),
+      this.repo.latestGroundednessJudgeVersion(),
+    ]);
 
+    const base: Omit<WeakMetricsFilters, 'judgeModel' | 'judgePromptVersion'> =
+      {
+        start,
+        bucket,
+        language: query.language ?? null,
+        llmModel: query.llmModel ?? null,
+        scenarioId: query.scenarioId ?? null,
+        scenarioVersionId: query.scenarioVersionId ?? null,
+        promptVersion: query.promptVersion ?? null,
+      };
+
+    // `f` stays the drift-pinned tuple: it is what the transcript- and
+    // turn-metric-derived queries take too, and those carry no judge version at
+    // all, so pinning them to anything is harmless.
     const f: WeakMetricsFilters = {
-      start,
-      bucket,
-      language: query.language ?? null,
-      llmModel: query.llmModel ?? null,
-      scenarioId: query.scenarioId ?? null,
-      scenarioVersionId: query.scenarioVersionId ?? null,
-      promptVersion: query.promptVersion ?? null,
+      ...base,
       judgeModel: judge?.judgeModel ?? null,
       judgePromptVersion: judge?.judgePromptVersion ?? null,
+    };
+    const fLang: WeakMetricsFilters = {
+      ...base,
+      judgeModel: languageJudge?.judgeModel ?? null,
+      judgePromptVersion: languageJudge?.judgePromptVersion ?? null,
+    };
+    const fGround: WeakMetricsFilters = {
+      ...base,
+      judgeModel: groundednessJudge?.judgeModel ?? null,
+      judgePromptVersion: groundednessJudge?.judgePromptVersion ?? null,
     };
 
     const [
@@ -220,7 +247,8 @@ export class WeakMetricsAnalyticsService {
       register,
       colloquial,
       lexicon,
-      quoteMatch,
+      offLanguage,
+      fabricatedQuotes,
       groundedness,
       falseNegativeFeedback,
       tone,
@@ -234,7 +262,7 @@ export class WeakMetricsAnalyticsService {
       worstScenarios,
       filterOptions,
     ] = await Promise.all([
-      this.repo.understandingWeightedTrend(f),
+      this.repo.understandingWeightedTrend(fLang),
       this.repo.unresponsiveTurnTrend(f),
       this.repo.rePromptTrend(f),
       this.repo.bargeInTrend(f),
@@ -242,12 +270,13 @@ export class WeakMetricsAnalyticsService {
       this.repo.sessionLoopRateTrend(f),
       this.repo.semanticStasisTrend(f),
       this.repo.resolutionTrend(f),
-      this.repo.realismWeightedTrend(f, 'register'),
-      this.repo.realismWeightedTrend(f, 'colloquialness'),
-      this.repo.realismWeightedTrend(f, 'dialect_lexicon'),
-      this.repo.quoteMatchTrend(f),
-      this.repo.groundednessTrend(f),
-      this.repo.falseNegativeFeedbackTrend(f),
+      this.repo.realismWeightedTrend(fLang, 'register'),
+      this.repo.realismWeightedTrend(fLang, 'colloquialness'),
+      this.repo.realismWeightedTrend(fLang, 'dialect_lexicon'),
+      this.repo.offLanguageTurnTrend(f),
+      this.repo.fabricatedQuoteTrend(fGround),
+      this.repo.groundednessTrend(fGround),
+      this.repo.falseNegativeFeedbackTrend(fGround),
       this.repo.feedbackToneTrend(f),
       this.repo.unhealthyScoredTrend(f),
       this.repo.scoreVsLengthPairs(f),
@@ -420,17 +449,43 @@ export class WeakMetricsAnalyticsService {
             WeakMetricState.MEASURED,
             colloquial,
           ),
+          // Deterministic and judge-independent, so it covers all history the
+          // moment it ships. It sits beside the judged dimensions because a
+          // reader asking "does the actor talk like a real person" needs to
+          // know it sometimes does not talk in the right LANGUAGE at all.
+          this.series(
+            'off_language',
+            'Turns not in the session language at all',
+            'percent',
+            WeakMetricState.MEASURED,
+            offLanguage,
+            {
+              caveat:
+                'Deterministic: an actor turn containing NO character of the ' +
+                'session script — English, or the right language romanised. ' +
+                'Only turns long enough to have made a language choice count, ' +
+                'and code-mixing is not flagged: "maybe मैं overthink कर रही हूँ" ' +
+                'is how people speak. Script fidelity misses these because it ' +
+                'tolerates Latin by design, and the codeswitch judge fired once ' +
+                'in 429 hi-IN turns. Concentrated in openings stored in the ' +
+                'wrong script, so check the scenario before blaming the model.',
+            },
+          ),
           this.series(
             'dialect_lexicon',
             'Wrong or odd word meanings, per 100 turns',
             'per100turns',
-            WeakMetricState.NONE,
+            WeakMetricState.MEASURED,
             lexicon,
             {
               caveat:
-                'Treat as UNMEASURED. Two partner orgs name this as their blocking ' +
-                'issue while the detector fires on almost nothing — that is a rubric ' +
-                'failure, not a low incidence. Fix the rubric before reading this line.',
+                'Counted ONLY over languages with a non-Latin script. English ' +
+                'has no regional variety to get wrong, and it is two thirds of ' +
+                'the corpus — dividing by it made this read near-zero and look ' +
+                'blind. Scoped, it runs about 2 per 100 turns in Tamil and ' +
+                'Kannada. Hindi reads ~0 because the Devanagari genuinely is ' +
+                'clean; what Hindi actually gets wrong is answering in the wrong ' +
+                'language entirely, which the series above measures.',
             },
           ),
         ],
@@ -469,21 +524,21 @@ export class WeakMetricsAnalyticsService {
             },
           ),
           this.series(
-            'quote_match',
-            'Feedback quotes not found in the transcript (sample)',
+            'fabricated_quotes',
+            'Feedback quotes that are not in the transcript',
             'percent',
-            WeakMetricState.NONE,
-            quoteMatch,
+            WeakMetricState.MEASURED,
+            fabricatedQuotes,
             {
               caveat:
-                'A SAMPLE, not a rate — do not read it as the fabrication rate. ' +
-                'Only double-quoted spans are extractable: of 14,752 feedback items ' +
-                'just 172 use double quotes while 6,736 use single quotes, and single ' +
-                'quotes cannot be parsed because the apostrophe is the same character ' +
-                '("client’s" opens a span). So this sees ~2.5% of quoting feedback. ' +
-                'The fix is upstream — have feedback emit a structured evidenceQuote ' +
-                'field instead of prose with embedded quotation marks; then the check ' +
-                'becomes exact.',
+                'Claims that CITE the transcript and cite it wrongly, over ' +
+                'claims that cite at all — a claim making no citation cannot ' +
+                'fabricate one. This replaces the old quote-match scrape, which ' +
+                'regex-extracted double-quoted spans from prose and could see ' +
+                'about 2.5% of quoting feedback, because the apostrophe in ' +
+                '"client\'s" makes single quotes unparseable. The judge checks ' +
+                'every claim instead, which is the upstream fix that caveat ' +
+                'asked for.',
             },
           ),
           this.series(
@@ -587,6 +642,11 @@ export class WeakMetricsAnalyticsService {
       parameters: { ...WEAK_METRICS_PARAMS },
       judgeModel: judge?.judgeModel ?? null,
       judgePromptVersion: judge?.judgePromptVersion ?? null,
+      judgeVersions: {
+        drift: judge,
+        language: languageJudge,
+        groundedness: groundednessJudge,
+      },
       bucket,
       start: start.toISOString(),
       groups,

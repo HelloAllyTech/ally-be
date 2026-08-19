@@ -77,16 +77,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # REPORT-ONLY, deliberately. Lint had never run in CI in any Ally repo, so
-      # its first run surfaced accumulated debt rather than anything this change
-      # introduced — here, 9 prettier violations (roadmap month-board work + migrations 1902/1903).
-      # A check that is red on every PR from day one is a check people learn to
-      # ignore, which would defeat the point of adding it. So this reports and
-      # does not fail, and the violation count goes into the job summary where it
-      # stays visible. Remove continue-on-error once the debt is cleared; that is
-      # the moment to make this a required check alongside the test job.
+      # Blocking. This was report-only for exactly one PR: lint had never run in
+      # CI in any Ally repo, so its first run surfaced 9 pre-existing prettier
+      # violations rather than anything the introducing change had done. Those are
+      # now fixed, so the check earns the right to fail the build.
       - name: Lint
-        continue-on-error: true
         run: npm run lint
 
       - name: Typecheck
