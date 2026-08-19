@@ -1,3 +1,9 @@
+import { Repository } from 'typeorm';
+
+import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
+import { RoadmapOpportunityStage } from 'src/product-roadmap/enum/roadmap-opportunity.enum';
+
+import { BUG_HUNTER_AGENT_ROADMAP_OWNER } from '../../constants/bug-fix-session.constants';
 import { BugFindingRepository } from '../../repository/bug-finding.repository';
 import { BugFindingService, RawFinding } from '../bug-finding.service';
 import { BugHunterNotificationService } from '../bug-hunter-notification.service';
@@ -37,6 +43,16 @@ const row = (over: Partial<BugFinding> = {}): BugFinding =>
     ...over,
   }) as BugFinding;
 
+/** Nothing under test here touches the roadmap unless a finding merges. */
+const roadmapRepository = (
+  over: Partial<{ findOne: jest.Mock; update: jest.Mock }> = {},
+) =>
+  ({
+    findOne: jest.fn().mockResolvedValue(null),
+    update: jest.fn().mockResolvedValue(undefined),
+    ...over,
+  }) as unknown as Repository<RoadmapOpportunity>;
+
 describe('BugFindingService.persistFindings', () => {
   let service: BugFindingService;
   let repo: jest.Mocked<
@@ -74,6 +90,7 @@ describe('BugFindingService.persistFindings', () => {
     service = new BugFindingService(
       repo as unknown as BugFindingRepository,
       notifications as unknown as BugHunterNotificationService,
+      roadmapRepository(),
     );
   });
 
@@ -215,6 +232,7 @@ describe('BugFindingService.raiseStaleEscalationDigest', () => {
     service = new BugFindingService(
       repo as unknown as BugFindingRepository,
       notifications as unknown as BugHunterNotificationService,
+      roadmapRepository(),
     );
   });
 
@@ -287,5 +305,123 @@ describe('BugFindingService.raiseStaleEscalationDigest', () => {
     repo.listStaleNeedsInput.mockResolvedValue([stale()]);
     await run();
     expect(notifications.notify.mock.calls[0][0].body).toContain('one bug');
+  });
+});
+
+/**
+ * This is the path a fix agent takes on the common single-repo run: it runs
+ * `gh pr merge --admin` itself and then PATCHes the finding to `merged`. If the
+ * bug came in through the Product Roadmap, that merge is the moment the
+ * reporter's card should move to Released — nothing else asks GitHub about that
+ * PR afterwards, so a card missed here is a card that stays wrong forever.
+ */
+describe('BugFindingService.setStatus — releasing the reporter’s roadmap card', () => {
+  const merged = (over: Partial<BugFinding> = {}): BugFinding =>
+    row({
+      id: 'finding-1',
+      status: BugFindingStatus.MERGED,
+      reportedBugId: 'opportunity-1',
+      ...over,
+    });
+
+  let service: BugFindingService;
+  let repo: { findOne: jest.Mock; update: jest.Mock };
+  let notifications: { notify: jest.Mock; wasRaisedSince: jest.Mock };
+  let roadmap: { findOne: jest.Mock; update: jest.Mock };
+
+  const build = () => {
+    service = new BugFindingService(
+      repo as unknown as BugFindingRepository,
+      notifications as unknown as BugHunterNotificationService,
+      roadmap as unknown as Repository<RoadmapOpportunity>,
+    );
+  };
+
+  beforeEach(() => {
+    repo = {
+      findOne: jest.fn().mockResolvedValue(merged()),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    notifications = {
+      notify: jest.fn().mockResolvedValue(undefined),
+      wasRaisedSince: jest.fn().mockResolvedValue(false),
+    };
+    roadmap = {
+      findOne: jest.fn().mockResolvedValue({
+        id: 'opportunity-1',
+        stage: RoadmapOpportunityStage.NEW,
+      }),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    build();
+  });
+
+  it('releases the linked opportunity when the fix agent reports its own merge', async () => {
+    await service.setStatus('finding-1', { status: BugFindingStatus.MERGED });
+
+    expect(roadmap.findOne).toHaveBeenCalledWith({
+      where: { id: 'opportunity-1' },
+    });
+    expect(roadmap.update).toHaveBeenCalledWith('opportunity-1', {
+      stage: RoadmapOpportunityStage.RELEASED,
+      owner: BUG_HUNTER_AGENT_ROADMAP_OWNER,
+      ownerUserId: null,
+      releasedAt: expect.any(Date),
+    });
+  });
+
+  it('does not re-stamp releasedAt on an already-released card', async () => {
+    roadmap.findOne.mockResolvedValue({
+      id: 'opportunity-1',
+      stage: RoadmapOpportunityStage.RELEASED,
+    });
+
+    await service.setStatus('finding-1', { status: BugFindingStatus.MERGED });
+
+    expect(roadmap.update).toHaveBeenCalledWith('opportunity-1', {
+      stage: RoadmapOpportunityStage.RELEASED,
+      owner: BUG_HUNTER_AGENT_ROADMAP_OWNER,
+      ownerUserId: null,
+    });
+  });
+
+  it('leaves the roadmap alone for a sweep finding nobody reported', async () => {
+    repo.findOne.mockResolvedValue(merged({ reportedBugId: null }));
+
+    await service.setStatus('finding-1', { status: BugFindingStatus.MERGED });
+
+    expect(roadmap.findOne).not.toHaveBeenCalled();
+    expect(roadmap.update).not.toHaveBeenCalled();
+  });
+
+  it('leaves the card where it is on any other transition', async () => {
+    // pr_opened is the guarded-path handoff: the fix has NOT landed yet, so
+    // telling the reporter it shipped would be a lie the reconcile pass would
+    // only correct once a human merges.
+    repo.findOne.mockResolvedValue(
+      merged({ status: BugFindingStatus.PR_OPENED }),
+    );
+
+    await service.setStatus('finding-1', {
+      status: BugFindingStatus.PR_OPENED,
+      prUrl: 'https://github.com/helloallytech/ally-be/pull/1',
+    });
+
+    expect(roadmap.update).not.toHaveBeenCalled();
+  });
+
+  it('still reports the finding as MERGED when the roadmap write fails', async () => {
+    // Best-effort: the status transition is already committed, so a roadmap
+    // outage must not turn a merged fix into a failed PATCH.
+    roadmap.findOne.mockRejectedValue(new Error('connection reset'));
+
+    const after = await service.setStatus('finding-1', {
+      status: BugFindingStatus.MERGED,
+    });
+
+    expect(after.status).toBe(BugFindingStatus.MERGED);
+    expect(repo.update).toHaveBeenCalledWith('finding-1', {
+      status: BugFindingStatus.MERGED,
+    });
   });
 });

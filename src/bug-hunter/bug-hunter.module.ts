@@ -48,9 +48,10 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
  * codebase has been bitten by before (see ally-be/CLAUDE.md's gotchas). The
  * same trick runs in the other direction too: `RoadmapOpportunity` is
  * registered here, just the entity and not ProductRoadmapModule, so
- * `BugFixSessionService` can release the linked roadmap opportunity the
- * moment a reported bug's finding merges (see its
- * `releaseLinkedRoadmapOpportunity`).
+ * `BugFindingService` and `BugFixSessionService` can release the linked
+ * roadmap opportunity the moment a reported bug's finding merges — by
+ * whichever of the three merge routes gets there first (see the shared
+ * `releaseLinkedRoadmapOpportunity` util).
  */
 @Module({
   imports: [

@@ -3,8 +3,14 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+
+import { LoggerService } from 'src/logger/logger.service';
+import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
+import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
 import {
   needsYourAnswer,
   STALE_ESCALATION_DIGEST_TITLE,
@@ -53,9 +59,13 @@ export interface RawFinding {
  */
 @Injectable()
 export class BugFindingService {
+  private readonly logger = LoggerService.getInstance(BugFindingService.name);
+
   constructor(
     private readonly findingRepository: BugFindingRepository,
     private readonly notificationService: BugHunterNotificationService,
+    @InjectRepository(RoadmapOpportunity)
+    private readonly roadmapOpportunityRepository: Repository<RoadmapOpportunity>,
   ) {}
 
   async getOne(id: string): Promise<BugFinding> {
@@ -260,6 +270,13 @@ export class BugFindingService {
    * inbox as a run-level escalation (see BugHunterService.appendEvent) — only
    * once per distinct question, so a later run re-polling an already-asked
    * finding doesn't re-notify.
+   *
+   * Merging also closes the reporter's roadmap card. This is the merge path
+   * that actually runs most of the time: a green non-guarded fix merges its own
+   * PR with `gh pr merge --admin` and then PATCHes here (see `bug-fix-prompt`),
+   * and the nightly sweep's auto-merges land here too. The reconcile pass only
+   * ever sees the PRs a human merged by hand, so without this a reported bug
+   * could ship with its card still sitting at the stage it was filed in.
    */
   async setStatus(
     id: string,
@@ -291,6 +308,14 @@ export class BugFindingService {
         runId: after.runId,
         repo: after.repo,
       });
+    }
+
+    if (patch.status === BugFindingStatus.MERGED) {
+      await releaseLinkedRoadmapOpportunity(
+        this.roadmapOpportunityRepository,
+        after,
+        this.logger,
+      );
     }
 
     return after;

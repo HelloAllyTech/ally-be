@@ -9,8 +9,7 @@ import { Repository } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
-import { RoadmapOpportunityStage } from 'src/product-roadmap/enum/roadmap-opportunity.enum';
-import { BUG_HUNTER_AGENT_ROADMAP_OWNER } from '../constants/bug-fix-session.constants';
+import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import {
@@ -877,44 +876,19 @@ export class BugFixSessionService {
   }
 
   /**
-   * Closes the loop the other direction: a reported bug's roadmap card
-   * shouldn't sit at whatever stage it was filed in once the fix that
-   * addresses it has actually merged.
-   *
-   * `reportedBugId` is only ever set on a finding created from a roadmap bug
-   * report (`RoadmapOpportunityService.create`) — a repo-wide sweep finding
-   * has none, and for a coordinated multi-repo plan only the PARENT carries
-   * it, never the per-repo steps, so this is a no-op for both. Best-effort,
-   * like the roadmap side's own reciprocal write: the finding's MERGED status
-   * is already committed by the time this runs, so a failure here must never
-   * undo it or stop the rest of the reconcile tick.
+   * The two routes to MERGED this service owns — a plan's last step landing,
+   * and the reconcile pass spotting a hand-merged PR — both write the status
+   * straight through `findingRepository`, so neither passes the third and most
+   * common route, `BugFindingService.setStatus`. All three share one
+   * implementation (see the util's own doc) precisely so a card can't be closed
+   * on some merge paths and not others.
    */
-  private async releaseLinkedRoadmapOpportunity(
-    finding: BugFinding,
-  ): Promise<void> {
-    if (!finding.reportedBugId) return;
-
-    try {
-      const opportunity = await this.roadmapOpportunityRepository.findOne({
-        where: { id: finding.reportedBugId },
-      });
-      if (!opportunity) return;
-
-      await this.roadmapOpportunityRepository.update(finding.reportedBugId, {
-        stage: RoadmapOpportunityStage.RELEASED,
-        owner: BUG_HUNTER_AGENT_ROADMAP_OWNER,
-        ownerUserId: null,
-        ...(opportunity.stage !== RoadmapOpportunityStage.RELEASED
-          ? { releasedAt: new Date() }
-          : {}),
-      });
-    } catch (error) {
-      this.logger.warn(
-        `Could not release linked roadmap opportunity ${finding.reportedBugId} for finding ${finding.id}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
+  private releaseLinkedRoadmapOpportunity(finding: BugFinding): Promise<void> {
+    return releaseLinkedRoadmapOpportunity(
+      this.roadmapOpportunityRepository,
+      finding,
+      this.logger,
+    );
   }
 
   /** Pulls the PR number out of a GitHub PR URL — `.../pull/123` → `123`. */
