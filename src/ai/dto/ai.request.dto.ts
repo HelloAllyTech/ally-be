@@ -1,4 +1,5 @@
 import { ScribeSessionMode } from 'src/common/constants/chat.constants';
+import { WorkerType } from 'src/user/enum/user.enum';
 
 export type PromptOverride =
   | string
@@ -165,6 +166,20 @@ export type ScenarioEvaluationRequest = {
   prompts?: Record<string, PromptOverride>;
   enable_recommendations?: boolean;
   language_code?: string | null;
+  /**
+   * The learner's worker type. Sets the register, depth and expectations of the
+   * supervisor note only — never the skill_coverage scores, which stay on one
+   * fixed standard so they remain comparable across an organisation.
+   * Unset falls back to LAY on the ally-ai side.
+   */
+  worker_type?: WorkerType | null;
+  /** The learner's first name, so the note can address them directly. */
+  learner_name?: string | null;
+  /**
+   * What the supervisor carries forward about THIS LEARNER from previous
+   * debriefs. Distinct from `previous_memory`, which is about the client/case.
+   */
+  supervisor_memory?: string | null;
 };
 
 // ── Product Roadmap semantic duplicate detection (ally-ai / Weaviate) ────────

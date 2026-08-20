@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { UserStatus } from 'src/user/constants/user-status.constants';
+import { WorkerType } from 'src/user/enum/user.enum';
 
 export class UserDto {
   @ApiProperty({ description: 'User ID' })
@@ -55,6 +56,14 @@ export class UserDto {
 
   @ApiProperty({ description: 'Used credits for the user', nullable: true })
   consumedCredits?: number;
+
+  @ApiProperty({
+    description:
+      'Resolved worker type (always present — unset or unrecognised ' +
+      'resolves to LAY). Admin-assigned only.',
+    enum: WorkerType,
+  })
+  workerType!: WorkerType;
 }
 
 // Response for get all users

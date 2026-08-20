@@ -79,9 +79,15 @@ import { AppConfigService } from 'src/config/config.service';
 import {
   ChecklistItem,
   ExperienceMode,
+  FeedbackTabsConfig,
   ScenarioStatus,
   StateNames,
+  feedbackTabsNeedEvaluation,
+  resolveFeedbackTabs,
 } from '../type/scenario.type';
+import { User } from 'src/user/entity/user.entity';
+import { WorkerType, resolveWorkerType } from 'src/user/enum/user.enum';
+import { LearnerSupervisorMemoryService } from './learner-supervisor-memory.service';
 import { ScenarioTenantService } from './scenario-tenant.service';
 import { ScenarioPathSessionService } from 'src/scenario-path/service/scenario-path-session.service';
 import { SessionItemStatus } from 'src/common/type/common.type';
@@ -180,6 +186,7 @@ export class ScenarioSessionService {
     // session service for engine=ROLEPLAY_V2 scenarios without importing
     // RoleplayStudioModule into LearnModule (keeps the v1 wiring untouched).
     private moduleRef: ModuleRef,
+    private readonly learnerSupervisorMemoryService: LearnerSupervisorMemoryService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -266,6 +273,16 @@ export class ScenarioSessionService {
   async getScenarioSessionSkills(
     scenarioSessionId: string,
   ): Promise<ScenarioSessionSkillsResponseDto> {
+    // The Skills tab is one of the per-roleplay post-session sub-toggles, so
+    // the opt-out is enforced here as well as in the UI — an author who turned
+    // scores off for a roleplay meant the learner not to see them, not merely
+    // not to be shown a tab.
+    const context =
+      await this.getSupervisorContextForSession(scenarioSessionId);
+    if (context && !context.feedbackTabs.skills) {
+      return { skillCoverage: [], emotionalMovement: [] };
+    }
+
     return this.scenarioSharedService.getScenarioSessionSkills(
       scenarioSessionId,
     );
@@ -433,12 +450,26 @@ export class ScenarioSessionService {
       );
 
     const scenario = (scenarioSession as any).scenario;
+    const feedbackTabs = resolveFeedbackTabs(scenario?.metadata);
+
+    // The debrief note is gated server-side as well as in the UI: a roleplay
+    // whose author turned the Debrief tab off should not ship the note to the
+    // client at all. The transcript is deliberately NOT gated at its endpoint —
+    // it is the learner's own conversation rather than an evaluation of them,
+    // and that endpoint is shared with the peer-review surfaces.
+    if (!feedbackTabs.debrief && (scenarioSession as any).details?.summary) {
+      delete (scenarioSession as any).details.summary.feedback?.supervisorNote;
+    }
+
     if (scenario) {
       scenario.metadata = {
         experienceMode:
           scenario.metadata?.experienceMode ?? ExperienceMode.FEEDBACK,
         name: scenario.metadata?.name,
         enableFeedback: scenario.metadata?.enableFeedback ?? true,
+        // Resolved, never raw: clients render tabs straight off this, so they
+        // must not have to re-implement the "absent means all on" default.
+        feedbackTabs,
       };
       if (languageCode && scenario.translations?.[languageCode]) {
         scenario.title =
@@ -1295,6 +1326,60 @@ export class ScenarioSessionService {
     return totalCreditsToConsume;
   }
 
+  /**
+   * Everything the supervisor debrief needs about WHO practised and WHAT the
+   * roleplay is configured to show them.
+   *
+   * Returns null only when the session or its scenario has vanished, in which
+   * case the caller carries on with a note that has no personalisation rather
+   * than failing the whole evaluation — feedback with a generic opening beats
+   * no feedback at all.
+   */
+  private async getSupervisorContextForSession(
+    scenarioSessionId: string,
+  ): Promise<{
+    counselorId: number;
+    workerType: WorkerType;
+    learnerFirstName?: string;
+    feedbackTabs: FeedbackTabsConfig;
+  } | null> {
+    try {
+      const scenarioSession = await this.scenarioSessionRepository.findOne({
+        where: { id: scenarioSessionId },
+        select: { id: true, counselorId: true, scenarioId: true },
+      });
+      if (!scenarioSession) return null;
+
+      const [scenario, user] = await Promise.all([
+        this.scenariosRepository.findOne({
+          where: { id: scenarioSession.scenarioId },
+          select: { id: true, metadata: true },
+        }),
+        // Resolved off the DataSource rather than an injected UserService:
+        // pulling src/user/service/* into this graph is the documented way to
+        // break boot with a circular DI import.
+        this.dataSource.getRepository(User).findOne({
+          where: { id: scenarioSession.counselorId },
+          select: { id: true, name: true, metadata: true },
+        }),
+      ]);
+
+      return {
+        counselorId: scenarioSession.counselorId,
+        workerType: resolveWorkerType(user?.metadata),
+        // First name only. The note greets someone the way a supervisor
+        // would, and "Nice work today, Priya Sharma" reads like a form letter.
+        learnerFirstName: user?.name?.trim().split(/\s+/)[0] || undefined,
+        feedbackTabs: resolveFeedbackTabs(scenario?.metadata),
+      };
+    } catch (error) {
+      this.logger.error(
+        `getSupervisorContextForSession failed for ${scenarioSessionId}: ${error?.message}`,
+      );
+      return null;
+    }
+  }
+
   private async getScenarioSessionSummaryFromAI(
     scenarioSessionId: string,
     needMemory: boolean,
@@ -1331,8 +1416,25 @@ export class ScenarioSessionService {
       return;
     }
 
+    // Who this session belongs to, and which post-session surfaces the roleplay
+    // actually shows. Both are needed before any LLM work: the learner drives
+    // the note's register and continuity, and a roleplay showing no feedback
+    // tabs at all must not pay for an evaluation nobody can see.
+    const sessionContext =
+      await this.getSupervisorContextForSession(scenarioSessionId);
+
     let summary;
     try {
+      if (
+        sessionContext &&
+        !feedbackTabsNeedEvaluation(sessionContext.feedbackTabs)
+      ) {
+        this.logger.info(
+          `Skipping evaluation for ${scenarioSessionId}: roleplay shows no post-session feedback tabs.`,
+        );
+        return;
+      }
+
       const scenarioSessionMessages =
         await this.scenarioSessionMessagesRepository.find({
           where: {
@@ -1368,6 +1470,16 @@ export class ScenarioSessionService {
             ...(useEvaluation ? { id: message.id.toString() } : {}),
           }));
 
+        // What the supervisor already knows about this learner, so the note can
+        // open on continuity ("last time we worked on...") instead of meeting
+        // them fresh every session. Absent for a learner's first debrief.
+        const supervisorMemory = sessionContext
+          ? await this.learnerSupervisorMemoryService.getSupervisorMemoryPrompt(
+              sessionContext.counselorId,
+              tenantId,
+            )
+          : null;
+
         const aiResult = useEvaluation
           ? await this.aiService.getScenarioSessionEvaluation(
               messages as ScenarioEvaluationChatMessage[],
@@ -1376,12 +1488,34 @@ export class ScenarioSessionService {
               undefined,
               enableRecommendations,
               languageCode,
+              {
+                workerType: sessionContext?.workerType,
+                learnerName: sessionContext?.learnerFirstName,
+                supervisorMemory,
+              },
             )
           : await this.aiService.getScenarioSessionSummary(
               messages as MessageRequest[],
               needMemory,
               previousMemory,
             );
+
+        // Carry this debrief forward before the response is camelCased — the
+        // learner's memory is keyed to them, not to this session, and is the
+        // one artefact here that outlives the row we are about to write.
+        if (
+          useEvaluation &&
+          sessionContext &&
+          aiResult &&
+          'memory_update' in aiResult
+        ) {
+          await this.learnerSupervisorMemoryService.recordFromEvaluation(
+            sessionContext.counselorId,
+            tenantId,
+            scenarioSessionId,
+            aiResult.memory_update,
+          );
+        }
 
         if (useEvaluation && aiResult && 'emotional_movement' in aiResult) {
           const messageStartSecondsByMessageId = new Map(
@@ -1405,7 +1539,15 @@ export class ScenarioSessionService {
           });
         }
 
-        const aiSummary = CommonUtil.convertToCamelCase(aiResult);
+        // memory_update is the supervisor's private note-to-self about the
+        // learner; it has already been persisted to their memory row above.
+        // Drop it here so it never reaches the payload the learner is served —
+        // being told how your supervisor characterises your trajectory is not
+        // the same thing as being given feedback.
+        const { memory_update: _memoryUpdate, ...learnerFacingResult } =
+          (aiResult ?? {}) as Record<string, any>;
+
+        const aiSummary = CommonUtil.convertToCamelCase(learnerFacingResult);
         summary = {
           feedback: aiSummary,
           // Language this default feedback was generated in (normalized primary

@@ -88,6 +88,18 @@ export interface ScenarioEvaluationAreaOfImprovementItem {
   recommendation: string;
 }
 
+/**
+ * What the supervisor carries into this learner's next debrief. Tracks the
+ * LEARNER's development as a practitioner, and follows them across cases —
+ * unlike `cumulative_memory`, which tracks one client and one case.
+ * Never shown to the learner.
+ */
+export interface ScenarioEvaluationMemoryUpdate {
+  focus_areas: string[];
+  trajectory: string;
+  next_time: string;
+}
+
 export interface ScenarioEvaluationResponse {
   improvements: string[];
   positives: string[];
@@ -97,6 +109,13 @@ export interface ScenarioEvaluationResponse {
   skill_coverage?: ScenarioEvaluationSkillCoverageItem[];
   emotional_movement: ScenarioEvaluationEmotionalMovementItem[];
   areas_of_growth: ScenarioEvaluationAreaOfImprovementItem[];
+  /**
+   * Markdown debrief note written to the learner in Ally's supervisor voice.
+   * Anchors specific moments as `[[msg:<scenario-session-message-id>]]`, which
+   * clients resolve into links into the annotated transcript.
+   */
+  supervisor_note?: string | null;
+  memory_update?: ScenarioEvaluationMemoryUpdate | null;
 }
 
 // ── Product Roadmap semantic duplicate detection (ally-ai / Weaviate) ────────
