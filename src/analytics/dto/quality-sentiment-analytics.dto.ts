@@ -55,6 +55,107 @@ export class QualitySentimentPointDto {
   @ApiProperty({ description: 'Ratings of 5' }) promoters!: number;
   @ApiProperty({ description: 'Ratings of 4' }) passives!: number;
   @ApiProperty({ description: 'Ratings of 3 or below' }) detractors!: number;
+
+  // --- Roleplay Quality Index (the series the card now plots) ---
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Roleplay Quality Index, 0-100. Weighted blend of the four dimensions ' +
+      'that had data in this bucket, renormalised over the present weights. ' +
+      'Null when no dimension had data.',
+  })
+  qualityIndex!: number | null;
+
+  @ApiProperty({
+    description:
+      'Per-dimension stack heights. The present layers sum exactly to ' +
+      'qualityIndex, which is why they are what the chart stacks rather than ' +
+      'the normalised scores.',
+    additionalProperties: { type: 'number' },
+  })
+  indexContributions!: Record<string, number>;
+
+  @ApiProperty({
+    description:
+      "Each dimension's raw value in its own unit (see indexCoverage[].unit), " +
+      'so a reader can check the index against the Drift, Language and Latency ' +
+      'tabs rather than taking the composite on trust.',
+    additionalProperties: { type: 'number' },
+  })
+  indexRaw!: Record<string, number>;
+
+  @ApiProperty({
+    description:
+      'Rows behind each dimension here — sessions, or turns for latency.',
+    additionalProperties: { type: 'number' },
+  })
+  indexSampleSizes!: Record<string, number>;
+
+  @ApiProperty({
+    type: [String],
+    description:
+      'Dimensions with no data in this bucket. Non-empty means qualityIndex is ' +
+      'a blend of fewer than four dimensions — not that quality was low.',
+  })
+  indexMissing!: string[];
+}
+
+/**
+ * One dimension's standing in the index: how it is weighted, how far its data
+ * reaches, and whether its 0-100 anchors are measured or still the shipped guess.
+ *
+ * `calibrated: false` is the field that must never be ignored by a client. An
+ * index normalised against invented anchors looks exactly like one normalised
+ * against measured ones, so the card is responsible for saying which it is.
+ */
+export class QualityIndexCoverageDto {
+  @ApiProperty({ description: 'Dimension key, e.g. responseLatency' })
+  dimension!: string;
+
+  @ApiProperty({ description: 'Display label for the stack legend' })
+  label!: string;
+
+  @ApiProperty({ description: "Unit of this dimension's raw value" })
+  unit!: string;
+
+  @ApiProperty({ description: 'Weight in the composite (weights sum to 1)' })
+  weight!: number;
+
+  @ApiProperty({
+    description: 'Buckets in the window where this dimension had data',
+  })
+  bucketsCovered!: number;
+
+  @ApiProperty({
+    description: 'Buckets in the window where any dimension had data',
+  })
+  bucketsTotal!: number;
+
+  @ApiProperty({
+    description:
+      'False while this dimension is normalised against shipped placeholder ' +
+      'anchors rather than anchors measured from production traffic.',
+  })
+  calibrated!: boolean;
+
+  @ApiProperty({ description: 'Raw value that normalises to 100' })
+  target!: number;
+
+  @ApiProperty({ description: 'Raw value that normalises to 0' })
+  ceiling!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Rows behind the measured anchors. Null while placeholder.',
+  })
+  sampleSize!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'When the anchors were measured. Null while placeholder.',
+  })
+  measuredAt!: Date | null;
 }
 
 export class QualitySentimentResponseDto {
@@ -122,6 +223,31 @@ export class QualitySentimentResponseDto {
       'quoted as a plain NPS.',
   })
   proxyNote!: string;
+
+  @ApiProperty({
+    description:
+      "The index definition's version stamp. Bumped whenever a weight, a " +
+      "direction or a dimension's raw metric changes — any of which moves every " +
+      'historical point without anyone having practised differently. Render it ' +
+      'on the card so a step in the line can be told apart from a step in the ' +
+      'product.',
+  })
+  indexVersion!: string;
+
+  @ApiProperty({
+    description:
+      'True only when EVERY dimension has measured anchors. False means the ' +
+      'line is drawn against shipped guesses and must be captioned as such.',
+  })
+  indexCalibrated!: boolean;
+
+  @ApiProperty({
+    type: [QualityIndexCoverageDto],
+    description:
+      'Per-dimension weight, coverage and calibration state, in the order the ' +
+      'contributions stack.',
+  })
+  indexCoverage!: QualityIndexCoverageDto[];
 
   @ApiProperty({ type: AnalyticsScopingDto })
   scoping!: AnalyticsScopingDto;

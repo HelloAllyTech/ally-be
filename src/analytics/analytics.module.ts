@@ -54,6 +54,13 @@ import { RoleplayCostAnalyticsService } from './service/roleplay-cost-analytics.
 import { RoleplayCostAnalyticsRepository } from './repository/roleplay-cost-analytics.repository';
 import { QualitySentimentAnalyticsService } from './service/quality-sentiment-analytics.service';
 import { QualitySentimentAnalyticsRepository } from './repository/quality-sentiment-analytics.repository';
+// Roleplay Quality Index: the composite behind the "Roleplay quality" card,
+// replacing the mean-composite trend and the quality-distribution series.
+import { QualityIndexAnalyticsService } from './service/quality-index-analytics.service';
+import { QualityIndexAnalyticsRepository } from './repository/quality-index-analytics.repository';
+import { QualityThresholdRepository } from './repository/quality-threshold.repository';
+import { QualityThresholdCalibrationService } from './service/quality-threshold-calibration.service';
+import { AnalyticsQualityThreshold } from './entity/analytics-quality-threshold.entity';
 import { ChartPreferenceService } from './service/chart-preference.service';
 import { AnalyticsChartPreference } from './entity/analytics-chart-preference.entity';
 import { PlatformAnalyticsService } from './service/platform-analytics.service';
@@ -104,6 +111,7 @@ import { TenantModule } from 'src/tenant/tenant.module';
       DashboardTenant,
       DashboardGroup,
       AnalyticsChartPreference,
+      AnalyticsQualityThreshold,
     ]),
     ChatModule,
     TenantModule,
@@ -166,6 +174,10 @@ import { TenantModule } from 'src/tenant/tenant.module';
     RoleplayCostAnalyticsRepository,
     QualitySentimentAnalyticsService,
     QualitySentimentAnalyticsRepository,
+    QualityIndexAnalyticsService,
+    QualityIndexAnalyticsRepository,
+    QualityThresholdRepository,
+    QualityThresholdCalibrationService,
     ChartPreferenceService,
     PlatformAnalyticsService,
     ScribeAnalyticsService,

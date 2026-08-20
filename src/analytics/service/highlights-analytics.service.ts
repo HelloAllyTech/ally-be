@@ -111,7 +111,6 @@ export class HighlightsAnalyticsService {
       practiceRows,
       playTimeRows,
       playTimeOverall,
-      qualityTrend,
       qualityOverall,
       csatTrend,
       csatOverall,
@@ -135,12 +134,6 @@ export class HighlightsAnalyticsService {
         tenantId,
       ),
       this.repo.getPlayTimeOverall(window.start, window.endExclusive, tenantId),
-      this.repo.getQualityTrendByBucket(
-        window.start,
-        window.endExclusive,
-        window.bucket,
-        tenantId,
-      ),
       this.repo.getQualityOverall(window.start, window.endExclusive, tenantId),
       this.repo.getCsatTrendByBucket(
         window.start,
@@ -253,7 +246,6 @@ export class HighlightsAnalyticsService {
       },
       practiceMinutes,
       playTime,
-      qualityTrend,
       csatTrend,
       trackFunnel: {
         enrolled: funnelCounts.enrolled,

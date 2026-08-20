@@ -166,17 +166,6 @@ export class PlayTimePointDto {
   sessions!: number;
 }
 
-export class QualityTrendPointDto {
-  @ApiProperty({ description: 'Bucket start, yyyy-mm-dd' }) bucket!: string;
-  @ApiProperty({
-    description: 'Mean composite evaluation score (0-100)',
-    nullable: true,
-    type: Number,
-  })
-  avgCompositeScore!: number | null;
-  @ApiProperty() evaluatedSessions!: number;
-}
-
 export class CsatTrendPointDto {
   @ApiProperty({ description: 'Bucket start, yyyy-mm-dd' }) bucket!: string;
   @ApiProperty({
@@ -224,6 +213,14 @@ export class CostPerSimPointDto {
  * Leadership "Highlights" aggregates. Only the metrics NOT already served by
  * `/v1/analytics/overview` or `/v1/analytics/scribe/overview` live here; the
  * frontend composes all three responses into one tab.
+ *
+ * `qualityTrend` (mean `compositeScore` per bucket) was retired from this
+ * payload: it plotted an unpinned judge composite with no coverage figures, and
+ * is superseded by the Roleplay Quality Index on `GET
+ * /v1/analytics/quality-sentiment` (see QualitySentimentResponseDto). `summary
+ * .avgCompositeScore` is UNCHANGED and still comes from `getQualityOverall` —
+ * it is a whole-window KPI figure, a different question from a trend chart,
+ * and stays out of this retirement.
  */
 export class AnalyticsHighlightsResponseDto {
   @ApiProperty({ enum: ANALYTICS_RANGES }) range!: AnalyticsRange;
@@ -284,12 +281,6 @@ export class AnalyticsHighlightsResponseDto {
       'has no value. The axis stays a real calendar; the line breaks.',
   })
   playTime!: PlayTimePointDto[];
-
-  @ApiProperty({
-    type: [QualityTrendPointDto],
-    description: 'Sparse — buckets with no evaluated sessions are absent',
-  })
-  qualityTrend!: QualityTrendPointDto[];
 
   @ApiProperty({
     type: [CsatTrendPointDto],
