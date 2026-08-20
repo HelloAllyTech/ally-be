@@ -1,3 +1,4 @@
+import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
 import { LlmModelService } from 'src/llm/service/llm-model.service';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
@@ -474,6 +475,15 @@ describe('ScenarioService', () => {
           provide: ScenarioSessionRepository,
           useValue: {
             getCompletionsForUser: jest.fn().mockResolvedValue(new Map()),
+          },
+        },
+        {
+          // Resolves to "no cohort" so the pre-cohort expectations keep asserting
+          // what they were written for. The cohort layer has its own coverage.
+          provide: CohortVisibilityService,
+          useValue: {
+            resolveUserCohortId: jest.fn().mockResolvedValue(null),
+            canAccess: jest.fn().mockResolvedValue(true),
           },
         },
       ],
@@ -1596,6 +1606,10 @@ describe('ScenarioService', () => {
       });
       expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
         tenantId: mockTenantId,
+        // Always passed on the learner catalog. `null` is the "Unassigned"
+        // audience, not "no filtering" — dropping this object entirely would
+        // silently restore pre-cohort behaviour, so assert it explicitly.
+        cohortScope: { cohortId: null },
       });
       expect(sharedLanguageService.getLanguagesByIds).toHaveBeenCalledWith([
         1, 2,
@@ -1684,6 +1698,7 @@ describe('ScenarioService', () => {
       expect((result.data[0] as any).translations).toBeUndefined();
       expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
         tenantId: mockTenantId,
+        cohortScope: { cohortId: null },
         languageCode: 'mr',
       });
     });
@@ -1711,6 +1726,7 @@ describe('ScenarioService', () => {
       // includeRoleplayV2 must NOT be set → repository default-excludes v2.
       expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
         tenantId: mockTenantId,
+        cohortScope: { cohortId: null },
       });
     });
 
@@ -1734,6 +1750,7 @@ describe('ScenarioService', () => {
 
       expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
         tenantId: mockTenantId,
+        cohortScope: { cohortId: null },
         includeRoleplayV2: true,
       });
     });

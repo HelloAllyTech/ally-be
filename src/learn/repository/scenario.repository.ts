@@ -16,6 +16,8 @@ import { GetScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioStatus, ScenarioSortBy } from '../type/scenario.type';
 import { ScenarioEngine } from '../enum/scenario-engine.enum';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
+import { applyCohortVisibilityFilter } from 'src/cohort/query/cohort-restriction.query';
+import { CohortContentType } from 'src/cohort/constants/cohort.constants';
 import { ScenarioBehaviorInstruction } from '../entity/scenario-behavior-instruction.entity';
 import { GetScenarioResponse } from '../interface/session.interface';
 
@@ -72,6 +74,22 @@ export class ScenariosRepository extends Repository<Scenarios> {
     if (filters?.isPublic) {
       query.andWhere('scenario.isPublic = :isPublic', {
         isPublic: filters.isPublic,
+      });
+    }
+
+    // Cohort narrowing, layer 2 on top of the scenario_tenants join above. Only
+    // the learner catalog passes cohortScope; the admin list deliberately does
+    // not, so an admin keeps seeing the scenarios they have restricted.
+    //
+    // No grace clause for scenarios: a roleplay is a single session with nothing
+    // to resume, so "finish what you started" has no subject here. Courses and
+    // cases, which do have resumable progress, pass one.
+    if (filters?.cohortScope && filters.tenantId) {
+      applyCohortVisibilityFilter(query, {
+        alias: 'scenario',
+        contentType: CohortContentType.SCENARIO,
+        tenantId: filters.tenantId,
+        cohortId: filters.cohortScope.cohortId,
       });
     }
 

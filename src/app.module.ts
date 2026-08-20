@@ -45,6 +45,7 @@ import { LlmModule } from './llm/llm.module';
 import { ConversationalGuardrailsModule } from './conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from './case/case.module';
 import { TrackModule } from './track/track.module';
+import { CohortModule } from './cohort/cohort.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
 import { ComfortAudioModule } from './comfort-audio/comfort-audio.module';
 import { KnowledgeBaseModule } from './knowledge-base/knowledge-base.module';
@@ -103,6 +104,7 @@ import { LogsModule } from './logs/logs.module';
     ScenarioPathModule,
     CaseModule,
     TrackModule,
+    CohortModule,
     LanguageModule,
     ScenarioSessionReviewModule,
     ScribeSessionReviewModule,

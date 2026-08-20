@@ -22,6 +22,15 @@ export type ScenarioFilters = {
    * ScenarioService.getScenariosV2).
    */
   includeRoleplayV2?: boolean;
+  /**
+   * Apply the requester's cohort restrictions. Present only on the learner
+   * catalog: the admin list must keep showing every scenario the tenant has,
+   * restricted or not, or an admin could not see what they had restricted.
+   *
+   * `cohortId: null` is meaningful — it is the "Unassigned" audience, not
+   * "no filtering". Pass the whole object or nothing.
+   */
+  cohortScope?: { cohortId: string | null };
 };
 
 export type GetScenarioByIdOptions = {

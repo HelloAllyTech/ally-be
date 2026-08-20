@@ -1,3 +1,4 @@
+import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource } from 'typeorm';
 import { CaseSessionService } from '../case-session.service';
@@ -87,6 +88,15 @@ describe('CaseSessionService', () => {
         { provide: AppConfigService, useValue: mockConfigService },
         { provide: SharedLanguageService, useValue: mockSharedLanguageService },
         { provide: EventEmitter2, useValue: { emit: jest.fn() } },
+        {
+          // Resolves to "no cohort" so the pre-cohort expectations keep asserting
+          // what they were written for. The cohort layer has its own coverage.
+          provide: CohortVisibilityService,
+          useValue: {
+            resolveUserCohortId: jest.fn().mockResolvedValue(null),
+            canAccess: jest.fn().mockResolvedValue(true),
+          },
+        },
       ],
     }).compile();
 

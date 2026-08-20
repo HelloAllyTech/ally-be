@@ -1,3 +1,8 @@
+import {
+  applyCohortVisibilityFilter,
+  TRACK_ENROLMENT_GRACE_SQL,
+} from 'src/cohort/query/cohort-restriction.query';
+import { CohortContentType } from 'src/cohort/constants/cohort.constants';
 import { Injectable } from '@nestjs/common';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Track } from '../entity/track.entity';
@@ -76,6 +81,11 @@ export class TrackRepository extends Repository<Track> {
     tenantId?: string;
     limit?: number;
     offset?: number;
+    /**
+     * Apply the requester's cohort restrictions. `cohortId: null` is the
+     * "Unassigned" audience, not "no filtering" — pass the object or nothing.
+     */
+    cohortScope?: { cohortId: string | null };
   }): Promise<{ data: TrackWithEnrollment[]; count: number }> {
     const query = this.createQueryBuilder('track')
       .leftJoinAndMapOne(
@@ -95,6 +105,20 @@ export class TrackRepository extends Repository<Track> {
           '"trackTenant"."trackId" = track.id AND trackTenant.tenantId = :tenantId AND "trackTenant"."deletedAt" IS NULL',
         )
         .setParameters({ tenantId: options.tenantId });
+    }
+
+    // Cohort narrowing, layer 2 on top of the track_tenants join above, plus the
+    // "finish what you started" grace: a learner with a live enrolment keeps the
+    // course even after their cohort loses browse access. Requires tenantId —
+    // restrictions are per tenant, so there is nothing to apply without one.
+    if (options.cohortScope && options.tenantId) {
+      applyCohortVisibilityFilter(query, {
+        alias: 'track',
+        contentType: CohortContentType.TRACK,
+        tenantId: options.tenantId,
+        cohortId: options.cohortScope.cohortId,
+        graceExistsSql: TRACK_ENROLMENT_GRACE_SQL,
+      });
     }
 
     query.orderBy('enrollment.lastActivityAt', 'DESC', 'NULLS LAST');

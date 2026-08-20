@@ -1,3 +1,4 @@
+import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
 import {
   BadRequestException,
   Injectable,
@@ -37,6 +38,7 @@ export class CaseSessionService {
     private readonly configService: AppConfigService,
     private readonly sharedLanguageService: SharedLanguageService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly cohortVisibilityService: CohortVisibilityService,
   ) {}
 
   async getUserCases(
@@ -50,9 +52,16 @@ export class CaseSessionService {
     if (!tenantId) {
       throw new UnauthorizedException('Unauthorized access');
     }
+    // `null` means this learner is in no cohort — the "Unassigned" audience,
+    // which restrictions can target. Not a signal to skip filtering.
+    const cohortId = await this.cohortVisibilityService.resolveUserCohortId(
+      Number(userId),
+    );
+
     const cases = await this.caseSharedService.getCasesWithSession({
       userId: Number(userId),
       tenantId,
+      cohortScope: { cohortId },
       limit: filters?.limit,
       offset: filters?.offset,
       sortBy: filters?.sortBy as CaseSortBy | undefined,
