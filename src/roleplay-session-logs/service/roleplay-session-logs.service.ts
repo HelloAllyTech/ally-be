@@ -478,6 +478,18 @@ export class RoleplaySessionLogsService {
 
     const judged = n(raw.judgedTurns) > 0;
     const langTurns = n(raw.languageTurnsJudged);
+
+    // Why a label-count of zero has two different causes, and why saying the
+    // wrong one reads as an outage: a session that was NEVER judged and one
+    // judged under the older rubric both arrive here with zero labelled turns.
+    // Telling the reader to "re-judge to populate" when nothing was ever judged
+    // sends them looking for a broken pipeline, and it contradicts the summary
+    // line on the same screen, which already knows the session is unjudged.
+    // There is nothing to do in the unjudged case: the catch-up scheduler picks
+    // new sessions up on its next tick (measured p50 17 min, p90 30 min).
+    const missingLabelReason = judged
+      ? 'Session judged before the v2 rubric — re-judge to populate'
+      : 'Not judged yet — judge lines fill in within ~30 minutes';
     const longestRun = n(raw.longestRepeatRun);
     const stalePairs = n(raw.staleAiPairs);
 
@@ -580,7 +592,7 @@ export class RoleplaySessionLogsService {
         n(raw.progressionLabelledTurns) > 0 ? 'measured' : 'none',
         n(raw.progressionLabelledTurns) > 0
           ? 'A client rightly refusing to yield to a weak intervention is excluded'
-          : 'Session judged before the v2 rubric — re-judge to populate',
+          : missingLabelReason,
       ),
       metric(
         'semantic_stasis',
@@ -683,9 +695,7 @@ export class RoleplaySessionLogsService {
         n(raw.clienthoodLabelledTurns),
         'percent',
         n(raw.clienthoodLabelledTurns) > 0 ? 'measured' : 'none',
-        n(raw.clienthoodLabelledTurns) > 0
-          ? null
-          : 'Session judged before the v2 rubric — re-judge to populate',
+        n(raw.clienthoodLabelledTurns) > 0 ? null : missingLabelReason,
       ),
       metric(
         'over_compliance',
