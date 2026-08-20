@@ -13,8 +13,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *   every entry it created (and auto-accepted), so an auto-accepted batch can
  *   be rolled back as a unit when attribution shows a regression.
  */
-export class GlossaryProfileOverlaysAndBatches1917000000000 implements MigrationInterface {
-  name = 'GlossaryProfileOverlaysAndBatches1917000000000';
+export class GlossaryProfileOverlaysAndBatches1918000000000 implements MigrationInterface {
+  name = 'GlossaryProfileOverlaysAndBatches1918000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

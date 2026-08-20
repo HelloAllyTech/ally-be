@@ -10,8 +10,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * v1 is inference + storage only; nothing reads these at runtime yet.
  */
-export class CreateLanguageVarietyProfiles1916000000000 implements MigrationInterface {
-  name = 'CreateLanguageVarietyProfiles1916000000000';
+export class CreateLanguageVarietyProfiles1917000000000 implements MigrationInterface {
+  name = 'CreateLanguageVarietyProfiles1917000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
