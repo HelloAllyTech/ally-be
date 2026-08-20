@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -10,6 +11,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
+import { BugHunterService } from './bug-hunter.service';
 import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
 import {
   needsYourAnswer,
@@ -17,12 +19,14 @@ import {
   stillWaitingOnAnswers,
 } from '../constants/bug-hunter-voice';
 import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
+import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 import { BugFinding } from '../entity/bug-finding.entity';
 import {
   BugFindingRepository,
   ListBugFindingsFilter,
 } from '../repository/bug-finding.repository';
 import {
+  BUG_FINDING_DESCRIPTION_EDITABLE_STATUSES,
   BugFindingSeverity,
   BugFindingSource,
   BugFindingStatus,
@@ -74,6 +78,11 @@ export class BugFindingService {
     private readonly notificationService: BugHunterNotificationService,
     @InjectRepository(RoadmapOpportunity)
     private readonly roadmapOpportunityRepository: Repository<RoadmapOpportunity>,
+    // Appended last, and safe to inject: BugHunterService depends on
+    // repositories and the notification service only, never back on this —
+    // the module's one-way edge that keeps `editDescription` able to write to
+    // the shared event timeline without a circular provider.
+    private readonly bugHunterService: BugHunterService,
   ) {}
 
   async getOne(id: string): Promise<BugFinding> {
@@ -376,6 +385,84 @@ export class BugFindingService {
       decidedBy: userId,
       decidedAt: new Date(),
     });
+    return this.getOne(id);
+  }
+
+  /**
+   * An admin rewrites the bug's description before putting Bug Hunter on it.
+   *
+   * This is an input-quality edit, not a status change: `description` is the
+   * entire statement of the problem in the fix agent's prompt (see
+   * `buildFixSessionPrompt`) and the text the repo classifier reads to decide
+   * which codebase the bug even belongs to. A one-line human report — "search
+   * is broken" — and a nine-paragraph finder essay fail the same fix session
+   * for the same reason, and before this the only remedy was to reject the bug
+   * and file a better one.
+   *
+   * Three things it deliberately does NOT do:
+   *
+   *  - **Move the status.** Editing is not approving. The admin still presses
+   *    "Put me on it" afterwards, and a Manual-mode finding still needs its
+   *    approval.
+   *  - **Touch the linked `roadmap_opportunities` row** for a reported bug.
+   *    That is the reporter's own account of what they saw, and it stays their
+   *    words — this rewrites the brief Bug Hunter works from, not the report
+   *    of record.
+   *  - **Recompute `dedupeKey`.** It is derived from the FINDER's text, so
+   *    leaving it alone is what lets tonight's sweep re-find this same bug and
+   *    touch this row rather than opening a duplicate beside it.
+   */
+  async editDescription(
+    id: string,
+    description: string,
+    userId: number,
+  ): Promise<BugFinding> {
+    const finding = await this.getOne(id);
+    if (!BUG_FINDING_DESCRIPTION_EDITABLE_STATUSES.includes(finding.status)) {
+      throw new ForbiddenException(
+        `Finding ${id} is ${finding.status} — its description can't be changed from there.`,
+      );
+    }
+
+    const next = description.trim();
+    // The invariant, not just DTO hygiene: `bug_findings.description` is NOT
+    // NULL and every fix prompt states the bug as nothing but this text, so a
+    // blank one is a fix session asked to fix "". `@IsNotEmpty` alone does not
+    // catch it — it accepts "   " — which is how a whitespace-only PATCH
+    // stored an empty brief the first time this endpoint was exercised.
+    if (!next) {
+      throw new BadRequestException(
+        'A bug description cannot be blank — it is the only statement of the problem the fix agent gets.',
+      );
+    }
+    // A no-op save would put a "description edited" row on the work log that
+    // says nothing happened, which is worse than silence on a timeline whose
+    // whole job is explaining why a fix session went the way it did.
+    if (next === finding.description) return finding;
+
+    await this.findingRepository.update(id, {
+      description: next,
+      // Captured on the FIRST edit only — a later edit must not overwrite the
+      // finder's original words with the previous admin's rewrite.
+      originalDescription: finding.originalDescription ?? finding.description,
+      descriptionEditedBy: userId,
+      descriptionEditedAt: new Date(),
+    });
+
+    // Runless, like the release lifecycle's events: an admin edits a bug long
+    // after the run that found it has closed, and `appendEvent` rightly
+    // refuses to write into a closed run.
+    await this.bugHunterService.appendFindingEvent({
+      findingId: id,
+      repo: finding.repo,
+      stage: BugHuntEventStage.DESCRIPTION_EDITED,
+      summary: `User ${userId} rewrote this bug's description.`,
+      // The before/after both go in the payload, not just the new text: the
+      // question a reviewer brings to this row is what changed, and
+      // `original_description` alone can't answer it after a second edit.
+      payload: { editedBy: userId, from: finding.description, to: next },
+    });
+
     return this.getOne(id);
   }
 

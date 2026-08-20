@@ -80,3 +80,15 @@ export const BUG_HUNT_ESCALATION_GUIDANCE =
   `it already did, and continue the rest of the protocol yourself. Reserve this for findings ` +
   `that actually warrant it — judge by the bug's difficulty, not by how many attempts you have ` +
   `left; a routine fix does not need it.`;
+
+/**
+ * Cap on an admin-rewritten bug description.
+ *
+ * Generous, because the whole point of the edit is to say more than the
+ * original did — a paragraph of context that spares the fix agent a wrong
+ * guess is cheap next to a wasted session. The cap exists at all because this
+ * text goes verbatim into the fix prompt (see `buildFixSessionPrompt`), where
+ * a pasted log dump would crowd out the protocol that follows it. Evidence is
+ * the field for raw output.
+ */
+export const BUG_FINDING_DESCRIPTION_MAX_LENGTH = 5000;

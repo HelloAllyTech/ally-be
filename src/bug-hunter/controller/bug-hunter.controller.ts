@@ -47,6 +47,7 @@ import {
   ListBugFindingsResponseDto,
   UpdateBugHunterSettingsDto,
   AnswerBugFindingDto,
+  EditBugFindingDescriptionDto,
   StartBugFixSessionDto,
   BugFixStepDto,
   BugHunterNotificationDto,
@@ -301,6 +302,43 @@ export class BugHunterController {
     return toFindingDto(await this.bugFindingService.reject(id, user.id));
   }
 
+  @Patch('findings/:id/description')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary:
+      "Rewrite a bug's description before putting Bug Hunter on it (super-duper-admin)",
+    description:
+      "The description is the fix agent's entire brief — `buildFixSessionPrompt` " +
+      'states the problem to it as nothing but this text, and the repo ' +
+      'classifier reads it to decide which codebase the bug belongs to. So a ' +
+      'vague human report or a rambling finder paragraph is an input-quality ' +
+      'problem, and this is how an admin fixes it without rejecting the bug ' +
+      'and re-filing a better one. Valid from exactly the statuses a fix ' +
+      'session can be started from (see ' +
+      'BUG_FINDING_DESCRIPTION_EDITABLE_STATUSES) — not while one is in ' +
+      'flight, and not once a fix is merged. Does NOT change the status: ' +
+      'editing is not approving, and the admin still presses "Put me on it" ' +
+      "afterwards. The finder's or reporter's original words are preserved in " +
+      "`originalDescription`, and the rewrite is recorded on the finding's " +
+      'own event timeline.',
+  })
+  @ApiResponse({ status: 200, type: BugFindingDto })
+  async editFindingDescription(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: EditBugFindingDescriptionDto,
+    @CurrentUser() user: TokenUser,
+  ): Promise<BugFindingDto> {
+    return toFindingDto(
+      await this.bugFindingService.editDescription(
+        id,
+        body.description,
+        user.id,
+      ),
+    );
+  }
+
   @Post('findings/:id/answer')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
     legacyRoles: SUPER_DUPER_ADMIN_ROLES,
@@ -526,6 +564,9 @@ export function toFindingDto(row: BugFinding): BugFindingDto {
     source: row.source,
     title: row.title,
     description: row.description,
+    originalDescription: row.originalDescription ?? null,
+    descriptionEditedBy: row.descriptionEditedBy ?? null,
+    descriptionEditedAt: row.descriptionEditedAt ?? null,
     file: row.file ?? null,
     symbol: row.symbol ?? null,
     evidence: row.evidence ?? null,

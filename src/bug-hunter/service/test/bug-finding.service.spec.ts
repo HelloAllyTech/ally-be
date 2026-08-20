@@ -1,3 +1,4 @@
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 
 import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
@@ -7,13 +8,16 @@ import { BUG_HUNTER_AGENT_ROADMAP_OWNER } from '../../constants/bug-fix-session.
 import { BugFindingRepository } from '../../repository/bug-finding.repository';
 import { BugFindingService, RawFinding } from '../bug-finding.service';
 import { BugHunterNotificationService } from '../bug-hunter-notification.service';
+import { BugHunterService } from '../bug-hunter.service';
 
 import { BugFinding } from '../../entity/bug-finding.entity';
 import {
+  BUG_FINDING_DESCRIPTION_EDITABLE_STATUSES,
   BugFindingSeverity,
   BugFindingSource,
   BugFindingStatus,
 } from '../../enum/bug-finding.enum';
+import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
 import { BugHunterNotificationLevel } from '../../enum/bug-hunter-notification.enum';
 
 const RUN = 'run-1';
@@ -42,6 +46,18 @@ const row = (over: Partial<BugFinding> = {}): BugFinding =>
     touchesGuardedPath: false,
     ...over,
   }) as BugFinding;
+
+/**
+ * Only `editDescription` writes to the event timeline, so everything else gets
+ * a stub that would fail loudly if it were ever called with the wrong shape.
+ */
+const bugHunterService = (
+  over: Partial<{ appendFindingEvent: jest.Mock }> = {},
+) =>
+  ({
+    appendFindingEvent: jest.fn().mockResolvedValue(undefined),
+    ...over,
+  }) as unknown as BugHunterService;
 
 /** Nothing under test here touches the roadmap unless a finding merges. */
 const roadmapRepository = (
@@ -91,6 +107,7 @@ describe('BugFindingService.persistFindings', () => {
       repo as unknown as BugFindingRepository,
       notifications as unknown as BugHunterNotificationService,
       roadmapRepository(),
+      bugHunterService(),
     );
   });
 
@@ -233,6 +250,7 @@ describe('BugFindingService.raiseStaleEscalationDigest', () => {
       repo as unknown as BugFindingRepository,
       notifications as unknown as BugHunterNotificationService,
       roadmapRepository(),
+      bugHunterService(),
     );
   });
 
@@ -334,6 +352,7 @@ describe('BugFindingService.setStatus — releasing the reporter’s roadmap car
       repo as unknown as BugFindingRepository,
       notifications as unknown as BugHunterNotificationService,
       roadmap as unknown as Repository<RoadmapOpportunity>,
+      bugHunterService(),
     );
   };
 
@@ -424,4 +443,155 @@ describe('BugFindingService.setStatus — releasing the reporter’s roadmap car
       status: BugFindingStatus.MERGED,
     });
   });
+});
+
+/**
+ * An admin rewriting the brief before a fix session runs.
+ *
+ * What these lock down is not the write — it is the three things the write
+ * must leave alone. The description is the fix agent's whole statement of the
+ * problem, so an edit that quietly moved the status, lost the finder's
+ * original words, or left no trace on the timeline would each remove the
+ * ability to answer the only question worth asking after a bad fix: was the
+ * agent wrong, or was it told the wrong thing?
+ */
+describe('BugFindingService.editDescription', () => {
+  const EDITOR = 42;
+  const NEXT =
+    'Searching for a counsellor by phone number returns nobody, even for a number that exists — the query compares the raw input against a normalised column.';
+
+  let service: BugFindingService;
+  let repo: { findOne: jest.Mock; update: jest.Mock };
+  let hunter: { appendFindingEvent: jest.Mock };
+
+  const build = (finding: BugFinding) => {
+    repo = {
+      findOne: jest.fn().mockResolvedValue(finding),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    hunter = { appendFindingEvent: jest.fn().mockResolvedValue(undefined) };
+    service = new BugFindingService(
+      repo as unknown as BugFindingRepository,
+      {
+        notify: jest.fn(),
+        wasRaisedSince: jest.fn(),
+      } as unknown as BugHunterNotificationService,
+      roadmapRepository(),
+      hunter as unknown as BugHunterService,
+    );
+  };
+
+  it('rewrites the description and keeps the original words', async () => {
+    build(row({ id: 'finding-1', description: 'search is broken' }));
+
+    await service.editDescription('finding-1', NEXT, EDITOR);
+
+    expect(repo.update).toHaveBeenCalledWith(
+      'finding-1',
+      expect.objectContaining({
+        description: NEXT,
+        originalDescription: 'search is broken',
+        descriptionEditedBy: EDITOR,
+      }),
+    );
+  });
+
+  it('never overwrites the original with a previous admin’s rewrite', async () => {
+    // Second edit: `originalDescription` is already set, and it is the
+    // finder's text — not the version being replaced right now.
+    build(
+      row({
+        id: 'finding-1',
+        description: 'first rewrite',
+        originalDescription: 'what the finder actually said',
+      }),
+    );
+
+    await service.editDescription('finding-1', NEXT, EDITOR);
+
+    expect(repo.update).toHaveBeenCalledWith(
+      'finding-1',
+      expect.objectContaining({
+        originalDescription: 'what the finder actually said',
+      }),
+    );
+  });
+
+  it('does not move the status — editing is not approving', async () => {
+    build(row({ id: 'finding-1', status: BugFindingStatus.PENDING_APPROVAL }));
+
+    await service.editDescription('finding-1', NEXT, EDITOR);
+
+    expect(repo.update).toHaveBeenCalledWith(
+      'finding-1',
+      expect.not.objectContaining({ status: expect.anything() }),
+    );
+  });
+
+  it('records the rewrite on the finding’s own timeline, with both versions', async () => {
+    build(row({ id: 'finding-1', description: 'search is broken' }));
+
+    await service.editDescription('finding-1', NEXT, EDITOR);
+
+    expect(hunter.appendFindingEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        findingId: 'finding-1',
+        stage: BugHuntEventStage.DESCRIPTION_EDITED,
+        payload: expect.objectContaining({
+          from: 'search is broken',
+          to: NEXT,
+        }),
+      }),
+    );
+  });
+
+  it('trims, and treats an unchanged description as nothing to do', async () => {
+    build(row({ id: 'finding-1', description: NEXT }));
+
+    await service.editDescription('finding-1', `  ${NEXT}  `, EDITOR);
+
+    expect(repo.update).not.toHaveBeenCalled();
+    // No work log row either: a "description edited" entry saying nothing
+    // changed is noise on a timeline whose job is explaining a fix session.
+    expect(hunter.appendFindingEvent).not.toHaveBeenCalled();
+  });
+
+  it('refuses a blank rewrite outright', async () => {
+    // Regression: `@IsNotEmpty` accepts "   ", so the DTO alone let a
+    // whitespace-only PATCH through and stored an empty brief — a fix session
+    // asked to fix nothing. The invariant belongs here as well as in the pipe.
+    build(row({ id: 'finding-1', description: 'search is broken' }));
+
+    await expect(
+      service.editDescription('finding-1', '   \n  ', EDITOR),
+    ).rejects.toThrow(BadRequestException);
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    BugFindingStatus.QUEUED,
+    BugFindingStatus.FIXING,
+    BugFindingStatus.MERGED,
+    BugFindingStatus.RELEASED,
+    BugFindingStatus.REJECTED,
+  ])('refuses to edit a finding that is %s', async (status) => {
+    build(row({ id: 'finding-1', status }));
+
+    await expect(
+      service.editDescription('finding-1', NEXT, EDITOR),
+    ).rejects.toThrow(ForbiddenException);
+    expect(repo.update).not.toHaveBeenCalled();
+  });
+
+  it.each(BUG_FINDING_DESCRIPTION_EDITABLE_STATUSES)(
+    'allows an edit from %s — the same statuses "Put me on it" is offered from',
+    async (status) => {
+      build(row({ id: 'finding-1', status, description: 'vague' }));
+
+      await expect(
+        service.editDescription('finding-1', NEXT, EDITOR),
+      ).resolves.toBeDefined();
+      expect(repo.update).toHaveBeenCalled();
+    },
+  );
 });

@@ -132,6 +132,27 @@ export const BUG_FINDING_FIX_SESSION_START_STATUSES: BugFindingStatus[] = [
   BugFindingStatus.CANCELLED,
 ];
 
+/**
+ * Statuses an admin may rewrite the description from.
+ *
+ * The same list as BUG_FINDING_FIX_SESSION_START_STATUSES, and deliberately
+ * so: the point of editing is to improve the brief a fix session will read, so
+ * the edit belongs exactly where the "Put me on it" button is offered and
+ * nowhere else. Derived from that list rather than re-typed, so the two can
+ * never drift apart.
+ *
+ * What this excludes is the interesting half. QUEUED and FIXING are out even
+ * though a runner fetches the prompt fresh (see the pipeline controller's
+ * `getFixPrompt`) and an edit made in that window would technically reach the
+ * agent: whether it lands depends on a race with the runner starting, and a
+ * field whose effect is "maybe" is worse than one that is plainly closed.
+ * MERGED and everything past it are out because a fix already exists — the
+ * description now documents what was fixed, and rewriting history there would
+ * make the PR and the bug disagree.
+ */
+export const BUG_FINDING_DESCRIPTION_EDITABLE_STATUSES: BugFindingStatus[] =
+  BUG_FINDING_FIX_SESSION_START_STATUSES;
+
 /** Statuses a client may filter the table by, plus the "show everything" option. */
 export const BUG_FINDING_STATUS_FILTERS = [
   ...Object.values(BugFindingStatus),
