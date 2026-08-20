@@ -6,6 +6,7 @@ import {
   QualitySentimentQueryDto,
   QualitySentimentResponseDto,
 } from '../dto/quality-sentiment-analytics.dto';
+import { QualityIndexAnalyticsService } from './quality-index-analytics.service';
 import { AnalyticsBucket } from '../repository/platform-analytics.repository';
 import {
   MIN_SENTIMENT_RESPONSES,
@@ -69,7 +70,10 @@ const defaultBucketFor = (range: AnalyticsRange): AnalyticsBucket =>
  */
 @Injectable()
 export class QualitySentimentAnalyticsService {
-  constructor(private readonly repo: QualitySentimentAnalyticsRepository) {}
+  constructor(
+    private readonly repo: QualitySentimentAnalyticsRepository,
+    private readonly qualityIndex: QualityIndexAnalyticsService,
+  ) {}
 
   async getQualitySentiment(
     query: QualitySentimentQueryDto,
@@ -84,13 +88,14 @@ export class QualitySentimentAnalyticsService {
     const tenantId = query.tenantId?.trim() || undefined;
     const { start, endExclusive, bucket } = window;
 
-    const rows = await this.repo.getByBucket(
-      start,
-      endExclusive,
-      bucket,
-      tenantId,
-    );
+    // The sentiment half and the index are independent aggregates over the same
+    // window — no ordering dependency, so they go out together.
+    const [rows, index] = await Promise.all([
+      this.repo.getByBucket(start, endExclusive, bucket, tenantId),
+      this.qualityIndex.getQualityIndex(start, endExclusive, bucket, tenantId),
+    ]);
     const byBucket = new Map(rows.map((r) => [r.bucket, r]));
+    const indexByBucket = new Map(index.points.map((p) => [p.bucket, p]));
 
     const points: QualitySentimentPointDto[] = generateBucketLabels(
       start,
@@ -99,6 +104,7 @@ export class QualitySentimentAnalyticsService {
     ).map((bucketKey) => {
       const row = byBucket.get(bucketKey);
       const responses = row?.responses ?? 0;
+      const indexPoint = indexByBucket.get(bucketKey);
       return {
         bucket: bucketKey,
         avgCompositeScore: row?.avgCompositeScore ?? null,
@@ -113,6 +119,15 @@ export class QualitySentimentAnalyticsService {
         promoters: row?.promoters ?? 0,
         passives: row?.passives ?? 0,
         detractors: row?.detractors ?? 0,
+        qualityIndex: indexPoint?.index ?? null,
+        indexContributions: indexPoint?.contributions ?? {},
+        indexRaw: indexPoint?.raw ?? {},
+        indexSampleSizes: indexPoint?.n ?? {},
+        // A bucket the index has no row for at all is missing every dimension,
+        // not missing none — otherwise a gap reads as full coverage.
+        indexMissing:
+          indexPoint?.missing ??
+          index.coverage.map((c) => c.dimension),
       };
     });
 
@@ -143,8 +158,13 @@ export class QualitySentimentAnalyticsService {
       },
     );
 
+    // Paired on the INDEX, not on the actor composite: the index is what the
+    // card plots, and a correlation quoted beside a line it does not describe
+    // is worse than no correlation. `avgCompositeScore` stays in the payload —
+    // the comparison table still shows it — but it is no longer the quality
+    // series.
     const paired = points.filter(
-      (p) => p.avgCompositeScore !== null && p.proxyNps !== null,
+      (p) => p.qualityIndex !== null && p.proxyNps !== null,
     );
 
     return {
@@ -167,12 +187,15 @@ export class QualitySentimentAnalyticsService {
       correlation:
         paired.length >= MIN_PAIRED_BUCKETS
           ? pearson(
-              paired.map((p) => p.avgCompositeScore as number),
+              paired.map((p) => p.qualityIndex as number),
               paired.map((p) => p.proxyNps as number),
             )
           : null,
       pairedBuckets: paired.length,
       proxyNote: PROXY_NOTE,
+      indexVersion: index.version,
+      indexCalibrated: index.calibrated,
+      indexCoverage: index.coverage,
       scoping: { tenantId: tenantId ?? null, unscopedSections: [] },
       computedAt: new Date().toISOString(),
     };

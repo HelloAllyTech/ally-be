@@ -116,11 +116,16 @@ export interface LowRatingTagResult {
 }
 
 /**
- * Distribution-aware quality + satisfaction for the leadership Highlights tab —
- * the successor to `HighlightsAnalyticsRepository.getQualityTrendByBucket` and
- * `getCsatTrendByBucket`, which are left in place and untouched.
+ * Distribution-aware quality + satisfaction, serving the Testing (staging)
+ * tab's `/v1/analytics/quality-distribution` endpoint — NOT the leadership
+ * Highlights tab, despite the name of this class predating that split.
+ * `HighlightsAnalyticsRepository.getQualityTrendByBucket` (the mean-composite
+ * trend this was once framed as a successor to) has since been retired from
+ * Highlights entirely, superseded there by the Roleplay Quality Index on
+ * `GET /v1/analytics/quality-sentiment`; `getCsatTrendByBucket` is unaffected
+ * and still serves that tab.
  *
- * Two things those two cannot say, and this one exists to say:
+ * Two things a mean cannot say, and this one exists to say:
  *
  *  - **A mean hides the shape.** A composite score of 68 can be everybody
  *    scoring 68, or half the platform at 40 and half at 95 — and only the second
