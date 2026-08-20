@@ -24,6 +24,17 @@ export interface TranscriptTurn {
   role: 'client' | 'counselor';
   text: string;
   turn_index?: number;
+  /**
+   * The learner talked over this client turn.
+   *
+   * Set only when TRUE. Absence means "not known to be interrupted", which is
+   * not the same as "not interrupted": the `interrupted` column went unwritten
+   * until the barge-in instrumentation shipped on 2026-08-17, so every earlier
+   * turn reads false in the database and none of them can be trusted. The judge
+   * conditions on presence for exactly that reason — sending `false` would turn
+   * an unknown into a claim.
+   */
+  interrupted?: boolean;
 }
 
 export interface BuiltTranscript {
@@ -194,6 +205,24 @@ export class DriftJudgeRepository {
           ORDER BY COALESCE("startSeconds", 0), id`,
         [sessionId],
       );
+    // Turns the learner barged in on, so the judge can stop charging a cut-off
+    // sentence to actor quality. Measured on the first week the flag existed:
+    // truncation runs 4.42% on uninterrupted turns and 15.63% on interrupted
+    // ones, and just over half of all truncation sat on interrupted turns.
+    // Only TRUE indices are collected — see TranscriptTurn.interrupted for why
+    // sending false would be a claim we cannot support.
+    const interruptedRows: { turn_index: number }[] =
+      await this.dataSource.query(
+        `SELECT DISTINCT "turnIndex" AS turn_index
+         FROM scenario_session_turn_metrics
+        WHERE "scenarioSessionId" = $1
+          AND source = 'pipeline'
+          AND interrupted = true`,
+        [sessionId],
+      );
+    const interrupted = new Set(
+      interruptedRows.map((r) => Number(r.turn_index)),
+    );
     const transcript: TranscriptTurn[] = [];
     const aiText: Record<number, string> = {};
     const userText: Record<number, string> = {};
@@ -202,7 +231,12 @@ export class DriftJudgeRepository {
     for (const r of rows) {
       const content = r.content ?? '';
       if (r.sender_id === AI_SENDER_ID) {
-        transcript.push({ role: 'client', turn_index: aiIdx, text: content });
+        transcript.push({
+          role: 'client',
+          turn_index: aiIdx,
+          text: content,
+          ...(interrupted.has(aiIdx) && { interrupted: true }),
+        });
         aiText[aiIdx] = content;
         userText[aiIdx] = lastCounselor;
         aiIdx += 1;
