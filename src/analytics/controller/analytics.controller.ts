@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -162,6 +163,38 @@ import {
   ScribeAdoptionResponseDto,
 } from '../dto/scribe-adoption-analytics.dto';
 import {
+  UsageLadderQueryDto,
+  UsageLadderResponseDto,
+} from '../dto/usage-ladder-analytics.dto';
+import {
+  QualifiedSessionsQueryDto,
+  QualifiedSessionsResponseDto,
+  StickinessQueryDto,
+  StickinessResponseDto,
+} from '../dto/practice-depth-analytics.dto';
+import {
+  OrgEngagementQueryDto,
+  OrgEngagementResponseDto,
+} from '../dto/org-engagement-analytics.dto';
+import {
+  RoleplayCostQueryDto,
+  RoleplayCostResponseDto,
+} from '../dto/roleplay-cost-analytics.dto';
+import {
+  QualitySentimentQueryDto,
+  QualitySentimentResponseDto,
+} from '../dto/quality-sentiment-analytics.dto';
+import {
+  ChartPreferencesResponseDto,
+  SaveChartPreferencesDto,
+} from '../dto/chart-preference.dto';
+import { UsageLadderAnalyticsService } from '../service/usage-ladder-analytics.service';
+import { PracticeDepthAnalyticsService } from '../service/practice-depth-analytics.service';
+import { OrgEngagementAnalyticsService } from '../service/org-engagement-analytics.service';
+import { RoleplayCostAnalyticsService } from '../service/roleplay-cost-analytics.service';
+import { QualitySentimentAnalyticsService } from '../service/quality-sentiment-analytics.service';
+import { ChartPreferenceService } from '../service/chart-preference.service';
+import {
   ApiTags,
   ApiOperation,
   ApiResponse,
@@ -212,6 +245,12 @@ export class AnalyticsController {
     private readonly learnerKpisAnalyticsService: LearnerKpisAnalyticsService,
     private readonly scenarioUsageAnalyticsService: ScenarioUsageAnalyticsService,
     private readonly scribeAdoptionAnalyticsService: ScribeAdoptionAnalyticsService,
+    private readonly usageLadderAnalyticsService: UsageLadderAnalyticsService,
+    private readonly practiceDepthAnalyticsService: PracticeDepthAnalyticsService,
+    private readonly orgEngagementAnalyticsService: OrgEngagementAnalyticsService,
+    private readonly roleplayCostAnalyticsService: RoleplayCostAnalyticsService,
+    private readonly qualitySentimentAnalyticsService: QualitySentimentAnalyticsService,
+    private readonly chartPreferenceService: ChartPreferenceService,
   ) {}
 
   @Get('overview')
@@ -336,6 +375,272 @@ export class AnalyticsController {
     @Query() query: CertificationQueryDto,
   ): Promise<CertificationResponseDto> {
     return this.certificationAnalyticsService.getCertification(query);
+  }
+
+  @Get('usage-ladder')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Learner usage ladder L1-L5 (super-admin)',
+    description:
+      'Learner progress up a five-rung ladder defined by LIFETIME roleplay ' +
+      'minutes (L1 60, L2 300, L3 1200, L4 3000, L5 6000). Serves four ' +
+      'readings of ONE definition, so they cannot disagree: learners newly ' +
+      'reaching each rung per period (the "how many L3s did we produce" ' +
+      'flow), the cumulative count holding each rung (the stock), the nested ' +
+      'account-created -> L1 -> L5 funnel as of now, and the ladder itself. ' +
+      'Minutes come from user_daily_scores.minutesPlayed, the same column the ' +
+      'practice-minutes and certification charts read. Population is ' +
+      'LEARNER-group accounts in non-test tenants. A learner is counted ONCE ' +
+      'per rung, in the period they first reached it; a learner who climbed ' +
+      'several rungs in one period appears in each of those series, so they ' +
+      'must never be stacked. NOTE this ladder is a SEPARATE internal scale ' +
+      'from the Ally Certification (one rung at 5,000 minutes) which its top ' +
+      'rung brackets — never label a rung a certification or put the two on ' +
+      'one axis. ALL-TIME by design: no range/from/to, because a lifetime ' +
+      'threshold read over a window moves every crossing date. `grain` picks ' +
+      'month or quarter only — the lowest rung takes weeks to reach, so a ' +
+      'finer axis shows noise. The current period is flagged `partial`.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Usage ladder retrieved successfully',
+    type: UsageLadderResponseDto,
+  })
+  async getUsageLadder(
+    @Query() query: UsageLadderQueryDto,
+  ): Promise<UsageLadderResponseDto> {
+    return this.usageLadderAnalyticsService.getUsageLadder(query);
+  }
+
+  @Get('practice-stickiness')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Practice stickiness funnel (super-admin)',
+    description:
+      'Of the learners who practised once, how many came back — and again. A ' +
+      'step is a DAY carrying at least 5 minutes of practice, so several ' +
+      'sessions in one evening count once: the funnel measures RETURNING, not ' +
+      'session length. Steps are nested (at least N qualifying days) so the ' +
+      'series can only narrow, and both conversions are returned — ' +
+      '`ofPreviousPct` says where people are lost, `ofTopPct` says how rare ' +
+      'deep engagement is. Ten explicit rungs plus a `beyondLastStep` tail so ' +
+      'the funnel still reconciles with the population. ALL-TIME by design: ' +
+      '"did they ever come back" cannot be asked of a window without ' +
+      'reporting every recent signup as churned. Percentages are suppressed ' +
+      '(null) when their denominator is below `minPopulation`, which is the ' +
+      'same minimum-group-size rule the cohort grid uses; the counts stay.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Stickiness funnel retrieved successfully',
+    type: StickinessResponseDto,
+  })
+  async getPracticeStickiness(
+    @Query() query: StickinessQueryDto,
+  ): Promise<StickinessResponseDto> {
+    return this.practiceDepthAnalyticsService.getStickiness(query);
+  }
+
+  @Get('qualified-sessions')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Roleplay sessions of 5+ minutes (super-admin)',
+    description:
+      'Completed roleplay sessions long enough to be practice — at least 5 ' +
+      'minutes of call duration — per bucket, with ALL completed sessions ' +
+      'beside them and the qualifying share. Both numbers because a fall in ' +
+      'qualifying sessions means something different when total sessions fell ' +
+      'with it (a quieter platform) than when they did not (sessions getting ' +
+      'shorter, or failing early). Definition matches the tab\'s "completed ' +
+      'simulation" exactly — eventStatus COMPLETED, timestamped by ' +
+      'COALESCE(endedAt, createdAt), duration from ' +
+      'scenario_session_details.callDuration in milliseconds net of paused ' +
+      'time — so this reconciles with the completed-simulations and play-time ' +
+      'charts. Sessions with no measurable duration are excluded from BOTH ' +
+      'counts. Counts gap-fill to real zeros; the SHARE is null over a zero ' +
+      'denominator. Supports range/bucket/from/to and tenantId.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Qualifying session trend retrieved successfully',
+    type: QualifiedSessionsResponseDto,
+  })
+  async getQualifiedSessions(
+    @Query() query: QualifiedSessionsQueryDto,
+  ): Promise<QualifiedSessionsResponseDto> {
+    return this.practiceDepthAnalyticsService.getQualifiedSessions(query);
+  }
+
+  @Get('org-engagement')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Org engagement ladder and recent activity (super-admin)',
+    description:
+      'Three org-level panels: the nested Orgs-created -> L1 -> L4 funnel by ' +
+      "TOTAL practice minutes summed across each org's learners (L1 500, L2 " +
+      '5,000, L3 25,000, L4 100,000), how many orgs were active in the ' +
+      'trailing `activityDays` (7/28/90, default 28) with that as a share, ' +
+      'and a 12-month activity trend. NOTE the ladder measures SIZE as much ' +
+      'as engagement — a large org clears L4 with token usage per seat while ' +
+      'a small org practising hard may never leave L1 — so surfaces must not ' +
+      'present it as adoption depth; org-health is where per-seat adoption is ' +
+      'answered. "Active" is >=1 completed simulation, the same definition as ' +
+      "the completed-simulations and top-orgs panels. The headline's " +
+      'denominator counts only orgs that existed BEFORE the window opened: an ' +
+      'org signed up three days ago has not had the chance to be inactive for ' +
+      '28. The trend is per CALENDAR MONTH, a different measurement from the ' +
+      'trailing headline rather than the same number. `tenantId` is accepted ' +
+      'and IGNORED — every figure counts orgs, which one org cannot narrow — ' +
+      'and the sections are named in scoping.unscopedSections.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Org engagement retrieved successfully',
+    type: OrgEngagementResponseDto,
+  })
+  async getOrgEngagement(
+    @Query() query: OrgEngagementQueryDto,
+  ): Promise<OrgEngagementResponseDto> {
+    return this.orgEngagementAnalyticsService.getOrgEngagement(query);
+  }
+
+  @Get('roleplay-cost')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'AI cost per 10 minutes of roleplay (super-admin)',
+    description:
+      'Estimated AI spend per 10 minutes of practice over time, split by area ' +
+      '(live roleplay / feedback & summary / quiz grading) and by service ' +
+      '(LLM / STT / TTS). Answers the unit-economics question ' +
+      'cost-per-completed-simulation cannot: a simulation is not a fixed ' +
+      'amount of product, so that figure moves when session length moves. ' +
+      'Only LEARNER-CAUSED spend is in the numerator — judges, studio ' +
+      'authoring, copilot, translation and internal tooling are reported ' +
+      'separately as `excludedCostUsd` rather than dropped or shared out, ' +
+      'because sharing them out would make practice look more expensive in a ' +
+      'week when nobody practised but somebody authored ten scenarios. The ' +
+      'denominator is the SAME practice-minutes measurement the ' +
+      'practice-minutes chart uses. Every figure is an ESTIMATE priced at ' +
+      'read time from a hand-maintained table that ignores prompt-cache ' +
+      'discounts and negotiated rates; `unpricedCalls` counts calls with no ' +
+      'pricing entry, which contribute $0 and make the total an ' +
+      'understatement whenever it is non-zero. USD only. Ratios are null over ' +
+      'a bucket with no practice — a ratio with no denominator is not zero. ' +
+      'Platform-wide always: llm_usage is largely tenantless by design, so a ' +
+      'tenant-filtered cost would be a fraction of real spend presented as ' +
+      'the whole.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Roleplay unit cost retrieved successfully',
+    type: RoleplayCostResponseDto,
+  })
+  async getRoleplayCost(
+    @Query() query: RoleplayCostQueryDto,
+  ): Promise<RoleplayCostResponseDto> {
+    return this.roleplayCostAnalyticsService.getRoleplayCost(query);
+  }
+
+  @Get('quality-sentiment')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Roleplay quality vs learner sentiment (super-admin)',
+    description:
+      'The LLM-judge composite score and a PROXY NPS on one time axis, plus ' +
+      'their correlation. Divergence is the signal: quality rising while ' +
+      'sentiment falls means the scenarios got harder, both falling means ' +
+      'something broke, and either number alone can be moved in the wrong ' +
+      'direction unnoticed. IMPORTANT — the sentiment series is NOT NPS. Ally ' +
+      'has never asked the 0-10 "would you recommend" question; this is ' +
+      'derived from the 1-5 post-session rating by treating 5 as a promoter, ' +
+      '4 as passive and <=3 as a detractor, then scoring it the way NPS is ' +
+      'scored. It is comparable with itself over time and with nobody ' +
+      "else's published score, and every surface must label it as a proxy " +
+      '(see `proxyNote`). Both series are bucketed on the SESSION timestamp, ' +
+      'not on when the evaluation or the rating was written, so asynchronous ' +
+      'evaluation cannot slide the two lines against each other and ' +
+      'manufacture divergence. Proxy NPS is null below `minResponses` — over ' +
+      'a handful of responses one rating swings it by tens of points. Neither ' +
+      'series is gap-filled with zeros: both are means, so a quiet bucket ' +
+      'breaks the line rather than drawing a collapse. The correlation is ' +
+      'computed over paired buckets only and suppressed below three of them, ' +
+      'and is co-movement, NOT evidence of causation either way.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Quality vs sentiment retrieved successfully',
+    type: QualitySentimentResponseDto,
+  })
+  async getQualitySentiment(
+    @Query() query: QualitySentimentQueryDto,
+  ): Promise<QualitySentimentResponseDto> {
+    return this.qualitySentimentAnalyticsService.getQualitySentiment(query);
+  }
+
+  @Get('chart-preferences')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: "The caller's saved per-chart controls (super-admin)",
+    description:
+      'Every saved window/grain preference for the CALLING user, across all ' +
+      'analytics tabs. The Highlights tab has no page-level date range — each ' +
+      'chart owns its own controls — and this is what makes that choice ' +
+      'survive a reload and follow the reader to another machine. Chart ids ' +
+      'are client-owned strings, so a key the client no longer recognises is ' +
+      'safe to ignore; a stored value that is no longer a legal range or ' +
+      'grain is dropped on the way out rather than failing the request.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Chart preferences retrieved successfully',
+    type: ChartPreferencesResponseDto,
+  })
+  async getChartPreferences(
+    @Req() req: { user: { id: number } },
+  ): Promise<ChartPreferencesResponseDto> {
+    return this.chartPreferenceService.getForUser(req.user.id);
+  }
+
+  @Put('chart-preferences')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: "Save the caller's per-chart controls (super-admin)",
+    description:
+      'Upserts one row per chart for the calling user and returns the full ' +
+      'saved set. A BATCH, so re-ranging three charts while reading is one ' +
+      'round trip and a tab saving on unmount gets its one chance. NOT a ' +
+      'replace-all: charts absent from the payload keep what they had, so a ' +
+      'client that knows only about the tab on screen cannot wipe the saved ' +
+      'state of every other tab. To clear one chart, send it with ' +
+      '`range: null, bucket: null`.',
+  })
+  @ApiBody({ type: SaveChartPreferencesDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Chart preferences saved successfully',
+    type: ChartPreferencesResponseDto,
+  })
+  async saveChartPreferences(
+    @Req() req: { user: { id: number } },
+    @Body() body: SaveChartPreferencesDto,
+  ): Promise<ChartPreferencesResponseDto> {
+    return this.chartPreferenceService.saveForUser(req.user.id, body);
   }
 
   @Get('usage-levels')

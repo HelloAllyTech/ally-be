@@ -26,6 +26,12 @@ import { OrgSessionDistributionAnalyticsService } from '../../service/org-sessio
 import { LearnerKpisAnalyticsService } from '../../service/learner-kpis-analytics.service';
 import { ScenarioUsageAnalyticsService } from '../../service/scenario-usage-analytics.service';
 import { ScribeAdoptionAnalyticsService } from '../../service/scribe-adoption-analytics.service';
+import { UsageLadderAnalyticsService } from '../../service/usage-ladder-analytics.service';
+import { PracticeDepthAnalyticsService } from '../../service/practice-depth-analytics.service';
+import { OrgEngagementAnalyticsService } from '../../service/org-engagement-analytics.service';
+import { RoleplayCostAnalyticsService } from '../../service/roleplay-cost-analytics.service';
+import { QualitySentimentAnalyticsService } from '../../service/quality-sentiment-analytics.service';
+import { ChartPreferenceService } from '../../service/chart-preference.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { RolesGuard } from '../../../auth/guards/roles.guard';
@@ -193,6 +199,33 @@ describe('AnalyticsController', () => {
         {
           provide: ScribeAdoptionAnalyticsService,
           useValue: { getScribeAdoption: jest.fn() },
+        },
+        {
+          provide: UsageLadderAnalyticsService,
+          useValue: { getUsageLadder: jest.fn() },
+        },
+        {
+          provide: PracticeDepthAnalyticsService,
+          useValue: {
+            getStickiness: jest.fn(),
+            getQualifiedSessions: jest.fn(),
+          },
+        },
+        {
+          provide: OrgEngagementAnalyticsService,
+          useValue: { getOrgEngagement: jest.fn() },
+        },
+        {
+          provide: RoleplayCostAnalyticsService,
+          useValue: { getRoleplayCost: jest.fn() },
+        },
+        {
+          provide: QualitySentimentAnalyticsService,
+          useValue: { getQualitySentiment: jest.fn() },
+        },
+        {
+          provide: ChartPreferenceService,
+          useValue: { getForUser: jest.fn(), saveForUser: jest.fn() },
         },
         {
           provide: Reflector,
