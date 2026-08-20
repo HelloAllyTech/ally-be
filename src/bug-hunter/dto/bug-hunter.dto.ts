@@ -6,8 +6,10 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -49,6 +51,60 @@ export class BugHuntEventDto {
 
   @ApiProperty()
   createdAt!: Date;
+}
+
+/**
+ * Body of `POST pipeline/runs/:id/report` — one progress event from the
+ * external Claude Code pipeline.
+ *
+ * `stage` is validated against the enum on purpose, unlike most inbound
+ * values in this repo, which are deliberately lenient (see CLAUDE.md: a
+ * tightened enum can lock out a released mobile build that sends the old
+ * value verbatim). Nothing here is a released client — the only callers are
+ * `buildSweepPrompt` and `buildFixSessionPrompt`, both compiled from this
+ * same enum — and the column carries a CHECK constraint matching it, so an
+ * unrecognised stage was never going to be stored either way. Without this
+ * it reached Postgres and came back as a 500 `Database query failed`, which
+ * is how `verify_result` sat in the sweep prompt for a week silently
+ * dropping every Phase-2 verification event: the pipeline treats the failed
+ * POST as a transient blip and carries on. A 400 naming the bad value fails
+ * the drift loudly, at the edge, for the price of one decorator.
+ */
+export class ReportBugHuntEventDto {
+  @ApiPropertyOptional({
+    description:
+      "Repo this event is about. Defaults to the run's own repo when omitted.",
+  })
+  @IsOptional()
+  @IsString()
+  repo?: string;
+
+  @ApiProperty({ enum: BugHuntEventStage })
+  @IsEnum(BugHuntEventStage)
+  stage!: BugHuntEventStage;
+
+  @ApiProperty({ description: 'One line, for the run timeline.' })
+  @IsString()
+  summary!: string;
+
+  @ApiPropertyOptional({
+    type: Object,
+    description:
+      'Structured detail only — never raw log or PII content, which this table must not carry.',
+  })
+  @IsOptional()
+  @IsObject()
+  payload?: Record<string, any>;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  suggestionId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  findingId?: string;
 }
 
 export class BugHunterSettingsDto {

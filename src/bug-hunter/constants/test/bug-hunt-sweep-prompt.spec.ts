@@ -1,6 +1,8 @@
 import { BugHunterMode } from '../../enum/bug-finding.enum';
+import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
 import { BUG_HUNT_MAX_AUTO_MERGES_PER_RUN } from '../bug-hunter.constants';
 import { buildSweepPrompt } from '../bug-hunt-sweep-prompt';
+import { stageMentions } from './stage-mentions';
 
 const build = (over: Partial<Parameters<typeof buildSweepPrompt>[0]> = {}) =>
   buildSweepPrompt({
@@ -136,6 +138,47 @@ describe('buildSweepPrompt', () => {
 
     it('still closes the run', () => {
       expect(mobile()).toContain('/close');
+    });
+  });
+
+  describe('the progress stages it advertises', () => {
+    const valid = new Set<string>(Object.values(BugHuntEventStage));
+
+    // Every branch of the prompt: the text differs by mode and by repo, so a
+    // bad stage hiding in one arm has to fail here too.
+    const variants: [
+      string,
+      Parameters<typeof buildSweepPrompt>[0]['repo'],
+      BugHunterMode,
+    ][] = [
+      ['ally-be, AI', 'ally-be', BugHunterMode.AI],
+      ['ally-be, MANUAL', 'ally-be', BugHunterMode.MANUAL],
+      ['ally-mobile (never merges)', 'ally-mobile', BugHunterMode.AI],
+      ['ally-ai', 'ally-ai', BugHunterMode.AI],
+      ['ally-web (unfixable)', 'ally-web', BugHunterMode.AI],
+    ];
+
+    it.each(variants)(
+      'names only stages BugHuntEventStage defines — %s',
+      (_label, repo, mode) => {
+        const mentioned = stageMentions(build({ repo, mode }));
+        // Guards the extractor itself: a regex that silently stops matching
+        // would make this whole suite pass vacuously.
+        expect(mentioned.length).toBeGreaterThan(5);
+        expect(mentioned.filter((stage) => !valid.has(stage))).toEqual([]);
+      },
+    );
+
+    it('calls the verify stage `verify`, not `verify_result`', () => {
+      // The actual regression: `verify_result` is not a BugHuntEventStage, so
+      // the CHECK constraint rejected every Phase-2 report and the sweep's
+      // verification work left no trace in the run timeline.
+      expect(stageMentions(build())).toContain(BugHuntEventStage.VERIFY);
+      expect(build()).not.toContain('verify_result');
+    });
+
+    it('asks for a verify report on the findings it dismisses', () => {
+      expect(build()).toMatch(/report a verify stage saying why/i);
     });
   });
 
