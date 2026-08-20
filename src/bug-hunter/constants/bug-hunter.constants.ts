@@ -50,3 +50,33 @@ export const BUG_HUNTER_PROMPT_CODES = {
 
 /** Max tokens for the repo-classification call — a one-sentence-rationale JSON reply. */
 export const BUG_HUNTER_CLASSIFY_REPO_MAX_TOKENS = 300;
+
+/**
+ * Subagent name for Bug Hunter's model escalation path — defined once per
+ * fixable repo at `.claude/agents/bug-escalation.md`, pinned to a stronger
+ * (and pricier) model than the sweep/fix session's own default. Sweeps and
+ * fix sessions run on a cheaper model by default and invoke this subagent by
+ * name, via the Task tool, only for the specific finding that warrants it —
+ * a genuinely hard root cause, a guarded-path change, or a retry after a
+ * non-obvious failure. Control returns to the cheaper default the moment the
+ * subagent reports back, so there is nothing to "switch back": escalation is
+ * scoped to one finding, not a session-wide mode.
+ */
+export const BUG_HUNT_ESCALATION_SUBAGENT = 'bug-escalation';
+
+/**
+ * Shared instruction for when to reach for `BUG_HUNT_ESCALATION_SUBAGENT`,
+ * used verbatim by both the sweep and fix-session prompts so the criteria
+ * for escalating can't drift between the two protocols.
+ */
+export const BUG_HUNT_ESCALATION_GUIDANCE =
+  `If this finding needs deeper reasoning than a routine fix — a root cause spanning ` +
+  `multiple files or modules, a change that sits in a guarded area (auth/permissions, ` +
+  `payments, migrations), or an attempt that already failed for a non-obvious reason — ` +
+  `hand the fix work to a stronger model instead of pushing through it yourself: invoke ` +
+  `the Task tool with subagent_type "${BUG_HUNT_ESCALATION_SUBAGENT}", and give it the ` +
+  `finding's full context (description, evidence, file, and — on a retry — what you already ` +
+  `tried and why it failed). Take its result as your own work: do not redo the verification ` +
+  `it already did, and continue the rest of the protocol yourself. Reserve this for findings ` +
+  `that actually warrant it — judge by the bug's difficulty, not by how many attempts you have ` +
+  `left; a routine fix does not need it.`;

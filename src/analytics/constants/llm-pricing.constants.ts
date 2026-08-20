@@ -21,11 +21,20 @@ export interface ModelPricing {
 export const MODEL_PRICING: Record<string, ModelPricing> = {
   // --- Anthropic (current) ---
   'claude-fable-5': { inputPer1MUsd: 10, outputPer1MUsd: 50 },
+  // Note the resolver matches by prefix (see resolvePricing below), so this
+  // entry also covers the "claude-opus-5[1m]" variant id the Claude Code CLI
+  // reports in its own modelUsage — Bug Hunter's cost-reporting step also
+  // normalizes to the plain id via canonicalModel, but this entry is what
+  // prices it if that ever falls back to the raw key.
+  'claude-opus-5': { inputPer1MUsd: 5, outputPer1MUsd: 25 },
   'claude-opus-4-8': { inputPer1MUsd: 5, outputPer1MUsd: 25 },
   'claude-opus-4-7': { inputPer1MUsd: 5, outputPer1MUsd: 25 },
   'claude-opus-4-6': { inputPer1MUsd: 5, outputPer1MUsd: 25 },
   'claude-opus-4-5': { inputPer1MUsd: 5, outputPer1MUsd: 25 },
   'claude-opus-4-1': { inputPer1MUsd: 15, outputPer1MUsd: 75 },
+  // Sticker rate ($3/$15) rather than the 2026-08-31 introductory discount —
+  // this table prices at list, not at time-bound promotions.
+  'claude-sonnet-5': { inputPer1MUsd: 3, outputPer1MUsd: 15 },
   'claude-sonnet-4-6': { inputPer1MUsd: 3, outputPer1MUsd: 15 },
   'claude-sonnet-4-5': { inputPer1MUsd: 3, outputPer1MUsd: 15 },
   'claude-haiku-4-5': { inputPer1MUsd: 1, outputPer1MUsd: 5 },

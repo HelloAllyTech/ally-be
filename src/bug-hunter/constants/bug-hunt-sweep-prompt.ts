@@ -1,6 +1,7 @@
 import { BugHunterMode } from '../enum/bug-finding.enum';
 import { repoCommands } from './bug-hunt-repos.constants';
 import {
+  BUG_HUNT_ESCALATION_GUIDANCE,
   BUG_HUNT_MAX_AUTO_MERGES_PER_RUN,
   BUG_HUNT_MAX_FIX_ATTEMPTS,
 } from './bug-hunter.constants';
@@ -137,6 +138,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
       ? [
           `For each finding you are fixing, in severity order (high first), at most ${BUG_HUNT_MAX_FIX_ATTEMPTS} attempts each:`,
           `  a. PATCH it to {"status":"fixing"}.`,
+          `  a1. ${BUG_HUNT_ESCALATION_GUIDANCE} If you escalate, continue from step (e) below once the subagent reports back.`,
           `  b. Write a regression test that FAILS because of this bug. If you cannot make it fail, the bug does not reproduce: PATCH to {"status":"dismissed"}, report an error stage saying exactly what you tried and observed, and move on.`,
           `  c. Apply the MINIMAL fix. No refactoring, renaming or drive-by cleanup.`,
           `  d. Confirm the new test passes, then run the full "${commands.test}" and "${commands.lint}". Both must be green. If they are not after ${BUG_HUNT_MAX_FIX_ATTEMPTS} attempts, PATCH to {"status":"failed"}, report escalated, and move on. Never force past a red suite.`,
