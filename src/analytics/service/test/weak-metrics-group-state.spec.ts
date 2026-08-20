@@ -7,7 +7,7 @@ import { WeakMetricState } from '../../dto/weak-metrics.dto';
  * carry real data tells the reader to ignore numbers they can see.
  */
 describe('WeakMetricsAnalyticsService.groupState', () => {
-  const service = new WeakMetricsAnalyticsService({} as never);
+  const service = new WeakMetricsAnalyticsService({} as never, {} as never);
 
   const groupState = (states: WeakMetricState[]) =>
     (service as any).groupState(states.map((state) => ({ state })));
@@ -56,7 +56,7 @@ describe('WeakMetricsAnalyticsService.groupState', () => {
  * not-measured series no matter how much data arrives behind it.
  */
 describe('WeakMetricsAnalyticsService.instrumentedFrom', () => {
-  const service = new WeakMetricsAnalyticsService({} as never);
+  const service = new WeakMetricsAnalyticsService({} as never, {} as never);
 
   const build = (rows: Array<[string, number, number]>) =>
     (service as any).instrumentedFrom(

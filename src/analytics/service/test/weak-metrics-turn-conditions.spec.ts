@@ -9,7 +9,7 @@ import { TurnConditionRow } from '../../repository/weak-metrics-analytics.reposi
  * sort are the parts worth pinning down.
  */
 describe('WeakMetricsAnalyticsService.turnConditions', () => {
-  const service = new WeakMetricsAnalyticsService({} as never);
+  const service = new WeakMetricsAnalyticsService({} as never, {} as never);
 
   const build = (rows: Partial<TurnConditionRow>[]) =>
     (service as any).turnConditions(

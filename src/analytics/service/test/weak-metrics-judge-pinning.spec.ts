@@ -17,6 +17,13 @@ describe('weak metrics judge pinning', () => {
     language: { judgeModel: 'gemini-2.5-pro', judgePromptVersion: 'v1' },
     groundedness: { judgeModel: 'gemini-2.5-pro', judgePromptVersion: 'v1' },
   };
+  // Always a miss, so every test exercises the compute path rather than a
+  // cached response from a sibling test. Writes are accepted and discarded.
+  const redisStub = () => ({
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue(undefined),
+    deleteByPattern: jest.fn().mockResolvedValue(undefined),
+  });
 
   const build = () => {
     const seen: Record<string, unknown> = {};
@@ -82,7 +89,13 @@ describe('weak metrics judge pinning', () => {
     ]) {
       repo[m] = trend(m);
     }
-    return { service: new WeakMetricsAnalyticsService(repo as never), seen };
+    return {
+      service: new WeakMetricsAnalyticsService(
+        repo as never,
+        redisStub() as never,
+      ),
+      seen,
+    };
   };
 
   const pinOf = (f: unknown) => ({

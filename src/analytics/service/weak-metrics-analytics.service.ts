@@ -1,4 +1,7 @@
 import { Injectable } from '@nestjs/common';
+
+import { LoggerService } from '../../logger/logger.service';
+import { RedisService } from '../../redis/service/redis.service';
 import {
   TrendPoint,
   TurnConditionRow,
@@ -80,7 +83,60 @@ const MIN_TURNS_PER_FACTOR = 100;
 
 @Injectable()
 export class WeakMetricsAnalyticsService {
-  constructor(private readonly repo: WeakMetricsAnalyticsRepository) {}
+  private readonly logger = LoggerService.getInstance(
+    WeakMetricsAnalyticsService.name,
+  );
+
+  constructor(
+    private readonly repo: WeakMetricsAnalyticsRepository,
+    private readonly redis: RedisService,
+  ) {}
+
+  /**
+   * How long a computed tab response is reused.
+   *
+   * This endpoint fans out to 26 aggregates per request and every filter change
+   * re-runs all of them. Warm, each is tens of milliseconds; cold, the same
+   * query measured 1.5s, and the reader pays that on every filter they try.
+   * Nothing here is slow enough to index away — the tables are small and the
+   * plans are clean — so the fix is to stop recomputing an answer that cannot
+   * have changed.
+   *
+   * Five minutes is safe rather than arbitrary: the judges feeding this tab run
+   * on a 30-minute catch-up, so an entry can only go stale ahead of data that
+   * does not exist yet. A manual re-judge is the one thing that changes the
+   * answer sooner, and five minutes is already inside the time it takes someone
+   * to trigger one and look — so there is deliberately no explicit
+   * invalidation hook to keep in sync with future filters.
+   */
+  private static readonly CACHE_TTL_SECONDS = 300;
+
+  /** Namespace + schema version. Bumping the suffix retires every old entry. */
+  private static readonly CACHE_PREFIX = 'weak-metrics:v1';
+
+  /**
+   * Cache key for one filter combination.
+   *
+   * Every field the response varies by is in here, and `WEAK_METRICS_VERSION`
+   * too: the thresholds it names are baked into the computed numbers, so a
+   * parameters change must not be served an entry computed under the old ones.
+   * Built from a FIXED field order rather than by serialising the DTO — object
+   * key order is not guaranteed, and two identical filter sets keyed
+   * differently would silently halve the hit rate.
+   */
+  private static cacheKey(query: WeakMetricsQueryDto): string {
+    const parts = [
+      WEAK_METRICS_VERSION,
+      query.range ?? '',
+      query.bucket ?? '',
+      query.language ?? '',
+      query.llmModel ?? '',
+      query.scenarioId ?? '',
+      query.scenarioVersionId ?? '',
+      query.promptVersion ?? '',
+    ];
+    return `${WeakMetricsAnalyticsService.CACHE_PREFIX}:${parts.join('|')}`;
+  }
 
   /**
    * Start of the bucket that today falls in, as `yyyy-mm-dd`.
@@ -351,7 +407,53 @@ export class WeakMetricsAnalyticsService {
     return den === 0 ? null : num / den;
   }
 
+  /**
+   * Cached read path. Every miss computes the full tab and every hit skips 26
+   * aggregates, which is the whole point.
+   *
+   * Redis is treated as an optimisation, never a dependency: a failed read
+   * falls through to computing, and a failed write is logged and dropped. A
+   * slow tab is a nuisance; a blank tab because a cache is down is an outage,
+   * and this endpoint is not worth one.
+   */
   async getWeakMetrics(
+    query: WeakMetricsQueryDto,
+  ): Promise<WeakMetricsResponseDto> {
+    const key = WeakMetricsAnalyticsService.cacheKey(query);
+
+    try {
+      const hit = await this.redis.get(key);
+      if (hit) {
+        return JSON.parse(hit) as WeakMetricsResponseDto;
+      }
+    } catch (error) {
+      this.logger.warn(
+        `[weak-metrics] cache read failed, computing instead: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    const response = await this.computeWeakMetrics(query);
+
+    try {
+      await this.redis.set(
+        key,
+        JSON.stringify(response),
+        WeakMetricsAnalyticsService.CACHE_TTL_SECONDS,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `[weak-metrics] cache write failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    return response;
+  }
+
+  private async computeWeakMetrics(
     query: WeakMetricsQueryDto,
   ): Promise<WeakMetricsResponseDto> {
     const start = this.resolveStart(query.range);
