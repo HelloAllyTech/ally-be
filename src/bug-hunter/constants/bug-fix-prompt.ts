@@ -3,6 +3,7 @@ import { BUG_FIX_SESSION_REPOS } from './bug-fix-session.constants';
 import { repoCommands } from './bug-hunt-repos.constants';
 import {
   BUG_HUNT_ESCALATION_ANSWER_TIMEOUT_MS,
+  BUG_HUNT_ESCALATION_GUIDANCE,
   BUG_HUNT_ESCALATION_POLL_INTERVAL_MS,
   BUG_HUNT_MAX_FIX_ATTEMPTS,
 } from './bug-hunter.constants';
@@ -115,6 +116,7 @@ export function buildFixSessionPrompt({
     ``,
     `Follow this protocol in order, with at most ${BUG_HUNT_MAX_FIX_ATTEMPTS} fix attempts:`,
     `0. Mark yourself as working on it: ${patch({ status: 'fixing' })}. Do this once, before anything else — an admin is watching this status.`,
+    `0a. ${BUG_HUNT_ESCALATION_GUIDANCE} If you escalate, continue from step 6 below once the subagent reports back — it owns steps 1-5 for this finding, you own everything after.`,
     `1. Reproduce it. Write a new or updated regression test, in this repo's existing test-file convention, that fails because of this bug.`,
     `2. Run ONLY that new test against the current code and confirm it FAILS. If you cannot make it fail — the bug does not reproduce as described — stop here: run ${report('error', 'could not reproduce with a regression test')}, then ${patch({ status: 'dismissed' })}, and finish with outcome "dismissed". Say precisely what you tried and what you observed instead: an admin asked for this, so "could not reproduce" has to be actionable rather than a shrug.`,
     `2a. Check the blast radius before you change anything. You have ONLY this repo checked out. If a complete fix needs a change in another Ally repo too — a backend field the frontend has to render, a contract both sides share, a worker and the API that feeds it — do NOT fix your half and call it done: a merged half-fix is worse than no fix, because it looks finished and can be released on its own. Instead, hand back a plan and let Bug Hunter run it:`,
