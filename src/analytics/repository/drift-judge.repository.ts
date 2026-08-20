@@ -25,14 +25,16 @@ export interface TranscriptTurn {
   text: string;
   turn_index?: number;
   /**
-   * The learner talked over this client turn.
+   * The learner talked over this client turn, so `text` is only the part of the
+   * reply that reached TTS before it stopped — a prefix of what the model
+   * produced. Measured across judged turns, a cut turn keeps ~36% of the
+   * generated characters against ~107% on an uncut one, which is why
+   * `truncation` became the second-largest annotation category.
    *
-   * Set only when TRUE. Absence means "not known to be interrupted", which is
-   * not the same as "not interrupted": the `interrupted` column went unwritten
-   * until the barge-in instrumentation shipped on 2026-08-17, so every earlier
-   * turn reads false in the database and none of them can be trusted. The judge
-   * conditions on presence for exactly that reason — sending `false` would turn
-   * an unknown into a claim.
+   * Sourced from the message's own metadata, written by the worker from the
+   * LiveKit ChatMessage. Set only when TRUE: a message without the flag is one
+   * whose worker never reported it, which is not the same as a turn that was
+   * not interrupted, and the judge conditions on presence for that reason.
    */
   interrupted?: boolean;
 }
@@ -197,31 +199,24 @@ export class DriftJudgeRepository {
    * preceding counselor utterance. Mirrors the former Python build_transcript.
    */
   async buildTranscript(sessionId: string): Promise<BuiltTranscript> {
-    const rows: { sender_id: number; content: string | null }[] =
-      await this.dataSource.query(
-        `SELECT "senderId" AS sender_id, content
+    // `metadata->>'interrupted'` comes from the worker, which reads it off the
+    // LiveKit ChatMessage it is publishing — the authoritative per-utterance
+    // signal. An earlier version of this method derived it by joining
+    // scenario_session_turn_metrics.interrupted instead, which was wrong in
+    // three ways: that column went unwritten before 2026-08-17, it only exists
+    // on `pipeline` rows, and it is a turn-level flag reconstructed from a
+    // playback handler rather than the message's own truth.
+    const rows: {
+      sender_id: number;
+      content: string | null;
+      interrupted: string | null;
+    }[] = await this.dataSource.query(
+      `SELECT "senderId" AS sender_id, content,
+                metadata->>'interrupted' AS interrupted
            FROM scenario_session_messages
           WHERE "scenarioSessionId" = $1
           ORDER BY COALESCE("startSeconds", 0), id`,
-        [sessionId],
-      );
-    // Turns the learner barged in on, so the judge can stop charging a cut-off
-    // sentence to actor quality. Measured on the first week the flag existed:
-    // truncation runs 4.42% on uninterrupted turns and 15.63% on interrupted
-    // ones, and just over half of all truncation sat on interrupted turns.
-    // Only TRUE indices are collected — see TranscriptTurn.interrupted for why
-    // sending false would be a claim we cannot support.
-    const interruptedRows: { turn_index: number }[] =
-      await this.dataSource.query(
-        `SELECT DISTINCT "turnIndex" AS turn_index
-         FROM scenario_session_turn_metrics
-        WHERE "scenarioSessionId" = $1
-          AND source = 'pipeline'
-          AND interrupted = true`,
-        [sessionId],
-      );
-    const interrupted = new Set(
-      interruptedRows.map((r) => Number(r.turn_index)),
+      [sessionId],
     );
     const transcript: TranscriptTurn[] = [];
     const aiText: Record<number, string> = {};
@@ -235,7 +230,10 @@ export class DriftJudgeRepository {
           role: 'client',
           turn_index: aiIdx,
           text: content,
-          ...(interrupted.has(aiIdx) && { interrupted: true }),
+          // Only when the worker actually said so. A message with no flag is
+          // from a worker that did not report it, which is not the same as a
+          // turn that was not interrupted — the judge conditions on presence.
+          ...(r.interrupted === 'true' && { interrupted: true }),
         });
         aiText[aiIdx] = content;
         userText[aiIdx] = lastCounselor;

@@ -29,6 +29,17 @@ export type MessageRequest = {
   content: string;
   start_time?: number;
   end_time?: number;
+  /**
+   * CLIENT turns only: the learner talked over this reply, so `content` holds
+   * only the part that reached TTS before it stopped — a PREFIX of what the
+   * model produced, not the whole utterance. Measured across judged turns, a cut
+   * turn keeps ~36% of the generated characters against ~107% on an uncut one.
+   *
+   * Undefined means unknown — an older worker, or a COUNSELOR turn — and is
+   * deliberately distinct from false, which is a worker that looked and found
+   * the turn completed.
+   */
+  interrupted?: boolean;
 };
 
 export type EnhanceTextRequest = {

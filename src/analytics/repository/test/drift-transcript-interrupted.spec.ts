@@ -21,19 +21,20 @@ describe('DriftJudgeRepository.buildTranscript — interrupted turns', () => {
   let repository: DriftJudgeRepository;
   let query: jest.Mock;
 
-  const messages = [
-    { sender_id: 1, content: 'how has the week been?' },
-    { sender_id: -1, content: 'I' }, // turn 0 — talked over
-    { sender_id: 1, content: 'sorry, go on' },
-    { sender_id: -1, content: 'it has been hard' }, // turn 1
+  /** `interrupted` mirrors what `metadata->>'interrupted'` returns: text or null. */
+  const messages = (flags: (string | null)[]) => [
+    { sender_id: 1, content: 'how has the week been?', interrupted: null },
+    { sender_id: -1, content: 'I', interrupted: flags[0] ?? null },
+    { sender_id: 1, content: 'sorry, go on', interrupted: null },
+    {
+      sender_id: -1,
+      content: 'it has been hard',
+      interrupted: flags[1] ?? null,
+    },
   ];
 
-  const build = async (interruptedIndices: number[]) => {
-    query = jest.fn(async (sql: string) =>
-      /scenario_session_turn_metrics/.test(sql)
-        ? interruptedIndices.map((i) => ({ turn_index: i }))
-        : messages,
-    );
+  const build = async (flags: (string | null)[]) => {
+    query = jest.fn(async () => messages(flags));
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         DriftJudgeRepository,
@@ -54,25 +55,25 @@ describe('DriftJudgeRepository.buildTranscript — interrupted turns', () => {
     ).filter((x) => x.role === 'client');
 
   it('marks the client turn the learner talked over', async () => {
-    const out = await build([0]);
+    const out = await build(['true']);
     const turns = clientTurns(out);
 
     expect(turns[0]).toMatchObject({ turn_index: 0, interrupted: true });
   });
 
-  it('omits the key entirely on turns that were not interrupted', async () => {
+  it('omits the key entirely on turns the worker reported as completed', async () => {
     // Not `interrupted: false` — absence is what tells the judge "unknown", and
     // an explicit false would read as "known not to be interrupted".
-    const out = await build([0]);
+    const out = await build(['true', 'false']);
     const turns = clientTurns(out);
 
     expect(turns[1]).not.toHaveProperty('interrupted');
   });
 
-  it('omits it from every turn when nothing is flagged', async () => {
-    // The pre-instrumentation case: the query returns nothing and the
-    // transcript is byte-identical to what it was before this change.
-    const out = await build([]);
+  it('omits it from every turn when the worker reported nothing', async () => {
+    // An older worker sends no flag at all: the transcript comes out
+    // byte-identical to what it was before this change.
+    const out = await build([null, null]);
 
     for (const turn of clientTurns(out)) {
       expect(turn).not.toHaveProperty('interrupted');
@@ -82,7 +83,7 @@ describe('DriftJudgeRepository.buildTranscript — interrupted turns', () => {
   it('never marks a counsellor turn', async () => {
     // Turn indices belong to client turns; a counsellor turn has none, so an
     // index-keyed flag must not leak onto one.
-    const out = await build([0, 1]);
+    const out = await build(['true', 'true']);
     const counsellor = (
       out.transcript as { role: string; interrupted?: boolean }[]
     ).filter((x) => x.role === 'counselor');
@@ -93,16 +94,14 @@ describe('DriftJudgeRepository.buildTranscript — interrupted turns', () => {
     }
   });
 
-  it('reads the flag only from live pipeline rows', async () => {
-    // Transcript-backfilled rows have no live playback handler behind them, so
-    // their `interrupted` could only ever be a default rather than an
-    // observation.
-    await build([0]);
-    const sql = query.mock.calls
-      .map((c) => String(c[0]))
-      .find((s) => /scenario_session_turn_metrics/.test(s));
+  it('reads the flag off the message, not off turn metrics', async () => {
+    // The message's own metadata is the authoritative per-utterance signal. The
+    // turn-metrics column it replaced went unwritten before 2026-08-17, existed
+    // only on `pipeline` rows, and was reconstructed from a playback handler.
+    await build(['true']);
+    const sql = query.mock.calls.map((c) => String(c[0])).join('\n');
 
-    expect(sql).toMatch(/source\s*=\s*'pipeline'/);
-    expect(sql).toMatch(/interrupted\s*=\s*true/);
+    expect(sql).toMatch(/metadata->>'interrupted'/);
+    expect(sql).not.toMatch(/scenario_session_turn_metrics/);
   });
 });

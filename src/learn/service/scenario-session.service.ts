@@ -1860,6 +1860,13 @@ export class ScenarioSessionService {
         startSeconds: chatMessage.start_time,
         endSeconds: chatMessage.end_time,
         tenantId,
+        // Only when the worker actually reported it. Undefined stays absent
+        // rather than becoming `false`: the language judge conditions on
+        // presence, and an older worker's silence must not read as "this turn
+        // was not interrupted". See MessageRequest.interrupted.
+        ...(chatMessage.interrupted !== undefined && {
+          metadata: { interrupted: chatMessage.interrupted },
+        }),
       });
     return this.scenarioSessionMessagesRepository.save(scenarioSessionMessage);
   }
