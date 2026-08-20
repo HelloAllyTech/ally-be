@@ -14,6 +14,7 @@ import { LanguageController } from './controller/language.controller';
 import { LanguageGlossaryController } from './controller/language-glossary.controller';
 import { LanguageService } from './service/language.service';
 import { LanguageGlossaryService } from './service/language-glossary.service';
+import { GlossaryAdherenceSchedulerRegistrationService } from './service/glossary-adherence-scheduler-registration.service';
 import { GlossaryAdherenceService } from './service/glossary-adherence.service';
 import { UserModule } from 'src/user/user.module';
 @Module({
@@ -40,6 +41,7 @@ import { UserModule } from 'src/user/user.module';
     LanguageService,
     LanguageGlossaryService,
     GlossaryAdherenceService,
+    GlossaryAdherenceSchedulerRegistrationService,
   ],
   exports: [
     SharedLanguageService,

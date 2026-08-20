@@ -29,6 +29,19 @@ const BACKFILL_DEFAULT_DAYS = 30;
 const BACKFILL_DEFAULT_LIMIT = 200;
 
 /**
+ * Catch-up bounds.
+ *
+ * The window matches the judge drainer's, because this scan answers a question
+ * about the same population: 664 eligible sessions predate the per-session
+ * auto-scan and were never scanned, which left the adherence signal readable on
+ * 1.5% of eligible sessions. The scan is deterministic string matching with no
+ * model call, so the only real cost is the transcript read — hence a chunk large
+ * enough to drain that backlog in a handful of ticks rather than over days.
+ */
+const CATCHUP_WINDOW_DAYS = 150;
+const CATCHUP_CHUNK = 150;
+
+/**
  * Deterministic glossary-adherence scan (LANGUAGE_GLOSSARY_DESIGN.md §9/§10).
  *
  * The glossary's term pairs are a machine-checkable lexicon: every
@@ -265,6 +278,77 @@ export class GlossaryAdherenceService {
     this.logger.log(
       `[GLOSSARY_ADHERENCE] language=${languageId} scanned=${rows.length} reported=${reported} skipped=${skipped}`,
     );
+    return { scanned: rows.length, reported, skipped };
+  }
+
+  /**
+   * Scan eligible sessions that have never been scanned, newest first.
+   *
+   * Why this is not `backfillLanguage` with a wider window: that method re-scans
+   * everything in its window, so it cannot drain a backlog — each run repeats
+   * the previous run's work and a bounded run never advances.
+   *
+   * The eligibility gates are in the QUERY, not left to `analyzeSession`'s
+   * `return null`. A session with no language, no published glossary, or a
+   * glossary with no avoid-terms produces no report row, so a selector keyed on
+   * "no report exists" would re-select it on every tick forever — the same
+   * mistake that once stalled the language judge, where 25 sessions with no AI
+   * turns were reselected each tick and nothing else got judged. Here the
+   * language must have a published section that actually contains an
+   * `(avoid: …)` group, and the session must have at least one agent message.
+   */
+  async catchUpUnscanned(options?: {
+    sinceDays?: number;
+    limit?: number;
+  }): Promise<BackfillAdherenceResult> {
+    const sinceDays = options?.sinceDays ?? CATCHUP_WINDOW_DAYS;
+    const limit = options?.limit ?? CATCHUP_CHUNK;
+    const rows: { id: string }[] = await this.dataSource.query(
+      `SELECT s.id FROM scenario_sessions s
+        WHERE s.status = 'ENDED'
+          AND s."roomId" NOT LIKE 'preview-%'
+          AND s."roomId" NOT LIKE 'seed-room-%'
+          AND s."createdAt" > now() - ($1 || ' days')::interval
+          AND NULLIF(s.metadata->>'languageId', '') IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM language_glossary_sections g
+             WHERE g."languageId" = NULLIF(s.metadata->>'languageId', '')::int
+               AND g.status = 'published'
+               AND g.content LIKE '%(avoid:%')
+          AND EXISTS (
+            SELECT 1 FROM scenario_session_messages m
+             WHERE m."scenarioSessionId" = s.id AND m."senderId" = -1)
+          AND NOT EXISTS (
+            SELECT 1 FROM glossary_adherence_reports r
+             WHERE r."scenarioSessionId" = s.id)
+        ORDER BY s."createdAt" DESC
+        LIMIT $2`,
+      [String(sinceDays), limit],
+    );
+
+    let reported = 0;
+    let skipped = 0;
+    for (const { id } of rows) {
+      try {
+        const report = await this.analyzeSession(id);
+        if (report) {
+          reported++;
+        } else {
+          skipped++;
+        }
+      } catch (error) {
+        skipped++;
+        this.logger.warn(
+          `[GLOSSARY_ADHERENCE] catch-up session ${id} scan failed: ${error}`,
+        );
+      }
+    }
+    if (rows.length > 0) {
+      this.logger.log(
+        `[GLOSSARY_ADHERENCE] catch-up scanned=${rows.length} ` +
+          `reported=${reported} skipped=${skipped}`,
+      );
+    }
     return { scanned: rows.length, reported, skipped };
   }
 
