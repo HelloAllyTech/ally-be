@@ -35,8 +35,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * continuity callback (ally-ai is given "No previous sessions with this learner
  * yet." and told not to imply it has met them before).
  */
-export class CreateLearnerSupervisorMemory1922000000000 implements MigrationInterface {
-  name = 'CreateLearnerSupervisorMemory1922000000000';
+export class CreateLearnerSupervisorMemory1926000000000 implements MigrationInterface {
+  name = 'CreateLearnerSupervisorMemory1926000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
