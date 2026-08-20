@@ -286,8 +286,16 @@ export function scoreLexicalEvidence(
   const sayLearnerCount = say ? countOccurrences(learnerCorpus, say) : 0;
   const avoidAgentCount = avoid ? countOccurrences(agentCorpus, avoid) : 0;
   const avoidLearnerCount = avoid ? countOccurrences(learnerCorpus, avoid) : 0;
+  // Contradiction is PROPORTIONAL, not absolute: the population must actually
+  // prefer the avoid-term, not merely brush against it. First prod run: நல்லா
+  // ×248 vs நன்றாக ×8 tripped the absolute floor — 3% marginal usage is not
+  // the population arguing for the literary form.
+  const avoidShare =
+    avoidLearnerCount + sayLearnerCount > 0
+      ? avoidLearnerCount / (avoidLearnerCount + sayLearnerCount)
+      : 0;
   const verdict: LexicalVerdict =
-    avoid && avoidLearnerCount >= contradictionMin
+    avoid && avoidLearnerCount >= contradictionMin && avoidShare >= 0.2
       ? 'contradicted'
       : sayLearnerCount > 0 || avoidAgentCount > 0
         ? 'confirmed'

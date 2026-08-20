@@ -30,11 +30,11 @@ import {
   applySupportGate,
   clusterAnnotations,
   countOccurrences,
-  parseSayAvoid,
   scoreLexicalEvidence,
   summarizeClusters,
   systematicFluency,
 } from '../util/construct-class.util';
+import { tokenize } from '../util/variety-feature.util';
 import {
   computeTierAssignment,
   TierAssignment,
@@ -1046,12 +1046,17 @@ export class LanguageGlossaryService {
       section: LanguageGlossarySection,
       corpus: string,
     ): number => {
+      // Format-agnostic term traffic: prod content mixes `- english: தமிழ்`
+      // lines, backticked forms and say/avoid pairs, so parse nothing —
+      // score every native-script token the section teaches by its frequency
+      // in live speech. (First prod dry-run demoted pronouns_kinship, the
+      // most-trafficked section, because its content had no quoted pairs.)
       const terms = new Set<string>();
-      for (const line of (section.content ?? '').split('\n')) {
-        const { say, avoid } = parseSayAvoid(line);
-        if (say) terms.add(say);
-        if (avoid) terms.add(avoid);
-        if (terms.size >= 40) break; // bound the scan for huge sections
+      for (const token of tokenize(section.content ?? '')) {
+        if (/^[a-z]+$/.test(token)) continue; // English scaffolding words
+        if (token.length < 2) continue;
+        terms.add(token);
+        if (terms.size >= 80) break; // bound the scan for huge sections
       }
       let usage = 0;
       for (const term of terms) usage += countOccurrences(corpus, term);
