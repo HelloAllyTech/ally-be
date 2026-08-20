@@ -48,12 +48,6 @@ export interface PlayTimeBucketRow {
   sessions: number;
 }
 
-export interface QualityTrendBucketRow {
-  bucket: string;
-  avgCompositeScore: number | null;
-  evaluatedSessions: number;
-}
-
 export interface CsatTrendBucketRow {
   bucket: string;
   avgRating: number | null;
@@ -438,59 +432,6 @@ export class HighlightsAnalyticsRepository {
       avgMinutes: row?.avgMinutes == null ? null : Number(row.avgMinutes),
       sessions: Number(row?.sessions) || 0,
     };
-  }
-
-  /**
-   * Mean composite evaluation score (0-100) + evaluated-session count per
-   * bucket, over COMPLETED actor evaluations. Bucketed by when the judgment
-   * landed (`evaluatedAt`, falling back to `createdAt` — `evaluatedAt` is
-   * nullable in the entity even for COMPLETED rows). Buckets with no evaluated
-   * sessions are absent (an average has no meaningful zero — not gap-filled).
-   */
-  async getQualityTrendByBucket(
-    start: Date,
-    end: Date,
-    bucket: AnalyticsBucket,
-    tenantId?: string,
-  ): Promise<QualityTrendBucketRow[]> {
-    const trunc = this.resolveBucket(bucket);
-    const qb = this.dataSource
-      .createQueryBuilder()
-      .select(
-        `to_char(date_trunc('${trunc}', COALESCE(d."evaluatedAt", d."createdAt")), 'YYYY-MM-DD')`,
-        'bucket',
-      )
-      .addSelect(
-        'round(avg(d."compositeScore")::numeric, 1)::float',
-        'avgCompositeScore',
-      )
-      .addSelect('COUNT(*)::int', 'evaluatedSessions')
-      .from('scenario_session_details', 'd')
-      .where('d."evaluationStatus" = :status', {
-        status: ActorEvaluationStatus.COMPLETED,
-      })
-      .andWhere('d."compositeScore" IS NOT NULL')
-      .andWhere('COALESCE(d."evaluatedAt", d."createdAt") >= :start', { start })
-      .andWhere('COALESCE(d."evaluatedAt", d."createdAt") < :end', { end })
-      .andWhere(excludeTestTenants('d."tenant_id"'));
-    if (tenantId) {
-      qb.andWhere(scopeToTenant('d."tenant_id"', ':tenantId'), { tenantId });
-    }
-    const rows = await qb
-      .groupBy('bucket')
-      .orderBy('bucket', 'ASC')
-      .getRawMany<{
-        bucket: string;
-        avgCompositeScore: number | null;
-        evaluatedSessions: number;
-      }>();
-
-    return rows.map((r) => ({
-      bucket: r.bucket,
-      avgCompositeScore:
-        r.avgCompositeScore === null ? null : Number(r.avgCompositeScore),
-      evaluatedSessions: Number(r.evaluatedSessions) || 0,
-    }));
   }
 
   /** Whole-window mean composite score + count (exact KPI, not re-averaged). */

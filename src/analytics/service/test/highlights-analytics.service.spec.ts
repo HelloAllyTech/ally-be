@@ -82,7 +82,6 @@ describe('HighlightsAnalyticsService', () => {
       getPlayTimeOverall: jest
         .fn()
         .mockResolvedValue({ avgMinutes: null, sessions: 0 }),
-      getQualityTrendByBucket: jest.fn().mockResolvedValue([]),
       getQualityOverall: jest
         .fn()
         .mockResolvedValue({ avgCompositeScore: null, evaluatedSessions: 0 }),
@@ -143,7 +142,6 @@ describe('HighlightsAnalyticsService', () => {
       for (const fn of [
         repo.getPracticeMinutesByBucket,
         repo.getPlayTimeByBucket,
-        repo.getQualityTrendByBucket,
         repo.getCsatTrendByBucket,
         repo.getCompletedSimulationsByBucket,
       ]) {
@@ -394,7 +392,6 @@ describe('HighlightsAnalyticsService', () => {
       // Summary scalars run twice, trends once — a delta needs one number per
       // window, not a second axis.
       expect(repo.getQualityOverall).toHaveBeenCalledTimes(2);
-      expect(repo.getQualityTrendByBucket).toHaveBeenCalledTimes(1);
       expect(repo.getCsatTrendByBucket).toHaveBeenCalledTimes(1);
     });
   });
@@ -474,19 +471,13 @@ describe('HighlightsAnalyticsService', () => {
   });
 
   describe('sparse average series', () => {
-    it('passes quality/CSAT trends through un-gap-filled', async () => {
-      repo.getQualityTrendByBucket.mockResolvedValue([
-        { bucket: '2024-06-01', avgCompositeScore: 82.5, evaluatedSessions: 4 },
-      ]);
+    it('passes the CSAT trend through un-gap-filled', async () => {
       repo.getCsatTrendByBucket.mockResolvedValue([
         { bucket: '2024-06-02', avgRating: 4.25, responses: 8 },
       ]);
 
       const res = await service.getHighlights({ range: '30d' });
 
-      expect(res.qualityTrend).toEqual([
-        { bucket: '2024-06-01', avgCompositeScore: 82.5, evaluatedSessions: 4 },
-      ]);
       expect(res.csatTrend).toEqual([
         { bucket: '2024-06-02', avgRating: 4.25, responses: 8 },
       ]);

@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { QualitySentimentAnalyticsService } from '../quality-sentiment-analytics.service';
+import { QualityIndexAnalyticsService } from '../quality-index-analytics.service';
 import {
   MIN_SENTIMENT_RESPONSES,
   QualitySentimentAnalyticsRepository,
@@ -27,6 +28,24 @@ describe('QualitySentimentAnalyticsService', () => {
   let service: QualitySentimentAnalyticsService;
 
   const setup = async (rows: QualitySentimentBucketRow[] = []) => {
+    // Stand-in for the real weighted-blend index: these tests are about the
+    // SERVICE's gap-fill / pairing / correlation behaviour, not about how the
+    // index itself is computed (that lives in
+    // quality-index-analytics.service.spec.ts), so the mock tracks
+    // avgCompositeScore 1:1 — every existing assertion here was written
+    // against that series before the index existed, and stays meaningful once
+    // pairing moves onto qualityIndex.
+    const indexPoints = rows
+      .filter((r) => r.avgCompositeScore !== null)
+      .map((r) => ({
+        bucket: r.bucket,
+        index: r.avgCompositeScore as number,
+        contributions: {},
+        raw: {},
+        n: {},
+        missing: [],
+      }));
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         QualitySentimentAnalyticsService,
@@ -37,6 +56,17 @@ describe('QualitySentimentAnalyticsService', () => {
             getDataFloor: jest
               .fn()
               .mockResolvedValue(new Date('2024-01-01T00:00:00.000Z')),
+          },
+        },
+        {
+          provide: QualityIndexAnalyticsService,
+          useValue: {
+            getQualityIndex: jest.fn().mockResolvedValue({
+              version: 'v1',
+              calibrated: false,
+              points: indexPoints,
+              coverage: [],
+            }),
           },
         },
       ],

@@ -1,3 +1,4 @@
+import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
@@ -109,6 +110,13 @@ describe('CaseSharedService', () => {
         },
         { provide: CaseSessionRepository, useValue: { findOne: jest.fn() } },
         { provide: DataSource, useValue: { transaction: jest.fn() } },
+        {
+          // Defaults to allowing access so the existing expectations — written
+          // before cohorts existed — keep asserting the tenant-assignment
+          // behaviour they were about. The cohort layer has its own coverage.
+          provide: CohortVisibilityService,
+          useValue: { canAccess: jest.fn().mockResolvedValue(true) },
+        },
       ],
     }).compile();
 

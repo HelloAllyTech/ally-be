@@ -85,6 +85,7 @@ import {
 import { sanitizeJsonbMetadata } from 'src/common/util/sanitize-jsonb.util';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
+import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
 import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.entity';
 import { ScenarioPathSharedService } from 'src/scenario-path/service/scenario-path-shared.service';
 import {
@@ -225,6 +226,7 @@ export class ScenarioService {
     private readonly scenarioTranslationNotificationService: ScenarioTranslationNotificationService,
     private readonly promptSharedService: PromptSharedService,
     private readonly scenarioSessionRepository: ScenarioSessionRepository,
+    private readonly cohortVisibilityService: CohortVisibilityService,
   ) {}
 
   async getScenarios(): Promise<GetScenarioDto[]> {
@@ -251,9 +253,22 @@ export class ScenarioService {
     // tester); every other learner sees the v1 catalog exactly as before and
     // never encounters a v2 scenario (nor its rollout-gate 403).
     const includeRoleplayV2 = await this.isCurrentUserRoleplayV2Allowed();
+
+    // Cohort narrowing. Resolved here rather than in the repository because only
+    // the request context knows who is asking; `null` back means the learner is
+    // in no cohort, which is a real audience ("Unassigned") and must still be
+    // passed through — treating it as "skip filtering" would hand unplaced users
+    // everything the tenant has.
+    const userId = Number(ExecutionManager.getUserId());
+    const cohortId =
+      userId && !Number.isNaN(userId)
+        ? await this.cohortVisibilityService.resolveUserCohortId(userId)
+        : null;
+
     const { data: fetchedData, count } =
       await this.scenariosRepository.getScenarios({
         tenantId,
+        cohortScope: { cohortId },
         ...(languageCode && { languageCode }),
         ...(includeRoleplayV2 && { includeRoleplayV2: true }),
       });

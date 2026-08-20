@@ -1,3 +1,5 @@
+import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
+import { CohortContentType } from 'src/cohort/constants/cohort.constants';
 import {
   BadRequestException,
   Injectable,
@@ -154,6 +156,7 @@ export class ScenarioSessionService {
     private dataSource: DataSource,
     private aiService: AiService,
     private scenarioTenantService: ScenarioTenantService,
+    private readonly cohortVisibilityService: CohortVisibilityService,
     private scenarioPathSessionService: ScenarioPathSessionService,
     private permissionValidatorService: PermissionValidator,
     private simulationCreditsService: SimulationCreditsService,
@@ -956,6 +959,27 @@ export class ScenarioSessionService {
       if (!scenarioTenant) {
         throw new BadRequestException(
           'Scenario is not available for your organization',
+        );
+      }
+
+      // Second access layer: the learner's cohort. Only on this branch — the
+      // standalone roleplay start. The path / track / case branches above are
+      // reached through a container the learner already had to be admitted to,
+      // and that container's own access check is the right authority: a course
+      // assigned to your cohort must not break halfway through because one of its
+      // roleplays is separately restricted.
+      //
+      // No "already started" grace: a roleplay is a single session with nothing
+      // to resume, so there is no in-progress work for the rule to protect.
+      const cohortAllowed = await this.cohortVisibilityService.canAccess({
+        contentType: CohortContentType.SCENARIO,
+        contentId: String(scenarioId),
+        tenantId,
+        userId: counselorId,
+      });
+      if (!cohortAllowed) {
+        throw new BadRequestException(
+          'This simulation is not available for your group',
         );
       }
     }

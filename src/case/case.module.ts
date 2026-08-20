@@ -1,3 +1,4 @@
+import { CohortModule } from 'src/cohort/cohort.module';
 import { Module, forwardRef } from '@nestjs/common';
 import { LearnModule } from 'src/learn/learn.module';
 import { TenantModule } from 'src/tenant/tenant.module';
@@ -16,7 +17,12 @@ import { CaseSessionController } from './controller/case-session.controller';
 import { LanguageModule } from 'src/language/language.module';
 
 @Module({
-  imports: [forwardRef(() => LearnModule), TenantModule, LanguageModule],
+  imports: [
+    forwardRef(() => LearnModule),
+    TenantModule,
+    LanguageModule,
+    CohortModule,
+  ],
   controllers: [CaseController, CaseSessionController],
   providers: [
     CaseService,

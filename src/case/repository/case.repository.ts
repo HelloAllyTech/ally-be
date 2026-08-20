@@ -1,3 +1,8 @@
+import {
+  applyCohortVisibilityFilter,
+  CASE_SESSION_GRACE_SQL,
+} from 'src/cohort/query/cohort-restriction.query';
+import { CohortContentType } from 'src/cohort/constants/cohort.constants';
 import { Injectable } from '@nestjs/common';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Case } from '../entity/case.entity';
@@ -88,6 +93,19 @@ export class CaseRepository extends Repository<Case> {
         .setParameters({
           tenantId: filters.tenantId,
         });
+    }
+
+    // Cohort narrowing, layer 2 on top of the case_tenants join above, plus the
+    // "finish what you started" grace: a case the learner has actually started
+    // stays reachable after their cohort loses browse access.
+    if (filters.cohortScope && filters.tenantId) {
+      applyCohortVisibilityFilter(query, {
+        alias: 'case',
+        contentType: CohortContentType.CASE,
+        tenantId: filters.tenantId,
+        cohortId: filters.cohortScope.cohortId,
+        graceExistsSql: CASE_SESSION_GRACE_SQL,
+      });
     }
 
     if (filters?.sortBy) {

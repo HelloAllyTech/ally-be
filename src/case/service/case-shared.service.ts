@@ -1,3 +1,5 @@
+import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
+import { CohortContentType } from 'src/cohort/constants/cohort.constants';
 import {
   BadRequestException,
   Injectable,
@@ -37,6 +39,7 @@ export class CaseSharedService {
     private readonly caseSessionItemRepository: CaseSessionItemRepository,
     private readonly caseSessionRepository: CaseSessionRepository,
     private readonly dataSource: DataSource,
+    private readonly cohortVisibilityService: CohortVisibilityService,
   ) {}
 
   async getCasesWithSession(
@@ -65,6 +68,31 @@ export class CaseSharedService {
       );
       if (!caseTenant) {
         throw new BadRequestException('Organization access denied');
+      }
+
+      // Second access layer: the learner's cohort. Enforced here rather than only
+      // in the list query so a direct link cannot bypass a restriction.
+      //
+      // "Finish what you started" — a case with a genuinely started session stays
+      // open. Only applied when there is a user in context; the admin callers of
+      // this method pass a tenant but no user and must keep seeing every case.
+      const userId = Number(ExecutionManager.getUserId());
+      if (userId && !Number.isNaN(userId)) {
+        const session = await this.caseSessionRepository.findOne({
+          where: { caseId, userId },
+        });
+        const allowed = await this.cohortVisibilityService.canAccess({
+          contentType: CohortContentType.CASE,
+          contentId: caseId,
+          tenantId,
+          userId,
+          alreadyStarted: !!session?.startedAt,
+        });
+        if (!allowed) {
+          throw new BadRequestException(
+            'This case is not available for your group',
+          );
+        }
       }
     }
 

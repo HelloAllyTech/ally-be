@@ -1,3 +1,4 @@
+import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
@@ -568,6 +569,14 @@ describe('ScenarioSessionService', () => {
             getSupervisorMemoryPrompt: jest.fn().mockResolvedValue(null),
             recordFromEvaluation: jest.fn().mockResolvedValue(undefined),
           },
+        },
+        {
+          // Defaults to allowing access so this suite's existing expectations —
+          // written before cohorts existed — keep asserting the tenant-assignment
+          // behaviour they were originally about. Cohort gating itself is covered
+          // in src/cohort/service/test/cohort-visibility.service.spec.ts.
+          provide: CohortVisibilityService,
+          useValue: { canAccess: jest.fn().mockResolvedValue(true) },
         },
       ],
     }).compile();

@@ -1,3 +1,4 @@
+import { CohortModule } from 'src/cohort/cohort.module';
 import { forwardRef, Module } from '@nestjs/common';
 import { LearnModule } from 'src/learn/learn.module';
 import { TenantModule } from 'src/tenant/tenant.module';
@@ -45,6 +46,7 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     AwsModule,
     forwardRef(() => PromptModule),
     LlmUsageModule,
+    CohortModule,
   ],
   controllers: [TrackAdminController, TrackLearnerController],
   providers: [
