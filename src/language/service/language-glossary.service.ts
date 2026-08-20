@@ -232,8 +232,13 @@ export class LanguageGlossaryService {
     languageId: number,
     sectionCode: string,
     updatedBy?: string,
+    profileId?: string | null,
   ): Promise<LanguageGlossarySection> {
-    const section = await this.getSectionOrThrow(languageId, sectionCode);
+    const section = await this.getSectionOrThrow(
+      languageId,
+      sectionCode,
+      profileId,
+    );
     if (section.injectionMode === GlossaryInjectionMode.ALWAYS) {
       await this.assertTier0WithinCap(languageId, {
         ...section,
@@ -249,8 +254,13 @@ export class LanguageGlossaryService {
     languageId: number,
     sectionCode: string,
     updatedBy?: string,
+    profileId?: string | null,
   ): Promise<LanguageGlossarySection> {
-    const section = await this.getSectionOrThrow(languageId, sectionCode);
+    const section = await this.getSectionOrThrow(
+      languageId,
+      sectionCode,
+      profileId,
+    );
     section.status = GlossarySectionStatus.ARCHIVED;
     section.updatedBy = updatedBy;
     return this.glossaryRepository.save(section);
