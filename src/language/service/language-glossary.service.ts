@@ -551,11 +551,27 @@ export class LanguageGlossaryService {
 
     const consolidated = this.parseConsolidatedSections(raw);
     const profileByTenant = await this.buildTenantProfileMap(languageId);
-    // Distributional evidence corpora for the lexical gate — best-effort; a
-    // fetch failure downgrades entries to 'unverified', never blocks the run.
-    const corpora = await this.fetchEvidenceCorpora(language.value).catch(
-      () => null,
-    );
+    // Distributional evidence corpora for the lexical gate, scoped to the
+    // routing target: an overlay entry is judged against ITS population's
+    // corpus (the profile's attached tenants), a global entry against every
+    // non-test tenant — otherwise one population's usage vetoes another
+    // population's correct rule. Best-effort; a fetch failure downgrades
+    // entries to 'unverified', never blocks the run.
+    const corporaCache = new Map<
+      string | null,
+      { learner: string; agent: string } | null
+    >();
+    const corporaFor = async (profileId: string | null) => {
+      if (!corporaCache.has(profileId)) {
+        corporaCache.set(
+          profileId,
+          await this.fetchEvidenceCorpora(language.value, profileId).catch(
+            () => null,
+          ),
+        );
+      }
+      return corporaCache.get(profileId) ?? null;
+    };
 
     // The batch row exists before its entries so their provenance can carry
     // the batch id (the rollback handle) from the moment they are written.
@@ -652,6 +668,7 @@ export class LanguageGlossaryService {
             .filter(Boolean),
         ]);
 
+        const corpora = await corporaFor(profileId ?? null);
         const newEntryIds: string[] = [];
         for (const { proposal, annos } of bucket) {
           const markdown = proposal.markdown.trim();
@@ -927,10 +944,27 @@ export class LanguageGlossaryService {
    * Evidence corpora for the lexical gate: learner (senderId > 0) and agent
    * (senderId = -1) text from the language's judged sessions, non-test
    * tenants, 90 days, NFC-normalized and concatenated for substring counting.
+   * With a profileId, the corpus narrows to that profile's attached tenants —
+   * overlay entries are judged against THEIR population's usage, not the
+   * whole language's (dual-key tenant match, id-as-text or code).
    */
   private async fetchEvidenceCorpora(
     languageValue: string,
+    profileId: string | null = null,
   ): Promise<{ learner: string; agent: string } | null> {
+    const profileScope = profileId
+      ? `AND (ljs."tenant_id" IN (
+             SELECT a."tenantId" FROM variety_profile_attachments a
+              WHERE a."profileId" = $2)
+         OR ljs."tenant_id" IN (
+             SELECT t.code FROM tenants t
+              JOIN variety_profile_attachments a ON a."tenantId" = t.id::text
+              WHERE a."profileId" = $2)
+         OR ljs."tenant_id" IN (
+             SELECT t.id::text FROM tenants t
+              JOIN variety_profile_attachments a ON a."tenantId" = t.code
+              WHERE a."profileId" = $2))`
+      : '';
     const rows: { content: string; senderId: number }[] =
       await this.annotationRepository.manager.query(
         `SELECT m.content, m."senderId"
@@ -940,10 +974,11 @@ export class LanguageGlossaryService {
                   FROM language_judgment_sessions ljs
                  WHERE ljs.language = $1
                    AND ljs."createdAt" > now() - interval '90 days'
-                   AND ${excludeTestTenants('ljs."tenant_id"')})
+                   AND ${excludeTestTenants('ljs."tenant_id"')}
+                   ${profileScope})
           ORDER BY m."createdAt" DESC
           LIMIT 40000`,
-        [languageValue],
+        profileId ? [languageValue, profileId] : [languageValue],
       );
     if (rows.length === 0) return null;
     const learner: string[] = [];

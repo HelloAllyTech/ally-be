@@ -196,6 +196,7 @@ describe('VarietyProfileService', () => {
         { id: 'p1', languageId: 6 },
         { id: 'p2', languageId: 6 },
       ]);
+      dataSource.query.mockResolvedValue([]);
       attachmentRepository.find.mockResolvedValue([
         { id: 'a1', profileId: 'p1' },
         { id: 'a2', profileId: 'p2' },

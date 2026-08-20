@@ -45,7 +45,8 @@ export interface InferProfileResult {
 
 export interface ProfileListView {
   profile: LanguageVarietyProfile;
-  attachments: VarietyProfileAttachment[];
+  /** Attachments enriched with the org's display name for the admin UI. */
+  attachments: (VarietyProfileAttachment & { tenantName?: string })[];
 }
 
 /**
@@ -86,9 +87,20 @@ export class VarietyProfileService {
     const attachments = await this.attachmentRepository.find({
       where: { languageId },
     });
+    // Which orgs speak this style — names resolved dual-key (id or code).
+    const tenants: { id: string; code: string; name: string }[] =
+      attachments.length > 0
+        ? await this.dataSource.query(
+            `SELECT id::text AS id, code, name FROM tenants`,
+          )
+        : [];
+    const nameOf = (tenantRef: string) =>
+      tenants.find((t) => t.id === tenantRef || t.code === tenantRef)?.name;
     return profiles.map((profile) => ({
       profile,
-      attachments: attachments.filter((a) => a.profileId === profile.id),
+      attachments: attachments
+        .filter((a) => a.profileId === profile.id)
+        .map((a) => ({ ...a, tenantName: nameOf(a.tenantId) })),
     }));
   }
 
