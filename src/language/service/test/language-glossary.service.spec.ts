@@ -33,6 +33,7 @@ describe('LanguageGlossaryService', () => {
   let promptRepository: any;
   let promptVersionRepository: any;
   let annotationRepository: any;
+  let annotationQb: any;
   let llmProviderFactory: any;
   let getCompletion: jest.Mock;
 
@@ -61,7 +62,18 @@ describe('LanguageGlossaryService', () => {
         .fn()
         .mockResolvedValue({ prompt: 'Generate for {{languageName}}' }),
     };
-    annotationRepository = { find: jest.fn().mockResolvedValue([]) };
+    // Consolidation reads annotations via a query builder (it carries the raw
+    // test-tenant exclusion fragment). Tests stub the terminal getMany().
+    annotationQb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+    };
+    annotationRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(annotationQb),
+    };
     getCompletion = jest.fn();
     llmProviderFactory = {
       getProvider: jest.fn().mockReturnValue({ getCompletion }),
@@ -345,6 +357,7 @@ describe('LanguageGlossaryService', () => {
   describe('consolidateGlossary', () => {
     const annotation = (id: string, extra: Record<string, unknown> = {}) => ({
       id,
+      tenantId: 'tenant-1',
       dimension: 'dialect_lexicon',
       category: 'wrong_regional_variety',
       severity: 'major',
@@ -383,16 +396,16 @@ describe('LanguageGlossaryService', () => {
           ],
         }),
       ]);
-      annotationRepository.find.mockResolvedValue([annotation('a1')]);
+      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
       const result = await service.consolidateGlossary(6);
       expect(result.annotationsConsidered).toBe(0);
       expect(getCompletion).not.toHaveBeenCalled();
     });
 
-    it('lands markdown proposals with annotation provenance', async () => {
-      annotationRepository.find.mockResolvedValue([
+    it('lands markdown proposals with annotation + tenant provenance', async () => {
+      annotationQb.getMany.mockResolvedValue([
         annotation('a1'),
-        annotation('a2'),
+        annotation('a2', { tenantId: 'tenant-2' }),
       ]);
       getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
 
@@ -407,11 +420,30 @@ describe('LanguageGlossaryService', () => {
       expect(proposal.status).toBe(GlossaryEntryStatus.PROPOSED);
       expect(proposal.markdown).toContain('டென்ஷன்');
       expect(proposal.provenance!.annotationIds).toEqual(['a1', 'a2']);
+      // Breadth signal: distinct supporting orgs, for the global-vs-overlay split.
+      expect(proposal.provenance!.tenantIds).toEqual(['tenant-1', 'tenant-2']);
       expect(proposal.importance).toBe(4);
     });
 
+    it('excludes test-organization tenants from the annotation read', async () => {
+      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      await service.consolidateGlossary(6);
+
+      const fragments = annotationQb.andWhere.mock.calls.map(
+        (c: any[]) => c[0],
+      );
+      expect(
+        fragments.some(
+          (f: unknown) =>
+            typeof f === 'string' && f.includes('"isTestOrganization" = true'),
+        ),
+      ).toBe(true);
+    });
+
     it('skips proposals duplicating existing content lines or proposals', async () => {
-      annotationRepository.find.mockResolvedValue([annotation('a1')]);
+      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
       glossaryRepository.findSection.mockResolvedValue(
         makeSection({
           sectionCode: 'clinical_terms',
@@ -426,7 +458,7 @@ describe('LanguageGlossaryService', () => {
     });
 
     it('rejects unparseable consolidation output', async () => {
-      annotationRepository.find.mockResolvedValue([annotation('a1')]);
+      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
       getCompletion.mockResolvedValue('here are your entries: ...');
       await expect(service.consolidateGlossary(6)).rejects.toThrow(
         BadRequestException,
@@ -467,7 +499,7 @@ describe('LanguageGlossaryService', () => {
         existingSection,
       ]);
       glossaryRepository.findSection.mockResolvedValue(existingSection);
-      annotationRepository.find.mockResolvedValue([annotation('a-new')]);
+      annotationQb.getMany.mockResolvedValue([annotation('a-new')]);
       getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
 
       const result = await service.consolidateGlossary(6, 'admin');

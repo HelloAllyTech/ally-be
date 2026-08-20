@@ -87,7 +87,7 @@ Module path = `src/<module>/entity/`.
 | `global_settings` | BaseWithoutTenant | `name` (uniq), `value` (jsonb), `created_by`, `updated_by` | Platform-wide settings |
 | `preference` | BaseEntity | `name` (`PreferenceName`), `related_id`, `related_entity`, `value` (jsonb) | Generic per-entity preferences |
 | `languages` | BaseWithoutTenant | `id` (int), `value` (uniq), `label`, `active`, `translation_code`, `llm_provider_config`, `stt_provider_config` (jsonb) | i18n + per-language LLM/STT config |
-| `language_glossary_sections` | BaseWithoutTenant | `language_id` → `languages`, `section_code`, `content` (markdown), `injection_mode` (`always`/`retrieved`), `status`, `version`, `entries` (jsonb proposals) | Per-language "how to speak X" glossary served to the live agent (Tier 0 style card / Tier 1 retrieval) |
+| `language_glossary_sections` | BaseWithoutTenant | `language_id` → `languages`, `section_code`, `content` (markdown), `injection_mode` (`always`/`retrieved`), `status`, `version`, `entries` (jsonb proposals; each entry's `provenance` carries `annotationIds` + `tenantIds` — the distinct orgs whose judged sessions support the proposal) | Per-language "how to speak X" glossary served to the live agent (Tier 0 style card / Tier 1 retrieval). Consolidation reads exclude `isTestOrganization` tenants |
 | `glossary_adherence_reports` | BaseWithoutTenant | `scenario_session_id` (uniq) → `scenario_sessions`, `language_id` → `languages`, `glossary_versions` (jsonb), `total_violations`, `violations` (jsonb) | Per-session avoid-list violation scan of the agent transcript (deterministic, derived — rebuilt on re-scan) |
 | `places` | (custom) | `id` (int), `city` (idx), `state` | Geo reference data |
 

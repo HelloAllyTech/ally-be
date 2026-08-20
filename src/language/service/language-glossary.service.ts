@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { In, Repository } from 'typeorm';
 import { LlmProviderFactory } from 'src/ai-chat/provider/llm-provider.factory';
+import { excludeTestTenants } from 'src/analytics/util/test-tenant.util';
 import { AppConfigService } from 'src/config/config.service';
 import { Prompt } from 'src/prompt/entity/prompt.entity';
 import { PromptVersion } from 'src/prompt/entity/prompt-version.entity';
@@ -399,16 +400,21 @@ export class LanguageGlossaryService {
     }
 
     // Cross-tenant read by design: the glossary is global per language, so it
-    // learns from every tenant's judged sessions.
-    const recent = await this.annotationRepository.find({
-      where: {
-        language: language.value,
-        dimension: In([...GLOSSARY_CONSOLIDATION_DIMENSIONS]),
-        conditionedOut: false,
-      },
-      order: { occurredAt: 'DESC' },
-      take: GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT,
-    });
+    // learns from every REAL tenant's judged sessions. Internal/demo/QA orgs
+    // (tenants.isTestOrganization) are excluded — measured 2026-08-20, test
+    // traffic was >50% of the Kannada style-annotation pool, so an unfiltered
+    // read learns style rules from our own testers, not the population.
+    const recent = await this.annotationRepository
+      .createQueryBuilder('a')
+      .where('a.language = :language', { language: language.value })
+      .andWhere('a.dimension IN (:...dimensions)', {
+        dimensions: [...GLOSSARY_CONSOLIDATION_DIMENSIONS],
+      })
+      .andWhere('a.conditionedOut = false')
+      .andWhere(excludeTestTenants('a."tenant_id"'))
+      .orderBy('a.occurredAt', 'DESC')
+      .take(GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT)
+      .getMany();
     const annotations = recent.filter((a) => !consumed.has(a.id));
     if (annotations.length === 0) {
       return {
@@ -497,9 +503,15 @@ export class LanguageGlossaryService {
           continue;
         }
         existingKeys.add(key);
-        const annotationIds = (proposal.sourceAnnotationIndexes ?? [])
-          .map((i) => annotations[i - 1]?.id)
-          .filter((id): id is string => Boolean(id));
+        const sourceAnnotations = (proposal.sourceAnnotationIndexes ?? [])
+          .map((i) => annotations[i - 1])
+          .filter((a): a is LanguageErrorAnnotation => Boolean(a));
+        const annotationIds = sourceAnnotations.map((a) => a.id);
+        // Which orgs' sessions support this rule — the breadth signal a later
+        // global-vs-overlay split reads, recorded now so it needs no backfill.
+        const tenantIds = [
+          ...new Set(sourceAnnotations.map((a) => a.tenantId).filter(Boolean)),
+        ];
         section.entries = [
           ...(section.entries ?? []),
           {
@@ -507,7 +519,7 @@ export class LanguageGlossaryService {
             markdown,
             status: GlossaryEntryStatus.PROPOSED,
             importance: this.clampImportance(proposal.importance),
-            provenance: { source: 'consolidation', annotationIds },
+            provenance: { source: 'consolidation', annotationIds, tenantIds },
           },
         ];
         appended++;
@@ -522,8 +534,11 @@ export class LanguageGlossaryService {
       }
     }
 
+    const distinctTenants = new Set(
+      annotations.map((a) => a.tenantId).filter(Boolean),
+    ).size;
     this.logger.log(
-      `[GLOSSARY_CONSOLIDATE] language=${language.value} annotations=${annotations.length} proposed=${proposed} duplicates=${skippedDuplicates} sections=${touched.join(',')}`,
+      `[GLOSSARY_CONSOLIDATE] language=${language.value} annotations=${annotations.length} tenants=${distinctTenants} proposed=${proposed} duplicates=${skippedDuplicates} sections=${touched.join(',')}`,
     );
     return {
       annotationsConsidered: annotations.length,

@@ -40,6 +40,10 @@ export interface GlossaryEntry {
   provenance?: {
     source: 'consolidation' | 'seed' | 'manual';
     annotationIds?: string[];
+    /** Distinct tenants whose annotations support this proposal — the breadth
+     * signal for a future global-vs-overlay split (multi-tenant support ⇒
+     * global candidate; single-tenant ⇒ overlay candidate). */
+    tenantIds?: string[];
   };
 }
 
