@@ -1379,7 +1379,10 @@ describe('ScenarioSharedService', () => {
         previousMemory: null,
       });
 
-      expect(glossaryService.resolveTier0Glossary).toHaveBeenCalledWith(2);
+      expect(glossaryService.resolveTier0Glossary).toHaveBeenCalledWith(
+        2,
+        null,
+      );
       expect((result.scenario.promptData as any).languageGlossary).toContain(
         '## Core style',
       );
@@ -1620,7 +1623,7 @@ describe('ScenarioSharedService', () => {
         previousMemory: null,
       });
 
-      expect(glossaryService.resolveGlossaryMeta).toHaveBeenCalledWith(2);
+      expect(glossaryService.resolveGlossaryMeta).toHaveBeenCalledWith(2, null);
       expect((result.scenario.promptData as any).glossaryMeta).toEqual({
         versions: { core_style: 4, clinical_terms: 2 },
         tier0Tokens: 381,

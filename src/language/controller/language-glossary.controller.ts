@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -50,8 +50,14 @@ export class LanguageGlossaryController {
   async publishSection(
     @Param('id') id: number,
     @Param('sectionCode') sectionCode: string,
+    @Query('profileId') profileId?: string,
   ) {
-    return this.glossaryService.publishSection(Number(id), sectionCode);
+    return this.glossaryService.publishSection(
+      Number(id),
+      sectionCode,
+      undefined,
+      profileId || null,
+    );
   }
 
   @ApiOperation({ summary: 'Archive a glossary section' })
@@ -60,8 +66,14 @@ export class LanguageGlossaryController {
   async archiveSection(
     @Param('id') id: number,
     @Param('sectionCode') sectionCode: string,
+    @Query('profileId') profileId?: string,
   ) {
-    return this.glossaryService.archiveSection(Number(id), sectionCode);
+    return this.glossaryService.archiveSection(
+      Number(id),
+      sectionCode,
+      undefined,
+      profileId || null,
+    );
   }
 
   @ApiOperation({
@@ -125,11 +137,14 @@ export class LanguageGlossaryController {
     @Param('id') id: number,
     @Param('sectionCode') sectionCode: string,
     @Param('entryId') entryId: string,
+    @Query('profileId') profileId?: string,
   ) {
     return this.glossaryService.acceptProposal(
       Number(id),
       sectionCode,
       entryId,
+      undefined,
+      profileId || null,
     );
   }
 
@@ -140,21 +155,69 @@ export class LanguageGlossaryController {
     @Param('id') id: number,
     @Param('sectionCode') sectionCode: string,
     @Param('entryId') entryId: string,
+    @Query('profileId') profileId?: string,
   ) {
     return this.glossaryService.rejectProposal(
       Number(id),
       sectionCode,
       entryId,
+      undefined,
+      profileId || null,
     );
   }
 
   @ApiOperation({
     summary:
-      'Consolidate judge error annotations into PROPOSED glossary entries (never auto-published)',
+      'Consolidate judge error annotations into glossary entries. Default: ' +
+      'PROPOSED for review; autoAccept=true publishes survivors immediately ' +
+      '(rollback via the batch endpoints)',
   })
   @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
   @Post(':id/glossary/consolidate')
-  async consolidateGlossary(@Param('id') id: number) {
-    return this.glossaryService.consolidateGlossary(Number(id));
+  async consolidateGlossary(
+    @Param('id') id: number,
+    @Body() body?: { autoAccept?: boolean },
+  ) {
+    return this.glossaryService.consolidateGlossary(Number(id), undefined, {
+      autoAccept: body?.autoAccept === true,
+      trigger: 'manual',
+    });
+  }
+
+  @ApiOperation({
+    summary:
+      'Recompute Tier 0 / Tier 1 assignment (value-per-token knapsack; ' +
+      'pinned sections untouched). apply=false returns the plan without applying',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Post(':id/glossary/retier')
+  async retierGlossary(
+    @Param('id') id: number,
+    @Body() body?: { apply?: boolean },
+  ) {
+    return this.glossaryService.retierGlossary(Number(id), {
+      apply: body?.apply !== false,
+    });
+  }
+
+  @ApiOperation({ summary: 'List consolidation batches (newest first)' })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_LANGUAGES])
+  @Get(':id/glossary/consolidation-batches')
+  async listConsolidationBatches(@Param('id') id: number) {
+    return this.glossaryService.listConsolidationBatches(Number(id));
+  }
+
+  @ApiOperation({
+    summary:
+      'Roll back one consolidation batch: removes its accepted lines from ' +
+      'section content and rejects its entries (their annotations stay consumed)',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Post(':id/glossary/consolidation-batches/:batchId/rollback')
+  async rollbackConsolidationBatch(
+    @Param('id') id: number,
+    @Param('batchId') batchId: string,
+  ) {
+    return this.glossaryService.rollbackConsolidationBatch(Number(id), batchId);
   }
 }

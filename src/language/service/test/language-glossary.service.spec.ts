@@ -33,6 +33,9 @@ describe('LanguageGlossaryService', () => {
   let promptRepository: any;
   let promptVersionRepository: any;
   let annotationRepository: any;
+  let annotationQb: any;
+  let batchRepository: any;
+  let attachmentRepository: any;
   let llmProviderFactory: any;
   let getCompletion: jest.Mock;
 
@@ -61,7 +64,29 @@ describe('LanguageGlossaryService', () => {
         .fn()
         .mockResolvedValue({ prompt: 'Generate for {{languageName}}' }),
     };
-    annotationRepository = { find: jest.fn().mockResolvedValue([]) };
+    // Consolidation reads annotations via a query builder (it carries the raw
+    // test-tenant exclusion fragment). Tests stub the terminal getMany().
+    annotationQb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+    };
+    annotationRepository = {
+      createQueryBuilder: jest.fn().mockReturnValue(annotationQb),
+      manager: { query: jest.fn().mockResolvedValue([]) },
+    };
+    batchRepository = {
+      create: jest.fn((v: any) => v),
+      save: jest.fn(async (v: any) => ({ id: v.id ?? 'batch-1', ...v })),
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(null),
+    };
+    attachmentRepository = {
+      find: jest.fn().mockResolvedValue([]),
+      manager: { query: jest.fn().mockResolvedValue([]) },
+    };
     getCompletion = jest.fn();
     llmProviderFactory = {
       getProvider: jest.fn().mockReturnValue({ getCompletion }),
@@ -80,6 +105,8 @@ describe('LanguageGlossaryService', () => {
       promptRepository,
       promptVersionRepository,
       annotationRepository,
+      batchRepository,
+      attachmentRepository,
       llmProviderFactory,
       configService as any,
     );
@@ -212,6 +239,7 @@ describe('LanguageGlossaryService', () => {
       expect(glossaryRepository.findPublishedByLanguage).toHaveBeenCalledWith(
         6,
         GlossaryInjectionMode.ALWAYS,
+        undefined,
       );
     });
   });
@@ -240,6 +268,8 @@ describe('LanguageGlossaryService', () => {
       // Unfiltered query: meta must cover both tiers, not just always-sections.
       expect(glossaryRepository.findPublishedByLanguage).toHaveBeenCalledWith(
         6,
+        undefined,
+        undefined,
       );
       expect(meta).toEqual({
         versions: { core_style: 4, clinical_terms: 2 },
@@ -345,6 +375,7 @@ describe('LanguageGlossaryService', () => {
   describe('consolidateGlossary', () => {
     const annotation = (id: string, extra: Record<string, unknown> = {}) => ({
       id,
+      tenantId: 'tenant-1',
       dimension: 'dialect_lexicon',
       category: 'wrong_regional_variety',
       severity: 'major',
@@ -383,16 +414,16 @@ describe('LanguageGlossaryService', () => {
           ],
         }),
       ]);
-      annotationRepository.find.mockResolvedValue([annotation('a1')]);
+      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
       const result = await service.consolidateGlossary(6);
       expect(result.annotationsConsidered).toBe(0);
       expect(getCompletion).not.toHaveBeenCalled();
     });
 
-    it('lands markdown proposals with annotation provenance', async () => {
-      annotationRepository.find.mockResolvedValue([
+    it('lands markdown proposals with annotation + tenant provenance', async () => {
+      annotationQb.getMany.mockResolvedValue([
         annotation('a1'),
-        annotation('a2'),
+        annotation('a2', { tenantId: 'tenant-2' }),
       ]);
       getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
 
@@ -407,11 +438,30 @@ describe('LanguageGlossaryService', () => {
       expect(proposal.status).toBe(GlossaryEntryStatus.PROPOSED);
       expect(proposal.markdown).toContain('டென்ஷன்');
       expect(proposal.provenance!.annotationIds).toEqual(['a1', 'a2']);
+      // Breadth signal: distinct supporting orgs, for the global-vs-overlay split.
+      expect(proposal.provenance!.tenantIds).toEqual(['tenant-1', 'tenant-2']);
       expect(proposal.importance).toBe(4);
     });
 
+    it('excludes test-organization tenants from the annotation read', async () => {
+      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      await service.consolidateGlossary(6);
+
+      const fragments = annotationQb.andWhere.mock.calls.map(
+        (c: any[]) => c[0],
+      );
+      expect(
+        fragments.some(
+          (f: unknown) =>
+            typeof f === 'string' && f.includes('"isTestOrganization" = true'),
+        ),
+      ).toBe(true);
+    });
+
     it('skips proposals duplicating existing content lines or proposals', async () => {
-      annotationRepository.find.mockResolvedValue([annotation('a1')]);
+      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
       glossaryRepository.findSection.mockResolvedValue(
         makeSection({
           sectionCode: 'clinical_terms',
@@ -426,7 +476,7 @@ describe('LanguageGlossaryService', () => {
     });
 
     it('rejects unparseable consolidation output', async () => {
-      annotationRepository.find.mockResolvedValue([annotation('a1')]);
+      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
       getCompletion.mockResolvedValue('here are your entries: ...');
       await expect(service.consolidateGlossary(6)).rejects.toThrow(
         BadRequestException,
@@ -467,7 +517,7 @@ describe('LanguageGlossaryService', () => {
         existingSection,
       ]);
       glossaryRepository.findSection.mockResolvedValue(existingSection);
-      annotationRepository.find.mockResolvedValue([annotation('a-new')]);
+      annotationQb.getMany.mockResolvedValue([annotation('a-new')]);
       getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
 
       const result = await service.consolidateGlossary(6, 'admin');
@@ -553,6 +603,438 @@ describe('LanguageGlossaryService', () => {
       await expect(
         service.acceptProposal(6, 'core_style', 'p1'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('consolidation loop (overlays, auto-accept, rollback)', () => {
+    const annotation = (
+      id: string,
+      tenantId: string,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      id,
+      tenantId,
+      dimension: 'dialect_lexicon',
+      category: 'wrong_regional_variety',
+      severity: 'major',
+      evidenceQuote: 'பதட்டம்',
+      aiText: 'உங்களுக்கு பதட்டம் உள்ளதா?',
+      ...extra,
+    });
+
+    const twoProposalOutput = [
+      {
+        sectionCode: 'clinical_terms',
+        title: 'Clinical terms',
+        injectionMode: 'retrieved',
+        proposals: [
+          // Supported only by tenant-1 (unattached) → global.
+          { markdown: '- global rule', sourceAnnotationIndexes: [1] },
+          // Supported only by tenant-2 (attached to p1) → overlay.
+          { markdown: '- overlay rule', sourceAnnotationIndexes: [2] },
+        ],
+      },
+    ];
+
+    beforeEach(() => {
+      annotationQb.getMany.mockResolvedValue([
+        annotation('a1', 'tenant-1'),
+        annotation('a2', 'tenant-2'),
+      ]);
+      getCompletion.mockResolvedValue(JSON.stringify(twoProposalOutput));
+      attachmentRepository.find.mockResolvedValue([
+        { tenantId: 'tenant-2', profileId: 'p1', languageId: 6 },
+      ]);
+    });
+
+    it('routes single-profile-supported entries to that profile overlay, the rest global', async () => {
+      const result = await service.consolidateGlossary(6);
+
+      expect(result.proposed).toBe(2);
+      expect(result.overlayEntries).toBe(1);
+      expect(result.batchId).toBe('batch-1');
+      const savedSections = glossaryRepository.save.mock.calls.map(
+        (c: any[]) => c[0],
+      );
+      const overlay = savedSections.find((s: any) => s.profileId === 'p1');
+      const global = savedSections.find((s: any) => !s.profileId);
+      expect(overlay.entries.map((e: any) => e.markdown)).toEqual([
+        '- overlay rule',
+      ]);
+      expect(global.entries.map((e: any) => e.markdown)).toEqual([
+        '- global rule',
+      ]);
+      // Every entry carries the batch id — the rollback handle.
+      expect(global.entries[0].provenance.batchId).toBe('batch-1');
+      // The batch records both entries with their routing.
+      const finalBatch = batchRepository.save.mock.calls.at(-1)[0];
+      expect(finalBatch.entries).toHaveLength(2);
+      expect(finalBatch.entries.map((e: any) => e.profileId).sort()).toEqual(
+        ['p1', null].sort(),
+      );
+    });
+
+    it('auto-accept publishes entries into content and records them accepted', async () => {
+      const result = await service.consolidateGlossary(6, 'rsi', {
+        autoAccept: true,
+        trigger: 'scheduled',
+      });
+
+      expect(result.autoAccepted).toBe(2);
+      const savedSections = glossaryRepository.save.mock.calls.map(
+        (c: any[]) => c[0],
+      );
+      for (const section of savedSections) {
+        expect(section.status).toBe(GlossarySectionStatus.PUBLISHED);
+        expect(
+          section.entries.every(
+            (e: any) => e.status === GlossaryEntryStatus.ACCEPTED,
+          ),
+        ).toBe(true);
+      }
+      const globalSaved = savedSections.find((s: any) => !s.profileId);
+      expect(globalSaved.content).toContain('- global rule');
+      const finalBatch = batchRepository.save.mock.calls.at(-1)[0];
+      expect(finalBatch.entries.every((e: any) => e.accepted)).toBe(true);
+    });
+
+    it('auto-accept falls back to proposals when the Tier 0 cap would be exceeded', async () => {
+      const hugeMarkdown = `- ${'register vocabulary rule '.repeat(1500)}`;
+      getCompletion.mockResolvedValue(
+        JSON.stringify([
+          {
+            sectionCode: 'core_style',
+            title: 'Core style',
+            injectionMode: 'always',
+            proposals: [
+              { markdown: hugeMarkdown, sourceAnnotationIndexes: [1] },
+            ],
+          },
+        ]),
+      );
+
+      const result = await service.consolidateGlossary(6, 'rsi', {
+        autoAccept: true,
+      });
+
+      expect(result.proposed).toBe(1);
+      expect(result.autoAccepted).toBe(0);
+      const saved = glossaryRepository.save.mock.calls.at(-1)[0];
+      expect(saved.entries[0].status).toBe(GlossaryEntryStatus.PROPOSED);
+      expect(saved.content ?? '').not.toContain('register vocabulary rule');
+    });
+
+    it('skips the run (and the LLM) below minAnnotations', async () => {
+      const result = await service.consolidateGlossary(6, undefined, {
+        minAnnotations: 10,
+      });
+      expect(result.annotationsConsidered).toBe(2);
+      expect(result.proposed).toBe(0);
+      expect(result.batchId).toBeNull();
+      expect(getCompletion).not.toHaveBeenCalled();
+    });
+
+    it('rollback removes accepted lines, rejects entries, keeps annotations consumed', async () => {
+      batchRepository.findOne.mockResolvedValue({
+        id: 'batch-9',
+        languageId: 6,
+        status: 'active',
+        entries: [
+          {
+            sectionId: 'sec-9',
+            sectionCode: 'clinical_terms',
+            profileId: null,
+            entryId: 'e1',
+            markdown: '- overlay rule',
+            accepted: true,
+          },
+        ],
+      });
+      glossaryRepository.findOne = jest.fn().mockResolvedValue(
+        makeSection({
+          id: 'sec-9',
+          sectionCode: 'clinical_terms',
+          content: '- existing line\n- overlay rule',
+          entries: [
+            {
+              id: 'e1',
+              markdown: '- overlay rule',
+              status: GlossaryEntryStatus.ACCEPTED,
+              provenance: {
+                source: 'consolidation',
+                annotationIds: ['a2'],
+                batchId: 'batch-9',
+              },
+            },
+          ],
+        }),
+      );
+
+      const result = await service.rollbackConsolidationBatch(6, 'batch-9');
+
+      expect(result.rolledBack).toBe(1);
+      const savedSection = glossaryRepository.save.mock.calls.at(-1)[0];
+      expect(savedSection.content).toBe('- existing line');
+      expect(savedSection.entries[0].status).toBe(GlossaryEntryStatus.REJECTED);
+      // Annotation stays in provenance → stays consumed on future runs.
+      expect(savedSection.entries[0].provenance.annotationIds).toEqual(['a2']);
+      const savedBatch = batchRepository.save.mock.calls.at(-1)[0];
+      expect(savedBatch.status).toBe('rolled_back');
+    });
+
+    it('routes production-artifact clusters to engineering findings, and consumes them', async () => {
+      annotationQb.getMany.mockResolvedValue([
+        annotation('a1', 'tenant-1'),
+        annotation('a2', 'tenant-1', {
+          dimension: 'persona_social',
+          category: 'persona_break',
+        }),
+      ]);
+      getCompletion.mockResolvedValue(
+        JSON.stringify({
+          sections: [],
+          engineeringFindings: [
+            {
+              summary:
+                'Replies frequently truncated mid-sentence (TTS cutoff?)',
+              sourceAnnotationIndexes: [1, 2],
+            },
+          ],
+        }),
+      );
+
+      const result = await service.consolidateGlossary(6);
+
+      expect(result.proposed).toBe(0);
+      expect(result.batchId).toBe('batch-1'); // findings alone keep the handle
+      const savedBatch = batchRepository.save.mock.calls.at(-1)[0];
+      expect(savedBatch.stats.engineeringFindings).toEqual([
+        {
+          summary: 'Replies frequently truncated mid-sentence (TTS cutoff?)',
+          annotationIds: ['a1', 'a2'],
+        },
+      ]);
+      // No glossary section was written for the finding.
+      expect(glossaryRepository.save).not.toHaveBeenCalled();
+
+      // Next run: the finding's annotations are consumed via the batch record.
+      batchRepository.find.mockResolvedValue([savedBatch]);
+      getCompletion.mockClear();
+      const second = await service.consolidateGlossary(6);
+      expect(second.annotationsConsidered).toBe(0);
+      expect(getCompletion).not.toHaveBeenCalled();
+    });
+
+    it('runs the tier pass after auto-accept (best-effort)', async () => {
+      const retierSpy = jest
+        .spyOn(service, 'retierGlossary')
+        .mockResolvedValue({ views: [] });
+      const result = await service.consolidateGlossary(6, 'rsi', {
+        autoAccept: true,
+      });
+      expect(retierSpy).toHaveBeenCalledWith(6, { apply: true });
+      expect(result.retier).toEqual({ views: [] });
+      retierSpy.mockRestore();
+    });
+
+    it('refuses to roll back an already rolled-back batch', async () => {
+      batchRepository.findOne.mockResolvedValue({
+        id: 'batch-9',
+        languageId: 6,
+        status: 'rolled_back',
+        entries: [],
+      });
+      await expect(
+        service.rollbackConsolidationBatch(6, 'batch-9'),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('retierGlossary', () => {
+    const section = (over: Partial<LanguageGlossarySection>) =>
+      makeSection({
+        status: GlossarySectionStatus.PUBLISHED,
+        entries: [],
+        ...over,
+      });
+
+    beforeEach(() => {
+      // manager.query serves two shapes: severity lookups and corpus rows.
+      annotationRepository.manager.query.mockImplementation(
+        async (sql: string) => {
+          if (sql.includes('severity')) {
+            return [{ id: 'a1', severity: 'major' }];
+          }
+          // Corpus: learners say டென்ஷன் a lot; nobody says அருஞ்சொல்.
+          return Array.from({ length: 30 }, () => ({
+            content: 'எனக்கு டென்ஷன் ஆகுது',
+            senderId: 101,
+          }));
+        },
+      );
+    });
+
+    it('promotes high-value sections, demotes zero-value ones, skips pins', async () => {
+      glossaryRepository.findAllForLanguage.mockResolvedValue([
+        section({
+          id: 'hot',
+          sectionCode: 'hot_terms',
+          injectionMode: GlossaryInjectionMode.RETRIEVED,
+          content: '- anxiety: say "டென்ஷன்" (avoid: "பதட்டம்")',
+          entries: [
+            {
+              id: 'e1',
+              markdown: '- anxiety: say "டென்ஷன்"',
+              status: GlossaryEntryStatus.ACCEPTED,
+              provenance: { source: 'consolidation', annotationIds: ['a1'] },
+            },
+          ],
+        }),
+        section({
+          id: 'cold',
+          sectionCode: 'cold_terms',
+          injectionMode: GlossaryInjectionMode.ALWAYS,
+          content: '- rare: say "அருஞ்சொல்"',
+        }),
+        section({
+          id: 'pinned',
+          sectionCode: 'pinned_terms',
+          injectionMode: GlossaryInjectionMode.ALWAYS,
+          content: '- also rare: say "வேறுஅருஞ்சொல்"',
+          tierPinned: true,
+        }),
+      ]);
+
+      const result = await service.retierGlossary(6);
+
+      const globalView = result.views.find((v) => v.profileId === null)!;
+      expect(globalView.promoted).toEqual(['hot_terms']);
+      expect(globalView.demoted).toEqual(['cold_terms']);
+      const savedModes = Object.fromEntries(
+        glossaryRepository.save.mock.calls.map((c: any[]) => [
+          c[0].sectionCode,
+          c[0].injectionMode,
+        ]),
+      );
+      expect(savedModes.hot_terms).toBe(GlossaryInjectionMode.ALWAYS);
+      expect(savedModes.cold_terms).toBe(GlossaryInjectionMode.RETRIEVED);
+      // Pinned zero-value section keeps Tier 0 and is never written.
+      expect(savedModes.pinned_terms).toBeUndefined();
+    });
+
+    it('apply=false plans without writing', async () => {
+      glossaryRepository.findAllForLanguage.mockResolvedValue([
+        section({
+          sectionCode: 'hot_terms',
+          injectionMode: GlossaryInjectionMode.RETRIEVED,
+          content: '- anxiety: say "டென்ஷன்"',
+        }),
+      ]);
+      const result = await service.retierGlossary(6, { apply: false });
+      expect(result.views[0].promoted).toEqual(['hot_terms']);
+      expect(glossaryRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('gives overlays only the budget the global always-set leaves', async () => {
+      glossaryRepository.findAllForLanguage.mockResolvedValue([
+        section({
+          sectionCode: 'core',
+          injectionMode: GlossaryInjectionMode.ALWAYS,
+          content: '- anxiety: say "டென்ஷன்"',
+        }),
+        section({
+          sectionCode: 'core',
+          profileId: 'p1',
+          injectionMode: GlossaryInjectionMode.RETRIEVED,
+          content: '- anxiety overlay: say "டென்ஷன்"',
+        }),
+      ]);
+      const result = await service.retierGlossary(6, { apply: false });
+      const overlayView = result.views.find((v) => v.profileId === 'p1')!;
+      const globalView = result.views.find((v) => v.profileId === null)!;
+      expect(overlayView.cap).toBe(2000 - globalView.tier0Tokens);
+      expect(overlayView.promoted).toEqual(['core@p1']);
+    });
+
+    it('runs after auto-accept consolidation (best-effort)', async () => {
+      annotationQb.getMany.mockResolvedValue([
+        {
+          id: 'a9',
+          tenantId: 'tenant-1',
+          dimension: 'dialect_lexicon',
+          category: 'wrong_regional_variety',
+          severity: 'major',
+          evidenceQuote: 'பதட்டம்',
+        },
+      ]);
+      getCompletion.mockResolvedValue(
+        JSON.stringify([
+          {
+            sectionCode: 'clinical_terms',
+            title: 'Clinical terms',
+            injectionMode: 'retrieved',
+            proposals: [
+              { markdown: '- x: say "டென்ஷன்"', sourceAnnotationIndexes: [1] },
+            ],
+          },
+        ]),
+      );
+      const retierSpy = jest
+        .spyOn(service, 'retierGlossary')
+        .mockResolvedValue({ views: [] });
+      const result = await service.consolidateGlossary(6, 'rsi', {
+        autoAccept: true,
+      });
+      expect(retierSpy).toHaveBeenCalledWith(6, { apply: true });
+      expect(result.retier).toEqual({ views: [] });
+      retierSpy.mockRestore();
+    });
+  });
+
+  describe('upsertSection tier pinning', () => {
+    const dto = (mode: GlossaryInjectionMode, tierPinned?: boolean) =>
+      ({
+        title: 'Core style',
+        content: '- x',
+        injectionMode: mode,
+        ...(tierPinned === undefined ? {} : { tierPinned }),
+      }) as UpsertGlossarySectionDto;
+
+    it('pins automatically when an admin changes the mode by hand', async () => {
+      glossaryRepository.findSection.mockResolvedValue(
+        makeSection({ injectionMode: GlossaryInjectionMode.ALWAYS }),
+      );
+      const saved = await service.upsertSection(
+        6,
+        'core_style',
+        dto(GlossaryInjectionMode.RETRIEVED),
+      );
+      expect(saved.tierPinned).toBe(true);
+    });
+
+    it('does not pin on an unchanged mode; explicit false unpins', async () => {
+      glossaryRepository.findSection.mockResolvedValue(
+        makeSection({ injectionMode: GlossaryInjectionMode.ALWAYS }),
+      );
+      const unchanged = await service.upsertSection(
+        6,
+        'core_style',
+        dto(GlossaryInjectionMode.ALWAYS),
+      );
+      expect(unchanged.tierPinned).toBe(false);
+
+      glossaryRepository.findSection.mockResolvedValue(
+        makeSection({
+          injectionMode: GlossaryInjectionMode.ALWAYS,
+          tierPinned: true,
+        }),
+      );
+      const unpinned = await service.upsertSection(
+        6,
+        'core_style',
+        dto(GlossaryInjectionMode.RETRIEVED, false),
+      );
+      expect(unpinned.tierPinned).toBe(false);
     });
   });
 });

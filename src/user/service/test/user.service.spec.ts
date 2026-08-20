@@ -24,7 +24,7 @@ import { ProfileImageUploadContentType } from 'src/user/enum/user.enum';
 import { AdminTenantService } from '../admin-tenant.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -756,6 +756,395 @@ describe('UserService', () => {
     });
   });
 
+  // The target-user lookup behind updateUser / updateUserStatus is scoped by
+  // the caller's reach, not blindly by id. `edit:user` / `edit:user:status`
+  // are platform-tier permissions, so cross-tenant reach is correct for an
+  // unrestricted platform admin — but a tenant-restricted one (any
+  // `admin_tenants` row) must stay inside their granted tenants, and a caller
+  // without SYSTEM_ACCESS must stay inside their own.
+  describe('admin user-management tenant scope', () => {
+    /** The `where` the target-user lookup actually ran with. */
+    const firstLookupWhere = () =>
+      mockUsersRepository.findOne.mock.calls[0][0].where;
+
+    describe('updateUserStatus', () => {
+      it('should pin a tenant-restricted platform admin to their granted tenants', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+        mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+          data: [{ id: 'tenant-a' }, { id: 'tenant-b' }],
+          count: 2,
+        });
+        mockUsersRepository.findOne.mockResolvedValue(mockUser);
+        mockUsersRepository.update.mockResolvedValue({ affected: 1 });
+
+        await service.updateUserStatus(1, UserStatus.SUSPENDED);
+
+        expect(firstLookupWhere()).toEqual({
+          id: 1,
+          tenantId: In(['tenant-a', 'tenant-b']),
+        });
+      });
+
+      it('should not suspend a user in a tenant the restricted admin was never granted', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+        mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+          data: [{ id: 'tenant-a' }],
+          count: 1,
+        });
+        // The id exists, but in tenant-b — the scoped lookup misses it.
+        mockUsersRepository.findOne.mockResolvedValue(null);
+
+        await expect(
+          service.updateUserStatus(1, UserStatus.SUSPENDED),
+        ).rejects.toThrow('User with ID 1 not found');
+        expect(mockUsersRepository.update).not.toHaveBeenCalled();
+      });
+
+      it('should reach no user at all when a restricted admin has no live granted tenants', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+        mockAdminTenantService.getTenantsForAdmin.mockResolvedValue({
+          data: [],
+          count: 0,
+        });
+
+        await expect(
+          service.updateUserStatus(1, UserStatus.SUSPENDED),
+        ).rejects.toThrow('User with ID 1 not found');
+        // Never even asks the DB — an empty scope cannot match anything.
+        expect(mockUsersRepository.findOne).not.toHaveBeenCalled();
+        expect(mockUsersRepository.update).not.toHaveBeenCalled();
+      });
+
+      it('should leave an unrestricted SYSTEM_ACCESS caller reaching every tenant', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.SYSTEM_ACCESS,
+        ]);
+        mockUsersRepository.findOne.mockResolvedValue({
+          ...mockUser,
+          tenantId: 'some-other-tenant',
+        });
+        mockUsersRepository.update.mockResolvedValue({ affected: 1 });
+
+        const result = await service.updateUserStatus(1, UserStatus.SUSPENDED);
+
+        expect(result).toEqual({ success: true });
+        expect(firstLookupWhere()).toEqual({ id: 1 });
+      });
+
+      it('should clamp a caller without SYSTEM_ACCESS to their own tenant', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.EDIT_USER_STATUS,
+        ]);
+        mockUsersRepository.findOne.mockResolvedValue(mockUser);
+        mockUsersRepository.update.mockResolvedValue({ affected: 1 });
+
+        await service.updateUserStatus(1, UserStatus.SUSPENDED);
+
+        expect(firstLookupWhere()).toEqual({
+          id: 1,
+          tenantId: In(['test-tenant']),
+        });
+      });
+
+      it('should reach no user when there is no caller and no tenant context', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue(undefined);
+        (ExecutionManager.getTenantId as jest.Mock).mockReturnValue(undefined);
+
+        await expect(
+          service.updateUserStatus(1, UserStatus.SUSPENDED),
+        ).rejects.toThrow('User with ID 1 not found');
+        expect(mockUsersRepository.findOne).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('updateUser', () => {
+      it('should leave an unrestricted SYSTEM_ACCESS caller reaching every tenant', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.SYSTEM_ACCESS,
+        ]);
+        mockUsersRepository.findOne.mockResolvedValue({
+          ...mockUser,
+          tenantId: 'some-other-tenant',
+        });
+        mockUsersRepository.update.mockResolvedValue({ affected: 1 });
+
+        const result = await service.updateUser(1, { name: 'Updated' } as any);
+
+        expect(result).toEqual({ success: true });
+        expect(firstLookupWhere()).toEqual({ id: 1 });
+      });
+
+      it('should clamp a caller without SYSTEM_ACCESS to their own tenant', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.EDIT_USER,
+        ]);
+        mockUsersRepository.findOne.mockResolvedValue(mockUser);
+        mockUsersRepository.update.mockResolvedValue({ affected: 1 });
+
+        await service.updateUser(1, { name: 'Updated' } as any);
+
+        expect(firstLookupWhere()).toEqual({
+          id: 1,
+          tenantId: In(['test-tenant']),
+        });
+      });
+
+      it('should not update a user outside the caller tenant', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.EDIT_USER,
+        ]);
+        // The id exists, but in another tenant — the scoped lookup misses it.
+        mockUsersRepository.findOne.mockResolvedValue(null);
+
+        await expect(
+          service.updateUser(1, { name: 'Updated' } as any),
+        ).rejects.toThrow('User with ID 1 not found');
+        expect(mockUsersRepository.update).not.toHaveBeenCalled();
+      });
+    });
+    // The create paths take their tenant from the request body, so the check
+    // is on the named tenant rather than on a lookup. A tenant-restricted
+    // platform admin is turned away wholesale before this (see the addUser /
+    // bulkAddUsers rejection tests) — what is asserted here is that everyone
+    // else can only name a tenant they actually have reach over.
+    describe('provisioning scope', () => {
+      const newUser = {
+        email: 'new@example.com',
+        name: 'New User',
+        roles: [UserRole.CLIENT],
+        tenantId: 'test-tenant',
+      };
+
+      beforeEach(() => {
+        // No account on this email/phone yet.
+        mockUsersRepository.findOne.mockResolvedValue(null);
+        mockTenantService.findById.mockResolvedValue({ id: 'test-tenant' });
+        mockUsersRepository.create.mockImplementation((data: any) => data);
+        mockUsersRepository.save.mockImplementation((user: any) =>
+          Promise.resolve({ id: 2, ...user }),
+        );
+        mockGroupRepository.find.mockResolvedValue([]);
+      });
+
+      it('should let an unrestricted SYSTEM_ACCESS caller provision any tenant', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.SYSTEM_ACCESS,
+        ]);
+        mockTenantService.findById.mockResolvedValue({ id: 'other-tenant' });
+
+        const result = await service.addUser({
+          ...newUser,
+          tenantId: 'other-tenant',
+        } as any);
+
+        expect(result.tenantId).toBe('other-tenant');
+      });
+
+      it('should refuse a caller without SYSTEM_ACCESS naming another tenant', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.EDIT_USER,
+        ]);
+
+        await expect(
+          service.addUser({ ...newUser, tenantId: 'other-tenant' } as any),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockUsersRepository.save).not.toHaveBeenCalled();
+      });
+
+      it('should still let a caller without SYSTEM_ACCESS provision their own tenant', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.EDIT_USER,
+        ]);
+
+        const result = await service.addUser(newUser as any);
+
+        expect(result.tenantId).toBe('test-tenant');
+      });
+
+      it('should refuse a platform role before ever reaching the tenant clamp', async () => {
+        // rejectPlatformManagedRoles is the actual boundary here — it runs
+        // before assertTenantProvisionable, so a platform role in the body
+        // is refused on its own terms (BadRequestException naming the right
+        // endpoint), not reinterpreted as a tenant-scope violation.
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.EDIT_USER,
+        ]);
+
+        await expect(
+          service.addUser({
+            ...newUser,
+            tenantId: 'other-tenant',
+            roles: [UserRole.SUPER_ADMIN],
+          } as any),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockUsersRepository.save).not.toHaveBeenCalled();
+      });
+
+      it('should still clamp an ordinary role to the tenant once the platform-role guard passes', async () => {
+        // With no platform role in the body, the tenant clamp is the next —
+        // and only remaining — line of defence.
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.EDIT_USER,
+        ]);
+
+        await expect(
+          service.addUser({
+            ...newUser,
+            tenantId: 'other-tenant',
+            roles: [UserRole.CLIENT],
+          } as any),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockUsersRepository.save).not.toHaveBeenCalled();
+      });
+
+      it('should refuse a bulk create into another tenant', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.EDIT_USER,
+        ]);
+
+        await expect(
+          service.bulkAddUsers({
+            emails: ['a@example.com'],
+            roles: [UserRole.CLIENT],
+            tenantId: 'other-tenant',
+          } as any),
+        ).rejects.toThrow(ForbiddenException);
+        expect(mockDataSource.transaction).not.toHaveBeenCalled();
+      });
+
+      it('should refuse a bulk create by a tenant-restricted platform admin', async () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+
+        await expect(
+          service.bulkAddUsers({
+            emails: ['a@example.com'],
+            roles: [UserRole.CLIENT],
+            tenantId: 'test-tenant',
+          } as any),
+        ).rejects.toThrow('User is not authorized to add user');
+        expect(mockDataSource.transaction).not.toHaveBeenCalled();
+      });
+    });
+
+    // Platform-tier roles (PLATFORM_ADMIN and the three retired tiers it
+    // replaces) have their own dedicated path — /v1/platform-admins, with its
+    // own admin_user_management toggle and tenant-allowlist checks — that a
+    // bulk user importer can't satisfy. rejectPlatformManagedRoles is what
+    // actually keeps them out of these two generic create paths; the added
+    // EDIT_USER_ROLE permission requirement is defence in depth for a future
+    // role grant, not the boundary itself (every current EDIT_USER_ROLE
+    // holder already has unrestricted platform reach).
+    describe('platform-managed roles', () => {
+      const provisionableCaller = () => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        mockPermissionsService.getUserPermissions.mockResolvedValue([
+          PERMISSIONS.SYSTEM_ACCESS,
+        ]);
+      };
+
+      it.each([
+        UserRole.PLATFORM_ADMIN,
+        UserRole.SUPER_ADMIN,
+        UserRole.SUPER_DUPER_ADMIN,
+        UserRole.MULTI_TENANT_ADMIN,
+      ])('should refuse to create a user with the %s role', async (role) => {
+        provisionableCaller();
+        mockUsersRepository.findOne.mockResolvedValue(null);
+
+        await expect(
+          service.addUser({
+            email: 'new@example.com',
+            name: 'New User',
+            tenantId: 'test-tenant',
+            roles: [role],
+          } as any),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockUsersRepository.save).not.toHaveBeenCalled();
+      });
+
+      it('should refuse the whole request when only one role in a mixed array is platform-managed', async () => {
+        provisionableCaller();
+        mockUsersRepository.findOne.mockResolvedValue(null);
+
+        await expect(
+          service.addUser({
+            email: 'new@example.com',
+            name: 'New User',
+            tenantId: 'test-tenant',
+            roles: [UserRole.CLIENT, UserRole.SUPER_ADMIN],
+          } as any),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockUsersRepository.save).not.toHaveBeenCalled();
+      });
+
+      it('should name the platform-admins endpoint in the rejection message', async () => {
+        provisionableCaller();
+        mockUsersRepository.findOne.mockResolvedValue(null);
+
+        await expect(
+          service.addUser({
+            email: 'new@example.com',
+            name: 'New User',
+            tenantId: 'test-tenant',
+            roles: [UserRole.PLATFORM_ADMIN],
+          } as any),
+        ).rejects.toThrow('/v1/platform-admins');
+      });
+
+      it('should refuse a bulk create carrying a platform role', async () => {
+        provisionableCaller();
+        mockTenantService.findById.mockResolvedValue({ id: 'test-tenant' });
+
+        await expect(
+          service.bulkAddUsers({
+            emails: ['a@example.com'],
+            roles: [UserRole.SUPER_ADMIN],
+            tenantId: 'test-tenant',
+          } as any),
+        ).rejects.toThrow(BadRequestException);
+        expect(mockDataSource.transaction).not.toHaveBeenCalled();
+      });
+
+      it('should still allow ordinary roles through for a provisionable caller', async () => {
+        provisionableCaller();
+        mockUsersRepository.findOne.mockResolvedValue(null);
+        mockTenantService.findById.mockResolvedValue({ id: 'test-tenant' });
+        mockUsersRepository.create.mockImplementation((data: any) => data);
+        mockUsersRepository.save.mockImplementation((user: any) =>
+          Promise.resolve({ id: 2, ...user }),
+        );
+        mockGroupRepository.find.mockResolvedValue([
+          { id: 1, name: UserRole.ADMIN },
+        ]);
+
+        const result = await service.addUser({
+          email: 'new@example.com',
+          name: 'New User',
+          tenantId: 'test-tenant',
+          roles: [UserRole.ADMIN],
+        } as any);
+
+        expect(result.email).toBe('new@example.com');
+        expect(mockUsersRepository.save).toHaveBeenCalled();
+      });
+    });
+  });
+
   describe('addUser', () => {
     it('should create user and assign roles successfully', async () => {
       const userData = {
@@ -867,7 +1256,10 @@ describe('UserService', () => {
     it('should throw BadRequestException when email already exists', async () => {
       mockUsersRepository.findOne.mockResolvedValue(mockUser);
       await expect(
-        service.addUser({ email: 'test@example.com' } as any),
+        service.addUser({
+          email: 'test@example.com',
+          roles: [UserRole.CLIENT],
+        } as any),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -880,6 +1272,7 @@ describe('UserService', () => {
         service.addUser({
           phone: '+1234567890',
           email: 'new@example.com',
+          roles: [UserRole.CLIENT],
         } as any),
       ).rejects.toThrow(BadRequestException);
     });
@@ -896,6 +1289,12 @@ describe('UserService', () => {
     });
 
     it('should throw BadRequestException when tenant is invalid', async () => {
+      // An unrestricted caller, so the request gets past the provisioning
+      // scope check and reaches the tenant-existence check under test.
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+      mockPermissionsService.getUserPermissions.mockResolvedValue([
+        PERMISSIONS.SYSTEM_ACCESS,
+      ]);
       mockUsersRepository.findOne.mockResolvedValue(null);
       mockTenantService.findById.mockResolvedValue(null);
       await expect(

@@ -40,6 +40,22 @@ export interface GlossaryEntry {
   provenance?: {
     source: 'consolidation' | 'seed' | 'manual';
     annotationIds?: string[];
+    /** Distinct tenants whose annotations support this proposal — the breadth
+     * signal the global-vs-overlay routing reads (multi-profile support ⇒
+     * global; single-profile ⇒ that profile's overlay). */
+    tenantIds?: string[];
+    /** The consolidation run that created this entry — the rollback handle. */
+    batchId?: string;
+    /** Distributional evidence for lexicon entries (construct-class.util):
+     * say/avoid corpus counts + verdict. 'contradicted' blocks auto-accept. */
+    evidence?: {
+      say: string | null;
+      avoid: string | null;
+      sayLearnerCount: number;
+      avoidAgentCount: number;
+      avoidLearnerCount: number;
+      verdict: 'confirmed' | 'unverified' | 'contradicted';
+    };
   };
 }
 
@@ -72,6 +88,12 @@ export class LanguageGlossarySection extends BaseWithoutTenantEntity {
   @Column({ type: 'uuid', nullable: true })
   organizationId?: string;
 
+  /** NULL = global row. Non-NULL scopes this section to a variety profile
+   * (language_variety_profiles): runtime serves global + the session
+   * profile's overlays, overlay winning on sectionCode. */
+  @Column({ type: 'uuid', nullable: true })
+  profileId?: string | null;
+
   @Column({ type: 'varchar', length: 100 })
   sectionCode!: string;
 
@@ -100,6 +122,11 @@ export class LanguageGlossarySection extends BaseWithoutTenantEntity {
 
   @Column({ type: 'varchar', length: 20, default: GlossarySectionStatus.DRAFT })
   status!: GlossarySectionStatus;
+
+  /** Admin override: the computed tier pass never changes a pinned section's
+   * injectionMode. Set automatically when an admin changes the mode by hand. */
+  @Column({ type: 'boolean', default: false })
+  tierPinned!: boolean;
 
   /** Consolidation-assigned score; drives Tier 0 slot allocation + eviction. */
   @Column({ type: 'int', nullable: true })

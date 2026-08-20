@@ -11,6 +11,7 @@ import {
   withJudgeSlot,
 } from '../util/judge-concurrency.util';
 import { LanguageBackfillJobDto } from '../dto/platform-analytics.dto';
+import { VarietyProfileService } from 'src/language/service/variety-profile.service';
 import { DriftJudgeRepository } from '../repository/drift-judge.repository';
 import {
   computeScriptFidelityPct,
@@ -61,6 +62,7 @@ export class LanguageJudgeService {
     private readonly driftRepo: DriftJudgeRepository,
     private readonly config: AppConfigService,
     private readonly redis: RedisService,
+    private readonly varietyProfileService: VarietyProfileService,
   ) {}
 
   private jobKey(jobId: string): string {
@@ -222,6 +224,13 @@ export class LanguageJudgeService {
     rubric: string | null,
   ): Promise<JudgeResult> {
     const { apiUrl, outboundApiKey } = this.config.ai;
+    // Population-aware variety (RSI loop): when the session's tenant is
+    // attached to a variety profile, the judge scores against that
+    // population's measured variety instead of the language-wide default.
+    // Best-effort — a profile lookup failure never blocks judging.
+    const varietyOverride = await this.varietyProfileService
+      .resolveVarietyOverride(s.language, s.tenant_id)
+      .catch(() => null);
     // Held inside the GLOBAL judge slot: the ceiling has to span every
     // backfill at once, not just this job's own pool.
     const res = await withJudgeSlot(() =>
@@ -235,7 +244,8 @@ export class LanguageJudgeService {
           // the judge renders absent values as "unknown".
           language_eval_config: {
             language_label: s.language_label ?? undefined,
-            target_variety: s.eval_config?.targetVariety ?? undefined,
+            target_variety:
+              varietyOverride ?? s.eval_config?.targetVariety ?? undefined,
             diglossia: s.eval_config?.diglossia ?? undefined,
             code_switch_partners: s.eval_config?.codeSwitchPartners ?? [],
           },

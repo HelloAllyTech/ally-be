@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
 import { In, Repository } from 'typeorm';
 import { LlmProviderFactory } from 'src/ai-chat/provider/llm-provider.factory';
+import { excludeTestTenants } from 'src/analytics/util/test-tenant.util';
 import { AppConfigService } from 'src/config/config.service';
 import { Prompt } from 'src/prompt/entity/prompt.entity';
 import { PromptVersion } from 'src/prompt/entity/prompt-version.entity';
@@ -17,8 +18,28 @@ import {
   GLOSSARY_CONSOLIDATION_DIMENSIONS,
   GLOSSARY_CONSOLIDATION_PROMPT_CODE,
   GLOSSARY_GENERATION_PROMPT_CODE,
+  GLOSSARY_LEXICAL_CONTRADICTION_MIN,
+  GLOSSARY_MIN_CLUSTER_SUPPORT,
+  GLOSSARY_SYSTEMATIC_MIN,
   TIER0_TOKEN_CAP,
+  TIER_ERROR_MASS_WEIGHT,
+  TIER_HYSTERESIS,
+  TIER_SEVERITY_WEIGHTS,
 } from '../constants/glossary.constants';
+import {
+  applySupportGate,
+  clusterAnnotations,
+  countOccurrences,
+  scoreLexicalEvidence,
+  summarizeClusters,
+  systematicFluency,
+} from '../util/construct-class.util';
+import { tokenize } from '../util/variety-feature.util';
+import {
+  computeTierAssignment,
+  TierAssignment,
+  TierCandidate,
+} from '../util/tier-assignment.util';
 import { UpsertGlossarySectionDto } from '../dto/glossary-section.dto';
 import {
   GlossaryEntryStatus,
@@ -26,6 +47,12 @@ import {
   GlossarySectionStatus,
   LanguageGlossarySection,
 } from '../entity/language-glossary-section.entity';
+import {
+  ConsolidationBatchEntry,
+  ConsolidationBatchStatus,
+  GlossaryConsolidationBatch,
+} from '../entity/glossary-consolidation-batch.entity';
+import { VarietyProfileAttachment } from '../entity/variety-profile-attachment.entity';
 import { LanguagesRepository } from '../repository/languages.repository';
 import { LanguageGlossaryRepository } from '../repository/language-glossary.repository';
 import {
@@ -60,6 +87,11 @@ interface ConsolidatedProposal {
   sourceAnnotationIndexes?: number[];
 }
 
+interface ConsolidatedEngineeringFinding {
+  summary: string;
+  sourceAnnotationIndexes?: number[];
+}
+
 interface ConsolidatedSection {
   sectionCode: string;
   title?: string;
@@ -80,8 +112,38 @@ export interface BackfillGlossariesOutcome {
 export interface ConsolidateGlossaryResult {
   annotationsConsidered: number;
   proposed: number;
+  /** Entries auto-accepted into live content (autoAccept mode only). */
+  autoAccepted: number;
+  /** Entries routed to profile overlays rather than the global glossary. */
+  overlayEntries: number;
   skippedDuplicates: number;
   sections: string[];
+  /** Rollback handle; null when the run made no changes. */
+  batchId: string | null;
+  /** Computed tier reassignment (auto-accept runs only). */
+  retier?: RetierResult;
+}
+
+export interface RetierViewResult {
+  /** null = the global view; else the variety profile whose overlays competed. */
+  profileId: string | null;
+  promoted: string[];
+  demoted: string[];
+  tier0Tokens: number;
+  cap: number;
+}
+
+export interface RetierResult {
+  views: RetierViewResult[];
+}
+
+export interface ConsolidateGlossaryOptions {
+  /** Publish surviving entries immediately (the RSI mode) instead of queueing
+   * proposals for human review. Safety = dedupe + Tier 0 cap + batch rollback. */
+  autoAccept?: boolean;
+  trigger?: 'manual' | 'scheduled';
+  /** Skip the run (and its LLM call) below this many unconsumed annotations. */
+  minAnnotations?: number;
 }
 
 /**
@@ -103,6 +165,10 @@ export class LanguageGlossaryService {
     private readonly promptVersionRepository: Repository<PromptVersion>,
     @InjectRepository(LanguageErrorAnnotation)
     private readonly annotationRepository: Repository<LanguageErrorAnnotation>,
+    @InjectRepository(GlossaryConsolidationBatch)
+    private readonly batchRepository: Repository<GlossaryConsolidationBatch>,
+    @InjectRepository(VarietyProfileAttachment)
+    private readonly attachmentRepository: Repository<VarietyProfileAttachment>,
     private readonly llmProviderFactory: LlmProviderFactory,
     private readonly configService: AppConfigService,
   ) {}
@@ -130,6 +196,14 @@ export class LanguageGlossaryService {
       sectionCode,
     );
 
+    // A manual injectionMode change pins the tier: the admin's explicit
+    // choice must survive the computed re-tiering pass. Explicit
+    // dto.tierPinned always wins (false = hand the section back to the pass).
+    const modeChangedByHand =
+      existing && dto.injectionMode !== existing.injectionMode;
+    const tierPinned =
+      dto.tierPinned ?? (modeChangedByHand || existing?.tierPinned || false);
+
     const candidate = this.glossaryRepository.create({
       ...(existing ?? {
         languageId,
@@ -142,6 +216,7 @@ export class LanguageGlossaryService {
       retrievalHint: dto.retrievalHint,
       injectionMode: dto.injectionMode,
       importance: dto.importance,
+      tierPinned,
       version: (existing?.version ?? 0) + 1,
       updatedBy,
     });
@@ -162,8 +237,13 @@ export class LanguageGlossaryService {
     languageId: number,
     sectionCode: string,
     updatedBy?: string,
+    profileId?: string | null,
   ): Promise<LanguageGlossarySection> {
-    const section = await this.getSectionOrThrow(languageId, sectionCode);
+    const section = await this.getSectionOrThrow(
+      languageId,
+      sectionCode,
+      profileId,
+    );
     if (section.injectionMode === GlossaryInjectionMode.ALWAYS) {
       await this.assertTier0WithinCap(languageId, {
         ...section,
@@ -179,18 +259,27 @@ export class LanguageGlossaryService {
     languageId: number,
     sectionCode: string,
     updatedBy?: string,
+    profileId?: string | null,
   ): Promise<LanguageGlossarySection> {
-    const section = await this.getSectionOrThrow(languageId, sectionCode);
+    const section = await this.getSectionOrThrow(
+      languageId,
+      sectionCode,
+      profileId,
+    );
     section.status = GlossarySectionStatus.ARCHIVED;
     section.updatedBy = updatedBy;
     return this.glossaryRepository.save(section);
   }
 
-  /** Compiled Tier 0 style card for a language — the runtime entry point (Phase 2). */
-  async resolveTier0Glossary(languageId: number): Promise<string> {
+  /** Compiled Tier 0 style card — global + the profile's overlays when given. */
+  async resolveTier0Glossary(
+    languageId: number,
+    profileId?: string | null,
+  ): Promise<string> {
     const sections = await this.glossaryRepository.findPublishedByLanguage(
       languageId,
       GlossaryInjectionMode.ALWAYS,
+      profileId,
     );
     return compileTier0Glossary(sections);
   }
@@ -201,7 +290,10 @@ export class LanguageGlossaryService {
    * tells the selector when to pull a section — glossary sections are
    * production resources (what the NEXT reply needs), not discussion topics.
    */
-  async resolveTier1Sections(languageId: number): Promise<
+  async resolveTier1Sections(
+    languageId: number,
+    profileId?: string | null,
+  ): Promise<
     {
       title: string;
       content: string;
@@ -212,6 +304,7 @@ export class LanguageGlossaryService {
     const sections = await this.glossaryRepository.findPublishedByLanguage(
       languageId,
       GlossaryInjectionMode.RETRIEVED,
+      profileId,
     );
     return sections
       .map((section) => ({
@@ -233,20 +326,32 @@ export class LanguageGlossaryService {
    * be grouped by the exact glossary a session ran with instead of by
    * publish date. Null when the language has nothing published.
    */
-  async resolveGlossaryMeta(languageId: number): Promise<{
+  async resolveGlossaryMeta(
+    languageId: number,
+    profileId?: string | null,
+  ): Promise<{
     versions: Record<string, number>;
     tier0Tokens: number;
+    profileId?: string;
   } | null> {
-    const sections =
-      await this.glossaryRepository.findPublishedByLanguage(languageId);
+    const sections = await this.glossaryRepository.findPublishedByLanguage(
+      languageId,
+      undefined,
+      profileId,
+    );
     if (sections.length === 0) return null;
     const versions: Record<string, number> = {};
     for (const section of sections) {
-      versions[section.sectionCode] = section.version;
+      // Overlay-scoped keys so provenance distinguishes which view served.
+      const key = section.profileId
+        ? `${section.sectionCode}@${section.profileId}`
+        : section.sectionCode;
+      versions[key] = section.version;
     }
     return {
       versions,
       tier0Tokens: countGlossaryTokens(compileTier0Glossary(sections)),
+      ...(profileId ? { profileId } : {}),
     };
   }
 
@@ -373,18 +478,37 @@ export class LanguageGlossaryService {
   }
 
   /**
-   * Consolidation loop (Phase 4, design §6.2): cluster the language judge's
-   * error annotations into PROPOSED glossary entries with provenance back to
-   * the annotations they generalize. Entries land as entry-status 'proposed'
-   * — invisible to the compiler until a reviewer accepts them — so this can
-   * never change what agents say on its own. Annotations already referenced
-   * by any entry's provenance are excluded (consumed-set), so re-runs only
-   * see new failures.
+   * Consolidation loop (Phase 4, design §6.2 + RSI extension): cluster the
+   * language judge's error annotations into glossary entries with provenance
+   * back to the annotations they generalize.
+   *
+   * Routing: entries supported by exactly one variety profile's tenants land
+   * in that profile's OVERLAY section (same sectionCode, profileId set);
+   * entries with multi-profile or unattached support land in the global
+   * section. Runtime serves global + the session profile's overlays.
+   *
+   * Modes: default queues entries as 'proposed' for human review. With
+   * `autoAccept` (the RSI mode) surviving entries publish immediately —
+   * safety comes from dedupe, the Tier 0 token cap, and the batch record,
+   * which lets a regressing run be rolled back as a unit.
+   *
+   * Annotations already referenced by any entry's provenance are excluded
+   * (consumed-set), so re-runs only see new failures.
    */
   async consolidateGlossary(
     languageId: number,
     createdBy?: string,
+    options: ConsolidateGlossaryOptions = {},
   ): Promise<ConsolidateGlossaryResult> {
+    const emptyResult: ConsolidateGlossaryResult = {
+      annotationsConsidered: 0,
+      proposed: 0,
+      autoAccepted: 0,
+      overlayEntries: 0,
+      skippedDuplicates: 0,
+      sections: [],
+      batchId: null,
+    };
     const language = await this.assertLanguageExists(languageId);
     const sections =
       await this.glossaryRepository.findAllForLanguage(languageId);
@@ -397,26 +521,64 @@ export class LanguageGlossaryService {
         }
       }
     }
+    // Engineering findings consume their annotations too — a reported
+    // production artifact should not be re-reported every cycle.
+    const recentBatches = await this.batchRepository.find({
+      where: { languageId },
+      order: { createdAt: 'DESC' },
+      take: 100,
+    });
+    for (const b of recentBatches) {
+      for (const finding of b.stats?.engineeringFindings ?? []) {
+        for (const id of finding.annotationIds ?? []) consumed.add(id);
+      }
+    }
 
     // Cross-tenant read by design: the glossary is global per language, so it
-    // learns from every tenant's judged sessions.
-    const recent = await this.annotationRepository.find({
-      where: {
-        language: language.value,
-        dimension: In([...GLOSSARY_CONSOLIDATION_DIMENSIONS]),
-        conditionedOut: false,
-      },
-      order: { occurredAt: 'DESC' },
-      take: GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT,
-    });
-    const annotations = recent.filter((a) => !consumed.has(a.id));
-    if (annotations.length === 0) {
-      return {
-        annotationsConsidered: 0,
-        proposed: 0,
-        skippedDuplicates: 0,
-        sections: [],
-      };
+    // learns from every REAL tenant's judged sessions. Internal/demo/QA orgs
+    // (tenants.isTestOrganization) are excluded — measured 2026-08-20, test
+    // traffic was >50% of the Kannada style-annotation pool, so an unfiltered
+    // read learns style rules from our own testers, not the population.
+    const recent = await this.annotationRepository
+      .createQueryBuilder('a')
+      .where('a.language = :language', { language: language.value })
+      .andWhere('a.dimension IN (:...dimensions)', {
+        dimensions: [...GLOSSARY_CONSOLIDATION_DIMENSIONS],
+      })
+      .andWhere('a.conditionedOut = false')
+      .andWhere(excludeTestTenants('a."tenant_id"'))
+      .orderBy('a.occurredAt', 'DESC')
+      .take(GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT)
+      .getMany();
+    const unconsumed = recent.filter((a) => !consumed.has(a.id));
+    if (unconsumed.length === 0) return emptyResult;
+    if (unconsumed.length < (options.minAnnotations ?? 0)) {
+      this.logger.log(
+        `[GLOSSARY_CONSOLIDATE] language=${language.value} skipped: ` +
+          `${unconsumed.length} unconsumed annotations < min ${options.minAnnotations}`,
+      );
+      return { ...emptyResult, annotationsConsidered: unconsumed.length };
+    }
+
+    // Construct-class pipeline (linguistics proposes, statistics disposes):
+    // grammar errors pass only the systematicity gate; everything is then
+    // clustered by evidence similarity within (construct, category) and
+    // clusters below the support floor never reach the LLM.
+    const annotations = [
+      ...unconsumed.filter((a) => a.dimension !== 'fluency'),
+      ...systematicFluency(unconsumed, GLOSSARY_SYSTEMATIC_MIN),
+    ];
+    const clusters = applySupportGate(
+      clusterAnnotations(annotations),
+      annotations.length,
+      GLOSSARY_MIN_CLUSTER_SUPPORT,
+    );
+    if (clusters.length === 0) {
+      this.logger.log(
+        `[GLOSSARY_CONSOLIDATE] language=${language.value} skipped: ` +
+          `${annotations.length} annotations formed no cluster above the support gate`,
+      );
+      return { ...emptyResult, annotationsConsidered: annotations.length };
     }
 
     const { systemPrompt, engine } = await this.resolvePromptByCode(
@@ -430,7 +592,7 @@ export class LanguageGlossaryService {
       .split('{{existingGlossary}}')
       .join(this.summarizeGlossary(sections))
       .split('{{annotations}}')
-      .join(this.summarizeAnnotations(annotations));
+      .join(summarizeClusters(clusters, annotations));
 
     const provider = this.llmProviderFactory.getProvider(engine.provider);
     const raw = await provider.getCompletion(
@@ -448,89 +610,739 @@ export class LanguageGlossaryService {
       },
     );
 
-    const consolidated = this.parseConsolidatedSections(raw);
+    const { sections: consolidated, engineeringFindings: rawFindings } =
+      this.parseConsolidationOutput(raw);
+    const profileByTenant = await this.buildTenantProfileMap(languageId);
+    // Distributional evidence corpora for the lexical gate, scoped to the
+    // routing target: an overlay entry is judged against ITS population's
+    // corpus (the profile's attached tenants), a global entry against every
+    // non-test tenant — otherwise one population's usage vetoes another
+    // population's correct rule. Best-effort; a fetch failure downgrades
+    // entries to 'unverified', never blocks the run.
+    const corporaCache = new Map<
+      string | null,
+      { learner: string; agent: string } | null
+    >();
+    const corporaFor = async (profileId: string | null) => {
+      if (!corporaCache.has(profileId)) {
+        corporaCache.set(
+          profileId,
+          await this.fetchEvidenceCorpora(language.value, profileId).catch(
+            () => null,
+          ),
+        );
+      }
+      return corporaCache.get(profileId) ?? null;
+    };
+
+    // The batch row exists before its entries so their provenance can carry
+    // the batch id (the rollback handle) from the moment they are written.
+    const batch = await this.batchRepository.save(
+      this.batchRepository.create({
+        languageId,
+        autoAccepted: Boolean(options.autoAccept),
+        trigger: options.trigger ?? 'manual',
+        createdBy,
+      }),
+    );
+
     let proposed = 0;
+    let autoAccepted = 0;
+    let overlayEntries = 0;
     let skippedDuplicates = 0;
     const touched: string[] = [];
+    const batchEntries: ConsolidationBatchEntry[] = [];
 
     for (const gen of consolidated) {
-      const existing = await this.glossaryRepository.findSection(
-        languageId,
-        gen.sectionCode,
-      );
-      const section =
-        existing ??
-        this.glossaryRepository.create({
-          languageId,
-          sectionCode: gen.sectionCode,
-          title: gen.title || gen.sectionCode.replace(/_/g, ' '),
-          content: '',
-          entries: [],
-          retrievalHint: gen.retrievalHint,
-          injectionMode:
-            gen.injectionMode === GlossaryInjectionMode.ALWAYS
-              ? GlossaryInjectionMode.ALWAYS
-              : GlossaryInjectionMode.RETRIEVED,
-          status: GlossarySectionStatus.DRAFT,
-          provenance: { source: 'consolidation' },
-          createdBy,
-        });
-
-      // Dedupe against both existing proposals and lines already in the
-      // section's markdown content.
-      const existingKeys = new Set([
-        ...(section.entries ?? []).map((e) => normalizeMarkdown(e.markdown)),
-        ...(section.content ?? '')
-          .split('\n')
-          .map((line) => normalizeMarkdown(line))
-          .filter(Boolean),
-      ]);
-
-      let appended = 0;
+      // Route each proposal: overlay when every supporting tenant maps to the
+      // SAME variety profile; global otherwise (multi-profile support means
+      // the rule generalizes; unattached support means we can't scope it).
+      const byTarget = new Map<
+        string | null,
+        { proposal: ConsolidatedProposal; annos: LanguageErrorAnnotation[] }[]
+      >();
       for (const proposal of gen.proposals ?? []) {
         if (!proposal || typeof proposal.markdown !== 'string') continue;
-        const markdown = proposal.markdown.trim();
-        if (!markdown) continue;
-        const key = normalizeMarkdown(markdown);
-        if (existingKeys.has(key)) {
-          skippedDuplicates++;
-          continue;
-        }
-        existingKeys.add(key);
-        const annotationIds = (proposal.sourceAnnotationIndexes ?? [])
-          .map((i) => annotations[i - 1]?.id)
-          .filter((id): id is string => Boolean(id));
-        section.entries = [
-          ...(section.entries ?? []),
-          {
-            id: randomUUID(),
-            markdown,
-            status: GlossaryEntryStatus.PROPOSED,
-            importance: this.clampImportance(proposal.importance),
-            provenance: { source: 'consolidation', annotationIds },
-          },
-        ];
-        appended++;
+        if (!proposal.markdown.trim()) continue;
+        const annos = (proposal.sourceAnnotationIndexes ?? [])
+          .map((i) => annotations[i - 1])
+          .filter((a): a is LanguageErrorAnnotation => Boolean(a));
+        const profiles = new Set(
+          annos
+            .map((a) => a.tenantId)
+            .filter(Boolean)
+            .map((t) => profileByTenant.get(t) ?? null),
+        );
+        const soleProfile = profiles.size === 1 ? [...profiles][0] : null;
+        const target = soleProfile ?? null;
+        const bucket = byTarget.get(target) ?? [];
+        bucket.push({ proposal, annos });
+        byTarget.set(target, bucket);
       }
 
-      if (appended > 0 || !existing) {
+      for (const [profileId, bucket] of byTarget) {
+        const existing = await this.glossaryRepository.findSection(
+          languageId,
+          gen.sectionCode,
+          profileId,
+        );
+        // Overlay sections inherit their shape from the global counterpart
+        // when one exists — the overlay overrides it at runtime, so diverging
+        // titles/hints would just confuse retrieval.
+        const globalCounterpart = profileId
+          ? (existing ??
+            (await this.glossaryRepository.findSection(
+              languageId,
+              gen.sectionCode,
+            )))
+          : existing;
+        const section =
+          existing ??
+          this.glossaryRepository.create({
+            languageId,
+            sectionCode: gen.sectionCode,
+            profileId,
+            title:
+              globalCounterpart?.title ||
+              gen.title ||
+              gen.sectionCode.replace(/_/g, ' '),
+            content: profileId ? (globalCounterpart?.content ?? '') : '',
+            entries: [],
+            retrievalHint:
+              globalCounterpart?.retrievalHint ?? gen.retrievalHint,
+            injectionMode: globalCounterpart
+              ? globalCounterpart.injectionMode
+              : gen.injectionMode === GlossaryInjectionMode.ALWAYS
+                ? GlossaryInjectionMode.ALWAYS
+                : GlossaryInjectionMode.RETRIEVED,
+            status: GlossarySectionStatus.DRAFT,
+            provenance: { source: 'consolidation' },
+            createdBy,
+          });
+
+        // Dedupe against both existing proposals and lines already in the
+        // section's markdown content.
+        const existingKeys = new Set([
+          ...(section.entries ?? []).map((e) => normalizeMarkdown(e.markdown)),
+          ...(section.content ?? '')
+            .split('\n')
+            .map((line) => normalizeMarkdown(line))
+            .filter(Boolean),
+        ]);
+
+        const corpora = await corporaFor(profileId ?? null);
+        const newEntryIds: string[] = [];
+        for (const { proposal, annos } of bucket) {
+          const markdown = proposal.markdown.trim();
+          const key = normalizeMarkdown(markdown);
+          if (existingKeys.has(key)) {
+            skippedDuplicates++;
+            continue;
+          }
+          existingKeys.add(key);
+          const annotationIds = annos.map((a) => a.id);
+          const tenantIds = [
+            ...new Set(annos.map((a) => a.tenantId).filter(Boolean)),
+          ];
+          // Statistics disposes: lexicon entries are scored against the real
+          // corpora. 'contradicted' entries (the population itself uses the
+          // avoid-term) are never auto-accepted.
+          const evidence = corpora
+            ? scoreLexicalEvidence(
+                markdown,
+                corpora.learner,
+                corpora.agent,
+                GLOSSARY_LEXICAL_CONTRADICTION_MIN,
+              )
+            : null;
+          const entryId = randomUUID();
+          section.entries = [
+            ...(section.entries ?? []),
+            {
+              id: entryId,
+              markdown,
+              status: GlossaryEntryStatus.PROPOSED,
+              importance: this.clampImportance(proposal.importance),
+              provenance: {
+                source: 'consolidation',
+                annotationIds,
+                tenantIds,
+                batchId: batch.id,
+                ...(evidence ? { evidence } : {}),
+              },
+            },
+          ];
+          newEntryIds.push(entryId);
+          if (profileId) overlayEntries++;
+        }
+
+        if (newEntryIds.length === 0 && existing) continue;
+
+        let acceptedHere = 0;
+        if (options.autoAccept && newEntryIds.length > 0) {
+          acceptedHere = await this.autoAcceptEntries(
+            languageId,
+            section,
+            newEntryIds,
+          );
+          autoAccepted += acceptedHere;
+        }
+
         section.version = (existing?.version ?? 0) + 1;
         section.updatedBy = createdBy;
-        await this.glossaryRepository.save(section);
-        touched.push(gen.sectionCode);
-        proposed += appended;
+        const saved = await this.glossaryRepository.save(section);
+        touched.push(
+          profileId ? `${gen.sectionCode}@${profileId}` : gen.sectionCode,
+        );
+        proposed += newEntryIds.length;
+        for (const entryId of newEntryIds) {
+          const entry = (saved.entries ?? []).find((e) => e.id === entryId);
+          if (!entry) continue;
+          batchEntries.push({
+            sectionId: saved.id,
+            sectionCode: saved.sectionCode,
+            profileId: profileId ?? null,
+            entryId,
+            markdown: entry.markdown,
+            accepted: entry.status === GlossaryEntryStatus.ACCEPTED,
+          });
+        }
       }
     }
 
+    // Production-artifact clusters land on the batch as engineering findings
+    // (v3 prompt contract) — visible to engineers, never glossary content.
+    const engineeringFindings = rawFindings.map((f) => ({
+      summary: f.summary.slice(0, 500),
+      annotationIds: (f.sourceAnnotationIndexes ?? [])
+        .map((i) => annotations[i - 1]?.id)
+        .filter((id): id is string => Boolean(id)),
+    }));
+
+    const distinctTenants = new Set(
+      annotations.map((a) => a.tenantId).filter(Boolean),
+    ).size;
+    batch.entries = batchEntries;
+    batch.stats = {
+      annotationsConsidered: annotations.length,
+      tenants: distinctTenants,
+      proposed,
+      autoAccepted,
+      skippedDuplicates,
+      overlayEntries,
+      ...(engineeringFindings.length ? { engineeringFindings } : {}),
+    };
+    await this.batchRepository.save(batch);
+
     this.logger.log(
-      `[GLOSSARY_CONSOLIDATE] language=${language.value} annotations=${annotations.length} proposed=${proposed} duplicates=${skippedDuplicates} sections=${touched.join(',')}`,
+      `[GLOSSARY_CONSOLIDATE] language=${language.value} batch=${batch.id} ` +
+        `annotations=${annotations.length} tenants=${distinctTenants} ` +
+        `proposed=${proposed} autoAccepted=${autoAccepted} overlays=${overlayEntries} ` +
+        `duplicates=${skippedDuplicates} engFindings=${engineeringFindings.length} sections=${touched.join(',')}`,
     );
+    // The cycle's final stage in auto mode: recompute tier assignment now
+    // that new entries are live. Best-effort — a retier failure never fails
+    // the consolidation that preceded it.
+    let retier: RetierResult | undefined;
+    if (options.autoAccept && autoAccepted > 0) {
+      try {
+        retier = await this.retierGlossary(languageId, { apply: true });
+      } catch (error) {
+        this.logger.warn(
+          `[GLOSSARY_RETIER] skipped after consolidation for language ${languageId}: ${error}`,
+        );
+      }
+    }
+
     return {
       annotationsConsidered: annotations.length,
       proposed,
+      autoAccepted,
+      overlayEntries,
       skippedDuplicates,
       sections: touched,
+      batchId:
+        batchEntries.length > 0 || engineeringFindings.length > 0
+          ? batch.id
+          : null,
+      ...(retier ? { retier } : {}),
     };
+  }
+
+  /**
+   * RSI-mode acceptance: fold the given proposed entries into the section's
+   * live content and publish. All-or-nothing per section: if the grown Tier 0
+   * block would exceed the cap, every entry stays 'proposed' for human review
+   * instead (never partially publish a run's entries — rollback and review
+   * both reason about whole sections).
+   */
+  private async autoAcceptEntries(
+    languageId: number,
+    section: LanguageGlossarySection,
+    entryIds: string[],
+  ): Promise<number> {
+    // Corpus-contradicted entries stay proposed for human eyes — the RSI mode
+    // never publishes a rule the population's own usage argues against.
+    const entries = (section.entries ?? []).filter(
+      (e) =>
+        entryIds.includes(e.id) &&
+        e.provenance?.evidence?.verdict !== 'contradicted',
+    );
+    if (entries.length === 0) return 0;
+    const grownContent = [
+      (section.content ?? '').trimEnd(),
+      ...entries.map((e) => e.markdown),
+    ]
+      .filter(Boolean)
+      .join('\n');
+    const candidate = {
+      ...section,
+      content: grownContent,
+      status: GlossarySectionStatus.PUBLISHED,
+    } as LanguageGlossarySection;
+    if (candidate.injectionMode === GlossaryInjectionMode.ALWAYS) {
+      try {
+        await this.assertTier0WithinCap(languageId, candidate);
+      } catch (error) {
+        this.logger.warn(
+          `[GLOSSARY_CONSOLIDATE] auto-accept skipped for '${section.sectionCode}'` +
+            `${section.profileId ? `@${section.profileId}` : ''}: ${error}`,
+        );
+        return 0;
+      }
+    }
+    section.content = grownContent;
+    section.status = GlossarySectionStatus.PUBLISHED;
+    for (const entry of entries) {
+      entry.status = GlossaryEntryStatus.ACCEPTED;
+    }
+    return entries.length;
+  }
+
+  /**
+   * Undo one consolidation run: remove its accepted lines from section
+   * content and flip its entries to 'rejected' — which keeps their
+   * annotations in the consumed-set, so a rolled-back rule is a rejected
+   * rule, not one the next run rediscovers.
+   */
+  async rollbackConsolidationBatch(
+    languageId: number,
+    batchId: string,
+    updatedBy?: string,
+  ): Promise<{ batchId: string; sections: string[]; rolledBack: number }> {
+    const batch = await this.batchRepository.findOne({
+      where: { id: batchId, languageId },
+    });
+    if (!batch) {
+      throw new NotFoundException(
+        `Consolidation batch ${batchId} not found for language ${languageId}`,
+      );
+    }
+    if (batch.status === ConsolidationBatchStatus.ROLLED_BACK) {
+      throw new BadRequestException(`Batch ${batchId} is already rolled back`);
+    }
+
+    const bySection = new Map<string, ConsolidationBatchEntry[]>();
+    for (const entry of batch.entries ?? []) {
+      const list = bySection.get(entry.sectionId) ?? [];
+      list.push(entry);
+      bySection.set(entry.sectionId, list);
+    }
+
+    let rolledBack = 0;
+    const sections: string[] = [];
+    for (const [sectionId, entries] of bySection) {
+      const section = await this.glossaryRepository.findOne({
+        where: { id: sectionId },
+      });
+      if (!section) continue;
+      let lines = (section.content ?? '').split('\n');
+      for (const batchEntry of entries) {
+        if (batchEntry.accepted) {
+          const needle = normalizeMarkdown(batchEntry.markdown);
+          const idx = lines.findIndex(
+            (line) => normalizeMarkdown(line) === needle,
+          );
+          if (idx >= 0) lines = lines.filter((_, i) => i !== idx);
+        }
+        const entry = (section.entries ?? []).find(
+          (e) => e.id === batchEntry.entryId,
+        );
+        if (entry && entry.status !== GlossaryEntryStatus.REJECTED) {
+          entry.status = GlossaryEntryStatus.REJECTED;
+          rolledBack++;
+        }
+      }
+      section.content = lines.join('\n').trim();
+      section.version += 1;
+      section.updatedBy = updatedBy;
+      await this.glossaryRepository.save(section);
+      sections.push(
+        section.profileId
+          ? `${section.sectionCode}@${section.profileId}`
+          : section.sectionCode,
+      );
+    }
+
+    batch.status = ConsolidationBatchStatus.ROLLED_BACK;
+    await this.batchRepository.save(batch);
+    this.logger.log(
+      `[GLOSSARY_ROLLBACK] language=${languageId} batch=${batchId} entries=${rolledBack} sections=${sections.join(',')}`,
+    );
+    return { batchId, sections, rolledBack };
+  }
+
+  async listConsolidationBatches(
+    languageId: number,
+  ): Promise<GlossaryConsolidationBatch[]> {
+    return this.batchRepository.find({
+      where: { languageId },
+      order: { createdAt: 'DESC' },
+      take: 50,
+    });
+  }
+
+  /** Unconsumed non-test style annotations — the scheduler's data-threshold gate. */
+  async countUnconsumedAnnotations(languageId: number): Promise<number> {
+    const language = await this.assertLanguageExists(languageId);
+    const sections =
+      await this.glossaryRepository.findAllForLanguage(languageId);
+    const consumed = new Set<string>();
+    for (const section of sections) {
+      for (const entry of section.entries ?? []) {
+        for (const annotationId of entry.provenance?.annotationIds ?? []) {
+          consumed.add(annotationId as string);
+        }
+      }
+    }
+    const recent = await this.annotationRepository
+      .createQueryBuilder('a')
+      .select('a.id')
+      .where('a.language = :language', { language: language.value })
+      .andWhere('a.dimension IN (:...dimensions)', {
+        dimensions: [...GLOSSARY_CONSOLIDATION_DIMENSIONS],
+      })
+      .andWhere('a.conditionedOut = false')
+      .andWhere(excludeTestTenants('a."tenant_id"'))
+      .orderBy('a.occurredAt', 'DESC')
+      .take(GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT)
+      .getMany();
+    return recent.filter((a) => !consumed.has(a.id)).length;
+  }
+
+  /**
+   * The computed tier pass (every-turn vs on-demand): rank each published
+   * section by value density — term traffic in the live corpus plus
+   * severity-weighted error mass behind its rules, per token — and let
+   * Tier 0 be the knapsack prefix that fits the cap. Pinned sections are
+   * untouchable; a hysteresis band prevents cycle-to-cycle flapping.
+   *
+   * Views are assigned independently: the global view first (its always-set
+   * is shared by everyone), then each profile's overlays compete for the
+   * budget the global always-set leaves.
+   */
+  async retierGlossary(
+    languageId: number,
+    options: { apply?: boolean } = {},
+  ): Promise<RetierResult> {
+    const apply = options.apply !== false;
+    const language = await this.assertLanguageExists(languageId);
+    const all = await this.glossaryRepository.findAllForLanguage(languageId);
+    const published = all.filter(
+      (s) => s.status === GlossarySectionStatus.PUBLISHED,
+    );
+    if (published.length === 0) return { views: [] };
+
+    // Severity lookup for every accepted entry's source annotations, one query.
+    const annotationIds = [
+      ...new Set(
+        published.flatMap((s) =>
+          (s.entries ?? [])
+            .filter((e) => e.status === GlossaryEntryStatus.ACCEPTED)
+            .flatMap((e) => e.provenance?.annotationIds ?? []),
+        ),
+      ),
+    ];
+    const severityById = new Map<string, string>();
+    if (annotationIds.length > 0) {
+      const rows: { id: string; severity: string }[] =
+        await this.annotationRepository.manager.query(
+          `SELECT id, severity FROM language_error_annotations WHERE id = ANY($1::uuid[])`,
+          [annotationIds],
+        );
+      for (const row of rows) severityById.set(row.id, row.severity);
+    }
+
+    const errorMassOf = (section: LanguageGlossarySection): number =>
+      (section.entries ?? [])
+        .filter((e) => e.status === GlossaryEntryStatus.ACCEPTED)
+        .flatMap((e) => e.provenance?.annotationIds ?? [])
+        .reduce(
+          (sum, id) =>
+            sum + (TIER_SEVERITY_WEIGHTS[severityById.get(id) ?? ''] ?? 1),
+          0,
+        );
+
+    const usageOf = (
+      section: LanguageGlossarySection,
+      corpus: string,
+    ): number => {
+      // Format-agnostic term traffic: prod content mixes `- english: தமிழ்`
+      // lines, backticked forms and say/avoid pairs, so parse nothing —
+      // score every native-script token the section teaches by its frequency
+      // in live speech. (First prod dry-run demoted pronouns_kinship, the
+      // most-trafficked section, because its content had no quoted pairs.)
+      const terms = new Set<string>();
+      for (const token of tokenize(section.content ?? '')) {
+        if (/^[a-z]+$/.test(token)) continue; // English scaffolding words
+        if (token.length < 2) continue;
+        terms.add(token);
+        if (terms.size >= 80) break; // bound the scan for huge sections
+      }
+      let usage = 0;
+      for (const term of terms) usage += countOccurrences(corpus, term);
+      return usage;
+    };
+
+    const toCandidate = (
+      section: LanguageGlossarySection,
+      corpus: string,
+    ): TierCandidate => ({
+      key: section.profileId
+        ? `${section.sectionCode}@${section.profileId}`
+        : section.sectionCode,
+      tokens: countGlossaryTokens(compileSection(section)),
+      score:
+        usageOf(section, corpus) +
+        TIER_ERROR_MASS_WEIGHT * errorMassOf(section),
+      pinned: section.tierPinned === true,
+      currentMode:
+        section.injectionMode === GlossaryInjectionMode.ALWAYS
+          ? 'always'
+          : 'retrieved',
+    });
+
+    const applyAssignment = async (
+      sections: LanguageGlossarySection[],
+      assignment: TierAssignment,
+    ) => {
+      if (!apply) return;
+      for (const change of assignment.changes) {
+        const section = sections.find(
+          (s) =>
+            (s.profileId
+              ? `${s.sectionCode}@${s.profileId}`
+              : s.sectionCode) === change.key,
+        );
+        if (!section) continue;
+        section.injectionMode =
+          change.to === 'always'
+            ? GlossaryInjectionMode.ALWAYS
+            : GlossaryInjectionMode.RETRIEVED;
+        section.version += 1;
+        section.updatedBy = 'retier';
+        await this.glossaryRepository.save(section);
+      }
+    };
+
+    const views: RetierViewResult[] = [];
+
+    // Global view first — its always-set is every session's baseline.
+    const globalSections = published.filter((s) => !s.profileId);
+    const globalCorpus = (await this.fetchEvidenceCorpora(
+      language.value,
+      null,
+    ).catch(() => null)) ?? { learner: '', agent: '' };
+    const globalCombined = `${globalCorpus.learner}\n${globalCorpus.agent}`;
+    const globalAssignment = computeTierAssignment(
+      globalSections.map((s) => toCandidate(s, globalCombined)),
+      TIER0_TOKEN_CAP,
+      TIER_HYSTERESIS,
+    );
+    await applyAssignment(globalSections, globalAssignment);
+    views.push({
+      profileId: null,
+      promoted: globalAssignment.changes
+        .filter((c) => c.to === 'always')
+        .map((c) => c.key),
+      demoted: globalAssignment.changes
+        .filter((c) => c.to === 'retrieved')
+        .map((c) => c.key),
+      tier0Tokens: globalAssignment.tier0Tokens,
+      cap: TIER0_TOKEN_CAP,
+    });
+
+    // Each profile's overlays compete for what the global always-set leaves.
+    const overlayBudget = Math.max(
+      0,
+      TIER0_TOKEN_CAP - globalAssignment.tier0Tokens,
+    );
+    const profileIds = [
+      ...new Set(
+        published.map((s) => s.profileId).filter((p): p is string => !!p),
+      ),
+    ];
+    for (const profileId of profileIds) {
+      const overlays = published.filter((s) => s.profileId === profileId);
+      const corpus = (await this.fetchEvidenceCorpora(
+        language.value,
+        profileId,
+      ).catch(() => null)) ?? { learner: '', agent: '' };
+      const combined = `${corpus.learner}\n${corpus.agent}`;
+      const assignment = computeTierAssignment(
+        overlays.map((s) => toCandidate(s, combined)),
+        overlayBudget,
+        TIER_HYSTERESIS,
+      );
+      await applyAssignment(overlays, assignment);
+      views.push({
+        profileId,
+        promoted: assignment.changes
+          .filter((c) => c.to === 'always')
+          .map((c) => c.key),
+        demoted: assignment.changes
+          .filter((c) => c.to === 'retrieved')
+          .map((c) => c.key),
+        tier0Tokens: assignment.tier0Tokens,
+        cap: overlayBudget,
+      });
+    }
+
+    const totalChanges = views.reduce(
+      (sum, v) => sum + v.promoted.length + v.demoted.length,
+      0,
+    );
+    this.logger.log(
+      `[GLOSSARY_RETIER] language=${language.value} apply=${apply} changes=${totalChanges} ` +
+        views
+          .map(
+            (v) =>
+              `${v.profileId ?? 'global'}:+[${v.promoted.join(',')}]-[${v.demoted.join(',')}]`,
+          )
+          .join(' '),
+    );
+    return { views };
+  }
+
+  /**
+   * Evidence corpora for the lexical gate: learner (senderId > 0) and agent
+   * (senderId = -1) text from the language's judged sessions, non-test
+   * tenants, 90 days, NFC-normalized and concatenated for substring counting.
+   * With a profileId, the corpus narrows to that profile's attached tenants —
+   * overlay entries are judged against THEIR population's usage, not the
+   * whole language's (dual-key tenant match, id-as-text or code).
+   */
+  private async fetchEvidenceCorpora(
+    languageValue: string,
+    profileId: string | null = null,
+  ): Promise<{ learner: string; agent: string } | null> {
+    const profileScope = profileId
+      ? `AND (ljs."tenant_id" IN (
+             SELECT a."tenantId" FROM variety_profile_attachments a
+              WHERE a."profileId" = $2)
+         OR ljs."tenant_id" IN (
+             SELECT t.code FROM tenants t
+              JOIN variety_profile_attachments a ON a."tenantId" = t.id::text
+              WHERE a."profileId" = $2)
+         OR ljs."tenant_id" IN (
+             SELECT t.id::text FROM tenants t
+              JOIN variety_profile_attachments a ON a."tenantId" = t.code
+              WHERE a."profileId" = $2))`
+      : '';
+    const rows: { content: string; senderId: number }[] =
+      await this.annotationRepository.manager.query(
+        `SELECT m.content, m."senderId"
+           FROM scenario_session_messages m
+          WHERE m."scenarioSessionId" IN (
+                SELECT DISTINCT ljs."scenarioSessionId"
+                  FROM language_judgment_sessions ljs
+                 WHERE ljs.language = $1
+                   AND ljs."createdAt" > now() - interval '90 days'
+                   AND ${excludeTestTenants('ljs."tenant_id"')}
+                   ${profileScope})
+          ORDER BY m."createdAt" DESC
+          LIMIT 40000`,
+        profileId ? [languageValue, profileId] : [languageValue],
+      );
+    if (rows.length === 0) return null;
+    const learner: string[] = [];
+    const agent: string[] = [];
+    for (const row of rows) {
+      const text = (row.content ?? '').normalize('NFC');
+      if (!text) continue;
+      if (row.senderId > 0) learner.push(text);
+      else agent.push(text);
+    }
+    return { learner: learner.join('\n'), agent: agent.join('\n') };
+  }
+
+  /** Languages (ids) with recent style annotations — the scheduler's worklist. */
+  async queryCandidateLanguages(
+    dimensions: string[],
+  ): Promise<{ id: number }[]> {
+    return this.annotationRepository.manager.query(
+      `SELECT DISTINCT l.id
+         FROM language_error_annotations a
+         JOIN languages l ON l.value = a.language
+        WHERE a.dimension = ANY($1)
+          AND a."conditionedOut" = false
+          AND a."occurredAt" > now() - interval '90 days'`,
+      [dimensions],
+    );
+  }
+
+  /**
+   * tenant→profile map for one language, keyed by every alias a tenant ref
+   * appears under (tenants.id as text AND tenants.code — annotation rows carry
+   * either, matching the platform's dual-key tenant refs).
+   */
+  private async buildTenantProfileMap(
+    languageId: number,
+  ): Promise<Map<string, string>> {
+    const attachments = await this.attachmentRepository.find({
+      where: { languageId },
+    });
+    const map = new Map<string, string>();
+    if (attachments.length === 0) return map;
+    const aliases: { id: string; code: string }[] =
+      await this.attachmentRepository.manager.query(
+        `SELECT id::text AS id, code FROM tenants`,
+      );
+    for (const attachment of attachments) {
+      map.set(attachment.tenantId, attachment.profileId);
+      for (const alias of aliases) {
+        if (alias.id === attachment.tenantId) {
+          map.set(alias.code, attachment.profileId);
+        } else if (alias.code === attachment.tenantId) {
+          map.set(alias.id, attachment.profileId);
+        }
+      }
+    }
+    return map;
+  }
+
+  /**
+   * The session-serving hook: which variety profile does this tenant speak
+   * for this language? Dual-key tenant match (uuid or code). Null when the
+   * tenant is unattached — the session gets the global glossary only.
+   */
+  async resolveProfileIdForTenant(
+    languageId: number,
+    tenantRef: string | null | undefined,
+  ): Promise<string | null> {
+    if (!tenantRef) return null;
+    const rows: { profileId: string }[] =
+      await this.attachmentRepository.manager.query(
+        `SELECT a."profileId"
+           FROM variety_profile_attachments a
+          WHERE a."languageId" = $1
+            AND (a."tenantId" = $2
+                 OR a."tenantId" IN (SELECT id::text FROM tenants WHERE code = $2)
+                 OR a."tenantId" IN (SELECT code FROM tenants WHERE id::text = $2))
+          LIMIT 1`,
+        [languageId, tenantRef],
+      );
+    return rows[0]?.profileId ?? null;
   }
 
   private clampImportance(value: unknown): number | undefined {
@@ -549,25 +1361,13 @@ export class LanguageGlossaryService {
       .join('\n\n');
   }
 
-  /** Numbered annotation listing for the consolidation prompt (1-based). */
-  private summarizeAnnotations(annotations: LanguageErrorAnnotation[]): string {
-    const clip = (v: string | undefined | null, n: number) =>
-      (v ?? '').replace(/\s+/g, ' ').trim().slice(0, n);
-    return annotations
-      .map((a, i) => {
-        const parts = [
-          `#${i + 1} [${a.dimension}/${a.category} ${a.severity}]`,
-          a.evidenceQuote ? `span="${clip(a.evidenceQuote, 160)}"` : '',
-          a.reasoning ? `reasoning="${clip(a.reasoning, 200)}"` : '',
-          a.aiText ? `reply="${clip(a.aiText, 200)}"` : '',
-        ];
-        return parts.filter(Boolean).join(' ');
-      })
-      .join('\n');
-  }
-
   /** Parse the consolidation model output (tolerating markdown fences). */
-  private parseConsolidatedSections(raw: string): ConsolidatedSection[] {
+  /** Parse v3 output ({sections, engineeringFindings}) tolerating the legacy
+   * bare-array shape and markdown fences. */
+  private parseConsolidationOutput(raw: string): {
+    sections: ConsolidatedSection[];
+    engineeringFindings: ConsolidatedEngineeringFinding[];
+  } {
     const cleaned = raw
       .trim()
       .replace(/^```(?:json)?\s*/i, '')
@@ -588,12 +1388,25 @@ export class LanguageGlossaryService {
         'Glossary consolidation output is not a section array',
       );
     }
-    return list.filter(
-      (s): s is ConsolidatedSection =>
-        !!s &&
-        typeof (s as ConsolidatedSection).sectionCode === 'string' &&
-        Array.isArray((s as ConsolidatedSection).proposals),
+    const findingsRaw = Array.isArray(parsed)
+      ? []
+      : ((parsed as Record<string, unknown>)?.engineeringFindings as unknown[]);
+    const engineeringFindings = (
+      Array.isArray(findingsRaw) ? findingsRaw : []
+    ).filter(
+      (f): f is ConsolidatedEngineeringFinding =>
+        !!f &&
+        typeof (f as ConsolidatedEngineeringFinding).summary === 'string',
     );
+    return {
+      sections: list.filter(
+        (s): s is ConsolidatedSection =>
+          !!s &&
+          typeof (s as ConsolidatedSection).sectionCode === 'string' &&
+          Array.isArray((s as ConsolidatedSection).proposals),
+      ),
+      engineeringFindings,
+    };
   }
 
   /**
@@ -606,8 +1419,13 @@ export class LanguageGlossaryService {
     sectionCode: string,
     entryId: string,
     updatedBy?: string,
+    profileId?: string | null,
   ): Promise<LanguageGlossarySection> {
-    const section = await this.getSectionOrThrow(languageId, sectionCode);
+    const section = await this.getSectionOrThrow(
+      languageId,
+      sectionCode,
+      profileId,
+    );
     const proposal = (section.entries ?? []).find(
       (e) => e.id === entryId && e.status === GlossaryEntryStatus.PROPOSED,
     );
@@ -642,8 +1460,13 @@ export class LanguageGlossaryService {
     sectionCode: string,
     entryId: string,
     updatedBy?: string,
+    profileId?: string | null,
   ): Promise<LanguageGlossarySection> {
-    const section = await this.getSectionOrThrow(languageId, sectionCode);
+    const section = await this.getSectionOrThrow(
+      languageId,
+      sectionCode,
+      profileId,
+    );
     const proposal = (section.entries ?? []).find(
       (e) => e.id === entryId && e.status === GlossaryEntryStatus.PROPOSED,
     );
@@ -660,10 +1483,12 @@ export class LanguageGlossaryService {
   private async getSectionOrThrow(
     languageId: number,
     sectionCode: string,
+    profileId?: string | null,
   ): Promise<LanguageGlossarySection> {
     const section = await this.glossaryRepository.findSection(
       languageId,
       sectionCode,
+      profileId,
     );
     if (!section) {
       throw new NotFoundException(
@@ -688,9 +1513,12 @@ export class LanguageGlossaryService {
     languageId: number,
     candidate: LanguageGlossarySection,
   ): Promise<void> {
+    // The cap applies to the VIEW the candidate participates in: overlay
+    // candidates are checked against global + their profile's overlays.
     const published = await this.glossaryRepository.findPublishedByLanguage(
       languageId,
       GlossaryInjectionMode.ALWAYS,
+      candidate.profileId ?? null,
     );
     const prospective = [
       ...published.filter((s) => s.sectionCode !== candidate.sectionCode),

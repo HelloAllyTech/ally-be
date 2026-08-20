@@ -1,7 +1,27 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsOptional, IsString, Matches } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  Min,
+} from 'class-validator';
 
 import { AnalyticsScopingDto } from './platform-analytics.dto';
+import {
+  SkillTrendClass,
+  SkillTrendSortKey,
+} from '../repository/skill-growth-analytics.repository';
+
+const TREND_CLASSES: SkillTrendClass[] = [
+  'improving',
+  'flat',
+  'declining',
+  'insufficient',
+];
 
 /**
  * Skill growth takes NO window params, for the same reason roleplay volume and
@@ -175,6 +195,77 @@ export class SkillGrowthSummaryDto {
 }
 
 /**
+ * The knobs a trend classification turns on, echoed with every response so no
+ * client keeps a second copy that can drift from what the server classified
+ * with. Chosen against local fixture data only — see the constants'
+ * rationale in the repository and SKILL_VIZ_SPIKE_FINDINGS.md.
+ */
+export class SkillTrendThresholdsDto {
+  @ApiProperty({
+    description:
+      'Evaluated sessions a learner needs before their trend is classified ' +
+      'at all. Below it the learner reports `insufficient` with null means.',
+  })
+  minSessions!: number;
+
+  @ApiProperty({
+    description:
+      "Sessions averaged at each end of the learner's history to form the " +
+      'delta — one session against one session would classify judge noise.',
+  })
+  window!: number;
+
+  @ApiProperty({
+    description:
+      'Half-width of the flat band, in composite-score points: a delta ' +
+      'within ± this is `flat`, not movement.',
+  })
+  flatBand!: number;
+}
+
+/** One month of the mix, keyed by when learners became classifiable. */
+export class SkillTrendMixMonthDto {
+  @ApiProperty({
+    description:
+      "'YYYY-MM' of each learner's `minSessions`th evaluated session — the " +
+      'month they became classifiable, NOT calendar activity. Each classified ' +
+      'learner appears in exactly one month, so the bars sum to the population.',
+    example: '2026-08',
+  })
+  month!: string;
+
+  @ApiProperty() improving!: number;
+  @ApiProperty() flat!: number;
+  @ApiProperty() declining!: number;
+}
+
+/** Improving / flat / declining, each learner against their own baseline. */
+export class SkillTrendMixDto {
+  @ApiProperty({
+    description: 'Learners with enough evaluated sessions to classify.',
+  })
+  classifiedLearners!: number;
+
+  @ApiProperty({
+    description:
+      'Learners with at least one evaluated session but fewer than ' +
+      '`thresholds.minSessions` — reported, never silently dropped, so the ' +
+      'classified share is read against the whole population.',
+  })
+  insufficientLearners!: number;
+
+  @ApiProperty() improving!: number;
+  @ApiProperty() flat!: number;
+  @ApiProperty() declining!: number;
+
+  @ApiProperty({ type: [SkillTrendMixMonthDto] })
+  months!: SkillTrendMixMonthDto[];
+
+  @ApiProperty({ type: SkillTrendThresholdsDto })
+  thresholds!: SkillTrendThresholdsDto;
+}
+
+/**
  * Does a learner's Nth simulation score better than their first?
  *
  * The efficacy chart, and the one question no calendar trend can answer: a
@@ -233,11 +324,265 @@ export class SkillGrowthResponseDto {
 
   @ApiProperty({
     description:
+      'Improving / flat / declining, each learner against their OWN first ' +
+      'sessions — the per-person answer the population curve nets out.',
+    type: () => SkillTrendMixDto,
+  })
+  trendMix!: SkillTrendMixDto;
+
+  @ApiProperty({
+    description:
       'Which tenant this was narrowed to, if any. `unscopedSections` is empty: ' +
       'the sessions carry a tenant, so the whole curve honours the filter.',
     type: AnalyticsScopingDto,
   })
   scoping!: AnalyticsScopingDto;
+
+  @ApiProperty({ description: 'When this response was computed (ISO 8601)' })
+  computedAt!: string;
+}
+
+/** Paging + sorting for the learner drill-down list. */
+export class SkillGrowthLearnersQueryDto {
+  @ApiProperty({
+    description: 'Narrow to a single tenant (uuid or code).',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{1,64}$/, {
+    message: 'tenantId must be a tenant uuid or code',
+  })
+  tenantId?: string;
+
+  @ApiProperty({ required: false, default: 20, minimum: 1, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  @ApiProperty({ required: false, default: 0, minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
+
+  @ApiProperty({
+    description:
+      "Sort key. Default 'delta': the biggest movers are the rows leadership " +
+      'opened this table for; unclassified learners always sort last.',
+    required: false,
+    enum: ['delta', 'evaluatedSessions', 'lastSessionAt'],
+    default: 'delta',
+  })
+  @IsOptional()
+  @IsIn(['delta', 'evaluatedSessions', 'lastSessionAt'])
+  sort?: SkillTrendSortKey;
+
+  @ApiProperty({
+    required: false,
+    enum: ['asc', 'desc'],
+    default: 'desc',
+  })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  order?: 'asc' | 'desc';
+}
+
+/** One learner's own-baseline trend, as the drill-down table lists them. */
+export class SkillTrendLearnerRowDto {
+  @ApiProperty() learnerId!: number;
+
+  @ApiProperty({ nullable: true, type: String }) name!: string | null;
+  @ApiProperty({ nullable: true, type: String }) email!: string | null;
+  @ApiProperty({ nullable: true, type: String }) tenantId!: string | null;
+
+  @ApiProperty({ description: 'Evaluated sessions in this scope.' })
+  evaluatedSessions!: number;
+
+  @ApiProperty({
+    description:
+      'Mean composite score of the FIRST `thresholds.window` evaluated ' +
+      'sessions. Null for unclassified learners — with fewer than 2×window ' +
+      'sessions the two windows would share sessions and the delta would be ' +
+      'biased toward zero.',
+    nullable: true,
+    type: Number,
+  })
+  firstWindowMean!: number | null;
+
+  @ApiProperty({
+    description: 'Mean of the LAST `thresholds.window` evaluated sessions.',
+    nullable: true,
+    type: Number,
+  })
+  lastWindowMean!: number | null;
+
+  @ApiProperty({
+    description: 'lastWindowMean − firstWindowMean; null when unclassified.',
+    nullable: true,
+    type: Number,
+  })
+  delta!: number | null;
+
+  @ApiProperty({ enum: TREND_CLASSES })
+  trend!: SkillTrendClass;
+
+  @ApiProperty({ nullable: true, type: String })
+  lastSessionAt!: string | null;
+}
+
+/** One page of the learner drill-down list. */
+export class SkillGrowthLearnersResponseDto {
+  @ApiProperty({ type: [SkillTrendLearnerRowDto] })
+  rows!: SkillTrendLearnerRowDto[];
+
+  @ApiProperty({ description: 'Learners in scope, across every page.' })
+  total!: number;
+
+  @ApiProperty() limit!: number;
+  @ApiProperty() offset!: number;
+
+  @ApiProperty({ type: SkillTrendThresholdsDto })
+  thresholds!: SkillTrendThresholdsDto;
+
+  @ApiProperty({ type: SkillGrowthProvenanceDto })
+  provenance!: SkillGrowthProvenanceDto;
+
+  @ApiProperty({ description: 'When this response was computed (ISO 8601)' })
+  computedAt!: string;
+}
+
+/** One raw `skillCoverage` entry, passed through as the evaluator wrote it. */
+export class SkillCoverageEntryDto {
+  @ApiProperty({
+    description:
+      'Skill category label AS EMITTED — two label generations exist ' +
+      '(`Listening Engagement`/`Emotional Attunement`/`Supportive engagement` ' +
+      'from ally-ai; `Learning`/`Support`/`Standards` in older payloads), so ' +
+      'clients group by the string they get rather than an enum.',
+  })
+  category!: string;
+
+  @ApiProperty({ description: '0-100.' })
+  percentage!: number;
+}
+
+/** One evaluated session on a single learner's timeline. */
+export class SkillGrowthLearnerSessionDto {
+  @ApiProperty({ description: "1 = this learner's first evaluated session." })
+  ordinal!: number;
+
+  @ApiProperty({ nullable: true, type: String })
+  occurredAt!: string | null;
+
+  @ApiProperty({
+    description:
+      'Scenario the session ran, so a score step can be read against a ' +
+      'scenario change — difficulty mix is the known confound of a raw-score ' +
+      'timeline.',
+    nullable: true,
+    type: String,
+  })
+  scenarioTitle!: string | null;
+
+  @ApiProperty({ description: 'Composite judge score, 0-100.' })
+  compositeScore!: number;
+
+  @ApiProperty({
+    description:
+      'Per-skill percentages when the evaluation left them; null on sessions ' +
+      'without a payload (most sessions predate it). A chart renders whatever ' +
+      'categories exist rather than expecting all three.',
+    nullable: true,
+    type: [SkillCoverageEntryDto],
+  })
+  skillCoverage!: SkillCoverageEntryDto[] | null;
+}
+
+/** One scored knowledge-side attempt (quiz or annotation). */
+export class SkillGrowthKnowledgeAttemptDto {
+  @ApiProperty({ enum: ['quiz', 'annotation'] })
+  kind!: 'quiz' | 'annotation';
+
+  @ApiProperty({ nullable: true, type: String })
+  itemTitle!: string | null;
+
+  @ApiProperty({ description: '0-100.' })
+  scorePct!: number;
+
+  @ApiProperty() attemptNumber!: number;
+
+  @ApiProperty({ nullable: true, type: String })
+  submittedAt!: string | null;
+}
+
+/** The learner a drill-down is about, with their own trend classification. */
+export class SkillGrowthLearnerDto {
+  @ApiProperty() id!: number;
+  @ApiProperty({ nullable: true, type: String }) name!: string | null;
+  @ApiProperty({ nullable: true, type: String }) email!: string | null;
+  @ApiProperty({ nullable: true, type: String }) tenantId!: string | null;
+
+  @ApiProperty() evaluatedSessions!: number;
+
+  @ApiProperty({ nullable: true, type: Number })
+  firstWindowMean!: number | null;
+
+  @ApiProperty({ nullable: true, type: Number })
+  lastWindowMean!: number | null;
+
+  @ApiProperty({ nullable: true, type: Number })
+  delta!: number | null;
+
+  @ApiProperty({ enum: TREND_CLASSES })
+  trend!: SkillTrendClass;
+}
+
+/**
+ * One learner's full skill timeline: the roleplay series and the knowledge
+ * series SIDE BY SIDE, never blended — an invented weighting would hide which
+ * signal moved.
+ */
+export class SkillGrowthLearnerSeriesResponseDto {
+  @ApiProperty({ type: SkillGrowthLearnerDto })
+  learner!: SkillGrowthLearnerDto;
+
+  @ApiProperty({
+    description:
+      "Every evaluated session, oldest first (the learner's own x-axis).",
+    type: [SkillGrowthLearnerSessionDto],
+  })
+  sessions!: SkillGrowthLearnerSessionDto[];
+
+  @ApiProperty({
+    description: 'Scored quiz and annotation attempts, oldest first.',
+    type: [SkillGrowthKnowledgeAttemptDto],
+  })
+  knowledgeAttempts!: SkillGrowthKnowledgeAttemptDto[];
+
+  @ApiProperty({
+    description:
+      'True when either series hit the server-side row cap and the timeline ' +
+      'shown is incomplete — surfaced rather than silently truncated.',
+  })
+  truncated!: boolean;
+
+  @ApiProperty({ type: SkillTrendThresholdsDto })
+  thresholds!: SkillTrendThresholdsDto;
+
+  @ApiProperty({
+    description: 'Fixed [min, max] for every score axis in this response.',
+    type: [Number],
+    example: [0, 100],
+  })
+  scoreDomain!: [number, number];
+
+  @ApiProperty({ type: SkillGrowthProvenanceDto })
+  provenance!: SkillGrowthProvenanceDto;
 
   @ApiProperty({ description: 'When this response was computed (ISO 8601)' })
   computedAt!: string;

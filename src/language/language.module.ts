@@ -7,6 +7,10 @@ import { LanguageErrorAnnotation } from 'src/learn/entity/language-error-annotat
 import { Languages } from './entity/languages.entity';
 import { LanguageGlossarySection } from './entity/language-glossary-section.entity';
 import { GlossaryAdherenceReport } from './entity/glossary-adherence-report.entity';
+import { LanguageVarietyProfile } from './entity/language-variety-profile.entity';
+import { VarietyProfileAttachment } from './entity/variety-profile-attachment.entity';
+import { GlossaryConsolidationBatch } from './entity/glossary-consolidation-batch.entity';
+import { GlossaryConsolidationSchedulerRegistrationService } from './service/glossary-consolidation-scheduler-registration.service';
 import { LanguagesRepository } from './repository/languages.repository';
 import { LanguageGlossaryRepository } from './repository/language-glossary.repository';
 import { SharedLanguageService } from './service/shared-language.service';
@@ -16,6 +20,8 @@ import { LanguageService } from './service/language.service';
 import { LanguageGlossaryService } from './service/language-glossary.service';
 import { GlossaryAdherenceSchedulerRegistrationService } from './service/glossary-adherence-scheduler-registration.service';
 import { GlossaryAdherenceService } from './service/glossary-adherence.service';
+import { VarietyProfileController } from './controller/variety-profile.controller';
+import { VarietyProfileService } from './service/variety-profile.service';
 import { UserModule } from 'src/user/user.module';
 @Module({
   imports: [
@@ -26,6 +32,9 @@ import { UserModule } from 'src/user/user.module';
       Languages,
       LanguageGlossarySection,
       GlossaryAdherenceReport,
+      LanguageVarietyProfile,
+      VarietyProfileAttachment,
+      GlossaryConsolidationBatch,
       Prompt,
       PromptVersion,
       LanguageErrorAnnotation,
@@ -33,7 +42,11 @@ import { UserModule } from 'src/user/user.module';
     AiChatModule,
     forwardRef(() => UserModule),
   ],
-  controllers: [LanguageController, LanguageGlossaryController],
+  controllers: [
+    LanguageController,
+    LanguageGlossaryController,
+    VarietyProfileController,
+  ],
   providers: [
     LanguagesRepository,
     LanguageGlossaryRepository,
@@ -42,11 +55,14 @@ import { UserModule } from 'src/user/user.module';
     LanguageGlossaryService,
     GlossaryAdherenceService,
     GlossaryAdherenceSchedulerRegistrationService,
+    GlossaryConsolidationSchedulerRegistrationService,
+    VarietyProfileService,
   ],
   exports: [
     SharedLanguageService,
     LanguageGlossaryService,
     GlossaryAdherenceService,
+    VarietyProfileService,
   ],
 })
 export class LanguageModule {}

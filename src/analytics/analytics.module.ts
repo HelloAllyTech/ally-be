@@ -44,6 +44,25 @@ import { ScenarioUsageAnalyticsService } from './service/scenario-usage-analytic
 import { ScenarioUsageAnalyticsRepository } from './repository/scenario-usage-analytics.repository';
 import { ScribeAdoptionAnalyticsService } from './service/scribe-adoption-analytics.service';
 import { ScribeAdoptionAnalyticsRepository } from './repository/scribe-adoption-analytics.repository';
+import { UsageLadderAnalyticsService } from './service/usage-ladder-analytics.service';
+import { UsageLadderAnalyticsRepository } from './repository/usage-ladder-analytics.repository';
+import { PracticeDepthAnalyticsService } from './service/practice-depth-analytics.service';
+import { PracticeDepthAnalyticsRepository } from './repository/practice-depth-analytics.repository';
+import { OrgEngagementAnalyticsService } from './service/org-engagement-analytics.service';
+import { OrgEngagementAnalyticsRepository } from './repository/org-engagement-analytics.repository';
+import { RoleplayCostAnalyticsService } from './service/roleplay-cost-analytics.service';
+import { RoleplayCostAnalyticsRepository } from './repository/roleplay-cost-analytics.repository';
+import { QualitySentimentAnalyticsService } from './service/quality-sentiment-analytics.service';
+import { QualitySentimentAnalyticsRepository } from './repository/quality-sentiment-analytics.repository';
+// Roleplay Quality Index: the composite behind the "Roleplay quality" card,
+// replacing the mean-composite trend and the quality-distribution series.
+import { QualityIndexAnalyticsService } from './service/quality-index-analytics.service';
+import { QualityIndexAnalyticsRepository } from './repository/quality-index-analytics.repository';
+import { QualityThresholdRepository } from './repository/quality-threshold.repository';
+import { QualityThresholdCalibrationService } from './service/quality-threshold-calibration.service';
+import { AnalyticsQualityThreshold } from './entity/analytics-quality-threshold.entity';
+import { ChartPreferenceService } from './service/chart-preference.service';
+import { AnalyticsChartPreference } from './entity/analytics-chart-preference.entity';
 import { PlatformAnalyticsService } from './service/platform-analytics.service';
 import { ScribeAnalyticsService } from './service/scribe-analytics.service';
 import { DriftJudgeService } from './service/drift-judge.service';
@@ -80,15 +99,25 @@ import { DashboardRepository } from './repository/dashboard.repository';
 import { ChatModule } from '../chat/chat.module';
 import { DashboardTenant } from './entity/dashboard-tenant.entity';
 import { DashboardGroup } from './entity/dashboard-group.entity';
+import { LanguageModule } from 'src/language/language.module';
 import { TenantModule } from 'src/tenant/tenant.module';
 
 @Module({
   imports: [
     AppConfigModule,
     UserModule,
-    TypeOrmModule.forFeature([Dashboard, DashboardTenant, DashboardGroup]),
+    TypeOrmModule.forFeature([
+      Dashboard,
+      DashboardTenant,
+      DashboardGroup,
+      AnalyticsChartPreference,
+      AnalyticsQualityThreshold,
+    ]),
     ChatModule,
     TenantModule,
+    // Variety profiles sharpen the language judge's target_variety per
+    // tenant population (RSI loop, judge-side wiring).
+    LanguageModule,
   ],
   controllers: [AnalyticsController, TenantAnalyticsController],
   providers: [
@@ -135,6 +164,21 @@ import { TenantModule } from 'src/tenant/tenant.module';
     ScenarioUsageAnalyticsRepository,
     ScribeAdoptionAnalyticsService,
     ScribeAdoptionAnalyticsRepository,
+    UsageLadderAnalyticsService,
+    UsageLadderAnalyticsRepository,
+    PracticeDepthAnalyticsService,
+    PracticeDepthAnalyticsRepository,
+    OrgEngagementAnalyticsService,
+    OrgEngagementAnalyticsRepository,
+    RoleplayCostAnalyticsService,
+    RoleplayCostAnalyticsRepository,
+    QualitySentimentAnalyticsService,
+    QualitySentimentAnalyticsRepository,
+    QualityIndexAnalyticsService,
+    QualityIndexAnalyticsRepository,
+    QualityThresholdRepository,
+    QualityThresholdCalibrationService,
+    ChartPreferenceService,
     PlatformAnalyticsService,
     ScribeAnalyticsService,
     DriftJudgeService,
