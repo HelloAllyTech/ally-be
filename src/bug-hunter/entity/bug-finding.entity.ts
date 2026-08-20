@@ -63,6 +63,25 @@ export class BugFinding extends BaseWithoutTenantEntity {
   @Column({ type: 'text' })
   description!: string;
 
+  /**
+   * The finder's or reporter's own words, kept from the FIRST edit onwards —
+   * `description` above is then whatever an admin last rewrote it to.
+   *
+   * Null means nobody has edited it, i.e. `description` is still original.
+   * Never overwritten by a later edit: the point is to preserve what Bug
+   * Hunter actually found, so a reviewer whose fix went wrong can tell whether
+   * the agent misread the bug or was handed a bad brief.
+   */
+  @Column({ name: 'original_description', type: 'text', nullable: true })
+  originalDescription?: string | null;
+
+  /** The admin who last rewrote the description. Integer users.id with NO foreign key, per ally-be convention. */
+  @Column({ name: 'description_edited_by', type: 'int', nullable: true })
+  descriptionEditedBy?: number | null;
+
+  @Column({ name: 'description_edited_at', type: 'timestamp', nullable: true })
+  descriptionEditedAt?: Date | null;
+
   @Column({ type: 'text', nullable: true })
   file?: string | null;
 

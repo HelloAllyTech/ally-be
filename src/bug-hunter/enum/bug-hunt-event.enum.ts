@@ -34,4 +34,11 @@ export enum BugHuntEventStage {
   STEP_STARTED = 'step_started',
   /** An admin pressed "Stop fix session" — see BugFixSessionService.cancelFixSession. */
   CANCELLED = 'cancelled',
+  /**
+   * An admin rewrote the bug's description before putting Bug Hunter on it —
+   * see BugFindingService.editDescription. Recorded because the description IS
+   * the fix agent's brief, so a reviewer asking why a session went the way it
+   * did needs to see that the brief changed, and when relative to the dispatch.
+   */
+  DESCRIPTION_EDITED = 'description_edited',
 }

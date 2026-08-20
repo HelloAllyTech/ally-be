@@ -12,10 +12,11 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 import {
@@ -25,6 +26,7 @@ import {
   BugHunterMode,
 } from '../enum/bug-finding.enum';
 import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
+import { BUG_FINDING_DESCRIPTION_MAX_LENGTH } from '../constants/bug-hunter.constants';
 
 export class BugHuntEventDto {
   @ApiProperty()
@@ -383,6 +385,22 @@ export class BugFindingDto {
   @ApiProperty()
   description!: string;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      "The finder's or reporter's own words, before an admin rewrote them. Null when nobody has edited this bug — `description` is then still original.",
+  })
+  originalDescription!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'The admin who last rewrote the description.',
+  })
+  descriptionEditedBy!: number | null;
+
+  @ApiProperty({ nullable: true })
+  descriptionEditedAt!: Date | null;
+
   @ApiProperty({ nullable: true })
   file!: string | null;
 
@@ -709,6 +727,25 @@ export class AnswerBugFindingDto {
   @ApiProperty()
   @IsString()
   answer!: string;
+}
+
+export class EditBugFindingDescriptionDto {
+  @ApiProperty({
+    description:
+      "The bug as you want Bug Hunter to understand it. This becomes the fix agent's entire brief, so it is worth being specific: what breaks, when, and what should happen instead.",
+    maxLength: BUG_FINDING_DESCRIPTION_MAX_LENGTH,
+  })
+  @IsString()
+  // Trimmed BEFORE validation, not after: `@IsNotEmpty` is happy with "   ",
+  // so without this a whitespace-only body passed the pipe and stored a blank
+  // brief — leaving the fix agent's prompt saying "Bug:" and nothing else.
+  // Caught by exercising the real endpoint, not by the unit tests.
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
+  @IsNotEmpty()
+  // The cap is here because this text is pasted into that same prompt — an
+  // accidental log-dump paste would otherwise crowd out the protocol after it.
+  @MaxLength(BUG_FINDING_DESCRIPTION_MAX_LENGTH)
+  description!: string;
 }
 
 export class BugHuntRunDto {
