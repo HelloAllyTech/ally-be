@@ -37,8 +37,7 @@ export const QUALITY_INDEX_DIMENSIONS = [
   'responseLatency',
 ] as const;
 
-export type QualityIndexDimension =
-  (typeof QUALITY_INDEX_DIMENSIONS)[number];
+export type QualityIndexDimension = (typeof QUALITY_INDEX_DIMENSIONS)[number];
 
 /**
  * Weights, summing to 1.

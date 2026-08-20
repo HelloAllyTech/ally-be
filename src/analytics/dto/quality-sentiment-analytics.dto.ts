@@ -86,7 +86,8 @@ export class QualitySentimentPointDto {
   indexRaw!: Record<string, number>;
 
   @ApiProperty({
-    description: 'Rows behind each dimension here — sessions, or turns for latency.',
+    description:
+      'Rows behind each dimension here — sessions, or turns for latency.',
     additionalProperties: { type: 'number' },
   })
   indexSampleSizes!: Record<string, number>;
@@ -121,10 +122,14 @@ export class QualityIndexCoverageDto {
   @ApiProperty({ description: 'Weight in the composite (weights sum to 1)' })
   weight!: number;
 
-  @ApiProperty({ description: 'Buckets in the window where this dimension had data' })
+  @ApiProperty({
+    description: 'Buckets in the window where this dimension had data',
+  })
   bucketsCovered!: number;
 
-  @ApiProperty({ description: 'Buckets in the window where any dimension had data' })
+  @ApiProperty({
+    description: 'Buckets in the window where any dimension had data',
+  })
   bucketsTotal!: number;
 
   @ApiProperty({

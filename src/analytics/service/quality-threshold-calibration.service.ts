@@ -80,7 +80,9 @@ export class QualityThresholdCalibrationService implements OnModuleInit {
    * outright is logged as an error and does not stop its siblings.
    */
   async calibrate(): Promise<{ pending: number; frozen: number }> {
-    let pending: Awaited<ReturnType<QualityThresholdRepository['findUncalibrated']>>;
+    let pending: Awaited<
+      ReturnType<QualityThresholdRepository['findUncalibrated']>
+    >;
     try {
       pending = await this.thresholdRepo.findUncalibrated();
     } catch (error) {

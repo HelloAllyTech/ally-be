@@ -32,9 +32,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * literals on purpose: a migration must not import application constants that
  * may be refactored or deleted later, or it stops being replayable.
  */
-export class CreateAnalyticsQualityThresholds1922000000000
-  implements MigrationInterface
-{
+export class CreateAnalyticsQualityThresholds1922000000000 implements MigrationInterface {
   name = 'CreateAnalyticsQualityThresholds1922000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

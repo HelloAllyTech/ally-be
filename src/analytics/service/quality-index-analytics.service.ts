@@ -179,7 +179,14 @@ export class QualityIndexAnalyticsService {
       }
 
       if (!scored.length || liveWeight === 0) {
-        return { bucket: bucketKey, index: null, contributions, raw, n, missing };
+        return {
+          bucket: bucketKey,
+          index: null,
+          contributions,
+          raw,
+          n,
+          missing,
+        };
       }
 
       // Pass two: scale each contribution by the LIVE weight total, so the

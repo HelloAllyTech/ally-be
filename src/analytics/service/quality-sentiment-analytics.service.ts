@@ -126,8 +126,7 @@ export class QualitySentimentAnalyticsService {
         // A bucket the index has no row for at all is missing every dimension,
         // not missing none — otherwise a gap reads as full coverage.
         indexMissing:
-          indexPoint?.missing ??
-          index.coverage.map((c) => c.dimension),
+          indexPoint?.missing ?? index.coverage.map((c) => c.dimension),
       };
     });
 
