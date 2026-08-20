@@ -9,6 +9,8 @@ import { LanguageGlossarySection } from './entity/language-glossary-section.enti
 import { GlossaryAdherenceReport } from './entity/glossary-adherence-report.entity';
 import { LanguageVarietyProfile } from './entity/language-variety-profile.entity';
 import { VarietyProfileAttachment } from './entity/variety-profile-attachment.entity';
+import { GlossaryConsolidationBatch } from './entity/glossary-consolidation-batch.entity';
+import { GlossaryConsolidationSchedulerRegistrationService } from './service/glossary-consolidation-scheduler-registration.service';
 import { LanguagesRepository } from './repository/languages.repository';
 import { LanguageGlossaryRepository } from './repository/language-glossary.repository';
 import { SharedLanguageService } from './service/shared-language.service';
@@ -32,6 +34,7 @@ import { UserModule } from 'src/user/user.module';
       GlossaryAdherenceReport,
       LanguageVarietyProfile,
       VarietyProfileAttachment,
+      GlossaryConsolidationBatch,
       Prompt,
       PromptVersion,
       LanguageErrorAnnotation,
@@ -52,12 +55,14 @@ import { UserModule } from 'src/user/user.module';
     LanguageGlossaryService,
     GlossaryAdherenceService,
     GlossaryAdherenceSchedulerRegistrationService,
+    GlossaryConsolidationSchedulerRegistrationService,
     VarietyProfileService,
   ],
   exports: [
     SharedLanguageService,
     LanguageGlossaryService,
     GlossaryAdherenceService,
+    VarietyProfileService,
   ],
 })
 export class LanguageModule {}

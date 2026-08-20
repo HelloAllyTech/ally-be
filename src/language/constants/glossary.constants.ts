@@ -29,8 +29,11 @@ export const MAX_GLOSSARY_ENTRIES_PER_SECTION = 200;
 export const GLOSSARY_CONSOLIDATION_PROMPT_CODE = 'glossary_consolidation';
 
 /**
- * Judge dimensions the consolidation loop mines. Style/lexicon dimensions only —
- * fluency/coherence/understanding errors are model competence, not glossary-able.
+ * Judge dimensions the consolidation loop mines. Style/lexicon dimensions plus
+ * `fluency`, which is admitted ONLY through the systematicity gate (the same
+ * grammatical category recurring ≥ GLOSSARY_SYSTEMATIC_MIN times) — one-off
+ * grammar slips are model competence; a recurring pattern is a correctable
+ * rule. coherence/understanding stay excluded outright.
  */
 export const GLOSSARY_CONSOLIDATION_DIMENSIONS = [
   'register',
@@ -38,7 +41,20 @@ export const GLOSSARY_CONSOLIDATION_DIMENSIONS = [
   'colloquialness',
   'codeswitch',
   'persona_social',
+  'fluency',
 ] as const;
+
+/** Cluster support floor (construct-class pipeline). Below this, a candidate
+ * never reaches the LLM — no single-anecdote rules (adaptive: singletons pass
+ * while a language has <20 unconsumed annotations, so thin languages don't stall). */
+export const GLOSSARY_MIN_CLUSTER_SUPPORT = 2;
+
+/** Same-category recurrences before a fluency (grammar) error counts as systematic. */
+export const GLOSSARY_SYSTEMATIC_MIN = 5;
+
+/** Learner-corpus occurrences of an avoid-term above which the entry is
+ * CONTRADICTED (the population itself says the word — don't fight real usage). */
+export const GLOSSARY_LEXICAL_CONTRADICTION_MIN = 5;
 
 /** Most-recent annotations considered per consolidation run (keeps the prompt bounded). */
 export const GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT = 200;

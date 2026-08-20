@@ -80,6 +80,7 @@ import { DashboardRepository } from './repository/dashboard.repository';
 import { ChatModule } from '../chat/chat.module';
 import { DashboardTenant } from './entity/dashboard-tenant.entity';
 import { DashboardGroup } from './entity/dashboard-group.entity';
+import { LanguageModule } from 'src/language/language.module';
 import { TenantModule } from 'src/tenant/tenant.module';
 
 @Module({
@@ -89,6 +90,9 @@ import { TenantModule } from 'src/tenant/tenant.module';
     TypeOrmModule.forFeature([Dashboard, DashboardTenant, DashboardGroup]),
     ChatModule,
     TenantModule,
+    // Variety profiles sharpen the language judge's target_variety per
+    // tenant population (RSI loop, judge-side wiring).
+    LanguageModule,
   ],
   controllers: [AnalyticsController, TenantAnalyticsController],
   providers: [

@@ -374,3 +374,43 @@ export function profileSimilarity(
 
 /** Attach a tenant to an existing profile at or above this similarity. */
 export const PROFILE_MATCH_THRESHOLD = 0.75;
+
+/**
+ * One-line target-variety descriptor for the language judge: the language's
+ * base variety string sharpened with the population's measured markers, so
+ * the judge scores each org's sessions against how ITS population speaks
+ * rather than the platform-wide default. Deliberately short — this rides in
+ * the judge's parameter block, not the rubric.
+ */
+export function varietyTargetDescriptor(
+  base: string,
+  features: VarietyFeatures,
+): string {
+  const parts: string[] = [];
+  const { formalShare } = features.addressForms;
+  if (formalShare !== null) {
+    const pct = Math.round(formalShare * 100);
+    parts.push(
+      pct >= 70
+        ? `predominantly formal address (${pct}%)`
+        : pct <= 30
+          ? `predominantly informal address (${100 - pct}% informal)`
+          : `mixed address registers (${pct}% formal)`,
+    );
+  }
+  const mix = features.codeMix.latinTokenShare;
+  parts.push(
+    mix >= 0.15
+      ? `heavy English code-mix (${Math.round(mix * 100)}% Latin tokens)`
+      : mix >= 0.05
+        ? `moderate English code-mix`
+        : `minimal English code-mix`,
+  );
+  const lexemes = features.characteristicLexemes.items
+    .slice(0, 5)
+    .map((i) => i.token);
+  if (lexemes.length) {
+    parts.push(`population says: ${lexemes.join(', ')}`);
+  }
+  return `${base} — ${parts.join('; ')}`;
+}

@@ -20,6 +20,7 @@ import {
   profileSimilarity,
   PROFILE_MATCH_THRESHOLD,
   tokenize,
+  varietyTargetDescriptor,
   VarietyFeatures,
 } from '../util/variety-feature.util';
 
@@ -190,6 +191,46 @@ export class VarietyProfileService {
         `${matched ? `matched=${profile.id} sim=${similarity?.toFixed(3)}` : `created=${profile.id}`}`,
     );
     return { profile, attachment, matched, similarity };
+  }
+
+  /**
+   * The judge-side hook: the target-variety descriptor for a tenant's
+   * sessions in a language, derived from the variety profile the tenant is
+   * attached to. Null when unattached (or the profile is archived) — the
+   * judge then falls back to the language's seeded targetVariety. Dual-key
+   * tenant match (tenants.id-as-text or code), same as the platform's other
+   * tenant refs.
+   */
+  async resolveVarietyOverride(
+    languageValue: string,
+    tenantRef: string | null | undefined,
+  ): Promise<string | null> {
+    if (!tenantRef) return null;
+    const language = await this.languagesRepository.findOne({
+      where: { value: languageValue },
+    });
+    if (!language) return null;
+    const rows: { profileId: string }[] = await this.dataSource.query(
+      `SELECT a."profileId"
+         FROM variety_profile_attachments a
+        WHERE a."languageId" = $1
+          AND (a."tenantId" = $2
+               OR a."tenantId" IN (SELECT id::text FROM tenants WHERE code = $2)
+               OR a."tenantId" IN (SELECT code FROM tenants WHERE id::text = $2))
+        LIMIT 1`,
+      [language.id, tenantRef],
+    );
+    if (!rows[0]) return null;
+    const profile = await this.profileRepository.findOne({
+      where: { id: rows[0].profileId },
+    });
+    if (!profile || profile.status === VarietyProfileStatus.ARCHIVED) {
+      return null;
+    }
+    const base =
+      (language.evalConfig as Record<string, any> | null)?.targetVariety ??
+      `colloquial spoken ${language.label}`;
+    return varietyTargetDescriptor(base, profile.features);
   }
 
   /** Learner (senderId > 0) turns from the tenant's judged sessions. */

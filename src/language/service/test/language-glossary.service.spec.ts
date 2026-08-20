@@ -34,6 +34,8 @@ describe('LanguageGlossaryService', () => {
   let promptVersionRepository: any;
   let annotationRepository: any;
   let annotationQb: any;
+  let batchRepository: any;
+  let attachmentRepository: any;
   let llmProviderFactory: any;
   let getCompletion: jest.Mock;
 
@@ -73,6 +75,17 @@ describe('LanguageGlossaryService', () => {
     };
     annotationRepository = {
       createQueryBuilder: jest.fn().mockReturnValue(annotationQb),
+      manager: { query: jest.fn().mockResolvedValue([]) },
+    };
+    batchRepository = {
+      create: jest.fn((v: any) => v),
+      save: jest.fn(async (v: any) => ({ id: v.id ?? 'batch-1', ...v })),
+      find: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(null),
+    };
+    attachmentRepository = {
+      find: jest.fn().mockResolvedValue([]),
+      manager: { query: jest.fn().mockResolvedValue([]) },
     };
     getCompletion = jest.fn();
     llmProviderFactory = {
@@ -92,6 +105,8 @@ describe('LanguageGlossaryService', () => {
       promptRepository,
       promptVersionRepository,
       annotationRepository,
+      batchRepository,
+      attachmentRepository,
       llmProviderFactory,
       configService as any,
     );
@@ -224,6 +239,7 @@ describe('LanguageGlossaryService', () => {
       expect(glossaryRepository.findPublishedByLanguage).toHaveBeenCalledWith(
         6,
         GlossaryInjectionMode.ALWAYS,
+        undefined,
       );
     });
   });
@@ -252,6 +268,8 @@ describe('LanguageGlossaryService', () => {
       // Unfiltered query: meta must cover both tiers, not just always-sections.
       expect(glossaryRepository.findPublishedByLanguage).toHaveBeenCalledWith(
         6,
+        undefined,
+        undefined,
       );
       expect(meta).toEqual({
         versions: { core_style: 4, clinical_terms: 2 },
@@ -585,6 +603,195 @@ describe('LanguageGlossaryService', () => {
       await expect(
         service.acceptProposal(6, 'core_style', 'p1'),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('consolidation loop (overlays, auto-accept, rollback)', () => {
+    const annotation = (
+      id: string,
+      tenantId: string,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      id,
+      tenantId,
+      dimension: 'dialect_lexicon',
+      category: 'wrong_regional_variety',
+      severity: 'major',
+      evidenceQuote: 'பதட்டம்',
+      aiText: 'உங்களுக்கு பதட்டம் உள்ளதா?',
+      ...extra,
+    });
+
+    const twoProposalOutput = [
+      {
+        sectionCode: 'clinical_terms',
+        title: 'Clinical terms',
+        injectionMode: 'retrieved',
+        proposals: [
+          // Supported only by tenant-1 (unattached) → global.
+          { markdown: '- global rule', sourceAnnotationIndexes: [1] },
+          // Supported only by tenant-2 (attached to p1) → overlay.
+          { markdown: '- overlay rule', sourceAnnotationIndexes: [2] },
+        ],
+      },
+    ];
+
+    beforeEach(() => {
+      annotationQb.getMany.mockResolvedValue([
+        annotation('a1', 'tenant-1'),
+        annotation('a2', 'tenant-2'),
+      ]);
+      getCompletion.mockResolvedValue(JSON.stringify(twoProposalOutput));
+      attachmentRepository.find.mockResolvedValue([
+        { tenantId: 'tenant-2', profileId: 'p1', languageId: 6 },
+      ]);
+    });
+
+    it('routes single-profile-supported entries to that profile overlay, the rest global', async () => {
+      const result = await service.consolidateGlossary(6);
+
+      expect(result.proposed).toBe(2);
+      expect(result.overlayEntries).toBe(1);
+      expect(result.batchId).toBe('batch-1');
+      const savedSections = glossaryRepository.save.mock.calls.map(
+        (c: any[]) => c[0],
+      );
+      const overlay = savedSections.find((s: any) => s.profileId === 'p1');
+      const global = savedSections.find((s: any) => !s.profileId);
+      expect(overlay.entries.map((e: any) => e.markdown)).toEqual([
+        '- overlay rule',
+      ]);
+      expect(global.entries.map((e: any) => e.markdown)).toEqual([
+        '- global rule',
+      ]);
+      // Every entry carries the batch id — the rollback handle.
+      expect(global.entries[0].provenance.batchId).toBe('batch-1');
+      // The batch records both entries with their routing.
+      const finalBatch = batchRepository.save.mock.calls.at(-1)[0];
+      expect(finalBatch.entries).toHaveLength(2);
+      expect(finalBatch.entries.map((e: any) => e.profileId).sort()).toEqual(
+        ['p1', null].sort(),
+      );
+    });
+
+    it('auto-accept publishes entries into content and records them accepted', async () => {
+      const result = await service.consolidateGlossary(6, 'rsi', {
+        autoAccept: true,
+        trigger: 'scheduled',
+      });
+
+      expect(result.autoAccepted).toBe(2);
+      const savedSections = glossaryRepository.save.mock.calls.map(
+        (c: any[]) => c[0],
+      );
+      for (const section of savedSections) {
+        expect(section.status).toBe(GlossarySectionStatus.PUBLISHED);
+        expect(
+          section.entries.every(
+            (e: any) => e.status === GlossaryEntryStatus.ACCEPTED,
+          ),
+        ).toBe(true);
+      }
+      const globalSaved = savedSections.find((s: any) => !s.profileId);
+      expect(globalSaved.content).toContain('- global rule');
+      const finalBatch = batchRepository.save.mock.calls.at(-1)[0];
+      expect(finalBatch.entries.every((e: any) => e.accepted)).toBe(true);
+    });
+
+    it('auto-accept falls back to proposals when the Tier 0 cap would be exceeded', async () => {
+      const hugeMarkdown = `- ${'register vocabulary rule '.repeat(1500)}`;
+      getCompletion.mockResolvedValue(
+        JSON.stringify([
+          {
+            sectionCode: 'core_style',
+            title: 'Core style',
+            injectionMode: 'always',
+            proposals: [
+              { markdown: hugeMarkdown, sourceAnnotationIndexes: [1] },
+            ],
+          },
+        ]),
+      );
+
+      const result = await service.consolidateGlossary(6, 'rsi', {
+        autoAccept: true,
+      });
+
+      expect(result.proposed).toBe(1);
+      expect(result.autoAccepted).toBe(0);
+      const saved = glossaryRepository.save.mock.calls.at(-1)[0];
+      expect(saved.entries[0].status).toBe(GlossaryEntryStatus.PROPOSED);
+      expect(saved.content ?? '').not.toContain('register vocabulary rule');
+    });
+
+    it('skips the run (and the LLM) below minAnnotations', async () => {
+      const result = await service.consolidateGlossary(6, undefined, {
+        minAnnotations: 10,
+      });
+      expect(result.annotationsConsidered).toBe(2);
+      expect(result.proposed).toBe(0);
+      expect(result.batchId).toBeNull();
+      expect(getCompletion).not.toHaveBeenCalled();
+    });
+
+    it('rollback removes accepted lines, rejects entries, keeps annotations consumed', async () => {
+      batchRepository.findOne.mockResolvedValue({
+        id: 'batch-9',
+        languageId: 6,
+        status: 'active',
+        entries: [
+          {
+            sectionId: 'sec-9',
+            sectionCode: 'clinical_terms',
+            profileId: null,
+            entryId: 'e1',
+            markdown: '- overlay rule',
+            accepted: true,
+          },
+        ],
+      });
+      glossaryRepository.findOne = jest.fn().mockResolvedValue(
+        makeSection({
+          id: 'sec-9',
+          sectionCode: 'clinical_terms',
+          content: '- existing line\n- overlay rule',
+          entries: [
+            {
+              id: 'e1',
+              markdown: '- overlay rule',
+              status: GlossaryEntryStatus.ACCEPTED,
+              provenance: {
+                source: 'consolidation',
+                annotationIds: ['a2'],
+                batchId: 'batch-9',
+              },
+            },
+          ],
+        }),
+      );
+
+      const result = await service.rollbackConsolidationBatch(6, 'batch-9');
+
+      expect(result.rolledBack).toBe(1);
+      const savedSection = glossaryRepository.save.mock.calls.at(-1)[0];
+      expect(savedSection.content).toBe('- existing line');
+      expect(savedSection.entries[0].status).toBe(GlossaryEntryStatus.REJECTED);
+      // Annotation stays in provenance → stays consumed on future runs.
+      expect(savedSection.entries[0].provenance.annotationIds).toEqual(['a2']);
+      const savedBatch = batchRepository.save.mock.calls.at(-1)[0];
+      expect(savedBatch.status).toBe('rolled_back');
+    });
+
+    it('refuses to roll back an already rolled-back batch', async () => {
+      batchRepository.findOne.mockResolvedValue({
+        id: 'batch-9',
+        languageId: 6,
+        status: 'rolled_back',
+        entries: [],
+      });
+      await expect(
+        service.rollbackConsolidationBatch(6, 'batch-9'),
+      ).rejects.toThrow(BadRequestException);
     });
   });
 });

@@ -505,10 +505,28 @@ export class ScenarioSharedService {
       languageDetails?.id &&
       !languageDetails.value?.startsWith('en')
     ) {
+      // Variety-profile overlay (RSI loop): the session's tenant may be
+      // attached to a variety profile, in which case all three glossary
+      // reads serve the merged view (global + that profile's overlays,
+      // overlay winning on sectionCode). Unattached tenants get global only.
+      let glossaryProfileId: string | null = null;
+      try {
+        glossaryProfileId =
+          await this.languageGlossaryService.resolveProfileIdForTenant(
+            languageDetails.id,
+            ExecutionManager.getTenantId(),
+          );
+      } catch (error) {
+        this.logger.warn(
+          `[GLOSSARY] profile resolution failed for language ${languageDetails.id}; serving global glossary: ${error}`,
+        );
+      }
+
       try {
         const glossary =
           await this.languageGlossaryService.resolveTier0Glossary(
             languageDetails.id,
+            glossaryProfileId,
           );
         if (glossary) {
           promptData.languageGlossary = glossary;
@@ -527,6 +545,7 @@ export class ScenarioSharedService {
       try {
         const tier1 = await this.languageGlossaryService.resolveTier1Sections(
           languageDetails.id,
+          glossaryProfileId,
         );
         if (tier1.length > 0) {
           const label = languageDetails.label || 'Language';
@@ -549,6 +568,7 @@ export class ScenarioSharedService {
         const glossaryMeta =
           await this.languageGlossaryService.resolveGlossaryMeta(
             languageDetails.id,
+            glossaryProfileId,
           );
         if (glossaryMeta) {
           promptData.glossaryMeta = glossaryMeta;
