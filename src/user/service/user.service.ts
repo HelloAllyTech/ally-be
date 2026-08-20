@@ -14,6 +14,7 @@ import { Chat } from '../../chat/entity/chat.entity';
 import {
   UserRole,
   SUPER_ADMIN_ROLES,
+  PLATFORM_MANAGED_ROLES,
 } from '../../common/constants/user.constants';
 import { UserStatus } from '../constants/user-status.constants';
 import { RedisService } from '../../redis/service/redis.service';
@@ -301,6 +302,131 @@ export class UserService {
     return { data: transformedUsers, count: result.count };
   }
 
+  /**
+   * Look up the target of an admin user-management call, refusing any id the
+   * caller has no reach over. Returns null for "no such user" and "not yours"
+   * alike, so callers raise the same 404 either way — a 403 on an id you
+   * cannot see confirms that it exists (same reasoning as `setWorkerType`).
+   *
+   * Reach is deliberately not "own tenant only". `edit:user` and
+   * `edit:user:status` are platform-tier permissions, and an unrestricted
+   * platform admin does edit users across every tenant — that is what the
+   * unclamped all-tenant list in `getAllUsers` is for. Three cases, in order:
+   *
+   *   1. Tenant-restricted platform admin (holds any `admin_tenants` row) →
+   *      only the tenants they were granted. This is the case that bites:
+   *      `CreatePlatformAdminRole1895000000001` gave PLATFORM_ADMIN the union
+   *      of all three legacy tiers' grants, so an ex-MULTI_TENANT_ADMIN now
+   *      carries `edit:user:status` while their `admin_tenants` rows still
+   *      mean to hold them to a subset of tenants.
+   *   2. SYSTEM_ACCESS holder, unrestricted → any tenant, unchanged.
+   *   3. Anyone else → their own JWT tenant. Nobody is in this bucket today —
+   *      no tenant-level role holds either permission — but a later grant to
+   *      a tenant role must not silently come with cross-tenant reach.
+   *
+   * The scope goes into the `where`, not a comparison after the fetch, so the
+   * isolation belongs to the query.
+   */
+  private async findManageableUser(id: number): Promise<User | null> {
+    const userIdStr = ExecutionManager.getUserId();
+    const callerId = userIdStr ? Number(userIdStr) : undefined;
+
+    const tenantScope = await this.resolveManageableTenantIds(callerId);
+    // Restricted to nothing at all (no JWT tenant, or every granted tenant
+    // has since been deleted) — no id is reachable.
+    if (tenantScope !== null && tenantScope.length === 0) {
+      return null;
+    }
+
+    return this.userRepository.findOne({
+      where: {
+        id,
+        ...(tenantScope ? { tenantId: In(tenantScope) } : {}),
+      },
+    });
+  }
+
+  /**
+   * The tenants the current caller may manage users in. `null` means
+   * unrestricted (platform-wide) — see `findManageableUser` for the cases.
+   */
+  private async resolveManageableTenantIds(
+    callerId?: number,
+  ): Promise<string[] | null> {
+    if (callerId) {
+      if (await this.permissionsService.isMultiTenantAdmin(callerId)) {
+        const adminTenants =
+          await this.adminTenantService.getTenantsForAdmin(callerId);
+        return adminTenants.data.map((tenant: any) => tenant.id);
+      }
+
+      const permissions =
+        await this.permissionsService.getUserPermissions(callerId);
+      if (permissions.includes(PERMISSIONS.SYSTEM_ACCESS)) {
+        return null;
+      }
+    }
+
+    const ownTenantId = ExecutionManager.getTenantId();
+    return ownTenantId ? [ownTenantId] : [];
+  }
+
+  /**
+   * Refuse to create a user in a tenant the caller has no reach over, using
+   * the same three-case reach as `findManageableUser`.
+   *
+   * Defence in depth rather than a live hole: the create paths already turn a
+   * tenant-restricted platform admin away outright, and every other holder of
+   * `edit:user` today also holds SYSTEM_ACCESS, so provisioning into any
+   * organization is currently correct for everyone who gets this far. What
+   * this closes is the next grant — hand `edit:user` to a tenant-level role
+   * and an unclamped body `tenantId` would let it provision users into any
+   * organization on the platform.
+   *
+   * Forbidden, not not-found: the caller named the tenant themselves, so
+   * there is no existence to leak by saying no plainly.
+   */
+  private async assertTenantProvisionable(tenantId: string): Promise<void> {
+    const userIdStr = ExecutionManager.getUserId();
+    const callerId = userIdStr ? Number(userIdStr) : undefined;
+
+    const tenantScope = await this.resolveManageableTenantIds(callerId);
+    if (tenantScope === null) {
+      return;
+    }
+
+    if (!tenantScope.includes(tenantId)) {
+      throw new ForbiddenException(
+        'You can only create users in your own organization',
+      );
+    }
+  }
+
+  /**
+   * Refuse a platform-tier role from the generic create path. Mirrors
+   * GroupService's `changeUserRoles` rejection of the same
+   * `PLATFORM_MANAGED_ROLES` set: PLATFORM_ADMIN and the three retired tiers
+   * it replaces carry checks a bulk user importer has no way to satisfy (the
+   * `admin_user_management` toggle, tenant-allowlist writes) and are only
+   * ever meant to be granted through /v1/platform-admins.
+   *
+   * This is what actually keeps a platform role out of these two methods —
+   * not the `@AuthPermissions([..., PERMISSIONS.EDIT_USER_ROLE])` gate above
+   * them, which exists for defence in depth against a future role grant, not
+   * as the boundary itself. Every holder of EDIT_USER_ROLE today already has
+   * unrestricted platform reach, so that gate changes nothing yet.
+   */
+  private rejectPlatformManagedRoles(roles: UserRole[]): void {
+    const requested = roles.filter((role) =>
+      (PLATFORM_MANAGED_ROLES as string[]).includes(role),
+    );
+    if (requested.length > 0) {
+      throw new BadRequestException(
+        `${requested.join(', ')} cannot be assigned here — manage platform admins via /v1/platform-admins`,
+      );
+    }
+  }
+
   async updateUser(
     id: number,
     body: UpdateUserDto,
@@ -316,7 +442,7 @@ export class UserService {
       throw new BadRequestException('User is not authorized to update user');
     }
 
-    const user = await this.userRepository.findOne({ where: { id } });
+    const user = await this.findManageableUser(id);
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
@@ -381,7 +507,7 @@ export class UserService {
     id: number,
     newStatus: UserStatus,
   ): Promise<UserUpdateResponseDto> {
-    const user = await this.userRepository.findOne({ where: { id } });
+    const user = await this.findManageableUser(id);
 
     if (!user) {
       throw new NotFoundException(`User with ID ${id} not found`);
@@ -419,6 +545,8 @@ export class UserService {
     const userIdStr = ExecutionManager.getUserId();
     const userId = userIdStr ? Number(userIdStr) : undefined;
 
+    this.rejectPlatformManagedRoles(userData.roles);
+
     // Check if user with email or phone already exists
     const existingUser = await this.userRepository.findOne({
       where: [{ email: userData.email }, { phone: userData.phone }],
@@ -432,6 +560,10 @@ export class UserService {
       throw new BadRequestException('Phone number already registered');
     }
 
+    // Always false here: rejectPlatformManagedRoles above already refused
+    // any role in PLATFORM_MANAGED_ROLES, and SUPER_ADMIN_ROLES is a subset
+    // of it. Left in place rather than restructured — the tenant-validation
+    // skip it guards is unrelated to this change.
     const isSuperAdmin = userData.roles.some((role) =>
       SUPER_ADMIN_ROLES.includes(role),
     );
@@ -445,7 +577,9 @@ export class UserService {
 
     if (!userData.tenantId) {
       throw new BadRequestException('Tenant ID is required');
-    } else if (!isSuperAdmin) {
+    }
+    await this.assertTenantProvisionable(userData.tenantId);
+    if (!isSuperAdmin) {
       const tenant = await this.tenantService.findById(userData.tenantId);
       if (!tenant) {
         throw new BadRequestException(' Tenant is not valid');
@@ -559,6 +693,8 @@ export class UserService {
       throw new BadRequestException('User is not authorized to add user');
     }
 
+    this.rejectPlatformManagedRoles(bulkData.roles);
+
     // Normalise + dedupe emails within the batch.
     const normalisedEmails = bulkData.emails.map((email) =>
       email.trim().toLowerCase(),
@@ -580,6 +716,8 @@ export class UserService {
     if (!bulkData.tenantId) {
       throw new BadRequestException('Tenant ID is required');
     }
+    await this.assertTenantProvisionable(bulkData.tenantId);
+    // Always false here — see the identical note in addUser.
     const isSuperAdmin = bulkData.roles.some((role) =>
       SUPER_ADMIN_ROLES.includes(role),
     );
