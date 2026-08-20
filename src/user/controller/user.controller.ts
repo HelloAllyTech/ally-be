@@ -249,7 +249,7 @@ export class UserController {
   })
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @AuthPermissions([PERMISSIONS.EDIT_USER])
+  @AuthPermissions([PERMISSIONS.EDIT_USER, PERMISSIONS.EDIT_USER_ROLE])
   @ApiSecurity('access-token')
   async addUser(@Body() userData: AddUserDto): Promise<AddUserResponseDto> {
     return this.userService.addUser(userData);
@@ -267,7 +267,7 @@ export class UserController {
   })
   @Post('bulk')
   @HttpCode(HttpStatus.CREATED)
-  @AuthPermissions([PERMISSIONS.EDIT_USER])
+  @AuthPermissions([PERMISSIONS.EDIT_USER, PERMISSIONS.EDIT_USER_ROLE])
   @ApiSecurity('access-token')
   async bulkAddUsers(
     @Body() bulkData: BulkAddUsersDto,
