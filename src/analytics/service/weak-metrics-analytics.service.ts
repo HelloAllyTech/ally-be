@@ -82,6 +82,29 @@ const MIN_TURNS_PER_FACTOR = 100;
 export class WeakMetricsAnalyticsService {
   constructor(private readonly repo: WeakMetricsAnalyticsRepository) {}
 
+  /**
+   * Start of the bucket that today falls in, as `yyyy-mm-dd`.
+   *
+   * Every window on this tab runs up to now, so there is always a partial
+   * bucket at the right-hand edge. Plotting it made the last point read as a
+   * cliff — three days of a week charted beside seven-day weeks looked like
+   * quality falling off, when it was only the week not being over. This names
+   * the bucket so the client can drop it from the plot and say so, exactly as
+   * `resolveWindow`'s `inProgressBucket` does for the other tabs.
+   */
+  private static inProgressBucketOf(bucket: 'week' | 'month'): string {
+    const d = new Date();
+    d.setUTCHours(0, 0, 0, 0);
+    if (bucket === 'month') {
+      d.setUTCDate(1);
+    } else {
+      // Monday-start, matching Postgres `date_trunc('week', ...)`.
+      const dow = (d.getUTCDay() + 6) % 7;
+      d.setUTCDate(d.getUTCDate() - dow);
+    }
+    return d.toISOString().slice(0, 10);
+  }
+
   private resolveStart(range?: WeakMetricsRange): Date {
     const now = new Date();
     const d = new Date(now);
@@ -845,6 +868,7 @@ export class WeakMetricsAnalyticsService {
       },
       bucket,
       start: start.toISOString(),
+      inProgressBucket: WeakMetricsAnalyticsService.inProgressBucketOf(bucket),
       groups,
       worstScenarios: (worstScenarios ?? []).map((r) => ({
         scenarioId: Number(r.scenarioId),

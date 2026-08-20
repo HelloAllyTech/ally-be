@@ -320,6 +320,19 @@ export class WeakMetricsResponseDto {
   @ApiProperty({ description: 'Window start, ISO' })
   start!: string;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Start of the bucket containing today (yyyy-mm-dd), or null when the ' +
+      'window ended in the past. This bucket is STILL ACCRUING: its figure ' +
+      'can only rise, so it is not comparable with the completed buckets ' +
+      'beside it and clients leave it off line charts — the same contract ' +
+      '`window.inProgressBucket` carries on every other analytics surface. ' +
+      'Named here rather than re-derived per client so every chart flags the ' +
+      'same bucket.',
+  })
+  inProgressBucket!: string | null;
+
   @ApiProperty({ type: [WeakMetricGroupDto] })
   groups!: WeakMetricGroupDto[];
 
