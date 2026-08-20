@@ -44,6 +44,18 @@ import { ScenarioUsageAnalyticsService } from './service/scenario-usage-analytic
 import { ScenarioUsageAnalyticsRepository } from './repository/scenario-usage-analytics.repository';
 import { ScribeAdoptionAnalyticsService } from './service/scribe-adoption-analytics.service';
 import { ScribeAdoptionAnalyticsRepository } from './repository/scribe-adoption-analytics.repository';
+import { UsageLadderAnalyticsService } from './service/usage-ladder-analytics.service';
+import { UsageLadderAnalyticsRepository } from './repository/usage-ladder-analytics.repository';
+import { PracticeDepthAnalyticsService } from './service/practice-depth-analytics.service';
+import { PracticeDepthAnalyticsRepository } from './repository/practice-depth-analytics.repository';
+import { OrgEngagementAnalyticsService } from './service/org-engagement-analytics.service';
+import { OrgEngagementAnalyticsRepository } from './repository/org-engagement-analytics.repository';
+import { RoleplayCostAnalyticsService } from './service/roleplay-cost-analytics.service';
+import { RoleplayCostAnalyticsRepository } from './repository/roleplay-cost-analytics.repository';
+import { QualitySentimentAnalyticsService } from './service/quality-sentiment-analytics.service';
+import { QualitySentimentAnalyticsRepository } from './repository/quality-sentiment-analytics.repository';
+import { ChartPreferenceService } from './service/chart-preference.service';
+import { AnalyticsChartPreference } from './entity/analytics-chart-preference.entity';
 import { PlatformAnalyticsService } from './service/platform-analytics.service';
 import { ScribeAnalyticsService } from './service/scribe-analytics.service';
 import { DriftJudgeService } from './service/drift-judge.service';
@@ -87,7 +99,12 @@ import { TenantModule } from 'src/tenant/tenant.module';
   imports: [
     AppConfigModule,
     UserModule,
-    TypeOrmModule.forFeature([Dashboard, DashboardTenant, DashboardGroup]),
+    TypeOrmModule.forFeature([
+      Dashboard,
+      DashboardTenant,
+      DashboardGroup,
+      AnalyticsChartPreference,
+    ]),
     ChatModule,
     TenantModule,
     // Variety profiles sharpen the language judge's target_variety per
@@ -139,6 +156,17 @@ import { TenantModule } from 'src/tenant/tenant.module';
     ScenarioUsageAnalyticsRepository,
     ScribeAdoptionAnalyticsService,
     ScribeAdoptionAnalyticsRepository,
+    UsageLadderAnalyticsService,
+    UsageLadderAnalyticsRepository,
+    PracticeDepthAnalyticsService,
+    PracticeDepthAnalyticsRepository,
+    OrgEngagementAnalyticsService,
+    OrgEngagementAnalyticsRepository,
+    RoleplayCostAnalyticsService,
+    RoleplayCostAnalyticsRepository,
+    QualitySentimentAnalyticsService,
+    QualitySentimentAnalyticsRepository,
+    ChartPreferenceService,
     PlatformAnalyticsService,
     ScribeAnalyticsService,
     DriftJudgeService,
