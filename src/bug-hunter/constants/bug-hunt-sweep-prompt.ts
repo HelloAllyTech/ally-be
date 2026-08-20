@@ -91,7 +91,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     ``,
     `Work through these phases IN ORDER. Report progress as you go with:`,
     `  curl -sS -X POST "${reportUrl}" -H "Content-Type: application/json" ${auth} -d '{"repo":"${repo}","stage":"<stage>","summary":"<one line>"}'`,
-    `Valid stages: finder_result, verify_result, fix_attempt, test_written, doc_updated, pr_opened, merged, escalated, error.`,
+    `Valid stages: finder_result, verify, fix_attempt, test_written, doc_updated, pr_opened, merged, escalated, error.`,
     ``,
     `## Phase 1 — Discover`,
     `Run these four finders. Do them in whatever order you like, but do ALL of them, and report a finder_result for each even when it found nothing — a clean finder is a result, not a gap.`,
@@ -118,7 +118,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     `For each UNPROVEN finding, try three times, independently, to REFUTE it. Read the actual code yourself each time — do not take the description's word for it. Default to refuted if you are not confident it is a real, reproducible bug: a plausible-looking pattern that is not actually wrong wastes far more of a reviewer's time than a missed bug does.`,
     `If at least two of the three refute it: PATCH it to dismissed —`,
     `  curl -sS -X PATCH "${base}/pipeline/findings/<id>" -H "Content-Type: application/json" ${auth} -d '{"status":"dismissed"}'`,
-    `and report a verify_result saying why. Otherwise it survives to Phase 3.`,
+    `and report a verify stage saying why. Otherwise it survives to Phase 3.`,
     ``,
     `## Phase 3 — Fix`,
     !commands.fixable

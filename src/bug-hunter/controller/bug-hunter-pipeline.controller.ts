@@ -11,7 +11,12 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
+import {
+  ApiOperation,
+  ApiResponse,
+  ApiSecurity,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { AppConfigService } from 'src/config/config.service';
@@ -28,6 +33,7 @@ import {
   BugHuntEventDto,
   BugFindingDto,
   RecordBugFixPlanDto,
+  ReportBugHuntEventDto,
 } from '../dto/bug-hunter.dto';
 import { BugFixSessionService } from '../service/bug-fix-session.service';
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
@@ -287,18 +293,16 @@ export class BugHunterPipelineController {
   @Post('runs/:id/report')
   @ApiOperation({
     summary: 'Append one pipeline event to a run (pipeline only)',
+    description:
+      'An unrecognised `stage` is rejected with a 400 naming it, rather than ' +
+      "reaching the column's CHECK constraint and coming back as a generic " +
+      '500 — see ReportBugHuntEventDto for why this one route validates ' +
+      'strictly.',
   })
+  @ApiResponse({ status: 400, description: 'Unrecognised `stage`.' })
   async report(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body()
-    body: {
-      repo?: string;
-      stage: BugHuntEventDto['stage'];
-      summary: string;
-      payload?: Record<string, any>;
-      suggestionId?: string;
-      findingId?: string;
-    },
+    @Body() body: ReportBugHuntEventDto,
   ): Promise<BugHuntEventDto> {
     return toEventDto(
       await this.bugHunterService.appendEvent({ runId: id, ...body }),
