@@ -66,6 +66,7 @@ import {
 } from '../dto/ai.response.dto';
 import { ScribeSessionMode } from 'src/common/constants/chat.constants';
 import { RoleplayTestRunRequest } from 'src/roleplay-studio/type/roleplay-test-run-request.type';
+import { WorkerType } from 'src/user/enum/user.enum';
 
 @Injectable()
 export class AiService {
@@ -827,6 +828,16 @@ export class AiService {
     memoryPrompt?: string | null,
     enableRecommendations?: boolean,
     languageCode?: string,
+    /**
+     * Who the debrief note is being written to. Grouped into one object because
+     * this signature is already six positional arguments deep, and these three
+     * always travel together.
+     */
+    supervisorContext?: {
+      workerType?: WorkerType | null;
+      learnerName?: string | null;
+      supervisorMemory?: string | null;
+    },
   ): Promise<ScenarioEvaluationResponse> {
     try {
       const prompts = await this.getPromptOverrides();
@@ -838,6 +849,9 @@ export class AiService {
         prompts,
         enable_recommendations: enableRecommendations ?? false,
         language_code: languageCode ?? null,
+        worker_type: supervisorContext?.workerType ?? null,
+        learner_name: supervisorContext?.learnerName ?? null,
+        supervisor_memory: supervisorContext?.supervisorMemory ?? null,
       };
 
       const response = await this.makeRequest<

@@ -53,7 +53,12 @@ import {
   ProfileImageUploadRequestDto,
   ProfileImageUploadResponseDto,
 } from '../dto/profile-image-upload-request.dto';
-import { ProfileImageUploadContentType } from '../enum/user.enum';
+import {
+  ProfileImageUploadContentType,
+  resolveWorkerType,
+  WorkerType,
+} from '../enum/user.enum';
+import { BulkSetWorkerTypeResponseDto } from '../dto/worker-type.dto';
 import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
 import { DeleteProfileImageDto } from '../dto/delete-profile-image.dto';
@@ -188,6 +193,9 @@ export class UserService {
       status: user.status,
       profileImageUrl: user.profileImageUrl,
       profileCompleted: user.profileCompleted,
+      // Always resolved (never null) so clients never special-case a missing
+      // value; admin-assigned only — there is no self-declaration path.
+      workerType: resolveWorkerType(user.metadata),
     };
   }
 
@@ -297,6 +305,7 @@ export class UserService {
       roles: rolesMap.get(user.user_id) || [],
       creditLimit: user.simulation_credit_limit,
       consumedCredits: user.simulation_consumed_credits,
+      workerType: resolveWorkerType(user.user_metadata),
     }));
 
     return { data: transformedUsers, count: result.count };
@@ -539,6 +548,115 @@ export class UserService {
       },
     });
     return { success: true };
+  }
+
+  /**
+   * Admin-only, single-user set of `metadata.workerType`. Read-modify-write:
+   * every other key already on `metadata` is preserved. Tenant-scoped —
+   * looking the user up by `{ id, tenantId }` means an id belonging to
+   * another tenant resolves as not-found rather than leaking its existence.
+   */
+  async setWorkerType(
+    id: number,
+    workerType: WorkerType,
+  ): Promise<UserUpdateResponseDto> {
+    const userIdStr = ExecutionManager.getUserId();
+    const userId = userIdStr ? Number(userIdStr) : undefined;
+
+    const isMultiTenantAdmin = userId
+      ? await this.permissionsService.isMultiTenantAdmin(userId)
+      : false;
+    if (isMultiTenantAdmin) {
+      throw new BadRequestException('User is not authorized to update user');
+    }
+
+    const user = await this.userRepository.findOne({
+      where: { id, tenantId: ExecutionManager.getTenantId() },
+    });
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    await this.userRepository.update(id, {
+      metadata: { ...(user.metadata ?? {}), workerType },
+      ...(userId ? { updatedBy: userId } : {}),
+    } as Partial<User>);
+
+    this.auditLogger.log({
+      eventType: AUDIT_EVENTS.USER_UPDATED,
+      tenantId: user.tenantId,
+      userId: user.id,
+      details: {
+        message: 'Worker type updated',
+        workerType,
+        updatedBy: userId,
+      },
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Admin-only, bulk set of `metadata.workerType` across many users in one
+   * call — org admins onboard cohorts of volunteers at a time, so a
+   * one-by-one loop from the client is not workable.
+   *
+   * All-or-nothing and tenant-scoped: every id must belong to the caller's
+   * own tenant or the whole batch is rejected before any write, the same
+   * way `bulkAddUsers` rejects on a bad email rather than silently skipping
+   * it. Each row still gets its own read-modify-write so unrelated metadata
+   * keys on other users are untouched.
+   */
+  async bulkSetWorkerType(
+    userIds: number[],
+    workerType: WorkerType,
+  ): Promise<BulkSetWorkerTypeResponseDto> {
+    const userIdStr = ExecutionManager.getUserId();
+    const callerId = userIdStr ? Number(userIdStr) : undefined;
+
+    const isMultiTenantAdmin = callerId
+      ? await this.permissionsService.isMultiTenantAdmin(callerId)
+      : false;
+    if (isMultiTenantAdmin) {
+      throw new BadRequestException('User is not authorized to update user');
+    }
+
+    const uniqueIds = Array.from(new Set(userIds));
+    const tenantId = ExecutionManager.getTenantId();
+
+    const users = await this.userRepository.find({
+      where: { id: In(uniqueIds), tenantId },
+    });
+
+    if (users.length !== uniqueIds.length) {
+      const foundIds = new Set(users.map((user) => user.id));
+      const missing = uniqueIds.filter((id) => !foundIds.has(id));
+      throw new BadRequestException(
+        `These user IDs were not found in your organization: ${missing.join(', ')}`,
+      );
+    }
+
+    for (const user of users) {
+      await this.userRepository.update(user.id, {
+        metadata: { ...(user.metadata ?? {}), workerType },
+        ...(callerId ? { updatedBy: callerId } : {}),
+      } as Partial<User>);
+    }
+
+    for (const user of users) {
+      this.auditLogger.log({
+        eventType: AUDIT_EVENTS.USER_UPDATED,
+        tenantId: user.tenantId,
+        userId: user.id,
+        details: {
+          message: 'Worker type updated (bulk)',
+          workerType,
+          updatedBy: callerId,
+        },
+      });
+    }
+
+    return { updated: users.length };
   }
 
   async addUser(userData: AddUserDto): Promise<AddUserResponseDto> {

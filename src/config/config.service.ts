@@ -444,11 +444,16 @@ export class AppConfigService {
   }
   get featureFlag() {
     return {
+      // Defaults ON. The `false` branch calls ally-ai's old
+      // /summary/scenario/feedback route, which that service no longer serves,
+      // so an unset env var used to mean "every learner sees 'Failed to
+      // generate summary'". It is also the only branch that produces the
+      // supervisor debrief note. Kept as a flag purely as a kill switch.
       useScenarioSessionEvaluation:
         this.configService.get<string>(
           'FEATURE_SCENARIO_SESSION_EVALUATION',
-          'false',
-        ) === 'true',
+          'true',
+        ) !== 'false',
       scenarioSessionAudioRecording:
         this.configService.get<string>(
           'FEATURE_SCENARIO_SESSION_AUDIO_RECORDING',

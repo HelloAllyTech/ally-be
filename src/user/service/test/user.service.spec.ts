@@ -20,7 +20,10 @@ import { UpdateUserPreferencesDto } from 'src/user/dto/update-user-prefernces.dt
 import { UserPreferencesRepository } from 'src/user/repository/user-prefernces.repository';
 import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
-import { ProfileImageUploadContentType } from 'src/user/enum/user.enum';
+import {
+  ProfileImageUploadContentType,
+  WorkerType,
+} from 'src/user/enum/user.enum';
 import { AdminTenantService } from '../admin-tenant.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -365,6 +368,30 @@ describe('UserService', () => {
         UserRole.LEARNER,
       ]);
     });
+
+    // mockUser carries no `metadata` at all, which is the "never self-declared,
+    // never backfilled" case every pre-existing account starts from.
+    it('should resolve workerType to LAY when metadata has none', async () => {
+      mockGroupService.getUserRolesByUserId.mockResolvedValue([
+        { id: 1, name: UserRole.CLIENT },
+      ]);
+      const result = await service.getMinimalUserInfo(mockUser);
+      expect(result && result.workerType).toBe(WorkerType.LAY);
+    });
+
+    it('should resolve an admin-assigned workerType from metadata', async () => {
+      mockGroupService.getUserRolesByUserId.mockResolvedValue([
+        { id: 1, name: UserRole.CLIENT },
+      ]);
+      const userWithWorkerType = {
+        ...mockUser,
+        metadata: { workerType: WorkerType.EXPERIENCED_PROFESSIONAL },
+      };
+      const result = await service.getMinimalUserInfo(userWithWorkerType);
+      expect(result && result.workerType).toBe(
+        WorkerType.EXPERIENCED_PROFESSIONAL,
+      );
+    });
   });
 
   describe('getCounselorNames', () => {
@@ -484,6 +511,33 @@ describe('UserService', () => {
         [1],
       );
     });
+
+    it('should resolve workerType per user, defaulting to LAY when unset', async () => {
+      mockUsersRepository.getAllUsers.mockResolvedValue({
+        users: [
+          {
+            user_id: 1,
+            user_name: 'No Worker Type',
+            user_metadata: {},
+            user_tenant_id: 'test-tenant',
+          },
+          {
+            user_id: 2,
+            user_name: 'Has Worker Type',
+            user_metadata: { workerType: WorkerType.EARLY_PROFESSIONAL },
+            user_tenant_id: 'test-tenant',
+          },
+        ],
+        count: 2,
+      });
+      mockUsersGroupService.getUserGroupsByUserIds.mockResolvedValue([]);
+
+      const result = await service.getAllUsers({});
+
+      expect(result.data[0].workerType).toBe(WorkerType.LAY);
+      expect(result.data[1].workerType).toBe(WorkerType.EARLY_PROFESSIONAL);
+    });
+
     it('should return empty array when no users found', async () => {
       mockUsersRepository.getAllUsers.mockResolvedValue({
         users: [],
@@ -1142,6 +1196,131 @@ describe('UserService', () => {
         expect(result.email).toBe('new@example.com');
         expect(mockUsersRepository.save).toHaveBeenCalled();
       });
+    });
+  });
+
+  describe('setWorkerType', () => {
+    it('should persist the worker type while preserving other metadata keys', async () => {
+      const userWithMetadata = {
+        ...mockUser,
+        metadata: { onboardingComplete: true },
+      };
+      mockUsersRepository.findOne.mockResolvedValue(userWithMetadata);
+      mockUsersRepository.update.mockResolvedValue({ affected: 1 });
+
+      const result = await service.setWorkerType(
+        1,
+        WorkerType.EARLY_PROFESSIONAL,
+      );
+
+      expect(result).toEqual({ success: true });
+      expect(mockUsersRepository.findOne).toHaveBeenCalledWith({
+        where: { id: 1, tenantId: 'test-tenant' },
+      });
+      expect(mockUsersRepository.update).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          metadata: {
+            onboardingComplete: true,
+            workerType: WorkerType.EARLY_PROFESSIONAL,
+          },
+        }),
+      );
+    });
+
+    it('should set updatedBy when userId is available', async () => {
+      const userId = '303';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockUsersRepository.findOne.mockResolvedValue(mockUser);
+      mockUsersRepository.update.mockResolvedValue({ affected: 1 });
+
+      await service.setWorkerType(1, WorkerType.LAY);
+
+      expect(mockUsersRepository.update).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ updatedBy: 303 }),
+      );
+    });
+
+    it('should throw NotFoundException when the user is not found in the caller tenant', async () => {
+      mockUsersRepository.findOne.mockResolvedValue(null);
+      await expect(service.setWorkerType(1, WorkerType.LAY)).rejects.toThrow(
+        'User with ID 1 not found',
+      );
+      expect(mockUsersRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('should throw BadRequestException when MULTI_TENANT_ADMIN attempts to set worker type', async () => {
+      const userId = '123';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+
+      await expect(service.setWorkerType(1, WorkerType.LAY)).rejects.toThrow(
+        'User is not authorized to update user',
+      );
+      expect(mockUsersRepository.findOne).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('bulkSetWorkerType', () => {
+    it('should apply the worker type to every listed id, preserving other metadata', async () => {
+      const userA = { ...mockUser, id: 1, metadata: { note: 'a' } };
+      const userB = { ...mockUser, id: 2, metadata: null };
+      mockUsersRepository.find.mockResolvedValue([userA, userB]);
+      mockUsersRepository.update.mockResolvedValue({ affected: 1 });
+
+      const result = await service.bulkSetWorkerType(
+        [1, 2],
+        WorkerType.EXPERIENCED_PROFESSIONAL,
+      );
+
+      expect(result).toEqual({ updated: 2 });
+      expect(mockUsersRepository.update).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          metadata: {
+            note: 'a',
+            workerType: WorkerType.EXPERIENCED_PROFESSIONAL,
+          },
+        }),
+      );
+      expect(mockUsersRepository.update).toHaveBeenCalledWith(
+        2,
+        expect.objectContaining({
+          metadata: { workerType: WorkerType.EXPERIENCED_PROFESSIONAL },
+        }),
+      );
+    });
+
+    it('should reject the whole batch when an id does not belong to the caller tenant', async () => {
+      // Only one of the two requested ids resolved under the tenant-scoped
+      // lookup — the other belongs to a different tenant or does not exist.
+      mockUsersRepository.find.mockResolvedValue([{ ...mockUser, id: 1 }]);
+
+      await expect(
+        service.bulkSetWorkerType([1, 2], WorkerType.LAY),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockUsersRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('should dedupe repeated ids before checking tenant membership', async () => {
+      mockUsersRepository.find.mockResolvedValue([{ ...mockUser, id: 1 }]);
+
+      const result = await service.bulkSetWorkerType([1, 1], WorkerType.LAY);
+
+      expect(result).toEqual({ updated: 1 });
+      expect(mockUsersRepository.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('should throw BadRequestException when MULTI_TENANT_ADMIN attempts a bulk set', async () => {
+      const userId = '123';
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(userId);
+      mockPermissionsService.isMultiTenantAdmin.mockResolvedValue(true);
+
+      await expect(
+        service.bulkSetWorkerType([1, 2], WorkerType.LAY),
+      ).rejects.toThrow('User is not authorized to update user');
+      expect(mockUsersRepository.find).not.toHaveBeenCalled();
     });
   });
 

@@ -62,6 +62,7 @@ import { ScenarioSessionRecordingService } from '../scenario-session-recording.s
 import { ScenarioSessionEvaluationService } from '../scenario-session-evaluation.service';
 import { ScenarioSessionDetailsRepository } from '../../repository/scenario-session-details.repository';
 import { GlossaryAdherenceService } from 'src/language/service/glossary-adherence.service';
+import { LearnerSupervisorMemoryService } from '../learner-supervisor-memory.service';
 import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -558,6 +559,15 @@ describe('ScenarioSessionService', () => {
         {
           provide: TranscriptTranslationService,
           useValue: mockTranscriptTranslationService,
+        },
+        {
+          provide: LearnerSupervisorMemoryService,
+          useValue: {
+            // Null memory is the first-debrief case, which is what most of
+            // these fixtures represent.
+            getSupervisorMemoryPrompt: jest.fn().mockResolvedValue(null),
+            recordFromEvaluation: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();
@@ -1588,6 +1598,10 @@ describe('ScenarioSessionService', () => {
         undefined,
         true,
         undefined,
+        // Supervisor context for the debrief note. Undefined worker type and
+        // name here because this fixture's session has no resolvable user;
+        // ally-ai falls back to the lay register in that case.
+        expect.objectContaining({ supervisorMemory: null }),
       );
 
       mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
@@ -1660,6 +1674,7 @@ describe('ScenarioSessionService', () => {
         undefined,
         true,
         'hi',
+        expect.objectContaining({ supervisorMemory: null }),
       );
 
       mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
