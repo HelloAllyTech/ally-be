@@ -5,6 +5,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  ParseIntPipe,
   ParseUUIDPipe,
   Patch,
   Post,
@@ -123,6 +124,9 @@ import {
   LanguageMixResponseDto,
 } from '../dto/language-mix-analytics.dto';
 import {
+  SkillGrowthLearnerSeriesResponseDto,
+  SkillGrowthLearnersQueryDto,
+  SkillGrowthLearnersResponseDto,
   SkillGrowthQueryDto,
   SkillGrowthResponseDto,
 } from '../dto/skill-growth-analytics.dto';
@@ -878,6 +882,60 @@ export class AnalyticsController {
     @Query() query: SkillGrowthQueryDto,
   ): Promise<SkillGrowthResponseDto> {
     return this.skillGrowthAnalyticsService.getSkillGrowth(query);
+  }
+
+  @Get('skill-growth/learners')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Learners with their own-baseline skill trend (super-admin)',
+    description:
+      'The drill-down behind the skill-growth curve: one row per learner with ' +
+      'an evaluated session, classified improving/flat/declining against ' +
+      'their OWN first sessions (last `window` vs first `window` mean, flat ' +
+      'within ±`flatBand`). Learners below `minSessions` are listed as ' +
+      '`insufficient` with null means rather than hidden, so the classified ' +
+      'share is read against the whole population. Self-vs-self on purpose: ' +
+      'no cross-learner ranking is offered, only sort keys. Thresholds travel ' +
+      'in the response; scores are LLM judged — see `provenance`.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Learner trend page retrieved successfully',
+    type: SkillGrowthLearnersResponseDto,
+  })
+  async getSkillGrowthLearners(
+    @Query() query: SkillGrowthLearnersQueryDto,
+  ): Promise<SkillGrowthLearnersResponseDto> {
+    return this.skillGrowthAnalyticsService.getLearnerTrends(query);
+  }
+
+  @Get('skill-growth/learners/:userId')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: "One learner's skill timeline (super-admin)",
+    description:
+      'Every evaluated roleplay session (composite score plus per-skill ' +
+      '`skillCoverage` where the evaluation left one) and every scored ' +
+      'quiz/annotation attempt for one learner, oldest first. The two series ' +
+      'are returned side by side and never blended — a composite index would ' +
+      'hide which signal moved. 404 on an unknown user id; a known learner ' +
+      'with no evaluated sessions returns empty series, because "no judged ' +
+      'sessions yet" is an answer, not an error.',
+  })
+  @ApiParam({ name: 'userId', description: 'users.id of the learner' })
+  @ApiResponse({
+    status: 200,
+    description: 'Learner series retrieved successfully',
+    type: SkillGrowthLearnerSeriesResponseDto,
+  })
+  async getSkillGrowthLearnerSeries(
+    @Param('userId', ParseIntPipe) userId: number,
+  ): Promise<SkillGrowthLearnerSeriesResponseDto> {
+    return this.skillGrowthAnalyticsService.getLearnerSeries(userId);
   }
 
   @Get('quality-distribution')

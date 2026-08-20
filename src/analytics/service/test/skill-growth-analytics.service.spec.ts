@@ -5,11 +5,17 @@ import { MIN_SCORE_SAMPLE_SIZE } from '../../repository/quality-distribution-ana
 import {
   SKILL_GROWTH_DERIVATION,
   SKILL_GROWTH_EXPERIENCED_MIN_SESSIONS,
+  SKILL_GROWTH_LEARNER_SESSION_CAP,
   SKILL_GROWTH_MAX_ORDINAL,
   SKILL_GROWTH_PROVENANCE_NOTE,
+  SKILL_TREND_FLAT_BAND,
+  SKILL_TREND_MIN_SESSIONS,
+  SKILL_TREND_WINDOW,
   SkillGrowthAnalyticsRepository,
   SkillGrowthDistribution,
+  SkillGrowthLearnerSession,
   SkillGrowthOrdinalRow,
+  SkillTrendMix,
 } from '../../repository/skill-growth-analytics.repository';
 
 /** A cell with `n` at or above the floor, so its score survives suppression. */
@@ -33,12 +39,31 @@ const emptyDistribution: SkillGrowthDistribution = {
   evaluatedSessions: 0,
 };
 
+const emptyTrendMix: SkillTrendMix = {
+  classifiedLearners: 0,
+  insufficientLearners: 0,
+  improving: 0,
+  flat: 0,
+  declining: 0,
+  months: [],
+};
+
+/** A learner session with only the fields classification reads. */
+const sessionAt = (ordinal: number, compositeScore: number) => ({
+  ordinal,
+  occurredAt: `2026-0${Math.min(ordinal, 9)}-01T00:00:00.000Z`,
+  scenarioTitle: 'De-escalation basics',
+  compositeScore,
+  skillCoverage: null,
+});
+
 describe('SkillGrowthAnalyticsService', () => {
   let service: SkillGrowthAnalyticsService;
   let repository: jest.Mocked<SkillGrowthAnalyticsRepository>;
 
   const setup = async (
     distribution: SkillGrowthDistribution = emptyDistribution,
+    trendMix: SkillTrendMix = emptyTrendMix,
   ) => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -47,6 +72,13 @@ describe('SkillGrowthAnalyticsService', () => {
           provide: SkillGrowthAnalyticsRepository,
           useValue: {
             getOrdinalDistribution: jest.fn().mockResolvedValue(distribution),
+            getTrendMix: jest.fn().mockResolvedValue(trendMix),
+            getLearnerTrendPage: jest
+              .fn()
+              .mockResolvedValue({ rows: [], total: 0 }),
+            getLearnerIdentity: jest.fn().mockResolvedValue(null),
+            getLearnerSessions: jest.fn().mockResolvedValue([]),
+            getLearnerKnowledgeAttempts: jest.fn().mockResolvedValue([]),
           },
         },
       ],
@@ -199,5 +231,149 @@ describe('SkillGrowthAnalyticsService', () => {
     await service.getSkillGrowth({ tenantId: '   ' });
 
     expect(repository.getOrdinalDistribution).toHaveBeenCalledWith(undefined);
+    expect(repository.getTrendMix).toHaveBeenCalledWith(undefined);
+  });
+
+  it('attaches the trend mix with the thresholds it was classified under', async () => {
+    await setup(emptyDistribution, {
+      classifiedLearners: 10,
+      insufficientLearners: 30,
+      improving: 6,
+      flat: 3,
+      declining: 1,
+      months: [{ month: '2026-07', improving: 6, flat: 3, declining: 1 }],
+    });
+
+    const result = await service.getSkillGrowth({});
+
+    expect(result.trendMix.improving).toBe(6);
+    expect(result.trendMix.insufficientLearners).toBe(30);
+    expect(result.trendMix.months).toHaveLength(1);
+    // The knobs travel with the numbers, so no client re-invents them.
+    expect(result.trendMix.thresholds).toEqual({
+      minSessions: SKILL_TREND_MIN_SESSIONS,
+      window: SKILL_TREND_WINDOW,
+      flatBand: SKILL_TREND_FLAT_BAND,
+    });
+  });
+
+  describe('getLearnerTrends', () => {
+    it('defaults to the biggest movers first and echoes the page shape', async () => {
+      await setup();
+
+      const result = await service.getLearnerTrends({});
+
+      expect(repository.getLearnerTrendPage).toHaveBeenCalledWith({
+        tenantId: undefined,
+        limit: 20,
+        offset: 0,
+        sort: 'delta',
+        descending: true,
+      });
+      expect(result.limit).toBe(20);
+      expect(result.offset).toBe(0);
+      expect(result.thresholds.minSessions).toBe(SKILL_TREND_MIN_SESSIONS);
+      expect(result.provenance.note).toBe(SKILL_GROWTH_PROVENANCE_NOTE);
+    });
+
+    it('passes paging, sort and tenant through untranslated', async () => {
+      await setup();
+
+      await service.getLearnerTrends({
+        tenantId: ' ally ',
+        limit: 50,
+        offset: 100,
+        sort: 'lastSessionAt',
+        order: 'asc',
+      });
+
+      expect(repository.getLearnerTrendPage).toHaveBeenCalledWith({
+        tenantId: 'ally',
+        limit: 50,
+        offset: 100,
+        sort: 'lastSessionAt',
+        descending: false,
+      });
+    });
+  });
+
+  describe('getLearnerSeries', () => {
+    const identity = {
+      id: 7,
+      name: 'Asha',
+      email: 'asha@example.com',
+      tenantId: 'ally',
+    };
+
+    it('404s on an unknown user id', async () => {
+      await setup();
+
+      await expect(service.getLearnerSeries(999)).rejects.toThrow(
+        'No user with id 999',
+      );
+    });
+
+    it('returns empty series for a learner with no evaluated sessions', async () => {
+      await setup();
+      repository.getLearnerIdentity.mockResolvedValue(identity);
+
+      const result = await service.getLearnerSeries(7);
+
+      expect(result.sessions).toEqual([]);
+      expect(result.knowledgeAttempts).toEqual([]);
+      expect(result.learner.trend).toBe('insufficient');
+      expect(result.learner.delta).toBeNull();
+      expect(result.truncated).toBe(false);
+    });
+
+    it('classifies the learner from the same windows the list uses', async () => {
+      await setup();
+      repository.getLearnerIdentity.mockResolvedValue(identity);
+      // First window mean (40+50)/2 = 45; last window (70+80)/2 = 75; +30.
+      repository.getLearnerSessions.mockResolvedValue([
+        sessionAt(1, 40),
+        sessionAt(2, 50),
+        sessionAt(3, 60),
+        sessionAt(4, 70),
+        sessionAt(5, 80),
+      ]);
+
+      const result = await service.getLearnerSeries(7);
+
+      expect(result.learner.evaluatedSessions).toBe(5);
+      expect(result.learner.firstWindowMean).toBe(45);
+      expect(result.learner.lastWindowMean).toBe(75);
+      expect(result.learner.delta).toBe(30);
+      expect(result.learner.trend).toBe('improving');
+    });
+
+    it('reports a delta inside the flat band as flat, not movement', async () => {
+      await setup();
+      repository.getLearnerIdentity.mockResolvedValue(identity);
+      repository.getLearnerSessions.mockResolvedValue([
+        sessionAt(1, 60),
+        sessionAt(2, 60),
+        sessionAt(3, 60),
+        sessionAt(4, 60 + SKILL_TREND_FLAT_BAND), // +2.5 mean shift: inside the band
+      ]);
+
+      const result = await service.getLearnerSeries(7);
+
+      expect(result.learner.trend).toBe('flat');
+    });
+
+    it('flags a capped series as truncated instead of passing it off as complete', async () => {
+      await setup();
+      repository.getLearnerIdentity.mockResolvedValue(identity);
+      const capped: SkillGrowthLearnerSession[] = Array.from(
+        { length: SKILL_GROWTH_LEARNER_SESSION_CAP },
+        (_, i) => sessionAt(i + 1, 50),
+      );
+      repository.getLearnerSessions.mockResolvedValue(capped);
+
+      const result = await service.getLearnerSeries(7);
+
+      expect(result.truncated).toBe(true);
+    });
   });
 });
