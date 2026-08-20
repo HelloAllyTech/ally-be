@@ -104,7 +104,11 @@ export const SKILL_TREND_WINDOW = 2;
 export const SKILL_TREND_FLAT_BAND = 5;
 
 /** How a classified learner's history moved. `insufficient` = too few sessions to say. */
-export type SkillTrendClass = 'improving' | 'flat' | 'declining' | 'insufficient';
+export type SkillTrendClass =
+  | 'improving'
+  | 'flat'
+  | 'declining'
+  | 'insufficient';
 
 /**
  * Hard cap on rows a single learner's drill-down returns.
@@ -784,9 +788,7 @@ export class SkillGrowthAnalyticsRepository {
       .map((e) => {
         if (typeof e !== 'object' || e === null) return null;
         const category = (e as Record<string, unknown>).category;
-        const percentage = this.num(
-          (e as Record<string, unknown>).percentage,
-        );
+        const percentage = this.num((e as Record<string, unknown>).percentage);
         if (typeof category !== 'string' || percentage === null) return null;
         return { category, percentage };
       })

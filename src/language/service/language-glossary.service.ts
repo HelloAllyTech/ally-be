@@ -87,6 +87,11 @@ interface ConsolidatedProposal {
   sourceAnnotationIndexes?: number[];
 }
 
+interface ConsolidatedEngineeringFinding {
+  summary: string;
+  sourceAnnotationIndexes?: number[];
+}
+
 interface ConsolidatedSection {
   sectionCode: string;
   title?: string;
@@ -516,6 +521,18 @@ export class LanguageGlossaryService {
         }
       }
     }
+    // Engineering findings consume their annotations too — a reported
+    // production artifact should not be re-reported every cycle.
+    const recentBatches = await this.batchRepository.find({
+      where: { languageId },
+      order: { createdAt: 'DESC' },
+      take: 100,
+    });
+    for (const b of recentBatches) {
+      for (const finding of b.stats?.engineeringFindings ?? []) {
+        for (const id of finding.annotationIds ?? []) consumed.add(id);
+      }
+    }
 
     // Cross-tenant read by design: the glossary is global per language, so it
     // learns from every REAL tenant's judged sessions. Internal/demo/QA orgs
@@ -593,7 +610,8 @@ export class LanguageGlossaryService {
       },
     );
 
-    const consolidated = this.parseConsolidatedSections(raw);
+    const { sections: consolidated, engineeringFindings: rawFindings } =
+      this.parseConsolidationOutput(raw);
     const profileByTenant = await this.buildTenantProfileMap(languageId);
     // Distributional evidence corpora for the lexical gate, scoped to the
     // routing target: an overlay entry is judged against ITS population's
@@ -792,6 +810,15 @@ export class LanguageGlossaryService {
       }
     }
 
+    // Production-artifact clusters land on the batch as engineering findings
+    // (v3 prompt contract) — visible to engineers, never glossary content.
+    const engineeringFindings = rawFindings.map((f) => ({
+      summary: f.summary.slice(0, 500),
+      annotationIds: (f.sourceAnnotationIndexes ?? [])
+        .map((i) => annotations[i - 1]?.id)
+        .filter((id): id is string => Boolean(id)),
+    }));
+
     const distinctTenants = new Set(
       annotations.map((a) => a.tenantId).filter(Boolean),
     ).size;
@@ -803,6 +830,7 @@ export class LanguageGlossaryService {
       autoAccepted,
       skippedDuplicates,
       overlayEntries,
+      ...(engineeringFindings.length ? { engineeringFindings } : {}),
     };
     await this.batchRepository.save(batch);
 
@@ -810,7 +838,7 @@ export class LanguageGlossaryService {
       `[GLOSSARY_CONSOLIDATE] language=${language.value} batch=${batch.id} ` +
         `annotations=${annotations.length} tenants=${distinctTenants} ` +
         `proposed=${proposed} autoAccepted=${autoAccepted} overlays=${overlayEntries} ` +
-        `duplicates=${skippedDuplicates} sections=${touched.join(',')}`,
+        `duplicates=${skippedDuplicates} engFindings=${engineeringFindings.length} sections=${touched.join(',')}`,
     );
     // The cycle's final stage in auto mode: recompute tier assignment now
     // that new entries are live. Best-effort — a retier failure never fails
@@ -833,7 +861,10 @@ export class LanguageGlossaryService {
       overlayEntries,
       skippedDuplicates,
       sections: touched,
-      batchId: batchEntries.length > 0 ? batch.id : null,
+      batchId:
+        batchEntries.length > 0 || engineeringFindings.length > 0
+          ? batch.id
+          : null,
       ...(retier ? { retier } : {}),
     };
   }
@@ -1331,7 +1362,12 @@ export class LanguageGlossaryService {
   }
 
   /** Parse the consolidation model output (tolerating markdown fences). */
-  private parseConsolidatedSections(raw: string): ConsolidatedSection[] {
+  /** Parse v3 output ({sections, engineeringFindings}) tolerating the legacy
+   * bare-array shape and markdown fences. */
+  private parseConsolidationOutput(raw: string): {
+    sections: ConsolidatedSection[];
+    engineeringFindings: ConsolidatedEngineeringFinding[];
+  } {
     const cleaned = raw
       .trim()
       .replace(/^```(?:json)?\s*/i, '')
@@ -1352,12 +1388,25 @@ export class LanguageGlossaryService {
         'Glossary consolidation output is not a section array',
       );
     }
-    return list.filter(
-      (s): s is ConsolidatedSection =>
-        !!s &&
-        typeof (s as ConsolidatedSection).sectionCode === 'string' &&
-        Array.isArray((s as ConsolidatedSection).proposals),
+    const findingsRaw = Array.isArray(parsed)
+      ? []
+      : ((parsed as Record<string, unknown>)?.engineeringFindings as unknown[]);
+    const engineeringFindings = (
+      Array.isArray(findingsRaw) ? findingsRaw : []
+    ).filter(
+      (f): f is ConsolidatedEngineeringFinding =>
+        !!f &&
+        typeof (f as ConsolidatedEngineeringFinding).summary === 'string',
     );
+    return {
+      sections: list.filter(
+        (s): s is ConsolidatedSection =>
+          !!s &&
+          typeof (s as ConsolidatedSection).sectionCode === 'string' &&
+          Array.isArray((s as ConsolidatedSection).proposals),
+      ),
+      engineeringFindings,
+    };
   }
 
   /**

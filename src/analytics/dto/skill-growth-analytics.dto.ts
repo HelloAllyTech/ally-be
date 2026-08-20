@@ -342,7 +342,6 @@ export class SkillGrowthResponseDto {
   computedAt!: string;
 }
 
-
 /** Paging + sorting for the learner drill-down list. */
 export class SkillGrowthLearnersQueryDto {
   @ApiProperty({
@@ -553,7 +552,8 @@ export class SkillGrowthLearnerSeriesResponseDto {
   learner!: SkillGrowthLearnerDto;
 
   @ApiProperty({
-    description: "Every evaluated session, oldest first (the learner's own x-axis).",
+    description:
+      "Every evaluated session, oldest first (the learner's own x-axis).",
     type: [SkillGrowthLearnerSessionDto],
   })
   sessions!: SkillGrowthLearnerSessionDto[];

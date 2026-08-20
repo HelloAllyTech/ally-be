@@ -782,6 +782,49 @@ describe('LanguageGlossaryService', () => {
       expect(savedBatch.status).toBe('rolled_back');
     });
 
+    it('routes production-artifact clusters to engineering findings, and consumes them', async () => {
+      annotationQb.getMany.mockResolvedValue([
+        annotation('a1', 'tenant-1'),
+        annotation('a2', 'tenant-1', {
+          dimension: 'persona_social',
+          category: 'persona_break',
+        }),
+      ]);
+      getCompletion.mockResolvedValue(
+        JSON.stringify({
+          sections: [],
+          engineeringFindings: [
+            {
+              summary:
+                'Replies frequently truncated mid-sentence (TTS cutoff?)',
+              sourceAnnotationIndexes: [1, 2],
+            },
+          ],
+        }),
+      );
+
+      const result = await service.consolidateGlossary(6);
+
+      expect(result.proposed).toBe(0);
+      expect(result.batchId).toBe('batch-1'); // findings alone keep the handle
+      const savedBatch = batchRepository.save.mock.calls.at(-1)[0];
+      expect(savedBatch.stats.engineeringFindings).toEqual([
+        {
+          summary: 'Replies frequently truncated mid-sentence (TTS cutoff?)',
+          annotationIds: ['a1', 'a2'],
+        },
+      ]);
+      // No glossary section was written for the finding.
+      expect(glossaryRepository.save).not.toHaveBeenCalled();
+
+      // Next run: the finding's annotations are consumed via the batch record.
+      batchRepository.find.mockResolvedValue([savedBatch]);
+      getCompletion.mockClear();
+      const second = await service.consolidateGlossary(6);
+      expect(second.annotationsConsidered).toBe(0);
+      expect(getCompletion).not.toHaveBeenCalled();
+    });
+
     it('runs the tier pass after auto-accept (best-effort)', async () => {
       const retierSpy = jest
         .spyOn(service, 'retierGlossary')

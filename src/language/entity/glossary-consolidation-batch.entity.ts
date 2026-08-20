@@ -57,6 +57,9 @@ export class GlossaryConsolidationBatch extends BaseWithoutTenantEntity {
     autoAccepted: number;
     skippedDuplicates: number;
     overlayEntries: number;
+    /** Production-artifact clusters (truncation, loops) the LLM routed away
+     * from glossary content — the engineers' queue, not the reviewers'. */
+    engineeringFindings?: { summary: string; annotationIds: string[] }[];
   };
 
   @Column({ type: 'jsonb', default: () => `'[]'` })
