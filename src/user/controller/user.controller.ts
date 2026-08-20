@@ -62,6 +62,11 @@ import { FeatureToggleService } from 'src/authorization/service/feature-toggle.s
 import { SetFeatureTogglesDto } from 'src/authorization/dto/admin-feature-toggle.dto';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
+import {
+  BulkSetWorkerTypeDto,
+  BulkSetWorkerTypeResponseDto,
+  SetWorkerTypeDto,
+} from '../dto/worker-type.dto';
 
 @Controller('v1/users')
 @ApiTags('Users')
@@ -316,6 +321,46 @@ export class UserController {
     @Body() updateUserStatusDto: UpdateUserStatusDto,
   ): Promise<UserUpdateResponseDto> {
     return this.userService.updateUserStatus(id, updateUserStatusDto.status);
+  }
+
+  @ApiOperation({
+    summary: 'Bulk-set worker type for a list of users',
+    description:
+      'One call, many user ids, one worker type — for onboarding a cohort ' +
+      'of volunteers at once. All-or-nothing: rejected if any id does not ' +
+      "belong to the caller's organization.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Users updated successfully',
+    type: BulkSetWorkerTypeResponseDto,
+  })
+  @Patch('/worker-type/bulk')
+  @AuthPermissions([PERMISSIONS.EDIT_USER])
+  async bulkSetWorkerType(
+    @Body() body: BulkSetWorkerTypeDto,
+  ): Promise<BulkSetWorkerTypeResponseDto> {
+    return this.userService.bulkSetWorkerType(body.userIds, body.workerType);
+  }
+
+  @ApiOperation({
+    summary: "Set a user's worker type",
+    description:
+      'Sets the clinical-experience level that gates the register of the ' +
+      'AI supervisor debrief. Admin-only — learners never self-declare this.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'User updated successfully',
+    type: UserUpdateResponseDto,
+  })
+  @Patch('/:id/worker-type')
+  @AuthPermissions([PERMISSIONS.EDIT_USER])
+  async setWorkerType(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: SetWorkerTypeDto,
+  ): Promise<UserUpdateResponseDto> {
+    return this.userService.setWorkerType(id, body.workerType);
   }
 
   @Get('terms-and-agreement-status')

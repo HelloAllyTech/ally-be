@@ -107,6 +107,9 @@ import { ActorEvaluationCatchupSchedulerRegistrationService } from './service/ac
 import { ScenarioSessionEvaluationWebhookController } from './controller/scenario-session-evaluation-webhook.controller';
 import { RoomMetadataWebhookController } from './controller/room-metadata-webhook.controller';
 import { LearnRoomMetadata } from './entity/learn-room-metadata.entity';
+import { LearnerSupervisorMemory } from './entity/learner-supervisor-memory.entity';
+import { LearnerSupervisorMemoryService } from './service/learner-supervisor-memory.service';
+import { User } from 'src/user/entity/user.entity';
 import { RoomMetadataStoreService } from './service/room-metadata-store.service';
 import { AgentTestCaseController } from './controller/agent-test-case.controller';
 import { CompetencyBehavior } from './entity/competency-behavior.entity';
@@ -166,6 +169,8 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
       ScenarioSessionRecording,
       ScenarioVersion,
       LearnRoomMetadata,
+      LearnerSupervisorMemory,
+      User,
     ]),
     forwardRef(() => LiveKitModule),
     SessionEventModule,
@@ -204,6 +209,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     ScenarioVersionService,
     ScenarioVersionRepository,
     ScenarioSessionService,
+    LearnerSupervisorMemoryService,
     ScenarioSessionRepository,
     ScenarioSessionMessagesRepository,
     ScenariosRepository,
