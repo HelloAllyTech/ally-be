@@ -123,6 +123,11 @@ export class LanguageGlossarySection extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', length: 20, default: GlossarySectionStatus.DRAFT })
   status!: GlossarySectionStatus;
 
+  /** Admin override: the computed tier pass never changes a pinned section's
+   * injectionMode. Set automatically when an admin changes the mode by hand. */
+  @Column({ type: 'boolean', default: false })
+  tierPinned!: boolean;
+
   /** Consolidation-assigned score; drives Tier 0 slot allocation + eviction. */
   @Column({ type: 'int', nullable: true })
   importance?: number;

@@ -56,5 +56,19 @@ export const GLOSSARY_SYSTEMATIC_MIN = 5;
  * CONTRADICTED (the population itself says the word — don't fight real usage). */
 export const GLOSSARY_LEXICAL_CONTRADICTION_MIN = 5;
 
+/** Tier scoring: severity-weighted error mass counts this much per weighted
+ * unit relative to one corpus term occurrence. Severity weights follow the
+ * platform's read-time convention (minor 1 / major 5 / critical 10). */
+export const TIER_ERROR_MASS_WEIGHT = 20;
+export const TIER_SEVERITY_WEIGHTS: Record<string, number> = {
+  minor: 1,
+  major: 5,
+  critical: 10,
+};
+
+/** Density band around the knapsack cut inside which a section keeps its
+ * current tier — prevents cycle-to-cycle tier flapping. */
+export const TIER_HYSTERESIS = 0.15;
+
 /** Most-recent annotations considered per consolidation run (keeps the prompt bounded). */
 export const GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT = 200;

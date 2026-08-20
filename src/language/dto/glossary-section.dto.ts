@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsOptional,
@@ -30,4 +31,10 @@ export class UpsertGlossarySectionDto {
   @IsOptional()
   @IsInt()
   importance?: number;
+
+  /** Pin the tier against the computed re-tiering pass. Omitted + a manual
+   * injectionMode change ⇒ pins automatically; explicit false unpins. */
+  @IsOptional()
+  @IsBoolean()
+  tierPinned?: boolean;
 }

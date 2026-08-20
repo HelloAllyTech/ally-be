@@ -22,14 +22,24 @@ import {
   GLOSSARY_MIN_CLUSTER_SUPPORT,
   GLOSSARY_SYSTEMATIC_MIN,
   TIER0_TOKEN_CAP,
+  TIER_ERROR_MASS_WEIGHT,
+  TIER_HYSTERESIS,
+  TIER_SEVERITY_WEIGHTS,
 } from '../constants/glossary.constants';
 import {
   applySupportGate,
   clusterAnnotations,
+  countOccurrences,
+  parseSayAvoid,
   scoreLexicalEvidence,
   summarizeClusters,
   systematicFluency,
 } from '../util/construct-class.util';
+import {
+  computeTierAssignment,
+  TierAssignment,
+  TierCandidate,
+} from '../util/tier-assignment.util';
 import { UpsertGlossarySectionDto } from '../dto/glossary-section.dto';
 import {
   GlossaryEntryStatus,
@@ -105,6 +115,21 @@ export interface ConsolidateGlossaryResult {
   sections: string[];
   /** Rollback handle; null when the run made no changes. */
   batchId: string | null;
+  /** Computed tier reassignment (auto-accept runs only). */
+  retier?: RetierResult;
+}
+
+export interface RetierViewResult {
+  /** null = the global view; else the variety profile whose overlays competed. */
+  profileId: string | null;
+  promoted: string[];
+  demoted: string[];
+  tier0Tokens: number;
+  cap: number;
+}
+
+export interface RetierResult {
+  views: RetierViewResult[];
 }
 
 export interface ConsolidateGlossaryOptions {
@@ -166,6 +191,14 @@ export class LanguageGlossaryService {
       sectionCode,
     );
 
+    // A manual injectionMode change pins the tier: the admin's explicit
+    // choice must survive the computed re-tiering pass. Explicit
+    // dto.tierPinned always wins (false = hand the section back to the pass).
+    const modeChangedByHand =
+      existing && dto.injectionMode !== existing.injectionMode;
+    const tierPinned =
+      dto.tierPinned ?? (modeChangedByHand || existing?.tierPinned || false);
+
     const candidate = this.glossaryRepository.create({
       ...(existing ?? {
         languageId,
@@ -178,6 +211,7 @@ export class LanguageGlossaryService {
       retrievalHint: dto.retrievalHint,
       injectionMode: dto.injectionMode,
       importance: dto.importance,
+      tierPinned,
       version: (existing?.version ?? 0) + 1,
       updatedBy,
     });
@@ -768,6 +802,20 @@ export class LanguageGlossaryService {
         `proposed=${proposed} autoAccepted=${autoAccepted} overlays=${overlayEntries} ` +
         `duplicates=${skippedDuplicates} sections=${touched.join(',')}`,
     );
+    // The cycle's final stage in auto mode: recompute tier assignment now
+    // that new entries are live. Best-effort — a retier failure never fails
+    // the consolidation that preceded it.
+    let retier: RetierResult | undefined;
+    if (options.autoAccept && autoAccepted > 0) {
+      try {
+        retier = await this.retierGlossary(languageId, { apply: true });
+      } catch (error) {
+        this.logger.warn(
+          `[GLOSSARY_RETIER] skipped after consolidation for language ${languageId}: ${error}`,
+        );
+      }
+    }
+
     return {
       annotationsConsidered: annotations.length,
       proposed,
@@ -776,6 +824,7 @@ export class LanguageGlossaryService {
       skippedDuplicates,
       sections: touched,
       batchId: batchEntries.length > 0 ? batch.id : null,
+      ...(retier ? { retier } : {}),
     };
   }
 
@@ -938,6 +987,195 @@ export class LanguageGlossaryService {
       .take(GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT)
       .getMany();
     return recent.filter((a) => !consumed.has(a.id)).length;
+  }
+
+  /**
+   * The computed tier pass (every-turn vs on-demand): rank each published
+   * section by value density — term traffic in the live corpus plus
+   * severity-weighted error mass behind its rules, per token — and let
+   * Tier 0 be the knapsack prefix that fits the cap. Pinned sections are
+   * untouchable; a hysteresis band prevents cycle-to-cycle flapping.
+   *
+   * Views are assigned independently: the global view first (its always-set
+   * is shared by everyone), then each profile's overlays compete for the
+   * budget the global always-set leaves.
+   */
+  async retierGlossary(
+    languageId: number,
+    options: { apply?: boolean } = {},
+  ): Promise<RetierResult> {
+    const apply = options.apply !== false;
+    const language = await this.assertLanguageExists(languageId);
+    const all = await this.glossaryRepository.findAllForLanguage(languageId);
+    const published = all.filter(
+      (s) => s.status === GlossarySectionStatus.PUBLISHED,
+    );
+    if (published.length === 0) return { views: [] };
+
+    // Severity lookup for every accepted entry's source annotations, one query.
+    const annotationIds = [
+      ...new Set(
+        published.flatMap((s) =>
+          (s.entries ?? [])
+            .filter((e) => e.status === GlossaryEntryStatus.ACCEPTED)
+            .flatMap((e) => e.provenance?.annotationIds ?? []),
+        ),
+      ),
+    ];
+    const severityById = new Map<string, string>();
+    if (annotationIds.length > 0) {
+      const rows: { id: string; severity: string }[] =
+        await this.annotationRepository.manager.query(
+          `SELECT id, severity FROM language_error_annotations WHERE id = ANY($1::uuid[])`,
+          [annotationIds],
+        );
+      for (const row of rows) severityById.set(row.id, row.severity);
+    }
+
+    const errorMassOf = (section: LanguageGlossarySection): number =>
+      (section.entries ?? [])
+        .filter((e) => e.status === GlossaryEntryStatus.ACCEPTED)
+        .flatMap((e) => e.provenance?.annotationIds ?? [])
+        .reduce(
+          (sum, id) =>
+            sum + (TIER_SEVERITY_WEIGHTS[severityById.get(id) ?? ''] ?? 1),
+          0,
+        );
+
+    const usageOf = (
+      section: LanguageGlossarySection,
+      corpus: string,
+    ): number => {
+      const terms = new Set<string>();
+      for (const line of (section.content ?? '').split('\n')) {
+        const { say, avoid } = parseSayAvoid(line);
+        if (say) terms.add(say);
+        if (avoid) terms.add(avoid);
+        if (terms.size >= 40) break; // bound the scan for huge sections
+      }
+      let usage = 0;
+      for (const term of terms) usage += countOccurrences(corpus, term);
+      return usage;
+    };
+
+    const toCandidate = (
+      section: LanguageGlossarySection,
+      corpus: string,
+    ): TierCandidate => ({
+      key: section.profileId
+        ? `${section.sectionCode}@${section.profileId}`
+        : section.sectionCode,
+      tokens: countGlossaryTokens(compileSection(section)),
+      score:
+        usageOf(section, corpus) +
+        TIER_ERROR_MASS_WEIGHT * errorMassOf(section),
+      pinned: section.tierPinned === true,
+      currentMode:
+        section.injectionMode === GlossaryInjectionMode.ALWAYS
+          ? 'always'
+          : 'retrieved',
+    });
+
+    const applyAssignment = async (
+      sections: LanguageGlossarySection[],
+      assignment: TierAssignment,
+    ) => {
+      if (!apply) return;
+      for (const change of assignment.changes) {
+        const section = sections.find(
+          (s) =>
+            (s.profileId
+              ? `${s.sectionCode}@${s.profileId}`
+              : s.sectionCode) === change.key,
+        );
+        if (!section) continue;
+        section.injectionMode =
+          change.to === 'always'
+            ? GlossaryInjectionMode.ALWAYS
+            : GlossaryInjectionMode.RETRIEVED;
+        section.version += 1;
+        section.updatedBy = 'retier';
+        await this.glossaryRepository.save(section);
+      }
+    };
+
+    const views: RetierViewResult[] = [];
+
+    // Global view first — its always-set is every session's baseline.
+    const globalSections = published.filter((s) => !s.profileId);
+    const globalCorpus = (await this.fetchEvidenceCorpora(
+      language.value,
+      null,
+    ).catch(() => null)) ?? { learner: '', agent: '' };
+    const globalCombined = `${globalCorpus.learner}\n${globalCorpus.agent}`;
+    const globalAssignment = computeTierAssignment(
+      globalSections.map((s) => toCandidate(s, globalCombined)),
+      TIER0_TOKEN_CAP,
+      TIER_HYSTERESIS,
+    );
+    await applyAssignment(globalSections, globalAssignment);
+    views.push({
+      profileId: null,
+      promoted: globalAssignment.changes
+        .filter((c) => c.to === 'always')
+        .map((c) => c.key),
+      demoted: globalAssignment.changes
+        .filter((c) => c.to === 'retrieved')
+        .map((c) => c.key),
+      tier0Tokens: globalAssignment.tier0Tokens,
+      cap: TIER0_TOKEN_CAP,
+    });
+
+    // Each profile's overlays compete for what the global always-set leaves.
+    const overlayBudget = Math.max(
+      0,
+      TIER0_TOKEN_CAP - globalAssignment.tier0Tokens,
+    );
+    const profileIds = [
+      ...new Set(
+        published.map((s) => s.profileId).filter((p): p is string => !!p),
+      ),
+    ];
+    for (const profileId of profileIds) {
+      const overlays = published.filter((s) => s.profileId === profileId);
+      const corpus = (await this.fetchEvidenceCorpora(
+        language.value,
+        profileId,
+      ).catch(() => null)) ?? { learner: '', agent: '' };
+      const combined = `${corpus.learner}\n${corpus.agent}`;
+      const assignment = computeTierAssignment(
+        overlays.map((s) => toCandidate(s, combined)),
+        overlayBudget,
+        TIER_HYSTERESIS,
+      );
+      await applyAssignment(overlays, assignment);
+      views.push({
+        profileId,
+        promoted: assignment.changes
+          .filter((c) => c.to === 'always')
+          .map((c) => c.key),
+        demoted: assignment.changes
+          .filter((c) => c.to === 'retrieved')
+          .map((c) => c.key),
+        tier0Tokens: assignment.tier0Tokens,
+        cap: overlayBudget,
+      });
+    }
+
+    const totalChanges = views.reduce(
+      (sum, v) => sum + v.promoted.length + v.demoted.length,
+      0,
+    );
+    this.logger.log(
+      `[GLOSSARY_RETIER] language=${language.value} apply=${apply} changes=${totalChanges} ` +
+        views
+          .map(
+            (v) =>
+              `${v.profileId ?? 'global'}:+[${v.promoted.join(',')}]-[${v.demoted.join(',')}]`,
+          )
+          .join(' '),
+    );
+    return { views };
   }
 
   /**

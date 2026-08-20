@@ -172,6 +172,22 @@ export class LanguageGlossaryController {
     });
   }
 
+  @ApiOperation({
+    summary:
+      'Recompute Tier 0 / Tier 1 assignment (value-per-token knapsack; ' +
+      'pinned sections untouched). apply=false returns the plan without applying',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Post(':id/glossary/retier')
+  async retierGlossary(
+    @Param('id') id: number,
+    @Body() body?: { apply?: boolean },
+  ) {
+    return this.glossaryService.retierGlossary(Number(id), {
+      apply: body?.apply !== false,
+    });
+  }
+
   @ApiOperation({ summary: 'List consolidation batches (newest first)' })
   @AuthPermissions([PERMISSIONS.VIEW_ADMIN_LANGUAGES])
   @Get(':id/glossary/consolidation-batches')
