@@ -53,7 +53,8 @@ export class BugHuntRun extends BaseWithoutTenantEntity {
 
   /**
    * Raw token counts backing `totalTokenCostUsd`, snapshotted the same way and
-   * at the same time (migration `1912000000000`). Nullable: runs closed before
+   * at the same time (migration `1912000000000`, renamed to the table's camelCase
+   * convention in `1915000000000`). Nullable: runs closed before
    * this column existed have a cost snapshot but no token breakdown, and are
    * never backfilled — the run-history table just shows "—" for them.
    */
