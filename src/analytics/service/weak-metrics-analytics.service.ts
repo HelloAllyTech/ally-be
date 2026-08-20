@@ -194,6 +194,12 @@ export class WeakMetricsAnalyticsService {
         numerator,
         denominator,
         value: denominator > 0 ? numerator / denominator : null,
+        // Flagged, not dropped: the bucket is real and belongs in the expanded
+        // view's table. What it must not do is get drawn beside a bucket a
+        // hundred times its size, or become the delta the card reports.
+        sparse:
+          denominator > 0 &&
+          denominator < WEAK_METRICS_PARAMS.minBucketDenominator,
       };
     });
   }
@@ -253,7 +259,10 @@ export class WeakMetricsAnalyticsService {
     } = {},
   ): WeakMetricSeriesDto {
     const points = this.toPoints(rows);
-    const withValues = points.filter((p) => p.value !== null);
+    // The delta reads the last two buckets that can carry one. A thin bucket at
+    // the right-hand edge was reporting "worsening" off a handful of turns —
+    // the reading the card leads with, from the least reliable point in it.
+    const withValues = points.filter((p) => p.value !== null && !p.sparse);
     return {
       id,
       label,

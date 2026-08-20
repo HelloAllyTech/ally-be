@@ -147,6 +147,20 @@ export const WEAK_METRICS_PARAMS = {
   stasisMinWordLength: 4,
   /** A real client offers one or two solutions; above this is over-compliance. */
   solutionOfferThreshold: 2,
+  /**
+   * Denominator a weekly bucket needs before its rate is plotted.
+   *
+   * Traffic per language is lumpy — Tamil ran 97 real sessions in the week of
+   * 2026-05-25 and 2 in the week of 07-06 — and a rate over a handful of turns
+   * was drawn with the same weight as one over hundreds, then read by the
+   * delta arrow as the headline. A thin bucket at the right-hand edge produced
+   * "worsening" out of noise.
+   *
+   * 20 matches the platform's existing `MIN_N_FOR_SCORE`, so a thin sample
+   * means the same thing on this tab as everywhere else rather than being a
+   * second, private definition.
+   */
+  minBucketDenominator: 20,
 } as const;
 
 export const WEAK_METRICS_VERSION = 'v1';

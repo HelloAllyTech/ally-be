@@ -86,6 +86,17 @@ export class WeakMetricPointDto {
     description: 'numerator / denominator, or null when the denominator is 0',
   })
   value!: number | null;
+
+  @ApiProperty({
+    description:
+      'True when the denominator is below WEAK_METRICS_PARAMS.' +
+      'minBucketDenominator — the bucket is real but too thin to read as a ' +
+      'rate. Clients keep it in tables and leave it off plots, and it never ' +
+      "supplies the card's latest/previous delta. Traffic per language is " +
+      'lumpy enough that a two-session week was otherwise drawn beside a ' +
+      'ninety-seven-session one and became the headline.',
+  })
+  sparse!: boolean;
 }
 
 export enum WeakMetricState {
