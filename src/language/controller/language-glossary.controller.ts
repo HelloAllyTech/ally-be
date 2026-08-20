@@ -50,8 +50,14 @@ export class LanguageGlossaryController {
   async publishSection(
     @Param('id') id: number,
     @Param('sectionCode') sectionCode: string,
+    @Query('profileId') profileId?: string,
   ) {
-    return this.glossaryService.publishSection(Number(id), sectionCode);
+    return this.glossaryService.publishSection(
+      Number(id),
+      sectionCode,
+      undefined,
+      profileId || null,
+    );
   }
 
   @ApiOperation({ summary: 'Archive a glossary section' })
@@ -60,8 +66,14 @@ export class LanguageGlossaryController {
   async archiveSection(
     @Param('id') id: number,
     @Param('sectionCode') sectionCode: string,
+    @Query('profileId') profileId?: string,
   ) {
-    return this.glossaryService.archiveSection(Number(id), sectionCode);
+    return this.glossaryService.archiveSection(
+      Number(id),
+      sectionCode,
+      undefined,
+      profileId || null,
+    );
   }
 
   @ApiOperation({
