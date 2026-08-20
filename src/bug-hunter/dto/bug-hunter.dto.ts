@@ -6,6 +6,8 @@ import {
   IsEnum,
   IsIn,
   IsInt,
+  IsNotEmpty,
+  IsNumber,
   IsObject,
   IsOptional,
   IsString,
@@ -105,6 +107,240 @@ export class ReportBugHuntEventDto {
   @IsOptional()
   @IsUUID()
   findingId?: string;
+}
+
+/**
+ * ── The machine surface's bodies ────────────────────────────────────────────
+ *
+ * `POST pipeline/runs`, `.../runs/:id/findings`, `.../runs/:id/close`,
+ * `.../runs/:id/cost` and `PATCH pipeline/findings/:id` all used to declare
+ * their body as an inline object type. TypeScript erases those at runtime, so
+ * the global ValidationPipe had no decorated class to inspect and handed the
+ * raw JSON straight through to the database — the same gap that let the sweep
+ * prompt's `verify_result` reach a CHECK constraint and come back as a generic
+ * 500 for a week. Every caller here is an LLM following prose instructions in
+ * a prompt, which is precisely the caller most likely to send a plausible
+ * wrong value.
+ *
+ * Where the line is drawn, deliberately — the aim is to change how these
+ * requests FAIL, not which ones succeed:
+ *
+ *   - STRICT on enum-backed fields. Each already has a CHECK constraint behind
+ *     it, so an unrecognised value was never going to be stored; it only chose
+ *     between failing clearly and failing cryptically.
+ *   - LENIENT — optional, type-checked only — wherever the column is nullable
+ *     or carries a default. Requiring more than the schema does would reject
+ *     bodies that work today, which is the trap CLAUDE.md warns about.
+ *   - REQUIRED only where absence crashes or silently corrupts: a finding's
+ *     `description` (sliced for the row title, so `undefined` throws) and a
+ *     run's close `status` (see CloseBugHuntRunDto).
+ *
+ * None of this is the be-lenient-on-inbound-enums exception being ignored:
+ * that rule protects released mobile builds that send a frozen value verbatim.
+ * There is no released client on this controller — it is `x-api-key` guarded
+ * and reachable only by the pipeline, whose prompts are compiled from these
+ * same enums.
+ */
+export class StartBugHuntRunDto {
+  @ApiProperty({ enum: BugHuntTrigger })
+  @IsEnum(BugHuntTrigger)
+  trigger!: BugHuntTrigger;
+
+  @ApiProperty({ example: 'ally-be' })
+  @IsString()
+  @IsNotEmpty()
+  repo!: string;
+}
+
+export class RawBugFindingDto {
+  @ApiProperty({ enum: BugFindingSource })
+  @IsEnum(BugFindingSource)
+  source!: BugFindingSource;
+
+  @ApiProperty({
+    description:
+      'Plain-language paragraph, blank line, then the technical detail. Sliced to 200 chars for the table title.',
+  })
+  @IsString()
+  @IsNotEmpty()
+  description!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Optional because the column is nullable and BugFindingRepository.dedupeKey takes null: a production-log cluster often spans no single file.',
+  })
+  @IsOptional()
+  @IsString()
+  file?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  evidence?: string;
+
+  @ApiPropertyOptional({ enum: BugFindingSeverity })
+  @IsOptional()
+  @IsEnum(BugFindingSeverity)
+  severity?: BugFindingSeverity;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  proven?: boolean;
+
+  @ApiPropertyOptional({ default: false })
+  @IsOptional()
+  @IsBoolean()
+  touchesGuardedPath?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Function, class, route, component or endpoint. Omitting it drops dedup back to a description fingerprint.',
+  })
+  @IsOptional()
+  @IsString()
+  symbol?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Only for source=reported_bug — the roadmap row this came from.',
+  })
+  @IsOptional()
+  @IsUUID()
+  reportedBugId?: string;
+}
+
+/**
+ * One Discover round, persisted in a single call.
+ *
+ * Validating the whole batch up front is a real improvement on what it
+ * replaced, not just a nicer error: `persistFindings` saves in a loop, so a
+ * bad finding halfway through left the earlier ones written, threw, and
+ * returned no `items` at all — leaving the agent with rows it cannot name and
+ * no ids to report against. All-or-nothing matches what the prompt already
+ * asks for ("persist them all in ONE call") and is recoverable by retrying.
+ */
+export class PersistBugFindingsDto {
+  @ApiProperty({ example: 'ally-be' })
+  @IsString()
+  @IsNotEmpty()
+  repo!: string;
+
+  @ApiProperty({ type: [RawBugFindingDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RawBugFindingDto)
+  findings!: RawBugFindingDto[];
+}
+
+export class PatchBugFindingDto {
+  @ApiPropertyOptional({ enum: BugFindingStatus })
+  @IsOptional()
+  @IsEnum(BugFindingStatus)
+  status?: BugFindingStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  prUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  escalationQuestion?: string;
+}
+
+export class BugHuntModelUsageDto {
+  @ApiProperty({ example: 'claude-opus-4-5' })
+  @IsString()
+  @IsNotEmpty()
+  model!: string;
+
+  @ApiProperty()
+  @IsInt()
+  @Min(0)
+  inputTokens!: number;
+
+  @ApiProperty()
+  @IsInt()
+  @Min(0)
+  outputTokens!: number;
+}
+
+export class RecordBugHuntRunCostDto {
+  @ApiProperty({ type: [BugHuntModelUsageDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BugHuntModelUsageDto)
+  modelUsage!: BugHuntModelUsageDto[];
+
+  @ApiPropertyOptional({
+    description:
+      "The CLI's own cost figure, kept alongside ours for comparison.",
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  cliReportedCostUsd?: number;
+}
+
+/** The only two states a run may be closed into. */
+export const BUG_HUNT_RUN_CLOSE_STATUSES = ['completed', 'failed'] as const;
+
+export type BugHuntRunCloseStatus =
+  (typeof BUG_HUNT_RUN_CLOSE_STATUSES)[number];
+
+/**
+ * `status` is the one REQUIRED field here, and the reason is worth stating:
+ * the handler maps anything that is not `'failed'` to COMPLETED, so before
+ * this DTO a malformed or missing status silently recorded a sweep that died
+ * as a clean night. That is bad data rather than a bad error message, and it
+ * is invisible — nobody goes looking at a run that says it succeeded.
+ *
+ * Refusing the call instead leaves the run OPEN, which the prompts already
+ * describe as the loud failure ("a run left open looks to an admin like a
+ * sweep still working"). Honest and visible beats silent and wrong.
+ *
+ * The four totals stay optional for the opposite reason: they land in an
+ * UPDATE that skips undefined, so omitting one has always meant "leave it at
+ * zero", and a close that 400s over a missing count would strand the run open
+ * for no real gain. Both prompts send all four anyway.
+ */
+export class CloseBugHuntRunDto {
+  @ApiProperty({ enum: BUG_HUNT_RUN_CLOSE_STATUSES })
+  @IsIn(BUG_HUNT_RUN_CLOSE_STATUSES)
+  status!: BugHuntRunCloseStatus;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  foundCount?: number;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  autoMergedCount?: number;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  prOpenedCount?: number;
+
+  @ApiPropertyOptional({ default: 0 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  dismissedCount?: number;
+
+  @ApiPropertyOptional({
+    description: 'Recorded into run metadata on a FAILED close.',
+  })
+  @IsOptional()
+  @IsString()
+  errorMessage?: string;
 }
 
 export class BugHunterSettingsDto {
