@@ -22,7 +22,7 @@ import { ApiAuthGuard } from 'src/auth/guards/api-auth.guard';
 import { AppConfigService } from 'src/config/config.service';
 
 import { BugHunterService } from '../service/bug-hunter.service';
-import { BugFindingService, RawFinding } from '../service/bug-finding.service';
+import { BugFindingService } from '../service/bug-finding.service';
 import {
   BugHunterFinderDataService,
   ProdLogFinding,
@@ -32,12 +32,16 @@ import {
   BugHuntRunDetailDto,
   BugHuntEventDto,
   BugFindingDto,
+  CloseBugHuntRunDto,
+  PatchBugFindingDto,
+  PersistBugFindingsDto,
   RecordBugFixPlanDto,
+  RecordBugHuntRunCostDto,
   ReportBugHuntEventDto,
+  StartBugHuntRunDto,
 } from '../dto/bug-hunter.dto';
 import { BugFixSessionService } from '../service/bug-fix-session.service';
-import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
-import { BugFindingStatus } from '../enum/bug-finding.enum';
+import { BugHuntRunStatus } from '../enum/bug-hunt-run.enum';
 import { toEventDto, toRunDto, toFindingDto } from './bug-hunter.controller';
 import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
 import { BUG_HUNT_REPOS } from '../constants/bug-hunt-repos.constants';
@@ -229,8 +233,9 @@ export class BugHunterPipelineController {
     summary:
       'Start a run, or record a skipped-disabled run if the switch is off (pipeline only)',
   })
+  @ApiResponse({ status: 400, description: 'Unrecognised `trigger`.' })
   async startRun(
-    @Body() body: { trigger: BugHuntTrigger; repo: string },
+    @Body() body: StartBugHuntRunDto,
   ): Promise<{ runId: string | null; mode: string | null }> {
     const mode = await this.bugHunterService.requireEnabledOrRecordSkip(
       body.trigger,
@@ -250,9 +255,14 @@ export class BugHunterPipelineController {
       'pipeline should zip each one back to its own in-memory finding and use ' +
       '`.id` in every subsequent report/status call about it.',
   })
+  @ApiResponse({
+    status: 400,
+    description:
+      'A finding carries an unrecognised `source`/`severity`, or no `description`. Nothing is persisted — retry the batch.',
+  })
   async persistFindings(
     @Param('id', ParseUUIDPipe) runId: string,
-    @Body() body: { repo: string; findings: RawFinding[] },
+    @Body() body: PersistBugFindingsDto,
   ): Promise<{ items: BugFindingDto[] }> {
     const findings = await this.bugFindingService.persistFindings(
       runId,
@@ -267,14 +277,10 @@ export class BugHunterPipelineController {
     summary:
       'Transition a finding: dismiss on refute, fixing on fix-start, pr_opened/merged/failed on fix-finish, needs_input + a question on genuine escalation (pipeline only)',
   })
+  @ApiResponse({ status: 400, description: 'Unrecognised `status`.' })
   async patchFinding(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body()
-    body: {
-      status?: BugFindingStatus;
-      prUrl?: string;
-      escalationQuestion?: string;
-    },
+    @Body() body: PatchBugFindingDto,
   ): Promise<BugFindingDto> {
     return toFindingDto(await this.bugFindingService.setStatus(id, body));
   }
@@ -319,17 +325,14 @@ export class BugHunterPipelineController {
       '/close — attaching cost to an already-closed run is the normal case. ' +
       'Writes one `llm_usage` row per model and re-derives `totalTokenCostUsd`.',
   })
+  @ApiResponse({
+    status: 400,
+    description:
+      "Malformed `modelUsage`. Worth a real response: `recordActualCost` is best-effort and swallows its own failures, so a bad body used to drop this run's cost data with nothing but a log line.",
+  })
   async recordCost(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body()
-    body: {
-      modelUsage: {
-        model: string;
-        inputTokens: number;
-        outputTokens: number;
-      }[];
-      cliReportedCostUsd?: number;
-    },
+    @Body() body: RecordBugHuntRunCostDto,
   ): Promise<{ totalTokenCostUsd: string }> {
     await this.bugHunterService.recordActualCost(id, body);
     const run = await this.bugHunterService.getRun(id);
@@ -340,21 +343,31 @@ export class BugHunterPipelineController {
   @ApiOperation({
     summary: 'Close a run with final totals (pipeline only)',
   })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Missing or unrecognised `status`. The run stays OPEN rather than being recorded as completed — see CloseBugHuntRunDto.',
+  })
   async closeRun(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body()
-    body: {
-      status: 'completed' | 'failed';
-      foundCount: number;
-      autoMergedCount: number;
-      prOpenedCount: number;
-      dismissedCount: number;
-      errorMessage?: string;
-    },
+    @Body() body: CloseBugHuntRunDto,
   ): Promise<BugHuntRunDetailDto> {
-    const { status, errorMessage, ...totals } = body;
+    const { status, errorMessage } = body;
+    // Omitting a total has always meant "leave it at zero"; naming the zeros
+    // is the same write, just no longer by way of an undefined the UPDATE
+    // happens to skip.
+    const totals = {
+      foundCount: body.foundCount ?? 0,
+      autoMergedCount: body.autoMergedCount ?? 0,
+      prOpenedCount: body.prOpenedCount ?? 0,
+      dismissedCount: body.dismissedCount ?? 0,
+    };
     const run = await this.bugHunterService.closeRun(
       id,
+      // Safe as a two-way branch only because CloseBugHuntRunDto has already
+      // refused anything that is not one of these two. It used to be reachable
+      // with any value at all, which quietly filed a failed sweep as
+      // COMPLETED.
       status === 'failed'
         ? BugHuntRunStatus.FAILED
         : BugHuntRunStatus.COMPLETED,

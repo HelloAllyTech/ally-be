@@ -31,12 +31,20 @@ import {
 /** One finder's raw output for one bug — the shape `.claude/workflows/bug-hunt.mjs` reports. */
 export interface RawFinding {
   source: BugFindingSource;
-  file: string;
+  /**
+   * Optional because the column is nullable and `dedupeKey` takes null: a
+   * production-log cluster often spans no single file. Declared required here
+   * until RawBugFindingDto was written, which was optimism rather than a
+   * contract — an omitted `file` has always inserted fine.
+   */
+  file?: string;
   description: string;
   evidence?: string;
   severity?: BugFindingSeverity;
-  proven: boolean;
-  touchesGuardedPath: boolean;
+  /** Optional: the column defaults to false, so an omitted value has always meant false. */
+  proven?: boolean;
+  /** Optional: as `proven`. */
+  touchesGuardedPath?: boolean;
   /**
    * The function, class, route, component or endpoint the bug sits on. Optional
    * because not every finder can name one (a prod-log cluster often cannot), but
@@ -189,12 +197,15 @@ export class BugFindingService {
           source: finding.source,
           title: finding.description.slice(0, 200),
           description: finding.description,
-          file: finding.file,
+          file: finding.file ?? null,
           symbol: finding.symbol ?? null,
           evidence: finding.evidence ?? null,
           severity: finding.severity ?? null,
-          proven: finding.proven,
-          touchesGuardedPath: finding.touchesGuardedPath,
+          // Same rows as before — the column defaults these to false, so an
+          // omitted value already landed as false. Naming it just stops the
+          // insert depending on TypeORM skipping an undefined.
+          proven: finding.proven ?? false,
+          touchesGuardedPath: finding.touchesGuardedPath ?? false,
           reportedBugId: finding.reportedBugId ?? null,
           dedupeKey,
           status: BugFindingStatus.NEW,
