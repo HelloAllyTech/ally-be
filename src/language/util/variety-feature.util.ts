@@ -406,9 +406,13 @@ export function varietyTargetDescriptor(
         ? `moderate English code-mix`
         : `minimal English code-mix`,
   );
-  const lexemes = features.characteristicLexemes.items
-    .slice(0, 5)
-    .map((i) => i.token);
+  // Only log-odds lexemes are distinctive enough for the judge's variety
+  // standard — the frequency fallback (no contrast corpus) surfaces function
+  // words and persona names, which would pollute target_variety.
+  const lexemes =
+    features.characteristicLexemes.method === 'log_odds'
+      ? features.characteristicLexemes.items.slice(0, 5).map((i) => i.token)
+      : [];
   if (lexemes.length) {
     parts.push(`population says: ${lexemes.join(', ')}`);
   }

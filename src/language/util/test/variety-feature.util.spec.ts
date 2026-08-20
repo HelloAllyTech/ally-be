@@ -8,6 +8,7 @@ import {
   tokenCounts,
   tokenize,
   topFrequencyLexemes,
+  varietyTargetDescriptor,
   weightedLogOdds,
 } from '../variety-feature.util';
 
@@ -169,6 +170,49 @@ describe('variety-feature.util', () => {
       ]);
       const top = topFrequencyLexemes(counts, { minCount: 5 });
       expect(top.map((t) => t.token)).toEqual(['மருந்து', 'சரி']);
+    });
+  });
+
+  describe('varietyTargetDescriptor', () => {
+    const base = 'colloquial spoken Tamil';
+    const features = (method: 'log_odds' | 'frequency') => ({
+      codeMix: { latinCharShare: 0.001, latinTokenShare: 0.001 },
+      addressForms: {
+        counts: {},
+        informal: 44,
+        formal: 1336,
+        formalShare: 0.97,
+      },
+      discourseMarkers: { counts: {}, perThousandTokens: 23 },
+      turnStats: { turns: 3803, avgTokensPerTurn: 10.7 },
+      characteristicLexemes: {
+        method,
+        items: [
+          {
+            token: 'காமாட்சி',
+            count: 624,
+            z: method === 'log_odds' ? 3 : undefined,
+          },
+        ],
+      },
+    });
+
+    it('includes lexemes only when they came from log-odds contrast', () => {
+      const withContrast = varietyTargetDescriptor(
+        base,
+        features('log_odds') as any,
+      );
+      expect(withContrast).toContain('population says: காமாட்சி');
+      expect(withContrast).toContain('predominantly formal address (97%)');
+
+      // Frequency fallback = function words + persona names; keep them out
+      // of the judge's variety standard.
+      const noContrast = varietyTargetDescriptor(
+        base,
+        features('frequency') as any,
+      );
+      expect(noContrast).not.toContain('population says');
+      expect(noContrast).toContain('predominantly formal address (97%)');
     });
   });
 });
