@@ -1,3 +1,5 @@
+import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
+import { CohortContentType } from 'src/cohort/constants/cohort.constants';
 import {
   BadRequestException,
   ForbiddenException,
@@ -62,6 +64,7 @@ export class TrackEnrollmentService {
     private readonly caseSessionService: CaseSessionService,
     private readonly scenarioSharedService: ScenarioSharedService,
     private readonly trackLocalizationService: TrackLocalizationService,
+    private readonly cohortVisibilityService: CohortVisibilityService,
   ) {}
 
   async getTracksForLearner(options: {
@@ -71,9 +74,16 @@ export class TrackEnrollmentService {
   }) {
     const userId = this.requireUserId();
     const tenantId = ExecutionManager.getTenantId();
+
+    // `null` means this learner is in no cohort — the "Unassigned" audience,
+    // which restrictions can target. It is not a signal to skip filtering.
+    const cohortId =
+      await this.cohortVisibilityService.resolveUserCohortId(userId);
+
     const result = await this.trackRepository.getTracksForLearner({
       userId,
       tenantId,
+      cohortScope: { cohortId },
       limit: options.limit,
       offset: options.offset,
     });
@@ -792,6 +802,22 @@ export class TrackEnrollmentService {
     });
   }
 
+  /**
+   * Both access layers for one course: assigned to the tenant at all, then
+   * reachable by this learner's cohort.
+   *
+   * This is the single choke point for the detail view and for enrolment, which
+   * is what stops a direct link from bypassing a restriction the list query
+   * applies — filtering the browse list alone would only hide the course, not
+   * protect it.
+   *
+   * The cohort half honours "finish what you started": a learner with a live
+   * enrolment keeps full access even after their cohort loses it, so losing
+   * access stops the next course rather than confiscating one in progress. That
+   * is also why enrolment order matters in `enroll` — the already-enrolled
+   * early return runs before this check, so an in-progress learner is never
+   * asked the question at all.
+   */
   private async assertTrackAvailable(track: TrackWithStructure): Promise<void> {
     const tenantId = ExecutionManager.getTenantId();
     if (!tenantId) {
@@ -803,6 +829,24 @@ export class TrackEnrollmentService {
     if (!tenantMapping) {
       throw new ForbiddenException(
         'This track is not available for your organization',
+      );
+    }
+
+    const userId = this.requireUserId();
+    const enrolment = await this.trackEnrollmentRepository.findByTrackAndUser(
+      track.id,
+      userId,
+    );
+    const allowed = await this.cohortVisibilityService.canAccess({
+      contentType: CohortContentType.TRACK,
+      contentId: track.id,
+      tenantId,
+      userId,
+      alreadyStarted: !!enrolment,
+    });
+    if (!allowed) {
+      throw new ForbiddenException(
+        'This course is not available for your group',
       );
     }
   }

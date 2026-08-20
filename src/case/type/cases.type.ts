@@ -52,6 +52,11 @@ export interface CaseWithSessionFilterOptions {
   sortBy?: CaseSortBy;
   order?: SortOrder;
   status: CaseStatus;
+  /**
+   * Apply the requester's cohort restrictions. `cohortId: null` is the
+   * "Unassigned" audience, not "no filtering" — pass the object or nothing.
+   */
+  cohortScope?: { cohortId: string | null };
 }
 
 export interface CaseWithSession extends Case {

@@ -191,6 +191,14 @@ const PERMISSIONS = {
   EDIT_SCENARIO_PATH_TENANT: 'edit:scenario-path-tenant',
   DELETE_SCENARIO_PATH_TENANT: 'delete:scenario-path-tenant',
 
+  // === COHORTS (a tenant's own MECE grouping of its users) ===
+  // Own-tenant scoped via OwnTenantScopeGuard on every cohort route. VIEW also
+  // gates the cohort member list, which is deliberately a narrow
+  // id/name/email/cohort projection of the tenant's own users — a tenant ADMIN
+  // gets it WITHOUT view:users and the platform-wide user-management payload.
+  VIEW_COHORTS: 'view:cohorts',
+  EDIT_COHORTS: 'edit:cohorts',
+
   // === CASES ===
   VIEW_ADMIN_CASES: 'view:admin:cases',
   VIEW_ADMIN_CASE: 'view:admin:case',
@@ -391,6 +399,10 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.DELETE_TRACK_TENANT,
   PERMISSIONS.EDIT_SCENARIO_TENANT,
   PERMISSIONS.DELETE_SCENARIO_TENANT,
+  // Cohorts, so a platform admin can set up or repair a tenant's grouping from
+  // the admin console's org-detail Cohorts tab without impersonating them.
+  PERMISSIONS.VIEW_COHORTS,
+  PERMISSIONS.EDIT_COHORTS,
   PERMISSIONS.VIEW_ADMIN_SCENARIO_VOICE_LANGUAGES,
   PERMISSIONS.EDIT_LANGUAGE,
   PERMISSIONS.VIEW_SCENARIO_LANGUAGES,
@@ -605,6 +617,11 @@ const ADMIN_PERMISSIONS = [
   PERMISSIONS.VIEW_ADMIN_BADGES,
   PERMISSIONS.VIEW_ADMIN_BADGES_FOR_SETTING,
   PERMISSIONS.EDIT_BADGE_TENANT,
+  // Cohorts — the tenant's own grouping of its users, and the per-cohort
+  // narrowing of the content assignments above. VIEW_COHORTS also serves the
+  // member list, which is why VIEW_USERS still is not granted here.
+  PERMISSIONS.VIEW_COHORTS,
+  PERMISSIONS.EDIT_COHORTS,
   // start:microphone-chat / start:cloud-telephony-chat are intentionally NOT
   // granted here — initiating a recording (scribe/dictation/telephony) is a
   // counsellor capability. An ADMIN who is also a counsellor inherits it via
@@ -649,6 +666,9 @@ const MULTI_TENANT_ADMIN_PERMISSIONS = [
   PERMISSIONS.VIEW_SCENARIO_EVENTS,
   PERMISSIONS.EDIT_SCENARIO_MAP_EVENTS,
   PERMISSIONS.VIEW_PROMPT,
+  // Cohorts for the tenants this admin manages — same rationale as SUPER_ADMIN.
+  PERMISSIONS.VIEW_COHORTS,
+  PERMISSIONS.EDIT_COHORTS,
 ];
 
 const LEARNER_PERMISSIONS = [

@@ -1,3 +1,4 @@
+import { CohortModule } from 'src/cohort/cohort.module';
 import { forwardRef, Module } from '@nestjs/common';
 import { LanguageModule } from '../language/language.module';
 import { LearnController } from './controller/learn.controller';
@@ -134,6 +135,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     // Languages now point at an llm_models catalog row; the resolver needs to
     // read it when assembling session metadata.
     LlmModule,
+    CohortModule,
     TypeOrmModule.forFeature([
       Scenarios,
       ScenarioSessions,
