@@ -299,6 +299,36 @@ describe('LanguageGlossaryService', () => {
       },
     ];
 
+    it('scores seeded avoid-lines against the corpora and flags contradictions', async () => {
+      // Corpus: learners say the avoid-term பதட்டம் constantly — the seeded
+      // pair must be recorded as contradicted in provenance.seedEvidence so
+      // the reviewer sees it before publishing (the Kannada ಆದರೆ lesson).
+      annotationRepository.manager.query.mockResolvedValue(
+        Array.from({ length: 10 }, () => ({
+          content: 'எனக்கு பதட்டம் இருக்கு',
+          senderId: 101,
+        })),
+      );
+      getCompletion.mockResolvedValue(JSON.stringify(generated));
+
+      await service.generateDraftGlossary(6);
+
+      const clinical = glossaryRepository.save.mock.calls
+        .map((c: any[]) => c[0])
+        .find((s: any) => s.sectionCode === 'clinical_terms');
+      expect(clinical.provenance.seedEvidence).toEqual([
+        expect.objectContaining({
+          verdict: 'contradicted',
+          avoidLearnerCount: 10,
+        }),
+      ]);
+      // Sections without avoid-lines carry no seedEvidence noise.
+      const core = glossaryRepository.save.mock.calls
+        .map((c: any[]) => c[0])
+        .find((s: any) => s.sectionCode === 'core_style');
+      expect(core.provenance.seedEvidence).toBeUndefined();
+    });
+
     it('parses fenced JSON, fills placeholders, and saves markdown drafts', async () => {
       getCompletion.mockResolvedValue(
         '```json\n' + JSON.stringify(generated) + '\n```',

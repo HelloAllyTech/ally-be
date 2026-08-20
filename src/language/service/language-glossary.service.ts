@@ -398,6 +398,16 @@ export class LanguageGlossaryService {
     const updated: string[] = [];
     const skipped: string[] = [];
 
+    // Seed content is held to the same evidence standard as consolidation
+    // (the Kannada ಆದரೆ incident: a seeded avoid-term the population itself
+    // uses). Score every parsed say/avoid line against the real corpora and
+    // record verdicts in provenance so a reviewer sees contradicted lines
+    // BEFORE publishing. Best-effort: no corpora (new language) = no verdicts.
+    const corpora = await this.fetchEvidenceCorpora(language.value, null).catch(
+      () => null,
+    );
+    let contradictedLines = 0;
+
     for (const gen of generated) {
       const existing = await this.glossaryRepository.findSection(
         languageId,
@@ -406,6 +416,29 @@ export class LanguageGlossaryService {
       if (existing && existing.status === GlossarySectionStatus.PUBLISHED) {
         skipped.push(gen.sectionCode);
         continue;
+      }
+
+      let seedEvidence:
+        | { line: string; verdict: string; avoidLearnerCount: number }[]
+        | undefined;
+      if (corpora) {
+        seedEvidence = [];
+        for (const line of (gen.content ?? '').split('\n')) {
+          const evidence = scoreLexicalEvidence(
+            line,
+            corpora.learner,
+            corpora.agent,
+            GLOSSARY_LEXICAL_CONTRADICTION_MIN,
+          );
+          if (!evidence || !evidence.avoid) continue;
+          seedEvidence.push({
+            line: line.trim().slice(0, 200),
+            verdict: evidence.verdict,
+            avoidLearnerCount: evidence.avoidLearnerCount,
+          });
+          if (evidence.verdict === 'contradicted') contradictedLines++;
+        }
+        if (seedEvidence.length === 0) seedEvidence = undefined;
       }
 
       const section = this.glossaryRepository.create({
@@ -422,7 +455,10 @@ export class LanguageGlossaryService {
             ? GlossaryInjectionMode.ALWAYS
             : GlossaryInjectionMode.RETRIEVED,
         status: GlossarySectionStatus.DRAFT,
-        provenance: { source: 'seed' },
+        provenance: {
+          source: 'seed',
+          ...(seedEvidence ? { seedEvidence } : {}),
+        },
         version: (existing?.version ?? 0) + 1,
         updatedBy: createdBy,
       });
@@ -430,8 +466,15 @@ export class LanguageGlossaryService {
       (existing ? updated : created).push(gen.sectionCode);
     }
 
+    if (contradictedLines > 0) {
+      this.logger.warn(
+        `[GLOSSARY_SEED] language=${language.value} ${contradictedLines} seeded ` +
+          `avoid-line(s) CONTRADICTED by the learner corpus — review before publishing ` +
+          `(provenance.seedEvidence on the draft sections)`,
+      );
+    }
     this.logger.log(
-      `[GLOSSARY_SEED] language=${language.value} created=${created.length} updated=${updated.length} skipped=${skipped.length}`,
+      `[GLOSSARY_SEED] language=${language.value} created=${created.length} updated=${updated.length} skipped=${skipped.length} contradicted=${contradictedLines}`,
     );
     return { created, updated, skipped };
   }
