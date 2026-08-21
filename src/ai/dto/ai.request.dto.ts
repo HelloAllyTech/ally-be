@@ -180,6 +180,18 @@ export type ScenarioEvaluationRequest = {
    * debriefs. Distinct from `previous_memory`, which is about the client/case.
    */
   supervisor_memory?: string | null;
+  /**
+   * Behaviours this specific scenario is configured to reward (its
+   * SHOULD_DO behavior instructions). Additional scenario-specific context
+   * for message_tags and the supervisor note — never the skill_coverage
+   * scores, which stay on one fixed standard.
+   */
+  helpful_behaviours?: string[];
+  /**
+   * Behaviours this specific scenario is configured to flag (its
+   * SHOULD_NOT_DO behavior instructions). Same scope as `helpful_behaviours`.
+   */
+  unhelpful_behaviours?: string[];
 };
 
 // ── Product Roadmap semantic duplicate detection (ally-ai / Weaviate) ────────

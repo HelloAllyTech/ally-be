@@ -829,14 +829,17 @@ export class AiService {
     enableRecommendations?: boolean,
     languageCode?: string,
     /**
-     * Who the debrief note is being written to. Grouped into one object because
-     * this signature is already six positional arguments deep, and these three
-     * always travel together.
+     * Who the debrief note is being written to, and what this scenario
+     * expects of them. Grouped into one object because this signature is
+     * already six positional arguments deep, and these always travel
+     * together.
      */
     supervisorContext?: {
       workerType?: WorkerType | null;
       learnerName?: string | null;
       supervisorMemory?: string | null;
+      helpfulBehaviours?: string[];
+      unhelpfulBehaviours?: string[];
     },
   ): Promise<ScenarioEvaluationResponse> {
     try {
@@ -852,6 +855,8 @@ export class AiService {
         worker_type: supervisorContext?.workerType ?? null,
         learner_name: supervisorContext?.learnerName ?? null,
         supervisor_memory: supervisorContext?.supervisorMemory ?? null,
+        helpful_behaviours: supervisorContext?.helpfulBehaviours,
+        unhelpful_behaviours: supervisorContext?.unhelpfulBehaviours,
       };
 
       const response = await this.makeRequest<

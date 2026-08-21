@@ -23,6 +23,7 @@ import { ScenarioSessionFeedbacks } from 'src/learn/entity/scenario-session-feed
 import { ScenarioSessionLifecycleEvent } from 'src/learn/entity/scenario-session-lifecycle-event.entity';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import { ScenarioSessionStatus } from 'src/learn/enum/scenario-session-status.enum';
+import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
 import {
   ScenarioStatus,
   ScenarioDifficultyLevel,
@@ -428,6 +429,7 @@ describe('ScenarioSessionService', () => {
               },
               languageDetails: { id: 1, value: 'en', translationCode: 'en' },
             }),
+            getBehaviorInstructionsByScenarioId: jest.fn(),
           },
         },
         { provide: AiService, useValue: mockAiService },
@@ -1611,6 +1613,163 @@ describe('ScenarioSessionService', () => {
         // name here because this fixture's session has no resolvable user;
         // ally-ai falls back to the lay register in that case.
         expect.objectContaining({ supervisorMemory: null }),
+      );
+
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
+    });
+
+    it("should pass the scenario's helpful/unhelpful behaviours to getScenarioSessionEvaluation", async () => {
+      const mockSummaryResponse = {
+        improvements: [],
+        positives: [],
+        sessionGlimpse: '',
+        cumulativeMemory: '',
+        messageTags: [] as string[],
+        emotionalMovement: [] as string[],
+        areas_of_improvement: [],
+      };
+      const mockMessages = [
+        {
+          id: 1,
+          scenarioSessionId: mockScenarioSessionId,
+          senderId: 1,
+          messageType: ScenarioSessionMessageType.TEXT,
+          content: 'Hello',
+          startSeconds: 0,
+          endSeconds: 2,
+          tenantId: mockTenantId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+      const mockDetailsSave = jest.fn().mockResolvedValue(undefined);
+      const mockDetailsRepo = { upsert: mockDetailsSave };
+      const mockEntityManager = {
+        getRepository: jest.fn(() => mockDetailsRepo),
+      };
+
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = true;
+      scenarioSessionMessagesRepository.find.mockResolvedValue(
+        mockMessages as ScenarioSessionMessages[],
+      );
+      aiService.getScenarioSessionEvaluation.mockResolvedValue(
+        mockSummaryResponse as any,
+      );
+      dataSource.transaction.mockImplementation(async (cb: any) =>
+        cb(mockEntityManager),
+      );
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+      scenariosRepository.findOne.mockResolvedValue({
+        id: 1,
+        metadata: {},
+      } as any);
+      (dataSource.getRepository as jest.Mock) = jest.fn().mockReturnValue({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+        [
+          {
+            id: 'instr-1',
+            category: BehaviorInstructionCategory.SHOULD_DO,
+            behaviors: [{ id: 'b1', name: 'Reflects feelings before advice' }],
+            stateInstructions: null,
+          },
+          {
+            id: 'instr-2',
+            category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+            behaviors: [{ id: 'b2', name: 'Interrupts the client' }],
+            stateInstructions: null,
+          },
+        ] as any,
+      );
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+      await new Promise((r) => setImmediate(r));
+
+      expect(aiService.getScenarioSessionEvaluation).toHaveBeenCalledWith(
+        expect.any(Array),
+        false,
+        null,
+        undefined,
+        undefined,
+        undefined,
+        expect.objectContaining({
+          helpfulBehaviours: ['Reflects feelings before advice'],
+          unhelpfulBehaviours: ['Interrupts the client'],
+        }),
+      );
+
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
+    });
+
+    it('leaves behaviours empty when the scenario has none configured', async () => {
+      const mockMessages = [
+        {
+          id: 1,
+          scenarioSessionId: mockScenarioSessionId,
+          senderId: 1,
+          messageType: ScenarioSessionMessageType.TEXT,
+          content: 'Hello',
+          startSeconds: 0,
+          endSeconds: 2,
+          tenantId: mockTenantId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+      const mockEntityManager = {
+        getRepository: jest.fn(() => ({ upsert: jest.fn() })),
+      };
+
+      mockConfigService.featureFlag.useScenarioSessionEvaluation = true;
+      scenarioSessionMessagesRepository.find.mockResolvedValue(
+        mockMessages as ScenarioSessionMessages[],
+      );
+      aiService.getScenarioSessionEvaluation.mockResolvedValue({
+        improvements: [],
+        positives: [],
+        messageTags: [] as string[],
+        emotionalMovement: [] as string[],
+      } as any);
+      dataSource.transaction.mockImplementation(async (cb: any) =>
+        cb(mockEntityManager),
+      );
+      scenarioSessionRepository.findOne.mockResolvedValue(mockScenarioSession);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+      scenariosRepository.findOne.mockResolvedValue({
+        id: 1,
+        metadata: {},
+      } as any);
+      (dataSource.getRepository as jest.Mock) = jest.fn().mockReturnValue({
+        findOne: jest.fn().mockResolvedValue(null),
+      });
+      scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+        undefined,
+      );
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+      await new Promise((r) => setImmediate(r));
+
+      expect(aiService.getScenarioSessionEvaluation).toHaveBeenCalledWith(
+        expect.any(Array),
+        false,
+        null,
+        undefined,
+        undefined,
+        undefined,
+        expect.objectContaining({
+          helpfulBehaviours: [],
+          unhelpfulBehaviours: [],
+        }),
       );
 
       mockConfigService.featureFlag.useScenarioSessionEvaluation = false;
