@@ -71,29 +71,42 @@ export class CohortRestrictionRepository {
     cohortIds: Array<string | null>,
     manager?: EntityManager,
   ): Promise<void> {
-    const { table, column, idIsUuid } = COHORT_CONTENT_CONFIG[contentType];
-    const cast = idIsUuid ? '::uuid' : '::int';
-    const runner = manager ?? this.dataSource.manager;
+    const run = async (runner: EntityManager): Promise<void> => {
+      const { table, column, idIsUuid } = COHORT_CONTENT_CONFIG[contentType];
+      const cast = idIsUuid ? '::uuid' : '::int';
 
-    await runner.query(
-      `DELETE FROM "${table}" WHERE "tenantId" = $1 AND "${column}" = $2${cast}`,
-      [tenantId, contentId],
-    );
+      await runner.query(
+        `DELETE FROM "${table}" WHERE "tenantId" = $1 AND "${column}" = $2${cast}`,
+        [tenantId, contentId],
+      );
 
-    if (cohortIds.length === 0) return;
+      if (cohortIds.length === 0) return;
 
-    // De-duplicate so a body listing the same cohort twice is accepted rather
-    // than tripping the unique index.
-    const unique = Array.from(new Set(cohortIds));
-    const values = unique
-      .map((_, i) => `($1, $2${cast}, $${i + 3}::uuid)`)
-      .join(', ');
+      // De-duplicate so a body listing the same cohort twice is accepted
+      // rather than tripping the unique index.
+      const unique = Array.from(new Set(cohortIds));
+      const values = unique
+        .map((_, i) => `($1, $2${cast}, $${i + 3}::uuid)`)
+        .join(', ');
 
-    await runner.query(
-      `INSERT INTO "${table}" ("tenantId", "${column}", "cohortId")
-       VALUES ${values}`,
-      [tenantId, contentId, ...unique],
-    );
+      await runner.query(
+        `INSERT INTO "${table}" ("tenantId", "${column}", "cohortId")
+         VALUES ${values}`,
+        [tenantId, contentId, ...unique],
+      );
+    };
+
+    // The delete and the insert must commit together: if the process is
+    // interrupted between them, or a concurrent call for the same content
+    // trips the unique index on the insert, an untransacted pair leaves the
+    // delete committed with nothing to replace it — the content silently
+    // reverts to tenant-wide visibility. A manager supplied by the caller is
+    // already inside its own transaction, so reuse it as-is.
+    if (manager) {
+      await run(manager);
+    } else {
+      await this.dataSource.transaction((txManager) => run(txManager));
+    }
   }
 
   /**
