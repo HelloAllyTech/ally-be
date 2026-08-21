@@ -335,7 +335,8 @@ export class DriftJudgeRepository {
            "introducedNewInformation" = EXCLUDED."introducedNewInformation",
            "stuckIsAppropriate" = EXCLUDED."stuckIsAppropriate",
            "metadata" = EXCLUDED."metadata",
-           "updatedAt" = now()`,
+           "updatedAt" = now()
+         RETURNING "scenarioSessionId"`,
         [
           sessionId,
           t.turn_index,
@@ -353,7 +354,10 @@ export class DriftJudgeRepository {
       );
       // `?? null` on every label, never `?? false`: a turn the judge declined
       // to label must leave the denominator, not enter the numerator.
-      merged += Array.isArray(res) ? 0 : 1;
+      // RETURNING is what makes `res` non-empty only when a row was actually
+      // written — without it Postgres always answers `[]` for an INSERT,
+      // whether or not the SELECT matched a source row.
+      merged += Array.isArray(res) ? res.length : 0;
     }
     return merged;
   }
