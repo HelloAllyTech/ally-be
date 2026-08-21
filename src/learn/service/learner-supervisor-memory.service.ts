@@ -43,7 +43,13 @@ export class LearnerSupervisorMemoryService {
       });
       if (!row?.memory) return null;
 
-      const { focusAreas, trajectory, nextTime, recentSessions } = row.memory;
+      const {
+        focusAreas,
+        trajectory,
+        nextTime,
+        recentSessions,
+        totalSessions,
+      } = row.memory;
       const lines: string[] = [];
 
       if (Array.isArray(focusAreas) && focusAreas.length) {
@@ -57,10 +63,16 @@ export class LearnerSupervisorMemoryService {
           `What you asked them to try after their last session: ${nextTime.trim()}`,
         );
       }
-      if (Array.isArray(recentSessions) && recentSessions.length) {
-        lines.push(
-          `Sessions debriefed with them so far: ${recentSessions.length}`,
-        );
+      // `totalSessions` is the running count; `recentSessions.length` is only
+      // a fallback for rows written before that counter existed.
+      const sessionCount =
+        typeof totalSessions === 'number'
+          ? totalSessions
+          : Array.isArray(recentSessions)
+            ? recentSessions.length
+            : 0;
+      if (sessionCount > 0) {
+        lines.push(`Sessions debriefed with them so far: ${sessionCount}`);
       }
 
       return lines.length ? lines.join('\n') : null;
@@ -100,6 +112,9 @@ export class LearnerSupervisorMemoryService {
       const previousTrail = Array.isArray(existing?.memory?.recentSessions)
         ? existing.memory.recentSessions
         : [];
+      const isRedelivery = previousTrail.some(
+        (entry: any) => entry?.scenarioSessionId === scenarioSessionId,
+      );
       // Guard against a redelivered end-of-session event stacking the same
       // session onto the trail twice.
       const trail = [
@@ -108,6 +123,14 @@ export class LearnerSupervisorMemoryService {
           (entry: any) => entry?.scenarioSessionId !== scenarioSessionId,
         ),
       ].slice(0, MAX_RECENT_SESSIONS);
+
+      // The trail above is a shallow, capped preview; this counter is the
+      // uncapped running total the debrief note reports to the learner.
+      const previousTotal =
+        typeof existing?.memory?.totalSessions === 'number'
+          ? existing.memory.totalSessions
+          : previousTrail.length;
+      const totalSessions = isRedelivery ? previousTotal : previousTotal + 1;
 
       await this.repository.upsert(
         {
@@ -121,6 +144,7 @@ export class LearnerSupervisorMemoryService {
             trajectory: memoryUpdate.trajectory ?? '',
             nextTime: memoryUpdate.next_time ?? '',
             recentSessions: trail,
+            totalSessions,
           } as Record<string, any>,
         },
         { conflictPaths: ['counselorId', 'tenantId'] },
