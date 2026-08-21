@@ -180,6 +180,13 @@ export type ScenarioEvaluationRequest = {
    * debriefs. Distinct from `previous_memory`, which is about the client/case.
    */
   supervisor_memory?: string | null;
+  /**
+   * The coaching hints the supervisor sent this learner DURING the session (live
+   * supervisor notes, in order). Lets the debrief pick up a thread the learner
+   * already saw instead of repeating it cold. Null when the scenario had live
+   * notes switched off, which is the default.
+   */
+  live_notes?: string[] | null;
 };
 
 // ── Product Roadmap semantic duplicate detection (ally-ai / Weaviate) ────────

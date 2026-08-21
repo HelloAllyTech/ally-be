@@ -837,6 +837,12 @@ export class AiService {
       workerType?: WorkerType | null;
       learnerName?: string | null;
       supervisorMemory?: string | null;
+      /**
+       * Coaching hints the supervisor already gave the learner DURING this
+       * session (live supervisor notes, in the order they were sent). Empty for
+       * the common case — the per-scenario toggle is off by default.
+       */
+      liveNotes?: string[] | null;
     },
   ): Promise<ScenarioEvaluationResponse> {
     try {
@@ -852,6 +858,9 @@ export class AiService {
         worker_type: supervisorContext?.workerType ?? null,
         learner_name: supervisorContext?.learnerName ?? null,
         supervisor_memory: supervisorContext?.supervisorMemory ?? null,
+        live_notes: supervisorContext?.liveNotes?.length
+          ? supervisorContext.liveNotes
+          : null,
       };
 
       const response = await this.makeRequest<
