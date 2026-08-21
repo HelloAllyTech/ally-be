@@ -954,6 +954,73 @@ export class VoiceLatencyPointDto {
     nullable: true,
   })
   avgCacheHitRatePct!: number | null;
+
+  @ApiProperty({
+    description:
+      'Turns whose first audio was a thinking-filler. avgMs/p50Ms/p95Ms ' +
+      'measure time to the first audio the learner heard, so these turns ' +
+      'are timed to the filler, not to the reply.',
+  })
+  firstAudioFillerTurns!: number;
+
+  @ApiProperty({
+    description: 'Turns whose first audio was a predictive interim reply.',
+  })
+  firstAudioInterimTurns!: number;
+
+  @ApiProperty({
+    description: 'Turns whose first audio was the real reply (unmasked).',
+  })
+  firstAudioReplyTurns!: number;
+
+  @ApiProperty({
+    description:
+      'Turns with no firstAudioSource recorded — every transcript-derived ' +
+      'row, and live rows predating the provenance instrumentation. Reported ' +
+      'separately rather than counted as unmasked: they may have been masked ' +
+      'and there is no way to tell.',
+  })
+  firstAudioUnknownTurns!: number;
+
+  @ApiProperty({
+    description: 'Mean time-to-first-voice (ms) for filler-first turns.',
+    nullable: true,
+  })
+  avgFirstAudioFillerMs!: number | null;
+
+  @ApiProperty({
+    description: 'Mean time-to-first-voice (ms) for interim-first turns.',
+    nullable: true,
+  })
+  avgFirstAudioInterimMs!: number | null;
+
+  @ApiProperty({
+    description: 'Mean time-to-first-voice (ms) for reply-first turns.',
+    nullable: true,
+  })
+  avgFirstAudioReplyMs!: number | null;
+
+  @ApiProperty({
+    description:
+      'Mean time to the REAL reply (ms) — the unmasked pipeline number, ' +
+      'which does not move when filler coverage changes. Computed over ' +
+      'instrumented turns only, so null for transcript buckets and windows ' +
+      'predating the instrumentation.',
+    nullable: true,
+  })
+  avgReplyLatencyMs!: number | null;
+
+  @ApiProperty({
+    description: 'Median (p50) time to the real reply (ms). Null as above.',
+    nullable: true,
+  })
+  p50ReplyLatencyMs!: number | null;
+
+  @ApiProperty({
+    description: 'p95 time to the real reply (ms). Null as above.',
+    nullable: true,
+  })
+  p95ReplyLatencyMs!: number | null;
 }
 
 export class VoiceLatencyByLanguageRowDto {

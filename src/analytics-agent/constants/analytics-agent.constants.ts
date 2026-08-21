@@ -85,7 +85,7 @@ export const ALLOWED_TABLES: Readonly<Record<string, string>> = Object.freeze({
     'Events that fired during a run, with when they occurred.',
   scenario_session_feedbacks: "The learner's post-session rating (CSAT).",
   scenario_session_turn_metrics:
-    'Per-turn latency telemetry (response latency, time-to-first-token, TTS time-to-first-byte, model, language, interruption and timeout flags). Wide table; percentiles come from here.',
+    "Per-turn latency telemetry (response latency, time-to-first-token, TTS time-to-first-byte, model, language, interruption and timeout flags). Wide table; percentiles come from here. response_latency_ms is time to the agent's FIRST audio, which is a thinking-filler or interim reply when one played — metadata->>'firstAudioSource' ('filler'|'interim'|'reply', absent on older rows) says which, and metadata->>'replyLatencyMs' holds the unmasked time to the real reply on masked turns. Split by firstAudioSource before trending response_latency_ms, or a rise in filler coverage reads as a latency improvement.",
   scenario_session_start_metrics:
     'Per-session start latency ("time to first word"), one row per simulation, with its segment breakdown.',
   scenario_session_reviews:
