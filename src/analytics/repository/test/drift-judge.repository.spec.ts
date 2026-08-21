@@ -120,3 +120,78 @@ describe('DriftJudgeRepository.upsertJudgments', () => {
     expect(params[23]).toBeNull();
   });
 });
+
+describe('DriftJudgeRepository.mergeLeanLabels', () => {
+  let repository: DriftJudgeRepository;
+  let query: jest.Mock;
+
+  const sourceVersion = {
+    judgeModel: 'gemini-2.5-pro',
+    judgePromptVersion: 'v1',
+  };
+  const targetVersion = {
+    judgeModel: 'gemini-2.5-pro',
+    judgePromptVersion: 'v2',
+  };
+
+  beforeEach(async () => {
+    query = jest.fn();
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        DriftJudgeRepository,
+        { provide: DataSource, useValue: { query } },
+      ],
+    }).compile();
+    repository = module.get(DriftJudgeRepository);
+  });
+
+  afterEach(() => jest.clearAllMocks());
+
+  it('counts a row that was actually written by the INSERT ... SELECT', async () => {
+    // Postgres only returns rows for an INSERT when the query has a
+    // RETURNING clause; this is what a row landing in the table looks like.
+    query.mockResolvedValueOnce([{ scenarioSessionId: 'sess-1' }]);
+
+    const merged = await repository.mergeLeanLabels(
+      'sess-1',
+      [{ turn_index: 0, role_inversion: true }],
+      sourceVersion,
+      targetVersion,
+    );
+
+    expect(merged).toBe(1);
+  });
+
+  it('does not count a turn whose INSERT ... SELECT matched no source row', async () => {
+    query.mockResolvedValueOnce([]);
+
+    const merged = await repository.mergeLeanLabels(
+      'sess-1',
+      [{ turn_index: 0, role_inversion: true }],
+      sourceVersion,
+      targetVersion,
+    );
+
+    expect(merged).toBe(0);
+  });
+
+  it('sums per-turn results across a mixed batch', async () => {
+    query
+      .mockResolvedValueOnce([{ scenarioSessionId: 'sess-1' }])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ scenarioSessionId: 'sess-1' }]);
+
+    const merged = await repository.mergeLeanLabels(
+      'sess-1',
+      [
+        { turn_index: 0, role_inversion: true },
+        { turn_index: 1, role_inversion: false },
+        { turn_index: 2, offered_solution: true },
+      ],
+      sourceVersion,
+      targetVersion,
+    );
+
+    expect(merged).toBe(2);
+  });
+});
