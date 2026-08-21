@@ -39,7 +39,8 @@ export class LearnerSupervisorMemory extends BaseEntity {
    *   focusAreas: string[],        // 1-3 skills actively being worked on
    *   trajectory: string,          // how they're developing across sessions
    *   nextTime: string,            // the one thing they were asked to try
-   *   recentSessions: [{ scenarioSessionId, at }]  // shallow trail, newest first
+   *   recentSessions: [{ scenarioSessionId, at }],  // shallow trail, newest first, capped
+   *   totalSessions: number,       // uncapped running count of debriefed sessions
    * }
    */
   @Column({ type: 'jsonb' })
