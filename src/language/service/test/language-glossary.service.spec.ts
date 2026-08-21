@@ -704,6 +704,39 @@ describe('LanguageGlossaryService', () => {
       );
     });
 
+    it('does not persist a phantom overlay section when its only proposal dedupes against the just-copied global content', async () => {
+      // No overlay copy exists yet for p1, but the global section it would be
+      // seeded from already contains the one proposal routed to it.
+      glossaryRepository.findSection.mockImplementation(
+        (_languageId: number, sectionCode: string, profileId?: string) => {
+          if (profileId) return Promise.resolve(null);
+          return Promise.resolve(
+            makeSection({ sectionCode, content: '- overlay rule' }),
+          );
+        },
+      );
+      getCompletion.mockResolvedValue(
+        JSON.stringify([
+          {
+            sectionCode: 'clinical_terms',
+            title: 'Clinical terms',
+            injectionMode: 'retrieved',
+            proposals: [
+              // Supported only by tenant-2 (attached to p1) → overlay.
+              { markdown: '- overlay rule', sourceAnnotationIndexes: [2] },
+            ],
+          },
+        ]),
+      );
+
+      const result = await service.consolidateGlossary(6);
+
+      expect(result.proposed).toBe(0);
+      expect(result.skippedDuplicates).toBe(1);
+      expect(result.sections).toEqual([]);
+      expect(glossaryRepository.save).not.toHaveBeenCalled();
+    });
+
     it('auto-accept publishes entries into content and records them accepted', async () => {
       const result = await service.consolidateGlossary(6, 'rsi', {
         autoAccept: true,
