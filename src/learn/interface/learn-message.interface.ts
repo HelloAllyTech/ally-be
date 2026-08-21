@@ -15,6 +15,29 @@ export interface LearnData {
   turn_metrics?: LearnTurnMetricsData;
   start_metrics?: LearnStartMetricsData;
   session_memory?: LearnSessionMemoryData;
+  supervisor_note?: LearnSupervisorNoteData;
+}
+
+/**
+ * One live supervisor note (message_type "supervisor_note") — a short coaching
+ * hint the AI supervisor streamed into the learner's sidebar mid-session, when
+ * the scenario has `metadata.supervisorNotesEnabled`. Emitted per note, not per
+ * session, and already delivered to the browser over the LiveKit data channel
+ * by the time this arrives: SQS is the durable copy, which the post-session
+ * debrief reads back as context.
+ *
+ * `seq` is agent-assigned and 1-based per session. It is the read order and the
+ * idempotency key — a redelivered note collides on
+ * (scenarioSessionId, seq) rather than duplicating.
+ */
+export interface LearnSupervisorNoteData {
+  note: string;
+  seq: number;
+  /** Conversation turn that prompted the note; correlation only. */
+  turn_index?: number;
+  /** Language the note was written in (the session language). */
+  language?: string;
+  env?: string;
 }
 
 /**

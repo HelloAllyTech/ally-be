@@ -7,5 +7,6 @@ export const PROCESSOR_EVENT_TYPES = {
   START_METRICS: 'start_metrics',
   LLM_USAGE: 'llm_usage',
   SESSION_MEMORY: 'session_memory',
+  SUPERVISOR_NOTE: 'supervisor_note',
   UNKNOWN_EVENT: 'UNKNOWN_EVENT',
 } as const;

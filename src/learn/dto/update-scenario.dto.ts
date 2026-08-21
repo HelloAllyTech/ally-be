@@ -673,6 +673,17 @@ export class UpdateScenarioDto {
 
   @ApiProperty({
     description:
+      'Stream live coaching hints from the AI supervisor into a Supervisor tab ' +
+      "in the learner's session sidebar. Opt-in: off unless explicitly true.",
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  supervisorNotesEnabled?: boolean;
+
+  @ApiProperty({
+    description:
       'Allow the learner to pause/resume the simulation. Defaults to enabled ' +
       '(only an explicit false hides the pause control).',
     example: true,

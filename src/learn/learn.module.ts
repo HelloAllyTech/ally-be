@@ -93,6 +93,7 @@ import { TurnMetricsProcessor } from './processor/turn-metrics.processor';
 import { StartMetricsProcessor } from './processor/start-metrics.processor';
 import { LlmUsageProcessor } from './processor/llm-usage.processor';
 import { SessionMemoryProcessor } from './processor/session-memory.processor';
+import { SupervisorNoteProcessor } from './processor/supervisor-note.processor';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { ScenarioSessionBehaviorInstructions } from './entity/scenario-session-behavior-instructions.entity';
 import { Competency } from './entity/competency.entity';
@@ -221,6 +222,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     StartMetricsProcessor,
     LlmUsageProcessor,
     SessionMemoryProcessor,
+    SupervisorNoteProcessor,
     ScenarioVoicesRepository,
     SttConfigsRepository,
     SttConfigService,
@@ -286,6 +288,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     StartMetricsProcessor,
     LlmUsageProcessor,
     SessionMemoryProcessor,
+    SupervisorNoteProcessor,
     ScenarioSessionService,
     SimulationCreditsService,
     ScenarioSharedService,
