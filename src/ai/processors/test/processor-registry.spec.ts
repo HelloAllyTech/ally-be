@@ -9,6 +9,7 @@ import { TurnMetricsProcessor } from '../../../learn/processor/turn-metrics.proc
 import { StartMetricsProcessor } from '../../../learn/processor/start-metrics.processor';
 import { LlmUsageProcessor } from '../../../learn/processor/llm-usage.processor';
 import { SessionMemoryProcessor } from '../../../learn/processor/session-memory.processor';
+import { SupervisorNoteProcessor } from '../../../learn/processor/supervisor-note.processor';
 import { LoggerService } from '../../../logger/logger.service';
 import { IEventProcessor } from '../base-processor.interface';
 
@@ -90,6 +91,12 @@ describe('ProcessorRegistry', () => {
       process: jest.fn().mockResolvedValue(undefined),
     };
 
+    const mockSupervisorNoteProcessor = {
+      ...mockProcessorBase,
+      getEventType: jest.fn().mockReturnValue('supervisor_note'),
+      process: jest.fn().mockResolvedValue(undefined),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ProcessorRegistry,
@@ -129,6 +136,10 @@ describe('ProcessorRegistry', () => {
           provide: SessionMemoryProcessor,
           useValue: mockSessionMemoryProcessor,
         },
+        {
+          provide: SupervisorNoteProcessor,
+          useValue: mockSupervisorNoteProcessor,
+        },
       ],
     }).compile();
 
@@ -157,7 +168,7 @@ describe('ProcessorRegistry', () => {
 
     it('should register all processors during initialization', () => {
       expect(mockLogger.info).toHaveBeenCalledWith(
-        'Registered 8 event processors',
+        'Registered 9 event processors',
       );
       expect(mockLogger.debug).toHaveBeenCalledWith(
         'Registered processor for: transcribe_result',
@@ -316,7 +327,7 @@ describe('ProcessorRegistry', () => {
     it('should return all registered event types', () => {
       const eventTypes = registry.getRegisteredEventTypes();
 
-      expect(eventTypes).toHaveLength(8);
+      expect(eventTypes).toHaveLength(9);
       expect(eventTypes).toContain('transcribe_result');
       expect(eventTypes).toContain('learn_message');
       expect(eventTypes).toContain('learn_event');
@@ -348,6 +359,7 @@ describe('ProcessorRegistry', () => {
         start_metrics: true,
         llm_usage: true,
         session_memory: true,
+        supervisor_note: true,
       });
     });
 
@@ -387,7 +399,7 @@ describe('ProcessorRegistry', () => {
 
       const eventTypes = registry.getRegisteredEventTypes();
       expect(eventTypes).toContain('custom_event');
-      expect(eventTypes).toHaveLength(9);
+      expect(eventTypes).toHaveLength(10);
     });
 
     it('should update processor health after custom registration', () => {
@@ -447,7 +459,7 @@ describe('ProcessorRegistry', () => {
 
       expect(registry.getProcessor('custom_event_1')).toBe(customProcessor1);
       expect(registry.getProcessor('custom_event_2')).toBe(customProcessor2);
-      expect(registry.getRegisteredEventTypes()).toHaveLength(10);
+      expect(registry.getRegisteredEventTypes()).toHaveLength(11);
     });
   });
 

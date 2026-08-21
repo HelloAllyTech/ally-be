@@ -88,6 +88,10 @@ describe('Scenario Util', () => {
           checklistType: ChecklistType.GUIDED,
           // Not set on the DTO, so the summary checklist stays opted out.
           summaryChecklistEnabled: false,
+          // Same: unset on the DTO means the supervisor stays silent in-session.
+          // Written as an explicit false rather than left undefined, so the
+          // stored metadata says which way the toggle was resolved.
+          supervisorNotesEnabled: false,
           timerMode: true,
           maxTimeValue: '1:30:00',
           optGuardrails: scenario.optGuardrails,
