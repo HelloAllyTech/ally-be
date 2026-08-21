@@ -18,8 +18,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *    examples, mirroring consolidation v3 — LLMs generalize from the rule,
  *    and instance lists waste the Tier 0 budget.
  */
-export class GlossaryGenerationPromptV31921000000000 implements MigrationInterface {
-  name = 'GlossaryGenerationPromptV31921000000000';
+export class GlossaryGenerationPromptV31927000000000 implements MigrationInterface {
+  name = 'GlossaryGenerationPromptV31927000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
