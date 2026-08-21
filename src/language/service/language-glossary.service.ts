@@ -819,7 +819,7 @@ export class LanguageGlossaryService {
           if (profileId) overlayEntries++;
         }
 
-        if (newEntryIds.length === 0 && existing) continue;
+        if (newEntryIds.length === 0) continue;
 
         let acceptedHere = 0;
         if (options.autoAccept && newEntryIds.length > 0) {
