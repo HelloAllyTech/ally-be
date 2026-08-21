@@ -147,6 +147,7 @@ describe('ScenarioSharedService', () => {
     const mockScenarioTranslationsRepository = {
       getUniqueLanguagesFromScenarioTranslations: jest.fn(),
       getScenarioTranslationsByScenarioId: jest.fn().mockResolvedValue([]),
+      findOne: jest.fn().mockResolvedValue(null),
     };
 
     const mockScenarioSessionMessagesRepository = {
@@ -1211,6 +1212,63 @@ describe('ScenarioSharedService', () => {
       expect(result.scenario.promptData.roleInstructions).toBe(
         'Act only as the client in this simulation.',
       );
+    });
+
+    it('should use the scenario_translations override for English (India) opening dialogue instead of the raw scenario metadata', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+      // en-IN is the platform's pinned "default" language id, but this
+      // scenario still has its own en-IN-specific scenario_translations row
+      // (e.g. an India-flavoured opening line) that must win over the raw
+      // scenario metadata (which reads like the generic/English-UK default).
+      (scenarioTranslationsRepository as any).findOne = jest
+        .fn()
+        .mockResolvedValue({
+          id: 'translation-1',
+          metadata: { openingStatements: ['Namaste, kaise ho?'] },
+        });
+
+      const result = await service.createRoomMetadata({
+        scenario: {
+          id: 1,
+          title: 'Test Scenario',
+          description: 'Test Description',
+          prompt: 'Act only as the client in this simulation.',
+          metadata: {
+            voiceId: 'voice-1',
+            languageId: 1,
+            language: 'en-IN',
+            defaultLanguageId: 1,
+            name: 'Alex',
+            age: 28,
+            gender: 'Male',
+            currentLocation: 'London',
+            openingStatements: ['Alright, how are you doing?'],
+          },
+          terminationEvents: [],
+          behaviorInstructions: [],
+          difficultyLevel: 'EASY',
+        } as any,
+        sessionEvents: [],
+        languageDetails: {
+          id: 1,
+          value: 'en-IN',
+          label: 'English (India)',
+        } as any,
+        previousMemory: null,
+      });
+
+      expect(scenarioTranslationsRepository.findOne).toHaveBeenCalledWith({
+        select: ['id', 'metadata'],
+        where: { scenarioId: 1, languageId: 1 },
+      });
+      expect((result.scenario.promptData as any).openingStatements).toEqual([
+        'Namaste, kaise ho?',
+      ]);
     });
 
     it('should forward metadata.turnMaxEndpointingDelay onto promptData unchanged (plain pass-through, not explicitly deleted)', async () => {

@@ -927,14 +927,19 @@ export class ScenarioSharedService {
     const { voiceId, languageId, language, defaultLanguageId, ...promptData } =
       metadata ?? {};
 
-    // If language is English (by languageId), return original data
     const langIsEnglish = isEnglishLanguage(
       languageId,
       language,
       defaultLanguageId,
     );
 
-    if (langIsEnglish) {
+    // No language selected at all — there is nothing more specific to look
+    // up. Note this is narrower than langIsEnglish: English has its own
+    // regional variants (en-IN, en-GB, en-US) that can each carry distinct
+    // opening dialogue via scenario_translations, so a specific language is
+    // never assumed to already match the raw scenario metadata just because
+    // isEnglishLanguage treats it as "English" — only a missing language does.
+    if (!languageId) {
       return {
         langIsEnglish,
         voiceId,
@@ -946,37 +951,35 @@ export class ScenarioSharedService {
       };
     }
 
-    // Fetch translation for non-English language
+    // Fetch a per-language override for this scenario, if one exists.
     const translations = await this.scenarioTranslationsRepository.findOne({
       select: ['id', 'metadata'],
       where: { scenarioId, languageId },
     });
 
-    if (!translations?.metadata) {
-      return { voiceId, promptData };
-    }
-
-    // Accept either object or JSON-string metadata
-    let translationMetadata: Record<string, any> = {};
-    if (typeof translations.metadata === 'string') {
-      try {
-        translationMetadata = JSON.parse(translations.metadata);
-      } catch {
-        // malformed JSON — skip applying translation (or log if desired)
-        translationMetadata = {};
+    if (translations?.metadata) {
+      // Accept either object or JSON-string metadata
+      let translationMetadata: Record<string, any> = {};
+      if (typeof translations.metadata === 'string') {
+        try {
+          translationMetadata = JSON.parse(translations.metadata);
+        } catch {
+          // malformed JSON — skip applying translation (or log if desired)
+          translationMetadata = {};
+        }
+      } else if (typeof translations.metadata === 'object') {
+        translationMetadata = translations.metadata;
       }
-    } else if (typeof translations.metadata === 'object') {
-      translationMetadata = translations.metadata;
-    }
 
-    // Apply only the translatable fields if present
-    for (const field of SCENARIO_SESSION_TRANSLATABLE_FIELDS) {
-      if (
-        Object.prototype.hasOwnProperty.call(translationMetadata, field) &&
-        translationMetadata[field] != null &&
-        translationMetadata[field] !== ''
-      ) {
-        promptData[field] = translationMetadata[field];
+      // Apply only the translatable fields if present
+      for (const field of SCENARIO_SESSION_TRANSLATABLE_FIELDS) {
+        if (
+          Object.prototype.hasOwnProperty.call(translationMetadata, field) &&
+          translationMetadata[field] != null &&
+          translationMetadata[field] !== ''
+        ) {
+          promptData[field] = translationMetadata[field];
+        }
       }
     }
 
