@@ -190,6 +190,34 @@ describe('VarietyProfileService', () => {
     expect(contrastSql).toContain('"isTestOrganization" = true');
   });
 
+  it("matches the tenant's own sessions by id or code (dual-key), not plain equality", async () => {
+    queueQueries([
+      sessionRows(20),
+      turnRows(300, tenantTurn),
+      turnRows(300, contrastTurn),
+    ]);
+    await service.inferProfile(6, 't-1');
+    const sessionsSql = dataSource.query.mock.calls[0][0] as string;
+    // A tenant stored under its code (or its uuid) elsewhere must still match
+    // here — plain `ljs.tenant_id = $2` only recognizes one of the two forms.
+    expect(sessionsSql).not.toMatch(/ljs\.tenant_id\s*=\s*\$2/);
+    expect(sessionsSql).toContain('st.id::text = $2');
+    expect(sessionsSql).toContain('st.code = $2');
+  });
+
+  it("excludes the tenant's own sessions from the contrast corpus by id or code (dual-key)", async () => {
+    queueQueries([
+      sessionRows(20),
+      turnRows(300, tenantTurn),
+      turnRows(300, contrastTurn),
+    ]);
+    await service.inferProfile(6, 't-1');
+    const contrastSql = dataSource.query.mock.calls[2][0] as string;
+    expect(contrastSql).not.toMatch(/ljs\.tenant_id\s*<>\s*\$2/);
+    expect(contrastSql).toContain('st.id::text = $2');
+    expect(contrastSql).toContain('st.code = $2');
+  });
+
   describe('listProfiles', () => {
     it('groups attachments under their profiles', async () => {
       profileRepository.find.mockResolvedValue([

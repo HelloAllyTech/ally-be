@@ -6,7 +6,10 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { excludeTestTenants } from 'src/analytics/util/test-tenant.util';
+import {
+  excludeTestTenants,
+  scopeToTenant,
+} from 'src/analytics/util/test-tenant.util';
 import { Languages } from '../entity/languages.entity';
 import {
   LanguageVarietyProfile,
@@ -254,7 +257,7 @@ export class VarietyProfileService {
     const sessions: { sid: string }[] = await this.dataSource.query(
       `SELECT DISTINCT ljs."scenarioSessionId" AS sid
          FROM language_judgment_sessions ljs
-        WHERE ljs.language = $1 AND ljs.tenant_id = $2
+        WHERE ljs.language = $1 AND ${scopeToTenant('ljs."tenant_id"', '$2')}
           AND ljs."createdAt" > now() - ($3 * interval '1 day')`,
       [languageValue, tenantId, windowDays],
     );
@@ -289,7 +292,7 @@ export class VarietyProfileService {
           AND m."scenarioSessionId" IN (
             SELECT DISTINCT ljs."scenarioSessionId"
               FROM language_judgment_sessions ljs
-             WHERE ljs.language = $1 AND ljs.tenant_id <> $2
+             WHERE ljs.language = $1 AND NOT ${scopeToTenant('ljs."tenant_id"', '$2')}
                AND ljs."createdAt" > now() - ($3 * interval '1 day')
                AND ${excludeTestTenants('ljs."tenant_id"')})
         ORDER BY m."createdAt" DESC
