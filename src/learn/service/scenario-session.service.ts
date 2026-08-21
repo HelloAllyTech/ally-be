@@ -120,6 +120,7 @@ import { BehaviorTranslationRepository } from '../repository/behavior-translatio
 import { ScenarioBehaviorInstructionTranslationRepository } from '../repository/scenario-behavior-instruction-translation.repository';
 import { ScenarioSessionEventChecklistResponseDto } from '../dto/scenario-session-event-checklist-response.dto';
 import { ScenarioEventsRepository } from '../repository/scenario-events.repository';
+import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 import { ScenariosRepository } from '../repository/scenario.repository';
 import { getActiveSessionDurationSeconds } from 'src/review/util/review.util';
 import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-request-body.dto';
@@ -1342,6 +1343,8 @@ export class ScenarioSessionService {
     workerType: WorkerType;
     learnerFirstName?: string;
     feedbackTabs: FeedbackTabsConfig;
+    helpfulBehaviours: string[];
+    unhelpfulBehaviours: string[];
   } | null> {
     try {
       const scenarioSession = await this.scenarioSessionRepository.findOne({
@@ -1350,7 +1353,7 @@ export class ScenarioSessionService {
       });
       if (!scenarioSession) return null;
 
-      const [scenario, user] = await Promise.all([
+      const [scenario, user, behaviorInstructions] = await Promise.all([
         this.scenariosRepository.findOne({
           where: { id: scenarioSession.scenarioId },
           select: { id: true, metadata: true },
@@ -1362,7 +1365,20 @@ export class ScenarioSessionService {
           where: { id: scenarioSession.counselorId },
           select: { id: true, name: true, metadata: true },
         }),
+        // Same SHOULD_DO/SHOULD_NOT_DO instructions ai-learn already uses to
+        // guardrail the live roleplay — reused here so the debrief judges the
+        // transcript against what this scenario actually asked for.
+        this.scenarioSharedService.getBehaviorInstructionsByScenarioId(
+          scenarioSession.scenarioId,
+        ),
       ]);
+
+      const helpfulBehaviours = (behaviorInstructions ?? [])
+        .filter((b) => b.category === BehaviorInstructionCategory.SHOULD_DO)
+        .flatMap((b) => b.behaviors.map((behavior) => behavior.name));
+      const unhelpfulBehaviours = (behaviorInstructions ?? [])
+        .filter((b) => b.category === BehaviorInstructionCategory.SHOULD_NOT_DO)
+        .flatMap((b) => b.behaviors.map((behavior) => behavior.name));
 
       return {
         counselorId: scenarioSession.counselorId,
@@ -1371,6 +1387,8 @@ export class ScenarioSessionService {
         // would, and "Nice work today, Priya Sharma" reads like a form letter.
         learnerFirstName: user?.name?.trim().split(/\s+/)[0] || undefined,
         feedbackTabs: resolveFeedbackTabs(scenario?.metadata),
+        helpfulBehaviours,
+        unhelpfulBehaviours,
       };
     } catch (error) {
       this.logger.error(
@@ -1492,6 +1510,8 @@ export class ScenarioSessionService {
                 workerType: sessionContext?.workerType,
                 learnerName: sessionContext?.learnerFirstName,
                 supervisorMemory,
+                helpfulBehaviours: sessionContext?.helpfulBehaviours,
+                unhelpfulBehaviours: sessionContext?.unhelpfulBehaviours,
               },
             )
           : await this.aiService.getScenarioSessionSummary(
