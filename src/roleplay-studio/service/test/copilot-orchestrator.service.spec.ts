@@ -1,6 +1,7 @@
 import { CopilotOrchestratorService } from '../copilot-orchestrator.service';
 import { CopilotSseFrame } from '../../type/copilot-sse-event.type';
 import { CopilotMessageRole } from '../../enum/copilot-message-role.enum';
+import { CopilotSessionMode } from '../../enum/copilot-session-mode.enum';
 
 /**
  * Orchestrator loop tests with a fully mocked Anthropic client — verifies the
@@ -15,6 +16,9 @@ describe('CopilotOrchestratorService', () => {
   let appendMessage: jest.Mock;
   let toolsExecute: jest.Mock;
   let usageRecord: jest.Mock;
+  let getSession: jest.Mock;
+  let getPromptByCode: jest.Mock;
+  let getToolDefinitions: jest.Mock;
   let seq: number;
 
   const makeStream = (blocks: any[], stopReason: string) => ({
@@ -59,16 +63,19 @@ describe('CopilotOrchestratorService', () => {
         maxToolIterations: MAX_ITERATIONS,
       },
     } as any;
+    getPromptByCode = jest.fn().mockResolvedValue('SYSTEM {{currentSpec}}');
     const promptSharedService = {
-      getPromptByCode: jest.fn().mockResolvedValue('SYSTEM {{currentSpec}}'),
+      getPromptByCode,
     } as any;
+    getSession = jest
+      .fn()
+      .mockResolvedValue({ id: 'sess-1', specId: 'spec-1', createdBy: 7 });
     const copilotSessionService = {
-      getSession: jest
-        .fn()
-        .mockResolvedValue({ id: 'sess-1', specId: 'spec-1', createdBy: 7 }),
+      getSession,
     } as any;
+    getToolDefinitions = jest.fn().mockReturnValue([]);
     const copilotToolsService = {
-      getToolDefinitions: jest.fn().mockReturnValue([]),
+      getToolDefinitions,
       execute: toolsExecute,
     } as any;
     const copilotMessageRepository = {
@@ -269,6 +276,64 @@ describe('CopilotOrchestratorService', () => {
     ]);
     // endTurn means no second model round-trip.
     expect(streamMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('uses the iteration prompt + tools and persists iteration summaries in ITERATING mode', async () => {
+    getSession.mockResolvedValue({
+      id: 'sess-1',
+      specId: 'spec-1',
+      createdBy: 7,
+      mode: CopilotSessionMode.ITERATING,
+    });
+    const summary = {
+      id: 'it-1',
+      feedback: 'She opened up too fast',
+      reasoning: 'Guard into Open needed only 2 turns.',
+      changes: [{ area: 'State machine', summary: 'Raised minTurnsInState' }],
+    };
+    toolsExecute.mockResolvedValueOnce({
+      modelResult: { ok: true },
+      summary: 'Summarised iteration: 1 change(s)',
+      events: [{ event: 'iteration_summary', data: summary }],
+    });
+    streamMock
+      .mockReturnValueOnce(
+        makeStream(
+          [
+            {
+              type: 'tool_use',
+              id: 'tu-sum',
+              name: 'summarize_iteration',
+              input: {},
+            },
+          ],
+          'tool_use',
+        ),
+      )
+      .mockReturnValueOnce(
+        makeStream([{ type: 'text', text: 'Done — try again.' }], 'end_turn'),
+      );
+
+    const frames = await collect();
+
+    // Iteration system prompt (not the interviewer) is fetched.
+    expect(getPromptByCode).toHaveBeenCalledWith(
+      'roleplay_copilot_iteration_system',
+    );
+    expect(getPromptByCode).not.toHaveBeenCalledWith(
+      'roleplay_copilot_interviewer_system',
+    );
+    // Tools are requested for ITERATING.
+    expect(getToolDefinitions).toHaveBeenCalledWith(
+      CopilotSessionMode.ITERATING,
+    );
+    // The card is streamed and persisted for resume fidelity.
+    expect(frames.map((frame) => frame.event)).toEqual(
+      expect.arrayContaining(['iteration_summary']),
+    );
+    const assistantRow = appendMessage.mock.calls[1][1];
+    expect(assistantRow.metadata.mode).toBe(CopilotSessionMode.ITERATING);
+    expect(assistantRow.metadata.iterationSummaries).toEqual([summary]);
   });
 
   it('surfaces stream failures as an error frame and still persists + closes', async () => {

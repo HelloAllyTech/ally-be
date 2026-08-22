@@ -12,6 +12,7 @@ export type CopilotSseEventName =
   | 'spec_patch'
   | 'question'
   | 'behaviour_review'
+  | 'iteration_summary'
   | 'error'
   | 'done'
   // Keep-alive written by the stream controller every ~15s; clients ignore it.
@@ -103,6 +104,35 @@ export interface CopilotBehaviourReviewEvent {
   helpful: CopilotBehaviourReviewItem[];
   unhelpful: CopilotBehaviourReviewItem[];
   allowCustom?: boolean;
+}
+
+/** One spec area the copilot changed in response to a piece of feedback. */
+export interface CopilotIterationChange {
+  /**
+   * Human label for the spec area touched (e.g. "State machine",
+   * "Disclosure ledger", "Rubric"). Free-form so the copilot can name the
+   * concept the trainer recognises, not a JSON pointer.
+   */
+  area: string;
+  /** One-line description of the concrete edit made to that area. */
+  summary: string;
+}
+
+/**
+ * summarize_iteration payload: the copilot's reasoned response to a piece of
+ * live-test feedback in ITERATING mode. `feedback` restates what the trainer
+ * asked for, `reasoning` explains which part(s) of the spec drive that runtime
+ * behaviour and why they were chosen, and `changes` lists the edits already
+ * applied (each spec_patch is streamed separately as progress). The studio
+ * renders this as the "summary of updates made" card.
+ */
+export interface CopilotIterationSummaryEvent {
+  id: string;
+  feedback: string;
+  reasoning: string;
+  changes: CopilotIterationChange[];
+  /** Optional closing note, e.g. "Try it again and tell me how she lands." */
+  note?: string;
 }
 
 export interface CopilotErrorEvent {

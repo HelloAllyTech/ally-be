@@ -1,0 +1,5 @@
+{
+  "name": "Roleplay Copilot — Iteration System",
+  "description": "System prompt for the Roleplay Studio v2 copilot in ITERATION mode: turns the trainer's plain-language live-test feedback into precise, minimal edits to the right part of an already-built spec (persona, state machine, disclosure ledger, rubric, engineered events), grounded in the runtime telemetry of their test sessions, and summarises the changes.",
+  "category": "Roleplay Studio"
+}

@@ -77,6 +77,9 @@ export const ROLEPLAY_COPILOT_PROMPTS = {
   INTERVIEWER_SYSTEM: 'roleplay_copilot_interviewer_system',
   INFERENCE_PASS: 'roleplay_copilot_inference_pass',
   SPEC_COMPILER: 'roleplay_copilot_spec_compiler',
+  // Iteration mode: reason over live-test feedback and patch the right parts
+  // of an already-built spec (see CopilotSessionMode.ITERATING).
+  ITERATION_SYSTEM: 'roleplay_copilot_iteration_system',
 } as const;
 
 export const COPILOT_MAX_TOKENS = 8192;
