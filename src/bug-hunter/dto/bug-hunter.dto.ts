@@ -700,6 +700,18 @@ export class ListBugFindingsQueryDto {
   @IsString()
   repo?: string;
 
+  @ApiProperty({
+    required: false,
+    description:
+      "Only the findings one sweep touched. A run's own findings are NOT " +
+      'necessarily recent: re-triaging a human-reported bug stamps this run ' +
+      'onto a row created the day the bug was filed, so this is the only ' +
+      'honest way to answer "what did last night produce?".',
+  })
+  @IsOptional()
+  @IsUUID()
+  runId?: string;
+
   @ApiProperty({ required: false, default: 50 })
   @IsOptional()
   @Type(() => Number)
