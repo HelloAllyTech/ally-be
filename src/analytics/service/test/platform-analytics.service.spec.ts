@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PlatformAnalyticsService } from '../platform-analytics.service';
 import { DriftJudgeService } from '../drift-judge.service';
-import { PlatformAnalyticsRepository } from '../../repository/platform-analytics.repository';
+import {
+  PlatformAnalyticsRepository,
+  VOICE_LATENCY_BY_SCENARIO_LIMIT,
+} from '../../repository/platform-analytics.repository';
 import { LlmUsageRepository } from '../../repository/llm-usage.repository';
 import { DriftAnalyticsRepository } from '../../repository/drift-analytics.repository';
 
@@ -78,6 +81,7 @@ describe('PlatformAnalyticsService', () => {
         interruptedTurns: 0,
         llmTimedOutTurns: 0,
       }),
+      getVoiceLatencyByScenario: jest.fn().mockResolvedValue([]),
       getAgentJoinReliabilityByBucket: jest.fn().mockResolvedValue([]),
       getSuspectedFreezeByBucket: jest.fn().mockResolvedValue([]),
       getSessionOutcomeMix: jest
@@ -669,6 +673,104 @@ describe('PlatformAnalyticsService', () => {
         interruptedTurns: 2,
         llmTimedOutTurns: 1,
       });
+    });
+  });
+
+  describe('getVoiceLatencyByScenario', () => {
+    it('resolves the default 90d window and forwards language', async () => {
+      await service.getVoiceLatencyByScenario({ language: 'ta-IN' });
+
+      expect(repo.getVoiceLatencyByScenario).toHaveBeenCalledWith(
+        new Date('2024-03-15T00:00:00.000Z'),
+        new Date('2024-06-13T00:00:00.000Z'),
+        'ta-IN',
+      );
+    });
+
+    it('coerces raw string aggregates to numbers, per row', async () => {
+      repo.getVoiceLatencyByScenario.mockResolvedValue([
+        {
+          scenarioId: 42,
+          scenarioTitle: 'Guide Kavya through a difficult conversation',
+          sessionCount: '18',
+          turnCount: '210',
+          avgResponseLatencyMs: '9680',
+          p50ResponseLatencyMs: '10037',
+          p95ResponseLatencyMs: '26305',
+          avgEouDelayMs: '1333',
+          avgSttFinalizeMs: null,
+          avgLlmTtftMs: '9680',
+          avgTtsTtfbMs: '1881',
+          avgOrchestrationMs: '31',
+          avgLlmResponseMs: '1200',
+          avgBranchingMs: '0',
+          avgKnowledgeRetrievalMs: '2413',
+          avgProcessEventsMs: '2554',
+          avgBehaviorsMs: '1534',
+          interruptedTurns: '1',
+          llmTimedOutTurns: '0',
+        },
+      ]);
+
+      const result = await service.getVoiceLatencyByScenario({});
+
+      expect(result.truncated).toBe(false);
+      expect(result.rows[0]).toEqual({
+        scenarioId: 42,
+        scenarioTitle: 'Guide Kavya through a difficult conversation',
+        sessionCount: 18,
+        turnCount: 210,
+        avgResponseLatencyMs: 9680,
+        p50ResponseLatencyMs: 10037,
+        p95ResponseLatencyMs: 26305,
+        avgEouDelayMs: 1333,
+        avgSttFinalizeMs: null,
+        avgLlmTtftMs: 9680,
+        avgTtsTtfbMs: 1881,
+        avgOrchestrationMs: 31,
+        avgLlmResponseMs: 1200,
+        avgBranchingMs: 0,
+        avgKnowledgeRetrievalMs: 2413,
+        avgProcessEventsMs: 2554,
+        avgBehaviorsMs: 1534,
+        interruptedTurns: 1,
+        llmTimedOutTurns: 0,
+      });
+    });
+
+    it('flags truncated when the repo returns exactly the defensive cap, without dropping rows silently', async () => {
+      const capRow = {
+        scenarioId: 0,
+        scenarioTitle: 'x',
+        sessionCount: 1,
+        turnCount: 1,
+        avgResponseLatencyMs: 1000,
+        p50ResponseLatencyMs: 1000,
+        p95ResponseLatencyMs: 1000,
+        avgEouDelayMs: null,
+        avgSttFinalizeMs: null,
+        avgLlmTtftMs: null,
+        avgTtsTtfbMs: null,
+        avgOrchestrationMs: null,
+        avgLlmResponseMs: null,
+        avgBranchingMs: null,
+        avgKnowledgeRetrievalMs: null,
+        avgProcessEventsMs: null,
+        avgBehaviorsMs: null,
+        interruptedTurns: 0,
+        llmTimedOutTurns: 0,
+      };
+      repo.getVoiceLatencyByScenario.mockResolvedValue(
+        Array.from({ length: VOICE_LATENCY_BY_SCENARIO_LIMIT }, (_, i) => ({
+          ...capRow,
+          scenarioId: i,
+        })),
+      );
+
+      const result = await service.getVoiceLatencyByScenario({});
+
+      expect(result.rows).toHaveLength(VOICE_LATENCY_BY_SCENARIO_LIMIT);
+      expect(result.truncated).toBe(true);
     });
   });
 

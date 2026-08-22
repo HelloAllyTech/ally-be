@@ -81,6 +81,8 @@ import {
   VoiceLatencySessionsSummaryQueryDto,
   ListVoiceLatencySessionsResponseDto,
   VoiceLatencySessionsSummaryResponseDto,
+  VoiceLatencyByScenarioQueryDto,
+  VoiceLatencyByScenarioResponseDto,
 } from '../dto/platform-analytics.dto';
 import {
   AnalyticsHighlightsQueryDto,
@@ -1264,6 +1266,31 @@ export class AnalyticsController {
     @Query() query: VoiceLatencySessionsSummaryQueryDto,
   ): Promise<VoiceLatencySessionsSummaryResponseDto> {
     return this.platformAnalyticsService.getVoiceLatencySessionsSummary(query);
+  }
+
+  @Get('voice-latency/by-scenario')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary: 'Voice latency ranked by simulation, worst-first (super-admin)',
+    description:
+      'One row per simulation with a matching turn in the window, sorted by ' +
+      'avg response latency descending, with the same per-stage breakdown ' +
+      '(EOU, STT finalize, LLM TTFT, process events, knowledge retrieval, ' +
+      'TTS TTFB, behaviors) as `/voice-latency/sessions` — "which ' +
+      'simulations are slow" as its own question, distinct from that ' +
+      'endpoint\'s "this simulation\'s worst sessions, once known".',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Voice latency by simulation retrieved successfully',
+    type: VoiceLatencyByScenarioResponseDto,
+  })
+  async getVoiceLatencyByScenario(
+    @Query() query: VoiceLatencyByScenarioQueryDto,
+  ): Promise<VoiceLatencyByScenarioResponseDto> {
+    return this.platformAnalyticsService.getVoiceLatencyByScenario(query);
   }
 
   @Get('agent-join-reliability')

@@ -193,6 +193,23 @@ export interface VoiceLatencySessionRow extends VoiceLatencySessionStagesRow {
   turnCount: number | string;
 }
 
+export interface VoiceLatencyByScenarioRow extends VoiceLatencySessionStagesRow {
+  scenarioId: number;
+  scenarioTitle: string;
+  sessionCount: number | string;
+  turnCount: number | string;
+}
+
+/**
+ * Defensive cap on {@link PlatformAnalyticsRepository.getVoiceLatencyByScenario} —
+ * comfortably above the platform's current scenario count (412 as of
+ * 2026-08-19) so nothing real gets cut today, while still bounding payload
+ * size if that count grows a lot. The service layer logs + flags
+ * `truncated: true` if this is ever actually hit — see
+ * platform-analytics.service.ts.
+ */
+export const VOICE_LATENCY_BY_SCENARIO_LIMIT = 500;
+
 export interface VoiceLatencySessionsSummaryRow extends VoiceLatencySessionStagesRow {
   sessionCount: number | string;
   turnCount: number | string;
@@ -914,6 +931,95 @@ export class PlatformAnalyticsRepository {
       avgSttFinalizeMs:
         r.avgSttFinalizeMs != null ? Number(r.avgSttFinalizeMs) : null,
     }));
+  }
+
+  /**
+   * Every simulation with at least one live-pipeline turn in the window,
+   * worst-first (`avgResponseLatencyMs DESC`) — "which simulations are slow"
+   * as its own question, distinct from {@link getVoiceLatencyBySessions}
+   * ("show me THIS simulation's worst sessions, once I already suspect it").
+   * Same stage SELECT-list as that method (kept in sync — see its own
+   * doc-comment), so a slow scenario's per-stage columns point at *why*
+   * without a second query. `m."scenarioId"` is reliably populated/indexed
+   * (unlike the sparse `m."language"`), so this joins straight to
+   * `scenarios` for a title rather than hopping through `scenario_sessions`
+   * the way the language join does. Capped at
+   * {@link VOICE_LATENCY_BY_SCENARIO_LIMIT} — see that constant's doc-comment.
+   */
+  async getVoiceLatencyByScenario(
+    start: Date,
+    end: Date,
+    language?: string,
+  ): Promise<VoiceLatencyByScenarioRow[]> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .from('scenario_session_turn_metrics', 'm')
+      .innerJoin('scenarios', 'sc', 'sc.id = m."scenarioId"');
+    if (language) {
+      qb.innerJoin(
+        'scenario_sessions',
+        'ss',
+        'ss.id = m."scenarioSessionId"',
+      ).leftJoin(
+        'languages',
+        'l',
+        `l.id = NULLIF(ss.metadata->>'languageId', '')::int`,
+      );
+    }
+    qb.where('m."occurredAt" >= :start', { start })
+      .andWhere('m."occurredAt" < :end', { end })
+      .andWhere(`m."source" = 'pipeline'`)
+      .andWhere('m."responseLatencyMs" IS NOT NULL')
+      .andWhere(excludeTestTenants('m."tenant_id"'));
+    if (language) {
+      qb.andWhere(`COALESCE(l."value", 'en') = :language`, { language });
+    }
+    qb.select('m."scenarioId"', 'scenarioId')
+      .addSelect('sc.title', 'scenarioTitle')
+      .addSelect('COUNT(DISTINCT m."scenarioSessionId")::int', 'sessionCount')
+      .addSelect('COUNT(*)::int', 'turnCount')
+      .addSelect(
+        'round(avg(m."responseLatencyMs"))::int',
+        'avgResponseLatencyMs',
+      )
+      .addSelect(
+        `round(percentile_cont(0.5) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p50ResponseLatencyMs',
+      )
+      .addSelect(
+        `round(percentile_cont(0.95) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p95ResponseLatencyMs',
+      )
+      .addSelect('round(avg(m."eouDelayMs"))::int', 'avgEouDelayMs')
+      .addSelect('round(avg(m."sttFinalizeMs"))::int', 'avgSttFinalizeMs')
+      .addSelect('round(avg(m."llmTtftMs"))::int', 'avgLlmTtftMs')
+      .addSelect('round(avg(m."ttsTtfbMs"))::int', 'avgTtsTtfbMs')
+      .addSelect('round(avg(m."orchestrationMs"))::int', 'avgOrchestrationMs')
+      .addSelect('round(avg(m."llmResponseMs"))::int', 'avgLlmResponseMs')
+      .addSelect('round(avg(m."branchingMs"))::int', 'avgBranchingMs')
+      .addSelect(
+        'round(avg(m."knowledgeRetrievalMs"))::int',
+        'avgKnowledgeRetrievalMs',
+      )
+      .addSelect('round(avg(m."processEventsMs"))::int', 'avgProcessEventsMs')
+      .addSelect('round(avg(m."behaviorsMs"))::int', 'avgBehaviorsMs')
+      .addSelect(
+        'COALESCE(SUM(CASE WHEN m."interrupted" THEN 1 ELSE 0 END), 0)::int',
+        'interruptedTurns',
+      )
+      .addSelect(
+        'COALESCE(SUM(CASE WHEN m."llmTimedOut" THEN 1 ELSE 0 END), 0)::int',
+        'llmTimedOutTurns',
+      )
+      .groupBy('m."scenarioId"')
+      .addGroupBy('sc.title')
+      .orderBy('avg(m."responseLatencyMs")', 'DESC', 'NULLS LAST')
+      .addOrderBy('m."scenarioId"', 'ASC')
+      .limit(VOICE_LATENCY_BY_SCENARIO_LIMIT);
+
+    return qb.getRawMany<VoiceLatencyByScenarioRow>();
   }
 
   /**

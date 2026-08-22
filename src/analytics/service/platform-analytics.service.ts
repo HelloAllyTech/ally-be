@@ -25,6 +25,8 @@ import {
   VoiceLatencySessionsSummaryQueryDto,
   ListVoiceLatencySessionsResponseDto,
   VoiceLatencySessionsSummaryResponseDto,
+  VoiceLatencyByScenarioQueryDto,
+  VoiceLatencyByScenarioResponseDto,
 } from '../dto/platform-analytics.dto';
 import {
   AnalyticsBucket,
@@ -33,6 +35,7 @@ import {
   DailyActivityRow,
   NewUsersBucketRow,
   PlatformAnalyticsRepository,
+  VOICE_LATENCY_BY_SCENARIO_LIMIT,
 } from '../repository/platform-analytics.repository';
 import { LlmUsageRepository } from '../repository/llm-usage.repository';
 import {
@@ -709,6 +712,50 @@ export class PlatformAnalyticsService {
       turnCount: Number(row.turnCount) || 0,
       window: describeWindow(window),
       ...PlatformAnalyticsService.mapVoiceLatencyStages(row),
+    };
+  }
+
+  /**
+   * Every simulation with a matching turn, worst-first — "which simulations
+   * are slow" as its own question, distinct from {@link getVoiceLatencySessions}
+   * ("this simulation's worst sessions"). Logs + flags `truncated: true`
+   * rather than silently dropping the tail if the platform ever exceeds
+   * {@link VOICE_LATENCY_BY_SCENARIO_LIMIT} simulations with matching turns.
+   */
+  async getVoiceLatencyByScenario(
+    query: VoiceLatencyByScenarioQueryDto,
+  ): Promise<VoiceLatencyByScenarioResponseDto> {
+    const { language } = query;
+    const window = resolveAnalyticsWindow(query, {
+      defaultRange: '90d',
+      defaultBucketFor: PlatformAnalyticsService.defaultBucketFor,
+    });
+    const { start: windowStart, endExclusive } = window;
+
+    const rows = await this.repo.getVoiceLatencyByScenario(
+      windowStart,
+      endExclusive,
+      language,
+    );
+    const truncated = rows.length >= VOICE_LATENCY_BY_SCENARIO_LIMIT;
+    if (truncated) {
+      this.logger.warn(
+        `getVoiceLatencyByScenario hit VOICE_LATENCY_BY_SCENARIO_LIMIT ` +
+          `(${VOICE_LATENCY_BY_SCENARIO_LIMIT}) — the tail of the ranking ` +
+          `was cut, not just the display; consider raising the cap`,
+      );
+    }
+
+    return {
+      rows: rows.map((r) => ({
+        scenarioId: r.scenarioId,
+        scenarioTitle: r.scenarioTitle,
+        sessionCount: Number(r.sessionCount) || 0,
+        turnCount: Number(r.turnCount) || 0,
+        ...PlatformAnalyticsService.mapVoiceLatencyStages(r),
+      })),
+      window: describeWindow(window),
+      truncated,
     };
   }
 

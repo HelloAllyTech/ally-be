@@ -1236,6 +1236,57 @@ export class VoiceLatencySessionsSummaryResponseDto extends VoiceLatencySessionS
   window!: AnalyticsWindowDto;
 }
 
+export class VoiceLatencyByScenarioQueryDto extends AnalyticsWindowQueryDto {
+  @ApiProperty({
+    description: "Filter by the session's language value (e.g. en-IN, hi-IN)",
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  language?: string;
+}
+
+/**
+ * One row per simulation, worst-first — "which simulations are slow"
+ * (distinct from {@link VoiceLatencySessionRowDto}, which is "this
+ * simulation's worst sessions"). Same stage fields as
+ * {@link VoiceLatencySessionStagesDto} so a slow scenario's bottleneck stage
+ * is visible without a second lookup.
+ */
+export class VoiceLatencyByScenarioRowDto extends VoiceLatencySessionStagesDto {
+  @ApiProperty({ description: 'scenarios.id' })
+  scenarioId!: number;
+
+  @ApiProperty({ description: 'scenarios.title' })
+  scenarioTitle!: string;
+
+  @ApiProperty({ description: 'Distinct sessions aggregated into this row' })
+  sessionCount!: number;
+
+  @ApiProperty({ description: 'Turns aggregated into this row' })
+  turnCount!: number;
+}
+
+export class VoiceLatencyByScenarioResponseDto {
+  @ApiProperty({ type: [VoiceLatencyByScenarioRowDto] })
+  rows!: VoiceLatencyByScenarioRowDto[];
+
+  @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
+
+  @ApiProperty({
+    description:
+      'True if the platform has more simulations with matching turns than ' +
+      'the defensive cap (VOICE_LATENCY_BY_SCENARIO_LIMIT) — the worst ones ' +
+      'are still shown first, but the tail was cut rather than silently ' +
+      'omitted without a flag.',
+  })
+  truncated!: boolean;
+}
+
 export class StartLatencyQueryDto extends AnalyticsWindowQueryDto {
   @ApiProperty({
     description: "Filter by the session's language value (e.g. en-IN, hi-IN)",
