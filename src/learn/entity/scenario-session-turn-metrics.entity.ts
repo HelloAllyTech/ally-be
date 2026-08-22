@@ -4,9 +4,16 @@ import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 /**
  * One row per agent turn — the latency fact table behind the "time between
  * turns" Metabase dashboards. `responseLatencyMs` is the headline metric
- * (user stops speaking -> agent starts speaking); the remaining *Ms columns
- * break that down so a bottleneck can be pinpointed. Populated from the
+ * (user stops speaking -> agent's FIRST audio, which is the thinking-filler or
+ * predictive interim reply when one played); the remaining *Ms columns break
+ * that down so a bottleneck can be pinpointed. Populated from the
  * ally-ai-learn `turn_metrics` SQS message (see TurnMetricsProcessor).
+ *
+ * Because a filler can front-run the real reply, `metadata->>'firstAudioSource'`
+ * ('filler' | 'interim' | 'reply') says what was counted, and on masked turns
+ * `metadata->>'replyLatencyMs'` carries the unmasked time to the real reply.
+ * Any trend chart on responseLatencyMs should split by firstAudioSource —
+ * otherwise a rise in filler coverage reads as a latency improvement.
  *
  * Append-only and wide-by-design (one column per stage) so Metabase can chart
  * percentiles / stacked component breakdowns without pivoting an EAV table.

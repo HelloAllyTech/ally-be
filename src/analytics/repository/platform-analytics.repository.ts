@@ -96,6 +96,51 @@ export interface VoiceLatencyBucketRow {
    * instrumented.
    */
   avgCacheHitRatePct: number | null;
+
+  // ---- What the learner heard first (metadata.firstAudioSource) ----
+  // `responseLatencyMs` measures time to the agent's FIRST audio, which is a
+  // thinking-filler or predictive interim reply when one played. These counts
+  // say which it was, so a bucket's headline latency can be read against how
+  // many of its turns were masked — otherwise a rise in filler coverage looks
+  // like a latency improvement.
+  /** Turns whose first audio was a thinking-filler. */
+  firstAudioFillerTurns: number;
+  /** Turns whose first audio was a predictive interim reply. */
+  firstAudioInterimTurns: number;
+  /** Turns whose first audio was the real reply (nothing masked it). */
+  firstAudioReplyTurns: number;
+  /**
+   * Turns with no `firstAudioSource` recorded: every 'transcript' row, and
+   * live rows predating the provenance instrumentation. Kept as its own
+   * count rather than folded into 'reply' — those turns MAY have been masked,
+   * and silently calling them unmasked would invent the very fact this split
+   * exists to establish.
+   */
+  firstAudioUnknownTurns: number;
+
+  /** Mean time-to-first-voice (ms) for filler-first turns. Null if none. */
+  avgFirstAudioFillerMs: number | null;
+  /** Mean time-to-first-voice (ms) for interim-first turns. Null if none. */
+  avgFirstAudioInterimMs: number | null;
+  /** Mean time-to-first-voice (ms) for reply-first turns. Null if none. */
+  avgFirstAudioReplyMs: number | null;
+
+  /**
+   * Mean time to the REAL reply (ms) — `metadata.replyLatencyMs` on masked
+   * turns, `responseLatencyMs` on unmasked ones. This is the unmasked
+   * pipeline number: it does not move when filler coverage changes.
+   *
+   * Computed over instrumented turns only (those carrying a
+   * `firstAudioSource`), so it is null for 'transcript' buckets and for
+   * windows predating the instrumentation. Turns without provenance are
+   * EXCLUDED rather than assumed unmasked, which would drag this toward the
+   * masked number and hide exactly the regression it exists to show.
+   */
+  avgReplyLatencyMs: number | null;
+  /** Median (p50) time to the real reply (ms). Null as above. */
+  p50ReplyLatencyMs: number | null;
+  /** p95 time to the real reply (ms). Null as above. */
+  p95ReplyLatencyMs: number | null;
 }
 
 export interface VoiceLatencyByLanguageRow {
@@ -613,6 +658,11 @@ export class PlatformAnalyticsRepository {
    * `scenario_session_turn_metrics`. Returns avg / p50 / p95 of
    * `responseLatencyMs` plus the turn count for each (bucket, source) pair.
    *
+   * Also returns the per-bucket first-audio split (how many turns were
+   * fronted by a filler / interim / the reply itself, their means, and the
+   * unmasked time to the real reply) — see the field docs on
+   * {@link VoiceLatencyBucketRow}.
+   *
    * Split by `source` so the live-pipeline trend and the historical
    * transcript-derived trend are never silently mixed (they measure latency
    * differently). The table is not registered as a TypeORM entity here, so it
@@ -672,8 +722,56 @@ export class PlatformAnalyticsRepository {
         `round(100.0 * sum(m."cachedTokens")::numeric / ` +
           `NULLIF(sum(m."promptTokens"), 0))::float`,
         'avgCacheHitRatePct',
-      )
-      .from('scenario_session_turn_metrics', 'm');
+      );
+
+    // What spoke first. `responseLatencyMs` is time-to-first-audio, so a
+    // filler or interim reply can own it; these counts + per-source means keep
+    // "we got faster" and "we masked more" distinguishable. Turns with no
+    // recorded provenance are counted separately, never assumed unmasked.
+    const firstAudioIs = (kind: string) =>
+      `m."metadata"->>'firstAudioSource' = '${kind}'`;
+    for (const [kind, alias] of [
+      ['filler', 'firstAudioFillerTurns'],
+      ['interim', 'firstAudioInterimTurns'],
+      ['reply', 'firstAudioReplyTurns'],
+    ] as const) {
+      qb.addSelect(`COUNT(*) FILTER (WHERE ${firstAudioIs(kind)})::int`, alias);
+      qb.addSelect(
+        `round(avg(m."responseLatencyMs") FILTER ` +
+          `(WHERE ${firstAudioIs(kind)}))::int`,
+        `avgFirstAudio${kind[0].toUpperCase()}${kind.slice(1)}Ms`,
+      );
+    }
+    qb.addSelect(
+      `COUNT(*) FILTER (WHERE m."metadata"->>'firstAudioSource' IS NULL)::int`,
+      'firstAudioUnknownTurns',
+    );
+
+    // Unmasked time to the real reply: replyLatencyMs when a filler/interim
+    // front-ran it, else the response latency itself (which already IS the
+    // reply on unmasked turns). jsonb_typeof guards the cast so one
+    // malformed metadata value cannot fail the whole query.
+    const replyLatencyExpr =
+      `COALESCE(CASE WHEN jsonb_typeof(m."metadata"->'replyLatencyMs') = 'number' ` +
+      `THEN (m."metadata"->>'replyLatencyMs')::numeric END, ` +
+      `m."responseLatencyMs")`;
+    const instrumented = `m."metadata"->>'firstAudioSource' IS NOT NULL`;
+    qb.addSelect(
+      `round(avg(${replyLatencyExpr}) FILTER (WHERE ${instrumented}))::int`,
+      'avgReplyLatencyMs',
+    );
+    for (const [q, alias] of [
+      ['0.5', 'p50ReplyLatencyMs'],
+      ['0.95', 'p95ReplyLatencyMs'],
+    ] as const) {
+      qb.addSelect(
+        `round(percentile_cont(${q}) WITHIN GROUP (ORDER BY ${replyLatencyExpr}) ` +
+          `FILTER (WHERE ${instrumented}))::int`,
+        alias,
+      );
+    }
+
+    qb.from('scenario_session_turn_metrics', 'm');
     if (language) {
       // turn_metrics.language is largely unpopulated, so filter by the SESSION's
       // configured language (join to scenario_sessions -> languages), matching
@@ -711,6 +809,16 @@ export class PlatformAnalyticsRepository {
         p50LlmTtftMs: number | null;
         p95LlmTtftMs: number | null;
         avgCacheHitRatePct: number | null;
+        firstAudioFillerTurns: number;
+        firstAudioInterimTurns: number;
+        firstAudioReplyTurns: number;
+        firstAudioUnknownTurns: number;
+        avgFirstAudioFillerMs: number | null;
+        avgFirstAudioInterimMs: number | null;
+        avgFirstAudioReplyMs: number | null;
+        avgReplyLatencyMs: number | null;
+        p50ReplyLatencyMs: number | null;
+        p95ReplyLatencyMs: number | null;
       }>();
 
     // llmTtft* are left as null (not coerced to 0) when unpopulated for the
@@ -729,6 +837,18 @@ export class PlatformAnalyticsRepository {
       p50LlmTtftMs: toNullableNumber(r.p50LlmTtftMs),
       p95LlmTtftMs: toNullableNumber(r.p95LlmTtftMs),
       avgCacheHitRatePct: toNullableNumber(r.avgCacheHitRatePct),
+      // Counts are real zeros (no turns of that kind), so they coerce to 0 —
+      // unlike the latencies beside them, which stay null when unpopulated.
+      firstAudioFillerTurns: Number(r.firstAudioFillerTurns) || 0,
+      firstAudioInterimTurns: Number(r.firstAudioInterimTurns) || 0,
+      firstAudioReplyTurns: Number(r.firstAudioReplyTurns) || 0,
+      firstAudioUnknownTurns: Number(r.firstAudioUnknownTurns) || 0,
+      avgFirstAudioFillerMs: toNullableNumber(r.avgFirstAudioFillerMs),
+      avgFirstAudioInterimMs: toNullableNumber(r.avgFirstAudioInterimMs),
+      avgFirstAudioReplyMs: toNullableNumber(r.avgFirstAudioReplyMs),
+      avgReplyLatencyMs: toNullableNumber(r.avgReplyLatencyMs),
+      p50ReplyLatencyMs: toNullableNumber(r.p50ReplyLatencyMs),
+      p95ReplyLatencyMs: toNullableNumber(r.p95ReplyLatencyMs),
     }));
   }
 

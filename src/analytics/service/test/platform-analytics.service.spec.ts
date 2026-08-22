@@ -449,6 +449,18 @@ describe('PlatformAnalyticsService', () => {
           p50LlmTtftMs: 1100,
           p95LlmTtftMs: 2400,
           avgCacheHitRatePct: 78,
+          // A masked bucket: most turns were fronted by a filler, so avgMs is
+          // the wait-to-any-voice and avgReplyLatencyMs is the pipeline's own.
+          firstAudioFillerTurns: 7,
+          firstAudioInterimTurns: 2,
+          firstAudioReplyTurns: 3,
+          firstAudioUnknownTurns: 0,
+          avgFirstAudioFillerMs: 480,
+          avgFirstAudioInterimMs: 900,
+          avgFirstAudioReplyMs: 5200,
+          avgReplyLatencyMs: 5100,
+          p50ReplyLatencyMs: 4600,
+          p95ReplyLatencyMs: 8300,
         },
         {
           bucket: '2024-06-10',
@@ -461,6 +473,17 @@ describe('PlatformAnalyticsService', () => {
           p50LlmTtftMs: null,
           p95LlmTtftMs: null,
           avgCacheHitRatePct: null,
+          // Transcript-derived rows carry no provenance at all.
+          firstAudioFillerTurns: 0,
+          firstAudioInterimTurns: 0,
+          firstAudioReplyTurns: 0,
+          firstAudioUnknownTurns: 4,
+          avgFirstAudioFillerMs: null,
+          avgFirstAudioInterimMs: null,
+          avgFirstAudioReplyMs: null,
+          avgReplyLatencyMs: null,
+          p50ReplyLatencyMs: null,
+          p95ReplyLatencyMs: null,
         },
       ];
       repo.getVoiceLatencyByBucket.mockResolvedValue(points);
