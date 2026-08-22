@@ -23,6 +23,18 @@ export interface ListBugFindingsFilter {
   status?: BugFindingStatus;
   source?: string;
   repo?: string;
+  /**
+   * Only the findings one sweep touched — the shift log's "Found N" made
+   * clickable.
+   *
+   * Server-side rather than client-side on the loaded window, and that is the
+   * whole point of it. `runId` is stamped on a row every time a run touches it,
+   * INCLUDING a re-triage of a human-reported bug that was filed weeks ago (see
+   * BugFindingService.persistFindings), so a run's findings are scattered
+   * arbitrarily far down a table ordered by `createdAt`. Filtering the newest-N
+   * window in the browser would have shown 2 of a run's 10 and called it 2.
+   */
+  runId?: string;
   limit: number;
   offset: number;
 }
@@ -285,6 +297,7 @@ export class BugFindingRepository extends Repository<BugFinding> {
     if (filter.source)
       qb.andWhere('f.source = :source', { source: filter.source });
     if (filter.repo) qb.andWhere('f.repo = :repo', { repo: filter.repo });
+    if (filter.runId) qb.andWhere('f.runId = :runId', { runId: filter.runId });
 
     const [items, count] = await qb
       .take(filter.limit)

@@ -127,7 +127,10 @@ export class BugHunterController {
     description:
       'Newest first. Defaults to every status; pass `status` to filter to one, ' +
       'or `all` explicitly. A human-reported bug appears here from the moment ' +
-      "it's filed, even before any hunt run has triaged it.",
+      "it's filed, even before any hunt run has triaged it — which is also why " +
+      '`runId` exists: a sweep that re-triages such a bug stamps itself onto a ' +
+      'row that may be weeks old, so ordering by discovery date cannot answer ' +
+      '"what did that sweep find?" and this filter is what does.',
   })
   @ApiResponse({ status: 200, type: ListBugFindingsResponseDto })
   async listFindings(
@@ -137,6 +140,7 @@ export class BugHunterController {
       status: query.status && query.status !== 'all' ? query.status : undefined,
       source: query.source,
       repo: query.repo,
+      runId: query.runId,
       limit: query.limit ?? 50,
       offset: query.offset ?? 0,
     });
