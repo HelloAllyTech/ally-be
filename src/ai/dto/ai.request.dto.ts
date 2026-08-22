@@ -192,6 +192,13 @@ export type ScenarioEvaluationRequest = {
    * SHOULD_NOT_DO behavior instructions). Same scope as `helpful_behaviours`.
    */
   unhelpful_behaviours?: string[];
+  /**
+   * The coaching hints the supervisor sent this learner DURING the session (live
+   * supervisor notes, in order). Lets the debrief pick up a thread the learner
+   * already saw instead of repeating it cold. Null when the scenario had live
+   * notes switched off, which is the default.
+   */
+  live_notes?: string[] | null;
 };
 
 // ── Product Roadmap semantic duplicate detection (ally-ai / Weaviate) ────────

@@ -44,9 +44,11 @@ import { ScenarioSessionDetailsRepository } from '../repository/scenario-session
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { ScenarioSessionTurnMetrics } from '../entity/scenario-session-turn-metrics.entity';
 import { ScenarioSessionStartMetrics } from '../entity/scenario-session-start-metrics.entity';
+import { ScenarioSessionSupervisorNotes } from '../entity/scenario-session-supervisor-notes.entity';
 import {
   LearnSessionMemoryData,
   LearnStartMetricsData,
+  LearnSupervisorNoteData,
   LearnTurnMetricsData,
 } from '../interface/learn-message.interface';
 import { ScenarioSessionMessageTags } from '../entity/scenario-session-message-tags.entity';
@@ -826,6 +828,9 @@ export class ScenarioSessionService {
         checklistEvents,
         showScoreMeter: scenario?.metadata?.showScoreMeter,
         pauseEnabled: scenario?.metadata?.pauseEnabled,
+        // Opt-in: only an explicit true shows the learner's Supervisor tab.
+        supervisorNotesEnabled:
+          scenario?.metadata?.supervisorNotesEnabled === true,
         stateNames,
         metadata: {
           name: scenario?.metadata?.name,
@@ -1498,6 +1503,11 @@ export class ScenarioSessionService {
             )
           : null;
 
+        // What the supervisor already said to the learner DURING this session,
+        // so the note can pick that thread up rather than repeat it cold. Empty
+        // whenever the scenario's live-notes toggle is off, which is the default.
+        const liveNotes = await this.getSupervisorNotes(scenarioSessionId);
+
         const aiResult = useEvaluation
           ? await this.aiService.getScenarioSessionEvaluation(
               messages as ScenarioEvaluationChatMessage[],
@@ -1512,6 +1522,7 @@ export class ScenarioSessionService {
                 supervisorMemory,
                 helpfulBehaviours: sessionContext?.helpfulBehaviours,
                 unhelpfulBehaviours: sessionContext?.unhelpfulBehaviours,
+                liveNotes,
               },
             )
           : await this.aiService.getScenarioSessionSummary(
@@ -2347,6 +2358,62 @@ export class ScenarioSessionService {
       metadata: metrics.metadata,
     });
     await repo.save(row);
+  }
+
+  /**
+   * Persist one live supervisor note. Idempotent on (scenarioSessionId, seq):
+   * an SQS redelivery of a note the learner already read is ignored rather than
+   * duplicated, so the debrief never sees the same hint twice.
+   */
+  async addSupervisorNote(
+    scenarioSession: ScenarioSessions,
+    note: LearnSupervisorNoteData,
+  ): Promise<void> {
+    const repo = this.dataSource.getRepository(ScenarioSessionSupervisorNotes);
+    await repo
+      .createQueryBuilder()
+      .insert()
+      .values({
+        scenarioSessionId: scenarioSession.id,
+        tenantId: scenarioSession.tenantId,
+        seq: note.seq,
+        note: note.note.trim(),
+        turnIndex: note.turn_index,
+        language: note.language,
+        env: note.env,
+      })
+      .orIgnore()
+      .execute();
+  }
+
+  /**
+   * The session's live supervisor notes in the order the learner saw them.
+   * Read at session end to give the debrief its "as I mentioned during the
+   * session…" continuity; an empty array is the normal case (the toggle is off
+   * for most scenarios, and an enabled session may still earn no notes).
+   */
+  async getSupervisorNotes(scenarioSessionId: string): Promise<string[]> {
+    // Best-effort: these notes only add continuity to the debrief note, so a
+    // failure here must cost the learner that continuity and nothing else.
+    // Letting it throw would abort the whole evaluation and leave the session
+    // with no debrief at all — a far worse outcome than a note that opens cold.
+    try {
+      const repo = this.dataSource.getRepository(
+        ScenarioSessionSupervisorNotes,
+      );
+      const rows = await repo.find({
+        select: ['note'],
+        where: { scenarioSessionId },
+        order: { seq: 'ASC' },
+      });
+      return rows.map((row) => row.note);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to read supervisor notes for session ${scenarioSessionId}: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
   }
 
   async addScenarioSessionBehaviorInstruction(

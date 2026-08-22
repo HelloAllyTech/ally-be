@@ -3928,4 +3928,38 @@ describe('ScenarioSessionService', () => {
       ).resolves.toBeNull();
     });
   });
+
+  describe('getSupervisorNotes', () => {
+    it('returns the session notes in seq order', async () => {
+      const find = jest
+        .fn()
+        .mockResolvedValue([
+          { note: 'Slow down.' },
+          { note: 'Name the fear.' },
+        ]);
+      (dataSource as any).getRepository = jest.fn().mockReturnValue({ find });
+
+      await expect(service.getSupervisorNotes('sess-1')).resolves.toEqual([
+        'Slow down.',
+        'Name the fear.',
+      ]);
+      expect(find).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { scenarioSessionId: 'sess-1' },
+          order: { seq: 'ASC' },
+        }),
+      );
+    });
+
+    it('returns [] rather than throwing when the read fails', async () => {
+      // These notes only add continuity to the debrief. Letting a failed read
+      // propagate would abort the evaluation and leave the learner with no
+      // debrief at all, which is far worse than one that opens cold.
+      (dataSource as any).getRepository = jest.fn(() => {
+        throw new Error('db down');
+      });
+
+      await expect(service.getSupervisorNotes('sess-1')).resolves.toEqual([]);
+    });
+  });
 });
