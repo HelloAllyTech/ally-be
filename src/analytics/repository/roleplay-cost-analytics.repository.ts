@@ -54,6 +54,7 @@ export const TASK_AREA: Partial<Record<LlmTask, CostArea>> = {
   [LlmTask.AGENT_STT]: 'roleplay',
   [LlmTask.AGENT_TTS]: 'roleplay',
   [LlmTask.ROLLING_SUMMARY]: 'roleplay',
+  [LlmTask.CLIENT_WORKING_MEMORY]: 'roleplay',
   [LlmTask.NUDGE]: 'roleplay',
   [LlmTask.SUMMARY]: 'feedback',
   [LlmTask.DYNAMIC_SUMMARY]: 'feedback',

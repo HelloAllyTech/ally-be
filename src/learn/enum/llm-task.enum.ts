@@ -20,6 +20,11 @@ export enum LlmTask {
   // Its own label because it runs at agent_turn frequency on a deliberately
   // cheaper model, so folding it into AGENT_TURN would distort both figures.
   SUPERVISOR_NOTE = 'supervisor_note',
+  // Client working memory in ally-ai-learn: one detached call per learner turn
+  // deriving the actor's inner state (stance, affect, ledgers). Same cadence as
+  // AGENT_TURN but off the reply path, so it has to be separable from turn cost
+  // for the feature's spend to be arguable against its benefit.
+  CLIENT_WORKING_MEMORY = 'client_working_memory',
   // Track-level memory consolidation in ally-be: folds per-session memories
   // into one evolving learner memory per track enrollment.
   TRACK_MEMORY_FOLD = 'track_memory_fold',
