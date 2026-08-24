@@ -152,7 +152,7 @@ export const mapCreateScenarioRequestToEntity = (
       openingStatements: scenario.openingStatements,
       reminders: scenario.reminders,
       temperature: scenario.temperature,
-      fillerEnabled: scenario.fillerEnabled,
+      fillerEnabled: scenario.fillerEnabled ?? true,
       languageGlossaryEnabled: scenario.languageGlossaryEnabled,
       comfortAudioEnabled: scenario.comfortAudioEnabled,
       comfortAudioUrl: scenario.comfortAudioUrl,
