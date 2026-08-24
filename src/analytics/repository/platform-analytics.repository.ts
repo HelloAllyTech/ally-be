@@ -196,7 +196,9 @@ export interface VoiceLatencySessionRow extends VoiceLatencySessionStagesRow {
 export interface VoiceLatencyByScenarioRow extends VoiceLatencySessionStagesRow {
   scenarioId: number;
   scenarioTitle: string;
-  sessionCount: number | string;
+  /** When the simulation's most recent session (the one this row's stage
+   *  averages are computed from) started. */
+  occurredAt: string | null;
   turnCount: number | string;
 }
 
@@ -935,15 +937,29 @@ export class PlatformAnalyticsRepository {
 
   /**
    * Every simulation with at least one live-pipeline turn in the window,
-   * worst-first (`avgResponseLatencyMs DESC`) — "which simulations are slow"
-   * as its own question, distinct from {@link getVoiceLatencyBySessions}
+   * worst-first (`avgResponseLatencyMs DESC`) — "which simulations are slow
+   * RIGHT NOW" as its own question, distinct from {@link getVoiceLatencyBySessions}
    * ("show me THIS simulation's worst sessions, once I already suspect it").
-   * Same stage SELECT-list as that method (kept in sync — see its own
-   * doc-comment), so a slow scenario's per-stage columns point at *why*
-   * without a second query. `m."scenarioId"` is reliably populated/indexed
-   * (unlike the sparse `m."language"`), so this joins straight to
-   * `scenarios` for a title rather than hopping through `scenario_sessions`
-   * the way the language join does. Capped at
+   * Each row is that simulation's SINGLE MOST RECENT session (by
+   * `scenario_sessions."startedAt"`), not a whole-window average — a
+   * multi-session average is fine for "has this been slow over 30 days" but
+   * hides whether a scenario is slow *today*, and (per a real production
+   * investigation) a single anomalous session — a disconnect, a paused
+   * client, a one-off provider stall — can dominate a small scenario's
+   * average and make it look like a systemic problem when it isn't. Picking
+   * the latest session avoids blending old and current behaviour, at the
+   * cost of being a one-session sample rather than an average — the same
+   * trade-off, in the other direction.
+   *
+   * `latestSession` picks that session per scenario via `DISTINCT ON`
+   * (Postgres-specific, already used elsewhere in this codebase's raw
+   * queries); the outer query then re-aggregates just that session's turns
+   * with the same stage SELECT-list as {@link getVoiceLatencyBySessions} (kept
+   * in sync — see its own doc-comment), so a slow scenario's per-stage
+   * columns point at *why* without a second query. `m."scenarioId"` is
+   * reliably populated/indexed (unlike the sparse `m."language"`), so this
+   * joins straight to `scenarios` for a title rather than hopping through
+   * `scenario_sessions` the way the language join does. Capped at
    * {@link VOICE_LATENCY_BY_SCENARIO_LIMIT} — see that constant's doc-comment.
    */
   async getVoiceLatencyByScenario(
@@ -951,32 +967,78 @@ export class PlatformAnalyticsRepository {
     end: Date,
     language?: string,
   ): Promise<VoiceLatencyByScenarioRow[]> {
+    // Applies the same window/source/tenant (+ optional language) filter to
+    // any query builder already `FROM scenario_session_turn_metrics m JOIN
+    // scenario_sessions ss` — shared by the latest-session subquery below and
+    // the outer aggregate, so the two can't drift out of sync.
+    const applyFilters = (target: SelectQueryBuilder<ObjectLiteral>) => {
+      if (language) {
+        target.leftJoin(
+          'languages',
+          'l',
+          `l.id = NULLIF(ss.metadata->>'languageId', '')::int`,
+        );
+      }
+      target
+        .where('m."occurredAt" >= :start', { start })
+        .andWhere('m."occurredAt" < :end', { end })
+        .andWhere(`m."source" = 'pipeline'`)
+        .andWhere('m."responseLatencyMs" IS NOT NULL')
+        .andWhere(excludeTestTenants('m."tenant_id"'));
+      if (language) {
+        target.andWhere(`COALESCE(l."value", 'en') = :language`, {
+          language,
+        });
+      }
+      return target;
+    };
+
     const qb = this.dataSource
       .createQueryBuilder()
-      .from('scenario_session_turn_metrics', 'm')
-      .innerJoin('scenarios', 'sc', 'sc.id = m."scenarioId"');
-    if (language) {
-      qb.innerJoin(
+      .from(
+        (sub) =>
+          // One row per scenario: the scenarioSessionId whose session
+          // started most recently, among sessions with a matching turn in
+          // the window. A genuine subquery (not a `.getQuery()` string
+          // embed) so TypeORM renumbers its bound parameters correctly
+          // against the outer query's own `:start`/`:end`/`:language`.
+          applyFilters(
+            sub
+              .select(
+                'DISTINCT ON (m."scenarioId") m."scenarioId"',
+                'scenarioId',
+              )
+              .addSelect('m."scenarioSessionId"', 'scenarioSessionId')
+              .from('scenario_session_turn_metrics', 'm')
+              .innerJoin(
+                'scenario_sessions',
+                'ss',
+                'ss.id = m."scenarioSessionId"',
+              ),
+          )
+            .orderBy('m."scenarioId"', 'ASC')
+            .addOrderBy('ss."startedAt"', 'DESC'),
+        'latest',
+      )
+      .innerJoin(
+        'scenario_session_turn_metrics',
+        'm',
+        'm."scenarioSessionId" = latest."scenarioSessionId"',
+      )
+      .innerJoin(
         'scenario_sessions',
         'ss',
-        'ss.id = m."scenarioSessionId"',
-      ).leftJoin(
-        'languages',
-        'l',
-        `l.id = NULLIF(ss.metadata->>'languageId', '')::int`,
-      );
-    }
-    qb.where('m."occurredAt" >= :start', { start })
+        'ss.id = latest."scenarioSessionId"',
+      )
+      .innerJoin('scenarios', 'sc', 'sc.id = latest."scenarioId"')
+      .where('m."occurredAt" >= :start', { start })
       .andWhere('m."occurredAt" < :end', { end })
       .andWhere(`m."source" = 'pipeline'`)
       .andWhere('m."responseLatencyMs" IS NOT NULL')
-      .andWhere(excludeTestTenants('m."tenant_id"'));
-    if (language) {
-      qb.andWhere(`COALESCE(l."value", 'en') = :language`, { language });
-    }
-    qb.select('m."scenarioId"', 'scenarioId')
+      .andWhere(excludeTestTenants('m."tenant_id"'))
+      .select('latest."scenarioId"', 'scenarioId')
       .addSelect('sc.title', 'scenarioTitle')
-      .addSelect('COUNT(DISTINCT m."scenarioSessionId")::int', 'sessionCount')
+      .addSelect('MIN(ss."startedAt")', 'occurredAt')
       .addSelect('COUNT(*)::int', 'turnCount')
       .addSelect(
         'round(avg(m."responseLatencyMs"))::int',
@@ -1013,10 +1075,10 @@ export class PlatformAnalyticsRepository {
         'COALESCE(SUM(CASE WHEN m."llmTimedOut" THEN 1 ELSE 0 END), 0)::int',
         'llmTimedOutTurns',
       )
-      .groupBy('m."scenarioId"')
+      .groupBy('latest."scenarioId"')
       .addGroupBy('sc.title')
       .orderBy('avg(m."responseLatencyMs")', 'DESC', 'NULLS LAST')
-      .addOrderBy('m."scenarioId"', 'ASC')
+      .addOrderBy('latest."scenarioId"', 'ASC')
       .limit(VOICE_LATENCY_BY_SCENARIO_LIMIT);
 
     return qb.getRawMany<VoiceLatencyByScenarioRow>();

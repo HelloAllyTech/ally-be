@@ -1247,11 +1247,13 @@ export class VoiceLatencyByScenarioQueryDto extends AnalyticsWindowQueryDto {
 }
 
 /**
- * One row per simulation, worst-first — "which simulations are slow"
- * (distinct from {@link VoiceLatencySessionRowDto}, which is "this
- * simulation's worst sessions"). Same stage fields as
- * {@link VoiceLatencySessionStagesDto} so a slow scenario's bottleneck stage
- * is visible without a second lookup.
+ * One row per simulation, worst-first — "which simulations are slow RIGHT
+ * NOW" (distinct from {@link VoiceLatencySessionRowDto}, which is "this
+ * simulation's worst sessions"). Each row is that simulation's single most
+ * recent session, not a whole-window average — see
+ * `PlatformAnalyticsRepository.getVoiceLatencyByScenario`'s doc-comment for
+ * why. Same stage fields as {@link VoiceLatencySessionStagesDto} so a slow
+ * scenario's bottleneck stage is visible without a second lookup.
  */
 export class VoiceLatencyByScenarioRowDto extends VoiceLatencySessionStagesDto {
   @ApiProperty({ description: 'scenarios.id' })
@@ -1260,8 +1262,11 @@ export class VoiceLatencyByScenarioRowDto extends VoiceLatencySessionStagesDto {
   @ApiProperty({ description: 'scenarios.title' })
   scenarioTitle!: string;
 
-  @ApiProperty({ description: 'Distinct sessions aggregated into this row' })
-  sessionCount!: number;
+  @ApiProperty({
+    description: "This simulation's most recent session's start time",
+    nullable: true,
+  })
+  occurredAt!: string | null;
 
   @ApiProperty({ description: 'Turns aggregated into this row' })
   turnCount!: number;

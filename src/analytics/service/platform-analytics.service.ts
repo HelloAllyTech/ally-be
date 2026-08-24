@@ -716,11 +716,15 @@ export class PlatformAnalyticsService {
   }
 
   /**
-   * Every simulation with a matching turn, worst-first — "which simulations
-   * are slow" as its own question, distinct from {@link getVoiceLatencySessions}
-   * ("this simulation's worst sessions"). Logs + flags `truncated: true`
-   * rather than silently dropping the tail if the platform ever exceeds
-   * {@link VOICE_LATENCY_BY_SCENARIO_LIMIT} simulations with matching turns.
+   * Every simulation's MOST RECENT session, worst-first — "which simulations
+   * are slow right now" as its own question, distinct from
+   * {@link getVoiceLatencySessions} ("this simulation's worst sessions").
+   * Latest-session rather than a whole-window average so one old, since-fixed
+   * session can't keep a scenario looking slow, and so a single anomalous
+   * session can't be mistaken for a systemic one — see the repository
+   * method's doc-comment. Logs + flags `truncated: true` rather than
+   * silently dropping the tail if the platform ever exceeds
+   * {@link VOICE_LATENCY_BY_SCENARIO_LIMIT} simulations with a matching turn.
    */
   async getVoiceLatencyByScenario(
     query: VoiceLatencyByScenarioQueryDto,
@@ -750,7 +754,7 @@ export class PlatformAnalyticsService {
       rows: rows.map((r) => ({
         scenarioId: r.scenarioId,
         scenarioTitle: r.scenarioTitle,
-        sessionCount: Number(r.sessionCount) || 0,
+        occurredAt: r.occurredAt,
         turnCount: Number(r.turnCount) || 0,
         ...PlatformAnalyticsService.mapVoiceLatencyStages(r),
       })),

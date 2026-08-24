@@ -692,7 +692,7 @@ describe('PlatformAnalyticsService', () => {
         {
           scenarioId: 42,
           scenarioTitle: 'Guide Kavya through a difficult conversation',
-          sessionCount: '18',
+          occurredAt: '2026-08-20T09:15:00.000Z',
           turnCount: '210',
           avgResponseLatencyMs: '9680',
           p50ResponseLatencyMs: '10037',
@@ -718,7 +718,7 @@ describe('PlatformAnalyticsService', () => {
       expect(result.rows[0]).toEqual({
         scenarioId: 42,
         scenarioTitle: 'Guide Kavya through a difficult conversation',
-        sessionCount: 18,
+        occurredAt: '2026-08-20T09:15:00.000Z',
         turnCount: 210,
         avgResponseLatencyMs: 9680,
         p50ResponseLatencyMs: 10037,
@@ -742,7 +742,7 @@ describe('PlatformAnalyticsService', () => {
       const capRow = {
         scenarioId: 0,
         scenarioTitle: 'x',
-        sessionCount: 1,
+        occurredAt: '2026-08-20T09:15:00.000Z',
         turnCount: 1,
         avgResponseLatencyMs: 1000,
         p50ResponseLatencyMs: 1000,
