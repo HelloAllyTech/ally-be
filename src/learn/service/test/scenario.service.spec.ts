@@ -4234,6 +4234,16 @@ describe('ScenarioService', () => {
             feedbackStatus: true,
             message: 'Great job!',
             score: 85,
+            detectionConfig: {
+              maxOccurrences: 3,
+              minGapTime: 10,
+              occurrenceInterval: 60,
+              startTime: 0,
+              endTime: 300,
+              minScore: 0,
+              maxScore: 100,
+            },
+            checklistVisibilityStatus: true,
           },
           {
             id: 2,
@@ -4246,6 +4256,8 @@ describe('ScenarioService', () => {
             feedbackStatus: false,
             message: 'Session terminated',
             score: 0,
+            detectionConfig: null,
+            checklistVisibilityStatus: false,
           },
         ];
 
@@ -4398,6 +4410,16 @@ describe('ScenarioService', () => {
               feedbackStatus: true,
               message: 'Great job!',
               score: 85,
+              detectionConfig: {
+                maxOccurrences: 3,
+                minGapTime: 10,
+                occurrenceInterval: 60,
+                startTime: 0,
+                endTime: 300,
+                minScore: 0,
+                maxScore: 100,
+              },
+              checklistVisibilityStatus: true,
             }),
             expect.objectContaining({
               scenarioId: 2,
@@ -4408,6 +4430,8 @@ describe('ScenarioService', () => {
               feedbackStatus: false,
               message: 'Session terminated',
               score: 0,
+              detectionConfig: null,
+              checklistVisibilityStatus: false,
             }),
           ]),
         );
