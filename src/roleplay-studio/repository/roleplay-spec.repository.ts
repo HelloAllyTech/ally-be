@@ -34,4 +34,16 @@ export class RoleplaySpecRepository extends Repository<RoleplaySpec> {
     qb.orderBy('spec.updatedAt', 'DESC');
     return qb.getManyAndCount();
   }
+
+  // Soft-deleted specs are excluded automatically (query builder filters on
+  // deletedAt IS NULL for entities with a @DeleteDateColumn).
+  async existsWithCompetencyId(competencyId: string): Promise<boolean> {
+    const count = await this.createQueryBuilder('spec')
+      .where('spec.competencyId = :competencyId', { competencyId })
+      .orWhere('spec.competencyIds @> :competencyIdJson', {
+        competencyIdJson: JSON.stringify([competencyId]),
+      })
+      .getCount();
+    return count > 0;
+  }
 }

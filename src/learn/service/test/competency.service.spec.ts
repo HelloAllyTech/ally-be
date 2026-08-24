@@ -1,9 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { CompetencyService } from '../competency.service';
 import { CompetencyRepository } from '../../repository/competency.repository';
 import { CompetencyBehaviorRepository } from '../../repository/competency-behavior.repository';
 import { BehaviorRepository } from '../../repository/behavior.repository';
+import { ScenariosRepository } from '../../repository/scenario.repository';
+import { RoleplaySpecRepository } from '../../../roleplay-studio/repository/roleplay-spec.repository';
 import { Competency } from '../../entity/competency.entity';
 
 describe('CompetencyService (custom competencies)', () => {
@@ -11,6 +17,8 @@ describe('CompetencyService (custom competencies)', () => {
   let competencyRepository: jest.Mocked<CompetencyRepository>;
   let competencyBehaviorRepository: jest.Mocked<CompetencyBehaviorRepository>;
   let behaviorRepository: jest.Mocked<BehaviorRepository>;
+  let scenariosRepository: jest.Mocked<ScenariosRepository>;
+  let roleplaySpecRepository: jest.Mocked<RoleplaySpecRepository>;
 
   const makeCompetency = (overrides: Partial<Competency> = {}): Competency =>
     ({
@@ -63,6 +71,18 @@ describe('CompetencyService (custom competencies)', () => {
             ),
           },
         },
+        {
+          provide: ScenariosRepository,
+          useValue: {
+            existsWithCompetencyId: jest.fn().mockResolvedValue(false),
+          },
+        },
+        {
+          provide: RoleplaySpecRepository,
+          useValue: {
+            existsWithCompetencyId: jest.fn().mockResolvedValue(false),
+          },
+        },
       ],
     }).compile();
 
@@ -70,6 +90,8 @@ describe('CompetencyService (custom competencies)', () => {
     competencyRepository = module.get(CompetencyRepository);
     competencyBehaviorRepository = module.get(CompetencyBehaviorRepository);
     behaviorRepository = module.get(BehaviorRepository);
+    scenariosRepository = module.get(ScenariosRepository);
+    roleplaySpecRepository = module.get(RoleplaySpecRepository);
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -283,6 +305,41 @@ describe('CompetencyService (custom competencies)', () => {
       await expect(service.deleteCompetency('missing', 42)).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('deleteCompetency (reference checks)', () => {
+    beforeEach(() => {
+      competencyRepository.getCompetencyById.mockResolvedValue(
+        makeCompetency(),
+      );
+    });
+
+    it('blocks deletion when a scenario still references the competency', async () => {
+      scenariosRepository.existsWithCompetencyId.mockResolvedValue(true);
+
+      await expect(service.deleteCompetency('comp-1', 42)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(competencyRepository.delete).not.toHaveBeenCalled();
+    });
+
+    it('blocks deletion when a roleplay spec still references the competency', async () => {
+      roleplaySpecRepository.existsWithCompetencyId.mockResolvedValue(true);
+
+      await expect(service.deleteCompetency('comp-1', 42)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(competencyRepository.delete).not.toHaveBeenCalled();
+    });
+
+    it('allows deletion when nothing references the competency', async () => {
+      scenariosRepository.existsWithCompetencyId.mockResolvedValue(false);
+      roleplaySpecRepository.existsWithCompetencyId.mockResolvedValue(false);
+
+      await service.deleteCompetency('comp-1', 42);
+
+      expect(competencyRepository.delete).toHaveBeenCalledWith('comp-1');
     });
   });
 });

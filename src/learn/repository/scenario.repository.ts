@@ -341,4 +341,16 @@ export class ScenariosRepository extends Repository<Scenarios> {
     const validColumns = Object.values(ScenarioSortBy);
     return validColumns.includes(sortBy as ScenarioSortBy) ? sortBy : null;
   }
+
+  // Soft-deleted scenarios are excluded automatically (query builder filters
+  // on deletedAt IS NULL for entities with a @DeleteDateColumn).
+  async existsWithCompetencyId(competencyId: string): Promise<boolean> {
+    const count = await this.createQueryBuilder('scenario')
+      .where('scenario.competencyId = :competencyId', { competencyId })
+      .orWhere('scenario.competencyIds @> :competencyIdJson', {
+        competencyIdJson: JSON.stringify([competencyId]),
+      })
+      .getCount();
+    return count > 0;
+  }
 }

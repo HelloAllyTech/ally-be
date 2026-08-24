@@ -115,6 +115,7 @@ import { RoomMetadataStoreService } from './service/room-metadata-store.service'
 import { AgentTestCaseController } from './controller/agent-test-case.controller';
 import { CompetencyBehavior } from './entity/competency-behavior.entity';
 import { CompetencyBehaviorRepository } from './repository/competency-behavior.repository';
+import { RoleplaySpecRepository } from '../roleplay-studio/repository/roleplay-spec.repository';
 import { BehaviorTranslation } from './entity/behavior-translation.entity';
 import { ScenarioBehaviorInstructionTranslation } from './entity/scenario-behavior-instruction-translation.entity';
 import { BehaviorTranslationRepository } from './repository/behavior-translation.repository';
@@ -264,6 +265,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     CompetencyService,
     CompetencyRepository,
     CompetencyBehaviorRepository,
+    RoleplaySpecRepository,
     AgentTestCaseService,
     AgentTestCaseRepository,
     ScenarioSessionEvaluationService,
