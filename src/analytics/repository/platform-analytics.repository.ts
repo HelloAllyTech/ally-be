@@ -1116,8 +1116,7 @@ export class PlatformAnalyticsRepository {
   /**
    * Session-wise voice latency for one simulation: one row per session,
    * averaging that session's turns across every pipeline stage. Sorted
-   * worst-first (`avgResponseLatencyMs DESC`) since this exists to help spot
-   * outlier sessions, not browse chronologically. The stage SELECT-list is
+   * latest-first (`occurredAt DESC`). The stage SELECT-list is
    * copied from `RoleplaySessionLogsRepository.getLatencyBySession`
    * (roleplay-session-logs.repository.ts:596-636) — that method computes the
    * same breakdown for a single known session id; this one groups it across
@@ -1193,7 +1192,7 @@ export class PlatformAnalyticsRepository {
         'llmTimedOutTurns',
       )
       .groupBy('m."scenarioSessionId"')
-      .orderBy('avg(m."responseLatencyMs")', 'DESC', 'NULLS LAST')
+      .orderBy('MIN(ss."startedAt")', 'DESC', 'NULLS LAST')
       .addOrderBy('m."scenarioSessionId"', 'ASC')
       .limit(limit)
       .offset(offset);
