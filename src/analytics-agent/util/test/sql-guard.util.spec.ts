@@ -25,7 +25,7 @@ const accept = (sql: string): string => {
 describe('guardSelectQuery — queries it must accept', () => {
   it('accepts a plain aggregate over an allowlisted table', () => {
     accept(
-      "SELECT count(*) AS n FROM scenario_sessions WHERE started_at >= CURRENT_DATE - INTERVAL '30 days' LIMIT 100",
+      "SELECT count(*) AS n FROM analytics_agent_scenario_sessions WHERE started_at >= CURRENT_DATE - INTERVAL '30 days' LIMIT 100",
     );
   });
 
@@ -33,7 +33,7 @@ describe('guardSelectQuery — queries it must accept', () => {
     accept(`
       WITH weekly AS (
         SELECT date_trunc('week', started_at) AS bucket, count(*) AS n
-          FROM scenario_sessions
+          FROM analytics_agent_scenario_sessions
          GROUP BY 1
       )
       SELECT bucket, n FROM weekly ORDER BY bucket LIMIT 200
@@ -42,7 +42,7 @@ describe('guardSelectQuery — queries it must accept', () => {
 
   it('accepts a multi-CTE query referencing each CTE by name', () => {
     accept(`
-      WITH a AS (SELECT id FROM tenants), b AS (SELECT id FROM users)
+      WITH a AS (SELECT id FROM analytics_agent_tenants), b AS (SELECT id FROM analytics_agent_users)
       SELECT (SELECT count(*) FROM a) AS orgs, (SELECT count(*) FROM b) AS people LIMIT 1
     `);
   });
@@ -50,8 +50,8 @@ describe('guardSelectQuery — queries it must accept', () => {
   it('accepts joins across allowlisted tables', () => {
     accept(`
       SELECT t.name AS org, count(s.id) AS sessions
-        FROM scenario_sessions s
-        JOIN tenants t ON t.id = s.tenant_id
+        FROM analytics_agent_scenario_sessions s
+        JOIN analytics_agent_tenants t ON t.id = s.tenant_id
        WHERE t.deleted_at IS NULL
        GROUP BY t.name
        ORDER BY sessions DESC
@@ -61,7 +61,7 @@ describe('guardSelectQuery — queries it must accept', () => {
 
   it('accepts double-quoted camelCase columns, which this schema needs', () => {
     accept(
-      'SELECT avg("compositeScore") AS mean_score, count(*) AS n FROM scenario_session_details LIMIT 1',
+      'SELECT avg("compositeScore") AS mean_score, count(*) AS n FROM analytics_agent_scenario_session_details LIMIT 1',
     );
   });
 
@@ -69,7 +69,7 @@ describe('guardSelectQuery — queries it must accept', () => {
     accept(`
       SELECT d::date AS bucket, count(s.id) AS n
         FROM generate_series(CURRENT_DATE - INTERVAL '30 days', CURRENT_DATE, INTERVAL '1 day') AS d
-        LEFT JOIN scenario_sessions s ON s.started_at::date = d::date
+        LEFT JOIN analytics_agent_scenario_sessions s ON s.started_at::date = d::date
        GROUP BY 1 ORDER BY 1 LIMIT 40
     `);
   });
@@ -78,7 +78,7 @@ describe('guardSelectQuery — queries it must accept', () => {
     // `'CREATED'` tokenises to a word that must not read as CREATE, or the agent
     // would be unusable on every enum column in the schema.
     accept(
-      "SELECT count(*) AS n FROM scenario_sessions WHERE status = 'CREATED' LIMIT 10",
+      "SELECT count(*) AS n FROM analytics_agent_scenario_sessions WHERE status = 'CREATED' LIMIT 10",
     );
   });
 
@@ -89,9 +89,9 @@ describe('guardSelectQuery — queries it must accept', () => {
   });
 
   it('strips a trailing semicolon rather than refusing the query', () => {
-    expect(accept('SELECT 1 AS one FROM tenants LIMIT 1;')).toBe(
-      'SELECT 1 AS one FROM tenants LIMIT 1',
-    );
+    expect(
+      accept('SELECT 1 AS one FROM analytics_agent_tenants LIMIT 1;'),
+    ).toBe('SELECT 1 AS one FROM analytics_agent_tenants LIMIT 1');
   });
 });
 
@@ -168,7 +168,7 @@ describe('guardSelectQuery — table allowlist', () => {
   it('refuses a non-allowlisted table reached through a JOIN', () => {
     expect(
       refusalFor(
-        'SELECT count(*) AS n FROM scenario_sessions s JOIN scenario_session_messages m ON m.scenario_session_id = s.id LIMIT 1',
+        'SELECT count(*) AS n FROM analytics_agent_scenario_sessions s JOIN scenario_session_messages m ON m.scenario_session_id = s.id LIMIT 1',
       ),
     ).toMatch(/not one of the tables/);
   });
@@ -231,13 +231,17 @@ describe('guardSelectQuery — denied columns', () => {
     // `summary_status` is metadata; `summary` is content. A substring rule here
     // would block the honest half of the schema.
     accept(
-      'SELECT summary_status, count(*) AS n FROM chats GROUP BY 1 LIMIT 10',
+      'SELECT summary_status, count(*) AS n FROM analytics_agent_chats GROUP BY 1 LIMIT 10',
     );
   });
 
   it('allows token *count* columns while refusing a token column', () => {
-    accept('SELECT sum("totalTokens") AS tokens FROM llm_usage LIMIT 1');
-    expect(refusalFor('SELECT token FROM users LIMIT 1')).toMatch(/never read/);
+    accept(
+      'SELECT sum("totalTokens") AS tokens FROM analytics_agent_llm_usage LIMIT 1',
+    );
+    expect(
+      refusalFor('SELECT token FROM analytics_agent_users LIMIT 1'),
+    ).toMatch(/never read/);
   });
 });
 

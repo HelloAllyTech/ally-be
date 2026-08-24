@@ -100,7 +100,7 @@ describe('AnalyticsAgentService', () => {
       .mockResolvedValueOnce(
         planResponse({
           intent: 'sql',
-          sql: 'SELECT 1 AS bucket, 2 AS n FROM scenario_sessions LIMIT 10',
+          sql: 'SELECT 1 AS bucket, 2 AS n FROM analytics_agent_scenario_sessions LIMIT 10',
           rationale: 'Counts sessions per week.',
         }),
       )
@@ -132,7 +132,8 @@ describe('AnalyticsAgentService', () => {
   });
 
   it('returns the SQL alongside the answer, so the number is auditable', async () => {
-    const sql = 'SELECT 1 AS bucket, 2 AS n FROM scenario_sessions LIMIT 10';
+    const sql =
+      'SELECT 1 AS bucket, 2 AS n FROM analytics_agent_scenario_sessions LIMIT 10';
     mockedAxios.post
       .mockResolvedValueOnce(planResponse({ intent: 'sql', sql }))
       .mockResolvedValueOnce(answerResponse());
@@ -177,14 +178,14 @@ describe('AnalyticsAgentService', () => {
       .mockResolvedValueOnce(
         planResponse({
           intent: 'sql',
-          sql: 'SELECT email FROM users LIMIT 10',
+          sql: 'SELECT email FROM analytics_agent_users LIMIT 10',
         }),
       )
       // Second plan, given the refusal as context, avoids it.
       .mockResolvedValueOnce(
         planResponse({
           intent: 'sql',
-          sql: 'SELECT count(*) AS n FROM users LIMIT 1',
+          sql: 'SELECT count(*) AS n FROM analytics_agent_users LIMIT 1',
         }),
       )
       .mockResolvedValueOnce(answerResponse());
@@ -192,7 +193,9 @@ describe('AnalyticsAgentService', () => {
     const result = await service.ask({ question: 'how many users?' });
 
     expect(result.outcome).toBe(AnalyticsAgentOutcome.ANSWER);
-    expect(result.sql).toBe('SELECT count(*) AS n FROM users LIMIT 1');
+    expect(result.sql).toBe(
+      'SELECT count(*) AS n FROM analytics_agent_users LIMIT 1',
+    );
     // plan, re-plan, narrate.
     expect(mockedAxios.post).toHaveBeenCalledTimes(3);
   });
@@ -202,13 +205,13 @@ describe('AnalyticsAgentService', () => {
       .mockResolvedValueOnce(
         planResponse({
           intent: 'sql',
-          sql: 'SELECT email FROM users LIMIT 10',
+          sql: 'SELECT email FROM analytics_agent_users LIMIT 10',
         }),
       )
       .mockResolvedValueOnce(
         planResponse({
           intent: 'sql',
-          sql: 'SELECT count(*) AS n FROM users LIMIT 1',
+          sql: 'SELECT count(*) AS n FROM analytics_agent_users LIMIT 1',
         }),
       )
       .mockResolvedValueOnce(answerResponse());
@@ -224,7 +227,7 @@ describe('AnalyticsAgentService', () => {
   });
 
   it('reports a rejection after the retry, showing the SQL it refused', async () => {
-    const bad = 'SELECT email FROM users LIMIT 10';
+    const bad = 'SELECT email FROM analytics_agent_users LIMIT 10';
     mockedAxios.post
       .mockResolvedValueOnce(planResponse({ intent: 'sql', sql: bad }))
       .mockResolvedValueOnce(planResponse({ intent: 'sql', sql: bad }));
@@ -241,7 +244,7 @@ describe('AnalyticsAgentService', () => {
     mockedAxios.post.mockResolvedValueOnce(
       planResponse({
         intent: 'sql',
-        sql: 'SELECT count(*) AS n FROM users LIMIT 1',
+        sql: 'SELECT count(*) AS n FROM analytics_agent_users LIMIT 1',
       }),
     );
     executor.run.mockRejectedValueOnce(
@@ -259,7 +262,7 @@ describe('AnalyticsAgentService', () => {
     mockedAxios.post.mockResolvedValueOnce(
       planResponse({
         intent: 'sql',
-        sql: 'SELECT count(*) AS n FROM users LIMIT 1',
+        sql: 'SELECT count(*) AS n FROM analytics_agent_users LIMIT 1',
       }),
     );
     executor.run.mockRejectedValueOnce(
@@ -292,7 +295,7 @@ describe('AnalyticsAgentService', () => {
       .mockResolvedValueOnce(
         planResponse({
           intent: 'sql',
-          sql: 'SELECT 1 AS bucket, 1 AS n FROM users LIMIT 500',
+          sql: 'SELECT 1 AS bucket, 1 AS n FROM analytics_agent_users LIMIT 500',
         }),
       )
       .mockResolvedValueOnce(
@@ -338,7 +341,7 @@ describe('AnalyticsAgentService', () => {
       .mockResolvedValueOnce(
         planResponse({
           intent: 'sql',
-          sql: 'SELECT count(*) AS n FROM users LIMIT 1',
+          sql: 'SELECT count(*) AS n FROM analytics_agent_users LIMIT 1',
         }),
       )
       .mockResolvedValueOnce(answerResponse());
@@ -361,7 +364,7 @@ describe('AnalyticsAgentService', () => {
       .mockResolvedValueOnce(
         planResponse({
           intent: 'sql',
-          sql: 'SELECT count(*) AS n FROM users LIMIT 1',
+          sql: 'SELECT count(*) AS n FROM analytics_agent_users LIMIT 1',
         }),
       )
       .mockResolvedValueOnce(answerResponse());
@@ -383,7 +386,7 @@ describe('AnalyticsAgentService', () => {
       .mockResolvedValueOnce(
         planResponse({
           intent: 'sql',
-          sql: 'SELECT count(*) AS n FROM users LIMIT 1',
+          sql: 'SELECT count(*) AS n FROM analytics_agent_users LIMIT 1',
         }),
       )
       .mockResolvedValueOnce(

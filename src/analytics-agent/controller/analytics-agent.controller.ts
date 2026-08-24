@@ -8,7 +8,7 @@ import {
 } from '@nestjs/swagger';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
+import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import {
   AnalyticsAgentCatalogResponseDto,
   AskAnalyticsAgentDto,
@@ -17,15 +17,19 @@ import {
 import { AnalyticsAgentService } from '../service/analytics-agent.service';
 
 /**
- * The Analytics Agent's HTTP surface — two endpoints, both gated on
- * SUPER_DUPER_ADMIN_ROLES.
+ * The Analytics Agent's HTTP surface — two endpoints, gated on
+ * SUPER_ADMIN_ROLES, the same tier as the rest of `/v1/analytics`.
  *
- * Note the gate is the *elevated* tier, not the SUPER_ADMIN_ROLES pair that the
- * rest of `/v1/analytics` uses. Every other endpoint on that controller answers
- * one fixed, reviewed question; this one answers whatever question the reader
- * types, across every allowlisted table, at platform scope. That is a different
- * privilege, so it gets a different gate — and the tab in ally-web is hidden for
- * a plain SUPER_ADMIN to match, rather than rendering a control that 403s.
+ * This used to sit on the elevated SUPER_DUPER_ADMIN_ROLES tier: every other
+ * endpoint on that controller answers one fixed, reviewed question, while this
+ * one answers whatever question the reader types, across every allowlisted
+ * table, at platform scope. That reasoning still holds as a general principle
+ * (broader capability warrants a stricter gate), but the product decision was
+ * made to give every admin tier parity across all analytics surfaces instead.
+ * What makes that safe here is `analytics-agent.constants.ts`'s ALLOWED_TABLES:
+ * every tenant-attributable table it names is a filtered view that already
+ * excludes test-tenant rows structurally, so widening who can ask a question
+ * does not widen what the question can see.
  */
 @ApiTags('Analytics Agent')
 @Controller('v1/analytics/agent')
@@ -36,10 +40,10 @@ export class AnalyticsAgentController {
 
   @Post('ask')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_AGENT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    legacyRoles: SUPER_ADMIN_ROLES,
   })
   @ApiOperation({
-    summary: 'Ask an analytics question in English (super-duper-admin)',
+    summary: 'Ask an analytics question in English',
     description:
       'Turns the question into one read-only SELECT over an allowlisted subset of ' +
       'the schema, runs it inside a READ ONLY transaction with a statement timeout ' +
@@ -67,10 +71,10 @@ export class AnalyticsAgentController {
 
   @Get('catalog')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_AGENT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    legacyRoles: SUPER_ADMIN_ROLES,
   })
   @ApiOperation({
-    summary: 'Tables and columns the agent can read (super-duper-admin)',
+    summary: 'Tables and columns the agent can read',
     description:
       'The readable catalogue, so the UI can tell a reader what is in scope ' +
       'before they ask — and state the columns that are never readable, rather ' +

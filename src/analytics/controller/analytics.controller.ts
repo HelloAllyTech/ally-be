@@ -758,11 +758,12 @@ export class AnalyticsController {
   /* ------------------------------------------------------------------------ */
   /* Testing-tab endpoints                                                     */
   /*                                                                           */
-  /* Candidates for the leadership Highlights tab, surfaced on a separate admin */
-  /* tab first so they can be judged against real data before anything on      */
-  /* Highlights is changed. Same guard as every sibling here — the tab itself   */
-  /* is reserved for the elevated admin tier in the frontend, matching the      */
-  /* existing convention that the SUPER_DUPER distinction is a UI one.          */
+  /* Originally candidates for the leadership Highlights tab, surfaced on a    */
+  /* separate admin tab first so they could be judged against real data before */
+  /* anything on Highlights changed; that Testing tab has since been folded    */
+  /* into Highlights (see ally-web's HighlightsTab.tsx). Same guard as every   */
+  /* sibling here — SUPER_ADMIN_ROLES, never a tighter tier than the rest of   */
+  /* /v1/analytics.                                                            */
   /* ------------------------------------------------------------------------ */
 
   @Get('activation')
