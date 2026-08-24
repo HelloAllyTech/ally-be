@@ -1100,6 +1100,20 @@ export class ScenarioSessionService {
       0,
       callDuration - this.effectiveTotalPausedMs(scenarioSession, endedAt),
     );
+
+    // Persist it here, not only in the summary writer. This handler is the
+    // agent's natural end-of-session; it sets status=ENDED, which makes the
+    // later room_finished webhook skip endScenarioSession (see
+    // RoomFinishedHandler) — so a learner who never clicks "End" leaves
+    // `callDuration` NULL forever, and every analytics surface that sums the
+    // column read the session as zero practice minutes while Roleplay Logs
+    // (which derives wall clock client-side) showed the real duration.
+    await this.persistCallDuration(
+      scenarioSessionId,
+      scenarioSession.tenantId,
+      callDuration,
+    );
+
     if (scenarioSession.scenarioPathSessionItemId)
       await this.scenarioPathSessionService.handleEndScenarioPathSession({
         scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
@@ -1245,6 +1259,18 @@ export class ScenarioSessionService {
     callDuration = Math.max(
       0,
       callDuration - this.effectiveTotalPausedMs(scenarioSession, endedAt),
+    );
+
+    // Record the duration on the end path itself rather than leaving it to the
+    // summary writer below: that writer returns early for a roleplay with no
+    // post-session feedback tabs and for a retry over an already-summarised
+    // session, and neither case should cost the learner their practice
+    // minutes. Awaited before the fire-and-forget summary call, so the two
+    // writers can't race.
+    await this.persistCallDuration(
+      scenarioSessionId,
+      scenarioSession.tenantId,
+      callDuration,
     );
 
     // Consume credits first so metadata.creditsUsed reflects the actual charge.
@@ -2152,6 +2178,39 @@ export class ScenarioSessionService {
       );
     }
     return total;
+  }
+
+  /**
+   * Write the session's active duration (MILLISECONDS, net of paused time) to
+   * the details row. This is the number every analytics surface sums as
+   * practice minutes, so it has to land on every end path — not just the one
+   * that generates a summary.
+   *
+   * Atomic upsert on the unique `scenarioSessionId` index (migration 1869) and
+   * scoped to the single column, so it never clobbers a summary or an
+   * evaluation result written by the other two writers, in either order.
+   * Best-effort: end-of-session bookkeeping must not fail on it.
+   */
+  private async persistCallDuration(
+    scenarioSessionId: string,
+    tenantId: string,
+    callDuration: number,
+  ): Promise<void> {
+    // A zero-length session has no practice time to record; don't materialise
+    // an otherwise-empty details row for it.
+    if (!callDuration || callDuration <= 0) return;
+    try {
+      await this.scenarioSessionDetailsRepository.upsert(
+        { scenarioSessionId, tenantId, callDuration },
+        { conflictPaths: ['scenarioSessionId'] },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist callDuration for ${scenarioSessionId}: ${
+          (error as Error)?.message
+        }`,
+      );
+    }
   }
 
   async addScenarioSessionEvent(
