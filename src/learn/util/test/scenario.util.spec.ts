@@ -498,6 +498,28 @@ describe('Scenario Util', () => {
         temperature: 0.4,
       });
     });
+
+    it('should persist feedbackTabs (e.g. Skills toggled off) into metadata', () => {
+      const userId = 505;
+      const existingScenario = {
+        id: 1,
+        metadata: { name: 'Existing' },
+      } as unknown as Scenarios;
+      const dto: UpdateScenarioDto = {
+        feedbackTabs: { debrief: true, skills: false, transcript: true },
+      } as any;
+
+      const result = mapUpdateScenarioRequestToEntity(
+        dto,
+        existingScenario,
+        userId,
+      );
+
+      expect(result.metadata).toEqual({
+        name: 'Existing',
+        feedbackTabs: { debrief: true, skills: false, transcript: true },
+      });
+    });
   });
 
   describe('formatAutoTerminationEventsList', () => {
