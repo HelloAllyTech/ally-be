@@ -330,6 +330,82 @@ describe('CaseSessionService', () => {
 
       expect(dataSource.transaction).toHaveBeenCalled();
     });
+
+    /**
+     * A minimumScore of 0 is the unconfigured default, and NULL means never
+     * configured — neither should gate. Case scores are a SUM over event
+     * scores and can go negative, and the old check missed NULL entirely
+     * (NULL coerced to 0 inside the `<` comparison), so both values blocked a
+     * negative-scoring learner from the next simulation.
+     */
+    it.each([
+      ['0 (the unconfigured default)', 0],
+      ['null (never configured)', null],
+      ['undefined (never configured)', undefined],
+    ])(
+      'completes the item on a negative score when minimumScore is %s',
+      async (_label, minimumScore) => {
+        caseSessionItemRepository.findOne.mockResolvedValue({
+          id: '60000000-0000-0000-0000-000000000001',
+          status: SessionItemStatus.UNLOCKED,
+          caseItemId: '20000000-0000-0000-0000-000000000001',
+          caseSessionId: '30000000-0000-0000-0000-000000000001',
+        } as any);
+        caseSharedService.getCaseItemById.mockResolvedValue({
+          id: '20000000-0000-0000-0000-000000000001',
+          minimumScore,
+        } as any);
+        caseSessionRepository.findOne.mockResolvedValue({
+          id: '30000000-0000-0000-0000-000000000001',
+          completedScenarios: 0,
+        } as any);
+
+        const itemRepo = {
+          update: jest.fn().mockResolvedValue(undefined),
+          create: jest.fn().mockReturnValue({}),
+          save: jest.fn().mockResolvedValue({}),
+        };
+        dataSource.transaction.mockImplementation(async (cb: any) =>
+          cb({ getRepository: jest.fn().mockReturnValue(itemRepo) }),
+        );
+        caseSharedService.getNextCaseItemByCurrentItemId.mockResolvedValue({
+          id: '20000000-0000-0000-0000-000000000002',
+        } as any);
+
+        await service.handleEndCaseSession({
+          caseSessionItemId: '60000000-0000-0000-0000-000000000001',
+          score: -25,
+          callDuration: 60000,
+        });
+
+        expect(itemRepo.update).toHaveBeenCalledWith(
+          '60000000-0000-0000-0000-000000000001',
+          expect.objectContaining({ status: SessionItemStatus.COMPLETED }),
+        );
+      },
+    );
+
+    it('still blocks a score below an explicitly configured non-zero minimumScore', async () => {
+      caseSessionItemRepository.findOne.mockResolvedValue({
+        id: '60000000-0000-0000-0000-000000000001',
+        status: SessionItemStatus.UNLOCKED,
+        caseItemId: '20000000-0000-0000-0000-000000000001',
+        caseSessionId: '30000000-0000-0000-0000-000000000001',
+      } as any);
+      caseSharedService.getCaseItemById.mockResolvedValue({
+        id: '20000000-0000-0000-0000-000000000001',
+        minimumScore: 50,
+      } as any);
+      dataSource.transaction.mockClear();
+
+      await service.handleEndCaseSession({
+        caseSessionItemId: '60000000-0000-0000-0000-000000000001',
+        score: 40,
+        callDuration: 60000,
+      });
+
+      expect(dataSource.transaction).not.toHaveBeenCalled();
+    });
   });
 
   describe('getNextCaseItem', () => {

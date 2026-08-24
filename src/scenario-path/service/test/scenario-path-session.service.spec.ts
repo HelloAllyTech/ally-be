@@ -941,6 +941,64 @@ describe('ScenarioPathSessionService', () => {
       expect(result).toBeUndefined();
     });
 
+    /**
+     * A minimumScore of 0 is the builder's unconfigured default, not a real
+     * "score >= 0" bar. Path scores are a SUM over event scores and can go
+     * negative, so treating 0 as a bar left learners permanently unable to
+     * unlock the next simulation in the path.
+     */
+    it.each([
+      ['0 (the unconfigured default)', 0],
+      ['null (never configured)', null],
+      ['undefined (never configured)', undefined],
+    ])(
+      'completes the item on a negative score when minimumScore is %s',
+      async (_label, minimumScore) => {
+        (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
+        scenarioPathSessionItemRepository.findOne
+          .mockResolvedValueOnce(mockSessionItem as any)
+          .mockResolvedValueOnce(null);
+        scenarioPathSharedService.getScenarioPathItemById.mockResolvedValue({
+          ...mockPathItem,
+          minimumScore,
+        } as any);
+        repository.findOne.mockResolvedValue(mockPathSession as any);
+        scenarioPathSharedService.getNextPathItemByCurrentItemId.mockResolvedValue(
+          { id: 'path-item-2' } as any,
+        );
+
+        const mockSessionItemRepo = {
+          update: jest.fn().mockResolvedValue({}),
+          create: jest.fn().mockReturnValue({ id: 'session-item-2' }),
+          save: jest.fn().mockResolvedValue({ id: 'session-item-2' }),
+        };
+        const mockSessionRepo = { update: jest.fn().mockResolvedValue({}) };
+        mockDataSource.transaction.mockImplementation(async (callback) =>
+          callback({
+            getRepository: jest.fn((entity) => {
+              if (entity === ScenarioPathSessionItem) {
+                return mockSessionItemRepo;
+              }
+              if (entity === ScenarioPathSession) return mockSessionRepo;
+            }),
+          } as any),
+        );
+
+        await service.handleEndScenarioPathSession({
+          scenarioPathSessionItemId: 'session-item-1',
+          score: -25,
+          callDuration: 10000,
+        });
+
+        expect(mockSessionItemRepo.update).toHaveBeenCalledWith(
+          'session-item-1',
+          { status: SessionItemStatus.COMPLETED },
+        );
+        // The next simulation in the path is created/unlocked.
+        expect(mockSessionItemRepo.save).toHaveBeenCalled();
+      },
+    );
+
     it('should complete session item and create next item when next path item exists', async () => {
       (ExecutionManager.getUserId as jest.Mock).mockReturnValue('123');
       scenarioPathSessionItemRepository.findOne
