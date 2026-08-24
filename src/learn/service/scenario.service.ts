@@ -1709,6 +1709,8 @@ export class ScenarioService {
             feedbackStatus: item.feedbackStatus,
             message: item.message,
             score: item.score,
+            detectionConfig: item.detectionConfig,
+            checklistVisibilityStatus: item.checklistVisibilityStatus,
           }),
         );
         await scenarioEventRepo.save(newScenarioEvents);
