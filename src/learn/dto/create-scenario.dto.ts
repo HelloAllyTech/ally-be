@@ -18,6 +18,7 @@ import {
   Max,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
+import { IsEndpointingPairConstraint } from './endpointing-pair.constraint';
 
 import {
   ScenarioDifficultyLevel,
@@ -333,14 +334,28 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description:
-      'Per-simulation override (seconds) for how long semantic turn-detection waits for a learner who seems mid-thought before giving up and replying anyway. When unset, falls back to the global platform default. Lower values reply faster but risk interrupting; higher values avoid interrupting but add perceived delay.',
-    example: 1.5,
+      'EXPERIMENT(turn-endpointing), temporary. Per-simulation floor (seconds) for turn detection — the fast path taken when the end-of-utterance model is confident the learner has finished. Must be set together with turnMaxEndpointingDelay, and strictly below it. Both unset = use the platform defaults.',
+    example: 0.3,
+    required: false,
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0.05)
+  @Max(5)
+  @Validate(IsEndpointingPairConstraint)
+  turnMinEndpointingDelay?: number;
+
+  @ApiProperty({
+    description:
+      'EXPERIMENT(turn-endpointing), temporary. Per-simulation ceiling (seconds) for turn detection — how long the agent waits for a learner who seems mid-thought before replying anyway. Must be strictly greater than turnMinEndpointingDelay. Both unset = use the platform defaults.',
+    example: 1.8,
     required: false,
   })
   @IsOptional()
   @IsNumber()
   @Min(0.1)
   @Max(10)
+  @Validate(IsEndpointingPairConstraint)
   turnMaxEndpointingDelay?: number;
 
   @ApiProperty({
