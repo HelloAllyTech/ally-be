@@ -56,7 +56,9 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'agentBuilderPrompt',
   'showScoreMeter',
   'enableFeedback',
+  'feedbackTabs',
   'supervisorNotesEnabled',
+  'liveTabEnabled',
   'pauseEnabled',
   'currentState',
   'remindersEnabled',
@@ -191,9 +193,13 @@ export const mapCreateScenarioRequestToEntity = (
       agentBuilderPrompt: scenario.agentBuilderPrompt,
       showScoreMeter: scenario.showScoreMeter,
       enableFeedback: scenario.enableFeedback,
+      feedbackTabs: scenario.feedbackTabs,
       // Opt-in per roleplay: the supervisor stays silent during a session
       // until an author turns the live notes on.
       supervisorNotesEnabled: scenario.supervisorNotesEnabled === true,
+      // Opt-out per roleplay: the learner's Live tab stays on unless an
+      // author explicitly disables it.
+      liveTabEnabled: scenario.liveTabEnabled,
       pauseEnabled: scenario.pauseEnabled,
       currentState: scenario.currentState,
       remindersEnabled: scenario.remindersEnabled,
