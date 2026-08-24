@@ -103,8 +103,11 @@ describe('Scenario Util', () => {
       });
     });
 
-    // EXPERIMENT(turn-endpointing) — delete with the feature.
-    it('should map the turn endpointing pair into metadata when set', () => {
+    // The per-simulation EXPERIMENT(turn-endpointing) override has been
+    // deleted in favour of a single global admin setting (see
+    // SettingsService.getTurnEndpointingSettings); scenario metadata no
+    // longer carries turnMin/MaxEndpointingDelay at all.
+    it('should not carry turnMin/MaxEndpointingDelay even if present on the DTO', () => {
       const userId = 111;
       const scenario: CreateScenarioDto = {
         title: 'Endpointing Pair Scenario',
@@ -116,22 +119,8 @@ describe('Scenario Util', () => {
 
       const result = mapCreateScenarioRequestToEntity(scenario, userId);
 
-      expect(result.metadata.turnMinEndpointingDelay).toBe(0.3);
-      expect(result.metadata.turnMaxEndpointingDelay).toBe(1.8);
-    });
-
-    it('should leave the turn endpointing pair undefined when unset', () => {
-      const userId = 112;
-      const scenario: CreateScenarioDto = {
-        title: 'No Endpointing Override Scenario',
-        description: 'Test Description',
-        status: ScenarioStatus.DRAFT,
-      } as any;
-
-      const result = mapCreateScenarioRequestToEntity(scenario, userId);
-
-      expect(result.metadata.turnMinEndpointingDelay).toBeUndefined();
-      expect(result.metadata.turnMaxEndpointingDelay).toBeUndefined();
+      expect(result.metadata).not.toHaveProperty('turnMinEndpointingDelay');
+      expect(result.metadata).not.toHaveProperty('turnMaxEndpointingDelay');
     });
 
     it('should map create scenario DTO with minimal fields', () => {

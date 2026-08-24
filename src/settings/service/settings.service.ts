@@ -23,9 +23,15 @@ import {
 } from '../../common/type/common.type';
 import {
   DEFAULT_CHAT_TYPES,
+  DEFAULT_TURN_ENDPOINTING_SETTINGS,
   LEGAL_CONTENT_NAMES,
   SELECTABLE_CHAT_TYPES,
+  TURN_ENDPOINTING_SETTINGS_NAME,
 } from '../constants/settings.constants';
+import {
+  TurnEndpointingSettings,
+  UpdateTurnEndpointingSettingsDto,
+} from '../dto/turn-endpointing-settings.dto';
 import {
   DEFAULT_HIDDEN_SECTION_IDS,
   SECTION_ID_TO_FIELD_IDS,
@@ -102,6 +108,61 @@ export class SettingsService {
       const entity = this.globalSettingsRepository.create({
         name,
         value: { html: sanitized },
+        createdBy: parseInt(userId),
+        updatedBy: parseInt(userId),
+      });
+      await this.globalSettingsRepository.save(entity);
+    }
+    return { success: true };
+  }
+
+  /**
+   * Read the global turn-endpointing bounds (seconds) used by Studio v1
+   * roleplay sessions, stored as a global_settings row. Falls back to
+   * LiveKit's own defaults if no admin has saved a value yet — the setting
+   * must always resolve to a well-defined pair.
+   */
+  async getTurnEndpointingSettings(): Promise<TurnEndpointingSettings> {
+    const row = await this.globalSettingsRepository.findOne({
+      where: { name: TURN_ENDPOINTING_SETTINGS_NAME },
+    });
+    const value = row?.value as Partial<TurnEndpointingSettings> | undefined;
+    return {
+      turnMinEndpointingDelay:
+        value?.turnMinEndpointingDelay ??
+        DEFAULT_TURN_ENDPOINTING_SETTINGS.turnMinEndpointingDelay,
+      turnMaxEndpointingDelay:
+        value?.turnMaxEndpointingDelay ??
+        DEFAULT_TURN_ENDPOINTING_SETTINGS.turnMaxEndpointingDelay,
+    };
+  }
+
+  /**
+   * Upsert the global turn-endpointing bounds. Access is gated to super
+   * admins at the controller layer.
+   */
+  async updateTurnEndpointingSettings(
+    dto: UpdateTurnEndpointingSettingsDto,
+  ): Promise<{ success: boolean }> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('User ID is required');
+    }
+    const value: TurnEndpointingSettings = {
+      turnMinEndpointingDelay: dto.turnMinEndpointingDelay,
+      turnMaxEndpointingDelay: dto.turnMaxEndpointingDelay,
+    };
+    const existing = await this.globalSettingsRepository.findOne({
+      where: { name: TURN_ENDPOINTING_SETTINGS_NAME },
+    });
+    if (existing) {
+      existing.value = value;
+      existing.updatedBy = parseInt(userId);
+      await this.globalSettingsRepository.save(existing);
+    } else {
+      const entity = this.globalSettingsRepository.create({
+        name: TURN_ENDPOINTING_SETTINGS_NAME,
+        value,
         createdBy: parseInt(userId),
         updatedBy: parseInt(userId),
       });

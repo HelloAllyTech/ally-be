@@ -79,6 +79,7 @@ import { S3Service } from 'src/aws/service/s3.service';
 import { htmlToPlainText } from 'src/common/util/sanitize-html.util';
 import { ScenarioSessionRecordingRepository } from '../repository/scenario-session-recording.repository';
 import { ScenarioSessionRecording } from '../entity/scenario-session-recording.entity';
+import { SettingsService } from 'src/settings/service/settings.service';
 
 /**
  * scenario_translations.metadata.openingStatements may be string[] (current) or a legacy /
@@ -154,6 +155,7 @@ export class ScenarioSharedService {
     private competencyService: CompetencyService,
     private configService: AppConfigService,
     private s3Service: S3Service,
+    private settingsService: SettingsService,
   ) {}
 
   async getScenarioByIds(
@@ -456,6 +458,18 @@ export class ScenarioSharedService {
     );
 
     const languageCode = metadata?.language as LanguageCode;
+
+    // Turn-endpointing bounds are a single global, always-on admin setting
+    // (promoted from the deleted per-simulation EXPERIMENT(turn-endpointing)
+    // override) — read fresh each call, same as Terms/Privacy, and always
+    // wins over whatever may still be sitting in scenario.metadata for older
+    // rows that predate the removal.
+    const turnEndpointingSettings =
+      await this.settingsService.getTurnEndpointingSettings();
+    promptData.turnMinEndpointingDelay =
+      turnEndpointingSettings.turnMinEndpointingDelay;
+    promptData.turnMaxEndpointingDelay =
+      turnEndpointingSettings.turnMaxEndpointingDelay;
 
     // Pre-format previousMemory into the final sentence here so the
     // ai-learn prompt template can substitute `{previous_memory}`

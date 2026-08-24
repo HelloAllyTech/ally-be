@@ -33,9 +33,6 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'comfortAudioUrl',
   'comfortAudioVolume',
   'historyTrimEnabled',
-  // EXPERIMENT(turn-endpointing) — temporary per-sim pair
-  'turnMinEndpointingDelay',
-  'turnMaxEndpointingDelay',
   'continuousBackchanneling',
   'interimReplyEnabled',
   'customFields',
@@ -160,9 +157,6 @@ export const mapCreateScenarioRequestToEntity = (
       comfortAudioUrl: scenario.comfortAudioUrl,
       comfortAudioVolume: scenario.comfortAudioVolume,
       historyTrimEnabled: scenario.historyTrimEnabled,
-      // EXPERIMENT(turn-endpointing) — temporary per-sim pair
-      turnMinEndpointingDelay: scenario.turnMinEndpointingDelay,
-      turnMaxEndpointingDelay: scenario.turnMaxEndpointingDelay,
       continuousBackchanneling: scenario.continuousBackchanneling,
       interimReplyEnabled: scenario.interimReplyEnabled,
       customFields: scenario.customFields?.map((customField) => ({

@@ -141,3 +141,21 @@ export const LEGAL_CONTENT_NAMES = {
   TERMS: 'legal_terms',
   PRIVACY: 'legal_privacy',
 } as const;
+
+/**
+ * Name of the global_settings row holding the platform-wide turn-endpointing
+ * bounds (seconds) used by Studio v1 roleplay sessions. Promoted from the
+ * per-simulation EXPERIMENT(turn-endpointing) override, which has been
+ * deleted — this is now the single always-on source of truth.
+ */
+export const TURN_ENDPOINTING_SETTINGS_NAME = 'turn_endpointing';
+
+/**
+ * LiveKit's own turn-detection defaults, served when no admin has saved a
+ * global_settings row yet — the setting must never resolve to an
+ * empty/undefined value.
+ */
+export const DEFAULT_TURN_ENDPOINTING_SETTINGS = {
+  turnMinEndpointingDelay: 0.5,
+  turnMaxEndpointingDelay: 3.0,
+} as const;
