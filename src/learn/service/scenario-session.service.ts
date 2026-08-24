@@ -1116,6 +1116,24 @@ export class ScenarioSessionService {
       callDuration,
     );
 
+    // Consume credits here too, for the same reason persistCallDuration is
+    // called above rather than left to endScenarioSession: this handler sets
+    // status=ENDED, which makes the later room_finished webhook skip
+    // endScenarioSession (see RoomFinishedHandler) — the only other place
+    // consumeSimulationCredits is called. Without this, a roleplay that ends
+    // naturally (learner never clicks "End") uses minutes without ever
+    // deducting credits.
+    try {
+      await this.consumeSimulationCredits(
+        scenarioSession.counselorId,
+        callDuration,
+      );
+    } catch (err) {
+      this.logger.error(
+        `consumeSimulationCredits failed for session ${scenarioSessionId}; continuing without deducting credits: ${err?.message}`,
+      );
+    }
+
     if (scenarioSession.scenarioPathSessionItemId)
       await this.scenarioPathSessionService.handleEndScenarioPathSession({
         scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
