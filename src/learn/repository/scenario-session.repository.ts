@@ -316,21 +316,23 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     startedBefore: Date;
     limit: number;
   }): Promise<ScenarioSessions[]> {
-    return this.createQueryBuilder('session')
-      .where('session.status = :status', {
-        status: ScenarioSessionStatus.ACTIVE,
-      })
-      .andWhere('session.startedAt IS NOT NULL')
-      .andWhere('session.startedAt < :startedBefore', {
-        startedBefore: params.startedBefore,
-      })
-      .andWhere("session.roomId NOT LIKE 'preview-%'")
-      .andWhere("session.roomId NOT LIKE 'seed-room-%'")
-      // Oldest first: if the limit bites, the most stuck rows are cleared first
-      // and the rest are picked up on the next tick.
-      .orderBy('session.startedAt', 'ASC')
-      .limit(params.limit)
-      .getMany();
+    return (
+      this.createQueryBuilder('session')
+        .where('session.status = :status', {
+          status: ScenarioSessionStatus.ACTIVE,
+        })
+        .andWhere('session.startedAt IS NOT NULL')
+        .andWhere('session.startedAt < :startedBefore', {
+          startedBefore: params.startedBefore,
+        })
+        .andWhere("session.roomId NOT LIKE 'preview-%'")
+        .andWhere("session.roomId NOT LIKE 'seed-room-%'")
+        // Oldest first: if the limit bites, the most stuck rows are cleared first
+        // and the rest are picked up on the next tick.
+        .orderBy('session.startedAt', 'ASC')
+        .limit(params.limit)
+        .getMany()
+    );
   }
 
   /**

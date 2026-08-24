@@ -60,7 +60,10 @@ export const FAILURE_MESSAGES = {
  * fact that a specific *user* lacks it is what stays in the log.
  */
 export const AUTHZ_MESSAGES = {
-  missingPermissions: (permissions: string[], operator: 'AND' | 'OR'): string =>
+  missingPermissions: (
+    permissions: string[],
+    operator: 'AND' | 'OR',
+  ): string =>
     permissions.length === 1
       ? `Missing required permission: ${permissions[0]}`
       : `Missing required permissions (${operator}): ${permissions.join(', ')}`,

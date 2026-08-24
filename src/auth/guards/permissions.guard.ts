@@ -75,7 +75,9 @@ export class PermissionsGuard implements CanActivate {
         ? permissions.every((permission) =>
             userPermissions.includes(permission),
           )
-        : permissions.some((permission) => userPermissions.includes(permission));
+        : permissions.some((permission) =>
+            userPermissions.includes(permission),
+          );
 
     if (granted) return true;
 

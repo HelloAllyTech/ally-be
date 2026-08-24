@@ -22,9 +22,7 @@ import { LoggerService } from '../../logger/logger.service';
  * Mirrors `ActorEvaluationCatchupSchedulerRegistrationService`.
  */
 @Injectable()
-export class StuckSessionSweeperSchedulerRegistrationService
-  implements OnModuleInit
-{
+export class StuckSessionSweeperSchedulerRegistrationService implements OnModuleInit {
   private readonly logger = LoggerService.getInstance(
     StuckSessionSweeperSchedulerRegistrationService.name,
   );

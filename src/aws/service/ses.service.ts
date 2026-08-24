@@ -1,4 +1,8 @@
-import { HttpStatus, Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  HttpStatus,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { AppConfigService } from '../../config/config.service';

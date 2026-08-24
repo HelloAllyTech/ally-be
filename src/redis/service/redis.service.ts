@@ -31,7 +31,8 @@ export class RedisService {
       this.redis.ping(),
       new Promise((_, reject) =>
         setTimeout(
-          () => reject(new Error(`Redis PING did not answer in ${timeoutMs}ms`)),
+          () =>
+            reject(new Error(`Redis PING did not answer in ${timeoutMs}ms`)),
           timeoutMs,
         ),
       ),

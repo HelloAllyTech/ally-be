@@ -32,9 +32,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * those queries filter `= 'COMPLETED'`. Every write moves a row from a value
  * already excluded to another already excluded.
  */
-export class AddScenarioSessionAbandonedState1932000000000
-  implements MigrationInterface
-{
+export class AddScenarioSessionAbandonedState1932000000000 implements MigrationInterface {
   name = 'AddScenarioSessionAbandonedState1932000000000';
 
   /**
