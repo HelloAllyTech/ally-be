@@ -101,30 +101,34 @@ describe('Scenario Util', () => {
       });
     });
 
-    it('should map turnMaxEndpointingDelay into metadata when set', () => {
+    // EXPERIMENT(turn-endpointing) — delete with the feature.
+    it('should map the turn endpointing pair into metadata when set', () => {
       const userId = 111;
       const scenario: CreateScenarioDto = {
-        title: 'Endpointing Override Scenario',
+        title: 'Endpointing Pair Scenario',
         description: 'Test Description',
         status: ScenarioStatus.DRAFT,
-        turnMaxEndpointingDelay: 1.5,
+        turnMinEndpointingDelay: 0.3,
+        turnMaxEndpointingDelay: 1.8,
       } as any;
 
       const result = mapCreateScenarioRequestToEntity(scenario, userId);
 
-      expect(result.metadata.turnMaxEndpointingDelay).toBe(1.5);
+      expect(result.metadata.turnMinEndpointingDelay).toBe(0.3);
+      expect(result.metadata.turnMaxEndpointingDelay).toBe(1.8);
     });
 
-    it('should leave turnMaxEndpointingDelay undefined when unset', () => {
+    it('should leave the turn endpointing pair undefined when unset', () => {
       const userId = 112;
       const scenario: CreateScenarioDto = {
-        title: 'No Override Scenario',
+        title: 'No Endpointing Override Scenario',
         description: 'Test Description',
         status: ScenarioStatus.DRAFT,
       } as any;
 
       const result = mapCreateScenarioRequestToEntity(scenario, userId);
 
+      expect(result.metadata.turnMinEndpointingDelay).toBeUndefined();
       expect(result.metadata.turnMaxEndpointingDelay).toBeUndefined();
     });
 
