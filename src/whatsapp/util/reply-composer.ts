@@ -36,11 +36,25 @@ export function composeReply(input: ComposeReplyInput): string {
     maxCitations,
   } = input;
 
-  // A decline uses the configured wording rather than the model's, so the admin controls exactly how
-  // "I don't have that" sounds to a worker. A clarify uses the model's question — the whole point of
-  // it is that it is specific to what was asked.
-  const bodyText =
-    intent === 'decline' ? declineText : answer.trim() || declineText;
+  // PREFER THE MODEL'S OWN DECLINE SENTENCE, falling back to the configured wording.
+  //
+  // This used to substitute `declineText` unconditionally on a decline, on the reasoning that the
+  // admin should control how "I don't have that" sounds. The cost of that was invisible and large:
+  // the answer prompt asks the model to write its decline IN THE WORKER'S LANGUAGE, and the
+  // configured `declineText` is a single fixed string. So a Hindi- or Tamil-speaking worker asked a
+  // question in their own language and got the English admin default — for the reply they are most
+  // likely to receive, since a decline is the outcome whenever the corpus does not cover something.
+  // The localized sentence the model was explicitly instructed to write was computed and thrown away.
+  //
+  // `declineText` remains the fallback, and it still carries every case that matters to the admin:
+  // a PRE-LLM decline (`no_hits`, `below_threshold`) never reaches a model, so `answer` is empty and
+  // the configured wording is what goes out, exactly as before. What changed is only the
+  // `model_declined` case, where a real sentence in the right language exists.
+  //
+  // A clarify uses the model's question — the whole point of it is that it is specific to what was
+  // asked. Which makes all three intents the same rule now: use what the model wrote if it wrote
+  // anything, otherwise the configured decline.
+  const bodyText = answer.trim() || declineText;
 
   const body = truncateAtSentence(bodyText, maxAnswerChars);
 

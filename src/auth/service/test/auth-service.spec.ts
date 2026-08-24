@@ -164,6 +164,9 @@ describe('AuthService', () => {
           provide: EventEmitter2,
           useValue: {
             emit: jest.fn(),
+            // Defaults to no listeners (matches production with notifications
+            // disabled) so existing tests keep asserting `success: true`.
+            emitAsync: jest.fn().mockResolvedValue([]),
           },
         },
         {

@@ -52,6 +52,47 @@ const KNOWLEDGE_PROMPT_CODES = [
 ];
 
 /**
+ * Send-retry budget for `reply()`.
+ *
+ * TWO attempts, not three, and the number is derived rather than picked. The inbound consumer's SQS
+ * visibility window is 60s; retrieval before the send may already have spent up to ~25s; the
+ * provider's own HTTP timeout is 15s. Two attempts plus one 500ms pause is ~30.5s of send worst
+ * case, which fits alongside retrieval with room to spare. A third would not.
+ *
+ * A retry here is safe from the double-reply hazard the class invariant guards against: the retry
+ * happens INSIDE one `reply()` call against one already-persisted outbound row, so it cannot produce
+ * a second row, and nothing is rethrown, so SQS is never asked to redeliver.
+ */
+const SEND_MAX_ATTEMPTS = 2;
+const SEND_RETRY_DELAY_MS = 500;
+/**
+ * Only retry a failure that came back FAST. A send that burned most of the provider's 15s timeout
+ * indicates a provider under strain, and a second full-length attempt would risk the visibility
+ * window to buy very little. The failures a retry genuinely fixes — connection reset, a 502 from
+ * Meta's edge, a DNS blip — return in well under a second.
+ */
+const SEND_RETRY_MAX_ATTEMPT_MS = 5_000;
+
+/**
+ * Is a provider send failure worth another attempt?
+ *
+ * Anything Meta answered with a 4xx is terminal: an invalid number, a closed 24-hour
+ * customer-service window and a rejected template are all refused identically on a second try, and
+ * retrying spends the visibility budget to reach the same conclusion. A 5xx, a timeout, or no
+ * response at all is transient.
+ */
+function isRetryableSendFailure(error: unknown): boolean {
+  const status = (
+    error as { response?: { status?: number }; status?: number } | undefined
+  )?.response?.status;
+  if (typeof status === 'number' && status >= 400 && status < 500) {
+    // 429 is the exception among 4xx — it explicitly means "later", not "never".
+    return status === 429;
+  }
+  return true;
+}
+
+/**
  * Processes one inbound WhatsApp message end to end.
  *
  * The ORDER of the steps below is the design. Each one exists because of a specific way the pipeline
@@ -429,12 +470,49 @@ export class WhatsAppInboundService {
       return;
     }
 
-    if (crisis?.failed) {
+    // The classifier did not run: either it reported `failed`, or the call itself rejected (which
+    // `allSettled` above turns into a rejected result rather than letting it take down the answer).
+    // BOTH are the degraded state, and the rejected case was previously not checked at all.
+    const classifierRequested = settings.crisisClassifierEnabled;
+    const classifierDegraded =
+      classifierRequested &&
+      (crisisResult.status === 'rejected' || Boolean(crisis?.failed));
+
+    if (classifierDegraded) {
+      const reason =
+        crisisResult.status === 'rejected'
+          ? crisisResult.reason instanceof Error
+            ? crisisResult.reason.message
+            : 'unknown error'
+          : 'ally-ai reported failed=true on the crisis check';
+
       // Named explicitly, because a silently degraded safety net is worse than a loud one: from the
       // dashboard, "the classifier never fires" and "the classifier is down" look identical.
       this.logger.warn(
-        'Crisis classifier did not run for this message; keyword rules only',
+        `Crisis classifier did not run for this message; keyword rules only (${reason})`,
       );
+
+      // ...and ALERTED, which the log line alone never achieved. Slack was notified when crisis
+      // FIRED but never when detection was degraded, so an expired API key or a renamed ally-ai
+      // route would quietly halve the safety net and look, from every dashboard we have, exactly
+      // like a quiet week: the classifier's firing rate is low by design, so "zero crises today" is
+      // an ordinary reading. That made the failure mode with the highest human cost the one we were
+      // least equipped to notice.
+      //
+      // statusCode 500 rather than the crisis paths' 200: this IS a fault, and `handleException`
+      // suppresses only 401s, so it reaches Slack either way.
+      this.eventEmitter.emit('exception', {
+        statusCode: 500,
+        timestamp: new Date().toISOString(),
+        path: 'whatsapp/crisis-classifier-degraded',
+        message:
+          `The WhatsApp crisis classifier did not run for a message (contact ends ` +
+          `${contact.phoneLast4}). Reason: ${reason}. The keyword rules ran and are ` +
+          `holding the safety net alone — check ally-ai's crisis-check route and its ` +
+          `model provider key. Expect NO crisis alerts while this persists, which is ` +
+          `indistinguishable from a quiet day.`,
+        type: 'WhatsApp Crisis Classifier Degraded',
+      } as NotificationErrorType);
     }
 
     let answer: KnowledgeAnswerResponse;
@@ -718,35 +796,114 @@ export class WhatsAppInboundService {
       }),
     );
 
-    try {
-      const { providerMessageId } = await this.provider.sendText(
-        contact.phoneE164,
-        body,
-      );
+    let sent = false;
+    let lastReason = 'unknown error';
+
+    // RETRY the send, then ALERT if it still fails. Neither existed before: a provider send failure
+    // marked the row FAILED and returned, so the worker who asked a question — possibly a CRISIS
+    // question, since the crisis paths reply through this same method — simply never heard back, and
+    // nobody was told. The crisis branches emit an `exception` event when a crisis FIRES; the reply
+    // that carries the safety number to the worker had no such coverage.
+    //
+    // Budget: SEND_MAX_ATTEMPTS × the provider's own 15s timeout + the pauses between them, which is
+    // sized to stay inside the inbound consumer's 60s SQS visibility window alongside the retrieval
+    // that ran before it. See SEND_MAX_ATTEMPTS.
+    for (let attempt = 1; attempt <= SEND_MAX_ATTEMPTS; attempt++) {
+      const attemptStartedAt = Date.now();
+      try {
+        const { providerMessageId } = await this.provider.sendText(
+          contact.phoneE164,
+          body,
+        );
+        await this.messageRepository.update(
+          { id: outbound.id },
+          { providerMessageId, status: WaMessageStatus.SENT },
+        );
+        await this.messageRepository.update(
+          { id: inReplyToId },
+          { status: WaMessageStatus.SENT, handledBy },
+        );
+        if (attempt > 1) {
+          this.logger.info(
+            `WhatsApp send succeeded on attempt ${attempt}/${SEND_MAX_ATTEMPTS}`,
+          );
+        }
+        sent = true;
+        break;
+      } catch (error) {
+        lastReason = error instanceof Error ? error.message : 'unknown error';
+        const attemptMs = Date.now() - attemptStartedAt;
+        this.logger.error(
+          `WhatsApp send failed (attempt ${attempt}/${SEND_MAX_ATTEMPTS}, ` +
+            `${attemptMs}ms): ${lastReason}`,
+        );
+
+        if (attempt >= SEND_MAX_ATTEMPTS) break;
+
+        // Only a TRANSIENT failure is worth a second attempt. A 4xx from Meta — an invalid number, a
+        // closed 24-hour customer-service window, a template rejection — will be refused identically,
+        // and retrying it spends the visibility window to arrive at the same place.
+        if (!isRetryableSendFailure(error)) {
+          this.logger.warn(
+            'Not retrying the WhatsApp send — the provider rejected it terminally',
+          );
+          break;
+        }
+        // A slow failure means the provider is struggling; a second full-length request would risk
+        // the visibility window for little gain. Fast failures (connection reset, 502) are the ones
+        // a retry actually fixes.
+        if (attemptMs > SEND_RETRY_MAX_ATTEMPT_MS) {
+          this.logger.warn(
+            `Not retrying the WhatsApp send — the failed attempt took ${attemptMs}ms, ` +
+              `above the ${SEND_RETRY_MAX_ATTEMPT_MS}ms retry ceiling`,
+          );
+          break;
+        }
+        await new Promise((resolve) =>
+          setTimeout(resolve, SEND_RETRY_DELAY_MS),
+        );
+      }
+    }
+
+    if (!sent) {
       await this.messageRepository.update(
         { id: outbound.id },
-        { providerMessageId, status: WaMessageStatus.SENT },
+        { status: WaMessageStatus.FAILED, errorMessage: lastReason },
       );
       await this.messageRepository.update(
         { id: inReplyToId },
-        { status: WaMessageStatus.SENT, handledBy },
+        { status: WaMessageStatus.FAILED, errorMessage: lastReason, handledBy },
       );
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'unknown error';
-      this.logger.error(`WhatsApp send failed: ${reason}`);
-      await this.messageRepository.update(
-        { id: outbound.id },
-        { status: WaMessageStatus.FAILED, errorMessage: reason },
-      );
-      await this.messageRepository.update(
-        { id: inReplyToId },
-        { status: WaMessageStatus.FAILED, errorMessage: reason, handledBy },
-      );
+
+      // Routed to the same Slack path the crisis branches use. An undelivered reply is only ever
+      // discoverable by querying wa_messages for FAILED rows, which is not something anyone does
+      // unprompted. Escalated hardest when the undelivered reply was a CRISIS reply: that is a
+      // worker in danger who was sent a safety number that never arrived, and it needs a human now.
+      const isCrisisReply = handledBy === WaHandledBy.CRISIS;
+      this.eventEmitter.emit('exception', {
+        statusCode: 500,
+        timestamp: new Date().toISOString(),
+        path: 'whatsapp/send-failed',
+        message:
+          `${isCrisisReply ? 'A CRISIS reply' : 'A reply'} to a WhatsApp worker ` +
+          `(contact ends ${contact.phoneLast4}) could not be delivered: ${lastReason}. ` +
+          `Handled by ${handledBy}. Outbound message ${outbound.id}. ` +
+          (isCrisisReply
+            ? 'The worker was NOT given the escalation contact — reach them another way.'
+            : 'The worker received no answer to their question.'),
+        type: isCrisisReply
+          ? 'WhatsApp Crisis Reply Undelivered'
+          : 'WhatsApp Reply Undelivered',
+      } as NotificationErrorType);
     }
 
     // Record consent on the first successful exchange, not before: a disclaimer that failed to send
     // has not been shown, and marking it granted would mean the worker never sees it.
-    if (contact.consentStatus === WaConsentStatus.PENDING) {
+    //
+    // NOTE this predates the retry above and is unchanged in spirit, but it was already only
+    // loosely honouring its own comment — it runs whether or not the send succeeded. Gated on `sent`
+    // now, which is what the comment says.
+    if (sent && contact.consentStatus === WaConsentStatus.PENDING) {
       await this.contactRepository.update(
         { id: contact.id },
         {

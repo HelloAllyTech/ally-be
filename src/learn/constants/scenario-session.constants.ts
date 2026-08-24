@@ -2,6 +2,29 @@ import { LanguageCode } from '../enum/scenario-language';
 
 export const DEFAULT_SCENARIO_SESSION_TTL_SECONDS = 1200; // 20 minutes
 
+/**
+ * How long a session must have been ACTIVE before the sweeper treats it as
+ * abandoned.
+ *
+ * SIX HOURS, which is 18× the 20-minute session TTL above. Generous on purpose:
+ * the cost of sweeping too early is reaping a session a learner is genuinely
+ * still in, which would end their roleplay under them — far worse than the cost
+ * of sweeping too late, which is a stale row surviving a few more hours. Sessions
+ * can also be PAUSED (`pausedAt`/`totalPausedMs`), and a learner who pauses over
+ * a lunch break must not be reaped, so the margin has to absorb that too.
+ *
+ * If this ever needs to be tighter, the honest way is to key off `pausedAt` and
+ * last transcript activity rather than to shrink this number.
+ */
+export const STUCK_SESSION_AGE_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Rows per sweep tick. Bounded so the first run after this ships — which may
+ * find a long tail of historical stuck sessions — cannot turn into one enormous
+ * transaction; the remainder is picked up on the next tick.
+ */
+export const STUCK_SESSION_SWEEP_LIMIT = 200;
+
 export const SCENARIO_SESSION_EXAMPLE = {
   id: '123',
   roomId: '123',

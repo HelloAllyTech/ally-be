@@ -1,4 +1,7 @@
-import { ServiceUnavailableException } from '@nestjs/common';
+import {
+  GatewayTimeoutException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import axios from 'axios';
@@ -114,9 +117,10 @@ describe('AiService', () => {
 
       await expect(
         service.transcribeAudioFromBuffer(mockBuffer),
-      ).rejects.toThrow('AI transcription failed');
+      ).rejects.toThrow(ServiceUnavailableException);
       expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining('AI Service Error: Transcription failed'),
+        expect.stringContaining('errMsg=Transcription failed'),
+        expect.anything(),
       );
     });
   });
@@ -153,14 +157,15 @@ describe('AiService', () => {
       expect(mockedAxios).not.toHaveBeenCalled();
     });
 
-    it('should handle nudge request error gracefully', async () => {
+    it('should fail loudly on a nudge request error, not return a false-success empty object', async () => {
+      // Previously this swallowed the failure and resolved {} — indistinguishable
+      // from "no nudge needed" on the wire. Fixed to fail loudly like enhance().
       const error = new Error('Nudge failed');
       (mockedAxios as any).mockRejectedValue(error);
 
-      // The method doesn't throw by default - it returns empty object and emits event
-      const result = await service.getNudge('New message', mockChatHistory);
-
-      expect(result).toEqual({});
+      await expect(
+        service.getNudge('New message', mockChatHistory),
+      ).rejects.toThrow(ServiceUnavailableException);
       expect(mockLogger.error).toHaveBeenCalledWith(
         expect.stringContaining('AI Request FAIL'),
         expect.anything(),
@@ -430,9 +435,10 @@ describe('AiService', () => {
       const mockBuffer = Buffer.from('audio data');
       await expect(
         service.transcribeAudioFromBuffer(mockBuffer),
-      ).rejects.toThrow('AI transcription failed');
+      ).rejects.toThrow(ServiceUnavailableException);
       expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining('AI Service Error: Network error'),
+        expect.stringContaining('errMsg=Network error'),
+        undefined,
       );
     });
 
@@ -443,9 +449,10 @@ describe('AiService', () => {
       const mockBuffer = Buffer.from('audio data');
       await expect(
         service.transcribeAudioFromBuffer(mockBuffer),
-      ).rejects.toThrow('AI transcription failed');
+      ).rejects.toThrow(GatewayTimeoutException);
       expect(mockLogger.error).toHaveBeenCalledWith(
-        expect.stringContaining('AI Service Error: timeout'),
+        expect.stringContaining('errMsg=timeout'),
+        undefined,
       );
     });
 

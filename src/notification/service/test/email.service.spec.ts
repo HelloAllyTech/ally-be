@@ -99,6 +99,7 @@ describe('EmailService', () => {
 ❌ If you did not request this code, you can safely ignore this email.
 `,
         isHtml: false,
+        purpose: 'login OTP',
       });
       expect(result).toBe(true);
     });
@@ -130,6 +131,7 @@ describe('EmailService', () => {
 ❌ If you did not request this code, you can safely ignore this email.
 `,
         isHtml: false,
+        purpose: 'login OTP',
       });
       expect(result).toBe(true);
     });
@@ -152,6 +154,7 @@ describe('EmailService', () => {
           'https://test.example.com/auth/verify?token=test-magic-token',
         ),
         isHtml: false,
+        purpose: 'login OTP',
       });
       expect(result).toBe(true);
     });
@@ -176,6 +179,7 @@ describe('EmailService', () => {
           'https://admin.example.com/auth/verify?token=test-magic-token',
         ),
         isHtml: false,
+        purpose: 'login OTP',
       });
       expect(result).toBe(true);
     });
@@ -206,6 +210,7 @@ https://test.example.com/summary/123?source=deeplink
 Best regards,
 The Ally Team`,
         isHtml: false,
+        purpose: 'summary ready',
       });
       expect(result).toBe(true);
     });
@@ -233,21 +238,26 @@ https://test.example.com/summary/123?source=deeplink
 Best regards,
 The Ally Team`,
         isHtml: false,
+        purpose: 'summary ready',
       });
       expect(result).toBe(true);
     });
 
-    it('should handle email sending failure', async () => {
+    it('propagates a send failure to the caller rather than swallowing it', async () => {
+      // SESService.sendEmail now THROWS instead of resolving false. EmailService
+      // deliberately does not catch: a caller that cannot tell a sent email from
+      // an unsent one is why "Summary-ready email sent" used to be logged on
+      // every failure.
       const params = {
         to: 'counselor@example.com',
         chatId: 123,
         summaryName: 'session-456',
       };
-      mockSESService.sendEmail.mockResolvedValue(false);
+      mockSESService.sendEmail.mockRejectedValue(new Error('SES is down'));
 
-      const result = await service.sendSummaryNotification(params);
-
-      expect(result).toBe(false);
+      await expect(service.sendSummaryNotification(params)).rejects.toThrow(
+        'SES is down',
+      );
     });
   });
 });

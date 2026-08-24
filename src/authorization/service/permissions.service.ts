@@ -1,8 +1,14 @@
 import {
   ForbiddenException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { ErrorCode } from 'src/exception/error-code.enum';
+import {
+  AUTHZ_MESSAGES,
+  FAILURE_MESSAGES,
+} from 'src/exception/failure-messages';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { RedisService } from 'src/redis/service/redis.service';
@@ -84,7 +90,12 @@ export class PermissionsService {
   ): Promise<SuccessResponse> {
     const userId = ExecutionManager.getUserId();
     if (!userId) {
-      throw new UnauthorizedException('User not found');
+      throw new UnauthorizedException({
+        message: FAILURE_MESSAGES.UNAUTHENTICATED,
+        error: 'Unauthorized',
+        statusCode: HttpStatus.UNAUTHORIZED,
+        errorCode: ErrorCode.UNAUTHENTICATED,
+      });
     }
 
     const userPermissions = await this.getUserPermissions(Number(userId));
@@ -100,8 +111,30 @@ export class PermissionsService {
           );
 
     if (!hasPermission) {
-      this.logger.warn(`User ${userId} does not have the required permissions`);
-      throw new ForbiddenException('Insufficient permissions');
+      // The required permissions were right here and were being thrown away in
+      // favour of a generic 'Insufficient permissions'. This endpoint exists so
+      // a client can ASK whether it may show a surface — an answer that does not
+      // say what was missing forces the caller to guess, which is exactly what
+      // it called this endpoint to avoid.
+      const missing = validatePermissionsDto.permissions.filter(
+        (permission) => !userPermissions.includes(permission),
+      );
+      this.logger.warn(
+        `User ${userId} does not have the required permissions: required ` +
+          `[${validatePermissionsDto.permissions.join(', ')}] (${operator}), ` +
+          `missing [${missing.join(', ')}]`,
+      );
+      throw new ForbiddenException({
+        message: AUTHZ_MESSAGES.missingPermissions(
+          validatePermissionsDto.permissions,
+          operator === PermissionOperator.AND ? 'AND' : 'OR',
+        ),
+        error: 'Forbidden',
+        statusCode: HttpStatus.FORBIDDEN,
+        errorCode: ErrorCode.PERMISSION_DENIED,
+        requiredPermissions: validatePermissionsDto.permissions,
+        permissionOperator: operator,
+      });
     }
 
     return { success: true };

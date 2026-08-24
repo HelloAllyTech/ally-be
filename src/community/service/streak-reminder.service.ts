@@ -212,6 +212,13 @@ export class StreakReminderService {
               subject: `Your ${recipient.currentStreak}-day practice streak ends tonight`,
               body: this.buildBody(recipient),
               isHtml: false,
+              purpose: 'streak reminder',
+              // The ONLY caller that opts out of the per-send Slack alert. A
+              // reminder run can be hundreds of recipients, and an SES outage
+              // would post one alert per recipient — burying the signal the
+              // alert exists to raise. The aggregate `sent` count this method
+              // returns is what surfaces the outage here instead.
+              alertOnFailure: false,
             })
             .catch(() => false),
         ),

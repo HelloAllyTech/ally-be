@@ -2,9 +2,16 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  HttpStatus,
   Injectable,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { ErrorCode } from 'src/exception/error-code.enum';
+import {
+  AUTHZ_MESSAGES,
+  FAILURE_MESSAGES,
+} from 'src/exception/failure-messages';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
 import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
@@ -53,7 +60,15 @@ export class FeatureToggleGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user;
     if (!user) {
-      throw new ForbiddenException('Authentication required');
+      // 401, not the 403 this used to raise. No identity on the request is an
+      // authentication failure, and answering 403 sent the client off to show a
+      // permissions error for what is really an expired session.
+      throw new UnauthorizedException({
+        message: FAILURE_MESSAGES.UNAUTHENTICATED,
+        error: 'Unauthorized',
+        statusCode: HttpStatus.UNAUTHORIZED,
+        errorCode: ErrorCode.UNAUTHENTICATED,
+      });
     }
 
     if (options.legacyRoles?.length) {
@@ -90,8 +105,17 @@ export class FeatureToggleGuard implements CanActivate {
       }
     }
 
-    throw new ForbiddenException(
-      `Missing required feature access: ${options.featureKey}`,
-    );
+    // Message unchanged (it already named the featureKey, which is why this
+    // guard was the in-repo model for the others); what is new is the
+    // machine-readable code. FEATURE_NOT_ENABLED is deliberately distinct from
+    // PERMISSION_DENIED: the remedy is an admin flipping a toggle, not a
+    // permission grant, and a client that can tell them apart can say so.
+    throw new ForbiddenException({
+      message: AUTHZ_MESSAGES.missingFeature(options.featureKey),
+      error: 'Forbidden',
+      statusCode: HttpStatus.FORBIDDEN,
+      errorCode: ErrorCode.FEATURE_NOT_ENABLED,
+      featureKey: options.featureKey,
+    });
   }
 }

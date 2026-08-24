@@ -1,9 +1,23 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  HttpStatus,
+  Injectable,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import axios, { AxiosError } from 'axios';
+import {
+  aiFailureToHttpException,
+  classifyAiFailure,
+  isRetryableAiFailure,
+} from '../exception/ai-upstream.exception';
+import { ErrorCode } from '../../exception/error-code.enum';
+import { FAILURE_MESSAGES } from '../../exception/failure-messages';
 import { v4 as uuidv4 } from 'uuid';
 import { NudgeRequest, NudgeResponse } from '../../chat/type/chat.type';
-import { RetryOnFail } from '../../common/decorator/retry.decorator';
+import {
+  RetryOnFail,
+  RetryWithinBudget,
+} from '../../common/decorator/retry.decorator';
 import { AppConfigService } from '../../config/config.service';
 import { LoggerService } from '../../logger/logger.service';
 import { NotificationErrorType } from '../../notification/type/notification.error.type';
@@ -92,21 +106,38 @@ export class AiService {
       this.logger.debug(`Transcription received: ${response.text}`);
       return response.text; // Assuming API returns `{ text: "..." }`
     } catch (error) {
-      this.logger.error(`AI Service Error: ${error.message}`);
-      throw new Error('AI transcription failed');
+      // Was `throw new Error(...)`, which the exception filter always turned
+      // into a 500 — discarding the 502/503/429/4xx ally-ai had just told us.
+      // makeRequest has already logged the failure in full detail.
+      throw aiFailureToHttpException(error, 'transcription');
     }
   }
 
+  /**
+   * Ask ally-ai whether the counsellor should be nudged.
+   *
+   * FAILS LOUDLY, and that is the whole point of this method's shape. It used to
+   * call `makeRequest` without `throwError`, so every ally-ai failure came back
+   * as `{}` with a 200 OK — which the frontend cannot distinguish from the
+   * ordinary, extremely common "no nudge needed" answer. A dead AI service
+   * looked exactly like a calm conversation, to the counsellor AND to us, and
+   * this method's own try/catch was unreachable code.
+   *
+   * Modelled on `enhance()` below.
+   *
+   * `undefined` (not an exception) remains the answer when ally-ai is not
+   * configured at all: that is a deployment without the feature, not a failure.
+   */
   async getNudge(
     newMessage: string,
     chat_history: MessageRequest[],
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     requireNudge = false,
   ) {
+    if (!this.config.ai.apiUrl) {
+      return;
+    }
     try {
-      if (!this.config.ai.apiUrl) {
-        return;
-      }
       const response = await this.makeRequest<NudgeResponse, NudgeRequest>(
         ENDPOINTS.CONVERSATION,
         {
@@ -114,14 +145,21 @@ export class AiService {
           chat_history: chat_history,
           //force_nudge: requireNudge,
         },
+        true,
       );
       return response; // Assuming API returns `{ nudge: "..." }`
     } catch (error) {
-      this.logger.error(`AI Service Error: ${error.message}`);
-      throw new Error('AI nudge request failed');
+      throw aiFailureToHttpException(error, 'nudge');
     }
   }
 
+  /**
+   * Label who said what in a scribe transcript.
+   *
+   * Same fix as `getNudge` above: without `throwError` this returned `{}` on any
+   * ally-ai failure, and a caller reading `response.speakers` off an empty
+   * object silently produced an unlabelled transcript instead of an error.
+   */
   async identifySpeakersFromConversation(chatHistory: Chat[]) {
     try {
       const prompts = await this.getPromptOverrides();
@@ -132,11 +170,10 @@ export class AiService {
       const response = await this.makeRequest<
         IdentifySpeakersResponse,
         IdentifySpeakersRequest
-      >(ENDPOINTS.IDENTIFY_SPEAKERS, request);
+      >(ENDPOINTS.IDENTIFY_SPEAKERS, request, true);
       return response;
     } catch (error) {
-      this.logger.error(`AI Service Error: ${error.message}`);
-      throw new Error('AI identify speakers request failed');
+      throw aiFailureToHttpException(error, 'speaker identification');
     }
   }
 
@@ -345,7 +382,25 @@ export class AiService {
    * would be answered twice — the worst failure mode this pipeline has.
    *
    * redactBody=true: the payload is the worker's question.
+   *
+   * RETRY BUDGET — 40s, and it is derived, not chosen. The SQS visibility window
+   * is 60s; the provider send that follows this call is capped at 15s; so about
+   * 40s is all that can be spent here without risking the redelivery this
+   * pipeline fears most. `RetryOnFail(3, 1000)` — which is what its siblings
+   * use — would allow 3 × 25s + backoff ≈ 78s and blow straight through it,
+   * which is why this uses the budget-aware decorator instead. In practice that
+   * means a fast failure (ally-ai refusing the connection, a 502 from its model
+   * provider) gets one cheap retry, while a 25s timeout does not — a second
+   * full-length request at an already-overloaded service buys nothing and would
+   * cost the window.
    */
+  @RetryWithinBudget({
+    attempts: 2,
+    delayMs: 500,
+    budgetMs: 40_000,
+    shouldRetry: isRetryableAiFailure,
+    label: 'answerKnowledgeQuestion',
+  })
   async answerKnowledgeQuestion(request: KnowledgeAnswerRequest) {
     return this.makeRequest<KnowledgeAnswerResponse, KnowledgeAnswerRequest>(
       ENDPOINTS.KNOWLEDGE_AGENT_ANSWER,
@@ -371,7 +426,22 @@ export class AiService {
    * message past it — and a timeout here is survivable, because ally-be's keyword rules already ran.
    *
    * redactBody=true: the payload is the worker's message.
+   *
+   * RETRY BUDGET — 25s. Runs CONCURRENTLY with `answerKnowledgeQuestion`, so the
+   * two share one wall clock and the pair must still finish inside the same
+   * window; a smaller budget than the answer call's keeps the classifier from
+   * ever being the reason the message is redelivered. Worth retrying at all
+   * because this is the second layer of the crisis safety net, and a retried
+   * connection reset is the difference between the net being there and the
+   * keyword rules standing alone.
    */
+  @RetryWithinBudget({
+    attempts: 2,
+    delayMs: 500,
+    budgetMs: 25_000,
+    shouldRetry: isRetryableAiFailure,
+    label: 'checkWhatsAppCrisis',
+  })
   async checkWhatsAppCrisis(request: CrisisCheckRequest) {
     return this.makeRequest<CrisisCheckResponse, CrisisCheckRequest>(
       ENDPOINTS.KNOWLEDGE_AGENT_CRISIS_CHECK,
@@ -741,7 +811,12 @@ export class AiService {
         type: 'AI Request Error',
       } as NotificationErrorType);
       if (throwError) {
-        throw new Error(error.message);
+        // Classified rather than flattened. `AiUpstreamError.message` is still
+        // the raw axios message, so existing callers that log `error.message`
+        // are unaffected; what is new is that `errorCode`/`upstreamStatus`
+        // survive, which is what lets a caller tell a transient outage from a
+        // request ally-ai will never accept.
+        throw classifyAiFailure(error);
       }
       return {} as R;
     } finally {
@@ -769,9 +844,12 @@ export class AiService {
         EnhanceTextResponse,
         EnhanceTextRequest
       >(ENDPOINTS.ENHANCE, request, true, 'post', undefined, false, 45_000);
-    } catch {
-      // makeRequest has already logged the failure in full detail.
-      throw new ServiceUnavailableException('Content enhancement failed');
+    } catch (error) {
+      // makeRequest has already logged the failure in full detail. Routed
+      // through the shared classifier so the counsellor's client can tell "try
+      // again in a moment" (503/504/429) from "this text will never be
+      // accepted" (400) — previously every one of them was a flat 503.
+      throw aiFailureToHttpException(error, 'content enhancement');
     }
     // A 200 with no content is the same dead end as an error: never hand the
     // caller an empty enhancement it would silently write over the field.
@@ -780,7 +858,12 @@ export class AiService {
         `AI Request enhance returned no enhanced_content | ` +
           `response=${JSON.stringify(response)}`,
       );
-      throw new ServiceUnavailableException('Content enhancement failed');
+      throw new ServiceUnavailableException({
+        message: FAILURE_MESSAGES.AI_UNAVAILABLE,
+        error: 'AI content enhancement failed',
+        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+        errorCode: ErrorCode.AI_SERVICE_UNAVAILABLE,
+      });
     }
     return response;
   }
@@ -816,8 +899,9 @@ export class AiService {
       );
       return response;
     } catch (error) {
-      this.logger.error(`AI Service Error: ${error.message}`);
-      throw new Error('AI scenario session summary request failed');
+      // See transcribeAudioFromBuffer: preserve ally-ai's status class instead
+      // of collapsing everything to a 500.
+      throw aiFailureToHttpException(error, 'scenario session summary');
     }
   }
 
@@ -877,8 +961,7 @@ export class AiService {
       );
       return response;
     } catch (error) {
-      this.logger.error(`AI Service Error: ${error.message}`);
-      throw new Error('AI scenario session evaluation request failed');
+      throw aiFailureToHttpException(error, 'scenario session evaluation');
     }
   }
 

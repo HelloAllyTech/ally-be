@@ -212,6 +212,13 @@ export class ChatAiService {
       const { callDetails } =
         await this.chatService.getChatWithCallDetails(chatId);
 
+      // The log line below used to sit OUTSIDE any check on the outcome, above a
+      // `sendEmail` that returned `false` instead of throwing — so it asserted
+      // "email sent" on every single failure. That is worse than logging
+      // nothing: on-call reading it would rule out email as the fault and go
+      // looking somewhere else. Now that the send throws, reaching this line
+      // means it really was accepted by SES; a failure lands in the catch below
+      // and has already raised a Slack alert from SESService.
       await this.notificationService.sendEmailSummaryNotification({
         to: counselor.email,
         chatId,

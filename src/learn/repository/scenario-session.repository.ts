@@ -293,6 +293,47 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
   }
 
   /**
+   * Sessions stuck at ACTIVE long past any plausible session length — the input
+   * to the stuck-session sweeper.
+   *
+   * These used to sit at ACTIVE forever. Nothing ends a session except the
+   * learner's End button, the agent's `end-of-session` message, or the
+   * `room_finished` webhook, and all three can be lost at once: an agent that
+   * never joins publishes nothing, a learner who closes their laptop clicks
+   * nothing, and if LiveKit never created the room there is no webhook either.
+   * The row then stays ACTIVE indefinitely, which makes it count against the
+   * tenant's concurrent-simulation ceiling and read, on every operational view,
+   * as a roleplay still in progress days later.
+   *
+   * `startedAt IS NOT NULL` is required rather than incidental: a row with no
+   * `startedAt` never began, and its age says nothing about whether it is stuck.
+   * Preview and seeded rooms are excluded, matching `countableSessionPredicate`.
+   *
+   * Runs from the scheduler, outside any request context, so this deliberately
+   * spans tenants — it is not a tenant-scoped read.
+   */
+  async findSessionsStuckActive(params: {
+    startedBefore: Date;
+    limit: number;
+  }): Promise<ScenarioSessions[]> {
+    return this.createQueryBuilder('session')
+      .where('session.status = :status', {
+        status: ScenarioSessionStatus.ACTIVE,
+      })
+      .andWhere('session.startedAt IS NOT NULL')
+      .andWhere('session.startedAt < :startedBefore', {
+        startedBefore: params.startedBefore,
+      })
+      .andWhere("session.roomId NOT LIKE 'preview-%'")
+      .andWhere("session.roomId NOT LIKE 'seed-room-%'")
+      // Oldest first: if the limit bites, the most stuck rows are cleared first
+      // and the rest are picked up on the next tick.
+      .orderBy('session.startedAt', 'ASC')
+      .limit(params.limit)
+      .getMany();
+  }
+
+  /**
    * Ended sessions that have a transcript but were never picked up by the actor
    * goal judge — the input to the catch-up task.
    *

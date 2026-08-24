@@ -1,6 +1,7 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseEntity } from 'src/common/entity/base.entity';
 import {
+  ScenarioSessionAbandonReason,
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
 } from '../enum/scenario-session-status.enum';
@@ -31,6 +32,19 @@ export class ScenarioSessions extends BaseEntity {
     default: ScenarioSessionEventStatus.IN_PROGRESS,
   })
   eventStatus!: ScenarioSessionEventStatus;
+
+  /**
+   * Why this session was marked abandoned, when it was. NULL for every session
+   * that ran its course — which is the overwhelming majority, hence nullable
+   * rather than a defaulted column.
+   *
+   * A plain ABANDONED status without this would only move the ambiguity: "the
+   * room died under a live session" and "this sat ACTIVE for a day and was
+   * reaped" want different follow-up, and telling them apart after the fact is
+   * impossible from the timestamps alone.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  abandonedReason?: ScenarioSessionAbandonReason | null;
 
   @Column({ type: 'timestamp', nullable: true })
   startedAt?: Date;
