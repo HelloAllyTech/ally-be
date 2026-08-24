@@ -831,6 +831,8 @@ export class ScenarioSessionService {
         // Opt-in: only an explicit true shows the learner's Supervisor tab.
         supervisorNotesEnabled:
           scenario?.metadata?.supervisorNotesEnabled === true,
+        // Opt-out: only an explicit false hides the learner's Live tab.
+        liveTabEnabled: scenario?.metadata?.liveTabEnabled !== false,
         stateNames,
         metadata: {
           name: scenario?.metadata?.name,

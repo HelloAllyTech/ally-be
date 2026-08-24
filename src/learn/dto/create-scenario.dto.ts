@@ -25,6 +25,7 @@ import {
   ScenarioStatus,
   ExperienceMode,
   ChecklistType,
+  FeedbackTabsConfig,
 } from '../type/scenario.type';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
 import { ScenarioCategory } from '../enum/scenario-category.enum';
@@ -683,6 +684,29 @@ export class CreateScenarioDto {
   @IsOptional()
   @IsBoolean()
   supervisorNotesEnabled?: boolean;
+
+  @ApiProperty({
+    description:
+      "Show the learner's Live transcript tab during the roleplay. " +
+      'Opt-out: on unless explicitly set to false.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  liveTabEnabled?: boolean;
+
+  @ApiProperty({
+    description:
+      'Sub-toggles of enableFeedback, controlling which post-session tabs the ' +
+      "learner sees (debrief, skills, transcript). Omitting a key, or the whole " +
+      'object, keeps that tab on.',
+    example: { debrief: true, skills: false, transcript: true },
+    required: false,
+  })
+  @IsOptional()
+  @IsObject()
+  feedbackTabs?: Partial<FeedbackTabsConfig>;
 
   @ApiProperty({
     description:
