@@ -134,6 +134,7 @@ import { ScenarioSessionRecordingRepository } from './repository/scenario-sessio
 import { ScenarioSessionRecordingController } from './controller/scenario-session-recording.controller';
 import { ScenarioSessionRecordingService } from './service/scenario-session-recording.service';
 import { TranscriptTranslationModule } from 'src/transcript-translation/transcript-translation.module';
+import { SettingsModule } from 'src/settings/settings.module';
 
 @Module({
   imports: [
@@ -193,6 +194,10 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     AuditModule,
     LlmUsageModule,
     TranscriptTranslationModule,
+    // forwardRef: SettingsModule -> (forwardRef) UserModule -> (forwardRef)
+    // LearnModule already forms a cycle; this edge closes it, so it needs
+    // forwardRef too or Nest resolves an undefined module at load time.
+    forwardRef(() => SettingsModule),
   ],
   controllers: [
     LearnController,

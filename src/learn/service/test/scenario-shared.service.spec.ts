@@ -35,6 +35,7 @@ import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
 import { ScenarioSessionRecordingRepository } from '../../repository/scenario-session-recording.repository';
 import { ScenarioSessionRecording } from '../../entity/scenario-session-recording.entity';
+import { SettingsService } from 'src/settings/service/settings.service';
 
 describe('ScenarioSharedService', () => {
   let service: ScenarioSharedService;
@@ -52,6 +53,7 @@ describe('ScenarioSharedService', () => {
   let behaviorRepository: jest.Mocked<BehaviorRepository>;
   let promptSharedService: jest.Mocked<PromptSharedService>;
   let scenarioSessionRecordingRepository: jest.Mocked<ScenarioSessionRecordingRepository>;
+  let settingsService: jest.Mocked<SettingsService>;
 
   const mockScenarios: Scenarios[] = [
     { id: 1, title: 'Scenario 1', status: ScenarioStatus.ACTIVE } as Scenarios,
@@ -142,6 +144,13 @@ describe('ScenarioSharedService', () => {
     const mockScenarioSessionRecordingRepository = {
       create: jest.fn(),
       save: jest.fn(),
+    };
+
+    const mockSettingsService = {
+      getTurnEndpointingSettings: jest.fn().mockResolvedValue({
+        turnMinEndpointingDelay: 0.5,
+        turnMaxEndpointingDelay: 3.0,
+      }),
     };
 
     const mockScenarioTranslationsRepository = {
@@ -302,6 +311,10 @@ describe('ScenarioSharedService', () => {
           provide: ScenarioSessionRecordingRepository,
           useValue: mockScenarioSessionRecordingRepository,
         },
+        {
+          provide: SettingsService,
+          useValue: mockSettingsService,
+        },
       ],
     }).compile();
 
@@ -332,6 +345,7 @@ describe('ScenarioSharedService', () => {
     scenarioSessionRecordingRepository = module.get(
       ScenarioSessionRecordingRepository,
     );
+    settingsService = module.get(SettingsService);
 
     jest.clearAllMocks();
   });
@@ -1271,13 +1285,17 @@ describe('ScenarioSharedService', () => {
       ]);
     });
 
-    it('should forward metadata.turnMaxEndpointingDelay onto promptData unchanged (plain pass-through, not explicitly deleted)', async () => {
+    it('should source promptData.turnMin/MaxEndpointingDelay from the global settings service, overriding any leftover scenario.metadata value', async () => {
       scenarioVoiceRepository.findOne.mockResolvedValue({
         id: 'voice-1',
         name: 'Test Voice',
         provider: 'deepgram',
         config: {},
       } as any);
+      settingsService.getTurnEndpointingSettings.mockResolvedValue({
+        turnMinEndpointingDelay: 0.75,
+        turnMaxEndpointingDelay: 2.25,
+      });
 
       const result = await service.createRoomMetadata({
         scenario: {
@@ -1292,6 +1310,9 @@ describe('ScenarioSharedService', () => {
             gender: 'Male',
             currentLocation: 'NYC',
             openingStatements: ['Hi'],
+            // Orphan data from before the per-sim override was deleted —
+            // the global setting must win regardless.
+            turnMinEndpointingDelay: 0.1,
             turnMaxEndpointingDelay: 1.5,
           },
           terminationEvents: [],
@@ -1303,8 +1324,12 @@ describe('ScenarioSharedService', () => {
         previousMemory: null,
       });
 
+      expect(settingsService.getTurnEndpointingSettings).toHaveBeenCalled();
+      expect((result.scenario.promptData as any).turnMinEndpointingDelay).toBe(
+        0.75,
+      );
       expect((result.scenario.promptData as any).turnMaxEndpointingDelay).toBe(
-        1.5,
+        2.25,
       );
     });
 

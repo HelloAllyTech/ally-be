@@ -17,6 +17,7 @@ import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { Public } from 'src/auth/decorators/auth.metadata';
 import { UpdateLegalContentDto } from '../dto/legal-content.dto';
 import { LEGAL_CONTENT_NAMES } from '../constants/settings.constants';
+import { UpdateTurnEndpointingSettingsDto } from '../dto/turn-endpointing-settings.dto';
 import {
   GetSummaryFieldsDto,
   UpdateSummaryFieldsDto,
@@ -418,5 +419,42 @@ export class SettingsController {
       LEGAL_CONTENT_NAMES.PRIVACY,
       body.html,
     );
+  }
+
+  @Get('turn-endpointing')
+  @ApiOperation({
+    summary:
+      'Get the global turn-endpointing bounds (seconds) for Studio v1 roleplay sessions',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Returns the current turn-endpointing bounds, falling back to LiveKit defaults if none have been saved yet',
+  })
+  @RequireFeatureToggle(FeatureToggleKey.SETTINGS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.SYSTEM_ACCESS],
+  })
+  getTurnEndpointing() {
+    return this.service.getTurnEndpointingSettings();
+  }
+
+  @Put('turn-endpointing')
+  @ApiOperation({
+    summary:
+      'Update the global turn-endpointing bounds (seconds) for Studio v1 roleplay sessions (super admin only)',
+  })
+  @ApiBody({ type: UpdateTurnEndpointingSettingsDto })
+  @ApiResponse({ status: 200, description: 'Turn-endpointing bounds updated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - only super admin can update',
+  })
+  @RequireFeatureToggle(FeatureToggleKey.SETTINGS, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.SYSTEM_ACCESS],
+  })
+  updateTurnEndpointing(@Body() body: UpdateTurnEndpointingSettingsDto) {
+    return this.service.updateTurnEndpointingSettings(body);
   }
 }

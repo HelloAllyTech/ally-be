@@ -14,6 +14,8 @@ import {
   DEFAULT_SUMMARY_FIELDS_SET,
   SELECTABLE_CHAT_TYPES,
   LEGAL_CONTENT_NAMES,
+  TURN_ENDPOINTING_SETTINGS_NAME,
+  DEFAULT_TURN_ENDPOINTING_SETTINGS,
 } from '../../constants/settings.constants';
 import { GlobalSettingsRepository } from '../../repository/global-settings.repository';
 import {
@@ -1512,6 +1514,101 @@ describe('SettingsService', () => {
 
       await expect(
         service.updateLegalContent(LEGAL_CONTENT_NAMES.TERMS, '<p>x</p>'),
+      ).rejects.toThrow(new BadRequestException('User ID is required'));
+    });
+  });
+
+  describe('getTurnEndpointingSettings', () => {
+    it('should return the LiveKit defaults when no row exists yet', async () => {
+      globalSettingsRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getTurnEndpointingSettings();
+
+      expect(globalSettingsRepository.findOne).toHaveBeenCalledWith({
+        where: { name: TURN_ENDPOINTING_SETTINGS_NAME },
+      });
+      expect(result).toEqual(DEFAULT_TURN_ENDPOINTING_SETTINGS);
+    });
+
+    it('should return the stored bounds when a row exists', async () => {
+      globalSettingsRepository.findOne.mockResolvedValue({
+        id: 'gs-1',
+        name: TURN_ENDPOINTING_SETTINGS_NAME,
+        value: {
+          turnMinEndpointingDelay: 0.75,
+          turnMaxEndpointingDelay: 2.25,
+        },
+        createdBy: 1,
+        updatedBy: 1,
+      } as any);
+
+      const result = await service.getTurnEndpointingSettings();
+
+      expect(result).toEqual({
+        turnMinEndpointingDelay: 0.75,
+        turnMaxEndpointingDelay: 2.25,
+      });
+    });
+  });
+
+  describe('updateTurnEndpointingSettings', () => {
+    it('should create a new row when none exists', async () => {
+      globalSettingsRepository.findOne.mockResolvedValue(null);
+      globalSettingsRepository.create.mockImplementation(
+        (entity: any) => entity,
+      );
+      globalSettingsRepository.save.mockResolvedValue({} as any);
+
+      const result = await service.updateTurnEndpointingSettings({
+        turnMinEndpointingDelay: 0.5,
+        turnMaxEndpointingDelay: 3,
+      });
+
+      expect(globalSettingsRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: TURN_ENDPOINTING_SETTINGS_NAME,
+          value: {
+            turnMinEndpointingDelay: 0.5,
+            turnMaxEndpointingDelay: 3,
+          },
+        }),
+      );
+      expect(globalSettingsRepository.save).toHaveBeenCalled();
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should update an existing row', async () => {
+      const existing = {
+        id: 'gs-1',
+        name: TURN_ENDPOINTING_SETTINGS_NAME,
+        value: { turnMinEndpointingDelay: 0.5, turnMaxEndpointingDelay: 3 },
+        createdBy: 1,
+        updatedBy: 1,
+      };
+      globalSettingsRepository.findOne.mockResolvedValue(existing as any);
+      globalSettingsRepository.save.mockResolvedValue(existing as any);
+
+      const result = await service.updateTurnEndpointingSettings({
+        turnMinEndpointingDelay: 1,
+        turnMaxEndpointingDelay: 4,
+      });
+
+      const saved = globalSettingsRepository.save.mock.calls[0][0] as any;
+      expect(saved.value).toEqual({
+        turnMinEndpointingDelay: 1,
+        turnMaxEndpointingDelay: 4,
+      });
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should throw BadRequestException when userId is missing', async () => {
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
+
+      await expect(
+        service.updateTurnEndpointingSettings({
+          turnMinEndpointingDelay: 0.5,
+          turnMaxEndpointingDelay: 3,
+        }),
       ).rejects.toThrow(new BadRequestException('User ID is required'));
     });
   });
