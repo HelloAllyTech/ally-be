@@ -5,6 +5,7 @@ import {
   ScenarioSessionStatus,
 } from '../../learn/enum/scenario-session-status.enum';
 import { startOfUtcDay } from '../util/analytics-window.util';
+import { sessionDurationMsExpr } from '../util/session-eligibility.util';
 import { AnalyticsBucket } from './platform-analytics.repository';
 
 export interface BucketCountRow {
@@ -18,10 +19,9 @@ export interface SessionEngagementTotals {
   /** Distinct counselorId with >=1 qualifying session in the window. */
   activeLearners: number;
   /**
-   * Sum of `scenario_session_details.callDuration` (ms, net of paused time)
-   * across sessions that have a details row. Sessions without one (details
-   * write failed/skipped) are excluded, not treated as zero — see the
-   * caller for the coverage caveat.
+   * Sum of the resolved session duration (ms, net of paused time): the
+   * persisted `scenario_session_details.callDuration` where present, else the
+   * session window — see {@link sessionDurationMsExpr}.
    */
   totalDurationMs: number;
 }
@@ -343,11 +343,11 @@ export class TenantAnalyticsRepository {
   /**
    * Session-count/duration totals within [start, end), for computing "avg
    * sessions per active learner" and "avg practice time per learner" in the
-   * service. `totalDurationMs` sums `scenario_session_details.callDuration`
-   * (ms, already net of paused time) across sessions that have a details
-   * row — sessions without one (details write failed/skipped) are excluded
-   * from the sum, not treated as zero, so this can under-count total
-   * duration if coverage is incomplete.
+   * service. `totalDurationMs` sums {@link sessionDurationMsExpr} (ms, net of
+   * paused time), which prefers the persisted
+   * `scenario_session_details.callDuration` and falls back to the session
+   * window for sessions whose details row never received one — those used to
+   * drop out of the sum entirely, understating practice time.
    */
   async getSessionEngagementTotals(
     tenantId: string,
@@ -359,7 +359,7 @@ export class TenantAnalyticsRepository {
       .select('COUNT(*)::int', 'totalSessions')
       .addSelect('COUNT(DISTINCT s."counselorId")::int', 'activeLearners')
       .addSelect(
-        'COALESCE(SUM(d."callDuration"), 0)::bigint',
+        `COALESCE(SUM(${sessionDurationMsExpr('s', 'd')}), 0)::bigint`,
         'totalDurationMs',
       )
       .from('scenario_sessions', 's')
@@ -518,6 +518,10 @@ export class TenantAnalyticsRepository {
    * `status = ENDED AND eventStatus = COMPLETED` completed-session
    * definition as {@link getSessionEngagementTotals}, so this table's numbers
    * reconcile with the "avg practice minutes per learner" KPI above it.
+   * Duration comes from {@link sessionDurationMsExpr}, which falls back to the
+   * session window when a details row carries no `callDuration` — without it a
+   * learner could show a completed session and an avg score (both read off
+   * that same row) next to 0 practice minutes.
    * `roleplaySessionsStarted` counts by `startedAt` while `...Completed` counts
    * by `COALESCE(endedAt, createdAt)` — a session straddling the window
    * boundary can in principle show as completed without showing as started
@@ -563,7 +567,7 @@ export class TenantAnalyticsRepository {
               AND COALESCE(s."endedAt", s."createdAt") >= $2
               AND COALESCE(s."endedAt", s."createdAt") < $3
           ) AS completed,
-          SUM(d."callDuration") FILTER (
+          SUM(${sessionDurationMsExpr('s', 'd')}) FILTER (
             WHERE s.status = 'ENDED' AND s."eventStatus" = 'COMPLETED'
               AND COALESCE(s."endedAt", s."createdAt") >= $2
               AND COALESCE(s."endedAt", s."createdAt") < $3

@@ -22,7 +22,10 @@ import { ScenarioSessionMessageType } from 'src/learn/enum/scenario-session-mess
 import { ScenarioSessionFeedbacks } from 'src/learn/entity/scenario-session-feedbacks.entity';
 import { ScenarioSessionLifecycleEvent } from 'src/learn/entity/scenario-session-lifecycle-event.entity';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
-import { ScenarioSessionStatus } from 'src/learn/enum/scenario-session-status.enum';
+import {
+  ScenarioSessionEventStatus,
+  ScenarioSessionStatus,
+} from 'src/learn/enum/scenario-session-status.enum';
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
 import {
   ScenarioStatus,
@@ -92,7 +95,10 @@ describe('ScenarioSessionService', () => {
     Repository<ScenarioSessionFeedbacks>
   >;
   let dataSource: jest.Mocked<DataSource>;
-  let scenarioSessionDetailsRepository: { findOne: jest.Mock };
+  let scenarioSessionDetailsRepository: {
+    findOne: jest.Mock;
+    upsert: jest.Mock;
+  };
   let permissionValidatorService: jest.Mocked<PermissionValidator>;
   let simulationCreditsService: jest.Mocked<SimulationCreditsService>;
   let scenarioTenantService: jest.Mocked<ScenarioTenantService>;
@@ -259,6 +265,7 @@ describe('ScenarioSessionService', () => {
     // yet" so the normal end-session path still generates a summary.
     const mockScenarioSessionDetailsRepository = {
       findOne: jest.fn().mockResolvedValue(null),
+      upsert: jest.fn().mockResolvedValue({ identifiers: [] }),
     };
 
     const mockScenarioSessionBehaviorInstructionsRepo = {
@@ -1907,6 +1914,121 @@ describe('ScenarioSessionService', () => {
       await new Promise((r) => setImmediate(r));
 
       expect(scenarioSessionMessagesRepository.find).toHaveBeenCalled();
+    });
+  });
+
+  // The practice-minutes column every analytics surface sums. It used to be
+  // written only by the summary writer reached from endScenarioSession, so a
+  // session that ended on the agent's end-of-session event (which sets
+  // status=ENDED and thereby makes the room_finished webhook skip
+  // endScenarioSession) never recorded any duration at all — the learner's
+  // "Total practice minutes" read 0 next to a Roleplay Logs row showing the
+  // real wall clock.
+  describe('callDuration persistence', () => {
+    const startedAt = new Date('2024-01-01T10:00:00Z');
+    const endedAt = new Date('2024-01-01T10:04:34Z');
+    const activeMs = endedAt.getTime() - startedAt.getTime();
+
+    it('handleEndScenarioSessionEvent persists the duration it computes', async () => {
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+
+      await service.handleEndScenarioSessionEvent(
+        { ...mockScenarioSession, startedAt, endedAt } as any,
+        { event_data: { id: 'end-of-session', totalScore: 0 } } as any,
+      );
+
+      expect(scenarioSessionDetailsRepository.upsert).toHaveBeenCalledWith(
+        {
+          scenarioSessionId: mockScenarioSessionId,
+          tenantId: mockTenantId,
+          callDuration: activeMs,
+        },
+        { conflictPaths: ['scenarioSessionId'] },
+      );
+    });
+
+    it('excludes paused time from the persisted duration', async () => {
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+
+      await service.handleEndScenarioSessionEvent(
+        {
+          ...mockScenarioSession,
+          startedAt,
+          endedAt,
+          totalPausedMs: 34_000,
+        } as any,
+        { event_data: { id: 'end-of-session', totalScore: 0 } } as any,
+      );
+
+      expect(scenarioSessionDetailsRepository.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({ callDuration: activeMs - 34_000 }),
+        { conflictPaths: ['scenarioSessionId'] },
+      );
+    });
+
+    it('does not materialise a details row for a zero-length session', async () => {
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+
+      await service.handleEndScenarioSessionEvent(
+        { ...mockScenarioSession, startedAt, endedAt: startedAt } as any,
+        { event_data: { id: 'end-of-session', totalScore: 0 } } as any,
+      );
+
+      expect(scenarioSessionDetailsRepository.upsert).not.toHaveBeenCalled();
+    });
+
+    it('still completes session end when the duration write fails', async () => {
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      scenarioSessionDetailsRepository.upsert.mockRejectedValueOnce(
+        new Error('deadlock'),
+      );
+
+      await expect(
+        service.handleEndScenarioSessionEvent(
+          { ...mockScenarioSession, startedAt, endedAt } as any,
+          { event_data: { id: 'end-of-session', totalScore: 0 } } as any,
+        ),
+      ).resolves.not.toThrow();
+
+      expect(scenarioSessionRepository.update).toHaveBeenCalledWith(
+        mockScenarioSessionId,
+        expect.objectContaining({
+          eventStatus: ScenarioSessionEventStatus.COMPLETED,
+        }),
+      );
+    });
+
+    it('endScenarioSession persists the duration without waiting on the summary writer', async () => {
+      scenarioSessionRepository.findOne.mockResolvedValue({
+        ...mockScenarioSession,
+        startedAt,
+        endedAt,
+      } as any);
+      scenarioSessionRepository.getScenarioSessionScore.mockResolvedValue(0);
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+      livekitService.deleteRoom.mockResolvedValue(undefined);
+      simulationCreditsService.consumeCredits.mockResolvedValue(true);
+
+      await service.endScenarioSession(mockScenarioSessionId, mockCounselorId);
+
+      expect(scenarioSessionDetailsRepository.upsert).toHaveBeenCalledWith(
+        {
+          scenarioSessionId: mockScenarioSessionId,
+          tenantId: mockTenantId,
+          callDuration: activeMs,
+        },
+        { conflictPaths: ['scenarioSessionId'] },
+      );
     });
   });
 
