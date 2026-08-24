@@ -29,9 +29,11 @@ export enum ExperienceMode {
  * Which post-session tabs a roleplay shows its learner.
  *
  * Sub-toggles of the roleplay-level `enableFeedback` master switch, stored at
- * `scenarios.metadata.feedbackTabs`. Absent means all three are on, so every
- * roleplay authored before this existed keeps its full post-session screen and
- * nothing needed backfilling.
+ * `scenarios.metadata.feedbackTabs`. Debrief and transcript default to on when
+ * unset, so every roleplay authored before those existed keeps its full
+ * post-session screen. Skills Demonstrated was switched off platform-wide
+ * (2026-08-24) — it now defaults to off unless a scenario's `feedbackTabs`
+ * explicitly sets `skills: true`.
  */
 export interface FeedbackTabsConfig {
   /** The supervisor debrief note from Ally, and its reply conversation. */
@@ -42,9 +44,9 @@ export interface FeedbackTabsConfig {
   transcript: boolean;
 }
 
-export const ALL_FEEDBACK_TABS_ENABLED: FeedbackTabsConfig = {
+export const DEFAULT_FEEDBACK_TABS: FeedbackTabsConfig = {
   debrief: true,
-  skills: true,
+  skills: false,
   transcript: true,
 };
 
@@ -52,11 +54,9 @@ export const ALL_FEEDBACK_TABS_ENABLED: FeedbackTabsConfig = {
  * Resolve a roleplay's post-session tab configuration from its metadata.
  *
  * `enableFeedback === false` turns everything off — the master switch keeps its
- * existing meaning. Otherwise each tab defaults to ON unless explicitly set to
- * false, which is what makes an absent (or partially-written) `feedbackTabs`
- * safe: an author who has never opened the new toggles, and one whose metadata
- * predates a tab being added, both get the full screen rather than an
- * accidentally blank one.
+ * existing meaning. Otherwise debrief and transcript default to ON unless
+ * explicitly set to false, and skills defaults to OFF unless explicitly set to
+ * true — see `DEFAULT_FEEDBACK_TABS` above.
  */
 export function resolveFeedbackTabs(
   scenarioMetadata?: Record<string, any> | null,
@@ -66,11 +66,11 @@ export function resolveFeedbackTabs(
   }
   const configured = scenarioMetadata?.feedbackTabs;
   if (!configured || typeof configured !== 'object') {
-    return { ...ALL_FEEDBACK_TABS_ENABLED };
+    return { ...DEFAULT_FEEDBACK_TABS };
   }
   return {
     debrief: configured.debrief !== false,
-    skills: configured.skills !== false,
+    skills: configured.skills === true,
     transcript: configured.transcript !== false,
   };
 }
