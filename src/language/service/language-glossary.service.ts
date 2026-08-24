@@ -34,7 +34,14 @@ import {
   summarizeClusters,
   systematicFluency,
 } from '../util/construct-class.util';
-import { tokenize } from '../util/variety-feature.util';
+import {
+  tokenize,
+  varietyTargetDescriptor,
+} from '../util/variety-feature.util';
+import {
+  compileRegisterPolicy,
+  resolveTargetVariety,
+} from '../util/register-policy.util';
 import {
   computeTierAssignment,
   TierAssignment,
@@ -53,6 +60,10 @@ import {
   GlossaryConsolidationBatch,
 } from '../entity/glossary-consolidation-batch.entity';
 import { VarietyProfileAttachment } from '../entity/variety-profile-attachment.entity';
+import {
+  LanguageVarietyProfile,
+  VarietyProfileStatus,
+} from '../entity/language-variety-profile.entity';
 import { LanguagesRepository } from '../repository/languages.repository';
 import { LanguageGlossaryRepository } from '../repository/language-glossary.repository';
 import {
@@ -169,6 +180,8 @@ export class LanguageGlossaryService {
     private readonly batchRepository: Repository<GlossaryConsolidationBatch>,
     @InjectRepository(VarietyProfileAttachment)
     private readonly attachmentRepository: Repository<VarietyProfileAttachment>,
+    @InjectRepository(LanguageVarietyProfile)
+    private readonly profileRepository: Repository<LanguageVarietyProfile>,
     private readonly llmProviderFactory: LlmProviderFactory,
     private readonly configService: AppConfigService,
   ) {}
@@ -180,7 +193,14 @@ export class LanguageGlossaryService {
       section,
       compiledTokens: countGlossaryTokens(compileSection(section)),
     }));
-    const tier0Tokens = countGlossaryTokens(compileTier0Glossary(sections));
+    // The register policy is part of the served card, so it is part of the
+    // budget. Counting the sections alone would let a publish pass a cap the
+    // runtime card then exceeds — and this cap is documented as enforced at
+    // authoring time and never truncated at runtime.
+    const registerPolicy = await this.resolveRegisterPolicy(languageId);
+    const tier0Tokens = countGlossaryTokens(
+      compileTier0Glossary(sections, registerPolicy),
+    );
     return { sections: views, tier0Tokens, tier0TokenCap: TIER0_TOKEN_CAP };
   }
 
@@ -271,17 +291,73 @@ export class LanguageGlossaryService {
     return this.glossaryRepository.save(section);
   }
 
-  /** Compiled Tier 0 style card — global + the profile's overlays when given. */
+  /**
+   * The derived `## Register` block for a language, and the tenant's variety
+   * profile when attached.
+   *
+   * This is the phase 1 fix (design §14): the agent's register instruction and
+   * the judge's grading target now come from ONE expression. When a tenant is
+   * attached to a variety profile the descriptor carries that profile's
+   * measured features — address-form share and code-mix level — so the
+   * instruction is grounded in what that tenant's learners actually say rather
+   * than in a seeded string.
+   *
+   * Never throws: a language row that cannot be read costs the register line,
+   * not the glossary.
+   */
+  async resolveRegisterPolicy(
+    languageId: number,
+    profileId?: string | null,
+  ): Promise<string> {
+    try {
+      const language = await this.languagesRepository.findOne({
+        where: { id: languageId },
+      });
+      if (!language) return '';
+      const base = resolveTargetVariety(
+        language.evalConfig as Record<string, unknown> | null,
+        language.label,
+      );
+      let descriptor = base;
+      if (profileId) {
+        const profile = await this.profileRepository.findOne({
+          where: { id: profileId },
+        });
+        if (profile && profile.status !== VarietyProfileStatus.ARCHIVED) {
+          descriptor = varietyTargetDescriptor(base, profile.features);
+        }
+      }
+      return compileRegisterPolicy(descriptor);
+    } catch (error) {
+      this.logger.warn(
+        `[GLOSSARY] register policy resolution failed for language ${languageId}: ${error}`,
+      );
+      return '';
+    }
+  }
+
+  /**
+   * Compiled Tier 0 style card — global + the profile's overlays when given,
+   * led by the derived register policy.
+   *
+   * The policy is resolved here rather than passed in by callers on purpose:
+   * every reader of the Tier 0 card wants the same register instruction, and a
+   * parameter would let one call site quietly serve a card without it. That is
+   * how the instruction drifted from the grading target in the first place.
+   */
   async resolveTier0Glossary(
     languageId: number,
     profileId?: string | null,
   ): Promise<string> {
-    const sections = await this.glossaryRepository.findPublishedByLanguage(
-      languageId,
-      GlossaryInjectionMode.ALWAYS,
-      profileId,
-    );
-    return compileTier0Glossary(sections);
+    const [sections, registerPolicy] = await Promise.all([
+      this.glossaryRepository.findPublishedByLanguage(
+        languageId,
+        GlossaryInjectionMode.ALWAYS,
+        profileId,
+      ),
+      this.resolveRegisterPolicy(languageId, profileId),
+    ]);
+    return compileTier0Glossary(sections, registerPolicy);
   }
 
   /**
@@ -348,9 +424,15 @@ export class LanguageGlossaryService {
         : section.sectionCode;
       versions[key] = section.version;
     }
+    const registerPolicy = await this.resolveRegisterPolicy(
+      languageId,
+      profileId,
+    );
     return {
       versions,
-      tier0Tokens: countGlossaryTokens(compileTier0Glossary(sections)),
+      tier0Tokens: countGlossaryTokens(
+        compileTier0Glossary(sections, registerPolicy),
+      ),
       ...(profileId ? { profileId } : {}),
     };
   }
@@ -1567,7 +1649,13 @@ export class LanguageGlossaryService {
       ...published.filter((s) => s.sectionCode !== candidate.sectionCode),
       candidate,
     ];
-    const tokens = countGlossaryTokens(compileTier0Glossary(prospective));
+    const registerPolicy = await this.resolveRegisterPolicy(
+      languageId,
+      candidate.profileId ?? null,
+    );
+    const tokens = countGlossaryTokens(
+      compileTier0Glossary(prospective, registerPolicy),
+    );
     if (tokens > TIER0_TOKEN_CAP) {
       throw new BadRequestException(
         `Tier 0 glossary would be ${tokens} tokens, over the ${TIER0_TOKEN_CAP}-token cap. ` +

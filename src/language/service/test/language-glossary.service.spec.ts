@@ -36,6 +36,7 @@ describe('LanguageGlossaryService', () => {
   let annotationQb: any;
   let batchRepository: any;
   let attachmentRepository: any;
+  let profileRepository: any;
   let llmProviderFactory: any;
   let getCompletion: jest.Mock;
 
@@ -87,6 +88,9 @@ describe('LanguageGlossaryService', () => {
       find: jest.fn().mockResolvedValue([]),
       manager: { query: jest.fn().mockResolvedValue([]) },
     };
+    // Unattached by default: the register policy then falls back to the
+    // language's seeded targetVariety, which is what most tenants get.
+    profileRepository = { findOne: jest.fn().mockResolvedValue(null) };
     getCompletion = jest.fn();
     llmProviderFactory = {
       getProvider: jest.fn().mockReturnValue({ getCompletion }),
@@ -107,6 +111,7 @@ describe('LanguageGlossaryService', () => {
       annotationRepository,
       batchRepository,
       attachmentRepository,
+      profileRepository,
       llmProviderFactory,
       configService as any,
     );
