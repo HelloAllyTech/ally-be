@@ -13,6 +13,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { CaseSharedService } from './case-shared.service';
 import { CaseSortBy, CaseStatus } from '../type/cases.type';
 import { SessionItemStatus } from 'src/common/type/common.type';
+import { meetsMinimumScore } from 'src/common/util/progression.util';
 import { CaseSessionItemRepository } from '../repository/case-session-item.repository';
 import { DataSource, EntityManager } from 'typeorm';
 import { EventEmitter2 } from '@nestjs/event-emitter';
@@ -421,11 +422,11 @@ export class CaseSessionService {
       throw new BadRequestException('Case item not found');
     }
 
-    // Score less than minimum score -> cant make the session complete
-    if (
-      currentCaseItem?.minimumScore !== undefined &&
-      (score ?? 0) < currentCaseItem?.minimumScore
-    ) {
+    // Score below a configured minimum -> cant make the session complete.
+    // A minimum of 0 is the unconfigured default and never gates; see
+    // meetsMinimumScore. (This check also used to miss the NULL case, so an
+    // unset column coerced to 0 in the comparison and gated negative scores.)
+    if (!meetsMinimumScore(score, currentCaseItem?.minimumScore)) {
       this.logger.info(
         `Score ${score} is less than minimum score ${currentCaseItem?.minimumScore} for caseSessionItemId: ${caseSessionItemId}`,
       );
