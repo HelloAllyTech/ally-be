@@ -271,8 +271,8 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description:
-      'Enable the thinking-filler back-channel (a short acknowledgement played while the agent generates its reply) to mask turn latency. Defaults to false (opt-in) when unspecified.',
-    example: false,
+      'Enable the thinking-filler back-channel (a short acknowledgement played while the agent generates its reply) to mask turn latency. Defaults to true when unspecified.',
+    example: true,
     required: false,
   })
   @IsOptional()

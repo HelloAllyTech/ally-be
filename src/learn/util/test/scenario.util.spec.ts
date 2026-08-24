@@ -97,6 +97,8 @@ describe('Scenario Util', () => {
           optGuardrails: scenario.optGuardrails,
           knowledgeSources: scenario.knowledgeSources,
           currentState: scenario.currentState,
+          // Not set on the DTO, so it resolves to the on-by-default toggle.
+          fillerEnabled: true,
         },
       });
     });
