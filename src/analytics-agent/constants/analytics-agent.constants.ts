@@ -40,85 +40,105 @@
  *  - `audit_logs` — carries IP addresses and user agents alongside actor ids.
  *  - `users` is included but its contact columns are denied below: "how many
  *    learners" and "which orgs are growing" are the questions this tool is for.
+ *
+ * Keys prefixed `analytics_agent_` name a Postgres VIEW, not the physical
+ * table (created by migration 1932000000000-CreateAnalyticsAgentTestTenant
+ * ExclusionViews), that pre-filters out rows belonging to a tenant flagged
+ * `tenants."isTestOrganization" = true` (Ally's own internal/demo/QA org). This
+ * is the Analytics Agent's equivalent of the `excludeTestTenants*` predicates
+ * every other analytics repository applies per-query (src/analytics/util/
+ * test-tenant.util.ts) — baked into the relation instead of the query, because
+ * an LLM-authored SELECT can take any shape and might never reference `tenants`
+ * itself. Every table that carries tenant-, session-, or user-attributable
+ * usage data is filtered this way; genuinely tenant-agnostic reference/catalog/
+ * authoring tables (scenarios, tracks, prompts, etc.) are left as plain tables.
+ * A new fact table added here MUST get a matching view in a new migration
+ * rather than being pointed at the raw table directly.
  */
 export const ALLOWED_TABLES: Readonly<Record<string, string>> = Object.freeze({
   // Identity, tenancy, reference data
-  users:
+  analytics_agent_users:
     'Platform accounts — one row per person. Contact columns are not readable.',
-  tenants: 'Organisations ("orgs"). The tenant root entity.',
-  admin_tenants: 'Which users administer which tenants.',
+  analytics_agent_tenants: 'Organisations ("orgs"). The tenant root entity.',
+  analytics_agent_admin_tenants: 'Which users administer which tenants.',
   groups: 'User groups, used both for RBAC and for content targeting.',
-  user_groups: 'Join user -> group. The usual way to count users by role.',
+  analytics_agent_user_groups:
+    'Join user -> group. The usual way to count users by role.',
   permissions: 'Permission catalog.',
   group_permissions: 'Join group -> permission.',
   languages: 'Supported languages. Join target for language_id columns.',
 
   // Scenario authoring
   scenarios: 'Training scenarios (the simulated roleplays learners practise).',
-  scenario_tenants: 'Join: which orgs a scenario is shared with.',
+  analytics_agent_scenario_tenants:
+    'Join: which orgs a scenario is shared with.',
   competencies: 'Higher-order skill groupings referenced by scenarios.',
   behaviors: 'Skills/behaviours a learner can demonstrate.',
   scenario_paths: 'Ordered curricula of scenarios.',
   scenario_path_items: 'One step in a path (path -> scenario, with an order).',
-  scenario_path_sessions: "A learner's run through a path.",
-  scenario_path_session_items: 'Per-step progress within a path run.',
+  analytics_agent_scenario_path_sessions: "A learner's run through a path.",
+  analytics_agent_scenario_path_session_items:
+    'Per-step progress within a path run.',
 
   // Tracks (Track 2.0)
   tracks: 'Multi-component learning tracks (the successor to paths).',
   track_sections: 'Ordered sections within a track.',
   track_items:
     'Ordered items in a section, typed ROLEPLAY | CASE | QUIZ | ARTICLE | VIDEO | JOURNAL.',
-  track_tenants: 'Join: which orgs a track is shared with.',
-  track_enrollments:
+  analytics_agent_track_tenants: 'Join: which orgs a track is shared with.',
+  analytics_agent_track_enrollments:
     "A learner's enrollment in a track, with completion progress.",
-  track_item_progress:
+  analytics_agent_track_item_progress:
     'Per-item progress. Rows are created for every item at enrollment, so a LOCKED row means "not reached", not "not enrolled".',
-  track_quiz_attempts:
+  analytics_agent_track_quiz_attempts:
     'One row per quiz attempt, with its score and pass flag.',
 
   // Session runtime — the main analytics fact tables
-  scenario_sessions:
+  analytics_agent_scenario_sessions:
     'THE central fact table: one simulated roleplay run. counselor_id is the LEARNER who practised; a run is tenant-scoped and carries its own start/end and score.',
-  scenario_session_details:
+  analytics_agent_scenario_session_details:
     'One row per session (unique on scenario_session_id): call duration in seconds, the composite evaluation score, and the async evaluation status.',
-  scenario_session_events:
+  analytics_agent_scenario_session_events:
     'Events that fired during a run, with when they occurred.',
-  scenario_session_feedbacks: "The learner's post-session rating (CSAT).",
-  scenario_session_turn_metrics:
+  analytics_agent_scenario_session_feedbacks:
+    "The learner's post-session rating (CSAT).",
+  analytics_agent_scenario_session_turn_metrics:
     "Per-turn latency telemetry (response latency, time-to-first-token, TTS time-to-first-byte, model, language, interruption and timeout flags). Wide table; percentiles come from here. response_latency_ms is time to the agent's FIRST audio, which is a thinking-filler or interim reply when one played — metadata->>'firstAudioSource' ('filler'|'interim'|'reply', absent on older rows) says which, and metadata->>'replyLatencyMs' holds the unmasked time to the real reply on masked turns. Split by firstAudioSource before trending response_latency_ms, or a rise in filler coverage reads as a latency improvement.",
-  scenario_session_start_metrics:
+  analytics_agent_scenario_session_start_metrics:
     'Per-session start latency ("time to first word"), one row per simulation, with its segment breakdown.',
-  scenario_session_reviews:
+  analytics_agent_scenario_session_reviews:
     'Reviews of training sessions (status and author only).',
 
   // Cases
   cases: 'Training/assessment cases — bundles of scenarios.',
   case_items: 'A scenario within a case.',
-  case_sessions: "A learner's progress through a case.",
-  case_session_items: 'Per-item progress within a case run.',
-  case_tenants: 'Join: which orgs a case is shared with.',
+  analytics_agent_case_sessions: "A learner's progress through a case.",
+  analytics_agent_case_session_items: 'Per-item progress within a case run.',
+  analytics_agent_case_tenants: 'Join: which orgs a case is shared with.',
 
   // Chats — metadata only; message content is not readable
-  chats:
+  analytics_agent_chats:
     'Live counsellor<->help-seeker sessions, METADATA ONLY (status, timing, tenant). No message content is reachable from here.',
-  queue_entries: 'The help-seeker waiting queue: wait start, status, priority.',
+  analytics_agent_queue_entries:
+    'The help-seeker waiting queue: wait start, status, priority.',
 
   // Engagement
-  user_daily_scores:
+  analytics_agent_user_daily_scores:
     'Daily engagement rollup per user (minutes played, score, one row per user/day). The prime source for activity over time.',
   badges: 'Badge definitions.',
-  badge_users: 'Badges earned, per user.',
+  analytics_agent_badge_users: 'Badges earned, per user.',
 
   // Roleplay Studio v2
   roleplay_specs: 'v2 authoring root — one spec document per roleplay.',
   roleplay_spec_versions:
     'Immutable spec snapshots (append-only version history).',
-  roleplay_rubric_scores: 'Per-(turn, behaviour) rubric scores from v2 runs.',
-  roleplay_director_events:
+  analytics_agent_roleplay_rubric_scores:
+    'Per-(turn, behaviour) rubric scores from v2 runs.',
+  analytics_agent_roleplay_director_events:
     'v2 director telemetry, one row per director message.',
 
   // Platform ops
-  llm_usage:
+  analytics_agent_llm_usage:
     'Token/cost accounting: one row per LLM, STT or TTS call, labelled by provider, model and task. The source for AI spend.',
   prompts:
     'Prompt registry for the agent pipeline (metadata; prompt text is not readable).',

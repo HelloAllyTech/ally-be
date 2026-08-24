@@ -18,7 +18,7 @@ import {
 
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
+import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 import {
   AcceptSuggestionDto,
@@ -34,16 +34,16 @@ import { AnalyticsSuggestionStatus } from '../enum/analytics-suggestion.enum';
 import { AnalyticsSuggestionsService } from '../service/analytics-suggestions.service';
 
 /**
- * The Suggestions queue's HTTP surface — four endpoints, all gated on
- * SUPER_DUPER_ADMIN_ROLES.
+ * The Suggestions queue's HTTP surface — four endpoints, gated on
+ * SUPER_ADMIN_ROLES, the same tier as the rest of `/v1/analytics`.
  *
- * The elevated tier, not the SUPER_ADMIN_ROLES pair the rest of `/v1/analytics`
- * uses, for the same reason as the Analytics Agent: the other endpoints answer
- * fixed, reviewed questions, while this one reads the whole platform at once and
- * files onto the product roadmap. Accepting is a write into another team's
- * backlog, which is a different privilege from reading a chart. The tab in
- * ally-web is hidden for a plain SUPER_ADMIN to match, rather than rendering a
- * control that 403s.
+ * This used to sit on the elevated SUPER_DUPER_ADMIN_ROLES tier: the other
+ * endpoints answer fixed, reviewed questions, while this one reads the whole
+ * platform at once and files onto the product roadmap, and accepting a
+ * suggestion is a write into another team's backlog rather than reading a
+ * chart. That reasoning still holds as a general principle, but the product
+ * decision was made to give every admin tier parity across all analytics
+ * surfaces instead.
  *
  * No new permission constant: the gate is a role tier, so there is no
  * `permissions` row to grant and no Redis permission cache to bust on deploy.
@@ -59,11 +59,10 @@ export class AnalyticsSuggestionsController {
 
   @Post('generate')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    legacyRoles: SUPER_ADMIN_ROLES,
   })
   @ApiOperation({
-    summary:
-      'Generate product suggestions from an analytics window (super-duper-admin)',
+    summary: 'Generate product suggestions from an analytics window',
     description:
       'Reads fifteen platform analytics sections for the chosen window, sends them ' +
       "to the model with Ally's product-vision context, the live product goals, the " +
@@ -95,10 +94,10 @@ export class AnalyticsSuggestionsController {
 
   @Get()
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    legacyRoles: SUPER_ADMIN_ROLES,
   })
   @ApiOperation({
-    summary: 'List suggestions (super-duper-admin)',
+    summary: 'List suggestions',
     description:
       'Newest first, with rows from one Generate run kept adjacent so the client ' +
       'can group by `batchId`. Defaults to `status=pending` — the decisions still ' +
@@ -116,11 +115,10 @@ export class AnalyticsSuggestionsController {
 
   @Post(':id/accept')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    legacyRoles: SUPER_ADMIN_ROLES,
   })
   @ApiOperation({
-    summary:
-      'Accept a suggestion and file it on the roadmap (super-duper-admin)',
+    summary: 'Accept a suggestion and file it on the roadmap',
     description:
       'Files the suggestion as a roadmap opportunity (stage `new`, no coins) and ' +
       'marks it accepted, linking the two.\n\n' +
@@ -143,10 +141,10 @@ export class AnalyticsSuggestionsController {
 
   @Post(':id/reject')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    legacyRoles: SUPER_ADMIN_ROLES,
   })
   @ApiOperation({
-    summary: 'Reject a suggestion (super-duper-admin)',
+    summary: 'Reject a suggestion',
     description:
       'Removes the suggestion from the pending queue and records the decision. ' +
       'The optional `reason` is fed into later generations as a standing decision, ' +
