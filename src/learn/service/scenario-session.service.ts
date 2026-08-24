@@ -12,6 +12,7 @@ import { ScenarioSessionMessagesRepository } from '../repository/scenario-sessio
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
 import { ScenarioService } from './scenario.service';
 import {
+  ScenarioSessionAbandonReason,
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
 } from '../enum/scenario-session-status.enum';
@@ -75,6 +76,8 @@ import { v4 } from 'uuid';
 import {
   DEFAULT_LANGUAGE_CODE,
   DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
+  STUCK_SESSION_AGE_MS,
+  STUCK_SESSION_SWEEP_LIMIT,
 } from '../constants/scenario-session.constants';
 import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
@@ -2761,6 +2764,92 @@ export class ScenarioSessionService {
         `The following required fields are missing for preview scenario: ${missingFields.join(', ')}`,
       );
     }
+  }
+
+  /**
+   * Label an already-terminal session as abandoned.
+   *
+   * Only ever writes `eventStatus`, never `status`, and only when the row is
+   * still at IN_PROGRESS. That guard is what makes it safe to call from the
+   * `room_finished` webhook, which races the agent's `end-of-session` message:
+   * if that message won and wrote COMPLETED, the session genuinely completed its
+   * lifecycle and must not be relabelled. Idempotent, so a redelivered webhook
+   * costs one no-op UPDATE.
+   */
+  async markSessionAbandoned(
+    scenarioSessionId: string,
+    reason: ScenarioSessionAbandonReason,
+  ): Promise<void> {
+    const result = await this.scenarioSessionRepository.update(
+      {
+        id: scenarioSessionId,
+        eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
+      },
+      {
+        eventStatus: ScenarioSessionEventStatus.ABANDONED,
+        abandonedReason: reason,
+      },
+    );
+    if (result.affected) {
+      this.logger.warn(
+        `Scenario session ${scenarioSessionId} marked ABANDONED (${reason})`,
+      );
+    } else {
+      this.logger.info(
+        `Scenario session ${scenarioSessionId} not labelled abandoned — its ` +
+          `lifecycle had already completed`,
+      );
+    }
+  }
+
+  /**
+   * Reap sessions left ACTIVE with no possibility of ever ending.
+   *
+   * Moves them ACTIVE → ABANDONED and stamps `endedAt` so they stop reading as
+   * live. Deliberately does NOT run the full end flow: there is no transcript
+   * worth summarising, no score to compute, and no learner waiting — and
+   * charging credits or awarding practice minutes for a session that never
+   * happened would be worse than leaving it unrecorded.
+   *
+   * Returns what it found and what it changed so the scheduler can log it.
+   */
+  async sweepStuckActiveSessions(): Promise<{
+    found: number;
+    abandoned: number;
+  }> {
+    const startedBefore = new Date(Date.now() - STUCK_SESSION_AGE_MS);
+    const stuck = await this.scenarioSessionRepository.findSessionsStuckActive({
+      startedBefore,
+      limit: STUCK_SESSION_SWEEP_LIMIT,
+    });
+    if (!stuck.length) return { found: 0, abandoned: 0 };
+
+    let abandoned = 0;
+    for (const session of stuck) {
+      // One row at a time, each guarded on status still being ACTIVE, so a
+      // session that ends between the read and the write is left alone rather
+      // than being clobbered by a bulk UPDATE.
+      const result = await this.scenarioSessionRepository.update(
+        { id: session.id, status: ScenarioSessionStatus.ACTIVE },
+        {
+          status: ScenarioSessionStatus.ABANDONED,
+          eventStatus: ScenarioSessionEventStatus.ABANDONED,
+          abandonedReason: ScenarioSessionAbandonReason.STUCK_ACTIVE_SWEEP,
+          // Wall-clock truth: it stopped being live when it stopped, which we
+          // cannot know, so the sweep time is the honest upper bound. Analytics
+          // never reads it — ABANDONED is excluded from every `status = 'ENDED'`
+          // filter — so this is for humans reading the row.
+          endedAt: new Date(),
+        },
+      );
+      if (result.affected) abandoned += 1;
+    }
+
+    this.logger.warn(
+      `Stuck-session sweep: ${stuck.length} session(s) had been ACTIVE since ` +
+        `before ${startedBefore.toISOString()}; ${abandoned} marked ABANDONED`,
+    );
+    return { found: stuck.length, abandoned };
   }
 
   async endPreviewScenario(roomName: string) {

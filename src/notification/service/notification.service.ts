@@ -134,6 +134,33 @@ export class NotificationService {
     }
     await this.slackService.sendMessage(message);
   }
+  /**
+   * An outbound email could not be handed to SES.
+   *
+   * Modelled on `notifyTranscriptionFailure` above: the failure MODE, enough
+   * context to act, and nothing that identifies a person. Email is the only
+   * channel by which a user can obtain a login code, so a silent SES failure
+   * looks — from every dashboard we have — exactly like nobody trying to log in.
+   */
+  async notifyEmailSendFailure(params: {
+    purpose: string;
+    subject: string;
+    recipientCount: number;
+    reason: string;
+    recipientDomains: string[];
+  }) {
+    const { purpose, subject, recipientCount, reason, recipientDomains } =
+      params;
+    const lines = [
+      `:email: *Email send failed* _(${purpose})_`,
+      `• Subject: ${subject}`,
+      `• Recipients: ${recipientCount}`,
+      `• Domains: ${recipientDomains.join(', ')}`,
+      `• Reason: ${reason}`,
+    ];
+    await this.slackService.sendMessage(lines.join('\n'));
+  }
+
   async sendEmailOTP(
     to: string,
     otp: string,

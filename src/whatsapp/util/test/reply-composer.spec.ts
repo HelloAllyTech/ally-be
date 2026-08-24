@@ -123,12 +123,28 @@ describe('composeReply', () => {
   });
 
   describe('declines and clarifications', () => {
-    it('a decline uses the configured wording, not the model output', () => {
-      // The admin controls exactly how "I don't have that" sounds to a worker.
+    it("a decline prefers the model's own sentence, which is in the worker's language", () => {
+      // The answer prompt asks the model to write its decline in the language the
+      // worker used. Substituting the fixed English `declineText` over the top of
+      // it — which is what this did before — answered a Hindi question in English
+      // on the single most common reply the bot sends.
       const out = composeReply({
         ...base,
         intent: 'decline',
-        answer: 'some model text that should not be used',
+        answer: 'मेरे संदर्भ सामग्री में यह जानकारी नहीं है।',
+        citations: [],
+      });
+      expect(out).toBe('मेरे संदर्भ सामग्री में यह जानकारी नहीं है।');
+    });
+
+    it('a decline falls back to the configured wording when the model wrote nothing', () => {
+      // The pre-LLM decline path (no_hits / below_threshold) never reaches a
+      // model, so `answer` is empty and the admin's wording is what goes out —
+      // unchanged from before.
+      const out = composeReply({
+        ...base,
+        intent: 'decline',
+        answer: '   ',
         citations: [],
       });
       expect(out).toBe(base.declineText);

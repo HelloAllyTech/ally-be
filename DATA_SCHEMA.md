@@ -156,7 +156,7 @@ This is where most **analytics** about training performance live.
 
 | Table | Base | Key columns | Notes |
 |-------|------|-------------|-------|
-| `scenario_sessions` | BaseEntity | `id` (uuid), `room_id`, `scenario_id`, `counselor_id` (idx), `status` (`ScenarioSessionStatus`, ACTIVE), `event_status`, `started_at`, `ended_at`, `score` (float), `metadata`, `scenario_path_session_item_id`, `case_session_item_id`, `roleplaySpecVersionId` (uuid, loose FK → `roleplay_spec_versions`; set for ROLEPLAY_V2 runs, DB column only — not on the entity) | **One simulation run.** Central fact table. v2 runs use `room_id` prefix `roleplay-` |
+| `scenario_sessions` | BaseEntity | `id` (uuid), `room_id`, `scenario_id`, `counselor_id` (idx), `status` (`ScenarioSessionStatus`: ACTIVE \| ENDED \| ABANDONED, default ACTIVE), `event_status` (`ScenarioSessionEventStatus`: IN_PROGRESS \| COMPLETED \| ABANDONED), `abandonedReason` (varchar(64), null; `ScenarioSessionAbandonReason`), `started_at`, `ended_at`, `score` (float), `metadata`, `scenario_path_session_item_id`, `case_session_item_id`, `roleplaySpecVersionId` (uuid, loose FK → `roleplay_spec_versions`; set for ROLEPLAY_V2 runs, DB column only — not on the entity) | **One simulation run.** Central fact table. v2 runs use `room_id` prefix `roleplay-` |
 | `scenario_session_details` | BaseEntity | `scenario_session_id` (**unique** idx since migration 1869), `call_duration` (sec), `summary` (jsonb), `sessionMemory` (jsonb, migration 1885), `metrics` (jsonb: goal→0-100), `notApplicableGoals` (jsonb `string[]`, migration 1898), `compositeScore` (int), `evaluationMarkdown` (text), `evaluationStatus` (IN_PROGRESS/COMPLETED/FAILED), `evaluatedAt` | One row per session, DB-enforced; all three writers (summary persist + evaluation webhook + session-memory processor) upsert ON CONFLICT on `scenario_session_id`. Migration 1869 merged historic duplicate rows (concurrent session-end writers used to insert two rows, hiding feedback). Eval columns hold the goal-based actor evaluation (LLM judge over the real-session transcript, scored vs `agent_test_cases`) populated async via the session-evaluation webhook. `agent_test_cases` is a global list with no scenario scoping, so a session is scored against goals it may never have had occasion to exercise: the judge marks those in `notApplicableGoals` (titles, matching `metrics` keys) and `compositeScore` is the mean over the applicable ones only. Every goal stays in `metrics` — `notApplicableGoals` is the subset to render as N/A rather than as a low score. Null on rows judged before migration 1898, meaning "all goals applicable" (how they were in fact scored). `sessionMemory` = the agent's end-of-session rolling summary ({summary, language, messageCount, summarizedMessageCount, receivedAt}) shipped over SQS as message_type `session_memory`; `getPreviousCaseMemory` prefers it over `summary.feedback.cumulativeMemory` when building the next case session's `previousMemory`. `summary.feedback.supervisorNote` (migration-free, added with `learner_supervisor_memory`) is the learner-facing markdown debrief note written in Ally's supervisor voice; it anchors transcript moments as `[[msg:<scenario_session_messages.id>]]`, which clients resolve into links into the annotated transcript. The sibling `memory_update` ally-ai returns alongside it is deliberately NOT persisted here — it goes to `learner_supervisor_memory` and is stripped before the learner is served |
 | `scenario_session_messages` | BaseEntity | `id` (int), `scenario_session_id` (idx), `sender_id`, `message_type` (`ScenarioSessionMessageType`), `content`, `start_seconds`, `end_seconds`, `metadata` | Voice transcript turns |
 | `scenario_session_chats` | BaseEntity | `scenario_session_id`, `user_id`, `summary`, `summarized_message_count` | Text-chat thread; uniq `(session, user)` |
@@ -511,6 +511,19 @@ stores share a key rather than matching on content); `Conversation.chat_id` ↔ 
 - **AWS S3**: binary assets. Object keys are stored on Postgres rows — `storage_key`
   (`scenario_session_recording`, `chat_audio_uploads`) and `*_url` columns (cover images, profile
   images, logos). To find a file, read the key/URL off the owning row.
+> **Crashed vs. finished sessions.** `ABANDONED` (added 2026-08, migration
+> `1932000000000`) exists because the two used to be indistinguishable. It is written
+> in two places: `RoomFinishedHandler` sets `event_status = ABANDONED` when the LiveKit
+> room closed while the session was still live (nobody ended it), and the hourly
+> stuck-session sweeper sets `status = ABANDONED` on rows left ACTIVE for over six
+> hours. Both are **analytics-neutral by construction** — `status = ABANDONED` is only
+> written over `ACTIVE` and every analytics query filters `status = 'ENDED'`;
+> `event_status = ABANDONED` is only written over `IN_PROGRESS` and those queries filter
+> `= 'COMPLETED'`. There is deliberately **no backfill**: a historical
+> ENDED/IN_PROGRESS row is also what a normal session looks like when the agent's
+> `end-of-session` message never arrived, so classifying it after the fact would
+> manufacture crashes that never happened.
+
 - **LiveKit** (`src/livekit/`): real-time audio/video rooms. `scenario_sessions.room_id`
   ties a session to its room; egress recordings land in S3 and are referenced by
   `scenario_session_recording.egress_id` + `storage_key`.

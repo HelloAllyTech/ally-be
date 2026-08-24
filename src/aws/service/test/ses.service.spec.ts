@@ -1,7 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { SESService } from '../ses.service';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EmailSendFailedException, SESService } from '../ses.service';
 import { AppConfigService } from '../../../config/config.service';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { EMAIL_SEND_FAILED_EVENT } from '../../../notification/type/email-send-failed.event';
 
 // Mock AWS SDK
 jest.mock('@aws-sdk/client-ses', () => ({
@@ -27,6 +29,7 @@ describe('SESService', () => {
   let service: SESService;
   let mockConfig: any;
   let mockSesClient: any;
+  let mockEventEmitter: { emit: jest.Mock };
 
   const mockConfigData = {
     email: {
@@ -47,10 +50,13 @@ describe('SESService', () => {
       email: mockConfigData.email,
     };
 
+    mockEventEmitter = { emit: jest.fn() };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SESService,
         { provide: AppConfigService, useValue: mockConfig },
+        { provide: EventEmitter2, useValue: mockEventEmitter },
       ],
     }).compile();
 
@@ -277,25 +283,58 @@ describe('SESService', () => {
       expect(result).toBe(true);
     });
 
-    it('should handle error and return false', async () => {
+    it('should throw EmailSendFailedException and alert on failure, rather than silently returning false', async () => {
+      // Was: swallow to `false`, no throw, no signal — the OTP path could tell
+      // a user "code sent" while SES never received it. Fixed to throw and to
+      // emit EMAIL_SEND_FAILED_EVENT so NotificationEventConsumer can page.
       const params = {
         from: 'sender@example.com',
         to: 'recipient@example.com',
         subject: 'Test Subject',
         body: 'Test Body',
+        purpose: 'login OTP',
       };
       const error = new Error('SES Error');
       mockSesClient.send.mockRejectedValue(error);
 
-      const result = await service.sendEmail(params);
+      await expect(service.sendEmail(params)).rejects.toBeInstanceOf(
+        EmailSendFailedException,
+      );
 
       expect(mockLoggerInstance.error).toHaveBeenCalledWith(
-        `Failed to send email via SES with error ${JSON.stringify(error)}`,
+        expect.stringContaining('Failed to send email via SES'),
       );
-      expect(result).toBe(false);
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        EMAIL_SEND_FAILED_EVENT,
+        expect.objectContaining({
+          purpose: 'login OTP',
+          subject: 'Test Subject',
+          recipientCount: 1,
+          reason: 'SES Error',
+          recipientDomains: ['example.com'],
+        }),
+      );
     });
 
-    it('should handle AWS SDK error and return false', async () => {
+    it('should not alert when alertOnFailure is false, but still throw', async () => {
+      // The bulk-sender escape hatch: a 200-recipient batch alerts once itself
+      // rather than paging once per recipient.
+      const params = {
+        from: 'sender@example.com',
+        to: 'recipient@example.com',
+        subject: 'Test Subject',
+        body: 'Test Body',
+        alertOnFailure: false,
+      };
+      mockSesClient.send.mockRejectedValue(new Error('SES Error'));
+
+      await expect(service.sendEmail(params)).rejects.toBeInstanceOf(
+        EmailSendFailedException,
+      );
+      expect(mockEventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('should handle a non-Error AWS SDK rejection and still throw/alert', async () => {
       const params = {
         from: 'sender@example.com',
         to: 'recipient@example.com',
@@ -309,12 +348,13 @@ describe('SESService', () => {
       };
       mockSesClient.send.mockRejectedValue(awsError);
 
-      const result = await service.sendEmail(params);
-
-      expect(mockLoggerInstance.error).toHaveBeenCalledWith(
-        `Failed to send email via SES with error ${JSON.stringify(awsError)}`,
+      await expect(service.sendEmail(params)).rejects.toBeInstanceOf(
+        EmailSendFailedException,
       );
-      expect(result).toBe(false);
+      expect(mockEventEmitter.emit).toHaveBeenCalledWith(
+        EMAIL_SEND_FAILED_EVENT,
+        expect.objectContaining({ reason: 'unknown error' }),
+      );
     });
 
     it('should handle empty recipient array', async () => {

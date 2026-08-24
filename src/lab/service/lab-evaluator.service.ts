@@ -57,7 +57,17 @@ export class LabEvaluatorService {
     private readonly emailService: EmailService,
   ) {}
 
-  /** Email the evaluator their portal link + credentials (best-effort). */
+  /**
+   * Email the evaluator their portal link + credentials (best-effort).
+   *
+   * This try/catch was structurally dead: `SESService.sendEmail` returned `false`
+   * on every failure and never threw, so an evaluator whose invite bounced was
+   * created with a password nobody ever received, and the admin saw a clean
+   * success. The send now throws, which makes this catch live — and the alert
+   * that goes with it comes from SESService, so the failure is visible even
+   * though it is still deliberately non-fatal (the evaluator row is valid and
+   * the invite can be resent).
+   */
   private async sendInvite(email: string, password: string): Promise<void> {
     try {
       await this.emailService.sendEvaluatorInvite({ to: email, password });

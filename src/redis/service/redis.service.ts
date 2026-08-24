@@ -16,6 +16,29 @@ export class RedisService {
     });
   }
 
+  /**
+   * Liveness probe for the health check.
+   *
+   * Deliberately a bare `PING` with a short deadline rather than a set/get
+   * round trip: the health endpoint is polled by the load balancer, so it must
+   * not write, and it must not be able to hang. ioredis queues commands while
+   * disconnected instead of rejecting, so without the timeout a Redis outage
+   * would make the health endpoint hang rather than report a failure — which is
+   * the opposite of what a health check is for.
+   */
+  async ping(timeoutMs = 1000): Promise<void> {
+    await Promise.race([
+      this.redis.ping(),
+      new Promise((_, reject) =>
+        setTimeout(
+          () =>
+            reject(new Error(`Redis PING did not answer in ${timeoutMs}ms`)),
+          timeoutMs,
+        ),
+      ),
+    ]);
+  }
+
   // Create a new client dynamically (for pub/sub)
   createClient(name: string): Redis {
     return this.redis.duplicate({

@@ -10,6 +10,7 @@ import { S3Service } from 'src/aws/service/s3.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
+import { ConfigurationException } from 'src/exception/configuration.exception';
 import {
   KB_DOCUMENT_S3_PREFIX,
   KB_MAX_FILE_SIZE_BYTES,
@@ -59,8 +60,10 @@ export class KnowledgeBaseService {
   private getBucket(): string {
     const bucket = this.configService.s3.assetsBucket;
     if (!bucket) {
-      throw new InternalServerErrorException(
-        'S3 bucket name for assetsBucket is not defined',
+      // Detail is logged, not returned — see ConfigurationException.
+      throw new ConfigurationException(
+        'S3 bucket name for assetsBucket (S3_ASSETS_BUCKET) is not defined; ' +
+          'knowledge-base uploads cannot be stored.',
       );
     }
     return bucket;

@@ -38,6 +38,7 @@ import { GoogleSignInDto } from '../dto/google-token.dto';
 import { AppleSignInDto } from '../dto/apple-token.dto';
 import * as crypto from 'crypto';
 import { MagicLinkVerifyDto } from '../dto/magic-link.dto';
+import { EmailSendFailedException } from 'src/aws/service/ses.service';
 import { CachedAuthAttempt } from '../interface/cached-auth-attempt.interface';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { Impersonate } from '../interface/impersonate.interface';
@@ -343,12 +344,37 @@ export class AuthService {
     );
     await this.cache.set(this.getOtpKey(email), otp, this.OTP_TTL);
 
-    this.eventEmitter.emit('otp.generated', {
+    // `emitAsync`, not `emit`, and the result is inspected.
+    //
+    // This used to fire and forget, then return `{success: true}` — before any
+    // send had even been attempted. Combined with a `SESService.sendEmail` that
+    // returned `false` instead of throwing, an SES outage produced a perfectly
+    // successful-looking API response for a code that was never going to
+    // arrive, and the user's only feedback was a login form that kept saying
+    // "check your email". Waiting for the send costs one SES round trip (a few
+    // hundred ms) and makes `success: true` mean what it says.
+    //
+    // The credentials above are already cached, deliberately: if the send fails
+    // the user can retry and the SAME attempt record is reused, and a code that
+    // did go out despite a reported failure still verifies.
+    const results = await this.eventEmitter.emitAsync('otp.generated', {
       email,
       otp,
       magicLinkToken: magicToken,
       appType,
     });
+
+    // The notification consumer resolves `false` when the send failed (it
+    // catches internally — an unhandled rejection out of an event handler would
+    // take the process down). No listener at all resolves to an empty array,
+    // which is the case in unit tests and in a deployment with notifications
+    // disabled; that is not a failure.
+    if (results.some((result) => result === false)) {
+      this.logger.error(`Could not deliver the login code for ${email}`);
+      this.logOtpGenerationError(email, 'Email delivery failed');
+      throw new EmailSendFailedException();
+    }
+
     return {
       success: true,
       expiresIn: this.OTP_TTL,

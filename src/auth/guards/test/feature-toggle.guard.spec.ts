@@ -135,7 +135,7 @@ describe('FeatureToggleGuard', () => {
     });
 
     await expect(guard.canActivate(contextFor(undefined))).rejects.toThrow(
-      'Authentication required',
+      'Please sign in to continue.',
     );
   });
 });
