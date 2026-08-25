@@ -184,6 +184,14 @@ export interface LearnEvent extends SessionEvents {
   autoTerminationStatus?: boolean;
   terminationMessage?: string;
   totalScore?: number;
+  /**
+   * Present on `end-of-session` only when ally-ai-learn's emergency/force-exit
+   * path produced it (e.g. "watchdog_force_exit") rather than a clean
+   * shutdown. Free-form and agent-internal — mapped to the fixed
+   * `ScenarioSessionEndReason` enum before being persisted, so a new
+   * agent-side cause string is tolerated rather than rejected.
+   */
+  reason?: string;
   /** Epoch-ms timestamp for session-paused / session-resumed control events. */
   atMs?: number;
   /**

@@ -73,3 +73,29 @@ export enum ScenarioSessionAbandonReason {
    */
   LIFECYCLE_MESSAGE_DEAD_LETTERED = 'LIFECYCLE_MESSAGE_DEAD_LETTERED',
 }
+
+/**
+ * Why a session that DID reach a normal `ENDED`/`COMPLETED` state got there.
+ * Stored in `scenario_sessions.endReason`. NULL means the ordinary case: the
+ * learner finished or clicked End.
+ *
+ * Distinct from `ScenarioSessionAbandonReason`: abandonment is for a session
+ * nobody ever closed out. This is for one that WAS closed out — scored,
+ * summarized, given an `endedAt` — but only because the agent's stall
+ * watchdog force-exited it (commonly caused by the learner's connection
+ * dropping, but also any other cause of the learner going silent past the
+ * timeout). Without it, a session ended this way was indistinguishable from
+ * a normal completion, so neither the learner nor a reviewer could tell a
+ * technical interruption apart from an ordinary finish.
+ */
+export enum ScenarioSessionEndReason {
+  /**
+   * ally-ai-learn's stall watchdog force-exited the job and delivered the
+   * score/summary via the emergency (no-event-loop) path rather than the
+   * normal clean shutdown. Any specific internal cause string the agent
+   * reports (e.g. "watchdog_force_exit") is bucketed into this one value —
+   * the exact string is logged, not schema, so a new agent-side cause never
+   * requires a migration to keep being recognised.
+   */
+  TECHNICAL_INTERRUPTION = 'TECHNICAL_INTERRUPTION',
+}
