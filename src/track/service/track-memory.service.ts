@@ -47,7 +47,24 @@ interface TrackMemoryItemEntry {
 export interface TrackLearnedFact {
   id: string;
   fact: string;
-  status: 'active' | 'superseded';
+  /**
+   * Why this fact is or is not injected — and the two non-active reasons are
+   * NOT interchangeable.
+   *
+   * `superseded` is SEMANTIC: a later session contradicted it, so it stopped
+   * being true. Decided by the merge model, and the entry is the audit trail
+   * of when the truth changed.
+   *
+   * `retired` is MECHANICAL: it is still true, we simply ran out of room under
+   * MAX_ACTIVE_FACTS. Decided by array length, not by anything the client said.
+   *
+   * Collapsing both into `superseded` (as this did until the third state was
+   * added) makes the trail unreadable — you cannot tell why a fact left — and
+   * loses the ability to ever bring an evicted-but-true fact back, because
+   * there is no way left to find it. The merge model is never shown or told
+   * about `retired`; only the two states it decides.
+   */
+  status: 'active' | 'superseded' | 'retired';
   sourceSessionId?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -169,13 +186,18 @@ export class TrackMemoryService {
       await this.trackEnrollmentRepository.update(enrollment.id, {
         memory: memory as Record<string, any>,
       });
-      const activeFacts = (memory.facts ?? []).filter(
-        (f) => f.status === 'active',
-      ).length;
+      const allFacts = memory.facts ?? [];
+      const countOf = (status: TrackLearnedFact['status']) =>
+        allFacts.filter((f) => f.status === status).length;
+      // The breakdown is the whole telemetry for this store: "N active/N total"
+      // alone cannot distinguish a fact that stopped being true from one
+      // evicted for space, which is exactly the question the status split
+      // exists to answer.
       this.logger.info(
         `[TRACK_MEMORY] folded session=${scenarioSessionId} into enrollment=${enrollment.id} ` +
           `items=${Object.keys(memory.items).length} summary_chars=${memory.summary?.length ?? 0} ` +
-          `facts=${activeFacts} active/${(memory.facts ?? []).length} total`,
+          `facts=${countOf('active')} active/${allFacts.length} total ` +
+          `superseded=${countOf('superseded')} retired=${countOf('retired')}`,
       );
     } catch (error) {
       this.logger.error(
@@ -293,9 +315,22 @@ export class TrackMemoryService {
       const template =
         await this.promptSharedService.getPromptByCode(FACTS_PROMPT_CODE);
       if (!template) throw new Error(`prompt '${FACTS_PROMPT_CODE}' not found`);
+      // Retired facts are withheld from the model: it only reasons in
+      // active/superseded, and showing it a third state it was never taught
+      // invites it to echo one back. Withholding them is safe BY
+      // CONSTRUCTION — an entry the model never sees is never claimed, so the
+      // reconciliation loop below preserves it verbatim, `retired` intact.
+      //
+      // It also buys the resurrection path. `byText` is built from ALL of
+      // `existing`, retired included, so if a retired fact is disclosed again
+      // it binds to that entry by text and comes back with its ORIGINAL id and
+      // provenance rather than as a duplicate — which is the whole point of
+      // distinguishing "evicted for space" from "no longer true".
       const prompt = renderTemplate(template, {
         existingFacts: JSON.stringify(
-          existing.map(({ id, fact, status }) => ({ id, fact, status })),
+          existing
+            .filter((f) => f.status !== 'retired')
+            .map(({ id, fact, status }) => ({ id, fact, status })),
         ),
         newDisclosures: newDisclosures.map((d) => `- ${d}`).join('\n'),
       });
@@ -432,18 +467,31 @@ export class TrackMemoryService {
       }
     }
 
-    // Cap: keep every superseded entry (audit trail is cheap) but bound the
-    // ACTIVE list — beyond the cap the oldest actives get superseded.
+    // Cap: keep every inactive entry (the trail is cheap) but bound the ACTIVE
+    // list — beyond the cap the oldest actives are RETIRED, not superseded.
+    // They are still true; there is simply no room. See TrackLearnedFact.status.
+    //
+    // Retiring by age is a placeholder policy, not a considered one: in a
+    // counselling arc the OLDEST facts tend to be the load-bearing ones ("mother
+    // has been unwell since January") and the newest the incidental ones, so
+    // this evicts roughly the wrong end. It has never once fired in production
+    // — the cap is 40 and the largest enrollment holds 16 — which is why it is
+    // left alone rather than replaced by a relevance policy that could not be
+    // evaluated against zero evictions. The log below is what turns the first
+    // real eviction into something we find out about instead of infer later.
     const actives = updated.filter((f) => f.status === 'active');
     if (actives.length > MAX_ACTIVE_FACTS) {
-      const toRetire = actives
+      const toRetire = [...actives]
         .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
         .slice(0, actives.length - MAX_ACTIVE_FACTS);
       const retireIds = new Set(toRetire.map((f) => f.id));
       updated = updated.map((f) =>
-        retireIds.has(f.id)
-          ? { ...f, status: 'superseded', updatedAt: now }
-          : f,
+        retireIds.has(f.id) ? { ...f, status: 'retired', updatedAt: now } : f,
+      );
+      this.logger.warn(
+        `[TRACK_MEMORY] fact cap reached: retiring ${retireIds.size} still-true ` +
+          `fact(s) to hold ${MAX_ACTIVE_FACTS} active — oldest first, which is ` +
+          `probably the wrong end. Retired ids: ${[...retireIds].join(', ')}`,
       );
     }
     return updated;

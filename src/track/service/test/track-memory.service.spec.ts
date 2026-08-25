@@ -209,7 +209,7 @@ describe('TrackMemoryService', () => {
       await expect(service.getConsolidatedMemory('tip-2')).resolves.toBeNull();
     });
 
-    it('appends active learned facts (superseded excluded) to the summary', async () => {
+    it('appends active learned facts only — neither superseded nor retired', async () => {
       trackEnrollmentRepository.findOne.mockResolvedValue({
         id: 'enr-1',
         memory: {
@@ -219,6 +219,7 @@ describe('TrackMemoryService', () => {
             { id: 'f1', fact: 'Works night shifts', status: 'active' },
             { id: 'f2', fact: 'Feared losing job', status: 'superseded' },
             { id: 'f3', fact: 'Son is 7 years old', status: 'active' },
+            { id: 'f4', fact: 'Cycles to work', status: 'retired' },
           ],
         },
       });
@@ -227,6 +228,8 @@ describe('TrackMemoryService', () => {
       expect(composed).toContain('- Works night shifts');
       expect(composed).toContain('- Son is 7 years old');
       expect(composed).not.toContain('Feared losing job');
+      // Still true, but evicted for space — it must not reach the persona.
+      expect(composed).not.toContain('Cycles to work');
     });
   });
 
@@ -470,7 +473,93 @@ describe('TrackMemoryService', () => {
       );
     });
 
-    it('caps active facts by superseding the oldest', async () => {
+    it('a retired fact is withheld from the merge model but survives the fold intact', async () => {
+      // The model only reasons in active/superseded. Showing it a third state
+      // it was never taught invites it to echo one back, so retired entries
+      // are kept out of the payload — and the reconciliation loop preserves
+      // anything the model never claimed.
+      promptSharedService.getPromptByCode.mockImplementation((code: string) =>
+        Promise.resolve(
+          code === 'track_memory_facts'
+            ? 'EXISTING: {{existingFacts}}\nNEW: {{newDisclosures}}'
+            : 'Fold these:\n{{sessionMemories}}',
+        ),
+      );
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify([
+              { id: 'f1', fact: 'Works night shifts', status: 'active' },
+              { id: 'new-1', fact: 'Son is 7 years old', status: 'active' },
+            ]),
+          },
+        ],
+        usage: { input_tokens: 10, output_tokens: 10 },
+      });
+      const facts = await foldWith(
+        [
+          { id: 'f1', fact: 'Works night shifts', status: 'active' },
+          {
+            id: 'f2',
+            fact: 'Cycles to work',
+            status: 'retired',
+            sourceSessionId: 'sess-1',
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+        ],
+        ['Son is 7 years old'],
+      );
+
+      const calls = mockCreate.mock.calls;
+      const factsCall = calls[calls.length - 1][0].messages[0].content;
+      expect(factsCall).toContain('EXISTING:'); // the facts template rendered
+      expect(factsCall).toContain('Works night shifts');
+      expect(factsCall).not.toContain('Cycles to work'); // withheld
+
+      const survivor = facts.find((f) => f.id === 'f2');
+      expect(survivor.status).toBe('retired'); // preserved verbatim
+      expect(survivor.sourceSessionId).toBe('sess-1');
+      expect(survivor.createdAt).toBe('2026-01-01T00:00:00Z');
+    });
+
+    it('a retired fact disclosed again is resurrected, keeping its original id', async () => {
+      // The point of separating "evicted for space" from "no longer true": an
+      // evicted fact is still TRUE, so if it comes up again it should come back
+      // as itself rather than as a duplicate with fresh provenance. It binds by
+      // text even though the model never saw it and invented a new-N id.
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify([
+              { id: 'new-1', fact: 'Cycles to work', status: 'active' },
+            ]),
+          },
+        ],
+        usage: { input_tokens: 10, output_tokens: 10 },
+      });
+      const facts = await foldWith(
+        [
+          {
+            id: 'f2',
+            fact: 'Cycles to work',
+            status: 'retired',
+            sourceSessionId: 'sess-1',
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+        ],
+        ['I cycle to work'],
+      );
+
+      expect(facts).toHaveLength(1); // resurrected, not duplicated
+      expect(facts[0].id).toBe('f2');
+      expect(facts[0].status).toBe('active');
+      expect(facts[0].sourceSessionId).toBe('sess-1'); // original provenance
+      expect(facts[0].createdAt).toBe('2026-01-01T00:00:00Z');
+    });
+
+    it('caps active facts by RETIRING the oldest, not superseding them', async () => {
       mockCreate.mockRejectedValue(new Error('llm down')); // use fallback path
       const existing = Array.from({ length: 40 }, (_, i) => ({
         id: `f${i}`,
@@ -484,7 +573,10 @@ describe('TrackMemoryService', () => {
       expect(facts.find((f) => f.fact === 'Brand new fact 41')?.status).toBe(
         'active',
       );
-      expect(facts.filter((f) => f.status === 'superseded')).toHaveLength(1);
+      // Evicted for space, so `retired` — NOT `superseded`, which would claim
+      // the client contradicted it.
+      expect(facts.filter((f) => f.status === 'retired')).toHaveLength(1);
+      expect(facts.filter((f) => f.status === 'superseded')).toHaveLength(0);
     });
   });
 });
