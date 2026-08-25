@@ -447,7 +447,7 @@ describe('ScenarioSessionService', () => {
         },
         {
           provide: getRepositoryToken(ScenarioSessionLifecycleEvent),
-          useValue: { insert: jest.fn() },
+          useValue: { insert: jest.fn(), findOne: jest.fn().mockResolvedValue(null) },
         },
         {
           provide: getRepositoryToken(ScenarioSessionEvents),
