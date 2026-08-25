@@ -13,6 +13,7 @@ import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-re
 import { ScenarioService } from './scenario.service';
 import {
   ScenarioSessionAbandonReason,
+  ScenarioSessionEndReason,
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
 } from '../enum/scenario-session-status.enum';
@@ -1103,6 +1104,19 @@ export class ScenarioSessionService {
     const scenarioSessionId = scenarioSession?.id;
 
     const score = event.event_data.totalScore;
+    // Any non-empty `reason` means ally-ai-learn's emergency/force-exit path
+    // produced this end-of-session, not a clean shutdown — bucket every such
+    // cause into one enum value (see ScenarioSessionEndReason) rather than
+    // validating against the agent's specific internal string, so a new cause
+    // there is recognised without a backend change.
+    const endReason = event.event_data.reason
+      ? ScenarioSessionEndReason.TECHNICAL_INTERRUPTION
+      : null;
+    if (endReason) {
+      this.logger.warn(
+        `Session ${scenarioSessionId} ended via emergency path (agent reason: ${event.event_data.reason})`,
+      );
+    }
 
     let callDuration = 0;
     const startedAt = scenarioSession.startedAt ?? new Date();
@@ -1175,6 +1189,7 @@ export class ScenarioSessionService {
       endedAt,
       score,
       eventStatus: ScenarioSessionEventStatus.COMPLETED,
+      endReason,
     });
     this.logger.info(
       `Updated scenario ${scenarioSessionId} eventStatus to COMPLETED`,

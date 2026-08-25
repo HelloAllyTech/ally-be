@@ -2,6 +2,7 @@ import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseEntity } from 'src/common/entity/base.entity';
 import {
   ScenarioSessionAbandonReason,
+  ScenarioSessionEndReason,
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
 } from '../enum/scenario-session-status.enum';
@@ -45,6 +46,14 @@ export class ScenarioSessions extends BaseEntity {
    */
   @Column({ type: 'varchar', length: 64, nullable: true })
   abandonedReason?: ScenarioSessionAbandonReason | null;
+
+  /**
+   * Set only when this ENDED/COMPLETED session was force-exited by
+   * ally-ai-learn's stall watchdog rather than shut down cleanly — see
+   * `ScenarioSessionEndReason`. NULL for the ordinary case.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  endReason?: ScenarioSessionEndReason | null;
 
   @Column({ type: 'timestamp', nullable: true })
   startedAt?: Date;
