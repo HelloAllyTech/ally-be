@@ -1091,7 +1091,8 @@ export class ScenarioSessionService {
       });
 
     const transcriptAnchor =
-      agentJoinedEvent && agentJoinedEvent.occurredAt < scenarioSession.startedAt
+      agentJoinedEvent &&
+      agentJoinedEvent.occurredAt < scenarioSession.startedAt
         ? agentJoinedEvent.occurredAt
         : scenarioSession.startedAt;
 
