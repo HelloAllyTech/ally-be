@@ -1082,6 +1082,17 @@ export class ScenarioSessionService {
     scenarioSession: ScenarioSessions,
     event: LearnEventData,
   ) {
+    // The agent's end-of-session SQS event can arrive after the session was
+    // already ended by another path (learner clicked "End", or
+    // RoomFinishedHandler detected a crash/disconnect/empty-room timeout and
+    // called endScenarioSession). Without this guard a delayed or redelivered
+    // event re-runs persistCallDuration, consumeSimulationCredits and the
+    // progression handlers a second time, double-charging the learner's
+    // credits, and overwrites eventStatus back to COMPLETED even if
+    // markSessionAbandoned had already labelled the row ABANDONED. Mirrors
+    // the same guard on handleSessionPausedEvent/handleSessionResumedEvent.
+    if (scenarioSession.status === ScenarioSessionStatus.ENDED) return;
+
     if (!ExecutionManager.getTenantId()) {
       ExecutionManager.setAuthContext(
         scenarioSession.counselorId.toString(),
