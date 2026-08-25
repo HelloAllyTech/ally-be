@@ -19,9 +19,7 @@ const MAX_FIELD = 'turnMaxEndpointingDelay';
  * since this DTO IS the defaults now.
  */
 @ValidatorConstraint({ name: 'isTurnEndpointingPair', async: false })
-export class IsTurnEndpointingPairConstraint
-  implements ValidatorConstraintInterface
-{
+export class IsTurnEndpointingPairConstraint implements ValidatorConstraintInterface {
   private failure = '';
 
   validate(_value: unknown, args: ValidationArguments): boolean {
