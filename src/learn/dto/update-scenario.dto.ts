@@ -685,7 +685,7 @@ export class UpdateScenarioDto {
   @ApiProperty({
     description:
       'Sub-toggles of enableFeedback, controlling which post-session tabs the ' +
-      "learner sees (debrief, skills, transcript). Omitting a key, or the whole " +
+      'learner sees (debrief, skills, transcript). Omitting a key, or the whole ' +
       'object, keeps that tab on.',
     example: { debrief: true, skills: false, transcript: true },
     required: false,
