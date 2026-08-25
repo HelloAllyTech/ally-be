@@ -1067,9 +1067,38 @@ export class ScenarioSessionService {
       return null;
     }
 
+    // Transcript start/end times from ally-ai-learn are relative to whatever
+    // it was told `conversationStartedAt` was. For a normal dispatch that's
+    // `scenarioSession.startedAt` (participant-joined.handler.ts sends it to
+    // the agent at dispatch time). But when the agent was *proactively*
+    // dispatched — already sitting in the room before the participant
+    // joined — that handler takes its early `agentAlreadyPresent` return
+    // before ever sending `conversationStartedAt`, so the agent falls back to
+    // its own actual room-join time instead, which precedes
+    // `scenarioSession.startedAt` by however long it pre-warmed. Anchoring the
+    // offset on `scenarioSession.startedAt` in that case leaves every
+    // transcript timestamp shifted later than the audio by that lead time, so
+    // detect it via the AGENT_JOINED lifecycle row (recorded independently,
+    // right when the agent's own participant_joined webhook fires) and anchor
+    // on that instead whenever it precedes the session start.
+    const agentJoinedEvent =
+      await this.scenarioSessionLifecycleEventRepository.findOne({
+        where: {
+          scenarioSessionId: scenarioSession.id,
+          type: ScenarioSessionLifecycleEventType.AGENT_JOINED,
+        },
+        order: { occurredAt: 'ASC' },
+      });
+
+    const transcriptAnchor =
+      agentJoinedEvent &&
+      agentJoinedEvent.occurredAt < scenarioSession.startedAt
+        ? agentJoinedEvent.occurredAt
+        : scenarioSession.startedAt;
+
     const transcriptVariationOffset =
       (new Date(recordingStartedAt).getTime() -
-        new Date(scenarioSession.startedAt).getTime()) /
+        new Date(transcriptAnchor).getTime()) /
       1000;
     await this.scenarioSessionMessagesRepository.updateTranscriptTimestamps(
       scenarioSession.id,
