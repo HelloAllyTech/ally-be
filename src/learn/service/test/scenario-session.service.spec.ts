@@ -2006,6 +2006,25 @@ describe('ScenarioSessionService', () => {
       );
     });
 
+    it('handleEndScenarioSessionEvent is a no-op once the session has already ended', async () => {
+      // Simulates a crash/disconnect: RoomFinishedHandler already ran
+      // endScenarioSession (status=ENDED, credits consumed) before the
+      // agent's delayed end-of-session SQS event is processed.
+      await service.handleEndScenarioSessionEvent(
+        {
+          ...mockScenarioSession,
+          startedAt,
+          endedAt,
+          status: ScenarioSessionStatus.ENDED,
+        } as any,
+        { event_data: { id: 'end-of-session', totalScore: 0 } } as any,
+      );
+
+      expect(scenarioSessionDetailsRepository.upsert).not.toHaveBeenCalled();
+      expect(simulationCreditsService.consumeCredits).not.toHaveBeenCalled();
+      expect(scenarioSessionRepository.update).not.toHaveBeenCalled();
+    });
+
     it('handleEndScenarioSessionEvent consumes credits for the duration it computes', async () => {
       // 274s active -> 4 full credits + 34s (>=30) -> 5 credits
       scenarioSessionRepository.update.mockResolvedValue({
