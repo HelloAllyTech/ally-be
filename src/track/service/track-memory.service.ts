@@ -29,6 +29,15 @@ const FACT_MAX_CHARS = 160;
 /** Bound of the facts block appended to the injected previousMemory. */
 const FACTS_BLOCK_MAX_CHARS = 1600;
 
+/**
+ * Comparison form of a fact. Shared by the two places that ask "is this the
+ * same fact?" — the LLM path's identity resolution and the fallback path's
+ * duplicate check — so the two can never disagree about what counts as
+ * unchanged wording.
+ */
+const normalizeFact = (fact: string): string =>
+  fact.toLowerCase().replace(/\s+/g, ' ').trim();
+
 interface TrackMemoryItemEntry {
   sessionId: string;
   summary: string;
@@ -92,9 +101,21 @@ export class TrackMemoryService {
 
   /**
    * Fold one session's memory into the enrollment's consolidated memory.
-   * Idempotent per (item, session): re-delivery (the two-phase
-   * session_memory upgrade) or a replay simply replaces that item's entry
-   * and re-consolidates. Never throws — memory folding is best-effort.
+   * Never throws — memory folding is best-effort.
+   *
+   * `items` and `summary` are idempotent per (item, session) BY CONSTRUCTION:
+   * re-delivery (the two-phase session_memory upgrade, which happens on every
+   * session) or a replay replaces that item's entry and re-consolidates from
+   * the replaced set.
+   *
+   * `facts` is NOT — it is an accumulator, and the same session's disclosures
+   * are re-submitted on every re-delivery. Nothing structural stops that
+   * double-counting; it rests entirely on the merge step recognising a
+   * restatement. That was checked against the live model rather than assumed
+   * (five facts re-sent as seven reworded disclosures came back as the same
+   * five plus the two genuinely new ones), so this is a known and measured
+   * dependency, not an oversight. If the merge model is ever changed, re-check
+   * it — the failure would be silent duplicate facts.
    */
   async foldSessionMemory({
     trackItemProgressId,
@@ -306,40 +327,85 @@ export class TrackMemoryService {
         raw.slice(jsonStart, raw.lastIndexOf(']') + 1),
       ) as Array<{ id?: string; fact?: string; status?: string }>;
 
-      updated = [];
-      const seenIds = new Set<string>();
-      for (const entry of parsed) {
-        const fact = (entry.fact ?? '').trim().slice(0, FACT_MAX_CHARS);
-        if (!fact) continue;
-        const status: TrackLearnedFact['status'] =
-          entry.status === 'superseded' ? 'superseded' : 'active';
+      const entries = parsed
+        .map((entry) => ({
+          id: entry.id,
+          fact: (entry.fact ?? '').trim().slice(0, FACT_MAX_CHARS),
+          status: (entry.status === 'superseded'
+            ? 'superseded'
+            : 'active') as TrackLearnedFact['status'],
+        }))
+        .filter((entry) => entry.fact);
+
+      // A FACT'S IDENTITY FOLLOWS ITS TEXT, NOT THE SLOT THE MODEL PUT IT IN.
+      //
+      // Asked to supersede, the model reads an id as belonging to the TOPIC
+      // rather than to the fact: it reassigns the existing id to the new fact
+      // and invents `old-<id>` for the original. Observed against the live
+      // model on a three-way contradiction — every one of the three came back
+      // that way round. Resolving by id alone then inverts the bookkeeping:
+      // the original's text is overwritten in place while a fresh uuid is
+      // minted for it, stamped with TODAY's session and createdAt. That
+      // falsifies the audit trail the superseded rows exist to be, moves a
+      // fact's durable id every time it is revised, and leaves the
+      // MAX_ACTIVE_FACTS retirement sorting on a createdAt that no longer
+      // describes the fact carrying it.
+      //
+      // So: bind by verbatim text first, and only then by id. An entry whose
+      // text is unchanged IS that fact whatever id it arrived under; an id is
+      // just the fallback for a fact whose wording genuinely changed.
+      const claimedIds = new Set<string>();
+      const resolved: Array<TrackLearnedFact | undefined> = new Array(
+        entries.length,
+      );
+      const byText = new Map<string, TrackLearnedFact>();
+      for (const f of existing) {
+        const key = normalizeFact(f.fact);
+        if (!byText.has(key)) byText.set(key, f);
+      }
+
+      entries.forEach((entry, i) => {
+        const prior = byText.get(normalizeFact(entry.fact));
+        if (prior && !claimedIds.has(prior.id)) {
+          claimedIds.add(prior.id);
+          resolved[i] = prior;
+        }
+      });
+      entries.forEach((entry, i) => {
+        if (resolved[i]) return;
         const prior = entry.id ? byId.get(entry.id) : undefined;
-        if (prior) {
-          seenIds.add(prior.id);
-          updated.push({
-            ...prior,
-            fact,
-            status,
-            updatedAt:
-              fact !== prior.fact || status !== prior.status
-                ? now
-                : prior.updatedAt,
-          });
-        } else {
-          updated.push({
+        if (prior && !claimedIds.has(prior.id)) {
+          claimedIds.add(prior.id);
+          resolved[i] = prior;
+        }
+      });
+
+      updated = entries.map((entry, i) => {
+        const prior = resolved[i];
+        if (!prior) {
+          return {
             id: randomUUID(),
-            fact,
-            status,
+            fact: entry.fact,
+            status: entry.status,
             sourceSessionId: scenarioSessionId,
             createdAt: now,
             updatedAt: now,
-          });
+          };
         }
-      }
+        return {
+          ...prior,
+          fact: entry.fact,
+          status: entry.status,
+          updatedAt:
+            entry.fact !== prior.fact || entry.status !== prior.status
+              ? now
+              : prior.updatedAt,
+        };
+      });
       // Reconcile: any existing fact the LLM omitted is kept unchanged —
       // omission must never delete memory.
       for (const f of existing) {
-        if (!seenIds.has(f.id)) updated.push(f);
+        if (!claimedIds.has(f.id)) updated.push(f);
       }
     } catch (error) {
       this.logger.warn(
@@ -349,12 +415,10 @@ export class TrackMemoryService {
       );
       // Deterministic fallback: append disclosures not already present
       // (normalized exact match), all active.
-      const normalized = new Set(
-        existing.map((f) => f.fact.toLowerCase().replace(/\s+/g, ' ').trim()),
-      );
+      const normalized = new Set(existing.map((f) => normalizeFact(f.fact)));
       updated = [...existing];
       for (const d of newDisclosures) {
-        const key = d.toLowerCase().replace(/\s+/g, ' ').trim();
+        const key = normalizeFact(d);
         if (normalized.has(key)) continue;
         normalized.add(key);
         updated.push({

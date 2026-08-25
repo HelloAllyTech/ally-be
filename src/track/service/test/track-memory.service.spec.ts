@@ -316,6 +316,160 @@ describe('TrackMemoryService', () => {
       expect(mockCreate).not.toHaveBeenCalled(); // single-item fold + no facts
     });
 
+    it("supersession keeps the ORIGINAL fact's id and provenance, and gives the replacement its own", async () => {
+      // The golden-record property: one stable identity per fact. A superseded
+      // entry is the audit trail of when something STOPPED being true, so it
+      // has to keep pointing at the session it came FROM, not the one that
+      // retired it.
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify([
+              { id: 'g1', fact: 'Works night shifts', status: 'superseded' },
+              {
+                id: 'new-1',
+                fact: 'Moved to days last month',
+                status: 'active',
+              },
+            ]),
+          },
+        ],
+        usage: { input_tokens: 10, output_tokens: 10 },
+      });
+      const facts = await foldWith(
+        [
+          {
+            id: 'g1',
+            fact: 'Works night shifts',
+            status: 'active',
+            sourceSessionId: 'sess-1',
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+        ],
+        ['I moved to the day shift last month'],
+      );
+
+      const retired = facts.find((f) => f.fact === 'Works night shifts');
+      expect(retired.id).toBe('g1');
+      expect(retired.status).toBe('superseded');
+      expect(retired.sourceSessionId).toBe('sess-1'); // NOT the retiring session
+      expect(retired.createdAt).toBe('2026-01-01T00:00:00Z');
+
+      const replacement = facts.find(
+        (f) => f.fact === 'Moved to days last month',
+      );
+      expect(replacement.id).not.toBe('g1');
+      expect(replacement.status).toBe('active');
+      expect(replacement.sourceSessionId).toBe('sess-9');
+    });
+
+    it('survives the model putting the ids the wrong way round', async () => {
+      // Observed against the live model before the prompt spelled the
+      // convention out: it treats an id as belonging to the TOPIC, reassigning
+      // it to the new fact and inventing `old-<id>` for the original. Resolving
+      // by id alone inverts the bookkeeping — the original is overwritten in
+      // place and a fresh uuid stamped with today's session is minted for it.
+      // Binding by text first makes the outcome identical to the correct form
+      // above, so a model regression cannot corrupt the trail.
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify([
+              { id: 'g1', fact: 'Moved to days last month', status: 'active' },
+              {
+                id: 'old-g1',
+                fact: 'Works night shifts',
+                status: 'superseded',
+              },
+            ]),
+          },
+        ],
+        usage: { input_tokens: 10, output_tokens: 10 },
+      });
+      const facts = await foldWith(
+        [
+          {
+            id: 'g1',
+            fact: 'Works night shifts',
+            status: 'active',
+            sourceSessionId: 'sess-1',
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+        ],
+        ['I moved to the day shift last month'],
+      );
+
+      const retired = facts.find((f) => f.fact === 'Works night shifts');
+      expect(retired.id).toBe('g1'); // identity followed the text, not the slot
+      expect(retired.status).toBe('superseded');
+      expect(retired.sourceSessionId).toBe('sess-1');
+      expect(retired.createdAt).toBe('2026-01-01T00:00:00Z');
+
+      const replacement = facts.find(
+        (f) => f.fact === 'Moved to days last month',
+      );
+      expect(replacement.id).not.toBe('g1');
+      expect(replacement.status).toBe('active');
+      expect(replacement.sourceSessionId).toBe('sess-9');
+      expect(facts).toHaveLength(2);
+    });
+
+    it('re-delivery of the same session does not duplicate what it already contributed', async () => {
+      // Every track session folds TWICE (the two-phase session_memory
+      // upgrade), re-submitting its own disclosures. items/summary are
+      // idempotent by construction; facts are not, so this pins the seam we
+      // actually depend on.
+      mockCreate.mockResolvedValue({
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify([
+              {
+                id: 'f1',
+                fact: 'Works night shifts at the factory',
+                status: 'active',
+              },
+              { id: 'f2', fact: 'Music helps him calm down', status: 'active' },
+              {
+                id: 'new-1',
+                fact: 'Mother has been unwell since January',
+                status: 'active',
+              },
+            ]),
+          },
+        ],
+        usage: { input_tokens: 10, output_tokens: 10 },
+      });
+      const facts = await foldWith(
+        [
+          {
+            id: 'f1',
+            fact: 'Works night shifts at the factory',
+            status: 'active',
+            sourceSessionId: 'sess-9',
+          },
+          {
+            id: 'f2',
+            fact: 'Music helps him calm down',
+            status: 'active',
+            sourceSessionId: 'sess-9',
+          },
+        ],
+        [
+          'I work nights at the factory',
+          'Music helps me feel calm',
+          'My mother has been unwell since January',
+        ],
+      );
+      expect(facts).toHaveLength(3); // 2 kept + 1 genuinely new, nothing doubled
+      expect(facts.filter((f) => f.id === 'f1')).toHaveLength(1);
+      expect(facts.find((f) => f.id === 'f1').fact).toBe(
+        'Works night shifts at the factory',
+      );
+    });
+
     it('caps active facts by superseding the oldest', async () => {
       mockCreate.mockRejectedValue(new Error('llm down')); // use fallback path
       const existing = Array.from({ length: 40 }, (_, i) => ({

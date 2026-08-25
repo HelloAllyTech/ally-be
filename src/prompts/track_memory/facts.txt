@@ -11,6 +11,9 @@ You maintain the LEARNED FACTS list for an AI client persona across a multi-sess
   [{"id": "<keep existing id, or new-1/new-2/... for new facts>", "fact": "<the fact>", "status": "active" | "superseded"}]
 - Keep every existing fact, with its original id. Do not drop entries — mark them "superseded" instead when they stop being true.
 - Mark an existing fact "superseded" when a new disclosure contradicts or replaces it; add the replacing fact as a new active fact.
+- An id belongs to the FACT, not to the topic. When you supersede, the existing entry keeps BOTH its own id AND its own original wording — never move its id onto the replacement, and never invent an id like "old-f7" for the original. The replacement is a separate new entry.
+  Existing: [{"id": "f7", "fact": "Works night shifts", "status": "active"}] + disclosure "I moved to days last month"
+  Correct:  [{"id": "f7", "fact": "Works night shifts", "status": "superseded"}, {"id": "new-1", "fact": "Moved to the day shift last month", "status": "active"}]
 - Merge duplicates: if a new disclosure restates an existing fact (even in different words), keep the existing entry and do NOT add a new one. Update the existing fact's wording only if the new version adds concrete detail.
 - Each fact must be ATOMIC (exactly one fact), concrete, at most 160 characters, and written in the SAME LANGUAGE as the inputs.
 - Only include durable facts (people, events, circumstances, what helps/doesn't help). Transient states ("felt anxious today") are NOT facts.
