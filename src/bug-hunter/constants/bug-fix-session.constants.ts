@@ -156,3 +156,15 @@ export const BUG_FIX_SESSION_DISPATCH_TIMEOUT_MS = 30 * 60 * 1000;
  * normal duration rather than near it.
  */
 export const BUG_RELEASE_TIMEOUT_MS = 90 * 60 * 1000;
+
+/**
+ * How long a fix session may sit in FIXING with no resolvable GitHub Actions
+ * run before the reconcile task gives up waiting for one.
+ *
+ * Every repo's `bug-fix-session.yml` caps itself at `timeout-minutes: 60`, so
+ * GitHub itself never lets a run outlive that — this is only the fallback for
+ * when `sessionRunId` was never resolved at all (a `findRunSince` that kept
+ * missing), set past the workflow's own cap rather than near it, the same
+ * reasoning as `BUG_RELEASE_TIMEOUT_MS`.
+ */
+export const BUG_FIX_SESSION_RUN_TIMEOUT_MS = 75 * 60 * 1000;

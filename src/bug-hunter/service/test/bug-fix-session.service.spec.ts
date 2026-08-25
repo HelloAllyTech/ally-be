@@ -533,6 +533,125 @@ describe('BugFixSessionService', () => {
       });
     });
 
+    it('fails a FIXING finding whose GitHub Actions run already ended without it self-reporting', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.FIXING
+          ? [
+              findingRow({
+                status: BugFindingStatus.FIXING,
+                sessionRunId: '99',
+                dispatchedAt: new Date(Date.now() - 70 * 60 * 1000),
+              }),
+            ]
+          : [],
+      );
+      github.getRun.mockResolvedValue({
+        id: '99',
+        htmlUrl: 'https://github.com/run/99',
+        status: 'completed',
+        conclusion: 'cancelled',
+      });
+
+      await service.reconcile();
+
+      expect(github.getRun).toHaveBeenCalledWith('ally-be', '99');
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.FAILED,
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'finding-1',
+          stage: BugHuntEventStage.ERROR,
+          summary: expect.stringMatching(/cancelled/i),
+        }),
+      );
+    });
+
+    it("resolves a FIXING finding's run id first if the reconcile loop never caught it, then fails it once that run is done", async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.FIXING
+          ? [
+              findingRow({
+                status: BugFindingStatus.FIXING,
+                sessionRunId: null,
+                dispatchedAt: new Date(Date.now() - 70 * 60 * 1000),
+              }),
+            ]
+          : [],
+      );
+      github.findRunSince.mockResolvedValue({
+        id: '99',
+        htmlUrl: 'https://github.com/run/99',
+      });
+      github.getRun.mockResolvedValue({
+        id: '99',
+        htmlUrl: 'https://github.com/run/99',
+        status: 'completed',
+        conclusion: 'failure',
+      });
+
+      await service.reconcile();
+
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        sessionRunUrl: 'https://github.com/run/99',
+        sessionRunId: '99',
+      });
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.FAILED,
+      });
+    });
+
+    it('leaves a still-running FIXING finding alone', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.FIXING
+          ? [
+              findingRow({
+                status: BugFindingStatus.FIXING,
+                sessionRunId: '99',
+                dispatchedAt: new Date(Date.now() - 10 * 60 * 1000),
+              }),
+            ]
+          : [],
+      );
+      github.getRun.mockResolvedValue({
+        id: '99',
+        htmlUrl: 'https://github.com/run/99',
+        status: 'in_progress',
+        conclusion: null,
+      });
+
+      await service.reconcile();
+
+      expect(findingRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('fails a FIXING finding past the timeout whose run could never be resolved at all', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.FIXING
+          ? [
+              findingRow({
+                status: BugFindingStatus.FIXING,
+                sessionRunId: null,
+                dispatchedAt: new Date(Date.now() - 80 * 60 * 1000),
+              }),
+            ]
+          : [],
+      );
+      github.findRunSince.mockResolvedValue(null);
+
+      await service.reconcile();
+
+      expect(github.getRun).not.toHaveBeenCalled();
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.FAILED,
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          summary: expect.stringMatching(/could never be found/i),
+        }),
+      );
+    });
+
     it('flips a PR_OPENED finding to MERGED once GitHub reports it merged — the human-review-merge case', async () => {
       findingRepository.find.mockImplementation(({ where }: any) =>
         where.status === BugFindingStatus.PR_OPENED
