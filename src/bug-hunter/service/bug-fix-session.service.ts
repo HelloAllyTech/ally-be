@@ -44,6 +44,7 @@ import {
   BUG_FIX_SESSION_DEFAULT_REF,
   BUG_FIX_SESSION_DISPATCH_TIMEOUT_MS,
   BUG_FIX_SESSION_REPOS,
+  BUG_FIX_SESSION_RUN_TIMEOUT_MS,
   BUG_FIX_SESSION_WORKFLOW_FILE,
   BUG_RELEASE_TIMEOUT_MS,
   resolveReleaseTarget,
@@ -191,8 +192,9 @@ export class BugFixSessionService {
    * escalation-answer poll and every reconcile pass are keyed off status
    * (QUEUED/FIXING/NEEDS_INPUT), so a status that has moved to CANCELLED
    * simply stops matching those queries on the very next read — see
-   * `reconcileQueuedSessions`/`reconcilePrOpenedFindings`'s `WHERE status =`
-   * filters and `advancePlans`'s stuck-step check for a cancelled child.
+   * `reconcileQueuedSessions`/`reconcileFixingSessions`/`reconcilePrOpenedFindings`'s
+   * `WHERE status =` filters and `advancePlans`'s stuck-step check for a
+   * cancelled child.
    */
   async cancelFixSession(
     findingId: string,
@@ -573,8 +575,8 @@ export class BugFixSessionService {
   // ── reconcile (scheduled) ────────────────────────────────────────────────
 
   /**
-   * Closes the loop on both dispatches, since neither tells us anything at the
-   * moment it is made: `workflow_dispatch` returns 204 with no run id.
+   * Closes the loop on every dispatch, since none of them tell us anything at
+   * the moment they're made: `workflow_dispatch` returns 204 with no run id.
    *
    * Runs on the 5-minute tick. Everything it does is idempotent and derived
    * from GitHub's own state, so a missed tick or a double-run costs nothing.
@@ -582,9 +584,10 @@ export class BugFixSessionService {
   async reconcile(): Promise<void> {
     if (!this.github.isConfigured) return;
     await this.reconcileQueuedSessions();
+    await this.reconcileFixingSessions();
     await this.reconcilePrOpenedFindings();
     await this.reconcileReleases();
-    // Order matters: the three passes above settle each step's own status from
+    // Order matters: the four passes above settle each step's own status from
     // GitHub, and these two then read those settled statuses to decide what to
     // start next. Running them first would advance a plan on stale state.
     await this.advancePlans();
@@ -822,6 +825,92 @@ export class BugFixSessionService {
         // One stuck finding must never stop the rest of the tick.
         this.logger.warn(
           `Could not reconcile queued fix session ${finding.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  /**
+   * FIXING → FAILED when the GitHub Actions run itself has ended — success,
+   * failure, cancellation, or the workflow's own `timeout-minutes: 60` cap —
+   * without the fix agent ever self-reporting a PR, a plan, or an escalation.
+   *
+   * Every normal way out of FIXING is the agent's own doing (PR_OPENED,
+   * NEEDS_INPUT, a plan's next step), so this pass usually finds nothing. It
+   * exists for the case those rely on not happening: the runner dies, loops
+   * past its own timeout, or is killed by GitHub before it calls back.
+   * Without it, nothing in `reconcile` ever looks at a FIXING finding's run
+   * again — the exact way `cancelFixSession`'s manual kill switch was found
+   * to be the only thing unsticking a finding stranded here, hours after its
+   * run had already ended.
+   */
+  private async reconcileFixingSessions(): Promise<void> {
+    const fixing = await this.findingRepository.find({
+      where: { status: BugFindingStatus.FIXING },
+    });
+
+    for (const finding of fixing) {
+      try {
+        let runId = finding.sessionRunId ?? null;
+        if (!runId && finding.repo && finding.dispatchedAt) {
+          const found = await this.github.findRunSince({
+            repo: finding.repo,
+            workflow: BUG_FIX_SESSION_WORKFLOW_FILE,
+            since: finding.dispatchedAt,
+          });
+          if (found) {
+            runId = found.id;
+            await this.findingRepository.update(finding.id, {
+              sessionRunUrl: found.htmlUrl,
+              sessionRunId: found.id,
+            });
+          }
+        }
+
+        const run =
+          runId && finding.repo
+            ? await this.github.getRun(finding.repo, runId)
+            : null;
+
+        if (run?.status === 'completed') {
+          await this.findingRepository.update(finding.id, {
+            status: BugFindingStatus.FAILED,
+          });
+          await this.bugHunterService.appendFindingEvent({
+            findingId: finding.id,
+            repo: finding.repo,
+            stage: BugHuntEventStage.ERROR,
+            summary: `The fix session's GitHub Actions run ended (${run.conclusion ?? 'unknown'}) without reporting a result. Marked failed — start a new session to retry.`,
+            payload: { runId, conclusion: run.conclusion, runUrl: run.htmlUrl },
+          });
+          continue;
+        }
+
+        // Still running, or we could never resolve a run at all. Either way,
+        // stop waiting once the window is past — same reasoning as
+        // `reconcileReleases`'s unresolved-run fallback.
+        const age = finding.dispatchedAt
+          ? Date.now() - finding.dispatchedAt.getTime()
+          : Number.POSITIVE_INFINITY;
+        if (age > BUG_FIX_SESSION_RUN_TIMEOUT_MS) {
+          await this.findingRepository.update(finding.id, {
+            status: BugFindingStatus.FAILED,
+          });
+          await this.bugHunterService.appendFindingEvent({
+            findingId: finding.id,
+            repo: finding.repo,
+            stage: BugHuntEventStage.ERROR,
+            summary: run
+              ? 'The fix session is still running past its expected window. Marked failed — start a new session to retry.'
+              : 'The fix session was dispatched but its GitHub Actions run could never be found. Marked failed — start a new session to retry.',
+            payload: { runId, dispatchedAt: finding.dispatchedAt },
+          });
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Could not reconcile fixing session ${finding.id}: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );
