@@ -31,13 +31,34 @@ src/prompts/
 │   ├── character_profile_text.txt
 │   ├── challenge_description.txt
 │   └── ...
-└── openai_translation/
+├── openai_translation/
+│   ├── _meta/
+│   │   └── guardrail_translation.meta.json
+│   ├── code_mixed_system.txt
+│   ├── speech_reexpression_user.txt
+│   └── ...
+└── builder/
     ├── _meta/
-    │   └── guardrail_translation.meta.json
-    ├── code_mixed_system.txt
-    ├── speech_reexpression_user.txt
-    └── ...
+    │   └── interviewer_system.meta.json
+    └── interviewer_system.txt
 ```
+
+### Agent system prompts
+
+A folder like `builder/` (or `character_interview/`, `roleplay_copilot/`) holds the *system*
+prompt for a long-running agent rather than a one-shot generation. Two things differ:
+
+- It is read by code through `PromptSharedService.getPromptByCode('<folder>_<file>')`, not
+  picked by a human in the Admin Dashboard — so the `_meta` name and description are for
+  whoever later goes looking for it, not for a chooser.
+- The service must **degrade to a hardcoded fallback when the row is missing**, because a
+  prompt that has not been synced to the database yet would otherwise take the whole agent
+  down. Copy that pattern rather than throwing; the agent working slightly worse beats the
+  tab not opening.
+
+Prompts that a *runner* fetches over HTTP mid-run (Builder's build protocol) are not in this
+folder at all — they are TypeScript builders under `src/<domain>/constants/`, because they are
+assembled per run from live state rather than being static text.
 
 ## Meta JSON (optional)
 

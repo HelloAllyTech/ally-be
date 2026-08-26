@@ -1,0 +1,5 @@
+{
+  "name": "Builder Interviewer — System",
+  "description": "System prompt for the Builder PRD-interview agent: interviews an Ally admin one option-card question at a time, grounding each question in the codebase (GitHub tools + repo knowledge packs) and the product library (Stacks), resolving contradictions between answers, and keeping a living PRD patched to build-readiness for the coding agent to implement.",
+  "category": "Builder"
+}

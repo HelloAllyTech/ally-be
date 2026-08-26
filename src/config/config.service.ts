@@ -594,6 +594,65 @@ export class AppConfigService {
     };
   }
 
+  get builder() {
+    return {
+      // PRD-interview model. Same family as the copilot default so there is
+      // one model to upgrade.
+      interviewModel: this.configService.get<string>(
+        'BUILDER_INTERVIEW_MODEL',
+        'claude-sonnet-4-6',
+      ),
+      // Default coding model handed to the build runner. A workflow input
+      // rather than a constant so a session can override it and a
+      // non-Anthropic engine can be slotted in later.
+      buildModel: this.configService.get<string>(
+        'BUILDER_BUILD_MODEL',
+        'claude-sonnet-5',
+      ),
+      buildEngine: this.configService.get<string>(
+        'BUILDER_ENGINE',
+        'claude-code',
+      ),
+      // Hard cap on tool-use round-trips per interview turn. Generous because
+      // a substantial turn legitimately chains research calls with several
+      // update_prd patches; on cap-hit the orchestrator wraps up in prose.
+      maxToolIterations: this.configService.get<number>(
+        'BUILDER_MAX_TOOL_ITERATIONS',
+        16,
+      ),
+      // Default spend ceiling per session, in USD. Null disables the cap.
+      defaultBudgetUsd: this.configService.get<number>(
+        'BUILDER_DEFAULT_BUDGET_USD',
+        25,
+      ),
+    };
+  }
+
+  /**
+   * Where the admin console is served from, used to build deep links a person
+   * follows from outside the app — a Builder pull-request body pointing back
+   * at the session that produced it. Falls back to the local dev port so a
+   * missing setting yields an obviously-wrong link rather than a silent one.
+   */
+  get adminBaseUrl(): string {
+    return this.configService.get<string>(
+      'ADMIN_BASE_URL',
+      'http://localhost:8081',
+    );
+  }
+
+  /**
+   * Stacks — the team's curated product-guidance library, reached over HTTP
+   * (ally-be is not an MCP client). Optional: unset simply means the
+   * interview runs without product guidance.
+   */
+  get stacks() {
+    return {
+      apiUrl: this.configService.get<string>('STACKS_API_URL'),
+      apiKey: this.configService.get<string>('STACKS_API_KEY'),
+    };
+  }
+
   get characterInterview() {
     return {
       // Character-library interview agent model. Same family as the copilot

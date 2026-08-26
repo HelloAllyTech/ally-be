@@ -272,7 +272,10 @@ export class GithubActionsService {
   private requireConfigured(): void {
     if (this.isConfigured) return;
     throw new ServiceUnavailableException(
-      'GITHUB_TOKEN is not configured on this environment — Bug Hunter cannot dispatch workflows.',
+      // Deliberately names no caller: this client is shared (Bug Hunter and
+      // Builder both dispatch through it), and an error telling a Builder
+      // user that "Bug Hunter cannot dispatch" sends them to the wrong tab.
+      'GITHUB_TOKEN is not configured on this environment, so workflows cannot be dispatched.',
     );
   }
 

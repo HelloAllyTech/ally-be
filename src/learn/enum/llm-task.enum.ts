@@ -63,6 +63,10 @@ export enum LlmTask {
   // Character-library interview agent: one streamed interviewer/tool-loop
   // turn building a character profile.
   CHARACTER_INTERVIEW = 'character_interview',
+  // Builder: one streamed PRD-interview turn (the coding half's usage is
+  // reported by the runner and recorded against BUILDER_BUILD).
+  BUILDER_INTERVIEW = 'builder_interview',
+  BUILDER_BUILD = 'builder_build',
   // Track 2.0 quiz: grading one open-ended learner answer against its rubric.
   TRACK_QUIZ_GRADING = 'track_quiz_grading',
   TRANSLATE_SCENARIO = 'translate_scenario',
