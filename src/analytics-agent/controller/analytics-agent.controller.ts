@@ -8,7 +8,6 @@ import {
 } from '@nestjs/swagger';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import {
   AnalyticsAgentCatalogResponseDto,
   AskAnalyticsAgentDto,
@@ -39,9 +38,7 @@ export class AnalyticsAgentController {
   constructor(private readonly analyticsAgentService: AnalyticsAgentService) {}
 
   @Post('ask')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_AGENT, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_AGENT)
   @ApiOperation({
     summary: 'Ask an analytics question in English',
     description:
@@ -70,9 +67,7 @@ export class AnalyticsAgentController {
   }
 
   @Get('catalog')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_AGENT, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_AGENT)
   @ApiOperation({
     summary: 'Tables and columns the agent can read',
     description:

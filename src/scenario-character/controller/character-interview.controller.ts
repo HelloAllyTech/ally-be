@@ -20,10 +20,7 @@ import { TokenUser } from 'src/auth/type/auth.types';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import {
-  PreferenceName,
-  SUPER_DUPER_ADMIN_ROLES,
-} from 'src/common/constants/user.constants';
+import { PreferenceName } from 'src/common/constants/user.constants';
 import { LoggerService } from 'src/logger/logger.service';
 import { RedisService } from 'src/redis/service/redis.service';
 import { CharacterInterviewSessionService } from '../service/character-interview-session.service';
@@ -58,7 +55,6 @@ export class CharacterInterviewController {
 
   @Post('sessions')
   @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     tenantPreference: PreferenceName.CHARACTER_LIBRARY_ENABLED,
     permissions: [PERMISSIONS.CREATE_SCENARIO_CHARACTER],
   })
@@ -69,7 +65,6 @@ export class CharacterInterviewController {
 
   @Get('sessions')
   @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     tenantPreference: PreferenceName.CHARACTER_LIBRARY_ENABLED,
     permissions: [PERMISSIONS.CREATE_SCENARIO_CHARACTER],
   })
@@ -83,7 +78,6 @@ export class CharacterInterviewController {
 
   @Get('sessions/:sessionId')
   @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     tenantPreference: PreferenceName.CHARACTER_LIBRARY_ENABLED,
     permissions: [PERMISSIONS.CREATE_SCENARIO_CHARACTER],
   })
@@ -97,7 +91,6 @@ export class CharacterInterviewController {
 
   @Post('sessions/:sessionId/messages/stream')
   @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     tenantPreference: PreferenceName.CHARACTER_LIBRARY_ENABLED,
     permissions: [PERMISSIONS.CREATE_SCENARIO_CHARACTER],
   })

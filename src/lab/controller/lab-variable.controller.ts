@@ -17,7 +17,6 @@ import {
 import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
-import { SUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import { LabVariableService } from '../service/lab-variable.service';
 import {
   CreateLabVariableDto,
@@ -35,7 +34,6 @@ export class LabVariableController {
 
   @Get()
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AI_LAB],
   })
   @ApiOperation({ summary: 'List AI Lab variables' })
@@ -47,7 +45,6 @@ export class LabVariableController {
 
   @Get(':id')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AI_LAB],
   })
   @ApiOperation({ summary: 'Get one AI Lab variable by ID' })
@@ -57,7 +54,6 @@ export class LabVariableController {
 
   @Post()
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_AI_LAB],
   })
   @ApiOperation({ summary: 'Create an AI Lab variable (name must be unique)' })
@@ -67,7 +63,6 @@ export class LabVariableController {
 
   @Patch(':id')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_AI_LAB],
   })
   @ApiOperation({ summary: 'Update an AI Lab variable' })
@@ -80,7 +75,6 @@ export class LabVariableController {
 
   @Delete(':id')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.DELETE_AI_LAB],
   })
   @ApiOperation({

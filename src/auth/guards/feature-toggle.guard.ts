@@ -12,7 +12,6 @@ import {
   AUTHZ_MESSAGES,
   FAILURE_MESSAGES,
 } from 'src/exception/failure-messages';
-import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { FeatureToggleService } from 'src/authorization/service/feature-toggle.service';
 import { TenantFeatureService } from 'src/authorization/service/tenant-feature.service';
 import {
@@ -30,19 +29,17 @@ import {
  *
  * Fails closed: a missing toggle row is treated as disabled, never enabled.
  *
- * During the dual-gate rollout window, `legacyRoles` on the decorator is an
- * OR-fallback — a caller holding one of those role names also passes, so an
- * incomplete migration backfill can't lock out someone who was legitimately
- * SDA/SUPER_ADMIN-tier before. This branch is meant to be temporary; the
- * rollout plan calls for removing `legacyRoles` from every call site once the
- * backend migration is confirmed correct in production.
+ * The dual-gate rollout window has closed: the `legacyRoles` OR-fallback
+ * (any caller holding a pre-collapse SUPER_ADMIN/SUPER_DUPER_ADMIN role also
+ * passed, regardless of toggle state) has been removed from every call site.
+ * `CreatePlatformAdminRole1895000000001` backfilled every legacy role holder
+ * an equivalent toggle before this was safe to retire.
  */
 @Injectable()
 export class FeatureToggleGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly featureToggleService: FeatureToggleService,
-    private readonly permissionsService: PermissionsService,
     private readonly tenantFeatureService: TenantFeatureService,
   ) {}
 
@@ -69,16 +66,6 @@ export class FeatureToggleGuard implements CanActivate {
         statusCode: HttpStatus.UNAUTHORIZED,
         errorCode: ErrorCode.UNAUTHENTICATED,
       });
-    }
-
-    if (options.legacyRoles?.length) {
-      const roles = await this.permissionsService.getUserRoles(user.id);
-      const hasLegacyRole = options.legacyRoles.some((role) =>
-        roles.includes(role),
-      );
-      if (hasLegacyRole) {
-        return true;
-      }
     }
 
     const hasToggle = await this.featureToggleService.hasToggle(

@@ -22,10 +22,6 @@ import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorat
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
-import {
-  SUPER_ADMIN_ROLES,
-  SUPER_DUPER_ADMIN_ROLES,
-} from 'src/common/constants/user.constants';
 
 import { BugHuntSweepService } from '../service/bug-hunt-sweep.service';
 import { BugHunterService } from '../service/bug-hunter.service';
@@ -95,9 +91,7 @@ export class BugHunterController {
   ) {}
 
   @Get('settings')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({ summary: 'Read the kill switch (super-duper-admin)' })
   @ApiResponse({ status: 200, type: BugHunterSettingsDto })
   async getSettings(): Promise<BugHunterSettingsDto> {
@@ -105,9 +99,7 @@ export class BugHunterController {
   }
 
   @Patch('settings')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary: 'Change the kill switch mode (super-duper-admin)',
     description:
@@ -138,9 +130,7 @@ export class BugHunterController {
    * does not.
    */
   @Get('findings')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary:
       'The comprehensive bug table — every bug Bug Hunter knows about, from any source (super-admin+)',
@@ -184,9 +174,7 @@ export class BugHunterController {
    * hazard here.
    */
   @Get('findings/by-reported-bug/:opportunityId')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary:
       'The bug finding behind a roadmap opportunity id, for the deep-link redirect (super-admin+)',
@@ -205,9 +193,7 @@ export class BugHunterController {
 
   /** Read-only, so the same SUPER_ADMIN reasoning as `listFindings` applies. */
   @Get('findings/:id')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary:
       'One finding plus its event timeline, for the drawer (super-admin+)',
@@ -222,9 +208,7 @@ export class BugHunterController {
   }
 
   @Post('findings/:id/fix-session')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary:
       'Start a fix session for one bug — the on-demand path (super-duper-admin)',
@@ -250,9 +234,7 @@ export class BugHunterController {
   }
 
   @Post('findings/:id/cancel-fix-session')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary: 'Stop a running fix session (super-duper-admin)',
     description:
@@ -280,9 +262,7 @@ export class BugHunterController {
   }
 
   @Post('findings/:id/release')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary: 'Release a merged fix to production (super-duper-admin)',
     description:
@@ -340,9 +320,7 @@ export class BugHunterController {
   }
 
   @Patch('findings/:id/stage')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary:
       'Pin the coarse roadmap stage by hand, or return it to automatic (super-duper-admin)',
@@ -371,9 +349,7 @@ export class BugHunterController {
   }
 
   @Post('findings/:id/approve')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary: 'Approve a Manual-mode finding for fixing (super-duper-admin)',
     description:
@@ -390,9 +366,7 @@ export class BugHunterController {
   }
 
   @Post('findings/:id/reject')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary:
       'Decline to fix a finding — it will never be picked up (super-duper-admin)',
@@ -408,9 +382,7 @@ export class BugHunterController {
   }
 
   @Patch('findings/:id/description')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary:
       "Rewrite a bug's description before putting Bug Hunter on it (super-duper-admin)",
@@ -445,9 +417,7 @@ export class BugHunterController {
   }
 
   @Post('findings/:id/answer')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary: "Answer a finding's open escalation question (super-duper-admin)",
     description:
@@ -468,9 +438,7 @@ export class BugHunterController {
   }
 
   @Get('notifications')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary:
       "Bug Hunter's inbox — everything it wants to tell you (super-duper-admin)",
@@ -492,9 +460,7 @@ export class BugHunterController {
   }
 
   @Post('notifications/:id/read')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary: 'Mark one notification read (super-duper-admin)',
     description:
@@ -513,9 +479,7 @@ export class BugHunterController {
   }
 
   @Post('notifications/read-all')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({ summary: 'Clear the badge (super-duper-admin)' })
   async markAllNotificationsRead(
     @CurrentUser() user: TokenUser,
@@ -524,9 +488,7 @@ export class BugHunterController {
   }
 
   @Post('runs/trigger')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary: 'Start a repo-wide sweep now (super-duper-admin)',
     description:
@@ -562,9 +524,7 @@ export class BugHunterController {
   }
 
   @Get('runs')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({ summary: 'Run history, newest first (super-duper-admin)' })
   @ApiResponse({ status: 200, type: ListBugHuntRunsResponseDto })
   async listRuns(
@@ -577,9 +537,7 @@ export class BugHunterController {
   }
 
   @Get('runs/:id')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary: 'One run plus its full event timeline (super-duper-admin)',
   })
@@ -592,9 +550,7 @@ export class BugHunterController {
   }
 
   @Get('runs/:id/stream')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary:
       "Live event stream for one run (SSE: event / ping), for the admin tab's live run card",

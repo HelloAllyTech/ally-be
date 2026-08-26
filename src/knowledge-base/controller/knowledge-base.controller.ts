@@ -20,7 +20,6 @@ import {
 import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import {
   CreateKbDocumentDto,
   CreateKbUploadUrlDto,
@@ -52,7 +51,6 @@ export class KnowledgeBaseController {
 
   @Post('documents/upload-url')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.UPLOAD_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -74,7 +72,6 @@ export class KnowledgeBaseController {
 
   @Post('documents')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -90,7 +87,6 @@ export class KnowledgeBaseController {
 
   @Get('documents')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
   })
   @ApiOperation({ summary: 'List corpus documents' })
@@ -103,7 +99,6 @@ export class KnowledgeBaseController {
 
   @Get('stats')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
   })
   @ApiOperation({ summary: 'Corpus totals by status, for the stats strip' })
@@ -114,7 +109,6 @@ export class KnowledgeBaseController {
 
   @Post('search')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -131,7 +125,6 @@ export class KnowledgeBaseController {
   // match a two-segment path. Kept adjacent so the ordering is visible rather than incidental.
   @Get('chunks/:chunkId')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -145,7 +138,6 @@ export class KnowledgeBaseController {
 
   @Get('documents/:id')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
   })
   @ApiOperation({ summary: 'One document, with its ingest status' })
@@ -156,7 +148,6 @@ export class KnowledgeBaseController {
 
   @Get('documents/:id/chunks')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -176,7 +167,6 @@ export class KnowledgeBaseController {
 
   @Patch('documents/:id')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -193,7 +183,6 @@ export class KnowledgeBaseController {
 
   @Put('documents/:id/content')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -213,7 +202,6 @@ export class KnowledgeBaseController {
 
   @Post('documents/:id/reindex')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -229,7 +217,6 @@ export class KnowledgeBaseController {
 
   @Post('documents/:id/archive')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE],
   })
   @ApiOperation({
@@ -247,7 +234,6 @@ export class KnowledgeBaseController {
 
   @Post('documents/:id/unarchive')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE],
   })
   @ApiOperation({
@@ -262,7 +248,6 @@ export class KnowledgeBaseController {
 
   @Delete('documents/:id')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE],
   })
   @ApiOperation({

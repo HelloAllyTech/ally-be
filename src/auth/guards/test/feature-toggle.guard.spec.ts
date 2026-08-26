@@ -2,13 +2,12 @@ import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { FeatureToggleGuard } from '../feature-toggle.guard';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import { PreferenceName, UserRole } from 'src/common/constants/user.constants';
+import { PreferenceName } from 'src/common/constants/user.constants';
 
 describe('FeatureToggleGuard', () => {
   let guard: FeatureToggleGuard;
   let reflector: { getAllAndOverride: jest.Mock };
   let featureToggleService: { hasToggle: jest.Mock };
-  let permissionsService: { getUserRoles: jest.Mock };
   let tenantFeatureService: { isEnabledForTenant: jest.Mock };
 
   const contextFor = (user: any): ExecutionContext =>
@@ -24,7 +23,6 @@ describe('FeatureToggleGuard', () => {
   beforeEach(() => {
     reflector = { getAllAndOverride: jest.fn() };
     featureToggleService = { hasToggle: jest.fn().mockResolvedValue(false) };
-    permissionsService = { getUserRoles: jest.fn().mockResolvedValue([]) };
     tenantFeatureService = {
       isEnabledForTenant: jest.fn().mockResolvedValue(false),
     };
@@ -32,7 +30,6 @@ describe('FeatureToggleGuard', () => {
     guard = new FeatureToggleGuard(
       reflector as unknown as Reflector,
       featureToggleService as any,
-      permissionsService as any,
       tenantFeatureService as any,
     );
   });
@@ -65,20 +62,6 @@ describe('FeatureToggleGuard', () => {
       await expect(
         guard.canActivate(contextFor(platformAdmin)),
       ).rejects.toThrow(ForbiddenException);
-    });
-
-    it('grants on a legacy role during the rollout window', async () => {
-      reflector.getAllAndOverride.mockReturnValue({
-        featureKey: FeatureToggleKey.CHARACTER_LIBRARY,
-        legacyRoles: [UserRole.SUPER_DUPER_ADMIN],
-      });
-      permissionsService.getUserRoles.mockResolvedValue([
-        UserRole.SUPER_DUPER_ADMIN,
-      ]);
-
-      await expect(guard.canActivate(contextFor(platformAdmin))).resolves.toBe(
-        true,
-      );
     });
   });
 

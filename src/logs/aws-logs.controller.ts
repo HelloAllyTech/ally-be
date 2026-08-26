@@ -9,7 +9,6 @@ import {
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { LogsService } from './logs.service';
 import {
   AwsLogsQueryDto,
@@ -33,7 +32,6 @@ export class AwsLogsController {
   @ApiOperation({ summary: 'Search CloudWatch log events for a service' })
   @ApiResponse({ status: 200, type: AwsLogsResponseDto })
   @RequireFeatureToggle(FeatureToggleKey.LOGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AWS_LOGS],
   })
   @Get()
@@ -44,7 +42,6 @@ export class AwsLogsController {
   @ApiOperation({ summary: 'List recent CloudWatch log streams for a service' })
   @ApiResponse({ status: 200, type: AwsLogStreamsResponseDto })
   @RequireFeatureToggle(FeatureToggleKey.LOGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AWS_LOGS],
   })
   @Get('streams')

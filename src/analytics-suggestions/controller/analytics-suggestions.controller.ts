@@ -18,7 +18,6 @@ import {
 
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 import {
   AcceptSuggestionDto,
@@ -58,9 +57,7 @@ export class AnalyticsSuggestionsController {
   ) {}
 
   @Post('generate')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS)
   @ApiOperation({
     summary: 'Generate product suggestions from an analytics window',
     description:
@@ -93,9 +90,7 @@ export class AnalyticsSuggestionsController {
   }
 
   @Get()
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS)
   @ApiOperation({
     summary: 'List suggestions',
     description:
@@ -114,9 +109,7 @@ export class AnalyticsSuggestionsController {
   }
 
   @Post(':id/accept')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS)
   @ApiOperation({
     summary: 'Accept a suggestion and file it on the roadmap',
     description:
@@ -140,9 +133,7 @@ export class AnalyticsSuggestionsController {
   }
 
   @Post(':id/reject')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS_SUGGESTIONS)
   @ApiOperation({
     summary: 'Reject a suggestion',
     description:

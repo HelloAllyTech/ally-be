@@ -18,7 +18,6 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { ConversationalGuardrailsService } from '../service/conversational-guardrails.service';
 import { CreateConversationalGuardrailDto } from '../dto/create-conversational-guardrails.dto';
 import { UpdateConversationalGuardrailDto } from '../dto/update-conversational-guardrails.dto';
@@ -34,7 +33,6 @@ export class ConversationalGuardrailsController {
 
   @Get()
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_GUARDRAILS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_GUARDRAILS],
   })
   @ApiOperation({
@@ -64,7 +62,6 @@ export class ConversationalGuardrailsController {
 
   @Post()
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_GUARDRAILS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_GUARDRAILS],
   })
   @ApiOperation({ summary: 'Create a new guardrail' })
@@ -74,7 +71,6 @@ export class ConversationalGuardrailsController {
 
   @Put(':id')
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_GUARDRAILS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_GUARDRAILS],
   })
   @ApiOperation({ summary: 'Update a guardrail' })

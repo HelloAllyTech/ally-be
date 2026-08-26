@@ -29,7 +29,6 @@ import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-togg
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 import {
   AiDraftDto,
@@ -96,7 +95,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Get('product-goals/usage')
@@ -108,7 +106,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('product-goals')
@@ -120,7 +117,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Patch('product-goals/:id')
@@ -139,7 +135,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Put('product-goals/order')
@@ -151,7 +146,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Delete('product-goals/:id')
@@ -189,7 +183,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Get('opportunity-owners/usage')
@@ -198,7 +191,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('opportunity-owners')
@@ -210,7 +202,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Patch('opportunity-owners/:id')
@@ -223,7 +214,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Put('opportunity-owners/order')
@@ -235,7 +225,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Delete('opportunity-owners/:id')
@@ -310,7 +299,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('release-notes')
@@ -322,7 +310,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Patch('release-notes/:id')
@@ -335,7 +322,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Delete('release-notes/:id')
@@ -399,7 +385,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('ai/generate-claude-prompt')
@@ -423,7 +408,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('ai/release-notes')
@@ -442,7 +426,6 @@ export class RoadmapAdminController {
   // ── vector-index repair ───────────────────────────────────────────────────
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('admin/reindex')
@@ -458,7 +441,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('admin/vectors/prune')
@@ -478,7 +460,6 @@ export class RoadmapAdminController {
   // ── one-off Supabase migration ────────────────────────────────────────────
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('admin/import')
