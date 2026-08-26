@@ -63,11 +63,12 @@ export class OpportunityResponseDto {
 }
 
 /**
- * The confirmation returned to a consumer who filed a bug report — one-time only, by
- * design (see CreateConsumerBugReportDto's docblock): no "my reports" listing, no full
- * OpportunityResponseDto, since the consumer has no further use for the roadmap fields.
+ * The confirmation returned to whoever filed a bug report — one-time only, by design (see
+ * CreateBugReportDto's docblock): no "my reports" listing, no full OpportunityResponseDto,
+ * since a reporter has no further use for the roadmap fields. Staff track their report in
+ * Bug Hunter's findings table, where it lands, rather than back on this form.
  */
-export class ConsumerBugReportResponseDto {
+export class BugReportResponseDto {
   @ApiProperty() id!: string;
   @ApiProperty({ enum: RoadmapOpportunityStage })
   stage!: RoadmapOpportunityStage;

@@ -242,16 +242,18 @@ export class ReporterContextDto {
 }
 
 /**
- * A bug report filed by a logged-in consumer app user (web/mobile/helpline) — POST
- * /product-roadmap/bug-reports. Deliberately NOT CreateOpportunityDto: `type` is always
- * forced to BUG server-side and every staff-oriented field (productGoal, owner, prd,
- * claudePrompt, …) is irrelevant here, so accepting them would just be dead input a
- * consumer client could never legitimately send.
+ * A bug report filed by any logged-in user — a consumer in web/mobile/helpline, or a staff
+ * member using the admin roadmap's "Report a bug" button. POST /product-roadmap/bug-reports.
+ *
+ * Deliberately NOT CreateOpportunityDto: `type` is always forced to BUG server-side and
+ * every board-oriented field (productGoal, owner, prd, claudePrompt, …) is irrelevant to a
+ * bug now that bugs are triaged in Bug Hunter rather than voted on, so accepting them would
+ * just be dead input no client could legitimately send.
  *
  * No severity/category picker by design — this is the answer to one guided prompt
  * ("What were you trying to do?"), not a support ticket form.
  */
-export class CreateConsumerBugReportDto {
+export class CreateBugReportDto {
   @ApiProperty({
     maxLength: ROADMAP_LIMITS.DESCRIPTION_MAX,
     description: 'Free text answer to "What were you trying to do?"',

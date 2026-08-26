@@ -190,7 +190,7 @@ export class RoadmapOpportunity extends BaseWithoutTenantEntity {
   /**
    * Auto-captured client context for a consumer bug report: screen/route, app version,
    * device/OS, client timestamp. Populated entirely from what the client sends — see
-   * CreateConsumerBugReportDto.context — never inferred server-side beyond the User-Agent
+   * CreateBugReportDto.context — never inferred server-side beyond the User-Agent
    * fallback in the controller. Admin-visible only, alongside `description`; never runs
    * through crisis-content detection.
    */

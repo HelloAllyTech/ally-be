@@ -29,9 +29,9 @@ import { TokenUser } from 'src/auth/type/auth.types';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { RateLimit } from 'src/rate-limit/decorator/rate-limit.decorator';
 
-import { CONSUMER_BUG_REPORT_RATE_LIMIT } from '../constants/product-roadmap.constants';
+import { BUG_REPORT_RATE_LIMIT } from '../constants/product-roadmap.constants';
 import {
-  CreateConsumerBugReportDto,
+  CreateBugReportDto,
   CreateOpportunityDto,
   ListOpportunitiesQueryDto,
   MergeOpportunitiesDto,
@@ -43,7 +43,7 @@ import {
 } from '../dto/roadmap-opportunity.dto';
 import {
   CoinBudgetDto,
-  ConsumerBugReportResponseDto,
+  BugReportResponseDto,
   GetOpportunitiesResponseDto,
   MonthBoardMoveResponseDto,
   MonthBoardResponseDto,
@@ -185,36 +185,43 @@ export class RoadmapOpportunityController {
   }
 
   /**
-   * The consumer counterpart of `create` above: any logged-in app user (web/mobile/
-   * helpline), not just SUPER_ADMIN/SUPER_DUPER_ADMIN staff — deliberately a separate route
-   * on a plain JwtAuthGuard rather than widening vote:admin:product-roadmap to consumer
-   * accounts. Goes through the exact same RoadmapOpportunityService.create() pipeline as
-   * the staff path (Bug Hunter inbox row, vector indexing), so it needs no bespoke
-   * follow-up work to show up anywhere staff bugs already do.
+   * The bug counterpart of `create` above, and the ONE route every bug report takes: a
+   * consumer in web/mobile/helpline, and a staff member using the admin roadmap's "Report a
+   * bug" button, both land here. Deliberately a separate route on a plain JwtAuthGuard
+   * rather than widening vote:admin:product-roadmap to consumer accounts — and the staff
+   * button reuses it rather than posting a `bug`-type opportunity to /opportunities, so
+   * every report carries the same silently-captured triage context regardless of who filed
+   * it. `source` is derived from the reporter's own roles; see isInternalReporter.
+   *
+   * Goes through the exact same RoadmapOpportunityService.create() pipeline as the staff
+   * path (Bug Hunter inbox row, vector indexing), so it needs no bespoke follow-up work to
+   * show up where bugs are triaged.
    */
   @UseGuards(JwtAuthGuard)
   @RateLimit({
     key: 'userId',
-    name: 'consumerBugReport',
-    limit: CONSUMER_BUG_REPORT_RATE_LIMIT.LIMIT,
-    ttl: CONSUMER_BUG_REPORT_RATE_LIMIT.TTL_MS,
+    name: 'bugReport',
+    limit: BUG_REPORT_RATE_LIMIT.LIMIT,
+    ttl: BUG_REPORT_RATE_LIMIT.TTL_MS,
     errorMessage: 'Too many bug reports. Please try again later.',
   })
   @Post('bug-reports')
   @ApiOperation({
-    summary: 'File a bug report as a logged-in consumer app user',
+    summary: 'File a bug report as any logged-in user',
     description:
-      'Lands directly on the internal roadmap as a `bug`-type opportunity, tagged ' +
-      "source='consumer', through the same pipeline a staff-filed bug uses. No severity " +
-      'or category picker — the description is the answer to a single guided prompt. Not ' +
-      'run through any crisis-content safety pipeline: this is a plain admin-visible field.',
+      'Lands as a `bug`-type opportunity and, through the same pipeline, as a row in Bug ' +
+      "Hunter's findings table — where bugs are triaged, since they no longer render on " +
+      "the roadmap board. `source` is stamped 'staff' or 'consumer' from the reporter's " +
+      'own roles. No severity or category picker — the description is the answer to a ' +
+      'single guided prompt. Not run through any crisis-content safety pipeline: this is ' +
+      'a plain admin-visible field.',
   })
-  @ApiResponse({ status: 201, type: ConsumerBugReportResponseDto })
+  @ApiResponse({ status: 201, type: BugReportResponseDto })
   createBugReport(
     @CurrentUser() user: TokenUser,
-    @Body() dto: CreateConsumerBugReportDto,
-  ): Promise<ConsumerBugReportResponseDto> {
-    return this.opportunityService.createConsumerBugReport(
+    @Body() dto: CreateBugReportDto,
+  ): Promise<BugReportResponseDto> {
+    return this.opportunityService.createBugReport(
       user.id,
       user.tenantId ?? null,
       dto,
