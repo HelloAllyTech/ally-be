@@ -14,7 +14,10 @@ import { AiService } from 'src/ai/service/ai.service';
 
 import { RoadmapOpportunityRepository } from '../repository/roadmap-opportunity.repository';
 import { RoadmapProductGoalRepository } from '../repository/roadmap-taxonomy.repository';
-import { RoadmapOpportunityStage } from '../enum/roadmap-opportunity.enum';
+import {
+  RoadmapOpportunityStage,
+  RoadmapOpportunityType,
+} from '../enum/roadmap-opportunity.enum';
 import {
   ROADMAP_DUPLICATES,
   ROADMAP_LIMITS,
@@ -224,7 +227,10 @@ export class RoadmapAiService {
 
       if (productGoal) {
         const sameGoal = await this.opportunityRepository.find({
-          where: { productGoal },
+          // Ideas only. A bug is not a duplicate of an idea, and offering one as
+          // a merge candidate would drag it back onto a board it is no longer
+          // listed on — see EXCLUDE_BUGS_SQL in RoadmapOpportunityRepository.
+          where: { productGoal, type: RoadmapOpportunityType.IDEA },
           order: { createdAt: 'DESC' },
           take: ROADMAP_DUPLICATES.CANDIDATE_LIMIT,
         });
@@ -238,7 +244,13 @@ export class RoadmapAiService {
       // FILTER 1: resolve every candidate against live Postgres. This is also what supplies the
       // description text — ally-ai stores vectors only, never the opportunity text.
       const live = await this.opportunityRepository.find({
-        where: { id: In([...candidates.keys()]) },
+        // Ideas only here too, and not merely for symmetry: the vector index
+        // still holds bug embeddings, so without this a bug reaches the LLM as
+        // a candidate even though the same-goal branch above filtered them out.
+        where: {
+          id: In([...candidates.keys()]),
+          type: RoadmapOpportunityType.IDEA,
+        },
         take: ROADMAP_DUPLICATES.CANDIDATE_LIMIT,
       });
       if (live.length === 0) return { matches: [] };

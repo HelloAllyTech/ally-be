@@ -20,7 +20,11 @@ describe('BugHunterController', () => {
     releasability: jest.Mock;
     cancelFixSession: jest.Mock;
   };
-  let bugFindingService: { list: jest.Mock };
+  let bugFindingService: {
+    list: jest.Mock;
+    enrich: jest.Mock;
+    enrichOne: jest.Mock;
+  };
   const user: TokenUser = { id: 42, username: 'admin', tenantId: 'ally' };
 
   const findingRow = (overrides: Partial<BugFinding> = {}): BugFinding =>
@@ -69,7 +73,14 @@ describe('BugHunterController', () => {
       cancelFixSession: jest.fn(),
     };
 
-    bugFindingService = { list: jest.fn() };
+    // `enrich`/`enrichOne` resolve the reporter block and stage-pinner name from
+    // other tables; every case here is about routing and gating, so they pass the
+    // rows straight through.
+    bugFindingService = {
+      list: jest.fn(),
+      enrich: jest.fn().mockImplementation((rows) => Promise.resolve(rows)),
+      enrichOne: jest.fn().mockImplementation((row) => Promise.resolve(row)),
+    };
 
     controller = new BugHunterController(
       {} as never,

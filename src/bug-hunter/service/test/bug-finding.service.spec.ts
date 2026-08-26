@@ -2,6 +2,7 @@ import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 
 import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
+import { User } from 'src/user/entity/user.entity';
 import { RoadmapOpportunityStage } from 'src/product-roadmap/enum/roadmap-opportunity.enum';
 
 import { BUG_HUNTER_AGENT_ROADMAP_OWNER } from '../../constants/bug-fix-session.constants';
@@ -48,8 +49,8 @@ const row = (over: Partial<BugFinding> = {}): BugFinding =>
   }) as BugFinding;
 
 /**
- * Only `editDescription` writes to the event timeline, so everything else gets
- * a stub that would fail loudly if it were ever called with the wrong shape.
+ * `editDescription` and `setStage` write to the event timeline; everything else
+ * gets a stub that would fail loudly if it were ever called with the wrong shape.
  */
 const bugHunterService = (
   over: Partial<{ appendFindingEvent: jest.Mock }> = {},
@@ -68,6 +69,10 @@ const roadmapRepository = (
     update: jest.fn().mockResolvedValue(undefined),
     ...over,
   }) as unknown as Repository<RoadmapOpportunity>;
+
+/** Name resolution for `enrich` — irrelevant to every case in this file, so it returns nothing. */
+const userRepository = () =>
+  ({ find: jest.fn().mockResolvedValue([]) }) as unknown as Repository<User>;
 
 describe('BugFindingService.persistFindings', () => {
   let service: BugFindingService;
@@ -107,6 +112,7 @@ describe('BugFindingService.persistFindings', () => {
       repo as unknown as BugFindingRepository,
       notifications as unknown as BugHunterNotificationService,
       roadmapRepository(),
+      userRepository(),
       bugHunterService(),
     );
   });
@@ -250,6 +256,7 @@ describe('BugFindingService.raiseStaleEscalationDigest', () => {
       repo as unknown as BugFindingRepository,
       notifications as unknown as BugHunterNotificationService,
       roadmapRepository(),
+      userRepository(),
       bugHunterService(),
     );
   });
@@ -352,6 +359,7 @@ describe('BugFindingService.setStatus — releasing the reporter’s roadmap car
       repo as unknown as BugFindingRepository,
       notifications as unknown as BugHunterNotificationService,
       roadmap as unknown as Repository<RoadmapOpportunity>,
+      userRepository(),
       bugHunterService(),
     );
   };
@@ -477,6 +485,7 @@ describe('BugFindingService.editDescription', () => {
         wasRaisedSince: jest.fn(),
       } as unknown as BugHunterNotificationService,
       roadmapRepository(),
+      userRepository(),
       hunter as unknown as BugHunterService,
     );
   };
@@ -594,4 +603,286 @@ describe('BugFindingService.editDescription', () => {
       expect(repo.update).toHaveBeenCalled();
     },
   );
+});
+
+describe('BugFindingService.setStage', () => {
+  const ADMIN = 7;
+  let service: BugFindingService;
+  let repo: { findOne: jest.Mock; update: jest.Mock };
+  let hunter: { appendFindingEvent: jest.Mock };
+
+  /**
+   * `setStage` reads the row, writes, then reads back. The two reads see
+   * different rows — before and after the update — so the stub returns them in
+   * sequence rather than one fixed row, which is what lets the event summary's
+   * "was X" half be asserted at all.
+   */
+  const build = (before: BugFinding, after: BugFinding) => {
+    repo = {
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce(before)
+        .mockResolvedValueOnce(after),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    hunter = { appendFindingEvent: jest.fn().mockResolvedValue(undefined) };
+    service = new BugFindingService(
+      repo as unknown as BugFindingRepository,
+      {
+        notify: jest.fn(),
+        wasRaisedSince: jest.fn(),
+      } as unknown as BugHunterNotificationService,
+      roadmapRepository(),
+      userRepository(),
+      hunter as unknown as BugHunterService,
+    );
+  };
+
+  /**
+   * The case the whole feature exists for: somebody fixed the bug with an
+   * ordinary hand-written PR, so Bug Hunter's own status never moved off NEW.
+   */
+  it('pins a stage the pipeline would never have derived, and records who did it', async () => {
+    const before = row({ id: 'f1', status: BugFindingStatus.NEW });
+    build(
+      before,
+      row({
+        id: 'f1',
+        status: BugFindingStatus.NEW,
+        stageOverride: RoadmapOpportunityStage.RELEASED,
+      }),
+    );
+
+    const after = await service.setStage(
+      'f1',
+      RoadmapOpportunityStage.RELEASED,
+      ADMIN,
+    );
+
+    expect(repo.update).toHaveBeenCalledWith(
+      'f1',
+      expect.objectContaining({
+        stageOverride: RoadmapOpportunityStage.RELEASED,
+        stageOverriddenBy: ADMIN,
+        stageOverriddenAt: expect.any(Date),
+      }),
+    );
+    expect(after.stageOverride).toBe(RoadmapOpportunityStage.RELEASED);
+  });
+
+  /**
+   * Clearing must wipe the stamps too. Leaving `stageOverriddenBy` behind would
+   * make the drawer claim a pin that is no longer in force — the row is back to
+   * deriving, so nobody pinned it.
+   */
+  it('clears the pin and its stamps together when the stage is null', async () => {
+    build(
+      row({
+        id: 'f1',
+        status: BugFindingStatus.MERGED,
+        stageOverride: RoadmapOpportunityStage.NEW,
+        stageOverriddenBy: ADMIN,
+      }),
+      row({ id: 'f1', status: BugFindingStatus.MERGED, stageOverride: null }),
+    );
+
+    await service.setStage('f1', null, ADMIN);
+
+    expect(repo.update).toHaveBeenCalledWith('f1', {
+      stageOverride: null,
+      stageOverriddenBy: null,
+      stageOverriddenAt: null,
+    });
+  });
+
+  /**
+   * The timeline is where an admin reconstructs why a bug's stage and its
+   * pipeline status disagree. A stage that moved with no entry beside it reads
+   * as the pipeline having done it.
+   */
+  it('writes a runless timeline entry naming the before and after', async () => {
+    build(
+      row({ id: 'f1', status: BugFindingStatus.NEW, repo: REPO }),
+      row({
+        id: 'f1',
+        status: BugFindingStatus.NEW,
+        repo: REPO,
+        stageOverride: RoadmapOpportunityStage.RELEASED,
+      }),
+    );
+
+    await service.setStage('f1', RoadmapOpportunityStage.RELEASED, ADMIN);
+
+    expect(hunter.appendFindingEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        findingId: 'f1',
+        stage: BugHuntEventStage.STAGE_CHANGED,
+        summary: expect.stringContaining('was new'),
+        payload: expect.objectContaining({
+          changedBy: ADMIN,
+          from: RoadmapOpportunityStage.NEW,
+          to: RoadmapOpportunityStage.RELEASED,
+          pinned: true,
+        }),
+      }),
+    );
+  });
+
+  /**
+   * Pinning a stage to what it already derives to is a real act, not a no-op:
+   * "I checked this and it is right" is worth recording, and it stops a later
+   * transition from silently moving it.
+   */
+  it('still records a pin when the stage does not actually change', async () => {
+    build(
+      row({ id: 'f1', status: BugFindingStatus.MERGED }),
+      row({
+        id: 'f1',
+        status: BugFindingStatus.MERGED,
+        stageOverride: RoadmapOpportunityStage.RELEASED,
+      }),
+    );
+
+    await service.setStage('f1', RoadmapOpportunityStage.RELEASED, ADMIN);
+
+    expect(hunter.appendFindingEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        summary: expect.stringContaining('now pinned'),
+        payload: expect.objectContaining({ pinned: true }),
+      }),
+    );
+  });
+});
+
+describe('BugFindingService.enrich', () => {
+  const build = (
+    opportunities: Partial<RoadmapOpportunity>[],
+    users: Partial<User>[],
+  ) => {
+    const roadmap = {
+      find: jest.fn().mockResolvedValue(opportunities),
+      findOne: jest.fn(),
+      update: jest.fn(),
+    };
+    const usersRepo = { find: jest.fn().mockResolvedValue(users) };
+    return {
+      roadmap,
+      service: new BugFindingService(
+        { findOne: jest.fn() } as unknown as BugFindingRepository,
+        {
+          notify: jest.fn(),
+          wasRaisedSince: jest.fn(),
+        } as unknown as BugHunterNotificationService,
+        roadmap as unknown as Repository<RoadmapOpportunity>,
+        usersRepo as unknown as Repository<User>,
+        bugHunterService(),
+      ),
+    };
+  };
+
+  it('returns nothing without querying at all for an empty page', async () => {
+    const { service, roadmap } = build([], []);
+
+    await expect(service.enrich([])).resolves.toEqual([]);
+    expect(roadmap.find).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The reporter block is the only thing separating a real user's report from
+   * an agent-found lint error now that bugs are not on the roadmap board.
+   */
+  it('attaches the reporter, their tenant and their captured context', async () => {
+    const reportedAt = new Date('2026-08-20T10:00:00Z');
+    const { service } = build(
+      [
+        {
+          id: 'opp-1',
+          source: 'consumer',
+          createdBy: 12,
+          tenantId: 'acme',
+          reporterContext: { screen: '/cases', os: 'Android 14' },
+          createdAt: reportedAt,
+        } as Partial<RoadmapOpportunity>,
+      ],
+      [{ id: 12, name: 'Priya' }],
+    );
+
+    const [enriched] = await service.enrich([
+      row({ id: 'f1', reportedBugId: 'opp-1' }),
+    ]);
+
+    expect(enriched.report).toEqual({
+      opportunityId: 'opp-1',
+      reporterSource: 'consumer',
+      reportedBy: 12,
+      reportedByName: 'Priya',
+      tenantId: 'acme',
+      reporterContext: { screen: '/cases', os: 'Android 14' },
+      reportedAt,
+    });
+  });
+
+  it('leaves a sweep-found finding with no reporter block', async () => {
+    const { service, roadmap } = build([], []);
+
+    const [enriched] = await service.enrich([
+      row({ id: 'f1', reportedBugId: null }),
+    ]);
+
+    expect(enriched.report).toBeNull();
+    expect(roadmap.find).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A finding whose roadmap row was hard-deleted, or whose reporter's account is
+   * gone, still has to render — that is precisely the row somebody is trying to
+   * look at. Degrade to nulls, never throw.
+   */
+  it('degrades to nulls when the roadmap row or the user is gone', async () => {
+    const { service } = build([], []);
+
+    const [enriched] = await service.enrich([
+      row({ id: 'f1', reportedBugId: 'opp-gone', stageOverriddenBy: 99 }),
+    ]);
+
+    expect(enriched.report).toBeNull();
+    expect(enriched.stageOverriddenByName).toBeNull();
+  });
+
+  /**
+   * Batched on purpose: the obvious per-row lookup inside the DTO mapper is 100
+   * round trips to render a 50-row table.
+   */
+  it('reads every reporter and stage-pinner in one query each', async () => {
+    const { service, roadmap } = build(
+      [
+        { id: 'opp-1', source: 'staff', createdBy: 1, createdAt: new Date() },
+        {
+          id: 'opp-2',
+          source: 'consumer',
+          createdBy: 2,
+          createdAt: new Date(),
+        },
+      ] as Partial<RoadmapOpportunity>[],
+      [
+        { id: 1, name: 'One' },
+        { id: 2, name: 'Two' },
+        { id: 3, name: 'Three' },
+      ],
+    );
+
+    const enriched = await service.enrich([
+      row({ id: 'f1', reportedBugId: 'opp-1' }),
+      row({ id: 'f2', reportedBugId: 'opp-2', stageOverriddenBy: 3 }),
+      row({ id: 'f3', reportedBugId: null }),
+    ]);
+
+    expect(roadmap.find).toHaveBeenCalledTimes(1);
+    expect(enriched.map((f) => f.report?.reportedByName ?? null)).toEqual([
+      'One',
+      'Two',
+      null,
+    ]);
+    expect(enriched[1].stageOverriddenByName).toBe('Three');
+  });
 });

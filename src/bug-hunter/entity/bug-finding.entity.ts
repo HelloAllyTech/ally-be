@@ -1,5 +1,6 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import { RoadmapOpportunityStage } from 'src/product-roadmap/enum/roadmap-opportunity.enum';
 
 import {
   BugFindingSeverity,
@@ -146,6 +147,36 @@ export class BugFinding extends BaseWithoutTenantEntity {
 
   @Column({ name: 'decided_at', type: 'timestamp', nullable: true })
   decidedAt?: Date | null;
+
+  // ── roadmap stage, shown here because bugs are no longer on the board ───────
+
+  /**
+   * A hand-set stage that OVERRIDES the one derived from `status` — see
+   * bug-finding-stage.util.ts. Null (the norm) means the stage is derived, so it
+   * tracks the pipeline with nothing to maintain.
+   *
+   * Exists for the bug fixed outside Bug Hunter entirely: a hand-written PR, a
+   * config change, a fix that rode along with unrelated work. The pipeline never
+   * saw any of that, so its status stays at NEW while the bug is in fact shipped,
+   * and only a human can say so.
+   *
+   * Stored on the FINDING rather than on the linked roadmap row on purpose. Most
+   * findings (every sweep-discovered one) have no `reportedBugId` at all, and a
+   * stage that existed for human-reported bugs only would be a column the table
+   * could not sort or filter by.
+   *
+   * `character varying` with a CHECK constraint listing the RoadmapOpportunityStage
+   * values, per repo convention — see migration 1936000000000.
+   */
+  @Column({ name: 'stage_override', type: 'varchar', nullable: true })
+  stageOverride?: RoadmapOpportunityStage | null;
+
+  /** The admin who pinned the stage. Integer users.id with NO foreign key, per ally-be convention. */
+  @Column({ name: 'stage_overridden_by', type: 'int', nullable: true })
+  stageOverriddenBy?: number | null;
+
+  @Column({ name: 'stage_overridden_at', type: 'timestamp', nullable: true })
+  stageOverriddenAt?: Date | null;
 
   // ── coordinated multi-repo fixes (migration 1900000000000) ──────────────────
 

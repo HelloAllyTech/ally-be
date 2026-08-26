@@ -22,11 +22,17 @@ import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorat
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
+import {
+  SUPER_ADMIN_ROLES,
+  SUPER_DUPER_ADMIN_ROLES,
+} from 'src/common/constants/user.constants';
 
 import { BugHuntSweepService } from '../service/bug-hunt-sweep.service';
 import { BugHunterService } from '../service/bug-hunter.service';
-import { BugFindingService } from '../service/bug-finding.service';
+import {
+  BugFindingEnrichment,
+  BugFindingService,
+} from '../service/bug-finding.service';
 import { BugFixSessionService } from '../service/bug-fix-session.service';
 import { BugHunterNotificationService } from '../service/bug-hunter-notification.service';
 import { BugHunterSettings } from '../entity/bug-hunter-settings.entity';
@@ -53,11 +59,14 @@ import {
   BugHunterNotificationDto,
   ListBugHunterNotificationsQueryDto,
   ListBugHunterNotificationsResponseDto,
+  SetBugFindingStageDto,
+  BugFindingRefDto,
 } from '../dto/bug-hunter.dto';
 import {
   BUG_HUNT_SSE_PING_INTERVAL_MS,
   BUG_HUNT_SSE_POLL_INTERVAL_MS,
 } from '../constants/bug-hunter.constants';
+import { effectiveStage } from '../util/bug-finding-stage.util';
 
 /**
  * The Bug Hunter HUMAN admin surface — settings (kill switch), run history,
@@ -117,13 +126,24 @@ export class BugHunterController {
     );
   }
 
+  /**
+   * READ-ONLY, and open to SUPER_ADMIN as well as SUPER_DUPER_ADMIN — unlike
+   * every mutating endpoint on this controller.
+   *
+   * Bugs used to be visible on the product roadmap board, which SUPER_ADMINs can
+   * see. Now that bugs are listed here and nowhere else, keeping this tier at
+   * super-duper-admin would not have been "unchanged access", it would have
+   * silently removed a whole class of item from what a SUPER_ADMIN can see.
+   * Deciding what gets fixed stays super-duper-admin; knowing what is broken
+   * does not.
+   */
   @Get('findings')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    legacyRoles: SUPER_ADMIN_ROLES,
   })
   @ApiOperation({
     summary:
-      'The comprehensive bug table — every bug Bug Hunter knows about, from any source (super-duper-admin)',
+      'The comprehensive bug table — every bug Bug Hunter knows about, from any source (super-admin+)',
     description:
       'Newest first. Defaults to every status; pass `status` to filter to one, ' +
       'or `all` explicitly. A human-reported bug appears here from the moment ' +
@@ -144,16 +164,53 @@ export class BugHunterController {
       limit: query.limit ?? 50,
       offset: query.offset ?? 0,
     });
-    return { items: items.map(toFindingDto), count };
+    const enriched = await this.bugFindingService.enrich(items);
+    return { items: enriched.map(toFindingDto), count };
   }
 
-  @Get('findings/:id')
+  /**
+   * Resolve a roadmap opportunity id to the bug it became.
+   *
+   * Exists purely for the redirect: `?opportunity=<id>` links to bugs are in
+   * people's bookmarks, notifications and Slack scrollback, and bugs are no
+   * longer shown on the roadmap board. Rather than 404 those links, the roadmap
+   * drawer looks the id up here and sends the reader to the bug's Bug Hunter
+   * drawer instead.
+   *
+   * Read-only, so the same SUPER_ADMIN reasoning as `listFindings` applies.
+   *
+   * Declared ABOVE `findings/:id` for legibility only — the paths differ in
+   * segment count, so unlike the FastAPI trap in ally-ai there is no ordering
+   * hazard here.
+   */
+  @Get('findings/by-reported-bug/:opportunityId')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    legacyRoles: SUPER_ADMIN_ROLES,
   })
   @ApiOperation({
     summary:
-      'One finding plus its event timeline, for the drawer (super-duper-admin)',
+      'The bug finding behind a roadmap opportunity id, for the deep-link redirect (super-admin+)',
+  })
+  @ApiResponse({ status: 200, type: BugFindingRefDto })
+  async getFindingByReportedBug(
+    @Param('opportunityId', ParseUUIDPipe) opportunityId: string,
+  ): Promise<BugFindingRefDto> {
+    const finding =
+      await this.bugFindingService.findByReportedBugId(opportunityId);
+    // 200 with a null id, not 404: "this roadmap row has no bug finding" is a
+    // real and expected answer (the inbox write is best-effort, and rows predate
+    // the table), and the caller redirects either way.
+    return { findingId: finding?.id ?? null };
+  }
+
+  /** Read-only, so the same SUPER_ADMIN reasoning as `listFindings` applies. */
+  @Get('findings/:id')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
+    legacyRoles: SUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary:
+      'One finding plus its event timeline, for the drawer (super-admin+)',
   })
   @ApiResponse({ status: 200, type: BugFindingDetailDto })
   async getFinding(
@@ -187,7 +244,7 @@ export class BugHunterController {
     @Body() body: StartBugFixSessionDto,
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
-    return toFindingDto(
+    return this.toDto(
       await this.bugFixSessionService.start(id, user.id, body.repo),
     );
   }
@@ -217,7 +274,7 @@ export class BugHunterController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
-    return toFindingDto(
+    return this.toDto(
       await this.bugFixSessionService.cancelFixSession(id, user.id),
     );
   }
@@ -242,7 +299,17 @@ export class BugHunterController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
-    return toFindingDto(await this.bugFixSessionService.release(id, user.id));
+    return this.toDto(await this.bugFixSessionService.release(id, user.id));
+  }
+
+  /**
+   * One finding → DTO, enrichment included. Every human-facing endpoint that
+   * returns a single finding goes through here rather than calling
+   * `toFindingDto` directly, so a row never loses its reporter block just
+   * because it came back from a mutation instead of the list.
+   */
+  private async toDto(finding: BugFinding): Promise<BugFindingDto> {
+    return toFindingDto(await this.bugFindingService.enrichOne(finding));
   }
 
   /**
@@ -255,18 +322,52 @@ export class BugHunterController {
     finding: BugFinding,
     events: BugHuntEvent[],
   ): Promise<BugFindingDetailDto> {
-    const [{ releasable, target, reason }, steps] = await Promise.all([
-      this.bugFixSessionService.releasability(finding),
-      this.bugFindingService.listSteps(finding.id),
-    ]);
+    const [{ releasable, target, reason }, steps, enriched] = await Promise.all(
+      [
+        this.bugFixSessionService.releasability(finding),
+        this.bugFindingService.listSteps(finding.id),
+        this.bugFindingService.enrichOne(finding),
+      ],
+    );
     return {
-      ...toFindingDto(finding),
+      ...toFindingDto(enriched),
       events: events.map(toEventDto),
       steps: steps.map(toStepDto),
       releasable,
       releaseTarget: target,
       releaseBlockedReason: reason,
     };
+  }
+
+  @Patch('findings/:id/stage')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER, {
+    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+  })
+  @ApiOperation({
+    summary:
+      'Pin the coarse roadmap stage by hand, or return it to automatic (super-duper-admin)',
+    description:
+      "A bug's stage (New / Prioritised / In development / Released / Archived) is normally " +
+      'DERIVED from its pipeline status and needs no maintenance. This exists for the bug ' +
+      'that was fixed outside Bug Hunter altogether — a hand-written PR, a config change, a ' +
+      'fix that rode along with unrelated work — where the pipeline never moved and the ' +
+      'status therefore still says NEW. Pinning STICKS: later transitions no longer move the ' +
+      'stage, because the admin who pinned it is the only party who knows about the ' +
+      'out-of-band fix. Send `stage: null` to clear the pin and go back to deriving. ' +
+      'Mutating, so unlike reading the table this stays super-duper-admin.',
+  })
+  @ApiResponse({ status: 200, type: BugFindingDto })
+  async setFindingStage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: SetBugFindingStageDto,
+    @CurrentUser() user: TokenUser,
+  ): Promise<BugFindingDto> {
+    return this.toDto(
+      // `stage` absent and `stage: null` both mean "back to automatic". An
+      // endpoint whose only field is optional would otherwise make an empty
+      // body a silent no-op, and there is no other reading of it here.
+      await this.bugFindingService.setStage(id, body.stage ?? null, user.id),
+    );
   }
 
   @Post('findings/:id/approve')
@@ -285,7 +386,7 @@ export class BugHunterController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
-    return toFindingDto(await this.bugFindingService.approve(id, user.id));
+    return this.toDto(await this.bugFindingService.approve(id, user.id));
   }
 
   @Post('findings/:id/reject')
@@ -303,7 +404,7 @@ export class BugHunterController {
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
-    return toFindingDto(await this.bugFindingService.reject(id, user.id));
+    return this.toDto(await this.bugFindingService.reject(id, user.id));
   }
 
   @Patch('findings/:id/description')
@@ -334,7 +435,7 @@ export class BugHunterController {
     @Body() body: EditBugFindingDescriptionDto,
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
-    return toFindingDto(
+    return this.toDto(
       await this.bugFindingService.editDescription(
         id,
         body.description,
@@ -361,7 +462,7 @@ export class BugHunterController {
     @Body() body: AnswerBugFindingDto,
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
-    return toFindingDto(
+    return this.toDto(
       await this.bugFindingService.recordAnswer(id, body.answer, user.id),
     );
   }
@@ -560,7 +661,19 @@ export function toSettingsDto(row: BugHunterSettings): BugHunterSettingsDto {
   };
 }
 
-export function toFindingDto(row: BugFinding): BugFindingDto {
+/**
+ * `row` may or may not have been through `BugFindingService.enrich`. The
+ * enrichment fields are optional so the pipeline-facing mappers and the unit
+ * tests can keep passing a plain entity; every human-facing endpoint enriches
+ * first (see `toDto`), because `report` is the only thing distinguishing a real
+ * user's bug report from an agent-found lint error now that bugs are not on the
+ * roadmap board.
+ *
+ * `stage` is computed here rather than stored — see bug-finding-stage.util.ts.
+ */
+export function toFindingDto(
+  row: BugFinding & Partial<BugFindingEnrichment>,
+): BugFindingDto {
   return {
     id: row.id,
     runId: row.runId ?? null,
@@ -579,6 +692,12 @@ export function toFindingDto(row: BugFinding): BugFindingDto {
     touchesGuardedPath: row.touchesGuardedPath,
     reportedBugId: row.reportedBugId ?? null,
     status: row.status,
+    stage: effectiveStage(row),
+    stageIsAuto: row.stageOverride == null,
+    stageOverriddenBy: row.stageOverriddenBy ?? null,
+    stageOverriddenByName: row.stageOverriddenByName ?? null,
+    stageOverriddenAt: row.stageOverriddenAt ?? null,
+    report: row.report ?? null,
     prUrl: row.prUrl ?? null,
     escalationQuestion: row.escalationQuestion ?? null,
     escalationAnswer: row.escalationAnswer ?? null,

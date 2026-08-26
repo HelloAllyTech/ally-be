@@ -151,11 +151,18 @@ export class RoadmapOpportunityService {
     }
 
     const response = await this.findOne(userId, saved.id);
-    this.notifications.emit({
-      kind: 'OPPORTUNITY_UPSERTED',
-      actorId: userId,
-      opportunity: response,
-    });
+    // Bugs are not broadcast. The realtime channel exists to slot a new card
+    // onto an open board, and bugs are no longer listed on that board — pushing
+    // one would make a filed bug flash up on the one screen it is meant to have
+    // left. Everything else about the create path is unchanged for a bug: the
+    // row, the vector, and above all the Bug Hunter inbox row above.
+    if (saved.type !== RoadmapOpportunityType.BUG) {
+      this.notifications.emit({
+        kind: 'OPPORTUNITY_UPSERTED',
+        actorId: userId,
+        opportunity: response,
+      });
+    }
     return response;
   }
 
@@ -267,11 +274,15 @@ export class RoadmapOpportunityService {
     if (needsReindex) await this.vectorService.indexQuietly(id);
 
     const response = await this.findOne(userId, id);
-    this.notifications.emit({
-      kind: 'OPPORTUNITY_UPSERTED',
-      actorId: userId,
-      opportunity: response,
-    });
+    // Same reasoning as create(): a bug is not on the board, so there is nothing
+    // for an upsert broadcast to update there.
+    if (response.type !== RoadmapOpportunityType.BUG) {
+      this.notifications.emit({
+        kind: 'OPPORTUNITY_UPSERTED',
+        actorId: userId,
+        opportunity: response,
+      });
+    }
     return response;
   }
 

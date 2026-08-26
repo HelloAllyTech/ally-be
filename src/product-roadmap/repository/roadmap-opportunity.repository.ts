@@ -98,6 +98,26 @@ export interface ListOpportunitiesResult {
   maxScore: number;
 }
 
+/**
+ * Bugs are not roadmap items any more.
+ *
+ * A bug reported through the in-app "Report a problem" form still WRITES a
+ * `roadmap_opportunities` row — that row is the record of who reported what,
+ * with what context, and it is what `bug_findings.reported_bug_id` points at.
+ * It is simply never listed here. Bug Hunter's findings table is the one place
+ * a bug appears, with its own stage and pipeline status.
+ *
+ * Applied in `projectedQuery` (and repeated in the handful of raw-SQL reads
+ * below) rather than in each caller on purpose: this has to hold for the table,
+ * the month board, lane totals, facets, month bounds and the priority scale
+ * alike, and a rule each caller opts into is a rule the next caller forgets.
+ *
+ * Deliberately NOT applied to `findOneWithScore`: the deep-link path has to be
+ * able to recognise a bug id and send the reader to Bug Hunter, which it cannot
+ * do if the row reads as missing. See RoadmapOpportunityService.findOne.
+ */
+const EXCLUDE_BUGS_SQL = `opp."type" <> 'bug'`;
+
 const SORT_COLUMNS: Record<string, string> = {
   priority: '"priorityScore"',
   createdAt: 'opp."createdAt"',
@@ -249,7 +269,8 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
                         ELSE opp."plannedMonth"
                       END AS m
                  FROM roadmap_opportunities opp
-                WHERE opp."deletedAt" IS NULL) s
+                WHERE opp."deletedAt" IS NULL
+                  AND ${EXCLUDE_BUGS_SQL}) s
         WHERE m IS NOT NULL`,
     );
     return { earliest: row?.earliest ?? null, latest: row?.latest ?? null };
@@ -338,6 +359,7 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
                  FROM roadmap_allocations a
                  JOIN roadmap_opportunities o ON o.id = a."opportunityId"
                 WHERE o."deletedAt" IS NULL
+                  AND o."type" <> 'bug'
                 GROUP BY a."opportunityId") s`,
     );
     return Number(row?.max ?? 0);
@@ -384,7 +406,8 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
                        COALESCE(u.name, o."owner") AS "owner"
          FROM roadmap_opportunities o
          LEFT JOIN users u ON u.id = o."ownerUserId"
-        WHERE o."deletedAt" IS NULL`,
+        WHERE o."deletedAt" IS NULL
+          AND o."type" <> 'bug'`,
     );
     return {
       createdBy: [...new Set(rows.map((r) => r.createdBy))],
@@ -452,7 +475,8 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
         'cmt',
         'cmt."opportunityId" = opp.id',
       )
-      .where('opp."deletedAt" IS NULL');
+      .where('opp."deletedAt" IS NULL')
+      .andWhere(EXCLUDE_BUGS_SQL);
   }
 
   private applyFilters(

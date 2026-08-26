@@ -5,14 +5,20 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 import { LoggerService } from 'src/logger/logger.service';
+import { User } from 'src/user/entity/user.entity';
 import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
+import {
+  RoadmapOpportunitySource,
+  RoadmapOpportunityStage,
+} from 'src/product-roadmap/enum/roadmap-opportunity.enum';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import { BugHunterService } from './bug-hunter.service';
 import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
+import { effectiveStage } from '../util/bug-finding-stage.util';
 import {
   needsYourAnswer,
   STALE_ESCALATION_DIGEST_TITLE,
@@ -60,6 +66,32 @@ export interface RawFinding {
 }
 
 /**
+ * Who reported a bug and what their client silently captured at the time —
+ * read from the linked `roadmap_opportunities` row.
+ *
+ * Bugs no longer render on the roadmap board, so this is no longer reachable
+ * anywhere else: without it a real user's report and an agent-found lint error
+ * are indistinguishable rows.
+ */
+export interface ReportedBugContext {
+  opportunityId: string;
+  reporterSource: RoadmapOpportunitySource;
+  reportedBy: number | null;
+  reportedByName: string | null;
+  tenantId: string | null;
+  reporterContext: Record<string, any> | null;
+  reportedAt: Date;
+}
+
+/** What `enrich` adds to a row: things that live in other tables and are resolved at read time. */
+export interface BugFindingEnrichment {
+  report: ReportedBugContext | null;
+  stageOverriddenByName: string | null;
+}
+
+export type EnrichedBugFinding = BugFinding & BugFindingEnrichment;
+
+/**
  * Owns the `bug_findings` lifecycle: persisting what the finders discover,
  * every status transition from NEW through to a terminal state, and the
  * escalation ask/answer exchange.
@@ -78,6 +110,7 @@ export class BugFindingService {
     private readonly notificationService: BugHunterNotificationService,
     @InjectRepository(RoadmapOpportunity)
     private readonly roadmapOpportunityRepository: Repository<RoadmapOpportunity>,
+    @InjectRepository(User) private readonly userRepository: Repository<User>,
     // Appended last, and safe to inject: BugHunterService depends on
     // repositories and the notification service only, never back on this —
     // the module's one-way edge that keeps `editDescription` able to write to
@@ -95,6 +128,157 @@ export class BugFindingService {
     filter: ListBugFindingsFilter,
   ): Promise<{ items: BugFinding[]; count: number }> {
     return this.findingRepository.listPaginated(filter);
+  }
+
+  /**
+   * Resolves the cross-table bits of a page of findings in TWO queries total,
+   * regardless of page size — the reporter behind each human-filed bug, and the
+   * name of whoever pinned a stage.
+   *
+   * Batched deliberately. The obvious shape is a per-row lookup inside the DTO
+   * mapper, which on a 50-row page is 100 round trips to render one table.
+   *
+   * Enrichment is additive and never throws: a finding whose roadmap row was
+   * hard-deleted, or whose reporter's account is gone, comes back with `report`
+   * null or `reportedByName` null rather than failing the whole list. The bug
+   * table has to render for bugs whose provenance we have partly lost — that is
+   * exactly the row someone is trying to look at.
+   */
+  async enrich(findings: BugFinding[]): Promise<EnrichedBugFinding[]> {
+    if (findings.length === 0) return [];
+
+    const reportedBugIds = [
+      ...new Set(
+        findings
+          .map((f) => f.reportedBugId)
+          .filter((id): id is string => id != null),
+      ),
+    ];
+    const opportunities = reportedBugIds.length
+      ? await this.roadmapOpportunityRepository.find({
+          where: { id: In(reportedBugIds) },
+          // withDeleted: a soft-deleted roadmap row is still the record of who
+          // reported this bug, and the bug itself is very much still open.
+          withDeleted: true,
+        })
+      : [];
+    const byOpportunityId = new Map(opportunities.map((o) => [o.id, o]));
+
+    // One name lookup covering both the reporters and the stage-pinners.
+    const userIds = [
+      ...new Set(
+        [
+          ...opportunities.map((o) => o.createdBy),
+          ...findings.map((f) => f.stageOverriddenBy),
+        ].filter((id): id is number => id != null),
+      ),
+    ];
+    const users = userIds.length
+      ? await this.userRepository.find({
+          where: { id: In(userIds) },
+          select: { id: true, name: true },
+        })
+      : [];
+    const nameById = new Map(users.map((u) => [u.id, u.name ?? null]));
+
+    return findings.map((finding) => {
+      const opportunity = finding.reportedBugId
+        ? byOpportunityId.get(finding.reportedBugId)
+        : undefined;
+
+      return Object.assign(finding, {
+        report: opportunity
+          ? {
+              opportunityId: opportunity.id,
+              reporterSource: opportunity.source,
+              reportedBy: opportunity.createdBy ?? null,
+              reportedByName: nameById.get(opportunity.createdBy) ?? null,
+              tenantId: opportunity.tenantId ?? null,
+              reporterContext: opportunity.reporterContext ?? null,
+              reportedAt: opportunity.createdAt,
+            }
+          : null,
+        stageOverriddenByName:
+          finding.stageOverriddenBy != null
+            ? (nameById.get(finding.stageOverriddenBy) ?? null)
+            : null,
+      });
+    });
+  }
+
+  /** `enrich` for a single row — the shape every one-finding endpoint returns. */
+  async enrichOne(finding: BugFinding): Promise<EnrichedBugFinding> {
+    const [enriched] = await this.enrich([finding]);
+    return enriched;
+  }
+
+  /**
+   * Pins the coarse roadmap stage by hand, or (with `stage: null`) hands the row
+   * back to derivation.
+   *
+   * Why a manual stage exists at all: the derived one reads `status`, which only
+   * moves when BUG HUNTER moves it. A bug someone fixed with an ordinary
+   * hand-written PR leaves the pipeline untouched, so its status sits at NEW
+   * forever while the bug is in fact shipped — and since bugs no longer appear on
+   * the roadmap board, there is no other screen on which anyone would correct it.
+   *
+   * Why the pin then STICKS rather than yielding to the next transition: the
+   * admin who set it is the only party who knows about the out-of-band fix. A
+   * later sweep re-finding the same bug and dragging the stage back to New would
+   * overwrite the one accurate value on the row with a guess.
+   *
+   * Setting the stage to exactly what it already derives to is still recorded as
+   * an override, on purpose — "I checked this and it is right" is a claim worth
+   * keeping, and it stops a later transition from silently moving it.
+   */
+  async setStage(
+    id: string,
+    stage: RoadmapOpportunityStage | null,
+    userId: number,
+  ): Promise<BugFinding> {
+    const finding = await this.getOne(id);
+    const before = effectiveStage(finding);
+
+    await this.findingRepository.update(id, {
+      stageOverride: stage,
+      // Cleared together with the override: "pinned by nobody at no time" is the
+      // only honest reading of a derived stage, and leaving the old stamps behind
+      // would make the drawer claim a pin that is no longer in force.
+      stageOverriddenBy: stage ? userId : null,
+      stageOverriddenAt: stage ? new Date() : null,
+    });
+    const after = await this.getOne(id);
+    const now = effectiveStage(after);
+
+    // Written to the shared event timeline, not just the row: the drawer's
+    // timeline is where an admin reconstructs why a bug says what it says, and a
+    // stage that changed with no entry beside it reads as the pipeline having
+    // done it.
+    // Runless, for the same reason editDescription's event is: an admin corrects
+    // a stage long after the run that found the bug has closed, and `appendEvent`
+    // rightly refuses to write into a closed run.
+    await this.bugHunterService.appendFindingEvent({
+      findingId: id,
+      repo: after.repo,
+      stage: BugHuntEventStage.STAGE_CHANGED,
+      summary: stage
+        ? `User ${userId} set the stage to ${now} by hand` +
+          (before === now ? ' (unchanged, now pinned).' : ` (was ${before}).`)
+        : `User ${userId} returned the stage to automatic (now ${now}).`,
+      payload: {
+        changedBy: userId,
+        from: before,
+        to: now,
+        pinned: stage != null,
+      },
+    });
+
+    return after;
+  }
+
+  /** The finding opened for a given roadmap bug report, if one ever was. */
+  findByReportedBugId(reportedBugId: string): Promise<BugFinding | null> {
+    return this.findingRepository.findByReportedBugId(reportedBugId);
   }
 
   listNewReportedBugs(): Promise<BugFinding[]> {

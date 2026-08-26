@@ -6,6 +6,7 @@ import { LogsModule } from 'src/logs/logs.module';
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
+import { User } from 'src/user/entity/user.entity';
 
 import { BugHunterController } from './controller/bug-hunter.controller';
 import { BugHunterPipelineController } from './controller/bug-hunter-pipeline.controller';
@@ -62,6 +63,11 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
       BugFinding,
       BugHunterNotification,
       RoadmapOpportunity,
+      // Read-only, for resolving reporter and stage-pinner names — see
+      // BugFindingService.enrich. Raw repository rather than an import of
+      // UserModule, matching how RoadmapOpportunity is taken here: the point is
+      // to avoid pulling a module graph in for two `SELECT name` lookups.
+      User,
     ]),
     NotificationModule,
     LogsModule,
@@ -85,6 +91,14 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
     BugHunterRepoClassifierService,
     BugFixSessionSchedulerRegistrationService,
   ],
-  exports: [BugHunterService, BugFindingService, BugHunterNotificationService],
+  exports: [
+    BugHunterService,
+    BugFindingService,
+    BugHunterNotificationService,
+    // Builder dispatches its own workflow through the same client rather than
+    // forking a second GitHub REST wrapper. Worth extracting to a shared
+    // `src/github/` module once a third caller appears.
+    GithubActionsService,
+  ],
 })
 export class BugHunterModule {}

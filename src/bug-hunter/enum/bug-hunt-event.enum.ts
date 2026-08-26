@@ -41,4 +41,11 @@ export enum BugHuntEventStage {
    * did needs to see that the brief changed, and when relative to the dispatch.
    */
   DESCRIPTION_EDITED = 'description_edited',
+  /**
+   * An admin pinned or un-pinned the coarse roadmap stage by hand — see
+   * BugFindingService.setStage. Recorded because a hand-set stage deliberately
+   * stops tracking `status`, so the timeline is the only place a later reader
+   * can see why the two disagree, and who decided they should.
+   */
+  STAGE_CHANGED = 'stage_changed',
 }
