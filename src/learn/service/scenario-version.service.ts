@@ -39,10 +39,14 @@ export class ScenarioVersionService {
     const existing =
       await this.scenarioVersionRepository.listByScenario(scenarioId);
     if (existing.length > 0) {
-      return existing;
+      return this.markLiveVersion(scenario, existing);
     }
     await this.ensureInitialVersion(scenario);
-    return this.scenarioVersionRepository.listByScenario(scenarioId);
+    // Re-read the scenario: ensureInitialVersion may have set publishedVersionId.
+    return this.markLiveVersion(
+      await this.requireScenario(scenarioId),
+      await this.scenarioVersionRepository.listByScenario(scenarioId),
+    );
   }
 
   async getVersion(
@@ -83,24 +87,24 @@ export class ScenarioVersionService {
       // Branch: fork an existing version's data into a new draft.
       const parent = await this.getVersion(scenarioId, dto.fromVersionId);
       parentVersionId = parent.id;
-      // The published version's stored config is a snapshot that can drift from
-      // the live scenario when it's edited directly (outside the version
-      // system). Rebuild from the live state so branching the published version
-      // always captures current edits. Drafts/archived snapshots are authored
-      // in the version system (or intentionally frozen), so clone them as-is.
+      // The live-mirroring version's stored `config` is a seed, not a record:
+      // the studio writes edits straight to the `scenarios` row whenever no
+      // version is explicitly selected, so that config drifts (and for a
+      // never-published scenario is typically the near-empty snapshot taken
+      // the instant the sim first got an id). Rebuild from the live state so
+      // branching it always captures current content instead of forking a
+      // blank. Every OTHER version is authored inside the version system (or
+      // intentionally frozen), so clone it as-is.
+      const liveVersionId = await this.resolveLiveVersionId(scenario);
       config =
-        parent.status === ScenarioVersionStatus.PUBLISHED
+        parent.status === ScenarioVersionStatus.PUBLISHED ||
+        parent.id === liveVersionId
           ? await this.buildConfigFromScenario(scenarioId)
           : (parent.config ?? {});
     } else {
-      // Default: seed from the published version, else the live scenario. The
-      // published snapshot can be stale (see above), so always rebuild from live.
-      const published = scenario.publishedVersionId
-        ? await this.scenarioVersionRepository.findOne({
-            where: { id: scenario.publishedVersionId, scenarioId },
-          })
-        : null;
-      parentVersionId = published?.id ?? null;
+      // Default: parent the new draft to the live-mirroring version, and seed
+      // it from the live scenario (whose config is authoritative, see above).
+      parentVersionId = await this.resolveLiveVersionId(scenario);
       config = await this.buildConfigFromScenario(scenarioId);
     }
 
@@ -196,6 +200,18 @@ export class ScenarioVersionService {
     if (version.status === ScenarioVersionStatus.PUBLISHED) {
       throw new BadRequestException(
         'Cannot delete the published version. Publish another version first.',
+      );
+    }
+    // The live-mirroring version is the editor's handle on the live scenario
+    // (see resolveLiveVersionId). Deleting it would leave the live record with
+    // no version representing it, so every remaining version reads as an
+    // isolated draft and the live content becomes unreachable from the panel.
+    const liveVersionId = await this.resolveLiveVersionId(
+      await this.requireScenario(scenarioId),
+    );
+    if (version.id === liveVersionId) {
+      throw new BadRequestException(
+        'Cannot delete the version that mirrors the live simulation.',
       );
     }
     await this.assertOwnership(await this.requireScenario(scenarioId), userId);
@@ -318,6 +334,64 @@ export class ScenarioVersionService {
       }
       return version;
     });
+  }
+
+  /**
+   * The version that MIRRORS the live scenario, as opposed to holding an
+   * isolated snapshot of its own.
+   *
+   * The studio only writes to a version's `config` while one is explicitly
+   * selected in the version panel; the rest of the time — which is the whole
+   * of normal authoring — it saves straight to the live `scenarios` row and
+   * its related tables. Exactly one version stands for that live record:
+   *
+   *  - the published version, when the scenario has one; otherwise
+   *  - the auto-seeded baseline (v1, parentless) that `ensureInitialVersion`
+   *    created from the live scenario.
+   *
+   * That version's stored `config` is therefore a seed that goes stale
+   * immediately, and for a never-published scenario it is usually captured the
+   * instant the sim first gets an id (title only) — which is why forking it or
+   * loading it must go through the live scenario, never through `config`.
+   *
+   * Returns null only for a scenario with no versions at all.
+   */
+  async resolveLiveVersionId(scenario: Scenarios): Promise<string | null> {
+    if (scenario.publishedVersionId) {
+      return scenario.publishedVersionId;
+    }
+    const versions = await this.scenarioVersionRepository.listByScenario(
+      scenario.id,
+    );
+    return this.resolveBaselineVersionId(versions);
+  }
+
+  /**
+   * Lowest-numbered parentless version — the `ensureInitialVersion` seed.
+   * Parentless is not enough on its own: a blank version (`empty: true`) is
+   * also parentless by design, so the version NUMBER breaks the tie and v1
+   * always wins.
+   */
+  private resolveBaselineVersionId(
+    versions: ScenarioVersion[] | null | undefined,
+  ): string | null {
+    const baseline = (versions ?? [])
+      .filter((v) => !v.parentVersionId)
+      .sort((a, b) => a.versionNumber - b.versionNumber)[0];
+    return baseline?.id ?? null;
+  }
+
+  /** Stamp the transient `isLive` flag for the client (see the entity). */
+  private markLiveVersion(
+    scenario: Scenarios,
+    versions: ScenarioVersion[],
+  ): ScenarioVersion[] {
+    const liveVersionId =
+      scenario.publishedVersionId ?? this.resolveBaselineVersionId(versions);
+    for (const version of versions) {
+      version.isLive = version.id === liveVersionId;
+    }
+    return versions;
   }
 
   /**

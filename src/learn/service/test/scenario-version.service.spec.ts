@@ -131,6 +131,75 @@ describe('ScenarioVersionService', () => {
       expect(scenarioService.getAdminScenario).toHaveBeenCalledWith(10);
     });
 
+    it('branching the auto-seeded v1 of a never-published scenario rebuilds from live', async () => {
+      // The regression this guards: v1 is seeded server-side the instant a new
+      // sim first gets an id — i.e. from a scenario that is still title-only —
+      // and never updates again, because the studio saves live edits to the
+      // `scenarios` row, not to v1. Cloning that config forked a blank sim.
+      const draftScenario = { ...scenario, publishedVersionId: null };
+      (scenariosRepo.findOne as jest.Mock).mockResolvedValue(draftScenario);
+      (versionRepo.listByScenario as jest.Mock).mockResolvedValue([
+        {
+          id: 'v1',
+          versionNumber: 1,
+          parentVersionId: null,
+          status: ScenarioVersionStatus.DRAFT,
+        },
+      ]);
+      (versionRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'v1',
+        scenarioId: 10,
+        status: ScenarioVersionStatus.DRAFT,
+        parentVersionId: null,
+        // The near-empty seed taken before the author filled anything in.
+        config: { title: 'Untitled Roleplay' },
+      });
+      (scenarioService.getAdminScenario as jest.Mock).mockResolvedValue({
+        title: 'live',
+        description: 'the brief',
+        metadata: { name: 'Ahana' },
+        triggerWarnings: [],
+        terminationEvents: [],
+        behaviorInstructions: [],
+      });
+
+      await service.createVersion(10, { fromVersionId: 'v1' }, 1);
+
+      const created = txVersionRepo.create.mock.calls[0][0];
+      expect(created.parentVersionId).toBe('v1');
+      expect(created.config).toMatchObject({
+        title: 'live',
+        description: 'the brief',
+        name: 'Ahana',
+        status: ScenarioStatus.DRAFT,
+      });
+    });
+
+    it('branching an ordinary draft still clones its config verbatim', async () => {
+      // Only the live-mirroring version is rebuilt; a draft authored inside the
+      // version system is a real snapshot and must fork exactly as stored.
+      const draftScenario = { ...scenario, publishedVersionId: null };
+      (scenariosRepo.findOne as jest.Mock).mockResolvedValue(draftScenario);
+      (versionRepo.listByScenario as jest.Mock).mockResolvedValue([
+        { id: 'v1', versionNumber: 1, parentVersionId: null },
+        { id: 'v2', versionNumber: 2, parentVersionId: 'v1' },
+      ]);
+      (versionRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'v2',
+        scenarioId: 10,
+        status: ScenarioVersionStatus.DRAFT,
+        parentVersionId: 'v1',
+        config: { title: 'experiment' },
+      });
+
+      await service.createVersion(10, { fromVersionId: 'v2' }, 1);
+
+      expect(txVersionRepo.create.mock.calls[0][0].config).toMatchObject({
+        title: 'experiment',
+      });
+      expect(scenarioService.getAdminScenario).not.toHaveBeenCalled();
+    });
+
     it('creates a blank draft with mappedEvents:[] when empty', async () => {
       await service.createVersion(10, { empty: true, name: 'from scratch' }, 1);
 
@@ -216,6 +285,78 @@ describe('ScenarioVersionService', () => {
       await expect(service.deleteVersion(10, 'v1', 1)).rejects.toBeInstanceOf(
         BadRequestException,
       );
+    });
+
+    it('refuses to delete the baseline version that mirrors the live scenario', async () => {
+      const draftScenario = { ...scenario, publishedVersionId: null };
+      (scenariosRepo.findOne as jest.Mock).mockResolvedValue(draftScenario);
+      (versionRepo.listByScenario as jest.Mock).mockResolvedValue([
+        { id: 'v1', versionNumber: 1, parentVersionId: null },
+        { id: 'v2', versionNumber: 2, parentVersionId: 'v1' },
+      ]);
+      (versionRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'v1',
+        scenarioId: 10,
+        status: ScenarioVersionStatus.DRAFT,
+        parentVersionId: null,
+      });
+
+      await expect(service.deleteVersion(10, 'v1', 1)).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(versionRepo.softDelete).not.toHaveBeenCalled();
+    });
+
+    it('deletes an ordinary draft', async () => {
+      const draftScenario = { ...scenario, publishedVersionId: null };
+      (scenariosRepo.findOne as jest.Mock).mockResolvedValue(draftScenario);
+      (versionRepo.listByScenario as jest.Mock).mockResolvedValue([
+        { id: 'v1', versionNumber: 1, parentVersionId: null },
+        { id: 'v2', versionNumber: 2, parentVersionId: 'v1' },
+      ]);
+      (versionRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'v2',
+        scenarioId: 10,
+        status: ScenarioVersionStatus.DRAFT,
+        parentVersionId: 'v1',
+      });
+
+      await expect(service.deleteVersion(10, 'v2', 1)).resolves.toBe(true);
+      expect(versionRepo.softDelete).toHaveBeenCalledWith('v2');
+    });
+  });
+
+  describe('listVersions', () => {
+    it('flags the published version as the live mirror', async () => {
+      (versionRepo.listByScenario as jest.Mock).mockResolvedValue([
+        { id: 'v2', versionNumber: 2, parentVersionId: 'v-published' },
+        { id: 'v-published', versionNumber: 1, parentVersionId: null },
+      ]);
+
+      const result = await service.listVersions(10);
+
+      expect(result.map((v) => [v.id, v.isLive])).toEqual([
+        ['v2', false],
+        ['v-published', true],
+      ]);
+    });
+
+    it('flags the baseline v1 as the live mirror when nothing is published', async () => {
+      (scenariosRepo.findOne as jest.Mock).mockResolvedValue({
+        ...scenario,
+        publishedVersionId: null,
+      });
+      // A blank version is parentless too, so the version number breaks the tie.
+      (versionRepo.listByScenario as jest.Mock).mockResolvedValue([
+        { id: 'v3', versionNumber: 3, parentVersionId: null },
+        { id: 'v2', versionNumber: 2, parentVersionId: 'v1' },
+        { id: 'v1', versionNumber: 1, parentVersionId: null },
+      ]);
+
+      const result = await service.listVersions(10);
+
+      expect(result.find((v) => v.isLive)?.id).toBe('v1');
+      expect(result.filter((v) => v.isLive)).toHaveLength(1);
     });
   });
 

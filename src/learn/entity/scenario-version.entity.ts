@@ -61,4 +61,16 @@ export class ScenarioVersion extends BaseWithoutTenantEntity {
 
   @DeleteDateColumn()
   deletedAt?: Date;
+
+  /**
+   * Transient (not a column): set on read to flag the version that MIRRORS the
+   * live scenario rather than holding an isolated snapshot.
+   *
+   * The studio edits the live `scenarios` row directly whenever no version is
+   * explicitly selected, so the mirroring version's stored `config` goes stale
+   * the moment anyone saves — it is a seed, not a record. Reading it must
+   * therefore read live, and branching it must rebuild from live. See
+   * `ScenarioVersionService.resolveLiveVersionId`.
+   */
+  isLive?: boolean;
 }
