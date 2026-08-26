@@ -24,9 +24,9 @@ import {
   RoadmapOpportunityRepository,
   RoadmapOpportunityRow,
 } from '../repository/roadmap-opportunity.repository';
-import { CONSUMER_BUG_REPORT_PRODUCT_GOAL } from '../constants/product-roadmap.constants';
+import { BUG_REPORT_DEFAULT_PRODUCT_GOAL } from '../constants/product-roadmap.constants';
 import {
-  CreateConsumerBugReportDto,
+  CreateBugReportDto,
   CreateOpportunityDto,
   ListOpportunitiesQueryDto,
   UpdateOpportunityDto,
@@ -95,7 +95,7 @@ export class RoadmapOpportunityService {
 
   /**
    * `extra` carries the fields the staff-facing CreateOpportunityDto has no reason to
-   * expose — see createConsumerBugReport, its only other caller. Left undefined, every
+   * expose — see createBugReport, its only other caller. Left undefined, every
    * field defaults exactly to what the pre-existing staff path always wrote (source
    * 'staff', tenantId/reporterContext null), so this is a no-op change for that caller.
    */
@@ -167,34 +167,66 @@ export class RoadmapOpportunityService {
   }
 
   /**
-   * POST /product-roadmap/bug-reports — a logged-in consumer app user (web/mobile/helpline)
-   * filing a bug, through the exact same create() pipeline a staff-filed bug uses (vector
-   * indexing, the Bug Hunter inbox row, the realtime notify). Only what differs from the
-   * staff path is made explicit here: `type` is forced to BUG, `productGoal` is the fixed
-   * consumer bucket (see CONSUMER_BUG_REPORT_PRODUCT_GOAL), and `source`/`tenantId`/
-   * `reporterContext` are stamped so admins can tell a consumer report apart from a staff
-   * one. Returns the minimal one-time confirmation, not the full opportunity — a consumer
-   * has no further use for roadmap-internal fields like productGoal or boardPosition.
+   * POST /product-roadmap/bug-reports — ANY logged-in user filing a bug from a one-prompt
+   * form, whether that is a consumer in web/mobile/helpline or a staff member using the
+   * admin roadmap's "Report a bug" button. It runs the exact same create() pipeline a
+   * staff-filed opportunity uses (vector indexing, the Bug Hunter inbox row), so a report
+   * needs no bespoke follow-up work to appear wherever bugs already do.
+   *
+   * What differs from the staff /opportunities path: `type` is forced to BUG, `productGoal`
+   * is fixed (see BUG_REPORT_DEFAULT_PRODUCT_GOAL — no form here has a goal picker), and
+   * `source`/`tenantId`/`reporterContext` are stamped for triage. Returns the minimal
+   * one-time confirmation, not the full opportunity — a reporter has no further use for
+   * roadmap-internal fields like productGoal or boardPosition.
    */
-  async createConsumerBugReport(
+  async createBugReport(
     userId: number,
     tenantId: string | null,
-    dto: CreateConsumerBugReportDto,
+    dto: CreateBugReportDto,
   ): Promise<{ id: string; stage: RoadmapOpportunityStage }> {
     const created = await this.create(
       userId,
       {
         description: dto.description,
         type: RoadmapOpportunityType.BUG,
-        productGoal: CONSUMER_BUG_REPORT_PRODUCT_GOAL,
+        productGoal: BUG_REPORT_DEFAULT_PRODUCT_GOAL,
       },
       {
-        source: RoadmapOpportunitySource.CONSUMER,
+        source: (await this.isInternalReporter(userId))
+          ? RoadmapOpportunitySource.STAFF
+          : RoadmapOpportunitySource.CONSUMER,
         tenantId,
         reporterContext: dto.context ?? null,
       },
     );
     return { id: created.id, stage: created.stage };
+  }
+
+  /**
+   * Whether a reporter is one of us.
+   *
+   * `source` surfaces in Bug Hunter as a Staff/Consumer badge answering "who filed this?",
+   * so it is derived from WHO the reporter is and not from which client they happened to
+   * open. An admin filing from the roadmap board and an admin filing from the helpline app
+   * are both internal reports; badging the second one "Consumer" would send a triager
+   * hunting for an affected customer who does not exist.
+   *
+   * One extra query per report, on a route capped at BUG_REPORT_RATE_LIMIT per user.
+   */
+  private async isInternalReporter(userId: number): Promise<boolean> {
+    const count = await this.userRepository
+      .createQueryBuilder('user')
+      .where('user.id = :userId', { userId })
+      .andWhere(
+        `EXISTS (
+           SELECT 1 FROM user_groups ug
+           INNER JOIN groups g ON g.id = ug."groupId"
+           WHERE ug."userId" = "user"."id" AND g.name IN (:...roles)
+         )`,
+        { roles: SUPER_ADMIN_ROLES },
+      )
+      .getCount();
+    return count > 0;
   }
 
   /**

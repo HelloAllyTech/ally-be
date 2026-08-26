@@ -14,15 +14,15 @@ import { TIME } from 'src/common/constants/time.constants';
 export const COINS_PER_MONTH = 100;
 
 /**
- * The `productGoal` a consumer bug report is filed under. `productGoal` is a required
- * text FK-by-name into `roadmap_product_goals` (see the entity) and the consumer flow
- * deliberately has no goal/category picker (product decision — see
- * CreateConsumerBugReportDto), so something has to be chosen server-side. 'Reliability &
- * Trust' already exists in the seeded taxonomy (migration 1871000000002) and is the closest
- * semantic fit for an unclassified bug; staff can always re-triage the goal from the drawer
- * like any other opportunity.
+ * The `productGoal` every bug report is filed under. `productGoal` is a required text
+ * FK-by-name into `roadmap_product_goals` (see the entity) and no bug-report form has a
+ * goal/category picker (product decision — see CreateBugReportDto), so something has to be
+ * chosen server-side. 'Reliability & Trust' already exists in the seeded taxonomy
+ * (migration 1871000000002) and is the closest semantic fit for an unclassified bug. It is
+ * near-invisible in practice: bugs no longer render on the roadmap board at all, so this is
+ * really just satisfying the column's FK.
  */
-export const CONSUMER_BUG_REPORT_PRODUCT_GOAL = 'Reliability & Trust';
+export const BUG_REPORT_DEFAULT_PRODUCT_GOAL = 'Reliability & Trust';
 
 /**
  * Per-user throttle on POST /product-roadmap/bug-reports, keyed by `userId` (not IP, since
@@ -31,8 +31,12 @@ export const CONSUMER_BUG_REPORT_PRODUCT_GOAL = 'Reliability & Trust';
  * scripted-spam or retry-loop client — there is no product-defined cadence for this today
  * (Stacks search turned up nothing Ally-specific), so this is a judgement call, easy to
  * retune later since it is not read anywhere else.
+ *
+ * Applies to internal reporters too, now that the admin roadmap's "Report a bug" button
+ * uses this same route. A staff member hitting 8 reports in an hour is the same runaway
+ * client this bounds, and nothing about being internal makes that safe.
  */
-export const CONSUMER_BUG_REPORT_RATE_LIMIT = {
+export const BUG_REPORT_RATE_LIMIT = {
   LIMIT: 8,
   TTL_MS: TIME.HOUR_IN_MS,
 } as const;
