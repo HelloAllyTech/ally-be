@@ -18,8 +18,10 @@ import {
 } from '@nestjs/swagger';
 import { Response } from 'express';
 
+import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 
@@ -70,6 +72,14 @@ import { effectiveStage } from '../util/bug-finding-stage.util';
  * Analytics Suggestions: this controls something that writes into repos and
  * other teams' backlogs, not a fixed reviewed chart.
  *
+ * THREE EXCEPTIONS, all read-only and all gated on VIEW_PRODUCT_ROADMAP
+ * instead: `GET findings`, `GET findings/:id` and
+ * `GET findings/by-reported-bug/:id`. Those three back the roadmap's read-only
+ * Bugs tab and its opportunity drawer, and the rule they encode is that
+ * knowing what is broken belongs to whoever plans the roadmap, while deciding
+ * what gets fixed stays with whoever holds the toggle. Each carries its own
+ * note; `listFindings` has the long form.
+ *
  * The pipeline's own start/report/close calls live in
  * `BugHunterPipelineController` instead — `@RequireFeatureToggle` runs
  * `AuthGuard('jwt')` first, which requires a logged-in human, and the
@@ -119,21 +129,37 @@ export class BugHunterController {
   }
 
   /**
-   * READ-ONLY, and open to SUPER_ADMIN as well as SUPER_DUPER_ADMIN — unlike
-   * every mutating endpoint on this controller.
+   * READ-ONLY, and gated on VIEW_PRODUCT_ROADMAP rather than on the BUG_HUNTER
+   * toggle — the only endpoint on this controller that is.
    *
-   * Bugs used to be visible on the product roadmap board, which SUPER_ADMINs can
-   * see. Now that bugs are listed here and nowhere else, keeping this tier at
-   * super-duper-admin would not have been "unchanged access", it would have
-   * silently removed a whole class of item from what a SUPER_ADMIN can see.
-   * Deciding what gets fixed stays super-duper-admin; knowing what is broken
-   * does not.
+   * ## Why this is a roadmap permission and not a Bug Hunter one
+   *
+   * Bugs used to be visible on the product roadmap board. When Bug Hunter took
+   * over tracking them they moved here, and this endpoint was widened once
+   * already so that losing the board did not silently remove a whole class of
+   * item from what a SUPER_ADMIN could see. That widening was half of the fix:
+   * it opened the DATA to super-admins while the only surface rendering it
+   * stayed behind the `bug_hunter` toggle, so a roadmap viewer without the
+   * toggle still had nowhere to read it.
+   *
+   * The roadmap's Bugs tab is the other half — a read-only mirror of the same
+   * table for the person deciding what next month contains. So the gate is now
+   * the same one `GET /v1/product-roadmap/opportunities` uses: if you can see
+   * the board, you can see what is broken. Deciding what gets FIXED is
+   * unchanged and still `@RequireFeatureToggle(BUG_HUNTER)`, on every mutating
+   * handler below.
+   *
+   * No caller loses access. A `bug_hunter` toggle row only ever exists for a
+   * PLATFORM_ADMIN account, and `CreatePlatformAdminRole1895000000001` granted
+   * that group the full SUPER_DUPER_ADMIN permission set — VIEW_PRODUCT_ROADMAP
+   * included. Dropping SYSTEM_ACCESS from the check is deliberate for the same
+   * reason: ANDing it would make this stricter than the board it mirrors.
    */
   @Get('findings')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
   @ApiOperation({
     summary:
-      'The comprehensive bug table — every bug Bug Hunter knows about, from any source (super-admin+)',
+      'The comprehensive bug table — every bug Bug Hunter knows about, from any source (roadmap viewer+)',
     description:
       'Newest first. Defaults to every status; pass `status` to filter to one, ' +
       'or `all` explicitly. A human-reported bug appears here from the moment ' +
@@ -167,17 +193,21 @@ export class BugHunterController {
    * drawer looks the id up here and sends the reader to the bug's Bug Hunter
    * drawer instead.
    *
-   * Read-only, so the same SUPER_ADMIN reasoning as `listFindings` applies.
+   * Read-only, and gated on VIEW_PRODUCT_ROADMAP like `listFindings`. It is the
+   * clearest case for that gate on the controller: the sole caller is the
+   * ROADMAP's own opportunity drawer, so under the old toggle gate a roadmap
+   * viewer clicking a BUG row got a 403 and a drawer that never redirected —
+   * the redirect this endpoint exists to serve simply did not happen for them.
    *
    * Declared ABOVE `findings/:id` for legibility only — the paths differ in
    * segment count, so unlike the FastAPI trap in ally-ai there is no ordering
    * hazard here.
    */
   @Get('findings/by-reported-bug/:opportunityId')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
   @ApiOperation({
     summary:
-      'The bug finding behind a roadmap opportunity id, for the deep-link redirect (super-admin+)',
+      'The bug finding behind a roadmap opportunity id, for the deep-link redirect (roadmap viewer+)',
   })
   @ApiResponse({ status: 200, type: BugFindingRefDto })
   async getFindingByReportedBug(
@@ -191,12 +221,17 @@ export class BugHunterController {
     return { findingId: finding?.id ?? null };
   }
 
-  /** Read-only, so the same SUPER_ADMIN reasoning as `listFindings` applies. */
+  /**
+   * Read-only, so the same roadmap-viewer reasoning as `listFindings` applies —
+   * and it has to, or the mirror would be a table whose rows cannot be opened.
+   * The drawer this serves renders read-only for a caller without the toggle;
+   * every button on it is a separate handler below, still toggle-gated.
+   */
   @Get('findings/:id')
-  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
   @ApiOperation({
     summary:
-      'One finding plus its event timeline, for the drawer (super-admin+)',
+      'One finding plus its event timeline, for the drawer (roadmap viewer+)',
   })
   @ApiResponse({ status: 200, type: BugFindingDetailDto })
   async getFinding(
