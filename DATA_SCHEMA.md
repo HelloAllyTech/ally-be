@@ -428,6 +428,13 @@ tagged `task=LlmTask.BUG_HUNTER` and `metadata.runId`, so `llm_usage` (§3.8) st
 truth for token cost and `bug_hunt_runs.total_token_cost_usd` is just a snapshot taken at close time
 for the admin tab's run-history table to render without a join.
 
+**`llm_usage.cacheCreationTokens`** (nullable int, migration `1935000000000`) is a new physical column
+for prompt-cache WRITE tokens, alongside the existing `cachedTokens` (cache READ tokens) column.
+`computeCostUsd` (`analytics/constants/llm-pricing.constants.ts`) now prices both off a model's base
+input rate (0.1x for reads, 1.25x for writes) — previously prompt-cache tokens were tracked but never
+priced, which is why Bug Hunter's "Est. cost" tile undercounted the real Anthropic bill: an agentic loop
+that resends a growing transcript every turn generates a lot of cache-write tokens.
+
 ---
 
 ### 3.13 Product Roadmap (`product-roadmap`)

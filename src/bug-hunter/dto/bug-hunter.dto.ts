@@ -267,6 +267,22 @@ export class BugHuntModelUsageDto {
   @IsInt()
   @Min(0)
   outputTokens!: number;
+
+  @ApiPropertyOptional({
+    description: 'Prompt-cache read tokens (subset of input), when reported.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  cacheReadInputTokens?: number;
+
+  @ApiPropertyOptional({
+    description: 'Prompt-cache write tokens (subset of input), when reported.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  cacheCreationInputTokens?: number;
 }
 
 export class RecordBugHuntRunCostDto {

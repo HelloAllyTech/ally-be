@@ -4,9 +4,12 @@
  * is derived at read time and never stored, so these rates are easy to update.
  *
  * Rates are USD per 1,000,000 tokens, split into input (prompt) and output
- * (completion). Cached/prompt-cache discounts are intentionally ignored for v1
- * (cachedTokens is stored for a future refinement) — so figures are an
- * approximation, not a billed amount.
+ * (completion). Prompt-cache tokens (cachedTokens = reads, cacheCreationTokens
+ * = writes) are priced off the same per-model input rate via the multipliers
+ * below — see computeCostUsd. This assumes the standard 5-minute cache TTL;
+ * Anthropic's 1-hour TTL writes bill at 2x input instead of 1.25x, but
+ * modelUsage as reported by the Claude Code CLI doesn't break writes out by
+ * TTL, so this is still an approximation, not a billed amount.
  *
  * ANTHROPIC rates are current (verified via the claude-api reference, 2026-06).
  * OPENAI / GEMINI rates verified against the providers' public pricing pages
@@ -17,6 +20,12 @@ export interface ModelPricing {
   inputPer1MUsd: number;
   outputPer1MUsd: number;
 }
+
+// Anthropic prompt-cache multipliers, applied to a model's base input rate.
+// Cache reads are far cheaper than a fresh input token; cache writes carry a
+// premium (5-minute TTL rate — see the file-level comment above).
+const CACHE_READ_MULTIPLIER = 0.1;
+const CACHE_WRITE_MULTIPLIER = 1.25;
 
 export const MODEL_PRICING: Record<string, ModelPricing> = {
   // --- Anthropic (current) ---
@@ -80,20 +89,28 @@ function resolvePricing(model: string): ModelPricing | undefined {
 }
 
 /**
- * Estimated USD cost for a (model, promptTokens, completionTokens) tuple.
- * `priced` is false when the model has no pricing entry — the caller should
- * still surface the token totals (cost 0) and can flag it in the UI.
+ * Estimated USD cost for a (model, promptTokens, completionTokens) tuple,
+ * optionally including prompt-cache read/write tokens (see the multipliers
+ * above). `priced` is false when the model has no pricing entry — the caller
+ * should still surface the token totals (cost 0) and can flag it in the UI.
  */
 export function computeCostUsd(
   model: string,
   promptTokens: number,
   completionTokens: number,
+  cacheTokens?: { cacheReadTokens?: number; cacheCreationTokens?: number },
 ): { costUsd: number; priced: boolean } {
   const pricing = resolvePricing(model);
   if (!pricing) return { costUsd: 0, priced: false };
   const costUsd =
     (promptTokens / 1_000_000) * pricing.inputPer1MUsd +
-    (completionTokens / 1_000_000) * pricing.outputPer1MUsd;
+    (completionTokens / 1_000_000) * pricing.outputPer1MUsd +
+    ((cacheTokens?.cacheReadTokens ?? 0) / 1_000_000) *
+      pricing.inputPer1MUsd *
+      CACHE_READ_MULTIPLIER +
+    ((cacheTokens?.cacheCreationTokens ?? 0) / 1_000_000) *
+      pricing.inputPer1MUsd *
+      CACHE_WRITE_MULTIPLIER;
   return { costUsd, priced: true };
 }
 

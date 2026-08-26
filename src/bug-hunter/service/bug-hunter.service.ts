@@ -307,6 +307,8 @@ export class BugHunterService {
         model: string;
         inputTokens: number;
         outputTokens: number;
+        cacheReadInputTokens?: number;
+        cacheCreationInputTokens?: number;
       }[];
       cliReportedCostUsd?: number;
     },
@@ -324,21 +326,31 @@ export class BugHunterService {
               task: LlmTask.BUG_HUNTER,
               promptTokens: m.inputTokens,
               completionTokens: m.outputTokens,
+              cachedTokens: m.cacheReadInputTokens,
+              cacheCreationTokens: m.cacheCreationInputTokens,
               metadata: { runId },
             }),
           ),
       );
 
       const usage = await this.snapshotUsage(runId);
+      // Accumulate rather than overwrite: `recordActualCost` normally fires
+      // once per run, but a manually re-run CI job replays this step against
+      // the same runId — overwriting would silently drop the first attempt's
+      // real spend from the figure the admin UI prefers (see runCostUsd).
+      const priorCliReportedCostUsd =
+        Number(run.metadata?.cliReportedCostUsd) || 0;
+      const cliReportedCostUsd =
+        params.cliReportedCostUsd != null
+          ? priorCliReportedCostUsd + params.cliReportedCostUsd
+          : undefined;
       await this.runRepository.update(runId, {
         totalTokenCostUsd: usage.costUsd.toFixed(4),
         totalInputTokens: usage.totalInputTokens,
         totalOutputTokens: usage.totalOutputTokens,
         metadata: {
           ...run.metadata,
-          ...(params.cliReportedCostUsd != null
-            ? { cliReportedCostUsd: params.cliReportedCostUsd }
-            : {}),
+          ...(cliReportedCostUsd != null ? { cliReportedCostUsd } : {}),
         } as Record<string, any>,
       });
     } catch (error) {
@@ -367,6 +379,8 @@ export class BugHunterService {
         model: string;
         promptTokens: string;
         completionTokens: string;
+        cacheReadTokens: string;
+        cacheCreationTokens: string;
       }[] = await this.dataSource
         .createQueryBuilder()
         .select('lu.model', 'model')
@@ -374,6 +388,11 @@ export class BugHunterService {
         .addSelect(
           'COALESCE(SUM(lu."completionTokens"), 0)',
           'completionTokens',
+        )
+        .addSelect('COALESCE(SUM(lu."cachedTokens"), 0)', 'cacheReadTokens')
+        .addSelect(
+          'COALESCE(SUM(lu."cacheCreationTokens"), 0)',
+          'cacheCreationTokens',
         )
         .from('llm_usage', 'lu')
         .where(`lu.metadata ->> 'runId' = :runId`, { runId })
@@ -388,6 +407,10 @@ export class BugHunterService {
             row.model,
             promptTokens,
             completionTokens,
+            {
+              cacheReadTokens: Number(row.cacheReadTokens ?? 0),
+              cacheCreationTokens: Number(row.cacheCreationTokens ?? 0),
+            },
           );
           return {
             costUsd: totals.costUsd + costUsd,

@@ -197,7 +197,7 @@ jobs:
         run: |
           set -uo pipefail
           if [ -s /tmp/claude-result.json ]; then
-            MODEL_USAGE=$(jq -c '[(.modelUsage // {}) | to_entries[] | {model: (.value.canonicalModel // .key), inputTokens: (.value.inputTokens // 0), outputTokens: (.value.outputTokens // 0)}]' /tmp/claude-result.json 2>/dev/null || echo '[]')
+            MODEL_USAGE=$(jq -c '[(.modelUsage // {}) | to_entries[] | {model: (.value.canonicalModel // .key), inputTokens: (.value.inputTokens // 0), outputTokens: (.value.outputTokens // 0), cacheReadInputTokens: (.value.cacheReadInputTokens // 0), cacheCreationInputTokens: (.value.cacheCreationInputTokens // 0)}]' /tmp/claude-result.json 2>/dev/null || echo '[]')
             CLI_COST=$(jq -r '.total_cost_usd // 0' /tmp/claude-result.json 2>/dev/null || echo 0)
             curl -sS -X POST "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/cost" \
               -H "Content-Type: application/json" \

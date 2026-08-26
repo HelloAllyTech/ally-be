@@ -78,9 +78,13 @@ export class LlmUsage {
   @Column({ type: 'int', default: 0 })
   totalTokens!: number;
 
-  /** Prompt-cache tokens (subset of prompt) when the provider reports them. */
+  /** Prompt-cache READ tokens (subset of prompt) when the provider reports them. */
   @Column({ type: 'int', nullable: true })
   cachedTokens?: number;
+
+  /** Prompt-cache WRITE tokens (subset of prompt) when the provider reports them — priced separately from cachedTokens (cache reads) since Anthropic bills writes at a premium over base input. */
+  @Column({ type: 'int', nullable: true })
+  cacheCreationTokens?: number;
 
   /** STT billable audio duration in milliseconds (service='stt'). */
   @Column({ type: 'int', nullable: true })

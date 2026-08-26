@@ -392,5 +392,53 @@ describe('BugHunterService', () => {
         expect.objectContaining({ totalTokenCostUsd: '0.0000' }),
       );
     });
+
+    it('passes cache read/write tokens through to LlmUsageService.record', async () => {
+      await service.recordActualCost('run-1', {
+        modelUsage: [
+          {
+            model: 'claude-sonnet-4-6',
+            inputTokens: 50000,
+            outputTokens: 2000,
+            cacheReadInputTokens: 10000,
+            cacheCreationInputTokens: 5000,
+          },
+        ],
+      });
+
+      expect(llmUsageService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cachedTokens: 10000,
+          cacheCreationTokens: 5000,
+        }),
+      );
+    });
+
+    it('accumulates cliReportedCostUsd across repeated calls instead of overwriting it', async () => {
+      // Mirrors a manually re-run CI job replaying the cost-reporting step
+      // against the same runId — losing the first attempt's real spend would
+      // silently undercount the figure the admin UI prefers.
+      currentRun = runRow({ status: BugHuntRunStatus.COMPLETED });
+
+      await service.recordActualCost('run-1', {
+        modelUsage: [
+          { model: 'claude-sonnet-4-6', inputTokens: 1000, outputTokens: 100 },
+        ],
+        cliReportedCostUsd: 0.5,
+      });
+      expect(currentRun.metadata).toEqual(
+        expect.objectContaining({ cliReportedCostUsd: 0.5 }),
+      );
+
+      await service.recordActualCost('run-1', {
+        modelUsage: [
+          { model: 'claude-sonnet-4-6', inputTokens: 1000, outputTokens: 100 },
+        ],
+        cliReportedCostUsd: 0.3,
+      });
+      expect(currentRun.metadata).toEqual(
+        expect.objectContaining({ cliReportedCostUsd: 0.8 }),
+      );
+    });
   });
 });
