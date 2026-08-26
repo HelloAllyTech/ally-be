@@ -21,9 +21,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * bug_findings precedent: TypeORM cannot express these CHECKs, so
  * `migration:generate` against these tables proposes dropping them.
  */
-export class CreateBuilderBuildTables1937100000000
-  implements MigrationInterface
-{
+export class CreateBuilderBuildTables1937100000000 implements MigrationInterface {
   name = 'CreateBuilderBuildTables1937100000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
