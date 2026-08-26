@@ -37,9 +37,7 @@ const PLATFORM_TIER_GROUPS = [
 
 const FEATURE_KEY = 'content_management';
 
-export class BackfillContentManagementToggle1938000000000
-  implements MigrationInterface
-{
+export class BackfillContentManagementToggle1938000000000 implements MigrationInterface {
   name = 'BackfillContentManagementToggle1938000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

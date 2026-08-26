@@ -22,7 +22,6 @@ import { TokenUser } from 'src/auth/type/auth.types';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { LoggerService } from 'src/logger/logger.service';
 import { RedisService } from 'src/redis/service/redis.service';
 import { BuilderSessionService } from '../service/builder-session.service';
@@ -90,7 +89,6 @@ export class BuilderController {
 
   @Post('sessions')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_BUILDER],
   })
   @ApiOperation({ summary: 'Start a Builder session (PRD interview)' })
@@ -106,7 +104,6 @@ export class BuilderController {
 
   @Get('sessions')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: "List the caller's Builder sessions, newest first" })
@@ -119,7 +116,6 @@ export class BuilderController {
 
   @Get('sessions/:sessionId')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({
@@ -134,7 +130,6 @@ export class BuilderController {
 
   @Patch('sessions/:sessionId')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_BUILDER],
   })
   @ApiOperation({
@@ -150,7 +145,6 @@ export class BuilderController {
 
   @Post('sessions/:sessionId/cancel')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_BUILDER],
   })
   @ApiOperation({ summary: 'Stop a session' })
@@ -163,7 +157,6 @@ export class BuilderController {
 
   @Patch('sessions/:sessionId/prd')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_BUILDER],
   })
   @ApiOperation({
@@ -184,7 +177,6 @@ export class BuilderController {
 
   @Get('sessions/:sessionId/prd/versions')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'PRD version history, newest first' })
@@ -200,7 +192,6 @@ export class BuilderController {
 
   @Get('repo-commands')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'Repos Builder can work in, with their commands' })
@@ -210,7 +201,6 @@ export class BuilderController {
 
   @Get('repo-maps')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({
@@ -232,7 +222,6 @@ export class BuilderController {
 
   @Post('sessions/:sessionId/start-build')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_BUILDER],
   })
   @ApiOperation({ summary: 'Dispatch a build run from the ready PRD' })
@@ -247,7 +236,6 @@ export class BuilderController {
 
   @Get('sessions/:sessionId/runs')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'Build runs for a session, oldest first' })
@@ -261,7 +249,6 @@ export class BuilderController {
 
   @Get('runs/:runId/events')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({
@@ -290,7 +277,6 @@ export class BuilderController {
 
   @Get('sessions/:sessionId/questions')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'Questions the build is waiting on' })
@@ -304,7 +290,6 @@ export class BuilderController {
 
   @Post('sessions/:sessionId/questions/:questionId/answer')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_BUILDER],
   })
   @ApiOperation({
@@ -332,7 +317,6 @@ export class BuilderController {
 
   @Get('sessions/:sessionId/pull-requests')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'Pull requests this session opened' })
@@ -346,7 +330,6 @@ export class BuilderController {
 
   @Get('sessions/:sessionId/reports')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: "The agent's reports on its own work" })
@@ -362,7 +345,6 @@ export class BuilderController {
 
   @Get('settings')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({
@@ -374,7 +356,6 @@ export class BuilderController {
 
   @Patch('settings')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_BUILDER],
   })
   @ApiOperation({ summary: 'Update Builder settings' })
@@ -398,7 +379,6 @@ export class BuilderController {
 
   @Get('notifications')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'Your Builder inbox' })
@@ -412,7 +392,6 @@ export class BuilderController {
 
   @Post('notifications/:id/read')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'Mark one notification read' })
@@ -426,7 +405,6 @@ export class BuilderController {
 
   @Post('notifications/read-all')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_BUILDER],
   })
   @ApiOperation({ summary: 'Mark every notification read' })
@@ -437,7 +415,6 @@ export class BuilderController {
 
   @Post('sessions/:sessionId/messages/stream')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_BUILDER],
   })
   @ApiOperation({
