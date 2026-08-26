@@ -21,6 +21,31 @@ export enum FeatureToggleKey {
   ROLEPLAY_SESSION_LOGS = 'roleplay_session_logs',
   ORG_DETAIL_CONTENT_TABS = 'org_detail_content_tabs',
 
+  // Simulation Studio's authoring surface — all four content types at once
+  // (Simulations, Tracks, Cases, Courses). One key, not four, because an admin
+  // who authors library content authors all of it; the tabs never diverged in
+  // practice.
+  //
+  // Enforced in ally-web today (route `requiredFeature` + the studio's own
+  // gate). No @RequireFeatureToggle yet — see the note below before adding it.
+  //
+  // When it is added, it belongs on the WRITE endpoints ONLY. The read side
+  // (VIEW_ADMIN_SCENARIO(S), VIEW_ADMIN_SCENARIO_PATH(S), VIEW_ADMIN_CASES,
+  // VIEW_ADMIN_TRACK(S)) is shared with the tenant-scoped ADMIN role, which
+  // ally-helpline-dashboard's Org Settings → access management screen depends
+  // on; gating those would break org admins this key has no business touching.
+  // Same goes for the `.../tenant/:tenantId` assignment routes — their
+  // EDIT_*_TENANT permissions are tenant-ADMIN-held too. The create/update/
+  // delete permissions are platform-tier exclusive, so those are safe.
+  //
+  // One trap: EDIT_SCENARIO in learn.controller.ts also guards
+  // `trigger-warnings`, `trigger-warnings/make-translations`,
+  // `scenarios/enhance-field` and `agent-builder/generate-field`, which belong
+  // to trigger-warning management and Roleplay Studio, not content authoring.
+  // Gating by permission name alone would break Roleplay Studio for an admin
+  // without this key.
+  CONTENT_MANAGEMENT = 'content_management',
+
   // Analytics (route itself is SUPER_ADMIN-tier; two sub-tabs are SDA-only)
   ANALYTICS = 'analytics',
   ANALYTICS_AGENT = 'analytics_agent',
@@ -90,6 +115,18 @@ const SUPER_ADMIN_TIER: FeatureToggleLegacyGrants = {
   multiTenantAdmin: false,
 };
 
+/**
+ * Every retired tier, MULTI_TENANT_ADMIN included — for a capability all three
+ * had some form of before the collapse. Only CONTENT_MANAGEMENT uses it:
+ * MULTI_TENANT_ADMIN authored simulations, so excluding them would take the
+ * Simulations tab away from an admin who has it today.
+ */
+const ALL_ADMIN_TIERS: FeatureToggleLegacyGrants = {
+  superAdmin: true,
+  superDuperAdmin: true,
+  multiTenantAdmin: true,
+};
+
 export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
   {
     key: FeatureToggleKey.MANAGE_SCENARIO_LANGUAGES,
@@ -97,6 +134,13 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     description:
       'Manage scenario language configuration and the language glossary.',
     legacyGrants: SUPER_ADMIN_TIER,
+  },
+  {
+    key: FeatureToggleKey.CONTENT_MANAGEMENT,
+    label: 'Content Management',
+    description:
+      'Create and edit library content in Simulation Studio — simulations, tracks, cases and courses.',
+    legacyGrants: ALL_ADMIN_TIERS,
   },
   {
     key: FeatureToggleKey.AI_LAB,
