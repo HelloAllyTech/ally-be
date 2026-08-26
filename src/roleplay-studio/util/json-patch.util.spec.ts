@@ -2,6 +2,7 @@ import {
   applyJsonPatch,
   JsonPatchError,
   parseJsonPointer,
+  resolveJsonPointer,
 } from './json-patch.util';
 
 describe('json-patch.util', () => {
@@ -167,6 +168,35 @@ describe('json-patch.util', () => {
       expect(() =>
         applyJsonPatch({ a: 1 }, [{ op: 'add', path: '/a/b', value: 1 }]),
       ).toThrow(/non-container/);
+    });
+  });
+
+  describe('resolveJsonPointer', () => {
+    const doc = { technicalPlan: { repos: [{ repo: 'ally-be' }] }, a: 0 };
+
+    it('reads objects, arrays and the whole document', () => {
+      expect(resolveJsonPointer(doc, '/technicalPlan/repos/0/repo')).toBe(
+        'ally-be',
+      );
+      expect(resolveJsonPointer(doc, '/technicalPlan/repos')).toEqual([
+        { repo: 'ally-be' },
+      ]);
+      expect(resolveJsonPointer(doc, '')).toBe(doc);
+      // Present and falsy is not the same as absent.
+      expect(resolveJsonPointer(doc, '/a')).toBe(0);
+    });
+
+    it('answers undefined rather than throwing for a path that addresses nothing', () => {
+      // The caller is showing a model what landed where it just wrote; "there
+      // is nothing there" is the useful answer, not an exception.
+      expect(
+        resolveJsonPointer(doc, '/technicalPlan/repos/9/repo'),
+      ).toBeUndefined();
+      expect(resolveJsonPointer(doc, '/nope/deeper')).toBeUndefined();
+      expect(resolveJsonPointer(doc, '/a/b')).toBeUndefined();
+      expect(
+        resolveJsonPointer(doc, '/technicalPlan/repos/last'),
+      ).toBeUndefined();
     });
   });
 });

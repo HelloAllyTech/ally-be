@@ -62,8 +62,10 @@ export class BuilderInterviewOrchestratorService {
   }
 
   /**
-   * One streamed interview turn. Persists the admin's message up front, the
-   * assistant message at the end, and yields SSE frames throughout.
+   * One streamed interview turn. Persists the admin's message up front, then
+   * allocates the assistant row and checkpoints it after every model pass and
+   * every tool, so an interrupted turn keeps whatever it had already done.
+   * Yields SSE frames throughout.
    */
   async *streamTurn(
     sessionId: string,
@@ -81,6 +83,17 @@ export class BuilderInterviewOrchestratorService {
       1,
       Number(this.configService.builder.maxToolIterations) || 16,
     );
+
+    // A row left `streaming` belongs to a turn that died without finishing —
+    // settle it before this turn writes beside it, so the transcript never
+    // shows two open assistant messages.
+    const closed =
+      await this.messageRepository.closeInterruptedMessages(sessionId);
+    if (closed) {
+      this.logger.warn(
+        `Builder session ${sessionId}: closed ${closed} interrupted assistant message(s).`,
+      );
+    }
 
     const history = await this.messageRepository.listBySession(sessionId);
 
@@ -101,6 +114,18 @@ export class BuilderInterviewOrchestratorService {
       createdBy: userId,
     });
 
+    // The assistant row is allocated now, empty, and rewritten as the turn
+    // progresses. Allocating it at the end instead is what used to lose a
+    // long turn's work to a restart: everything below accumulates in local
+    // arrays, and until they reach a row they exist only in this process.
+    const assistantMessage: BuilderMessage =
+      await this.messageRepository.appendMessage(sessionId, {
+        role: BuilderMessageRole.ASSISTANT,
+        content: null,
+        metadata: { model, streaming: true },
+        createdBy: userId,
+      });
+
     const system = await this.buildSystemBlocks(session.repos ?? undefined);
     const messages: any[] = [
       ...this.rebuildAnthropicHistory(history),
@@ -117,6 +142,40 @@ export class BuilderInterviewOrchestratorService {
     let iterations = 0;
     let stopReason: string | null = null;
     let turnErrored = false;
+
+    /**
+     * Flush the accumulators onto the assistant row.
+     *
+     * Called after every model pass and every tool, and once more when the
+     * turn settles. A failed checkpoint is logged and swallowed: losing a
+     * save point is a smaller harm than killing a turn that is otherwise
+     * working, and the next one supersedes it anyway.
+     */
+    const checkpoint = async (final: boolean): Promise<void> => {
+      try {
+        // Copied, not passed by reference: a checkpoint is a snapshot of the
+        // turn as it stands, and the accumulators keep growing underneath it.
+        await this.messageRepository.checkpointMessage(assistantMessage.id, {
+          content: textParts.join('\n\n') || null,
+          toolCalls: allToolCalls.length > 0 ? [...allToolCalls] : null,
+          toolResults: allToolResults.length > 0 ? [...allToolResults] : null,
+          metadata: {
+            model,
+            iterations,
+            stopReason,
+            errored: turnErrored,
+            streaming: !final,
+            ...(questions.length > 0 ? { questions: [...questions] } : {}),
+          },
+        });
+      } catch (error) {
+        this.logger.warn(
+          `Builder session ${sessionId}: checkpoint failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    };
 
     try {
       for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -157,6 +216,10 @@ export class BuilderInterviewOrchestratorService {
         if (stopReason !== 'tool_use' || toolUses.length === 0) {
           break;
         }
+
+        // The prose of this pass is on the admin's screen already; save it
+        // before spending minutes in the tools that follow.
+        await checkpoint(false);
 
         messages.push({ role: 'assistant', content: contentBlocks });
 
@@ -207,6 +270,10 @@ export class BuilderInterviewOrchestratorService {
             tool_use_id: toolUse.id,
             content: JSON.stringify(outcome.modelResult),
           });
+          // Per tool, not per iteration: a github_read_file that returns a
+          // large file, or a stacks_search, is exactly the work nobody wants
+          // to pay for twice.
+          await checkpoint(false);
           if (outcome.endTurn) {
             endTurn = true;
           }
@@ -260,22 +327,9 @@ export class BuilderInterviewOrchestratorService {
       yield { event: 'error', data: { code: 'interview_error', message } };
     }
 
-    // Persist the assistant message even for aborted turns.
-    const assistantMessage: BuilderMessage =
-      await this.messageRepository.appendMessage(sessionId, {
-        role: BuilderMessageRole.ASSISTANT,
-        content: textParts.join('\n\n') || null,
-        toolCalls: allToolCalls.length > 0 ? allToolCalls : null,
-        toolResults: allToolResults.length > 0 ? allToolResults : null,
-        metadata: {
-          model,
-          iterations,
-          stopReason,
-          errored: turnErrored,
-          ...(questions.length > 0 ? { questions } : {}),
-        },
-        createdBy: userId,
-      });
+    // Settle the assistant row even for aborted turns: `streaming` goes false
+    // here and nowhere else, so a row still marked open is a turn that died.
+    await checkpoint(true);
 
     // Readiness may have moved during the turn; settle the status before the
     // client reads it off the `done` frame.

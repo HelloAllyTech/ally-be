@@ -164,7 +164,66 @@ describe('BuilderPrdService', () => {
       );
 
       expect(readiness.ready).toBe(false);
-      expect(section?.hint).toContain('no repo chosen');
+      // The admin's half stays a short sentence; it renders in a small
+      // tooltip and a paragraph of JSON Pointers there is unreadable.
+      expect(section?.hint).toBe('1 planned change(s) have no repo chosen.');
+      // The agent's half names the pointer, the field and the legal values.
+      // That is the difference between a one-op repair and the session that
+      // spent its whole budget guessing at key names.
+      expect(section?.detail).toContain('/technicalPlan/repos/1/repo');
+      expect(section?.detail).toContain('ally-be, ally-web');
+      expect(section?.detail).not.toContain('/technicalPlan/repos/0/repo');
+      // Only the blockers list carries both, and only the agent reads it.
+      expect(
+        readiness.blockers.find((blocker) =>
+          blocker.includes('no repo chosen'),
+        ),
+      ).toContain('/technicalPlan/repos/1/repo');
+    });
+
+    // The same session read the rubric as forbidding a cross-repo feature and
+    // started spreading one change over five repos to satisfy it.
+    it('tells the agent that one entry per repo is how a cross-repo change is written', () => {
+      const draft = buildReadyPrd();
+      draft.technicalPlan.repos = [
+        { repo: '', changesMd: 'The same edit everywhere.' },
+      ];
+
+      const detail = service
+        .computeReadiness(draft)
+        .sections.find((entry) => entry.key === 'technicalPlan')?.detail;
+
+      expect(detail).toContain('{repo, changesMd}');
+      expect(detail).toContain('not a workaround');
+    });
+
+    it('points at the exact requirement missing criteria', () => {
+      const draft = buildReadyPrd();
+      draft.requirements = [
+        {
+          id: 'R1',
+          title: 'PRD interview',
+          description: 'Interviews the admin.',
+          acceptanceCriteria: ['Options plus a custom field'],
+        },
+        {
+          id: 'R2',
+          title: 'Readiness ring',
+          description: 'Scores the document.',
+          acceptanceCriteria: [],
+        },
+      ];
+
+      const section = service
+        .computeReadiness(draft)
+        .sections.find((entry) => entry.key === 'requirements');
+
+      expect(section?.hint).toBe(
+        '1 requirement(s) have no acceptance criteria.',
+      );
+      expect(section?.detail).toContain('/requirements/1/acceptanceCriteria');
+      expect(section?.detail).toContain('Readiness ring');
+      expect(section?.detail).not.toContain('/requirements/0/');
     });
 
     it('blocks a plan naming a repo Builder cannot work in', () => {
@@ -181,6 +240,7 @@ describe('BuilderPrdService', () => {
 
       expect(readiness.ready).toBe(false);
       expect(section?.hint).toContain('some-other-repo');
+      expect(section?.detail).toContain('Allowed values: ally-be');
     });
 
     it('treats a too-thin section differently from an empty one', () => {
@@ -257,6 +317,54 @@ describe('BuilderPrdService', () => {
       expect(docRepo.update).toHaveBeenCalledWith(
         'doc-1',
         expect.objectContaining({ versionNumber: 1, updatedBy: 7 }),
+      );
+    });
+
+    it('reports the coercions it had to make, so update_prd can hand them back', async () => {
+      const versionRepo = {
+        create: jest.fn((v) => v),
+        save: jest.fn(async (v) => v),
+      };
+      const docRepo = {
+        findOneOrFail: jest.fn().mockResolvedValue(docStub()),
+        update: jest.fn(),
+      };
+      dataSource.transaction.mockImplementation(async (work: any) =>
+        work({
+          getRepository: (entity: any) =>
+            entity?.name === 'BuilderPrdVersion' ? versionRepo : docRepo,
+        }),
+      );
+
+      const { diagnostics } = await service.applyPatch(
+        docStub() as any,
+        [
+          {
+            op: 'add',
+            path: '/technicalPlan/repos/-',
+            value: { repoName: 'ally-be', changes: 'Lower the timeout.' },
+          },
+        ],
+        7,
+        BuilderPrdVersionAuthor.AGENT,
+      );
+
+      expect(diagnostics.recovered).toEqual([
+        { path: '/technicalPlan/repos/0', wrote: 'repoName', storedAs: 'repo' },
+        {
+          path: '/technicalPlan/repos/0',
+          wrote: 'changes',
+          storedAs: 'changesMd',
+        },
+      ]);
+      expect(versionRepo.save).toHaveBeenCalledWith(
+        expect.objectContaining({
+          content: expect.objectContaining({
+            technicalPlan: expect.objectContaining({
+              repos: [{ repo: 'ally-be', changesMd: 'Lower the timeout.' }],
+            }),
+          }),
+        }),
       );
     });
   });

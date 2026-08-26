@@ -1,6 +1,7 @@
 import {
   asPrdText,
   asPrdTextList,
+  createPrdNormaliseDiagnostics,
   normalisePrdDocument,
 } from '../builder-prd-normalise.util';
 import { createEmptyPrdDocument } from '../../type/builder-prd.type';
@@ -129,6 +130,139 @@ describe('builder PRD normalisation', () => {
     it('survives a draft that is not an object at all', () => {
       expect(normalisePrdDocument(null).openQuestions).toEqual([]);
       expect(normalisePrdDocument('broken').requirements).toEqual([]);
+    });
+  });
+
+  describe('near-miss key names on structured rows', () => {
+    it('recovers a repo plan written under synonyms', () => {
+      // The exact shape that cost a live session its whole budget: the plan
+      // was stored as { repo: '', changesMd: '' }, the patch reported success,
+      // and the readiness blocker never moved.
+      const result = normalisePrdDocument({
+        technicalPlan: {
+          repos: [
+            { repoName: 'ally-be', changes: 'Lower the fix-session timeout.' },
+            { targetRepo: 'ally-web', changesMarkdown: 'No change.' },
+          ],
+        },
+      });
+
+      expect(result.technicalPlan.repos).toEqual([
+        { repo: 'ally-be', changesMd: 'Lower the fix-session timeout.' },
+        { repo: 'ally-web', changesMd: 'No change.' },
+      ]);
+    });
+
+    it('ignores case and separators, so changes_md lands', () => {
+      const result = normalisePrdDocument({
+        technicalPlan: {
+          repos: [{ Repo: 'ally-ai', changes_md: 'RAG tweak' }],
+        },
+      });
+      expect(result.technicalPlan.repos[0]).toEqual({
+        repo: 'ally-ai',
+        changesMd: 'RAG tweak',
+      });
+    });
+
+    it('prefers the declared key, and skips it only when it is empty', () => {
+      const both = normalisePrdDocument({
+        technicalPlan: {
+          repos: [{ repo: 'ally-be', repoName: 'ally-web', changesMd: 'x' }],
+        },
+      });
+      expect(both.technicalPlan.repos[0].repo).toBe('ally-be');
+
+      // An agent that wrote both an empty declared key and a populated synonym
+      // meant the synonym.
+      const empty = normalisePrdDocument({
+        technicalPlan: {
+          repos: [{ repo: '', repoName: 'ally-web', changesMd: 'x' }],
+        },
+      });
+      expect(empty.technicalPlan.repos[0].repo).toBe('ally-web');
+    });
+
+    it('recovers requirement and assumption synonyms too', () => {
+      const result = normalisePrdDocument({
+        requirements: [
+          { id: 'R1', name: 'Precheck step', criteria: ['Skips in ~30s'] },
+        ],
+        assumptions: [
+          { id: 'A1', assumption: 'Cron stays hourly', confirmed: true },
+        ],
+      });
+
+      expect(result.requirements[0].title).toBe('Precheck step');
+      expect(result.requirements[0].acceptanceCriteria).toEqual([
+        'Skips in ~30s',
+      ]);
+      expect(result.assumptions[0].text).toBe('Cron stays hourly');
+      // `confirmed: true` says the same thing as the sentinel; blocking
+      // readiness on it would hold up an assumption the admin had settled.
+      expect(result.assumptions[0].status).toBe('confirmed');
+    });
+
+    it('reports what it recovered and what it could not', () => {
+      const diagnostics = createPrdNormaliseDiagnostics();
+      normalisePrdDocument(
+        {
+          technicalPlan: {
+            repos: [
+              {
+                repoName: 'ally-be',
+                changesMd: 'Lower the timeout.',
+                files: 'src/bug-hunter/constants/bug-fix-session.constants.ts',
+              },
+            ],
+          },
+        },
+        diagnostics,
+      );
+
+      expect(diagnostics.recovered).toEqual([
+        {
+          path: '/technicalPlan/repos/0',
+          wrote: 'repoName',
+          storedAs: 'repo',
+        },
+      ]);
+      // The only warning the agent will get that these words are not in the
+      // document.
+      expect(diagnostics.ignored).toEqual([
+        { path: '/technicalPlan/repos/0', keys: ['files'] },
+      ]);
+    });
+
+    it('says nothing about a correctly-shaped document', () => {
+      const diagnostics = createPrdNormaliseDiagnostics();
+      normalisePrdDocument(
+        {
+          requirements: [
+            {
+              id: 'R1',
+              title: 'Precheck',
+              description: 'A first step',
+              acceptanceCriteria: ['Skips in ~30s'],
+            },
+          ],
+          technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'Timeout' }] },
+        },
+        diagnostics,
+      );
+      expect(diagnostics).toEqual({ recovered: [], ignored: [] });
+    });
+
+    it('keeps a bare string entry quiet rather than warning about its own scaffolding', () => {
+      const diagnostics = createPrdNormaliseDiagnostics();
+      const result = normalisePrdDocument(
+        { technicalPlan: { repos: ['Lower the timeout in ally-be'] } },
+        diagnostics,
+      );
+      expect(result.technicalPlan.repos[0].changesMd).toBe(
+        'Lower the timeout in ally-be',
+      );
+      expect(diagnostics.ignored).toEqual([]);
     });
   });
 });
