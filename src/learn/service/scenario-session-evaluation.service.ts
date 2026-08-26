@@ -150,15 +150,22 @@ export class ScenarioSessionEvaluationService {
    * 30-minute catch-up sweep.
    *
    * WHY THIS EXISTS. The normal fast path is `triggerForSession` inside
-   * `handleEndScenarioSessionEvent`, but that method returns early when the
-   * session is already ENDED — and for a V2V run it always is: the tester
-   * disconnects cleanly, so `RoomFinishedHandler` ends the session a beat
-   * before the agent's `end-of-session` SQS event arrives (measured 0.5s apart
-   * in prod). The evaluation trigger is collateral of a guard that exists to
-   * stop credits being double-charged, so every V2V run silently fell through
-   * to the catch-up and waited `CATCHUP_GRACE_MINUTES` plus up to a full tick.
-   * That is fine for a background sweep and useless for a test harness, where
-   * the score IS the result being waited on.
+   * `handleEndScenarioSessionEvent`, and it used to be unreachable for a V2V
+   * run: that handler bailed out whenever the session was already ENDED, which
+   * for a V2V run it always is — the tester disconnects cleanly, so
+   * `RoomFinishedHandler` ends the session a beat before the agent's
+   * `end-of-session` SQS event arrives (measured 0.5s apart in prod). Every V2V
+   * run therefore fell through to the catch-up and waited
+   * `CATCHUP_GRACE_MINUTES` plus up to a full tick — fine for a background
+   * sweep, useless for a test harness where the score IS the result being
+   * waited on.
+   *
+   * That early return is gone (the handler now gates only the credit and
+   * duration writes on "already ended", since everything else it does has no
+   * other writer), so the fast path does reach V2V runs again. This stays as
+   * the harness's own guarantee rather than a dependency on that ordering: it
+   * costs one guarded read when the trigger already ran, and it is what makes
+   * the V2V result independent of whether the agent's message arrives at all.
    *
    * Deliberately fire-and-forget, and deliberately still covered by the
    * catch-up: the settle wait lives in this process, so a deploy or crash
