@@ -32,7 +32,6 @@ import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.de
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import {
   CreateBadgeDto,
   CreateBadgeResponseDto,
@@ -78,7 +77,6 @@ export class BadgeController {
     type: CreateBadgeResponseDto,
   })
   @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
   })
   @Post()
@@ -96,7 +94,6 @@ export class BadgeController {
     type: CreateBadgesBatchResponseDto,
   })
   @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
   })
   @Post('/batch')
@@ -395,7 +392,6 @@ export class BadgeController {
 
   @ApiOperation({ summary: 'Get presigned URL for badge image' })
   @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
   })
   @Post('badge-image-url')
@@ -409,7 +405,6 @@ export class BadgeController {
 
   @ApiOperation({ summary: 'Delete badge image' })
   @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
   })
   @ApiBody({ type: DeleteBadgeImageDto })
@@ -431,7 +426,6 @@ export class BadgeController {
     type: Boolean,
   })
   @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
   })
   @Patch(':badgeId')
@@ -449,7 +443,6 @@ export class BadgeController {
     type: Boolean,
   })
   @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
   })
   @Delete('batch')
@@ -471,7 +464,6 @@ export class BadgeController {
     type: Boolean,
   })
   @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
   })
   @Delete(':badgeId')
@@ -483,7 +475,6 @@ export class BadgeController {
 
   @ApiOperation({ summary: 'Make translations for badges' })
   @RequireFeatureToggle(FeatureToggleKey.USER_BADGES, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_ADMIN_BADGES],
   })
   @Post('make-translations')

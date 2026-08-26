@@ -35,7 +35,6 @@ import { TokenUser } from 'src/auth/type/auth.types';
 import { SuccessResponse } from 'src/common/type/common.type';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 @ApiTags('SessionEvents')
 @ApiBearerAuth()
@@ -161,9 +160,7 @@ export class SessionEventController {
   @ApiOperation({ summary: 'Process passive session events' })
   // Role-gated (not EDIT_SESSION_EVENTS) so multi-tenant admins, who hold that
   // permission for library CRUD, cannot trigger this operational endpoint.
-  @RequireFeatureToggle(FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS)
   @Post('translate-passive')
   async translatePassiveSessionEvents(): Promise<SuccessResponse> {
     return await this.sessionEventService.translatePassiveSessionEvents();

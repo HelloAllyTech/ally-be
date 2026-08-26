@@ -5,20 +5,12 @@ import { FeatureToggleGuard } from '../guards/feature-toggle.guard';
 import { RequirePermissions } from './permissions.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import { PreferenceName, UserRole } from 'src/common/constants/user.constants';
+import { PreferenceName } from 'src/common/constants/user.constants';
 
 export const FEATURE_TOGGLE_KEY = 'feature-toggle';
 
 export interface FeatureToggleOptions {
   featureKey: FeatureToggleKey;
-  /**
-   * Rollout-window escape hatch: while the frontend/backend deploy is mid-flight,
-   * a caller holding one of these legacy role names also passes, even without the
-   * toggle row. Remove this option (and the field) from every call site once the
-   * migration backfill is confirmed correct in production — see the "Remove the
-   * legacy branch" step in the role-collapse rollout plan.
-   */
-  legacyRoles?: UserRole[];
   /**
    * Org-level escape hatch: a caller whose *tenant* has this preference switched
    * on also passes, without a per-user toggle row. This is how a surface built
@@ -26,9 +18,9 @@ export interface FeatureToggleOptions {
    * only ever has rows for PLATFORM_ADMIN accounts, so without this a tenant
    * admin holding the right permission would still 403.
    *
-   * Unlike `legacyRoles` this is permanent, not a rollout window. It never
-   * widens *what* the caller may do: PermissionsGuard has already run, so the
-   * per-role permission set still decides read vs. write.
+   * Permanent, not a rollout window. It never widens *what* the caller may do:
+   * PermissionsGuard has already run, so the per-role permission set still
+   * decides read vs. write.
    */
   tenantPreference?: PreferenceName;
 }
@@ -52,7 +44,6 @@ export interface FeatureToggleOptions {
 export function RequireFeatureToggle(
   featureKey: FeatureToggleKey,
   options: {
-    legacyRoles?: UserRole[];
     permissions?: string[];
     tenantPreference?: PreferenceName;
   } = {},
@@ -63,7 +54,6 @@ export function RequireFeatureToggle(
     RequirePermissions(permissions, 'AND'),
     SetMetadata(FEATURE_TOGGLE_KEY, {
       featureKey,
-      legacyRoles: options.legacyRoles,
       tenantPreference: options.tenantPreference,
     } as FeatureToggleOptions),
   );

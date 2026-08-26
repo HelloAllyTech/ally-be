@@ -13,7 +13,6 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { Public } from 'src/auth/decorators/auth.metadata';
 import { UpdateLegalContentDto } from '../dto/legal-content.dto';
 import { LEGAL_CONTENT_NAMES } from '../constants/settings.constants';
@@ -392,7 +391,6 @@ export class SettingsController {
     description: 'Forbidden - only super admin can update',
   })
   @RequireFeatureToggle(FeatureToggleKey.SETTINGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.SYSTEM_ACCESS],
   })
   updateTerms(@Body() body: UpdateLegalContentDto) {
@@ -411,7 +409,6 @@ export class SettingsController {
     description: 'Forbidden - only super admin can update',
   })
   @RequireFeatureToggle(FeatureToggleKey.SETTINGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.SYSTEM_ACCESS],
   })
   updatePrivacy(@Body() body: UpdateLegalContentDto) {
@@ -432,7 +429,6 @@ export class SettingsController {
       'Returns the current turn-endpointing bounds, falling back to LiveKit defaults if none have been saved yet',
   })
   @RequireFeatureToggle(FeatureToggleKey.SETTINGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.SYSTEM_ACCESS],
   })
   getTurnEndpointing() {
@@ -451,7 +447,6 @@ export class SettingsController {
     description: 'Forbidden - only super admin can update',
   })
   @RequireFeatureToggle(FeatureToggleKey.SETTINGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.SYSTEM_ACCESS],
   })
   updateTurnEndpointing(@Body() body: UpdateTurnEndpointingSettingsDto) {

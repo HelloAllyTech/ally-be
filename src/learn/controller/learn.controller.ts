@@ -102,10 +102,6 @@ import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-re
 import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import {
-  SUPER_ADMIN_ROLES,
-  SUPER_DUPER_ADMIN_ROLES,
-} from 'src/common/constants/user.constants';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -763,9 +759,7 @@ export class LearnController {
   })
   // Role-gated (not EDIT_SCENARIO_MAP_EVENTS) so multi-tenant admins cannot
   // trigger this operational, all-scenarios bulk operation.
-  @RequireFeatureToggle(FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS)
   @Post('scenarios/checklist-items/translate')
   async translateChecklistItems(
     @Query('batchSize') batchSize?: number,
@@ -1174,7 +1168,6 @@ export class LearnController {
   })
   @ApiQuery({ name: 'activeOnly', required: false, type: Boolean })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_STT_CONFIGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_ADMIN_LANGUAGES],
   })
   @Get('stt-configs')
@@ -1184,7 +1177,6 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Create an STT config' })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_STT_CONFIGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_LANGUAGE],
   })
   @Post('stt-configs')
@@ -1194,7 +1186,6 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Update an STT config' })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_STT_CONFIGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_LANGUAGE],
   })
   @Put('stt-configs/:id')
@@ -1211,7 +1202,6 @@ export class LearnController {
       'Refused while a language still defaults to it — deactivate instead.',
   })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_STT_CONFIGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_LANGUAGE],
   })
   @Delete('stt-configs/:id')
@@ -1227,7 +1217,6 @@ export class LearnController {
   })
   @ApiQuery({ name: 'activeOnly', required: false, type: Boolean })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_LLM_MODEL_CATALOG, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_ADMIN_LANGUAGES],
   })
   @Get('llm-configs')
@@ -1237,7 +1226,6 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Create an LLM config' })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_LLM_MODEL_CATALOG, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_LANGUAGE],
   })
   @Post('llm-configs')
@@ -1247,7 +1235,6 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Update an LLM config' })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_LLM_MODEL_CATALOG, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_LANGUAGE],
   })
   @Put('llm-configs/:id')
@@ -1264,7 +1251,6 @@ export class LearnController {
       'Refused while a language still defaults to it — deactivate instead.',
   })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_LLM_MODEL_CATALOG, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_LANGUAGE],
   })
   @Delete('llm-configs/:id')
@@ -1496,9 +1482,7 @@ export class LearnController {
       'The session appears in Roleplay Session Logs.',
   })
   @ApiBody({ type: StartV2VTestSessionDto })
-  @RequireFeatureToggle(FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS)
   @Post('v2v-test-session-start')
   async startV2VTestSession(
     @CurrentUser() user: TokenUser,

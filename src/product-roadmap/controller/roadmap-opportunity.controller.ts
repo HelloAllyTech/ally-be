@@ -27,7 +27,6 @@ import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { RateLimit } from 'src/rate-limit/decorator/rate-limit.decorator';
 
 import { CONSUMER_BUG_REPORT_RATE_LIMIT } from '../constants/product-roadmap.constants';
@@ -116,7 +115,6 @@ export class RoadmapOpportunityController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Put('board/lane')
@@ -224,7 +222,6 @@ export class RoadmapOpportunityController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Patch('opportunities/:id')
@@ -245,7 +242,6 @@ export class RoadmapOpportunityController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Delete('opportunities/:id')
@@ -286,7 +282,6 @@ export class RoadmapOpportunityController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('opportunities/:id/split')
@@ -305,7 +300,6 @@ export class RoadmapOpportunityController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('opportunities/merge')

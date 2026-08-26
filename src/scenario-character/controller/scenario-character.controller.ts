@@ -22,10 +22,7 @@ import { ScenarioCharacterService } from '../service/scenario-character.service'
 import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
-import {
-  PreferenceName,
-  SUPER_DUPER_ADMIN_ROLES,
-} from '../../common/constants/user.constants';
+import { PreferenceName } from '../../common/constants/user.constants';
 import { ScenarioCharacter } from '../entity/scenario-character.entity';
 import {
   ScenarioCharacterSortBy,
@@ -89,7 +86,6 @@ export class ScenarioCharacterController {
   })
   @Get()
   @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     tenantPreference: PreferenceName.CHARACTER_LIBRARY_ENABLED,
     permissions: [PERMISSIONS.VIEW_SCENARIO_CHARACTER],
   })
@@ -117,7 +113,6 @@ export class ScenarioCharacterController {
   })
   @Post()
   @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     tenantPreference: PreferenceName.CHARACTER_LIBRARY_ENABLED,
     permissions: [PERMISSIONS.CREATE_SCENARIO_CHARACTER],
   })
@@ -130,7 +125,6 @@ export class ScenarioCharacterController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     tenantPreference: PreferenceName.CHARACTER_LIBRARY_ENABLED,
     permissions: [PERMISSIONS.VIEW_SCENARIO_CHARACTER],
   })
@@ -154,7 +148,6 @@ export class ScenarioCharacterController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     tenantPreference: PreferenceName.CHARACTER_LIBRARY_ENABLED,
     permissions: [PERMISSIONS.EDIT_SCENARIO_CHARACTER],
   })
@@ -182,7 +175,6 @@ export class ScenarioCharacterController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     tenantPreference: PreferenceName.CHARACTER_LIBRARY_ENABLED,
     permissions: [PERMISSIONS.DELETE_SCENARIO_CHARACTER],
   })
@@ -203,7 +195,6 @@ export class ScenarioCharacterController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.CHARACTER_LIBRARY, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     tenantPreference: PreferenceName.CHARACTER_LIBRARY_ENABLED,
     permissions: [PERMISSIONS.DELETE_SCENARIO_CHARACTER],
   })

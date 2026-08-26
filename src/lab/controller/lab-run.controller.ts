@@ -16,7 +16,6 @@ import {
 import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
-import { SUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import { LabRunService } from '../service/lab-run.service';
 import { LabEvalService } from '../service/lab-eval.service';
 import { LabAutoEvalService } from '../service/lab-auto-eval.service';
@@ -39,7 +38,6 @@ export class LabRunController {
 
   @Get()
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AI_LAB],
   })
   @ApiOperation({ summary: 'List AI Lab runs (one row per skill execution)' })
@@ -50,7 +48,6 @@ export class LabRunController {
   // Declared before ':id' routes so 'assignments/...' never binds as an id.
   @Delete('assignments/:assignmentId')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_AI_LAB],
   })
   @ApiOperation({
@@ -62,7 +59,6 @@ export class LabRunController {
 
   @Get(':id')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AI_LAB],
   })
   @ApiOperation({ summary: 'Get one AI Lab run by ID' })
@@ -72,7 +68,6 @@ export class LabRunController {
 
   @Post()
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_AI_LAB],
   })
   @ApiOperation({
@@ -84,7 +79,6 @@ export class LabRunController {
 
   @Post(':id/publish')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_AI_LAB],
   })
   @ApiOperation({
@@ -97,7 +91,6 @@ export class LabRunController {
 
   @Get(':id/questions')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AI_LAB],
   })
   @ApiOperation({ summary: 'Evaluation questions attached to a published run' })
@@ -107,7 +100,6 @@ export class LabRunController {
 
   @Get(':id/assignments')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AI_LAB],
   })
   @ApiOperation({ summary: 'Evaluator assignments of a published run' })
@@ -117,7 +109,6 @@ export class LabRunController {
 
   @Post(':id/assignments')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_AI_LAB],
   })
   @ApiOperation({
@@ -129,7 +120,6 @@ export class LabRunController {
 
   @Get(':id/results')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AI_LAB],
   })
   @ApiOperation({
@@ -142,7 +132,6 @@ export class LabRunController {
 
   @Get(':id/auto-evaluations')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AI_LAB],
   })
   @ApiOperation({ summary: 'Automated (LLM-judge) evaluations of a run' })
@@ -152,7 +141,6 @@ export class LabRunController {
 
   @Post(':id/auto-evaluations')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_AI_LAB],
   })
   @ApiOperation({
@@ -165,7 +153,6 @@ export class LabRunController {
 
   @Delete(':id')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.DELETE_AI_LAB],
   })
   @ApiOperation({ summary: 'Delete an AI Lab run from the log' })
