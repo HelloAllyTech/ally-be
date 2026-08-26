@@ -322,6 +322,14 @@ const PERMISSIONS = {
   EDIT_AI_LAB: 'edit:admin:ai-lab',
   DELETE_AI_LAB: 'delete:admin:ai-lab',
 
+  // === BUILDER ===
+  // Two tiers, not three: VIEW is read-only (someone catching up on a build),
+  // EDIT covers running the interview, editing the PRD and starting or
+  // stopping a build. There is no separate delete — a session is cancelled,
+  // never removed, because its PRs outlive it.
+  VIEW_BUILDER: 'view:admin:builder',
+  EDIT_BUILDER: 'edit:admin:builder',
+
   // === PRODUCT ROADMAP ===
   // Three tiers, because the roadmap is a voting board rather than a CRUD screen:
   // VIEW is read-only, VOTE adds "participate" (file an opportunity, allocate your
@@ -446,6 +454,8 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.VIEW_AI_LAB,
   PERMISSIONS.EDIT_AI_LAB,
   PERMISSIONS.DELETE_AI_LAB,
+  PERMISSIONS.VIEW_BUILDER,
+  PERMISSIONS.EDIT_BUILDER,
   // Product Roadmap: SUPER_ADMIN can see the board and vote on it. The management
   // surface (EDIT_PRODUCT_ROADMAP) is deliberately withheld here and granted only to
   // SUPER_DUPER_ADMIN below.
