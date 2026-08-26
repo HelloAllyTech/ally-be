@@ -45,13 +45,6 @@ export class ReferenceDocumentController {
     return this.documentService.addReferenceDocument(tokenUser.id, documentDto);
   }
 
-  @Public()
-  @Post('search/public')
-  @ApiOperation({ summary: 'Search public reference documents' })
-  async searchPublicDocuments(@Body() searchDto: SearchDocumentsDto) {
-    return this.documentService.searchPublicDocuments(searchDto);
-  }
-
   @Post('search')
   @ApiOperation({
     summary: 'Search organization reference documents ',
@@ -87,13 +80,6 @@ export class ReferenceDocumentController {
   @Public()
   async getCategories() {
     return this.documentService.getDistinctCategories();
-  }
-
-  @Get('public/:id')
-  @ApiOperation({ summary: 'Get a public reference document by ID' })
-  @Public()
-  async getDocument(@Param('id') id: string) {
-    return this.documentService.getPublicReferenceDocument(id);
   }
 
   @Get(':id')

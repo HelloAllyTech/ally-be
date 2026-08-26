@@ -262,10 +262,14 @@ describe('ReferenceDocumentService', () => {
     });
   });
 
-  describe('searchPublicDocuments', () => {
+  describe('searchDocumentsByIds (via tenant search)', () => {
+    beforeEach(() => {
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('org-1');
+    });
+
     it('returns empty when none available', async () => {
       repo.find.mockResolvedValue([]);
-      const res = await service.searchPublicDocuments({ query: 'q' } as any);
+      const res = await service.searchTenantDocuments({ query: 'q' } as any);
       expect(res).toEqual({ documents: [], total: 0, categories: {} });
     });
 
@@ -288,7 +292,7 @@ describe('ReferenceDocumentService', () => {
         categories: { Cat: 1 },
       } as unknown as SearchReferenceDocumentsResponse);
 
-      const res = await service.searchPublicDocuments({ query: 'q' } as any);
+      const res = await service.searchTenantDocuments({ query: 'q' } as any);
       expect(ai.searchReferenceDocuments).toHaveBeenCalledWith({
         query: 'q',
         limit: 10,
@@ -299,7 +303,7 @@ describe('ReferenceDocumentService', () => {
 
     it('skips when all excluded', async () => {
       repo.find.mockResolvedValue([{ id: 'a' }, { id: 'b' }] as any);
-      const res = await service.searchPublicDocuments({
+      const res = await service.searchTenantDocuments({
         query: 'q',
         excludedIds: ['a', 'b'],
       } as any);
@@ -310,7 +314,7 @@ describe('ReferenceDocumentService', () => {
       repo.find.mockResolvedValue([{ id: 'a' }] as any);
       ai.searchReferenceDocuments.mockRejectedValue(new Error('AI search'));
       await expect(
-        service.searchPublicDocuments({ query: 'q' } as any),
+        service.searchTenantDocuments({ query: 'q' } as any),
       ).rejects.toThrow(SearchOperationFailedException);
     });
   });
@@ -348,8 +352,9 @@ describe('ReferenceDocumentService', () => {
     });
   });
 
-  describe('buildSearchRequest + mapDocument via public search', () => {
+  describe('buildSearchRequest + mapDocument via tenant search', () => {
     it('passes filters/sort into ai request and maps score', async () => {
+      (ExecutionManager.getTenantId as jest.Mock).mockReturnValue('org-1');
       repo.find.mockResolvedValue([{ id: 'd1' }] as any);
 
       ai.searchReferenceDocuments.mockResolvedValue({
@@ -368,7 +373,7 @@ describe('ReferenceDocumentService', () => {
         categories: {},
       } as unknown as SearchReferenceDocumentsResponse);
 
-      const res = await service.searchPublicDocuments({
+      const res = await service.searchTenantDocuments({
         query: 'q',
         limit: 5,
         filters: { category: 'Cat' },
@@ -507,54 +512,6 @@ describe('ReferenceDocumentService', () => {
     it('throws NotFound on AI error', async () => {
       ai.getReferenceDocument.mockRejectedValue(new Error('AI fail'));
       await expect(service.getReferenceDocument('x')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-  });
-
-  describe('getPublicReferenceDocument', () => {
-    it('throws NotFound if not found', async () => {
-      repo.findOneBy.mockResolvedValue(null);
-      await expect(service.getPublicReferenceDocument('x')).rejects.toThrow(
-        NotFoundException,
-      );
-    });
-
-    it('returns ai doc when present', async () => {
-      repo.findOneBy.mockResolvedValue({
-        ...baseDocument,
-        isPublic: true,
-        uploadStatus: DocumentUploadStatus.SUCCESS,
-      } as any);
-
-      ai.getReferenceDocument.mockResolvedValue({
-        id: 'x',
-        heading: 'H',
-        content: 'C',
-        category: 'Cat',
-        tags: [],
-        tenant_id: '',
-      } as unknown as GetReferenceDocumentResponse);
-
-      const res = await service.getPublicReferenceDocument('x');
-      expect(res).toEqual({
-        id: 'x',
-        heading: 'H',
-        content: 'C',
-        category: 'Cat',
-        tags: [],
-        tenant_id: '',
-      });
-    });
-
-    it('throws NotFound when AI fails', async () => {
-      repo.findOneBy.mockResolvedValue({
-        ...baseDocument,
-        isPublic: true,
-        uploadStatus: DocumentUploadStatus.SUCCESS,
-      } as any);
-      ai.getReferenceDocument.mockRejectedValue(new Error('AI fail'));
-      await expect(service.getPublicReferenceDocument('x')).rejects.toThrow(
         NotFoundException,
       );
     });
