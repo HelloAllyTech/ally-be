@@ -14,6 +14,7 @@ import {
   IsUUID,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
@@ -26,6 +27,10 @@ import {
   BugHunterMode,
 } from '../enum/bug-finding.enum';
 import { BugHunterNotificationLevel } from '../enum/bug-hunter-notification.enum';
+import {
+  RoadmapOpportunitySource,
+  RoadmapOpportunityStage,
+} from 'src/product-roadmap/enum/roadmap-opportunity.enum';
 import { BUG_FINDING_DESCRIPTION_MAX_LENGTH } from '../constants/bug-hunter.constants';
 
 export class BugHuntEventDto {
@@ -382,6 +387,99 @@ export class UpdateBugHunterSettingsDto {
   mode!: BugHunterMode;
 }
 
+/**
+ * Everything that is true of a bug because a PERSON filed it, rather than a
+ * finder discovering it. Null on every sweep-found row.
+ *
+ * Read from the linked `roadmap_opportunities` row (`reportedBugId`), which is
+ * still where a report is recorded — bugs left the roadmap's VIEWS, not its
+ * storage. Surfaced here because Bug Hunter is now the only screen that lists
+ * them, so this is the only place the reporter can be seen at all.
+ */
+export class ReportedBugContextDto {
+  @ApiProperty({
+    description: 'The roadmap_opportunities row behind this bug.',
+  })
+  opportunityId!: string;
+
+  @ApiProperty({
+    enum: RoadmapOpportunitySource,
+    description:
+      "'consumer' means the in-app Report-a-problem form; 'staff' means somebody internal filed it.",
+  })
+  reporterSource!: RoadmapOpportunitySource;
+
+  @ApiProperty({ nullable: true })
+  reportedBy!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      "The reporter's name, resolved at read time so a rename propagates.",
+  })
+  reportedByName!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Tenant the reporter belongs to.',
+  })
+  tenantId!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Diagnostic context captured silently at report time — route, device, OS, app version, ' +
+      'client clock. Free-form: written by three different clients and never validated, so ' +
+      'treat every key as optional.',
+    type: 'object',
+    additionalProperties: true,
+  })
+  reporterContext!: Record<string, any> | null;
+
+  @ApiProperty({ description: 'When the bug was reported.' })
+  reportedAt!: Date;
+}
+
+/**
+ * PATCH findings/:id/stage. `stage: null` clears the override and hands the row
+ * back to derivation — the "Back to auto" action, expressed as the same field
+ * rather than a second endpoint so the two can never disagree.
+ *
+ * STRICT on the enum, per this file's validation doc: a stage outside the five
+ * has a CHECK constraint waiting for it either way, and this only chooses
+ * between failing clearly and failing cryptically. There is no released client
+ * on this endpoint, so the be-lenient-on-inbound-enums exception does not apply.
+ */
+export class SetBugFindingStageDto {
+  @ApiPropertyOptional({
+    enum: RoadmapOpportunityStage,
+    nullable: true,
+    description:
+      'Null clears the override and returns the row to derived stage.',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsEnum(RoadmapOpportunityStage)
+  stage?: RoadmapOpportunityStage | null;
+}
+
+/**
+ * The answer to "where did this roadmap bug go?" — nothing more.
+ *
+ * Deliberately just the id: the caller is a redirect, and handing it a whole
+ * finding would mean fetching one twice (once here, once by the drawer it is
+ * about to open).
+ */
+export class BugFindingRefDto {
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Null when no finding was ever opened for this roadmap row — possible for a bug filed ' +
+      'before Bug Hunter existed, or one whose inbox write failed (that write is best-effort).',
+  })
+  findingId!: string | null;
+}
+
 export class BugFindingDto {
   @ApiProperty()
   id!: string;
@@ -444,6 +542,42 @@ export class BugFindingDto {
 
   @ApiProperty({ enum: BugFindingStatus })
   status!: BugFindingStatus;
+
+  @ApiProperty({
+    enum: RoadmapOpportunityStage,
+    description:
+      'The coarse roadmap ladder for this bug. Derived from `status` unless an admin pinned ' +
+      'it — see `stageIsAuto`. Always present, including on sweep-found bugs that have no ' +
+      'roadmap row at all.',
+  })
+  stage!: RoadmapOpportunityStage;
+
+  @ApiProperty({
+    description:
+      'True when `stage` is derived from `status` and will keep tracking it. False when an ' +
+      'admin pinned the stage by hand, at which point pipeline transitions no longer move it.',
+  })
+  stageIsAuto!: boolean;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'The admin who pinned the stage.',
+  })
+  stageOverriddenBy!: number | null;
+
+  @ApiProperty({ nullable: true })
+  stageOverriddenByName!: string | null;
+
+  @ApiProperty({ nullable: true })
+  stageOverriddenAt!: Date | null;
+
+  @ApiProperty({
+    type: ReportedBugContextDto,
+    nullable: true,
+    description:
+      'Present only when a person filed this bug. Null on every finder-discovered row.',
+  })
+  report!: ReportedBugContextDto | null;
 
   @ApiProperty({ nullable: true })
   prUrl!: string | null;
