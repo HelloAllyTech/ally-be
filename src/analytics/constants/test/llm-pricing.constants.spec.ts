@@ -43,3 +43,40 @@ describe('MODEL_PRICING — Gemini coverage', () => {
     expect(costUsd).toBe(0);
   });
 });
+
+describe('computeCostUsd — prompt-cache pricing', () => {
+  /**
+   * Bug Hunter's "Est. cost" tile undercounted real Anthropic spend because
+   * cache read/write tokens were tracked but never priced — this is the
+   * regression test for that fix (see llm-pricing.constants.ts multipliers).
+   */
+  it('prices cache reads at 0.1x and cache writes at 1.25x the input rate', () => {
+    const base = computeCostUsd('claude-sonnet-5', 0, 0);
+    expect(base.costUsd).toBe(0);
+
+    const withCacheRead = computeCostUsd('claude-sonnet-5', 0, 0, {
+      cacheReadTokens: 1_000_000,
+    });
+    expect(withCacheRead.priced).toBe(true);
+    expect(withCacheRead.costUsd).toBeCloseTo(0.3, 5); // 0.1 * $3/1M
+
+    const withCacheWrite = computeCostUsd('claude-sonnet-5', 0, 0, {
+      cacheCreationTokens: 1_000_000,
+    });
+    expect(withCacheWrite.costUsd).toBeCloseTo(3.75, 5); // 1.25 * $3/1M
+  });
+
+  it('adds cache cost on top of base prompt/completion cost, not in place of it', () => {
+    const { costUsd } = computeCostUsd(
+      'claude-sonnet-5',
+      1_000_000,
+      1_000_000,
+      {
+        cacheReadTokens: 1_000_000,
+        cacheCreationTokens: 1_000_000,
+      },
+    );
+    // base: 3 + 15 = 18; cache read: 0.3; cache write: 3.75
+    expect(costUsd).toBeCloseTo(22.05, 5);
+  });
+});
