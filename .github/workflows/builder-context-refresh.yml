@@ -1,0 +1,63 @@
+name: Builder context refresh
+
+# Regenerate the Repo Knowledge Packs the Builder interviewer reads.
+#
+# This is the cheap half of "codebase-aware". Reading real files through the
+# GitHub API costs a round-trip and thousands of tokens each; a map is the
+# index that tells the agent which few files are worth that cost. Generating it
+# once a week and reusing it across every interview turn — where prompt caching
+# then holds it — is the difference between an agent that knows the platform
+# and one that pays to rediscover it every session.
+#
+# Weekly rather than per-session for the same reason: nothing here changes
+# hour to hour, and a per-session refresh would spend more than it saves.
+
+on:
+  schedule:
+    # Sunday 03:00 UTC — nobody is interviewing, and it lands before Monday.
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      repos:
+        description: JSON array of repos to refresh (default: all)
+        required: false
+        default: '["ally-be","ally-web","ally-ai","ally-ai-learn","ally-mobile"]'
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ALLY_BE_API_URL: ${{ vars.ALLY_BE_API_URL }}
+      ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      BUILDER_GH_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
+      REFRESH_REPOS: ${{ inputs.repos || '["ally-be","ally-web","ally-ai","ally-ai-learn","ally-mobile"]' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: protocol
+          token: ${{ secrets.BUILDER_GH_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install the engine
+        env:
+          BUILDER_ENGINE: claude-code
+        run: protocol/scripts/builder/install-engine.sh
+
+      - name: Refresh each repo's map
+        run: |
+          set -uo pipefail
+          for repo in $(echo "$REFRESH_REPOS" | jq -r '.[]'); do
+            echo "::group::map $repo"
+            # Per-repo failure is tolerated: one repo whose clone or model call
+            # failed should not cost the other four their refresh. A stale map
+            # is usable; no map at all sends the agent back to paging files.
+            protocol/scripts/builder/refresh-repo-map.sh "$repo" || \
+              echo "::warning::Could not refresh the map for ${repo}"
+            echo "::endgroup::"
+          done

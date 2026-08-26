@@ -55,6 +55,9 @@ export enum FeatureToggleKey {
   // Bug Hunter: the autonomous find-and-fix agent (formerly SUPER_DUPER_ADMIN-only)
   BUG_HUNTER = 'bug_hunter',
 
+  // Builder: the PRD-interview + coding agent that opens PRs
+  BUILDER = 'builder',
+
   // Operational, all-scenarios/all-sessions bulk actions (translate-passive,
   // checklist-item translation, V2V test sessions) — historically gated to
   // SUPER_ADMIN-tier specifically so MULTI_TENANT_ADMIN, who holds the
@@ -235,6 +238,13 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     description:
       'Configure and run the autonomous find-and-fix agent, and review its run history.',
     legacyGrants: SDA_ONLY,
+  },
+  {
+    key: FeatureToggleKey.BUILDER,
+    label: 'Builder',
+    description:
+      'Interview an agent into a PRD, then have it build the feature and open pull requests for review.',
+    legacyGrants: SUPER_ADMIN_TIER,
   },
   {
     key: FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS,

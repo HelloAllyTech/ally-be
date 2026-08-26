@@ -1,0 +1,175 @@
+name: Builder session
+
+# One coding run for a Builder session.
+#
+# Hosted here, in ally-be, as the ONLY copy. A multi-repo build belongs to no
+# single target repo, and one copy cannot drift from five others. Target repos
+# are cloned at run time rather than checked out by `actions/checkout`, which
+# cannot loop over a variable list.
+#
+# This file is deliberately thin. Everything about *how* a build works — the
+# protocol, the ordering, the reporting contract — is fetched from ally-be at
+# run time, so changing it takes effect on the next dispatch instead of after
+# a PR merges here.
+#
+# Required secrets on this repo:
+#   ANTHROPIC_API_KEY  — the coding engine
+#   ALLY_BE_API_KEY    — equals ally-be's API_KEY, for the pipeline callbacks
+#   BUILDER_GH_TOKEN   — org PAT with contents:write + pull-requests:write on
+#                        every target repo. NOT the default GITHUB_TOKEN: pull
+#                        requests opened with that token do not trigger other
+#                        workflows, so CI would never run on what Builder writes.
+# Required variable:
+#   ALLY_BE_API_URL    — base URL a runner can reach ally-be on.
+
+on:
+  workflow_dispatch:
+    inputs:
+      session_id:
+        description: Builder session id
+        required: true
+      run_id:
+        description: Builder run id (created before dispatch)
+        required: true
+      mode:
+        description: build | resume
+        required: true
+        default: build
+      repos:
+        description: JSON array of repo names to clone
+        required: true
+      engine:
+        description: Coding engine key (claude-code, …)
+        required: false
+        default: claude-code
+      model:
+        description: Model for the engine
+        required: false
+        default: claude-sonnet-5
+      branch_slug:
+        description: Branch base — pushes go to builder/<slug>
+        required: true
+      branches:
+        description: JSON map of {repo: branch} to resume from
+        required: false
+        default: '{}'
+      api_base_url:
+        description: Base URL for ally-be callbacks
+        required: false
+
+# Serialised per session, so a resume can never overlap the run it continues.
+# Different sessions run concurrently — that is the point of the grouping key.
+concurrency:
+  group: builder-session-${{ inputs.session_id }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      ALLY_BE_API_URL: ${{ inputs.api_base_url || vars.ALLY_BE_API_URL }}
+      ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      BUILDER_GH_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
+      GH_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
+      BUILDER_SESSION_ID: ${{ inputs.session_id }}
+      BUILDER_RUN_ID: ${{ inputs.run_id }}
+      BUILDER_MODE: ${{ inputs.mode }}
+      BUILDER_ENGINE: ${{ inputs.engine }}
+      BUILDER_MODEL: ${{ inputs.model }}
+      BUILDER_BRANCH_SLUG: ${{ inputs.branch_slug }}
+      BUILDER_BRANCHES: ${{ inputs.branches }}
+      BUILDER_REPOS: ${{ inputs.repos }}
+
+    steps:
+      - name: Check out the protocol (ally-be)
+        uses: actions/checkout@v4
+        with:
+          path: protocol
+          token: ${{ secrets.BUILDER_GH_TOKEN }}
+
+      - name: Clone target repos
+        run: |
+          set -euo pipefail
+          mkdir -p repos
+          for repo in $(echo "$BUILDER_REPOS" | jq -r '.[]'); do
+            echo "::group::clone $repo"
+            # Blobless: full history so branching and `git diff master...HEAD`
+            # work, but file contents fetched on demand. A full clone of
+            # ally-web is minutes of runner time for blobs nothing reads.
+            git clone --filter=blob:none \
+              "https://x-access-token:${BUILDER_GH_TOKEN}@github.com/${GITHUB_REPOSITORY_OWNER}/${repo}.git" \
+              "repos/${repo}"
+            echo "::endgroup::"
+          done
+
+      - name: Configure git identity
+        run: |
+          git config --global user.name "ally-builder[bot]"
+          git config --global user.email "builder@helloally.ai"
+          git config --global init.defaultBranch master
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Keyed on the repo list rather than a lockfile: the runner installs
+      # dependencies for several repos, and there is no single lockfile that
+      # represents the set.
+      - name: Cache package managers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/pip
+            ~/.cache/pypoetry
+          key: builder-deps-${{ hashFiles('protocol/package-lock.json') }}-${{ inputs.repos }}
+          restore-keys: builder-deps-
+
+      - name: Install the coding engine
+        run: protocol/scripts/builder/install-engine.sh
+
+      - name: Fetch the build protocol
+        run: |
+          set -euo pipefail
+          curl -fsS \
+            "${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}/prompt" \
+            -H "x-api-key: ${ALLY_BE_API_KEY}" \
+            -o /tmp/build-prompt.txt
+          wc -c /tmp/build-prompt.txt
+
+      - name: Run the build
+        run: protocol/scripts/builder/run-engine.sh /tmp/build-prompt.txt
+
+      # `if: always()` so a run that failed still reports what it spent — an
+      # agent that burned twenty dollars and crashed still spent it, and the
+      # session budget has to know.
+      - name: Report cost
+        if: always()
+        run: protocol/scripts/builder/report-cost.sh
+
+      # The runner-level net. Covers what the agent itself cannot report:
+      # the runner dying, a bad clone, a wrong API key. ally-be ignores this
+      # for a run already parked on a question, so a deliberate pause (which
+      # exits 0 anyway) is never recorded as a failure.
+      - name: Report failure
+        if: failure()
+        run: |
+          curl -sS -X POST \
+            "${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}/complete" \
+            -H "x-api-key: ${ALLY_BE_API_KEY}" \
+            -H 'Content-Type: application/json' \
+            -d '{"outcome":"failed","error":"The build runner failed. See the workflow log."}' \
+            || true
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: builder-evidence-${{ inputs.run_id }}
+          path: |
+            /tmp/builder-evidence/**
+            /tmp/engine-result.json
+          if-no-files-found: ignore
+          retention-days: 14
