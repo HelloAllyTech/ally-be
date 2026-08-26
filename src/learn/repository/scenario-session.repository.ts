@@ -18,6 +18,11 @@ import {
 } from '../enum/scenario-session-status.enum';
 import { countableSessionPredicate } from 'src/analytics/util/session-eligibility.util';
 import { ScenarioCompletionSummary } from '../interface/scenario-completion.interface';
+import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
+import {
+  BEHAVIOR_INSTRUCTION_SHOULD_DO_SCORE,
+  BEHAVIOR_INSTRUCTION_SHOULD_NOT_DO_SCORE,
+} from '../constants/scenario-behavior-instuctions.constants';
 
 type CreateScenarioSessionDto = StartScenarioSessionRequestDto & {
   voiceId?: string;
@@ -384,5 +389,136 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         .limit(params.limit)
         .getMany()
     );
+  }
+  /**
+   * Sessions that reached a terminal `ENDED` but never had their post-session
+   * lifecycle completed — the input to the unfinalised-session sweep.
+   *
+   * `eventStatus = IN_PROGRESS` on an ENDED row means exactly one thing: the
+   * agent's `end-of-session` SQS message — the only writer of the score,
+   * COMPLETED, the progression handoff and the leaderboard minutes — never got
+   * to do its work. Either it was never sent (agent died before finalize), it
+   * was dropped, or it was consumed while a bug made the handler bail out.
+   * ABANDONED is excluded by the same predicate: those rows were deliberately
+   * labelled and must not be quietly relabelled COMPLETED.
+   *
+   * `endedAt` bounded on both sides: `endedBefore` is the grace period that
+   * keeps the sweep from racing a session that is ending right now, and
+   * `endedAfter` bounds how far back a background task is allowed to restate
+   * analytics (see UNFINALISED_SESSION_LOOKBACK_MS).
+   *
+   * Preview and seeded rooms are excluded, matching `findSessionsStuckActive`:
+   * neither has a learner whose progress or practice minutes are owed.
+   *
+   * Runs from the scheduler, outside any request context, so this deliberately
+   * spans tenants — it is not a tenant-scoped read. Each row carries its own
+   * `tenantId`, which is what the downstream writes use.
+   */
+  async findEndedSessionsMissingFinalisation(params: {
+    endedAfter: Date;
+    endedBefore: Date;
+    limit: number;
+  }): Promise<ScenarioSessions[]> {
+    return (
+      this.createQueryBuilder('session')
+        .where('session.status = :status', {
+          status: ScenarioSessionStatus.ENDED,
+        })
+        .andWhere('session.eventStatus = :eventStatus', {
+          eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
+        })
+        .andWhere('session.endedAt IS NOT NULL')
+        .andWhere('session.endedAt >= :endedAfter', {
+          endedAfter: params.endedAfter,
+        })
+        .andWhere('session.endedAt <= :endedBefore', {
+          endedBefore: params.endedBefore,
+        })
+        .andWhere("session.roomId NOT LIKE 'preview-%'")
+        .andWhere("session.roomId NOT LIKE 'seed-room-%'")
+        // Oldest first: a learner waiting longest on a locked track item is the
+        // one served first, and a bitten limit drains in order on the next tick.
+        .orderBy('session.endedAt', 'ASC')
+        .limit(params.limit)
+        .getMany()
+    );
+  }
+  /**
+   * Sum the scored detections we persisted for these sessions — a DIAGNOSTIC
+   * for a session whose `end-of-session` message went missing, not a substitute
+   * for the score it carried.
+   *
+   * The agent's `totalScore` is `ScoreKeeper.get_total_score()`: every event it
+   * sent us (persisted per detection into `scenario_session_events.score`) plus
+   * every behaviour instruction it detected (persisted into
+   * `scenario_session_behavior_instructions`, whose score is a constant per
+   * category — see `formatBehaviorInstructionsForLivekitMetadata`, which is
+   * where the agent read it from). So this is the same arithmetic over the same
+   * rows, and it lands close.
+   *
+   * BUT IT IS NOT THE SAME NUMBER, and must never be written into
+   * `scenario_sessions.score`. Two known divergences, both in the direction of
+   * overcounting:
+   *
+   *  - A termination event outside the scenario's `trigger_events` is still
+   *    sent to us, with its score, but ScoreKeeper deliberately excludes it
+   *    (`_calculate_total_score_from_events` filters on `trigger_events`).
+   *    Nothing we store records which events were trigger events, so we cannot
+   *    subtract it back out.
+   *  - A detection whose own message was lost is invisible here, which cuts the
+   *    other way.
+   *
+   * A learner's score is not the place for a number that is nearly right, so
+   * callers log this to give a human something to work from and leave the
+   * column NULL, which every surface already renders as "--".
+   *
+   * Runs from the scheduler, outside any request context, so this deliberately
+   * spans tenants. Keyed by session id, which is a uuid and unique across them.
+   * A session with no scored detections at all is absent from the map rather
+   * than present as zero.
+   */
+  async sumDetectionScores(
+    scenarioSessionIds: string[],
+  ): Promise<Map<string, number>> {
+    if (!scenarioSessionIds.length) return new Map();
+
+    const rows: Array<{ sid: string; total: string | number }> =
+      await this.query(
+        `SELECT sid, SUM(points)::int AS total
+           FROM (
+             SELECT e."scenarioSessionId" AS sid,
+                    COALESCE(SUM(COALESCE(e.score, 0)), 0) AS points
+               FROM scenario_session_events e
+              WHERE e."scenarioSessionId" = ANY($1::uuid[])
+              GROUP BY e."scenarioSessionId"
+             UNION ALL
+             SELECT sb."scenarioSessionId" AS sid,
+                    -- The ::int casts are required, not decorative: an
+                    -- untyped bound parameter arrives as text, and SUM(text)
+                    -- is not a function that exists.
+                    SUM(CASE WHEN bi.category = $2 THEN $3::int ELSE $4::int END)
+                      AS points
+               FROM scenario_session_behavior_instructions sb
+               JOIN scenario_behavior_instructions bi
+                 -- bi.id is uuid but the detection row stores it as varchar,
+                 -- so this join needs the cast spelled out (Postgres has no
+                 -- uuid = varchar operator). Cast the uuid side: the varchar
+                 -- column is not guaranteed to hold well-formed uuids, and
+                 -- casting it the other way would throw on the first bad row
+                 -- instead of just not matching it.
+                 ON bi.id::text = sb."scenarioBehaviorInstructionId"
+              WHERE sb."scenarioSessionId" = ANY($1::uuid[])
+              GROUP BY sb."scenarioSessionId"
+           ) parts
+          GROUP BY sid`,
+        [
+          scenarioSessionIds,
+          BehaviorInstructionCategory.SHOULD_DO,
+          BEHAVIOR_INSTRUCTION_SHOULD_DO_SCORE,
+          BEHAVIOR_INSTRUCTION_SHOULD_NOT_DO_SCORE,
+        ],
+      );
+
+    return new Map(rows.map((row) => [row.sid, Number(row.total)]));
   }
 }

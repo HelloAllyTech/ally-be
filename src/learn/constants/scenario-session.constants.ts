@@ -371,3 +371,38 @@ export const ROOM_METADATA_WARN_BYTES = 48 * 1024;
  * within seconds of dispatch. Sweep runs opportunistically on each store.
  */
 export const ROOM_METADATA_STALE_HOURS = 24;
+
+/**
+ * How long after `endedAt` a session must have sat at
+ * `eventStatus = IN_PROGRESS` before the unfinalised-session sweep closes out
+ * its lifecycle.
+ *
+ * FIFTEEN MINUTES. In the normal case the agent's `end-of-session` message
+ * trails the other end paths by well under a second (0.5s measured in prod), so
+ * anything still unfinalised a quarter of an hour after the session ended is
+ * not going to be finalised by that message at all — it was dropped, dead-
+ * lettered, or the agent died before sending it. Long enough that the sweep can
+ * never race a live end, short enough that a learner's track item unlocks the
+ * same sitting.
+ */
+export const UNFINALISED_SESSION_GRACE_MS = 15 * 60 * 1000;
+
+/**
+ * How far back the unfinalised-session sweep will reach.
+ *
+ * TWO WEEKS, and deliberately bounded rather than open-ended. Completing a
+ * lifecycle moves the row into every analytics filter that keys on
+ * `eventStatus = 'COMPLETED'`, so an unbounded sweep would silently restate
+ * historical dashboards on its first tick. Two weeks covers any realistic
+ * incident window while keeping that restatement to recent, explainable data;
+ * anything older is a deliberate, hand-run repair, not a background task's
+ * decision.
+ */
+export const UNFINALISED_SESSION_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Rows per unfinalised-sweep tick. Bounded for the same reason as
+ * STUCK_SESSION_SWEEP_LIMIT: the first run after this ships clears a backlog,
+ * and the remainder is picked up on the next tick.
+ */
+export const UNFINALISED_SESSION_SWEEP_LIMIT = 200;

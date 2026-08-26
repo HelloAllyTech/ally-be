@@ -26,6 +26,7 @@ import {
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
 } from 'src/learn/enum/scenario-session-status.enum';
+import { ScenarioSessionLeaderboardEvent } from 'src/learn/type/scenario-session-leaderboard-event.type';
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
 import {
   ScenarioStatus,
@@ -80,6 +81,7 @@ jest.mock('src/common/execution/execution-manager', () => ({
       userId: 'test-user-id',
       executionId: 'test-execution-id',
     })),
+    setAuthContext: jest.fn(),
   },
 }));
 
@@ -192,6 +194,8 @@ describe('ScenarioSessionService', () => {
       update: jest.fn(),
       getScenarioSessionScore: jest.fn(),
       delete: jest.fn(),
+      findEndedSessionsMissingFinalisation: jest.fn(),
+      sumDetectionScores: jest.fn(),
     };
 
     const mockScenarioSessionMessagesRepo = {
@@ -2002,17 +2006,27 @@ describe('ScenarioSessionService', () => {
       ).resolves.not.toThrow();
 
       expect(scenarioSessionRepository.update).toHaveBeenCalledWith(
-        mockScenarioSessionId,
+        {
+          id: mockScenarioSessionId,
+          eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
+        },
         expect.objectContaining({
           eventStatus: ScenarioSessionEventStatus.COMPLETED,
         }),
       );
     });
 
-    it('handleEndScenarioSessionEvent is a no-op once the session has already ended', async () => {
-      // Simulates a crash/disconnect: RoomFinishedHandler already ran
-      // endScenarioSession (status=ENDED, credits consumed) before the
-      // agent's delayed end-of-session SQS event is processed.
+    it('still records the score and progression when the session was already ended by another path, without re-charging', async () => {
+      // The NORMAL case, not an edge case: the learner clicked End (or
+      // RoomFinishedHandler saw the disconnect), so endScenarioSession set
+      // status=ENDED, persisted the duration and consumed the credits a beat
+      // before the agent's end-of-session message arrived. The score, the
+      // lifecycle flag and the progression handoff exist nowhere else, so they
+      // must still be written; the money and the duration must not be redone.
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 1,
+      } as any);
+
       await service.handleEndScenarioSessionEvent(
         {
           ...mockScenarioSession,
@@ -2020,12 +2034,49 @@ describe('ScenarioSessionService', () => {
           endedAt,
           status: ScenarioSessionStatus.ENDED,
         } as any,
+        { event_data: { id: 'end-of-session', totalScore: 42 } } as any,
+      );
+
+      expect(scenarioSessionRepository.update).toHaveBeenCalledWith(
+        {
+          id: mockScenarioSessionId,
+          eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
+        },
+        expect.objectContaining({
+          score: 42,
+          eventStatus: ScenarioSessionEventStatus.COMPLETED,
+        }),
+      );
+      expect(scenarioSessionDetailsRepository.upsert).not.toHaveBeenCalled();
+      expect(simulationCreditsService.consumeCredits).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op for a redelivered event, whose compare-and-set finds nothing to win', async () => {
+      // The lifecycle already completed (or the sweeper labelled the row
+      // ABANDONED), so the guarded UPDATE matches no row. Nothing downstream
+      // may run: no credits, no duration, no progression, no second helping of
+      // leaderboard minutes.
+      scenarioSessionRepository.update.mockResolvedValue({
+        affected: 0,
+      } as any);
+
+      await service.handleEndScenarioSessionEvent(
+        {
+          ...mockScenarioSession,
+          startedAt,
+          endedAt,
+          status: ScenarioSessionStatus.ENDED,
+          eventStatus: ScenarioSessionEventStatus.COMPLETED,
+        } as any,
         { event_data: { id: 'end-of-session', totalScore: 0 } } as any,
       );
 
       expect(scenarioSessionDetailsRepository.upsert).not.toHaveBeenCalled();
       expect(simulationCreditsService.consumeCredits).not.toHaveBeenCalled();
-      expect(scenarioSessionRepository.update).not.toHaveBeenCalled();
+      expect(
+        scenarioPathSessionService.handleEndScenarioPathSession,
+      ).not.toHaveBeenCalled();
+      expect((service as any).eventEmitter.emit).not.toHaveBeenCalled();
     });
 
     it('handleEndScenarioSessionEvent consumes credits for the duration it computes', async () => {
@@ -2062,7 +2113,10 @@ describe('ScenarioSessionService', () => {
       ).resolves.not.toThrow();
 
       expect(scenarioSessionRepository.update).toHaveBeenCalledWith(
-        mockScenarioSessionId,
+        {
+          id: mockScenarioSessionId,
+          eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
+        },
         expect.objectContaining({
           eventStatus: ScenarioSessionEventStatus.COMPLETED,
         }),
@@ -4145,6 +4199,142 @@ describe('ScenarioSessionService', () => {
       });
 
       await expect(service.getSupervisorNotes('sess-1')).resolves.toEqual([]);
+    });
+  });
+
+  describe('sweepUnfinalisedEndedSessions', () => {
+    const endedAt = new Date('2024-01-01T10:04:34.000Z');
+    const startedAt = new Date('2024-01-01T10:00:00.000Z');
+    const activeMs = endedAt.getTime() - startedAt.getTime();
+
+    const unfinalised = (overrides: Record<string, any> = {}) => ({
+      ...mockScenarioSession,
+      startedAt,
+      endedAt,
+      status: ScenarioSessionStatus.ENDED,
+      eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
+      score: null,
+      trackItemProgressId: 'tip-1',
+      ...overrides,
+    });
+
+    const given = (
+      sessions: any[],
+      scores: Map<string, number> = new Map(),
+      affected = 1,
+    ) => {
+      scenarioSessionRepository.findEndedSessionsMissingFinalisation.mockResolvedValue(
+        sessions as any,
+      );
+      scenarioSessionRepository.sumDetectionScores.mockResolvedValue(
+        scores as any,
+      );
+      scenarioSessionRepository.update.mockResolvedValue({ affected } as any);
+    };
+
+    it('completes the lifecycle and credits practice minutes, leaving the score alone', async () => {
+      given([unfinalised()], new Map([[mockScenarioSessionId, 40]]));
+
+      const result = await service.sweepUnfinalisedEndedSessions();
+
+      expect(result).toEqual({ found: 1, finalised: 1 });
+      // eventStatus is the ONLY column that moves. The detection sum (40 here)
+      // is a diagnostic for the log — close to the lost score but not equal to
+      // it, so it must not reach the learner-visible column.
+      expect(scenarioSessionRepository.update).toHaveBeenCalledWith(
+        {
+          id: mockScenarioSessionId,
+          eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
+        },
+        { eventStatus: ScenarioSessionEventStatus.COMPLETED },
+      );
+      expect(
+        (service as any).trackProgressService.handleRoleplayEnd,
+      ).toHaveBeenCalledWith({
+        trackItemProgressId: 'tip-1',
+        score: undefined,
+        callDuration: activeMs,
+      });
+      expect((service as any).eventEmitter.emit).toHaveBeenCalledWith(
+        ScenarioSessionLeaderboardEvent.SCENARIO_SESSION_ENDED,
+        expect.objectContaining({
+          userId: mockCounselorId,
+          durationMinutes: activeMs / 60000,
+        }),
+      );
+    });
+
+    it('still finalises when the detection diagnostic itself fails', async () => {
+      // The lifecycle flag, the progression and the practice minutes are owed
+      // to the learner whether or not the diagnostic can be computed.
+      given([unfinalised()]);
+      scenarioSessionRepository.sumDetectionScores.mockRejectedValue(
+        new Error('diagnostic query failed'),
+      );
+
+      await expect(service.sweepUnfinalisedEndedSessions()).resolves.toEqual({
+        found: 1,
+        finalised: 1,
+      });
+      expect((service as any).eventEmitter.emit).toHaveBeenCalled();
+    });
+
+    it('never touches credits — whichever path ended the session already charged them', async () => {
+      given([unfinalised()], new Map([[mockScenarioSessionId, 10]]));
+
+      await service.sweepUnfinalisedEndedSessions();
+
+      expect(simulationCreditsService.consumeCredits).not.toHaveBeenCalled();
+      expect(scenarioSessionDetailsRepository.upsert).not.toHaveBeenCalled();
+    });
+
+    it('leaves a row alone when it is finalised between the scan and the write', async () => {
+      given([unfinalised()], new Map([[mockScenarioSessionId, 10]]), 0);
+
+      const result = await service.sweepUnfinalisedEndedSessions();
+
+      expect(result).toEqual({ found: 1, finalised: 0 });
+      expect(
+        (service as any).trackProgressService.handleRoleplayEnd,
+      ).not.toHaveBeenCalled();
+      expect((service as any).eventEmitter.emit).not.toHaveBeenCalled();
+    });
+
+    it('excludes paused time from the credited minutes', async () => {
+      given([unfinalised({ totalPausedMs: 34_000 })]);
+
+      await service.sweepUnfinalisedEndedSessions();
+
+      expect(
+        (service as any).trackProgressService.handleRoleplayEnd,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({ callDuration: activeMs - 34_000 }),
+      );
+    });
+
+    it('carries on through a session whose progression engine throws', async () => {
+      given([
+        unfinalised({ id: 'bad', trackItemProgressId: 'tip-bad' }),
+        unfinalised(),
+      ]);
+      (service as any).trackProgressService.handleRoleplayEnd
+        .mockRejectedValueOnce(new Error('progression exploded'))
+        .mockResolvedValueOnce(undefined);
+
+      const result = await service.sweepUnfinalisedEndedSessions();
+
+      expect(result).toEqual({ found: 2, finalised: 1 });
+    });
+
+    it('reports nothing rather than throwing when the scan itself fails', async () => {
+      scenarioSessionRepository.findEndedSessionsMissingFinalisation.mockRejectedValue(
+        new Error('db down'),
+      );
+
+      await expect(service.sweepUnfinalisedEndedSessions()).resolves.toEqual({
+        found: 0,
+        finalised: 0,
+      });
     });
   });
 });
