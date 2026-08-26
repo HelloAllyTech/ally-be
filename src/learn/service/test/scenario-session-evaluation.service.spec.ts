@@ -325,3 +325,87 @@ describe('ScenarioSessionEvaluationService — runCatchup', () => {
     expect(aiService.triggerActorGoalEvaluation).not.toHaveBeenCalled();
   });
 });
+
+describe('ScenarioSessionEvaluationService — scheduleV2VEvaluation', () => {
+  const session = {
+    id: 'sess-v2v',
+    tenantId: 'tenant-1',
+    counselorId: 7,
+  } as unknown as ScenarioSessions;
+
+  const make = (sessionFindOne: unknown = session) => {
+    const sessionRepo = {
+      findOne: jest.fn().mockResolvedValue(sessionFindOne),
+      findSessionsMissingActorEvaluation: jest.fn().mockResolvedValue([]),
+    };
+    const detailsRepo = {
+      findOne: jest.fn().mockResolvedValue(null),
+      upsert: jest.fn().mockResolvedValue(undefined),
+    };
+    const messagesRepo = {
+      find: jest
+        .fn()
+        .mockResolvedValue([{ senderId: 7, content: 'hello', id: 1 }]),
+    };
+    const testCaseService = {
+      getAgentTestCases: jest
+        .fn()
+        .mockResolvedValue({ data: [{ id: 'g1', title: 'Build rapport' }] }),
+    };
+    const aiService = {
+      triggerActorGoalEvaluation: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new ScenarioSessionEvaluationService(
+      detailsRepo as any,
+      messagesRepo as any,
+      testCaseService as any,
+      aiService as any,
+      sessionRepo as any,
+    );
+    return { service, sessionRepo, aiService };
+  };
+
+  // Trailing transcript turns arrive over SQS AFTER the end signal, so judging
+  // at t=0 would score an incomplete transcript that still looks complete.
+  it('waits for the transcript to settle before dispatching the judge', async () => {
+    jest.useFakeTimers();
+    try {
+      const { service, aiService } = make();
+
+      service.scheduleV2VEvaluation('sess-v2v');
+      expect(aiService.triggerActorGoalEvaluation).not.toHaveBeenCalled();
+
+      await jest.advanceTimersByTimeAsync(20_000);
+      expect(aiService.triggerActorGoalEvaluation).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('returns immediately — ending the session never waits on the judge', () => {
+    const { service } = make();
+    jest.useFakeTimers();
+    try {
+      expect(service.scheduleV2VEvaluation('sess-v2v')).toBeUndefined();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // The catch-up sweep is the backstop, so a fast path that cannot find its
+  // session must degrade quietly rather than throw inside a webhook.
+  it('never throws when the session has vanished', async () => {
+    jest.useFakeTimers();
+    try {
+      const { service, aiService } = make(null);
+
+      service.scheduleV2VEvaluation('sess-gone');
+      await expect(
+        jest.advanceTimersByTimeAsync(20_000),
+      ).resolves.not.toThrow();
+      expect(aiService.triggerActorGoalEvaluation).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+});

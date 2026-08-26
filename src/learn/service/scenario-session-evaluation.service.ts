@@ -38,6 +38,22 @@ const CATCHUP_GRACE_MINUTES = 15;
 const CATCHUP_BATCH_LIMIT = 50;
 
 /**
+ * How long the V2V fast path waits after the tester's `end-v2v` webhook before
+ * judging, so trailing transcript turns have landed.
+ *
+ * The agent's chat messages travel over SQS independently of the end signal and
+ * arrive AFTER it. Measured on a real prod run (session
+ * 6e0150c5, 2026-08-26): room finished at 04:52:44, a COUNSELOR turn landed at
+ * 04:52:50 (+6s) and the session memory at 04:53:00 (+16s). Judging at t=0
+ * would score a transcript missing its final turns — worse than judging late,
+ * because the result looks complete.
+ *
+ * 20s clears the observed tail with headroom while still turning a 15-45 minute
+ * wait into well under a minute.
+ */
+const V2V_EVALUATION_SETTLE_MS = 20_000;
+
+/**
  * Goal-based evaluation of the roleplay ACTOR agent for a REAL session.
  *
  * On session end, {@link triggerForSession} fires an async ai-learn job that
@@ -127,6 +143,62 @@ export class ScenarioSessionEvaluationService {
     );
 
     return { found: sessions.length, triggered };
+  }
+
+  /**
+   * Evaluate a just-finished V2V run immediately, instead of leaving it to the
+   * 30-minute catch-up sweep.
+   *
+   * WHY THIS EXISTS. The normal fast path is `triggerForSession` inside
+   * `handleEndScenarioSessionEvent`, but that method returns early when the
+   * session is already ENDED — and for a V2V run it always is: the tester
+   * disconnects cleanly, so `RoomFinishedHandler` ends the session a beat
+   * before the agent's `end-of-session` SQS event arrives (measured 0.5s apart
+   * in prod). The evaluation trigger is collateral of a guard that exists to
+   * stop credits being double-charged, so every V2V run silently fell through
+   * to the catch-up and waited `CATCHUP_GRACE_MINUTES` plus up to a full tick.
+   * That is fine for a background sweep and useless for a test harness, where
+   * the score IS the result being waited on.
+   *
+   * Deliberately fire-and-forget, and deliberately still covered by the
+   * catch-up: the settle wait lives in this process, so a deploy or crash
+   * during it loses the fast path, not the evaluation. `triggerForSession`
+   * re-checks IN_PROGRESS/COMPLETED, so the sweep finding the same session
+   * later costs nothing and cannot double-spend a judge run.
+   *
+   * Never throws — the caller is a webhook whose job is ending the session.
+   */
+  scheduleV2VEvaluation(scenarioSessionId: string): void {
+    setTimeout(() => {
+      void (async () => {
+        try {
+          const session = await this.scenarioSessionRepository.findOne({
+            where: { id: scenarioSessionId },
+          });
+          if (!session) {
+            this.logger.warn(
+              `[ACTOR_EVAL_V2V] session ${scenarioSessionId} not found; ` +
+                'leaving it to the catch-up sweep.',
+            );
+            return;
+          }
+          const dispatched = await this.triggerForSession(session);
+          this.logger.info(
+            `[ACTOR_EVAL_V2V] session ${scenarioSessionId}: ` +
+              (dispatched
+                ? 'judge dispatched without waiting for the catch-up.'
+                : 'not dispatched (see the reason logged above).'),
+          );
+        } catch (error) {
+          // The catch-up remains the backstop, so this is a degraded fast
+          // path rather than a lost evaluation.
+          this.logger.error(
+            `[ACTOR_EVAL_V2V] fast-path evaluation failed for ` +
+              `${scenarioSessionId}: ${(error as Error)?.message}`,
+          );
+        }
+      })();
+    }, V2V_EVALUATION_SETTLE_MS).unref?.();
   }
 
   /**
