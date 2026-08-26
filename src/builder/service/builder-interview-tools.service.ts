@@ -112,7 +112,15 @@ export class BuilderInterviewToolsService {
           'document fill in, and a patch persists even if the turn is later ' +
           'interrupted. Paths are JSON Pointers into the PRD document, e.g. ' +
           '"/problem", "/requirements/-", "/assumptions/0/status". On failure ' +
-          'you get the failing operation index back and must self-repair.',
+          'you get the failing operation index back and must self-repair.\n' +
+          'Shapes matter, because three readers render this document as text: ' +
+          'openQuestions and every acceptanceCriteria are arrays of plain ' +
+          'sentences, not objects — write "Which tenant owns this?", never ' +
+          '{"id":"q1","text":"..."}. Structured rows exist only where the ' +
+          'schema says so: requirements are {id,title,description,' +
+          'acceptanceCriteria}, assumptions are {id,text,status}, and ' +
+          'technicalPlan.repos are {repo,changesMd}. Everything else is ' +
+          'markdown prose.',
         input_schema: {
           type: 'object',
           properties: {

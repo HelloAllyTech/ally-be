@@ -17,6 +17,7 @@ import {
   BuilderPrdReadinessSection,
   createEmptyPrdDocument,
 } from '../type/builder-prd.type';
+import { normalisePrdDocument } from '../util/builder-prd-normalise.util';
 
 /** Prose sections that must say something before a build can start. */
 const PROSE_SECTIONS: {
@@ -60,6 +61,14 @@ export class BuilderPrdService {
   ): Promise<BuilderPrdDoc> {
     const existing = await this.docRepository.findBySession(sessionId);
     if (existing) {
+      // Normalised on the way out as well as on the way in: docs written
+      // before the write-side guard existed still hold malformed fields, and a
+      // session whose panel crashes on open cannot be repaired by editing it.
+      // In memory only — a read has no business writing a new version, and the
+      // next real patch persists the clean shape anyway. Every reader (the
+      // admin panel, the readiness rubric, the interview and build prompts)
+      // comes through here, so this is the one place that covers them all.
+      existing.draft = normalisePrdDocument(existing.draft);
       return existing;
     }
     return this.docRepository.save(
@@ -118,6 +127,10 @@ export class BuilderPrdService {
     author: BuilderPrdVersionAuthor,
     changeSummary?: string,
   ): Promise<{ doc: BuilderPrdDoc; version: BuilderPrdVersion }> {
+    // Every write goes through here, so this is the one place that can promise
+    // the stored document matches its declared shape — the agent's patch
+    // `value` is untyped and has written objects where the schema says string.
+    const normalised = normalisePrdDocument(nextDraft);
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; ; attempt++) {
       try {
@@ -136,7 +149,7 @@ export class BuilderPrdService {
             versionRepo.create({
               docId: current.id,
               versionNumber: nextVersionNumber,
-              content: nextDraft,
+              content: normalised,
               author,
               changeSummary: changeSummary ?? null,
               createdBy: userId,
@@ -144,7 +157,7 @@ export class BuilderPrdService {
           );
 
           await docRepo.update(current.id, {
-            draft: nextDraft,
+            draft: normalised,
             versionNumber: nextVersionNumber,
             updatedBy: userId,
           });
