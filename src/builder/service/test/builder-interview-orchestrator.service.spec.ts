@@ -1,0 +1,199 @@
+import { BuilderInterviewOrchestratorService } from '../builder-interview-orchestrator.service';
+import { BuilderMessageRole } from '../../enum/builder.enum';
+import { createEmptyPrdDocument } from '../../type/builder-prd.type';
+
+/**
+ * A stubbed Anthropic streaming response. Yields no text deltas — the turn's
+ * prose comes from `finalMessage().content`, which is what the orchestrator
+ * actually persists.
+ */
+const fakeStream = (content: any[], stopReason: string) => ({
+  [Symbol.asyncIterator]: async function* () {
+    // No deltas: token frames are not what these tests are about.
+  },
+  finalMessage: async () => ({
+    content,
+    stop_reason: stopReason,
+    usage: { input_tokens: 10, output_tokens: 5 },
+  }),
+});
+
+describe('BuilderInterviewOrchestratorService — turn autosave', () => {
+  let service: BuilderInterviewOrchestratorService;
+  let messageRepository: {
+    listBySession: jest.Mock;
+    appendMessage: jest.Mock;
+    checkpointMessage: jest.Mock;
+    closeInterruptedMessages: jest.Mock;
+  };
+  let toolsService: { getToolDefinitions: jest.Mock; execute: jest.Mock };
+  let streams: any[];
+
+  const drain = async (): Promise<any[]> => {
+    const frames: any[] = [];
+    for await (const frame of service.streamTurn(
+      'session-1',
+      { message: 'Cut the runner cost.' } as any,
+      7,
+    )) {
+      frames.push(frame);
+    }
+    return frames;
+  };
+
+  beforeEach(() => {
+    streams = [];
+    let appended = 0;
+    messageRepository = {
+      listBySession: jest.fn().mockResolvedValue([]),
+      appendMessage: jest.fn(async (_sessionId, message) => ({
+        id: `msg-${++appended}`,
+        seq: appended,
+        ...message,
+      })),
+      checkpointMessage: jest.fn(),
+      closeInterruptedMessages: jest.fn().mockResolvedValue(0),
+    };
+    toolsService = {
+      getToolDefinitions: jest.fn().mockReturnValue([]),
+      execute: jest.fn(async () => ({
+        modelResult: { ok: true },
+        summary: 'PRD updated',
+      })),
+    };
+
+    service = new BuilderInterviewOrchestratorService(
+      {
+        anthropic: { apiKey: 'test' },
+        builder: { interviewModel: 'claude-opus-5', maxToolIterations: 4 },
+      } as any,
+      {
+        getPromptByCode: jest.fn().mockResolvedValue('Interview them.'),
+      } as any,
+      {
+        getSession: jest
+          .fn()
+          .mockResolvedValue({ id: 'session-1', title: 'T' }),
+        syncReadinessStatus: jest.fn().mockResolvedValue('scoping'),
+      } as any,
+      {
+        getOrCreateDoc: jest
+          .fn()
+          .mockResolvedValue({ draft: createEmptyPrdDocument() }),
+        computeReadiness: jest
+          .fn()
+          .mockReturnValue({ score: 40, ready: false, blockers: [] }),
+      } as any,
+      { buildContextBlock: jest.fn().mockResolvedValue('context') } as any,
+      toolsService as any,
+      messageRepository as any,
+      { record: jest.fn() } as any,
+    );
+
+    (service as any).client = {
+      messages: { stream: jest.fn(() => streams.shift()) },
+    };
+  });
+
+  it('allocates the assistant row before the model runs, not after', async () => {
+    streams = [
+      fakeStream([{ type: 'text', text: 'Here is the plan.' }], 'end_turn'),
+    ];
+
+    await drain();
+
+    // Two appends, in transcript order, and the assistant row is opened empty
+    // and marked as still moving.
+    expect(messageRepository.appendMessage).toHaveBeenCalledTimes(2);
+    expect(messageRepository.appendMessage.mock.calls[0][1].role).toBe(
+      BuilderMessageRole.USER,
+    );
+    const assistant = messageRepository.appendMessage.mock.calls[1][1];
+    expect(assistant.role).toBe(BuilderMessageRole.ASSISTANT);
+    expect(assistant.content).toBeNull();
+    expect(assistant.metadata.streaming).toBe(true);
+  });
+
+  it('checkpoints after each tool, so a restart mid-turn keeps the work already done', async () => {
+    streams = [
+      fakeStream(
+        [
+          { type: 'text', text: 'Let me check the workflow.' },
+          { type: 'tool_use', id: 'tu-1', name: 'github_read_file', input: {} },
+          { type: 'tool_use', id: 'tu-2', name: 'update_prd', input: {} },
+        ],
+        'tool_use',
+      ),
+      fakeStream([{ type: 'text', text: 'Ready to build.' }], 'end_turn'),
+    ];
+
+    await drain();
+
+    // One for the prose of the first pass, one per tool, one to settle.
+    expect(messageRepository.checkpointMessage).toHaveBeenCalledTimes(4);
+    expect(messageRepository.checkpointMessage.mock.calls[0][0]).toBe('msg-2');
+
+    // The checkpoint taken after the first tool already carries that tool's
+    // call and result — the thing that used to exist only in local arrays.
+    const afterFirstTool = messageRepository.checkpointMessage.mock.calls[1][1];
+    expect(afterFirstTool.toolCalls).toHaveLength(1);
+    expect(afterFirstTool.toolResults).toHaveLength(1);
+    expect(afterFirstTool.content).toBe('Let me check the workflow.');
+    expect(afterFirstTool.metadata.streaming).toBe(true);
+  });
+
+  it('settles the row exactly once, clearing streaming', async () => {
+    streams = [fakeStream([{ type: 'text', text: 'Done.' }], 'end_turn')];
+
+    await drain();
+
+    const calls = messageRepository.checkpointMessage.mock.calls;
+    const final = calls[calls.length - 1][1];
+    expect(final.metadata.streaming).toBe(false);
+    expect(final.metadata.stopReason).toBe('end_turn');
+    expect(final.content).toBe('Done.');
+    expect(
+      calls.filter(([, patch]) => patch.metadata?.streaming === false),
+    ).toHaveLength(1);
+  });
+
+  it('settles the row when the turn dies mid-stream', async () => {
+    (service as any).client.messages.stream = jest.fn(() => {
+      throw new Error('anthropic exploded');
+    });
+
+    const frames = await drain();
+
+    expect(frames.some((frame) => frame.event === 'error')).toBe(true);
+    const calls = messageRepository.checkpointMessage.mock.calls;
+    const final = calls[calls.length - 1][1];
+    expect(final.metadata.streaming).toBe(false);
+    expect(final.metadata.errored).toBe(true);
+  });
+
+  it('does not fail the turn when a checkpoint cannot be written', async () => {
+    // Losing a save point is a smaller harm than killing a working turn.
+    messageRepository.checkpointMessage.mockRejectedValue(new Error('db gone'));
+    streams = [fakeStream([{ type: 'text', text: 'Done.' }], 'end_turn')];
+
+    const frames = await drain();
+
+    expect(frames.some((frame) => frame.event === 'done')).toBe(true);
+    expect(frames.some((frame) => frame.event === 'error')).toBe(false);
+  });
+
+  it('closes a row left open by a turn that never came back', async () => {
+    messageRepository.closeInterruptedMessages.mockResolvedValue(1);
+    streams = [fakeStream([{ type: 'text', text: 'Done.' }], 'end_turn')];
+
+    await drain();
+
+    expect(messageRepository.closeInterruptedMessages).toHaveBeenCalledWith(
+      'session-1',
+    );
+    // Before this turn's own row is opened, so the transcript never shows two.
+    expect(
+      messageRepository.closeInterruptedMessages.mock.invocationCallOrder[0],
+    ).toBeLessThan(messageRepository.appendMessage.mock.invocationCallOrder[0]);
+  });
+});

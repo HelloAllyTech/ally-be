@@ -47,6 +47,28 @@ export function parseJsonPointer(pointer: string): string[] {
     .map((segment) => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
 }
 
+/**
+ * Read the value a pointer addresses, or `undefined` if it addresses nothing.
+ *
+ * Deliberately non-throwing, unlike the patch ops: the caller is showing a
+ * model what actually landed at a path it just wrote, and "nothing is there"
+ * is the most useful answer that case can give.
+ */
+export function resolveJsonPointer(document: any, pointer: string): any {
+  let current = document;
+  for (const segment of parseJsonPointer(pointer)) {
+    if (current === null || typeof current !== 'object') return undefined;
+    if (Array.isArray(current)) {
+      if (!/^(0|[1-9]\d*)$/.test(segment)) return undefined;
+      current = current[Number(segment)];
+      continue;
+    }
+    if (!(segment in current)) return undefined;
+    current = current[segment];
+  }
+  return current;
+}
+
 export function applyJsonPatch<T>(document: T, ops: JsonPatchOp[]): T {
   if (!Array.isArray(ops)) {
     throw new JsonPatchError('Patch must be an array of operations');

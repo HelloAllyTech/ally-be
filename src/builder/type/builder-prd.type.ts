@@ -71,8 +71,20 @@ export interface BuilderPrdReadinessSection {
   key: string;
   label: string;
   ok: boolean;
-  /** What is missing, phrased as the next action. Empty when ok. */
+  /**
+   * What is missing, phrased as the next action, in one short sentence.
+   * Empty when ok. This is what the admin sees, in a tooltip.
+   */
   hint: string;
+  /**
+   * The same gap spelled out for the interview agent: which JSON Pointers to
+   * patch, the declared field names, the legal values. Kept apart from `hint`
+   * because the two readers want different lengths — the agent cannot see the
+   * schema and needs all of it, while a paragraph of pointers in the admin's
+   * tooltip is just noise. Empty when ok, and absent where there is nothing
+   * mechanical to add.
+   */
+  detail?: string;
 }
 
 export interface BuilderPrdReadiness {
@@ -80,7 +92,11 @@ export interface BuilderPrdReadiness {
   score: number;
   ready: boolean;
   sections: BuilderPrdReadinessSection[];
-  /** Flat list of what still blocks a build; drives the confirm dialog. */
+  /**
+   * Flat list of what still blocks a build: `hint` plus `detail`, so the
+   * agent gets the actionable half. The UI counts these rather than reading
+   * them; the text a human sees comes from `sections[].hint`.
+   */
   blockers: string[];
 }
 

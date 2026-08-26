@@ -10,14 +10,32 @@ import { BuilderPrdDoc } from '../entity/builder-prd-doc.entity';
 import { BuilderPrdVersion } from '../entity/builder-prd-version.entity';
 import { BuilderPrdDocRepository } from '../repository/builder-prd.repository';
 import { BuilderPrdVersionAuthor } from '../enum/builder.enum';
-import { isBuilderRepo } from '../constants/builder-repos.constants';
+import {
+  BUILDER_REPO_NAMES,
+  isBuilderRepo,
+} from '../constants/builder-repos.constants';
 import {
   BuilderPrdDocument,
   BuilderPrdReadiness,
   BuilderPrdReadinessSection,
+  BuilderPrdRepoPlan,
   createEmptyPrdDocument,
 } from '../type/builder-prd.type';
-import { normalisePrdDocument } from '../util/builder-prd-normalise.util';
+import {
+  createPrdNormaliseDiagnostics,
+  normalisePrdDocument,
+  PrdNormaliseDiagnostics,
+} from '../util/builder-prd-normalise.util';
+
+/**
+ * One persisted PRD mutation: the new doc, its immutable snapshot, and what
+ * normalisation had to coerce on the way in.
+ */
+export interface BuilderPrdMutationResult {
+  doc: BuilderPrdDoc;
+  version: BuilderPrdVersion;
+  diagnostics: PrdNormaliseDiagnostics;
+}
 
 /** Prose sections that must say something before a build can start. */
 const PROSE_SECTIONS: {
@@ -94,7 +112,7 @@ export class BuilderPrdService {
     userId: number,
     author: BuilderPrdVersionAuthor,
     changeSummary?: string,
-  ): Promise<{ doc: BuilderPrdDoc; version: BuilderPrdVersion }> {
+  ): Promise<BuilderPrdMutationResult> {
     let nextDraft: BuilderPrdDocument;
     try {
       nextDraft = applyJsonPatch(doc.draft, ops);
@@ -126,11 +144,16 @@ export class BuilderPrdService {
     userId: number,
     author: BuilderPrdVersionAuthor,
     changeSummary?: string,
-  ): Promise<{ doc: BuilderPrdDoc; version: BuilderPrdVersion }> {
+  ): Promise<BuilderPrdMutationResult> {
     // Every write goes through here, so this is the one place that can promise
     // the stored document matches its declared shape — the agent's patch
     // `value` is untyped and has written objects where the schema says string.
-    const normalised = normalisePrdDocument(nextDraft);
+    //
+    // The diagnostics are collected rather than discarded because the writer
+    // is usually the interview agent, and what normalisation had to do is the
+    // only signal it gets that a key name it invented was not the one stored.
+    const diagnostics = createPrdNormaliseDiagnostics();
+    const normalised = normalisePrdDocument(nextDraft, diagnostics);
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; ; attempt++) {
       try {
@@ -164,7 +187,7 @@ export class BuilderPrdService {
           const saved = await docRepo.findOneOrFail({
             where: { id: current.id },
           });
-          return { doc: saved, version };
+          return { doc: saved, version, diagnostics };
         });
       } catch (error) {
         if (attempt < MAX_ATTEMPTS && this.isDuplicateKey(error)) {
@@ -208,9 +231,14 @@ export class BuilderPrdService {
     }
 
     const requirements = draft.requirements ?? [];
-    const requirementsWithoutCriteria = requirements.filter(
-      (requirement) => !(requirement.acceptanceCriteria ?? []).length,
-    );
+    // Carries the index because that is what the agent needs in order to
+    // patch: "requirement 1 has no criteria" is actionable, "a requirement has
+    // no criteria" sends it re-reading the whole array to find out which.
+    const requirementsWithoutCriteria = requirements
+      .map((requirement, index) => ({ requirement, index }))
+      .filter(
+        ({ requirement }) => !(requirement.acceptanceCriteria ?? []).length,
+      );
     sections.push({
       key: 'requirements',
       label: 'Requirements',
@@ -220,6 +248,23 @@ export class BuilderPrdService {
         : requirementsWithoutCriteria.length
           ? `${requirementsWithoutCriteria.length} requirement(s) have no acceptance criteria.`
           : '',
+      detail: !requirements.length
+        ? 'Each /requirements entry is {id, title, description, ' +
+          'acceptanceCriteria}, acceptanceCriteria being a list of plain ' +
+          'sentences.'
+        : requirementsWithoutCriteria.length
+          ? 'Set "acceptanceCriteria" to a list of observable, testable ' +
+            'sentences at: ' +
+            requirementsWithoutCriteria
+              .map(
+                ({ requirement, index }) =>
+                  `/requirements/${index}/acceptanceCriteria (${
+                    requirement.title || requirement.id || 'untitled'
+                  })`,
+              )
+              .join(', ') +
+            '.'
+          : '',
     });
 
     const repoPlans = draft.technicalPlan?.repos ?? [];
@@ -228,16 +273,29 @@ export class BuilderPrdService {
     // hypothetical: the agent adds a plan entry as soon as it knows a change
     // is needed, sometimes before it has settled which repo owns it, and a
     // plan naming no repo would otherwise pass as complete.
-    const unnamedRepoPlans = repoPlans.filter(
-      (plan) => !String(plan.repo ?? '').trim(),
+    const plansAt = (
+      predicate: (plan: BuilderPrdRepoPlan) => boolean,
+    ): { plan: BuilderPrdRepoPlan; index: number }[] =>
+      repoPlans
+        .map((plan, index) => ({ plan, index }))
+        .filter(({ plan }) => predicate(plan));
+
+    const unnamedRepoPlans = plansAt((plan) => !String(plan.repo ?? '').trim());
+    const unknownRepoPlans = plansAt(
+      (plan) => !!String(plan.repo ?? '').trim() && !isBuilderRepo(plan.repo),
     );
-    const unknownRepoPlans = repoPlans.filter(
-      (plan) => String(plan.repo ?? '').trim() && !isBuilderRepo(plan.repo),
-    );
-    const emptyRepoPlans = repoPlans.filter(
+    const emptyRepoPlans = plansAt(
       (plan) =>
-        String(plan.repo ?? '').trim() && !String(plan.changesMd ?? '').trim(),
+        !!String(plan.repo ?? '').trim() &&
+        !String(plan.changesMd ?? '').trim(),
     );
+    const repoChoices = BUILDER_REPO_NAMES.join(', ');
+    const planShape =
+      'Each /technicalPlan/repos entry is {repo, changesMd} and only those two ' +
+      'keys are stored. One entry per repo the build touches — several entries ' +
+      'describing the same change in different repos is the correct way to ' +
+      'write a cross-repo feature, not a workaround.';
+
     sections.push({
       key: 'technicalPlan',
       label: 'Technical plan',
@@ -252,12 +310,30 @@ export class BuilderPrdService {
           ? `${unnamedRepoPlans.length} planned change(s) have no repo chosen.`
           : unknownRepoPlans.length
             ? `Not repos Builder can work in: ${unknownRepoPlans
-                .map((plan) => plan.repo)
+                .map(({ plan }) => plan.repo)
                 .join(', ')}.`
             : emptyRepoPlans.length
               ? `No described changes for: ${emptyRepoPlans
-                  .map((plan) => plan.repo)
+                  .map(({ plan }) => plan.repo)
                   .join(', ')}.`
+              : '',
+      detail: !repoPlans.length
+        ? `${planShape} "repo" must be one of: ${repoChoices}.`
+        : unnamedRepoPlans.length
+          ? `Set ${unnamedRepoPlans
+              .map(({ index }) => `/technicalPlan/repos/${index}/repo`)
+              .join(', ')} to one of: ${repoChoices}. ${planShape}`
+          : unknownRepoPlans.length
+            ? `Allowed values: ${repoChoices}. Fix ${unknownRepoPlans
+                .map(({ index }) => `/technicalPlan/repos/${index}/repo`)
+                .join(', ')}.`
+            : emptyRepoPlans.length
+              ? 'Write what changes in that repo, in enough detail to start ' +
+                'from, at: ' +
+                emptyRepoPlans
+                  .map(({ index }) => `/technicalPlan/repos/${index}/changesMd`)
+                  .join(', ') +
+                '.'
               : '',
     });
 
@@ -303,9 +379,15 @@ export class BuilderPrdService {
       // which is exactly the state the blockers list exists to explain.
       ready: sections.every((section) => section.ok),
       sections,
+      // hint + detail, because the agent is the reader that acts on this list
+      // and it cannot see the schema. The admin's tooltip renders `hint` on
+      // its own — a pointer-by-pointer repair note in a small tooltip is
+      // unreadable, and the two readers genuinely want different lengths.
       blockers: sections
         .filter((section) => !section.ok)
-        .map((section) => section.hint),
+        .map((section) =>
+          [section.hint, section.detail].filter(Boolean).join(' '),
+        ),
     };
   }
 

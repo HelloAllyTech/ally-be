@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { v4 as uuidv4 } from 'uuid';
 import { LoggerService } from 'src/logger/logger.service';
-import { JsonPatchOp } from 'src/roleplay-studio/util/json-patch.util';
+import {
+  JsonPatchOp,
+  resolveJsonPointer,
+} from 'src/roleplay-studio/util/json-patch.util';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderPrdDoc } from '../entity/builder-prd-doc.entity';
 import { BuilderPrdVersionAuthor } from '../enum/builder.enum';
@@ -17,6 +20,38 @@ import {
   BUILDER_REPOS,
 } from '../constants/builder-repos.constants';
 import { BUILDER_STACKS_DEFAULT_RESULTS } from '../constants/builder.constants';
+
+/**
+ * Truncate a stored value down to something a model can read in a tool result.
+ *
+ * Long prose is the point of the PRD but not of the echo — the agent is
+ * checking that its words landed under the right key, not re-reading them.
+ */
+const STORED_ECHO_MAX_CHARS = 120;
+const STORED_ECHO_MAX_ITEMS = 12;
+
+function describeStored(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return value.length <= STORED_ECHO_MAX_CHARS
+      ? value
+      : `${value.slice(0, STORED_ECHO_MAX_CHARS)}… (${value.length} chars)`;
+  }
+  if (Array.isArray(value)) {
+    const head = value.slice(0, STORED_ECHO_MAX_ITEMS).map(describeStored);
+    return value.length > STORED_ECHO_MAX_ITEMS
+      ? [...head, `… ${value.length - STORED_ECHO_MAX_ITEMS} more`]
+      : head;
+  }
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+        key,
+        describeStored(entry),
+      ]),
+    );
+  }
+  return value;
+}
 
 /** Mutable per-turn context threaded through tool executions. */
 export interface BuilderToolExecutionContext {
@@ -120,7 +155,14 @@ export class BuilderInterviewToolsService {
           'schema says so: requirements are {id,title,description,' +
           'acceptanceCriteria}, assumptions are {id,text,status}, and ' +
           'technicalPlan.repos are {repo,changesMd}. Everything else is ' +
-          'markdown prose.',
+          'markdown prose.\n' +
+          'Only the declared keys on those rows are stored — any other key ' +
+          'name is coerced or dropped. You do not have to guess whether a ' +
+          'write landed: the result echoes `stored`, the value now at each ' +
+          'path you patched, plus `renamedKeys` and `ignoredKeys` when a name ' +
+          'you used was not the declared one. Read `stored` before retrying — ' +
+          'if it shows what you meant, the write worked and a different field ' +
+          'is what the blocker is about.',
         input_schema: {
           type: 'object',
           properties: {
@@ -448,7 +490,7 @@ export class BuilderInterviewToolsService {
     }
 
     try {
-      const { doc } = await this.prdService.applyPatch(
+      const { doc, diagnostics } = await this.prdService.applyPatch(
         context.doc,
         ops,
         context.userId,
@@ -457,6 +499,19 @@ export class BuilderInterviewToolsService {
       );
       context.doc = doc;
       const readiness = this.prdService.computeReadiness(doc.draft);
+
+      // What is now stored at each path the patch addressed. The PRD is
+      // normalised on write, so "the op succeeded" and "the value you wrote is
+      // in the document" are different claims — a key name the schema does not
+      // declare is coerced or dropped, and without this echo the only evidence
+      // the agent gets is a readiness score that will not move. One session
+      // spent its whole budget guessing at field names for exactly this
+      // reason. The full document only reaches the agent on the next turn;
+      // within a turn this is the sole read-back it has.
+      const stored = ops.map((op) => ({
+        path: op.path,
+        value: describeStored(resolveJsonPointer(doc.draft, op.path)),
+      }));
 
       return {
         modelResult: {
@@ -467,6 +522,25 @@ export class BuilderInterviewToolsService {
           // Feed the blockers back so the agent knows what to ask about next
           // without having to re-derive the rubric from the document.
           blockers: readiness.blockers,
+          stored,
+          // Only present when something was coerced, so a clean patch does not
+          // spend tokens saying nothing happened.
+          ...(diagnostics.recovered.length
+            ? {
+                renamedKeys: diagnostics.recovered.map(
+                  ({ path, wrote, storedAs }) =>
+                    `${path}: you wrote "${wrote}", stored as "${storedAs}" — use the declared name`,
+                ),
+              }
+            : {}),
+          ...(diagnostics.ignored.length
+            ? {
+                ignoredKeys: diagnostics.ignored.map(
+                  ({ path, keys }) =>
+                    `${path}: ${keys.join(', ')} — not declared fields, so this text is NOT in the document`,
+                ),
+              }
+            : {}),
         },
         summary: input?.changeSummary
           ? `PRD updated: ${input.changeSummary}`
