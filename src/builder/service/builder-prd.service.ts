@@ -113,9 +113,12 @@ export class BuilderPrdService {
     author: BuilderPrdVersionAuthor,
     changeSummary?: string,
   ): Promise<BuilderPrdMutationResult> {
-    let nextDraft: BuilderPrdDocument;
+    // Fail fast against the caller's already-loaded draft so an obviously bad
+    // patch (unknown path, etc.) never opens a transaction. The authoritative
+    // application happens inside persistDraftMutation against whatever draft
+    // is current at write time.
     try {
-      nextDraft = applyJsonPatch(doc.draft, ops);
+      applyJsonPatch(doc.draft, ops);
     } catch (error) {
       if (error instanceof JsonPatchError) {
         throw new BadRequestException(
@@ -124,36 +127,26 @@ export class BuilderPrdService {
       }
       throw error;
     }
-    return this.persistDraftMutation(
-      doc,
-      nextDraft,
-      userId,
-      author,
-      changeSummary,
-    );
+    return this.persistDraftMutation(doc, ops, userId, author, changeSummary);
   }
 
   /**
    * Write the draft and append an immutable snapshot in one transaction,
-   * retrying once on a versionNumber race (two writers landing together —
-   * the agent patching while the admin saves a section edit).
+   * retrying on a versionNumber race (two writers landing together — the
+   * agent patching while the admin saves a section edit).
+   *
+   * The ops are re-applied to the freshly-read draft on every attempt, not
+   * just the first: recomputing nextVersionNumber from `current` while still
+   * writing content derived from the pre-race draft would silently discard
+   * whichever write committed first, defeating the retry.
    */
   async persistDraftMutation(
     doc: BuilderPrdDoc,
-    nextDraft: BuilderPrdDocument,
+    ops: JsonPatchOp[],
     userId: number,
     author: BuilderPrdVersionAuthor,
     changeSummary?: string,
   ): Promise<BuilderPrdMutationResult> {
-    // Every write goes through here, so this is the one place that can promise
-    // the stored document matches its declared shape — the agent's patch
-    // `value` is untyped and has written objects where the schema says string.
-    //
-    // The diagnostics are collected rather than discarded because the writer
-    // is usually the interview agent, and what normalisation had to do is the
-    // only signal it gets that a key name it invented was not the one stored.
-    const diagnostics = createPrdNormaliseDiagnostics();
-    const normalised = normalisePrdDocument(nextDraft, diagnostics);
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; ; attempt++) {
       try {
@@ -161,12 +154,36 @@ export class BuilderPrdService {
           const docRepo = em.getRepository(BuilderPrdDoc);
           const versionRepo = em.getRepository(BuilderPrdVersion);
 
-          // Re-read inside the transaction: versionNumber may have moved
-          // since the caller loaded the doc.
+          // Re-read inside the transaction: versionNumber — and the draft
+          // itself — may have moved since the caller loaded the doc.
           const current = await docRepo.findOneOrFail({
             where: { id: doc.id },
           });
           const nextVersionNumber = current.versionNumber + 1;
+
+          let nextDraft: BuilderPrdDocument;
+          try {
+            nextDraft = applyJsonPatch(current.draft, ops);
+          } catch (error) {
+            if (error instanceof JsonPatchError) {
+              throw new BadRequestException(
+                `PRD patch failed at operation ${error.opIndex ?? 0}: ${error.message}`,
+              );
+            }
+            throw error;
+          }
+
+          // Every write goes through here, so this is the one place that can
+          // promise the stored document matches its declared shape — the
+          // agent's patch `value` is untyped and has written objects where
+          // the schema says string.
+          //
+          // The diagnostics are collected rather than discarded because the
+          // writer is usually the interview agent, and what normalisation
+          // had to do is the only signal it gets that a key name it invented
+          // was not the one stored.
+          const diagnostics = createPrdNormaliseDiagnostics();
+          const normalised = normalisePrdDocument(nextDraft, diagnostics);
 
           const version = await versionRepo.save(
             versionRepo.create({
