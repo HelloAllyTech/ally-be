@@ -1,9 +1,13 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpStatus,
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { ErrorCode } from 'src/exception/error-code.enum';
+import { VoiceNoteExtractionFailedException } from 'src/exception/custom.exception';
+import { FAILURE_MESSAGES } from 'src/exception/failure-messages';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI, { toFile } from 'openai';
 
@@ -152,9 +156,15 @@ export class VoiceNoteService {
     // COUNSELOR_ACCESS alone is not enough.
     const enabled = await this.settingsService.getScribeVoiceNoteEnabled();
     if (!enabled) {
-      throw new ForbiddenException(
-        'Scribe voice note is not enabled for this organization',
-      );
+      // Carries FEATURE_NOT_ENABLED so the client can say "ask an admin to
+      // switch this on" instead of the generic retry copy every other failure
+      // on this endpoint produced. The remedy is a toggle, not a retry.
+      throw new ForbiddenException({
+        message: FAILURE_MESSAGES.VOICE_NOTE_NOT_ENABLED,
+        error: 'Forbidden',
+        statusCode: HttpStatus.FORBIDDEN,
+        errorCode: ErrorCode.FEATURE_NOT_ENABLED,
+      });
     }
 
     if (!audio?.buffer?.length) {
@@ -168,11 +178,33 @@ export class VoiceNoteService {
       throw new BadRequestException('NO_SPEECH_DETECTED');
     }
 
-    const values = fields.length
-      ? await this.extractFields(transcript, fields)
-      : [];
+    if (!fields.length) return { transcript, values: [] };
 
-    return { transcript, values };
+    try {
+      return {
+        transcript,
+        values: await this.extractFields(transcript, fields),
+      };
+    } catch (error) {
+      // Transcription succeeded; only extraction failed. Returning a bare 500
+      // here discarded a good transcript — the counsellor had already spoken
+      // the note, and the only way back was to record the whole thing again.
+      // Fail loudly (this IS a failure, not an empty result) but hand the
+      // transcript back with it, so the client can save the dictation to the
+      // note and drop the counsellor into the manual form with their words in
+      // front of them.
+      this.logger.error(
+        `[VOICE_NOTE] extraction failed after a good transcript ` +
+          `chars=${transcript.length} fields=${fields.length}; ` +
+          `returning the transcript so it is not lost`,
+        error as any,
+      );
+      throw new VoiceNoteExtractionFailedException(
+        FAILURE_MESSAGES.VOICE_NOTE_EXTRACTION_FAILED,
+        ErrorCode.VOICE_NOTE_EXTRACTION_FAILED,
+        transcript,
+      );
+    }
   }
 
   // ── Step 1: speech-to-text ────────────────────────────────────────────────

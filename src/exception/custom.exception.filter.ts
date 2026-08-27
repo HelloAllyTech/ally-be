@@ -10,7 +10,10 @@ import { QueryFailedError } from 'typeorm';
 import { LoggerService } from '../logger/logger.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { NotificationErrorType } from '../notification/type/notification.error.type';
-import { EntityOperationException } from './custom.exception';
+import {
+  EntityOperationException,
+  VoiceNoteExtractionFailedException,
+} from './custom.exception';
 import { ErrorCode } from './error-code.enum';
 import { FAILURE_MESSAGES } from './failure-messages';
 @Catch()
@@ -101,6 +104,11 @@ export class CustomExceptionFilter implements ExceptionFilter {
     }
     if (exception instanceof EntityOperationException) {
       body.entityId = (exception.getResponse() as any).entityId;
+    }
+    // Same carry-through as entityId above: the body is an allowlist, so the
+    // salvaged dictation has to be named here or it never reaches the client.
+    if (exception instanceof VoiceNoteExtractionFailedException) {
+      body.transcript = exception.transcript;
     }
     response.status(status).json(body);
 

@@ -55,6 +55,17 @@ export enum ErrorCode {
    */
   FEATURE_NOT_ENABLED = 'FEATURE_NOT_ENABLED',
 
+  // ── Scribe voice note (dictation → note fields) ───────────────────────────
+  /**
+   * 500. The dictation was transcribed, but the field-extraction model failed.
+   * The response still carries the `transcript`, because it is real work the
+   * counsellor did with their voice and the alternative is throwing it away:
+   * the client saves it to the note and falls back to the manual form. TERMINAL
+   * for the extraction — the transcript is already in hand, so a client must
+   * not re-upload the audio to get it.
+   */
+  VOICE_NOTE_EXTRACTION_FAILED = 'VOICE_NOTE_EXTRACTION_FAILED',
+
   // ── Throttling / capacity ─────────────────────────────────────────────────
   /** 429 from the rate limiter. Transient; honour `Retry-After`. */
   RATE_LIMITED = 'RATE_LIMITED',
