@@ -25,12 +25,58 @@ export interface BuildPromptContext {
   /** Where a person can watch this run, for the PR body. */
   sessionUrl: string;
   lessons: string[];
+  /** Digests of similar past builds and how they turned out. */
+  exemplars?: string[];
+  /** Epic mode — the slice of the PRD this run is responsible for. */
+  milestone?: {
+    position: number;
+    total: number;
+    title: string;
+    summaryMd?: string | null;
+    requirementIds: string[];
+    technicalNotesMd?: string | null;
+    /** Branch to build on top of, when a previous milestone left one. */
+    baseBranch?: string | null;
+    /** What earlier milestones already delivered. */
+    completed: { position: number; title: string; branch: string }[];
+  } | null;
   /** Resume only — the branches the paused run left behind. */
   branches?: Record<string, string> | null;
   /** Resume only — server-condensed state from the previous run. */
   resumeContext?: string | null;
   /** Resume only — the questions just answered. */
   answeredQuestions?: { prompt: string; answer: string }[];
+}
+
+/**
+ * Shared prelude for every phase prompt: who you are, where the repos are,
+ * the reporting helpers, and the repo command table. Rendered identically for
+ * plan, code, remediate and finalise so the cached prefix is shared across
+ * a run's invocations.
+ */
+export function buildPromptHeader(context: {
+  sessionId: string;
+  runId: string;
+  branchSlug: string;
+  apiBaseUrl: string;
+  repos: BuilderRepoDefinition[];
+  role: string;
+}): string {
+  return `
+You are Builder's ${context.role}, working inside a GitHub Actions runner on
+the Ally platform.
+
+Session: ${context.sessionId}
+Run: ${context.runId}
+Branch slug: \`builder/${context.branchSlug}\`
+Repos are checked out side by side under \`repos/<name>\`.
+
+${buildHelpers(context.apiBaseUrl, context.runId)}
+
+## Repos and their commands
+
+${renderRepoCommands(context.repos)}
+`.trim();
 }
 
 /**
@@ -83,6 +129,14 @@ ask() {
   && touch /tmp/builder-paused
 }
 
+# What is left of this session's spend ceiling. Worth checking before
+# anything expensive (an E2E bring-up, a long test matrix): the run is also
+# stopped automatically at each phase boundary, but that is after the money
+# is spent rather than before.
+budget() {
+  curl -sS "${base}/budget" -H "x-api-key: $ALLY_BE_API_KEY" || true
+}
+
 # Record opened pull requests. Body: {"pullRequests":[{repo,branch,prNumber,prUrl,title}]}
 prs() {
   curl -sS -X POST "${base}/prs" -H "x-api-key: $ALLY_BE_API_KEY" \\
@@ -104,7 +158,7 @@ complete() {
 `.trim();
 };
 
-const renderPrd = (prd: BuilderPrdDocument): string => {
+export const renderPrd = (prd: BuilderPrdDocument): string => {
   const requirements = (prd.requirements ?? [])
     .map((requirement) => {
       const criteria = Array.isArray(requirement.acceptanceCriteria)
@@ -163,7 +217,7 @@ ${prd.e2ePlanMd}
 `.trim();
 };
 
-const renderRepoCommands = (repos: BuilderRepoDefinition[]): string =>
+export const renderRepoCommands = (repos: BuilderRepoDefinition[]): string =>
   repos
     .map(
       (repo) =>
@@ -178,24 +232,23 @@ const renderRepoCommands = (repos: BuilderRepoDefinition[]): string =>
 export function buildBuildPrompt(context: BuildPromptContext): string {
   const isResume = context.mode === 'resume';
 
-  const header = `
-You are Builder's coding agent, working inside a GitHub Actions runner on the
-Ally platform.
+  const header = `${buildPromptHeader({
+    sessionId: context.sessionId,
+    runId: context.runId,
+    branchSlug: context.branchSlug,
+    apiBaseUrl: context.apiBaseUrl,
+    repos: context.repos,
+    role: 'coding agent',
+  })}
 
-A PRD is below. Implement it, prove it works, and open a pull request per repo
-you touched. A human reviews and merges — you never merge.
+A PRD is below. Implement it and prove it works.
 
-Session: ${context.sessionId}
-Run: ${context.runId}
-Branch slug: \`builder/${context.branchSlug}\`
-Repos are checked out side by side under \`repos/<name>\`.
-
-${buildHelpers(context.apiBaseUrl, context.runId)}
-
-## Repos and their commands
-
-${renderRepoCommands(context.repos)}
-`.trim();
+**You do not open the pull requests.** When you finish coding and testing, this
+run continues automatically: a machine test gate runs every touched repo's
+suites, then a fresh-context reviewer goes after your diff, and only once both
+are satisfied does a final phase commit, push and open the PRs. Nothing you
+write reaches a pull request until it has passed both. Stop when the code and
+tests are done.`;
 
   const protocol = `
 ## Protocol
@@ -206,9 +259,11 @@ Follow these in order. Report each stage as you enter it.
 enough to know where the change lands. Read what you need and no more; you are
 billed for every token and the runner has a wall clock.
 
-**2. \`stage PLANNING\`** — post a plan with \`note plan "…"\`: the files you
-expect to touch per repo, in what order, and what proves each requirement.
-Then post an initial todo list with \`todo\`.
+**2. \`stage PLANNING\`** — a plan for this run is below, written by a planner
+pass with a stronger model. Follow it. Post your initial todo list with
+\`todo\`, derived from the plan's workstreams. If the plan is wrong about
+something you can now see in the code, say so in your report and deviate
+deliberately — do not follow a plan off a cliff.
 
 **3. Ask everything now, once.** If anything material is ambiguous — a
 decision the PRD does not settle, a conflict between two requirements, a repo
@@ -233,6 +288,13 @@ finished, and re-send the whole list. Write code that reads like the code
 around it — match the surrounding naming, comment density and idiom rather
 than importing a style from elsewhere.
 
+**Work the plan's independent workstreams in parallel.** Where the plan marks
+two workstreams parallel-safe, run them as concurrent \`Task\` subagents — one
+per workstream, each told to confine itself to that workstream's file list.
+You integrate the results and run the tests yourself. Never let two subagents
+hold the same file: a plan that marks overlapping file sets parallel-safe is
+wrong, and sequential is the right answer there.
+
 **6. Tests are part of the change, not a step after it.** For each requirement,
 write a test that fails for the right reason before you make it pass. A test
 written after the fact tends to assert what the code does rather than what the
@@ -249,33 +311,15 @@ Fix what you broke. If a test was already failing before your change, say so
 in your report rather than fixing it silently — an unrelated fix buried in a
 feature PR is a bad review.
 
-**8. \`stage VERIFYING\`** — a separate verification pass runs here
-automatically with a fresh context. If it returns objections, address them and
-re-run the affected tests. You get two rounds; if objections still stand after
-that, pause and ask rather than opening a PR over them.
+Run these yourself rather than leaving them to the gate. The gate is a
+backstop that stops broken work reaching a PR; discovering a failure there
+costs a whole extra invocation to fix what you could have seen here.
 
-**9. \`stage E2E_VERIFY\`** — see "End-to-end" below.
-
-**10. Commit and push.** One commit per repo, message in the imperative,
-describing the change rather than the process. Push the branch.
-
-**11. \`stage OPENING_PRS\`** — open one PR per touched repo with
-\`gh pr create\`. The body must carry: what changed and why (from the PRD
-summary), the requirement ids covered, the test evidence (commands run and
-their results), any deviation from the PRD with your reasoning, a link to
-${context.sessionUrl}, and the line **"Opened by Builder — human review and
-merge required."** Then record them with \`prs\`.
-
-Never run \`gh pr merge\`. Never push to master.
-
-**12. \`stage REPORTING\`** — write your account of the run with \`report\`:
-what you built, files changed per repo, tests added and their results,
-decisions you made that the PRD did not dictate, anything you could not do.
-Include a \`retrospective\` array in the metrics of 3-5 short lessons a future
-Builder run should know — traps you hit, conventions you had to discover,
-estimates that were wrong. Those feed forward into later builds.
-
-**13. \`complete '{"outcome":"done"}'\`** — exactly once.
+**8. Stop.** Commit your work on each repo you touched (imperative message,
+describing the change rather than the process) but **do not push and do not
+open a PR** — the finalise phase does that once the gate and the reviewer are
+satisfied. Then post a short summary of what you did with
+\`note text "…"\` and exit. Do not call \`complete\`.
 
 ## Pausing to ask
 
@@ -313,23 +357,6 @@ branches in \`branches\`. Then **exit 0**. Pausing is a success, not a failure �
 the run ends here and a fresh run resumes from your branches when the answer
 arrives. Uncommitted work at this point is work thrown away.
 
-## End-to-end
-
-Only worth doing on the run that will open the PRs, and only when it can
-actually prove something. Bring up what you need
-(\`docker compose up -d postgres redis localstack\` in ally-be, migrations,
-the service, the frontend), exercise the feature the way a person would, and
-capture evidence with \`note e2e_evidence "…"\`.
-
-Skip it — with \`note e2e_skipped "<reason>"\` — when any of these hold:
-
-- the change is backend logic that unit tests already cover properly;
-- stack bring-up has failed twice;
-- fewer than 25 minutes of the runner's budget remain.
-
-Skipping with a stated reason is a fine outcome. Failing the build because a
-docker-compose service was slow is not.
-
 ## Conduct
 
 - **Guarded paths** (listed per repo above) cover auth, permissions,
@@ -362,8 +389,8 @@ ${
       }
 ${context.resumeContext ? `\n### Where you left off\n\n${context.resumeContext}\n` : ''}
 Continue from there. Do not restart, do not re-plan from scratch, and re-run
-the tests before opening any PR — the answer you just received may have
-changed something you had already tested.
+the tests before you stop — the answer you just received may have changed
+something you had already tested.
 `.trim()
     : '';
 
@@ -378,7 +405,73 @@ ${context.lessons.map((lesson) => `- ${lesson}`).join('\n')}
 `.trim()
     : '';
 
-  return [header, protocol, resumeBlock, lessonsBlock, renderPrd(context.prd)]
+  const milestone = context.milestone;
+  const milestoneBlock = milestone
+    ? `
+## This run builds milestone ${milestone.position} of ${milestone.total}
+
+**${milestone.title}**
+
+${milestone.summaryMd ?? ''}
+
+**Your requirements are ${milestone.requirementIds.join(', ') || '(none listed — treat that as a gap and say so)'}.**
+The PRD below is the whole feature; everything outside those requirement ids
+belongs to another milestone. Do not build ahead: a later milestone's work
+appearing in this pull request is the thing that makes a stacked series
+unreviewable.
+
+${
+  milestone.completed.length
+    ? `### Already built, in earlier milestones
+
+${milestone.completed
+  .map(
+    (done) => `- **${done.position}. ${done.title}** — on \`${done.branch}\``,
+  )
+  .join('\n')}
+
+You may rely on all of it. It is in the branch you are starting from, whether or not anyone has merged it yet.`
+    : 'This is the first milestone, so nothing has been built yet.'
+}
+
+${
+  milestone.baseBranch
+    ? `### Branching
+
+Branch from \`${milestone.baseBranch}\` — **not** from master — so this milestone stacks on the last one. When you open the pull request, set its base to \`${milestone.baseBranch}\` too (\`gh pr create --base ${milestone.baseBranch}\`); GitHub retargets it automatically once that one merges.`
+    : ''
+}
+
+${
+  milestone.technicalNotesMd
+    ? `### Notes for this slice
+
+${milestone.technicalNotesMd}`
+    : ''
+}
+`.trim()
+    : '';
+
+  const exemplarBlock = context.exemplars?.length
+    ? `
+## Similar builds this platform has already attempted
+
+What happened *after* each shipped is the useful part. A rejected approach is
+worth more to you here than a successful one.
+
+${context.exemplars.join('\n\n')}
+`.trim()
+    : '';
+
+  return [
+    header,
+    protocol,
+    milestoneBlock,
+    resumeBlock,
+    lessonsBlock,
+    exemplarBlock,
+    renderPrd(context.prd),
+  ]
     .filter(Boolean)
     .join('\n\n---\n\n');
 }

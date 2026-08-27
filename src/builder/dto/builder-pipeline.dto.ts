@@ -121,6 +121,23 @@ export class RecordBuilderReportDto {
 }
 
 export class RecordBuilderRunCostDto {
+  @ApiPropertyOptional({
+    description:
+      'Which engine invocation this bills (plan, code-1, verify-2, finalise, …). ' +
+      'Upserted by key, so re-reporting a phase replaces it rather than double counting. ' +
+      'Omitted means the legacy single-invocation shape and lands as "build".',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  phase?: string;
+
+  @ApiPropertyOptional({ description: 'Model that ran this phase' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  model?: string;
+
   @ApiPropertyOptional({ type: Object, description: 'Per-model token usage' })
   @IsOptional()
   @IsObject()
@@ -130,6 +147,36 @@ export class RecordBuilderRunCostDto {
   @IsOptional()
   @IsNumber()
   totalCostUsd?: number;
+}
+
+export class BuilderFeedbackOutcomeDto {
+  @ApiProperty({ description: 'The builder_pr_feedback row this is about' })
+  @IsString()
+  @IsNotEmpty()
+  feedbackId!: string;
+
+  @ApiPropertyOptional({
+    enum: ['addressed', 'dismissed'],
+    description:
+      'addressed = changed the code; dismissed = replied explaining why not. Anything else is treated as addressed.',
+  })
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @ApiPropertyOptional({ description: 'Where Builder replied on the PR' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  replyUrl?: string;
+}
+
+export class RecordBuilderFeedbackOutcomesDto {
+  @ApiProperty({ type: [BuilderFeedbackOutcomeDto] })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BuilderFeedbackOutcomeDto)
+  outcomes!: BuilderFeedbackOutcomeDto[];
 }
 
 export class CompleteBuilderRunDto {

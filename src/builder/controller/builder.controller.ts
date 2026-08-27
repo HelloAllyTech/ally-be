@@ -35,6 +35,11 @@ import { BuilderPullRequestService } from '../service/builder-pull-request.servi
 import { BuilderReportService } from '../service/builder-report.service';
 import { BuilderSettingsService } from '../service/builder-settings.service';
 import { BuilderNotificationService } from '../service/builder-notification.service';
+import { BuilderLessonCuratorService } from '../service/builder-lesson-curator.service';
+import { BuilderExemplarService } from '../service/builder-exemplar.service';
+import { BuilderMetricsService } from '../service/builder-metrics.service';
+import { BuilderEpicService } from '../service/builder-epic.service';
+import { BuilderResearchService } from '../service/builder-research.service';
 import { BuilderPrdVersionRepository } from '../repository/builder-prd.repository';
 import { BuilderBuildRunRepository } from '../repository/builder-build.repository';
 import {
@@ -46,6 +51,9 @@ import {
   StartBuilderBuildDto,
   UpdateBuilderSessionDto,
   UpdateBuilderSettingsDto,
+  ListBuilderLessonsQueryDto,
+  UpdateBuilderLessonDto,
+  BuilderResearchDto,
 } from '../dto/builder.dto';
 import {
   BUILDER_EVENT_PAGE_SIZE,
@@ -82,6 +90,11 @@ export class BuilderController {
     private readonly reportService: BuilderReportService,
     private readonly settingsService: BuilderSettingsService,
     private readonly notificationService: BuilderNotificationService,
+    private readonly curatorService: BuilderLessonCuratorService,
+    private readonly exemplarService: BuilderExemplarService,
+    private readonly metricsService: BuilderMetricsService,
+    private readonly epicService: BuilderEpicService,
+    private readonly researchService: BuilderResearchService,
     private readonly prdVersionRepository: BuilderPrdVersionRepository,
     private readonly runRepository: BuilderBuildRunRepository,
     private readonly redisService: RedisService,
@@ -328,6 +341,21 @@ export class BuilderController {
     return this.pullRequestService.listBySession(sessionId);
   }
 
+  @Get('sessions/:sessionId/pr-feedback')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.VIEW_BUILDER],
+  })
+  @ApiOperation({
+    summary: 'CI failures and review comments on this session’s PRs',
+  })
+  async listPrFeedback(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    await this.sessionService.getSession(sessionId, user.id);
+    return this.pullRequestService.listFeedback(sessionId);
+  }
+
   @Get('sessions/:sessionId/reports')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
     permissions: [PERMISSIONS.VIEW_BUILDER],
@@ -342,6 +370,142 @@ export class BuilderController {
   }
 
   /* ── Settings & notifications ─────────────────────────────────────────── */
+
+  @Post('sessions/:sessionId/research')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'Read the codebase and write the technical plan (or draft the whole PRD)',
+  })
+  async research(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Body() dto: BuilderResearchDto,
+    @CurrentUser() user: TokenUser,
+  ) {
+    const session = await this.sessionService.getSession(sessionId, user.id);
+    return this.researchService.run(
+      session,
+      user.id,
+      dto.mode ?? 'technical_plan',
+    );
+  }
+
+  /* ── Epic mode ──────────────────────────────────────────────────────── */
+
+  @Get('sessions/:sessionId/milestones')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.VIEW_BUILDER],
+  })
+  @ApiOperation({ summary: 'The milestone series for an epic session' })
+  async listMilestones(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    await this.sessionService.getSession(sessionId, user.id);
+    return this.epicService.listBySession(sessionId);
+  }
+
+  @Post('sessions/:sessionId/epic-plan')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'Propose a milestone split for a large PRD. Nothing dispatches until it is confirmed.',
+  })
+  async proposeEpic(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    const session = await this.sessionService.getSession(sessionId, user.id);
+    const doc = await this.prdService.getOrCreateDoc(sessionId, user.id);
+    return this.epicService.propose(session, doc.draft);
+  }
+
+  @Post('sessions/:sessionId/epic-plan/confirm')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary: 'Accept the proposed split and start the first milestone',
+  })
+  async confirmEpic(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Body() dto: StartBuilderBuildDto,
+    @CurrentUser() user: TokenUser,
+  ) {
+    const session = await this.sessionService.getSession(sessionId, user.id);
+    const milestones = await this.epicService.listBySession(sessionId);
+    if (!milestones.length) {
+      throw new NotFoundException(
+        'This session has no proposed milestones to confirm.',
+      );
+    }
+    return this.buildService.startBuild(session, user.id, dto);
+  }
+
+  /* ── The lesson library ─────────────────────────────────────────────── */
+
+  @Get('lessons')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.VIEW_BUILDER],
+  })
+  @ApiOperation({
+    summary: 'The lesson library, with its curation state and counters',
+  })
+  listLessons(@Query() query: ListBuilderLessonsQueryDto) {
+    return this.knowledgeService.listLessons(query);
+  }
+
+  @Patch('lessons/:lessonId')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'Edit, retire or pin a lesson. A pinned lesson the curator may not touch.',
+  })
+  updateLesson(
+    @Param('lessonId', ParseUUIDPipe) lessonId: string,
+    @Body() dto: UpdateBuilderLessonDto,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.knowledgeService.updateLesson(lessonId, dto, user.id);
+  }
+
+  @Post('lessons/consolidate')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary: 'Run the consolidation pass now rather than waiting for the tick',
+  })
+  consolidateLessons() {
+    return this.curatorService.consolidate(true);
+  }
+
+  @Get('scoreboard')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.VIEW_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'Is Builder getting better — merge rate, rework and cost over time',
+  })
+  scoreboard(@Query('windowDays') windowDays?: string) {
+    return this.metricsService.scoreboard(Number(windowDays) || 30);
+  }
+
+  @Get('exemplars')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.VIEW_BUILDER],
+  })
+  @ApiOperation({ summary: 'Past builds and how they turned out' })
+  listExemplars() {
+    return this.exemplarService.listRecent();
+  }
 
   @Get('settings')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
@@ -371,6 +535,24 @@ export class BuilderController {
           : {}),
         ...(dto.defaultBudgetUsd !== undefined
           ? { defaultBudgetUsd: String(dto.defaultBudgetUsd) }
+          : {}),
+        ...(dto.maxRunnerMinutes !== undefined
+          ? { maxRunnerMinutes: dto.maxRunnerMinutes || null }
+          : {}),
+        ...(dto.autoFixEnabled !== undefined
+          ? { autoFixEnabled: dto.autoFixEnabled }
+          : {}),
+        ...(dto.maxFixRunsPerPr !== undefined
+          ? { maxFixRunsPerPr: dto.maxFixRunsPerPr }
+          : {}),
+        ...(dto.plannerModel !== undefined
+          ? { plannerModel: dto.plannerModel || null }
+          : {}),
+        ...(dto.coderModel !== undefined
+          ? { coderModel: dto.coderModel || null }
+          : {}),
+        ...(dto.verifierModel !== undefined
+          ? { verifierModel: dto.verifierModel || null }
           : {}),
       },
       user.id,

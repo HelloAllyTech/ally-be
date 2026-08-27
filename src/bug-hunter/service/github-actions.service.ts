@@ -19,6 +19,53 @@ export interface PullRequestInfo {
   merged: boolean;
   htmlUrl: string;
   mergedAt: Date | null;
+  /** open | closed. A PR closed without merging is a rejection, not a pass. */
+  state: string;
+  /** Head commit sha — what a CI rollup is actually about. */
+  headSha: string | null;
+}
+
+/**
+ * The combined state of every check on a commit, as one word.
+ *
+ * GitHub reports checks per run; what a reader (and an auto-fix decision)
+ * wants is "is this branch red". `failure` wins over everything because one
+ * failing required check blocks a merge regardless of what else passed.
+ */
+export interface CheckRollup {
+  /** success | failure | pending | none */
+  state: string;
+  /** Names of the checks that failed, for the fix prompt to reproduce. */
+  failed: string[];
+  total: number;
+}
+
+/**
+ * Who wrote a commit.
+ *
+ * Two names because they answer differently. `login` is the GitHub ACCOUNT the
+ * commit is attributed to and is the one worth matching a bot against — but it
+ * is null whenever the commit's email is not linked to an account, which is
+ * ordinary for a CI-authored or a locally-configured git identity. `name` is
+ * the git author line, always there, and is the fallback.
+ */
+export interface CommitAuthor {
+  login: string | null;
+  name: string | null;
+}
+
+/** A review comment or review verdict left on a pull request by a person. */
+export interface PullRequestFeedback {
+  /** GitHub's own id, so re-reading the PR cannot duplicate a row. */
+  externalId: string;
+  kind: 'review_comment' | 'review';
+  author: string;
+  body: string;
+  path?: string | null;
+  line?: number | null;
+  /** For a review: APPROVED | CHANGES_REQUESTED | COMMENTED. */
+  state?: string | null;
+  createdAt: Date | null;
 }
 
 /**
@@ -161,10 +208,226 @@ export class GithubActionsService {
         merged: Boolean(data?.merged),
         htmlUrl: data?.html_url,
         mergedAt: data?.merged_at ? new Date(data.merged_at) : null,
+        state: String(data?.state ?? 'open'),
+        headSha: data?.head?.sha ? String(data.head.sha) : null,
       };
     } catch (error) {
       this.logger.warn(
         `Could not read PR #${number} in ${repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Who authored a commit — used to tell Builder's own pushes from a person's.
+   *
+   * Returns `null` for "could not tell", which callers must NOT collapse into
+   * "not a bot": the two mean different things, and a caller that writes a
+   * decision to the database on a failed lookup makes a transient GitHub
+   * outage permanent. See `BuilderPullRequestService.ingestFeedback`, which
+   * skips the tick rather than guessing.
+   */
+  async getCommitAuthor(
+    repo: string,
+    sha: string,
+  ): Promise<CommitAuthor | null> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.get(this.url(repo, `commits/${sha}`), {
+        headers: this.headers,
+        timeout: 15_000,
+      });
+      return {
+        login: data?.author?.login ? String(data.author.login) : null,
+        name: data?.commit?.author?.name
+          ? String(data.commit.author.name)
+          : null,
+      };
+    } catch (error) {
+      this.logger.warn(
+        `Could not read the author of ${repo}@${sha}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Whether CI is green on a commit, as one verdict plus the names of what
+   * failed.
+   *
+   * Reads both APIs on purpose: `check-runs` covers GitHub Actions, and the
+   * older `status` API covers anything reporting commit statuses instead. A
+   * repo using only one of them would look like it had no CI at all if we read
+   * only the other, and "no CI" is indistinguishable from "green" to a caller
+   * deciding whether to auto-fix.
+   */
+  async getCheckRollup(repo: string, ref: string): Promise<CheckRollup | null> {
+    this.requireConfigured();
+    try {
+      const [checks, statuses] = await Promise.all([
+        axios
+          .get(this.url(repo, `commits/${ref}/check-runs`), {
+            headers: this.headers,
+            timeout: 15_000,
+          })
+          .then((response) => response.data?.check_runs ?? [])
+          .catch(() => []),
+        axios
+          .get(this.url(repo, `commits/${ref}/status`), {
+            headers: this.headers,
+            timeout: 15_000,
+          })
+          .then((response) => response.data?.statuses ?? [])
+          .catch(() => []),
+      ]);
+
+      const failed: string[] = [];
+      let pending = 0;
+      let total = 0;
+
+      for (const run of checks) {
+        total += 1;
+        const status = String(run?.status ?? '');
+        const conclusion = String(run?.conclusion ?? '');
+        if (status !== 'completed') {
+          pending += 1;
+        } else if (
+          // `neutral`, `skipped` and `cancelled` are not failures: a skipped
+          // job is a job somebody deliberately did not need to run.
+          [
+            'failure',
+            'timed_out',
+            'action_required',
+            'startup_failure',
+          ].includes(conclusion)
+        ) {
+          failed.push(String(run?.name ?? 'unnamed check'));
+        }
+      }
+
+      for (const status of statuses) {
+        total += 1;
+        const state = String(status?.state ?? '');
+        if (state === 'pending') pending += 1;
+        else if (state === 'failure' || state === 'error') {
+          failed.push(String(status?.context ?? 'unnamed status'));
+        }
+      }
+
+      const state = !total
+        ? 'none'
+        : failed.length
+          ? 'failure'
+          : pending
+            ? 'pending'
+            : 'success';
+      return { state, failed, total };
+    } catch (error) {
+      this.logger.warn(
+        `Could not read checks for ${repo}@${ref}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Human feedback on a pull request: inline review comments and review
+   * verdicts, newest first.
+   *
+   * Both carry GitHub's own ids so a caller can upsert rather than duplicate —
+   * this is polled on a timer, so every read sees everything again.
+   */
+  async listPullRequestFeedback(
+    repo: string,
+    number: number,
+  ): Promise<PullRequestFeedback[]> {
+    this.requireConfigured();
+    const feedback: PullRequestFeedback[] = [];
+
+    try {
+      const { data } = await axios.get(
+        this.url(repo, `pulls/${number}/comments`),
+        { headers: this.headers, timeout: 15_000, params: { per_page: 100 } },
+      );
+      for (const comment of data ?? []) {
+        feedback.push({
+          externalId: String(comment?.id),
+          kind: 'review_comment',
+          author: String(comment?.user?.login ?? 'unknown'),
+          body: String(comment?.body ?? ''),
+          path: comment?.path ? String(comment.path) : null,
+          line: Number.isFinite(comment?.line) ? Number(comment.line) : null,
+          createdAt: comment?.created_at ? new Date(comment.created_at) : null,
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Could not read review comments on ${repo}#${number}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    try {
+      const { data } = await axios.get(
+        this.url(repo, `pulls/${number}/reviews`),
+        { headers: this.headers, timeout: 15_000, params: { per_page: 100 } },
+      );
+      for (const review of data ?? []) {
+        const state = String(review?.state ?? '');
+        // An approval with no words is not feedback to act on.
+        if (state === 'APPROVED' && !String(review?.body ?? '').trim())
+          continue;
+        feedback.push({
+          externalId: String(review?.id),
+          kind: 'review',
+          author: String(review?.user?.login ?? 'unknown'),
+          body: String(review?.body ?? ''),
+          state,
+          createdAt: review?.submitted_at
+            ? new Date(review.submitted_at)
+            : null,
+        });
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Could not read reviews on ${repo}#${number}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    return feedback;
+  }
+
+  /**
+   * Reply in the thread of a review comment, so the person who raised it sees
+   * the answer where they asked rather than as a new top-level comment.
+   */
+  async replyToReviewComment(
+    repo: string,
+    number: number,
+    commentId: string,
+    body: string,
+  ): Promise<string | null> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.post(
+        this.url(repo, `pulls/${number}/comments/${commentId}/replies`),
+        { body },
+        { headers: this.headers, timeout: 15_000 },
+      );
+      return data?.html_url ? String(data.html_url) : null;
+    } catch (error) {
+      this.logger.warn(
+        `Could not reply to comment ${commentId} on ${repo}#${number}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

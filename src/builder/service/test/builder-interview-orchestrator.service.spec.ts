@@ -88,6 +88,14 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
       toolsService as any,
       messageRepository as any,
       { record: jest.fn() } as any,
+      // Worked examples are best-effort context; the turn must not depend on
+      // them, so the stub simply supplies none.
+      {
+        digestsForSession: jest
+          .fn()
+          .mockResolvedValue({ digests: [], chosen: [] }),
+      } as any,
+      { update: jest.fn() } as any,
     );
 
     (service as any).client = {

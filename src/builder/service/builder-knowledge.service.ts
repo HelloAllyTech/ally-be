@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import {
   FEATURE_TOGGLES,
@@ -9,9 +9,32 @@ import {
   BuilderLessonRepository,
   BuilderRepoMapRepository,
 } from '../repository/builder-knowledge.repository';
-import { BuilderLessonCategory } from '../enum/builder.enum';
+import { BuilderLesson } from '../entity/builder-lesson.entity';
+import {
+  BuilderLessonCategory,
+  BuilderLessonStatus,
+} from '../enum/builder.enum';
 import { BUILDER_LESSONS_IN_CONTEXT } from '../constants/builder.constants';
 import { BUILDER_REPOS } from '../constants/builder-repos.constants';
+
+/**
+ * One rendered lesson line.
+ *
+ * Carries a short id because runs are asked to report which lessons actually
+ * changed what they did (`appliedLessonIds`), and that is what lets the curator
+ * retire the ones nobody uses. Short rather than the full uuid: it only has to
+ * be unambiguous within one prompt, and a 36-character id per line is a real
+ * cost across twenty of them.
+ */
+export const renderLessonLine = (lesson: BuilderLesson): string => {
+  const scope = lesson.repos?.length
+    ? `/${lesson.repos.join(',')}`
+    : lesson.repo
+      ? `/${lesson.repo}`
+      : '';
+  const seen = lesson.sourceCount > 1 ? ` (seen ${lesson.sourceCount}×)` : '';
+  return `- [${lesson.id}] [${lesson.category}${scope}]${seen} ${lesson.lesson}`;
+};
 
 /**
  * The agent's standing knowledge of Ally: Repo Knowledge Packs, the feature
@@ -41,10 +64,19 @@ export class BuilderKnowledgeService {
    * Returns markdown rather than JSON because it is read by a model, not
    * parsed — and because a map is prose to begin with.
    */
-  async buildContextBlock(repos?: string[]): Promise<string> {
+  async buildContextBlock(
+    repos?: string[],
+    /**
+     * Digests of similar past builds. Passed in rather than fetched here so
+     * the caller controls when a re-rank call is worth making — this block is
+     * assembled on every turn, and the exemplar set changes far more slowly
+     * than that.
+     */
+    exemplars: string[] = [],
+  ): Promise<string> {
     const [maps, lessons] = await Promise.all([
       this.repoMapRepository.listAll(),
-      this.lessonRepository.listRecent(BUILDER_LESSONS_IN_CONTEXT, repos),
+      this.selectLessons(repos),
     ]);
 
     const parts: string[] = [];
@@ -90,10 +122,24 @@ export class BuilderKnowledgeService {
 
     if (lessons.length) {
       parts.push('\n# Lessons from previous builds\n');
+      parts.push(
+        'Each carries an id. If one of these changes what you do, cite its id ' +
+          'in your report — an unused lesson is one nobody should keep paying ' +
+          'context for.\n',
+      );
       for (const lesson of lessons) {
-        parts.push(
-          `- [${lesson.category}${lesson.repo ? `/${lesson.repo}` : ''}] ${lesson.lesson}`,
-        );
+        parts.push(renderLessonLine(lesson));
+      }
+    }
+
+    if (exemplars.length) {
+      parts.push('\n# Similar builds this platform has already attempted\n');
+      parts.push(
+        'What happened *after* each shipped is the useful part — a rejected ' +
+          'approach is worth more here than a successful one.\n',
+      );
+      for (const exemplar of exemplars) {
+        parts.push(`\n${exemplar}`);
       }
     }
 
@@ -105,24 +151,64 @@ export class BuilderKnowledgeService {
     return FEATURE_TOGGLES.map((toggle) => toggle.key);
   }
 
+  /**
+   * Record a lesson as a **candidate**, for the curator to place.
+   *
+   * Candidates are not fed to prompts. That is the whole change: raw
+   * retrospective bullets used to go straight into the set every future run
+   * read, so the same trap learned five times became five rows competing for
+   * one fixed context budget.
+   */
   async recordLesson(params: {
     sessionId?: string | null;
+    /** @deprecated pass `repos` — a single repo loses multi-repo attribution. */
     repo?: string | null;
+    repos?: string[] | null;
     category: BuilderLessonCategory;
     lesson: string;
     createdBy?: number;
   }): Promise<void> {
     const text = params.lesson?.trim();
     if (!text) return;
+
+    // A two-repo build used to lose its attribution entirely and become
+    // platform-wide, because only a single-repo build had a `repo` to record.
+    const repos = params.repos?.length
+      ? params.repos
+      : params.repo
+        ? [params.repo]
+        : null;
+
     await this.lessonRepository.save(
       this.lessonRepository.create({
         sessionId: params.sessionId ?? null,
-        repo: params.repo ?? null,
+        repo: repos?.length === 1 ? repos[0] : null,
+        repos,
         category: params.category,
         lesson: text,
+        status: BuilderLessonStatus.CANDIDATE,
+        sourceSessionIds: params.sessionId ? [params.sessionId] : null,
         createdBy: params.createdBy,
       }),
     );
+  }
+
+  /**
+   * The lessons a prompt should carry, from the curated set.
+   *
+   * Scored rather than recent: `listRecent` meant that after twenty builds the
+   * earliest lessons were unreachable however good they were, and a lesson
+   * five builds independently confirmed ranked below one written yesterday.
+   * The curator's cap is what makes this a plain query — the whole eligible
+   * set is already small enough to rank in SQL.
+   */
+  async selectLessons(repos?: string[]): Promise<BuilderLesson[]> {
+    const active = await this.lessonRepository.listActiveForRepos(repos);
+    if (active.length) return active.slice(0, BUILDER_LESSONS_IN_CONTEXT);
+
+    // Nothing curated yet (a fresh deployment, or the curator has not run).
+    // Fall back to recency so early builds still learn from each other.
+    return this.lessonRepository.listRecent(BUILDER_LESSONS_IN_CONTEXT, repos);
   }
 
   /**
@@ -131,11 +217,95 @@ export class BuilderKnowledgeService {
    * sentences rather than rows.
    */
   async listLessonTexts(limit: number, repos?: string[]): Promise<string[]> {
-    const lessons = await this.lessonRepository.listRecent(limit, repos);
-    return lessons.map(
-      (lesson) =>
-        `[${lesson.category}${lesson.repo ? `/${lesson.repo}` : ''}] ${lesson.lesson}`,
+    const lessons = await this.selectLessons(repos);
+    return lessons
+      .slice(0, limit)
+      .map((lesson) => renderLessonLine(lesson).replace(/^- /, ''));
+  }
+
+  /**
+   * The lesson library for the curation UI, newest-strongest first.
+   *
+   * Defaults to the active set, because that is what runs actually read —
+   * showing candidates and retired rows by default would make the list look
+   * like the memory and it is not.
+   */
+  listLessons(filter: {
+    status?: BuilderLessonStatus;
+    category?: BuilderLessonCategory;
+    repo?: string;
+  }): Promise<BuilderLesson[]> {
+    const query = this.lessonRepository
+      .createQueryBuilder('lesson')
+      .where('lesson.status = :status', {
+        status: filter.status ?? BuilderLessonStatus.ACTIVE,
+      })
+      .orderBy('lesson.pinned', 'DESC')
+      .addOrderBy(
+        'lesson."sourceCount" + lesson."timesApplied" - 2 * lesson."timesContradicted"',
+        'DESC',
+      )
+      .addOrderBy('lesson.createdAt', 'DESC');
+
+    if (filter.category) {
+      query.andWhere('lesson.category = :category', {
+        category: filter.category,
+      });
+    }
+    if (filter.repo) {
+      query.andWhere('(lesson.repos ? :repo OR lesson.repo = :repo)', {
+        repo: filter.repo,
+      });
+    }
+    return query.getMany();
+  }
+
+  /**
+   * A human's edit to the library.
+   *
+   * Pinning is the important one: it takes the lesson out of the curator's
+   * reach entirely. A person who has decided a rule matters outranks a model's
+   * tidying pass, and without an escape hatch the consolidation pass would be
+   * something to distrust rather than rely on.
+   */
+  async updateLesson(
+    lessonId: string,
+    changes: {
+      lesson?: string;
+      category?: BuilderLessonCategory;
+      status?: BuilderLessonStatus;
+      pinned?: boolean;
+      tags?: string[];
+    },
+    userId: number,
+  ): Promise<BuilderLesson> {
+    const existing = await this.lessonRepository.findOne({
+      where: { id: lessonId },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Builder lesson not found: ${lessonId}`);
+    }
+
+    await this.lessonRepository.update(
+      { id: lessonId },
+      {
+        ...(changes.lesson !== undefined
+          ? { lesson: changes.lesson.trim() }
+          : {}),
+        ...(changes.category !== undefined
+          ? { category: changes.category }
+          : {}),
+        ...(changes.status !== undefined ? { status: changes.status } : {}),
+        ...(changes.pinned !== undefined ? { pinned: changes.pinned } : {}),
+        ...(changes.tags !== undefined ? { tags: changes.tags } : {}),
+      },
     );
+    this.logger.info(
+      `Builder lesson ${lessonId} edited by user ${userId}${
+        changes.pinned === true ? ' (pinned)' : ''
+      }${changes.status ? ` (→ ${changes.status})` : ''}`,
+    );
+    return this.lessonRepository.findOneOrFail({ where: { id: lessonId } });
   }
 
   /** Repo maps with their staleness, for the settings view. */

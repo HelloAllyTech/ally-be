@@ -6,7 +6,10 @@ import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { BuilderMessage } from '../entity/builder-message.entity';
+import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderMessageRepository } from '../repository/builder-message.repository';
+import { BuilderSessionRepository } from '../repository/builder-session.repository';
+import { BuilderExemplarService } from './builder-exemplar.service';
 import { BuilderMessageRole } from '../enum/builder.enum';
 import { BuilderSessionService } from './builder-session.service';
 import { BuilderPrdService } from './builder-prd.service';
@@ -18,6 +21,8 @@ import {
 import { BuilderSseFrame } from '../type/builder-sse.type';
 import { CreateBuilderMessageDto } from '../dto/builder.dto';
 import {
+  BUILDER_INTERVIEW_SUMMARY_AFTER_MESSAGES,
+  BUILDER_INTERVIEW_SUMMARY_KEEP_RECENT,
   BUILDER_MAX_TOKENS,
   BUILDER_PROMPTS,
 } from '../constants/builder.constants';
@@ -55,6 +60,8 @@ export class BuilderInterviewOrchestratorService {
     private readonly toolsService: BuilderInterviewToolsService,
     private readonly messageRepository: BuilderMessageRepository,
     private readonly llmUsage: LlmUsageService,
+    private readonly exemplarService: BuilderExemplarService,
+    private readonly sessionRepository: BuilderSessionRepository,
   ) {
     this.client = new Anthropic({
       apiKey: this.configService.anthropic.apiKey,
@@ -126,9 +133,16 @@ export class BuilderInterviewOrchestratorService {
         createdBy: userId,
       });
 
-    const system = await this.buildSystemBlocks(session.repos ?? undefined);
+    // Similar past builds, chosen once per session and frozen — the block they
+    // land in is inside the cached prefix, so a selection that varied per turn
+    // would cost more in cache misses than the examples are worth.
+    const exemplars = await this.resolveExemplars(session);
+    const system = await this.buildSystemBlocks(
+      session.repos ?? undefined,
+      exemplars,
+    );
     const messages: any[] = [
-      ...this.rebuildAnthropicHistory(history),
+      ...(await this.replayHistory(session, history)),
       { role: 'user', content: this.buildLiveUserTurn(doc.draft, userContent) },
     ];
     const tools = this.toolsService.getToolDefinitions();
@@ -413,10 +427,44 @@ export class BuilderInterviewOrchestratorService {
    * attaches per-block; the boundary after the last cached block is what the
    * API reuses on the next turn.
    */
-  private async buildSystemBlocks(repos?: string[]): Promise<any[]> {
+  /**
+   * The exemplar digests for this session, persisting the choice the first
+   * time so later turns reuse it byte-for-byte.
+   *
+   * Best-effort: worked examples are a nice-to-have, and an interview turn must
+   * not fail because a ranking call did.
+   */
+  private async resolveExemplars(session: BuilderSession): Promise<string[]> {
+    try {
+      const { digests, chosen } =
+        await this.exemplarService.digestsForSession(session);
+      if (chosen) {
+        await this.sessionRepository.update(
+          { id: session.id },
+          {
+            contextExemplarIds: chosen,
+            contextExemplarRepos: session.repos ?? [],
+          },
+        );
+      }
+      return digests;
+    } catch (error) {
+      this.logger.warn(
+        `Could not resolve exemplars for session ${session.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return [];
+    }
+  }
+
+  private async buildSystemBlocks(
+    repos?: string[],
+    exemplars: string[] = [],
+  ): Promise<any[]> {
     const [instructions, context] = await Promise.all([
       this.buildSystemPrompt(),
-      this.knowledgeService.buildContextBlock(repos),
+      this.knowledgeService.buildContextBlock(repos, exemplars),
     ]);
     return [
       {
@@ -467,6 +515,111 @@ export class BuilderInterviewOrchestratorService {
    * the recorded tool_result blocks (Anthropic requires every tool_use to be
    * answered before the next real user message).
    */
+  /**
+   * The transcript to replay, summarising the oldest turns once it grows.
+   *
+   * Full replay every turn is what made a long interview cost more each time:
+   * only the two system blocks are cached, so the transcript is re-read at
+   * full price on every turn and a twenty-turn interview with heavy tool
+   * results grows monotonically. The summary sits *outside* the cached prefix
+   * on purpose — it changes, and putting it inside would bust the cache it was
+   * meant to protect — but it still replaces far more tokens than it costs.
+   *
+   * Best-effort: a failed summarisation falls back to full replay, which is
+   * expensive rather than broken.
+   */
+  private async replayHistory(
+    session: BuilderSession,
+    history: BuilderMessage[],
+  ): Promise<any[]> {
+    if (history.length <= BUILDER_INTERVIEW_SUMMARY_AFTER_MESSAGES) {
+      return this.rebuildAnthropicHistory(history);
+    }
+
+    try {
+      const keep = BUILDER_INTERVIEW_SUMMARY_KEEP_RECENT;
+      // Never split a tool_use from its tool_result: the API rejects a
+      // dangling tool_use, and the boundary has to fall on a user message.
+      let boundary = history.length - keep;
+      while (
+        boundary > 0 &&
+        history[boundary].role !== BuilderMessageRole.USER
+      ) {
+        boundary -= 1;
+      }
+      if (boundary <= 0) return this.rebuildAnthropicHistory(history);
+
+      const summary = await this.summariseTurns(
+        session,
+        history.slice(0, boundary),
+      );
+      if (!summary) return this.rebuildAnthropicHistory(history);
+
+      return [
+        {
+          role: 'user',
+          content: `<earlier_conversation_summary>\n${summary}\n</earlier_conversation_summary>`,
+        },
+        ...this.rebuildAnthropicHistory(history.slice(boundary)),
+      ];
+    } catch (error) {
+      this.logger.warn(
+        `Could not summarise the interview history for ${session.id}; replaying it in full: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return this.rebuildAnthropicHistory(history);
+    }
+  }
+
+  /** A cheap-model digest of the turns being dropped from the replay. */
+  private async summariseTurns(
+    session: BuilderSession,
+    turns: BuilderMessage[],
+  ): Promise<string | null> {
+    const model = this.configService.builder.mechanicalModel;
+    const rendered = turns
+      .map((message) => {
+        const who = message.role === BuilderMessageRole.USER ? 'Admin' : 'You';
+        return `${who}: ${(message.content ?? '').slice(0, 2_000)}`;
+      })
+      .filter((line) => line.length > 8)
+      .join('\n\n');
+    if (!rendered) return null;
+
+    const response = await this.client.messages.create({
+      model,
+      max_tokens: 1_500,
+      system:
+        'You compress the earlier part of a requirements interview so it can ' +
+        'be dropped from the replayed transcript without losing what it ' +
+        'settled. Keep: decisions made and the reason for each, options that ' +
+        'were considered and rejected, constraints and preferences the admin ' +
+        'stated, and anything still open. Drop: pleasantries, restatements, ' +
+        'and anything already written into the PRD — the agent reads that ' +
+        'separately and in full. Write it as notes to yourself, not prose.',
+      messages: [{ role: 'user', content: rendered }],
+    });
+
+    const input = response.usage?.input_tokens ?? 0;
+    const output = response.usage?.output_tokens ?? 0;
+    void this.llmUsage.record({
+      provider: 'anthropic',
+      model,
+      task: LlmTask.BUILDER_INTERVIEW_SUMMARY,
+      promptTokens: input,
+      completionTokens: output,
+      totalTokens: input + output,
+      metadata: { builderSessionId: session.id, turns: turns.length },
+    });
+
+    const text = response.content
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .join('\n')
+      .trim();
+    return text || null;
+  }
+
   private rebuildAnthropicHistory(history: BuilderMessage[]): any[] {
     const messages: any[] = [];
     for (const message of history) {

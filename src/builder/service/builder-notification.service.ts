@@ -84,6 +84,24 @@ export class BuilderNotificationService {
     );
   }
 
+  /**
+   * A fix run went out at a pull request. Worth telling someone: Builder is
+   * pushing to a branch a human may be reading right now, and finding that out
+   * from the commit list rather than from us is a bad surprise.
+   */
+  fixRunStarted(
+    session: BuilderSession,
+    repo: string,
+    prNumber: number,
+    reason: string,
+  ): Promise<void> {
+    return this.notify(
+      session,
+      BuilderNotificationKind.FIX_RUN_STARTED,
+      `Builder is working on ${repo}#${prNumber} — ${reason}.`,
+    );
+  }
+
   budgetReached(session: BuilderSession, spent: number): Promise<void> {
     return this.notify(
       session,

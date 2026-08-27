@@ -16,7 +16,11 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { BuilderSessionStatus } from '../enum/builder.enum';
+import {
+  BuilderLessonCategory,
+  BuilderLessonStatus,
+  BuilderSessionStatus,
+} from '../enum/builder.enum';
 import {
   BUILDER_SLUG_MAX_LENGTH,
   BUILDER_TITLE_MAX_LENGTH,
@@ -151,12 +155,28 @@ export class StartBuilderBuildDto {
   engine?: string;
 
   @ApiPropertyOptional({
-    description: 'Override the session model for this run',
+    description: 'Override the coder-tier model for this run',
   })
   @IsOptional()
   @IsString()
   @MaxLength(80)
   model?: string;
+
+  @ApiPropertyOptional({
+    description: 'Override the planner-tier model for this run',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  plannerModel?: string;
+
+  @ApiPropertyOptional({
+    description: 'Override the verifier-tier model for this run',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  verifierModel?: string;
 
   @ApiPropertyOptional({
     description:
@@ -209,6 +229,54 @@ export class UpdateBuilderSettingsDto {
   @IsNumber()
   @Min(0)
   defaultBudgetUsd?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Ceiling on GitHub Actions minutes per session. Separate from the dollar budget: a run can be cheap in tokens and still hold a runner for two hours.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  maxRunnerMinutes?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether Builder may act on its own open pull requests — self-fixing red CI and answering review comments. Separate from the kill switch on purpose.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  autoFixEnabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Fix runs allowed per pull request' })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(20)
+  maxFixRunsPerPr?: number;
+
+  @ApiPropertyOptional({
+    description: 'Planner-tier model for new runs (null = platform default)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  plannerModel?: string;
+
+  @ApiPropertyOptional({
+    description: 'Coder-tier model for new runs (null = platform default)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  coderModel?: string;
+
+  @ApiPropertyOptional({
+    description: 'Verifier-tier model for new runs (null = platform default)',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  verifierModel?: string;
 }
 
 export class ListBuilderSessionsQueryDto {
@@ -222,4 +290,71 @@ export class ListBuilderSessionsQueryDto {
   @IsEnum(BuilderSessionStatus, { each: true })
   @Type(() => String)
   status?: BuilderSessionStatus[];
+}
+
+export class ListBuilderLessonsQueryDto {
+  @ApiPropertyOptional({
+    enum: BuilderLessonStatus,
+    description: 'Defaults to the active set — what runs actually read.',
+  })
+  @IsOptional()
+  @IsEnum(BuilderLessonStatus)
+  status?: BuilderLessonStatus;
+
+  @ApiPropertyOptional({ enum: BuilderLessonCategory })
+  @IsOptional()
+  @IsEnum(BuilderLessonCategory)
+  category?: BuilderLessonCategory;
+
+  @ApiPropertyOptional({ description: 'Only lessons scoped to this repo' })
+  @IsOptional()
+  @IsString()
+  repo?: string;
+}
+
+export class UpdateBuilderLessonDto {
+  @ApiPropertyOptional({ description: 'Rewrite the lesson text' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2_000)
+  lesson?: string;
+
+  @ApiPropertyOptional({ enum: BuilderLessonCategory })
+  @IsOptional()
+  @IsEnum(BuilderLessonCategory)
+  category?: BuilderLessonCategory;
+
+  @ApiPropertyOptional({
+    enum: BuilderLessonStatus,
+    description:
+      'Activate or retire it by hand. The curator respects a human decision.',
+  })
+  @IsOptional()
+  @IsEnum(BuilderLessonStatus)
+  status?: BuilderLessonStatus;
+
+  @ApiPropertyOptional({
+    description:
+      'Pinned lessons are always in context and the curator may never edit or retire them.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  pinned?: boolean;
+
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+}
+
+export class BuilderResearchDto {
+  @ApiPropertyOptional({
+    enum: ['technical_plan', 'draft_prd'],
+    description:
+      'technical_plan fills in the codebase half of an interviewed PRD; draft_prd writes a first draft from the opening message for the admin to correct.',
+  })
+  @IsOptional()
+  @IsIn(['technical_plan', 'draft_prd'])
+  mode?: 'technical_plan' | 'draft_prd';
 }
