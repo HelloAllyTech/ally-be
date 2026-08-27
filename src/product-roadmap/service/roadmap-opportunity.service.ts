@@ -345,7 +345,7 @@ export class RoadmapOpportunityService {
 
   /**
    * Soft delete. Hard-deletes the opportunity's allocations (via the FK's ON DELETE CASCADE
-   * this would only fire on a hard delete, so it is done explicitly) so the coins are returned
+   * this would only fire on a hard delete, so it is done explicitly) so the votes are returned
    * to their owners' budgets and the priority score disappears, and removes the opportunity
    * from the vector index so duplicate-detection stops proposing it.
    */
@@ -357,7 +357,7 @@ export class RoadmapOpportunityService {
 
     await this.opportunityRepository.manager.transaction(async (manager) => {
       // Explicit: a soft delete does not trigger ON DELETE CASCADE, and leaving the rows would
-      // keep other people's coins locked up in an invisible opportunity.
+      // keep other people's votes locked up in an invisible opportunity.
       await manager.query(
         `DELETE FROM roadmap_allocations WHERE "opportunityId" = $1`,
         [id],
@@ -411,7 +411,10 @@ export class RoadmapOpportunityService {
       owner: row.ownerDisplay ?? row.owner ?? null,
       ownerUserId: row.ownerUserId ?? null,
       prd: row.prd ?? null,
+      code: row.code,
+      queueRank: row.queueRank ?? null,
       claudePrompt: row.claudePrompt ?? null,
+      builderSessionId: row.builderSessionId ?? null,
       releasedAt: row.releasedAt ?? null,
       plannedMonth: row.plannedMonth ?? null,
       boardPosition: Number(row.boardPosition ?? 0),
@@ -424,7 +427,7 @@ export class RoadmapOpportunityService {
       ),
       monthPinned: isMonthPinned(row.stage, row.releasedAt),
       priorityScore: Number(row.priorityScore ?? 0),
-      myCoins: Number(row.myCoins ?? 0),
+      myVotes: Number(row.myVotes ?? 0),
       commentCount: Number(row.commentCount ?? 0),
       source: row.source,
       createdAt: row.createdAt,
@@ -462,7 +465,7 @@ export class RoadmapOpportunityService {
    * Reject an owner who is not a super-admin.
    *
    * 422 rather than 400: the id is well-formed, it just names someone ineligible — the same shape
-   * the coin-cap breach uses, so the client can show the message rather than a generic failure.
+   * the vote-cap breach uses, so the client can show the message rather than a generic failure.
    */
   private async assertEligibleOwner(userId: number): Promise<void> {
     const eligible = await this.listEligibleOwners();

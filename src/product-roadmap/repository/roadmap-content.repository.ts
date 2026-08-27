@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { DataSource, Repository } from 'typeorm';
 import { RoadmapOpportunityComment } from '../entity/roadmap-opportunity-comment.entity';
 import { RoadmapInterviewNote } from '../entity/roadmap-interview-note.entity';
-import { RoadmapReleaseNote } from '../entity/roadmap-release-note.entity';
 import { RoadmapUserTabOrder } from '../entity/roadmap-user-tab-order.entity';
 
 @Injectable()
@@ -44,21 +43,6 @@ export class RoadmapInterviewNoteRepository extends Repository<RoadmapInterviewN
       .limit(limit)
       .offset(offset)
       .getManyAndCount();
-  }
-}
-
-@Injectable()
-export class RoadmapReleaseNoteRepository extends Repository<RoadmapReleaseNote> {
-  constructor(private readonly dataSource: DataSource) {
-    super(RoadmapReleaseNote, dataSource.createEntityManager());
-  }
-
-  findAllNewestFirst(limit: number, offset: number) {
-    return this.findAndCount({
-      order: { createdAt: 'DESC' },
-      take: limit,
-      skip: offset,
-    });
   }
 }
 

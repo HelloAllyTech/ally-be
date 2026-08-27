@@ -9,9 +9,12 @@ import { LoggerService } from 'src/logger/logger.service';
 
 import { RoadmapAllocation } from '../entity/roadmap-allocation.entity';
 import { RoadmapOpportunity } from '../entity/roadmap-opportunity.entity';
-import { RoadmapOpportunityStage } from '../enum/roadmap-opportunity.enum';
 import { largestRemainderSplit } from '../util/largest-remainder.util';
-import { COINS_PER_MONTH } from '../constants/product-roadmap.constants';
+import {
+  isReshapeableStage,
+  unreshapeableMessage,
+} from '../util/roadmap-stage.util';
+import { VOTES_PER_MONTH } from '../constants/product-roadmap.constants';
 import {
   MergeOpportunitiesDto,
   SplitPartDto,
@@ -34,8 +37,8 @@ import { RoadmapNotificationService } from './roadmap-notification.service';
  * mutate `allocations` while iterating it. TypeORM's find() already materialises rows into JS
  * before we mutate, so the snapshot is free.
  *
- * THE INVARIANT BOTH OPERATIONS PRESERVE: for every (user, period) pair, the total coins that
- * user had committed across the affected opportunities is identical before and after. Coins are
+ * THE INVARIANT BOTH OPERATIONS PRESERVE: for every (user, period) pair, the total votes that
+ * user had cast across the affected opportunities is identical before and after. Votes are
  * never created or destroyed. Both are covered by randomised conservation tests.
  */
 @Injectable()
@@ -51,7 +54,7 @@ export class RoadmapSplitMergeService {
   ) {}
 
   /**
-   * Split one opportunity into N parts, redistributing every contributor's coins by weight.
+   * Split one opportunity into N parts, redistributing every contributor's votes by weight.
    *
    * Exactly one part must carry the source's id — that part is KEPT (and reworded) rather than
    * recreated, so its comments, its history, and any external link to /?opportunity=<id> survive.
@@ -73,6 +76,11 @@ export class RoadmapSplitMergeService {
       });
       if (!source)
         throw new NotFoundException(`Opportunity ${sourceId} not found`);
+
+      // Checked INSIDE the transaction, after the pessimistic lock. Checking before opening one
+      // would race a concurrent stage change: the source could be marked released between the
+      // read and the redistribution, and the split would land on a shipped record anyway.
+      this.assertReshapeable('split', [source]);
 
       // 1. Snapshot the allocations BEFORE touching anything, in a deterministic lock order.
       const original = await manager
@@ -104,12 +112,10 @@ export class RoadmapSplitMergeService {
               // The original author keeps authorship of the ideas their opportunity became.
               createdBy: source.createdBy,
               updatedBy: actingUserId,
-              // CRITICAL: inherit, never re-stamp. This is precisely why the released-at rule
-              // lives in the service and not in a trigger.
-              releasedAt:
-                source.stage === RoadmapOpportunityStage.RELEASED
-                  ? (source.releasedAt ?? null)
-                  : null,
+              // Always null: assertReshapeable above has already refused a RELEASED source, so
+              // there is no ship date to inherit and none is being stamped here. See the note on
+              // ROADMAP_UNRESHAPEABLE_STAGES before relaxing that guard.
+              releasedAt: null,
               prd: null,
             }),
           );
@@ -119,33 +125,33 @@ export class RoadmapSplitMergeService {
 
       // 3. Redistribute. ORDER MATTERS: delete every original allocation row FIRST, then
       //    insert the new ones. Otherwise the monthly-cap trigger sees a transient state where
-      //    a user holds their original coins AND their new shares — over 100 — and rejects a
+      //    a user holds their original votes AND their new shares — over 100 — and rejects a
       //    legitimate split. (The source dodged this with set_config('app.bypass_stage_check');
       //    we simply never create the invalid intermediate state.)
       await manager.delete(RoadmapAllocation, { opportunityId: sourceId });
 
       for (const row of original) {
-        const shares = largestRemainderSplit(row.coins, weights);
+        const shares = largestRemainderSplit(row.votes, weights);
 
-        // Coin-conservation guard. largestRemainderSplit is exact by construction, so this
+        // Vote-conservation guard. largestRemainderSplit is exact by construction, so this
         // firing means the util was changed and a test was not — fail loudly inside the
         // transaction rather than silently losing someone's votes.
         const total = shares.reduce((a, b) => a + b, 0);
-        if (total !== row.coins) {
+        if (total !== row.votes) {
           throw new Error(
-            `Split would not conserve coins for user ${row.userId} in ${row.periodKey}: ` +
-              `${row.coins} became ${total}`,
+            `Split would not conserve votes for user ${row.userId} in ${row.periodKey}: ` +
+              `${row.votes} became ${total}`,
           );
         }
 
-        for (const [index, coins] of shares.entries()) {
-          if (coins <= 0) continue;
+        for (const [index, votes] of shares.entries()) {
+          if (votes <= 0) continue;
           await manager.save(
             manager.create(RoadmapAllocation, {
               userId: row.userId,
               opportunityId: ids[index],
               periodKey: row.periodKey,
-              coins,
+              votes,
             }),
           );
         }
@@ -170,7 +176,7 @@ export class RoadmapSplitMergeService {
   }
 
   /**
-   * Fold several opportunities into one, summing each contributor's coins per (user, period)
+   * Fold several opportunities into one, summing each contributor's votes per (user, period)
    * and moving comments across. Sources are soft-deleted, so release notes that snapshotted
    * their ids still resolve.
    */
@@ -209,6 +215,11 @@ export class RoadmapSplitMergeService {
         );
       }
 
+      // EVERY participant, not just the survivor. A released source is the worse case of the
+      // two: the merge would soft-delete a shipped record and move its votes onto something
+      // else, so what shipped stops existing on the board it shipped from.
+      this.assertReshapeable('merge', [primary, ...sources]);
+
       const allIds = [dto.primaryId, ...sourceIds];
 
       // Roll up per (user, period) across the primary AND every source.
@@ -224,19 +235,19 @@ export class RoadmapSplitMergeService {
       let totalBefore = 0;
       for (const row of rows) {
         const key = `${row.userId}|${row.periodKey}`;
-        rollup.set(key, (rollup.get(key) ?? 0) + row.coins);
-        totalBefore += row.coins;
+        rollup.set(key, (rollup.get(key) ?? 0) + row.votes);
+        totalBefore += row.votes;
       }
 
       // Same ordering rule as split: clear first, then write, so the cap trigger never sees a
-      // user holding their coins on two opportunities at once.
+      // user holding their votes on two opportunities at once.
       await manager.query(
         `DELETE FROM roadmap_allocations WHERE "opportunityId" = ANY($1::uuid[])`,
         [allIds],
       );
 
       let totalAfter = 0;
-      for (const [key, coins] of rollup) {
+      for (const [key, votes] of rollup) {
         const [userIdRaw, periodKey] = key.split('|');
 
         // A rollup can NEVER legitimately exceed the cap: a user's total across ALL
@@ -248,21 +259,21 @@ export class RoadmapSplitMergeService {
         // quietly break the conservation invariant this whole class exists to preserve — and
         // the operator would never know. A failed merge inside a transaction leaves the board
         // untouched and demands attention, which is the correct outcome.
-        if (coins > COINS_PER_MONTH) {
+        if (votes > VOTES_PER_MONTH) {
           throw new ConflictException(
-            `Cannot merge: user ${userIdRaw} holds ${coins} coins across these opportunities ` +
-              `in ${periodKey}, above the ${COINS_PER_MONTH}-coin cap. That should be ` +
+            `Cannot merge: user ${userIdRaw} holds ${votes} votes across these opportunities ` +
+              `in ${periodKey}, above the ${VOTES_PER_MONTH}-vote cap. That should be ` +
               `impossible — investigate the allocation data before retrying.`,
           );
         }
 
-        totalAfter += coins;
+        totalAfter += votes;
         await manager.save(
           manager.create(RoadmapAllocation, {
             userId: Number(userIdRaw),
             opportunityId: dto.primaryId,
             periodKey,
-            coins,
+            votes,
           }),
         );
       }
@@ -271,7 +282,7 @@ export class RoadmapSplitMergeService {
       // number the whole feature depends on.
       if (totalAfter !== totalBefore) {
         throw new Error(
-          `Merge did not conserve coins: ${totalBefore} before, ${totalAfter} after`,
+          `Merge did not conserve votes: ${totalBefore} before, ${totalAfter} after`,
         );
       }
 
@@ -306,6 +317,27 @@ export class RoadmapSplitMergeService {
       `[ROADMAP] Merged ${sourceIds.length} opportunities into ${dto.primaryId} by user ${actingUserId}`,
     );
     return { primaryId: dto.primaryId };
+  }
+
+  /**
+   * Refuse to reshape anything already released or archived.
+   *
+   * Throws a 409 rather than filtering the offenders out and proceeding: a merge that quietly
+   * dropped two of its five rows would report success while leaving the manager to discover the
+   * board did not do what they asked. The whole operation is the unit.
+   */
+  private assertReshapeable(
+    operation: 'split' | 'merge',
+    rows: RoadmapOpportunity[],
+  ): void {
+    const offenders = rows.filter((row) => !isReshapeableStage(row.stage));
+    if (offenders.length === 0) return;
+    throw new ConflictException(
+      unreshapeableMessage(
+        operation,
+        offenders.map(({ id, stage }) => ({ id, stage })),
+      ),
+    );
   }
 
   /** Validated before opening a transaction, so a bad request costs nothing. */

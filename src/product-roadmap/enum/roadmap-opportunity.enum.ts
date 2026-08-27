@@ -12,9 +12,9 @@ export enum RoadmapOpportunityType {
 }
 
 /**
- * The opportunity lifecycle. Coins may only be allocated to NEW (enforced in
+ * The opportunity lifecycle. Votes may only be cast on NEW (enforced in
  * RoadmapAllocationService, not by a trigger, because split/merge must be able to
- * redistribute coins on an opportunity that has already moved on).
+ * redistribute votes on an opportunity that has already moved on).
  *
  * `releasedAt` is stamped only on the TRANSITION into RELEASED, never re-stamped, and is
  * copied rather than regenerated when a released opportunity is split.
@@ -54,4 +54,25 @@ export enum RoadmapEmbeddingStatus {
 export enum RoadmapOpportunitySource {
   STAFF = 'staff',
   CONSUMER = 'consumer',
+}
+
+/**
+ * How the board groups its lanes.
+ *
+ * MONTH is the default and the original board — lanes are calendar months and a card's lane is
+ * derived (`effectiveMonthOf`). The other three group by a plain column, which is what makes
+ * them draggable: dropping a card in a lane writes that column, exactly as editing the field in
+ * the drawer does.
+ *
+ * That difference is the whole reason the released/archived pinning rule has no equivalent here.
+ * A shipped card is pinned in MONTH because its lane comes from `releasedAt`, a stamped fact
+ * with no writable counterpart — asking to drag it out is asking to restate when it shipped.
+ * Stage, goal and owner are all editable at any stage today, so a board that refused what the
+ * drawer allows would just be a worse way to do the same edit.
+ */
+export enum RoadmapBoardGroupBy {
+  MONTH = 'month',
+  STAGE = 'stage',
+  PRODUCT_GOAL = 'productGoal',
+  OWNER = 'owner',
 }

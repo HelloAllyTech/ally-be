@@ -95,59 +95,6 @@ export class UpdateInterviewNoteDto {
   summary?: string;
 }
 
-// ── release notes ────────────────────────────────────────────────────────────
-export class CreateReleaseNoteDto {
-  @ApiPropertyOptional({
-    maxLength: ROADMAP_LIMITS.RELEASE_NOTE_TITLE_MAX,
-    nullable: true,
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(ROADMAP_LIMITS.RELEASE_NOTE_TITLE_MAX)
-  title?: string | null;
-
-  @ApiProperty({ maxLength: ROADMAP_LIMITS.RELEASE_NOTE_CONTENT_MAX })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(ROADMAP_LIMITS.RELEASE_NOTE_CONTENT_MAX)
-  content!: string;
-
-  @ApiProperty({
-    type: [String],
-    description:
-      'Denormalised snapshot of the opportunities these notes were generated from. Stored ' +
-      'verbatim; not a join table.',
-  })
-  @IsArray()
-  @IsUUID(undefined, { each: true })
-  opportunityIds!: string[];
-}
-
-export class UpdateReleaseNoteDto {
-  @ApiPropertyOptional({
-    maxLength: ROADMAP_LIMITS.RELEASE_NOTE_TITLE_MAX,
-    nullable: true,
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(ROADMAP_LIMITS.RELEASE_NOTE_TITLE_MAX)
-  title?: string | null;
-
-  @ApiPropertyOptional({ maxLength: ROADMAP_LIMITS.RELEASE_NOTE_CONTENT_MAX })
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(ROADMAP_LIMITS.RELEASE_NOTE_CONTENT_MAX)
-  content?: string;
-
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  @IsUUID(undefined, { each: true })
-  opportunityIds?: string[];
-}
-
-// ── saved views ──────────────────────────────────────────────────────────────
 export class CreateSavedViewDto {
   @ApiProperty({ maxLength: ROADMAP_LIMITS.SAVED_VIEW_NAME_MAX })
   @IsString()
@@ -261,18 +208,6 @@ export class AiSummariseDto {
   @MinLength(1)
   @MaxLength(ROADMAP_LIMITS.INTERVIEW_TRANSCRIPT_MAX)
   transcript!: string;
-}
-
-export class AiReleaseNotesDto {
-  @ApiProperty({
-    type: [String],
-    description:
-      'Opportunities to summarise. The service filters these to rows that are actually ' +
-      'stage=released, matching the source behaviour.',
-  })
-  @IsArray()
-  @IsUUID(undefined, { each: true })
-  opportunityIds!: string[];
 }
 
 /**

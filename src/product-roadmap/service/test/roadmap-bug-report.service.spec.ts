@@ -30,15 +30,15 @@ describe('RoadmapOpportunityService.createBugReport', () => {
       save: jest.fn().mockResolvedValue({
         id: 'opp-1',
         type: RoadmapOpportunityType.BUG,
-        description: 'Coin allocator saved 0 coins silently',
+        description: 'Vote button saved 0 votes silently',
       }),
       findOneWithScore: jest.fn().mockResolvedValue({
         id: 'opp-1',
         type: RoadmapOpportunityType.BUG,
-        description: 'Coin allocator saved 0 coins silently',
+        description: 'Vote button saved 0 votes silently',
         stage: 'new',
         priorityScore: 0,
-        myCoins: 0,
+        myVotes: 0,
         commentCount: 0,
         ownerDisplay: null,
       }),
@@ -74,7 +74,7 @@ describe('RoadmapOpportunityService.createBugReport', () => {
     const { service, opportunityRepository } = build(true);
 
     await service.createBugReport(1, 'tenant-a', {
-      description: 'Coin allocator saved 0 coins silently',
+      description: 'Vote button saved 0 votes silently',
     });
 
     expect(opportunityRepository.create).toHaveBeenCalledWith(
@@ -96,15 +96,15 @@ describe('RoadmapOpportunityService.createBugReport', () => {
       save: jest.fn().mockResolvedValue({
         id: 'opp-1',
         type: RoadmapOpportunityType.BUG,
-        description: 'Coin allocator saved 0 coins silently',
+        description: 'Vote button saved 0 votes silently',
       }),
       findOneWithScore: jest.fn().mockResolvedValue({
         id: 'opp-1',
         type: RoadmapOpportunityType.BUG,
-        description: 'Coin allocator saved 0 coins silently',
+        description: 'Vote button saved 0 votes silently',
         stage: 'new',
         priorityScore: 0,
-        myCoins: 0,
+        myVotes: 0,
         commentCount: 0,
         ownerDisplay: null,
       }),
@@ -148,7 +148,7 @@ describe('RoadmapOpportunityService.createBugReport', () => {
     );
 
     await service.createBugReport(7, 'tenant-a', {
-      description: 'Coin allocator saved 0 coins silently',
+      description: 'Vote button saved 0 votes silently',
     });
 
     expect(opportunityRepository.create).toHaveBeenCalledWith(
@@ -160,7 +160,7 @@ describe('RoadmapOpportunityService.createBugReport', () => {
     const { service, opportunityRepository } = build(false);
 
     await service.createBugReport(42, 'tenant-a', {
-      description: 'Coin allocator saved 0 coins silently',
+      description: 'Vote button saved 0 votes silently',
     });
 
     expect(opportunityRepository.create).toHaveBeenCalledWith(
@@ -172,7 +172,7 @@ describe('RoadmapOpportunityService.createBugReport', () => {
     const { service, opportunityRepository } = build(true);
 
     await service.createBugReport(1, null, {
-      description: 'Coin allocator saved 0 coins silently',
+      description: 'Vote button saved 0 votes silently',
     });
 
     expect(opportunityRepository.create).toHaveBeenCalledWith(
@@ -193,7 +193,7 @@ describe('RoadmapOpportunityService.createBugReport', () => {
     };
 
     await service.createBugReport(42, 'tenant-a', {
-      description: 'Coin allocator saved 0 coins silently',
+      description: 'Vote button saved 0 votes silently',
       context,
     });
 

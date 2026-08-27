@@ -14,10 +14,7 @@ import { AiService } from 'src/ai/service/ai.service';
 
 import { RoadmapOpportunityRepository } from '../repository/roadmap-opportunity.repository';
 import { RoadmapProductGoalRepository } from '../repository/roadmap-taxonomy.repository';
-import {
-  RoadmapOpportunityStage,
-  RoadmapOpportunityType,
-} from '../enum/roadmap-opportunity.enum';
+import { RoadmapOpportunityType } from '../enum/roadmap-opportunity.enum';
 import {
   ROADMAP_DUPLICATES,
   ROADMAP_LIMITS,
@@ -36,7 +33,6 @@ const MAX_TOKENS = {
   ENHANCE: 1500,
   DUPLICATES: 1000,
   SUMMARISE: 2000,
-  RELEASE_NOTES: 2500,
   CLAUDE_PROMPT: 2000,
 } as const;
 
@@ -142,41 +138,6 @@ export class RoadmapAiService {
       MAX_TOKENS.SUMMARISE,
       LlmTask.AUTOFILL_ENHANCE_FIELD,
       'summarise',
-    );
-  }
-
-  /**
-   * Draft categorised release notes.
-   *
-   * Only opportunities that are ACTUALLY stage=released are fed to the model — the source did
-   * the same, and it matters because the UI lets you multi-select before a stage change lands.
-   */
-  async draftReleaseNotes(opportunityIds: string[]): Promise<string> {
-    if (opportunityIds.length === 0) return '';
-
-    const released = await this.opportunityRepository.find({
-      where: {
-        id: In(opportunityIds),
-        stage: RoadmapOpportunityStage.RELEASED,
-      },
-      order: { releasedAt: 'DESC', createdAt: 'DESC' },
-    });
-    if (released.length === 0) {
-      throw new NotFoundException(
-        'None of the selected opportunities are in the released stage',
-      );
-    }
-
-    const items = released
-      .map((o) => `- [${o.type}] (${o.productGoal}) ${o.description}`)
-      .join('\n');
-
-    return this.runText(
-      ROADMAP_PROMPT_CODES.RELEASE_NOTES,
-      `Released opportunities (${released.length}):\n${items}`,
-      MAX_TOKENS.RELEASE_NOTES,
-      LlmTask.AUTOFILL_ENHANCE_FIELD,
-      'release-notes',
     );
   }
 
@@ -298,9 +259,13 @@ export class RoadmapAiService {
 
   /**
    * Turn an opportunity's description (+ optional PRD) into a ready-to-paste implementation
-   * brief for Claude Code. Plain text, not JSON — same reasoning as summariseTranscript and
-   * draftReleaseNotes: the output is multiline prose, and forcing it through JSON only adds a
-   * fragile parse step for no benefit.
+   * brief for Claude Code. Plain text, not JSON — same reasoning as summariseTranscript: the
+   * output is multiline prose, and forcing it through JSON only adds a fragile parse step for
+   * no benefit.
+   *
+   * NOTE: no longer reachable from the admin UI. The drawer's "Open in Builder Agent" replaced
+   * the generate-a-prompt flow; this endpoint is kept until the `claudePrompt` column is
+   * dropped, and should go with it.
    */
   async generateClaudeCodePrompt(
     description: string,

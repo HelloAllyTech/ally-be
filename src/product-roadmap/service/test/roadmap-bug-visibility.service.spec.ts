@@ -38,7 +38,7 @@ describe('RoadmapOpportunityService — bugs stay off the board', () => {
       findOneWithScore: jest.fn().mockResolvedValue({
         ...saved(type),
         priorityScore: 0,
-        myCoins: 0,
+        myVotes: 0,
         commentCount: 0,
         ownerDisplay: null,
       }),

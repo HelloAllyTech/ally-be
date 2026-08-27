@@ -1,9 +1,9 @@
 /**
- * The coin budget's calendar month, as 'YYYY-MM'.
+ * The vote budget's calendar month, as 'YYYY-MM'.
  *
  * ALWAYS UTC, and always computed server-side. The standalone app derived this in the browser
  * from local getMonth(), which had two consequences: a tab left open across midnight on the
- * 1st wrote coins into the previous month, and a user in IST disagreed with a UTC server about
+ * 1st wrote votes into the previous month, and a user in IST disagreed with a UTC server about
  * which month they were voting in. Fixing it means one authority (this function) and a wire
  * contract where the client never sends a period key — it receives one.
  *

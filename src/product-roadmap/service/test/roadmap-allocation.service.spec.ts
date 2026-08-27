@@ -37,13 +37,13 @@ describe('RoadmapAllocationService', () => {
 
   /** An existing allocation row for this user/opportunity/period, or none. */
   const givenExistingAllocation = (
-    coins: number | null,
+    votes: number | null,
     stage = RoadmapOpportunityStage.NEW,
     type = RoadmapOpportunityType.IDEA,
   ) =>
     manager.findOne.mockImplementation(async (entity: unknown) => {
       if (entity === RoadmapOpportunity) return { id: OPP_ID, stage, type };
-      return coins === null ? null : { id: 'alloc-1', coins };
+      return votes === null ? null : { id: 'alloc-1', votes };
     });
 
   beforeEach(async () => {
@@ -92,9 +92,9 @@ describe('RoadmapAllocationService', () => {
       givenExistingAllocation(null);
       allocationRepository.sumForPeriodExcluding.mockResolvedValue(60);
 
-      const result = await service.setCoins(USER, OPP_ID, 40);
+      const result = await service.setVotes(USER, OPP_ID, 40);
 
-      expect(result.coins).toBe(40);
+      expect(result.votes).toBe(40);
       expect(result.budget.used).toBe(100);
       expect(result.budget.remaining).toBe(0);
     });
@@ -103,7 +103,7 @@ describe('RoadmapAllocationService', () => {
       givenExistingAllocation(null);
       allocationRepository.sumForPeriodExcluding.mockResolvedValue(60);
 
-      await expect(service.setCoins(USER, OPP_ID, 41)).rejects.toBeInstanceOf(
+      await expect(service.setVotes(USER, OPP_ID, 41)).rejects.toBeInstanceOf(
         UnprocessableEntityException,
       );
       // The friendly path must refuse BEFORE touching the table — otherwise the DB trigger
@@ -116,7 +116,7 @@ describe('RoadmapAllocationService', () => {
       givenExistingAllocation(null);
       allocationRepository.sumForPeriodExcluding.mockResolvedValue(85);
 
-      await expect(service.setCoins(USER, OPP_ID, 20)).rejects.toMatchObject({
+      await expect(service.setVotes(USER, OPP_ID, 20)).rejects.toMatchObject({
         response: { remaining: 15, cap: 100 },
       });
     });
@@ -132,9 +132,9 @@ describe('RoadmapAllocationService', () => {
       // 40 committed on OTHER opportunities; this row is excluded from the sum.
       allocationRepository.sumForPeriodExcluding.mockResolvedValue(40);
 
-      const result = await service.setCoins(USER, OPP_ID, 60);
+      const result = await service.setVotes(USER, OPP_ID, 60);
 
-      expect(result.coins).toBe(60);
+      expect(result.votes).toBe(60);
       expect(result.budget.used).toBe(100);
       expect(allocationRepository.sumForPeriodExcluding).toHaveBeenCalledWith(
         manager,
@@ -157,7 +157,7 @@ describe('RoadmapAllocationService', () => {
         },
       );
 
-      await service.setCoins(USER, OPP_ID, 10);
+      await service.setVotes(USER, OPP_ID, 10);
 
       // Reversed, and two concurrent writes both read a stale sum and both pass the check.
       expect(order).toEqual(['lock', 'sum']);
@@ -167,11 +167,11 @@ describe('RoadmapAllocationService', () => {
       givenExistingAllocation(null);
       manager.save.mockRejectedValue(
         new Error(
-          'ROADMAP_MONTHLY_CAP_EXCEEDED: user 7 already holds 100 of 100 coins in 2026-07',
+          'ROADMAP_MONTHLY_CAP_EXCEEDED: user 7 already holds 100 of 100 votes in 2026-07',
         ),
       );
 
-      await expect(service.setCoins(USER, OPP_ID, 5)).rejects.toBeInstanceOf(
+      await expect(service.setVotes(USER, OPP_ID, 5)).rejects.toBeInstanceOf(
         ConflictException,
       );
     });
@@ -180,22 +180,22 @@ describe('RoadmapAllocationService', () => {
       givenExistingAllocation(null);
       manager.save.mockRejectedValue(new Error('connection terminated'));
 
-      await expect(service.setCoins(USER, OPP_ID, 5)).rejects.toThrow(
+      await expect(service.setVotes(USER, OPP_ID, 5)).rejects.toThrow(
         'connection terminated',
       );
     });
   });
 
-  describe('coins: 0', () => {
+  describe('votes: 0', () => {
     it('deletes the row instead of storing a zero', async () => {
       givenExistingAllocation(30);
 
-      await service.setCoins(USER, OPP_ID, 0);
+      await service.setVotes(USER, OPP_ID, 0);
 
       // "No vote" must have exactly one representation, or every SUM has to special-case zeros.
       expect(manager.remove).toHaveBeenCalledWith(RoadmapAllocation, {
         id: 'alloc-1',
-        coins: 30,
+        votes: 30,
       });
       expect(manager.save).not.toHaveBeenCalled();
     });
@@ -203,10 +203,10 @@ describe('RoadmapAllocationService', () => {
     it('is a no-op when there was no allocation', async () => {
       givenExistingAllocation(null);
 
-      const result = await service.setCoins(USER, OPP_ID, 0);
+      const result = await service.setVotes(USER, OPP_ID, 0);
 
       expect(manager.remove).not.toHaveBeenCalled();
-      expect(result.coins).toBe(0);
+      expect(result.votes).toBe(0);
     });
   });
 
@@ -219,7 +219,7 @@ describe('RoadmapAllocationService', () => {
     ])('rejects a vote on a %s opportunity with 409', async (stage) => {
       givenExistingAllocation(null, stage);
 
-      await expect(service.setCoins(USER, OPP_ID, 5)).rejects.toBeInstanceOf(
+      await expect(service.setVotes(USER, OPP_ID, 5)).rejects.toBeInstanceOf(
         ConflictException,
       );
       expect(manager.save).not.toHaveBeenCalled();
@@ -227,14 +227,14 @@ describe('RoadmapAllocationService', () => {
 
     it('allows a vote on a new opportunity', async () => {
       givenExistingAllocation(null, RoadmapOpportunityStage.NEW);
-      await expect(service.setCoins(USER, OPP_ID, 5)).resolves.toMatchObject({
-        coins: 5,
+      await expect(service.setVotes(USER, OPP_ID, 5)).resolves.toMatchObject({
+        votes: 5,
       });
     });
 
     it('404s for an unknown opportunity', async () => {
       manager.findOne.mockResolvedValue(null);
-      await expect(service.setCoins(USER, OPP_ID, 5)).rejects.toBeInstanceOf(
+      await expect(service.setVotes(USER, OPP_ID, 5)).rejects.toBeInstanceOf(
         NotFoundException,
       );
     });
@@ -248,7 +248,7 @@ describe('RoadmapAllocationService', () => {
         RoadmapOpportunityType.BUG,
       );
 
-      await expect(service.setCoins(USER, OPP_ID, 5)).rejects.toBeInstanceOf(
+      await expect(service.setVotes(USER, OPP_ID, 5)).rejects.toBeInstanceOf(
         ConflictException,
       );
       expect(manager.save).not.toHaveBeenCalled();
@@ -260,8 +260,8 @@ describe('RoadmapAllocationService', () => {
         RoadmapOpportunityStage.NEW,
         RoadmapOpportunityType.IDEA,
       );
-      await expect(service.setCoins(USER, OPP_ID, 5)).resolves.toMatchObject({
-        coins: 5,
+      await expect(service.setVotes(USER, OPP_ID, 5)).resolves.toMatchObject({
+        votes: 5,
       });
     });
   });
@@ -270,14 +270,14 @@ describe('RoadmapAllocationService', () => {
     it('is server-computed and never taken from the caller', async () => {
       givenExistingAllocation(null);
 
-      const result = await service.setCoins(USER, OPP_ID, 5);
+      const result = await service.setVotes(USER, OPP_ID, 5);
 
-      // Shape only — the exact month depends on the clock. The point is that setCoins takes no
+      // Shape only — the exact month depends on the clock. The point is that setVotes takes no
       // periodKey argument at all, so historical periods are read-only by construction. That
       // closes the source's hole where RLS allowed a write to ANY period_key while the score
       // sums every period forever.
       expect(result.periodKey).toMatch(/^\d{4}-(0[1-9]|1[0-2])$/);
-      expect(service.setCoins).toHaveLength(3); // (userId, opportunityId, coins)
+      expect(service.setVotes).toHaveLength(3); // (userId, opportunityId, votes)
     });
   });
 
@@ -286,14 +286,14 @@ describe('RoadmapAllocationService', () => {
       givenExistingAllocation(null);
       manager.query.mockResolvedValue([{ total: '42' }]);
 
-      await service.setCoins(USER, OPP_ID, 5);
+      await service.setVotes(USER, OPP_ID, 5);
 
       expect(notifications.emit).toHaveBeenCalledWith(
         expect.objectContaining({
           kind: 'ALLOCATION_CHANGED',
           actorId: USER,
           opportunityId: OPP_ID,
-          coins: 5,
+          votes: 5,
           priorityScore: 42,
         }),
       );
@@ -301,20 +301,20 @@ describe('RoadmapAllocationService', () => {
   });
 
   describe('getBudget', () => {
-    it('reports the remaining coins for the current period', async () => {
+    it('reports the remaining votes for the current period', async () => {
       allocationRepository.sumForPeriod.mockResolvedValue(73);
 
       const budget = await service.getBudget(USER);
 
       expect(budget).toMatchObject({
-        coinsPerMonth: 100,
+        votesPerMonth: 100,
         used: 73,
         remaining: 27,
       });
     });
 
     it('never reports negative remaining, even if the data is over cap', async () => {
-      // Defensive: a pre-trigger breach in migrated data must not render as "-20 coins left".
+      // Defensive: a pre-trigger breach in migrated data must not render as "-20 votes left".
       allocationRepository.sumForPeriod.mockResolvedValue(120);
 
       const budget = await service.getBudget(USER);
