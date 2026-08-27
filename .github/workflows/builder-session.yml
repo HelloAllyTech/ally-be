@@ -42,10 +42,13 @@ on:
         description: Coding engine key (claude-code, …)
         required: false
         default: claude-code
-      model:
-        description: Model for the engine
+      # One input for all three tiers rather than three: workflow_dispatch
+      # accepts at most 10 inputs and this file is already at 9. ally-be
+      # resolves the models and always sends all three.
+      models:
+        description: 'JSON {planner, coder, verifier} model ids'
         required: false
-        default: claude-sonnet-5
+        default: '{}'
       branch_slug:
         description: Branch base — pushes go to builder/<slug>
         required: true
@@ -77,7 +80,7 @@ jobs:
       BUILDER_RUN_ID: ${{ inputs.run_id }}
       BUILDER_MODE: ${{ inputs.mode }}
       BUILDER_ENGINE: ${{ inputs.engine }}
-      BUILDER_MODEL: ${{ inputs.model }}
+      BUILDER_MODELS: ${{ inputs.models }}
       BUILDER_BRANCH_SLUG: ${{ inputs.branch_slug }}
       BUILDER_BRANCHES: ${{ inputs.branches }}
       BUILDER_REPOS: ${{ inputs.repos }}
@@ -139,6 +142,9 @@ jobs:
             -o /tmp/build-prompt.txt
           wc -c /tmp/build-prompt.txt
 
+      # PLAN → (CODE → GATE → VERIFY)* → FINALISE. The pull requests are
+      # opened by the last phase, which is only reached once the machine test
+      # gate and the independent reviewer are both satisfied.
       - name: Run the build
         run: protocol/scripts/builder/run-engine.sh /tmp/build-prompt.txt
 
@@ -170,6 +176,10 @@ jobs:
           name: builder-evidence-${{ inputs.run_id }}
           path: |
             /tmp/builder-evidence/**
-            /tmp/engine-result.json
+            /tmp/builder-results/*.json
+            /tmp/builder-plan.md
+            /tmp/builder-gate/*.json
+            /tmp/builder-gate-*.log
+            /tmp/builder-baseline/*.json
           if-no-files-found: ignore
           retention-days: 14

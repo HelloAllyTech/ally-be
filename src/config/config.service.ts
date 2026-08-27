@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TIME } from '../common/constants/time.constants';
 import { buildRoleplayV2Allowlist } from '../common/util/roleplay-v2-access.util';
+import { BUILDER_MODEL_DEFAULTS } from '../builder/constants/builder.constants';
 
 export type AwsLogServiceKey = 'ally-be' | 'ally-ai' | 'ally-ai-learn';
 
@@ -596,18 +597,31 @@ export class AppConfigService {
 
   get builder() {
     return {
-      // PRD-interview model. Same family as the copilot default so there is
-      // one model to upgrade.
+      // Model per role in the tiered loop. Defaults live in ONE place
+      // (BUILDER_MODEL_DEFAULTS) — the previous per-getter literals drifted
+      // (interview on claude-sonnet-4-6 while the build ran claude-sonnet-5).
       interviewModel: this.configService.get<string>(
         'BUILDER_INTERVIEW_MODEL',
-        'claude-sonnet-4-6',
+        BUILDER_MODEL_DEFAULTS.interview,
       ),
-      // Default coding model handed to the build runner. A workflow input
-      // rather than a constant so a session can override it and a
-      // non-Anthropic engine can be slotted in later.
-      buildModel: this.configService.get<string>(
+      plannerModel: this.configService.get<string>(
+        'BUILDER_PLANNER_MODEL',
+        BUILDER_MODEL_DEFAULTS.planner,
+      ),
+      // `BUILDER_BUILD_MODEL` kept as the env name for the coder tier so an
+      // environment that already sets it keeps working.
+      coderModel: this.configService.get<string>(
         'BUILDER_BUILD_MODEL',
-        'claude-sonnet-5',
+        BUILDER_MODEL_DEFAULTS.coder,
+      ),
+      verifierModel: this.configService.get<string>(
+        'BUILDER_VERIFIER_MODEL',
+        BUILDER_MODEL_DEFAULTS.verifier,
+      ),
+      // Cheap tier for mechanical passes: repo maps, summaries, consolidation.
+      mechanicalModel: this.configService.get<string>(
+        'BUILDER_MECHANICAL_MODEL',
+        BUILDER_MODEL_DEFAULTS.mechanical,
       ),
       buildEngine: this.configService.get<string>(
         'BUILDER_ENGINE',

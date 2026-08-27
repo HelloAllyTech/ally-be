@@ -45,8 +45,15 @@ export class BuilderBuildRun extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', length: 40 })
   engine!: string;
 
+  /** The coder-tier model. Planner and verifier ride their own columns. */
   @Column({ type: 'varchar', length: 80 })
   model!: string;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  plannerModel?: string | null;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  verifierModel?: string | null;
 
   /** Slug shared by every branch this run pushes (`builder/<slug>`). */
   @Column({ type: 'varchar', length: 80 })
@@ -58,6 +65,14 @@ export class BuilderBuildRun extends BaseWithoutTenantEntity {
    */
   @Column({ type: 'jsonb', nullable: true })
   branches?: Record<string, string> | null;
+
+  /** Fix runs only — the pull request this run was sent to work on. */
+  @Column({ type: 'uuid', nullable: true })
+  pullRequestId?: string | null;
+
+  /** Epic mode — the milestone this run builds. */
+  @Column({ type: 'uuid', nullable: true })
+  milestoneId?: string | null;
 
   @Column({ type: 'bigint', nullable: true })
   githubRunId?: string | null;

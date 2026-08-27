@@ -18,9 +18,17 @@ import { BuilderRepoDefinition } from './builder-repos.constants';
 export interface VerifyPromptContext {
   prd: BuilderPrdDocument;
   repos: BuilderRepoDefinition[];
-  /** Round 1 or 2 — the second round is told what was already raised. */
+  /** Which review round this is; later rounds are told what was raised. */
   round: number;
+  /**
+   * Objections from the previous round, read back from the stored
+   * `verification` event. Populated now — the coder is genuinely re-invoked
+   * between rounds, so round two reads a diff that has changed in response to
+   * these rather than the same bytes again.
+   */
   previousObjections?: string[];
+  /** Machine gate results, so the reviewer need not re-run the suites. */
+  gateSummary?: string | null;
 }
 
 export function buildVerifyPrompt(context: VerifyPromptContext): string {
@@ -45,13 +53,26 @@ export function buildVerifyPrompt(context: VerifyPromptContext): string {
   const roundNote =
     context.round > 1 && context.previousObjections?.length
       ? `
-This is round ${context.round}. These objections were raised last round and
-the agent has since tried to address them — check each one specifically, and
-say whether it is now resolved:
+This is round ${context.round}. These objections were raised last round, and
+the coding agent has since been re-invoked and has changed the diff in
+response. Check each one specifically and say whether it is now genuinely
+resolved — a fix that suppressed the symptom (a deleted test, a loosened
+assertion, a widened type) is not resolved, it is a new finding:
 
 ${context.previousObjections.map((objection) => `- ${objection}`).join('\n')}
 `.trim()
       : '';
+
+  const gateNote = context.gateSummary
+    ? `
+## What the machine gate already checked
+
+Every touched repo's tests, lint and typecheck have run. Take these as given
+rather than re-running them, and spend your time on what a suite cannot see:
+
+${context.gateSummary}
+`.trim()
+    : '';
 
   return `
 You are reviewing a change another agent just wrote, before it becomes a pull
@@ -60,7 +81,15 @@ request. You did not write it and you have no stake in it being right.
 Your job is to **find what is wrong with it**. A review that finds nothing is
 only useful if you genuinely looked; assume there is something and go after it.
 
+**You are read-only.** You have no edit tools, and anything you did manage to
+write to the tree is reverted before the next phase runs. Do not try to fix
+what you find — a reviewer who patches the diff is no longer reviewing it.
+Report it and let the coding agent, which gets re-invoked with your objections,
+do the fixing.
+
 ${roundNote}
+
+${gateNote}
 
 ## What to check, in priority order
 
@@ -101,7 +130,8 @@ is scope nobody reviewed.
 
 Read the diff in each repo (\`git diff master...HEAD\`), then read the
 surrounding code — the diff alone will not tell you whether a caller broke.
-Run any test you want to check a suspicion; you have the same tools.
+Run any test or command you want to check a suspicion — you can read and
+execute, you just cannot edit.
 
 Be concrete. "Error handling could be better" is not actionable. "\`getUser\`
 now returns null for a deleted user, and \`AuthService.resolve\` at

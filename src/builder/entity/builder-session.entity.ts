@@ -74,6 +74,30 @@ export class BuilderSession extends BaseWithoutTenantEntity {
   lastMessageSeq!: number;
 
   /**
+   * Exemplar ids chosen for this session's context, frozen at first use.
+   *
+   * Frozen because the context block lives inside the prompt-cached prefix: a
+   * selection that changed between turns would invalidate the cache on every
+   * turn, which costs far more than the exemplars are worth. Re-picked only
+   * when the repo set changes, since that is what makes a different past build
+   * relevant.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  contextExemplarIds?: string[] | null;
+
+  /** Repos in play when the exemplars above were chosen. */
+  @Column({ type: 'jsonb', nullable: true })
+  contextExemplarRepos?: string[] | null;
+
+  /**
+   * Monotonic run counter, incremented the same atomic way as
+   * `lastMessageSeq`. Two dispatches for one session used to read the same
+   * `MAX(sequence)` and collide — a double-clicked answer was enough.
+   */
+  @Column({ type: 'int', default: 0 })
+  lastRunSequence!: number;
+
+  /**
    * Spend ceiling for the whole session. ally-be refuses to dispatch another
    * run once totalCostUsd reaches it — an agent that loops is otherwise
    * bounded only by patience.

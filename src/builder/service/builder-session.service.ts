@@ -1,16 +1,21 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { In, MoreThanOrEqual } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
+import { AppConfigService } from 'src/config/config.service';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderMessage } from '../entity/builder-message.entity';
 import { BuilderSessionRepository } from '../repository/builder-session.repository';
 import { BuilderMessageRepository } from '../repository/builder-message.repository';
 import { BuilderPrdService } from './builder-prd.service';
+import { BuilderSettingsService } from './builder-settings.service';
+import { BuilderBuildService } from './builder-build.service';
 import {
   BUILDER_ACTIVE_STATUSES,
   BuilderPrdVersionAuthor,
@@ -36,9 +41,16 @@ export class BuilderSessionService {
   );
 
   constructor(
+    private readonly configService: AppConfigService,
     private readonly sessionRepository: BuilderSessionRepository,
     private readonly messageRepository: BuilderMessageRepository,
     private readonly prdService: BuilderPrdService,
+    private readonly settingsService: BuilderSettingsService,
+    // Forward-ref'd: the build service reads sessions through repositories
+    // only, so this is a one-way edge rather than a cycle. Cancelling has to
+    // reach it — a DB-only cancel left the runner burning up to two hours.
+    @Inject(forwardRef(() => BuilderBuildService))
+    private readonly buildService: BuilderBuildService,
   ) {}
 
   async createSession(
@@ -51,11 +63,24 @@ export class BuilderSessionService {
     const title = (params.title ?? '')
       .trim()
       .slice(0, BUILDER_TITLE_MAX_LENGTH);
+
+    // Stamp the default budget at creation. `defaultBudgetUsd` was documented
+    // as "applied to a new session's budgetUsd" and never actually read, so
+    // every session ran with no ceiling at all: `assertWithinBudget`
+    // short-circuits on a null budget, and the config default had no readers.
+    const settings = await this.settingsService.get();
+    const budgetUsd =
+      settings.defaultBudgetUsd ??
+      (this.configService.builder.defaultBudgetUsd
+        ? String(this.configService.builder.defaultBudgetUsd)
+        : null);
+
     const session = await this.sessionRepository.save(
       this.sessionRepository.create({
         title: title || 'New build',
         slug: await this.allocateSlug(title),
         tenantId: params.tenantId ?? null,
+        budgetUsd,
         createdBy: userId,
         updatedBy: userId,
       }),
@@ -312,9 +337,41 @@ export class BuilderSessionService {
       { id: session.id },
       { status: BuilderSessionStatus.CANCELLED, updatedBy: userId },
     );
+
+    // Then stop the thing that is actually running. The DB write above is
+    // what the UI reads, so it lands first and unconditionally; this second
+    // half is why "cancel" now costs GitHub minutes rather than only looking
+    // like it stopped. Without it a cancelled session left its runner working
+    // for up to two hours and its questions PENDING against a dead session.
+    await this.cancelActiveRun(session.id, userId);
+
     this.logger.info(
       `Builder session ${sessionId} cancelled by user ${userId}`,
     );
     return this.getSession(sessionId, userId);
+  }
+
+  /**
+   * Best-effort cancel of whatever run the session still has in flight.
+   *
+   * Swallows its own failures: the session is already CANCELLED in the DB, and
+   * a GitHub API hiccup must not turn a successful cancel into a 500 for the
+   * admin who asked for it. The reconcile pass settles the run row either way.
+   */
+  private async cancelActiveRun(
+    sessionId: string,
+    userId: number,
+  ): Promise<void> {
+    try {
+      const run = await this.buildService.findCancellableRun(sessionId);
+      if (!run) return;
+      await this.buildService.cancelRun(run, userId);
+    } catch (error) {
+      this.logger.warn(
+        `Builder session ${sessionId} was cancelled, but stopping its run failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 }

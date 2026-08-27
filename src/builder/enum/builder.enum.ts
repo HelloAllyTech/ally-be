@@ -45,13 +45,25 @@ export const BUILDER_PRD_FROZEN_STATUSES: BuilderSessionStatus[] = [
   BuilderSessionStatus.WAITING_FOR_INPUT,
 ];
 
-/** Agent-reported progress within BUILDING. */
+/**
+ * Progress within BUILDING. Phase-boundary stages (PLANNING, CODING, GATE,
+ * VERIFYING, REMEDIATING, FINALISING) are posted by run-engine.sh itself at
+ * each phase transition, so the phase rail is machine-truthful; the finer
+ * stages inside a phase (TESTING, E2E_VERIFY, OPENING_PRS, REPORTING) are
+ * still agent-asserted.
+ */
 export enum BuilderStage {
   SETUP = 'SETUP',
   PLANNING = 'PLANNING',
   CODING = 'CODING',
   TESTING = 'TESTING',
+  /** The machine test gate: every touched repo's test/lint/typecheck. */
+  GATE = 'GATE',
   VERIFYING = 'VERIFYING',
+  /** A coder re-invocation fixing gate failures or verifier objections. */
+  REMEDIATING = 'REMEDIATING',
+  /** E2E, commit, push, PRs, report — only reached on a green verify. */
+  FINALISING = 'FINALISING',
   E2E_VERIFY = 'E2E_VERIFY',
   OPENING_PRS = 'OPENING_PRS',
   REPORTING = 'REPORTING',
@@ -89,6 +101,45 @@ export enum BuilderRunMode {
   BUILD = 'build',
   /** Continue on the branches a paused run left behind. */
   RESUME = 'resume',
+  /**
+   * Act on what happened to an already-open pull request: red CI, or a human's
+   * review comments. Skips the planner and the reviewer — CI and a human
+   * reviewer are already the second pair of eyes — but still runs the gate.
+   */
+  FIX = 'fix',
+}
+
+/** What arrived on a pull request after Builder opened it. */
+export enum BuilderPrFeedbackKind {
+  CI_FAILURE = 'ci_failure',
+  /** An inline comment on a line of the diff. */
+  REVIEW_COMMENT = 'review_comment',
+  /** A review verdict — approved-with-comments, or changes requested. */
+  REVIEW = 'review',
+}
+
+export enum BuilderPrFeedbackStatus {
+  PENDING = 'pending',
+  /** A fix run has it. */
+  IN_FIX = 'in_fix',
+  ADDRESSED = 'addressed',
+  /** Builder disagreed, in writing, on the PR. */
+  DISMISSED = 'dismissed',
+  /** The PR closed underneath it — nothing left to act on. */
+  STALE = 'stale',
+  /**
+   * Recorded, deliberately never actionable — and terminal from birth, unlike
+   * every status above it.
+   *
+   * A CI failure on a head commit somebody else pushed. It is true, it belongs
+   * in the timeline and the outcome flywheel wants it, but it is not Builder's
+   * to fix: the person who pushed is mid-work on that branch, and a commit
+   * arriving underneath them is how an agent turns into the reason nobody
+   * reviews its pull requests. `countPending` counts PENDING alone, so this
+   * status is the whole of the mechanism — a row written OBSERVED can never
+   * drag itself into a fix run that some later review comment triggers.
+   */
+  OBSERVED = 'observed',
 }
 
 /**
@@ -110,6 +161,14 @@ export enum BuilderEventType {
   STAGE_CHANGE = 'stage_change',
   PLAN = 'plan',
   VERIFICATION = 'verification',
+  /**
+   * A machine-run test-gate result, posted by run-test-gate.sh rather than
+   * asserted by the agent — the UI renders it as verified, not self-reported,
+   * and /complete refuses a `done` for a run that never passed one.
+   */
+  GATE_RESULT = 'gate_result',
+  /** Per-phase cost increment (plan/code/verify/finalise invocations). */
+  PHASE_COST = 'phase_cost',
   QUESTION = 'question',
   E2E_EVIDENCE = 'e2e_evidence',
   E2E_SKIPPED = 'e2e_skipped',
@@ -142,6 +201,23 @@ export enum BuilderNotificationKind {
   BUILD_FAILED = 'build_failed',
   PRS_OPENED = 'prs_opened',
   BUDGET_REACHED = 'budget_reached',
+  /** Builder is pushing to a PR a human may be reviewing right now. */
+  FIX_RUN_STARTED = 'fix_run_started',
+}
+
+/**
+ * A milestone's life. Mirrors the session states it can be in rather than
+ * inventing new names, so a reader does not have to learn two vocabularies for
+ * the same three things.
+ */
+export enum BuilderMilestoneStatus {
+  PENDING = 'PENDING',
+  BUILDING = 'BUILDING',
+  WAITING_FOR_INPUT = 'WAITING_FOR_INPUT',
+  COMPLETED = 'COMPLETED',
+  FAILED = 'FAILED',
+  /** A person decided this slice was not needed after all. */
+  SKIPPED = 'SKIPPED',
 }
 
 /** Who wrote a PRD version — the agent's patches or the admin's own edit. */
@@ -155,6 +231,74 @@ export enum BuilderPrdVersionAuthor {
  * both receive recent lessons, which is how build N+1 stops rediscovering
  * what build N learned the hard way.
  */
+/**
+ * Where a lesson is in its life.
+ *
+ * The flat table this replaces had no such notion: every retrospective bullet
+ * went straight into the set fed to every future prompt, so the same trap
+ * learned five times was five rows competing for the same context budget. A
+ * candidate is raw harvest; the curator promotes, merges or retires it.
+ */
+export enum BuilderLessonStatus {
+  /** Freshly harvested, not yet curated. Not fed to prompts. */
+  CANDIDATE = 'candidate',
+  /** In the curated set. This is what runs actually read. */
+  ACTIVE = 'active',
+  /** Folded into another lesson; kept as a tombstone for provenance. */
+  MERGED = 'merged',
+  /** Stale, contradicted, or subsumed. */
+  RETIRED = 'retired',
+}
+
+/**
+ * How a build turned out, once the humans have had their say.
+ *
+ * `closed_unmerged` is the most informative value here and the one the old
+ * schema could not express at all: a rejected pull request and a merged one
+ * looked identical, so nothing downstream could tell good work from bad.
+ */
+export enum BuilderExemplarOutcome {
+  /** PRs are open; nobody has decided yet. */
+  OPEN = 'open',
+  MERGED = 'merged',
+  /** Some repos merged, some did not. */
+  PARTIALLY_MERGED = 'partially_merged',
+  /** Closed without merging — the work was rejected. */
+  CLOSED_UNMERGED = 'closed_unmerged',
+  /** Never got as far as a pull request. */
+  FAILED = 'failed',
+  CANCELLED = 'cancelled',
+}
+
+/**
+ * Why a build needed more work than it should have.
+ *
+ * Tagging matters more than the individual tags: without a shared vocabulary,
+ * "it went badly" is a story per build and a trend across none of them. These
+ * are what the scoreboard groups by and what the curator reads to decide which
+ * lessons are actually earning their place.
+ */
+export enum BuilderFailureTag {
+  TEST_FAILURE = 'test_failure',
+  TYPE_ERROR = 'type_error',
+  LINT = 'lint',
+  MIGRATION_CONFLICT = 'migration_conflict',
+  /** CI broke for reasons that were not about the change. */
+  CI_INFRA = 'ci_infra',
+  BUILD_TIMEOUT = 'build_timeout',
+  BUDGET_EXCEEDED = 'budget_exceeded',
+  RUNNER_LOST = 'runner_lost',
+  /** A reviewer said the code was wrong. */
+  REVIEW_CORRECTNESS = 'review_correctness',
+  /** A reviewer said it did more than was asked. */
+  REVIEW_SCOPE_CREEP = 'review_scope_creep',
+  REVIEW_STYLE = 'review_style',
+  REVIEW_MISSING_TESTS = 'review_missing_tests',
+  /** Nobody merged it and nobody said why. */
+  CLOSED_ABANDONED = 'closed_abandoned',
+  OTHER = 'other',
+}
+
 export enum BuilderLessonCategory {
   /** A trap that cost time — a build-order surprise, a silent failure mode. */
   GOTCHA = 'gotcha',

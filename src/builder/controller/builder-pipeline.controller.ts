@@ -19,6 +19,9 @@ import { BuilderEventService } from '../service/builder-event.service';
 import { BuilderQuestionService } from '../service/builder-question.service';
 import { BuilderPullRequestService } from '../service/builder-pull-request.service';
 import { BuilderReportService } from '../service/builder-report.service';
+import { BuilderSettingsService } from '../service/builder-settings.service';
+import { BuilderExemplarService } from '../service/builder-exemplar.service';
+import { BuilderEpicService } from '../service/builder-epic.service';
 import { BuilderKnowledgeService } from '../service/builder-knowledge.service';
 import { BuilderPrdService } from '../service/builder-prd.service';
 import { BuilderSessionService } from '../service/builder-session.service';
@@ -27,21 +30,30 @@ import {
   BuilderQuestionRepository,
 } from '../repository/builder-build.repository';
 import { buildBuildPrompt } from '../constants/builder-build-prompt';
+import { buildPlanPrompt } from '../constants/builder-plan-prompt';
+import { buildRemediatePrompt } from '../constants/builder-remediate-prompt';
+import { buildFinalisePrompt } from '../constants/builder-finalise-prompt';
 import { buildVerifyPrompt } from '../constants/builder-verify-prompt';
+import { buildFixPrompt } from '../constants/builder-fix-prompt';
 import {
   BUILDER_EVENT_BATCH_MAX,
   BUILDER_LESSONS_IN_CONTEXT,
+  BUILDER_MAX_CODE_ITERATIONS,
 } from '../constants/builder.constants';
 import {
   BUILDER_REPOS,
   findBuilderRepo,
 } from '../constants/builder-repos.constants';
-import { BuilderRunStatus } from '../enum/builder.enum';
+import { BuilderRunMode, BuilderRunStatus } from '../enum/builder.enum';
+import { BuilderBuildRun } from '../entity/builder-build-run.entity';
+import { BuilderSession } from '../entity/builder-session.entity';
+import { BuilderPrdDocument } from '../type/builder-prd.type';
 import {
   IngestBuilderEventsDto,
   RecordBuilderPrsDto,
   RecordBuilderQuestionsDto,
   RecordBuilderReportDto,
+  RecordBuilderFeedbackOutcomesDto,
   RecordBuilderRunCostDto,
   CompleteBuilderRunDto,
   UpsertBuilderRepoMapDto,
@@ -75,12 +87,33 @@ export class BuilderPipelineController {
     private readonly questionService: BuilderQuestionService,
     private readonly pullRequestService: BuilderPullRequestService,
     private readonly reportService: BuilderReportService,
+    private readonly settingsService: BuilderSettingsService,
+    private readonly exemplarService: BuilderExemplarService,
+    private readonly epicService: BuilderEpicService,
     private readonly knowledgeService: BuilderKnowledgeService,
     private readonly prdService: BuilderPrdService,
     private readonly sessionService: BuilderSessionService,
     private readonly runRepository: BuilderBuildRunRepository,
     private readonly questionRepository: BuilderQuestionRepository,
   ) {}
+
+  /**
+   * Run + session + PRD + repo definitions, which every phase prompt needs.
+   * One loader so a new phase cannot accidentally resolve repos differently
+   * from the others.
+   */
+  private async loadRunContext(runId: string) {
+    const run = await this.buildService.getRunOrFail(runId);
+    const session = await this.sessionService.getSession(run.sessionId);
+    const doc = await this.prdService.getOrCreateDoc(
+      session.id,
+      session.createdBy,
+    );
+    const repos = (session.repos ?? [])
+      .map((repo) => findBuilderRepo(repo))
+      .filter(Boolean) as typeof BUILDER_REPOS;
+    return { run, session, doc, repos };
+  }
 
   @Get('runs/:runId/prompt')
   @Header('Content-Type', 'text/plain; charset=utf-8')
@@ -90,16 +123,14 @@ export class BuilderPipelineController {
   async getPrompt(
     @Param('runId', ParseUUIDPipe) runId: string,
   ): Promise<string> {
-    const run = await this.buildService.getRunOrFail(runId);
-    const session = await this.sessionService.getSession(run.sessionId);
-    const doc = await this.prdService.getOrCreateDoc(
-      session.id,
-      session.createdBy,
-    );
+    const { run, session, doc, repos } = await this.loadRunContext(runId);
 
-    const repos = (session.repos ?? [])
-      .map((repo) => findBuilderRepo(repo))
-      .filter(Boolean) as typeof BUILDER_REPOS;
+    // A fix run's work is a list of complaints about an open pull request, not
+    // a PRD to implement, so it gets its own protocol from the same URL — the
+    // runner does not need to know which kind of run it is fetching for.
+    if (run.mode === BuilderRunMode.FIX) {
+      return this.renderFixPrompt(run, session, doc, repos);
+    }
 
     const lessons = await this.knowledgeService.listLessonTexts(
       BUILDER_LESSONS_IN_CONTEXT,
@@ -126,6 +157,13 @@ export class BuilderPipelineController {
       }
     }
 
+    // The frozen selection from the interview, so the build reads the same
+    // worked examples the PRD was written against.
+    const { digests: exemplars } =
+      await this.exemplarService.digestsForSession(session);
+
+    const milestone = await this.resolveMilestoneBlock(run);
+
     return buildBuildPrompt({
       sessionId: session.id,
       runId: run.id,
@@ -136,9 +174,201 @@ export class BuilderPipelineController {
       apiBaseUrl: this.configService.publicApiBaseUrl,
       sessionUrl: `${this.configService.adminBaseUrl}/builder/${session.id}`,
       lessons,
+      exemplars,
+      milestone,
       branches: run.branches,
       resumeContext,
       answeredQuestions,
+    });
+  }
+
+  /**
+   * The milestone context for an epic run: its slice of the PRD, what earlier
+   * milestones already delivered, and the branch to stack on.
+   */
+  private async resolveMilestoneBlock(run: BuilderBuildRun) {
+    if (!run.milestoneId) return null;
+
+    const milestones = await this.epicService.listBySession(run.sessionId);
+    const current = milestones.find((m) => m.id === run.milestoneId);
+    if (!current) return null;
+
+    const completed = milestones.filter(
+      (m) => m.position < current.position && m.status === 'COMPLETED',
+    );
+    // Stack on the last completed milestone's branch, so this slice can build
+    // on code nobody has merged yet.
+    const previous = completed[completed.length - 1];
+
+    return {
+      position: current.position,
+      total: milestones.length,
+      title: current.title,
+      summaryMd: current.summaryMd,
+      requirementIds: current.requirementIds ?? [],
+      technicalNotesMd: current.technicalNotesMd,
+      baseBranch: previous ? `builder/${previous.branchSlug}` : null,
+      completed: completed.map((m) => ({
+        position: m.position,
+        title: m.title,
+        branch: `builder/${m.branchSlug}`,
+      })),
+    };
+  }
+
+  /**
+   * The fix protocol for a run pointed at an open pull request.
+   *
+   * Feedback rows are claimed as IN_FIX on the way out: without that, a
+   * reconcile tick landing mid-run would count them as still pending and
+   * dispatch a second fix run at the same comments.
+   */
+  private async renderFixPrompt(
+    run: BuilderBuildRun,
+    session: BuilderSession,
+    doc: { draft: BuilderPrdDocument },
+    repos: typeof BUILDER_REPOS,
+  ): Promise<string> {
+    if (!run.pullRequestId) {
+      throw new BadRequestException(
+        'This fix run has no pull request attached, so there is nothing to fix.',
+      );
+    }
+    const pullRequest = await this.pullRequestService.getById(
+      run.pullRequestId,
+    );
+    const feedback = await this.pullRequestService.claimForFix(
+      run.pullRequestId,
+      run.id,
+    );
+    const settings = await this.settingsService.get();
+
+    return buildFixPrompt({
+      sessionId: session.id,
+      runId: run.id,
+      branchSlug: run.branchSlug,
+      prd: doc.draft,
+      repos,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      pullRequest: {
+        repo: pullRequest.repo,
+        branch: pullRequest.branch,
+        prNumber: pullRequest.prNumber,
+        prUrl: pullRequest.prUrl,
+        ciStatus: pullRequest.ciStatus ?? null,
+      },
+      feedback: feedback.map((item) => ({
+        id: item.id,
+        kind: item.kind,
+        author: item.author ?? null,
+        body: item.body ?? null,
+        path: item.path ?? null,
+        line: item.line ?? null,
+      })),
+      // Floored at 1: the counter is incremented at dispatch, so a prompt
+      // re-fetched before that landed would otherwise read "attempt 0 of 3".
+      attempt: Math.max(1, pullRequest.fixRunCount),
+      maxAttempts: settings.maxFixRunsPerPr ?? 3,
+    });
+  }
+
+  @Post('runs/:runId/feedback')
+  @ApiOperation({
+    summary: 'What a fix run did with each piece of review feedback',
+  })
+  async recordFeedbackOutcomes(
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Body() dto: RecordBuilderFeedbackOutcomesDto,
+  ) {
+    const run = await this.buildService.getRunOrFail(runId);
+    const updated = await this.pullRequestService.recordFeedbackOutcomes(
+      run.id,
+      run.sessionId,
+      dto.outcomes,
+    );
+    return { ok: true, updated };
+  }
+
+  @Get('runs/:runId/plan-prompt')
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  @ApiOperation({
+    summary: 'The planning prompt (stronger-model pass, read-only tools)',
+  })
+  async getPlanPrompt(
+    @Param('runId', ParseUUIDPipe) runId: string,
+  ): Promise<string> {
+    const { run, session, doc, repos } = await this.loadRunContext(runId);
+    const lessons = await this.knowledgeService.listLessonTexts(
+      BUILDER_LESSONS_IN_CONTEXT,
+      session.repos ?? undefined,
+    );
+    const resumeContext = run.resumeOfRunId
+      ? await this.buildService.buildResumeContext(run.resumeOfRunId)
+      : null;
+
+    return buildPlanPrompt({
+      sessionId: session.id,
+      runId: run.id,
+      branchSlug: run.branchSlug,
+      prd: doc.draft,
+      repos,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      lessons,
+      resumeContext,
+    });
+  }
+
+  @Get('runs/:runId/remediate-prompt')
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  @ApiOperation({
+    summary:
+      'The remediation prompt: the coder re-invoked with gate failures and reviewer objections',
+  })
+  async getRemediatePrompt(
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Query('round') round?: string,
+  ): Promise<string> {
+    const { run, session, doc, repos } = await this.loadRunContext(runId);
+    const phase = await this.buildService.getRunPhaseContext(run.id);
+
+    return buildRemediatePrompt({
+      sessionId: session.id,
+      runId: run.id,
+      branchSlug: run.branchSlug,
+      prd: doc.draft,
+      repos,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      round: Math.max(2, Number(round) || 2),
+      maxRounds: BUILDER_MAX_CODE_ITERATIONS,
+      gateFailures: phase.gateFailures,
+      objections: phase.objections,
+      planMd: phase.planMd,
+    });
+  }
+
+  @Get('runs/:runId/finalise-prompt')
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  @ApiOperation({
+    summary:
+      'The finalise prompt: E2E, push, PRs, report — after a green verify',
+  })
+  async getFinalisePrompt(
+    @Param('runId', ParseUUIDPipe) runId: string,
+  ): Promise<string> {
+    const { run, session, doc, repos } = await this.loadRunContext(runId);
+    const phase = await this.buildService.getRunPhaseContext(run.id);
+
+    return buildFinalisePrompt({
+      sessionId: session.id,
+      runId: run.id,
+      branchSlug: run.branchSlug,
+      prd: doc.draft,
+      repos,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      sessionUrl: `${this.configService.adminBaseUrl}/builder/${session.id}`,
+      gateSummary: phase.gateSummary,
+      verifierNotes: phase.verifierNotes,
+      planMd: phase.planMd,
     });
   }
 
@@ -151,20 +381,33 @@ export class BuilderPipelineController {
     @Param('runId', ParseUUIDPipe) runId: string,
     @Query('round') round?: string,
   ): Promise<string> {
-    const run = await this.buildService.getRunOrFail(runId);
-    const session = await this.sessionService.getSession(run.sessionId);
-    const doc = await this.prdService.getOrCreateDoc(
-      session.id,
-      session.createdBy,
-    );
-    const repos = (session.repos ?? [])
-      .map((repo) => findBuilderRepo(repo))
-      .filter(Boolean) as typeof BUILDER_REPOS;
+    const { run, doc, repos } = await this.loadRunContext(runId);
+    const requestedRound = Math.max(1, Number(round) || 1);
+    const phase = await this.buildService.getRunPhaseContext(run.id);
+
+    // Round 2 is told what round 1 raised, read back from the stored
+    // verification event. This branch was dead before the verdict was
+    // persisted, so every round reviewed as if it were the first.
+    const previousObjections =
+      requestedRound > 1
+        ? phase.objections.map((objection) =>
+            [
+              objection.severity ? `[${objection.severity}]` : '',
+              [objection.repo, objection.file].filter(Boolean).join(' · '),
+              objection.summary ?? '',
+            ]
+              .filter(Boolean)
+              .join(' ')
+              .trim(),
+          )
+        : undefined;
 
     return buildVerifyPrompt({
       prd: doc.draft,
       repos,
-      round: Math.max(1, Number(round) || 1),
+      round: requestedRound,
+      previousObjections,
+      gateSummary: phase.gateSummary,
     });
   }
 
@@ -267,6 +510,29 @@ export class BuilderPipelineController {
       return { ok: true, note: 'Run is paused for input; completion ignored.' };
     }
 
+    // A `done` needs a machine-verified gate behind it. Testing used to be
+    // prompt-instructed with the agent's own `test_output` string as the only
+    // evidence, so a run that skipped it entirely still settled SUCCEEDED.
+    // Refused rather than trusted: the gate is cheap and the claim is not
+    // checkable any other way.
+    if (
+      dto.outcome === 'done' &&
+      !(await this.buildService.hasPassingGate(run.id))
+    ) {
+      this.logger.warn(
+        `Builder run ${run.id} reported done with no passing test gate — failing it instead.`,
+      );
+      await this.buildService.settleRun(
+        run,
+        BuilderRunStatus.FAILED,
+        'The run reported success but no passing test gate was recorded, so nothing proves the change works.',
+      );
+      return {
+        ok: false,
+        note: 'No passing gate_result for this run. Run the test gate before completing.',
+      };
+    }
+
     await this.buildService.settleRun(
       run,
       dto.outcome === 'done'
@@ -279,6 +545,15 @@ export class BuilderPipelineController {
       await this.reportService.composeSessionReport(run.sessionId);
     }
     return { ok: true };
+  }
+
+  @Get('runs/:runId/budget')
+  @ApiOperation({
+    summary: 'Live spend against the session ceiling, checked between phases',
+  })
+  async getBudget(@Param('runId', ParseUUIDPipe) runId: string) {
+    const run = await this.buildService.getRunOrFail(runId);
+    return this.buildService.getBudgetState(run);
   }
 
   @Get('repo-commands')

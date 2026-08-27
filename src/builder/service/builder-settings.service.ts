@@ -45,8 +45,14 @@ export class BuilderSettingsService {
         | 'enabled'
         | 'maxConcurrentBuilds'
         | 'defaultBudgetUsd'
+        | 'maxRunnerMinutes'
+        | 'autoFixEnabled'
+        | 'maxFixRunsPerPr'
         | 'defaultEngine'
         | 'defaultModel'
+        | 'plannerModel'
+        | 'coderModel'
+        | 'verifierModel'
       >
     >,
     userId: number,

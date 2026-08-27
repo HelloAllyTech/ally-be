@@ -10,10 +10,13 @@ import { BuilderPrdDoc } from './entity/builder-prd-doc.entity';
 import { BuilderPrdVersion } from './entity/builder-prd-version.entity';
 import { BuilderRepoMap } from './entity/builder-repo-map.entity';
 import { BuilderLesson } from './entity/builder-lesson.entity';
+import { BuilderExemplar } from './entity/builder-exemplar.entity';
+import { BuilderMilestone } from './entity/builder-milestone.entity';
 import { BuilderBuildRun } from './entity/builder-build-run.entity';
 import { BuilderBuildEvent } from './entity/builder-build-event.entity';
 import { BuilderQuestion } from './entity/builder-question.entity';
 import { BuilderPullRequest } from './entity/builder-pull-request.entity';
+import { BuilderPrFeedback } from './entity/builder-pr-feedback.entity';
 import { BuilderReport } from './entity/builder-report.entity';
 import { BuilderSettings } from './entity/builder-settings.entity';
 import { BuilderNotification } from './entity/builder-notification.entity';
@@ -33,6 +36,12 @@ import { BuilderQuestionService } from './service/builder-question.service';
 import { BuilderPullRequestService } from './service/builder-pull-request.service';
 import { BuilderReportService } from './service/builder-report.service';
 import { BuilderSettingsService } from './service/builder-settings.service';
+import { BuilderLessonCuratorService } from './service/builder-lesson-curator.service';
+import { BuilderExemplarService } from './service/builder-exemplar.service';
+import { BuilderOutcomeService } from './service/builder-outcome.service';
+import { BuilderMetricsService } from './service/builder-metrics.service';
+import { BuilderEpicService } from './service/builder-epic.service';
+import { BuilderResearchService } from './service/builder-research.service';
 import { BuilderNotificationService } from './service/builder-notification.service';
 import { BuilderSchedulerRegistrationService } from './service/builder-scheduler-registration.service';
 import { BuilderSessionRepository } from './repository/builder-session.repository';
@@ -43,6 +52,7 @@ import {
 } from './repository/builder-prd.repository';
 import {
   BuilderLessonRepository,
+  BuilderExemplarRepository,
   BuilderRepoMapRepository,
 } from './repository/builder-knowledge.repository';
 import {
@@ -50,6 +60,7 @@ import {
   BuilderBuildRunRepository,
   BuilderNotificationRepository,
   BuilderPullRequestRepository,
+  BuilderPrFeedbackRepository,
   BuilderQuestionRepository,
   BuilderReportRepository,
 } from './repository/builder-build.repository';
@@ -79,10 +90,13 @@ import {
       BuilderPrdVersion,
       BuilderRepoMap,
       BuilderLesson,
+      BuilderExemplar,
+      BuilderMilestone,
       BuilderBuildRun,
       BuilderBuildEvent,
       BuilderQuestion,
       BuilderPullRequest,
+      BuilderPrFeedback,
       BuilderReport,
       BuilderSettings,
       BuilderNotification,
@@ -108,6 +122,12 @@ import {
     BuilderPullRequestService,
     BuilderReportService,
     BuilderSettingsService,
+    BuilderLessonCuratorService,
+    BuilderExemplarService,
+    BuilderOutcomeService,
+    BuilderMetricsService,
+    BuilderEpicService,
+    BuilderResearchService,
     BuilderNotificationService,
     BuilderSchedulerRegistrationService,
     BuilderSessionRepository,
@@ -116,10 +136,12 @@ import {
     BuilderPrdVersionRepository,
     BuilderRepoMapRepository,
     BuilderLessonRepository,
+    BuilderExemplarRepository,
     BuilderBuildRunRepository,
     BuilderBuildEventRepository,
     BuilderQuestionRepository,
     BuilderPullRequestRepository,
+    BuilderPrFeedbackRepository,
     BuilderReportRepository,
     BuilderNotificationRepository,
   ],

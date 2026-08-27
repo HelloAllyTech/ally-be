@@ -2,7 +2,13 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { scheduledTaskRegistry } from 'src/scheduler/registry/scheduled-task.registry';
 import { BuilderBuildService } from './builder-build.service';
 import { BuilderPullRequestService } from './builder-pull-request.service';
+import { BuilderOutcomeService } from './builder-outcome.service';
+import { BuilderLessonCuratorService } from './builder-lesson-curator.service';
 import {
+  BUILDER_CURATE_INTERVAL,
+  BUILDER_CURATE_TASK,
+  BUILDER_OUTCOME_INTERVAL,
+  BUILDER_OUTCOME_TASK,
   BUILDER_RECONCILE_INTERVAL,
   BUILDER_RECONCILE_TASK,
 } from '../constants/builder.constants';
@@ -12,6 +18,8 @@ export class BuilderSchedulerRegistrationService implements OnModuleInit {
   constructor(
     private readonly buildService: BuilderBuildService,
     private readonly pullRequestService: BuilderPullRequestService,
+    private readonly outcomeService: BuilderOutcomeService,
+    private readonly curatorService: BuilderLessonCuratorService,
   ) {}
 
   onModuleInit(): void {
@@ -37,6 +45,25 @@ export class BuilderSchedulerRegistrationService implements OnModuleInit {
       BUILDER_RECONCILE_INTERVAL,
       'builder-pr-reconcile',
       () => this.pullRequestService.reconcileOpenPullRequests(),
+    );
+
+    // The flywheel's catch-up. Merge and settle hooks do most of the work;
+    // this exists because a hook that failed, or a PR merged while the
+    // service was down, would otherwise leave a build's outcome permanently
+    // unlearned — and an outcome nobody records is a build nobody learns from.
+    scheduledTaskRegistry.register(
+      BUILDER_OUTCOME_INTERVAL,
+      BUILDER_OUTCOME_TASK,
+      () => this.outcomeService.sweep().then(() => undefined),
+    );
+
+    // Fold new candidate lessons into the curated set. Separate from the
+    // sweep so a batch harvested by a merge hook is still curated on a
+    // predictable cadence; no-ops on one COUNT when there is nothing new.
+    scheduledTaskRegistry.register(
+      BUILDER_CURATE_INTERVAL,
+      BUILDER_CURATE_TASK,
+      () => this.curatorService.consolidate().then(() => undefined),
     );
   }
 }

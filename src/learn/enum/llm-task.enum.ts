@@ -67,6 +67,18 @@ export enum LlmTask {
   // reported by the runner and recorded against BUILDER_BUILD).
   BUILDER_INTERVIEW = 'builder_interview',
   BUILDER_BUILD = 'builder_build',
+  // The flywheel's cheap passes: folding retrospective bullets into the
+  // curated lesson set, categorising how a build actually turned out, and
+  // picking which past lessons/exemplars a new session should see.
+  BUILDER_LESSON_CURATION = 'builder_lesson_curation',
+  BUILDER_OUTCOME_CATEGORISE = 'builder_outcome_categorise',
+  BUILDER_CONTEXT_SELECTION = 'builder_context_selection',
+  // Cutting a large PRD into independently shippable milestones.
+  BUILDER_EPIC_DECOMPOSITION = 'builder_epic_decomposition',
+  // The interview's one-shot research pass over the codebase.
+  BUILDER_RESEARCH = 'builder_research',
+  // Bounding interview context growth by summarising older turns.
+  BUILDER_INTERVIEW_SUMMARY = 'builder_interview_summary',
   // Track 2.0 quiz: grading one open-ended learner answer against its rubric.
   TRACK_QUIZ_GRADING = 'track_quiz_grading',
   TRANSLATE_SCENARIO = 'translate_scenario',

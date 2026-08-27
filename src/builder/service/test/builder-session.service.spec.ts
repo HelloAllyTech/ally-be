@@ -19,6 +19,8 @@ describe('BuilderSessionService', () => {
     applyPatch: jest.Mock;
     computeReadiness: jest.Mock;
   };
+  let settingsService: { get: jest.Mock };
+  let buildService: { findCancellableRun: jest.Mock; cancelRun: jest.Mock };
 
   beforeEach(() => {
     sessionRepository = {
@@ -29,6 +31,15 @@ describe('BuilderSessionService', () => {
       findOne: jest.fn(),
       update: jest.fn(),
       slugExists: jest.fn().mockResolvedValue(false),
+    };
+    settingsService = {
+      get: jest.fn().mockResolvedValue({ defaultBudgetUsd: null }),
+    };
+    // Cancelling now has to reach the build service — a DB-only cancel left
+    // the runner working for up to two hours.
+    buildService = {
+      findCancellableRun: jest.fn().mockResolvedValue(null),
+      cancelRun: jest.fn().mockResolvedValue(undefined),
     };
     prdService = {
       getOrCreateDoc: jest.fn().mockResolvedValue({ id: 'doc-1', draft: {} }),
@@ -44,9 +55,12 @@ describe('BuilderSessionService', () => {
     };
 
     service = new BuilderSessionService(
+      { builder: { defaultBudgetUsd: 25 } } as any,
       sessionRepository as any,
       {} as any,
       prdService as any,
+      settingsService as any,
+      buildService as any,
     );
   });
 
@@ -74,6 +88,27 @@ describe('BuilderSessionService', () => {
 
       expect(sessionRepository.create).toHaveBeenCalledWith(
         expect.objectContaining({ slug: 'build', title: 'New build' }),
+      );
+    });
+
+    it('stamps the configured default budget, so no session runs uncapped', async () => {
+      // `defaultBudgetUsd` was documented as applied at creation and never
+      // read, so the budget guard short-circuited on null for every session
+      // an admin did not manually cap.
+      await service.createSession(1, {});
+
+      expect(sessionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ budgetUsd: '25' }),
+      );
+    });
+
+    it('prefers the settings budget over the config default', async () => {
+      settingsService.get.mockResolvedValue({ defaultBudgetUsd: '10.0000' });
+
+      await service.createSession(1, {});
+
+      expect(sessionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ budgetUsd: '10.0000' }),
       );
     });
 
@@ -206,6 +241,12 @@ describe('BuilderSessionService', () => {
   });
 
   describe('cancelSession', () => {
+    const activeSession = {
+      id: 'session-1',
+      createdBy: 1,
+      status: BuilderSessionStatus.BUILDING,
+    };
+
     it('refuses to cancel an already-terminal session', async () => {
       sessionRepository.findOne.mockResolvedValue({
         id: 'session-1',
@@ -216,6 +257,46 @@ describe('BuilderSessionService', () => {
       await expect(
         service.cancelSession('session-1', 1),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it('stops the run, not just the row', async () => {
+      // A DB-only cancel left the runner working for up to two hours and its
+      // questions PENDING against a dead session.
+      sessionRepository.findOne.mockResolvedValue(activeSession);
+      buildService.findCancellableRun.mockResolvedValue({ id: 'run-7' });
+
+      await service.cancelSession('session-1', 1);
+
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.CANCELLED }),
+      );
+      expect(buildService.cancelRun).toHaveBeenCalledWith({ id: 'run-7' }, 1);
+    });
+
+    it('still cancels the session when stopping the run fails', async () => {
+      // The session is already CANCELLED in the DB by then; a GitHub hiccup
+      // must not turn a successful cancel into a 500 for the admin.
+      sessionRepository.findOne.mockResolvedValue(activeSession);
+      buildService.findCancellableRun.mockRejectedValue(new Error('GH down'));
+
+      await expect(service.cancelSession('session-1', 1)).resolves.toBeTruthy();
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.CANCELLED }),
+      );
+    });
+
+    it('is a no-op on the run side when nothing is in flight', async () => {
+      sessionRepository.findOne.mockResolvedValue({
+        ...activeSession,
+        status: BuilderSessionStatus.INTERVIEWING,
+      });
+      buildService.findCancellableRun.mockResolvedValue(null);
+
+      await service.cancelSession('session-1', 1);
+
+      expect(buildService.cancelRun).not.toHaveBeenCalled();
     });
   });
 });
