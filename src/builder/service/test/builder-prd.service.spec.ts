@@ -320,6 +320,74 @@ describe('BuilderPrdService', () => {
       );
     });
 
+    it('re-applies the patch to the post-race draft on a versionNumber collision, instead of overwriting it with stale content', async () => {
+      // Simulates the admin editing `problem` while the agent's update_prd
+      // tool call for `summary` is in flight: both compute nextVersionNumber
+      // from the same starting point, one write wins outright, and the
+      // other's transaction collides on (docId, versionNumber) and retries.
+      const winningDraft = {
+        ...createEmptyPrdDocument(),
+        problem: 'Concurrent admin edit that must survive the retry.',
+      };
+      const raceWinnerDoc = {
+        ...docStub(),
+        draft: winningDraft,
+        versionNumber: 1,
+      };
+
+      const versionRepo = {
+        create: jest.fn((v) => v),
+        save: jest
+          .fn()
+          .mockRejectedValueOnce({ code: '23505' })
+          .mockImplementationOnce(async (v) => v),
+      };
+      const docRepo = {
+        findOneOrFail: jest
+          .fn()
+          .mockResolvedValueOnce(docStub()) // attempt 1: current read
+          .mockResolvedValueOnce(raceWinnerDoc) // attempt 2: current read, after the other writer committed
+          .mockResolvedValueOnce({
+            ...raceWinnerDoc,
+            versionNumber: 2,
+          }), // final read after the successful update
+        update: jest.fn(),
+      };
+      dataSource.transaction.mockImplementation(async (work: any) =>
+        work({
+          getRepository: (entity: any) =>
+            entity?.name === 'BuilderPrdVersion' ? versionRepo : docRepo,
+        }),
+      );
+
+      await service.applyPatch(
+        docStub() as any,
+        [{ op: 'replace', path: '/summary', value: 'Agent edit.' }],
+        7,
+        BuilderPrdVersionAuthor.AGENT,
+      );
+
+      // The retried attempt must have applied the agent's patch on top of
+      // the freshly-read (post-race) draft, not the one computed before the
+      // collision — otherwise the admin's already-committed edit is silently
+      // discarded by the retry's write.
+      expect(versionRepo.save).toHaveBeenCalledTimes(2);
+      const retriedContent = versionRepo.save.mock.calls[1][0].content;
+      expect(retriedContent.problem).toBe(
+        'Concurrent admin edit that must survive the retry.',
+      );
+      expect(retriedContent.summary).toBe('Agent edit.');
+      expect(docRepo.update).toHaveBeenCalledWith(
+        'doc-1',
+        expect.objectContaining({
+          draft: expect.objectContaining({
+            problem: 'Concurrent admin edit that must survive the retry.',
+            summary: 'Agent edit.',
+          }),
+        }),
+      );
+    });
+
     it('reports the coercions it had to make, so update_prd can hand them back', async () => {
       const versionRepo = {
         create: jest.fn((v) => v),
