@@ -10,7 +10,8 @@ export interface UserFilterOptions {
   statuses?: string;
   search?: string;
   /**
-   * Opt in to listing holders of a platform role (SUPER_ADMIN_ROLES), who are
+   * Opt in to listing holders of a platform role (PLATFORM_TIER_ROLES — the live
+   * PLATFORM_ADMIN plus the three tiers the role collapse retired), who are
    * filtered out of this list by default so a tenant's user list only ever
    * shows that tenant's own people. Honoured only for callers who can manage
    * the super-admin tier (view:super-duper-admins) — see
