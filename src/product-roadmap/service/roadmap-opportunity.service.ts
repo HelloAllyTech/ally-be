@@ -7,7 +7,10 @@ import { In, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { User } from 'src/user/entity/user.entity';
-import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
+import {
+  PLATFORM_TIER_ROLES,
+  SUPER_ADMIN_ROLES,
+} from 'src/common/constants/user.constants';
 import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
 import {
   BugFindingSource,
@@ -223,7 +226,7 @@ export class RoadmapOpportunityService {
            INNER JOIN groups g ON g.id = ug."groupId"
            WHERE ug."userId" = "user"."id" AND g.name IN (:...roles)
          )`,
-        { roles: SUPER_ADMIN_ROLES },
+        { roles: PLATFORM_TIER_ROLES },
       )
       .getCount();
     return count > 0;
