@@ -41,7 +41,35 @@ export const SUPER_ADMIN_ROLES: UserRole[] = [
 export const SUPER_DUPER_ADMIN_ROLES: UserRole[] = [UserRole.SUPER_DUPER_ADMIN];
 
 /**
+ * Every group name that means "this is an Ally staff account", live and retired.
+ *
+ * The live one is PLATFORM_ADMIN. The other three are the tiers
+ * `CreatePlatformAdminRole1895000000001` collapsed into it, whose `groups` rows
+ * were deliberately left in place for rollback safety — so an account still
+ * carrying one is still staff, and any check that asks "is this person one of
+ * us?" has to name all four.
+ *
+ * Use this, NOT `SUPER_ADMIN_ROLES`, for that question. `SUPER_ADMIN_ROLES`
+ * lists only the two retired super-admin tiers, so an account promoted through
+ * the Ally admins screen since the collapse — which grants PLATFORM_ADMIN and
+ * nothing else — does not match it. A check written against that list reads
+ * every present-day admin as an ordinary app user, silently and plausibly.
+ * `TenantCohortMemberRepository` spells the same four names out in raw SQL for
+ * the same reason.
+ */
+export const PLATFORM_TIER_ROLES: UserRole[] = [
+  UserRole.PLATFORM_ADMIN,
+  UserRole.SUPER_ADMIN,
+  UserRole.SUPER_DUPER_ADMIN,
+  UserRole.MULTI_TENANT_ADMIN,
+];
+
+/**
  * Platform-tier groups that the generic role picker must never grant or revoke.
+ *
+ * The same four names as `PLATFORM_TIER_ROLES`, aliased rather than repeated so
+ * a fifth tier is added in one place — but kept as its own export because the
+ * rule it encodes is a different one, spelled out below.
  *
  * PLATFORM_ADMIN is owned by the dedicated Ally admins screen
  * (POST/DELETE /v1/platform-admins), which also writes the per-user feature
@@ -67,12 +95,7 @@ export const SUPER_DUPER_ADMIN_ROLES: UserRole[] = [UserRole.SUPER_DUPER_ADMIN];
  * that platform-admin.service itself calls to grant PLATFORM_ADMIN, so guarding
  * it would break the very screen this constant protects.
  */
-export const PLATFORM_MANAGED_ROLES: UserRole[] = [
-  UserRole.PLATFORM_ADMIN,
-  UserRole.SUPER_ADMIN,
-  UserRole.SUPER_DUPER_ADMIN,
-  UserRole.MULTI_TENANT_ADMIN,
-];
+export const PLATFORM_MANAGED_ROLES: UserRole[] = PLATFORM_TIER_ROLES;
 
 export enum AppType {
   APP = 'APP',
