@@ -65,8 +65,12 @@ export class CopilotToolsService {
           'Batch related edits into ONE call — the ops array carries many operations, so group ' +
           'everything you can decide together (all the basics, a whole persona, the full objective ' +
           'set) into a single patch instead of one field per call; that keeps the turn within its ' +
-          'tool round-trip budget. The result is validated; on failure you get the structured error ' +
-          'list back and MUST self-repair with a corrected patch.',
+          'tool round-trip budget. Batch to that granularity and no further: a call is ' +
+          'all-or-nothing, so a patch carrying the entire spec at once can run past the output ' +
+          'limit, and a call cut off there is discarded whole — the draft does not move and the ' +
+          'work is lost. Section-sized patches cost the same and each one lands. The result is ' +
+          'validated; on failure you get the structured error list back and MUST self-repair with ' +
+          'a corrected patch.',
         input_schema: {
           type: 'object',
           properties: {

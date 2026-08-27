@@ -21,11 +21,37 @@ import {
 import { BuilderSseFrame } from '../type/builder-sse.type';
 import { CreateBuilderMessageDto } from '../dto/builder.dto';
 import {
+  BUILDER_INTERVIEW_MAX_TOKENS,
   BUILDER_INTERVIEW_SUMMARY_AFTER_MESSAGES,
   BUILDER_INTERVIEW_SUMMARY_KEEP_RECENT,
-  BUILDER_MAX_TOKENS,
+  BUILDER_MAX_TRUNCATION_RETRIES,
   BUILDER_PROMPTS,
 } from '../constants/builder.constants';
+
+/**
+ * What the model is told when its own message was cut off at the output cap.
+ *
+ * It is phrased as a fact plus an instruction because the model cannot see
+ * the truncation from its side: the transcript it gets back looks like a
+ * message it chose to end, and without this it re-sends the same oversized
+ * patch and is cut off again.
+ */
+const BUILDER_TRUNCATION_NUDGE =
+  'Your previous message hit the output limit and was cut off before it ' +
+  'finished. Nothing from it was saved — any tool call it contained was ' +
+  'discarded, so the PRD is unchanged. Write it again as several smaller ' +
+  'update_prd calls, one section per call (requirements, then technicalPlan, ' +
+  'then testPlanMd), rather than one large patch.';
+
+/** Shown to the admin when a turn came back with nothing in it at all. */
+const BUILDER_EMPTY_TURN_ERROR =
+  'That turn came back empty — nothing was written and nothing was asked. ' +
+  'Send your message again.';
+
+/** Shown to the admin when a turn overruns the cap past recovering. */
+const BUILDER_TRUNCATION_ERROR =
+  "That turn ran past the response limit before anything was saved, so the PRD hasn't " +
+  'changed. Ask for one section at a time — "write the requirements only" — and it will fit.';
 
 /**
  * The PRD-interview turn loop: stream an Anthropic response, execute tool
@@ -156,6 +182,8 @@ export class BuilderInterviewOrchestratorService {
     let iterations = 0;
     let stopReason: string | null = null;
     let turnErrored = false;
+    let turnError: string | null = null;
+    let truncations = 0;
 
     /**
      * Flush the accumulators onto the assistant row.
@@ -178,6 +206,11 @@ export class BuilderInterviewOrchestratorService {
             iterations,
             stopReason,
             errored: turnErrored,
+            // Persisted, not just streamed: an `error` frame only reaches the
+            // tab that was open when it happened. Without the message on the
+            // row, a reload renders a failed turn as no turn at all — the
+            // admin sees their own message answered by silence.
+            ...(turnError ? { errorMessage: turnError } : {}),
             streaming: !final,
             ...(questions.length > 0 ? { questions: [...questions] } : {}),
           },
@@ -197,7 +230,7 @@ export class BuilderInterviewOrchestratorService {
 
         const stream = this.client.messages.stream({
           model,
-          max_tokens: BUILDER_MAX_TOKENS,
+          max_tokens: BUILDER_INTERVIEW_MAX_TOKENS,
           system,
           messages,
           tools,
@@ -226,6 +259,58 @@ export class BuilderInterviewOrchestratorService {
         const toolUses = contentBlocks.filter(
           (block) => block?.type === 'tool_use',
         );
+
+        // The model ran out of output room mid-message.
+        //
+        // This is the failure that looked like the agent going quiet: a
+        // `max_tokens` stop carries whatever text it managed plus, usually, a
+        // half-written tool_use whose `input` the SDK reconstructs by partial
+        // JSON parse. Executing that would apply an arbitrary fragment of the
+        // intended patch, so the block is dropped — but dropping it silently
+        // is what produced turns that announced "writing the requirements
+        // now" and wrote nothing, and turns that produced no row at all. Tell
+        // the model what happened and let it re-do the write in pieces.
+        if (stopReason === 'max_tokens') {
+          truncations += 1;
+          if (truncations > BUILDER_MAX_TRUNCATION_RETRIES) {
+            this.logger.error(
+              `Builder session ${sessionId}: model output still truncated at ` +
+                `${BUILDER_INTERVIEW_MAX_TOKENS} tokens after ` +
+                `${BUILDER_MAX_TRUNCATION_RETRIES} retries; ending the turn.`,
+            );
+            turnErrored = true;
+            turnError = BUILDER_TRUNCATION_ERROR;
+            yield {
+              event: 'error',
+              data: {
+                code: 'response_truncated',
+                message: BUILDER_TRUNCATION_ERROR,
+              },
+            };
+            break;
+          }
+
+          this.logger.warn(
+            `Builder session ${sessionId}: model output truncated at ` +
+              `${BUILDER_INTERVIEW_MAX_TOKENS} tokens ` +
+              `(retry ${truncations}/${BUILDER_MAX_TRUNCATION_RETRIES}, ` +
+              `${toolUses.length} tool call(s) discarded).`,
+          );
+
+          await checkpoint(false);
+
+          // Only the completed text blocks are replayed — a truncated
+          // tool_use has no result to pair it with, and the API rejects a
+          // dangling one.
+          const textBlocks = contentBlocks.filter(
+            (block) => block?.type === 'text' && block.text,
+          );
+          if (textBlocks.length > 0) {
+            messages.push({ role: 'assistant', content: textBlocks });
+          }
+          messages.push({ role: 'user', content: BUILDER_TRUNCATION_NUDGE });
+          continue;
+        }
 
         if (stopReason !== 'tool_use' || toolUses.length === 0) {
           break;
@@ -301,6 +386,21 @@ export class BuilderInterviewOrchestratorService {
         }
       }
 
+      // The iteration cap landed on a truncated pass, so the retry above never
+      // got to run. Nothing was applied, and the admin is owed the same
+      // explanation as the give-up path.
+      if (stopReason === 'max_tokens' && !turnErrored) {
+        turnErrored = true;
+        turnError = BUILDER_TRUNCATION_ERROR;
+        yield {
+          event: 'error',
+          data: {
+            code: 'response_truncated',
+            message: BUILDER_TRUNCATION_ERROR,
+          },
+        };
+      }
+
       // Budget exhausted while the model still wanted tools: one tool-less
       // pass so the turn ends in prose rather than a raw error.
       if (stopReason === 'tool_use') {
@@ -310,7 +410,7 @@ export class BuilderInterviewOrchestratorService {
         );
         const wrapUpStream = this.client.messages.stream({
           model,
-          max_tokens: BUILDER_MAX_TOKENS,
+          max_tokens: BUILDER_INTERVIEW_MAX_TOKENS,
           system,
           messages,
         });
@@ -335,10 +435,29 @@ export class BuilderInterviewOrchestratorService {
     } catch (error) {
       turnErrored = true;
       const message = error instanceof Error ? error.message : String(error);
+      turnError = message;
       this.logger.error(
         `Builder interview turn failed for session ${sessionId}: ${message}`,
       );
       yield { event: 'error', data: { code: 'interview_error', message } };
+    }
+
+    // Last backstop against a silent turn. Every known way of producing one is
+    // handled above, but the shape of the failure — the admin's message sitting
+    // there with nothing under it — is indistinguishable from the agent having
+    // hung, so anything that still gets here says so rather than settling
+    // quietly.
+    if (!turnErrored && textParts.length === 0 && allToolCalls.length === 0) {
+      turnErrored = true;
+      turnError = BUILDER_EMPTY_TURN_ERROR;
+      this.logger.warn(
+        `Builder session ${sessionId}: turn produced no text and no tool ` +
+          `calls (stop reason ${stopReason ?? 'none'}).`,
+      );
+      yield {
+        event: 'error',
+        data: { code: 'empty_turn', message: BUILDER_EMPTY_TURN_ERROR },
+      };
     }
 
     // Settle the assistant row even for aborted turns: `streaming` goes false

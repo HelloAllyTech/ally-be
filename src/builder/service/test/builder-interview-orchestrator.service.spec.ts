@@ -28,6 +28,9 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
   };
   let toolsService: { getToolDefinitions: jest.Mock; execute: jest.Mock };
   let streams: any[];
+  // Snapshotted per pass: the orchestrator mutates one `messages` array in
+  // place, so the mock's recorded args all point at its final state.
+  let requests: any[][];
 
   const drain = async (): Promise<any[]> => {
     const frames: any[] = [];
@@ -43,6 +46,7 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
 
   beforeEach(() => {
     streams = [];
+    requests = [];
     let appended = 0;
     messageRepository = {
       listBySession: jest.fn().mockResolvedValue([]),
@@ -99,7 +103,12 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     );
 
     (service as any).client = {
-      messages: { stream: jest.fn(() => streams.shift()) },
+      messages: {
+        stream: jest.fn((params: any) => {
+          requests.push(JSON.parse(JSON.stringify(params.messages)));
+          return streams.shift();
+        }),
+      },
     };
   });
 
@@ -188,6 +197,86 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
 
     expect(frames.some((frame) => frame.event === 'done')).toBe(true);
     expect(frames.some((frame) => frame.event === 'error')).toBe(false);
+  });
+
+  it('discards a truncated tool call and asks the model to split the write', async () => {
+    // The failure this guards: a `max_tokens` stop carries a half-written
+    // tool_use whose input the SDK reconstructs by partial parse. Running it
+    // would apply a fragment of the intended patch; dropping it silently used
+    // to end the turn with the PRD unchanged and nothing on screen.
+    streams = [
+      fakeStream(
+        [
+          { type: 'text', text: 'Writing up the requirements now.' },
+          {
+            type: 'tool_use',
+            id: 'tu-1',
+            name: 'update_prd',
+            input: { ops: [{ op: 'add', path: '/requirements/-' }] },
+          },
+        ],
+        'max_tokens',
+      ),
+      fakeStream(
+        [{ type: 'tool_use', id: 'tu-2', name: 'update_prd', input: {} }],
+        'tool_use',
+      ),
+      fakeStream([{ type: 'text', text: 'Requirements are in.' }], 'end_turn'),
+    ];
+
+    const frames = await drain();
+
+    // The truncated call never ran; the retry's did.
+    expect(toolsService.execute).toHaveBeenCalledTimes(1);
+    expect(toolsService.execute.mock.calls[0][0]).toBe('update_prd');
+    expect(frames.some((frame) => frame.event === 'error')).toBe(false);
+
+    // The retry pass was told why, in the same request that carries the
+    // partial prose — without the nudge the model re-sends the same patch.
+    const retry = requests[1];
+    const nudge = retry[retry.length - 1];
+    expect(nudge.role).toBe('user');
+    expect(nudge.content).toContain('cut off');
+    // A truncated tool_use has no result to pair it with, so it must not be
+    // replayed — the API rejects a dangling one.
+    const replayed = retry[retry.length - 2];
+    expect(replayed.role).toBe('assistant');
+    expect(replayed.content).toEqual([
+      { type: 'text', text: 'Writing up the requirements now.' },
+    ]);
+  });
+
+  it('gives up with an actionable error when every retry is truncated too', async () => {
+    streams = [
+      fakeStream([{ type: 'text', text: 'Writing.' }], 'max_tokens'),
+      fakeStream([{ type: 'text', text: 'Writing.' }], 'max_tokens'),
+      fakeStream([{ type: 'text', text: 'Writing.' }], 'max_tokens'),
+    ];
+
+    const frames = await drain();
+
+    const error = frames.find((frame) => frame.event === 'error');
+    expect(error?.data.code).toBe('response_truncated');
+    // Three passes: the original plus BUILDER_MAX_TRUNCATION_RETRIES.
+    expect((service as any).client.messages.stream).toHaveBeenCalledTimes(3);
+
+    // Persisted, not only streamed — an `error` frame reaches the open tab and
+    // nothing else, so a reload would otherwise show the turn as silence.
+    const calls = messageRepository.checkpointMessage.mock.calls;
+    const final = calls[calls.length - 1][1];
+    expect(final.metadata.errored).toBe(true);
+    expect(final.metadata.errorMessage).toContain('one section at a time');
+  });
+
+  it('flags a turn that came back with nothing in it', async () => {
+    streams = [fakeStream([], 'end_turn')];
+
+    const frames = await drain();
+
+    const error = frames.find((frame) => frame.event === 'error');
+    expect(error?.data.code).toBe('empty_turn');
+    const calls = messageRepository.checkpointMessage.mock.calls;
+    expect(calls[calls.length - 1][1].metadata.errored).toBe(true);
   });
 
   it('closes a row left open by a turn that never came back', async () => {

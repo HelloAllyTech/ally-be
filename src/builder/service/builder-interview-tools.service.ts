@@ -148,6 +148,11 @@ export class BuilderInterviewToolsService {
           'interrupted. Paths are JSON Pointers into the PRD document, e.g. ' +
           '"/problem", "/requirements/-", "/assumptions/0/status". On failure ' +
           'you get the failing operation index back and must self-repair.\n' +
+          'Keep each call to one section. A tool call is all-or-nothing: one ' +
+          'that writes the requirements, the technical plan and the test plan ' +
+          'together can run past the output limit, and a call cut off there is ' +
+          'discarded whole — the document does not move and the work is lost. ' +
+          'Three calls in a row cost the same and each one lands.\n' +
           'Shapes matter, because three readers render this document as text: ' +
           'openQuestions and every acceptanceCriteria are arrays of plain ' +
           'sentences, not objects — write "Which tenant owns this?", never ' +
