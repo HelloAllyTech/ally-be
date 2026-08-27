@@ -33,4 +33,16 @@ export class UpdateUserPreferencesDto {
   @IsOptional()
   @IsBoolean()
   streak_reminder_enabled?: boolean;
+
+  // Per-user ordering of the Organization Metrics chart/table blocks
+  // (ally-helpline-dashboard Statistics page, Org tab). Array of block ids
+  // from ORG_METRICS_BLOCK_IDS in ally-web; validated loosely here (just
+  // "array of strings") so adding/removing a block needs no backend deploy —
+  // the frontend drops unknown/stale ids and appends any missing ones at the
+  // end (see OrganizationMetrics.tsx's resolveLayout).
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @ArrayUnique()
+  org_metrics_layout?: string[];
 }
