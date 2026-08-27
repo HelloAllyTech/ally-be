@@ -79,4 +79,21 @@ export const ROLEPLAY_COPILOT_PROMPTS = {
   SPEC_COMPILER: 'roleplay_copilot_spec_compiler',
 } as const;
 
-export const COPILOT_MAX_TOKENS = 8192;
+/**
+ * Output cap for one copilot model pass.
+ *
+ * A tool call is all-or-nothing: an `update_spec` patch cut off at the cap is
+ * discarded whole, so the cap is not a budget here, it is a cliff. The tool
+ * deliberately asks for batched patches (a whole persona, the full objective
+ * set) to stay inside the round-trip budget, which puts a substantial build
+ * turn well past 8192. The truncation handler in the orchestrator still
+ * exists because a bigger cap moves the cliff rather than removing it.
+ */
+export const COPILOT_MAX_TOKENS = 16_000;
+
+/**
+ * How many times one turn may be cut off at the cap before it gives up and
+ * says so. Each retry tells the model it was truncated and asks it to split
+ * the patch; a third attempt that still overruns needs a person.
+ */
+export const COPILOT_MAX_TRUNCATION_RETRIES = 2;

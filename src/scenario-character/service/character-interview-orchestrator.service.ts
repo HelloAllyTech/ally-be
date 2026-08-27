@@ -17,8 +17,37 @@ import { CharacterInterviewSseFrame } from '../type/character-interview-sse.type
 import { CreateCharacterInterviewMessageDto } from '../dto/character-interview.dto';
 import {
   CHARACTER_INTERVIEW_MAX_TOKENS,
+  CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES,
   CHARACTER_INTERVIEW_PROMPTS,
 } from '../constants/character-interview.constants';
+
+/**
+ * What the model is told when its own message was cut off at the output cap.
+ *
+ * The model cannot see the truncation from its side — the transcript it gets
+ * back looks like a message it chose to end — so without this it re-sends the
+ * same oversized draft and is cut off again. Unlike a patch-based agent it
+ * has nothing to split: `save_character_draft` is one submission, so the only
+ * available instruction is to write less of it.
+ */
+const CHARACTER_INTERVIEW_TRUNCATION_NUDGE =
+  'Your previous message hit the output limit and was cut off before it ' +
+  'finished. Nothing from it was saved — any tool call it contained was ' +
+  'discarded, so no character draft exists. Send save_character_draft again, ' +
+  'shorter: keep the strongest knowledge sources rather than all of them, and ' +
+  'tighten the longest ones. A saved character the admin can edit beats a ' +
+  'complete one that never lands.';
+
+/** Shown to the admin when a turn overruns the cap past recovering. */
+const CHARACTER_INTERVIEW_TRUNCATION_ERROR =
+  'That turn ran past the response limit before anything was saved, so no ' +
+  'character was created. Your answers are all still here — ask for the ' +
+  'character again and it will be written more concisely.';
+
+/** Shown to the admin when a turn came back with nothing in it at all. */
+const CHARACTER_INTERVIEW_EMPTY_TURN_ERROR =
+  'That turn came back empty — nothing was written and nothing was asked. ' +
+  'Send your message again.';
 
 /**
  * The interview turn loop (modeled on CopilotOrchestratorService): stream an
@@ -112,6 +141,8 @@ export class CharacterInterviewOrchestratorService {
     let iterations = 0;
     let stopReason: string | null = null;
     let turnErrored = false;
+    let turnError: string | null = null;
+    let truncations = 0;
 
     try {
       for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -148,6 +179,59 @@ export class CharacterInterviewOrchestratorService {
         const toolUses = contentBlocks.filter(
           (block) => block?.type === 'tool_use',
         );
+
+        // The model ran out of output room mid-message.
+        //
+        // A `max_tokens` stop carries whatever text it managed plus, usually,
+        // a half-written tool_use whose `input` the SDK reconstructs by
+        // partial JSON parse — present, and unusable. Executing it would save
+        // an arbitrary fragment of a character; dropping it silently (which is
+        // what this loop used to do) ends the turn with the agent having
+        // announced a draft it never wrote. Tell the model and let it retry
+        // smaller.
+        if (stopReason === 'max_tokens') {
+          truncations += 1;
+          if (truncations > CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES) {
+            this.logger.error(
+              `Interview session ${sessionId}: model output still truncated ` +
+                `at ${CHARACTER_INTERVIEW_MAX_TOKENS} tokens after ` +
+                `${CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES} retries; ` +
+                'ending the turn.',
+            );
+            turnErrored = true;
+            turnError = CHARACTER_INTERVIEW_TRUNCATION_ERROR;
+            yield {
+              event: 'error',
+              data: {
+                code: 'response_truncated',
+                message: CHARACTER_INTERVIEW_TRUNCATION_ERROR,
+              },
+            };
+            break;
+          }
+
+          this.logger.warn(
+            `Interview session ${sessionId}: model output truncated at ` +
+              `${CHARACTER_INTERVIEW_MAX_TOKENS} tokens ` +
+              `(retry ${truncations}/${CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES}, ` +
+              `${toolUses.length} tool call(s) discarded).`,
+          );
+
+          // Only the completed text blocks are replayed — a truncated
+          // tool_use has no result to pair it with, and the API rejects a
+          // dangling one.
+          const textBlocks = contentBlocks.filter(
+            (block) => block?.type === 'text' && block.text,
+          );
+          if (textBlocks.length > 0) {
+            messages.push({ role: 'assistant', content: textBlocks });
+          }
+          messages.push({
+            role: 'user',
+            content: CHARACTER_INTERVIEW_TRUNCATION_NUDGE,
+          });
+          continue;
+        }
 
         if (stopReason !== 'tool_use' || toolUses.length === 0) {
           break;
@@ -216,6 +300,21 @@ export class CharacterInterviewOrchestratorService {
         }
       }
 
+      // The iteration cap landed on a truncated pass, so the retry above never
+      // got to run. Nothing was saved, and the admin is owed the same
+      // explanation as the give-up path.
+      if (stopReason === 'max_tokens' && !turnErrored) {
+        turnErrored = true;
+        turnError = CHARACTER_INTERVIEW_TRUNCATION_ERROR;
+        yield {
+          event: 'error',
+          data: {
+            code: 'response_truncated',
+            message: CHARACTER_INTERVIEW_TRUNCATION_ERROR,
+          },
+        };
+      }
+
       // We exhausted the round-trip budget while the model still wanted
       // tools. Make one final tool-less pass so the agent wraps up in prose
       // instead of dying with a raw error.
@@ -251,12 +350,33 @@ export class CharacterInterviewOrchestratorService {
     } catch (error) {
       turnErrored = true;
       const message = error instanceof Error ? error.message : String(error);
+      turnError = message;
       this.logger.error(
         `Interview turn failed for session ${sessionId}: ${message}`,
       );
       yield {
         event: 'error',
         data: { code: 'interview_error', message },
+      };
+    }
+
+    // Last backstop against a silent turn. Every known way of producing one is
+    // handled above, but the shape of the failure — the admin's message with
+    // nothing under it — is indistinguishable from the agent having hung, so
+    // anything that still gets here says so rather than settling quietly.
+    if (!turnErrored && textParts.length === 0 && allToolCalls.length === 0) {
+      turnErrored = true;
+      turnError = CHARACTER_INTERVIEW_EMPTY_TURN_ERROR;
+      this.logger.warn(
+        `Interview session ${sessionId}: turn produced no text and no tool ` +
+          `calls (stop reason ${stopReason ?? 'none'}).`,
+      );
+      yield {
+        event: 'error',
+        data: {
+          code: 'empty_turn',
+          message: CHARACTER_INTERVIEW_EMPTY_TURN_ERROR,
+        },
       };
     }
 
@@ -272,6 +392,10 @@ export class CharacterInterviewOrchestratorService {
           iterations,
           stopReason,
           errored: turnErrored,
+          // Persisted, not just streamed: an `error` frame only reaches the
+          // tab that was open when it happened, so without the message on the
+          // row a reload renders a failed turn as no turn at all.
+          ...(turnError ? { errorMessage: turnError } : {}),
           ...(questions.length > 0 ? { questions } : {}),
           ...(characterDraft ? { characterDraft } : {}),
         },

@@ -16,6 +16,9 @@ describe('CopilotOrchestratorService', () => {
   let toolsExecute: jest.Mock;
   let usageRecord: jest.Mock;
   let seq: number;
+  // Snapshotted per pass: the orchestrator mutates one `messages` array in
+  // place, so jest's recorded call args all point at its final state.
+  let requests: any[][];
 
   const makeStream = (blocks: any[], stopReason: string) => ({
     async *[Symbol.asyncIterator]() {
@@ -44,6 +47,7 @@ describe('CopilotOrchestratorService', () => {
 
   beforeEach(() => {
     seq = 0;
+    requests = [];
     streamMock = jest.fn();
     appendMessage = jest.fn().mockImplementation(async () => ({ seq: ++seq }));
     toolsExecute = jest.fn().mockResolvedValue({
@@ -98,7 +102,14 @@ describe('CopilotOrchestratorService', () => {
       llmUsage,
       testRunService,
     );
-    (service as any).client = { messages: { stream: streamMock } };
+    (service as any).client = {
+      messages: {
+        stream: (params: any) => {
+          requests.push(JSON.parse(JSON.stringify(params.messages)));
+          return streamMock(params);
+        },
+      },
+    };
   });
 
   const collect = async (): Promise<CopilotSseFrame[]> => {
@@ -269,6 +280,79 @@ describe('CopilotOrchestratorService', () => {
     ]);
     // endTurn means no second model round-trip.
     expect(streamMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards a truncated tool call and asks the model to split the patch', async () => {
+    // A `max_tokens` stop carries a half-written tool_use whose input the SDK
+    // reconstructs by partial parse. Applying it would write a fragment of the
+    // patch; dropping it silently used to end the turn with the spec
+    // unchanged and the copilot claiming otherwise.
+    streamMock
+      .mockReturnValueOnce(
+        makeStream(
+          [
+            { type: 'text', text: 'Rewriting the persona now.' },
+            toolUseBlock('tu-1'),
+          ],
+          'max_tokens',
+        ),
+      )
+      .mockReturnValueOnce(makeStream([toolUseBlock('tu-2')], 'tool_use'))
+      .mockReturnValueOnce(
+        makeStream([{ type: 'text', text: 'Persona updated.' }], 'end_turn'),
+      );
+
+    const frames = await collect();
+
+    // The truncated call never ran; the retry's did.
+    expect(toolsExecute).toHaveBeenCalledTimes(1);
+    expect(frames.map((frame) => frame.event)).not.toContain('error');
+
+    // The retry pass was told why — without the nudge the model re-sends the
+    // same oversized patch and is cut off again.
+    const retry = requests[1];
+    const nudge = retry[retry.length - 1];
+    expect(nudge.role).toBe('user');
+    expect(nudge.content).toContain('cut off');
+    // A truncated tool_use has no result to pair it with, so only the
+    // completed text is replayed — the API rejects a dangling one.
+    const replayed = retry[retry.length - 2];
+    expect(replayed.role).toBe('assistant');
+    expect(replayed.content).toEqual([
+      { type: 'text', text: 'Rewriting the persona now.' },
+    ]);
+  });
+
+  it('gives up with an actionable error when every retry is truncated too', async () => {
+    streamMock.mockReturnValue(
+      makeStream([{ type: 'text', text: 'Writing.' }], 'max_tokens'),
+    );
+
+    const frames = await collect();
+
+    const error = frames.find((frame) => frame.event === 'error');
+    expect(error?.data.code).toBe('response_truncated');
+    // Bounded, and no tool-less wrap-up pass on top: that one exists to let a
+    // model that ran out of round-trips summarise, and letting it speak after
+    // a truncation would narrate a spec change that never happened.
+    expect(streamMock).toHaveBeenCalledTimes(3);
+
+    // Persisted, not only streamed — an `error` frame reaches the open tab and
+    // nothing else, so a reload would otherwise show the turn as silence.
+    const assistantRow = appendMessage.mock.calls[1][1];
+    expect(assistantRow.metadata.errored).toBe(true);
+    expect(assistantRow.metadata.errorMessage).toContain('one part at a time');
+  });
+
+  it('flags a turn that came back with nothing in it', async () => {
+    streamMock.mockReturnValue(makeStream([], 'end_turn'));
+
+    const frames = await collect();
+
+    expect(frames.find((frame) => frame.event === 'error')?.data.code).toBe(
+      'empty_turn',
+    );
+    expect(appendMessage.mock.calls[1][1].metadata.errored).toBe(true);
   });
 
   it('surfaces stream failures as an error frame and still persists + closes', async () => {

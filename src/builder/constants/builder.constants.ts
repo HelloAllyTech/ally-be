@@ -13,6 +13,28 @@ export const BUILDER_SSE_PING_INTERVAL_MS = 15_000;
 export const BUILDER_MAX_TOKENS = 8192;
 
 /**
+ * Output cap for one interview model pass, deliberately larger than the
+ * shared cap above.
+ *
+ * The interview writes the PRD through `update_prd`, and a tool call is
+ * all-or-nothing: a patch cut off at the cap is discarded whole, so the cap
+ * is not a budget here, it is a cliff. A turn that writes requirements, the
+ * technical plan and the test plan together runs past 8k comfortably, and
+ * every such turn used to end with the agent announcing the write and the
+ * document not moving. The truncation handler below still exists because a
+ * bigger cap moves the cliff rather than removing it.
+ */
+export const BUILDER_INTERVIEW_MAX_TOKENS = 16_000;
+
+/**
+ * How many times one turn may be cut off at the output cap before it gives
+ * up and says so. Each retry tells the model what happened and asks it to
+ * split the write; a third attempt that still overruns is not going to be
+ * fixed by a fourth.
+ */
+export const BUILDER_MAX_TRUNCATION_RETRIES = 2;
+
+/**
  * When the interview transcript starts being summarised, and how much of the
  * recent conversation is always replayed verbatim.
  *

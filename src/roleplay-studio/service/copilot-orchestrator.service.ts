@@ -21,8 +21,34 @@ import { CreateCopilotMessageDto } from '../dto/copilot.dto';
 import {
   AUTO_IMPROVE_MESSAGE_TEMPLATE,
   COPILOT_MAX_TOKENS,
+  COPILOT_MAX_TRUNCATION_RETRIES,
   ROLEPLAY_COPILOT_PROMPTS,
 } from '../constants/roleplay-studio.constants';
+
+/**
+ * What the model is told when its own message was cut off at the output cap.
+ *
+ * The model cannot see the truncation from its side — the transcript it gets
+ * back looks like a message it chose to end — so without this it re-sends the
+ * same oversized patch and is cut off again. `update_spec` otherwise asks for
+ * batched patches, so the instruction has to override that here specifically.
+ */
+const COPILOT_TRUNCATION_NUDGE =
+  'Your previous message hit the output limit and was cut off before it ' +
+  'finished. Nothing from it was saved — any tool call it contained was ' +
+  'discarded, so the spec is unchanged. Send it again split across several ' +
+  'smaller update_spec calls (one section per call) instead of one large ' +
+  'patch. Each one lands on its own.';
+
+/** Shown to the trainer when a turn overruns the cap past recovering. */
+const COPILOT_TRUNCATION_ERROR =
+  "That turn ran past the response limit before anything was saved, so the spec hasn't " +
+  'changed. Ask for one part at a time — "just the persona" — and it will fit.';
+
+/** Shown to the trainer when a turn came back with nothing in it at all. */
+const COPILOT_EMPTY_TURN_ERROR =
+  'That turn came back empty — nothing was changed and nothing was asked. ' +
+  'Send your message again.';
 
 /**
  * The copilot turn loop: stream an Anthropic response, execute tool calls
@@ -139,6 +165,8 @@ export class CopilotOrchestratorService {
     let iterations = 0;
     let stopReason: string | null = null;
     let turnErrored = false;
+    let turnError: string | null = null;
+    let truncations = 0;
 
     try {
       for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -175,6 +203,55 @@ export class CopilotOrchestratorService {
         const toolUses = contentBlocks.filter(
           (block) => block?.type === 'tool_use',
         );
+
+        // The model ran out of output room mid-message.
+        //
+        // A `max_tokens` stop carries whatever text it managed plus, usually,
+        // a half-written tool_use whose `input` the SDK reconstructs by
+        // partial JSON parse — present, and unusable. Applying it would write
+        // an arbitrary fragment of the patch; dropping it silently (which is
+        // what this loop used to do) ends the turn with the copilot having
+        // announced an edit it never made. Tell the model and let it retry in
+        // pieces.
+        if (stopReason === 'max_tokens') {
+          truncations += 1;
+          if (truncations > COPILOT_MAX_TRUNCATION_RETRIES) {
+            this.logger.error(
+              `Copilot session ${sessionId}: model output still truncated at ` +
+                `${COPILOT_MAX_TOKENS} tokens after ` +
+                `${COPILOT_MAX_TRUNCATION_RETRIES} retries; ending the turn.`,
+            );
+            turnErrored = true;
+            turnError = COPILOT_TRUNCATION_ERROR;
+            yield {
+              event: 'error',
+              data: {
+                code: 'response_truncated',
+                message: COPILOT_TRUNCATION_ERROR,
+              },
+            };
+            break;
+          }
+
+          this.logger.warn(
+            `Copilot session ${sessionId}: model output truncated at ` +
+              `${COPILOT_MAX_TOKENS} tokens ` +
+              `(retry ${truncations}/${COPILOT_MAX_TRUNCATION_RETRIES}, ` +
+              `${toolUses.length} tool call(s) discarded).`,
+          );
+
+          // Only the completed text blocks are replayed — a truncated
+          // tool_use has no result to pair it with, and the API rejects a
+          // dangling one.
+          const textBlocks = contentBlocks.filter(
+            (block) => block?.type === 'text' && block.text,
+          );
+          if (textBlocks.length > 0) {
+            messages.push({ role: 'assistant', content: textBlocks });
+          }
+          messages.push({ role: 'user', content: COPILOT_TRUNCATION_NUDGE });
+          continue;
+        }
 
         if (stopReason !== 'tool_use' || toolUses.length === 0) {
           break;
@@ -247,6 +324,21 @@ export class CopilotOrchestratorService {
         }
       }
 
+      // The iteration cap landed on a truncated pass, so the retry above never
+      // got to run. Nothing was applied, and the trainer is owed the same
+      // explanation as the give-up path.
+      if (stopReason === 'max_tokens' && !turnErrored) {
+        turnErrored = true;
+        turnError = COPILOT_TRUNCATION_ERROR;
+        yield {
+          event: 'error',
+          data: {
+            code: 'response_truncated',
+            message: COPILOT_TRUNCATION_ERROR,
+          },
+        };
+      }
+
       // We exhausted the round-trip budget while the model still wanted tools.
       // Instead of dying with a raw error, make one final tool-less pass so the
       // copilot summarizes what it changed and what's left — the trainer can
@@ -283,12 +375,30 @@ export class CopilotOrchestratorService {
     } catch (error) {
       turnErrored = true;
       const message = error instanceof Error ? error.message : String(error);
+      turnError = message;
       this.logger.error(
         `Copilot turn failed for session ${sessionId}: ${message}`,
       );
       yield {
         event: 'error',
         data: { code: 'copilot_error', message },
+      };
+    }
+
+    // Last backstop against a silent turn. Every known way of producing one is
+    // handled above, but the shape of the failure — the trainer's message with
+    // nothing under it — is indistinguishable from the copilot having hung, so
+    // anything that still gets here says so rather than settling quietly.
+    if (!turnErrored && textParts.length === 0 && allToolCalls.length === 0) {
+      turnErrored = true;
+      turnError = COPILOT_EMPTY_TURN_ERROR;
+      this.logger.warn(
+        `Copilot session ${sessionId}: turn produced no text and no tool ` +
+          `calls (stop reason ${stopReason ?? 'none'}).`,
+      );
+      yield {
+        event: 'error',
+        data: { code: 'empty_turn', message: COPILOT_EMPTY_TURN_ERROR },
       };
     }
 
@@ -308,6 +418,10 @@ export class CopilotOrchestratorService {
           iterations,
           stopReason,
           errored: turnErrored,
+          // Persisted, not just streamed: an `error` frame only reaches the
+          // tab that was open when it happened, so without the message on the
+          // row a reload renders a failed turn as no turn at all.
+          ...(turnError ? { errorMessage: turnError } : {}),
           ...(questions.length > 0 ? { questions } : {}),
           ...(behaviourReviews.length > 0 ? { behaviourReviews } : {}),
         },
