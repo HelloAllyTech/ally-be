@@ -11,12 +11,12 @@ export class RoadmapAllocationRepository extends Repository<RoadmapAllocation> {
   /**
    * Serialise this user's allocation writes for this period inside the current transaction.
    *
-   * MUST be called before summing in setCoins(). Without it, two concurrent writes both read
+   * MUST be called before summing in setVotes(). Without it, two concurrent writes both read
    * a stale total under READ COMMITTED and the service-level cap check passes for both — the
    * DB trigger then rejects one of them with a 500-shaped error instead of the API returning a
-   * clean 422. That is not a theoretical race: the coin control is a number input with
-   * debounced autosave, so the same person with two tabs open, a double-fired debounce, or an
-   * axios retry all produce concurrent writes for the same (userId, periodKey).
+   * clean 422. That is not a theoretical race: the vote control debounces autosave, so the
+   * same person with two tabs open, a double-fired debounce, or an axios retry all produce
+   * concurrent writes for the same (userId, periodKey).
    *
    * An advisory lock rather than SELECT ... FOR UPDATE because FOR UPDATE cannot lock the
    * FIRST insert in a period — there are no rows yet to lock.
@@ -37,7 +37,7 @@ export class RoadmapAllocationRepository extends Repository<RoadmapAllocation> {
   }
 
   /**
-   * Coins this user has already committed in this period, EXCLUDING the given opportunity.
+   * Votes this user has already cast in this period, EXCLUDING the given opportunity.
    *
    * The exclusion is what makes "raise my own vote from 40 to 60 while holding 40 elsewhere"
    * legal: without it the row being updated is counted twice and a legitimate edit fails with
@@ -51,7 +51,7 @@ export class RoadmapAllocationRepository extends Repository<RoadmapAllocation> {
     excludeOpportunityId?: string,
   ): Promise<number> {
     const rows = await manager.query<{ total: string | null }[]>(
-      `SELECT COALESCE(SUM(coins), 0) AS total
+      `SELECT COALESCE(SUM(votes), 0) AS total
          FROM roadmap_allocations
         WHERE "userId" = $1
           AND "periodKey" = $2
@@ -61,20 +61,20 @@ export class RoadmapAllocationRepository extends Repository<RoadmapAllocation> {
     return Number(rows[0]?.total ?? 0);
   }
 
-  /** Total coins this user has committed in the period, across all opportunities. */
+  /** Total votes this user has cast in the period, across all opportunities. */
   async sumForPeriod(userId: number, periodKey: string): Promise<number> {
     const rows = await this.dataSource.query<{ total: string | null }[]>(
-      `SELECT COALESCE(SUM(coins), 0) AS total
+      `SELECT COALESCE(SUM(votes), 0) AS total
          FROM roadmap_allocations WHERE "userId" = $1 AND "periodKey" = $2`,
       [userId, periodKey],
     );
     return Number(rows[0]?.total ?? 0);
   }
 
-  /** Sum of every user's coins on one opportunity, across every period — the priority score. */
+  /** Sum of every user's votes on one opportunity, across every period — the priority score. */
   async scoreForOpportunity(opportunityId: string): Promise<number> {
     const rows = await this.dataSource.query<{ total: string | null }[]>(
-      `SELECT COALESCE(SUM(coins), 0) AS total
+      `SELECT COALESCE(SUM(votes), 0) AS total
          FROM roadmap_allocations WHERE "opportunityId" = $1`,
       [opportunityId],
     );

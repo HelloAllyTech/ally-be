@@ -439,12 +439,12 @@ that resends a growing transcript every turn generates a lot of cache-write toke
 
 ### 3.13 Product Roadmap (`product-roadmap`)
 
-Coin-voted idea and bug board, migrated from a standalone Supabase app (migration `1871000000000`
+Vote-based idea and bug board, migrated from a standalone Supabase app (migration `1871000000000`
 onward). **Not multi-tenant** — this is Ally's own internal roadmap, so every table here extends
 `BaseWithoutTenant` and carries no `tenantId`.
 
 Two things about this domain surprise people. First, **there is no `priorityScore` column**: the score
-is `SUM(coins)` computed as a SQL aggregate on every read, because the code most likely to get the
+is `SUM(votes)` computed as a SQL aggregate on every read, because the code most likely to get the
 arithmetic wrong is split/merge (which moves hundreds of allocation rows in one transaction) and a
 wrong counter can't be recovered without a rebuild job. If it ever needs to be faster the next step is
 a MATERIALIZED VIEW, never a counter. Second, **`productGoal` and `owner` are FKs BY NAME**
@@ -454,7 +454,7 @@ make eight migrated views silently match nothing.
 | Table | Base | Key columns | Notes |
 |-------|------|-------------|-------|
 | `roadmap_opportunities` | BaseWithoutTenant | `id` (uuid), `description` (text, CHECK ≤1000 & non-blank), `type` (`idea`/`bug`), `stage` (`new`/`prioritised`/`under_development`/`released`/`archived`), `productGoal` (text, FK **by name** → `roadmap_product_goals.name` ON UPDATE CASCADE ON DELETE RESTRICT), `owner` (text, nullable, legacy FK by name ON DELETE SET NULL), `ownerUserId` (int, nullable FK → `users` ON DELETE SET NULL), `prd`/`claudePrompt` (text, CHECK ≤20000), `releasedAt`, **month board:** `plannedMonth` (varchar(7), nullable, CHECK `^[0-9]{4}-(0[1-9]\|1[0-2])$`), `boardPosition` (int, default 0), **Weaviate state:** `embeddingStatus`/`embeddingAttempts`/`embeddedAt`/`textHash`, **consumer bug reports (migration `1909000000000`):** `source` (`staff`/`consumer`, default `staff`), `tenant_id` (varchar, nullable, informational only — does NOT tenant-scope this table), `reporterContext` (jsonb, nullable — auto-captured client context: screen/appVersion/device/os/clientTimestamp), `createdBy`/`updatedBy` (int), `deletedAt` | The atomic unit. **Soft delete**, which is why a delete MUST also remove the vector — Postgres filters `deletedAt IS NULL`, Weaviate has no idea, and a missed delete makes duplicate detection propose a deleted row forever. `releasedAt` is stamped only on the *transition* into `released` and never re-stamped; ~173 of 280 migrated released rows have it NULL because the source trigger behaved the same way, and **nothing may backfill it**. A `bug`-type row filed by a logged-in consumer via `POST /product-roadmap/bug-reports` runs through the exact same `RoadmapOpportunityService.create()` pipeline as a staff-filed one (see `bug_findings` below) — `source='consumer'` and `createdBy` (the consumer's own `users.id`, same shared table as staff) are the only things that distinguish it. **`type='bug'` rows are never LISTED by this domain.** `EXCLUDE_BUGS_SQL` in `RoadmapOpportunityRepository` drops them from the shared `projectedQuery` (so the table, the month board and lane totals inherit it) and from the raw-SQL facets, month bounds and max-score reads; `findDuplicates` filters its candidates to `type='idea'`; and `create`/`update` skip the realtime `OPPORTUNITY_UPSERTED` broadcast for a bug so a filed one cannot flash onto a board it is not on. Bug Hunter's `bug_findings` table is where a bug is read. The row here is still written, and is still the record of who reported what with what context — `findOneWithScore` is deliberately NOT filtered, so the `?opportunity=<id>` deep link can recognise a bug id and send the reader to Bug Hunter instead of 404ing |
-| `roadmap_allocations` | BaseWithoutTenant | `id` (uuid), `userId` (int), `opportunityId` (uuid FK ON DELETE CASCADE), `periodKey` (varchar(7), CHECK `^[0-9]{4}-(0[1-9]\|1[0-2])$`), `coins` (int, CHECK 0–100). UNIQUE `(userId, opportunityId, periodKey)` | One person's coins on one opportunity in one month. No `deletedAt` — `coins=0` deletes the row. `periodKey` is **server-computed in UTC and never accepted from a client**: the source let any period be written, which was unbounded score inflation since the score sums every period forever. The 100-coin monthly cap is enforced twice, by `roadmap_enforce_monthly_cap()` (migration `1871000000001`) and by the service |
+| `roadmap_allocations` | BaseWithoutTenant | `id` (uuid), `userId` (int), `opportunityId` (uuid FK ON DELETE CASCADE), `periodKey` (varchar(7), CHECK `^[0-9]{4}-(0[1-9]\|1[0-2])$`), `votes` (int, CHECK 0–100, renamed from `coins` by migration `1940700000000`). UNIQUE `(userId, opportunityId, periodKey)` | One person's votes on one opportunity in one month. No `deletedAt` — `votes=0` deletes the row. `periodKey` is **server-computed in UTC and never accepted from a client**: the source let any period be written, which was unbounded score inflation since the score sums every period forever. The 100-vote monthly cap is enforced twice, by `roadmap_enforce_monthly_cap()` (migration `1871000000001`, retargeted onto `votes` by `1940700000000`) and by the service |
 | `roadmap_product_goals` | BaseWithoutTenant | `id` (uuid), `name` (text UNIQUE), `position` (int, default 0) | FK target, so no soft delete |
 | `roadmap_opportunity_owners` | BaseWithoutTenant | `id` (uuid), `name` (text UNIQUE), `position` (int, default 0) | Legacy taxonomy. New human assignments use `ownerUserId` and must be an Ally super-admin. One exception, seeded by migration `1913000000000`: `'Bug Hunter Agent'`, written to the legacy `owner` column (never `ownerUserId`) by the shared `releaseLinkedRoadmapOpportunity` util — see `bug_findings` below |
 | `roadmap_opportunity_comments` | BaseWithoutTenant | `id` (uuid), `opportunityId` (uuid), `body` (text, CHECK ≤500), `createdBy`/`updatedBy`, `deletedAt` | |
@@ -479,7 +479,7 @@ March, shipped in May. A shipped card therefore can't be dragged to another mont
 reordered within its release month.
 
 `boardPosition` ships with **no backfill on purpose**: DEFAULT 0 leaves every row tied and the board's
-ORDER BY falls through to `priorityScore DESC`, so every lane is already coin-sorted on day one and
+ORDER BY falls through to `priorityScore DESC`, so every lane is already vote-sorted on day one and
 dragging progressively replaces that with a human order, lane by lane. Gaps and duplicate positions are
 harmless — the ORDER BY has deterministic tiebreaks — so a reorder rewrites one lane rather than
 maintaining a globally sparse sequence.
@@ -656,7 +656,7 @@ stores share a key rather than matching on content); `Conversation.chat_id` ↔ 
 | A real client chat/call + transcript | `chats`, `messages`, `call_details` |
 | Daily activity / engagement for analytics | `user_daily_scores`, `badge_users` |
 | Analytics dashboard config | `dashboards` (current), `dashboard` (legacy) |
-| An internal roadmap idea or bug + its coin votes | `roadmap_opportunities`, `roadmap_allocations` (score is `SUM(coins)`, never a column) |
+| An internal roadmap idea or bug + its votes | `roadmap_opportunities`, `roadmap_allocations` (score is `SUM(votes)`, never a column) |
 | Which month an idea or bug is planned for | `roadmap_opportunities.plannedMonth` + `boardPosition` — but the lane shown is `effectiveMonthOf()`, which prefers `releasedAt` once shipped |
 | What the WhatsApp bot can answer from | `kb_documents`, `kb_document_chunks` (+ Weaviate `KnowledgeChunk`) |
 | What a worker asked the bot and what it replied | `wa_conversations`, `wa_messages` (bodies blanked past `retentionDays`) |

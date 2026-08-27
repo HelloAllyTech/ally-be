@@ -18,6 +18,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import {
+  RoadmapBoardGroupBy,
   RoadmapOpportunitySource,
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
@@ -152,12 +153,12 @@ export class RoadmapOpportunityFiltersDto {
 
 export class ListOpportunitiesQueryDto extends RoadmapOpportunityFiltersDto {
   @ApiPropertyOptional({
-    enum: ['priority', 'createdAt', 'releasedAt', 'myCoins', 'description'],
+    enum: ['priority', 'createdAt', 'releasedAt', 'myVotes', 'description'],
     default: 'priority',
   })
   @IsOptional()
-  @IsEnum(['priority', 'createdAt', 'releasedAt', 'myCoins', 'description'])
-  sortBy?: 'priority' | 'createdAt' | 'releasedAt' | 'myCoins' | 'description';
+  @IsEnum(['priority', 'createdAt', 'releasedAt', 'myVotes', 'description'])
+  sortBy?: 'priority' | 'createdAt' | 'releasedAt' | 'myVotes' | 'description';
 
   @ApiPropertyOptional({ enum: ['ASC', 'DESC'], default: 'DESC' })
   @IsOptional()
@@ -385,6 +386,18 @@ export class MonthBoardQueryDto extends RoadmapOpportunityFiltersDto {
   @IsInt()
   @Min(1)
   laneLimit?: number;
+
+  @ApiPropertyOptional({
+    enum: RoadmapBoardGroupBy,
+    default: RoadmapBoardGroupBy.MONTH,
+    description:
+      'How to group the lanes. `from`/`to` are MONTH-only and are ignored by the other ' +
+      'groupings, which have no window — a stage board that dropped every card without a ' +
+      'planned month would be empty for no reason a reader could see.',
+  })
+  @IsOptional()
+  @IsEnum(RoadmapBoardGroupBy)
+  groupBy?: RoadmapBoardGroupBy;
 }
 
 /**
@@ -405,27 +418,43 @@ export class MoveOpportunityDto {
   @IsUUID()
   opportunityId!: string;
 
+  @ApiPropertyOptional({
+    enum: RoadmapBoardGroupBy,
+    default: RoadmapBoardGroupBy.MONTH,
+    description:
+      'Which grouping the drag happened on — decides WHICH FIELD the drop writes. Defaults to ' +
+      'month so an older client keeps working unchanged.',
+  })
+  @IsOptional()
+  @IsEnum(RoadmapBoardGroupBy)
+  groupBy?: RoadmapBoardGroupBy;
+
   @ApiProperty({
     nullable: true,
     description:
-      "Destination lane as 'YYYY-MM'; null is the Unscheduled lane. Must be sent explicitly.",
+      "Destination lane. 'YYYY-MM' when grouping by month (null = Unscheduled); the stage, " +
+      'product goal or owner value otherwise (null = the catch-all lane, which for stage is ' +
+      'not a legal destination). Must be sent explicitly.',
   })
-  @ValidateIf((o: MoveOpportunityDto) => o.month !== null)
+  @ValidateIf((o: MoveOpportunityDto) => o.lane !== null)
   @IsString()
-  @Matches(MONTH_KEY_REGEX, { message: `month ${MONTH_KEY_MESSAGE}` })
-  month!: string | null;
+  @MaxLength(ROADMAP_LIMITS.GOAL_NAME_MAX)
+  lane!: string | null;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: [String],
     description:
-      'Every card id in the destination lane, in its new top-to-bottom order',
+      'Every card id in the destination lane, in its new top-to-bottom order. MONTH ONLY — the ' +
+      'other groupings order by priority and have no hand-ordering to rewrite, so sending it ' +
+      'there is ignored rather than rejected.',
   })
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(ROADMAP_BOARD_DEFAULTS.MAX_LANE_IDS)
   // Plain @IsUUID, matching MergeOpportunitiesDto: migrated ids come from the source database
   // and a version assertion would reject legitimate historical rows.
   @IsUUID(undefined, { each: true })
-  orderedIds!: string[];
+  orderedIds?: string[];
 }
 
 export class SplitPartDto {
@@ -445,7 +474,7 @@ export class SplitPartDto {
   description!: string;
 
   @ApiProperty({
-    description: 'Relative weight; the coin split is proportional to this',
+    description: 'Relative weight; the vote split is proportional to this',
   })
   @Type(() => Number)
   @IsInt()
@@ -487,13 +516,13 @@ export class MergeOpportunitiesDto {
 }
 
 /**
- * Setting a coin allocation. Note there is deliberately NO periodKey field: the server
- * computes it in UTC. The source's RLS allowed writes to any period_key, and because the
- * priority score sums every period forever, that was unbounded score inflation; it also used
+ * Setting a vote count. Note there is deliberately NO periodKey field: the server computes
+ * it in UTC. The source's RLS allowed writes to any period_key, and because the priority
+ * score sums every period forever, that was unbounded score inflation; it also used
  * browser-local time, so a tab open across midnight on the 1st voted into the wrong month.
  * Historical periods are read-only by construction.
  *
- * coins = 0 deletes the allocation row rather than storing a zero.
+ * votes = 0 deletes the allocation row rather than storing a zero.
  */
 export class SetAllocationDto {
   @ApiProperty()
@@ -504,5 +533,5 @@ export class SetAllocationDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  coins!: number;
+  votes!: number;
 }

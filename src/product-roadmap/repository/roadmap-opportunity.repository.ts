@@ -10,7 +10,7 @@ import {
 /** A row as projected by listOpportunities — the entity plus three computed columns. */
 export interface RoadmapOpportunityRow extends RoadmapOpportunity {
   priorityScore: number;
-  myCoins: number;
+  myVotes: number;
   commentCount: number;
   /**
    * The owner name to SHOW: the linked Ally user's current name, falling back to the legacy
@@ -18,10 +18,17 @@ export interface RoadmapOpportunityRow extends RoadmapOpportunity {
    * onto the row, so renaming a person in Ally propagates with no sync step.
    */
   ownerDisplay: string | null;
+  /**
+   * Position in the queue (New / Prioritised / In development) by total votes, 1-based and
+   * unique. NULL for anything outside those stages. See QUEUE_RANK_SQL.
+   */
+  queueRank: number | null;
 }
 
 /** A board row: the list projection plus the lane it belongs to, resolved in SQL. */
 export interface RoadmapBoardRow extends RoadmapOpportunityRow {
+  /** The lane this row belongs to under the requested grouping. Null is the catch-all lane. */
+  laneKey: string | null;
   effectiveMonth: string | null;
 }
 
@@ -36,16 +43,33 @@ export interface RoadmapBoardRow extends RoadmapOpportunityRow {
  * to_char on a `timestamp without time zone` reads the stored value with no conversion, which is
  * what makes this agree with currentPeriodKey(): both end up on the UTC month.
  */
+import { RoadmapBoardGroupBy } from '../enum/roadmap-opportunity.enum';
+
 const EFFECTIVE_MONTH_SQL = `CASE
   WHEN opp."stage" = 'released' AND opp."releasedAt" IS NOT NULL
     THEN to_char(opp."releasedAt", 'YYYY-MM')
   ELSE opp."plannedMonth"
 END`;
 
+/**
+ * The lane key, per grouping. One map so the select, the ORDER BY, the GROUP BY of the totals
+ * query and the move endpoint's destination predicate all read the same expression — four copies
+ * of "which lane is this card in" is how a board starts disagreeing with its own counts.
+ *
+ * Every value here is a literal, never interpolated from a request: `groupBy` is validated
+ * against RoadmapBoardGroupBy by the DTO, and this is the only place a column name is chosen.
+ */
+const LANE_KEY_SQL: Record<RoadmapBoardGroupBy, string> = {
+  [RoadmapBoardGroupBy.MONTH]: EFFECTIVE_MONTH_SQL,
+  [RoadmapBoardGroupBy.STAGE]: 'opp."stage"',
+  [RoadmapBoardGroupBy.PRODUCT_GOAL]: 'opp."productGoal"',
+  [RoadmapBoardGroupBy.OWNER]: 'opp."owner"',
+};
+
 export interface ListOpportunitiesOptions {
-  /** Caller's Ally users.id — scopes the myCoins projection. */
+  /** Caller's Ally users.id — scopes the myVotes projection. */
   userId: number;
-  /** Server-computed 'YYYY-MM' — scopes the myCoins projection. */
+  /** Server-computed 'YYYY-MM' — scopes the myVotes projection. */
   periodKey: string;
 
   search?: string;
@@ -63,7 +87,7 @@ export interface ListOpportunitiesOptions {
   priorityMin?: number;
   priorityMax?: number;
 
-  sortBy?: 'priority' | 'createdAt' | 'releasedAt' | 'myCoins' | 'description';
+  sortBy?: 'priority' | 'createdAt' | 'releasedAt' | 'myVotes' | 'description';
   order?: 'ASC' | 'DESC';
   limit?: number;
   offset?: number;
@@ -73,9 +97,14 @@ export interface ListBoardOptions extends Omit<
   ListOpportunitiesOptions,
   'sortBy' | 'order' | 'limit' | 'offset'
 > {
-  /** Inclusive month window, 'YYYY-MM'. Resolved by the service, never defaulted here. */
+  /**
+   * Inclusive month window, 'YYYY-MM'. Resolved by the service, never defaulted here.
+   * Applied ONLY when grouping by month — see listBoard.
+   */
   from: string;
   to: string;
+  /** Defaults to MONTH, which is the board this started as. */
+  groupBy?: RoadmapBoardGroupBy;
 }
 
 export interface ListBoardResult {
@@ -118,11 +147,54 @@ export interface ListOpportunitiesResult {
  */
 const EXCLUDE_BUGS_SQL = `opp."type" <> 'bug'`;
 
+/**
+ * The queue rank: a card's position in THE QUEUE, computed at read time.
+ *
+ * ## Why derived and not stored
+ *
+ * The rank is a pure function of (total votes, stage) across the whole queue, so any single
+ * opportunity's rank changes when ANOTHER one is voted on or moves stage. A stored column would
+ * therefore need recomputing on every vote, every stage change, every create, delete,
+ * split and merge — six write paths, each able to leave the whole table stale by forgetting one.
+ * Computed here it is correct by construction, and "refresh the ranks when a stage changes"
+ * needs no refresh mechanism: the next read already reflects it.
+ *
+ * ## Ranked over the QUEUE, not over the caller's filters
+ *
+ * The window sits in its own subquery, deliberately NOT sharing the outer query's WHERE clause.
+ * A card's rank must not change because someone typed in the search box — #7 is #7 whether you
+ * are looking at all 159 or the three that match "scribe". This is the whole reason it cannot be
+ * a `RANK() OVER ()` bolted onto the main query.
+ *
+ * ## ROW_NUMBER, not RANK
+ *
+ * No two cards may share a rank. The ordering carries the same deterministic tiebreak the list
+ * query uses (`createdAt DESC, id ASC`), so there are no ties to share and ROW_NUMBER states
+ * that plainly — RANK would leave gaps if the tiebreak were ever dropped.
+ *
+ * NULL for anything outside the queue: released and archived rows are not in the population, so
+ * they have no position in it, and null is what "no rank" looks like rather than 0.
+ */
+const QUEUE_RANK_SQL = `(
+  SELECT q.id,
+         ROW_NUMBER() OVER (
+           ORDER BY COALESCE(qa.score, 0) DESC, q."createdAt" DESC, q.id ASC
+         )::int AS rank
+    FROM roadmap_opportunities q
+    LEFT JOIN (SELECT a."opportunityId", SUM(a.votes)::int AS score
+                 FROM roadmap_allocations a
+                GROUP BY a."opportunityId") qa
+           ON qa."opportunityId" = q.id
+   WHERE q."deletedAt" IS NULL
+     AND q."type" <> 'bug'
+     AND q."stage" IN ('new', 'prioritised', 'under_development')
+)`;
+
 const SORT_COLUMNS: Record<string, string> = {
   priority: '"priorityScore"',
   createdAt: 'opp."createdAt"',
   releasedAt: 'opp."releasedAt"',
-  myCoins: '"myCoins"',
+  myVotes: '"myVotes"',
   description: 'opp."description"',
 };
 
@@ -197,16 +269,30 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
    */
   async listBoard(options: ListBoardOptions): Promise<ListBoardResult> {
     const { userId, periodKey, from, to } = options;
+    const groupBy = options.groupBy ?? RoadmapBoardGroupBy.MONTH;
+    const laneKey = LANE_KEY_SQL[groupBy];
+    const isMonth = groupBy === RoadmapBoardGroupBy.MONTH;
 
     const qb = this.projectedQuery(userId, periodKey);
     this.applyFilters(qb, options);
-    this.applyMonthWindow(qb, from, to);
+    // The window is a MONTH concept. Applying it to a stage or owner board would silently drop
+    // every card with no planned month — which is most of them — from lanes that have nothing
+    // to do with dates.
+    if (isMonth) this.applyMonthWindow(qb, from, to);
 
-    const rows = await qb
+    const ordered = qb
+      .addSelect(laneKey, 'laneKey')
       .addSelect(EFFECTIVE_MONTH_SQL, 'effectiveMonth')
-      .orderBy(EFFECTIVE_MONTH_SQL, 'ASC', 'NULLS FIRST')
-      .addOrderBy('opp."boardPosition"', 'ASC')
-      // Falls through to coins while a lane has never been hand-ordered — this is what lets
+      .orderBy(laneKey, 'ASC', 'NULLS FIRST');
+
+    // boardPosition is the MONTH board's hand-ordering and means nothing in the other
+    // groupings — one column cannot hold four independent orders. There, priority (the vote
+    // total) is the order, which is the ranking the whole board exists to express; a second
+    // hand-ordering per grouping would compete with it.
+    if (isMonth) ordered.addOrderBy('opp."boardPosition"', 'ASC');
+
+    const rows = await ordered
+      // Falls through to votes while a lane has never been hand-ordered — this is what lets
       // boardPosition ship with DEFAULT 0 and no backfill and still look sorted on day one.
       .addOrderBy('"priorityScore"', 'DESC')
       .addOrderBy('opp."createdAt"', 'DESC')
@@ -235,17 +321,22 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
   private async getLaneTotals(
     options: ListBoardOptions,
   ): Promise<Map<string | null, number>> {
+    const groupBy = options.groupBy ?? RoadmapBoardGroupBy.MONTH;
+    const laneKey = LANE_KEY_SQL[groupBy];
+
     const qb = this.projectedQuery(options.userId, options.periodKey);
     this.applyFilters(qb, options);
-    this.applyMonthWindow(qb, options.from, options.to);
+    if (groupBy === RoadmapBoardGroupBy.MONTH) {
+      this.applyMonthWindow(qb, options.from, options.to);
+    }
 
     const rows = await qb
-      .select(EFFECTIVE_MONTH_SQL, 'month')
+      .select(laneKey, 'lane')
       .addSelect('COUNT(*)::int', 'total')
-      .groupBy(EFFECTIVE_MONTH_SQL)
-      .getRawMany<{ month: string | null; total: number }>();
+      .groupBy(laneKey)
+      .getRawMany<{ lane: string | null; total: number }>();
 
-    return new Map(rows.map((r) => [r.month, Number(r.total)]));
+    return new Map(rows.map((r) => [r.lane, Number(r.total)]));
   }
 
   /**
@@ -355,7 +446,7 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
   async getMaxScore(): Promise<number> {
     const [row] = await this.dataSource.query<{ max: string | null }[]>(
       `SELECT COALESCE(MAX(score), 0) AS max
-         FROM (SELECT a."opportunityId", SUM(a.coins) AS score
+         FROM (SELECT a."opportunityId", SUM(a.votes) AS score
                  FROM roadmap_allocations a
                  JOIN roadmap_opportunities o ON o.id = a."opportunityId"
                 WHERE o."deletedAt" IS NULL
@@ -373,11 +464,11 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
   ): Promise<RoadmapOpportunityRow | null> {
     const rows = await this.dataSource.query<RoadmapOpportunityRow[]>(
       `SELECT opp.*,
-              COALESCE((SELECT SUM(a.coins)::int FROM roadmap_allocations a
+              COALESCE((SELECT SUM(a.votes)::int FROM roadmap_allocations a
                          WHERE a."opportunityId" = opp.id), 0)               AS "priorityScore",
-              COALESCE((SELECT a.coins FROM roadmap_allocations a
+              COALESCE((SELECT a.votes FROM roadmap_allocations a
                          WHERE a."opportunityId" = opp.id
-                           AND a."userId" = $2 AND a."periodKey" = $3), 0)   AS "myCoins",
+                           AND a."userId" = $2 AND a."periodKey" = $3), 0)   AS "myVotes",
               COALESCE((SELECT COUNT(*)::int FROM roadmap_opportunity_comments c
                          WHERE c."opportunityId" = opp.id
                            AND c."deletedAt" IS NULL), 0)                    AS "commentCount",
@@ -438,7 +529,7 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
   }
 
   /**
-   * The shared projection: the entity plus priorityScore, myCoins, commentCount and the resolved
+   * The shared projection: the entity plus priorityScore, myVotes, commentCount and the resolved
    * owner name. Extracted so the table and the month board read the SAME columns — a card that
    * showed a different score depending on which layout you were looking at would be worse than
    * either layout being wrong.
@@ -450,17 +541,19 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
     return this.createQueryBuilder('opp')
       .select('opp.*')
       .addSelect('COALESCE(alloc.score, 0)::int', 'priorityScore')
-      .addSelect('COALESCE(mine.coins, 0)::int', 'myCoins')
+      .addSelect('COALESCE(mine.votes, 0)::int', 'myVotes')
       .addSelect('COALESCE(cmt.cnt, 0)::int', 'commentCount')
       .addSelect('COALESCE(owner_user.name, opp."owner")', 'ownerDisplay')
+      .addSelect('qrank.rank', 'queueRank')
       .leftJoin(
-        `(SELECT a."opportunityId", SUM(a.coins)::int AS score
+        `(SELECT a."opportunityId", SUM(a.votes)::int AS score
             FROM roadmap_allocations a
            GROUP BY a."opportunityId")`,
         'alloc',
         'alloc."opportunityId" = opp.id',
       )
       .leftJoin('users', 'owner_user', 'owner_user.id = opp."ownerUserId"')
+      .leftJoin(QUEUE_RANK_SQL, 'qrank', 'qrank.id = opp.id')
       .leftJoin(
         'roadmap_allocations',
         'mine',
@@ -484,9 +577,15 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
     o: ListOpportunitiesOptions,
   ): void {
     if (o.search?.trim()) {
-      qb.andWhere('opp."description" ILIKE :search', {
-        search: `%${o.search.trim()}%`,
-      });
+      // Description OR code. A code exists to be quoted and then looked up, so pasting
+      // "OPP-0042" into the search box has to find it — a code you cannot search for only
+      // half-works. ILIKE on both so the code match is case-insensitive too ("opp-42").
+      qb.andWhere(
+        '(opp."description" ILIKE :search OR opp."code" ILIKE :search)',
+        {
+          search: `%${o.search.trim()}%`,
+        },
+      );
     }
     if (o.type?.length)
       qb.andWhere('opp."type" IN (:...type)', { type: o.type });

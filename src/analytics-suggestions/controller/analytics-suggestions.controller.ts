@@ -113,7 +113,7 @@ export class AnalyticsSuggestionsController {
   @ApiOperation({
     summary: 'Accept a suggestion and file it on the roadmap',
     description:
-      'Files the suggestion as a roadmap opportunity (stage `new`, no coins) and ' +
+      'Files the suggestion as a roadmap opportunity (stage `new`, no votes) and ' +
       'marks it accepted, linking the two.\n\n' +
       'The body carries what the REVIEWER agreed to, not what the model drafted: ' +
       'accept opens an editable form, and the description, goal and type sent here ' +

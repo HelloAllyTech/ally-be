@@ -20,7 +20,7 @@ import {
 } from '../util/analytics-window.util';
 
 /**
- * Coin-weighted roadmap delivery for the Analytics → Product management tab.
+ * Vote-weighted roadmap delivery for the Analytics → Product management tab.
  *
  * Shapes two result sets into one dense monthly axis with a stable owner domain,
  * so the client draws it without doing calendar maths, ranking or roll-ups of its
@@ -131,9 +131,9 @@ function emptyTotals(): RoadmapDeliveryTotalsDto {
     opportunities: 0,
     ideaOpportunities: 0,
     bugOpportunities: 0,
-    coins: 0,
-    ideaCoins: 0,
-    bugCoins: 0,
+    votes: 0,
+    ideaVotes: 0,
+    bugVotes: 0,
   };
 }
 
@@ -148,16 +148,16 @@ function emptyTotals(): RoadmapDeliveryTotalsDto {
  */
 function addRow(
   totals: RoadmapDeliveryTotalsDto,
-  row: { type: RoadmapOpportunityType; opportunities: number; coins: number },
+  row: { type: RoadmapOpportunityType; opportunities: number; votes: number },
 ): void {
   totals.opportunities += row.opportunities;
-  totals.coins += row.coins;
+  totals.votes += row.votes;
   if (row.type === RoadmapOpportunityType.BUG) {
     totals.bugOpportunities += row.opportunities;
-    totals.bugCoins += row.coins;
+    totals.bugVotes += row.votes;
   } else {
     totals.ideaOpportunities += row.opportunities;
-    totals.ideaCoins += row.coins;
+    totals.ideaVotes += row.votes;
   }
 }
 
@@ -168,16 +168,16 @@ function addTotals(
   into.opportunities += from.opportunities;
   into.ideaOpportunities += from.ideaOpportunities;
   into.bugOpportunities += from.bugOpportunities;
-  into.coins += from.coins;
-  into.ideaCoins += from.ideaCoins;
-  into.bugCoins += from.bugCoins;
+  into.votes += from.votes;
+  into.ideaVotes += from.ideaVotes;
+  into.bugVotes += from.bugVotes;
 }
 
 /**
  * Map an owner name onto the band it is drawn as: itself, the unassigned label,
  * or the rolled-up tail.
  *
- * The ranking is over ALL-TIME coins across every month and both types, which is
+ * The ranking is over ALL-TIME votes across every month and both types, which is
  * what makes the mapping stable — a band decided from the rows currently on
  * screen would change membership every time the reader touched a control, and a
  * band that reshuffles under a filter encodes nothing the reader can read.
@@ -190,13 +190,13 @@ function addTotals(
 function resolveOwnerBands(
   rows: RoadmapDeliveryRow[],
 ): (owner: string | null) => string {
-  const coinsByOwner = new Map<string, number>();
+  const votesByOwner = new Map<string, number>();
   for (const row of rows) {
     if (row.owner === null) continue;
-    coinsByOwner.set(row.owner, (coinsByOwner.get(row.owner) ?? 0) + row.coins);
+    votesByOwner.set(row.owner, (votesByOwner.get(row.owner) ?? 0) + row.votes);
   }
 
-  const ranked = [...coinsByOwner.entries()]
+  const ranked = [...votesByOwner.entries()]
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([owner]) => owner);
 
@@ -217,7 +217,7 @@ function resolveOwnerBands(
 
 /**
  * The owner bands in the order the client draws them: real owners by all-time
- * coins, then the two context bands.
+ * votes, then the two context bands.
  *
  * Context last means it stacks on top, so the owners below keep a fixed baseline
  * month to month — a grey band at the bottom would shift every owner above it as
@@ -227,17 +227,17 @@ function orderedOwnerBands(
   rows: RoadmapDeliveryRow[],
   bandOf: (owner: string | null) => string,
 ): string[] {
-  const coinsByBand = new Map<string, number>();
+  const votesByBand = new Map<string, number>();
   for (const row of rows) {
     const band = bandOf(row.owner);
-    coinsByBand.set(band, (coinsByBand.get(band) ?? 0) + row.coins);
+    votesByBand.set(band, (votesByBand.get(band) ?? 0) + row.votes);
   }
 
   const isContext = (band: string) =>
     band === ROADMAP_DELIVERY_UNASSIGNED_LABEL ||
     band === ROADMAP_DELIVERY_OTHER_LABEL;
 
-  return [...coinsByBand.keys()].sort((a, b) => {
+  return [...votesByBand.keys()].sort((a, b) => {
     if (isContext(a) !== isContext(b)) return isContext(a) ? 1 : -1;
     // Unassigned before Other among the context bands: a real gap in the data
     // reads ahead of a presentational roll-up.
@@ -245,7 +245,7 @@ function orderedOwnerBands(
       return a === ROADMAP_DELIVERY_UNASSIGNED_LABEL ? -1 : 1;
     }
     return (
-      (coinsByBand.get(b) ?? 0) - (coinsByBand.get(a) ?? 0) ||
+      (votesByBand.get(b) ?? 0) - (votesByBand.get(a) ?? 0) ||
       a.localeCompare(b)
     );
   });

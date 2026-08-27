@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { AnalyticsScopingDto } from './platform-analytics.dto';
 
 /**
- * Coins and item counts, split by opportunity type.
+ * Votes and item counts, split by opportunity type.
  *
  * Both types are always returned from the one pass — "did we ship demand, or did
  * we ship bug fixes?" is a different question from "how much did we ship", and a
@@ -10,7 +10,7 @@ import { AnalyticsScopingDto } from './platform-analytics.dto';
  * responses computed at different moments. The client offers the split as a
  * control and switches on this shape without going back to the server.
  *
- * `coins`/`opportunities` are the totals, sent rather than left to the client to
+ * `votes`/`opportunities` are the totals, sent rather than left to the client to
  * add up: two clients summing the same parts is two chances to disagree about
  * what the total was.
  */
@@ -26,18 +26,18 @@ export class RoadmapDeliveryTotalsDto {
 
   @ApiProperty({
     description:
-      'Their total coins — every voter, every monthly period, i.e. the sum of ' +
+      'Their total votes — every voter, every monthly period, i.e. the sum of ' +
       "the board's `priorityScore`. Not restricted to the release month: an " +
       'opportunity accrues backing while it waits, and shipping it satisfies all ' +
       'of that accumulated demand.',
   })
-  coins!: number;
+  votes!: number;
 
-  @ApiProperty({ description: 'Of those coins, the ones on ideas' })
-  ideaCoins!: number;
+  @ApiProperty({ description: 'Of those votes, the ones on ideas' })
+  ideaVotes!: number;
 
-  @ApiProperty({ description: 'Of those coins, the ones on bugs' })
-  bugCoins!: number;
+  @ApiProperty({ description: 'Of those votes, the ones on bugs' })
+  bugVotes!: number;
 }
 
 /** One owner's share of a month's releases. */
@@ -81,7 +81,7 @@ export class RoadmapDeliveryMonthDto extends RoadmapDeliveryTotalsDto {
 }
 
 /**
- * Coin-weighted delivery out of the internal product roadmap, by release month
+ * Vote-weighted delivery out of the internal product roadmap, by release month
  * and owner. All-time and month-grained by construction.
  */
 export class RoadmapDeliveryResponseDto {
@@ -99,7 +99,7 @@ export class RoadmapDeliveryResponseDto {
   @ApiProperty({
     description:
       'Every owner band that appears anywhere in `months`, ranked by ALL-TIME ' +
-      'coins so the legend order and the stack order are one thing the server ' +
+      'votes so the legend order and the stack order are one thing the server ' +
       'decides once. The two context bands sort last. Ranked on all-time totals ' +
       'rather than on the type filter in play, so a band never changes place or ' +
       'colour as the reader moves a control.',

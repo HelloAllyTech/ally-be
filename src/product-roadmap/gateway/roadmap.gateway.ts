@@ -147,7 +147,7 @@ export class RoadmapGateway
    * Fan out one service event.
    *
    * Every payload carries `actorId`. That is a HARD CONTRACT with the client, which uses it to
-   * suppress its own echo — without it, your own coin click round-trips a broadcast that
+   * suppress its own echo — without it, your own vote click round-trips a broadcast that
    * invalidates the list and refetches over your optimistic patch while your finger is still on
    * the button.
    */

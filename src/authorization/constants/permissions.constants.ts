@@ -332,8 +332,8 @@ const PERMISSIONS = {
 
   // === PRODUCT ROADMAP ===
   // Three tiers, because the roadmap is a voting board rather than a CRUD screen:
-  // VIEW is read-only, VOTE adds "participate" (file an opportunity, allocate your
-  // monthly coins, comment, keep your own saved views), and EDIT is the management
+  // VIEW is read-only, VOTE adds "participate" (file an opportunity, cast your
+  // monthly votes, comment, keep your own saved views), and EDIT is the management
   // surface (stages, editing/deleting anyone's opportunity, goals/owners,
   // split/merge, release notes, pinning a view for everyone).
   VIEW_PRODUCT_ROADMAP: 'view:admin:product-roadmap',

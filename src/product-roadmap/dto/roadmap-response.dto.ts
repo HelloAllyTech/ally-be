@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  RoadmapBoardGroupBy,
   RoadmapOpportunitySource,
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
@@ -25,7 +26,24 @@ export class OpportunityResponseDto {
   /** Null for legacy migrated rows whose owner was never linked to an Ally account. */
   @ApiPropertyOptional({ nullable: true }) ownerUserId?: number | null;
   @ApiPropertyOptional({ nullable: true }) prd?: string | null;
+  @ApiProperty({
+    description:
+      "Short human-quotable id, e.g. 'OPP-0042'. Unique, never reused.",
+  })
+  code!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Position in the queue (New / Prioritised / In development) by total votes — 1-based, ' +
+      'unique, and null outside those stages. Computed per read, so it always reflects the ' +
+      'current stages and vote totals.',
+  })
+  queueRank!: number | null;
   @ApiPropertyOptional({ nullable: true }) claudePrompt?: string | null;
+  /** The Builder session started from this opportunity, or null. Drives the drawer's
+   *  button between "Open in Builder Agent" and "Resume in Builder Agent". */
+  @ApiPropertyOptional({ nullable: true }) builderSessionId?: string | null;
   @ApiPropertyOptional({ nullable: true }) releasedAt?: Date | null;
 
   /** The month somebody planned this into, 'YYYY-MM'. Null means Unscheduled. */
@@ -46,10 +64,10 @@ export class OpportunityResponseDto {
    */
   @ApiProperty() monthPinned!: boolean;
 
-  /** SUM(coins) over ALL users and ALL periods. Computed in SQL, never stored. */
+  /** SUM(votes) over ALL users and ALL periods. Computed in SQL, never stored. */
   @ApiProperty() priorityScore!: number;
-  /** The CALLER's coins on this opportunity in the CURRENT period only. */
-  @ApiProperty() myCoins!: number;
+  /** The CALLER's votes on this opportunity in the CURRENT period only. */
+  @ApiProperty() myVotes!: number;
   @ApiProperty() commentCount!: number;
 
   /** Who filed it — 'staff' (admin /opportunities) or 'consumer' (/bug-reports). Admin display only. */
@@ -107,6 +125,30 @@ export class MonthLaneDto {
   @ApiProperty() total!: number;
 }
 
+/**
+ * One lane on the generic board.
+ *
+ * Supersedes MonthLaneDto's shape for every grouping including month — `key` is the month for a
+ * month board, the stage/goal/owner value otherwise, and null is always the catch-all lane
+ * (Unscheduled, or No goal / No owner). `label` is resolved server-side so the client is not
+ * left mapping raw enum values, and so an empty lane can still be named.
+ */
+export class BoardLaneDto {
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Lane value: 'YYYY-MM' for month, the stage/goal/owner value otherwise. Null is the " +
+      'catch-all lane.',
+  })
+  key!: string | null;
+
+  @ApiProperty({ type: [OpportunityResponseDto] })
+  items!: OpportunityResponseDto[];
+
+  @ApiProperty({ description: "The lane's true size, ignoring laneLimit" })
+  total!: number;
+}
+
 export class MonthBoardBoundsDto {
   @ApiProperty({
     nullable: true,
@@ -120,20 +162,22 @@ export class MonthBoardBoundsDto {
 
 export class MonthBoardResponseDto {
   @ApiProperty({
-    type: [MonthLaneDto],
-    description:
-      'One entry per month in the requested window, INCLUDING empty months — a gap in a plan is ' +
-      'information, and collapsing empty lanes would make March look adjacent to June.',
+    enum: RoadmapBoardGroupBy,
+    description: 'The grouping these lanes were built with',
   })
-  months!: MonthLaneDto[];
+  groupBy!: RoadmapBoardGroupBy;
 
   @ApiProperty({
-    type: MonthLaneDto,
+    type: [BoardLaneDto],
     description:
-      'Everything with no month. Always present and always returned whole, because this is the ' +
-      'lane people drag OUT of and hiding it would make the board unusable on first load.',
+      'Every lane, in display order, INCLUDING empty ones — a gap is information, and ' +
+      'collapsing empty lanes would make March look adjacent to June (and would hide a product ' +
+      'goal nobody is working on, which is the same fact about a different axis).\n\n' +
+      'The catch-all (key: null) comes FIRST when grouping by month, because Unscheduled is the ' +
+      'lane people drag out of and it has always been the leftmost. It comes LAST for the other ' +
+      'groupings, where "no goal" / "no owner" is a residue rather than a starting point.',
   })
-  unscheduled!: MonthLaneDto;
+  lanes!: BoardLaneDto[];
 
   @ApiProperty({ type: MonthBoardBoundsDto })
   bounds!: MonthBoardBoundsDto;
@@ -147,7 +191,7 @@ export class MonthBoardResponseDto {
   /** Unfiltered MAX(priorityScore) — same stable-scale contract as the table's maxScore. */
   @ApiProperty() maxScore!: number;
 
-  /** Server-computed 'YYYY-MM' coin period. The client must never derive this itself. */
+  /** Server-computed 'YYYY-MM' vote period. The client must never derive this itself. */
   @ApiProperty() periodKey!: string;
 
   @ApiProperty({
@@ -173,9 +217,9 @@ export class MonthBoardMoveResponseDto {
   reordered!: string[];
 }
 
-export class CoinBudgetDto {
+export class VoteBudgetDto {
   @ApiProperty() periodKey!: string;
-  @ApiProperty() coinsPerMonth!: number;
+  @ApiProperty() votesPerMonth!: number;
   @ApiProperty() used!: number;
   @ApiProperty() remaining!: number;
 }
@@ -183,14 +227,14 @@ export class CoinBudgetDto {
 /**
  * Returned by PUT /allocations. Carries BOTH the updated opportunity aggregate and the
  * caller's budget, so the frontend can reconcile its optimistic patch in one round-trip
- * instead of refetching the list (which would stomp an in-flight coin edit).
+ * instead of refetching the list (which would stomp an in-flight vote).
  */
 export class SetAllocationResponseDto {
   @ApiProperty() opportunityId!: string;
   @ApiProperty() periodKey!: string;
-  @ApiProperty() coins!: number;
+  @ApiProperty() votes!: number;
   @ApiProperty() priorityScore!: number;
-  @ApiProperty({ type: CoinBudgetDto }) budget!: CoinBudgetDto;
+  @ApiProperty({ type: VoteBudgetDto }) budget!: VoteBudgetDto;
 }
 
 export class RoadmapFacetsDto {
@@ -299,4 +343,26 @@ export class RoadmapImportResultDto {
     description: 'The same progress output the CLI prints.',
   })
   log!: string[];
+}
+
+/**
+ * The result of pressing "Open in Builder Agent".
+ *
+ * `created` is the whole contract for whether the client seeds the interview: on a resume the
+ * transcript already has the brief in it, and sending it again would open the session with the
+ * same paragraph twice and the agent responding to the repeat. `seedMessage` is null in that case
+ * for the same reason — there is nothing to send.
+ */
+export class OpenBuilderSessionResponseDto {
+  @ApiProperty() sessionId!: string;
+  @ApiProperty({
+    description:
+      'True only when this call created the session, so the client must seed it',
+  })
+  created!: boolean;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'The opening brief to send, when created',
+  })
+  seedMessage!: string | null;
 }

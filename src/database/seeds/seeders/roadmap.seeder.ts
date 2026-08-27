@@ -84,17 +84,17 @@ const OPPORTUNITIES: OpportunityFixture[] = [
   },
 ];
 
-// Coins allocated by the seed admin: two NEW-stage opportunities in the current
+// Votes cast by the seed admin: two NEW-stage opportunities in the current
 // period, plus a historical allocation from a prior period on an opportunity that
 // has since moved on (allocations are never removed on a stage change).
 const ALLOCATIONS: Array<{
   opportunityKey: string;
   monthsAgo: number;
-  coins: number;
+  votes: number;
 }> = [
-  { opportunityKey: 'scribe-sentiment-chart', monthsAgo: 0, coins: 40 },
-  { opportunityKey: 'tenant-onboarding-checklist', monthsAgo: 0, coins: 30 },
-  { opportunityKey: 'actor-interrupt-break', monthsAgo: 1, coins: 20 },
+  { opportunityKey: 'scribe-sentiment-chart', monthsAgo: 0, votes: 40 },
+  { opportunityKey: 'tenant-onboarding-checklist', monthsAgo: 0, votes: 30 },
+  { opportunityKey: 'actor-interrupt-break', monthsAgo: 1, votes: 20 },
 ];
 
 function periodKey(monthsAgo: number): string {
@@ -145,7 +145,7 @@ export async function seedRoadmap(
         opportunityId: opportunity.id,
         periodKey: periodKey(allocation.monthsAgo),
       },
-      { coins: allocation.coins },
+      { votes: allocation.votes },
     );
   }
 

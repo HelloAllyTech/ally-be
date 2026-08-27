@@ -8,7 +8,7 @@ import {
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 
 /**
- * Qualitative research alongside the quantitative coin votes: a user interview, optionally
+ * Qualitative research alongside the quantitative votes: a user interview, optionally
  * with the raw transcript, and a summary that is either hand-written or LLM-generated from
  * the transcript.
  *

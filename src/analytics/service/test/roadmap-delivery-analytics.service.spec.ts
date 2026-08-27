@@ -16,21 +16,21 @@ const FIXED_NOW = new Date('2026-08-10T12:00:00.000Z');
 const row = (
   month: string,
   owner: string | null,
-  coins: number,
+  votes: number,
   opportunities = 1,
   type = RoadmapOpportunityType.IDEA,
-): RoadmapDeliveryRow => ({ month, owner, type, opportunities, coins });
+): RoadmapDeliveryRow => ({ month, owner, type, opportunities, votes });
 
-const ownerCoins = (
+const ownerVotes = (
   result: {
-    months: { month: string; owners: { owner: string; coins: number }[] }[];
+    months: { month: string; owners: { owner: string; votes: number }[] }[];
   },
   month: string,
   owner: string,
 ): number | undefined =>
   result.months
     .find((m) => m.month === month)
-    ?.owners.find((o) => o.owner === owner)?.coins;
+    ?.owners.find((o) => o.owner === owner)?.votes;
 
 describe('RoadmapDeliveryAnalyticsService', () => {
   let service: RoadmapDeliveryAnalyticsService;
@@ -82,14 +82,14 @@ describe('RoadmapDeliveryAnalyticsService', () => {
     // client needs an empty months list so it can show an empty state instead.
     await setup(
       [],
-      [{ type: RoadmapOpportunityType.IDEA, opportunities: 173, coins: 604 }],
+      [{ type: RoadmapOpportunityType.IDEA, opportunities: 173, votes: 604 }],
     );
 
     const result = await service.getRoadmapDelivery();
 
     expect(result.months).toEqual([]);
-    expect(result.plotted.coins).toBe(0);
-    expect(result.undated.coins).toBe(604);
+    expect(result.plotted.votes).toBe(0);
+    expect(result.undated.votes).toBe(604);
     expect(result.undated.opportunities).toBe(173);
   });
 
@@ -105,7 +105,7 @@ describe('RoadmapDeliveryAnalyticsService', () => {
       '2026-08-01',
     ]);
     expect(result.months[1]).toMatchObject({
-      coins: 0,
+      votes: 0,
       opportunities: 0,
       owners: [],
     });
@@ -143,11 +143,11 @@ describe('RoadmapDeliveryAnalyticsService', () => {
       '2026-09-01',
       '2026-10-01',
     ]);
-    const plottedFromBars = result.months.reduce((sum, m) => sum + m.coins, 0);
-    expect(plottedFromBars).toBe(result.plotted.coins);
+    const plottedFromBars = result.months.reduce((sum, m) => sum + m.votes, 0);
+    expect(plottedFromBars).toBe(result.plotted.votes);
   });
 
-  it('sums coins per owner per month and keeps the month total consistent', async () => {
+  it('sums votes per owner per month and keeps the month total consistent', async () => {
     await setup([
       row('2026-07-01', 'Ajey', 40, 2),
       row('2026-07-01', 'Gopi', 15, 1),
@@ -158,15 +158,15 @@ describe('RoadmapDeliveryAnalyticsService', () => {
     const july = result.months.find((m) => m.month === '2026-07-01');
 
     expect(july).toMatchObject({
-      coins: 60,
+      votes: 60,
       opportunities: 4,
-      ideaCoins: 55,
-      bugCoins: 5,
+      ideaVotes: 55,
+      bugVotes: 5,
       ideaOpportunities: 3,
       bugOpportunities: 1,
     });
-    expect(ownerCoins(result, '2026-07-01', 'Ajey')).toBe(45);
-    expect(ownerCoins(result, '2026-07-01', 'Gopi')).toBe(15);
+    expect(ownerVotes(result, '2026-07-01', 'Ajey')).toBe(45);
+    expect(ownerVotes(result, '2026-07-01', 'Gopi')).toBe(15);
   });
 
   it('keeps the type splits reconciling with the totals', async () => {
@@ -177,7 +177,7 @@ describe('RoadmapDeliveryAnalyticsService', () => {
 
     const { plotted } = await service.getRoadmapDelivery();
 
-    expect(plotted.ideaCoins + plotted.bugCoins).toBe(plotted.coins);
+    expect(plotted.ideaVotes + plotted.bugVotes).toBe(plotted.votes);
     expect(plotted.ideaOpportunities + plotted.bugOpportunities).toBe(
       plotted.opportunities,
     );
@@ -189,12 +189,12 @@ describe('RoadmapDeliveryAnalyticsService', () => {
     const result = await service.getRoadmapDelivery();
 
     expect(
-      ownerCoins(result, '2026-07-01', ROADMAP_DELIVERY_UNASSIGNED_LABEL),
+      ownerVotes(result, '2026-07-01', ROADMAP_DELIVERY_UNASSIGNED_LABEL),
     ).toBe(12);
-    expect(result.months.find((m) => m.month === '2026-07-01')?.coins).toBe(52);
+    expect(result.months.find((m) => m.month === '2026-07-01')?.votes).toBe(52);
   });
 
-  it('orders owners by all-time coins with the context bands last', async () => {
+  it('orders owners by all-time votes with the context bands last', async () => {
     await setup([
       row('2026-06-01', 'Gopi', 10),
       row('2026-07-01', 'Ajey', 40),
@@ -224,7 +224,7 @@ describe('RoadmapDeliveryAnalyticsService', () => {
     const orderIn = (month: string) =>
       result.months.find((m) => m.month === month)?.owners.map((o) => o.owner);
 
-    // Ajey outranks Gopi on all-time coins (45 vs 11), so Ajey comes first in
+    // Ajey outranks Gopi on all-time votes (45 vs 11), so Ajey comes first in
     // BOTH months — including June, where Gopi shipped more.
     expect(result.owners).toEqual(['Ajey', 'Gopi']);
     expect(orderIn('2026-06-01')).toEqual(['Ajey', 'Gopi']);
@@ -259,13 +259,13 @@ describe('RoadmapDeliveryAnalyticsService', () => {
     expect(result.owners[result.owners.length - 1]).toBe(
       ROADMAP_DELIVERY_OTHER_LABEL,
     );
-    // The two weakest owners (coins 92 and 91) are the ones rolled up.
-    expect(ownerCoins(result, '2026-07-01', ROADMAP_DELIVERY_OTHER_LABEL)).toBe(
+    // The two weakest owners (votes 92 and 91) are the ones rolled up.
+    expect(ownerVotes(result, '2026-07-01', ROADMAP_DELIVERY_OTHER_LABEL)).toBe(
       183,
     );
     // Nothing is lost in the roll-up.
-    expect(result.months[0].coins).toBe(
-      owners.reduce((sum, o) => sum + o.coins, 0),
+    expect(result.months[0].votes).toBe(
+      owners.reduce((sum, o) => sum + o.votes, 0),
     );
   });
 });

@@ -33,17 +33,14 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import {
   AiDraftDto,
   AiGenerateClaudePromptDto,
-  AiReleaseNotesDto,
   AiSummariseDto,
   RoadmapImportRequestDto,
   CreateInterviewNoteDto,
-  CreateReleaseNoteDto,
   CreateTaxonomyItemDto,
   RenameTaxonomyItemDto,
   ReorderTaxonomyDto,
   RoadmapListQueryDto,
   UpdateInterviewNoteDto,
-  UpdateReleaseNoteDto,
 } from '../dto/roadmap-content.dto';
 import {
   AiEnhanceResponseDto,
@@ -58,10 +55,7 @@ import {
 import { RoadmapImportService } from '../service/roadmap-import.service';
 import { RoadmapOpportunityService } from '../service/roadmap-opportunity.service';
 import { RoadmapTaxonomyService } from '../service/roadmap-taxonomy.service';
-import {
-  RoadmapInterviewNoteService,
-  RoadmapReleaseNoteService,
-} from '../service/roadmap-content.service';
+import { RoadmapInterviewNoteService } from '../service/roadmap-content.service';
 import { RoadmapAiService } from '../service/roadmap-ai.service';
 import { RoadmapVectorService } from '../service/roadmap-vector.service';
 import { RoadmapAccessService } from '../service/roadmap-access.service';
@@ -75,7 +69,6 @@ export class RoadmapAdminController {
   constructor(
     private readonly taxonomyService: RoadmapTaxonomyService,
     private readonly interviewService: RoadmapInterviewNoteService,
-    private readonly releaseNoteService: RoadmapReleaseNoteService,
     private readonly aiService: RoadmapAiService,
     private readonly vectorService: RoadmapVectorService,
     private readonly opportunityService: RoadmapOpportunityService,
@@ -292,47 +285,6 @@ export class RoadmapAdminController {
   // READ is VIEW-gated, WRITE is EDIT-gated. Deliberate: the source used RLS, so a non-admin
   // SELECT returned 200 [] rather than 403, and its client relied on that.
 
-  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
-  @Get('release-notes')
-  listReleaseNotes(@Query() query: RoadmapListQueryDto) {
-    return this.releaseNoteService.list(query);
-  }
-
-  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
-  })
-  @Post('release-notes')
-  createReleaseNote(
-    @CurrentUser() user: TokenUser,
-    @Body() dto: CreateReleaseNoteDto,
-  ) {
-    return this.releaseNoteService.create(user.id, dto);
-  }
-
-  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
-  })
-  @Patch('release-notes/:id')
-  updateReleaseNote(
-    @CurrentUser() user: TokenUser,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateReleaseNoteDto,
-  ) {
-    return this.releaseNoteService.update(user.id, id, dto);
-  }
-
-  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
-  })
-  @Delete('release-notes/:id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  removeReleaseNote(
-    @CurrentUser() user: TokenUser,
-    @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<void> {
-    return this.releaseNoteService.remove(user.id, id);
-  }
-
   // ── AI helpers ────────────────────────────────────────────────────────────
 
   @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
@@ -406,24 +358,6 @@ export class RoadmapAdminController {
       ),
     };
   }
-
-  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
-  })
-  @Post('ai/release-notes')
-  @ApiOperation({
-    summary: 'Draft release notes from released opportunities',
-    description:
-      'Non-released selections are filtered out before the model sees them.',
-  })
-  @ApiResponse({ status: 201, type: AiTextResponseDto })
-  async draftReleaseNotes(
-    @Body() dto: AiReleaseNotesDto,
-  ): Promise<AiTextResponseDto> {
-    return { text: await this.aiService.draftReleaseNotes(dto.opportunityIds) };
-  }
-
-  // ── vector-index repair ───────────────────────────────────────────────────
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],

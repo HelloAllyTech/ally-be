@@ -1,3 +1,4 @@
+import { RoadmapOpportunityStage } from '../enum/roadmap-opportunity.enum';
 import { TIME } from 'src/common/constants/time.constants';
 
 /**
@@ -7,11 +8,11 @@ import { TIME } from 'src/common/constants/time.constants';
  */
 
 /**
- * Coins each user may allocate per calendar month. Unspent coins LAPSE — there is no
- * rollover; the period key simply changes. Mirrored on the frontend, and enforced by both
+ * Votes each user may cast per calendar month. Unused votes LAPSE — there is no rollover;
+ * the period key simply changes. Mirrored on the frontend, and enforced by both
  * roadmap_enforce_monthly_cap() and RoadmapAllocationService.
  */
-export const COINS_PER_MONTH = 100;
+export const VOTES_PER_MONTH = 100;
 
 /**
  * The `productGoal` every bug report is filed under. `productGoal` is a required text
@@ -41,6 +42,15 @@ export const BUG_REPORT_RATE_LIMIT = {
   TTL_MS: TIME.HOUR_IN_MS,
 } as const;
 
+/**
+ * How much of an opportunity's description becomes the Builder session title.
+ *
+ * Builder derives its branch slug from the title, so this is a readability bound, not a storage
+ * one — BuilderSessionService truncates to its own BUILDER_TITLE_MAX_LENGTH regardless. 80 is
+ * about a headline's worth, which is what a branch name and a session list can both carry.
+ */
+export const BUILDER_SEED_TITLE_MAX = 80;
+
 export const ROADMAP_LIMITS = {
   DESCRIPTION_MAX: 1000,
   PRD_MAX: 20000,
@@ -50,16 +60,41 @@ export const ROADMAP_LIMITS = {
   INTERVIEW_SUMMARY_MAX: 5000,
   /** Cap on transcript text handed to the LLM for summarisation. */
   INTERVIEW_TRANSCRIPT_MAX: 50000,
-  RELEASE_NOTE_CONTENT_MAX: 20000,
-  RELEASE_NOTE_TITLE_MAX: 200,
   SAVED_VIEW_NAME_MAX: 100,
   GOAL_NAME_MAX: 200,
   OWNER_NAME_MAX: 200,
 } as const;
 
+/**
+ * The stages that make up THE QUEUE — the working pipeline.
+ *
+ * A single list: everything still in play, ordered by total votes. Released and archived are out
+ * because they are records rather than work. This drives both the queue's stage filter and the
+ * queue-rank window (see QUEUE_RANK_SQL), so the ranked population and the filtered population
+ * cannot drift apart.
+ */
+export const ROADMAP_QUEUE_STAGES = [
+  RoadmapOpportunityStage.NEW,
+  RoadmapOpportunityStage.PRIORITISED,
+  RoadmapOpportunityStage.UNDER_DEVELOPMENT,
+] as const;
+
 export const ROADMAP_LIST_DEFAULTS = {
   LIMIT: 50,
-  MAX_LIMIT: 200,
+  /**
+   * Hard ceiling on one list response. Raised from 200 when the list view replaced pagination
+   * with "Load more": that button grows `limit` rather than walking `offset`, so the ceiling is
+   * now the point at which loading more stops working.
+   *
+   * The repository CLAMPS silently (`Math.min(limit, MAX_LIMIT)`) rather than rejecting, so
+   * exceeding this does not error — it just returns fewer rows than asked for, which on the
+   * client looks like a button that does nothing. The client mirrors this number so it can say
+   * so instead; if you change it here, change it there (utils/paging.ts).
+   *
+   * 500 is chosen against the real population: the whole board is ~430 rows today, so this
+   * covers loading everything in one view with room to grow, while still bounding a response.
+   */
+  MAX_LIMIT: 500,
 } as const;
 
 /**
@@ -114,7 +149,6 @@ export const ROADMAP_PROMPT_CODES = {
   CLASSIFY_GOAL: 'roadmap_classify_goal',
   DUPLICATE_CHECK: 'roadmap_duplicate_check',
   SUMMARISE_INTERVIEW: 'roadmap_summarise_interview',
-  RELEASE_NOTES: 'roadmap_release_notes',
   GENERATE_CLAUDE_PROMPT: 'roadmap_generate_claude_prompt',
 } as const;
 

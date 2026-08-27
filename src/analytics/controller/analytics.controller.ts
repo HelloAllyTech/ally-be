@@ -689,16 +689,16 @@ export class AnalyticsController {
   @Get('roadmap-delivery')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
-    summary: 'Coins shipped per month by owner (super-admin)',
+    summary: 'Votes shipped per month by owner (super-admin)',
     description:
       'Of the demand our own team voted for on the internal product roadmap, how ' +
       'much did we ship, when, and by whom. Each released opportunity — both ' +
-      "`idea` and `bug` — is weighted by its COINS, i.e. the board's " +
+      "`idea` and `bug` — is weighted by its VOTES, i.e. the board's " +
       '`priorityScore`: the sum over every voter and every monthly period, not ' +
       'just the release month, because an opportunity accrues backing while it ' +
       'waits and shipping it satisfies all of it. That makes a bar a measure of ' +
       'demand satisfied rather than of throughput, where a count would weigh a ' +
-      '3-coin nicety like a 90-coin blocker. Bucketed on `releasedAt` by ' +
+      '3-vote nicety like a 90-vote blocker. Bucketed on `releasedAt` by ' +
       "calendar month and split by owner (the linked account's current name, " +
       'else the legacy migrated string, else an Unassigned band), with the tail ' +
       'past `maxOwners` rolled into one band on an ALL-TIME ranking so no band ' +

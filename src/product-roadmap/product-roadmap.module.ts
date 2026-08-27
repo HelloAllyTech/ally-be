@@ -13,7 +13,6 @@ import { RoadmapOpportunity } from './entity/roadmap-opportunity.entity';
 import { RoadmapOpportunityComment } from './entity/roadmap-opportunity-comment.entity';
 import { RoadmapOpportunityOwner } from './entity/roadmap-opportunity-owner.entity';
 import { RoadmapProductGoal } from './entity/roadmap-product-goal.entity';
-import { RoadmapReleaseNote } from './entity/roadmap-release-note.entity';
 import { RoadmapSavedView } from './entity/roadmap-saved-view.entity';
 import { RoadmapUserMap } from './entity/roadmap-user-map.entity';
 import { RoadmapUserTabOrder } from './entity/roadmap-user-tab-order.entity';
@@ -22,7 +21,6 @@ import { RoadmapAllocationRepository } from './repository/roadmap-allocation.rep
 import {
   RoadmapInterviewNoteRepository,
   RoadmapOpportunityCommentRepository,
-  RoadmapReleaseNoteRepository,
   RoadmapUserTabOrderRepository,
 } from './repository/roadmap-content.repository';
 import { RoadmapOpportunityRepository } from './repository/roadmap-opportunity.repository';
@@ -36,15 +34,14 @@ import { RoadmapAccessService } from './service/roadmap-access.service';
 import { RoadmapAiService } from './service/roadmap-ai.service';
 import { RoadmapAllocationService } from './service/roadmap-allocation.service';
 import { RoadmapCommentService } from './service/roadmap-comment.service';
-import {
-  RoadmapInterviewNoteService,
-  RoadmapReleaseNoteService,
-} from './service/roadmap-content.service';
+import { RoadmapInterviewNoteService } from './service/roadmap-content.service';
 import { RoadmapNotificationService } from './service/roadmap-notification.service';
 import { RoadmapImportService } from './service/roadmap-import.service';
 import { RoadmapOpportunityService } from './service/roadmap-opportunity.service';
 import { RoadmapSavedViewService } from './service/roadmap-saved-view.service';
 import { RoadmapSplitMergeService } from './service/roadmap-split-merge.service';
+import { RoadmapBuilderService } from './service/roadmap-builder.service';
+import { BuilderModule } from 'src/builder/builder.module';
 import { RoadmapBoardService } from './service/roadmap-board.service';
 import { RoadmapTaxonomyService } from './service/roadmap-taxonomy.service';
 import { RoadmapVectorService } from './service/roadmap-vector.service';
@@ -55,7 +52,7 @@ import { RoadmapOpportunityController } from './controller/roadmap-opportunity.c
 import { RoadmapGateway } from './gateway/roadmap.gateway';
 
 /**
- * Product Roadmap — the internal coin-voting prioritisation board, rebuilt from the standalone
+ * Product Roadmap — the internal vote-based prioritisation board, rebuilt from the standalone
  * `sandeep-roadmap-app` (Next.js + Supabase). Global, not tenant-scoped.
  *
  * Access is three permissions rather than a role gate, because viewing and voting are meant to
@@ -88,7 +85,6 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
       RoadmapAllocation,
       RoadmapOpportunityComment,
       RoadmapInterviewNote,
-      RoadmapReleaseNote,
       RoadmapSavedView,
       RoadmapUserTabOrder,
       RoadmapUserMap,
@@ -106,6 +102,16 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
     PromptModule,
     // LlmUsageService — token/cost accounting, which is mandatory for every LLM call here.
     LlmUsageModule,
+    /**
+     * BuilderSessionService — "Open in Builder Agent" on an opportunity.
+     *
+     * The whole module rather than the entity (the treatment BugFinding gets above) because
+     * creating a session is real logic: slug allocation, the default budget ceiling and the
+     * tenant caps all live in that service, and a roadmap-side INSERT would silently skip them.
+     * Safe to import: nothing in Builder's graph reaches back here — only AnalyticsSuggestions
+     * imports ProductRoadmapModule.
+     */
+    BuilderModule,
   ],
   controllers: [
     RoadmapOpportunityController,
@@ -120,7 +126,6 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
     RoadmapAllocationRepository,
     RoadmapOpportunityCommentRepository,
     RoadmapInterviewNoteRepository,
-    RoadmapReleaseNoteRepository,
     RoadmapSavedViewRepository,
     RoadmapUserTabOrderRepository,
     // services
@@ -131,12 +136,12 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
     RoadmapOpportunityService,
     RoadmapAllocationService,
     RoadmapSplitMergeService,
+    RoadmapBuilderService,
     RoadmapBoardService,
     RoadmapCommentService,
     RoadmapSavedViewService,
     RoadmapTaxonomyService,
     RoadmapInterviewNoteService,
-    RoadmapReleaseNoteService,
     RoadmapAiService,
     // realtime
     RoadmapGateway,

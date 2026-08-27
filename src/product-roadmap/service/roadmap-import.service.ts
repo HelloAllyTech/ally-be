@@ -65,7 +65,7 @@ export class RoadmapImportService {
       `[ROADMAP] Import requested by user ${actorId}: dryRun=${options.dryRun !== false} ` +
         `createUsers=${options.createMissingUsers === true} ` +
         `opportunities=${snapshot.opportunities.length} ` +
-        `coins=${snapshot.manifest?.totalCoins}`,
+        `votes=${snapshot.manifest?.totalVotes}`,
     );
 
     const result = await runRoadmapImport(this.dataSource, snapshot, options);
@@ -122,9 +122,9 @@ export class RoadmapImportService {
         'Bundle is missing "manifest" — refusing to load a snapshot that cannot be verified.',
       );
     }
-    if (typeof manifest.totalCoins !== 'number') {
+    if (typeof manifest.totalVotes !== 'number') {
       throw new BadRequestException(
-        'Bundle manifest has no numeric totalCoins, so coin conservation could not be checked.',
+        'Bundle manifest has no numeric totalVotes, so vote conservation could not be checked.',
       );
     }
 

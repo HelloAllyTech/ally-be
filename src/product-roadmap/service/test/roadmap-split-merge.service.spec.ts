@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { RoadmapSplitMergeService } from '../roadmap-split-merge.service';
@@ -68,7 +72,7 @@ describe('RoadmapSplitMergeService', () => {
       }),
       save: jest.fn(async (entityOrData: unknown, maybeData?: unknown) => {
         const data = (maybeData ?? entityOrData) as Record<string, unknown>;
-        if (data && 'coins' in data) {
+        if (data && 'votes' in data) {
           calls.push('insert-allocation');
           savedAllocations.push(data as Partial<RoadmapAllocation>);
           return data;
@@ -128,24 +132,24 @@ describe('RoadmapSplitMergeService', () => {
     }));
 
   describe('split', () => {
-    it('redistributes each contributor’s coins by weight, conserving the total', async () => {
+    it('redistributes each contributor’s votes by weight, conserving the total', async () => {
       setup({
         allocations: [
-          { userId: 1, opportunityId: SRC, periodKey: '2026-07', coins: 100 },
-          { userId: 2, opportunityId: SRC, periodKey: '2026-06', coins: 43 },
+          { userId: 1, opportunityId: SRC, periodKey: '2026-07', votes: 100 },
+          { userId: 2, opportunityId: SRC, periodKey: '2026-06', votes: 43 },
         ],
       });
 
       await service.split(ACTOR, SRC, parts([50, 30, 20]));
 
-      const total = savedAllocations.reduce((a, r) => a + (r.coins ?? 0), 0);
+      const total = savedAllocations.reduce((a, r) => a + (r.votes ?? 0), 0);
       expect(total).toBe(143);
 
       // Per (user, period) totals are preserved exactly — nobody's monthly spend changes.
       const byUserPeriod = savedAllocations.reduce<Record<string, number>>(
         (acc, r) => {
           const key = `${r.userId}|${r.periodKey}`;
-          acc[key] = (acc[key] ?? 0) + (r.coins ?? 0);
+          acc[key] = (acc[key] ?? 0) + (r.votes ?? 0);
           return acc;
         },
         {},
@@ -155,14 +159,14 @@ describe('RoadmapSplitMergeService', () => {
 
     /**
      * ORDERING. Every original allocation row must be deleted BEFORE any part's row is
-     * inserted. Otherwise the cap trigger briefly sees a user holding their original coins AND
+     * inserted. Otherwise the cap trigger briefly sees a user holding their original votes AND
      * their new shares — over 100 — and rejects a legitimate split. The source dodged this with
      * set_config('app.bypass_stage_check'); we simply never create the invalid state.
      */
     it('deletes the original allocations before inserting any new ones', async () => {
       setup({
         allocations: [
-          { userId: 1, opportunityId: SRC, periodKey: '2026-07', coins: 90 },
+          { userId: 1, opportunityId: SRC, periodKey: '2026-07', votes: 90 },
         ],
       });
 
@@ -174,38 +178,53 @@ describe('RoadmapSplitMergeService', () => {
       );
     });
 
-    it('skips zero-coin shares rather than storing them', async () => {
+    it('skips zero-vote shares rather than storing them', async () => {
       setup({
         allocations: [
-          { userId: 1, opportunityId: SRC, periodKey: '2026-07', coins: 1 },
+          { userId: 1, opportunityId: SRC, periodKey: '2026-07', votes: 1 },
         ],
       });
 
       await service.split(ACTOR, SRC, parts([100, 0, 0]));
 
-      // 1 coin across [100,0,0] is [1,0,0] — only one row should be written.
+      // 1 vote across [100,0,0] is [1,0,0] — only one row should be written.
       expect(savedAllocations).toHaveLength(1);
-      expect(savedAllocations[0].coins).toBe(1);
+      expect(savedAllocations[0].votes).toBe(1);
     });
 
-    it('COPIES releasedAt onto new parts of a released source, never re-stamping it', async () => {
-      const releasedAt = new Date('2026-03-04T05:06:07Z');
+    it.each([
+      RoadmapOpportunityStage.RELEASED,
+      RoadmapOpportunityStage.ARCHIVED,
+    ])('refuses to split a %s source, writing nothing', async (stage) => {
       setup({
-        source: { stage: RoadmapOpportunityStage.RELEASED, releasedAt },
-        allocations: [],
+        source: { stage, releasedAt: new Date('2026-03-04T05:06:07Z') },
+        allocations: [
+          { userId: 1, opportunityId: SRC, periodKey: '2026-07', votes: 10 },
+        ],
       });
 
-      await service.split(ACTOR, SRC, parts([50, 50]));
+      await expect(service.split(ACTOR, SRC, parts([50, 50]))).rejects.toThrow(
+        ConflictException,
+      );
 
-      // This is precisely why the released-at rule lives in the service and not a trigger.
-      expect(createdOpportunities).toHaveLength(1);
-      expect(createdOpportunities[0].releasedAt).toBe(releasedAt);
-      expect(createdOpportunities[0].stage).toBe(
-        RoadmapOpportunityStage.RELEASED,
+      // The transaction must abort before any of it happens: no parts created, no allocations
+      // moved, and nothing broadcast to a board that did not change.
+      expect(createdOpportunities).toHaveLength(0);
+      expect(savedAllocations).toHaveLength(0);
+      expect(calls).not.toContain('delete-allocations');
+      expect(notifications.emit).not.toHaveBeenCalled();
+    });
+
+    it('names the offender and its stage in the refusal', async () => {
+      setup({ source: { stage: RoadmapOpportunityStage.ARCHIVED } });
+
+      // The manager must not have to go back to the board to work out which row blocked it.
+      await expect(service.split(ACTOR, SRC, parts([50, 50]))).rejects.toThrow(
+        new RegExp(`${SRC}.*archived`, 's'),
       );
     });
 
-    it('leaves releasedAt null on parts of a non-released source', async () => {
+    it('leaves releasedAt null on parts of a reshapeable source', async () => {
       setup({
         source: { stage: RoadmapOpportunityStage.NEW, releasedAt: null },
       });
@@ -222,19 +241,20 @@ describe('RoadmapSplitMergeService', () => {
     });
 
     it('splits a source that has already left the "new" stage', async () => {
-      // The stage guard is deliberately NOT consulted here — that is the bypass_stage_check
-      // replacement.
+      // Leaving "new" only stops VOTES, not reshaping — the allocation stage rule and the
+      // reshape rule are different rules with different stage sets, and prioritised /
+      // under development sit between them.
       setup({
         source: { stage: RoadmapOpportunityStage.PRIORITISED },
         allocations: [
-          { userId: 1, opportunityId: SRC, periodKey: '2026-07', coins: 10 },
+          { userId: 1, opportunityId: SRC, periodKey: '2026-07', votes: 10 },
         ],
       });
 
       await expect(
         service.split(ACTOR, SRC, parts([50, 50])),
       ).resolves.toBeDefined();
-      expect(savedAllocations.reduce((a, r) => a + (r.coins ?? 0), 0)).toBe(10);
+      expect(savedAllocations.reduce((a, r) => a + (r.votes ?? 0), 0)).toBe(10);
     });
 
     it('re-indexes every part and broadcasts one invalidation', async () => {
@@ -318,21 +338,33 @@ describe('RoadmapSplitMergeService', () => {
     const setupMerge = (
       allocations: Partial<RoadmapAllocation>[],
       sourceIds: string[] = [A, B],
+      stages?: {
+        primary?: RoadmapOpportunityStage;
+        sources?: Record<string, RoadmapOpportunityStage>;
+      },
     ) => {
+      const sourceStages = stages?.sources;
       manager.findOne.mockResolvedValue({
         id: SRC,
-        stage: RoadmapOpportunityStage.NEW,
+        stage: stages?.primary ?? RoadmapOpportunityStage.NEW,
       });
       manager.createQueryBuilder
-        .mockReturnValueOnce(queryBuilder(sourceIds.map((id) => ({ id })))) // the sources
+        .mockReturnValueOnce(
+          queryBuilder(
+            sourceIds.map((id) => ({
+              id,
+              stage: sourceStages?.[id] ?? RoadmapOpportunityStage.NEW,
+            })),
+          ),
+        ) // the sources
         .mockReturnValueOnce(queryBuilder(allocations)); // their allocations
     };
 
-    it('rolls coins up per (user, period) and conserves the total', async () => {
+    it('rolls votes up per (user, period) and conserves the total', async () => {
       setupMerge([
-        { userId: 1, opportunityId: SRC, periodKey: '2026-07', coins: 20 },
-        { userId: 1, opportunityId: A, periodKey: '2026-07', coins: 30 },
-        { userId: 2, opportunityId: B, periodKey: '2026-06', coins: 15 },
+        { userId: 1, opportunityId: SRC, periodKey: '2026-07', votes: 20 },
+        { userId: 1, opportunityId: A, periodKey: '2026-07', votes: 30 },
+        { userId: 2, opportunityId: B, periodKey: '2026-06', votes: 15 },
       ]);
 
       await service.merge(ACTOR, { primaryId: SRC, sourceIds: [A, B] });
@@ -340,7 +372,7 @@ describe('RoadmapSplitMergeService', () => {
       const byUserPeriod = savedAllocations.reduce<Record<string, number>>(
         (acc, r) => {
           acc[`${r.userId}|${r.periodKey}`] =
-            (acc[`${r.userId}|${r.periodKey}`] ?? 0) + (r.coins ?? 0);
+            (acc[`${r.userId}|${r.periodKey}`] ?? 0) + (r.votes ?? 0);
           return acc;
         },
         {},
@@ -351,7 +383,7 @@ describe('RoadmapSplitMergeService', () => {
 
     it('deletes the old allocations before inserting the rollup', async () => {
       setupMerge(
-        [{ userId: 1, opportunityId: A, periodKey: '2026-07', coins: 10 }],
+        [{ userId: 1, opportunityId: A, periodKey: '2026-07', votes: 10 }],
         [A],
       );
       await service.merge(ACTOR, { primaryId: SRC, sourceIds: [A] });
@@ -366,15 +398,15 @@ describe('RoadmapSplitMergeService', () => {
       // conservation invariant with nobody noticing.
       setupMerge(
         [
-          { userId: 1, opportunityId: SRC, periodKey: '2026-07', coins: 80 },
-          { userId: 1, opportunityId: A, periodKey: '2026-07', coins: 40 },
+          { userId: 1, opportunityId: SRC, periodKey: '2026-07', votes: 80 },
+          { userId: 1, opportunityId: A, periodKey: '2026-07', votes: 40 },
         ],
         [A],
       );
 
       await expect(
         service.merge(ACTOR, { primaryId: SRC, sourceIds: [A] }),
-      ).rejects.toThrow(/above the 100-coin cap/);
+      ).rejects.toThrow(/above the 100-vote cap/);
     });
 
     it('removes every source from the vector index', async () => {
@@ -402,6 +434,61 @@ describe('RoadmapSplitMergeService', () => {
       await expect(
         service.merge(ACTOR, { primaryId: SRC, sourceIds: [SRC] }),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it.each([
+      RoadmapOpportunityStage.RELEASED,
+      RoadmapOpportunityStage.ARCHIVED,
+    ])('refuses a merge whose PRIMARY is %s', async (stage) => {
+      setupMerge(
+        [{ userId: 1, opportunityId: A, periodKey: '2026-07', votes: 30 }],
+        [A, B],
+        { primary: stage },
+      );
+
+      await expect(
+        service.merge(ACTOR, { primaryId: SRC, sourceIds: [A, B] }),
+      ).rejects.toThrow(ConflictException);
+      expect(savedAllocations).toHaveLength(0);
+      expect(calls).not.toContain('soft-delete-sources');
+      expect(notifications.emit).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      RoadmapOpportunityStage.RELEASED,
+      RoadmapOpportunityStage.ARCHIVED,
+    ])('refuses a merge when any SOURCE is %s', async (stage) => {
+      // The worse of the two cases: a merge soft-deletes its sources, so allowing this would
+      // retire a shipped record and move its votes somewhere else.
+      setupMerge(
+        [{ userId: 1, opportunityId: A, periodKey: '2026-07', votes: 30 }],
+        [A, B],
+        { sources: { [B]: stage } },
+      );
+
+      await expect(
+        service.merge(ACTOR, { primaryId: SRC, sourceIds: [A, B] }),
+      ).rejects.toThrow(ConflictException);
+      expect(calls).not.toContain('soft-delete-sources');
+    });
+
+    it('names every offender, not just the first', async () => {
+      setupMerge([], [A, B], {
+        sources: {
+          [A]: RoadmapOpportunityStage.RELEASED,
+          [B]: RoadmapOpportunityStage.ARCHIVED,
+        },
+      });
+
+      const error: Error = await service
+        .merge(ACTOR, { primaryId: SRC, sourceIds: [A, B] })
+        .then(() => new Error('merge resolved but should have thrown'))
+        .catch((e: Error) => e);
+
+      // "2 of these cannot be merged" would send the manager back to the board to work out which.
+      expect(error).toBeInstanceOf(ConflictException);
+      expect(error.message).toContain(A);
+      expect(error.message).toContain(B);
     });
 
     it('404s when a source is missing or already merged', async () => {
