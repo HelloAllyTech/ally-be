@@ -50,6 +50,7 @@ export enum FeatureToggleKey {
   ANALYTICS = 'analytics',
   ANALYTICS_AGENT = 'analytics_agent',
   ANALYTICS_SUGGESTIONS = 'analytics_suggestions',
+  UX_SIGNALS = 'ux_signals',
 
   // Platform config (formerly SUPER_DUPER_ADMIN-only)
   USER_BADGES = 'user_badges',
@@ -185,6 +186,14 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     label: 'Analytics — Suggestions',
     description:
       'The Analytics Suggestions sub-tab, on top of general Analytics access.',
+    legacyGrants: SDA_ONLY,
+  },
+  {
+    key: FeatureToggleKey.UX_SIGNALS,
+    label: 'UX Signals',
+    description:
+      'The PostHog UX scan that files findings to Bug Hunter and suggestions ' +
+      'to the Analytics Suggestions queue, plus its "Scan now" control.',
     legacyGrants: SDA_ONLY,
   },
   {

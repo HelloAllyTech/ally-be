@@ -37,10 +37,14 @@ src/prompts/
 │   ├── code_mixed_system.txt
 │   ├── speech_reexpression_user.txt
 │   └── ...
-└── builder/
+├── builder/
+│   ├── _meta/
+│   │   └── interviewer_system.meta.json
+│   └── interviewer_system.txt
+└── ux_signals/
     ├── _meta/
-    │   └── interviewer_system.meta.json
-    └── interviewer_system.txt
+    │   └── triage.meta.json
+    └── triage.txt
 ```
 
 ### Agent system prompts
@@ -55,6 +59,20 @@ prompt for a long-running agent rather than a one-shot generation. Two things di
   prompt that has not been synced to the database yet would otherwise take the whole agent
   down. Copy that pattern rather than throwing; the agent working slightly worse beats the
   tab not opening.
+
+### Code-read one-shot prompts
+
+A third shape sits between the two: a folder like `analytics_suggestions/` or `ux_signals/`
+holds the system prompt for a **single** call that a feature makes on demand, read through
+`getPromptByCode` like an agent prompt but not driving a conversation.
+
+These deliberately do **not** degrade to a hardcoded fallback — they throw when the row is
+missing. The reasoning is the opposite of the agent case: an agent answering slightly worse
+still serves its user, whereas one of these produces a batch of stored items (roadmap
+suggestions, bug findings) that a human will later act on believing a reviewed prompt
+produced them. Silently falling back would put unattributable rows in a review queue, so
+failing the run is the safer answer. Follow whichever pattern matches what your prompt's
+output becomes, not whichever folder you copied.
 
 Prompts that a *runner* fetches over HTTP mid-run (Builder's build protocol) are not in this
 folder at all — they are TypeScript builders under `src/<domain>/constants/`, because they are

@@ -8,6 +8,11 @@
  * whether any hunt run has looked at it yet. `ANALYTICS_SUGGESTION` exists only
  * on rows backfilled from the old Analytics → Suggestions bug queue (migration
  * 1898000000000); no code path writes it going forward.
+ *
+ * `UX_SIGNAL` is written by the UX Signals scan (src/ux-signals), which reads
+ * PostHog telemetry rather than the codebase. Those findings carry no `file`:
+ * their stable coordinate is a route/element, passed as `symbol` so they dedupe
+ * precisely instead of falling back to the description fingerprint.
  */
 export enum BugFindingSource {
   TEST_FAILURE = 'test_failure',
@@ -16,6 +21,7 @@ export enum BugFindingSource {
   PRODUCTION_LOG = 'production_log',
   REPORTED_BUG = 'reported_bug',
   ANALYTICS_SUGGESTION = 'analytics_suggestion',
+  UX_SIGNAL = 'ux_signal',
 }
 
 export enum BugFindingSeverity {

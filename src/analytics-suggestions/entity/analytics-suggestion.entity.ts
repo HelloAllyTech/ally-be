@@ -2,7 +2,10 @@ import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 import { RoadmapOpportunityType } from 'src/product-roadmap/enum/roadmap-opportunity.enum';
 
-import { AnalyticsSuggestionStatus } from '../enum/analytics-suggestion.enum';
+import {
+  AnalyticsSuggestionSource,
+  AnalyticsSuggestionStatus,
+} from '../enum/analytics-suggestion.enum';
 
 /**
  * One LLM-drafted product suggestion awaiting a super-duper-admin's decision.
@@ -74,6 +77,21 @@ export class AnalyticsSuggestion extends BaseWithoutTenantEntity {
     default: AnalyticsSuggestionStatus.PENDING,
   })
   status!: AnalyticsSuggestionStatus;
+
+  /**
+   * Which pipeline drafted this — an analytics-window Generate run, or the UX
+   * Signals scan over PostHog telemetry.
+   *
+   * Defaulted rather than backfilled per row: every suggestion that existed
+   * before UX Signals came from a window run, so the column default IS the
+   * historical truth. Both sources share this queue and one accept/reject flow;
+   * the column exists so a reviewer can tell what kind of evidence backs a card.
+   */
+  @Column({
+    enum: AnalyticsSuggestionSource,
+    default: AnalyticsSuggestionSource.ANALYTICS_WINDOW,
+  })
+  source!: AnalyticsSuggestionSource;
 
   /**
    * Optional free text captured when rejecting, and fed into the next
