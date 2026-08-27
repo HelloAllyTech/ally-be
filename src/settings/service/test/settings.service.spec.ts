@@ -1272,6 +1272,73 @@ describe('SettingsService', () => {
     });
   });
 
+  describe('own-tenant fallback on settings writes', () => {
+    // The helpline app's Org. Settings screen is the *own*-tenant screen, so it
+    // sends no tenantId. A tenant admin was fine (their branch always used the
+    // JWT tenant); an Ally staff account with SYSTEM_ACCESS took the other
+    // branch and got "Tenant ID is required" on every toggle — while the
+    // matching GET happily reported the current value from their own tenant.
+    beforeEach(() => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+      preferenceService.getPreference.mockResolvedValue(null);
+      preferenceService.createPreference.mockResolvedValue({} as any);
+    });
+
+    it('falls back to the caller tenant for a system-access voice-note write', async () => {
+      const result = await service.updateScribeVoiceNoteEnabled(
+        undefined as unknown as string,
+        true,
+      );
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: PreferenceName.SCRIBE_VOICE_NOTE_ENABLED,
+          relatedId: mockTenantId,
+          value: { enabled: true },
+        }),
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('falls back to the caller tenant for a system-access note-creation write', async () => {
+      await service.updateScribeNoteCreationEnabled(
+        undefined as unknown as string,
+        true,
+      );
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
+          relatedId: mockTenantId,
+        }),
+      );
+    });
+
+    it('still honours an explicit tenantId from a system-access caller', async () => {
+      // The admin dashboard's per-tenant screen does send one, and it must keep
+      // winning — the fallback is for the screen that has nothing to send.
+      await service.updateScribeVoiceNoteEnabled('other-tenant', true);
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({ relatedId: 'other-tenant' }),
+      );
+    });
+
+    it('still pins a non-system-access caller to their own tenant', async () => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+
+      await service.updateScribeVoiceNoteEnabled('other-tenant', true);
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({ relatedId: mockTenantId }),
+      );
+    });
+  });
+
   describe('getEnabledCustomFieldTypes', () => {
     const mockCustomFieldTypesPreference = {
       id: mockPreferenceId,

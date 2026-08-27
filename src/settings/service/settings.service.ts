@@ -184,6 +184,37 @@ export class SettingsService {
     return row?.[0]?.code ?? tenantId;
   }
 
+  /**
+   * Which tenant a settings WRITE lands on.
+   *
+   * A tenant admin is pinned to their own tenant; an Ally staff account
+   * (SYSTEM_ACCESS) may name any tenant, which is what the admin dashboard's
+   * per-tenant screens do. The `??` on the staff branch is the part that
+   * matters: the helpline app's own Org. Settings screen sends no `tenantId`
+   * at all — it is the *own*-tenant screen, so there is nothing to send — and
+   * without the fallback a staff account opening that screen got
+   * "Tenant ID is required" on every toggle while an ordinary tenant admin on
+   * the same screen succeeded. The matching read helpers have always had this
+   * fallback, so the getter reported one thing and the setter refused to
+   * change it.
+   *
+   * Returns the resolved tenant CODE (see resolveTenantCode) — preference rows
+   * are keyed by code, not by uuid.
+   */
+  private async resolveWritableTenantId(tenantId?: string): Promise<string> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    const scopedTenantId = hasSystemAccess
+      ? (tenantId ?? ExecutionManager.getTenantId())
+      : ExecutionManager.getTenantId();
+    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
+    return this.resolveTenantCode(scopedTenantId);
+  }
+
   async getSummaryFieldsConfig(getSummaryFieldsDto?: GetSummaryFieldsDto) {
     const { tenantId: selectedTenantId } = getSummaryFieldsDto || {};
     const userId = ExecutionManager.getUserId();
@@ -431,8 +462,11 @@ export class SettingsService {
       [PERMISSIONS.SYSTEM_ACCESS],
     );
     // Super admins may target any tenant; a tenant admin is locked to their own.
+    // The `??` matters — see resolveWritableTenantId: the helpline app's own
+    // Org. Settings screen sends no tenantId, so without it a staff account on
+    // that screen fails where a tenant admin succeeds.
     const scopedTenantId = hasSystemAccess
-      ? dto.tenantId
+      ? (dto.tenantId ?? ExecutionManager.getTenantId())
       : ExecutionManager.getTenantId();
     if (!scopedTenantId) {
       throw new BadRequestException('Tenant ID is required');
@@ -675,18 +709,7 @@ export class SettingsService {
     tenantId: string,
     enabled: boolean,
   ): Promise<{ success: boolean }> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    // Super admins may target any tenant; a tenant admin is locked to their own.
-    const scopedTenantId = hasSystemAccess
-      ? tenantId
-      : ExecutionManager.getTenantId();
-    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
-    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+    const resolvedId = await this.resolveWritableTenantId(tenantId);
     const existing = await this.preferenceService.getPreference(
       PreferenceName.CUSTOM_FIELDS_ENABLED,
       resolvedId,
@@ -805,18 +828,7 @@ export class SettingsService {
     tenantId: string,
     enabled: boolean,
   ): Promise<{ success: boolean }> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    // Super admins may target any tenant; a tenant admin is locked to their own.
-    const scopedTenantId = hasSystemAccess
-      ? tenantId
-      : ExecutionManager.getTenantId();
-    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
-    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+    const resolvedId = await this.resolveWritableTenantId(tenantId);
     const existing = await this.preferenceService.getPreference(
       PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
       resolvedId,
@@ -866,18 +878,7 @@ export class SettingsService {
     tenantId: string,
     enabled: boolean,
   ): Promise<{ success: boolean }> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    // Super admins may target any tenant; a tenant admin is locked to their own.
-    const scopedTenantId = hasSystemAccess
-      ? tenantId
-      : ExecutionManager.getTenantId();
-    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
-    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+    const resolvedId = await this.resolveWritableTenantId(tenantId);
     const existing = await this.preferenceService.getPreference(
       PreferenceName.SCRIBE_VOICE_NOTE_ENABLED,
       resolvedId,
@@ -901,17 +902,6 @@ export class SettingsService {
     tenantId: string,
     enabledTypes: string[],
   ): Promise<{ success: boolean }> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    // Super admins may target any tenant; a tenant admin is locked to their own.
-    const scopedTenantId = hasSystemAccess
-      ? tenantId
-      : ExecutionManager.getTenantId();
-    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
     const allTypes = Object.values(CustomFieldType);
     const invalid = enabledTypes.filter(
       (t) => !allTypes.includes(t as CustomFieldType),
@@ -922,7 +912,7 @@ export class SettingsService {
       );
     }
 
-    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+    const resolvedId = await this.resolveWritableTenantId(tenantId);
 
     const existing = await this.preferenceService.getPreference(
       PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,

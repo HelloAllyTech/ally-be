@@ -45,6 +45,23 @@ export const FAILURE_MESSAGES = {
   AI_TIMEOUT: 'The AI service took too long to respond. Please try again.',
   AI_THROTTLED:
     'The AI service is busy right now. Please wait a moment and try again.',
+  // ── Scribe voice note ─────────────────────────────────────────────────────
+  /**
+   * Paired with VOICE_NOTE_EXTRACTION_FAILED. Says the dictation survived,
+   * because that is the part the counsellor cares about — they can read it back
+   * and type the fields rather than re-recording.
+   */
+  VOICE_NOTE_EXTRACTION_FAILED:
+    "We saved what you dictated, but couldn't fill the fields from it. Please fill them in below.",
+  /**
+   * Paired with FEATURE_NOT_ENABLED on the voice-note endpoint. Names the
+   * remedy (an admin switch), because the previous wording was the same generic
+   * "couldn't generate notes, please try again" a transient upstream failure
+   * produced — so a counsellor retried a request that could never succeed.
+   */
+  VOICE_NOTE_NOT_ENABLED:
+    'Voice notes are not switched on for your organisation. Ask an administrator to enable them.',
+
   AI_REJECTED:
     'The AI service could not process this request. Please contact support if it keeps happening.',
 } as const;
