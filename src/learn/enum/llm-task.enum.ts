@@ -52,6 +52,11 @@ export enum LlmTask {
   // Generate run. Its own label because the profile is unlike anything else
   // here — a whole analytics window in, at most ten suggestions out.
   ANALYTICS_SUGGESTIONS = 'analytics_suggestions',
+  // UX Signals scan (src/ux-signals): one triage call per scan, turning
+  // threshold-crossing PostHog signals into bug findings and suggestions. Its
+  // own label because the input is telemetry aggregates rather than an
+  // analytics window, so its token profile tracks detector count, not date range.
+  UX_SIGNALS = 'ux_signals',
 
   // ally-be studio operations (in-process).
   AUTOFILL_FIELD = 'autofill_field',

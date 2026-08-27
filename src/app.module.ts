@@ -67,6 +67,7 @@ import { LabModule } from './lab/lab.module';
 import { ProductRoadmapModule } from './product-roadmap/product-roadmap.module';
 import { LogsModule } from './logs/logs.module';
 import { ChangelogModule } from './changelog/changelog.module';
+import { UxSignalsModule } from './ux-signals/ux-signals.module';
 
 @Module({
   imports: [
@@ -137,6 +138,7 @@ import { ChangelogModule } from './changelog/changelog.module';
     ProductRoadmapModule,
     LogsModule,
     ChangelogModule,
+    UxSignalsModule,
   ],
   controllers: [],
   providers: [

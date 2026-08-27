@@ -564,6 +564,38 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * Read access to the self-hosted PostHog, for the UX Signals scan.
+   *
+   * Write-side PostHog config lives in the frontends (VITE_POSTHOG_*) and is
+   * unrelated: this is a *query* credential (a personal API key with read
+   * scope), used only to pull aggregates back out.
+   *
+   * `enabled` is derived rather than configured. A missing value means the scan
+   * skips itself and says so, which is what we want on a local or CI boot — the
+   * alternative is every environment without a PostHog credential failing a
+   * scheduled task once a day.
+   *
+   * All three are read with NO fallback, `host` included. An internal hostname
+   * must not be committed (the repo's gitleaks config rejects them outright),
+   * and a default host would be the wrong safety anyway: it would aim a
+   * credential at whichever environment the default named, rather than at the
+   * one whose credential it is.
+   */
+  get posthog() {
+    const host = this.configService.get<string>('POSTHOG_HOST');
+    const personalApiKey = this.configService.get<string>(
+      'POSTHOG_PERSONAL_API_KEY',
+    );
+    const projectId = this.configService.get<string>('POSTHOG_PROJECT_ID');
+    return {
+      host,
+      personalApiKey,
+      projectId,
+      enabled: Boolean(host && personalApiKey && projectId),
+    };
+  }
+
   get roleplayStudio() {
     return {
       // Copilot (spec-authoring interviewer) model. Same family as the
