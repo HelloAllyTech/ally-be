@@ -56,7 +56,10 @@ export class HealthController {
   @HealthCheck()
   check() {
     return this.health.check([
-      () => this.db.pingCheck(this.configService.database.database as string),
+      () =>
+        this.db.pingCheck(this.configService.database.database as string, {
+          timeout: CHECK_TIMEOUT_MS,
+        }),
       () => this.checkRedis(),
       () =>
         this.checkAiService(
