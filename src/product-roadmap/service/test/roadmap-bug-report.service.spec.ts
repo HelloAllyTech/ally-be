@@ -2,6 +2,7 @@ import { Repository } from 'typeorm';
 
 import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
 import { User } from 'src/user/entity/user.entity';
+import { UserRole } from 'src/common/constants/user.constants';
 
 import { RoadmapOpportunityRepository } from '../../repository/roadmap-opportunity.repository';
 import { RoadmapNotificationService } from '../roadmap-notification.service';
@@ -73,6 +74,80 @@ describe('RoadmapOpportunityService.createBugReport', () => {
     const { service, opportunityRepository } = build(true);
 
     await service.createBugReport(1, 'tenant-a', {
+      description: 'Coin allocator saved 0 coins silently',
+    });
+
+    expect(opportunityRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ source: 'staff' }),
+    );
+  });
+
+  /**
+   * A current-generation platform admin (created via /v1/platform-admins) holds ONLY the
+   * PLATFORM_ADMIN group — CreatePlatformAdminRole1895000000001 collapsed SUPER_ADMIN /
+   * SUPER_DUPER_ADMIN / MULTI_TENANT_ADMIN into it, and assignRole grants nothing else.
+   * isInternalReporter has to name PLATFORM_ADMIN (PLATFORM_TIER_ROLES), not just the two
+   * retired super-admin tiers (SUPER_ADMIN_ROLES) — otherwise every admin created since the
+   * collapse gets badged Consumer instead of Staff.
+   */
+  it('badges a report from a present-day platform admin as staff', async () => {
+    const opportunityRepository = {
+      create: jest.fn().mockImplementation((v) => v),
+      save: jest.fn().mockResolvedValue({
+        id: 'opp-1',
+        type: RoadmapOpportunityType.BUG,
+        description: 'Coin allocator saved 0 coins silently',
+      }),
+      findOneWithScore: jest.fn().mockResolvedValue({
+        id: 'opp-1',
+        type: RoadmapOpportunityType.BUG,
+        description: 'Coin allocator saved 0 coins silently',
+        stage: 'new',
+        priorityScore: 0,
+        myCoins: 0,
+        commentCount: 0,
+        ownerDisplay: null,
+      }),
+    };
+
+    // Simulates the real SQL: this account's only group is PLATFORM_ADMIN, so the query
+    // only matches if the roles list passed in actually includes it.
+    const userRepository = {
+      find: jest.fn().mockResolvedValue([]),
+      createQueryBuilder: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockImplementation(function (
+          this: { _roles?: UserRole[] },
+          _sql: string,
+          params: { roles: UserRole[] },
+        ) {
+          this._roles = params.roles;
+          return this;
+        }),
+        getCount: jest.fn().mockImplementation(function (this: {
+          _roles?: UserRole[];
+        }) {
+          return Promise.resolve(
+            this._roles?.includes(UserRole.PLATFORM_ADMIN) ? 1 : 0,
+          );
+        }),
+      }),
+    };
+
+    const service = new RoadmapOpportunityService(
+      opportunityRepository as unknown as RoadmapOpportunityRepository,
+      {
+        indexQuietly: jest.fn().mockResolvedValue(undefined),
+      } as unknown as RoadmapVectorService,
+      { emit: jest.fn() } as unknown as RoadmapNotificationService,
+      userRepository as unknown as Repository<User>,
+      {
+        create: jest.fn().mockImplementation((v) => v),
+        save: jest.fn().mockResolvedValue({ id: 'finding-1' }),
+      } as unknown as Repository<BugFinding>,
+    );
+
+    await service.createBugReport(7, 'tenant-a', {
       description: 'Coin allocator saved 0 coins silently',
     });
 
