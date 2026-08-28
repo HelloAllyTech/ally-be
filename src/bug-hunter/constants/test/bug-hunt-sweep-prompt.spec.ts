@@ -195,4 +195,38 @@ describe('buildSweepPrompt', () => {
     expect(p).toContain('/runs/abc-123/report');
     expect(p).toContain('/runs/abc-123/close');
   });
+
+  // ── one-shot runtime ─────────────────────────────────────────────────────
+  //
+  // `claude -p` exits 0 whenever the agent produces a final response. A fix
+  // session backgrounded its pre-commit-hooked `git commit`, said it would
+  // push "once it finishes", and ended its turn — the runner died with the
+  // work in its tree and the job stayed green. The sweep commits in the same
+  // way, once per fix, across a 300-turn run, so it is exposed to the same
+  // mistake more often rather than less.
+
+  it('tells the agent it gets one process and no second chance', () => {
+    const p = build();
+
+    expect(p).toMatch(/single non-interactive process/i);
+    expect(p).toMatch(/NEVER start a long command in the background/i);
+  });
+
+  it('quotes the sweep job’s own budget, not the fix session’s', () => {
+    // The two workflows cap differently — 120 vs 60 — and a sweep told it has
+    // an hour would ration work it has time for.
+    expect(build()).toMatch(/120 minutes is the real budget/);
+  });
+
+  it('warns that a commit runs the full suite and is not a hang', () => {
+    expect(build()).toMatch(
+      /pre-commit hook that re-runs lint and the whole suite/i,
+    );
+    expect(build()).toMatch(/NOT a hang/);
+  });
+
+  it('warns that the workflow fails the job on a run left open', () => {
+    expect(build()).toMatch(/re-reads this run the moment you exit/i);
+    expect(build()).toMatch(/fails the job if it is still open/i);
+  });
 });

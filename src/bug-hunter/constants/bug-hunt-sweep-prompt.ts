@@ -1,4 +1,5 @@
 import { BugHunterMode } from '../enum/bug-finding.enum';
+import { BUG_HUNT_SWEEP_JOB_TIMEOUT_MINUTES } from './bug-fix-session.constants';
 import { repoCommands } from './bug-hunt-repos.constants';
 import {
   BUG_HUNT_ESCALATION_GUIDANCE,
@@ -90,6 +91,9 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
   return [
     `You are running a repo-wide bug sweep on the "${repo}" repo, checked out at master in your current working directory. Read this repo's CLAUDE.md before you change anything. Bug Hunter is in ${mode.toUpperCase()} mode.`,
     ``,
+    `HOW YOU ARE RUNNING — read this before you plan anything:`,
+    `You are a single non-interactive process on a throwaway CI runner. The moment you end your turn the process exits and the runner is destroyed. There is no "later" for you: nothing re-invokes you, no background task ever notifies you, and any work not already pushed to GitHub or reported to Bug Hunter is lost with the machine. So NEVER start a long command in the background and end your turn intending to pick it up when it finishes — that silently throws away the rest of the sweep. Run long commands in the FOREGROUND and wait for them, however many minutes they take; ${BUG_HUNT_SWEEP_JOB_TIMEOUT_MINUTES} minutes is the real budget for everything below, and a single command is allowed to spend a large part of it. The full suite in Phase 1 and each commit in Phase 3 are the slowest, and both are meant to be — a commit here may fire a pre-commit hook that re-runs lint and the whole suite, which is expected and is NOT a hang.`,
+    ``,
     `Work through these phases IN ORDER. Report progress as you go with:`,
     `  curl -sS -X POST "${reportUrl}" -H "Content-Type: application/json" ${auth} -d '{"repo":"${repo}","stage":"<stage>","summary":"<one line>"}'`,
     `Valid stages: finder_result, verify, fix_attempt, test_written, doc_updated, pr_opened, merged, escalated, error.`,
@@ -167,7 +171,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     `## Phase 4 — Close`,
     `Exactly once, whatever happened, including if you found nothing at all:`,
     `  curl -sS -X POST "${closeUrl}" -H "Content-Type: application/json" ${auth} -d '{"status":"completed","foundCount":<n>,"autoMergedCount":<n>,"prOpenedCount":<n>,"dismissedCount":<n>}'`,
-    `A run left open looks to an admin like a sweep still working. If you hit something that stopped you entirely, close with {"status":"failed",...} instead and report an error stage explaining what.`,
+    `A run left open looks to an admin like a sweep still working. If you hit something that stopped you entirely, close with {"status":"failed",...} instead and report an error stage explaining what. The workflow re-reads this run the moment you exit and fails the job if it is still open, so stopping without closing is not a quiet outcome — it is a red run and an admin asking why.`,
     ``,
     `Finally: if a fix made a README, TESTING.md, DATA_SCHEMA.md or a CLAUDE.md "gotchas" section stale, update it in the same PR and report doc_updated naming the file.`,
   ]

@@ -205,6 +205,55 @@ jobs:
               -d "{\"modelUsage\":${MODEL_USAGE},\"cliReportedCostUsd\":${CLI_COST}}" || true
           fi
 
+      - name: Fail if the sweep ended without closing its run
+        # Same hole `bug-fix-session.yml` had. `claude -p` exits 0 whenever the
+        # agent produces a final response, including when it ends its turn
+        # mid-protocol — a fix session once backgrounded its `git commit`, said
+        # it would push "once it finishes", and ended; the runner died with the
+        # work in its tree and the job stayed green.
+        #
+        # A sweep has no single finding to read, so the terminal marker is the
+        # run itself: the protocol's last instruction is to close it. Still
+        # RUNNING once the CLI has exited means the agent stopped early, and
+        # nothing else would ever notice — there is no reconcile pass for an
+        # open run, so it would look like a sweep still working forever.
+        if: steps.cfg.outputs.skip != 'true'
+        env:
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -uo pipefail
+          STATUS=$(curl -sS -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/status" \
+            | jq -r '.status // "unknown"')
+          echo "Run ${{ steps.cfg.outputs.run_id }} is '$STATUS' after the sweep."
+
+          # Anything but `running` is a sweep that closed itself, one way or
+          # another. `unknown` means ally-be was unreachable, not that the
+          # agent failed — never fail a sweep over a reporting hiccup.
+          if [ "$STATUS" != "running" ]; then
+            exit 0
+          fi
+
+          echo "::error::The sweep ended with its run still open — it stopped mid-protocol without closing it."
+          SUMMARY="The sweep ended with its run still open — the agent stopped mid-protocol without closing it, so whatever it had not already reported is lost with the runner. Findings it did persist are kept. Start a new sweep to retry."
+          # Before the close, or appendEvent rejects it: a closed run refuses
+          # further events.
+          curl -sS -X POST \
+            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/report" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            -d "{\"repo\":\"${{ steps.cfg.outputs.repo }}\",\"stage\":\"error\",\"summary\":\"${SUMMARY}\",\"payload\":{\"runUrl\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}}" || true
+          curl -sS -X POST \
+            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/close" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            -d "{\"status\":\"failed\",\"foundCount\":0,\"autoMergedCount\":0,\"prOpenedCount\":0,\"dismissedCount\":0,\"errorMessage\":\"${SUMMARY}\"}" || true
+
+          # The generic failure reporter below would otherwise post a second,
+          # vaguer error event on top of this one.
+          touch /tmp/bug-sweep-already-reported
+          exit 1
+
       - name: Report a runner-level failure
         # The protocol has the agent close its own run for every outcome it can
         # reach. This covers the ones it cannot: the runner dying, npm ci
@@ -215,6 +264,13 @@ jobs:
           ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
         run: |
           set -eu
+          # The gate step above already posted a precise account of what went
+          # wrong and closed the run. Adding this generic one on top would just
+          # bury it in the admin tab.
+          if [ -f /tmp/bug-sweep-already-reported ]; then
+            echo "Already reported by the outcome gate; nothing to add."
+            exit 0
+          fi
           curl -sS -X POST \
             "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/report" \
             -H "Content-Type: application/json" \
