@@ -371,6 +371,21 @@ export class CopilotOrchestratorService {
           }
         }
         stopReason = wrapUpMessage?.stop_reason ?? 'end_turn';
+
+        // The wrap-up pass has no retry budget behind it — if it is itself
+        // cut off, the partial text it produced is not a complete answer and
+        // must not be persisted as one.
+        if (stopReason === 'max_tokens') {
+          turnErrored = true;
+          turnError = COPILOT_TRUNCATION_ERROR;
+          yield {
+            event: 'error',
+            data: {
+              code: 'response_truncated',
+              message: COPILOT_TRUNCATION_ERROR,
+            },
+          };
+        }
       }
     } catch (error) {
       turnErrored = true;

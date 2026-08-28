@@ -131,7 +131,11 @@ describe('UxSignalsService', () => {
 
   it('records a quiet week without spending a triage call', async () => {
     // Zero signals is a real answer, and must be distinguishable from a failure.
-    detect.mockResolvedValue({ signals: [], failedDetectors: [] });
+    detect.mockResolvedValue({
+      signals: [],
+      failedDetectors: [],
+      totalDetectors: 7,
+    });
 
     const outcome = await service.runScan(UxSignalScanTrigger.SCHEDULED);
 
@@ -140,6 +144,37 @@ describe('UxSignalsService', () => {
     expect(updateScan).toHaveBeenCalledWith(
       'scan-1',
       expect.objectContaining({ status: UxSignalScanStatus.COMPLETED }),
+    );
+  });
+
+  it('fails the scan, rather than recording a clean run, when every detector failed', async () => {
+    // A total PostHog outage must not look like a quiet night: zero signals here
+    // means the scan could not look at anything, not that nothing was wrong.
+    detect.mockResolvedValue({
+      signals: [],
+      failedDetectors: [
+        UxSignalDetector.API_ERROR_SPIKE,
+        UxSignalDetector.ERROR_LOOP,
+        UxSignalDetector.RAGE_CLICK_CLUSTER,
+        UxSignalDetector.DEAD_CLICK_CLUSTER,
+        UxSignalDetector.ROUTE_ABANDONMENT,
+        UxSignalDetector.ZERO_RESULT_SEARCH,
+        UxSignalDetector.FUNNEL_DROPOFF,
+      ],
+      totalDetectors: 7,
+    });
+
+    await expect(
+      service.runScan(UxSignalScanTrigger.SCHEDULED),
+    ).rejects.toThrow(ServiceUnavailableException);
+
+    expect(triage).not.toHaveBeenCalled();
+    expect(updateScan).toHaveBeenCalledWith(
+      'scan-1',
+      expect.objectContaining({
+        status: UxSignalScanStatus.FAILED,
+        error: expect.stringContaining('unreachable'),
+      }),
     );
   });
 
