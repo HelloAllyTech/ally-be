@@ -32,6 +32,14 @@ export const BUG_HUNTER_AGENT_ROADMAP_OWNER = 'Bug Hunter Agent';
 export const BUG_HUNT_SWEEP_WORKFLOW_FILE = 'bug-hunt-sweep.yml';
 
 /**
+ * The `timeout-minutes` every repo's `bug-hunt-sweep.yml` job carries, quoted
+ * to the sweep agent as its real budget — same reasoning as
+ * `BUG_FIX_SESSION_JOB_TIMEOUT_MINUTES` below, and double it, because a sweep
+ * works through every finding it discovers rather than one.
+ */
+export const BUG_HUNT_SWEEP_JOB_TIMEOUT_MINUTES = 120;
+
+/**
  * Repos a fix session may be dispatched for — i.e. those carrying
  * `bug-fix-session.yml`. `ally-mobile` is fixable (opens a PR) but never
  * auto-merges and never appears in `RELEASE_TARGETS` below — see

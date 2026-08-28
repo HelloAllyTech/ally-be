@@ -246,6 +246,25 @@ export class BugHunterPipelineController {
     return { runId: run.id, mode };
   }
 
+  @Get('runs/:id/status')
+  @ApiOperation({
+    summary: 'Whether a run is still open (pipeline only)',
+    description:
+      'Read by each sweep workflow immediately after `claude -p` exits. The ' +
+      'CLI exits 0 whenever the agent produces a final response — including ' +
+      'when it ends its turn mid-protocol without closing its run — so a ' +
+      'green job is not evidence the sweep finished. A run still RUNNING at ' +
+      'that point was abandoned, and the workflow fails itself rather than ' +
+      'leaving it open forever. Deliberately narrower than the admin ' +
+      "controller's run detail: a CI gate needs the status and nothing else.",
+  })
+  async getRunStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ status: BugHuntRunStatus }> {
+    const run = await this.bugHunterService.getRun(id);
+    return { status: run.status };
+  }
+
   @Post('runs/:id/findings')
   @ApiOperation({
     summary:
