@@ -104,10 +104,17 @@ export class UxSignalsService {
     );
 
     try {
-      const { signals, failedDetectors } = await this.detector.detect(
-        windowFrom,
-        windowTo,
-      );
+      const { signals, failedDetectors, totalDetectors } =
+        await this.detector.detect(windowFrom, windowTo);
+
+      // Every detector failing means PostHog itself could not be read, not that
+      // the week was quiet — recording that as a clean, zero-signal scan is
+      // exactly the half-run-looks-clean failure this method exists to prevent.
+      if (failedDetectors.length === totalDetectors) {
+        throw new ServiceUnavailableException(
+          `All ${totalDetectors} UX signal detectors failed; PostHog appears to be unreachable. No signals could be read for this window.`,
+        );
+      }
 
       // Zero signals is a real, healthy answer — the week was quiet. Recording it
       // without calling the model keeps a quiet week from costing a triage call
