@@ -34,6 +34,7 @@ describe('UxSignalsService', () => {
   let write: jest.Mock;
   let scanRows: UxSignalScan[];
   let savedScan: Record<string, unknown>;
+  let saveScan: jest.Mock;
   let updateScan: jest.Mock;
   let countScans: jest.Mock;
   let posthogEnabled: boolean;
@@ -65,6 +66,10 @@ describe('UxSignalsService', () => {
     });
     updateScan = jest.fn();
     countScans = jest.fn().mockResolvedValue(0);
+    saveScan = jest.fn(async (row: Record<string, unknown>) => {
+      savedScan = { ...row, id: 'scan-1' };
+      return savedScan;
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -103,10 +108,7 @@ describe('UxSignalsService', () => {
           provide: getRepositoryToken(UxSignalScan),
           useValue: {
             create: (row: Record<string, unknown>) => row,
-            save: jest.fn(async (row: Record<string, unknown>) => {
-              savedScan = { ...row, id: 'scan-1' };
-              return savedScan;
-            }),
+            save: (row: Record<string, unknown>) => saveScan(row),
             update: updateScan,
             count: countScans,
             find: jest.fn(async () => scanRows),
@@ -293,6 +295,58 @@ describe('UxSignalsService', () => {
     await expect(
       service.runScan(UxSignalScanTrigger.MANUAL, 1),
     ).rejects.toThrow(ConflictException);
+  });
+
+  it('rejects the loser of two racing scans instead of running both', async () => {
+    // A double-clicked "Scan now" (or a retry of a request that looked hung)
+    // puts two calls in flight before either has committed its RUNNING row, so
+    // both read zero in flight — the count-then-insert check cannot be what
+    // separates them. The database's single-running-scan index is, and the
+    // loser has to surface as the same 409 a sequential second press gets,
+    // not as a raw driver error and not as a second concurrent scan.
+    countScans.mockResolvedValue(0);
+
+    let runningRows = 0;
+    saveScan.mockImplementation(async (row: Record<string, unknown>) => {
+      if (runningRows > 0) {
+        throw Object.assign(
+          new Error(
+            'duplicate key value violates unique constraint ' +
+              '"uq_ux_signal_scans_single_running"',
+          ),
+          { name: 'QueryFailedError', code: '23505' },
+        );
+      }
+      runningRows += 1;
+      return { ...row, id: 'scan-1' };
+    });
+
+    // Hold the winner inside detection so the two runs genuinely overlap.
+    let releaseDetect: () => void = () => {};
+    detect.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseDetect = () => resolve({ signals: [], failedDetectors: [] });
+        }),
+    );
+
+    const winner = service.runScan(UxSignalScanTrigger.MANUAL, 1);
+    await new Promise((resolve) => setImmediate(resolve));
+    const loser = service.runScan(UxSignalScanTrigger.MANUAL, 2);
+
+    await expect(loser).rejects.toThrow(ConflictException);
+    releaseDetect();
+    await expect(winner).resolves.toEqual(
+      expect.objectContaining({ scanId: 'scan-1' }),
+    );
+    // The loser must not have spent a detector pass or a triage call.
+    expect(detect).toHaveBeenCalledTimes(1);
+    expect(triage).not.toHaveBeenCalled();
+    // Nor may it have marked the winner's row FAILED on its way out.
+    expect(updateScan).not.toHaveBeenCalledWith(
+      'scan-1',
+      expect.objectContaining({ status: UxSignalScanStatus.FAILED }),
+    );
   });
 
   it('clears an abandoned RUNNING row instead of wedging forever', async () => {
