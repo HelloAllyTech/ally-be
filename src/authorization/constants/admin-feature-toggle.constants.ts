@@ -268,7 +268,7 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     key: FeatureToggleKey.PRODUCT_ROADMAP_MANAGE,
     label: 'Product Roadmap — Manage',
     description:
-      'Stage transitions, editing/deleting any opportunity, taxonomy, split/merge and release notes. Viewing and voting stay open to every admin.',
+      'Stage transitions, editing/deleting any opportunity, taxonomy, split/merge, month-board lane moves, pinning a saved view for everyone, and opening a Builder session from a card. Viewing and voting stay open to every admin.',
     legacyGrants: SDA_ONLY,
   },
   {

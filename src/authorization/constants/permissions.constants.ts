@@ -335,7 +335,8 @@ const PERMISSIONS = {
   // VIEW is read-only, VOTE adds "participate" (file an opportunity, cast your
   // monthly votes, comment, keep your own saved views), and EDIT is the management
   // surface (stages, editing/deleting anyone's opportunity, goals/owners,
-  // split/merge, release notes, pinning a view for everyone).
+  // split/merge, month-board lane moves, opening a Builder session, pinning a
+  // view for everyone).
   VIEW_PRODUCT_ROADMAP: 'view:admin:product-roadmap',
   VOTE_PRODUCT_ROADMAP: 'vote:admin:product-roadmap',
   EDIT_PRODUCT_ROADMAP: 'edit:admin:product-roadmap',
@@ -478,8 +479,9 @@ const SUPER_DUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.VIEW_SUPER_DUPER_ADMINS,
   PERMISSIONS.EDIT_SUPER_DUPER_ADMINS,
   // Product Roadmap management: stage transitions, editing/deleting anyone's
-  // opportunity, the goal/owner taxonomy, split/merge, release notes, and pinning a
-  // saved view for everyone. SUPER_ADMIN gets VIEW + VOTE only (see above).
+  // opportunity, the goal/owner taxonomy, split/merge, month-board lane moves, opening
+  // a Builder session, and pinning a saved view for everyone. SUPER_ADMIN gets
+  // VIEW + VOTE only (see above).
   PERMISSIONS.EDIT_PRODUCT_ROADMAP,
   PERMISSIONS.VIEW_AWS_LOGS,
   // WhatsApp Q&A knowledge corpus. SDA-only rather than shared with SUPER_ADMIN for the same
