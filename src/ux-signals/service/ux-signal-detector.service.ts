@@ -17,6 +17,8 @@ import { HogQlResult, PosthogQueryService } from './posthog-query.service';
 export interface DetectionResult {
   signals: UxSignal[];
   failedDetectors: string[];
+  /** How many detectors were attempted, so a caller can tell "all failed" from "some did". */
+  totalDetectors: number;
 }
 
 /**
@@ -93,6 +95,7 @@ export class UxSignalDetectorService {
     return {
       signals: signals.slice(0, UX_SIGNAL_LIMITS.MAX_SIGNALS_PER_SCAN),
       failedDetectors,
+      totalDetectors: detectors.length,
     };
   }
 
