@@ -99,6 +99,46 @@ export class LanguageAnalyticsService {
       .sort((a, b) => b.weightedRatePer100 - a.weightedRatePer100);
   }
 
+  /**
+   * Weighted rate grouped by WHICH MAIN-AGENT PROMPT ran.
+   *
+   * Separate from `byExperiment` because the value is not a column: it is the
+   * key of `scenario_sessions.metadata.promptVersions`, resolved in SQL. Same
+   * denominator-aware shape, so the UI can render it beside the others.
+   */
+  private async byMainPrompt(
+    filters: LanguageAnalyticsFilters,
+  ): Promise<LanguageRateByExperimentDto[]> {
+    const [totals, weighted] = await Promise.all([
+      this.repo.sessionTotalsByMainPrompt(filters),
+      this.repo.weightedByMainPrompt(filters),
+    ]);
+    const weightedByValue = new Map<string, number>();
+    for (const row of weighted) {
+      const key = row.value ?? 'unknown';
+      weightedByValue.set(
+        key,
+        (weightedByValue.get(key) ?? 0) +
+          Number(row.count) * (SEVERITY_WEIGHT[row.severity] ?? 1),
+      );
+    }
+    return totals
+      .map((t) => {
+        const value = t.value ?? 'unknown';
+        const nTurns = Number(t.turns);
+        return {
+          value,
+          sessionsJudged: Number(t.sessions),
+          nTurns,
+          weightedRatePer100:
+            nTurns > 0
+              ? round2(((weightedByValue.get(value) ?? 0) / nTurns) * 100)
+              : 0,
+        };
+      })
+      .sort((a, b) => b.weightedRatePer100 - a.weightedRatePer100);
+  }
+
   /** The pinned reference experiment (FR13); null when none. */
   async getReference(): Promise<LanguageEvalReferenceDto | null> {
     return this.repo.getPinnedReference();
@@ -188,6 +228,7 @@ export class LanguageAnalyticsService {
       layerTrend: [],
       rateByScenarioVersion: [],
       rateByPromptVersion: [],
+      rateByMainPrompt: [],
       rateByModel: [],
       werByVoice: [],
       reference: null,
@@ -215,6 +256,7 @@ export class LanguageAnalyticsService {
       countsByBucketDim,
       byScenarioVersion,
       byPromptVersion,
+      byMainPrompt,
       byModel,
       reference,
       werByVoiceRows,
@@ -228,6 +270,7 @@ export class LanguageAnalyticsService {
       this.repo.countsByBucketAndDimension(filters),
       this.byExperiment(filters, 'scenarioVersionId'),
       this.byExperiment(filters, 'promptVersion'),
+      this.byMainPrompt(filters),
       this.byExperiment(filters, 'llmModel'),
       this.repo.getPinnedReference(),
       this.repo.roundTripWerByVoice(filters),
@@ -514,6 +557,7 @@ export class LanguageAnalyticsService {
       layerTrend,
       rateByScenarioVersion,
       rateByPromptVersion: byPromptVersion,
+      rateByMainPrompt: byMainPrompt,
       rateByModel: byModel,
       werByVoice: werByVoiceRows.map((r) => ({
         voiceId: r.voice_id,

@@ -723,6 +723,19 @@ export class LanguageQualityResponseDto {
   @ApiProperty({ type: [LanguageRateByExperimentDto] })
   rateByPromptVersion!: LanguageRateByExperimentDto[];
 
+  @ApiProperty({
+    type: [LanguageRateByExperimentDto],
+    description:
+      'Weighted error rate grouped by WHICH MAIN-AGENT PROMPT ran (e.g. ' +
+      'ally_ai_learn_system_main_agent_prompt_full vs ' +
+      '..._working_memory_split). Distinct from rateByPromptVersion, which is ' +
+      "the prompt's version NUMBER and cannot tell two prompts apart. " +
+      'Resolved from scenario_sessions.metadata.promptVersions, written at ' +
+      'session time, so it stays accurate when a scenario later switches ' +
+      'prompt.',
+  })
+  rateByMainPrompt!: LanguageRateByExperimentDto[];
+
   @ApiProperty({ type: [LanguageRateByExperimentDto] })
   rateByModel!: LanguageRateByExperimentDto[];
 
