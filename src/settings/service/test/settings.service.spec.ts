@@ -1337,6 +1337,22 @@ describe('SettingsService', () => {
         expect.objectContaining({ relatedId: mockTenantId }),
       );
     });
+
+    it('falls back to the caller tenant for a system-access character-library write', async () => {
+      const result = await service.updateCharacterLibraryEnabled(
+        undefined as unknown as string,
+        true,
+      );
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: PreferenceName.CHARACTER_LIBRARY_ENABLED,
+          relatedId: mockTenantId,
+          value: { enabled: true },
+        }),
+      );
+      expect(result).toEqual({ success: true });
+    });
   });
 
   describe('getEnabledCustomFieldTypes', () => {
