@@ -556,6 +556,22 @@ export class BuilderPipelineController {
     return this.buildService.getBudgetState(run);
   }
 
+  /**
+   * The runner announcing that it has parked on the ceiling rather than
+   * aborting, so the admin gets told and the feed records where it stopped.
+   *
+   * The runner posts this once and then polls `/budget` until the ceiling moves
+   * or the window it is handed back runs out.
+   */
+  @Post('runs/:runId/budget-hold')
+  @ApiOperation({
+    summary: 'A run is holding at a phase boundary, waiting for a raise',
+  })
+  async budgetHold(@Param('runId', ParseUUIDPipe) runId: string) {
+    const run = await this.buildService.getRunOrFail(runId);
+    return this.buildService.recordBudgetHold(run);
+  }
+
   @Get('repo-commands')
   @ApiOperation({ summary: 'Repos Builder can work in, with their commands' })
   listRepoCommands() {

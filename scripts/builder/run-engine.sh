@@ -102,25 +102,98 @@ report_phase_cost() {
     -d @/tmp/builder-cost-body.json >/dev/null 2>&1 || true
 }
 
-# A run that has spent its ceiling stops between phases rather than inside one.
-# Exit 0, not 1: the spend is real and already reported, and a clean stop with
-# a stated reason is a different thing from a crash.
-abort_if_over_budget() {
-  local state exceeded
-  state="$(curl -fsS "${API}/budget" -H "x-api-key: ${ALLY_BE_API_KEY}" 2>/dev/null || echo '')"
-  [ -n "$state" ] || return 0
-  exceeded="$(printf '%s' "$state" | jq -r '.exceeded // false' 2>/dev/null || echo false)"
-  [ "$exceeded" = "true" ] || return 0
+# A run that has spent its ceiling HOLDS at the phase boundary rather than
+# throwing its work away, and carries on if somebody raises the ceiling while
+# it waits.
+#
+# Holding is the cheap option by a wide margin. Nothing a run writes is pushed
+# anywhere before FINALISE, so an immediate abort discards the entire working
+# tree — an hour of coding and every dollar that bought it — and the retry
+# starts again from the PRD. An idle runner costs GitHub minutes and no tokens
+# at all. So the phase boundary is where the run asks a person a question it
+# cannot answer itself, exactly like a pause for input.
+#
+# The window and the poll cadence come from ally-be (BUILDER_BUDGET_HOLD_SECONDS
+# / _POLL_SECONDS in builder.constants.ts, served on /budget) so they can be
+# re-tuned without merging this file. A response that carries no window at all
+# — an older ally-be — aborts immediately as before: an omitted field must not
+# silently park a runner for twenty minutes.
+#
+# Exit 0 when the wait runs out, not 1: the spend is real and already reported,
+# and a clean stop with a stated reason is a different thing from a crash.
+hold_or_abort_if_over_budget() {
+  local state exceeded spent budget hold_seconds poll_seconds
+  local waited=0 announced=false
 
-  local spent budget
-  spent="$(printf '%s' "$state" | jq -r '.spentUsd // 0')"
-  budget="$(printf '%s' "$state" | jq -r '.budgetUsd // 0')"
-  echo "Budget exhausted: spent \$${spent} of \$${budget}. Stopping." >&2
-  curl -sS -X POST "${API}/complete" \
-    -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
-    -d "{\"outcome\":\"failed\",\"error\":\"Budget exhausted mid-run: spent \$${spent} of the \$${budget} ceiling. Raise the budget and retry.\"}" \
-    >/dev/null 2>&1 || true
-  exit 0
+  while :; do
+    state="$(curl -fsS "${API}/budget" -H "x-api-key: ${ALLY_BE_API_KEY}" 2>/dev/null || echo '')"
+    # An unreachable budget endpoint is not evidence of an exhausted budget.
+    [ -n "$state" ] || return 0
+
+    exceeded="$(printf '%s' "$state" | jq -r '.exceeded // false' 2>/dev/null || echo false)"
+    if [ "$exceeded" != "true" ]; then
+      if [ "$announced" = true ]; then
+        echo "Budget raised after ${waited}s — carrying on from where the run stopped."
+      fi
+      return 0
+    fi
+
+    spent="$(printf '%s' "$state" | jq -r '.spentUsd // 0')"
+    budget="$(printf '%s' "$state" | jq -r '.budgetUsd // 0')"
+    hold_seconds="$(printf '%s' "$state" | jq -r '.holdSeconds // 0' 2>/dev/null || echo 0)"
+    poll_seconds="$(printf '%s' "$state" | jq -r '.pollSeconds // 15' 2>/dev/null || echo 15)"
+    # Both are used in arithmetic below, and a non-integer would make every
+    # comparison error out — which under this loop means never aborting.
+    case "$hold_seconds" in '' | *[!0-9]*) hold_seconds=0 ;; esac
+    case "$poll_seconds" in '' | *[!0-9]*) poll_seconds=15 ;; esac
+
+    # Said as minutes because that is how the window is set; a sub-minute
+    # window only happens in the dry-run harness, and "0 minutes" there would
+    # read as a bug in the message rather than a deliberately tiny window.
+    local held_for
+    if [ "$hold_seconds" -ge 60 ]; then
+      held_for="$((hold_seconds / 60)) minutes"
+    else
+      held_for="${hold_seconds} seconds"
+    fi
+
+    if [ "$announced" != true ]; then
+      echo "Budget exhausted: spent \$${spent} of \$${budget}." >&2
+      if [ "$hold_seconds" -gt 0 ]; then
+        echo "Holding the work for up to ${held_for} in case the budget is raised." >&2
+        # Tells the admin, and marks the feed where the run stopped. Telemetry,
+        # so a failure here must not decide whether we wait.
+        curl -sS -X POST "${API}/budget-hold" \
+          -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+          -d '{}' >/dev/null 2>&1 || true
+      fi
+      announced=true
+    fi
+
+    if [ "$waited" -ge "$hold_seconds" ]; then
+      echo "Nobody raised the budget. Stopping." >&2
+      if [ "$hold_seconds" -gt 0 ]; then
+        curl -sS -X POST "${API}/events" \
+          -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+          -d "{\"events\":[{\"type\":\"budget_hold\",\"payload\":{\"state\":\"expired\",\"spentUsd\":${spent},\"budgetUsd\":${budget}}}]}" \
+          >/dev/null 2>&1 || true
+      fi
+      local reason
+      if [ "$hold_seconds" -gt 0 ]; then
+        reason="Budget exhausted mid-run: spent \$${spent} of the \$${budget} ceiling. I held the work for ${held_for} waiting for a raise and nobody raised it, so this run stopped. Raise the budget and retry."
+      else
+        reason="Budget exhausted mid-run: spent \$${spent} of the \$${budget} ceiling. Raise the budget and retry."
+      fi
+      curl -sS -X POST "${API}/complete" \
+        -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+        -d "{\"outcome\":\"failed\",\"error\":\"${reason}\"}" \
+        >/dev/null 2>&1 || true
+      exit 0
+    fi
+
+    sleep "$poll_seconds"
+    waited=$((waited + poll_seconds))
+  done
 }
 
 # A pause is a deliberate exit 0 — the agent has committed its work, posted its
@@ -253,7 +326,7 @@ fi
 echo "::endgroup::"
 
 exit_if_paused "planning"
-abort_if_over_budget
+hold_or_abort_if_over_budget
 
 # Wait for the baseline before the first gate can need it.
 wait "$BASELINE_PID" 2>/dev/null || true
@@ -297,7 +370,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   echo "::endgroup::"
 
   exit_if_paused "coding"
-  abort_if_over_budget
+  hold_or_abort_if_over_budget
 
   # ---- GATE ----
   echo "::group::test gate (attempt ${attempt})"
@@ -309,7 +382,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   if [ "$gate_ok" != true ]; then
     echo "Test gate failed on attempt ${attempt}."
     attempt=$((attempt + 1))
-    abort_if_over_budget
+    hold_or_abort_if_over_budget
     continue
   fi
 
@@ -393,7 +466,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   echo "Verification raised blocking objections (round ${verify_round})."
   verify_round=$((verify_round + 1))
   attempt=$((attempt + 1))
-  abort_if_over_budget
+  hold_or_abort_if_over_budget
 done
 
 if [ "$verdict" != "pass" ]; then

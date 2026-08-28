@@ -48,6 +48,7 @@ import {
   CreateBuilderSessionDto,
   ListBuilderSessionsQueryDto,
   PatchBuilderPrdDto,
+  RaiseBuilderBudgetDto,
   StartBuilderBuildDto,
   UpdateBuilderSessionDto,
   UpdateBuilderSettingsDto,
@@ -245,6 +246,46 @@ export class BuilderController {
   ) {
     const session = await this.sessionService.getSession(sessionId, user.id);
     return this.buildService.startBuild(session, user.id, dto);
+  }
+
+  /**
+   * Raise the session's ceiling — including while a build is running, which is
+   * the case this exists for.
+   *
+   * VIEW_BUILDER is not enough: this authorises spend.
+   */
+  @Post('sessions/:sessionId/budget')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary: 'Raise the session spend ceiling; releases a build held on it',
+  })
+  async raiseBudget(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Body() dto: RaiseBuilderBudgetDto,
+    @CurrentUser() user: TokenUser,
+  ) {
+    const session = await this.sessionService.getSession(sessionId, user.id);
+    return this.buildService.raiseBudget(session, user.id, dto.budgetUsd);
+  }
+
+  /**
+   * Live spend, the ceiling, and whether a run is parked on it. Polled by the
+   * session page while a build is live — the session detail it loaded once
+   * cannot show a number that moves every phase.
+   */
+  @Get('sessions/:sessionId/budget')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.VIEW_BUILDER],
+  })
+  @ApiOperation({ summary: 'Live spend against the ceiling, and any hold' })
+  async getSessionBudget(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    await this.sessionService.getSession(sessionId, user.id);
+    return this.buildService.getSessionBudget(sessionId);
   }
 
   @Get('sessions/:sessionId/runs')

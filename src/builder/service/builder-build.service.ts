@@ -21,6 +21,7 @@ import {
   BuilderPullRequestRepository,
   BuilderQuestionRepository,
 } from '../repository/builder-build.repository';
+import { BuilderEventService } from './builder-event.service';
 import { BuilderSettingsService } from './builder-settings.service';
 import { BuilderNotificationService } from './builder-notification.service';
 import { BuilderExemplarService } from './builder-exemplar.service';
@@ -36,6 +37,8 @@ import {
   BuilderStage,
 } from '../enum/builder.enum';
 import {
+  BUILDER_BUDGET_HOLD_POLL_SECONDS,
+  BUILDER_BUDGET_HOLD_SECONDS,
   BUILDER_DISPATCH_LOCK_PREFIX,
   BUILDER_DISPATCH_LOCK_TTL_SECONDS,
   BUILDER_DISPATCH_TIMEOUT_MS,
@@ -46,6 +49,22 @@ import {
   BUILDER_WORKFLOW_REF,
   BUILDER_WORKFLOW_REPO,
 } from '../constants/builder.constants';
+
+/**
+ * Live spend against the session's ceiling.
+ *
+ * `holdSeconds` and `pollSeconds` are served rather than compiled into the
+ * workflow on purpose: run-engine.sh reads them at the boundary it stops on,
+ * so the wait can be re-tuned here without a workflow merge.
+ */
+export interface BuilderBudgetState {
+  budgetUsd: number | null;
+  spentUsd: number;
+  remainingUsd: number | null;
+  exceeded: boolean;
+  holdSeconds: number;
+  pollSeconds: number;
+}
 
 /**
  * Dispatching, resuming, cancelling and reconciling build runs.
@@ -71,6 +90,7 @@ export class BuilderBuildService {
     private readonly pullRequestRepository: BuilderPullRequestRepository,
     private readonly settingsService: BuilderSettingsService,
     private readonly notificationService: BuilderNotificationService,
+    private readonly eventService: BuilderEventService,
     private readonly redisService: RedisService,
     // Forward-ref'd: the exemplar service reads runs and events through
     // repositories, so this edge is one-way rather than a cycle.
@@ -1199,14 +1219,39 @@ export class BuilderBuildService {
    * a checkpoint, and the phase-level cost reporting that feeds it means the
    * number is current rather than end-of-run.
    */
-  async getBudgetState(run: BuilderBuildRun): Promise<{
-    budgetUsd: number | null;
-    spentUsd: number;
-    remainingUsd: number | null;
-    exceeded: boolean;
-  }> {
+  async getBudgetState(run: BuilderBuildRun): Promise<BuilderBudgetState> {
+    return this.budgetStateFor(run.sessionId);
+  }
+
+  /**
+   * The same state, for the admin UI rather than the runner.
+   *
+   * Read live rather than taken from the session detail the page loaded: that
+   * response is fetched once per session and a held run's whole point is that
+   * the numbers moved after it was fetched. `holdSeconds` rides along so the
+   * banner can say how long the run will wait without hard-coding it.
+   */
+  async getSessionBudget(sessionId: string): Promise<
+    BuilderBudgetState & {
+      /** Set while a run is parked at a phase boundary waiting for a raise. */
+      hold: { runId: string; heldAt: string; holdUntil: string } | null;
+    }
+  > {
+    const state = await this.budgetStateFor(sessionId);
+    // Gated on `exceeded` as well as the event, so the hold clears however the
+    // ceiling moved. A retry dispatched with a `budgetUsd` override raises it
+    // without going through raiseBudget, and nothing would then write the
+    // `raised` event that ends the hold — leaving the page saying "paused" over
+    // a run that is working.
+    return {
+      ...state,
+      hold: state.exceeded ? await this.findActiveHold(sessionId) : null,
+    };
+  }
+
+  private async budgetStateFor(sessionId: string): Promise<BuilderBudgetState> {
     const session = await this.sessionRepository.findOne({
-      where: { id: run.sessionId },
+      where: { id: sessionId },
     });
     const spentUsd = Number(session?.totalCostUsd ?? 0);
     const budget = Number(session?.budgetUsd ?? 0);
@@ -1216,6 +1261,8 @@ export class BuilderBuildService {
         spentUsd,
         remainingUsd: null,
         exceeded: false,
+        holdSeconds: BUILDER_BUDGET_HOLD_SECONDS,
+        pollSeconds: BUILDER_BUDGET_HOLD_POLL_SECONDS,
       };
     }
     return {
@@ -1223,6 +1270,143 @@ export class BuilderBuildService {
       spentUsd,
       remainingUsd: Math.max(0, budget - spentUsd),
       exceeded: spentUsd >= budget,
+      holdSeconds: BUILDER_BUDGET_HOLD_SECONDS,
+      pollSeconds: BUILDER_BUDGET_HOLD_POLL_SECONDS,
+    };
+  }
+
+  /**
+   * Raise (or lower) the session's spend ceiling, at any point in its life.
+   *
+   * Deliberately allowed **while a build is running**, which is the case it
+   * exists for. A run that hits the ceiling mid-flight holds at the next phase
+   * boundary rather than aborting, and this is what releases it — the runner
+   * re-reads the ceiling every few seconds, so nothing needs to be dispatched
+   * and the hour of work already in its tree survives.
+   *
+   * The one refusal is a figure that would not actually release a held run:
+   * setting the ceiling at or below what has already been spent leaves the run
+   * exactly where it was, and "raised the budget, nothing happened" is a worse
+   * outcome than being told the number is too low.
+   */
+  async raiseBudget(
+    session: BuilderSession,
+    userId: number,
+    budgetUsd: number,
+  ): Promise<
+    BuilderBudgetState & { hold: { runId: string } | null; released: boolean }
+  > {
+    const spent = Number(session.totalCostUsd ?? 0);
+    const activeRun = await this.runRepository.findOne({
+      where: { sessionId: session.id, status: In(BUILDER_RUN_ACTIVE_STATUSES) },
+      order: { sequence: 'DESC' },
+    });
+
+    // A ceiling of zero means "no ceiling" everywhere else (see
+    // assertWithinBudget), so it is a legitimate value here and not a floor
+    // violation — uncapping a session is the strongest possible raise.
+    if (budgetUsd > 0 && budgetUsd <= spent) {
+      throw new BadRequestException(
+        `This session has already spent $${spent.toFixed(2)}, so a $${budgetUsd.toFixed(2)} ceiling ` +
+          'would stop it again immediately. Choose a figure above what it has spent, or stop the build.',
+      );
+    }
+
+    await this.sessionRepository.update(
+      { id: session.id },
+      { budgetUsd: String(budgetUsd), updatedBy: userId },
+    );
+
+    const hold = activeRun
+      ? await this.findActiveHold(session.id, activeRun)
+      : null;
+
+    // Written onto the run's own log so the feed shows the raise where the
+    // hold is, in order, rather than the banner quietly changing.
+    if (activeRun) {
+      await this.eventService.record(activeRun, BuilderEventType.BUDGET_HOLD, {
+        state: hold ? 'raised' : 'headroom',
+        budgetUsd,
+        spentUsd: spent,
+        previousBudgetUsd: Number(session.budgetUsd ?? 0) || null,
+      });
+    }
+
+    const state = await this.budgetStateFor(session.id);
+    return {
+      ...state,
+      hold: hold ? { runId: hold.runId } : null,
+      released: Boolean(hold) && !state.exceeded,
+    };
+  }
+
+  /**
+   * Record that a run has parked on its ceiling, and tell somebody.
+   *
+   * Posted by the runner at the phase boundary where it stopped, not inferred
+   * from the spend: only the runner knows it is actually sitting there waiting,
+   * and a session whose ceiling is gone between runs is a different (already
+   * notified) situation.
+   */
+  async recordBudgetHold(
+    run: BuilderBuildRun,
+  ): Promise<{ holdSeconds: number }> {
+    const state = await this.budgetStateFor(run.sessionId);
+    const holdUntil = new Date(Date.now() + state.holdSeconds * 1000);
+
+    await this.eventService.record(run, BuilderEventType.BUDGET_HOLD, {
+      state: 'held',
+      spentUsd: state.spentUsd,
+      budgetUsd: state.budgetUsd,
+      holdUntil: holdUntil.toISOString(),
+      holdSeconds: state.holdSeconds,
+    });
+
+    const session = await this.sessionRepository.findOne({
+      where: { id: run.sessionId },
+    });
+    if (session) {
+      await this.notificationService.budgetHold(
+        session,
+        state.spentUsd,
+        Math.round(state.holdSeconds / 60),
+      );
+    }
+    return { holdSeconds: state.holdSeconds };
+  }
+
+  /**
+   * The hold a run is currently sitting in, if any — the last BUDGET_HOLD
+   * event on the newest active run, and only while it still says `held`.
+   */
+  private async findActiveHold(
+    sessionId: string,
+    knownRun?: BuilderBuildRun,
+  ): Promise<{ runId: string; heldAt: string; holdUntil: string } | null> {
+    const run =
+      knownRun ??
+      (await this.runRepository.findOne({
+        where: { sessionId, status: In(BUILDER_RUN_ACTIVE_STATUSES) },
+        order: { sequence: 'DESC' },
+      }));
+    if (!run) return null;
+
+    const event = await this.eventRepository.latestOfType(
+      run.id,
+      BuilderEventType.BUDGET_HOLD,
+    );
+    if (!event || event.payload?.state !== 'held') return null;
+
+    const heldAt = event.createdAt ?? new Date();
+    return {
+      runId: run.id,
+      heldAt: new Date(heldAt).toISOString(),
+      holdUntil: String(
+        event.payload?.holdUntil ??
+          new Date(
+            new Date(heldAt).getTime() + BUILDER_BUDGET_HOLD_SECONDS * 1000,
+          ).toISOString(),
+      ),
     };
   }
 

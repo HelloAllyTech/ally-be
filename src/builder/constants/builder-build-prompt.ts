@@ -130,9 +130,9 @@ ask() {
 }
 
 # What is left of this session's spend ceiling. Worth checking before
-# anything expensive (an E2E bring-up, a long test matrix): the run is also
-# stopped automatically at each phase boundary, but that is after the money
-# is spent rather than before.
+# anything expensive (an E2E bring-up, a long test matrix): a run that is over
+# the ceiling stops at the next phase boundary and waits there for an admin to
+# raise it, which is time your work spends unfinished rather than money saved.
 budget() {
   curl -sS "${base}/budget" -H "x-api-key: $ALLY_BE_API_KEY" || true
 }

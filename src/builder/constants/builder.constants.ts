@@ -211,3 +211,30 @@ export const BUILDER_MAX_VERIFY_ROUNDS = 3;
 export const BUILDER_CODER_TOOLS = 'Bash,Read,Write,Edit,Glob,Grep,Task';
 export const BUILDER_PLANNER_TOOLS = 'Bash,Read,Glob,Grep,Task';
 export const BUILDER_VERIFIER_TOOLS = 'Bash,Read,Glob,Grep';
+
+/* ── Mid-run budget hold ────────────────────────────────────────────────── */
+
+/**
+ * How long a run that has hit its ceiling waits at a phase boundary for
+ * somebody to raise the budget before it gives up.
+ *
+ * Waiting is cheaper than aborting, which is the whole reason this exists.
+ * Nothing a run writes is pushed before FINALISE, so a budget abort throws
+ * away the entire working tree — an hour of coding and every dollar that
+ * bought it — and the retry starts from the PRD again. Holding a runner idle
+ * costs GitHub minutes and no tokens at all, so twenty minutes of waiting is
+ * a rounding error against re-running the phase that just burned $16.
+ *
+ * Twenty minutes rather than sixty: it has to be long enough for the
+ * notification to reach whoever is watching, and short enough that an
+ * abandoned build releases its runner well inside the workflow's own
+ * `timeout-minutes: 120`.
+ */
+export const BUILDER_BUDGET_HOLD_SECONDS = 20 * 60;
+
+/**
+ * How often a held run re-reads the ceiling. Fifteen seconds so a raise feels
+ * immediate to the person who just made it — the poll is one indexed read and
+ * the runner is otherwise doing nothing.
+ */
+export const BUILDER_BUDGET_HOLD_POLL_SECONDS = 15;

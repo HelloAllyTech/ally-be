@@ -169,6 +169,17 @@ export enum BuilderEventType {
   GATE_RESULT = 'gate_result',
   /** Per-phase cost increment (plan/code/verify/finalise invocations). */
   PHASE_COST = 'phase_cost',
+  /**
+   * A run sitting at a phase boundary because the session's spend ceiling is
+   * gone, waiting for it to be raised. `payload.state` is `held` when the wait
+   * starts, `raised` when a new ceiling let it carry on, and `expired` when
+   * nobody answered in time and the run stopped.
+   *
+   * A distinct type rather than an `error`: the run is alive and its work is
+   * intact, and the feed has to say so — an error here reads as "that hour is
+   * gone", which is exactly what the hold exists to prevent.
+   */
+  BUDGET_HOLD = 'budget_hold',
   QUESTION = 'question',
   E2E_EVIDENCE = 'e2e_evidence',
   E2E_SKIPPED = 'e2e_skipped',
