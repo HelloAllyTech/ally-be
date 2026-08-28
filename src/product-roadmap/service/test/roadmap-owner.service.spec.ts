@@ -95,6 +95,21 @@ describe('RoadmapOpportunityService — owners', () => {
     );
   });
 
+  it('also treats present-day PLATFORM_ADMIN accounts as eligible owners', async () => {
+    // Staff promoted through the current admin-management screen only ever gain PLATFORM_ADMIN,
+    // not the two retired SUPER_ADMIN / SUPER_DUPER_ADMIN tiers — see the docblock on
+    // PLATFORM_TIER_ROLES in src/common/constants/user.constants.ts. A query built against the
+    // retired tiers alone silently excludes every admin created since the collapse.
+    givenEligibleOwners([
+      { id: 9, name: 'Pat PlatformAdmin', email: 'pat@helloally.ai' },
+    ]);
+
+    await service.listEligibleOwners();
+
+    const [[, params]] = userQueryBuilder.where.mock.calls;
+    expect(params.roles).toEqual(expect.arrayContaining(['PLATFORM_ADMIN']));
+  });
+
   it('assigns ownerUserId and does NOT write the legacy owner column', async () => {
     // Writing the name too would violate the text FK into roadmap_opportunity_owners(name) —
     // that 500 is what forced this design. One representation, never both.
