@@ -117,10 +117,5 @@ jobs:
       # production-release.yaml — quoting nits in two deploy pipelines that
       # work — which would mean rewriting them before this check could ever be
       # blocking. Structural linting is what catches the class of bug above.
-      #
-      # The one -ignore is a real pre-existing finding: the release pipeline
-      # pins softprops/action-gh-release@v1, whose runner GitHub has
-      # deprecated. Bumping it to @v2 is a change to the production release
-      # path and belongs in its own PR; drop this flag when that lands.
       - name: Lint workflows
-        run: actionlint -shellcheck= -ignore 'softprops/action-gh-release@v1'
+        run: actionlint -shellcheck=
