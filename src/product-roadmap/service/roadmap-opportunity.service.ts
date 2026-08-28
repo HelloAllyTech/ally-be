@@ -113,6 +113,9 @@ export class RoadmapOpportunityService {
         description: dto.description.trim(),
         type: dto.type,
         productGoal: dto.productGoal,
+        // `?? null` so an omitted effort files as unsized rather than undefined — the column
+        // is nullable and "not sized" is a real state, not a missing value.
+        effort: dto.effort ?? null,
         createdBy: userId,
         updatedBy: userId,
         source: extra?.source ?? RoadmapOpportunitySource.STAFF,

@@ -220,6 +220,16 @@ export class CreateOpportunityDto {
   @IsString()
   @MinLength(1)
   productGoal!: string;
+
+  /**
+   * Rough size, set at filing time. Optional and nullable: every row predating the field is
+   * unsized, and "not sized" stays a legal state — see the effort note in OpportunityDrawer.
+   * The admin drawer sends whatever the readiness check proposed, after any human correction.
+   */
+  @ApiPropertyOptional({ enum: RoadmapOpportunityEffort, nullable: true })
+  @IsOptional()
+  @IsEnum(RoadmapOpportunityEffort)
+  effort?: RoadmapOpportunityEffort | null;
 }
 
 /**

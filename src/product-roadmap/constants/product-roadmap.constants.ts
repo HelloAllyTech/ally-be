@@ -144,6 +144,7 @@ export const ROADMAP_DUPLICATES = {
  * admins get runtime editability without a bespoke settings table.
  */
 export const ROADMAP_PROMPT_CODES = {
+  READINESS_CHECK: 'roadmap_readiness_check',
   REVIEW_DRAFT: 'roadmap_review_draft',
   ENHANCE_DRAFT: 'roadmap_enhance_draft',
   CLASSIFY_GOAL: 'roadmap_classify_goal',
@@ -151,6 +152,44 @@ export const ROADMAP_PROMPT_CODES = {
   SUMMARISE_INTERVIEW: 'roadmap_summarise_interview',
   GENERATE_CLAUDE_PROMPT: 'roadmap_generate_claude_prompt',
 } as const;
+
+/**
+ * The readiness checklist the "Check readiness" button grades a draft against, and the gate on
+ * filing: every item must come back green before the opportunity can be filed.
+ *
+ * SEED LIST — expected to change. It lives here, server-side, as the single source of truth:
+ * the admin drawer renders whatever this returns rather than holding its own copy, so editing
+ * this array is the whole change. The ids are the join key between the criteria the UI shows
+ * and the verdicts the model returns, so treat an id as permanent once shipped — renaming one
+ * silently drops its verdict and fails that item closed.
+ *
+ * The four here are the gatekeeping questions the team's own discovery guidance applies before
+ * an opportunity earns a place on the tree (Stacks: "Filter opportunities by specificity and
+ * validation criteria"): framed as a need rather than a solution, specific rather than a theme,
+ * attributable to more than one person, and tied to an outcome.
+ */
+export const ROADMAP_READINESS_CRITERIA = [
+  {
+    id: 'problem_not_solution',
+    label: 'Describes a problem, not a solution',
+    hint: 'Framed as a need, pain point or desire — not the feature you would build for it.',
+  },
+  {
+    id: 'specific',
+    label: 'Specific enough to act on',
+    hint: 'One narrow problem, not a broad theme like "the interface is hard to use".',
+  },
+  {
+    id: 'who_it_affects',
+    label: 'Names who hits it',
+    hint: "Says whose problem this is, and that it is more than one person's opinion.",
+  },
+  {
+    id: 'outcome',
+    label: 'Says what solving it changes',
+    hint: 'The impact — what those people would be able to do, or stop losing.',
+  },
+] as const;
 
 /**
  * Marker raised by roadmap_enforce_monthly_cap(). The trigger's SQLSTATE is P0001, which

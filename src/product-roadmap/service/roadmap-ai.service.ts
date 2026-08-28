@@ -14,14 +14,20 @@ import { AiService } from 'src/ai/service/ai.service';
 
 import { RoadmapOpportunityRepository } from '../repository/roadmap-opportunity.repository';
 import { RoadmapProductGoalRepository } from '../repository/roadmap-taxonomy.repository';
-import { RoadmapOpportunityType } from '../enum/roadmap-opportunity.enum';
+import {
+  RoadmapOpportunityEffort,
+  RoadmapOpportunityType,
+} from '../enum/roadmap-opportunity.enum';
 import {
   ROADMAP_DUPLICATES,
   ROADMAP_LIMITS,
   ROADMAP_PROMPT_CODES,
+  ROADMAP_READINESS_CRITERIA,
 } from '../constants/product-roadmap.constants';
 import {
   AiEnhanceResponseDto,
+  AiReadinessResponseDto,
+  AiReadinessResultDto,
   AiReviewResponseDto,
   AiReviewSuggestionDto,
   DuplicateMatchDto,
@@ -29,6 +35,7 @@ import {
 } from '../dto/roadmap-response.dto';
 
 const MAX_TOKENS = {
+  READINESS: 1500,
   REVIEW: 1000,
   ENHANCE: 1500,
   DUPLICATES: 1000,
@@ -54,6 +61,84 @@ export class RoadmapAiService {
       apiKey: this.configService.anthropic.apiKey,
     });
     this.model = this.configService.anthropic.autofillModel;
+  }
+
+  /**
+   * Grade a draft against ROADMAP_READINESS_CRITERIA. One entry per criterion, always.
+   *
+   * FAILS CLOSED, and that is the whole design. This is a gate — the admin drawer will not let
+   * an opportunity be filed until every item comes back green — so any answer the model does
+   * not give must read as "not yet", never as a pass. A missing id, a non-boolean verdict, a
+   * hallucinated id, unparseable JSON: all resolve to `passed: false` with a reason the writer
+   * can act on. The inverse would let a dropped field wave a draft through.
+   *
+   * The criteria are sent in the user message rather than baked into the prompt file, so
+   * editing the constant is the entire change — the prompt file never goes stale against it.
+   *
+   * The same call also proposes an EFFORT, because it has already read the draft closely enough
+   * to size it and a second round trip would buy nothing. That half does not fail closed — it
+   * proposes, it does not gate — so an unrecognised size resolves to `null` ("Not sized")
+   * rather than to a guess. Never store an unvalidated model answer as taxonomy; see
+   * classifyGoal for what that cost us once already.
+   */
+  async checkReadiness(description: string): Promise<AiReadinessResponseDto> {
+    const criteria = ROADMAP_READINESS_CRITERIA;
+    const rendered = criteria
+      .map((c) => `- id: ${c.id}\n  criterion: ${c.label}\n  means: ${c.hint}`)
+      .join('\n');
+
+    const parsed = await this.runJson<{
+      results?: { id?: string; passed?: boolean; reason?: string }[];
+      effort?: string;
+      effortReason?: string;
+    }>(
+      ROADMAP_PROMPT_CODES.READINESS_CHECK,
+      `Checklist:\n${rendered}\n\nDraft to judge:\n"""\n${description}\n"""\n\n` +
+        `Return one result per criterion id now.`,
+      MAX_TOKENS.READINESS,
+      LlmTask.AUTOFILL_ENHANCE_FIELD,
+      'readiness',
+    );
+
+    const byId = new Map(
+      (parsed?.results ?? [])
+        .filter((r) => typeof r?.id === 'string')
+        .map((r) => [r.id as string, r]),
+    );
+
+    const results: AiReadinessResultDto[] = criteria.map((criterion) => {
+      const answer = byId.get(criterion.id);
+      // `=== true`, not truthy: a model that answers "yes" or 1 has not answered the schema,
+      // and on a gate an unparsed verdict must not become a pass.
+      const passed = answer?.passed === true;
+      return {
+        id: criterion.id,
+        passed,
+        reason:
+          answer?.reason?.trim() ||
+          (passed
+            ? 'Met.'
+            : 'The check did not return a verdict for this item — run it again.'),
+      };
+    });
+
+    const efforts = Object.values(RoadmapOpportunityEffort) as string[];
+    const proposed = parsed?.effort?.trim().toLowerCase();
+    const effort = efforts.includes(proposed ?? '')
+      ? (proposed as RoadmapOpportunityEffort)
+      : null;
+    if (!effort && proposed) {
+      this.logger.warn(
+        `[ROADMAP] Readiness check returned effort "${proposed}", which is not a live size. ` +
+          `Filing unsized instead.`,
+      );
+    }
+
+    return {
+      results,
+      effort,
+      effortReason: effort ? (parsed?.effortReason?.trim() ?? '') : '',
+    };
   }
 
   /** Critique a draft against writing best practices. Returns at most 3 issue/tip pairs. */
