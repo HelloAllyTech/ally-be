@@ -268,6 +268,10 @@ export class RoadmapOpportunityService {
       }
     }
     if (dto.prd !== undefined) patch.prd = dto.prd ?? null;
+    // `?? null` rather than assigning dto.effort straight through: `null` is a real edit here
+    // (un-sizing something that was sized), and the `!== undefined` guard is what separates that
+    // from "the caller did not mention effort at all".
+    if (dto.effort !== undefined) patch.effort = dto.effort ?? null;
     if (dto.claudePrompt !== undefined)
       patch.claudePrompt = dto.claudePrompt ?? null;
 
@@ -414,6 +418,7 @@ export class RoadmapOpportunityService {
       builderSessionId: row.builderSessionId ?? null,
       releasedAt: row.releasedAt ?? null,
       plannedMonth: row.plannedMonth ?? null,
+      effort: row.effort ?? null,
       boardPosition: Number(row.boardPosition ?? 0),
       // Derived here rather than trusted from the row, so the single-opportunity read (which has
       // no lane context) reports the same month as the board.

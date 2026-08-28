@@ -8,6 +8,7 @@ import {
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 import {
   RoadmapEmbeddingStatus,
+  RoadmapOpportunityEffort,
   RoadmapOpportunitySource,
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
@@ -159,6 +160,16 @@ export class RoadmapOpportunity extends BaseWithoutTenantEntity {
    */
   @Column({ type: 'varchar', length: 7, nullable: true })
   plannedMonth?: string | null;
+
+  /**
+   * Rough size of the work — S / M / L / XL / XXL. See RoadmapOpportunityEffort.
+   *
+   * Nullable with no default, so every existing row reads as unsized rather than being silently
+   * called Small. "Not estimated yet" and "estimated as the smallest thing we do" are different
+   * facts and a default would collapse them.
+   */
+  @Column({ type: 'varchar', length: 3, nullable: true })
+  effort?: RoadmapOpportunityEffort | null;
 
   /**
    * Manual rank WITHIN a lane, ascending. Not globally meaningful — two cards in different

@@ -87,7 +87,13 @@ export interface ListOpportunitiesOptions {
   priorityMin?: number;
   priorityMax?: number;
 
-  sortBy?: 'priority' | 'createdAt' | 'releasedAt' | 'myVotes' | 'description';
+  sortBy?:
+    | 'priority'
+    | 'createdAt'
+    | 'releasedAt'
+    | 'myVotes'
+    | 'description'
+    | 'plannedMonth';
   order?: 'ASC' | 'DESC';
   limit?: number;
   offset?: number;
@@ -196,6 +202,18 @@ const SORT_COLUMNS: Record<string, string> = {
   releasedAt: 'opp."releasedAt"',
   myVotes: '"myVotes"',
   description: 'opp."description"',
+  /*
+   * The planned month, for the Queue's "Expected first" ordering.
+   *
+   * A varchar(7) 'YYYY-MM', so a plain text sort IS chronological — no cast, and no month-name
+   * parsing that would order April before January.
+   *
+   * NULLABLE, and the ordering below already applies NULLS LAST in BOTH directions. That is what
+   * makes this ordering read correctly: unscheduled work sorts to the end whichever way the
+   * arrow points, rather than the nulls leading one direction and a wall of undated rows burying
+   * the dated ones people asked to see.
+   */
+  plannedMonth: 'opp."plannedMonth"',
 };
 
 @Injectable()
@@ -238,12 +256,27 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
     const count = await qb.getCount();
 
     const sortColumn = SORT_COLUMNS[sortBy] ?? SORT_COLUMNS.priority;
+    /*
+     * The tiebreak FOLLOWS the primary direction, so ASC is the exact reverse of DESC.
+     *
+     * It used to be fixed at `createdAt DESC, id ASC` whichever way the primary column ran, and
+     * that is not a detail when — as the comment below says — most rows score 0. QUEUE_RANK_SQL
+     * numbers the queue with `score DESC, createdAt DESC, id ASC`, so an ASC sort that inverted
+     * only the score left the whole 0-score tie group in ASCENDING rank order and put it on top:
+     * asking for the bottom of the queue opened on #41 and buried #159 in the middle. Inverting
+     * the tiebreak too makes the last row of one direction the first row of the other, which is
+     * what a reader flipping the direction is asking for.
+     *
+     * Still a TOTAL order either way — id is unique, so no two rows can tie — which is the
+     * property pagination needs: an offset window cannot repeat or skip a row.
+     */
+    const tiebreakDesc = order === 'DESC';
     const items = await qb
       .orderBy(sortColumn, order, 'NULLS LAST')
       // Deterministic tiebreak, so pagination cannot repeat or skip a row when many
       // opportunities share a score (most of them have a score of 0).
-      .addOrderBy('opp."createdAt"', 'DESC')
-      .addOrderBy('opp.id', 'ASC')
+      .addOrderBy('opp."createdAt"', tiebreakDesc ? 'DESC' : 'ASC')
+      .addOrderBy('opp.id', tiebreakDesc ? 'ASC' : 'DESC')
       .limit(Math.min(limit, ROADMAP_LIST_DEFAULTS.MAX_LIMIT))
       .offset(offset)
       .getRawMany<RoadmapOpportunityRow>();
