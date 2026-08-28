@@ -110,6 +110,27 @@ export class BuilderNotificationService {
     );
   }
 
+  /**
+   * The urgent version of the above: a run is holding its work open, waiting.
+   *
+   * Separate from `budgetReached` because the deadline is the whole message.
+   * "Reached its budget" is something to deal with later; this one expires, and
+   * what expires with it is an hour of coding that was never pushed anywhere.
+   */
+  budgetHold(
+    session: BuilderSession,
+    spent: number,
+    holdMinutes: number,
+  ): Promise<void> {
+    return this.notify(
+      session,
+      BuilderNotificationKind.BUDGET_REACHED,
+      `“${session.title}” has paused mid-build at $${spent.toFixed(2)} — its ceiling is gone. ` +
+        `Raise the budget within ${holdMinutes} minutes and it carries on from where it stopped; ` +
+        'after that it gives up and the work in progress is lost.',
+    );
+  }
+
   listForAdmin(adminId: number, unreadOnly = false) {
     return this.repository.listForAdmin(adminId, unreadOnly);
   }

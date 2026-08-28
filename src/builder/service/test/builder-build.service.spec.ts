@@ -9,6 +9,10 @@ import {
   BuilderRunStatus,
   BuilderSessionStatus,
 } from '../../enum/builder.enum';
+import {
+  BUILDER_BUDGET_HOLD_POLL_SECONDS,
+  BUILDER_BUDGET_HOLD_SECONDS,
+} from '../../constants/builder.constants';
 
 const readySession = (overrides: Record<string, any> = {}) => ({
   id: 'session-1',
@@ -48,7 +52,7 @@ describe('BuilderBuildService', () => {
     nextSequence: jest.Mock;
     count: jest.Mock;
   };
-  let eventRepository: { listByRun: jest.Mock };
+  let eventRepository: { listByRun: jest.Mock; latestOfType: jest.Mock };
   let pullRequestRepository: { increment: jest.Mock; findOne: jest.Mock };
   let questionRepository: { isGroupComplete: jest.Mock; update: jest.Mock };
   let settingsService: { get: jest.Mock };
@@ -56,7 +60,9 @@ describe('BuilderBuildService', () => {
     buildCompleted: jest.Mock;
     buildFailed: jest.Mock;
     budgetReached: jest.Mock;
+    budgetHold: jest.Mock;
   };
+  let eventService: { record: jest.Mock };
   let redisService: { acquireLock: jest.Mock; releaseLock: jest.Mock };
   let exemplarService: { archiveSession: jest.Mock };
   let epicService: {
@@ -88,7 +94,10 @@ describe('BuilderBuildService', () => {
       nextSequence: jest.fn().mockResolvedValue(1),
       count: jest.fn().mockResolvedValue(0),
     };
-    eventRepository = { listByRun: jest.fn().mockResolvedValue([]) };
+    eventRepository = {
+      listByRun: jest.fn().mockResolvedValue([]),
+      latestOfType: jest.fn().mockResolvedValue(null),
+    };
     pullRequestRepository = {
       increment: jest.fn(),
       findOne: jest.fn(),
@@ -106,7 +115,12 @@ describe('BuilderBuildService', () => {
       buildCompleted: jest.fn(),
       buildFailed: jest.fn(),
       budgetReached: jest.fn(),
+      budgetHold: jest.fn(),
     };
+    // Annotations the service writes onto a run's own log (a budget raise, a
+    // hold). Recorded through the event service so they also push over the
+    // socket, which is why this is stubbed rather than the repository.
+    eventService = { record: jest.fn() };
     // The dispatch mutex: granted by default, so only the test that cares
     // about a double dispatch has to think about it.
     redisService = {
@@ -141,6 +155,7 @@ describe('BuilderBuildService', () => {
       pullRequestRepository as any,
       settingsService as any,
       notificationService as any,
+      eventService as any,
       redisService as any,
       exemplarService as any,
       epicService as any,
@@ -713,14 +728,31 @@ describe('BuilderBuildService', () => {
         readySession({ totalCostUsd: '3', budgetUsd: null }),
       );
 
-      await expect(
-        service.getBudgetState({ id: 'run-1', sessionId: 'session-1' } as any),
-      ).resolves.toEqual({
+      const state = await service.getBudgetState({
+        id: 'run-1',
+        sessionId: 'session-1',
+      } as any);
+
+      expect(state).toMatchObject({
         budgetUsd: null,
         spentUsd: 3,
         remainingUsd: null,
         exceeded: false,
       });
+    });
+
+    it('serves the hold window, so run-engine.sh need not hard-code it', async () => {
+      sessionRepository.findOne.mockResolvedValue(
+        readySession({ totalCostUsd: '25.5', budgetUsd: '25' }),
+      );
+
+      const state = await service.getBudgetState({
+        id: 'run-1',
+        sessionId: 'session-1',
+      } as any);
+
+      expect(state.holdSeconds).toBe(BUILDER_BUDGET_HOLD_SECONDS);
+      expect(state.pollSeconds).toBe(BUILDER_BUDGET_HOLD_POLL_SECONDS);
     });
 
     it('flags a session that has spent its ceiling mid-run', async () => {
@@ -735,6 +767,188 @@ describe('BuilderBuildService', () => {
 
       expect(state.exceeded).toBe(true);
       expect(state.remainingUsd).toBe(0);
+    });
+  });
+
+  describe('raiseBudget', () => {
+    const heldRun = {
+      id: 'run-9',
+      sessionId: 'session-1',
+      status: BuilderRunStatus.RUNNING,
+    };
+
+    it('releases a run holding on the ceiling rather than making it retry', async () => {
+      const session = readySession({
+        status: BuilderSessionStatus.BUILDING,
+        totalCostUsd: '16.77',
+        budgetUsd: '15',
+      });
+      runRepository.findOne.mockResolvedValue(heldRun);
+      eventRepository.latestOfType.mockResolvedValue({
+        payload: { state: 'held', holdUntil: '2026-08-28T10:20:00.000Z' },
+        createdAt: new Date('2026-08-28T10:00:00.000Z'),
+      });
+      // The raise itself is what the next poll reads, so the session has to
+      // come back over the line before `released` can mean anything.
+      sessionRepository.findOne.mockResolvedValue(
+        readySession({ totalCostUsd: '16.77', budgetUsd: '30' }),
+      );
+
+      const result = await service.raiseBudget(session as any, 7, 30);
+
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        { budgetUsd: '30', updatedBy: 7 },
+      );
+      expect(result.released).toBe(true);
+      expect(result.exceeded).toBe(false);
+      // On the run's own log, where the hold is — not just a banner that
+      // quietly changes.
+      expect(eventService.record).toHaveBeenCalledWith(
+        heldRun,
+        BuilderEventType.BUDGET_HOLD,
+        expect.objectContaining({ state: 'raised', budgetUsd: 30 }),
+      );
+    });
+
+    it('refuses a ceiling at or below what is already spent, which would stop it again at once', async () => {
+      const session = readySession({
+        status: BuilderSessionStatus.BUILDING,
+        totalCostUsd: '16.77',
+        budgetUsd: '15',
+      });
+      runRepository.findOne.mockResolvedValue(heldRun);
+
+      await expect(service.raiseBudget(session as any, 7, 16)).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(sessionRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('treats zero as removing the ceiling, not as a figure below the spend', async () => {
+      const session = readySession({
+        status: BuilderSessionStatus.BUILDING,
+        totalCostUsd: '16.77',
+        budgetUsd: '15',
+      });
+      runRepository.findOne.mockResolvedValue(heldRun);
+      sessionRepository.findOne.mockResolvedValue(
+        readySession({ totalCostUsd: '16.77', budgetUsd: '0' }),
+      );
+
+      const result = await service.raiseBudget(session as any, 7, 0);
+
+      expect(result.budgetUsd).toBeNull();
+      expect(result.exceeded).toBe(false);
+    });
+
+    it('works with no run in flight — raising it between runs is the same action', async () => {
+      const session = readySession({
+        status: BuilderSessionStatus.FAILED,
+        totalCostUsd: '16.77',
+        budgetUsd: '15',
+      });
+      runRepository.findOne.mockResolvedValue(null);
+      sessionRepository.findOne.mockResolvedValue(
+        readySession({ totalCostUsd: '16.77', budgetUsd: '40' }),
+      );
+
+      const result = await service.raiseBudget(session as any, 7, 40);
+
+      expect(result.hold).toBeNull();
+      expect(result.released).toBe(false);
+      expect(eventService.record).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('recordBudgetHold', () => {
+    it('marks the feed and tells the admin what the deadline is', async () => {
+      sessionRepository.findOne.mockResolvedValue(
+        readySession({ totalCostUsd: '16.77', budgetUsd: '15' }),
+      );
+
+      const result = await service.recordBudgetHold({
+        id: 'run-9',
+        sessionId: 'session-1',
+      } as any);
+
+      expect(result.holdSeconds).toBe(BUILDER_BUDGET_HOLD_SECONDS);
+      expect(eventService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'run-9' }),
+        BuilderEventType.BUDGET_HOLD,
+        expect.objectContaining({ state: 'held', spentUsd: 16.77 }),
+      );
+      expect(notificationService.budgetHold).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'session-1' }),
+        16.77,
+        BUILDER_BUDGET_HOLD_SECONDS / 60,
+      );
+    });
+  });
+
+  describe('getSessionBudget', () => {
+    it('reports the hold the page needs to offer a raise', async () => {
+      sessionRepository.findOne.mockResolvedValue(
+        readySession({ totalCostUsd: '16.77', budgetUsd: '15' }),
+      );
+      runRepository.findOne.mockResolvedValue({
+        id: 'run-9',
+        sessionId: 'session-1',
+        status: BuilderRunStatus.RUNNING,
+      });
+      eventRepository.latestOfType.mockResolvedValue({
+        payload: { state: 'held', holdUntil: '2026-08-28T10:20:00.000Z' },
+        createdAt: new Date('2026-08-28T10:00:00.000Z'),
+      });
+
+      const state = await service.getSessionBudget('session-1');
+
+      expect(state.exceeded).toBe(true);
+      expect(state.hold).toEqual({
+        runId: 'run-9',
+        heldAt: '2026-08-28T10:00:00.000Z',
+        holdUntil: '2026-08-28T10:20:00.000Z',
+      });
+    });
+
+    it('clears the hold when the ceiling moved without a raise event, e.g. a retry override', async () => {
+      sessionRepository.findOne.mockResolvedValue(
+        readySession({ totalCostUsd: '16.77', budgetUsd: '50' }),
+      );
+      runRepository.findOne.mockResolvedValue({
+        id: 'run-9',
+        sessionId: 'session-1',
+        status: BuilderRunStatus.RUNNING,
+      });
+      // Still the last budget_hold event on the run — nothing wrote over it.
+      eventRepository.latestOfType.mockResolvedValue({
+        payload: { state: 'held', holdUntil: '2026-08-28T10:20:00.000Z' },
+        createdAt: new Date('2026-08-28T10:00:00.000Z'),
+      });
+
+      const state = await service.getSessionBudget('session-1');
+
+      expect(state.exceeded).toBe(false);
+      expect(state.hold).toBeNull();
+    });
+
+    it('reports no hold once a raise has been recorded over it', async () => {
+      sessionRepository.findOne.mockResolvedValue(
+        readySession({ totalCostUsd: '16.77', budgetUsd: '30' }),
+      );
+      runRepository.findOne.mockResolvedValue({
+        id: 'run-9',
+        sessionId: 'session-1',
+        status: BuilderRunStatus.RUNNING,
+      });
+      eventRepository.latestOfType.mockResolvedValue({
+        payload: { state: 'raised', budgetUsd: 30 },
+        createdAt: new Date('2026-08-28T10:05:00.000Z'),
+      });
+
+      const state = await service.getSessionBudget('session-1');
+
+      expect(state.hold).toBeNull();
     });
   });
 

@@ -51,14 +51,28 @@ import fs from 'node:fs';
 
 const log = process.env.DRYRUN_LOG;
 const append = (line) => fs.appendFileSync(log, `${line}\n`);
+let budgetPolls = 0;
 
 http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
   const path = url.pathname;
 
   if (req.method === 'GET' && path.endsWith('/budget')) {
+    // A scenario can make the ceiling move underneath a held run:
+    // DRYRUN_BUDGET_RAISE_AFTER=n serves `exceeded` for the first n polls and
+    // a raised ceiling from then on, which is exactly what an admin pressing
+    // "Raise budget" looks like to the runner.
+    const state = JSON.parse(process.env.DRYRUN_BUDGET ?? '{"exceeded":false}');
+    const raiseAfter = Number(process.env.DRYRUN_BUDGET_RAISE_AFTER ?? 0);
+    budgetPolls += 1;
+    append(`GET budget:${state.exceeded && !(raiseAfter && budgetPolls > raiseAfter) ? 'exceeded' : 'ok'}`);
+    if (raiseAfter && budgetPolls > raiseAfter) {
+      state.exceeded = false;
+      state.budgetUsd = Number(state.spentUsd ?? 0) + 10;
+      state.remainingUsd = 10;
+    }
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify(JSON.parse(process.env.DRYRUN_BUDGET ?? '{"exceeded":false}')));
+    res.end(JSON.stringify(state));
     return;
   }
 
@@ -260,6 +274,7 @@ run_scenario() {
   done
 
   DRYRUN_LOG="$log" DRYRUN_PORT="$PORT" DRYRUN_BUDGET="$budget_json" \
+  DRYRUN_BUDGET_RAISE_AFTER="${DRYRUN_BUDGET_RAISE_AFTER:-0}" \
   DRYRUN_GATE_FAIL="$gate_fail" \
     node "${WORK}/server.mjs" &
   SERVER_PID=$!
@@ -336,8 +351,11 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = gate-block ]; then
   check "reported the failure to ally-be" yes "$(has_in_log 'POST complete')"
 fi
 
-# ── 4. budget exhausted ─────────────────────────────────────────────────────
+# ── 4. budget exhausted, no hold window ─────────────────────────────────────
 if [ "$SCENARIO" = all ] || [ "$SCENARIO" = budget ]; then
+  # `holdSeconds` absent: an older ally-be, and the reason the runner treats a
+  # missing window as zero rather than a default wait — an omitted field must
+  # not silently park a runner for twenty minutes.
   DRYRUN_BUDGET='{"exceeded":true,"spentUsd":26.4,"budgetUsd":25}' \
     run_scenario budget
   # A clean stop, not a crash: the spend is real and already reported, and the
@@ -345,6 +363,39 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = budget ]; then
   check "stops cleanly rather than crashing" 0 "$EXIT_CODE"
   check "told ally-be why it stopped" yes "$(has_in_log 'POST complete')"
   check "said budget in the reason" yes "$(grep -q 'Budget exhausted' "$LOG_FILE" && echo yes || echo no)"
+  check "did not announce a hold it wasn't offered" no "$(has_in_log 'POST budget-hold')"
+  check "opened no pull requests" no "$(has_in_log 'GET finalise-prompt')"
+  unset DRYRUN_BUDGET
+fi
+
+# ── 4b. budget raised while the run holds ───────────────────────────────────
+#
+# THE case the hold exists for: nothing is pushed before FINALISE, so aborting
+# here would throw away the whole tree. The run must wait, notice the raise and
+# carry on to a pull request — not stop and need a retry from the PRD.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = budget-raise ]; then
+  DRYRUN_BUDGET='{"exceeded":true,"spentUsd":16.77,"budgetUsd":15,"holdSeconds":6,"pollSeconds":1}' \
+  DRYRUN_BUDGET_RAISE_AFTER=2 \
+    run_scenario budget-raise
+  check "finishes the run" 0 "$EXIT_CODE"
+  check "announced the hold once" 1 "$(count_in_log 'POST budget-hold')"
+  check "kept polling while held" yes \
+    "$([ "$(count_in_log 'GET budget:exceeded')" -ge 2 ] && echo yes || echo no)"
+  check "never reported a failure" no "$(has_in_log 'POST complete .*failed')"
+  check "carried on to the pull requests" yes "$(has_in_log 'GET finalise-prompt')"
+  check "logged no expiry" no "$(has_in_log 'EVENT budget_hold')"
+  unset DRYRUN_BUDGET DRYRUN_BUDGET_RAISE_AFTER
+fi
+
+# ── 4c. nobody raises it before the window closes ───────────────────────────
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = budget-expiry ]; then
+  DRYRUN_BUDGET='{"exceeded":true,"spentUsd":16.77,"budgetUsd":15,"holdSeconds":2,"pollSeconds":1}' \
+    run_scenario budget-expiry
+  check "stops cleanly rather than crashing" 0 "$EXIT_CODE"
+  check "announced the hold" yes "$(has_in_log 'POST budget-hold')"
+  check "recorded the expiry on the feed" yes "$(has_in_log 'EVENT budget_hold')"
+  check "said how long it waited" yes \
+    "$(grep -q 'held the work for' "$LOG_FILE" && echo yes || echo no)"
   check "opened no pull requests" no "$(has_in_log 'GET finalise-prompt')"
   unset DRYRUN_BUDGET
 fi

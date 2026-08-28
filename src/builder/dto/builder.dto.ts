@@ -188,6 +188,16 @@ export class StartBuilderBuildDto {
   budgetUsd?: number;
 }
 
+export class RaiseBuilderBudgetDto {
+  @ApiProperty({
+    description:
+      'The new spend ceiling for the session, USD. Must be above what the session has already spent — anything at or below it would stop the build again immediately. 0 removes the ceiling.',
+  })
+  @IsNumber()
+  @Min(0)
+  budgetUsd!: number;
+}
+
 export class AnswerBuilderQuestionDto {
   @ApiProperty({
     description: 'Human-readable answer, as the agent will read it',

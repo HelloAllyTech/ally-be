@@ -87,6 +87,22 @@ export class BuilderBuildEventRepository extends Repository<BuilderBuildEvent> {
   }
 
   /**
+   * The newest event of one type on a run.
+   *
+   * Used to read a run's mid-run budget hold back out of the log rather than
+   * duplicating it as a column: the hold lives for minutes, the log is already
+   * the durable record of it, and a status column would be one more piece of
+   * state a dead runner could strand.
+   */
+  latestOfType(runId: string, type: string): Promise<BuilderBuildEvent | null> {
+    return this.createQueryBuilder('event')
+      .where('event.runId = :runId', { runId })
+      .andWhere('event.type = :type', { type })
+      .orderBy('event.seq', 'DESC')
+      .getOne();
+  }
+
+  /**
    * Append a batch with gapless per-run seq, allocated by one atomic
    * `UPDATE … RETURNING` on the run row.
    *
