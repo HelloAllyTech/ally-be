@@ -24,6 +24,17 @@ import {
 import { UxSignalKind } from '../enum/ux-signal.enum';
 import { TriagedItem } from '../ux-signals.types';
 
+/**
+ * Advisory-lock coordinates for filing a UX-signal suggestion.
+ *
+ * A fixed namespace, distinct from ScheduledTaskRunnerService's 4919, so these
+ * can never collide with an interval lock. One fixed key rather than a hash of the
+ * title: this path files at most a handful of rows a day, so serialising all of it
+ * costs nothing and needs no argument about hash collisions to be correct.
+ */
+const SUGGESTION_LOCK_NAMESPACE = 4920;
+const SUGGESTION_LOCK_KEY = 1;
+
 /** What one write pass filed, and what it recognised as already known. */
 export interface WriteResult {
   findingsCreated: number;
@@ -175,6 +186,19 @@ export class UxSignalWriterService {
    * prompt, which is given the open findings and the pending and rejected
    * suggestions — a rejection with a reason is a standing decision, and re-filing
    * a reworded version of it is how a review queue loses its readers.
+   *
+   * The check and the insert run inside one transaction that first takes a
+   * transaction-level advisory lock, because on their own they are a read followed
+   * by a write and two passes can interleave between them — each seeing an empty
+   * pending queue, each filing the same card. Scans are serialised by a unique
+   * index now, but not absolutely: a scan that outlives the staleness cutoff is
+   * declared abandoned and a second one starts beside it, and that is the window
+   * this closes. A lock rather than a unique index on `analytics_suggestions`,
+   * because that table is the shared review queue — the analytics-window producer
+   * writes to it too, historical rows may already hold repeated titles, and a
+   * constraint added underneath a human queue would turn old data into a hard
+   * error nobody asked for. The lock is released when the transaction ends,
+   * including on rollback, so a failed filing cannot wedge the next one.
    */
   private async fileSuggestion(
     item: TriagedItem,
@@ -183,47 +207,55 @@ export class UxSignalWriterService {
     userId: number | null,
   ): Promise<boolean> {
     const title = item.title.slice(0, UX_SIGNAL_FIELD_LIMITS.TITLE);
-    const duplicate = await this.suggestionRepository
-      .createQueryBuilder('s')
-      .where('s.status = :status', {
-        status: AnalyticsSuggestionStatus.PENDING,
-      })
-      .andWhere('s.source = :source', {
-        source: AnalyticsSuggestionSource.UX_SIGNAL,
-      })
-      .andWhere('LOWER(TRIM(s.title)) = :title', {
-        title: title.toLowerCase().trim(),
-      })
-      .getOne();
-    if (duplicate) return false;
-
     // A scheduled scan has no acting user. 0 is ally-be's system-write
     // convention for these audit columns.
     const actor = userId ?? 0;
 
-    await this.suggestionRepository.save(
-      this.suggestionRepository.create({
-        batchId,
-        source: AnalyticsSuggestionSource.UX_SIGNAL,
-        title,
-        body: item.body.slice(0, UX_SIGNAL_FIELD_LIMITS.BODY),
-        rationale: item.rationale.slice(0, UX_SIGNAL_FIELD_LIMITS.RATIONALE),
-        evidence: item.evidence,
-        suggestedGoal: item.suggestedGoal,
-        // Always IDEA: a signal the triage classified as bug-shaped went to the
-        // bug queue instead of here, so anything reaching this method is an
-        // improvement by construction.
-        suggestedType: RoadmapOpportunityType.IDEA,
-        status: AnalyticsSuggestionStatus.PENDING,
-        windowFrom: scan.windowFrom,
-        windowTo: scan.windowTo,
-        windowLabel: `UX scan · ${scan.windowFrom} → ${scan.windowTo}`,
-        model: scan.model,
-        createdBy: actor,
-        updatedBy: actor,
-      }),
-    );
-    return true;
+    return this.suggestionRepository.manager.transaction(async (manager) => {
+      await manager.query('SELECT pg_advisory_xact_lock($1, $2)', [
+        SUGGESTION_LOCK_NAMESPACE,
+        SUGGESTION_LOCK_KEY,
+      ]);
+
+      const repository = manager.getRepository(AnalyticsSuggestion);
+      const duplicate = await repository
+        .createQueryBuilder('s')
+        .where('s.status = :status', {
+          status: AnalyticsSuggestionStatus.PENDING,
+        })
+        .andWhere('s.source = :source', {
+          source: AnalyticsSuggestionSource.UX_SIGNAL,
+        })
+        .andWhere('LOWER(TRIM(s.title)) = :title', {
+          title: title.toLowerCase().trim(),
+        })
+        .getOne();
+      if (duplicate) return false;
+
+      await repository.save(
+        repository.create({
+          batchId,
+          source: AnalyticsSuggestionSource.UX_SIGNAL,
+          title,
+          body: item.body.slice(0, UX_SIGNAL_FIELD_LIMITS.BODY),
+          rationale: item.rationale.slice(0, UX_SIGNAL_FIELD_LIMITS.RATIONALE),
+          evidence: item.evidence,
+          suggestedGoal: item.suggestedGoal,
+          // Always IDEA: a signal the triage classified as bug-shaped went to the
+          // bug queue instead of here, so anything reaching this method is an
+          // improvement by construction.
+          suggestedType: RoadmapOpportunityType.IDEA,
+          status: AnalyticsSuggestionStatus.PENDING,
+          windowFrom: scan.windowFrom,
+          windowTo: scan.windowTo,
+          windowLabel: `UX scan · ${scan.windowFrom} → ${scan.windowTo}`,
+          model: scan.model,
+          createdBy: actor,
+          updatedBy: actor,
+        }),
+      );
+      return true;
+    });
   }
 
   /**

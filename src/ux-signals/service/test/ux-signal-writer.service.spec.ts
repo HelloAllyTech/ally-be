@@ -28,6 +28,8 @@ describe('UxSignalWriterService', () => {
   let saveFinding: jest.Mock;
   let saveSuggestion: jest.Mock;
   let suggestionQueryBuilder: { getOne: jest.Mock };
+  /** Every statement any transactional manager ran, in order. */
+  let txStatements: string[];
 
   const scan = {
     windowFrom: '2026-08-20',
@@ -61,12 +63,66 @@ describe('UxSignalWriterService', () => {
     findOpenByDedupeKey = jest.fn().mockResolvedValue(null);
     saveFinding = jest.fn(async (row) => row);
     saveSuggestion = jest.fn(async (row) => row);
-    suggestionQueryBuilder = { getOne: jest.fn().mockResolvedValue(null) };
+    txStatements = [];
+
+    // Stands in for the pending ux_signal rows the duplicate check reads. The
+    // answer is fixed when the query is issued and delivered a tick later, which
+    // is what lets two overlapping passes both see "nothing pending" unless
+    // something serialises them.
+    const stored: unknown[] = [];
+    suggestionQueryBuilder = {
+      getOne: jest.fn(async () => {
+        const asOfQueryTime = stored[0] ?? null;
+        await new Promise((resolve) => setImmediate(resolve));
+        return asOfQueryTime;
+      }),
+    };
+    const record = async (row: unknown) => {
+      stored.push(row);
+      return saveSuggestion(row);
+    };
 
     const chainable = {
       where: () => chainable,
       andWhere: () => chainable,
       getOne: () => suggestionQueryBuilder.getOne(),
+    };
+    const transactionalRepository = {
+      createQueryBuilder: () => chainable,
+      create: (row: unknown) => row,
+      save: record,
+    };
+
+    // A stand-in for Postgres transaction-level advisory locks: a transaction
+    // that asks for the lock waits for whoever holds it and keeps it until it
+    // commits, and one that never asks is not serialised at all. Modelling the
+    // second half matters — a plain transaction under READ COMMITTED would not
+    // make a check-then-insert atomic, so the test must not pretend it does.
+    let lockChain: Promise<void> = Promise.resolve();
+    const manager = {
+      transaction: async <T>(
+        run: (entityManager: unknown) => Promise<T>,
+      ): Promise<T> => {
+        let releaseLock: () => void = () => {};
+        const entityManager = {
+          query: async (sql: string) => {
+            txStatements.push(sql);
+            if (!sql.includes('pg_advisory_xact_lock')) return [];
+            const heldByOthers = lockChain;
+            lockChain = new Promise<void>((resolve) => {
+              releaseLock = resolve;
+            });
+            await heldByOthers;
+            return [{}];
+          },
+          getRepository: () => transactionalRepository,
+        };
+        try {
+          return await run(entityManager);
+        } finally {
+          releaseLock();
+        }
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -85,7 +141,8 @@ describe('UxSignalWriterService', () => {
           useValue: {
             createQueryBuilder: () => chainable,
             create: (row: unknown) => row,
-            save: saveSuggestion,
+            save: record,
+            manager,
           },
         },
       ],
@@ -174,6 +231,28 @@ describe('UxSignalWriterService', () => {
     expect(result.suggestionsCreated).toBe(0);
     expect(result.skippedDuplicates).toBe(1);
     expect(saveSuggestion).not.toHaveBeenCalled();
+  });
+
+  it('files one suggestion, not two, when two passes file the same title at once', async () => {
+    // Two write passes can overlap when a scan outlives the staleness cutoff and
+    // a second one starts alongside it. Both read the pending queue before
+    // either has committed, so the title check on its own cannot separate them —
+    // and a second near-identical card is exactly the clutter this queue is
+    // supposed to stay free of.
+    const item = improvement();
+
+    const [first, second] = await Promise.all([
+      service.write([item], scan, 7),
+      service.write([item], scan, 7),
+    ]);
+
+    expect(saveSuggestion).toHaveBeenCalledTimes(1);
+    expect(first.suggestionsCreated + second.suggestionsCreated).toBe(1);
+    // The loser reports an honest skipped duplicate, not a silent failure.
+    expect(first.skippedDuplicates + second.skippedDuplicates).toBe(1);
+    expect(
+      txStatements.some((sql) => sql.includes('pg_advisory_xact_lock')),
+    ).toBe(true);
   });
 
   it('keeps filing the rest of a scan when one row fails', async () => {

@@ -43,6 +43,25 @@ import { UxSignalsAiService } from './ux-signals-ai.service';
 import { BugFindingSeverity } from 'src/bug-hunter/enum/bug-finding.enum';
 
 /**
+ * Both halves of the concurrency guard answer with the same sentence: from the
+ * admin's side "you double-clicked" and "you lost a millisecond-wide race" are the
+ * same event, and two wordings for it would only invite the second press.
+ */
+const SCAN_IN_FLIGHT_MESSAGE =
+  'A UX Signals scan is already running. Wait for it to finish before starting another.';
+
+// Postgres unique-violation SQLSTATE. TypeORM surfaces it on the thrown error
+// directly and/or on the wrapped driver error.
+const PG_UNIQUE_VIOLATION = '23505';
+function isUniqueViolation(error: unknown): boolean {
+  const e = error as { code?: string; driverError?: { code?: string } };
+  return (
+    e?.code === PG_UNIQUE_VIOLATION ||
+    e?.driverError?.code === PG_UNIQUE_VIOLATION
+  );
+}
+
+/**
  * Orchestrates one UX Signals scan: read PostHog, triage what crossed a
  * threshold, file it into the two human review queues, and record what happened.
  *
@@ -92,16 +111,7 @@ export class UxSignalsService {
 
     const windowTo = isoDate(new Date());
     const windowFrom = isoDate(addDays(new Date(), -UX_SIGNAL_WINDOW_DAYS));
-    const scan = await this.scanRepository.save(
-      this.scanRepository.create({
-        trigger,
-        status: UxSignalScanStatus.RUNNING,
-        windowFrom,
-        windowTo,
-        startedBy: userId,
-        startedAt: new Date(),
-      }),
-    );
+    const scan = await this.claimScan(trigger, windowFrom, windowTo, userId);
 
     try {
       const { signals, failedDetectors } = await this.detector.detect(
@@ -198,11 +208,54 @@ export class UxSignalsService {
   // ── internals ──────────────────────────────────────────────────────────────
 
   /**
+   * Take the RUNNING row that *is* the right to run, or lose the race politely.
+   *
+   * `assertNoScanInFlight` reads and this writes, and between those two statements
+   * a second caller can read the same "nothing in flight" — which is exactly what
+   * a double-clicked "Scan now" or a retry of a request that looked hung produces.
+   * The count can never settle that; only the insert can, so the partial unique
+   * index on RUNNING rows (migration 1940800000000) decides it and the loser is
+   * translated back into the same 409 a sequential second press would have got.
+   *
+   * Deliberately outside runScan's try/catch: there is no scan row to mark FAILED
+   * here, and the row the loser collided with belongs to the winner.
+   */
+  private async claimScan(
+    trigger: UxSignalScanTrigger,
+    windowFrom: string,
+    windowTo: string,
+    userId: number | null,
+  ): Promise<UxSignalScan> {
+    try {
+      return await this.scanRepository.save(
+        this.scanRepository.create({
+          trigger,
+          status: UxSignalScanStatus.RUNNING,
+          windowFrom,
+          windowTo,
+          startedBy: userId,
+          startedAt: new Date(),
+        }),
+      );
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      this.logger.warn(
+        '[UX-SIGNALS] Lost the race to start a scan; another one had already claimed the RUNNING row.',
+      );
+      throw new ConflictException(SCAN_IN_FLIGHT_MESSAGE);
+    }
+  }
+
+  /**
    * Refuse to start while another scan is genuinely in flight.
    *
    * A RUNNING row older than the stale window is treated as abandoned rather than
    * blocking: a crash or a redeploy mid-scan leaves one behind, and without this
    * a single dead row would wedge the pipeline until someone noticed by hand.
+   *
+   * This is the cheap, common-sense half of the guard — it answers "is one already
+   * running?" without an insert, and it is what clears abandoned rows. It is not
+   * the half that makes overlap impossible; see `claimScan`.
    */
   private async assertNoScanInFlight(): Promise<void> {
     const cutoff = new Date(
@@ -235,9 +288,7 @@ export class UxSignalsService {
       return;
     }
 
-    throw new ConflictException(
-      'A UX Signals scan is already running. Wait for it to finish before starting another.',
-    );
+    throw new ConflictException(SCAN_IN_FLIGHT_MESSAGE);
   }
 
   private async finish(
