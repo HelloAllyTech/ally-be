@@ -44,6 +44,8 @@ import {
 } from '../dto/roadmap-content.dto';
 import {
   AiEnhanceResponseDto,
+  AiReadinessCriteriaResponseDto,
+  AiReadinessResponseDto,
   AiReviewResponseDto,
   AiTextResponseDto,
   DuplicatesResponseDto,
@@ -59,6 +61,7 @@ import { RoadmapInterviewNoteService } from '../service/roadmap-content.service'
 import { RoadmapAiService } from '../service/roadmap-ai.service';
 import { RoadmapVectorService } from '../service/roadmap-vector.service';
 import { RoadmapAccessService } from '../service/roadmap-access.service';
+import { ROADMAP_READINESS_CRITERIA } from '../constants/product-roadmap.constants';
 
 /** Taxonomy, research notes, release notes, AI helpers, and the vector-index repair tools. */
 @ApiTags('Product Roadmap')
@@ -287,17 +290,71 @@ export class RoadmapAdminController {
 
   // ── AI helpers ────────────────────────────────────────────────────────────
 
+  /**
+   * The checklist itself. Served rather than duplicated in the client so that editing
+   * ROADMAP_READINESS_CRITERIA is the entire change — a second copy in the admin bundle would
+   * drift, and the drift would show up as a checklist item the grader never grades.
+   */
+  @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
+  @Get('ai/readiness/criteria')
+  @ApiOperation({
+    summary: 'The readiness checklist a draft is graded against',
+  })
+  @ApiResponse({ status: 200, type: AiReadinessCriteriaResponseDto })
+  readinessCriteria(): AiReadinessCriteriaResponseDto {
+    return {
+      criteria: ROADMAP_READINESS_CRITERIA.map((c) => ({
+        id: c.id,
+        label: c.label,
+        hint: c.hint,
+      })),
+    };
+  }
+
+  /**
+   * Grade a draft. One verdict per criterion, and every one of them must be green before the
+   * admin drawer enables "File opportunity" — so this fails closed by construction; see
+   * RoadmapAiService.checkReadiness.
+   */
+  @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
+  @Post('ai/readiness')
+  @ApiOperation({ summary: 'Grade a draft against the readiness checklist' })
+  @ApiResponse({ status: 201, type: AiReadinessResponseDto })
+  readiness(@Body() dto: AiDraftDto): Promise<AiReadinessResponseDto> {
+    return this.aiService.checkReadiness(dto.description);
+  }
+
+  /**
+   * @deprecated The admin "New opportunity" modal's Review button was removed, and nothing
+   * else calls this. Kept serving so any client still holding the old bundle degrades to a
+   * working request rather than a 404; delete once no traffic is seen on it.
+   */
   @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
   @Post('ai/review')
-  @ApiOperation({ summary: 'Critique a draft; at most 3 issue/tip pairs' })
+  @ApiOperation({
+    summary: 'Critique a draft; at most 3 issue/tip pairs',
+    deprecated: true,
+    description:
+      'Deprecated: no caller. The Add Opportunity modal no longer offers Review.',
+  })
   @ApiResponse({ status: 201, type: AiReviewResponseDto })
   review(@Body() dto: AiDraftDto): Promise<AiReviewResponseDto> {
     return this.aiService.reviewDraft(dto.description);
   }
 
+  /**
+   * @deprecated The admin drawer's "Improve wording" button was removed, and nothing else
+   * calls this. Kept serving for the same reason as ai/review above — an old bundle should
+   * degrade to a working request rather than a 404 — and deletable once traffic is zero.
+   */
   @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
   @Post('ai/enhance')
-  @ApiOperation({ summary: 'Rewrite a draft' })
+  @ApiOperation({
+    summary: 'Rewrite a draft',
+    deprecated: true,
+    description:
+      'Deprecated: no caller. The Add Opportunity drawer no longer offers a rewrite.',
+  })
   @ApiResponse({ status: 201, type: AiEnhanceResponseDto })
   enhance(@Body() dto: AiDraftDto): Promise<AiEnhanceResponseDto> {
     return this.aiService.enhanceDraft(dto.description);

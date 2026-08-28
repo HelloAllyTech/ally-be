@@ -273,6 +273,40 @@ export class AiReviewResponseDto {
   suggestions!: AiReviewSuggestionDto[];
 }
 
+export class AiReadinessCriterionDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() label!: string;
+  @ApiProperty() hint!: string;
+}
+
+export class AiReadinessCriteriaResponseDto {
+  @ApiProperty({ type: [AiReadinessCriterionDto] })
+  criteria!: AiReadinessCriterionDto[];
+}
+
+export class AiReadinessResultDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() passed!: boolean;
+  @ApiProperty() reason!: string;
+}
+
+export class AiReadinessResponseDto {
+  /** One entry per criterion, in the order the criteria are defined. */
+  @ApiProperty({ type: [AiReadinessResultDto] })
+  results!: AiReadinessResultDto[];
+
+  /**
+   * A proposed size for the same draft, from the same call — null when the model gives
+   * anything that is not a live effort value. A proposal, not a decision: the filer can
+   * override it in the drawer before filing, and anyone can change it afterwards.
+   */
+  @ApiProperty({ enum: RoadmapOpportunityEffort, nullable: true })
+  effort!: RoadmapOpportunityEffort | null;
+
+  /** One sentence on why that size. Empty when there is no size to explain. */
+  @ApiProperty() effortReason!: string;
+}
+
 export class AiEnhanceResponseDto {
   @ApiProperty() enhanced!: string;
 }
