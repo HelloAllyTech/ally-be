@@ -163,6 +163,37 @@ describe('CharacterInterviewOrchestratorService — truncated turns', () => {
     );
   });
 
+  it('flags a truncated wrap-up pass instead of persisting it as a success', async () => {
+    // The model keeps calling save_character_draft until the iteration cap is
+    // hit, triggering a tool-less wrap-up pass. If that wrap-up pass is itself
+    // cut off, there is no retry budget left for it — it must not be saved as
+    // a complete, successful reply.
+    let counter = 0;
+    streamMock.mockImplementation(() => {
+      counter += 1;
+      return counter <= MAX_ITERATIONS
+        ? makeStream([draftBlock(`tu-${counter}`)], 'tool_use')
+        : makeStream(
+            [{ type: 'text', text: 'Asha is mostly done, but cut o' }],
+            'max_tokens',
+          );
+    });
+
+    const frames = await collect();
+    const events = frames.map((frame) => frame.event);
+
+    expect(streamMock).toHaveBeenCalledTimes(MAX_ITERATIONS + 1);
+    const error = frames.find((frame) => frame.event === 'error');
+    expect(error?.data.code).toBe('response_truncated');
+    expect(events[events.length - 1]).toBe('done');
+
+    const assistantRow = appendMessage.mock.calls[1][1];
+    expect(assistantRow.metadata.errored).toBe(true);
+    expect(assistantRow.metadata.errorMessage).toContain(
+      'no character was created',
+    );
+  });
+
   it('flags a turn that came back with nothing in it', async () => {
     streamMock.mockReturnValue(makeStream([], 'end_turn'));
 
