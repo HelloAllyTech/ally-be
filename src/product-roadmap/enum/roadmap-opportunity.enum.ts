@@ -28,6 +28,30 @@ export enum RoadmapOpportunityStage {
 }
 
 /**
+ * Rough size of the work, on the shirt-size scale teams already use in estimation.
+ *
+ * A JUDGEMENT, not a measurement: the point of shirt sizes is that they are quick and coarse, so
+ * they get filled in. Storing hours or points instead invites false precision on something nobody
+ * has broken down yet — and the roadmap's job is deciding what is next, which needs "is this a
+ * week or a quarter", not "is this 13 points or 21".
+ *
+ * NULLABLE everywhere. Every existing row has no effort and no backfill can invent one, so
+ * "unsized" is a real and permanent state rather than a gap waiting to be filled. Nothing gates
+ * on it.
+ *
+ * Stored as `character varying` per ally-be convention (not a Postgres enum), with a CHECK
+ * constraint in the migration recovering the guarantee that a typo cannot land in the column.
+ * The string values are the WIRE and STORAGE format.
+ */
+export enum RoadmapOpportunityEffort {
+  S = 's',
+  M = 'm',
+  L = 'l',
+  XL = 'xl',
+  XXL = 'xxl',
+}
+
+/**
  * Reconciliation state for the derived Weaviate index (ally-ai's `RoadmapOpportunity`
  * collection). Postgres is the system of record; the vector index can drift because a
  * network call can fail, so drift must be detectable and healable.

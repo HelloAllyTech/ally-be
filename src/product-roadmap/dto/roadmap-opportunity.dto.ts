@@ -19,6 +19,7 @@ import {
 } from 'class-validator';
 import {
   RoadmapBoardGroupBy,
+  RoadmapOpportunityEffort,
   RoadmapOpportunitySource,
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
@@ -153,12 +154,32 @@ export class RoadmapOpportunityFiltersDto {
 
 export class ListOpportunitiesQueryDto extends RoadmapOpportunityFiltersDto {
   @ApiPropertyOptional({
-    enum: ['priority', 'createdAt', 'releasedAt', 'myVotes', 'description'],
+    enum: [
+      'priority',
+      'createdAt',
+      'releasedAt',
+      'myVotes',
+      'description',
+      'plannedMonth',
+    ],
     default: 'priority',
   })
   @IsOptional()
-  @IsEnum(['priority', 'createdAt', 'releasedAt', 'myVotes', 'description'])
-  sortBy?: 'priority' | 'createdAt' | 'releasedAt' | 'myVotes' | 'description';
+  @IsEnum([
+    'priority',
+    'createdAt',
+    'releasedAt',
+    'myVotes',
+    'description',
+    'plannedMonth',
+  ])
+  sortBy?:
+    | 'priority'
+    | 'createdAt'
+    | 'releasedAt'
+    | 'myVotes'
+    | 'description'
+    | 'plannedMonth';
 
   @ApiPropertyOptional({ enum: ['ASC', 'DESC'], default: 'DESC' })
   @IsOptional()
@@ -351,6 +372,23 @@ export class UpdateOpportunityDto {
   @IsOptional()
   @Matches(MONTH_KEY_REGEX, { message: `plannedMonth ${MONTH_KEY_MESSAGE}` })
   plannedMonth?: string | null;
+
+  /**
+   * Rough size — S/M/L/XL/XXL. Null un-sizes it, which is a legitimate edit and not a no-op:
+   * "we sized this and it was wrong" has to be undoable back to unsized.
+   *
+   * Not on CreateOpportunityDto. The create modal asks for a description and a goal, because the
+   * moment of filing is the moment you know least about the size — and unsized is already the
+   * correct state for a brand-new row.
+   */
+  @ApiPropertyOptional({
+    enum: RoadmapOpportunityEffort,
+    nullable: true,
+    description: 'Rough size; null means unsized',
+  })
+  @IsOptional()
+  @IsEnum(RoadmapOpportunityEffort)
+  effort?: RoadmapOpportunityEffort | null;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   RoadmapBoardGroupBy,
+  RoadmapOpportunityEffort,
   RoadmapOpportunitySource,
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
@@ -48,6 +49,10 @@ export class OpportunityResponseDto {
 
   /** The month somebody planned this into, 'YYYY-MM'. Null means Unscheduled. */
   @ApiPropertyOptional({ nullable: true }) plannedMonth?: string | null;
+
+  /** Rough size — S/M/L/XL/XXL. Null means nobody has sized it. */
+  @ApiPropertyOptional({ nullable: true, enum: RoadmapOpportunityEffort })
+  effort?: RoadmapOpportunityEffort | null;
 
   /** Manual rank within its lane, ascending. Only meaningful against its own lane. */
   @ApiProperty() boardPosition!: number;
