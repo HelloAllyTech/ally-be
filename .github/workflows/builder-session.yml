@@ -119,7 +119,9 @@ jobs:
 
       # Keyed on the repo list rather than a lockfile: the runner installs
       # dependencies for several repos, and there is no single lockfile that
-      # represents the set.
+      # represents the set. The list is joined with underscores rather than
+      # interpolated raw — `repos` is a JSON array, and actions/cache rejects
+      # any key containing a comma.
       - name: Cache package managers
         uses: actions/cache@v4
         with:
@@ -127,7 +129,7 @@ jobs:
             ~/.npm
             ~/.cache/pip
             ~/.cache/pypoetry
-          key: builder-deps-${{ hashFiles('protocol/package-lock.json') }}-${{ inputs.repos }}
+          key: builder-deps-${{ hashFiles('protocol/package-lock.json') }}-${{ join(fromJSON(inputs.repos), '_') }}
           restore-keys: builder-deps-
 
       - name: Install the coding engine
