@@ -3573,10 +3573,25 @@ export class ScenarioSessionService {
       });
 
     // Tag the session as a V2V test so it can be filtered downstream.
+    //
+    // `selectedMainPromptCode` is captured here for the same reason
+    // `startScenarioSession` captures it: analytics cannot otherwise tell which
+    // main-agent prompt produced a session. It was missing on this path, so
+    // every V2V run — the sessions we deliberately generate to COMPARE prompts
+    // — was the one population that could not be attributed to one.
+    //
+    // Read from the scenario at start time, not at analysis time: a scenario's
+    // selected prompt mutates, and on 2026-08-28 scenario 440 ran on two
+    // different prompts within an hour.
+    const v2vSelectedMainPromptCode = scenario?.metadata
+      ?.selectedMainPromptCode as string | undefined;
     scenarioSession.metadata = {
       ...(scenarioSession.metadata ?? {}),
       v2vTest: true,
       v2vMaxExchanges: maxExchanges,
+      ...(v2vSelectedMainPromptCode
+        ? { selectedMainPromptCode: v2vSelectedMainPromptCode }
+        : {}),
     };
     await this.scenarioSessionRepository.save(scenarioSession);
 

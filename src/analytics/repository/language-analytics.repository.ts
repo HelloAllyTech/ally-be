@@ -318,14 +318,21 @@ export class LanguageAnalyticsRepository {
    * #2 in the morning and #3 in the afternoon on 2026-08-28; joining to the
    * scenario would attribute both to #3 and quietly invent the comparison.
    *
-   * `promptVersion` is already derived from this same map, keeping only the
-   * VALUE. The key was there all along, which is why prompt attribution needs
-   * no migration and works on every session already judged.
+   * `selectedMainPromptCode` FIRST, because it is unambiguous. The
+   * promptVersions fallback exists for sessions predating it, and it is a
+   * heuristic: that map can carry several main-agent entries, and picking
+   * alphabetically returned `..._main_agent_prompt` in preference to
+   * `..._main_agent_prompt_full` and `..._working_memory_split` — every session
+   * attributed to the base prompt, which is what the first version of this
+   * shipped and what the numbers exposed. Longest key first is a better guess,
+   * because variants are suffixes of the base code, but it is still a guess:
+   * treat fallback rows as approximate and prefer the recorded field.
    */
-  private static readonly MAIN_PROMPT_CODE_SQL = `(
-    SELECT k FROM jsonb_object_keys(ss."metadata"->'promptVersions') AS k
-     WHERE k LIKE '%main_agent%' OR k LIKE '%base_role%'
-     ORDER BY k LIMIT 1)`;
+  private static readonly MAIN_PROMPT_CODE_SQL = `COALESCE(
+    ss."metadata"->>'selectedMainPromptCode',
+    (SELECT k FROM jsonb_object_keys(ss."metadata"->'promptVersions') AS k
+      WHERE k LIKE '%main_agent%' OR k LIKE '%base_role%'
+      ORDER BY length(k) DESC, k LIMIT 1))`;
 
   /** Session denominators grouped by which main-agent prompt ran. */
   async sessionTotalsByMainPrompt(f: LanguageAnalyticsFilters): Promise<
