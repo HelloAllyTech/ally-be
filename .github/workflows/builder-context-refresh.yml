@@ -19,7 +19,7 @@ on:
   workflow_dispatch:
     inputs:
       repos:
-        description: JSON array of repos to refresh (default: all)
+        description: 'JSON array of repos to refresh (default: all)'
         required: false
         default: '["ally-be","ally-web","ally-ai","ally-ai-learn","ally-mobile"]'
 

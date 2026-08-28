@@ -53,7 +53,7 @@ on:
         description: Branch base — pushes go to builder/<slug>
         required: true
       branches:
-        description: JSON map of {repo: branch} to resume from
+        description: 'JSON map of {repo: branch} to resume from'
         required: false
         default: '{}'
       api_base_url:
