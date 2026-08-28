@@ -7,10 +7,7 @@ import { In, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { User } from 'src/user/entity/user.entity';
-import {
-  PLATFORM_TIER_ROLES,
-  SUPER_ADMIN_ROLES,
-} from 'src/common/constants/user.constants';
+import { PLATFORM_TIER_ROLES } from 'src/common/constants/user.constants';
 import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
 import {
   BugFindingSource,
@@ -442,10 +439,12 @@ export class RoadmapOpportunityService {
   }
 
   /**
-   * The users who may own an opportunity: Ally SUPER_ADMIN / SUPER_DUPER_ADMIN accounts.
+   * The users who may own an opportunity: Ally platform-tier accounts (PLATFORM_ADMIN, plus the
+   * retired SUPER_ADMIN / SUPER_DUPER_ADMIN / MULTI_TENANT_ADMIN tiers it collapsed) — see
+   * PLATFORM_TIER_ROLES.
    *
    * Group membership is the source of truth rather than a hand-maintained list, so somebody losing
-   * super-admin stops appearing here without anyone remembering to prune a taxonomy table. Their
+   * platform-admin stops appearing here without anyone remembering to prune a taxonomy table. Their
    * existing assignments are left alone — history should not silently rewrite itself.
    */
   async listEligibleOwners(): Promise<RoadmapEligibleOwnerDto[]> {
@@ -458,7 +457,7 @@ export class RoadmapOpportunityService {
            INNER JOIN groups g ON g.id = ug."groupId"
            WHERE ug."userId" = "user"."id" AND g.name IN (:...roles)
          )`,
-        { roles: SUPER_ADMIN_ROLES },
+        { roles: PLATFORM_TIER_ROLES },
       )
       .orderBy('user.name', 'ASC')
       .getMany();
