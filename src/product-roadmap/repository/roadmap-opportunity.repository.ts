@@ -472,9 +472,11 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
               COALESCE((SELECT COUNT(*)::int FROM roadmap_opportunity_comments c
                          WHERE c."opportunityId" = opp.id
                            AND c."deletedAt" IS NULL), 0)                    AS "commentCount",
-              COALESCE(owner_user.name, opp."owner")                         AS "ownerDisplay"
+              COALESCE(owner_user.name, opp."owner")                         AS "ownerDisplay",
+              qrank.rank                                                     AS "queueRank"
          FROM roadmap_opportunities opp
          LEFT JOIN users owner_user ON owner_user.id = opp."ownerUserId"
+         LEFT JOIN ${QUEUE_RANK_SQL} qrank ON qrank.id = opp.id
         WHERE opp.id = $1 AND opp."deletedAt" IS NULL`,
       [id, userId, periodKey],
     );

@@ -772,9 +772,10 @@ export class SettingsService {
       [PERMISSIONS.SYSTEM_ACCESS],
     );
     // Only a platform admin may grant this — a tenant admin must not be able to
-    // switch on their own access.
+    // switch on their own access. The `??` on the staff branch matters: the
+    // helpline app's own Org Settings screen sends no tenantId at all.
     const scopedTenantId = hasSystemAccess
-      ? tenantId
+      ? (tenantId ?? ExecutionManager.getTenantId())
       : ExecutionManager.getTenantId();
     if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
     const resolvedId = await this.resolveTenantCode(scopedTenantId);

@@ -86,3 +86,36 @@ jobs:
 
       - name: Typecheck
         run: npx tsc --noEmit -p tsconfig.json
+
+  # Workflow files themselves are code, and until 2026-08-28 nothing checked
+  # them. Two Builder workflows carried an unquoted `": "` inside an input
+  # description, which is a YAML syntax error. GitHub registers an unparseable
+  # workflow anyway — with no triggers — so the failure surfaced as a lying
+  # error message ("Workflow does not have 'workflow_dispatch' trigger") on
+  # every Builder dispatch, and the weekly context refresh silently never ran.
+  # actionlint parses each file and would have failed the PR that introduced it.
+  actionlint:
+    name: Workflow lint
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned release binary, same approach as secret-scan.yml uses for
+      # gitleaks: no marketplace action in the supply chain for a linter.
+      - name: Install actionlint
+        run: |
+          curl -sSL https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz \
+            | tar -xz -C /usr/local/bin actionlint
+          actionlint -version
+
+      # Blocking, and green on every workflow in this repo as of landing.
+      #
+      # -shellcheck= turns off the bundled shellcheck integration. Left on, it
+      # reports 112 SC2086/SC2129 style notes inside main.yaml and
+      # production-release.yaml — quoting nits in two deploy pipelines that
+      # work — which would mean rewriting them before this check could ever be
+      # blocking. Structural linting is what catches the class of bug above.
+      - name: Lint workflows
+        run: actionlint -shellcheck=

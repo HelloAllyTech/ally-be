@@ -244,6 +244,34 @@ describe('CopilotOrchestratorService', () => {
     );
   });
 
+  it('flags a truncated wrap-up pass instead of persisting it as a success', async () => {
+    // Same iteration-cap situation as the pass above, but this time the
+    // tool-less wrap-up call itself hits max_tokens. There is no retry left
+    // for it — it must not be saved as a normal, complete answer.
+    let counter = 0;
+    streamMock.mockImplementation(() => {
+      counter += 1;
+      return counter <= MAX_ITERATIONS
+        ? makeStream([toolUseBlock(`tu-${counter}`)], 'tool_use')
+        : makeStream(
+            [{ type: 'text', text: 'Got most of it, but cut o' }],
+            'max_tokens',
+          );
+    });
+
+    const frames = await collect();
+    const events = frames.map((frame) => frame.event);
+
+    expect(streamMock).toHaveBeenCalledTimes(MAX_ITERATIONS + 1);
+    const error = frames.find((frame) => frame.event === 'error');
+    expect(error?.data.code).toBe('response_truncated');
+    expect(events[events.length - 1]).toBe('done');
+
+    const assistantRow = appendMessage.mock.calls[1][1];
+    expect(assistantRow.metadata.errored).toBe(true);
+    expect(assistantRow.metadata.errorMessage).toContain('one part at a time');
+  });
+
   it('ends the turn immediately when a tool requests endTurn (ask_trainer)', async () => {
     streamMock.mockReturnValue(
       makeStream(
