@@ -168,3 +168,17 @@ export const BUG_RELEASE_TIMEOUT_MS = 90 * 60 * 1000;
  * reasoning as `BUG_RELEASE_TIMEOUT_MS`.
  */
 export const BUG_FIX_SESSION_RUN_TIMEOUT_MS = 75 * 60 * 1000;
+
+/**
+ * The `timeout-minutes` every repo's `bug-fix-session.yml` job carries, quoted
+ * to the fix agent as its real budget.
+ *
+ * The agent needs to know this number. Not knowing it is what makes a long
+ * command look like something to escape rather than something to wait for —
+ * and a fix session that backgrounds its commit and ends its turn throws the
+ * whole session away, because the runner dies with the process. Kept here
+ * rather than inline in the prompt so the two places that state the cap are
+ * one edit apart; `BUG_FIX_SESSION_RUN_TIMEOUT_MS` above is deliberately set
+ * past it.
+ */
+export const BUG_FIX_SESSION_JOB_TIMEOUT_MINUTES = 60;

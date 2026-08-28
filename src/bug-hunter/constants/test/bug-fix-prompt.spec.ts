@@ -132,4 +132,50 @@ describe('buildFixSessionPrompt', () => {
       /not identified — locate it yourself/,
     );
   });
+
+  // ── one-shot runtime ─────────────────────────────────────────────────────
+  //
+  // A live session backgrounded its `git commit`, announced it would push
+  // "once it finishes", and ended its turn. `claude -p` exited 0, the runner
+  // was destroyed with the work still in its tree, and the job stayed green.
+  // The prompt now has to say that ending a turn IS the end.
+
+  it('tells the agent it gets one process and no second chance', () => {
+    const prompt = build();
+
+    expect(prompt).toMatch(/single non-interactive process/i);
+    expect(prompt).toMatch(/NEVER start a long command in the background/i);
+    expect(prompt).toMatch(/60 minutes is the real budget/);
+  });
+
+  it('requires a terminal status before the agent may stop', () => {
+    const prompt = build();
+
+    expect(prompt).toMatch(/must be OUT of "fixing"/i);
+    expect(prompt).toMatch(/fails the job if it is still "fixing"/i);
+  });
+
+  // ── the pre-commit hook ──────────────────────────────────────────────────
+
+  it('forbids --no-verify on a fix it is about to admin-merge', () => {
+    // `gh pr merge --admin` walks past the PR's own checks (master has
+    // enforce_admins: false), so the commit hook is the last place the suite
+    // runs against this diff before it reaches master.
+    const prompt = build();
+
+    expect(prompt).toMatch(/Do not pass `--no-verify`/);
+    expect(prompt).toMatch(/last time the suite runs against your diff/i);
+  });
+
+  it('skips the duplicated hook on a fix that stays an open PR', () => {
+    // Nothing merges without CI and a reviewer here, so re-running a suite the
+    // agent already ran at step 5 buys nothing.
+    for (const prompt of [
+      build({ touchesGuardedPath: true }),
+      build({ touchesGuardedPath: false }, 'ally-mobile'),
+    ]) {
+      expect(prompt).toMatch(/git commit --no-verify/);
+      expect(prompt).not.toMatch(/Do not pass `--no-verify`/);
+    }
+  });
 });

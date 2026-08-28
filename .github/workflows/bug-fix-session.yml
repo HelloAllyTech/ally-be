@@ -8,9 +8,9 @@
 #
 # This file is deliberately thin and identical in every repo that has it. The
 # whole protocol lives in ally-be (`src/bug-hunter/constants/bug-fix-prompt.ts`)
-# and is fetched at run time, so it cannot drift between the four copies of
+# and is fetched at run time, so it cannot drift between the five copies of
 # this workflow and a change to it takes effect on the next dispatch rather
-# than after four PRs.
+# than after five PRs.
 #
 # It does NOT deploy. Promoting the merged fix to production is a separate,
 # explicitly human click in the same admin tab, which dispatches
@@ -144,6 +144,61 @@ jobs:
               -d "{\"modelUsage\":${MODEL_USAGE},\"cliReportedCostUsd\":${CLI_COST}}" || true
           fi
 
+      - name: Fail if the session ended without reporting an outcome
+        # `claude -p` exits 0 whenever the agent produces a final response —
+        # including when it ends its turn mid-protocol, which is a real failure
+        # mode: one session backgrounded its pre-commit-hooked `git commit`,
+        # said it would push "once it finishes", and ended. The process died
+        # with the runner, nothing was pushed, and the job stayed green. The
+        # finding then sat FIXING until `reconcileFixingSessions` timed it out
+        # half an hour later with a message nobody could act on.
+        #
+        # So: re-read the finding. If it is still `fixing` (or never left
+        # `queued`), the protocol was abandoned. Say exactly that against the
+        # run, mark it failed, close the run so it stops looking live, and go
+        # red — a stopped session should reach a human as an explicit report,
+        # not as an inferred timeout.
+        env:
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -uo pipefail
+          STATUS=$(curl -sS -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/findings/${{ inputs.finding_id }}" \
+            | jq -r '.status // "unknown"')
+          echo "Finding ${{ inputs.finding_id }} is '$STATUS' after the session."
+
+          # `unknown` means ally-be was unreachable, not that the agent failed.
+          # Never fail a session over a reporting hiccup — reconcile still has
+          # the run to fall back on.
+          if [ "$STATUS" != "fixing" ] && [ "$STATUS" != "queued" ]; then
+            exit 0
+          fi
+
+          echo "::error::The fix session ended while the finding was still '$STATUS' — it stopped mid-protocol without reporting an outcome."
+          SUMMARY="The fix session ended while the bug was still '$STATUS' — the agent stopped mid-protocol without opening a PR, escalating, or dismissing. Anything it had not pushed is gone with the runner. Start a new session to retry."
+          # Before the close, or appendEvent rejects it: a closed run refuses
+          # further events.
+          curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ inputs.api_base_url }}/api/v1/bug-hunter/runs/${{ inputs.run_id }}/report" \
+            -d "{\"repo\":\"${{ inputs.repo }}\",\"stage\":\"error\",\"summary\":\"${SUMMARY}\",\"findingId\":\"${{ inputs.finding_id }}\",\"payload\":{\"runUrl\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",\"findingStatus\":\"${STATUS}\"}}" || true
+          curl -sS -X PATCH \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/findings/${{ inputs.finding_id }}" \
+            -d '{"status":"failed"}' || true
+          curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ inputs.api_base_url }}/api/v1/bug-hunter/runs/${{ inputs.run_id }}/close" \
+            -d "{\"status\":\"failed\",\"foundCount\":1,\"dismissedCount\":1,\"errorMessage\":\"${SUMMARY}\"}" || true
+
+          # The generic failure reporter below would otherwise post a second,
+          # vaguer error event on top of this one.
+          touch /tmp/bug-fix-already-reported
+          exit 1
+
       - name: Report a runner-level failure
         # The protocol has ally-be told about every outcome it can reach by
         # itself. This covers the ones it cannot: the runner dying, npm ci
@@ -154,6 +209,14 @@ jobs:
         env:
           ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
         run: |
+          set -uo pipefail
+          # The gate step above already posted a precise account of what went
+          # wrong and closed the run. Adding this generic one on top would just
+          # bury it in the drawer.
+          if [ -f /tmp/bug-fix-already-reported ]; then
+            echo "Already reported by the outcome gate; nothing to add."
+            exit 0
+          fi
           curl -sS -X POST \
             -H "Content-Type: application/json" \
             -H "x-api-key: $ALLY_BE_API_KEY" \
@@ -164,3 +227,10 @@ jobs:
             -H "x-api-key: $ALLY_BE_API_KEY" \
             "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/findings/${{ inputs.finding_id }}" \
             -d '{"status":"failed"}' || true
+          # Without this a run whose runner died stays RUNNING forever: nothing
+          # in ally-be ever closes a run it did not hear from.
+          curl -sS -X POST \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ inputs.api_base_url }}/api/v1/bug-hunter/runs/${{ inputs.run_id }}/close" \
+            -d '{"status":"failed","foundCount":1,"dismissedCount":1,"errorMessage":"The fix session runner failed before finishing."}' || true
