@@ -63,6 +63,8 @@ export enum FeatureToggleKey {
   // Also gates the backend's VIEW_AWS_LOGS permission — one feature, one key.
   LOGS = 'logs',
   AGENT_TEST_CASES = 'agent_test_cases',
+  // Also gates the backend's VIEW_MOBILE_RELEASES permission — one feature, one key.
+  MOBILE_RELEASES = 'mobile_releases',
 
   // WhatsApp Q&A bot (formerly SUPER_DUPER_ADMIN-only)
   WHATSAPP_BOT = 'whatsapp_bot',
@@ -248,6 +250,13 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     key: FeatureToggleKey.AGENT_TEST_CASES,
     label: 'Agent Test Cases',
     description: 'Manage roleplay agent test cases and rubrics.',
+    legacyGrants: SDA_ONLY,
+  },
+  {
+    key: FeatureToggleKey.MOBILE_RELEASES,
+    label: 'Mobile Releases',
+    description:
+      'View the ally-mobile automated release pipeline: current app version and recent GitHub Actions build/release run history.',
     legacyGrants: SDA_ONLY,
   },
   {

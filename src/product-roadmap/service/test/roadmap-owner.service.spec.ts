@@ -1,5 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnprocessableEntityException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  UnprocessableEntityException,
+} from '@nestjs/common';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
@@ -11,7 +14,11 @@ import { RoadmapOpportunityService } from '../roadmap-opportunity.service';
 import { RoadmapOpportunityRepository } from '../../repository/roadmap-opportunity.repository';
 import { RoadmapVectorService } from '../roadmap-vector.service';
 import { RoadmapNotificationService } from '../roadmap-notification.service';
-import { ListOpportunitiesQueryDto } from '../../dto/roadmap-opportunity.dto';
+import {
+  CreateOpportunityDto,
+  ListOpportunitiesQueryDto,
+} from '../../dto/roadmap-opportunity.dto';
+import { RoadmapOpportunityType } from '../../enum/roadmap-opportunity.enum';
 
 const OPP_ID = '11111111-1111-1111-1111-111111111111';
 
@@ -25,6 +32,8 @@ describe('RoadmapOpportunityService — owners', () => {
     findOne: jest.Mock;
     update: jest.Mock;
     findOneWithScore: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
   };
   let userQueryBuilder: { getMany: jest.Mock } & Record<string, jest.Mock>;
   let userRepository: { createQueryBuilder: jest.Mock; find: jest.Mock };
@@ -42,6 +51,12 @@ describe('RoadmapOpportunityService — owners', () => {
         createdBy: 1,
         description: 'x',
         productGoal: 'Scribe',
+      }),
+      create: jest.fn((row) => row),
+      save: jest.fn().mockResolvedValue({
+        id: OPP_ID,
+        description: 'x',
+        type: RoadmapOpportunityType.IDEA,
       }),
     };
 
@@ -147,6 +162,58 @@ describe('RoadmapOpportunityService — owners', () => {
     const [, patch] = opportunityRepository.update.mock.calls[0];
     expect(patch).not.toHaveProperty('ownerUserId');
     expect(patch).not.toHaveProperty('owner');
+  });
+
+  // ── filing with an owner ────────────────────────────────────────────────────
+  //
+  // POST /opportunities sits on the VOTE tier so that anyone who can vote can file. Assigning
+  // is a MANAGE action, so the same three rules the update path enforces have to hold on the
+  // create path too — otherwise the field the drawer hides from a non-manager is still postable.
+
+  const draft = (over: Partial<CreateOpportunityDto> = {}) => ({
+    description: 'As a counsellor, I want x — so that y.',
+    type: RoadmapOpportunityType.IDEA,
+    productGoal: 'Scribe',
+    ...over,
+  });
+
+  it('files with an owner when the caller can manage the roadmap', async () => {
+    givenEligibleOwners([{ id: 7, name: 'Ada Admin', email: 'a@b.c' }]);
+
+    await service.create(1, draft({ ownerUserId: 7 }), { canManage: true });
+
+    const [row] = opportunityRepository.create.mock.calls[0];
+    expect(row.ownerUserId).toBe(7);
+    // Same one-representation rule as the update path: the legacy text column is a FK into
+    // roadmap_opportunity_owners(name) and must stay null on a newly filed row.
+    expect(row.owner).toBeUndefined();
+  });
+
+  it('refuses to assign an owner when the caller cannot manage the roadmap', async () => {
+    givenEligibleOwners([{ id: 7, name: 'Ada Admin', email: 'a@b.c' }]);
+
+    await expect(
+      service.create(1, draft({ ownerUserId: 7 }), { canManage: false }),
+    ).rejects.toThrow(ForbiddenException);
+    // Refused outright rather than filed unassigned — a silently dropped assignment reads to
+    // the filer as a successful one.
+    expect(opportunityRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects filing against an owner who is not a super-admin with 422', async () => {
+    givenEligibleOwners([{ id: 7, name: 'Ada Admin', email: 'a@b.c' }]);
+
+    await expect(
+      service.create(1, draft({ ownerUserId: 99 }), { canManage: true }),
+    ).rejects.toThrow(UnprocessableEntityException);
+    expect(opportunityRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('files unassigned when no owner is sent, without consulting the manage flag', async () => {
+    await service.create(1, draft());
+
+    const [row] = opportunityRepository.create.mock.calls[0];
+    expect(row.ownerUserId).toBeNull();
   });
 });
 

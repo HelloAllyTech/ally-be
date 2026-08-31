@@ -61,13 +61,13 @@ import { CustomFieldsModule } from './custom-fields/custom-fields.module';
 import { DynamicI18nModule } from './dynamic-i18n/dynamic-i18n.module';
 import { TooltipModule } from './tooltip/tooltip.module';
 import { RoleplaySessionLogsModule } from './roleplay-session-logs/roleplay-session-logs.module';
-import { RoleplayStudioModule } from './roleplay-studio/roleplay-studio.module';
 import { BlogModule } from './blog/blog.module';
 import { LabModule } from './lab/lab.module';
 import { ProductRoadmapModule } from './product-roadmap/product-roadmap.module';
 import { LogsModule } from './logs/logs.module';
 import { ChangelogModule } from './changelog/changelog.module';
 import { UxSignalsModule } from './ux-signals/ux-signals.module';
+import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
 
 @Module({
   imports: [
@@ -132,13 +132,13 @@ import { UxSignalsModule } from './ux-signals/ux-signals.module';
     DynamicI18nModule,
     TooltipModule,
     RoleplaySessionLogsModule,
-    RoleplayStudioModule,
     BlogModule,
     LabModule,
     ProductRoadmapModule,
     LogsModule,
     ChangelogModule,
     UxSignalsModule,
+    MobileReleasesModule,
   ],
   controllers: [],
   providers: [

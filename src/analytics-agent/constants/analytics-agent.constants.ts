@@ -35,7 +35,7 @@
  *  - `refresh_token`, `lab_evaluators`, `cloud_telephony_integrations` — hold
  *    credentials/hashes.
  *  - `messages`, `scenario_session_messages`, `call_details`, `chat_*` content,
- *    `scenario_session_chat_messages`, `copilot_messages` — carry conversation
+ *    `scenario_session_chat_messages` — carry conversation
  *    content (help-seeker speech is PHI-adjacent by default here).
  *  - `audit_logs` — carries IP addresses and user agents alongside actor ids.
  *  - `users` is included but its contact columns are denied below: "how many
@@ -127,15 +127,6 @@ export const ALLOWED_TABLES: Readonly<Record<string, string>> = Object.freeze({
     'Daily engagement rollup per user (minutes played, score, one row per user/day). The prime source for activity over time.',
   badges: 'Badge definitions.',
   analytics_agent_badge_users: 'Badges earned, per user.',
-
-  // Roleplay Studio v2
-  roleplay_specs: 'v2 authoring root — one spec document per roleplay.',
-  roleplay_spec_versions:
-    'Immutable spec snapshots (append-only version history).',
-  analytics_agent_roleplay_rubric_scores:
-    'Per-(turn, behaviour) rubric scores from v2 runs.',
-  analytics_agent_roleplay_director_events:
-    'v2 director telemetry, one row per director message.',
 
   // Platform ops
   analytics_agent_llm_usage:

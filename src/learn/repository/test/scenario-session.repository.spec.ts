@@ -839,4 +839,77 @@ describe('ScenarioSessionRepository', () => {
       },
     );
   });
+
+  describe('findSessionsStuckActive', () => {
+    const activeBefore = new Date('2026-08-31T00:00:00Z');
+
+    /** Every predicate the query was built with, as [sql, params]. */
+    const predicates = () =>
+      [
+        ...(mockQueryBuilder.where as jest.Mock).mock.calls,
+        ...(mockQueryBuilder.andWhere as jest.Mock).mock.calls,
+      ].map(([sql, params]) => [String(sql), params] as const);
+
+    const callWith = async (limit = 50) => {
+      mockQueryBuilder.getMany.mockResolvedValue([]);
+      return repository.findSessionsStuckActive({ activeBefore, limit });
+    };
+
+    it('looks only at ACTIVE rows, bounded by the sweep limit', async () => {
+      await callWith(50);
+
+      expect(repository.createQueryBuilder).toHaveBeenCalledWith('session');
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'session.status = :status',
+        { status: ScenarioSessionStatus.ACTIVE },
+      );
+      expect(mockQueryBuilder.limit).toHaveBeenCalledWith(50);
+    });
+
+    // Regression: a start where the learner's client never joined the room
+    // leaves an ACTIVE row with `startedAt` NULL, and nothing can ever set it
+    // afterwards. Requiring `startedAt IS NOT NULL` hid exactly those rows from
+    // the sweep forever, and each one permanently blocks its learner from
+    // starting ANY new session ("You already have an active scenario session").
+    it('ages a session that never started by createdAt rather than skipping it', async () => {
+      await callWith();
+
+      expect(
+        predicates().some(([sql]) => /startedAt\s+IS\s+NOT\s+NULL/i.test(sql)),
+      ).toBe(false);
+
+      const cutoff = predicates().find(([sql]) =>
+        sql.includes(':activeBefore'),
+      );
+      expect(cutoff).toBeDefined();
+      const [cutoffSql, cutoffParams] = cutoff!;
+      // The cutoff compares the row's ACTIVE age — `startedAt` when it started,
+      // `createdAt` when it never did — against the caller's instant.
+      expect(cutoffSql).toContain('session.startedAt');
+      expect(cutoffSql).toContain('session.createdAt');
+      expect(cutoffSql.replace(/\s+/g, ' ')).toContain('< :activeBefore');
+      expect(cutoffParams).toEqual({ activeBefore });
+    });
+
+    it('orders on the same coalesced age, so never-started rows are not starved when the limit bites', async () => {
+      await callWith();
+
+      const [[orderBySql, direction]] = (mockQueryBuilder.orderBy as jest.Mock)
+        .mock.calls;
+      // Ordering on `startedAt` alone sorts every never-started row last
+      // (Postgres ASC is NULLS LAST), which would push the blocking rows past
+      // the limit on a backlogged tick.
+      expect(String(orderBySql)).toContain('session.startedAt');
+      expect(String(orderBySql)).toContain('session.createdAt');
+      expect(direction).toBe('ASC');
+    });
+
+    it('still excludes preview and seed rooms', async () => {
+      await callWith();
+
+      const sql = predicates().map(([predicate]) => predicate);
+      expect(sql.some((s) => s.includes("NOT LIKE 'preview-%'"))).toBe(true);
+      expect(sql.some((s) => s.includes("NOT LIKE 'seed-room-%'"))).toBe(true);
+    });
+  });
 });

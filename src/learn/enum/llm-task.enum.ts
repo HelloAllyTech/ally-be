@@ -63,8 +63,6 @@ export enum LlmTask {
   AUTOFILL_ENHANCE_FIELD = 'autofill_enhance_field',
   // Agent Builder Copilot: one parallel per-field generation call.
   AUTOFILL_AGENT_FIELD = 'autofill_agent_field',
-  // Roleplay Studio v2 copilot: one streamed interviewer/tool-loop turn.
-  ROLEPLAY_COPILOT = 'roleplay_copilot',
   // Character-library interview agent: one streamed interviewer/tool-loop
   // turn building a character profile.
   CHARACTER_INTERVIEW = 'character_interview',

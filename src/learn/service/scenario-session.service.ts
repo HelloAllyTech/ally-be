@@ -130,9 +130,6 @@ import { SessionEventTranslationService } from 'src/session-event/service/sessio
 import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
 import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
 import { SimulationStateDto } from '../dto/simulation-state.dto';
-import { ModuleRef } from '@nestjs/core';
-import { ScenarioEngine } from '../enum/scenario-engine.enum';
-import { RoleplaySessionService } from 'src/roleplay-studio/service/roleplay-session.service';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
 const previewRoomMetadataCache = new Map<string, object>();
@@ -181,10 +178,6 @@ export class ScenarioSessionService {
     private scenarioSessionDetailsRepository: ScenarioSessionDetailsRepository,
     private readonly glossaryAdherenceService: GlossaryAdherenceService,
     private transcriptTranslationService: TranscriptTranslationService,
-    // App-container handle used ONLY to resolve the Roleplay Studio v2
-    // session service for engine=ROLEPLAY_V2 scenarios without importing
-    // RoleplayStudioModule into LearnModule (keeps the v1 wiring untouched).
-    private moduleRef: ModuleRef,
     private readonly learnerSupervisorMemoryService: LearnerSupervisorMemoryService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
@@ -500,32 +493,6 @@ export class ScenarioSessionService {
     );
     if (!scenario) {
       throw new BadRequestException('Scenario not found');
-    }
-
-    // Roleplay Studio v2 scenarios are thin shells over a versioned spec —
-    // the v2 runtime owns their session lifecycle (roleplay- room, AgentV2
-    // dispatch, director telemetry). Delegate and skip the entire v1 path.
-    // Resolved via ModuleRef (strict: false) so the learn module wiring
-    // stays untouched.
-    if (scenario.engine === ScenarioEngine.ROLEPLAY_V2) {
-      if (!scenario.roleplaySpecId) {
-        throw new BadRequestException(
-          'Roleplay scenario is missing its spec reference',
-        );
-      }
-      const roleplaySessionService = this.moduleRef.get(
-        RoleplaySessionService,
-        { strict: false },
-      );
-      return roleplaySessionService.startSpecSession(
-        counselorId,
-        scenario.roleplaySpecId,
-        null, // published version resolves inside the v2 service
-        {
-          languageId: startScenarioSessionDto.languageId,
-          ttl: startScenarioSessionDto.ttl,
-        },
-      );
     }
 
     await this.validateStartScenarioSession(
@@ -2886,15 +2853,19 @@ export class ScenarioSessionService {
    * charging credits or awarding practice minutes for a session that never
    * happened would be worse than leaving it unrecorded.
    *
+   * Includes sessions that never started at all — see `findSessionsStuckActive`
+   * for why those are the ones that matter most: while such a row survives, its
+   * learner cannot start ANY new session.
+   *
    * Returns what it found and what it changed so the scheduler can log it.
    */
   async sweepStuckActiveSessions(): Promise<{
     found: number;
     abandoned: number;
   }> {
-    const startedBefore = new Date(Date.now() - STUCK_SESSION_AGE_MS);
+    const activeBefore = new Date(Date.now() - STUCK_SESSION_AGE_MS);
     const stuck = await this.scenarioSessionRepository.findSessionsStuckActive({
-      startedBefore,
+      activeBefore,
       limit: STUCK_SESSION_SWEEP_LIMIT,
     });
     if (!stuck.length) return { found: 0, abandoned: 0 };
@@ -2922,7 +2893,7 @@ export class ScenarioSessionService {
 
     this.logger.warn(
       `Stuck-session sweep: ${stuck.length} session(s) had been ACTIVE since ` +
-        `before ${startedBefore.toISOString()}; ${abandoned} marked ABANDONED`,
+        `before ${activeBefore.toISOString()}; ${abandoned} marked ABANDONED`,
     );
     return { found: stuck.length, abandoned };
   }
