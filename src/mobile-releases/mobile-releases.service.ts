@@ -64,6 +64,47 @@ function normalizeAppStoreConnectPrivateKey(raw: string): string {
   return key;
 }
 
+// Known PEM private-key header/footer pairs, checked by exact string match. Reporting only
+// which candidate index matched (a number), plus per-line character codes, keeps a parse-failure
+// error diagnosable without ever including a substring of the actual secret in the response —
+// same defensive shape ally-mobile's promote-ios-testflight.mjs converged on after discovering
+// GitHub Actions masks every line of a multi-line secret independently, which made an earlier,
+// more naive version of this diagnostic (printing the matched header/footer text directly) come
+// back redacted as "***" in a real run. HTTP responses aren't subject to that same masking, but
+// there's no reason to print key-derived substrings here either.
+const KNOWN_PEM_HEADERS = [
+  '-----BEGIN PRIVATE KEY-----', // PKCS8 — what App Store Connect's .p8 download normally is
+  '-----BEGIN EC PRIVATE KEY-----', // SEC1
+  '-----BEGIN RSA PRIVATE KEY-----', // wrong key type entirely
+  '-----BEGIN ENCRYPTED PRIVATE KEY-----', // password-protected — unsupported here, no passphrase is ever provided
+];
+const KNOWN_PEM_FOOTERS = [
+  '-----END PRIVATE KEY-----',
+  '-----END EC PRIVATE KEY-----',
+  '-----END RSA PRIVATE KEY-----',
+  '-----END ENCRYPTED PRIVATE KEY-----',
+];
+
+function describePemShape(pem: string): string {
+  const lines = pem.split('\n');
+  const headerIndex = KNOWN_PEM_HEADERS.findIndex((h) => pem.startsWith(h));
+  const trimmedEnd = pem.trimEnd();
+  const footerIndex = KNOWN_PEM_FOOTERS.findIndex((f) =>
+    trimmedEnd.endsWith(f),
+  );
+  const firstLineCharCodes = [...(lines[0] ?? '')].map((c) => c.charCodeAt(0));
+  const lastLine = lines[lines.length - 1] ?? '';
+  const lastLineCharCodes = [...lastLine].map((c) => c.charCodeAt(0));
+  return (
+    `total length ${pem.length}, ${lines.length} line(s) (lengths: ${lines
+      .map((l) => l.length)
+      .join(',')}), header candidate index: ${headerIndex} (-1 = no known ` +
+    `header matched), footer candidate index: ${footerIndex} (-1 = no known ` +
+    `footer matched), first line char codes: [${firstLineCharCodes.join(',')}], ` +
+    `last line char codes: [${lastLineCharCodes.join(',')}]`
+  );
+}
+
 /**
  * Straight passthrough to GitHub's REST API for the ally-mobile release
  * pipeline — no caching, per the same reasoning as the AWS Logs viewer:
@@ -391,9 +432,10 @@ export class MobileReleasesService {
       });
     } catch (error) {
       throw new ServiceUnavailableException(
-        `APPSTORE_API_PRIVATE_KEY could not be parsed as a PEM private key: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `APPSTORE_API_PRIVATE_KEY could not be parsed as a PEM private key ` +
+          `(${describePemShape(normalizedPem)}). Node crypto error: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
       );
     }
 
