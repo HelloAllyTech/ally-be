@@ -179,11 +179,11 @@ export class RoadmapAdminController {
   @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
   @Get('opportunity-owners/eligible')
   @ApiOperation({
-    summary: 'Ally super-admin users who may own an opportunity',
+    summary: 'The users who may own an opportunity',
     description:
-      "The owner picker's options. Derived from SUPER_ADMIN / SUPER_DUPER_ADMIN group " +
-      'membership rather than a hand-maintained list, so losing super-admin removes someone ' +
-      'from the picker with no separate cleanup. Existing assignments are left untouched.',
+      "The owner picker's options: the named product leads in ROADMAP_OWNER_EMAILS, matched " +
+      'by email. Deliberately a short, explicit list rather than every platform admin — see ' +
+      'the constant. Changing it is a code change; existing assignments are left untouched.',
   })
   @ApiResponse({ status: 200, type: [RoadmapEligibleOwnerDto] })
   listEligibleOwners(): Promise<RoadmapEligibleOwnerDto[]> {
