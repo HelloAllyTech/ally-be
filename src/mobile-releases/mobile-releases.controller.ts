@@ -26,8 +26,13 @@ import {
  * for the read endpoints (GitHub-backed and the App Store Connect-backed
  * ios-testflight-status below), trigger:mobile-releases (migration
  * 1943000000000) for the manual scheduled-release dispatch endpoint, and
- * promote:mobile-releases (migration 1944000000000) for the manual promote
- * endpoints below — same divergence pattern as the AWS Logs viewer.
+ * promote:mobile-releases (migration 1944000000000) for the manual Android
+ * production-promotion endpoint below — same divergence pattern as the AWS
+ * Logs viewer. (iOS external-TestFlight promotion used to have a matching
+ * manual endpoint here too; removed once submission became fully automatic
+ * in ally-mobile's build-ios-production.yml and this repo's actual testers
+ * turned out to all be Internal, not External — see git history if it's
+ * ever needed again.)
  */
 @Controller('v1/mobile-releases')
 @ApiTags('Mobile Releases')
@@ -100,19 +105,5 @@ export class MobileReleasesController {
     @Body() body: PromoteAndroidRequestDto,
   ): Promise<MobileDispatchResponseDto> {
     return this.mobileReleasesService.promoteAndroid(body.rolloutPercentage);
-  }
-
-  @ApiOperation({
-    summary:
-      'MANUAL, REAL-PRODUCTION ACTION: dispatch promote-ios-testflight-external.yml to promote the current TestFlight internal build to the external testing group. Requires the TESTFLIGHT_EXTERNAL_GROUP_NAME repo variable to be set on ally-mobile.',
-  })
-  @ApiResponse({ status: 200, type: MobileDispatchResponseDto })
-  @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
-    permissions: [PERMISSIONS.PROMOTE_MOBILE_RELEASES],
-  })
-  @HttpCode(200)
-  @Post('promote-ios-testflight')
-  promoteIosTestflight(): Promise<MobileDispatchResponseDto> {
-    return this.mobileReleasesService.promoteIosTestflight();
   }
 }

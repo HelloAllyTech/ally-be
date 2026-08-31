@@ -20,8 +20,6 @@ const RELEASE_WORKFLOW_FILE: MobileWorkflowFile =
   'scheduled-mobile-release.yml';
 const PROMOTE_ANDROID_WORKFLOW_FILE: MobileWorkflowFile =
   'promote-android-production.yml';
-const PROMOTE_IOS_WORKFLOW_FILE: MobileWorkflowFile =
-  'promote-ios-testflight-external.yml';
 const MS_PER_HOUR = 60 * 60 * 1000;
 const CADENCE_GATE_HOURS = 48;
 const DAILY_CHECK_UTC_HOUR = 5; // matches scheduled-mobile-release.yml's `cron: '0 5 * * *'`
@@ -351,38 +349,6 @@ export class MobileReleasesService {
       throw this.toReadableError(
         error,
         `Could not dispatch ${PROMOTE_ANDROID_WORKFLOW_FILE} on ${this.repo}`,
-      );
-    }
-  }
-
-  /**
-   * MANUAL, REAL-PRODUCTION ACTION. Dispatches
-   * promote-ios-testflight-external.yml, which promotes the current
-   * TestFlight internal build to the external testing group — this is
-   * workflow_dispatch-only, never runs automatically, and takes no inputs.
-   *
-   * DEPLOYMENT PREREQUISITE (on the ally-mobile side, not here): the
-   * workflow reads a `TESTFLIGHT_EXTERNAL_GROUP_NAME` repo variable to know
-   * which external group to promote into. That variable lives in GitHub
-   * Actions on HelloAllyTech/ally-mobile — this backend does not need to
-   * know its value, only that the workflow depends on it being set.
-   */
-  async promoteIosTestflight(): Promise<MobileDispatchResponseDto> {
-    const headers = this.headers;
-
-    try {
-      // GitHub returns 204 No Content with an empty body on success — do not
-      // attempt to read/parse `data` from this response.
-      await axios.post(
-        `${GITHUB_API}/repos/${this.repo}/actions/workflows/${PROMOTE_IOS_WORKFLOW_FILE}/dispatches`,
-        { ref: 'master', inputs: {} },
-        { headers, timeout: 15_000 },
-      );
-      return { dispatched: true };
-    } catch (error) {
-      throw this.toReadableError(
-        error,
-        `Could not dispatch ${PROMOTE_IOS_WORKFLOW_FILE} on ${this.repo}`,
       );
     }
   }

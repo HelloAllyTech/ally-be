@@ -13,7 +13,6 @@ export const MOBILE_WORKFLOW_FILES = [
   'build-ios-production.yml',
   'build-android-production.yml',
   'promote-android-production.yml',
-  'promote-ios-testflight-external.yml',
 ] as const;
 
 export type MobileWorkflowFile = (typeof MOBILE_WORKFLOW_FILES)[number];
@@ -23,7 +22,6 @@ export const MOBILE_WORKFLOW_LABELS: Record<MobileWorkflowFile, string> = {
   'build-ios-production.yml': 'iOS Build',
   'build-android-production.yml': 'Android Build',
   'promote-android-production.yml': 'Promote Android',
-  'promote-ios-testflight-external.yml': 'Promote iOS External',
 };
 
 export class MobileReleaseRunDto {
