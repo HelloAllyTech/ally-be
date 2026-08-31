@@ -2981,15 +2981,19 @@ export class ScenarioSessionService {
    * charging credits or awarding practice minutes for a session that never
    * happened would be worse than leaving it unrecorded.
    *
+   * Includes sessions that never started at all — see `findSessionsStuckActive`
+   * for why those are the ones that matter most: while such a row survives, its
+   * learner cannot start ANY new session.
+   *
    * Returns what it found and what it changed so the scheduler can log it.
    */
   async sweepStuckActiveSessions(): Promise<{
     found: number;
     abandoned: number;
   }> {
-    const startedBefore = new Date(Date.now() - STUCK_SESSION_AGE_MS);
+    const activeBefore = new Date(Date.now() - STUCK_SESSION_AGE_MS);
     const stuck = await this.scenarioSessionRepository.findSessionsStuckActive({
-      startedBefore,
+      activeBefore,
       limit: STUCK_SESSION_SWEEP_LIMIT,
     });
     if (!stuck.length) return { found: 0, abandoned: 0 };
@@ -3017,7 +3021,7 @@ export class ScenarioSessionService {
 
     this.logger.warn(
       `Stuck-session sweep: ${stuck.length} session(s) had been ACTIVE since ` +
-        `before ${startedBefore.toISOString()}; ${abandoned} marked ABANDONED`,
+        `before ${activeBefore.toISOString()}; ${abandoned} marked ABANDONED`,
     );
     return { found: stuck.length, abandoned };
   }
