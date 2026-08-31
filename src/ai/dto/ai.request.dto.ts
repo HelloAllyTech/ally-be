@@ -183,7 +183,7 @@ export type ScenarioEvaluationRequest = {
   /**
    * Behaviours this specific scenario is configured to reward (its
    * SHOULD_DO behavior instructions). Additional scenario-specific context
-   * for message_tags and the supervisor note — never the skill_coverage
+   * for the supervisor note — never the skill_coverage
    * scores, which stay on one fixed standard.
    */
   helpful_behaviours?: string[];

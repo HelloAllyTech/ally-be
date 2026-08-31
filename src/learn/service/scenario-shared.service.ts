@@ -13,8 +13,6 @@ import { ScenarioSessionMessagesRepository } from '../repository/scenario-sessio
 import { ScenarioSessionMessages } from '../entity/scenario-session-messages.entity';
 import { ScenarioSessionDetailsRepository } from '../repository/scenario-session-details.repository';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
-import { ScenarioSessionMessageTagsRepository } from '../repository/scenario-session-message-tags.repository';
-import { MessageTagMapping } from '../type/scenario-message-tag.type';
 import {
   ALLY_AI_LEARN_PROMPT_PREFIX,
   SCENARIO_SESSION_TRANSLATABLE_FIELDS,
@@ -137,7 +135,6 @@ export class ScenarioSharedService {
     private scenarioTranslationsRepository: ScenarioTranslationsRepository,
     private scenarioSessionMessagesRepository: ScenarioSessionMessagesRepository,
     private scenarioSessionDetailsRepository: ScenarioSessionDetailsRepository,
-    private scenarioSessionMessageTagsRepository: ScenarioSessionMessageTagsRepository,
     private scenarioVoiceRepository: ScenarioVoicesRepository,
     private sttConfigsRepository: SttConfigsRepository,
     private llmConfigsRepository: LlmConfigsRepository,
@@ -237,9 +234,8 @@ export class ScenarioSharedService {
   async getMessagesByScenarioSessionId(
     scenarioSessionId: string,
     pagination: Pagination,
-    options?: { includeTags?: boolean },
   ): Promise<{
-    messages: (ScenarioSessionMessages & { tags?: MessageTagMapping[] })[];
+    messages: ScenarioSessionMessages[];
     count: number;
   }> {
     const [messages, count] =
@@ -248,23 +244,7 @@ export class ScenarioSharedService {
         pagination,
       );
 
-    if (!options?.includeTags) {
-      return { messages, count };
-    }
-
-    const messageIds = messages.map((m) => m.id);
-    const tagsByMessageId =
-      await this.scenarioSessionMessageTagsRepository.getTagsByMessageIds(
-        scenarioSessionId,
-        messageIds,
-      );
-
-    const messagesWithTags = messages.map((m) => ({
-      ...m,
-      tags: tagsByMessageId.get(m.id) ?? [],
-    }));
-
-    return { messages: messagesWithTags, count };
+    return { messages, count };
   }
 
   async getMessagesByIds(

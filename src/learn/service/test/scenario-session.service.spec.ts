@@ -674,7 +674,6 @@ describe('ScenarioSessionService', () => {
       const result = await service.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         {},
-        undefined,
         'en',
       );
 
@@ -713,7 +712,6 @@ describe('ScenarioSessionService', () => {
       const result = await service.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         {},
-        undefined,
         'en',
       );
 
@@ -741,7 +739,6 @@ describe('ScenarioSessionService', () => {
       const result = await service.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         {},
-        undefined,
         'hi',
       );
 
@@ -767,7 +764,6 @@ describe('ScenarioSessionService', () => {
       const result = await service.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         {},
-        undefined,
         'hi',
       );
 
@@ -1294,7 +1290,6 @@ describe('ScenarioSessionService', () => {
         positives: [],
         improvements: [],
         emotional_movement: [],
-        message_tags: [],
         areas_of_growth: [],
       } as any);
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(

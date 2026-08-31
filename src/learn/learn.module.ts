@@ -65,7 +65,6 @@ import { ScenarioReportModule } from 'src/scenario-report/scenario-report.module
 import { ScenarioSessionTags } from './entity/scenario-session-tags.entity';
 import { ScenarioSessionMessageTags } from './entity/scenario-session-message-tags.entity';
 import { ScenarioSessionTagsRepository } from './repository/scenario-session-tags.repository';
-import { ScenarioSessionMessageTagsRepository } from './repository/scenario-session-message-tags.repository';
 import { Behavior } from './entity/behavior.entity';
 import { FillerTag } from './entity/filler-tag.entity';
 import { ScenarioBehaviorInstruction } from './entity/scenario-behavior-instruction.entity';
@@ -256,7 +255,6 @@ import { SettingsModule } from 'src/settings/settings.module';
     ScenarioEventsTranslationsRepository,
     ScenarioSessionDetailsRepository,
     ScenarioSessionTagsRepository,
-    ScenarioSessionMessageTagsRepository,
     BehaviorService,
     FillerTagService,
     BehaviorRepository,

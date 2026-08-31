@@ -22,14 +22,7 @@ import { ParticipantInfo_Kind } from '@livekit/protocol';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
-import {
-  DataSource,
-  EntityManager,
-  In,
-  IsNull,
-  Not,
-  Repository,
-} from 'typeorm';
+import { DataSource, IsNull, Not, Repository } from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
 import {
   ScenarioSessionLifecycleEvent,
@@ -37,7 +30,6 @@ import {
 } from '../entity/scenario-session-lifecycle-event.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ScenarioSessionMessageType } from '../enum/scenario-session-message.type.enum';
-import { ScenarioSessionTagCategory } from '../enum/scenario-session-tag-category.enum';
 import { AiService } from 'src/ai/service/ai.service';
 import { ScenarioSessionEvaluationService } from './scenario-session-evaluation.service';
 import { GlossaryAdherenceService } from 'src/language/service/glossary-adherence.service';
@@ -53,13 +45,10 @@ import {
   LearnSupervisorNoteData,
   LearnTurnMetricsData,
 } from '../interface/learn-message.interface';
-import { ScenarioSessionMessageTags } from '../entity/scenario-session-message-tags.entity';
-import { ScenarioSessionTags } from '../entity/scenario-session-tags.entity';
 import {
   MessageRequest,
   ScenarioEvaluationChatMessage,
 } from 'src/ai/dto/ai.request.dto';
-import { ScenarioEvaluationMessageTag } from 'src/ai/dto/ai.response.dto';
 import {
   LearnBehaviorInstructionData,
   LearnEventData,
@@ -197,14 +186,12 @@ export class ScenarioSessionService {
   async getMessagesByScenarioSessionId(
     scenarioSessionId: string,
     pagination: Pagination,
-    options?: { includeTags?: boolean },
     languageCode?: string,
   ) {
     const result =
       await this.scenarioSharedService.getMessagesByScenarioSessionId(
         scenarioSessionId,
         pagination,
-        options,
       );
 
     if (!languageCode) {
@@ -1771,18 +1758,6 @@ export class ScenarioSessionService {
           }
         }
 
-        if (useEvaluation && aiResult && 'message_tags' in aiResult) {
-          await this.dataSource.transaction(async (entityManager) => {
-            await this.persistMessageTags(
-              entityManager,
-              scenarioSessionId,
-              tenantId,
-              scenarioSessionMessages.map((m) => m.id),
-              aiResult.message_tags,
-            );
-          });
-        }
-
         // memory_update is the supervisor's private note-to-self about the
         // learner; it has already been persisted to their memory row above.
         // Drop it here so it never reaches the payload the learner is served —
@@ -2066,109 +2041,6 @@ export class ScenarioSessionService {
         status: 'FAILED',
         errorMessage: 'Failed to generate summary in the selected language.',
       }).catch(() => undefined);
-    }
-  }
-
-  private async persistMessageTags(
-    entityManager: EntityManager,
-    scenarioSessionId: string,
-    tenantId: string,
-    validMessageIds: number[],
-    messageTags: ScenarioEvaluationMessageTag[],
-  ) {
-    const messageIdsSet = new Set(validMessageIds);
-    const tagsRepo = entityManager.getRepository(ScenarioSessionTags);
-    const messageTagsRepo = entityManager.getRepository(
-      ScenarioSessionMessageTags,
-    );
-
-    const uniqueLabels = new Set<string>();
-    const desiredMappings: Array<{
-      messageId: number;
-      label: string;
-      category: ScenarioSessionTagCategory;
-    }> = [];
-
-    for (const msgTag of messageTags) {
-      const messageId = parseInt(msgTag.id, 10);
-      if (Number.isNaN(messageId) || !messageIdsSet.has(messageId)) {
-        continue;
-      }
-      const tags = msgTag.tags ?? [];
-      for (const tag of tags) {
-        const category = tag.category as ScenarioSessionTagCategory;
-        if (
-          !tag?.label ||
-          !category ||
-          !Object.values(ScenarioSessionTagCategory).includes(category)
-        ) {
-          continue;
-        }
-        uniqueLabels.add(tag.label);
-        desiredMappings.push({ messageId, label: tag.label, category });
-      }
-    }
-
-    if (uniqueLabels.size === 0) {
-      return;
-    }
-
-    const existingTags = await tagsRepo.find({
-      where: { label: In(Array.from(uniqueLabels)) },
-    });
-    const labelToTag = new Map<string, ScenarioSessionTags>();
-    for (const t of existingTags) {
-      labelToTag.set(t.label, t);
-    }
-
-    const missingLabels = Array.from(uniqueLabels).filter(
-      (label) => !labelToTag.has(label),
-    );
-    if (missingLabels.length > 0) {
-      const newTags = missingLabels.map((label) => tagsRepo.create({ label }));
-      const saved = await tagsRepo.save(newTags);
-      for (const t of saved) {
-        labelToTag.set(t.label, t);
-      }
-    }
-
-    const existingMappings = await messageTagsRepo.find({
-      where: {
-        scenarioSessionId,
-        messageId: In(validMessageIds),
-      },
-      select: ['messageId', 'tagId'],
-    });
-    const existingKeySet = new Set(
-      existingMappings.map((m) => `${m.messageId}-${m.tagId}`),
-    );
-
-    const tagsToInsert: Array<{
-      scenarioSessionId: string;
-      messageId: number;
-      tagId: string;
-      category: ScenarioSessionTagCategory;
-      tenantId: string;
-    }> = [];
-    for (const m of desiredMappings) {
-      const tagId = labelToTag.get(m.label)?.id;
-      if (!tagId) continue;
-      const key = `${m.messageId}-${tagId}`;
-      if (!existingKeySet.has(key)) {
-        existingKeySet.add(key);
-        tagsToInsert.push({
-          scenarioSessionId,
-          messageId: m.messageId,
-          tagId,
-          category: m.category,
-          tenantId,
-        });
-      }
-    }
-
-    if (tagsToInsert.length > 0) {
-      const entities = messageTagsRepo.create(tagsToInsert);
-      await messageTagsRepo.save(entities);
     }
   }
 
