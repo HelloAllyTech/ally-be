@@ -165,8 +165,13 @@ export class ListOpportunitiesQueryDto extends RoadmapOpportunityFiltersDto {
     default: 'priority',
   })
   @IsOptional()
+  // MUST stay in step with SORT_COLUMNS in RoadmapOpportunityRepository. A value the repository
+  // accepts but this rejects is a 400 on the board's own default ordering; a value this accepts
+  // but the repository does not silently falls back to another sort.
   @IsEnum([
+    'composite',
     'priority',
+    'voters',
     'createdAt',
     'releasedAt',
     'myVotes',
@@ -174,7 +179,9 @@ export class ListOpportunitiesQueryDto extends RoadmapOpportunityFiltersDto {
     'plannedMonth',
   ])
   sortBy?:
+    | 'composite'
     | 'priority'
+    | 'voters'
     | 'createdAt'
     | 'releasedAt'
     | 'myVotes'

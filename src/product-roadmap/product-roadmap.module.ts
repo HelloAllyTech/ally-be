@@ -13,6 +13,9 @@ import { RoadmapOpportunity } from './entity/roadmap-opportunity.entity';
 import { RoadmapOpportunityComment } from './entity/roadmap-opportunity-comment.entity';
 import { RoadmapOpportunityOwner } from './entity/roadmap-opportunity-owner.entity';
 import { RoadmapProductGoal } from './entity/roadmap-product-goal.entity';
+import { RoadmapStrategyGoal } from './entity/roadmap-strategy-goal.entity';
+import { RoadmapOpportunityGoalImpact } from './entity/roadmap-opportunity-goal-impact.entity';
+import { RoadmapRankWeights } from './entity/roadmap-rank-weights.entity';
 import { RoadmapSavedView } from './entity/roadmap-saved-view.entity';
 import { RoadmapUserMap } from './entity/roadmap-user-map.entity';
 import { RoadmapUserTabOrder } from './entity/roadmap-user-tab-order.entity';
@@ -29,6 +32,11 @@ import {
   RoadmapOpportunityOwnerRepository,
   RoadmapProductGoalRepository,
 } from './repository/roadmap-taxonomy.repository';
+import {
+  RoadmapGoalImpactRepository,
+  RoadmapRankWeightsRepository,
+  RoadmapStrategyGoalRepository,
+} from './repository/roadmap-strategy.repository';
 
 import { RoadmapAccessService } from './service/roadmap-access.service';
 import { RoadmapAiService } from './service/roadmap-ai.service';
@@ -44,6 +52,8 @@ import { RoadmapBuilderService } from './service/roadmap-builder.service';
 import { BuilderModule } from 'src/builder/builder.module';
 import { RoadmapBoardService } from './service/roadmap-board.service';
 import { RoadmapTaxonomyService } from './service/roadmap-taxonomy.service';
+import { RoadmapStrategyGoalService } from './service/roadmap-strategy-goal.service';
+import { RoadmapGoalImpactService } from './service/roadmap-goal-impact.service';
 import { RoadmapVectorService } from './service/roadmap-vector.service';
 
 import { RoadmapAdminController } from './controller/roadmap-admin.controller';
@@ -80,6 +90,9 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
   imports: [
     TypeOrmModule.forFeature([
       RoadmapProductGoal,
+      RoadmapStrategyGoal,
+      RoadmapOpportunityGoalImpact,
+      RoadmapRankWeights,
       RoadmapOpportunityOwner,
       RoadmapOpportunity,
       RoadmapAllocation,
@@ -121,6 +134,9 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
   providers: [
     // repositories
     RoadmapProductGoalRepository,
+    RoadmapStrategyGoalRepository,
+    RoadmapGoalImpactRepository,
+    RoadmapRankWeightsRepository,
     RoadmapOpportunityOwnerRepository,
     RoadmapOpportunityRepository,
     RoadmapAllocationRepository,
@@ -141,6 +157,8 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
     RoadmapCommentService,
     RoadmapSavedViewService,
     RoadmapTaxonomyService,
+    RoadmapStrategyGoalService,
+    RoadmapGoalImpactService,
     RoadmapInterviewNoteService,
     RoadmapAiService,
     // realtime
