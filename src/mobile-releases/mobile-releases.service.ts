@@ -185,15 +185,39 @@ export class MobileReleasesService {
   /**
    * Recent runs of all three release workflows, merged into one array and
    * sorted by createdAt descending.
+   *
+   * Uses allSettled, not all: this is polled every 30s from the admin page,
+   * and GitHub's REST API occasionally throws a transient secondary-rate-limit
+   * 403 on one of the three parallel per-workflow calls. With Promise.all,
+   * that one flaky call used to fail the whole merged list — which the
+   * frontend's polling then rendered as a "Failed to load run history"
+   * screen replacing an otherwise-healthy table every time it happened. A
+   * partial result (the workflows that did succeed) is far more useful than
+   * none, so a single workflow's failure is logged and dropped rather than
+   * taking down the other two.
    */
   async listRuns(): Promise<MobileReleaseRunDto[]> {
     const headers = this.headers;
 
-    const runsPerWorkflow = await Promise.all(
+    const settled = await Promise.allSettled(
       MOBILE_WORKFLOW_FILES.map((file) =>
         this.fetchWorkflowRuns(file, headers),
       ),
     );
+
+    const runsPerWorkflow = settled.map((result, index) => {
+      if (result.status === 'fulfilled') {
+        return result.value;
+      }
+      this.logger.warn(
+        `Dropping runs for ${MOBILE_WORKFLOW_FILES[index]} from listRuns(): ${
+          result.reason instanceof Error
+            ? result.reason.message
+            : String(result.reason)
+        }`,
+      );
+      return [];
+    });
 
     return runsPerWorkflow
       .flat()
