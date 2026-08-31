@@ -13,6 +13,7 @@ export const MOBILE_WORKFLOW_FILES = [
   'build-ios-production.yml',
   'build-android-production.yml',
   'promote-android-production.yml',
+  'submit-ios-app-store-review.yml',
 ] as const;
 
 export type MobileWorkflowFile = (typeof MOBILE_WORKFLOW_FILES)[number];
@@ -22,6 +23,7 @@ export const MOBILE_WORKFLOW_LABELS: Record<MobileWorkflowFile, string> = {
   'build-ios-production.yml': 'iOS Build',
   'build-android-production.yml': 'Android Build',
   'promote-android-production.yml': 'Promote Android',
+  'submit-ios-app-store-review.yml': 'App Store Review Submission',
 };
 
 export class MobileReleaseRunDto {
@@ -117,10 +119,12 @@ export class MobileTriggerResponseDto {
 }
 
 /**
- * Reused as-is for both promote-android and promote-ios-testflight: shape is
- * identical to MobileTriggerResponseDto ({ dispatched: true }), but named
- * generically here since "trigger" specifically refers to
- * scheduled-mobile-release.yml elsewhere in this module.
+ * Reused as-is for every other workflow-dispatch endpoint in this module
+ * (promote-android, submit-ios-app-store-review, and formerly
+ * promote-ios-testflight): shape is identical to MobileTriggerResponseDto
+ * ({ dispatched: true }), but named generically here since "trigger"
+ * specifically refers to scheduled-mobile-release.yml elsewhere in this
+ * module.
  */
 export class MobileDispatchResponseDto {
   @ApiProperty({

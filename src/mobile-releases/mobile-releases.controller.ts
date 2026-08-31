@@ -26,14 +26,15 @@ import {
  * ONLY to SUPER_DUPER_ADMIN — view:mobile-releases (migration 1941000000000)
  * for the read endpoints (GitHub-backed and the App Store Connect-backed
  * ios-testflight-status below), trigger:mobile-releases (migration
- * 1943000000000) for the manual scheduled-release dispatch endpoint, and
+ * 1943000000000) for the manual scheduled-release dispatch endpoint,
  * promote:mobile-releases (migration 1944000000000) for the manual Android
- * production-promotion endpoint below — same divergence pattern as the AWS
- * Logs viewer. (iOS external-TestFlight promotion used to have a matching
- * manual endpoint here too; removed once submission became fully automatic
- * in ally-mobile's build-ios-production.yml and this repo's actual testers
- * turned out to all be Internal, not External — see git history if it's
- * ever needed again.)
+ * production-promotion endpoint, and submit-app-store-review:mobile-releases
+ * (migration 1944300000000) for the manual, full App Store review submission
+ * endpoint below — same divergence pattern as the AWS Logs viewer. (iOS
+ * external-TestFlight promotion used to have a matching manual endpoint here
+ * too; removed once submission became fully automatic in ally-mobile's
+ * build-ios-production.yml and this repo's actual testers turned out to all
+ * be Internal, not External — see git history if it's ever needed again.)
  */
 @Controller('v1/mobile-releases')
 @ApiTags('Mobile Releases')
@@ -119,5 +120,19 @@ export class MobileReleasesController {
     @Body() body: PromoteAndroidRequestDto,
   ): Promise<MobileDispatchResponseDto> {
     return this.mobileReleasesService.promoteAndroid(body.rolloutPercentage);
+  }
+
+  @ApiOperation({
+    summary:
+      "MANUAL, REAL-PRODUCTION ACTION: dispatch submit-ios-app-store-review.yml to submit the current iOS build for Apple's FULL App Store review (real public distribution, not TestFlight). Does NOT auto-release to users — the workflow forces releaseType: MANUAL, so a human still has to explicitly release the build in App Store Connect after Apple approves it. Does not prepare the App Store Connect listing itself; that content work is assumed already done.",
+  })
+  @ApiResponse({ status: 200, type: MobileDispatchResponseDto })
+  @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
+    permissions: [PERMISSIONS.SUBMIT_APP_STORE_REVIEW],
+  })
+  @HttpCode(200)
+  @Post('submit-ios-app-store-review')
+  submitIosAppStoreReview(): Promise<MobileDispatchResponseDto> {
+    return this.mobileReleasesService.submitIosAppStoreReview();
   }
 }

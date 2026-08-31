@@ -22,6 +22,8 @@ const RELEASE_WORKFLOW_FILE: MobileWorkflowFile =
   'scheduled-mobile-release.yml';
 const PROMOTE_ANDROID_WORKFLOW_FILE: MobileWorkflowFile =
   'promote-android-production.yml';
+const SUBMIT_IOS_APP_STORE_REVIEW_WORKFLOW_FILE: MobileWorkflowFile =
+  'submit-ios-app-store-review.yml';
 const MS_PER_HOUR = 60 * 60 * 1000;
 const CADENCE_GATE_HOURS = 48;
 const DAILY_CHECK_UTC_HOUR = 5; // matches scheduled-mobile-release.yml's `cron: '0 5 * * *'`
@@ -402,6 +404,48 @@ export class MobileReleasesService {
       throw this.toReadableError(
         error,
         `Could not dispatch ${PROMOTE_ANDROID_WORKFLOW_FILE} on ${this.repo}`,
+      );
+    }
+  }
+
+  /**
+   * MANUAL, REAL-PRODUCTION ACTION — the highest-stakes endpoint in this
+   * module. Dispatches submit-ios-app-store-review.yml, which submits the
+   * current iOS build for Apple's FULL App Store review: real public
+   * distribution to every App Store user, not TestFlight. This is
+   * workflow_dispatch-only, never runs automatically, and there is no undo
+   * endpoint here — once submitted, Apple's review clock starts, and there
+   * is no API-level "cancel submission" offered by this module.
+   *
+   * It does NOT auto-release to real users: the workflow forces
+   * `releaseType: MANUAL` on the App Store Connect version, so even after
+   * Apple approves the build, a human still has to explicitly click
+   * "Release" in App Store Connect for it to actually reach users. It also
+   * does not prepare the App Store Connect listing itself (screenshots,
+   * release notes, etc.) — that is human content work assumed already done
+   * before this is ever called.
+   *
+   * DEPLOYMENT PREREQUISITE: same as promoteAndroid() above, dispatching a
+   * workflow requires `Actions: write` scope on GITHUB_ACTIONS_TOKEN. A 403
+   * or 404 from GitHub here is the likely symptom of a still-read-only
+   * token.
+   */
+  async submitIosAppStoreReview(): Promise<MobileDispatchResponseDto> {
+    const headers = this.headers;
+
+    try {
+      // GitHub returns 204 No Content with an empty body on success — do not
+      // attempt to read/parse `data` from this response.
+      await axios.post(
+        `${GITHUB_API}/repos/${this.repo}/actions/workflows/${SUBMIT_IOS_APP_STORE_REVIEW_WORKFLOW_FILE}/dispatches`,
+        { ref: 'master', inputs: {} },
+        { headers, timeout: 15_000 },
+      );
+      return { dispatched: true };
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not dispatch ${SUBMIT_IOS_APP_STORE_REVIEW_WORKFLOW_FILE} on ${this.repo}`,
       );
     }
   }
