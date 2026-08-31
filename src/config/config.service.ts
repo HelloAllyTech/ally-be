@@ -40,6 +40,25 @@ export class AppConfigService {
   }
 
   /**
+   * Auth token for the ally-mobile GitHub Actions / Contents API calls behind
+   * the super-duper-admin Mobile Releases page. Deliberately separate from
+   * `githubToken` (Bug Hunter/Builder's write-scoped dispatch token) — this
+   * page only ever reads, so it gets its own, narrower credential. Empty on
+   * environments that haven't set it — MobileReleasesService refuses cleanly
+   * rather than calling GitHub with no auth.
+   */
+  get githubActionsToken(): string {
+    return this.configService.get<string>('GITHUB_ACTIONS_TOKEN', '');
+  }
+
+  get githubMobileRepo(): string {
+    return this.configService.get<string>(
+      'GITHUB_MOBILE_REPO',
+      'HelloAllyTech/ally-mobile',
+    );
+  }
+
+  /**
    * Base URL a GitHub-hosted runner can reach this API on, handed to the
    * fix-session workflow so it can report progress back. Falls back to the
    * local port purely so a dev environment fails with an obvious connection

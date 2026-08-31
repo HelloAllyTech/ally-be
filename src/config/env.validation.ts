@@ -147,6 +147,8 @@ export const validationSchema = Joi.object({
   // CI at all (local, dev).
   GITHUB_TOKEN: Joi.string().optional(),
   GITHUB_ORG: Joi.string().default('HelloAllyTech'),
+  GITHUB_ACTIONS_TOKEN: Joi.string().optional(),
+  GITHUB_MOBILE_REPO: Joi.string().default('HelloAllyTech/ally-mobile'),
   /** Publicly reachable base URL a GitHub-hosted runner can call this API back on. */
   PUBLIC_API_BASE_URL: Joi.string().uri().optional(),
 
