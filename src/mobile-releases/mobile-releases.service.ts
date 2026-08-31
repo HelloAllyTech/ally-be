@@ -41,7 +41,7 @@ const TESTFLIGHT_HISTORY_BUILD_LIMIT = 15;
 function normalizeAppStoreConnectPrivateKey(raw: string): string {
   // Accept either raw PEM or base64-encoded PEM. Checking for "PRIVATE KEY"
   // (not "BEGIN PRIVATE KEY") so this also matches SEC1-format keys headed
-  // "-----BEGIN EC PRIVATE KEY-----".
+  // "-----BEGIN EC PRIVATE KEY-----". gitleaks:allow
   let key = raw.includes('PRIVATE KEY')
     ? raw
     : Buffer.from(raw, 'base64').toString('utf-8');
@@ -75,17 +75,26 @@ function normalizeAppStoreConnectPrivateKey(raw: string): string {
 // more naive version of this diagnostic (printing the matched header/footer text directly) come
 // back redacted as "***" in a real run. HTTP responses aren't subject to that same masking, but
 // there's no reason to print key-derived substrings here either.
+//
+// The `gitleaks:allow` trailers below are required, not cosmetic: gitleaks' private-key
+// rule fires on a bare BEGIN/END marker, so these format constants turned master's
+// secret-scan red. Per-line annotation is deliberate over a config allowlist — three
+// allowlist spellings (path-scoped, ^...$ anchors, \A...\z anchors) were each tested by
+// generating a real EC key into this file, and all three suppressed THAT too. gitleaks
+// ORs `paths` with `regexes`, and its anchors match per line, so a config entry narrow
+// enough to describe "marker with no body" could not be written. These annotations only
+// silence the exact lines they sit on; a pasted key elsewhere in this file still fails CI.
 const KNOWN_PEM_HEADERS = [
-  '-----BEGIN PRIVATE KEY-----', // PKCS8 — what App Store Connect's .p8 download normally is
-  '-----BEGIN EC PRIVATE KEY-----', // SEC1
-  '-----BEGIN RSA PRIVATE KEY-----', // wrong key type entirely
-  '-----BEGIN ENCRYPTED PRIVATE KEY-----', // password-protected — unsupported here, no passphrase is ever provided
+  '-----BEGIN PRIVATE KEY-----', // PKCS8 — what App Store Connect's .p8 download normally is gitleaks:allow
+  '-----BEGIN EC PRIVATE KEY-----', // SEC1 gitleaks:allow
+  '-----BEGIN RSA PRIVATE KEY-----', // wrong key type entirely gitleaks:allow
+  '-----BEGIN ENCRYPTED PRIVATE KEY-----', // password-protected — unsupported here, no passphrase is ever provided gitleaks:allow
 ];
 const KNOWN_PEM_FOOTERS = [
-  '-----END PRIVATE KEY-----',
-  '-----END EC PRIVATE KEY-----',
-  '-----END RSA PRIVATE KEY-----',
-  '-----END ENCRYPTED PRIVATE KEY-----',
+  '-----END PRIVATE KEY-----', // gitleaks:allow
+  '-----END EC PRIVATE KEY-----', // gitleaks:allow
+  '-----END RSA PRIVATE KEY-----', // gitleaks:allow
+  '-----END ENCRYPTED PRIVATE KEY-----', // gitleaks:allow
 ];
 
 function describePemShape(pem: string): string {
