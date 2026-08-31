@@ -1154,9 +1154,13 @@ export class ScenarioSessionService {
     // therefore dropped the learner's score on every cleanly-ended session,
     // left the row IN_PROGRESS for analytics, never completed the
     // track/path/case item and never credited practice minutes. Redelivery and
-    // already-abandoned rows are held off by the compare-and-set below, which
-    // is the right tool for that job: it is atomic, where a status read is not.
-    const endedByAnotherPath = session.status === ScenarioSessionStatus.ENDED;
+    // rows abandoned without ever running an end flow are held off by the
+    // compare-and-set below, which is the right tool for that job: it is
+    // atomic, where a status read is not.
+    //
+    // Set here from the row as read, and again below if the reclaim wins —
+    // that predicate proves the same thing.
+    let endedByAnotherPath = session.status === ScenarioSessionStatus.ENDED;
 
     const score = event.event_data.totalScore;
     // Any non-empty `reason` means ally-ai-learn's emergency/force-exit path
@@ -1180,26 +1184,67 @@ export class ScenarioSessionService {
     // Compare-and-set on eventStatus, written BEFORE the side effects because
     // winning the flip is what licenses them. Same idiom as
     // markSessionAbandoned: IN_PROGRESS is the token, so a redelivered SQS
-    // message loses the race and does nothing, and a row the sweeper already
-    // labelled ABANDONED is never relabelled COMPLETED.
+    // message loses the race and does nothing.
     //
     // `startedAt`/`endedAt` are written back from the freshly-read row, so on
     // the already-ended path this is a no-op for them rather than a clobber of
     // the egress-derived timestamps.
-    const finalised = await this.scenarioSessionRepository.update(
+    const finalisation = {
+      status: ScenarioSessionStatus.ENDED,
+      startedAt,
+      endedAt,
+      score,
+      eventStatus: ScenarioSessionEventStatus.COMPLETED,
+      endReason,
+    };
+    let finalised = await this.scenarioSessionRepository.update(
       {
         id: scenarioSessionId,
         eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
       },
-      {
-        status: ScenarioSessionStatus.ENDED,
-        startedAt,
-        endedAt,
-        score,
-        eventStatus: ScenarioSessionEventStatus.COMPLETED,
-        endReason,
-      },
+      finalisation,
     );
+
+    if (!finalised.affected) {
+      // Second chance, for one situation only: the `room_finished` webhook beat
+      // this message, ran the FULL end flow (status=ENDED, duration, credits)
+      // and then labelled the row ABANDONED because at that instant no
+      // end-of-session had arrived. This message is that end-of-session — proof
+      // the session did complete its lifecycle — so the guess must yield to it,
+      // exactly as markSessionAbandoned yields when the message wins the other
+      // way round. Without this the row keeps the ABANDONED label, the score is
+      // thrown away, no progression engine ever sees the finished roleplay, and
+      // the unfinalised sweep can never repair any of it because it scans for
+      // IN_PROGRESS: the learner replays a track item they already passed.
+      //
+      // Deliberately narrow. `STUCK_ACTIVE_SWEEP` rows are excluded by both the
+      // reason and the `status = ENDED` predicate: nothing ran for those, so
+      // completing one here would charge hours of credits for a session that
+      // never happened. Still a single-winner compare-and-set — COMPLETED
+      // matches neither predicate, so redelivery finds nothing to win.
+      finalised = await this.scenarioSessionRepository.update(
+        {
+          id: scenarioSessionId,
+          status: ScenarioSessionStatus.ENDED,
+          eventStatus: ScenarioSessionEventStatus.ABANDONED,
+          abandonedReason:
+            ScenarioSessionAbandonReason.ROOM_FINISHED_WITHOUT_END,
+        },
+        { ...finalisation, abandonedReason: null },
+      );
+      if (finalised.affected) {
+        // The predicate required status=ENDED, so the webhook's end flow has
+        // already persisted the duration and charged the credits — whatever the
+        // row said when it was read at the top of this handler.
+        endedByAnotherPath = true;
+        this.logger.info(
+          `Scenario session ${scenarioSessionId} was labelled abandoned by the ` +
+            `room_finished webhook, but its end-of-session event has now ` +
+            `arrived — reclaimed as COMPLETED`,
+        );
+      }
+    }
+
     if (!finalised.affected) {
       this.logger.info(
         `Scenario session ${scenarioSessionId} was already finalised ` +
@@ -2927,6 +2972,12 @@ export class ScenarioSessionService {
    * if that message won and wrote COMPLETED, the session genuinely completed its
    * lifecycle and must not be relabelled. Idempotent, so a redelivered webhook
    * costs one no-op UPDATE.
+   *
+   * The race also runs the other way — this label lands and the message arrives
+   * a beat later — and the label loses that one too: see the
+   * ROOM_FINISHED_WITHOUT_END reclaim in `handleEndScenarioSessionEvent`. This
+   * is a guess that no end-of-session is coming, so the end-of-session itself
+   * always outranks it.
    */
   async markSessionAbandoned(
     scenarioSessionId: string,
