@@ -1,4 +1,5 @@
 import {
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
@@ -106,8 +107,28 @@ export class RoadmapOpportunityService {
       source?: RoadmapOpportunitySource;
       tenantId?: string | null;
       reporterContext?: Record<string, any> | null;
+      /**
+       * Whether the caller holds edit:admin:product-roadmap, resolved in the controller the same
+       * way comment and saved-view deletion resolve it — see RoadmapAccessService for why a
+       * row-level rule like this cannot be a decorator. Consulted by `ownerUserId` and by
+       * nothing else, so every other caller can keep leaving it out.
+       */
+      canManage?: boolean;
     },
   ): Promise<OpportunityResponseDto> {
+    // Assigning at filing time is a MANAGE action on a route gated at the VOTE tier, so it is
+    // checked here rather than left to the decorator: a filer who cannot manage the board must
+    // not be able to point a new row at someone by posting a field the drawer never showed them.
+    // 403 rather than dropping it — a silently ignored assignment is worse than a refusal.
+    if (dto.ownerUserId !== undefined && dto.ownerUserId !== null) {
+      if (!extra?.canManage) {
+        throw new ForbiddenException(
+          'Only a roadmap manager can assign an owner.',
+        );
+      }
+      await this.assertEligibleOwner(dto.ownerUserId);
+    }
+
     const saved = await this.opportunityRepository.save(
       this.opportunityRepository.create({
         description: dto.description.trim(),
@@ -116,6 +137,10 @@ export class RoadmapOpportunityService {
         // `?? null` so an omitted effort files as unsized rather than undefined — the column
         // is nullable and "not sized" is a real state, not a missing value.
         effort: dto.effort ?? null,
+        // Only ever the id. The legacy free-text `owner` column stays untouched on a new row —
+        // it is a text FK into roadmap_opportunity_owners(name) and writing both is what the
+        // update path documents as the thing that 500s. See update().
+        ownerUserId: dto.ownerUserId ?? null,
         createdBy: userId,
         updatedBy: userId,
         source: extra?.source ?? RoadmapOpportunitySource.STAFF,

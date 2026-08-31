@@ -230,6 +230,27 @@ export class CreateOpportunityDto {
   @IsOptional()
   @IsEnum(RoadmapOpportunityEffort)
   effort?: RoadmapOpportunityEffort | null;
+
+  /**
+   * Assign the owner at filing time. Optional and omitted by everyone who cannot assign one:
+   * this route is gated on vote:admin:product-roadmap, so most callers who reach it may file but
+   * not manage, and a caller without edit:admin:product-roadmap sending this gets a 403 rather
+   * than a silently-dropped field.
+   *
+   * Same eligibility rule as UpdateOpportunityDto.ownerUserId — a super-admin user id — and the
+   * same reason the legacy free-text `owner` is not accepted: one representation, never both.
+   * Null and omitted mean the same thing here (unassigned); there is nothing to un-assign on a
+   * row that does not exist yet.
+   */
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Ally user id of a super-admin. Requires edit:admin:product-roadmap; null/omitted files ' +
+      'the opportunity unassigned.',
+  })
+  @IsOptional()
+  @IsInt()
+  ownerUserId?: number | null;
 }
 
 /**
