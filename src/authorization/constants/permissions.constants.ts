@@ -282,6 +282,12 @@ const PERMISSIONS = {
   // request data, so this stays as restricted as the SDA management surface.
   VIEW_AWS_LOGS: 'view:aws-logs',
 
+  // === MOBILE RELEASES ===
+  // Granted ONLY to SUPER_DUPER_ADMIN — same divergence pattern as
+  // VIEW_AWS_LOGS. Backs the Mobile Releases admin page (ally-mobile CI
+  // build/release status + current app version).
+  VIEW_MOBILE_RELEASES: 'view:mobile-releases',
+
   // === WHATSAPP Q&A KNOWLEDGE BASE ===
   // Granted ONLY to SUPER_DUPER_ADMIN. The corpus is what the bot tells mental
   // healthcare workers, so write access is the ability to change clinical
@@ -472,6 +478,7 @@ const SUPER_DUPER_ADMIN_PERMISSIONS = [
   // VIEW + VOTE only (see above).
   PERMISSIONS.EDIT_PRODUCT_ROADMAP,
   PERMISSIONS.VIEW_AWS_LOGS,
+  PERMISSIONS.VIEW_MOBILE_RELEASES,
   // WhatsApp Q&A knowledge corpus. SDA-only rather than shared with SUPER_ADMIN for the same
   // reason as VIEW_AWS_LOGS: this is clinical guidance served to workers, and an unreviewed edit
   // reaches every worker who asks a related question.

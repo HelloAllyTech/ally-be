@@ -67,6 +67,7 @@ import { ProductRoadmapModule } from './product-roadmap/product-roadmap.module';
 import { LogsModule } from './logs/logs.module';
 import { ChangelogModule } from './changelog/changelog.module';
 import { UxSignalsModule } from './ux-signals/ux-signals.module';
+import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
 
 @Module({
   imports: [
@@ -137,6 +138,7 @@ import { UxSignalsModule } from './ux-signals/ux-signals.module';
     LogsModule,
     ChangelogModule,
     UxSignalsModule,
+    MobileReleasesModule,
   ],
   controllers: [],
   providers: [
