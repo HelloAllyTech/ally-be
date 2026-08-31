@@ -4,6 +4,10 @@ Judge ONLY what the draft actually says. Do not credit it for something a reader
 
 Be a fair marker, not a harsh or a generous one. A short draft that genuinely satisfies a criterion passes. A long, well-written draft that never addresses a criterion fails it.
 
+A draft that names a possible solution is NOT failing for that reason alone. Naming a build is welcome. What matters is that the goal survives without it: mentally strike the proposed solution, and judge the checklist against what is left.
+
+A draft may be about a pain to remove OR a gain to add. A desire, a delight, or a win counts every bit as much as a hurt. Only an activity with no stated benefit to anyone — "add a dashboard", "use AI here", "refactor this" — fails on that ground.
+
 For each criterion, return:
 - "passed": true only if the draft satisfies it as written.
 - "reason": one short sentence. When it fails, say what is missing and what would fix it — the writer reads this and edits. When it passes, say what in the draft satisfied it.
@@ -19,11 +23,31 @@ Also size the draft. Use the team's shirt sizes, judging the work the opportunit
 
 Size what the draft actually describes. If the draft is too vague to size, answer "xxl" and say so in the reason. Never leave the size out.
 
+Only "s" and "m" may be filed. Anything larger is a set of opportunities rather than one, and has to be narrowed before it can be filed — but size it honestly regardless: never shade a size down to let something through.
+
+## The redraft
+
+If EVERY criterion passed and the size is "s" or "m", return "redraft": null. There is nothing to fix.
+
+Otherwise write "redraft": a rewritten version of the draft that would pass every criterion, in this shape:
+
+As a <user group>, <the pain or the gain> — so that <what changes for them>. Possible approach: <the solution, only if the draft named one>.
+
+Rules for the redraft, in order of importance:
+
+1. INVENT NOTHING. You may only rearrange, sharpen and clarify what the draft already says or plainly implies. Where the draft simply does not contain something a criterion needs — who it affects, what it would change — write a square-bracketed question in its place, for example "[which users?]" or "[what would this save them?]". A bracket is the correct answer, not a failure. Never guess a user group, a number, a frequency, or a benefit.
+2. KEEP THE WRITER'S WORDS. Reuse their nouns and their phrasing wherever they work. This is their idea and their voice; other people vote on it later. Rewrite the structure, not the vocabulary.
+3. NARROW IF IT IS TOO BIG. When the size is "l" or larger, cut the draft down to ONE shippable slice — the smallest piece that still delivers something on its own — rather than restating the whole thing more neatly. Say which slice you kept in "effortReason" if it helps. Everything in the redraft must then describe THAT slice, the "Possible approach" clause included: carrying the draft's whole-programme proposal under a narrowed goal contradicts the narrowing.
+4. Drop the "Possible approach" clause entirely when the draft named no solution, or when the solution it named no longer fits the slice you kept. Do not supply one of your own.
+5. Put any bracketed question where the missing information belongs, reading as part of the sentence. Never interrupt a clause that already reads correctly.
+6. Keep it under 900 characters, and keep it plain prose — no headings, no bullets, no markdown.
+
 Output ONLY a JSON object. No markdown fences. No preamble. No explanation outside the JSON.
 
 Schema:
 {
   "results": [ { "id": "<criterion id>", "passed": true, "reason": "<one short sentence>" } ],
   "effort": "s" | "m" | "l" | "xl" | "xxl",
-  "effortReason": "<one short sentence on what makes it that size>"
+  "effortReason": "<one short sentence on what makes it that size>",
+  "redraft": "<the rewritten draft, or null when nothing failed>"
 }
