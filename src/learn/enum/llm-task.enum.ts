@@ -57,6 +57,12 @@ export enum LlmTask {
   // own label because the input is telemetry aggregates rather than an
   // analytics window, so its token profile tracks detector count, not date range.
   UX_SIGNALS = 'ux_signals',
+  // Mobile Releases admin page (src/mobile-releases): one call per
+  // ios-whats-new-suggestion request, turning raw ally-mobile commit
+  // subjects since the last release into a draft App Store "What's New"
+  // text. Its own label because the input is a short commit list, not an
+  // analytics window or telemetry aggregate.
+  MOBILE_RELEASE_WHATS_NEW = 'mobile_release_whats_new',
 
   // ally-be studio operations (in-process).
   AUTOFILL_FIELD = 'autofill_field',

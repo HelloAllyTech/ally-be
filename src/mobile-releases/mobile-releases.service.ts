@@ -4,10 +4,12 @@ import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
+import { MobileReleaseWhatsNewAiService } from './mobile-release-whats-new-ai.service';
 import {
   IosTestflightHistoryEntryDto,
   IosTestflightHistoryResponseDto,
   IosTestflightStatusResponseDto,
+  IosWhatsNewSuggestionResponseDto,
   MOBILE_WORKFLOW_FILES,
   MOBILE_WORKFLOW_LABELS,
   MobileCurrentVersionResponseDto,
@@ -153,7 +155,10 @@ export class MobileReleasesService {
     MobileReleasesService.name,
   );
 
-  constructor(private readonly configService: AppConfigService) {}
+  constructor(
+    private readonly configService: AppConfigService,
+    private readonly whatsNewAiService: MobileReleaseWhatsNewAiService,
+  ) {}
 
   private get repo(): string {
     return this.configService.githubMobileRepo;
@@ -276,6 +281,105 @@ export class MobileReleasesService {
       },
       nextEligibleCheckAt,
     };
+  }
+
+  /**
+   * LLM-drafted "What's New in This Version" text for the App Store
+   * submission, built from the ally-mobile commit subjects since the last
+   * release point (the same "most recent commit that touched
+   * android/app/build.gradle on master" heuristic computeNextEligibleCheckAt
+   * uses). Read-only and uncached — a fresh suggestion each time is correct
+   * here since the commit history changes.
+   *
+   * Zero non-merge commits since the last release point is a legitimate
+   * "nothing new" state, not an error: returns `{ suggestion: null }` rather
+   * than calling the model or throwing.
+   */
+  async getIosWhatsNewSuggestion(): Promise<IosWhatsNewSuggestionResponseDto> {
+    const headers = this.headers;
+    const commitSubjects =
+      await this.fetchCommitSubjectsSinceLastRelease(headers);
+
+    if (commitSubjects.length === 0) {
+      return { suggestion: null };
+    }
+
+    const suggestion =
+      await this.whatsNewAiService.generateSuggestion(commitSubjects);
+    return { suggestion };
+  }
+
+  /**
+   * Non-merge commit subject lines (first line of each commit message) on
+   * `master` since the last release point, oldest-first as GitHub's compare
+   * API returns them. "Merge pull request" commits are filtered out — the
+   * same convention ally-mobile's scheduled-mobile-release.yml already uses
+   * when building Android release notes.
+   */
+  private async fetchCommitSubjectsSinceLastRelease(
+    headers: Record<string, string>,
+  ): Promise<string[]> {
+    const lastReleaseSha = await this.fetchLastReleaseCommitSha(headers);
+
+    try {
+      const { data } = await axios.get(
+        `${GITHUB_API}/repos/${this.repo}/compare/${lastReleaseSha}...master`,
+        { headers, timeout: 15_000 },
+      );
+      const commits = data?.commits ?? [];
+      return commits
+        .map((commit: any) =>
+          String(commit?.commit?.message ?? '')
+            .split('\n')[0]
+            .trim(),
+        )
+        .filter(
+          (subject: string) =>
+            subject && !subject.startsWith('Merge pull request'),
+        );
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not compare ${lastReleaseSha}...master for ${this.repo}`,
+      );
+    }
+  }
+
+  /**
+   * SHA of the most recent commit that touched android/app/build.gradle on
+   * master — same GitHub API call shape as computeNextEligibleCheckAt below
+   * (that method only needs the commit's date; this one needs its sha), used
+   * here as "the last release point" to diff master against.
+   */
+  private async fetchLastReleaseCommitSha(
+    headers: Record<string, string>,
+  ): Promise<string> {
+    try {
+      const { data } = await axios.get(
+        `${GITHUB_API}/repos/${this.repo}/commits`,
+        {
+          headers,
+          params: {
+            path: 'android/app/build.gradle',
+            sha: 'master',
+            per_page: 1,
+          },
+          timeout: 15_000,
+        },
+      );
+      const sha = data?.[0]?.sha;
+      if (!sha) {
+        throw new Error(
+          'No commits found for android/app/build.gradle on master',
+        );
+      }
+      return String(sha);
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not find the last release commit for ${this.repo}`,
+      );
+    }
   }
 
   /**

@@ -226,6 +226,21 @@ export class PromoteAndroidRequestDto {
   rolloutPercentage!: number;
 }
 
+export class IosWhatsNewSuggestionResponseDto {
+  @ApiProperty({
+    nullable: true,
+    description:
+      'LLM-drafted "What\'s New in This Version" text, generated from ' +
+      'ally-mobile commit subjects since the last release (the most recent ' +
+      'commit that touched android/app/build.gradle on master), with ' +
+      '"Merge pull request" commits filtered out. Meant to prefill the App ' +
+      "Store submission's What's New field — still editable, never " +
+      'auto-submitted. null when there are no new (non-merge) commits since ' +
+      'the last release to summarize, which is a normal state, not an error.',
+  })
+  suggestion!: string | null;
+}
+
 export class SubmitIosAppStoreReviewRequestDto {
   @ApiProperty({
     required: false,

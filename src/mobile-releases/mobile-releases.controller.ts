@@ -13,6 +13,7 @@ import { MobileReleasesService } from './mobile-releases.service';
 import {
   IosTestflightHistoryResponseDto,
   IosTestflightStatusResponseDto,
+  IosWhatsNewSuggestionResponseDto,
   MobileCurrentVersionResponseDto,
   MobileDispatchResponseDto,
   MobileReleaseRunsResponseDto,
@@ -36,6 +37,13 @@ import {
  * too; removed once submission became fully automatic in ally-mobile's
  * build-ios-production.yml and this repo's actual testers turned out to all
  * be Internal, not External — see git history if it's ever needed again.)
+ *
+ * ios-whats-new-suggestion below is also read-only, but is gated to the
+ * narrower submit-app-store-review:mobile-releases permission rather than
+ * view:mobile-releases (no new migration needed — reusing the same
+ * permission that already gates submit-ios-app-store-review): it costs a
+ * real LLM call per request, so it's only exposed to whoever could actually
+ * act on the draft it returns.
  */
 @Controller('v1/mobile-releases')
 @ApiTags('Mobile Releases')
@@ -121,6 +129,19 @@ export class MobileReleasesController {
     @Body() body: PromoteAndroidRequestDto,
   ): Promise<MobileDispatchResponseDto> {
     return this.mobileReleasesService.promoteAndroid(body.rolloutPercentage);
+  }
+
+  @ApiOperation({
+    summary:
+      "LLM-drafted \"What's New in This Version\" text for the App Store submission, built from ally-mobile commit messages since the last release. Prefills the admin dashboard's submit-ios-app-store-review What's New field — still editable, never auto-submitted.",
+  })
+  @ApiResponse({ status: 200, type: IosWhatsNewSuggestionResponseDto })
+  @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
+    permissions: [PERMISSIONS.SUBMIT_APP_STORE_REVIEW],
+  })
+  @Get('ios-whats-new-suggestion')
+  getIosWhatsNewSuggestion(): Promise<IosWhatsNewSuggestionResponseDto> {
+    return this.mobileReleasesService.getIosWhatsNewSuggestion();
   }
 
   @ApiOperation({
