@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, HttpCode, Post } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -13,12 +13,15 @@ import { MobileReleasesService } from './mobile-releases.service';
 import {
   MobileCurrentVersionResponseDto,
   MobileReleaseRunsResponseDto,
+  MobileTriggerResponseDto,
 } from './dto/mobile-releases.dto';
 
 /**
  * GitHub Actions release/build status for ally-mobile's automated release
- * pipeline. Gated ONLY to SUPER_DUPER_ADMIN (view:mobile-releases, migration
- * 1941000000000) — same divergence pattern as the AWS Logs viewer.
+ * pipeline. Gated ONLY to SUPER_DUPER_ADMIN — view:mobile-releases (migration
+ * 1941000000000) for the read endpoints, and the narrower
+ * trigger:mobile-releases (migration 1943000000000) for the manual dispatch
+ * endpoint — same divergence pattern as the AWS Logs viewer.
  */
 @Controller('v1/mobile-releases')
 @ApiTags('Mobile Releases')
@@ -48,5 +51,19 @@ export class MobileReleasesController {
   @Get('current-version')
   getCurrentVersion(): Promise<MobileCurrentVersionResponseDto> {
     return this.mobileReleasesService.getCurrentVersion();
+  }
+
+  @ApiOperation({
+    summary:
+      'Manually dispatch scheduled-mobile-release.yml (force: skips the 48h cadence gate, tests still gate the actual build)',
+  })
+  @ApiResponse({ status: 200, type: MobileTriggerResponseDto })
+  @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
+    permissions: [PERMISSIONS.TRIGGER_MOBILE_RELEASES],
+  })
+  @HttpCode(200)
+  @Post('trigger')
+  triggerRelease(): Promise<MobileTriggerResponseDto> {
+    return this.mobileReleasesService.triggerRelease();
   }
 }

@@ -287,6 +287,10 @@ const PERMISSIONS = {
   // VIEW_AWS_LOGS. Backs the Mobile Releases admin page (ally-mobile CI
   // build/release status + current app version).
   VIEW_MOBILE_RELEASES: 'view:mobile-releases',
+  // Narrower than VIEW_MOBILE_RELEASES: dispatches a real production release
+  // pipeline run (scheduled-mobile-release.yml with force: true), so it is
+  // gated separately even though both are SUPER_DUPER_ADMIN-only today.
+  TRIGGER_MOBILE_RELEASES: 'trigger:mobile-releases',
 
   // === WHATSAPP Q&A KNOWLEDGE BASE ===
   // Granted ONLY to SUPER_DUPER_ADMIN. The corpus is what the bot tells mental
@@ -479,6 +483,7 @@ const SUPER_DUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_PRODUCT_ROADMAP,
   PERMISSIONS.VIEW_AWS_LOGS,
   PERMISSIONS.VIEW_MOBILE_RELEASES,
+  PERMISSIONS.TRIGGER_MOBILE_RELEASES,
   // WhatsApp Q&A knowledge corpus. SDA-only rather than shared with SUPER_ADMIN for the same
   // reason as VIEW_AWS_LOGS: this is clinical guidance served to workers, and an unreviewed edit
   // reaches every worker who asks a related question.

@@ -7,10 +7,16 @@ import {
   MOBILE_WORKFLOW_LABELS,
   MobileCurrentVersionResponseDto,
   MobileReleaseRunDto,
+  MobileTriggerResponseDto,
   MobileWorkflowFile,
 } from './dto/mobile-releases.dto';
 
 const GITHUB_API = 'https://api.github.com';
+const RELEASE_WORKFLOW_FILE: MobileWorkflowFile =
+  'scheduled-mobile-release.yml';
+const MS_PER_HOUR = 60 * 60 * 1000;
+const CADENCE_GATE_HOURS = 48;
+const DAILY_CHECK_UTC_HOUR = 5; // matches scheduled-mobile-release.yml's `cron: '0 5 * * *'`
 
 /**
  * Straight passthrough to GitHub's REST API for the ally-mobile release
@@ -114,13 +120,19 @@ export class MobileReleasesService {
    * + versionName, and ios/ally.xcodeproj/project.pbxproj's first
    * MARKETING_VERSION. Regex-extracted rather than parsed: both files are
    * not valid JSON/YAML, and the pipeline only ever needs these few fields.
+   *
+   * Also includes `nextEligibleCheckAt`, a best-effort ETA for the next
+   * scheduled-mobile-release.yml run that could actually ship a build. That
+   * sub-fetch is allowed to fail independently — it's a nice-to-have, not
+   * the reason this endpoint exists.
    */
   async getCurrentVersion(): Promise<MobileCurrentVersionResponseDto> {
     const headers = this.headers;
 
-    const [gradle, pbxproj] = await Promise.all([
+    const [gradle, pbxproj, nextEligibleCheckAt] = await Promise.all([
       this.fetchFileContent('android/app/build.gradle', headers),
       this.fetchFileContent('ios/ally.xcodeproj/project.pbxproj', headers),
+      this.computeNextEligibleCheckAt(headers),
     ]);
 
     const versionCodeMatch = gradle.match(/versionCode\s+(\d+)/);
@@ -139,7 +151,118 @@ export class MobileReleasesService {
           ? marketingVersionMatch[1].trim()
           : null,
       },
+      nextEligibleCheckAt,
     };
+  }
+
+  /**
+   * ESTIMATE only, not a guarantee. scheduled-mobile-release.yml ships a
+   * build once 48h+ have passed since the last version bump AND there are
+   * new commits on master AND tests are green when its daily 05:00 UTC
+   * cron tick fires — this method can only account for the 48h cadence
+   * gate and the cron cadence, since "are there new commits" and "are
+   * tests green" are unknowable in advance.
+   *
+   * "Last version bump" is approximated as the most recent commit that
+   * touched android/app/build.gradle on master, which changes whenever a
+   * release actually lands (automated or, historically, manual).
+   *
+   * Returns null (rather than throwing) if that history can't be read, so
+   * a GitHub hiccup here never takes down the primary version payload.
+   */
+  private async computeNextEligibleCheckAt(
+    headers: Record<string, string>,
+  ): Promise<string | null> {
+    try {
+      const { data } = await axios.get(
+        `${GITHUB_API}/repos/${this.repo}/commits`,
+        {
+          headers,
+          params: {
+            path: 'android/app/build.gradle',
+            sha: 'master',
+            per_page: 1,
+          },
+          timeout: 15_000,
+        },
+      );
+
+      const commit = data?.[0]?.commit;
+      const lastVersionBumpAt: string | undefined =
+        commit?.committer?.date ?? commit?.author?.date;
+      if (!lastVersionBumpAt) {
+        return null;
+      }
+
+      const eligibleAt = new Date(
+        new Date(lastVersionBumpAt).getTime() +
+          CADENCE_GATE_HOURS * MS_PER_HOUR,
+      );
+      const now = new Date();
+      const referencePoint =
+        eligibleAt.getTime() > now.getTime() ? eligibleAt : now;
+
+      return this.firstDailyCheckAtOrAfter(referencePoint).toISOString();
+    } catch (error) {
+      this.logger.warn(
+        `Could not compute nextEligibleCheckAt for ${this.repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /** First scheduled-mobile-release.yml cron tick (05:00 UTC daily) at or after `from`. */
+  private firstDailyCheckAtOrAfter(from: Date): Date {
+    const tick = new Date(
+      Date.UTC(
+        from.getUTCFullYear(),
+        from.getUTCMonth(),
+        from.getUTCDate(),
+        DAILY_CHECK_UTC_HOUR,
+        0,
+        0,
+        0,
+      ),
+    );
+    if (tick.getTime() < from.getTime()) {
+      tick.setUTCDate(tick.getUTCDate() + 1);
+    }
+    return tick;
+  }
+
+  /**
+   * Manually dispatches scheduled-mobile-release.yml with `force: 'true'`,
+   * which skips the 48h cadence gate but still requires green tests before
+   * anything ships — safe to call anytime.
+   *
+   * DEPLOYMENT PREREQUISITE: dispatching a workflow requires `Actions: write`
+   * scope on the GitHub token, but GITHUB_ACTIONS_TOKEN was originally
+   * provisioned read-only (`Actions: read` + `Contents: read`) for
+   * listRuns()/getCurrentVersion(). That token must be upgraded to
+   * `Actions: read and write` in GitHub's PAT settings for this endpoint to
+   * work — this is not fixable in code. A 403 or 404 from GitHub here is the
+   * likely symptom of a still-read-only token.
+   */
+  async triggerRelease(): Promise<MobileTriggerResponseDto> {
+    const headers = this.headers;
+
+    try {
+      // GitHub returns 204 No Content with an empty body on success — do not
+      // attempt to read/parse `data` from this response.
+      await axios.post(
+        `${GITHUB_API}/repos/${this.repo}/actions/workflows/${RELEASE_WORKFLOW_FILE}/dispatches`,
+        { ref: 'master', inputs: { force: 'true' } },
+        { headers, timeout: 15_000 },
+      );
+      return { dispatched: true };
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not dispatch ${RELEASE_WORKFLOW_FILE} on ${this.repo}`,
+      );
+    }
   }
 
   private async fetchFileContent(

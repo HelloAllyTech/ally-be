@@ -91,4 +91,24 @@ export class MobileCurrentVersionResponseDto {
 
   @ApiProperty({ type: MobileIosVersionDto })
   ios!: MobileIosVersionDto;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Estimated ISO timestamp of the next daily 05:00 UTC tick at which ' +
+      'scheduled-mobile-release.yml is eligible to ship (48h+ since the ' +
+      'last android/app/build.gradle version bump). An estimate only: the ' +
+      'workflow still requires new commits on master and green tests at ' +
+      'that tick, neither of which this endpoint can know in advance. ' +
+      'null if the version-bump history could not be read.',
+  })
+  nextEligibleCheckAt!: string | null;
+}
+
+export class MobileTriggerResponseDto {
+  @ApiProperty({
+    description:
+      'true once scheduled-mobile-release.yml has been dispatched via the GitHub API',
+  })
+  dispatched!: boolean;
 }
