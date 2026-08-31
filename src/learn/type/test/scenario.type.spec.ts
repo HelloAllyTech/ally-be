@@ -33,9 +33,10 @@ describe('resolveFeedbackTabs', () => {
   });
 
   it('honours each tab independently', () => {
-    expect(
-      resolveFeedbackTabs({ feedbackTabs: { debrief: false } }),
-    ).toEqual({ debrief: false, transcript: true });
+    expect(resolveFeedbackTabs({ feedbackTabs: { debrief: false } })).toEqual({
+      debrief: false,
+      transcript: true,
+    });
 
     expect(
       resolveFeedbackTabs({ feedbackTabs: { transcript: false } }),
