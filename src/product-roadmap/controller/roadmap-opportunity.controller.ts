@@ -57,6 +57,7 @@ import { RoadmapAllocationService } from '../service/roadmap-allocation.service'
 import { RoadmapSplitMergeService } from '../service/roadmap-split-merge.service';
 import { RoadmapBuilderService } from '../service/roadmap-builder.service';
 import { RoadmapBoardService } from '../service/roadmap-board.service';
+import { RoadmapAccessService } from '../service/roadmap-access.service';
 
 /**
  * The board itself.
@@ -77,6 +78,7 @@ export class RoadmapOpportunityController {
     private readonly splitMergeService: RoadmapSplitMergeService,
     private readonly builderService: RoadmapBuilderService,
     private readonly boardService: RoadmapBoardService,
+    private readonly access: RoadmapAccessService,
   ) {}
 
   @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
@@ -176,15 +178,28 @@ export class RoadmapOpportunityController {
     return this.opportunityService.findOne(user.id, id);
   }
 
+  /**
+   * Stays on the VOTE tier: anyone who can vote can file. `ownerUserId` is the one field on the
+   * body that needs more than that, so the manage answer is resolved here and handed to the
+   * service — the same shape comment and saved-view deletion use. Cheap: getUserPermissions is
+   * Redis-cached (see RoadmapAccessService).
+   */
   @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
   @Post('opportunities')
-  @ApiOperation({ summary: 'File a new opportunity' })
+  @ApiOperation({
+    summary: 'File a new opportunity',
+    description:
+      'Assigning `ownerUserId` additionally requires edit:admin:product-roadmap (403 otherwise) ' +
+      'and the named user must be a super-admin (422 otherwise).',
+  })
   @ApiResponse({ status: 201, type: OpportunityResponseDto })
-  create(
+  async create(
     @CurrentUser() user: TokenUser,
     @Body() dto: CreateOpportunityDto,
   ): Promise<OpportunityResponseDto> {
-    return this.opportunityService.create(user.id, dto);
+    return this.opportunityService.create(user.id, dto, {
+      canManage: await this.access.canManage(user.id),
+    });
   }
 
   /**
