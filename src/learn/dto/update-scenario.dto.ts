@@ -652,9 +652,14 @@ export class UpdateScenarioDto {
   showScoreMeter?: boolean;
 
   @ApiProperty({
-    description: 'Enable the AI feedback/evaluation summary after a session',
+    description:
+      'DEPRECATED (2026-08-31) and ignored. The master switch was folded into ' +
+      '`feedbackTabs` — send `{debrief: false, transcript: false}` for the ' +
+      'wholesale opt-out this used to express. Still accepted so an older ' +
+      'admin build does not start getting 400s mid-deploy.',
     example: true,
     required: false,
+    deprecated: true,
   })
   @IsOptional()
   @IsBoolean()
@@ -684,10 +689,10 @@ export class UpdateScenarioDto {
 
   @ApiProperty({
     description:
-      'Sub-toggles of enableFeedback, controlling which post-session tabs the ' +
-      'learner sees (debrief, skills, transcript). Omitting a key, or the whole ' +
-      'object, keeps that tab on.',
-    example: { debrief: true, skills: false, transcript: true },
+      'Which post-session tabs the learner sees (debrief, transcript). ' +
+      'Omitting a key, or the whole object, keeps that tab on. Both off is the ' +
+      'wholesale opt-out that the retired `enableFeedback` switch used to mean.',
+    example: { debrief: true, transcript: true },
     required: false,
   })
   @IsOptional()

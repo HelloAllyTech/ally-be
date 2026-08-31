@@ -52,7 +52,6 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'agentBuilderDescription',
   'agentBuilderPrompt',
   'showScoreMeter',
-  'enableFeedback',
   'feedbackTabs',
   'supervisorNotesEnabled',
   'liveTabEnabled',
@@ -186,7 +185,9 @@ export const mapCreateScenarioRequestToEntity = (
       agentBuilderDescription: scenario.agentBuilderDescription,
       agentBuilderPrompt: scenario.agentBuilderPrompt,
       showScoreMeter: scenario.showScoreMeter,
-      enableFeedback: scenario.enableFeedback,
+      // `enableFeedback` is deliberately not persisted any more (retired
+      // 2026-08-31, folded into feedbackTabs). Writing it back would undo
+      // migration 1944200000000's cleanup on the next save of any roleplay.
       feedbackTabs: scenario.feedbackTabs,
       // Opt-in per roleplay: the supervisor stays silent during a session
       // until an author turns the live notes on.

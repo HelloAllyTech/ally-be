@@ -265,16 +265,10 @@ export class ScenarioSessionService {
   async getScenarioSessionSkills(
     scenarioSessionId: string,
   ): Promise<ScenarioSessionSkillsResponseDto> {
-    // The Skills tab is one of the per-roleplay post-session sub-toggles, so
-    // the opt-out is enforced here as well as in the UI — an author who turned
-    // scores off for a roleplay meant the learner not to see them, not merely
-    // not to be shown a tab.
-    const context =
-      await this.getSupervisorContextForSession(scenarioSessionId);
-    if (context && !context.feedbackTabs.skills) {
-      return { skillCoverage: [], emotionalMovement: [] };
-    }
-
+    // No per-roleplay gate any more: the Skills Demonstrated tab was retired
+    // on 2026-08-31, so there is no learner surface left to withhold this
+    // from. The data itself lives on because admin analytics reads
+    // `skillCoverage` (skill-growth charts, LearnerSkillPanel).
     return this.scenarioSharedService.getScenarioSessionSkills(
       scenarioSessionId,
     );
@@ -458,9 +452,10 @@ export class ScenarioSessionService {
         experienceMode:
           scenario.metadata?.experienceMode ?? ExperienceMode.FEEDBACK,
         name: scenario.metadata?.name,
-        enableFeedback: scenario.metadata?.enableFeedback ?? true,
         // Resolved, never raw: clients render tabs straight off this, so they
-        // must not have to re-implement the "absent means all on" default.
+        // must not have to re-implement the "absent means on" default.
+        // `enableFeedback` is deliberately not sent — it stopped being a gate
+        // when it was folded into feedbackTabs (see resolveFeedbackTabs).
         feedbackTabs,
       };
       if (languageCode && scenario.translations?.[languageCode]) {
