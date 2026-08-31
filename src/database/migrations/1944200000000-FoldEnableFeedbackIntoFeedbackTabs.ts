@@ -47,9 +47,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * back as `false`, matching the platform-wide default it had before removal
  * rather than guessing at a per-roleplay value that is no longer recorded.
  */
-export class FoldEnableFeedbackIntoFeedbackTabs1944200000000
-  implements MigrationInterface
-{
+export class FoldEnableFeedbackIntoFeedbackTabs1944200000000 implements MigrationInterface {
   name = 'FoldEnableFeedbackIntoFeedbackTabs1944200000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

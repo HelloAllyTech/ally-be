@@ -522,7 +522,11 @@ describe('Scenario Util', () => {
         feedbackTabs: { debrief: false, transcript: false },
       } as any;
 
-      const result = mapUpdateScenarioRequestToEntity(dto, existingScenario, 505);
+      const result = mapUpdateScenarioRequestToEntity(
+        dto,
+        existingScenario,
+        505,
+      );
 
       expect(result.metadata).not.toHaveProperty('enableFeedback');
       expect(result.metadata).toEqual({
