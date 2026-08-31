@@ -11,6 +11,7 @@ import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-togg
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { MobileReleasesService } from './mobile-releases.service';
 import {
+  IosTestflightStatusResponseDto,
   MobileCurrentVersionResponseDto,
   MobileDispatchResponseDto,
   MobileReleaseRunsResponseDto,
@@ -20,8 +21,10 @@ import {
 
 /**
  * GitHub Actions release/build status for ally-mobile's automated release
- * pipeline. Gated ONLY to SUPER_DUPER_ADMIN — view:mobile-releases (migration
- * 1941000000000) for the read endpoints, trigger:mobile-releases (migration
+ * pipeline, plus a read-only App Store Connect TestFlight status view. Gated
+ * ONLY to SUPER_DUPER_ADMIN — view:mobile-releases (migration 1941000000000)
+ * for the read endpoints (GitHub-backed and the App Store Connect-backed
+ * ios-testflight-status below), trigger:mobile-releases (migration
  * 1943000000000) for the manual scheduled-release dispatch endpoint, and
  * promote:mobile-releases (migration 1944000000000) for the manual promote
  * endpoints below — same divergence pattern as the AWS Logs viewer.
@@ -68,6 +71,19 @@ export class MobileReleasesController {
   @Post('trigger')
   triggerRelease(): Promise<MobileTriggerResponseDto> {
     return this.mobileReleasesService.triggerRelease();
+  }
+
+  @ApiOperation({
+    summary:
+      'Live App Store Connect TestFlight review status for the current iOS build',
+  })
+  @ApiResponse({ status: 200, type: IosTestflightStatusResponseDto })
+  @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
+    permissions: [PERMISSIONS.VIEW_MOBILE_RELEASES],
+  })
+  @Get('ios-testflight-status')
+  getIosTestflightStatus(): Promise<IosTestflightStatusResponseDto> {
+    return this.mobileReleasesService.getIosTestflightStatus();
   }
 
   @ApiOperation({

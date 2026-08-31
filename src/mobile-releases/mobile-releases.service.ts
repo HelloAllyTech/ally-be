@@ -1,8 +1,11 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
+import * as crypto from 'crypto';
+import * as jwt from 'jsonwebtoken';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import {
+  IosTestflightStatusResponseDto,
   MOBILE_WORKFLOW_FILES,
   MOBILE_WORKFLOW_LABELS,
   MobileCurrentVersionResponseDto,
@@ -22,6 +25,46 @@ const PROMOTE_IOS_WORKFLOW_FILE: MobileWorkflowFile =
 const MS_PER_HOUR = 60 * 60 * 1000;
 const CADENCE_GATE_HOURS = 48;
 const DAILY_CHECK_UTC_HOUR = 5; // matches scheduled-mobile-release.yml's `cron: '0 5 * * *'`
+
+const APPSTORE_CONNECT_API = 'https://api.appstoreconnect.apple.com/v1';
+const APPSTORE_BUNDLE_ID = 'com.helloally.app';
+const APPSTORE_JWT_AUDIENCE = 'appstoreconnect-v1';
+// Apple caps App Store Connect API JWTs at 20 minutes; stay comfortably under it.
+const APPSTORE_JWT_TTL_SECONDS = 19 * 60;
+
+/**
+ * Normalizes an APPSTORE_API_PRIVATE_KEY env value into a clean PEM string,
+ * mirroring ally-mobile's scripts/promote-ios-testflight.mjs exactly — every
+ * step here is the product of live production debugging, not speculation.
+ */
+function normalizeAppStoreConnectPrivateKey(raw: string): string {
+  // Accept either raw PEM or base64-encoded PEM. Checking for "PRIVATE KEY"
+  // (not "BEGIN PRIVATE KEY") so this also matches SEC1-format keys headed
+  // "-----BEGIN EC PRIVATE KEY-----".
+  let key = raw.includes('PRIVATE KEY')
+    ? raw
+    : Buffer.from(raw, 'base64').toString('utf-8');
+  // A literal "\n" (backslash-n) instead of a real newline is a common
+  // secret-storage flattening artifact.
+  key = key.includes('\\n') ? key.replace(/\\n/g, '\n') : key;
+  // CRLF line endings parse fine by eye but can trip OpenSSL's PEM decoder.
+  key = key.replace(/\r/g, '');
+  key = key.trim();
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1).trim();
+  }
+  // CONFIRMED root cause on a real key tonight: a trailing "%" is zsh's own
+  // "no trailing newline" indicator, left over from someone copying a
+  // `cat file.p8` terminal display instead of the file's raw bytes. No valid
+  // PEM ever legitimately ends in "%".
+  if (key.endsWith('%')) {
+    key = key.slice(0, -1).trimEnd();
+  }
+  return key;
+}
 
 /**
  * Straight passthrough to GitHub's REST API for the ally-mobile release
@@ -344,6 +387,226 @@ export class MobileReleasesService {
     }
   }
 
+  /** Throws when any App Store Connect credential is unset — every caller must refuse cleanly rather than mint a JWT with missing/partial credentials. */
+  private requireAppStoreConnectConfig() {
+    const { issuerId, apiKeyId, privateKey, testflightExternalGroupName } =
+      this.configService.appStoreConnect;
+    if (!issuerId || !apiKeyId || !privateKey || !testflightExternalGroupName) {
+      throw new ServiceUnavailableException(
+        'APPSTORE_ISSUER_ID / APPSTORE_API_KEY_ID / APPSTORE_API_PRIVATE_KEY / ' +
+          'TESTFLIGHT_EXTERNAL_GROUP_NAME are not fully configured on this ' +
+          'environment, so iOS TestFlight status cannot be read.',
+      );
+    }
+    return { issuerId, apiKeyId, privateKey, testflightExternalGroupName };
+  }
+
+  /**
+   * Mints a short-lived (19-minute) ES256 JWT per Apple's App Store Connect
+   * API auth scheme. The private key is parsed with Node's own
+   * `crypto.createPrivateKey` rather than handed to `jsonwebtoken` as a raw
+   * string: jsonwebtoken's own PEM handling gives one opaque, generic error
+   * ("secretOrPrivateKey must be an asymmetric key when using ES256") no
+   * matter what's actually wrong with the key, whereas Node's decoder gives
+   * the real, specific parse error — the difference that cost hours of
+   * debugging on this exact key.
+   */
+  private mintAppStoreConnectJwt(): string {
+    const { issuerId, apiKeyId, privateKey } =
+      this.requireAppStoreConnectConfig();
+
+    const normalizedPem = normalizeAppStoreConnectPrivateKey(privateKey);
+
+    let keyObject: crypto.KeyObject;
+    try {
+      keyObject = crypto.createPrivateKey({
+        key: normalizedPem,
+        format: 'pem',
+      });
+    } catch (error) {
+      throw new ServiceUnavailableException(
+        `APPSTORE_API_PRIVATE_KEY could not be parsed as a PEM private key: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    if (keyObject.asymmetricKeyType !== 'ec') {
+      throw new ServiceUnavailableException(
+        `APPSTORE_API_PRIVATE_KEY is not an EC private key (got ` +
+          `"${keyObject.asymmetricKeyType}") — App Store Connect requires an ` +
+          `ES256 (P-256) key.`,
+      );
+    }
+    const namedCurve = keyObject.asymmetricKeyDetails?.namedCurve;
+    if (namedCurve && namedCurve !== 'prime256v1') {
+      throw new ServiceUnavailableException(
+        `APPSTORE_API_PRIVATE_KEY is not a P-256 (prime256v1) EC key (got ` +
+          `"${namedCurve}") — App Store Connect requires ES256.`,
+      );
+    }
+
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    return jwt.sign(
+      {
+        iss: issuerId,
+        iat: nowSeconds,
+        exp: nowSeconds + APPSTORE_JWT_TTL_SECONDS,
+        aud: APPSTORE_JWT_AUDIENCE,
+      },
+      keyObject,
+      { algorithm: 'ES256', keyid: apiKeyId },
+    );
+  }
+
+  private get appStoreConnectHeaders(): Record<string, string> {
+    return { Authorization: `Bearer ${this.mintAppStoreConnectJwt()}` };
+  }
+
+  /**
+   * Live TestFlight review status for the current iOS build — a read-only
+   * dashboard view, no caching (same reasoning as the rest of this module).
+   * Returns 200 with all-null/false fields when there's simply no processed
+   * build yet; that's a normal, expected state (still processing, or none
+   * uploaded), not a failure. Only genuine upstream failures (auth, network,
+   * unexpected non-2xx) throw via toReadableError.
+   */
+  async getIosTestflightStatus(): Promise<IosTestflightStatusResponseDto> {
+    const { testflightExternalGroupName } = this.requireAppStoreConnectConfig();
+    const headers = this.appStoreConnectHeaders;
+
+    const appId = await this.fetchAppStoreConnectAppId(headers);
+    const build = await this.fetchLatestValidBuild(appId, headers);
+
+    if (!build) {
+      return {
+        buildVersion: null,
+        buildId: null,
+        betaReviewState: null,
+        externalGroupAssigned: false,
+      };
+    }
+
+    const [betaReviewState, externalGroupAssigned] = await Promise.all([
+      this.fetchBetaReviewState(build.id, headers),
+      this.fetchExternalGroupAssigned(
+        build.id,
+        testflightExternalGroupName,
+        headers,
+      ),
+    ]);
+
+    return {
+      buildVersion: build.version,
+      buildId: build.id,
+      betaReviewState,
+      externalGroupAssigned,
+    };
+  }
+
+  private async fetchAppStoreConnectAppId(
+    headers: Record<string, string>,
+  ): Promise<string> {
+    try {
+      const { data } = await axios.get(`${APPSTORE_CONNECT_API}/apps`, {
+        headers,
+        params: { 'filter[bundleId]': APPSTORE_BUNDLE_ID },
+        timeout: 15_000,
+      });
+      const appId = data?.data?.[0]?.id;
+      if (!appId) {
+        throw new Error(
+          `No App Store Connect app found for bundle id ${APPSTORE_BUNDLE_ID}`,
+        );
+      }
+      return String(appId);
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not look up the App Store Connect app id for ${APPSTORE_BUNDLE_ID}`,
+      );
+    }
+  }
+
+  private async fetchLatestValidBuild(
+    appId: string,
+    headers: Record<string, string>,
+  ): Promise<{ id: string; version: string } | null> {
+    try {
+      const { data } = await axios.get(`${APPSTORE_CONNECT_API}/builds`, {
+        headers,
+        params: {
+          'filter[app]': appId,
+          'filter[processingState]': 'VALID',
+          sort: '-uploadedDate',
+          limit: 1,
+        },
+        timeout: 15_000,
+      });
+      const build = data?.data?.[0];
+      if (!build?.id) {
+        return null;
+      }
+      return {
+        id: String(build.id),
+        version: String(build.attributes?.version ?? ''),
+      };
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not list builds for App Store Connect app ${appId}`,
+      );
+    }
+  }
+
+  /** null when the build has never been submitted for Beta App Review — App Store Connect shows this as "Ready to Submit". */
+  private async fetchBetaReviewState(
+    buildId: string,
+    headers: Record<string, string>,
+  ): Promise<string | null> {
+    try {
+      const { data } = await axios.get(
+        `${APPSTORE_CONNECT_API}/betaAppReviewSubmissions`,
+        {
+          headers,
+          params: { 'filter[build]': buildId },
+          timeout: 15_000,
+        },
+      );
+      const submission = data?.data?.[0];
+      return submission?.attributes?.betaReviewState
+        ? String(submission.attributes.betaReviewState)
+        : null;
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not read betaAppReviewSubmissions for build ${buildId}`,
+      );
+    }
+  }
+
+  private async fetchExternalGroupAssigned(
+    buildId: string,
+    externalGroupName: string,
+    headers: Record<string, string>,
+  ): Promise<boolean> {
+    try {
+      const { data } = await axios.get(
+        `${APPSTORE_CONNECT_API}/builds/${buildId}/betaGroups`,
+        { headers, timeout: 15_000 },
+      );
+      const groupNames: string[] = (data?.data ?? []).map((group: any) =>
+        String(group?.attributes?.name ?? ''),
+      );
+      return groupNames.includes(externalGroupName);
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not read beta groups for build ${buildId}`,
+      );
+    }
+  }
+
   private async fetchFileContent(
     path: string,
     headers: Record<string, string>,
@@ -367,14 +630,23 @@ export class MobileReleasesService {
   }
 
   /**
-   * GitHub's own error text is far more useful to an admin than a generic
-   * 502 ("Not Found", "Bad credentials"), so it is surfaced rather than
-   * swallowed. Mirrors GithubActionsService.toReadableError.
+   * The upstream API's own error text is far more useful to an admin than a
+   * generic 502 ("Not Found", "Bad credentials"), so it is surfaced rather
+   * than swallowed. Mirrors GithubActionsService.toReadableError. Handles
+   * both GitHub's `{ message }` error body and App Store Connect's JSON:API
+   * `{ errors: [{ title, detail }] }` shape.
    */
   private toReadableError(error: unknown, prefix: string): Error {
-    const axiosError = error as AxiosError<{ message?: string }>;
+    const axiosError = error as AxiosError<{
+      message?: string;
+      errors?: { title?: string; detail?: string }[];
+    }>;
+    const appStoreConnectError = axiosError?.response?.data?.errors?.[0];
     const detail =
       axiosError?.response?.data?.message ??
+      (appStoreConnectError
+        ? `${appStoreConnectError.title ?? ''} ${appStoreConnectError.detail ?? ''}`.trim()
+        : undefined) ??
       (error instanceof Error ? error.message : String(error));
     const status = axiosError?.response?.status;
     this.logger.error(`${prefix}: ${status ?? ''} ${detail}`);

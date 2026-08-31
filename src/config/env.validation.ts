@@ -152,6 +152,16 @@ export const validationSchema = Joi.object({
   /** Publicly reachable base URL a GitHub-hosted runner can call this API back on. */
   PUBLIC_API_BASE_URL: Joi.string().uri().optional(),
 
+  // App Store Connect API — iOS TestFlight status (Mobile Releases admin
+  // page). All optional at the Joi level, same reasoning as
+  // GITHUB_ACTIONS_TOKEN: an environment that hasn't provisioned these yet
+  // should still boot, and MobileReleasesService.getIosTestflightStatus()
+  // refuses cleanly (503) rather than calling Apple with missing credentials.
+  APPSTORE_ISSUER_ID: Joi.string().optional(),
+  APPSTORE_API_KEY_ID: Joi.string().optional(),
+  APPSTORE_API_PRIVATE_KEY: Joi.string().optional(),
+  TESTFLIGHT_EXTERNAL_GROUP_NAME: Joi.string().optional(),
+
   // Voice Preview (TTS provider API keys)
   DEEPGRAM_API_KEY: Joi.string().optional(),
   ELEVENLABS_API_KEY: Joi.string().optional(),

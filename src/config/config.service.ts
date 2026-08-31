@@ -59,6 +59,31 @@ export class AppConfigService {
   }
 
   /**
+   * App Store Connect API credentials, for the super-duper-admin Mobile
+   * Releases page's read-only iOS TestFlight status endpoint. Brand new to
+   * ally-be — these secrets previously only existed as GitHub Actions
+   * secrets on HelloAllyTech/ally-mobile (a separate secrets store) for
+   * scripts/promote-ios-testflight.mjs, and must be provisioned here
+   * separately with the same values before that endpoint will work. All
+   * empty-string-default like githubActionsToken — MobileReleasesService
+   * refuses cleanly rather than minting a JWT with missing credentials.
+   */
+  get appStoreConnect() {
+    return {
+      issuerId: this.configService.get<string>('APPSTORE_ISSUER_ID', ''),
+      apiKeyId: this.configService.get<string>('APPSTORE_API_KEY_ID', ''),
+      privateKey: this.configService.get<string>(
+        'APPSTORE_API_PRIVATE_KEY',
+        '',
+      ),
+      testflightExternalGroupName: this.configService.get<string>(
+        'TESTFLIGHT_EXTERNAL_GROUP_NAME',
+        '',
+      ),
+    };
+  }
+
+  /**
    * Base URL a GitHub-hosted runner can reach this API on, handed to the
    * fix-session workflow so it can report progress back. Falls back to the
    * local port purely so a dev environment fails with an obvious connection

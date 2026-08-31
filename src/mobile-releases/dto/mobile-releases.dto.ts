@@ -132,6 +132,43 @@ export class MobileDispatchResponseDto {
   dispatched!: boolean;
 }
 
+export class IosTestflightStatusResponseDto {
+  @ApiProperty({
+    nullable: true,
+    description:
+      'App Store Connect build version of the latest VALID (fully processed) ' +
+      'build for com.helloally.app. null if no processed build exists yet ' +
+      '(e.g. still processing, or none uploaded).',
+  })
+  buildVersion!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      "App Store Connect's own id for that build. null alongside buildVersion.",
+  })
+  buildId!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Apple's raw betaReviewState enum value from betaAppReviewSubmissions " +
+      '(WAITING_FOR_REVIEW | IN_REVIEW | REJECTED | APPROVED), passed through ' +
+      'verbatim rather than remapped. null if the build has never been ' +
+      'submitted for Beta App Review — App Store Connect shows this state as ' +
+      '"Ready to Submit". Also null when buildId is null.',
+  })
+  betaReviewState!: string | null;
+
+  @ApiProperty({
+    description:
+      'true if the build is associated with the beta group named by the ' +
+      'TESTFLIGHT_EXTERNAL_GROUP_NAME config value. false (never null) when ' +
+      'there is no processed build, or no group matches.',
+  })
+  externalGroupAssigned!: boolean;
+}
+
 export class PromoteAndroidRequestDto {
   @ApiProperty({
     minimum: 1,
