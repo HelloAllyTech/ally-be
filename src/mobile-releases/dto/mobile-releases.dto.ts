@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, Max, Min } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 /**
  * GitHub Actions workflow file names backing the ally-mobile automated
@@ -217,4 +224,16 @@ export class PromoteAndroidRequestDto {
   @Min(1)
   @Max(100)
   rolloutPercentage!: number;
+}
+
+export class SubmitIosAppStoreReviewRequestDto {
+  @ApiProperty({
+    required: false,
+    description:
+      "Optional replacement text for the App Store listing's \"What's New in This Version\" field, applied before submission. Forwarded to submit-ios-app-store-review.yml's whats_new input. Omit to leave whatever is already set in App Store Connect untouched.",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000) // generous sanity cap; Apple's own field limit applies and rejects via the usual error path if exceeded
+  whatsNew?: string;
 }

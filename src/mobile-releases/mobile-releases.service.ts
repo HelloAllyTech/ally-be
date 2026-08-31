@@ -451,8 +451,15 @@ export class MobileReleasesService {
    * workflow requires `Actions: write` scope on GITHUB_ACTIONS_TOKEN. A 403
    * or 404 from GitHub here is the likely symptom of a still-read-only
    * token.
+   *
+   * `whatsNew`, when provided, overwrites the "What's New in This Version"
+   * text on the App Store listing before submission; omitted (or left
+   * empty), whatever's already set in App Store Connect is left untouched —
+   * see submit-ios-app-store-review.yml's own whats_new input handling.
    */
-  async submitIosAppStoreReview(): Promise<MobileDispatchResponseDto> {
+  async submitIosAppStoreReview(
+    whatsNew?: string,
+  ): Promise<MobileDispatchResponseDto> {
     const headers = this.headers;
 
     try {
@@ -460,7 +467,13 @@ export class MobileReleasesService {
       // attempt to read/parse `data` from this response.
       await axios.post(
         `${GITHUB_API}/repos/${this.repo}/actions/workflows/${SUBMIT_IOS_APP_STORE_REVIEW_WORKFLOW_FILE}/dispatches`,
-        { ref: 'master', inputs: {} },
+        {
+          ref: 'master',
+          // workflow_dispatch string inputs must always be strings — an
+          // empty string is how "not provided" is conveyed for this
+          // optional input.
+          inputs: { whats_new: whatsNew ?? '' },
+        },
         { headers, timeout: 15_000 },
       );
       return { dispatched: true };

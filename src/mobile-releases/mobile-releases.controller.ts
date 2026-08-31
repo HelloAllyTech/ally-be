@@ -18,6 +18,7 @@ import {
   MobileReleaseRunsResponseDto,
   MobileTriggerResponseDto,
   PromoteAndroidRequestDto,
+  SubmitIosAppStoreReviewRequestDto,
 } from './dto/mobile-releases.dto';
 
 /**
@@ -132,7 +133,9 @@ export class MobileReleasesController {
   })
   @HttpCode(200)
   @Post('submit-ios-app-store-review')
-  submitIosAppStoreReview(): Promise<MobileDispatchResponseDto> {
-    return this.mobileReleasesService.submitIosAppStoreReview();
+  submitIosAppStoreReview(
+    @Body() body: SubmitIosAppStoreReviewRequestDto,
+  ): Promise<MobileDispatchResponseDto> {
+    return this.mobileReleasesService.submitIosAppStoreReview(body.whatsNew);
   }
 }
