@@ -120,6 +120,28 @@ function describePemShape(pem: string): string {
 }
 
 /**
+ * A Build's own `attributes.version` is Apple's CFBundleVersion — for this app that's the
+ * timestamp-based build number build-ios-production.yml generates (e.g. "1202608310934"), not
+ * the human-meaningful marketing version ("1.23.15") shown everywhere else on the admin page.
+ * That marketing version lives on a separate PrereleaseVersion resource, reachable from the
+ * build via `relationships.preReleaseVersion` — fetched alongside the build in the same request
+ * via `include=preReleaseVersion` rather than a second round-trip per build. Falls back to the
+ * raw build number if the pre-release version can't be resolved for some reason, so the caller
+ * always gets *something* rather than an empty string.
+ */
+function resolveMarketingVersion(build: any, included: any[]): string {
+  const preReleaseVersionId = build?.relationships?.preReleaseVersion?.data?.id;
+  const preReleaseVersion = (included ?? []).find(
+    (item: any) =>
+      item?.type === 'preReleaseVersions' && item?.id === preReleaseVersionId,
+  );
+  const marketingVersion = preReleaseVersion?.attributes?.version;
+  return marketingVersion
+    ? String(marketingVersion)
+    : String(build?.attributes?.version ?? '');
+}
+
+/**
  * Straight passthrough to GitHub's REST API for the ally-mobile release
  * pipeline — no caching, per the same reasoning as the AWS Logs viewer:
  * GitHub's own rate limits are generous for a low-traffic admin page, and a
@@ -623,14 +645,16 @@ export class MobileReleasesService {
           'filter[processingState]': 'VALID',
           sort: '-uploadedDate',
           limit: TESTFLIGHT_HISTORY_BUILD_LIMIT,
+          include: 'preReleaseVersion',
         },
         timeout: 15_000,
       });
+      const included = data?.included ?? [];
       return (data?.data ?? [])
         .filter((build: any) => build?.id)
         .map((build: any) => ({
           id: String(build.id),
-          version: String(build.attributes?.version ?? ''),
+          version: resolveMarketingVersion(build, included),
           uploadedDate: String(build.attributes?.uploadedDate ?? ''),
         }));
     } catch (error) {
@@ -677,6 +701,7 @@ export class MobileReleasesService {
           'filter[processingState]': 'VALID',
           sort: '-uploadedDate',
           limit: 1,
+          include: 'preReleaseVersion',
         },
         timeout: 15_000,
       });
@@ -686,7 +711,7 @@ export class MobileReleasesService {
       }
       return {
         id: String(build.id),
-        version: String(build.attributes?.version ?? ''),
+        version: resolveMarketingVersion(build, data?.included ?? []),
       };
     } catch (error) {
       throw this.toReadableError(
