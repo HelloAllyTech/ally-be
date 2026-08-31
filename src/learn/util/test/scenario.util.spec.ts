@@ -488,14 +488,14 @@ describe('Scenario Util', () => {
       });
     });
 
-    it('should persist feedbackTabs (e.g. Skills toggled off) into metadata', () => {
+    it('should persist feedbackTabs (e.g. Transcript toggled off) into metadata', () => {
       const userId = 505;
       const existingScenario = {
         id: 1,
         metadata: { name: 'Existing' },
       } as unknown as Scenarios;
       const dto: UpdateScenarioDto = {
-        feedbackTabs: { debrief: true, skills: false, transcript: true },
+        feedbackTabs: { debrief: true, transcript: false },
       } as any;
 
       const result = mapUpdateScenarioRequestToEntity(
@@ -506,7 +506,28 @@ describe('Scenario Util', () => {
 
       expect(result.metadata).toEqual({
         name: 'Existing',
-        feedbackTabs: { debrief: true, skills: false, transcript: true },
+        feedbackTabs: { debrief: true, transcript: false },
+      });
+    });
+
+    it('should NOT persist the retired enableFeedback master switch', () => {
+      // Migration 1944200000000 strips this key; writing it back on the next
+      // save of any roleplay would quietly undo that cleanup.
+      const existingScenario = {
+        id: 1,
+        metadata: { name: 'Existing' },
+      } as unknown as Scenarios;
+      const dto: UpdateScenarioDto = {
+        enableFeedback: false,
+        feedbackTabs: { debrief: false, transcript: false },
+      } as any;
+
+      const result = mapUpdateScenarioRequestToEntity(dto, existingScenario, 505);
+
+      expect(result.metadata).not.toHaveProperty('enableFeedback');
+      expect(result.metadata).toEqual({
+        name: 'Existing',
+        feedbackTabs: { debrief: false, transcript: false },
       });
     });
   });
