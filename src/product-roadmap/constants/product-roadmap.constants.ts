@@ -269,3 +269,28 @@ export const ROADMAP_CAP_ERROR_MARKER = 'ROADMAP_MONTHLY_CAP_EXCEEDED';
 
 /** Advisory-lock namespace for serialising a user's allocation writes within a period. */
 export const ROADMAP_ALLOCATION_LOCK_NAMESPACE = 'roadmap:allocation';
+
+/**
+ * The opportunity owner picker's options, by email.
+ *
+ * Owning an opportunity is a named product-leadership responsibility, not a permission — the four
+ * people below are the ones who actually drive delivery, and they are a strict subset of the
+ * platform admins. Deriving the list from PLATFORM_TIER_ROLES group membership (what this
+ * replaced) put every staff account in the dropdown, which made the picker a directory to scroll
+ * rather than a short list of accountable owners.
+ *
+ * Email rather than user id because ids differ per environment; matched case-insensitively, so
+ * keep these lowercase. `+admin` addressing is significant — it is a distinct account.
+ *
+ * Adding or removing an owner is a one-line edit here plus a deploy. That is deliberate: the set
+ * changes about as often as the leadership team does, and a hardcoded list cannot silently drift
+ * the way a group-derived one did. Existing assignments are NOT rewritten when someone leaves the
+ * list — history should not change under a rename — but they can no longer be re-assigned to that
+ * person, and RoadmapOpportunityService.assertEligibleOwner answers 422 if anyone tries.
+ */
+export const ROADMAP_OWNER_EMAILS: readonly string[] = [
+  'sandeep.malhotra@helloally.ai',
+  'ajey@helloally.ai',
+  'shubham.bhoite+admin@helloally.ai',
+  'gopikrishnan.sasikumar@helloally.ai',
+] as const;

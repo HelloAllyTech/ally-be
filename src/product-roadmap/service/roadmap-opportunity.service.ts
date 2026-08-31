@@ -25,7 +25,10 @@ import {
   RoadmapOpportunityRepository,
   RoadmapOpportunityRow,
 } from '../repository/roadmap-opportunity.repository';
-import { BUG_REPORT_DEFAULT_PRODUCT_GOAL } from '../constants/product-roadmap.constants';
+import {
+  BUG_REPORT_DEFAULT_PRODUCT_GOAL,
+  ROADMAP_OWNER_EMAILS,
+} from '../constants/product-roadmap.constants';
 import {
   CreateBugReportDto,
   CreateOpportunityDto,
@@ -301,7 +304,14 @@ export class RoadmapOpportunityService {
       // migrated saved view keeps working after its owner is linked to a real account.
       patch.ownerUserId = dto.ownerUserId ?? null;
       if (dto.ownerUserId !== null) {
-        await this.assertEligibleOwner(dto.ownerUserId);
+        // Only a CHANGE of owner is validated. Now that the picker is the short
+        // ROADMAP_OWNER_EMAILS list, rows owned by someone who predates it are normal — and the
+        // drawer re-sends that unchanged id on every unrelated edit. Validating it again would
+        // make those rows uneditable until somebody reassigned them, which is a worse outcome
+        // than letting a grandfathered owner stand. Reassigning still has to land on the list.
+        if (dto.ownerUserId !== existing.ownerUserId) {
+          await this.assertEligibleOwner(dto.ownerUserId);
+        }
       } else {
         // Un-assigning must also clear a legacy string, or the row would keep displaying a name
         // for an opportunity nobody owns.
@@ -507,26 +517,23 @@ export class RoadmapOpportunityService {
   }
 
   /**
-   * The users who may own an opportunity: Ally platform-tier accounts (PLATFORM_ADMIN, plus the
-   * retired SUPER_ADMIN / SUPER_DUPER_ADMIN / MULTI_TENANT_ADMIN tiers it collapsed) — see
-   * PLATFORM_TIER_ROLES.
+   * The users who may own an opportunity: the named accounts in ROADMAP_OWNER_EMAILS.
    *
-   * Group membership is the source of truth rather than a hand-maintained list, so somebody losing
-   * platform-admin stops appearing here without anyone remembering to prune a taxonomy table. Their
-   * existing assignments are left alone — history should not silently rewrite itself.
+   * Previously this was every PLATFORM_TIER_ROLES account, which turned the picker into a staff
+   * directory — see the constant for why a short, explicit list replaced it. Matching is on
+   * lowercased email so a `+admin` alias resolves to exactly that account and nothing else.
+   *
+   * A listed address with no Ally user simply contributes no option; the picker degrades to the
+   * owners that do exist rather than failing. Existing assignments to someone no longer listed are
+   * left alone — history should not silently rewrite itself — but cannot be re-made.
    */
   async listEligibleOwners(): Promise<RoadmapEligibleOwnerDto[]> {
     const rows = await this.userRepository
       .createQueryBuilder('user')
       .select(['user.id', 'user.name', 'user.email'])
-      .where(
-        `EXISTS (
-           SELECT 1 FROM user_groups ug
-           INNER JOIN groups g ON g.id = ug."groupId"
-           WHERE ug."userId" = "user"."id" AND g.name IN (:...roles)
-         )`,
-        { roles: PLATFORM_TIER_ROLES },
-      )
+      .where('LOWER(user.email) IN (:...emails)', {
+        emails: ROADMAP_OWNER_EMAILS,
+      })
       .orderBy('user.name', 'ASC')
       .getMany();
 
@@ -534,7 +541,7 @@ export class RoadmapOpportunityService {
   }
 
   /**
-   * Reject an owner who is not a super-admin.
+   * Reject an owner who is not on the roadmap owner list.
    *
    * 422 rather than 400: the id is well-formed, it just names someone ineligible — the same shape
    * the vote-cap breach uses, so the client can show the message rather than a generic failure.
@@ -543,7 +550,7 @@ export class RoadmapOpportunityService {
     const eligible = await this.listEligibleOwners();
     if (!eligible.some((u) => u.id === userId)) {
       throw new UnprocessableEntityException(
-        'An opportunity owner must be an Ally super-admin user.',
+        'That user is not on the roadmap owner list.',
       );
     }
   }

@@ -21,12 +21,14 @@ import {
   ListOpportunitiesQueryDto,
 } from '../../dto/roadmap-opportunity.dto';
 import { RoadmapOpportunityType } from '../../enum/roadmap-opportunity.enum';
+import { ROADMAP_OWNER_EMAILS } from '../../constants/product-roadmap.constants';
 
 const OPP_ID = '11111111-1111-1111-1111-111111111111';
 
 /**
- * An opportunity owner must be an Ally super-admin. These cover the rule itself and the two
- * representations the column pair carries — see the docblock on migration 1871000000004.
+ * An opportunity owner must be one of the named accounts in ROADMAP_OWNER_EMAILS. These cover
+ * the rule itself and the two representations the column pair carries — see the docblock on
+ * migration 1871000000004.
  */
 describe('RoadmapOpportunityService — owners', () => {
   let service: RoadmapOpportunityService;
@@ -40,7 +42,7 @@ describe('RoadmapOpportunityService — owners', () => {
   let userQueryBuilder: { getMany: jest.Mock } & Record<string, jest.Mock>;
   let userRepository: { createQueryBuilder: jest.Mock; find: jest.Mock };
 
-  /** ally-be resolves eligibility from SUPER_ADMIN / SUPER_DUPER_ADMIN group membership. */
+  /** ally-be resolves eligibility by email against ROADMAP_OWNER_EMAILS. */
   const givenEligibleOwners = (users: Partial<User>[]) =>
     userQueryBuilder.getMany.mockResolvedValue(users);
 
@@ -117,7 +119,7 @@ describe('RoadmapOpportunityService — owners', () => {
     service = module.get(RoadmapOpportunityService);
   });
 
-  it('lists only super-admin users as eligible owners', async () => {
+  it('lists only the named roadmap owners as eligible', async () => {
     givenEligibleOwners([
       { id: 7, name: 'Ada Admin', email: 'ada@helloally.ai' },
     ]);
@@ -125,27 +127,25 @@ describe('RoadmapOpportunityService — owners', () => {
     await expect(service.listEligibleOwners()).resolves.toEqual([
       { id: 7, name: 'Ada Admin', email: 'ada@helloally.ai' },
     ]);
-    // Group membership is the source of truth, so the query must constrain on roles rather than
-    // read a hand-maintained taxonomy table.
-    const [[, params]] = userQueryBuilder.where.mock.calls;
-    expect(params.roles).toEqual(
-      expect.arrayContaining(['SUPER_ADMIN', 'SUPER_DUPER_ADMIN']),
-    );
+    // The named list is the source of truth, not group membership: constraining on
+    // PLATFORM_TIER_ROLES again would put every staff account back in the picker.
+    const [[clause, params]] = userQueryBuilder.where.mock.calls;
+    expect(clause).toContain('LOWER(user.email) IN');
+    expect(params.roles).toBeUndefined();
+    expect(params.emails).toEqual([...ROADMAP_OWNER_EMAILS]);
   });
 
-  it('also treats present-day PLATFORM_ADMIN accounts as eligible owners', async () => {
-    // Staff promoted through the current admin-management screen only ever gain PLATFORM_ADMIN,
-    // not the two retired SUPER_ADMIN / SUPER_DUPER_ADMIN tiers — see the docblock on
-    // PLATFORM_TIER_ROLES in src/common/constants/user.constants.ts. A query built against the
-    // retired tiers alone silently excludes every admin created since the collapse.
-    givenEligibleOwners([
-      { id: 9, name: 'Pat PlatformAdmin', email: 'pat@helloally.ai' },
-    ]);
-
+  it('matches owner emails in lowercase, `+` alias included', async () => {
+    // `shubham.bhoite+admin@` is a distinct account from `shubham.bhoite@`, so the constant is
+    // compared verbatim apart from case — stripping or normalising the alias would either
+    // match the wrong user or match nobody.
     await service.listEligibleOwners();
 
     const [[, params]] = userQueryBuilder.where.mock.calls;
-    expect(params.roles).toEqual(expect.arrayContaining(['PLATFORM_ADMIN']));
+    expect(params.emails).toEqual(
+      params.emails.map((e: string) => e.toLowerCase()),
+    );
+    expect(params.emails).toContain('shubham.bhoite+admin@helloally.ai');
   });
 
   it('assigns ownerUserId and does NOT write the legacy owner column', async () => {
@@ -160,13 +160,30 @@ describe('RoadmapOpportunityService — owners', () => {
     expect(patch).not.toHaveProperty('owner');
   });
 
-  it('rejects an owner who is not a super-admin with 422', async () => {
+  it('rejects an owner who is not a named roadmap owner with 422', async () => {
     givenEligibleOwners([{ id: 7, name: 'Ada Admin', email: 'a@b.c' }]);
 
     await expect(
       service.update(1, OPP_ID, { ownerUserId: 99 }),
     ).rejects.toThrow(UnprocessableEntityException);
     expect(opportunityRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('lets an unrelated edit keep an owner who is no longer on the list', async () => {
+    // A row assigned before ROADMAP_OWNER_EMAILS narrowed re-sends its existing owner id on every
+    // save the drawer makes. Re-validating an UNCHANGED owner would make that row uneditable
+    // until somebody reassigned it — a worse outcome than a grandfathered owner standing.
+    opportunityRepository.findOne.mockResolvedValue({
+      id: OPP_ID,
+      stage: 'new',
+      ownerUserId: 99,
+    });
+    givenEligibleOwners([{ id: 7, name: 'Ada Admin', email: 'a@b.c' }]);
+
+    await service.update(1, OPP_ID, { ownerUserId: 99, prd: 'unrelated edit' });
+
+    const [, patch] = opportunityRepository.update.mock.calls[0];
+    expect(patch.ownerUserId).toBe(99);
   });
 
   it('un-assigning clears BOTH representations', async () => {
@@ -223,7 +240,7 @@ describe('RoadmapOpportunityService — owners', () => {
     expect(opportunityRepository.save).not.toHaveBeenCalled();
   });
 
-  it('rejects filing against an owner who is not a super-admin with 422', async () => {
+  it('rejects filing against an owner who is not a named roadmap owner with 422', async () => {
     givenEligibleOwners([{ id: 7, name: 'Ada Admin', email: 'a@b.c' }]);
 
     await expect(
