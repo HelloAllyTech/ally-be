@@ -866,12 +866,6 @@ export class LearnController {
     description: 'Sort order (default: DESC)',
   })
   @ApiQuery({
-    name: 'includeTags',
-    required: false,
-    type: Boolean,
-    description: 'When true, include message tags in the response',
-  })
-  @ApiQuery({
     name: 'languageCode',
     required: false,
     type: String,
@@ -886,7 +880,6 @@ export class LearnController {
     @Query('offset') offset?: number,
     @Query('sortBy') sortBy?: string,
     @Query('order') order: SortOrder = SortOrder.ASC,
-    @Query('includeTags') includeTags?: boolean,
     @Query('languageCode') languageCode?: string,
   ) {
     return this.scenarioSessionService.getMessagesByScenarioSessionId(
@@ -897,7 +890,6 @@ export class LearnController {
         sortBy,
         order,
       },
-      { includeTags: !!includeTags },
       languageCode,
     );
   }
