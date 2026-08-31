@@ -554,6 +554,7 @@ export class MobileReleasesService {
     const [betaReviewState, externalGroupAssigned] = await Promise.all([
       this.fetchBetaReviewState(build.id, headers),
       this.fetchExternalGroupAssigned(
+        appId,
         build.id,
         testflightExternalGroupName,
         headers,
@@ -721,24 +722,58 @@ export class MobileReleasesService {
     }
   }
 
+  /**
+   * Whether `buildId` is a member of the named external testing group. Checked from the
+   * GROUP's side, not the build's: GET /v1/builds/{id}/betaGroups doesn't exist on Apple's API
+   * (confirmed live — it 409s with "The relationship 'betaGroups' does not allow
+   * 'GET_RELATED'. Allowed operations are: CREATE, DELETE"), and the relationship-links variant
+   * at /v1/builds/{id}/relationships/betaGroups only supports POST/DELETE, no GET either.
+   * GET /v1/betaGroups/{id}/relationships/builds does support GET, so membership has to be
+   * checked from the group looking at its builds, the reverse direction from what "is this
+   * build in that group" reads like. Verified against Apple's own current OpenAPI spec.
+   */
   private async fetchExternalGroupAssigned(
+    appId: string,
     buildId: string,
     externalGroupName: string,
     headers: Record<string, string>,
   ): Promise<boolean> {
     try {
-      const { data } = await axios.get(
-        `${APPSTORE_CONNECT_API}/builds/${buildId}/betaGroups`,
-        { headers, timeout: 15_000 },
+      const { data: groupsData } = await axios.get(
+        `${APPSTORE_CONNECT_API}/betaGroups`,
+        {
+          headers,
+          params: {
+            'filter[app]': appId,
+            'filter[name]': externalGroupName,
+            limit: 1,
+          },
+          timeout: 15_000,
+        },
       );
-      const groupNames: string[] = (data?.data ?? []).map((group: any) =>
-        String(group?.attributes?.name ?? ''),
+      const groupId = groupsData?.data?.[0]?.id;
+      if (!groupId) {
+        // No group with this name exists (yet) — not assigned to it, but not an error either;
+        // the same "not found" case ally-mobile's promote-ios-testflight.mjs treats as a clear
+        // configuration problem (wrong TESTFLIGHT_EXTERNAL_GROUP_NAME) rather than surfacing it
+        // here, since a stale/misconfigured group name shouldn't break the whole status view.
+        return false;
+      }
+
+      // Lightweight relationship-links form (just {type, id} pairs), not the full betaGroups
+      // GET /v1/betaGroups/{id}/builds resource form — cheaper, and all that's needed here.
+      const { data: buildsData } = await axios.get(
+        `${APPSTORE_CONNECT_API}/betaGroups/${groupId}/relationships/builds`,
+        { headers, params: { limit: 200 }, timeout: 15_000 },
       );
-      return groupNames.includes(externalGroupName);
+      const buildIds: string[] = (buildsData?.data ?? []).map((b: any) =>
+        String(b?.id ?? ''),
+      );
+      return buildIds.includes(buildId);
     } catch (error) {
       throw this.toReadableError(
         error,
-        `Could not read beta groups for build ${buildId}`,
+        `Could not check whether build ${buildId} is in the "${externalGroupName}" beta group`,
       );
     }
   }
