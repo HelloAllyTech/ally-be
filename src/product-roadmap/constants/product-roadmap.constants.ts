@@ -157,39 +157,82 @@ export const ROADMAP_PROMPT_CODES = {
  * The readiness checklist the "Check readiness" button grades a draft against, and the gate on
  * filing: every item must come back green before the opportunity can be filed.
  *
- * SEED LIST — expected to change. It lives here, server-side, as the single source of truth:
- * the admin drawer renders whatever this returns rather than holding its own copy, so editing
- * this array is the whole change. The ids are the join key between the criteria the UI shows
- * and the verdicts the model returns, so treat an id as permanent once shipped — renaming one
- * silently drops its verdict and fails that item closed.
+ * EXPECTED TO CHANGE. It lives here, server-side, as the single source of truth: the admin
+ * drawer renders whatever this returns rather than holding its own copy, so editing this array
+ * is the whole change. The ids are the join key between the criteria the UI shows and the
+ * verdicts the model returns, so treat an id as permanent once shipped — renaming one silently
+ * drops its verdict and fails that item closed. (Renaming is nonetheless safe to DO: verdicts
+ * live in the drawer's local state for the length of one draft and are never persisted against
+ * a filed row.)
  *
- * The four here are the gatekeeping questions the team's own discovery guidance applies before
- * an opportunity earns a place on the tree (Stacks: "Filter opportunities by specificity and
- * validation criteria"): framed as a need rather than a solution, specific rather than a theme,
- * attributable to more than one person, and tied to an outcome.
+ * These five apply the team's discovery guidance at the point of filing (Stacks: "Filter
+ * opportunities by specificity and validation criteria"), with two deliberate departures from
+ * the strict reading of it:
+ *
+ * 1. A GAIN COUNTS, not only a pain. Stacks: "Frame customer needs as opportunities, not just
+ *    problems" — the frame has to hold desires and delights, or the checklist quietly rejects
+ *    every idea that adds something rather than repairing something.
+ * 2. A PROPOSED SOLUTION IS ALLOWED, as long as the goal stands without it. The strict rule
+ *    ("Distinguish Opportunities from Disguised Solutions") rejects any draft that names a
+ *    feature, which in practice made people delete the most concrete thing they knew. What
+ *    actually matters is the ORDER: strike the proposed build and there must still be a stated
+ *    goal underneath. `goal_before_solution` grades that, and nothing grades solution-mention
+ *    on its own.
+ *
+ * What is deliberately NOT here:
+ * - SIZE. Graded from the effort the same call already proposes — see ROADMAP_FILEABLE_EFFORTS
+ *   — so that the model cannot pass "small enough" while sizing the same draft XL.
+ * - EVIDENCE ("more than one person said this"). It is a validation test, not a clarity test,
+ *   and it failed real gaps spotted internally or derived from a bug report.
+ * - USER-STORY FORMAT. Carried by the field placeholder and by the redraft, never gated: a
+ *   clear plain-English opportunity must not be blocked over its shape, and criteria 3-5
+ *   already grade the content the format would carry.
  */
 export const ROADMAP_READINESS_CRITERIA = [
   {
-    id: 'problem_not_solution',
-    label: 'Describes a problem, not a solution',
-    hint: 'Framed as a need, pain point or desire — not the feature you would build for it.',
+    id: 'pain_or_gain',
+    label: 'Names a real pain or a real gain',
+    hint: 'A hurt to remove or a win to add for someone — not an activity ("add a dashboard", "use AI here") with no stated benefit.',
+  },
+  {
+    id: 'goal_before_solution',
+    label: 'Leads with the goal, not the build',
+    hint: 'Naming a possible solution is fine. Strike it, and the entry must still say what we are trying to achieve.',
   },
   {
     id: 'specific',
-    label: 'Specific enough to act on',
-    hint: 'One narrow problem, not a broad theme like "the interface is hard to use".',
+    label: 'Narrow enough to act on',
+    hint: 'One situation at one moment — not a theme like "onboarding is confusing" or "the interface is hard to use".',
   },
   {
     id: 'who_it_affects',
-    label: 'Names who hits it',
-    hint: "Says whose problem this is, and that it is more than one person's opinion.",
+    label: 'Names the user group it affects',
+    hint: 'Which users — counsellors, learners mid-track, admins of one tenant — not "users" in general.',
   },
   {
     id: 'outcome',
-    label: 'Says what solving it changes',
-    hint: 'The impact — what those people would be able to do, or stop losing.',
+    label: 'Says what changes for them',
+    hint: 'What that group can then do, stop losing, or gain — stated so we could later tell whether it happened.',
   },
 ] as const;
+
+/**
+ * The sizes an opportunity may be filed at. Anything larger is not one opportunity — it is a
+ * set of them, and Stacks ("Select leaf-node opportunities for iterative value delivery") is
+ * explicit that value lands by solving a series of smaller ones in succession rather than
+ * taking a whole set at once. So L and up BLOCK filing, with the redraft asked to narrow the
+ * draft to a single shippable slice.
+ *
+ * Served to the drawer alongside the criteria so the threshold lives in one place; the drawer
+ * renders it as a sixth checklist row rather than as a hidden rule that greys out the button
+ * for no visible reason.
+ *
+ * Sized against the effort currently in the field, which the filer may correct: the model
+ * sizes from prose and gets it wrong both ways, and a gate a human cannot answer to is a gate
+ * people route around by writing vaguer drafts. Correcting the size to something fileable is
+ * an explicit act, visible in the row that turns green.
+ */
+export const ROADMAP_FILEABLE_EFFORTS = ['s', 'm'] as const;
 
 /**
  * Marker raised by roadmap_enforce_monthly_cap(). The trigger's SQLSTATE is P0001, which

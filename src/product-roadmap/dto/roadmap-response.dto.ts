@@ -282,6 +282,15 @@ export class AiReadinessCriterionDto {
 export class AiReadinessCriteriaResponseDto {
   @ApiProperty({ type: [AiReadinessCriterionDto] })
   criteria!: AiReadinessCriterionDto[];
+
+  /**
+   * The sizes an opportunity may be filed at (ROADMAP_FILEABLE_EFFORTS). Served with the
+   * checklist so the threshold has one home: the drawer renders a size row from this rather
+   * than hardcoding "S or M" in the bundle, where it would drift the first time the team
+   * decides an L is fileable after all.
+   */
+  @ApiProperty({ enum: RoadmapOpportunityEffort, isArray: true })
+  fileableEfforts!: RoadmapOpportunityEffort[];
 }
 
 export class AiReadinessResultDto {
@@ -305,6 +314,21 @@ export class AiReadinessResponseDto {
 
   /** One sentence on why that size. Empty when there is no size to explain. */
   @ApiProperty() effortReason!: string;
+
+  /**
+   * A rewritten draft that would pass, offered only when something did NOT pass — null when
+   * every criterion is green and the size is fileable, because there is then nothing to
+   * propose. The drawer shows it under the failing rows behind an explicit "Use this"; it
+   * never replaces what the filer wrote on its own.
+   *
+   * It may contain [square-bracketed questions] where the original genuinely lacked something
+   * a criterion needs. That is the designed answer, not a defect: the alternative is a model
+   * inventing a user group or a benefit, and an invented fact filed as an opportunity is worse
+   * than a gap the filer can see and fill. Accepting one re-opens the gate (the description
+   * changed), so a bracket left in place cannot be filed.
+   */
+  @ApiProperty({ nullable: true })
+  redraft!: string | null;
 }
 
 export class AiEnhanceResponseDto {
