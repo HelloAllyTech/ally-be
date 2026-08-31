@@ -13,6 +13,8 @@ import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
 import { RoadmapOpportunityService } from '../roadmap-opportunity.service';
 import { RoadmapOpportunityRepository } from '../../repository/roadmap-opportunity.repository';
 import { RoadmapVectorService } from '../roadmap-vector.service';
+import { RoadmapStrategyGoalService } from '../roadmap-strategy-goal.service';
+import { RoadmapGoalImpactService } from '../roadmap-goal-impact.service';
 import { RoadmapNotificationService } from '../roadmap-notification.service';
 import {
   CreateOpportunityDto,
@@ -82,6 +84,27 @@ describe('RoadmapOpportunityService — owners', () => {
         {
           provide: RoadmapVectorService,
           useValue: { indexQuietly: jest.fn(), removeQuietly: jest.fn() },
+        },
+        // Ranking plays no part in owner resolution; these satisfy the constructor so the
+        // owner-picker assertions stay the only thing this suite is about.
+        {
+          provide: RoadmapStrategyGoalService,
+          useValue: {
+            countGoals: jest.fn().mockResolvedValue(0),
+            getRankContext: jest.fn().mockResolvedValue({
+              weights: {
+                votesWeight: 1,
+                votersWeight: 1,
+                effortWeight: 1,
+                goalImpactWeight: 1,
+              },
+              bases: { maxScore: 0, maxVoters: 0, totalGoals: 0 },
+            }),
+          },
+        },
+        {
+          provide: RoadmapGoalImpactService,
+          useValue: { assessQuietly: jest.fn() },
         },
         { provide: RoadmapNotificationService, useValue: { emit: jest.fn() } },
         {

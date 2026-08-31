@@ -54,9 +54,21 @@ import {
   ReindexResponseDto,
   RoadmapEligibleOwnerDto,
 } from '../dto/roadmap-response.dto';
+import {
+  BulkAssessResponseDto,
+  CreateStrategyGoalDto,
+  GoalImpactVerdictDto,
+  RankWeightsResponseDto,
+  RenameStrategyGoalDto,
+  ReorderStrategyGoalsDto,
+  StrategyGoalsResponseDto,
+  UpdateRankWeightsDto,
+} from '../dto/roadmap-strategy.dto';
 import { RoadmapImportService } from '../service/roadmap-import.service';
 import { RoadmapOpportunityService } from '../service/roadmap-opportunity.service';
 import { RoadmapTaxonomyService } from '../service/roadmap-taxonomy.service';
+import { RoadmapStrategyGoalService } from '../service/roadmap-strategy-goal.service';
+import { RoadmapGoalImpactService } from '../service/roadmap-goal-impact.service';
 import { RoadmapInterviewNoteService } from '../service/roadmap-content.service';
 import { RoadmapAiService } from '../service/roadmap-ai.service';
 import { RoadmapVectorService } from '../service/roadmap-vector.service';
@@ -81,6 +93,8 @@ export class RoadmapAdminController {
     private readonly opportunityService: RoadmapOpportunityService,
     private readonly importService: RoadmapImportService,
     private readonly access: RoadmapAccessService,
+    private readonly strategyGoalService: RoadmapStrategyGoalService,
+    private readonly goalImpactService: RoadmapGoalImpactService,
   ) {}
 
   // ── taxonomy ──────────────────────────────────────────────────────────────
@@ -239,6 +253,174 @@ export class RoadmapAdminController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.taxonomyService.deleteOwner(user.id, id);
+  }
+
+  // ── product strategy goals & composite rank ───────────────────────────────
+  // A DIFFERENT CONCEPT from the product goals above, and worth not conflating: those are
+  // CATEGORIES (exactly one per opportunity, used to file and filter). These are OUTCOMES the
+  // board is ranked against, and one opportunity may advance several or none. Same id-not-name
+  // path-parameter rule, for the same reason.
+
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @Get('strategy-goals')
+  @ApiOperation({
+    summary: 'Strategy goals, each with its unassessed count',
+    description:
+      'VIEW-gated rather than EDIT-gated because every card shows a coverage figure these ' +
+      'goals define — a reader who cannot name them cannot read the rank.',
+  })
+  @ApiResponse({ status: HttpStatus.OK, type: StrategyGoalsResponseDto })
+  async listStrategyGoals(): Promise<StrategyGoalsResponseDto> {
+    const [goals, unassessed, needingAssessment] = await Promise.all([
+      this.strategyGoalService.listGoals(),
+      this.strategyGoalService.getUnassessedCounts(),
+      this.goalImpactService.countNeedingAssessment(),
+    ]);
+    return {
+      goals: goals.map((g) => ({
+        id: g.id,
+        name: g.name,
+        position: g.position,
+        unassessed: unassessed[g.name] ?? 0,
+      })),
+      needingAssessment,
+    };
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Post('strategy-goals')
+  @ApiOperation({
+    summary: 'Add a strategy goal',
+    description:
+      'Returns how many opportunities are now unassessed against it. Adding a goal grows the ' +
+      'coverage denominator, so every score drops until a bulk assessment catches up — the ' +
+      'count is returned so the UI can say so instead of letting the board look re-ranked.',
+  })
+  createStrategyGoal(
+    @CurrentUser() user: TokenUser,
+    @Body() dto: CreateStrategyGoalDto,
+  ) {
+    return this.strategyGoalService.createGoal(user.id, dto.name);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Patch('strategy-goals/:id')
+  @ApiOperation({
+    summary: 'Rename a strategy goal',
+    description:
+      'Free: ON UPDATE CASCADE carries every stored verdict across, so nothing needs ' +
+      'reassessing. A rename that changes the goal MEANING does leave verdicts judged against ' +
+      'the old intent — reassess explicitly if so.',
+  })
+  renameStrategyGoal(
+    @CurrentUser() user: TokenUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RenameStrategyGoalDto,
+  ) {
+    return this.strategyGoalService.renameGoal(user.id, id, dto.name);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Put('strategy-goals/order')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  reorderStrategyGoals(
+    @CurrentUser() user: TokenUser,
+    @Body() dto: ReorderStrategyGoalsDto,
+  ): Promise<void> {
+    return this.strategyGoalService.reorderGoals(user.id, dto.ids);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Delete('strategy-goals/:id')
+  @ApiOperation({
+    summary: 'Delete a strategy goal',
+    description:
+      'Never blocks: the verdicts cascade away and coverage recomputes against the smaller ' +
+      'denominator with no LLM calls. Returns how many assessments were discarded, because ' +
+      'they cost money to produce and this is not reversible.',
+  })
+  deleteStrategyGoal(
+    @CurrentUser() user: TokenUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.strategyGoalService.deleteGoal(user.id, id);
+  }
+
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @Get('rank-weights')
+  @ApiOperation({ summary: 'The four composite-rank factor weights' })
+  @ApiResponse({ status: HttpStatus.OK, type: RankWeightsResponseDto })
+  getRankWeights() {
+    return this.strategyGoalService.getWeights();
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Patch('rank-weights')
+  @ApiOperation({
+    summary: 'Retune the composite rank',
+    description:
+      'PATCH semantics on purpose — one slider at a time, so two admins tuning different ' +
+      'factors do not overwrite each other. Costs nothing but a re-sort: weights apply in SQL ' +
+      'over factors that already exist, so this never re-runs the model.',
+  })
+  updateRankWeights(
+    @CurrentUser() user: TokenUser,
+    @Body() dto: UpdateRankWeightsDto,
+  ) {
+    return this.strategyGoalService.updateWeights(user.id, dto);
+  }
+
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @Get('opportunities/:id/goal-impact')
+  @ApiOperation({ summary: "One opportunity's strategy-goal verdicts" })
+  @ApiResponse({ status: HttpStatus.OK, type: [GoalImpactVerdictDto] })
+  listGoalImpact(@Param('id', ParseUUIDPipe) id: string) {
+    return this.goalImpactService.listForOpportunity(id);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Post('opportunities/:id/goal-impact')
+  @ApiOperation({
+    summary: 'Reassess one opportunity against the current strategy',
+    description:
+      'The correction path for a verdict you disagree with. Verdicts are machine-derived and ' +
+      'deliberately not hand-editable — a ranking input anyone could edit is one people would ' +
+      'edit to move their own idea up.',
+  })
+  @ApiResponse({ status: HttpStatus.OK, type: [GoalImpactVerdictDto] })
+  reassessGoalImpact(
+    @CurrentUser() user: TokenUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.goalImpactService.assess(id, user.id);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Post('strategy-goals/assess-missing')
+  @ApiOperation({
+    summary: 'Assess opportunities missing a verdict for at least one goal',
+    description:
+      'BOUNDED, and reports what remains. Adding a goal makes the whole board stale at once, ' +
+      'and one request that billed all of it would time out — so a big backlog is several ' +
+      'clicks rather than one call that silently truncates.',
+  })
+  @ApiResponse({ status: HttpStatus.OK, type: BulkAssessResponseDto })
+  assessMissing(@CurrentUser() user: TokenUser) {
+    return this.goalImpactService.assessMissing(user.id);
   }
 
   // ── interview notes ───────────────────────────────────────────────────────

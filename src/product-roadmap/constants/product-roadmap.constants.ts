@@ -63,6 +63,30 @@ export const ROADMAP_LIMITS = {
   SAVED_VIEW_NAME_MAX: 100,
   GOAL_NAME_MAX: 200,
   OWNER_NAME_MAX: 200,
+  STRATEGY_GOAL_NAME_MAX: 200,
+  /** Cap on the model's justification for one goal-impact verdict. Matches the CHECK. */
+  GOAL_IMPACT_REASON_MAX: 500,
+} as const;
+
+/**
+ * Composite-rank tuning that is NOT admin-settable, kept here so the two places that need it
+ * (the assessment service and its tests) cannot disagree.
+ */
+export const ROADMAP_RANK = {
+  /**
+   * Hard ceiling on strategy goals. The impact prompt asks for a verdict per goal in ONE call,
+   * so the goal list is the thing that grows the response — and coverage gets less meaningful
+   * the more goals there are (a strategy of twenty goals is not a strategy). Enforced when
+   * creating a goal, with a message that says so.
+   */
+  MAX_STRATEGY_GOALS: 12,
+  /**
+   * Opportunities re-assessed per bulk run. A bound, not a target: adding a strategy goal makes
+   * every rankable opportunity stale at once, and an unbounded run would bill the whole board in
+   * one request and time out the HTTP call. The endpoint reports how many remain so the caller
+   * can run it again rather than silently truncating.
+   */
+  BULK_ASSESS_LIMIT: 25,
 } as const;
 
 /**
@@ -149,6 +173,7 @@ export const ROADMAP_PROMPT_CODES = {
   ENHANCE_DRAFT: 'roadmap_enhance_draft',
   CLASSIFY_GOAL: 'roadmap_classify_goal',
   DUPLICATE_CHECK: 'roadmap_duplicate_check',
+  GOAL_IMPACT: 'roadmap_goal_impact',
   SUMMARISE_INTERVIEW: 'roadmap_summarise_interview',
   GENERATE_CLAUDE_PROMPT: 'roadmap_generate_claude_prompt',
 } as const;
