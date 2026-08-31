@@ -310,15 +310,38 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
    * tenant's concurrent-simulation ceiling and read, on every operational view,
    * as a roleplay still in progress days later.
    *
-   * `startedAt IS NOT NULL` is required rather than incidental: a row with no
-   * `startedAt` never began, and its age says nothing about whether it is stuck.
+   * A row that never began is IN SCOPE, aged by `createdAt`. This used to be
+   * excluded on the reasoning that "a row with no `startedAt` never began, so
+   * its age says nothing about whether it is stuck", and that reasoning had the
+   * blind spot backwards. `startedAt` is written from exactly one place —
+   * `participant-joined.handler`, and only for a non-AGENT participant — so a
+   * start where the learner's own client never made it into the room leaves the
+   * row ACTIVE with `startedAt` NULL forever. Nothing can ever set it later: the
+   * room is gone, and LiveKit's empty-timeout never fires it either, because the
+   * proactively-dispatched agent is in the room keeping it non-empty, so no
+   * `room_finished` webhook arrives to end the session. That row then blocks the
+   * learner out of the product entirely — `validateStartScenarioSession` refuses
+   * any new start while ANY ACTIVE row exists for them — and it was the one
+   * shape of stuck row this sweep could never see.
+   *
+   * The same six-hour margin covers it, and must: `startedAt` NULL is also what
+   * a genuinely live session looks like when its participant-joined webhook was
+   * merely lost, and reaping one of those mid-roleplay is the outcome
+   * `STUCK_SESSION_AGE_MS` exists to make impossible. `createdAt` is only ever
+   * EARLIER than the `startedAt` it stands in for, so nothing that used to be
+   * out of scope moves in ahead of its old cutoff.
+   *
    * Preview and seeded rooms are excluded, matching `countableSessionPredicate`.
    *
    * Runs from the scheduler, outside any request context, so this deliberately
    * spans tenants — it is not a tenant-scoped read.
    */
   async findSessionsStuckActive(params: {
-    startedBefore: Date;
+    /**
+     * Cutoff for the row's ACTIVE age: `startedAt` where the session started,
+     * else `createdAt`.
+     */
+    activeBefore: Date;
     limit: number;
   }): Promise<ScenarioSessions[]> {
     return (
@@ -326,15 +349,21 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
         .where('session.status = :status', {
           status: ScenarioSessionStatus.ACTIVE,
         })
-        .andWhere('session.startedAt IS NOT NULL')
-        .andWhere('session.startedAt < :startedBefore', {
-          startedBefore: params.startedBefore,
-        })
+        // `scenario_sessions_active_started_idx` (partial on status = 'ACTIVE')
+        // is still the access path: the live set it indexes is a tiny fraction
+        // of the table, so the coalesced age applies as a filter over it.
+        .andWhere(
+          'COALESCE(session.startedAt, session.createdAt) < :activeBefore',
+          { activeBefore: params.activeBefore },
+        )
         .andWhere("session.roomId NOT LIKE 'preview-%'")
         .andWhere("session.roomId NOT LIKE 'seed-room-%'")
         // Oldest first: if the limit bites, the most stuck rows are cleared first
-        // and the rest are picked up on the next tick.
-        .orderBy('session.startedAt', 'ASC')
+        // and the rest are picked up on the next tick. Coalesced for the same
+        // reason as the cutoff — ordering on `startedAt` alone would sort every
+        // never-started row last (ASC is NULLS LAST) and starve exactly the rows
+        // that block a learner.
+        .orderBy('COALESCE(session.startedAt, session.createdAt)', 'ASC')
         .limit(params.limit)
         .getMany()
     );

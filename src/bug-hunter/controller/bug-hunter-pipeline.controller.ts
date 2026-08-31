@@ -55,7 +55,7 @@ import { buildSweepPrompt } from '../constants/bug-hunt-sweep-prompt';
  *
  * `x-api-key` guarded (`ApiAuthGuard`, same platform `API_KEY` already used
  * for ally-ai/ally-ai-learn inbound calls — see the webhook controllers under
- * `roleplay-studio/` for the identical pattern) rather than
+ * the identical pattern elsewhere) rather than
  * `@RequireFeatureToggle`: that decorator's `AuthGuard('jwt')` requires a
  * logged-in human, which an autonomous pipeline is not. Split into its own
  * controller (not just a different decorator on the same class) so the two

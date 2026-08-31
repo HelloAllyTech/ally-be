@@ -61,7 +61,11 @@ import { RoadmapInterviewNoteService } from '../service/roadmap-content.service'
 import { RoadmapAiService } from '../service/roadmap-ai.service';
 import { RoadmapVectorService } from '../service/roadmap-vector.service';
 import { RoadmapAccessService } from '../service/roadmap-access.service';
-import { ROADMAP_READINESS_CRITERIA } from '../constants/product-roadmap.constants';
+import {
+  ROADMAP_FILEABLE_EFFORTS,
+  ROADMAP_READINESS_CRITERIA,
+} from '../constants/product-roadmap.constants';
+import { RoadmapOpportunityEffort } from '../enum/roadmap-opportunity.enum';
 
 /** Taxonomy, research notes, release notes, AI helpers, and the vector-index repair tools. */
 @ApiTags('Product Roadmap')
@@ -308,6 +312,11 @@ export class RoadmapAdminController {
         label: c.label,
         hint: c.hint,
       })),
+      // Same reason as the criteria: the size threshold gates filing, so the client must not
+      // hold its own copy of it.
+      fileableEfforts: [
+        ...ROADMAP_FILEABLE_EFFORTS,
+      ] as RoadmapOpportunityEffort[],
     };
   }
 

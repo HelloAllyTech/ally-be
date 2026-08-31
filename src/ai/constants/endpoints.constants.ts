@@ -22,10 +22,7 @@ export const ENDPOINTS = {
   // Roleplay Studio v2 Improve test runs. ai-learn keeps its internal
   // "rehearsal" naming for these routes; ally-be calls them test runs.
   // Answers 202; progress/results come back via the test-run webhook
-  // (PATCH /v1/roleplay-studio/test-runs/webhook/:runId).
-  ROLEPLAY_TEST_RUN_RUN: 'api/v1/roleplay-rehearsal/run',
   // Per-run path — append the run id at call site.
-  ROLEPLAY_TEST_RUN_CANCEL: 'api/v1/roleplay-rehearsal/cancel',
   // Product Roadmap semantic duplicate detection. ally-ai owns the
   // `RoadmapOpportunity` Weaviate collection; ally-be's Postgres stays the
   // system of record and treats the vector store as a DERIVED index. The

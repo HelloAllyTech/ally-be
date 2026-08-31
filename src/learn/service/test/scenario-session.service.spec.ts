@@ -36,6 +36,7 @@ import {
   ChecklistType,
 } from 'src/learn/type/scenario.type';
 import { ScenarioSessionMessagesRepository } from 'src/learn/repository/scenario-session-messages.repository';
+import { PreviewMonologueService } from '../preview-monologue.service';
 import { ScenarioSessionRepository } from 'src/learn/repository/scenario-session.repository';
 import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
@@ -396,6 +397,10 @@ describe('ScenarioSessionService', () => {
       providers: [
         ScenarioSessionService,
         {
+          provide: PreviewMonologueService,
+          useValue: { startRun: jest.fn().mockResolvedValue(undefined) },
+        },
+        {
           provide: ScenarioSessionRepository,
           useValue: mockScenarioSessionRepo,
         },
@@ -674,7 +679,6 @@ describe('ScenarioSessionService', () => {
       const result = await service.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         {},
-        undefined,
         'en',
       );
 
@@ -713,7 +717,6 @@ describe('ScenarioSessionService', () => {
       const result = await service.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         {},
-        undefined,
         'en',
       );
 
@@ -741,7 +744,6 @@ describe('ScenarioSessionService', () => {
       const result = await service.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         {},
-        undefined,
         'hi',
       );
 
@@ -767,7 +769,6 @@ describe('ScenarioSessionService', () => {
       const result = await service.getMessagesByScenarioSessionId(
         mockScenarioSessionId,
         {},
-        undefined,
         'hi',
       );
 
@@ -1294,7 +1295,6 @@ describe('ScenarioSessionService', () => {
         positives: [],
         improvements: [],
         emotional_movement: [],
-        message_tags: [],
         areas_of_growth: [],
       } as any);
       scenarioSessionRepository.getScenarioSession.mockResolvedValue(

@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { CompetencyRepository } from '../repository/competency.repository';
 import { ScenariosRepository } from '../repository/scenario.repository';
-import { RoleplaySpecRepository } from '../../roleplay-studio/repository/roleplay-spec.repository';
 import {
   CreateCompetencyDto,
   CreateCompetencyResponseDto,
@@ -46,7 +45,6 @@ export class CompetencyService {
     private readonly competencyBehaviorRepository: CompetencyBehaviorRepository,
     private readonly behaviorRepository: BehaviorRepository,
     private readonly scenariosRepository: ScenariosRepository,
-    private readonly roleplaySpecRepository: RoleplaySpecRepository,
   ) {}
 
   async createCompetency(
@@ -164,13 +162,11 @@ export class CompetencyService {
     }
     this.assertCanManage(competency, userId);
 
-    const [usedByScenario, usedByRoleplaySpec] = await Promise.all([
-      this.scenariosRepository.existsWithCompetencyId(id),
-      this.roleplaySpecRepository.existsWithCompetencyId(id),
-    ]);
-    if (usedByScenario || usedByRoleplaySpec) {
+    const usedByScenario =
+      await this.scenariosRepository.existsWithCompetencyId(id);
+    if (usedByScenario) {
       throw new ConflictException(
-        'This competency is still assigned to a scenario or roleplay and cannot be deleted',
+        'This competency is still assigned to a scenario and cannot be deleted',
       );
     }
 

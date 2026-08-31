@@ -21,6 +21,7 @@ import {
 import {
   ROADMAP_DUPLICATES,
   ROADMAP_LIMITS,
+  ROADMAP_FILEABLE_EFFORTS,
   ROADMAP_PROMPT_CODES,
   ROADMAP_READINESS_CRITERIA,
 } from '../constants/product-roadmap.constants';
@@ -35,7 +36,8 @@ import {
 } from '../dto/roadmap-response.dto';
 
 const MAX_TOKENS = {
-  READINESS: 1500,
+  // Room for six verdicts, a size, and a redraft of up to ~900 characters in the same answer.
+  READINESS: 2200,
   REVIEW: 1000,
   ENHANCE: 1500,
   DUPLICATES: 1000,
@@ -80,6 +82,17 @@ export class RoadmapAiService {
    * proposes, it does not gate — so an unrecognised size resolves to `null` ("Not sized")
    * rather than to a guess. Never store an unvalidated model answer as taxonomy; see
    * classifyGoal for what that cost us once already.
+   *
+   * The REDRAFT rides along for the same reason: the model has just read the draft and knows
+   * precisely which criteria it failed, so a rewrite costs a few hundred tokens here versus a
+   * second call that would have to re-derive all of it. It is suppressed unless something
+   * actually failed — a passing draft needs no proposal, and offering one invites people to
+   * replace their own words for no reason. Note the ordering: suppression keys off the
+   * verdicts THIS METHOD computed, not the model's own claim to have passed everything, so a
+   * draft the fail-closed rules knocked down still gets its redraft.
+   *
+   * Size failing is enough on its own to offer one — that is the case where the redraft has
+   * real work to do, narrowing a set of opportunities down to the one shippable slice.
    */
   async checkReadiness(description: string): Promise<AiReadinessResponseDto> {
     const criteria = ROADMAP_READINESS_CRITERIA;
@@ -91,6 +104,7 @@ export class RoadmapAiService {
       results?: { id?: string; passed?: boolean; reason?: string }[];
       effort?: string;
       effortReason?: string;
+      redraft?: string | null;
     }>(
       ROADMAP_PROMPT_CODES.READINESS_CHECK,
       `Checklist:\n${rendered}\n\nDraft to judge:\n"""\n${description}\n"""\n\n` +
@@ -134,10 +148,22 @@ export class RoadmapAiService {
       );
     }
 
+    // Unsized counts as not-fileable: "we could not tell how big this is" is not a pass, and
+    // the drawer's size row says so rather than going quietly green on a missing value.
+    const sizeFileable =
+      effort !== null &&
+      (ROADMAP_FILEABLE_EFFORTS as readonly string[]).includes(effort);
+    const needsRedraft = results.some((r) => !r.passed) || !sizeFileable;
+
+    const redraft = parsed?.redraft?.trim();
     return {
       results,
       effort,
       effortReason: effort ? (parsed?.effortReason?.trim() ?? '') : '',
+      redraft:
+        needsRedraft && redraft
+          ? redraft.slice(0, ROADMAP_LIMITS.DESCRIPTION_MAX)
+          : null,
     };
   }
 

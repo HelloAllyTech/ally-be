@@ -22,14 +22,7 @@ import { ParticipantInfo_Kind } from '@livekit/protocol';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
-import {
-  DataSource,
-  EntityManager,
-  In,
-  IsNull,
-  Not,
-  Repository,
-} from 'typeorm';
+import { DataSource, IsNull, Not, Repository } from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
 import {
   ScenarioSessionLifecycleEvent,
@@ -37,7 +30,6 @@ import {
 } from '../entity/scenario-session-lifecycle-event.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ScenarioSessionMessageType } from '../enum/scenario-session-message.type.enum';
-import { ScenarioSessionTagCategory } from '../enum/scenario-session-tag-category.enum';
 import { AiService } from 'src/ai/service/ai.service';
 import { ScenarioSessionEvaluationService } from './scenario-session-evaluation.service';
 import { GlossaryAdherenceService } from 'src/language/service/glossary-adherence.service';
@@ -53,13 +45,10 @@ import {
   LearnSupervisorNoteData,
   LearnTurnMetricsData,
 } from '../interface/learn-message.interface';
-import { ScenarioSessionMessageTags } from '../entity/scenario-session-message-tags.entity';
-import { ScenarioSessionTags } from '../entity/scenario-session-tags.entity';
 import {
   MessageRequest,
   ScenarioEvaluationChatMessage,
 } from 'src/ai/dto/ai.request.dto';
-import { ScenarioEvaluationMessageTag } from 'src/ai/dto/ai.response.dto';
 import {
   LearnBehaviorInstructionData,
   LearnEventData,
@@ -73,6 +62,7 @@ import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
+import { PreviewMonologueService } from './preview-monologue.service';
 import { v4 } from 'uuid';
 import {
   DEFAULT_LANGUAGE_CODE,
@@ -141,9 +131,6 @@ import { SessionEventTranslationService } from 'src/session-event/service/sessio
 import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
 import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
 import { SimulationStateDto } from '../dto/simulation-state.dto';
-import { ModuleRef } from '@nestjs/core';
-import { ScenarioEngine } from '../enum/scenario-engine.enum';
-import { RoleplaySessionService } from 'src/roleplay-studio/service/roleplay-session.service';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
 const previewRoomMetadataCache = new Map<string, object>();
@@ -157,6 +144,7 @@ export class ScenarioSessionService {
     private scenarioService: ScenarioService,
     private scenarioSharedService: ScenarioSharedService,
     private roomMetadataStoreService: RoomMetadataStoreService,
+    private previewMonologueService: PreviewMonologueService,
     private livekitService: LiveKitService,
     private sessionEventSharedService: SessionEventSharedService,
     @InjectRepository(ScenarioSessionFeedbacks)
@@ -192,10 +180,6 @@ export class ScenarioSessionService {
     private scenarioSessionDetailsRepository: ScenarioSessionDetailsRepository,
     private readonly glossaryAdherenceService: GlossaryAdherenceService,
     private transcriptTranslationService: TranscriptTranslationService,
-    // App-container handle used ONLY to resolve the Roleplay Studio v2
-    // session service for engine=ROLEPLAY_V2 scenarios without importing
-    // RoleplayStudioModule into LearnModule (keeps the v1 wiring untouched).
-    private moduleRef: ModuleRef,
     private readonly learnerSupervisorMemoryService: LearnerSupervisorMemoryService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
@@ -204,14 +188,12 @@ export class ScenarioSessionService {
   async getMessagesByScenarioSessionId(
     scenarioSessionId: string,
     pagination: Pagination,
-    options?: { includeTags?: boolean },
     languageCode?: string,
   ) {
     const result =
       await this.scenarioSharedService.getMessagesByScenarioSessionId(
         scenarioSessionId,
         pagination,
-        options,
       );
 
     if (!languageCode) {
@@ -508,32 +490,6 @@ export class ScenarioSessionService {
     );
     if (!scenario) {
       throw new BadRequestException('Scenario not found');
-    }
-
-    // Roleplay Studio v2 scenarios are thin shells over a versioned spec —
-    // the v2 runtime owns their session lifecycle (roleplay- room, AgentV2
-    // dispatch, director telemetry). Delegate and skip the entire v1 path.
-    // Resolved via ModuleRef (strict: false) so the learn module wiring
-    // stays untouched.
-    if (scenario.engine === ScenarioEngine.ROLEPLAY_V2) {
-      if (!scenario.roleplaySpecId) {
-        throw new BadRequestException(
-          'Roleplay scenario is missing its spec reference',
-        );
-      }
-      const roleplaySessionService = this.moduleRef.get(
-        RoleplaySessionService,
-        { strict: false },
-      );
-      return roleplaySessionService.startSpecSession(
-        counselorId,
-        scenario.roleplaySpecId,
-        null, // published version resolves inside the v2 service
-        {
-          languageId: startScenarioSessionDto.languageId,
-          ttl: startScenarioSessionDto.ttl,
-        },
-      );
     }
 
     await this.validateStartScenarioSession(
@@ -1799,18 +1755,6 @@ export class ScenarioSessionService {
           }
         }
 
-        if (useEvaluation && aiResult && 'message_tags' in aiResult) {
-          await this.dataSource.transaction(async (entityManager) => {
-            await this.persistMessageTags(
-              entityManager,
-              scenarioSessionId,
-              tenantId,
-              scenarioSessionMessages.map((m) => m.id),
-              aiResult.message_tags,
-            );
-          });
-        }
-
         // memory_update is the supervisor's private note-to-self about the
         // learner; it has already been persisted to their memory row above.
         // Drop it here so it never reaches the payload the learner is served —
@@ -2094,109 +2038,6 @@ export class ScenarioSessionService {
         status: 'FAILED',
         errorMessage: 'Failed to generate summary in the selected language.',
       }).catch(() => undefined);
-    }
-  }
-
-  private async persistMessageTags(
-    entityManager: EntityManager,
-    scenarioSessionId: string,
-    tenantId: string,
-    validMessageIds: number[],
-    messageTags: ScenarioEvaluationMessageTag[],
-  ) {
-    const messageIdsSet = new Set(validMessageIds);
-    const tagsRepo = entityManager.getRepository(ScenarioSessionTags);
-    const messageTagsRepo = entityManager.getRepository(
-      ScenarioSessionMessageTags,
-    );
-
-    const uniqueLabels = new Set<string>();
-    const desiredMappings: Array<{
-      messageId: number;
-      label: string;
-      category: ScenarioSessionTagCategory;
-    }> = [];
-
-    for (const msgTag of messageTags) {
-      const messageId = parseInt(msgTag.id, 10);
-      if (Number.isNaN(messageId) || !messageIdsSet.has(messageId)) {
-        continue;
-      }
-      const tags = msgTag.tags ?? [];
-      for (const tag of tags) {
-        const category = tag.category as ScenarioSessionTagCategory;
-        if (
-          !tag?.label ||
-          !category ||
-          !Object.values(ScenarioSessionTagCategory).includes(category)
-        ) {
-          continue;
-        }
-        uniqueLabels.add(tag.label);
-        desiredMappings.push({ messageId, label: tag.label, category });
-      }
-    }
-
-    if (uniqueLabels.size === 0) {
-      return;
-    }
-
-    const existingTags = await tagsRepo.find({
-      where: { label: In(Array.from(uniqueLabels)) },
-    });
-    const labelToTag = new Map<string, ScenarioSessionTags>();
-    for (const t of existingTags) {
-      labelToTag.set(t.label, t);
-    }
-
-    const missingLabels = Array.from(uniqueLabels).filter(
-      (label) => !labelToTag.has(label),
-    );
-    if (missingLabels.length > 0) {
-      const newTags = missingLabels.map((label) => tagsRepo.create({ label }));
-      const saved = await tagsRepo.save(newTags);
-      for (const t of saved) {
-        labelToTag.set(t.label, t);
-      }
-    }
-
-    const existingMappings = await messageTagsRepo.find({
-      where: {
-        scenarioSessionId,
-        messageId: In(validMessageIds),
-      },
-      select: ['messageId', 'tagId'],
-    });
-    const existingKeySet = new Set(
-      existingMappings.map((m) => `${m.messageId}-${m.tagId}`),
-    );
-
-    const tagsToInsert: Array<{
-      scenarioSessionId: string;
-      messageId: number;
-      tagId: string;
-      category: ScenarioSessionTagCategory;
-      tenantId: string;
-    }> = [];
-    for (const m of desiredMappings) {
-      const tagId = labelToTag.get(m.label)?.id;
-      if (!tagId) continue;
-      const key = `${m.messageId}-${tagId}`;
-      if (!existingKeySet.has(key)) {
-        existingKeySet.add(key);
-        tagsToInsert.push({
-          scenarioSessionId,
-          messageId: m.messageId,
-          tagId,
-          category: m.category,
-          tenantId,
-        });
-      }
-    }
-
-    if (tagsToInsert.length > 0) {
-      const entities = messageTagsRepo.create(tagsToInsert);
-      await messageTagsRepo.save(entities);
     }
   }
 
@@ -2797,6 +2638,22 @@ export class ScenarioSessionService {
     });
     const roomName = `preview-${scenarioId}-${v4()}`;
 
+    // Open the run now so the monologue the agent ships at end of session has
+    // a row to land on — and so a preview that produced nothing still records
+    // who ran it, against which version, in which language. Best-effort by
+    // construction; PreviewMonologueService never throws into this path.
+    await this.previewMonologueService.startRun({
+      roomName,
+      scenarioId,
+      scenarioVersionId: scenarioVersionId ?? null,
+      languageId: languageId ?? enLanguageDetails?.id ?? null,
+      // Stored for provenance. Reads are not tenant-filtered, matching the
+      // rest of the admin scenario surface (getScenario is permission-guarded,
+      // not tenant-partitioned) — filtering only here would be inconsistent.
+      tenantId: ExecutionManager.getTenantId() ?? null,
+      startedByUserId: userId,
+    });
+
     // Preparing checklist events for simulation room, only if CHECKLIST mode is enabled for scenario
     let checklistEvents: ChecklistItem[] = [];
 
@@ -3009,15 +2866,19 @@ export class ScenarioSessionService {
    * charging credits or awarding practice minutes for a session that never
    * happened would be worse than leaving it unrecorded.
    *
+   * Includes sessions that never started at all — see `findSessionsStuckActive`
+   * for why those are the ones that matter most: while such a row survives, its
+   * learner cannot start ANY new session.
+   *
    * Returns what it found and what it changed so the scheduler can log it.
    */
   async sweepStuckActiveSessions(): Promise<{
     found: number;
     abandoned: number;
   }> {
-    const startedBefore = new Date(Date.now() - STUCK_SESSION_AGE_MS);
+    const activeBefore = new Date(Date.now() - STUCK_SESSION_AGE_MS);
     const stuck = await this.scenarioSessionRepository.findSessionsStuckActive({
-      startedBefore,
+      activeBefore,
       limit: STUCK_SESSION_SWEEP_LIMIT,
     });
     if (!stuck.length) return { found: 0, abandoned: 0 };
@@ -3045,7 +2906,7 @@ export class ScenarioSessionService {
 
     this.logger.warn(
       `Stuck-session sweep: ${stuck.length} session(s) had been ACTIVE since ` +
-        `before ${startedBefore.toISOString()}; ${abandoned} marked ABANDONED`,
+        `before ${activeBefore.toISOString()}; ${abandoned} marked ABANDONED`,
     );
     return { found: stuck.length, abandoned };
   }

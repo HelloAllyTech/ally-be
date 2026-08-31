@@ -22,6 +22,8 @@ import { LearnEventProcessor } from './processor/learn-event.processor';
 import { ScenarioSessionEvents } from './entity/scenario-session-events.entity';
 import { ScenariosRepository } from './repository/scenario.repository';
 import { ScenarioVersion } from './entity/scenario-version.entity';
+import { PreviewMonologueRun } from './entity/preview-monologue-run.entity';
+import { PreviewMonologueService } from './service/preview-monologue.service';
 import { LlmModule } from 'src/llm/llm.module';
 import { ScenarioVersionRepository } from './repository/scenario-version.repository';
 import { ScenarioVersionService } from './service/scenario-version.service';
@@ -65,7 +67,6 @@ import { ScenarioReportModule } from 'src/scenario-report/scenario-report.module
 import { ScenarioSessionTags } from './entity/scenario-session-tags.entity';
 import { ScenarioSessionMessageTags } from './entity/scenario-session-message-tags.entity';
 import { ScenarioSessionTagsRepository } from './repository/scenario-session-tags.repository';
-import { ScenarioSessionMessageTagsRepository } from './repository/scenario-session-message-tags.repository';
 import { Behavior } from './entity/behavior.entity';
 import { FillerTag } from './entity/filler-tag.entity';
 import { ScenarioBehaviorInstruction } from './entity/scenario-behavior-instruction.entity';
@@ -117,7 +118,6 @@ import { RoomMetadataStoreService } from './service/room-metadata-store.service'
 import { AgentTestCaseController } from './controller/agent-test-case.controller';
 import { CompetencyBehavior } from './entity/competency-behavior.entity';
 import { CompetencyBehaviorRepository } from './repository/competency-behavior.repository';
-import { RoleplaySpecRepository } from '../roleplay-studio/repository/roleplay-spec.repository';
 import { BehaviorTranslation } from './entity/behavior-translation.entity';
 import { ScenarioBehaviorInstructionTranslation } from './entity/scenario-behavior-instruction-translation.entity';
 import { BehaviorTranslationRepository } from './repository/behavior-translation.repository';
@@ -146,6 +146,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     CohortModule,
     TypeOrmModule.forFeature([
       Scenarios,
+      PreviewMonologueRun,
       ScenarioSessions,
       ScenarioEvents,
       ScenarioSessionFeedbacks,
@@ -215,6 +216,7 @@ import { SettingsModule } from 'src/settings/settings.module';
   ],
   providers: [
     ScenarioService,
+    PreviewMonologueService,
     ScenarioVersionService,
     ScenarioVersionRepository,
     ScenarioSessionService,
@@ -257,7 +259,6 @@ import { SettingsModule } from 'src/settings/settings.module';
     ScenarioEventsTranslationsRepository,
     ScenarioSessionDetailsRepository,
     ScenarioSessionTagsRepository,
-    ScenarioSessionMessageTagsRepository,
     BehaviorService,
     FillerTagService,
     BehaviorRepository,
@@ -272,7 +273,6 @@ import { SettingsModule } from 'src/settings/settings.module';
     CompetencyService,
     CompetencyRepository,
     CompetencyBehaviorRepository,
-    RoleplaySpecRepository,
     AgentTestCaseService,
     AgentTestCaseRepository,
     ScenarioSessionEvaluationService,

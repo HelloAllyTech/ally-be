@@ -4,7 +4,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import {
   JsonPatchOp,
   resolveJsonPointer,
-} from 'src/roleplay-studio/util/json-patch.util';
+} from 'src/common/util/json-patch.util';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderPrdDoc } from '../entity/builder-prd-doc.entity';
 import { BuilderPrdVersionAuthor } from '../enum/builder.enum';

@@ -117,6 +117,7 @@ export class RoleplaySessionLogsService {
       runConfig,
       glossaryActivity,
       glossaryAdherence,
+      internalMonologue,
     ] = await Promise.all([
       this.roleplaySessionLogsRepository.findSummary(id),
       this.roleplaySessionLogsRepository.findEvents(id),
@@ -139,6 +140,7 @@ export class RoleplaySessionLogsService {
       this.roleplaySessionLogsRepository.getGlossaryActivity(id),
       // Read-only preview (no upsert) — see GlossaryAdherenceService.previewAdherence.
       this.glossaryAdherenceService.previewAdherence(id),
+      this.roleplaySessionLogsRepository.findInternalMonologue(id),
     ]);
 
     // Suspected mid-session freeze: had a conversation and either the agent
@@ -179,6 +181,10 @@ export class RoleplaySessionLogsService {
       runConfig,
       drift,
       weakMetrics: this.buildWeakMetrics(weakMetricsRaw),
+      // The client's per-turn reasoning, so an admin can reopen a finished
+      // session and work out WHY it went the way it did — the same payload the
+      // Studio preview renders live.
+      internalMonologue,
       languageQuality: languageJudgment
         ? {
             judgeModel: languageJudgment.session.judgeModel,

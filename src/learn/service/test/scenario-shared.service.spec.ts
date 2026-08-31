@@ -11,8 +11,6 @@ import { ScenarioFilters } from 'src/learn/type/scenario-filter.type';
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
 import { ScenarioSessionMessagesRepository } from '../../repository/scenario-session-messages.repository';
 import { ScenarioSessionDetailsRepository } from '../../repository/scenario-session-details.repository';
-import { ScenarioSessionMessageTagsRepository } from '../../repository/scenario-session-message-tags.repository';
-import { ScenarioSessionTagCategory } from '../../enum/scenario-session-tag-category.enum';
 import { ScenarioVoicesRepository } from '../../repository/scenario-voices.repository';
 import { SttConfigsRepository } from '../../repository/stt-configs.repository';
 import { LlmConfigsRepository } from '../../repository/llm-configs.repository';
@@ -43,7 +41,6 @@ describe('ScenarioSharedService', () => {
   let scenarioSessionRepository: jest.Mocked<ScenarioSessionRepository>;
   let scenarioTranslationsRepository: jest.Mocked<ScenarioTranslationsRepository>;
   let scenarioSessionMessagesRepository: jest.Mocked<ScenarioSessionMessagesRepository>;
-  let scenarioSessionMessageTagsRepository: jest.Mocked<ScenarioSessionMessageTagsRepository>;
   let scenarioSessionDetailsRepository: jest.Mocked<ScenarioSessionDetailsRepository>;
   let scenarioVoiceRepository: jest.Mocked<ScenarioVoicesRepository>;
   let sessionEventSharedService: jest.Mocked<SessionEventSharedService>;
@@ -171,10 +168,6 @@ describe('ScenarioSharedService', () => {
       findOne: jest.fn(),
     };
 
-    const mockScenarioSessionMessageTagsRepository = {
-      getTagsByMessageIds: jest.fn().mockResolvedValue(new Map()),
-    };
-
     const mockScenarioVoicesRepository = {
       findOne: jest.fn(),
       find: jest.fn(),
@@ -238,10 +231,6 @@ describe('ScenarioSharedService', () => {
         {
           provide: ScenarioSessionDetailsRepository,
           useValue: mockScenarioSessionDetailsRepository,
-        },
-        {
-          provide: ScenarioSessionMessageTagsRepository,
-          useValue: mockScenarioSessionMessageTagsRepository,
         },
         {
           provide: ScenarioVoicesRepository,
@@ -324,9 +313,6 @@ describe('ScenarioSharedService', () => {
     scenarioTranslationsRepository = module.get(ScenarioTranslationsRepository);
     scenarioSessionMessagesRepository = module.get(
       ScenarioSessionMessagesRepository,
-    );
-    scenarioSessionMessageTagsRepository = module.get(
-      ScenarioSessionMessageTagsRepository,
     );
     scenarioSessionDetailsRepository = module.get(
       ScenarioSessionDetailsRepository,
@@ -467,67 +453,21 @@ describe('ScenarioSharedService', () => {
       { id: 1, content: 'msg1', scenarioSessionId: sessionId } as any,
       { id: 2, content: 'msg2', scenarioSessionId: sessionId } as any,
     ];
-    const mockTagsMap = new Map<
-      number,
-      { tagId: string; label: string; category: ScenarioSessionTagCategory }[]
-    >([
-      [
-        1,
-        [
-          {
-            tagId: 'tag-1',
-            label: 'reflection',
-            category: ScenarioSessionTagCategory.POSITIVE,
-          },
-        ],
-      ],
-      [2, []],
-    ]);
 
-    it('should fetch and attach tags when includeTags is true', async () => {
+    // Message tags were deprecated with the annotated transcript: the
+    // transcript is returned as-is, with no second query to decorate it.
+    it('should return the messages and count as fetched', async () => {
       scenarioSessionMessagesRepository.getMessagesByScenarioSessionId.mockResolvedValue(
         [mockMessages, 2],
-      );
-      scenarioSessionMessageTagsRepository.getTagsByMessageIds.mockResolvedValue(
-        mockTagsMap,
       );
 
       const result = await service.getMessagesByScenarioSessionId(
         sessionId,
         pagination,
-        { includeTags: true },
       );
 
-      expect(
-        scenarioSessionMessageTagsRepository.getTagsByMessageIds,
-      ).toHaveBeenCalledWith(sessionId, [1, 2]);
       expect(result.count).toBe(2);
-      expect(result.messages).toHaveLength(2);
-      expect(result.messages[0].tags).toEqual([
-        {
-          tagId: 'tag-1',
-          label: 'reflection',
-          category: ScenarioSessionTagCategory.POSITIVE,
-        },
-      ]);
-      expect(result.messages[1].tags).toEqual([]);
-    });
-
-    it('should not call getTagsByMessageIds when includeTags is false', async () => {
-      scenarioSessionMessagesRepository.getMessagesByScenarioSessionId.mockResolvedValue(
-        [mockMessages, 2],
-      );
-
-      const result = await service.getMessagesByScenarioSessionId(
-        sessionId,
-        pagination,
-        { includeTags: false },
-      );
-
-      expect(
-        scenarioSessionMessageTagsRepository.getTagsByMessageIds,
-      ).not.toHaveBeenCalled();
-      expect(result.messages).toHaveLength(2);
+      expect(result.messages).toEqual(mockMessages);
       expect(result.messages[0]).not.toHaveProperty('tags');
       expect(result.messages[1]).not.toHaveProperty('tags');
     });

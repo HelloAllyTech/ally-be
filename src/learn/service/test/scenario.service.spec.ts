@@ -1713,47 +1713,6 @@ describe('ScenarioService', () => {
         'Tenant ID is required',
       );
     });
-
-    it('excludes v2 scenarios for an ordinary (non-allowlisted) user', async () => {
-      // Default mocks: no v2 config / no getRepository → resolver returns false.
-      scenariosRepository.getScenarios.mockResolvedValue({
-        data: [],
-        count: 0,
-      } as any);
-
-      await service.getScenariosV2();
-
-      // includeRoleplayV2 must NOT be set → repository default-excludes v2.
-      expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
-        tenantId: mockTenantId,
-        cohortScope: { cohortId: null },
-      });
-    });
-
-    it('includes v2 scenarios for an allowlisted user (flag on)', async () => {
-      mockConfigService.roleplayV2 = {
-        enabled: true,
-        allowlist: ['sandeep.malhotra@helloally.ai'],
-      };
-      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('1');
-      (dataSource as any).getRepository = jest.fn().mockReturnValue({
-        findOne: jest
-          .fn()
-          .mockResolvedValue({ id: 1, email: 'sandeep.malhotra@helloally.ai' }),
-      });
-      scenariosRepository.getScenarios.mockResolvedValue({
-        data: [],
-        count: 0,
-      } as any);
-
-      await service.getScenariosV2();
-
-      expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
-        tenantId: mockTenantId,
-        cohortScope: { cohortId: null },
-        includeRoleplayV2: true,
-      });
-    });
   });
 
   describe('getAdminScenarios', () => {

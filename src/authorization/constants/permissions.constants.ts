@@ -282,6 +282,23 @@ const PERMISSIONS = {
   // request data, so this stays as restricted as the SDA management surface.
   VIEW_AWS_LOGS: 'view:aws-logs',
 
+  // === MOBILE RELEASES ===
+  // Granted ONLY to SUPER_DUPER_ADMIN — same divergence pattern as
+  // VIEW_AWS_LOGS. Backs the Mobile Releases admin page (ally-mobile CI
+  // build/release status + current app version).
+  VIEW_MOBILE_RELEASES: 'view:mobile-releases',
+  // Narrower than VIEW_MOBILE_RELEASES: dispatches a real production release
+  // pipeline run (scheduled-mobile-release.yml with force: true), so it is
+  // gated separately even though both are SUPER_DUPER_ADMIN-only today.
+  TRIGGER_MOBILE_RELEASES: 'trigger:mobile-releases',
+  // Narrower still: promotes an already-shipped build further into
+  // production (Play Store staged rollout increase, or TestFlight external
+  // promotion) via promote-android-production.yml /
+  // promote-ios-testflight-external.yml. Kept separate from
+  // TRIGGER_MOBILE_RELEASES even though both are SUPER_DUPER_ADMIN-only
+  // today, since these are distinct manual, real-production actions.
+  PROMOTE_MOBILE_RELEASES: 'promote:mobile-releases',
+
   // === WHATSAPP Q&A KNOWLEDGE BASE ===
   // Granted ONLY to SUPER_DUPER_ADMIN. The corpus is what the bot tells mental
   // healthcare workers, so write access is the ability to change clinical
@@ -340,13 +357,6 @@ const PERMISSIONS = {
   VIEW_PRODUCT_ROADMAP: 'view:admin:product-roadmap',
   VOTE_PRODUCT_ROADMAP: 'vote:admin:product-roadmap',
   EDIT_PRODUCT_ROADMAP: 'edit:admin:product-roadmap',
-
-  // === ROLEPLAY STUDIO V2 ===
-  VIEW_ROLEPLAY_SPECS: 'view:roleplay-specs',
-  EDIT_ROLEPLAY_SPEC: 'edit:roleplay-spec',
-  DELETE_ROLEPLAY_SPEC: 'delete:roleplay-spec',
-  EDIT_ROLEPLAY_COPILOT: 'edit:roleplay-copilot',
-  EDIT_ROLEPLAY_SPEC_TENANT: 'edit:roleplay-spec-tenant',
 };
 
 const SUPER_ADMIN_PERMISSIONS = [
@@ -444,11 +454,6 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_I18N_TRANSLATIONS,
   PERMISSIONS.VIEW_TOOLTIPS,
   PERMISSIONS.EDIT_TOOLTIPS,
-  PERMISSIONS.VIEW_ROLEPLAY_SPECS,
-  PERMISSIONS.EDIT_ROLEPLAY_SPEC,
-  PERMISSIONS.DELETE_ROLEPLAY_SPEC,
-  PERMISSIONS.EDIT_ROLEPLAY_COPILOT,
-  PERMISSIONS.EDIT_ROLEPLAY_SPEC_TENANT,
   PERMISSIONS.VIEW_BLOGS,
   PERMISSIONS.EDIT_BLOG,
   PERMISSIONS.DELETE_BLOG,
@@ -484,6 +489,9 @@ const SUPER_DUPER_ADMIN_PERMISSIONS = [
   // VIEW + VOTE only (see above).
   PERMISSIONS.EDIT_PRODUCT_ROADMAP,
   PERMISSIONS.VIEW_AWS_LOGS,
+  PERMISSIONS.VIEW_MOBILE_RELEASES,
+  PERMISSIONS.TRIGGER_MOBILE_RELEASES,
+  PERMISSIONS.PROMOTE_MOBILE_RELEASES,
   // WhatsApp Q&A knowledge corpus. SDA-only rather than shared with SUPER_ADMIN for the same
   // reason as VIEW_AWS_LOGS: this is clinical guidance served to workers, and an unreviewed edit
   // reaches every worker who asks a related question.

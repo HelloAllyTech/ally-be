@@ -79,7 +79,6 @@ import {
   UpdateReferenceDocumentResponse,
 } from '../dto/ai.response.dto';
 import { ScribeSessionMode } from 'src/common/constants/chat.constants';
-import { RoleplayTestRunRequest } from 'src/roleplay-studio/type/roleplay-test-run-request.type';
 import { WorkerType } from 'src/user/enum/user.enum';
 
 @Injectable()
@@ -620,50 +619,6 @@ export class AiService {
       this.logger.warn(
         `Actor goal-evaluation trigger failed for session ` +
           `${request.scenario_session_id}; it will simply remain un-evaluated.`,
-      );
-    }
-  }
-
-  /**
-   * Kick off a Roleplay Studio v2 Improve test run in ai-learn (202
-   * accepted; ai-learn keeps its internal "rehearsal" naming for the route
-   * and payload). Progress/results/transcripts come back via the test-run
-   * webhook (PATCH /v1/roleplay-studio/test-runs/webhook/:runId). Throws on
-   * failure so RoleplayTestRunService can mark the run FAILED immediately.
-   */
-  @RetryOnFail(3, 1000)
-  async triggerRoleplayTestRun(request: RoleplayTestRunRequest): Promise<void> {
-    await this.makeRequest<unknown, RoleplayTestRunRequest>(
-      ENDPOINTS.ROLEPLAY_TEST_RUN_RUN,
-      request,
-      true,
-      'post',
-      undefined,
-      true, // isLearnService — routes to ally-ai-learn
-    );
-  }
-
-  /**
-   * Signal an in-flight test run to cancel. Best-effort, mirrors
-   * triggerScenarioReportCancel: the CANCELLED status is already durable in
-   * our DB, and a late webhook is ignored by the end-status guard.
-   */
-  async triggerRoleplayTestRunCancel(runId: string): Promise<void> {
-    try {
-      await this.makeRequest<unknown, Record<string, never>>(
-        `${ENDPOINTS.ROLEPLAY_TEST_RUN_CANCEL}/${runId}`,
-        {},
-        false,
-        'post',
-        undefined,
-        true,
-      );
-    } catch {
-      // Already logged inside makeRequest's catch.
-      this.logger.warn(
-        `Cancel propagation to ai-learn failed for test run ${runId}; ` +
-          `the run will finish naturally and its final webhook will be ` +
-          `ignored by the status guard.`,
       );
     }
   }

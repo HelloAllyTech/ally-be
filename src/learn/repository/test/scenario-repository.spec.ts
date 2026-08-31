@@ -10,7 +10,6 @@ import { AssignmentStatus, Pagination } from 'src/common/type/common.type';
 import { ScenariosRepository } from '../scenario.repository';
 import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
 import { ScenarioStatus } from '../../type/scenario.type';
-import { ScenarioEngine } from '../../enum/scenario-engine.enum';
 import { GetScenarioByIdOptions } from 'src/learn/type/scenario-filter.type';
 
 describe('ScenariosRepository', () => {
@@ -265,16 +264,6 @@ describe('ScenariosRepository', () => {
       ]);
       expect(mockQueryBuilder.addSelect).toHaveBeenCalledTimes(3);
       expect(mockQueryBuilder.groupBy).toHaveBeenCalledWith('scenario.id');
-    });
-
-    it('should exclude Roleplay Studio v2 (ROLEPLAY_V2) shells', async () => {
-      mockQueryBuilder.getRawMany.mockResolvedValue(mockAdminScenariosData);
-      await repository.getAdminScenarios();
-
-      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        'scenario.engine != :roleplayV2Engine',
-        { roleplayV2Engine: ScenarioEngine.ROLEPLAY_V2 },
-      );
     });
 
     it('should apply tenant filter when provided', async () => {

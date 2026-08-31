@@ -5,7 +5,7 @@ import {
   applyJsonPatch,
   JsonPatchError,
   JsonPatchOp,
-} from 'src/roleplay-studio/util/json-patch.util';
+} from 'src/common/util/json-patch.util';
 import { BuilderPrdDoc } from '../entity/builder-prd-doc.entity';
 import { BuilderPrdVersion } from '../entity/builder-prd-version.entity';
 import { BuilderPrdDocRepository } from '../repository/builder-prd.repository';
