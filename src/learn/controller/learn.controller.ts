@@ -66,6 +66,7 @@ import { ScenarioVoiceSortBy } from '../enum/scenario-voice-sort-by.enum';
 import { ScenarioImageUploadRequestDto } from '../dto/scenario-image-upload-request.dto';
 import { ScenarioImageUploadResponseDto } from '../dto/scenario-image-upload-response.dto';
 import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
+import { PreviewMonologueService } from '../service/preview-monologue.service';
 import { DeleteCoverImageDto } from '../dto/delete-cover-image.dto';
 import { ScenarioVideoUploadResponseDto } from '../dto/scenario-video-upload-response.dto';
 import { ScenarioVideoUploadRequestDto } from '../dto/scenario-video-upload-request.dto';
@@ -119,6 +120,7 @@ export class LearnController {
     private readonly scenarioTenantService: ScenarioTenantService,
     private readonly triggerWarningService: TriggerWarningsService,
     private readonly scenarioVersionService: ScenarioVersionService,
+    private readonly previewMonologueService: PreviewMonologueService,
     private readonly sttConfigService: SttConfigService,
     private readonly llmConfigService: LlmConfigService,
   ) {}
@@ -511,6 +513,28 @@ export class LearnController {
       previewScenarioDto,
       tokenUser.id,
     );
+  }
+
+  @ApiOperation({
+    summary: 'List internal-monologue runs recorded for a scenario preview',
+    description:
+      'Newest first, without their turns. Admin previews are ephemeral ' +
+      'everywhere else in the system; these rows exist so a curator can ' +
+      'reopen a past run and see what the client was thinking.',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @Get('scenarios/:id/preview-monologues')
+  async listPreviewMonologues(@Param('id') id: number) {
+    return this.previewMonologueService.listRunsForScenario(Number(id));
+  }
+
+  @ApiOperation({
+    summary: 'Read one recorded preview internal-monologue run, with its turns',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @Get('preview-monologues/:runId')
+  async getPreviewMonologue(@Param('runId') runId: string) {
+    return this.previewMonologueService.getRun(runId);
   }
 
   @ApiOperation({

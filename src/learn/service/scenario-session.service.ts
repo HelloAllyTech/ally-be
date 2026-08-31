@@ -62,6 +62,7 @@ import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
+import { PreviewMonologueService } from './preview-monologue.service';
 import { v4 } from 'uuid';
 import {
   DEFAULT_LANGUAGE_CODE,
@@ -143,6 +144,7 @@ export class ScenarioSessionService {
     private scenarioService: ScenarioService,
     private scenarioSharedService: ScenarioSharedService,
     private roomMetadataStoreService: RoomMetadataStoreService,
+    private previewMonologueService: PreviewMonologueService,
     private livekitService: LiveKitService,
     private sessionEventSharedService: SessionEventSharedService,
     @InjectRepository(ScenarioSessionFeedbacks)
@@ -2640,6 +2642,22 @@ export class ScenarioSessionService {
       languageDetails,
     });
     const roomName = `preview-${scenarioId}-${v4()}`;
+
+    // Open the run now so the monologue the agent ships at end of session has
+    // a row to land on — and so a preview that produced nothing still records
+    // who ran it, against which version, in which language. Best-effort by
+    // construction; PreviewMonologueService never throws into this path.
+    await this.previewMonologueService.startRun({
+      roomName,
+      scenarioId,
+      scenarioVersionId: scenarioVersionId ?? null,
+      languageId: languageId ?? enLanguageDetails?.id ?? null,
+      // Stored for provenance. Reads are not tenant-filtered, matching the
+      // rest of the admin scenario surface (getScenario is permission-guarded,
+      // not tenant-partitioned) — filtering only here would be inconsistent.
+      tenantId: ExecutionManager.getTenantId() ?? null,
+      startedByUserId: userId,
+    });
 
     // Preparing checklist events for simulation room, only if CHECKLIST mode is enabled for scenario
     let checklistEvents: ChecklistItem[] = [];

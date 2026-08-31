@@ -22,6 +22,8 @@ import { LearnEventProcessor } from './processor/learn-event.processor';
 import { ScenarioSessionEvents } from './entity/scenario-session-events.entity';
 import { ScenariosRepository } from './repository/scenario.repository';
 import { ScenarioVersion } from './entity/scenario-version.entity';
+import { PreviewMonologueRun } from './entity/preview-monologue-run.entity';
+import { PreviewMonologueService } from './service/preview-monologue.service';
 import { LlmModule } from 'src/llm/llm.module';
 import { ScenarioVersionRepository } from './repository/scenario-version.repository';
 import { ScenarioVersionService } from './service/scenario-version.service';
@@ -144,6 +146,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     CohortModule,
     TypeOrmModule.forFeature([
       Scenarios,
+      PreviewMonologueRun,
       ScenarioSessions,
       ScenarioEvents,
       ScenarioSessionFeedbacks,
@@ -213,6 +216,7 @@ import { SettingsModule } from 'src/settings/settings.module';
   ],
   providers: [
     ScenarioService,
+    PreviewMonologueService,
     ScenarioVersionService,
     ScenarioVersionRepository,
     ScenarioSessionService,

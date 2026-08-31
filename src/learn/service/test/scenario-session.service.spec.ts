@@ -36,6 +36,7 @@ import {
   ChecklistType,
 } from 'src/learn/type/scenario.type';
 import { ScenarioSessionMessagesRepository } from 'src/learn/repository/scenario-session-messages.repository';
+import { PreviewMonologueService } from '../preview-monologue.service';
 import { ScenarioSessionRepository } from 'src/learn/repository/scenario-session.repository';
 import { LiveKitService } from 'src/livekit/service/livekit.service';
 import { SessionEvents } from 'src/session-event/entity/session-events.entity';
@@ -395,6 +396,10 @@ describe('ScenarioSessionService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSessionService,
+        {
+          provide: PreviewMonologueService,
+          useValue: { startRun: jest.fn().mockResolvedValue(undefined) },
+        },
         {
           provide: ScenarioSessionRepository,
           useValue: mockScenarioSessionRepo,

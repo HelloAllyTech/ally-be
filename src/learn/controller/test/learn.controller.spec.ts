@@ -10,6 +10,7 @@ import { TriggerWarningsService } from '../../service/trigger-warnings.service';
 import { SttConfigService } from '../../service/stt-config.service';
 import { LlmConfigService } from '../../service/llm-config.service';
 import { ScenarioVersionService } from '../../service/scenario-version.service';
+import { PreviewMonologueService } from '../../service/preview-monologue.service';
 import { ScenarioSharedService } from '../../service/scenario-shared.service';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { TokenUser } from 'src/auth/type/auth.types';
@@ -336,6 +337,13 @@ describe('LearnController', () => {
             updateVersion: jest.fn(),
             publishVersion: jest.fn(),
             deleteVersion: jest.fn(),
+          },
+        },
+        {
+          provide: PreviewMonologueService,
+          useValue: {
+            listRunsForScenario: jest.fn(),
+            getRun: jest.fn(),
           },
         },
         {
