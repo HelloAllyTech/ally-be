@@ -23,6 +23,7 @@ import { ScenarioSessionFeedbacks } from 'src/learn/entity/scenario-session-feed
 import { ScenarioSessionLifecycleEvent } from 'src/learn/entity/scenario-session-lifecycle-event.entity';
 import { ScenarioSessions } from 'src/learn/entity/scenario-sessions.entity';
 import {
+  ScenarioSessionAbandonReason,
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
 } from 'src/learn/enum/scenario-session-status.enum';
@@ -2146,6 +2147,135 @@ describe('ScenarioSessionService', () => {
         },
         { conflictPaths: ['scenarioSessionId'] },
       );
+    });
+  });
+
+  // The `room_finished` webhook races the agent's `end-of-session` message, and
+  // when it wins it runs the full end flow and THEN labels the row ABANDONED
+  // (`ROOM_FINISHED_WITHOUT_END`). The message that follows a beat later carries
+  // the only copy of the score and is the only thing that ever hands a
+  // track/path/case item to its progression engine — so a compare-and-set that
+  // recognised IN_PROGRESS alone silently threw all of it away, and the
+  // unfinalised sweep never picks the row up again because it scans for
+  // IN_PROGRESS. Learners finished a track roleplay and had to replay it to
+  // unlock the next section.
+  describe('handleEndScenarioSessionEvent — a row the room_finished webhook labelled ABANDONED', () => {
+    const startedAt = new Date('2024-01-01T10:00:00Z');
+    const endedAt = new Date('2024-01-01T10:04:34Z');
+    const activeMs = endedAt.getTime() - startedAt.getTime();
+
+    const abandonedRow = ({
+      reason = ScenarioSessionAbandonReason.ROOM_FINISHED_WITHOUT_END,
+      status = ScenarioSessionStatus.ENDED,
+    }: {
+      reason?: ScenarioSessionAbandonReason;
+      status?: ScenarioSessionStatus;
+    } = {}) =>
+      ({
+        ...mockScenarioSession,
+        startedAt,
+        endedAt,
+        status,
+        eventStatus: ScenarioSessionEventStatus.ABANDONED,
+        abandonedReason: reason,
+        trackItemProgressId: 'tip-1',
+      }) as any;
+
+    // Stands in for the database: a guarded UPDATE only affects the row when
+    // its current state matches every column of the predicate.
+    const updateAgainst = (row: Record<string, unknown>) =>
+      scenarioSessionRepository.update.mockImplementation(
+        (criteria: any) =>
+          Promise.resolve({
+            affected: Object.entries(criteria).every(([column, value]) =>
+              column === 'id' ? value === row.id : row[column] === value,
+            )
+              ? 1
+              : 0,
+          }) as any,
+      );
+
+    it('reclaims the row and records the score the message carries', async () => {
+      const row = abandonedRow();
+      updateAgainst(row);
+
+      await service.handleEndScenarioSessionEvent(row, {
+        event_data: { id: 'end-of-session', totalScore: 42 },
+      } as any);
+
+      expect(scenarioSessionRepository.update).toHaveBeenCalledWith(
+        {
+          id: mockScenarioSessionId,
+          status: ScenarioSessionStatus.ENDED,
+          eventStatus: ScenarioSessionEventStatus.ABANDONED,
+          abandonedReason:
+            ScenarioSessionAbandonReason.ROOM_FINISHED_WITHOUT_END,
+        },
+        expect.objectContaining({
+          score: 42,
+          eventStatus: ScenarioSessionEventStatus.COMPLETED,
+          // The row is not abandoned: the message we were waiting for arrived.
+          abandonedReason: null,
+        }),
+      );
+    });
+
+    it('still hands the finished roleplay to the track progression engine', async () => {
+      const row = abandonedRow();
+      updateAgainst(row);
+
+      await service.handleEndScenarioSessionEvent(row, {
+        event_data: { id: 'end-of-session', totalScore: 42 },
+      } as any);
+
+      expect(
+        (service as any).trackProgressService.handleRoleplayEnd,
+      ).toHaveBeenCalledWith({
+        trackItemProgressId: 'tip-1',
+        score: 42,
+        callDuration: activeMs,
+      });
+      expect((service as any).eventEmitter.emit).toHaveBeenCalledWith(
+        ScenarioSessionLeaderboardEvent.SCENARIO_SESSION_ENDED,
+        expect.objectContaining({
+          userId: mockCounselorId,
+          durationMinutes: activeMs / 60000,
+        }),
+      );
+    });
+
+    it('does not re-charge credits or rewrite the duration the end flow already recorded', async () => {
+      const row = abandonedRow();
+      updateAgainst(row);
+
+      await service.handleEndScenarioSessionEvent(row, {
+        event_data: { id: 'end-of-session', totalScore: 42 },
+      } as any);
+
+      expect(simulationCreditsService.consumeCredits).not.toHaveBeenCalled();
+      expect(scenarioSessionDetailsRepository.upsert).not.toHaveBeenCalled();
+    });
+
+    it('leaves a session the stuck-session sweeper abandoned exactly as it is', async () => {
+      // Nothing ran for that row: no end flow, no duration, no credits. It sat
+      // ACTIVE for hours and was reaped, so a late message must not resurrect
+      // it into a completed session with hours of billable practice.
+      const row = abandonedRow({
+        reason: ScenarioSessionAbandonReason.STUCK_ACTIVE_SWEEP,
+        status: ScenarioSessionStatus.ABANDONED,
+      });
+      updateAgainst(row);
+
+      await service.handleEndScenarioSessionEvent(row, {
+        event_data: { id: 'end-of-session', totalScore: 42 },
+      } as any);
+
+      expect(
+        (service as any).trackProgressService.handleRoleplayEnd,
+      ).not.toHaveBeenCalled();
+      expect((service as any).eventEmitter.emit).not.toHaveBeenCalled();
+      expect(simulationCreditsService.consumeCredits).not.toHaveBeenCalled();
+      expect(scenarioSessionDetailsRepository.upsert).not.toHaveBeenCalled();
     });
   });
 
