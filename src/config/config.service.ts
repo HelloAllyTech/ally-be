@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TIME } from '../common/constants/time.constants';
-import { buildRoleplayV2Allowlist } from '../common/util/roleplay-v2-access.util';
 import { BUILDER_MODEL_DEFAULTS } from '../builder/constants/builder.constants';
 
 export type AwsLogServiceKey = 'ally-be' | 'ally-ai' | 'ally-ai-learn';
@@ -357,17 +356,6 @@ export class AppConfigService {
         'SIMULATED_USER_AGENT_NAME',
         'SimulatedUser',
       ),
-      // Roleplay Studio v2 runtime agent (actor + director). Dispatched for
-      // scenarios with engine=ROLEPLAY_V2; rooms are prefixed `roleplay-`.
-      // Defaults to the SAME name as the v1 agent because v2 is now served by
-      // the merged single worker (app/worker.py routes v1 + v2 by the `engine`
-      // metadata marker) — one fleet, one prewarmed model set, no duplication.
-      // Override with LIVEKIT_ROLEPLAY_AGENT_NAME (e.g. set it to `${agentName}V2`)
-      // to fall back to a separate dedicated v2 fleet.
-      roleplayAgentName: this.configService.get<string>(
-        'LIVEKIT_ROLEPLAY_AGENT_NAME',
-        agentName,
-      ),
     };
   }
 
@@ -461,36 +449,6 @@ export class AppConfigService {
           'false',
         ) === 'true',
     };
-  }
-
-  /**
-   * Roleplay Studio v2 rollout gate. A v2 session is allowed only when BOTH
-   * hold: the feature flag is on AND the user's email is on the allowlist.
-   *
-   * - `enabled` (ROLEPLAY_V2_ENABLED): master kill-switch. Defaults ON. When
-   *   `false`, v2 is off for EVERYONE — including allowlisted users.
-   * - `allowlist` (ROLEPLAY_V2_ALLOWLIST): comma-separated emails, lower-cased.
-   *   `sandeep.malhotra@helloally.ai`, `gopi.s@helloally.ai` and
-   *   `gopikrishnan.sasikumar@helloally.ai` are always included so the current
-   *   testers work without extra env config; ROLEPLAY_V2_ALLOWLIST adds more.
-   *   `+tag` sub-addresses of any allowlisted email match too (see
-   *   normalizeEmailForAllowlist), so testers can use as many `+tag` accounts
-   *   as they like without listing each one.
-   *
-   * This is the primary who/whether gate. The learn-core worker also self-guards
-   * on its own ROLEPLAY_V2_ENABLED (defense in depth), so enabling v2 end-to-end
-   * in an environment requires that flag to be on there too.
-   */
-  get roleplayV2() {
-    const enabled =
-      this.configService.get<string>('ROLEPLAY_V2_ENABLED', 'true') !== 'false';
-    // Allowlist = launch-phase default testers + ROLEPLAY_V2_ALLOWLIST env
-    // entries, centralized in roleplay-v2-access.util so there is exactly one
-    // place to change when v2 moves to a permission/flag-based rollout.
-    const allowlist = buildRoleplayV2Allowlist(
-      this.configService.get<string>('ROLEPLAY_V2_ALLOWLIST', ''),
-    );
-    return { enabled, allowlist };
   }
 
   get googleCloudTranslationConfig() {

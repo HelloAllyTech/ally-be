@@ -4,7 +4,6 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
-  UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, DeepPartial, EntityManager, In } from 'typeorm';
 
@@ -26,7 +25,6 @@ async function executeInChunks<T, R>(
   return results;
 }
 import { Scenarios } from '../entity/scenarios.entity';
-import { ScenarioEngine } from '../enum/scenario-engine.enum';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { validateSimulationStates } from '../util/validate-simulation-states.util';
@@ -181,8 +179,6 @@ import {
 } from 'src/common/util/time.util';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { TokenUser } from 'src/auth/type/auth.types';
-import { User } from 'src/user/entity/user.entity';
-import { isRoleplayV2EmailAllowed } from 'src/common/util/roleplay-v2-access.util';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
 import {
   AUDIT_ACTIONS,
@@ -249,11 +245,6 @@ export class ScenarioService {
     if (!tenantId) {
       throw new BadRequestException('Tenant ID is required');
     }
-    // v2 scenarios are only listed for a v2-allowlisted requester (e.g. the
-    // tester); every other learner sees the v1 catalog exactly as before and
-    // never encounters a v2 scenario (nor its rollout-gate 403).
-    const includeRoleplayV2 = await this.isCurrentUserRoleplayV2Allowed();
-
     // Cohort narrowing. Resolved here rather than in the repository because only
     // the request context knows who is asking; `null` back means the learner is
     // in no cohort, which is a real audience ("Unassigned") and must still be
@@ -270,7 +261,6 @@ export class ScenarioService {
         tenantId,
         cohortScope: { cohortId },
         ...(languageCode && { languageCode }),
-        ...(includeRoleplayV2 && { includeRoleplayV2: true }),
       });
     let data = fetchedData;
 
@@ -350,27 +340,6 @@ export class ScenarioService {
         `Failed to load scenario completions: ${(error as Error)?.message}`,
       );
       return new Map();
-    }
-  }
-
-  /**
-   * Whether the CURRENT request's user may see/use v2 (flag on + allowlisted).
-   * Fully defensive: any missing context resolves to false so the safe default
-   * is "hide v2". Shares the exact allowlist logic used by the session-start
-   * gate (isRoleplayV2EmailAllowed).
-   */
-  private async isCurrentUserRoleplayV2Allowed(): Promise<boolean> {
-    try {
-      const config = this.configService.roleplayV2;
-      if (!config?.enabled) return false;
-      const userId = Number(ExecutionManager.getUserId());
-      if (!userId || Number.isNaN(userId)) return false;
-      const user = await this.dataSource
-        .getRepository(User)
-        .findOne({ where: { id: userId }, select: ['id', 'email'] });
-      return isRoleplayV2EmailAllowed(user?.email, config);
-    } catch {
-      return false;
     }
   }
 
@@ -1432,16 +1401,6 @@ export class ScenarioService {
     await this.pruneStatesIfPromptNotStateful(updateScenarioDto);
 
     const scenario = await this.validateUpdateScenario(id, updateScenarioDto);
-
-    // Roleplay Studio v2 shells are materialised from a versioned spec — the
-    // v1 studio's fan-out must never touch them, or the next spec publish
-    // would silently clobber the edit. Author through the roleplay-studio
-    // endpoints instead.
-    if (scenario.engine === ScenarioEngine.ROLEPLAY_V2) {
-      throw new UnprocessableEntityException(
-        'This scenario is managed by Roleplay Studio v2; edit its roleplay spec instead.',
-      );
-    }
 
     const isMultiTenantAdmin =
       await this.permissionsService.isMultiTenantAdmin(userId);

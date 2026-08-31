@@ -4,7 +4,7 @@ import { BuilderPrdDocument } from '../type/builder-prd.type';
 
 /**
  * The living PRD for a session: one mutable `draft` plus an append-only trail
- * of builder_prd_versions snapshots (the RoleplaySpec draft/version pair).
+ * of builder_prd_versions snapshots (a draft/version pair).
  *
  * Both the agent (update_prd, RFC-6902 patches) and the admin (direct section
  * edits) mutate the same draft, which is why every mutation snapshots — the

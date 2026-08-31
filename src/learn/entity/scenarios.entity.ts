@@ -77,18 +77,16 @@ export class Scenarios extends BaseWithoutTenantEntity {
   @Column({ type: 'uuid', nullable: true })
   publishedVersionId?: string | null;
 
-  // Which runtime plays this scenario. ROLEPLAY_V2 rows are thin shells
-  // materialised by Roleplay Studio v2 (see src/roleplay-studio/): learner
-  // listing/launch reuses the scenarios pipeline, but the configuration lives
-  // in roleplay_specs/roleplay_spec_versions and the v1 studio must never
-  // edit them (updateScenario rejects with 422).
+  // Which runtime plays this scenario. Single-valued since Roleplay Studio v2
+  // was removed: every row is SIMULATION. Kept as a column rather than dropped
+  // so a second engine does not need a migration on this table.
   // Optional on the type (defaulted by the DB) so pre-existing structural
   // uses of the entity shape — GetAdminScenarioDto extends it — stay valid.
   @Column({ enum: ScenarioEngine, default: ScenarioEngine.SIMULATION })
   engine?: ScenarioEngine;
 
-  // Loose FK to roleplay_specs.id for engine=ROLEPLAY_V2 rows (no DB
-  // constraint, matching repo convention). Null for v1 scenarios.
+  // Vestigial: the loose FK to the removed roleplay_specs table. Always null
+  // now; the column is left in place rather than migrated off a hot table.
   @Column({ type: 'uuid', nullable: true })
   roleplaySpecId?: string | null;
 

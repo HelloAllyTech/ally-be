@@ -1,5 +1,0 @@
-{
-  "name": "Roleplay Copilot — Inference Pass",
-  "description": "Appended to the copilot system prompt: rules for inferring resistance profile, disclosure schedule, state-machine shape, engineered events and prosody from the trainer's interview answers.",
-  "category": "Roleplay Studio"
-}
