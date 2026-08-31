@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { IsInt, Max, Min } from 'class-validator';
 
 /**
  * GitHub Actions workflow file names backing the ally-mobile automated
@@ -11,6 +12,8 @@ export const MOBILE_WORKFLOW_FILES = [
   'scheduled-mobile-release.yml',
   'build-ios-production.yml',
   'build-android-production.yml',
+  'promote-android-production.yml',
+  'promote-ios-testflight-external.yml',
 ] as const;
 
 export type MobileWorkflowFile = (typeof MOBILE_WORKFLOW_FILES)[number];
@@ -19,6 +22,8 @@ export const MOBILE_WORKFLOW_LABELS: Record<MobileWorkflowFile, string> = {
   'scheduled-mobile-release.yml': 'Scheduled Check',
   'build-ios-production.yml': 'iOS Build',
   'build-android-production.yml': 'Android Build',
+  'promote-android-production.yml': 'Promote Android',
+  'promote-ios-testflight-external.yml': 'Promote iOS External',
 };
 
 export class MobileReleaseRunDto {
@@ -111,4 +116,31 @@ export class MobileTriggerResponseDto {
       'true once scheduled-mobile-release.yml has been dispatched via the GitHub API',
   })
   dispatched!: boolean;
+}
+
+/**
+ * Reused as-is for both promote-android and promote-ios-testflight: shape is
+ * identical to MobileTriggerResponseDto ({ dispatched: true }), but named
+ * generically here since "trigger" specifically refers to
+ * scheduled-mobile-release.yml elsewhere in this module.
+ */
+export class MobileDispatchResponseDto {
+  @ApiProperty({
+    description:
+      'true once the target workflow has been dispatched via the GitHub API',
+  })
+  dispatched!: boolean;
+}
+
+export class PromoteAndroidRequestDto {
+  @ApiProperty({
+    minimum: 1,
+    maximum: 100,
+    description:
+      "Play Store staged rollout percentage to promote the production track to, e.g. 20 for 20%. Forwarded to promote-android-production.yml's rollout_percentage input as a string, per GitHub's workflow_dispatch requirements.",
+  })
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  rolloutPercentage!: number;
 }

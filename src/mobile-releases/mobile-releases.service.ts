@@ -6,6 +6,7 @@ import {
   MOBILE_WORKFLOW_FILES,
   MOBILE_WORKFLOW_LABELS,
   MobileCurrentVersionResponseDto,
+  MobileDispatchResponseDto,
   MobileReleaseRunDto,
   MobileTriggerResponseDto,
   MobileWorkflowFile,
@@ -14,6 +15,10 @@ import {
 const GITHUB_API = 'https://api.github.com';
 const RELEASE_WORKFLOW_FILE: MobileWorkflowFile =
   'scheduled-mobile-release.yml';
+const PROMOTE_ANDROID_WORKFLOW_FILE: MobileWorkflowFile =
+  'promote-android-production.yml';
+const PROMOTE_IOS_WORKFLOW_FILE: MobileWorkflowFile =
+  'promote-ios-testflight-external.yml';
 const MS_PER_HOUR = 60 * 60 * 1000;
 const CADENCE_GATE_HOURS = 48;
 const DAILY_CHECK_UTC_HOUR = 5; // matches scheduled-mobile-release.yml's `cron: '0 5 * * *'`
@@ -261,6 +266,80 @@ export class MobileReleasesService {
       throw this.toReadableError(
         error,
         `Could not dispatch ${RELEASE_WORKFLOW_FILE} on ${this.repo}`,
+      );
+    }
+  }
+
+  /**
+   * MANUAL, REAL-PRODUCTION ACTION. Dispatches promote-android-production.yml,
+   * which advances the Play Store production track's staged rollout to
+   * `rolloutPercentage`% — this is workflow_dispatch-only, never runs
+   * automatically, and there is no undo endpoint here (rollout percentage
+   * can only go up via this workflow; a halt/rollback is a Play Console
+   * action, not a GitHub Actions one).
+   *
+   * DEPLOYMENT PREREQUISITE: the Play Console service account backing this
+   * workflow's Google Play upload step must be granted "Release to
+   * production" permission in Play Console — today it may only be scoped to
+   * internal-track release, in which case this workflow will fail even
+   * though the GitHub dispatch itself succeeds. That's a Play Console
+   * change, not something fixable here.
+   */
+  async promoteAndroid(
+    rolloutPercentage: number,
+  ): Promise<MobileDispatchResponseDto> {
+    const headers = this.headers;
+
+    try {
+      // GitHub returns 204 No Content with an empty body on success — do not
+      // attempt to read/parse `data` from this response.
+      await axios.post(
+        `${GITHUB_API}/repos/${this.repo}/actions/workflows/${PROMOTE_ANDROID_WORKFLOW_FILE}/dispatches`,
+        {
+          ref: 'master',
+          // workflow_dispatch inputs must be strings, even for what's
+          // conceptually a number.
+          inputs: { rollout_percentage: String(rolloutPercentage) },
+        },
+        { headers, timeout: 15_000 },
+      );
+      return { dispatched: true };
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not dispatch ${PROMOTE_ANDROID_WORKFLOW_FILE} on ${this.repo}`,
+      );
+    }
+  }
+
+  /**
+   * MANUAL, REAL-PRODUCTION ACTION. Dispatches
+   * promote-ios-testflight-external.yml, which promotes the current
+   * TestFlight internal build to the external testing group — this is
+   * workflow_dispatch-only, never runs automatically, and takes no inputs.
+   *
+   * DEPLOYMENT PREREQUISITE (on the ally-mobile side, not here): the
+   * workflow reads a `TESTFLIGHT_EXTERNAL_GROUP_NAME` repo variable to know
+   * which external group to promote into. That variable lives in GitHub
+   * Actions on HelloAllyTech/ally-mobile — this backend does not need to
+   * know its value, only that the workflow depends on it being set.
+   */
+  async promoteIosTestflight(): Promise<MobileDispatchResponseDto> {
+    const headers = this.headers;
+
+    try {
+      // GitHub returns 204 No Content with an empty body on success — do not
+      // attempt to read/parse `data` from this response.
+      await axios.post(
+        `${GITHUB_API}/repos/${this.repo}/actions/workflows/${PROMOTE_IOS_WORKFLOW_FILE}/dispatches`,
+        { ref: 'master', inputs: {} },
+        { headers, timeout: 15_000 },
+      );
+      return { dispatched: true };
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not dispatch ${PROMOTE_IOS_WORKFLOW_FILE} on ${this.repo}`,
       );
     }
   }
