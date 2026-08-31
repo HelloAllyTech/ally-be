@@ -167,6 +167,41 @@ export class IosTestflightStatusResponseDto {
   externalGroupAssigned!: boolean;
 }
 
+export class IosTestflightHistoryEntryDto {
+  @ApiProperty({ description: 'App Store Connect build version' })
+  buildVersion!: string;
+
+  @ApiProperty({ description: "App Store Connect's own id for this build" })
+  buildId!: string;
+
+  @ApiProperty({
+    description: "ISO timestamp, from Apple's build attributes.uploadedDate",
+  })
+  uploadedDate!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Apple's raw betaReviewState enum value from betaAppReviewSubmissions " +
+      '(WAITING_FOR_REVIEW | IN_REVIEW | REJECTED | APPROVED), passed through ' +
+      'verbatim rather than remapped. null if this build has never been ' +
+      'submitted for Beta App Review.',
+  })
+  betaReviewState!: string | null;
+}
+
+export class IosTestflightHistoryResponseDto {
+  @ApiProperty({
+    type: IosTestflightHistoryEntryDto,
+    isArray: true,
+    description:
+      'Up to the last 15 processed (VALID) iOS builds for com.helloally.app, ' +
+      'each with its Beta App Review submission status, sorted by ' +
+      'uploadedDate descending. Empty array if no processed build exists yet.',
+  })
+  history!: IosTestflightHistoryEntryDto[];
+}
+
 export class PromoteAndroidRequestDto {
   @ApiProperty({
     minimum: 1,

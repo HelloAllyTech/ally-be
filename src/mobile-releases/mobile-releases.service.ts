@@ -5,6 +5,8 @@ import * as jwt from 'jsonwebtoken';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import {
+  IosTestflightHistoryEntryDto,
+  IosTestflightHistoryResponseDto,
   IosTestflightStatusResponseDto,
   MOBILE_WORKFLOW_FILES,
   MOBILE_WORKFLOW_LABELS,
@@ -29,6 +31,7 @@ const APPSTORE_BUNDLE_ID = 'com.helloally.app';
 const APPSTORE_JWT_AUDIENCE = 'appstoreconnect-v1';
 // Apple caps App Store Connect API JWTs at 20 minutes; stay comfortably under it.
 const APPSTORE_JWT_TTL_SECONDS = 19 * 60;
+const TESTFLIGHT_HISTORY_BUILD_LIMIT = 15;
 
 /**
  * Normalizes an APPSTORE_API_PRIVATE_KEY env value into a clean PEM string,
@@ -510,6 +513,78 @@ export class MobileReleasesService {
       betaReviewState,
       externalGroupAssigned,
     };
+  }
+
+  /**
+   * Review-submission history across the last {@link TESTFLIGHT_HISTORY_BUILD_LIMIT}
+   * processed (VALID) iOS builds — same auth/fetch pattern as
+   * getIosTestflightStatus(), just listing more than one build. Read-only,
+   * no caching. Returns 200 with an empty array when there are simply no
+   * processed builds yet, same "empty state is not a failure" convention as
+   * the rest of this module. Only genuine upstream failures throw via
+   * toReadableError.
+   *
+   * Apple API calls per request: 1 (app id lookup) + 1 (builds list) + up to
+   * TESTFLIGHT_HISTORY_BUILD_LIMIT (one betaAppReviewSubmissions lookup per
+   * build, fanned out in parallel) = up to 17.
+   */
+  async getIosTestflightHistory(): Promise<IosTestflightHistoryResponseDto> {
+    this.requireAppStoreConnectConfig();
+    const headers = this.appStoreConnectHeaders;
+
+    const appId = await this.fetchAppStoreConnectAppId(headers);
+    const builds = await this.fetchRecentValidBuilds(appId, headers);
+
+    if (builds.length === 0) {
+      return { history: [] };
+    }
+
+    const history: IosTestflightHistoryEntryDto[] = await Promise.all(
+      builds.map(async (build) => ({
+        buildVersion: build.version,
+        buildId: build.id,
+        uploadedDate: build.uploadedDate,
+        betaReviewState: await this.fetchBetaReviewState(build.id, headers),
+      })),
+    );
+
+    return {
+      history: history.sort(
+        (a, b) =>
+          new Date(b.uploadedDate).getTime() -
+          new Date(a.uploadedDate).getTime(),
+      ),
+    };
+  }
+
+  private async fetchRecentValidBuilds(
+    appId: string,
+    headers: Record<string, string>,
+  ): Promise<{ id: string; version: string; uploadedDate: string }[]> {
+    try {
+      const { data } = await axios.get(`${APPSTORE_CONNECT_API}/builds`, {
+        headers,
+        params: {
+          'filter[app]': appId,
+          'filter[processingState]': 'VALID',
+          sort: '-uploadedDate',
+          limit: TESTFLIGHT_HISTORY_BUILD_LIMIT,
+        },
+        timeout: 15_000,
+      });
+      return (data?.data ?? [])
+        .filter((build: any) => build?.id)
+        .map((build: any) => ({
+          id: String(build.id),
+          version: String(build.attributes?.version ?? ''),
+          uploadedDate: String(build.attributes?.uploadedDate ?? ''),
+        }));
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not list builds for App Store Connect app ${appId}`,
+      );
+    }
   }
 
   private async fetchAppStoreConnectAppId(
