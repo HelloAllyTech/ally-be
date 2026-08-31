@@ -31,6 +31,7 @@ import {
   RoadmapBoardGroupBy,
   RoadmapOpportunityStage,
 } from '../enum/roadmap-opportunity.enum';
+import { RoadmapStrategyGoalService } from './roadmap-strategy-goal.service';
 import { RoadmapTaxonomyService } from './roadmap-taxonomy.service';
 import { RoadmapOpportunityService } from './roadmap-opportunity.service';
 import { RoadmapNotificationService } from './roadmap-notification.service';
@@ -53,6 +54,7 @@ export class RoadmapBoardService {
     private readonly opportunityRepository: RoadmapOpportunityRepository,
     private readonly opportunityService: RoadmapOpportunityService,
     private readonly notifications: RoadmapNotificationService,
+    private readonly strategyGoalService: RoadmapStrategyGoalService,
     // Lane keys for the goal and owner boards, and the validation behind a drop into one.
     private readonly taxonomyService: RoadmapTaxonomyService,
   ) {}
@@ -77,6 +79,7 @@ export class RoadmapBoardService {
         periodKey,
         from,
         to,
+        rank: await this.strategyGoalService.getRankContext(),
       });
 
     // ONE mapping pass over every row, then bucket the mapped DTOs. Mapping per lane would

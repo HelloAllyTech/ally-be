@@ -43,6 +43,8 @@ const MAX_TOKENS = {
   DUPLICATES: 1000,
   SUMMARISE: 2000,
   CLAUDE_PROMPT: 2000,
+  // A verdict plus a ≤200-char reason per goal, at the 12-goal ceiling, with headroom.
+  GOAL_IMPACT: 1600,
 } as const;
 
 @Injectable()
@@ -396,6 +398,83 @@ export class RoadmapAiService {
   }
 
   // ── LLM plumbing ───────────────────────────────────────────────────────────
+
+  /**
+   * Judge one opportunity against every strategy goal, in a single call.
+   *
+   * ONE CALL FOR ALL GOALS, not one per goal: the model reads the same description either way,
+   * so per-goal calls would re-bill the description N times for no extra signal — and judging
+   * the goals side by side is what stops every goal coming back true, which is the failure mode
+   * that makes coverage useless.
+   *
+   * FAILS CLOSED, like checkReadiness and for the same reason: coverage is a RANKING input, so
+   * an answer the model did not give must never read as "yes, this advances the goal". A missing
+   * verdict, a non-boolean, unparseable JSON — all resolve to `helped: false` with a reason
+   * saying the assessment did not complete, which is honest and visible in the drawer rather
+   * than a silent zero.
+   *
+   * HALLUCINATED GOAL NAMES ARE DROPPED, not stored. The FK would reject them anyway, but
+   * catching it here means one invented name does not fail the whole opportunity's assessment.
+   * The returned array is always exactly the goals passed in, in that order — the caller
+   * replaces a whole opportunity's verdicts with it, so a short answer would silently shrink
+   * the numerator while the denominator stayed put.
+   */
+  async assessGoalImpact(
+    description: string,
+    goalNames: string[],
+  ): Promise<{ goalName: string; helped: boolean; reason: string | null }[]> {
+    if (!goalNames.length) return [];
+
+    const parsed = await this.runJson<{
+      verdicts?: { goal?: string; helped?: boolean; reason?: string }[];
+    }>(
+      ROADMAP_PROMPT_CODES.GOAL_IMPACT,
+      `Strategy goals:\n${goalNames.map((g) => `- ${g}`).join('\n')}\n\n` +
+        `Opportunity to assess:\n"""\n${description}\n"""\n\n` +
+        `Return exactly ${goalNames.length} verdict(s), one per goal, in the order listed.`,
+      MAX_TOKENS.GOAL_IMPACT,
+      // Every roadmap call bills under this task; there is no roadmap-specific LlmTask and
+      // inventing one here would split this module's spend across two buckets in analytics.
+      LlmTask.AUTOFILL_ENHANCE_FIELD,
+      'goal impact',
+    );
+
+    // Index the model's answer by goal name so order drift is harmless — the schema asks for
+    // the given order, but the verdicts are joined by name, never by position. A positional
+    // join would assign goal A's verdict to goal B on a single reordered element.
+    const byGoal = new Map<string, { helped?: boolean; reason?: string }>();
+    for (const v of parsed?.verdicts ?? []) {
+      const name = v?.goal?.trim();
+      if (!name) continue;
+      if (!goalNames.includes(name)) {
+        this.logger.warn(
+          `[ROADMAP] Goal impact returned "${name}", which is not a live strategy goal. Dropped.`,
+        );
+        continue;
+      }
+      byGoal.set(name, v);
+    }
+
+    return goalNames.map((goalName) => {
+      const v = byGoal.get(goalName);
+      if (typeof v?.helped !== 'boolean') {
+        return {
+          goalName,
+          helped: false,
+          reason:
+            'Not assessed — the model did not return a verdict for this goal.',
+        };
+      }
+      const reason = v.reason?.trim();
+      return {
+        goalName,
+        helped: v.helped,
+        reason: reason
+          ? reason.slice(0, ROADMAP_LIMITS.GOAL_IMPACT_REASON_MAX)
+          : null,
+      };
+    });
+  }
 
   /**
    * JSON-shaped call. Anthropic has no JSON mode and this model rejects assistant prefill

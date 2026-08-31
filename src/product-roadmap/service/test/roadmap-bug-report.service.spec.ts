@@ -56,6 +56,21 @@ describe('RoadmapOpportunityService.createBugReport', () => {
 
     const service = new RoadmapOpportunityService(
       opportunityRepository as unknown as RoadmapOpportunityRepository,
+      // Ranking is not what these tests are about; countGoals feeds the response mapper and
+      // getRankContext feeds the read paths.
+      {
+        countGoals: jest.fn().mockResolvedValue(0),
+        getRankContext: jest.fn().mockResolvedValue({
+          weights: {
+            votesWeight: 1,
+            votersWeight: 1,
+            effortWeight: 1,
+            goalImpactWeight: 1,
+          },
+          bases: { maxScore: 0, maxVoters: 0, totalGoals: 0 },
+        }),
+      } as never,
+      { assessQuietly: jest.fn().mockResolvedValue(undefined) } as never,
       {
         indexQuietly: jest.fn().mockResolvedValue(undefined),
       } as unknown as RoadmapVectorService,
@@ -136,6 +151,21 @@ describe('RoadmapOpportunityService.createBugReport', () => {
 
     const service = new RoadmapOpportunityService(
       opportunityRepository as unknown as RoadmapOpportunityRepository,
+      // Ranking is not what these tests are about; countGoals feeds the response mapper and
+      // getRankContext feeds the read paths.
+      {
+        countGoals: jest.fn().mockResolvedValue(0),
+        getRankContext: jest.fn().mockResolvedValue({
+          weights: {
+            votesWeight: 1,
+            votersWeight: 1,
+            effortWeight: 1,
+            goalImpactWeight: 1,
+          },
+          bases: { maxScore: 0, maxVoters: 0, totalGoals: 0 },
+        }),
+      } as never,
+      { assessQuietly: jest.fn().mockResolvedValue(undefined) } as never,
       {
         indexQuietly: jest.fn().mockResolvedValue(undefined),
       } as unknown as RoadmapVectorService,

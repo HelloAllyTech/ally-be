@@ -12,6 +12,17 @@ import {
 const OPP = '11111111-1111-1111-1111-111111111111';
 const ACTOR = 9;
 
+/** Neutral rank context — these tests never assert on the composite score. */
+const TEST_RANK = {
+  weights: {
+    votesWeight: 1,
+    votersWeight: 1,
+    effortWeight: 1,
+    goalImpactWeight: 1,
+  },
+  bases: { maxScore: 100, maxVoters: 10, totalGoals: 4 },
+};
+
 describe('RoadmapBoardService', () => {
   let service: RoadmapBoardService;
   let repository: Record<string, jest.Mock>;
@@ -50,6 +61,9 @@ describe('RoadmapBoardService', () => {
       repository as never,
       opportunityService as never,
       notifications as never,
+      // These tests are about drag-and-drop routing, not ranking; a neutral context is enough
+      // for listBoard to be callable.
+      { getRankContext: jest.fn(async () => TEST_RANK) } as never,
       taxonomyService as never,
     );
   });

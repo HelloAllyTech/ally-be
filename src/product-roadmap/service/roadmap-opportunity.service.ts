@@ -41,6 +41,8 @@ import {
 } from '../dto/roadmap-response.dto';
 import { currentPeriodKey } from '../util/roadmap-period.util';
 import { effectiveMonthOf, isMonthPinned } from '../util/roadmap-month.util';
+import { RoadmapGoalImpactService } from './roadmap-goal-impact.service';
+import { RoadmapStrategyGoalService } from './roadmap-strategy-goal.service';
 import { RoadmapVectorService } from './roadmap-vector.service';
 import { RoadmapNotificationService } from './roadmap-notification.service';
 
@@ -58,6 +60,8 @@ export class RoadmapOpportunityService {
 
   constructor(
     private readonly opportunityRepository: RoadmapOpportunityRepository,
+    private readonly strategyGoalService: RoadmapStrategyGoalService,
+    private readonly goalImpactService: RoadmapGoalImpactService,
     private readonly vectorService: RoadmapVectorService,
     private readonly notifications: RoadmapNotificationService,
     @InjectRepository(User) private readonly userRepository: Repository<User>,
@@ -74,6 +78,9 @@ export class RoadmapOpportunityService {
       ...query,
       userId,
       periodKey,
+      // Read once for the whole page. The bases are board-wide maxima, so scoring rows in one
+      // page against different bases would break the ordering the page depends on.
+      rank: await this.strategyGoalService.getRankContext(),
     });
     return {
       items: await this.toResponseList(result.items),
@@ -89,6 +96,7 @@ export class RoadmapOpportunityService {
       id,
       userId,
       currentPeriodKey(),
+      await this.strategyGoalService.getRankContext(),
     );
     if (!row) throw new NotFoundException(`Opportunity ${id} not found`);
     return (await this.toResponseList([row]))[0];
@@ -152,6 +160,11 @@ export class RoadmapOpportunityService {
     // Best-effort and awaited: the row is already committed, so a vector failure cannot roll
     // it back, but awaiting means the very next duplicate check sees this opportunity.
     await this.vectorService.indexQuietly(saved.id);
+
+    // Score the new row against the strategy before it is first read, so it enters the board
+    // ranked rather than sitting at zero coverage until someone notices. Same best-effort
+    // contract as the vector index above: a model outage must not fail a committed write.
+    await this.goalImpactService.assessQuietly(saved.id, userId);
 
     // Bug Hunter's comprehensive findings table is a complete bug inbox — a human report
     // needs a row there the moment it's filed, not only once a hunt run gets around to
@@ -337,6 +350,20 @@ export class RoadmapOpportunityService {
     );
     if (needsReindex) await this.vectorService.indexQuietly(id);
 
+    // Re-assess only when the DESCRIPTION changed, and only when it really did — the drawer
+    // resends the existing description alongside an unrelated edit, so an `!== undefined` check
+    // alone would re-bill an assessment every time somebody set a planned month.
+    //
+    // Description is the ONLY trigger: it is the entire input the model judges. Effort, stage
+    // and owner do not change whether the work advances a strategy goal, and re-running on them
+    // would pay for an identical answer.
+    const descriptionChanged =
+      dto.description !== undefined &&
+      dto.description.trim() !== existing.description;
+    if (descriptionChanged) {
+      await this.goalImpactService.assessQuietly(id, userId);
+    }
+
     const response = await this.findOne(userId, id);
     // Same reasoning as create(): a bug is not on the board, so there is nothing
     // for an upsert broadcast to update there.
@@ -428,7 +455,12 @@ export class RoadmapOpportunityService {
   async toResponseList(
     rows: RoadmapOpportunityRow[],
   ): Promise<OpportunityResponseDto[]> {
-    const users = await this.resolveUsers(rows.map((r) => r.createdBy));
+    // Both resolved ONCE for the whole page, not per row: the goal count is the same for every
+    // opportunity in a response, and fetching it per row would issue a query per card.
+    const [users, goalsTotal] = await Promise.all([
+      this.resolveUsers(rows.map((r) => r.createdBy)),
+      this.strategyGoalService.countGoals(),
+    ]);
     return rows.map((row) => ({
       id: row.id,
       description: row.description,
@@ -457,6 +489,14 @@ export class RoadmapOpportunityService {
       ),
       monthPinned: isMonthPinned(row.stage, row.releasedAt),
       priorityScore: Number(row.priorityScore ?? 0),
+      // Rounded to one decimal at the edge, not in SQL: the ORDER BY runs on the full-precision
+      // value, so rounding here cannot reorder anything — it only stops the card rendering
+      // 63.33333333333333.
+      compositeScore: Math.round(Number(row.compositeScore ?? 0) * 10) / 10,
+      voterCount: Number(row.voterCount ?? 0),
+      goalsHelped: Number(row.goalsHelped ?? 0),
+      goalsAssessed: Number(row.goalsAssessed ?? 0),
+      goalsTotal,
       myVotes: Number(row.myVotes ?? 0),
       commentCount: Number(row.commentCount ?? 0),
       source: row.source,

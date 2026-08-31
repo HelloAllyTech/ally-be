@@ -7,6 +7,17 @@ import { RoadmapOpportunityRepository } from '../roadmap-opportunity.repository'
  * does for listOpportunities/listBoard — otherwise the queue position badge renders blank
  * until the next full list refresh, even though the opportunity has a real position.
  */
+/** Neutral rank context: the ordering tests are about tiebreaks, not about the weighting. */
+const TEST_RANK = {
+  weights: {
+    votesWeight: 1,
+    votersWeight: 1,
+    effortWeight: 1,
+    goalImpactWeight: 1,
+  },
+  bases: { maxScore: 100, maxVoters: 10, totalGoals: 4 },
+};
+
 describe('RoadmapOpportunityRepository.findOneWithScore', () => {
   it('projects queueRank so the badge does not need a full list refresh to appear', async () => {
     const query = jest.fn().mockResolvedValue([{ id: 'opp-1' }]);
@@ -16,7 +27,7 @@ describe('RoadmapOpportunityRepository.findOneWithScore', () => {
     } as unknown as DataSource;
 
     const repository = new RoadmapOpportunityRepository(dataSource);
-    await repository.findOneWithScore('opp-1', 7, '2026-08');
+    await repository.findOneWithScore('opp-1', 7, '2026-08', TEST_RANK);
 
     const [sql] = query.mock.calls[0];
     expect(sql).toMatch(/"queueRank"/);
@@ -68,6 +79,7 @@ describe('RoadmapOpportunityRepository.listOpportunities ordering', () => {
       userId: 7,
       periodKey: '2026-08',
       order,
+      rank: TEST_RANK,
     });
     return chain;
   };

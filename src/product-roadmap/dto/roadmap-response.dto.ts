@@ -54,6 +54,39 @@ export class OpportunityResponseDto {
   @ApiPropertyOptional({ nullable: true, enum: RoadmapOpportunityEffort })
   effort?: RoadmapOpportunityEffort | null;
 
+  /**
+   * The weighted four-factor rank, 0-100. The board's DEFAULT ordering.
+   *
+   * Always accompanied by the four factors that produced it (below) — a composite you cannot
+   * check against its own inputs is a number nobody can argue with, and the whole point of
+   * ranking on four lenses rather than one is that the lenses stay visible.
+   */
+  @ApiProperty({
+    description:
+      'Weighted composite of votes, distinct backers, effort and strategy-goal coverage, ' +
+      '0-100. Recomputed per read from live weights — never stored.',
+  })
+  compositeScore!: number;
+
+  /**
+   * Distinct admins backing this, across all periods. Breadth, where priorityScore is
+   * intensity: one admin spending 40 votes and forty spending one each are the same total.
+   */
+  @ApiProperty() voterCount!: number;
+
+  /** Strategy goals this was judged to positively move. */
+  @ApiProperty() goalsHelped!: number;
+
+  /**
+   * Strategy goals this has any verdict for. Below `goalsTotal` means the assessment predates
+   * a goal being added — coverage divides by the live total either way, so such a row reads as
+   * lower-impact than it may actually be. Surfaced rather than hidden.
+   */
+  @ApiProperty() goalsAssessed!: number;
+
+  /** Live strategy-goal count — the coverage denominator. Zero means no strategy is defined. */
+  @ApiProperty() goalsTotal!: number;
+
   /** Manual rank within its lane, ascending. Only meaningful against its own lane. */
   @ApiProperty() boardPosition!: number;
 
