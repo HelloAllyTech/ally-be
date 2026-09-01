@@ -60,6 +60,7 @@ import { RoadmapAdminController } from './controller/roadmap-admin.controller';
 import { RoadmapCollaborationController } from './controller/roadmap-collaboration.controller';
 import { RoadmapOpportunityController } from './controller/roadmap-opportunity.controller';
 import { RoadmapGateway } from './gateway/roadmap.gateway';
+import { AwsModule } from 'src/aws/aws.module';
 
 /**
  * Product Roadmap — the internal vote-based prioritisation board, rebuilt from the standalone
@@ -125,6 +126,11 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
      * imports ProductRoadmapModule.
      */
     BuilderModule,
+    /**
+     * S3Service — presigned PUTs for opportunity reference images, and the URL parsing that
+     * checks a stored image really is one of our own uploads.
+     */
+    AwsModule,
   ],
   controllers: [
     RoadmapOpportunityController,

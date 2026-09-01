@@ -6,6 +6,7 @@ import {
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
 } from '../enum/roadmap-opportunity.enum';
+import { RoadmapReferenceImageDto } from './roadmap-opportunity.dto';
 
 export class RoadmapUserRefDto {
   @ApiProperty() id!: number;
@@ -42,6 +43,13 @@ export class OpportunityResponseDto {
   })
   queueRank!: number | null;
   @ApiPropertyOptional({ nullable: true }) claudePrompt?: string | null;
+
+  /**
+   * Reference images in the order they were arranged. Always an array — empty, never null, so no
+   * client has to handle both shapes.
+   */
+  @ApiProperty({ type: [RoadmapReferenceImageDto] })
+  referenceImages!: RoadmapReferenceImageDto[];
   /** The Builder session started from this opportunity, or null. Drives the drawer's
    *  button between "Open in Builder Agent" and "Resume in Builder Agent". */
   @ApiPropertyOptional({ nullable: true }) builderSessionId?: string | null;
@@ -461,4 +469,22 @@ export class OpenBuilderSessionResponseDto {
     description: 'The opening brief to send, when created',
   })
   seedMessage!: string | null;
+}
+
+/**
+ * The presigned PUT, plus the URL to send back in `referenceImages` once the upload succeeds.
+ *
+ * Two URLs because they are two different things: `presignedUrl` is a short-lived, signed,
+ * write-once address the browser PUTs to and must never be stored; `imageUrl` is the durable
+ * object address that goes on the row. Returning only the first and having the client derive the
+ * second is how a signature ends up persisted in a database.
+ */
+export class RoadmapReferenceImageUploadUrlResponseDto {
+  @ApiProperty({ description: 'Presigned S3 PUT URL. Expires in 10 minutes.' })
+  presignedUrl!: string;
+
+  @ApiProperty({
+    description: 'The stored object URL — send this back in `referenceImages`.',
+  })
+  imageUrl!: string;
 }

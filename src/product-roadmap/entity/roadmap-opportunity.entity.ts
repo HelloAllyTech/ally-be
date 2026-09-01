@@ -15,6 +15,15 @@ import {
 } from '../enum/roadmap-opportunity.enum';
 
 /**
+ * One attached image: the S3 object URL, plus an optional caption saying what a reader is
+ * looking at. Captions are capped at ROADMAP_LIMITS.REFERENCE_IMAGE_CAPTION_MAX by the DTO.
+ */
+export interface RoadmapReferenceImage {
+  url: string;
+  caption?: string | null;
+}
+
+/**
  * The atomic unit of the roadmap: an idea or a bug that people vote on.
  *
  * There is deliberately no `priorityScore` column. The score is SUM(votes) over ALL users
@@ -118,6 +127,33 @@ export class RoadmapOpportunity extends BaseWithoutTenantEntity {
 
   @Column({ type: 'text', nullable: true })
   claudePrompt?: string | null;
+
+  /**
+   * Screenshots, mocks and photos attached to the opportunity, in the order somebody arranged
+   * them. `[{ url, caption }]`, at most ROADMAP_LIMITS.REFERENCE_IMAGES_MAX of them.
+   *
+   * NOT NULL DEFAULT '[]': "no images" is an empty array and never null, so no read path has to
+   * distinguish the two and no existing row needed a backfill beyond the default.
+   *
+   * jsonb rather than a child table, and this is the one decision here worth defending. A child
+   * table buys per-image ids, its own audit columns and a real FK — none of which anything wants:
+   * nothing links to an individual image, no query filters or aggregates by one, and the ORDER is
+   * part of the data (a `position` column exists only to rebuild what an array already stores).
+   * What it would cost is a join on the hottest read in the module — the board loads every card
+   * — plus a second write path inside split/merge. If an image ever needs to be commented on or
+   * linked to on its own, that is the point to promote it; until then this is one column on the
+   * row that owns it.
+   *
+   * The URLs are OUR OWN S3 objects and the service enforces that on every write (see
+   * `assertOwnReferenceImages`): the array is rendered as <img src> in the admin dashboard for
+   * every roadmap viewer, so accepting an arbitrary URL here would let one filer point every
+   * reader's browser at a host of their choosing.
+   *
+   * Deliberately NOT part of the embedded text (see RoadmapVectorService) — duplicate detection
+   * reads what an opportunity says, and an S3 key says nothing about that.
+   */
+  @Column({ type: 'jsonb', default: () => `'[]'::jsonb` })
+  referenceImages!: RoadmapReferenceImage[];
 
   /**
    * The Builder session started from this opportunity, if any.

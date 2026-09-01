@@ -9,6 +9,8 @@ import { validateSync } from 'class-validator';
 
 import { User } from 'src/user/entity/user.entity';
 import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
+import { S3Service } from 'src/aws/service/s3.service';
+import { AppConfigService } from 'src/config/config.service';
 
 import { RoadmapOpportunityService } from '../roadmap-opportunity.service';
 import { RoadmapOpportunityRepository } from '../../repository/roadmap-opportunity.repository';
@@ -112,6 +114,12 @@ describe('RoadmapOpportunityService — owners', () => {
         {
           provide: getRepositoryToken(BugFinding),
           useValue: { create: jest.fn(), save: jest.fn() },
+        },
+        // Reference images play no part in owner resolution; these satisfy the constructor.
+        { provide: S3Service, useValue: { parseS3Url: jest.fn() } },
+        {
+          provide: AppConfigService,
+          useValue: { s3: { assetsBucket: 'ally-assets' } },
         },
       ],
     }).compile();

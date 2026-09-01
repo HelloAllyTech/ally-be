@@ -3,6 +3,10 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsNotEmpty,
+  IsNumber,
+  IsUrl,
+  Max,
   IsEnum,
   IsInt,
   IsISO8601,
@@ -23,10 +27,12 @@ import {
   RoadmapOpportunitySource,
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
+  RoadmapReferenceImageContentType,
 } from '../enum/roadmap-opportunity.enum';
 import {
   ROADMAP_BOARD_DEFAULTS,
   ROADMAP_LIMITS,
+  ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES,
 } from '../constants/product-roadmap.constants';
 
 /**
@@ -208,6 +214,78 @@ export class ListOpportunitiesQueryDto extends RoadmapOpportunityFiltersDto {
   offset?: number;
 }
 
+/**
+ * One attached reference image.
+ *
+ * `url` must be an object this service handed out a presigned PUT for — the create/update
+ * service re-derives the bucket and key prefix from it and refuses anything else. That check
+ * cannot live here: the bucket is configuration, not a property of the payload, and a DTO that
+ * hardcoded it would be wrong in every environment but one.
+ *
+ * `caption` is optional because most images need none — a screenshot of the broken screen speaks
+ * for itself. It earns its place on the few that do: three near-identical mocks are unreadable
+ * without "current", "option A", "option B".
+ */
+export class RoadmapReferenceImageDto {
+  @ApiProperty({
+    description:
+      'S3 object URL returned by POST /product-roadmap/reference-images/upload-url',
+  })
+  @IsString()
+  @IsNotEmpty()
+  // `require_tld: false` so a LocalStack/path-style host (http://localstack:4566/...) validates
+  // in dev. The service's own bucket check is what actually constrains this; @IsUrl only rejects
+  // input that is not a URL at all, which is the difference between a 400 here and a 422 there.
+  @IsUrl({ require_tld: false })
+  @MaxLength(2000)
+  url!: string;
+
+  @ApiPropertyOptional({
+    maxLength: ROADMAP_LIMITS.REFERENCE_IMAGE_CAPTION_MAX,
+    nullable: true,
+    description: 'What a reader is looking at. Optional.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(ROADMAP_LIMITS.REFERENCE_IMAGE_CAPTION_MAX)
+  caption?: string | null;
+}
+
+/**
+ * Ask for a presigned PUT so the browser can upload one image straight to S3.
+ *
+ * Same shape as the blog's image presign, and the same reason for existing: the bytes never pass
+ * through this service, so a 5 MB screenshot is not a 5 MB request body through the API gateway.
+ * The returned `imageUrl` is what the client then sends back in `referenceImages`.
+ *
+ * Gated at the VOTE tier, matching POST /opportunities — the person FILING an opportunity is the
+ * one with the screenshot, and making them file first and attach later (edit is the MANAGE tier)
+ * would put the picture behind a permission most filers do not hold.
+ */
+export class RoadmapReferenceImageUploadUrlDto {
+  @ApiProperty({ example: 'filter-row-wrapping.png' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  fileName!: string;
+
+  @ApiProperty({
+    description: 'File size in bytes',
+    minimum: 1,
+    maximum: ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES,
+  })
+  @IsNumber()
+  @Min(1)
+  // Checked here as well as in S3Service so an oversized file is refused before anything is
+  // signed, rather than after the client has already been handed a URL.
+  @Max(ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES)
+  fileSize!: number;
+
+  @ApiProperty({ enum: RoadmapReferenceImageContentType })
+  @IsEnum(RoadmapReferenceImageContentType)
+  contentType!: RoadmapReferenceImageContentType;
+}
+
 export class CreateOpportunityDto {
   @ApiProperty({ maxLength: ROADMAP_LIMITS.DESCRIPTION_MAX })
   @IsString()
@@ -258,6 +336,28 @@ export class CreateOpportunityDto {
   @IsOptional()
   @IsInt()
   ownerUserId?: number | null;
+
+  /**
+   * Reference images, attached at filing time.
+   *
+   * On the CREATE path deliberately, not edit-only: the moment somebody has the screenshot is the
+   * moment they are describing the problem, and editing an opportunity needs
+   * edit:admin:product-roadmap while filing one does not — so an attach-afterwards-only design
+   * would mean most filers could never attach anything.
+   *
+   * Omitted and `[]` mean the same thing (no images); there is nothing to clear on a row that
+   * does not exist yet.
+   */
+  @ApiPropertyOptional({
+    type: [RoadmapReferenceImageDto],
+    maxItems: ROADMAP_LIMITS.REFERENCE_IMAGES_MAX,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(ROADMAP_LIMITS.REFERENCE_IMAGES_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => RoadmapReferenceImageDto)
+  referenceImages?: RoadmapReferenceImageDto[];
 }
 
 /**
@@ -427,6 +527,34 @@ export class UpdateOpportunityDto {
   @IsOptional()
   @IsEnum(RoadmapOpportunityEffort)
   effort?: RoadmapOpportunityEffort | null;
+
+  /**
+   * The FULL resulting list of reference images, not a delta — the same contract the board's lane
+   * reorder uses, and for the same reason: the client already holds the whole array, so sending
+   * it whole means adding, removing, re-captioning and reordering are one operation with no
+   * per-image endpoints and no way for two of them to interleave into a state nobody saw.
+   *
+   * `[]` clears them, and is a real edit rather than a no-op. Omitted leaves them alone, which is
+   * what makes every unrelated PATCH from the drawer safe.
+   *
+   * Removing an image from this array does NOT delete the S3 object. Deliberately: the object may
+   * be referenced by another opportunity a split created, an "undo" is one paste of the URL away
+   * while the object lives, and an orphaned 200 KB PNG in a bucket is a far cheaper mistake than
+   * a delete that breaks a row still pointing at it.
+   */
+  @ApiPropertyOptional({
+    type: [RoadmapReferenceImageDto],
+    maxItems: ROADMAP_LIMITS.REFERENCE_IMAGES_MAX,
+    description:
+      'The complete resulting list, not a delta. [] clears every image; omitting the field ' +
+      'leaves them untouched.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(ROADMAP_LIMITS.REFERENCE_IMAGES_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => RoadmapReferenceImageDto)
+  referenceImages?: RoadmapReferenceImageDto[];
 }
 
 /**

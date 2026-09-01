@@ -71,6 +71,9 @@ describe('RoadmapOpportunityService — bugs stay off the board', () => {
       { emit } as unknown as RoadmapNotificationService,
       { find: jest.fn().mockResolvedValue([]) } as unknown as Repository<User>,
       bugFindingRepository as unknown as Repository<BugFinding>,
+      // Images play no part in bug visibility; these satisfy the constructor.
+      { parseS3Url: jest.fn() } as never,
+      { s3: { assetsBucket: 'ally-assets' } } as never,
     );
 
     return { service, emit, bugFindingRepository };
