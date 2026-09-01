@@ -11,6 +11,7 @@ import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-togg
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { MobileReleasesService } from './mobile-releases.service';
 import {
+  IosAppStoreReviewSubmissionsResponseDto,
   IosTestflightHistoryResponseDto,
   IosTestflightStatusResponseDto,
   IosWhatsNewSuggestionResponseDto,
@@ -117,7 +118,20 @@ export class MobileReleasesController {
 
   @ApiOperation({
     summary:
-      'MANUAL, REAL-PRODUCTION ACTION: dispatch promote-android-production.yml to advance the Play Store production track staged rollout to rolloutPercentage%. Requires the Play Console service account to have "Release to production" permission, not just internal-track release.',
+      "Apple's full App Store review submission history (distinct from the TestFlight Beta App Review history above) for the current app",
+  })
+  @ApiResponse({ status: 200, type: IosAppStoreReviewSubmissionsResponseDto })
+  @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
+    permissions: [PERMISSIONS.VIEW_MOBILE_RELEASES],
+  })
+  @Get('ios-app-store-review-history')
+  getIosAppStoreReviewHistory(): Promise<IosAppStoreReviewSubmissionsResponseDto> {
+    return this.mobileReleasesService.getIosAppStoreReviewSubmissions();
+  }
+
+  @ApiOperation({
+    summary:
+      'MANUAL, REAL-PRODUCTION ACTION: dispatch promote-android-production.yml to advance the Play Store production track staged rollout to rolloutPercentage%. Requires the Play Console service account to have "Release to production" permission, not just internal-track release. Optional whatsNew sets the production release notes, which Google Play does not carry over from the internal track automatically.',
   })
   @ApiResponse({ status: 200, type: MobileDispatchResponseDto })
   @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
@@ -128,7 +142,10 @@ export class MobileReleasesController {
   promoteAndroid(
     @Body() body: PromoteAndroidRequestDto,
   ): Promise<MobileDispatchResponseDto> {
-    return this.mobileReleasesService.promoteAndroid(body.rolloutPercentage);
+    return this.mobileReleasesService.promoteAndroid(
+      body.rolloutPercentage,
+      body.whatsNew,
+    );
   }
 
   @ApiOperation({

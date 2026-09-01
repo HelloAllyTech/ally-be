@@ -267,9 +267,12 @@ It was an experiment and never left draft. Removed in migration
 `1941000000000-DropRoleplayStudioV2`, which dropped all nine tables
 (`roleplay_specs`, `roleplay_spec_versions`, `roleplay_spec_tenants`, `copilot_sessions`,
 `copilot_messages`, `roleplay_director_events`, `roleplay_rubric_scores`, `roleplay_test_runs`,
-`roleplay_test_reports`), the two `analytics_agent_roleplay_*` views over them, the two orphaned
-`engine=ROLEPLAY_V2` scenario shells and the five `*:roleplay-spec*` permissions. The schemas
-are still readable in migrations 1811 / 1812 / 1866.
+`roleplay_test_reports`), the two `analytics_agent_roleplay_*` views over them, and the two orphaned
+`engine=ROLEPLAY_V2` scenario shells. That migration's permission cleanup only covered five of the
+seven permissions seeded by `1817000000000-RoleplayStudioPermissions`; the remaining two
+(`view:roleplay-rehearsals`, `edit:roleplay-rehearsals`) were dropped by the follow-up migration
+`1944500000000-DropRemainingRoleplayStudioV2Permissions`. All seven Roleplay Studio v2 permissions
+are now gone. The schemas are still readable in migrations 1811 / 1812 / 1866.
 
 `scenarios.engine` and `scenarios.roleplaySpecId` remain as columns — vestigial, single-valued
 and always-null respectively — because dropping them means migrating a hot table for no gain.

@@ -7,5 +7,6 @@ import { AppVersionSettingsService } from './service/app-version-settings.servic
   imports: [SettingsModule],
   controllers: [AppVersionController],
   providers: [AppVersionSettingsService],
+  exports: [AppVersionSettingsService],
 })
 export class AppVersionModule {}

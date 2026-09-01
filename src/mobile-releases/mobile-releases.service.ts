@@ -1,11 +1,16 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
 import * as crypto from 'crypto';
+import { google } from 'googleapis';
 import * as jwt from 'jsonwebtoken';
+import { AppVersionSettingsService } from 'src/app-version/service/app-version-settings.service';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
+import { SlackService } from 'src/notification/service/slack.service';
 import { MobileReleaseWhatsNewAiService } from './mobile-release-whats-new-ai.service';
 import {
+  IosAppStoreReviewSubmissionEntryDto,
+  IosAppStoreReviewSubmissionsResponseDto,
   IosTestflightHistoryEntryDto,
   IosTestflightHistoryResponseDto,
   IosTestflightStatusResponseDto,
@@ -36,6 +41,9 @@ const APPSTORE_JWT_AUDIENCE = 'appstoreconnect-v1';
 // Apple caps App Store Connect API JWTs at 20 minutes; stay comfortably under it.
 const APPSTORE_JWT_TTL_SECONDS = 19 * 60;
 const TESTFLIGHT_HISTORY_BUILD_LIMIT = 15;
+const APP_STORE_REVIEW_SUBMISSION_LIMIT = 15;
+
+const ANDROID_PACKAGE_NAME = 'com.helloally.app';
 
 /**
  * Normalizes an APPSTORE_API_PRIVATE_KEY env value into a clean PEM string,
@@ -158,6 +166,8 @@ export class MobileReleasesService {
   constructor(
     private readonly configService: AppConfigService,
     private readonly whatsNewAiService: MobileReleaseWhatsNewAiService,
+    private readonly appVersionSettingsService: AppVersionSettingsService,
+    private readonly slackService: SlackService,
   ) {}
 
   private get repo(): string {
@@ -281,29 +291,40 @@ export class MobileReleasesService {
   async getCurrentVersion(): Promise<MobileCurrentVersionResponseDto> {
     const headers = this.headers;
 
-    const [gradle, pbxproj, nextEligibleCheckAt] = await Promise.all([
-      this.fetchFileContent('android/app/build.gradle', headers),
+    const [android, pbxproj, nextEligibleCheckAt] = await Promise.all([
+      this.fetchCurrentAndroidVersion(headers),
       this.fetchFileContent('ios/ally.xcodeproj/project.pbxproj', headers),
       this.computeNextEligibleCheckAt(headers),
     ]);
 
-    const versionCodeMatch = gradle.match(/versionCode\s+(\d+)/);
-    const versionNameMatch = gradle.match(/versionName\s+"([^"]+)"/);
     const marketingVersionMatch = pbxproj.match(
       /MARKETING_VERSION\s*=\s*([^;]+);/,
     );
 
     return {
-      android: {
-        versionCode: versionCodeMatch ? Number(versionCodeMatch[1]) : null,
-        versionName: versionNameMatch ? versionNameMatch[1] : null,
-      },
+      android,
       ios: {
         marketingVersion: marketingVersionMatch
           ? marketingVersionMatch[1].trim()
           : null,
       },
       nextEligibleCheckAt,
+    };
+  }
+
+  /** Regex-extracted from master's android/app/build.gradle — shared by getCurrentVersion() and the Android auto-bump task below. */
+  private async fetchCurrentAndroidVersion(
+    headers: Record<string, string>,
+  ): Promise<{ versionCode: number | null; versionName: string | null }> {
+    const gradle = await this.fetchFileContent(
+      'android/app/build.gradle',
+      headers,
+    );
+    const versionCodeMatch = gradle.match(/versionCode\s+(\d+)/);
+    const versionNameMatch = gradle.match(/versionName\s+"([^"]+)"/);
+    return {
+      versionCode: versionCodeMatch ? Number(versionCodeMatch[1]) : null,
+      versionName: versionNameMatch ? versionNameMatch[1] : null,
     };
   }
 
@@ -530,9 +551,17 @@ export class MobileReleasesService {
    * internal-track release, in which case this workflow will fail even
    * though the GitHub dispatch itself succeeds. That's a Play Console
    * change, not something fixable here.
+   *
+   * `whatsNew`, when provided, sets the production release's "What's New"
+   * text — Google Play does not carry a release's notes across tracks
+   * automatically, so without this the production listing ends up with none
+   * at all even though the internal track has its own. Omitted (or left
+   * empty), the production release just has no release notes, same as
+   * before this parameter existed.
    */
   async promoteAndroid(
     rolloutPercentage: number,
+    whatsNew?: string,
   ): Promise<MobileDispatchResponseDto> {
     const headers = this.headers;
 
@@ -543,9 +572,14 @@ export class MobileReleasesService {
         `${GITHUB_API}/repos/${this.repo}/actions/workflows/${PROMOTE_ANDROID_WORKFLOW_FILE}/dispatches`,
         {
           ref: 'master',
-          // workflow_dispatch inputs must be strings, even for what's
-          // conceptually a number.
-          inputs: { rollout_percentage: String(rolloutPercentage) },
+          inputs: {
+            // workflow_dispatch inputs must be strings, even for what's
+            // conceptually a number.
+            rollout_percentage: String(rolloutPercentage),
+            // Empty string, not omitted, is how "not provided" is conveyed for this optional
+            // input — same convention submitIosAppStoreReview() below uses for whats_new.
+            whats_new: whatsNew ?? '',
+          },
         },
         { headers, timeout: 15_000 },
       );
@@ -756,7 +790,14 @@ export class MobileReleasesService {
       return { history: [] };
     }
 
-    const history: IosTestflightHistoryEntryDto[] = await Promise.all(
+    // allSettled, not all — same reasoning as listRuns() above: this fans out
+    // to up to TESTFLIGHT_HISTORY_BUILD_LIMIT parallel Apple API calls (one
+    // betaAppReviewSubmissions lookup per build), and a single transient
+    // failure among them used to fail the whole history list. A failed
+    // build's lookup is dropped from the result (not mapped to null — null
+    // already means "never submitted for review", a different, misleading
+    // thing to show for "the lookup failed").
+    const settled = await Promise.allSettled(
       builds.map(async (build) => ({
         buildVersion: build.version,
         buildId: build.id,
@@ -765,6 +806,24 @@ export class MobileReleasesService {
       })),
     );
 
+    const history: IosTestflightHistoryEntryDto[] = settled
+      .filter(
+        (
+          result,
+        ): result is PromiseFulfilledResult<IosTestflightHistoryEntryDto> => {
+          if (result.status === 'fulfilled') return true;
+          this.logger.warn(
+            `Dropping a build from getIosTestflightHistory(): ${
+              result.reason instanceof Error
+                ? result.reason.message
+                : String(result.reason)
+            }`,
+          );
+          return false;
+        },
+      )
+      .map((result) => result.value);
+
     return {
       history: history.sort(
         (a, b) =>
@@ -772,6 +831,314 @@ export class MobileReleasesService {
           new Date(a.uploadedDate).getTime(),
       ),
     };
+  }
+
+  /**
+   * AUTONOMOUS, REAL-PRODUCTION ACTION — the only one in this module that
+   * isn't triggered by a human click. Run on a schedule (see
+   * IosMinVersionAutoBumpSchedulerRegistrationService), this raises the iOS
+   * force-update minimum version the moment — and only the moment — Apple
+   * confirms the current build's App Store version is genuinely live to real
+   * users.
+   *
+   * "Live" here means `appVersionState === 'READY_FOR_DISTRIBUTION'`
+   * specifically, verified against Apple's real App Store Connect API
+   * schema before writing this rather than assumed: `COMPLETE` on a review
+   * submission only means Apple finished reviewing it, and this workflow
+   * forces releaseType MANUAL, so an approved version normally sits at
+   * `PENDING_DEVELOPER_RELEASE` until a human clicks Release in App Store
+   * Connect — exactly the gap this method waits out rather than jumping.
+   * Only once the version reaches READY_FOR_DISTRIBUTION is it safe to
+   * assume every user on the platform can actually download it.
+   *
+   * Deliberately iOS-only. The Play Developer API has no equivalent signal
+   * for Android once Managed Publishing is enabled on this app (confirmed
+   * by checking Google's own API reference) — `edits.tracks.get` only
+   * reflects what was last *committed*, not whether Google's review +
+   * manual-publish gate has actually let it through, so there is currently
+   * no safe way to build the same automation for Android.
+   *
+   * A no-op (not an error) when: there's no processed build yet, the build
+   * isn't READY_FOR_DISTRIBUTION yet, or the minimum is already at this
+   * version. Every actual change is logged and posted to Slack, since this
+   * is the one action on this page nobody clicked.
+   */
+  async autoBumpIosMinimumVersionIfLive(): Promise<void> {
+    this.requireAppStoreConnectConfig();
+    const headers = this.appStoreConnectHeaders;
+
+    const appId = await this.fetchAppStoreConnectAppId(headers);
+    const build = await this.fetchLatestValidBuild(appId, headers);
+    if (!build) return;
+
+    const appVersionState = await this.fetchAppStoreVersionState(
+      appId,
+      build.version,
+      headers,
+    );
+    if (appVersionState !== 'READY_FOR_DISTRIBUTION') return;
+
+    const current =
+      await this.appVersionSettingsService.getAppVersionSettings('ios');
+    if (current.minimumSupportedVersion === build.version) return;
+
+    await this.appVersionSettingsService.updateAppVersionSettings({
+      ios: build.version,
+    });
+
+    this.logger.info(
+      `Auto-raised iOS minimum supported version from ${current.minimumSupportedVersion} to ` +
+        `${build.version} — Apple confirmed READY_FOR_DISTRIBUTION.`,
+    );
+    await this.slackService.sendMessage(
+      `iOS minimum supported version auto-raised to ${build.version} — Apple confirmed it's ` +
+        `live (READY_FOR_DISTRIBUTION). Previous minimum was ${current.minimumSupportedVersion}. ` +
+        'No human action taken; this ran on schedule.',
+    );
+  }
+
+  /** null if no appStoreVersions resource matches `versionString` yet (e.g. not created, or already replaced). */
+  private async fetchAppStoreVersionState(
+    appId: string,
+    versionString: string,
+    headers: Record<string, string>,
+  ): Promise<string | null> {
+    try {
+      const { data } = await axios.get(
+        `${APPSTORE_CONNECT_API}/apps/${appId}/appStoreVersions`,
+        {
+          headers,
+          params: {
+            'filter[platform]': 'IOS',
+            'filter[versionString]': versionString,
+            'fields[appStoreVersions]': 'versionString,appVersionState',
+            limit: 1,
+          },
+          timeout: 15_000,
+        },
+      );
+      return data?.data?.[0]?.attributes?.appVersionState ?? null;
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not look up appVersionState for iOS version ${versionString}`,
+      );
+    }
+  }
+
+  /** Throws when ANDROID_SERVICE_ACCOUNT_JSON is unset — every caller must refuse cleanly rather than authenticate with no credentials. */
+  private requireAndroidPublisherConfig(): string {
+    const { serviceAccountJson } = this.configService.androidPublisher;
+    if (!serviceAccountJson) {
+      throw new ServiceUnavailableException(
+        'ANDROID_SERVICE_ACCOUNT_JSON is not configured on this environment, so the Android production track cannot be read.',
+      );
+    }
+    return serviceAccountJson;
+  }
+
+  /**
+   * AUTONOMOUS, REAL-PRODUCTION ACTION — Android's counterpart to
+   * autoBumpIosMinimumVersionIfLive() above, run on the same 30-minute
+   * schedule. Only safe to enable once Managed Publishing is OFF for this
+   * app in Play Console: with it on, a track's release `status` reflects
+   * what was last *committed*, not whether Google's review-then-manual-
+   * publish gate has actually let it through — confirmed by checking
+   * Google's own Play Developer API reference before building this, the
+   * same discipline as the iOS side. With Managed Publishing off, `status:
+   * 'completed'` on the production track is a trustworthy "this is really
+   * live" signal, the same role READY_FOR_DISTRIBUTION plays for iOS.
+   *
+   * Matches the production release to the *current* build by exact
+   * versionCode equality against what's committed on master right now —
+   * deliberately strict, not a "close enough" heuristic: if master has
+   * already moved on to a newer versionCode this promotion doesn't cover,
+   * the match simply fails and this is a no-op until the production track
+   * catches up, rather than bumping to a version the resolved versionCode
+   * doesn't actually correspond to.
+   *
+   * A staged rollout (status 'inProgress' with userFraction < 1) is
+   * deliberately NOT treated as live — raising the minimum version while
+   * only a fraction of users can download the build would lock out
+   * everyone else, the exact failure mode this whole feature exists to
+   * prevent.
+   */
+  async autoBumpAndroidMinimumVersionIfLive(): Promise<void> {
+    if (!this.configService.androidMinVersionAutoBumpEnabled) {
+      this.logger.debug(
+        'Skipping Android min-version auto-bump — ANDROID_MIN_VERSION_AUTO_BUMP_ENABLED is not true.',
+      );
+      return;
+    }
+
+    const headers = this.headers;
+    const { versionCode, versionName } =
+      await this.fetchCurrentAndroidVersion(headers);
+    if (!versionCode || !versionName) return;
+
+    const release = await this.fetchAndroidProductionRelease();
+    if (!release || release.status !== 'completed') return;
+    if (!release.versionCodes.includes(versionCode)) return;
+
+    const current =
+      await this.appVersionSettingsService.getAppVersionSettings('android');
+    if (current.minimumSupportedVersion === versionName) return;
+
+    await this.appVersionSettingsService.updateAppVersionSettings({
+      android: versionName,
+    });
+
+    this.logger.info(
+      `Auto-raised Android minimum supported version from ${current.minimumSupportedVersion} to ` +
+        `${versionName} — production track confirmed status: completed for versionCode ${versionCode}.`,
+    );
+    await this.slackService.sendMessage(
+      `Android minimum supported version auto-raised to ${versionName} — the production track ` +
+        `confirmed this build is fully live (not a staged rollout). Previous minimum was ` +
+        `${current.minimumSupportedVersion}. No human action taken; this ran on schedule.`,
+    );
+  }
+
+  /**
+   * The production track's highest-versionCode release, or null if the track has none. Reads via
+   * a throwaway edit (insert -> tracks.get -> delete) — never committed, so this can never
+   * publish anything; the delete is just tidiness, not a correctness requirement, since an
+   * uncommitted edit Google doesn't hear from again expires on its own.
+   */
+  private async fetchAndroidProductionRelease(): Promise<{
+    status: string;
+    versionCodes: number[];
+  } | null> {
+    const serviceAccountJson = this.requireAndroidPublisherConfig();
+    const androidpublisher = google.androidpublisher({
+      version: 'v3',
+      auth: new google.auth.GoogleAuth({
+        credentials: JSON.parse(serviceAccountJson),
+        scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+      }),
+    });
+
+    let editId: string | undefined;
+    try {
+      const { data: edit } = await androidpublisher.edits.insert({
+        packageName: ANDROID_PACKAGE_NAME,
+      });
+      editId = edit.id ?? undefined;
+      if (!editId) return null;
+
+      const { data: track } = await androidpublisher.edits.tracks.get({
+        packageName: ANDROID_PACKAGE_NAME,
+        editId,
+        track: 'production',
+      });
+
+      const releases = track.releases ?? [];
+      const latest = releases
+        .flatMap((release) =>
+          (release.versionCodes ?? []).map((vc) => ({
+            release,
+            versionCode: Number(vc),
+          })),
+        )
+        .sort((a, b) => b.versionCode - a.versionCode)[0];
+      if (!latest) return null;
+
+      return {
+        status: latest.release.status ?? '',
+        versionCodes: (latest.release.versionCodes ?? []).map(Number),
+      };
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not read the Android production track for ${ANDROID_PACKAGE_NAME}`,
+      );
+    } finally {
+      if (editId) {
+        try {
+          await androidpublisher.edits.delete({
+            packageName: ANDROID_PACKAGE_NAME,
+            editId,
+          });
+        } catch {
+          // Best-effort cleanup only — an uncommitted edit expires on its own regardless.
+        }
+      }
+    }
+  }
+
+  /**
+   * Apple's own full App Store review submission history — the real
+   * public-distribution review (what the App Store Connect UI's "App Store"
+   * tab shows as Date Submitted / Versions / Status), distinct from the
+   * TestFlight Beta App Review history above which only ever covers
+   * TestFlight builds. Read-only, no caching, same auth/fetch pattern as the
+   * rest of this module. Only 2 Apple API calls per request (app id lookup +
+   * the reviewSubmissions list itself, with the version string resolved via
+   * `include=appStoreVersionForReview` in the same call) — no per-item
+   * fan-out needed, unlike getIosTestflightHistory's betaReviewState lookups.
+   */
+  async getIosAppStoreReviewSubmissions(): Promise<IosAppStoreReviewSubmissionsResponseDto> {
+    this.requireAppStoreConnectConfig();
+    const headers = this.appStoreConnectHeaders;
+
+    const appId = await this.fetchAppStoreConnectAppId(headers);
+    const submissions = await this.fetchRecentAppStoreReviewSubmissions(
+      appId,
+      headers,
+    );
+
+    return { submissions };
+  }
+
+  private async fetchRecentAppStoreReviewSubmissions(
+    appId: string,
+    headers: Record<string, string>,
+  ): Promise<IosAppStoreReviewSubmissionEntryDto[]> {
+    try {
+      const { data } = await axios.get(
+        `${APPSTORE_CONNECT_API}/apps/${appId}/reviewSubmissions`,
+        {
+          headers,
+          params: {
+            'filter[platform]': 'IOS',
+            include: 'appStoreVersionForReview',
+            limit: APP_STORE_REVIEW_SUBMISSION_LIMIT,
+            'fields[reviewSubmissions]':
+              'submittedDate,state,appStoreVersionForReview',
+            'fields[appStoreVersions]': 'versionString',
+          },
+          timeout: 15_000,
+        },
+      );
+      const included = data?.included ?? [];
+      const entries: IosAppStoreReviewSubmissionEntryDto[] = (data?.data ?? [])
+        .filter((submission: any) => submission?.id)
+        .map((submission: any) => {
+          const versionId =
+            submission?.relationships?.appStoreVersionForReview?.data?.id;
+          const versionResource = included.find(
+            (item: any) =>
+              item?.type === 'appStoreVersions' && item?.id === versionId,
+          );
+          return {
+            versionString: String(
+              versionResource?.attributes?.versionString ?? '',
+            ),
+            submittedDate: String(submission?.attributes?.submittedDate ?? ''),
+            state: String(submission?.attributes?.state ?? ''),
+          };
+        });
+      return entries.sort(
+        (a, b) =>
+          new Date(b.submittedDate).getTime() -
+          new Date(a.submittedDate).getTime(),
+      );
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not list App Store review submissions for App Store Connect app ${appId}`,
+      );
+    }
   }
 
   private async fetchRecentValidBuilds(
