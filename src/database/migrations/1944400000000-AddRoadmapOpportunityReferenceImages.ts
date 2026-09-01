@@ -34,6 +34,15 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * is a fact about configuration rather than about data and is enforced in
  * RoadmapOpportunityService.assertOwnReferenceImages.
  *
+ * The per-element half is written as jsonpath predicates rather than the obvious
+ * `NOT EXISTS (SELECT 1 FROM jsonb_array_elements(...))`, because PostgreSQL rejects a subquery
+ * in a CHECK constraint at parse time (0A000, "cannot use subquery in check constraint") — it
+ * never gets as far as looking at a row, so the table being empty does not save you. `@?` is a
+ * plain immutable operator and is allowed. Each clause is phrased negatively ("no element
+ * violates") because a jsonpath filter that matches nothing is a pass, which is what we want for
+ * an empty array. `!exists(@.url)` is load-bearing: without it a url-less element matches no
+ * filter and slips through.
+ *
  * No index. The array is read as part of a row somebody is already looking at, and nothing
  * queries into it.
  */
@@ -49,12 +58,10 @@ export class AddRoadmapOpportunityReferenceImages1944400000000 implements Migrat
         `CHECK (` +
         `jsonb_typeof("referenceImages") = 'array' ` +
         `AND jsonb_array_length("referenceImages") <= 6 ` +
-        `AND NOT EXISTS (` +
-        `SELECT 1 FROM jsonb_array_elements("referenceImages") AS img ` +
-        `WHERE jsonb_typeof(img) <> 'object' ` +
-        `OR jsonb_typeof(img -> 'url') <> 'string' ` +
-        `OR length(img ->> 'url') = 0` +
-        `))`,
+        `AND NOT ("referenceImages" @? '$[*] ? (@.type() != "object")') ` +
+        `AND NOT ("referenceImages" @? ` +
+        `'$[*] ? (!exists(@.url) || @.url.type() != "string" || @.url == "")')` +
+        `)`,
     );
   }
 
