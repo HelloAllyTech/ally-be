@@ -162,6 +162,16 @@ export const validationSchema = Joi.object({
   APPSTORE_API_PRIVATE_KEY: Joi.string().optional(),
   TESTFLIGHT_EXTERNAL_GROUP_NAME: Joi.string().optional(),
 
+  // Play Developer API service account (Mobile Releases page's Android
+  // auto-minimum-version-bump task). Same "optional, refuse cleanly at
+  // call time" reasoning as the App Store Connect block above.
+  ANDROID_SERVICE_ACCOUNT_JSON: Joi.string().optional(),
+  // Kill switch, default off — see AppConfigService.androidMinVersionAutoBumpEnabled
+  // for why this one (unlike the iOS task) needs an explicit opt-in.
+  ANDROID_MIN_VERSION_AUTO_BUMP_ENABLED: Joi.string()
+    .valid('true', 'false')
+    .optional(),
+
   // Voice Preview (TTS provider API keys)
   DEEPGRAM_API_KEY: Joi.string().optional(),
   ELEVENLABS_API_KEY: Joi.string().optional(),

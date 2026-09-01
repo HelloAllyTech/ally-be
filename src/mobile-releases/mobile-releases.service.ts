@@ -1,6 +1,7 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
 import * as crypto from 'crypto';
+import { google } from 'googleapis';
 import * as jwt from 'jsonwebtoken';
 import { AppVersionSettingsService } from 'src/app-version/service/app-version-settings.service';
 import { AppConfigService } from 'src/config/config.service';
@@ -41,6 +42,8 @@ const APPSTORE_JWT_AUDIENCE = 'appstoreconnect-v1';
 const APPSTORE_JWT_TTL_SECONDS = 19 * 60;
 const TESTFLIGHT_HISTORY_BUILD_LIMIT = 15;
 const APP_STORE_REVIEW_SUBMISSION_LIMIT = 15;
+
+const ANDROID_PACKAGE_NAME = 'com.helloally.app';
 
 /**
  * Normalizes an APPSTORE_API_PRIVATE_KEY env value into a clean PEM string,
@@ -288,29 +291,40 @@ export class MobileReleasesService {
   async getCurrentVersion(): Promise<MobileCurrentVersionResponseDto> {
     const headers = this.headers;
 
-    const [gradle, pbxproj, nextEligibleCheckAt] = await Promise.all([
-      this.fetchFileContent('android/app/build.gradle', headers),
+    const [android, pbxproj, nextEligibleCheckAt] = await Promise.all([
+      this.fetchCurrentAndroidVersion(headers),
       this.fetchFileContent('ios/ally.xcodeproj/project.pbxproj', headers),
       this.computeNextEligibleCheckAt(headers),
     ]);
 
-    const versionCodeMatch = gradle.match(/versionCode\s+(\d+)/);
-    const versionNameMatch = gradle.match(/versionName\s+"([^"]+)"/);
     const marketingVersionMatch = pbxproj.match(
       /MARKETING_VERSION\s*=\s*([^;]+);/,
     );
 
     return {
-      android: {
-        versionCode: versionCodeMatch ? Number(versionCodeMatch[1]) : null,
-        versionName: versionNameMatch ? versionNameMatch[1] : null,
-      },
+      android,
       ios: {
         marketingVersion: marketingVersionMatch
           ? marketingVersionMatch[1].trim()
           : null,
       },
       nextEligibleCheckAt,
+    };
+  }
+
+  /** Regex-extracted from master's android/app/build.gradle — shared by getCurrentVersion() and the Android auto-bump task below. */
+  private async fetchCurrentAndroidVersion(
+    headers: Record<string, string>,
+  ): Promise<{ versionCode: number | null; versionName: string | null }> {
+    const gradle = await this.fetchFileContent(
+      'android/app/build.gradle',
+      headers,
+    );
+    const versionCodeMatch = gradle.match(/versionCode\s+(\d+)/);
+    const versionNameMatch = gradle.match(/versionName\s+"([^"]+)"/);
+    return {
+      versionCode: versionCodeMatch ? Number(versionCodeMatch[1]) : null,
+      versionName: versionNameMatch ? versionNameMatch[1] : null,
     };
   }
 
@@ -909,6 +923,146 @@ export class MobileReleasesService {
         error,
         `Could not look up appVersionState for iOS version ${versionString}`,
       );
+    }
+  }
+
+  /** Throws when ANDROID_SERVICE_ACCOUNT_JSON is unset — every caller must refuse cleanly rather than authenticate with no credentials. */
+  private requireAndroidPublisherConfig(): string {
+    const { serviceAccountJson } = this.configService.androidPublisher;
+    if (!serviceAccountJson) {
+      throw new ServiceUnavailableException(
+        'ANDROID_SERVICE_ACCOUNT_JSON is not configured on this environment, so the Android production track cannot be read.',
+      );
+    }
+    return serviceAccountJson;
+  }
+
+  /**
+   * AUTONOMOUS, REAL-PRODUCTION ACTION — Android's counterpart to
+   * autoBumpIosMinimumVersionIfLive() above, run on the same 30-minute
+   * schedule. Only safe to enable once Managed Publishing is OFF for this
+   * app in Play Console: with it on, a track's release `status` reflects
+   * what was last *committed*, not whether Google's review-then-manual-
+   * publish gate has actually let it through — confirmed by checking
+   * Google's own Play Developer API reference before building this, the
+   * same discipline as the iOS side. With Managed Publishing off, `status:
+   * 'completed'` on the production track is a trustworthy "this is really
+   * live" signal, the same role READY_FOR_DISTRIBUTION plays for iOS.
+   *
+   * Matches the production release to the *current* build by exact
+   * versionCode equality against what's committed on master right now —
+   * deliberately strict, not a "close enough" heuristic: if master has
+   * already moved on to a newer versionCode this promotion doesn't cover,
+   * the match simply fails and this is a no-op until the production track
+   * catches up, rather than bumping to a version the resolved versionCode
+   * doesn't actually correspond to.
+   *
+   * A staged rollout (status 'inProgress' with userFraction < 1) is
+   * deliberately NOT treated as live — raising the minimum version while
+   * only a fraction of users can download the build would lock out
+   * everyone else, the exact failure mode this whole feature exists to
+   * prevent.
+   */
+  async autoBumpAndroidMinimumVersionIfLive(): Promise<void> {
+    if (!this.configService.androidMinVersionAutoBumpEnabled) {
+      this.logger.debug(
+        'Skipping Android min-version auto-bump — ANDROID_MIN_VERSION_AUTO_BUMP_ENABLED is not true.',
+      );
+      return;
+    }
+
+    const headers = this.headers;
+    const { versionCode, versionName } =
+      await this.fetchCurrentAndroidVersion(headers);
+    if (!versionCode || !versionName) return;
+
+    const release = await this.fetchAndroidProductionRelease();
+    if (!release || release.status !== 'completed') return;
+    if (!release.versionCodes.includes(versionCode)) return;
+
+    const current =
+      await this.appVersionSettingsService.getAppVersionSettings('android');
+    if (current.minimumSupportedVersion === versionName) return;
+
+    await this.appVersionSettingsService.updateAppVersionSettings({
+      android: versionName,
+    });
+
+    this.logger.info(
+      `Auto-raised Android minimum supported version from ${current.minimumSupportedVersion} to ` +
+        `${versionName} — production track confirmed status: completed for versionCode ${versionCode}.`,
+    );
+    await this.slackService.sendMessage(
+      `Android minimum supported version auto-raised to ${versionName} — the production track ` +
+        `confirmed this build is fully live (not a staged rollout). Previous minimum was ` +
+        `${current.minimumSupportedVersion}. No human action taken; this ran on schedule.`,
+    );
+  }
+
+  /**
+   * The production track's highest-versionCode release, or null if the track has none. Reads via
+   * a throwaway edit (insert -> tracks.get -> delete) — never committed, so this can never
+   * publish anything; the delete is just tidiness, not a correctness requirement, since an
+   * uncommitted edit Google doesn't hear from again expires on its own.
+   */
+  private async fetchAndroidProductionRelease(): Promise<{
+    status: string;
+    versionCodes: number[];
+  } | null> {
+    const serviceAccountJson = this.requireAndroidPublisherConfig();
+    const androidpublisher = google.androidpublisher({
+      version: 'v3',
+      auth: new google.auth.GoogleAuth({
+        credentials: JSON.parse(serviceAccountJson),
+        scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+      }),
+    });
+
+    let editId: string | undefined;
+    try {
+      const { data: edit } = await androidpublisher.edits.insert({
+        packageName: ANDROID_PACKAGE_NAME,
+      });
+      editId = edit.id ?? undefined;
+      if (!editId) return null;
+
+      const { data: track } = await androidpublisher.edits.tracks.get({
+        packageName: ANDROID_PACKAGE_NAME,
+        editId,
+        track: 'production',
+      });
+
+      const releases = track.releases ?? [];
+      const latest = releases
+        .flatMap((release) =>
+          (release.versionCodes ?? []).map((vc) => ({
+            release,
+            versionCode: Number(vc),
+          })),
+        )
+        .sort((a, b) => b.versionCode - a.versionCode)[0];
+      if (!latest) return null;
+
+      return {
+        status: latest.release.status ?? '',
+        versionCodes: (latest.release.versionCodes ?? []).map(Number),
+      };
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not read the Android production track for ${ANDROID_PACKAGE_NAME}`,
+      );
+    } finally {
+      if (editId) {
+        try {
+          await androidpublisher.edits.delete({
+            packageName: ANDROID_PACKAGE_NAME,
+            editId,
+          });
+        } catch {
+          // Best-effort cleanup only — an uncommitted edit expires on its own regardless.
+        }
+      }
     }
   }
 

@@ -84,6 +84,46 @@ export class AppConfigService {
   }
 
   /**
+   * Play Developer API service account, for the super-duper-admin Mobile
+   * Releases page's Android auto-minimum-version-bump task. Same
+   * dual-provisioning caveat as appStoreConnect above: this previously only
+   * existed as an ally-mobile GitHub Actions secret (a separate secrets
+   * store) for scripts/promote-android-release.mjs, and must be provisioned
+   * here separately with the same JSON value before this feature will work.
+   * Empty-string default — MobileReleasesService refuses cleanly rather than
+   * authenticating with no credentials.
+   */
+  get androidPublisher() {
+    return {
+      serviceAccountJson: this.configService.get<string>(
+        'ANDROID_SERVICE_ACCOUNT_JSON',
+        '',
+      ),
+    };
+  }
+
+  /**
+   * Explicit kill switch for the Android auto-minimum-version-bump task,
+   * default OFF. Unlike the iOS equivalent (safe by construction —
+   * READY_FOR_DISTRIBUTION only ever means genuinely live), the Android
+   * signal this task relies on (production track status: 'completed') is
+   * only trustworthy once Managed Publishing is turned OFF for this app in
+   * Play Console — with it on, a track's status reflects what was
+   * committed, not what Google's review-then-manual-publish gate has
+   * actually released. Flip ANDROID_MIN_VERSION_AUTO_BUMP_ENABLED=true only
+   * after confirming that in Play Console; the task no-ops (not errors)
+   * while this is unset.
+   */
+  get androidMinVersionAutoBumpEnabled(): boolean {
+    return (
+      this.configService.get<string>(
+        'ANDROID_MIN_VERSION_AUTO_BUMP_ENABLED',
+        'false',
+      ) === 'true'
+    );
+  }
+
+  /**
    * Base URL a GitHub-hosted runner can reach this API on, handed to the
    * fix-session workflow so it can report progress back. Falls back to the
    * local port purely so a dev environment fails with an obvious connection
