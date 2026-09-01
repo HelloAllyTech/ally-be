@@ -1629,6 +1629,27 @@ export class ScenarioService {
     const originalBehaviorInstructions =
       await this.scenarioSharedService.getBehaviorInstructionsByScenarioId(id);
 
+    // Tenant assignments of the source, for a source that is NOT global.
+    //
+    // A copy nobody can reach is not a copy. `scenario_tenants` is the only
+    // thing that makes a simulation startable outside a course/case/path:
+    // `validateStartScenarioSession` requires an explicit row for the caller's
+    // tenant on the standalone start branch, and the learner catalog
+    // inner-joins the same table. Duplicating a tenant-scoped simulation
+    // without them produced a copy that looks complete in the studio, can be
+    // published, can be reached by id — and then refuses every Practice click
+    // with "Scenario is not available for your organization", permanently,
+    // with nothing in the duplicate flow ever backfilling the rows.
+    //
+    // Copying the source's own set can only ever reproduce the audience the
+    // source already had, never widen it; the isGlobal branch below is the
+    // same intent for the global case and was the only half implemented.
+    const sourceScenarioTenants = scenario.isGlobal
+      ? []
+      : await this.dataSource
+          .getRepository(ScenarioTenants)
+          .find({ where: { scenarioId: id } });
+
     const newScenario = {
       title: `Copy of ${scenario.title}`,
       description: scenario.description,
@@ -1696,6 +1717,16 @@ export class ScenarioService {
           }),
         );
         await scenarioTenantRepo.save(scenarioTenants);
+      } else if (sourceScenarioTenants.length > 0) {
+        const scenarioTenantRepo = manager.getRepository(ScenarioTenants);
+        await scenarioTenantRepo.save(
+          sourceScenarioTenants.map(({ tenantId }) =>
+            scenarioTenantRepo.create({
+              scenarioId: newScenarioData.id,
+              tenantId,
+            }),
+          ),
+        );
       }
 
       // Copy behavior instructions from the original scenario
