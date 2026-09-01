@@ -80,6 +80,9 @@ describe('RoadmapOpportunityService.createBugReport', () => {
         create: jest.fn().mockImplementation((v) => v),
         save: jest.fn().mockResolvedValue({ id: 'finding-1' }),
       } as unknown as Repository<BugFinding>,
+      // Images play no part in a bug report; these satisfy the constructor.
+      { parseS3Url: jest.fn() } as never,
+      { s3: { assetsBucket: 'ally-assets' } } as never,
     );
 
     return { service, opportunityRepository };
@@ -175,6 +178,9 @@ describe('RoadmapOpportunityService.createBugReport', () => {
         create: jest.fn().mockImplementation((v) => v),
         save: jest.fn().mockResolvedValue({ id: 'finding-1' }),
       } as unknown as Repository<BugFinding>,
+      // Images play no part in a bug report; these satisfy the constructor.
+      { parseS3Url: jest.fn() } as never,
+      { s3: { assetsBucket: 'ally-assets' } } as never,
     );
 
     await service.createBugReport(7, 'tenant-a', {

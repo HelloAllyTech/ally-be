@@ -37,6 +37,7 @@ import {
   MergeOpportunitiesDto,
   MonthBoardQueryDto,
   MoveOpportunityDto,
+  RoadmapReferenceImageUploadUrlDto,
   SetAllocationDto,
   SplitOpportunityDto,
   UpdateOpportunityDto,
@@ -49,6 +50,7 @@ import {
   MonthBoardResponseDto,
   OpportunityResponseDto,
   RoadmapFacetsDto,
+  RoadmapReferenceImageUploadUrlResponseDto,
   SetAllocationResponseDto,
   OpenBuilderSessionResponseDto,
 } from '../dto/roadmap-response.dto';
@@ -200,6 +202,33 @@ export class RoadmapOpportunityController {
     return this.opportunityService.create(user.id, dto, {
       canManage: await this.access.canManage(user.id),
     });
+  }
+
+  /**
+   * Presign one reference-image upload.
+   *
+   * On the VOTE tier, matching `create` above rather than the MANAGE tier `PATCH` sits on: the
+   * person with the screenshot is the person filing, and putting the picture behind a permission
+   * most filers do not hold would make the field decorative on the one form they actually use.
+   *
+   * Not under `/opportunities/:id` because there is no id yet when the drawer uploads — the image
+   * is attached by the create or update call that follows, and until then the object is simply an
+   * object nothing points at.
+   */
+  @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
+  @Post('reference-images/upload-url')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Presigned URL for a reference-image upload',
+    description:
+      'The browser PUTs the file straight to S3, then sends the returned `imageUrl` back in ' +
+      '`referenceImages` on create or update. Uploading does NOT attach anything on its own.',
+  })
+  @ApiResponse({ status: 200, type: RoadmapReferenceImageUploadUrlResponseDto })
+  createReferenceImageUploadUrl(
+    @Body() dto: RoadmapReferenceImageUploadUrlDto,
+  ): Promise<RoadmapReferenceImageUploadUrlResponseDto> {
+    return this.opportunityService.createReferenceImageUploadUrl(dto);
   }
 
   /**

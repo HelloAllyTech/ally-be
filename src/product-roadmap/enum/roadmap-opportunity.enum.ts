@@ -100,3 +100,18 @@ export enum RoadmapBoardGroupBy {
   PRODUCT_GOAL = 'productGoal',
   OWNER = 'owner',
 }
+
+/**
+ * Image types a reference image may be uploaded as.
+ *
+ * The presign endpoint gates on this rather than on a bare `image/*` prefix, and SVG is
+ * deliberately NOT here even though the blog accepts it: an SVG is a document that can carry
+ * script, these are rendered inline in the admin dashboard, and nothing anyone attaches to an
+ * opportunity — a screenshot, a mock, a photo of a whiteboard — needs to be one.
+ */
+export enum RoadmapReferenceImageContentType {
+  JPEG = 'image/jpeg',
+  PNG = 'image/png',
+  WEBP = 'image/webp',
+  GIF = 'image/gif',
+}

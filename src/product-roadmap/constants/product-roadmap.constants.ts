@@ -66,7 +66,35 @@ export const ROADMAP_LIMITS = {
   STRATEGY_GOAL_NAME_MAX: 200,
   /** Cap on the model's justification for one goal-impact verdict. Matches the CHECK. */
   GOAL_IMPACT_REASON_MAX: 500,
+  /**
+   * How many reference images one opportunity may carry.
+   *
+   * Six, because these are evidence rather than a gallery: the screenshot of the broken screen,
+   * the mock of the fixed one, and a handful of variants is the whole use. A cap exists at all
+   * because the array rides the shared opportunity response — every board read pays for it —
+   * and because an unbounded list is an unbounded list of S3 objects nothing ever prunes.
+   * Enforced by the DTO (friendly 400) and by CHK_roadmap_opportunities_reference_images.
+   */
+  REFERENCE_IMAGES_MAX: 6,
+  /** Caption length. A label under a thumbnail — "current state", not a paragraph. */
+  REFERENCE_IMAGE_CAPTION_MAX: 200,
 } as const;
+
+/**
+ * Where reference images land in the assets bucket, and the ceiling on one upload.
+ *
+ * The prefix is load-bearing, not cosmetic: `assertOwnReferenceImages` requires every stored URL
+ * to resolve to this bucket and this prefix, so a caller cannot use the images array to park an
+ * arbitrary third-party URL (or one pointing at another feature's objects) on a row that every
+ * roadmap viewer then loads in their browser. Changing it orphans nothing already stored — the
+ * guard admits any key under the prefix, and existing rows keep the keys they have — but it does
+ * mean older uploads would stop validating on a later edit, so treat it as append-only.
+ *
+ * 5 MB matches the blog's image cap. A screenshot is well under it; a photo off a phone is not
+ * always, which is why it is not tighter.
+ */
+export const ROADMAP_REFERENCE_IMAGE_S3_PREFIX = 'roadmap/reference-images';
+export const ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES = 5 * 1024 * 1024;
 
 /**
  * Composite-rank tuning that is NOT admin-settable, kept here so the two places that need it

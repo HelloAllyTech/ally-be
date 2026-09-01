@@ -1,6 +1,7 @@
 import {
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -15,7 +16,13 @@ import {
   BugFindingStatus,
 } from 'src/bug-hunter/enum/bug-finding.enum';
 
-import { RoadmapOpportunity } from '../entity/roadmap-opportunity.entity';
+import { S3Service } from 'src/aws/service/s3.service';
+import { AppConfigService } from 'src/config/config.service';
+
+import {
+  RoadmapOpportunity,
+  RoadmapReferenceImage,
+} from '../entity/roadmap-opportunity.entity';
 import {
   RoadmapOpportunitySource,
   RoadmapOpportunityStage,
@@ -28,11 +35,15 @@ import {
 import {
   BUG_REPORT_DEFAULT_PRODUCT_GOAL,
   ROADMAP_OWNER_EMAILS,
+  ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES,
+  ROADMAP_REFERENCE_IMAGE_S3_PREFIX,
 } from '../constants/product-roadmap.constants';
 import {
   CreateBugReportDto,
   CreateOpportunityDto,
   ListOpportunitiesQueryDto,
+  RoadmapReferenceImageDto,
+  RoadmapReferenceImageUploadUrlDto,
   UpdateOpportunityDto,
 } from '../dto/roadmap-opportunity.dto';
 import {
@@ -40,6 +51,7 @@ import {
   OpportunityResponseDto,
   RoadmapEligibleOwnerDto,
   RoadmapFacetsDto,
+  RoadmapReferenceImageUploadUrlResponseDto,
   RoadmapUserRefDto,
 } from '../dto/roadmap-response.dto';
 import { currentPeriodKey } from '../util/roadmap-period.util';
@@ -70,6 +82,8 @@ export class RoadmapOpportunityService {
     @InjectRepository(User) private readonly userRepository: Repository<User>,
     @InjectRepository(BugFinding)
     private readonly bugFindingRepository: Repository<BugFinding>,
+    private readonly s3Service: S3Service,
+    private readonly config: AppConfigService,
   ) {}
 
   async list(
@@ -140,6 +154,8 @@ export class RoadmapOpportunityService {
       await this.assertEligibleOwner(dto.ownerUserId);
     }
 
+    const referenceImages = this.normaliseReferenceImages(dto.referenceImages);
+
     const saved = await this.opportunityRepository.save(
       this.opportunityRepository.create({
         description: dto.description.trim(),
@@ -152,6 +168,10 @@ export class RoadmapOpportunityService {
         // it is a text FK into roadmap_opportunity_owners(name) and writing both is what the
         // update path documents as the thing that 500s. See update().
         ownerUserId: dto.ownerUserId ?? null,
+        // `?? []` rather than leaving it undefined: the column is NOT NULL with a '[]' default,
+        // so both land the same row, but being explicit means the created entity in memory has
+        // the same shape as one read back — which is what the response mapper reads.
+        referenceImages,
         createdBy: userId,
         updatedBy: userId,
         source: extra?.source ?? RoadmapOpportunitySource.STAFF,
@@ -325,6 +345,13 @@ export class RoadmapOpportunityService {
     if (dto.effort !== undefined) patch.effort = dto.effort ?? null;
     if (dto.claudePrompt !== undefined)
       patch.claudePrompt = dto.claudePrompt ?? null;
+    // The full resulting list, never a delta — see the DTO. `[]` is a real edit (clear them all),
+    // which is why this is guarded on `!== undefined` rather than on truthiness.
+    if (dto.referenceImages !== undefined) {
+      patch.referenceImages = this.normaliseReferenceImages(
+        dto.referenceImages,
+      );
+    }
 
     if (dto.stage !== undefined) {
       patch.stage = dto.stage;
@@ -485,6 +512,10 @@ export class RoadmapOpportunityService {
       code: row.code,
       queueRank: row.queueRank ?? null,
       claudePrompt: row.claudePrompt ?? null,
+      // `?? []` because the column is only NOT NULL from migration 1944400000000 onward and a
+      // row read through a raw `opp.*` projection in a mid-deploy window can still arrive
+      // without it. An absent array and an empty one mean the same thing to every client.
+      referenceImages: row.referenceImages ?? [],
       builderSessionId: row.builderSessionId ?? null,
       releasedAt: row.releasedAt ?? null,
       plannedMonth: row.plannedMonth ?? null,
@@ -514,6 +545,94 @@ export class RoadmapOpportunityService {
       updatedAt: row.updatedAt,
       creator: users.get(row.createdBy) ?? this.unknownUser(row.createdBy),
     }));
+  }
+
+  // ── reference images ────────────────────────────────────────────────────────
+
+  /**
+   * Hand the browser a presigned PUT so a 5 MB screenshot never travels through this service.
+   *
+   * Deliberately does NOT record anything: an upload is not an attachment. The object exists as
+   * soon as the PUT lands, but it is only attached when the returned `imageUrl` comes back in a
+   * create or update — so abandoning the drawer leaves an unreferenced object rather than a row
+   * pointing at a picture nobody meant to keep.
+   */
+  async createReferenceImageUploadUrl(
+    dto: RoadmapReferenceImageUploadUrlDto,
+  ): Promise<RoadmapReferenceImageUploadUrlResponseDto> {
+    return this.s3Service.getPresignedUrlForImageUpload(
+      this.assetsBucket(),
+      ROADMAP_REFERENCE_IMAGE_S3_PREFIX,
+      dto.fileName,
+      dto.fileSize,
+      dto.contentType,
+      ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES,
+    );
+  }
+
+  /**
+   * Trim captions, drop empty ones, and refuse any URL that is not one of our own uploads.
+   *
+   * THE GUARD IS THE POINT. `referenceImages` is rendered as `<img src>` in the admin dashboard
+   * for every roadmap viewer, so without this the array is a way for one filer to point every
+   * reader's browser at a host of their choosing — a beacon at best, and at worst a request
+   * carrying whatever that host's cookies imply. The presign endpoint is the only way to get an
+   * object into the prefix, so requiring the URL to resolve to that bucket AND that prefix means
+   * the only images that can be attached are ones this service handed out an address for.
+   *
+   * It also scopes the check to THIS feature's prefix rather than to the bucket as a whole: the
+   * assets bucket holds badges, blog headers and scenario covers too, and letting an opportunity
+   * reach into those would make deleting one feature's object break another feature's row.
+   *
+   * 422, not 400: the payload is well-formed and the URL is a URL — it just names an object this
+   * service did not issue, which is the same "well-formed but ineligible" shape as an owner who
+   * is not on the roadmap owner list.
+   *
+   * Caption normalisation matters more than it looks: a caption of "   " renders as a blank line
+   * under a thumbnail, and `undefined` vs `null` vs `''` in a jsonb array is three ways to store
+   * the same absence. One representation — the key is absent — so two identical lists compare
+   * equal, which is what the drawer's dirty check depends on.
+   */
+  private normaliseReferenceImages(
+    images: RoadmapReferenceImageDto[] | undefined,
+  ): RoadmapReferenceImage[] {
+    if (!images?.length) return [];
+
+    const bucket = this.assetsBucket();
+    return images.map((image) => {
+      const url = image.url.trim();
+      const parsed = this.s3Service.parseS3Url(url);
+      if (
+        !parsed ||
+        parsed.bucket !== bucket ||
+        !parsed.key.startsWith(`${ROADMAP_REFERENCE_IMAGE_S3_PREFIX}/`)
+      ) {
+        throw new UnprocessableEntityException(
+          'A reference image must be an image uploaded through this roadmap. Upload it again rather than pasting a link.',
+        );
+      }
+
+      const caption = image.caption?.trim();
+      return caption ? { url, caption } : { url };
+    });
+  }
+
+  /**
+   * The shared assets bucket, the same one blog headers and badge icons live in.
+   *
+   * Resolved per call rather than in the constructor: reading configuration at construction time
+   * is module-load-time work, and this module is imported by AnalyticsSuggestions — a missing
+   * env var would take down suites that never touch an image. Failing here fails only the
+   * request that actually needed a bucket.
+   */
+  private assetsBucket(): string {
+    const bucket = this.config.s3.assetsBucket;
+    if (!bucket) {
+      throw new InternalServerErrorException(
+        'S3 bucket name for assetsBucket is not defined',
+      );
+    }
+    return bucket;
   }
 
   /**

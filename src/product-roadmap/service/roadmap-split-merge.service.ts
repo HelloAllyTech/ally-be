@@ -117,6 +117,11 @@ export class RoadmapSplitMergeService {
               // ROADMAP_UNRESHAPEABLE_STAGES before relaxing that guard.
               releasedAt: null,
               prd: null,
+              // The images stay on the source. Same reasoning as `prd`: a split says "this was
+              // several things", and copying one screenshot onto four parts makes three of them
+              // carry evidence for something they are no longer about. Re-attaching to the part
+              // that needs it is a paste of a URL; un-attaching from three is four edits.
+              referenceImages: [],
             }),
           );
           ids.push(created.id);
