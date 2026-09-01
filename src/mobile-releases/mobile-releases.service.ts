@@ -2,8 +2,10 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import axios, { AxiosError } from 'axios';
 import * as crypto from 'crypto';
 import * as jwt from 'jsonwebtoken';
+import { AppVersionSettingsService } from 'src/app-version/service/app-version-settings.service';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
+import { SlackService } from 'src/notification/service/slack.service';
 import { MobileReleaseWhatsNewAiService } from './mobile-release-whats-new-ai.service';
 import {
   IosAppStoreReviewSubmissionEntryDto,
@@ -161,6 +163,8 @@ export class MobileReleasesService {
   constructor(
     private readonly configService: AppConfigService,
     private readonly whatsNewAiService: MobileReleaseWhatsNewAiService,
+    private readonly appVersionSettingsService: AppVersionSettingsService,
+    private readonly slackService: SlackService,
   ) {}
 
   private get repo(): string {
@@ -813,6 +817,99 @@ export class MobileReleasesService {
           new Date(a.uploadedDate).getTime(),
       ),
     };
+  }
+
+  /**
+   * AUTONOMOUS, REAL-PRODUCTION ACTION — the only one in this module that
+   * isn't triggered by a human click. Run on a schedule (see
+   * IosMinVersionAutoBumpSchedulerRegistrationService), this raises the iOS
+   * force-update minimum version the moment — and only the moment — Apple
+   * confirms the current build's App Store version is genuinely live to real
+   * users.
+   *
+   * "Live" here means `appVersionState === 'READY_FOR_DISTRIBUTION'`
+   * specifically, verified against Apple's real App Store Connect API
+   * schema before writing this rather than assumed: `COMPLETE` on a review
+   * submission only means Apple finished reviewing it, and this workflow
+   * forces releaseType MANUAL, so an approved version normally sits at
+   * `PENDING_DEVELOPER_RELEASE` until a human clicks Release in App Store
+   * Connect — exactly the gap this method waits out rather than jumping.
+   * Only once the version reaches READY_FOR_DISTRIBUTION is it safe to
+   * assume every user on the platform can actually download it.
+   *
+   * Deliberately iOS-only. The Play Developer API has no equivalent signal
+   * for Android once Managed Publishing is enabled on this app (confirmed
+   * by checking Google's own API reference) — `edits.tracks.get` only
+   * reflects what was last *committed*, not whether Google's review +
+   * manual-publish gate has actually let it through, so there is currently
+   * no safe way to build the same automation for Android.
+   *
+   * A no-op (not an error) when: there's no processed build yet, the build
+   * isn't READY_FOR_DISTRIBUTION yet, or the minimum is already at this
+   * version. Every actual change is logged and posted to Slack, since this
+   * is the one action on this page nobody clicked.
+   */
+  async autoBumpIosMinimumVersionIfLive(): Promise<void> {
+    this.requireAppStoreConnectConfig();
+    const headers = this.appStoreConnectHeaders;
+
+    const appId = await this.fetchAppStoreConnectAppId(headers);
+    const build = await this.fetchLatestValidBuild(appId, headers);
+    if (!build) return;
+
+    const appVersionState = await this.fetchAppStoreVersionState(
+      appId,
+      build.version,
+      headers,
+    );
+    if (appVersionState !== 'READY_FOR_DISTRIBUTION') return;
+
+    const current =
+      await this.appVersionSettingsService.getAppVersionSettings('ios');
+    if (current.minimumSupportedVersion === build.version) return;
+
+    await this.appVersionSettingsService.updateAppVersionSettings({
+      ios: build.version,
+    });
+
+    this.logger.info(
+      `Auto-raised iOS minimum supported version from ${current.minimumSupportedVersion} to ` +
+        `${build.version} — Apple confirmed READY_FOR_DISTRIBUTION.`,
+    );
+    await this.slackService.sendMessage(
+      `iOS minimum supported version auto-raised to ${build.version} — Apple confirmed it's ` +
+        `live (READY_FOR_DISTRIBUTION). Previous minimum was ${current.minimumSupportedVersion}. ` +
+        'No human action taken; this ran on schedule.',
+    );
+  }
+
+  /** null if no appStoreVersions resource matches `versionString` yet (e.g. not created, or already replaced). */
+  private async fetchAppStoreVersionState(
+    appId: string,
+    versionString: string,
+    headers: Record<string, string>,
+  ): Promise<string | null> {
+    try {
+      const { data } = await axios.get(
+        `${APPSTORE_CONNECT_API}/apps/${appId}/appStoreVersions`,
+        {
+          headers,
+          params: {
+            'filter[platform]': 'IOS',
+            'filter[versionString]': versionString,
+            'fields[appStoreVersions]': 'versionString,appVersionState',
+            limit: 1,
+          },
+          timeout: 15_000,
+        },
+      );
+      return data?.data?.[0]?.attributes?.appVersionState ?? null;
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not look up appVersionState for iOS version ${versionString}`,
+      );
+    }
   }
 
   /**
