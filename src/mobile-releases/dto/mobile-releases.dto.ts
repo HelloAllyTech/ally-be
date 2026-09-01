@@ -141,6 +141,34 @@ export class MobileDispatchResponseDto {
   dispatched!: boolean;
 }
 
+export class AndroidProductionStatusResponseDto {
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Play Developer API release status on the production track, passed through verbatim: ' +
+      "'draft' | 'inProgress' | 'halted' | 'completed'. null if there is no release on that " +
+      "track yet. 'completed' only means genuinely live to every user once Managed Publishing " +
+      'is off for this app — with it on, this can still be true while Google is still holding ' +
+      'the change for review or a manual publish click.',
+  })
+  status!: string | null;
+
+  @ApiProperty({
+    type: [Number],
+    description:
+      'versionCodes included in the current highest-versionCode production release. Empty array if there is none.',
+  })
+  versionCodes!: number[];
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Fraction (0-1) of eligible users receiving a staged rollout — only meaningful when status is 'inProgress' or " +
+      "'halted'. null otherwise (e.g. status 'completed', or no release at all).",
+  })
+  userFraction!: number | null;
+}
+
 export class IosTestflightStatusResponseDto {
   @ApiProperty({
     nullable: true,
