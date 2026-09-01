@@ -6,6 +6,8 @@ import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { MobileReleaseWhatsNewAiService } from './mobile-release-whats-new-ai.service';
 import {
+  IosAppStoreReviewSubmissionEntryDto,
+  IosAppStoreReviewSubmissionsResponseDto,
   IosTestflightHistoryEntryDto,
   IosTestflightHistoryResponseDto,
   IosTestflightStatusResponseDto,
@@ -36,6 +38,7 @@ const APPSTORE_JWT_AUDIENCE = 'appstoreconnect-v1';
 // Apple caps App Store Connect API JWTs at 20 minutes; stay comfortably under it.
 const APPSTORE_JWT_TTL_SECONDS = 19 * 60;
 const TESTFLIGHT_HISTORY_BUILD_LIMIT = 15;
+const APP_STORE_REVIEW_SUBMISSION_LIMIT = 15;
 
 /**
  * Normalizes an APPSTORE_API_PRIVATE_KEY env value into a clean PEM string,
@@ -772,6 +775,81 @@ export class MobileReleasesService {
           new Date(a.uploadedDate).getTime(),
       ),
     };
+  }
+
+  /**
+   * Apple's own full App Store review submission history — the real
+   * public-distribution review (what the App Store Connect UI's "App Store"
+   * tab shows as Date Submitted / Versions / Status), distinct from the
+   * TestFlight Beta App Review history above which only ever covers
+   * TestFlight builds. Read-only, no caching, same auth/fetch pattern as the
+   * rest of this module. Only 2 Apple API calls per request (app id lookup +
+   * the reviewSubmissions list itself, with the version string resolved via
+   * `include=appStoreVersionForReview` in the same call) — no per-item
+   * fan-out needed, unlike getIosTestflightHistory's betaReviewState lookups.
+   */
+  async getIosAppStoreReviewSubmissions(): Promise<IosAppStoreReviewSubmissionsResponseDto> {
+    this.requireAppStoreConnectConfig();
+    const headers = this.appStoreConnectHeaders;
+
+    const appId = await this.fetchAppStoreConnectAppId(headers);
+    const submissions = await this.fetchRecentAppStoreReviewSubmissions(
+      appId,
+      headers,
+    );
+
+    return { submissions };
+  }
+
+  private async fetchRecentAppStoreReviewSubmissions(
+    appId: string,
+    headers: Record<string, string>,
+  ): Promise<IosAppStoreReviewSubmissionEntryDto[]> {
+    try {
+      const { data } = await axios.get(
+        `${APPSTORE_CONNECT_API}/apps/${appId}/reviewSubmissions`,
+        {
+          headers,
+          params: {
+            'filter[platform]': 'IOS',
+            include: 'appStoreVersionForReview',
+            limit: APP_STORE_REVIEW_SUBMISSION_LIMIT,
+            'fields[reviewSubmissions]':
+              'submittedDate,state,appStoreVersionForReview',
+            'fields[appStoreVersions]': 'versionString',
+          },
+          timeout: 15_000,
+        },
+      );
+      const included = data?.included ?? [];
+      const entries: IosAppStoreReviewSubmissionEntryDto[] = (data?.data ?? [])
+        .filter((submission: any) => submission?.id)
+        .map((submission: any) => {
+          const versionId =
+            submission?.relationships?.appStoreVersionForReview?.data?.id;
+          const versionResource = included.find(
+            (item: any) =>
+              item?.type === 'appStoreVersions' && item?.id === versionId,
+          );
+          return {
+            versionString: String(
+              versionResource?.attributes?.versionString ?? '',
+            ),
+            submittedDate: String(submission?.attributes?.submittedDate ?? ''),
+            state: String(submission?.attributes?.state ?? ''),
+          };
+        });
+      return entries.sort(
+        (a, b) =>
+          new Date(b.submittedDate).getTime() -
+          new Date(a.submittedDate).getTime(),
+      );
+    } catch (error) {
+      throw this.toReadableError(
+        error,
+        `Could not list App Store review submissions for App Store Connect app ${appId}`,
+      );
+    }
   }
 
   private async fetchRecentValidBuilds(

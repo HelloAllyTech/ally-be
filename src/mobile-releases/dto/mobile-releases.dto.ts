@@ -213,6 +213,44 @@ export class IosTestflightHistoryResponseDto {
   history!: IosTestflightHistoryEntryDto[];
 }
 
+export class IosAppStoreReviewSubmissionEntryDto {
+  @ApiProperty({
+    description:
+      'App Store version string this submission covers (e.g. "1.23.15"), ' +
+      "resolved from Apple's appStoreVersionForReview relationship.",
+  })
+  versionString!: string;
+
+  @ApiProperty({
+    description:
+      "ISO timestamp, from Apple's reviewSubmissions attributes.submittedDate",
+  })
+  submittedDate!: string;
+
+  @ApiProperty({
+    description:
+      "Apple's raw reviewSubmissions state enum value (READY_FOR_REVIEW | " +
+      'WAITING_FOR_REVIEW | IN_REVIEW | UNRESOLVED_ISSUES | CANCELING | ' +
+      'COMPLETING | COMPLETE), passed through verbatim rather than remapped — ' +
+      'same convention as betaReviewState elsewhere in this module.',
+  })
+  state!: string;
+}
+
+export class IosAppStoreReviewSubmissionsResponseDto {
+  @ApiProperty({
+    type: IosAppStoreReviewSubmissionEntryDto,
+    isArray: true,
+    description:
+      "Up to the last 15 of Apple's full App Store review submissions for " +
+      'com.helloally.app, sorted by submittedDate descending. Distinct from ' +
+      'the TestFlight Beta App Review history above — these are submissions ' +
+      'for real public App Store distribution, from the reviewSubmissions ' +
+      'resource, not betaAppReviewSubmissions. Empty array if none exist yet.',
+  })
+  submissions!: IosAppStoreReviewSubmissionEntryDto[];
+}
+
 export class PromoteAndroidRequestDto {
   @ApiProperty({
     minimum: 1,

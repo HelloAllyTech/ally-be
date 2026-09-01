@@ -11,6 +11,7 @@ import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-togg
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { MobileReleasesService } from './mobile-releases.service';
 import {
+  IosAppStoreReviewSubmissionsResponseDto,
   IosTestflightHistoryResponseDto,
   IosTestflightStatusResponseDto,
   IosWhatsNewSuggestionResponseDto,
@@ -113,6 +114,19 @@ export class MobileReleasesController {
   @Get('ios-testflight-history')
   getIosTestflightHistory(): Promise<IosTestflightHistoryResponseDto> {
     return this.mobileReleasesService.getIosTestflightHistory();
+  }
+
+  @ApiOperation({
+    summary:
+      "Apple's full App Store review submission history (distinct from the TestFlight Beta App Review history above) for the current app",
+  })
+  @ApiResponse({ status: 200, type: IosAppStoreReviewSubmissionsResponseDto })
+  @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
+    permissions: [PERMISSIONS.VIEW_MOBILE_RELEASES],
+  })
+  @Get('ios-app-store-review-history')
+  getIosAppStoreReviewHistory(): Promise<IosAppStoreReviewSubmissionsResponseDto> {
+    return this.mobileReleasesService.getIosAppStoreReviewSubmissions();
   }
 
   @ApiOperation({
