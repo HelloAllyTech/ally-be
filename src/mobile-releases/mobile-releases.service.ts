@@ -759,7 +759,14 @@ export class MobileReleasesService {
       return { history: [] };
     }
 
-    const history: IosTestflightHistoryEntryDto[] = await Promise.all(
+    // allSettled, not all — same reasoning as listRuns() above: this fans out
+    // to up to TESTFLIGHT_HISTORY_BUILD_LIMIT parallel Apple API calls (one
+    // betaAppReviewSubmissions lookup per build), and a single transient
+    // failure among them used to fail the whole history list. A failed
+    // build's lookup is dropped from the result (not mapped to null — null
+    // already means "never submitted for review", a different, misleading
+    // thing to show for "the lookup failed").
+    const settled = await Promise.allSettled(
       builds.map(async (build) => ({
         buildVersion: build.version,
         buildId: build.id,
@@ -767,6 +774,24 @@ export class MobileReleasesService {
         betaReviewState: await this.fetchBetaReviewState(build.id, headers),
       })),
     );
+
+    const history: IosTestflightHistoryEntryDto[] = settled
+      .filter(
+        (
+          result,
+        ): result is PromiseFulfilledResult<IosTestflightHistoryEntryDto> => {
+          if (result.status === 'fulfilled') return true;
+          this.logger.warn(
+            `Dropping a build from getIosTestflightHistory(): ${
+              result.reason instanceof Error
+                ? result.reason.message
+                : String(result.reason)
+            }`,
+          );
+          return false;
+        },
+      )
+      .map((result) => result.value);
 
     return {
       history: history.sort(
