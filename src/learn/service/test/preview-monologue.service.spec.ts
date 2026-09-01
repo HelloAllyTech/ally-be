@@ -99,7 +99,13 @@ describe('PreviewMonologueService', () => {
     await service.recordMonologue('preview-450-abc', [{ turn: 1 }]);
 
     expect(repository.update).toHaveBeenCalledWith(
-      { roomName: 'preview-450-abc' },
+      {
+        roomName: 'preview-450-abc',
+        turnCount: expect.objectContaining({
+          _type: 'lessThanOrEqual',
+          _value: 1,
+        }),
+      },
       expect.objectContaining({ turnCount: 1 }),
     );
   });
@@ -124,6 +130,59 @@ describe('PreviewMonologueService', () => {
 
     expect(repository.update).not.toHaveBeenCalled();
     expect(repository.upsert).not.toHaveBeenCalled();
+  });
+
+  it('keeps the longer write even when both write-outs land in the same SQS batch and are processed concurrently', async () => {
+    // Mirrors SqsPollingService.pollMessages: every message in a batch is
+    // processed via Promise.all, so the agent's short early write-out and its
+    // fuller final write-out for the same room can both call findOne before
+    // either update commits, then race to write. Whichever commits last must
+    // still lose if it is the shorter one — that only holds if the
+    // check-then-write is atomic at the database, not just at read time.
+    let row = { roomName: 'preview-450-abc', turnCount: 0, turns: [] as any[] };
+
+    repository.findOne.mockImplementation(async () => ({ ...row }));
+
+    let resolveLongCommitted: () => void;
+    const longCommitted = new Promise<void>((resolve) => {
+      resolveLongCommitted = resolve;
+    });
+
+    // Fake atomic UPDATE: only applies when the row's *current* turnCount
+    // still satisfies the criteria's condition, checked against `row` as it
+    // is at apply time (not the stale snapshot recordMonologue read earlier).
+    repository.update.mockImplementation((criteria, partial) => {
+      const apply = () => {
+        const satisfiesCondition =
+          criteria.turnCount === undefined ||
+          row.turnCount <= criteria.turnCount.value;
+        if (row.roomName === criteria.roomName && satisfiesCondition) {
+          row = { ...row, ...partial };
+          return { affected: 1 };
+        }
+        return { affected: 0 };
+      };
+
+      const isShortWrite = partial.turnCount === 1;
+      if (isShortWrite) {
+        // The short write's commit lands after the long write's, even though
+        // nothing in the (buggy) code prevents it from winning anyway.
+        return longCommitted.then(apply);
+      }
+      const result = apply();
+      resolveLongCommitted();
+      return Promise.resolve(result);
+    });
+
+    const fullMonologue = Array.from({ length: 9 }, (_, i) => ({ turn: i }));
+
+    await Promise.all([
+      service.recordMonologue('preview-450-abc', [{ turn: 1 }]),
+      service.recordMonologue('preview-450-abc', fullMonologue),
+    ]);
+
+    expect(row.turnCount).toBe(9);
+    expect(row.turns).toEqual(fullMonologue);
   });
 
   it('ignores a room that is not a preview', async () => {

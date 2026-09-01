@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { LessThanOrEqual, Repository } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { PreviewMonologueRun } from '../entity/preview-monologue-run.entity';
 
@@ -122,8 +122,15 @@ export class PreviewMonologueService {
         return;
       }
 
+      // Compare-and-set in the WHERE clause: the agent ships this write-out
+      // twice, and both can land in the same SQS batch and be processed
+      // concurrently (see SqsPollingService.pollMessages), so the `existing`
+      // read above can be stale by the time this runs. Folding the length
+      // check into the UPDATE's own WHERE makes the check-then-write atomic
+      // at the database, so whichever write is genuinely longer always wins
+      // regardless of which one commits last.
       await this.repository.update(
-        { roomName },
+        { roomName, turnCount: LessThanOrEqual(turns.length) },
         { turns, turnCount: turns.length, endedAt: endedAt ?? new Date() },
       );
     } catch (error) {
