@@ -9,6 +9,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { SlackService } from 'src/notification/service/slack.service';
 import { MobileReleaseWhatsNewAiService } from './mobile-release-whats-new-ai.service';
 import {
+  AndroidProductionStatusResponseDto,
   IosAppStoreReviewSubmissionEntryDto,
   IosAppStoreReviewSubmissionsResponseDto,
   IosTestflightHistoryEntryDto,
@@ -938,6 +939,29 @@ export class MobileReleasesService {
   }
 
   /**
+   * Live Play Developer API production-track status for the current Android app — read-only,
+   * no caching, same pattern as the rest of this module. Powers the admin dashboard's Android
+   * pipeline "Publish" stage, which previously had no live signal at all and showed a static
+   * placeholder. Shares fetchAndroidProductionRelease() with the auto-bump task below rather
+   * than duplicating the Play Developer API call.
+   *
+   * Deliberately doesn't say "live" anywhere in its own shape — `status`/`userFraction` are
+   * passed through verbatim, same as this module does for Apple's raw enum values elsewhere,
+   * so the frontend (and whoever reads this response) decides what those mean rather than this
+   * endpoint asserting more certainty than the underlying signal actually carries, especially
+   * given `status: 'completed'` is only a trustworthy "genuinely live" signal once Managed
+   * Publishing is off for this app.
+   */
+  async getAndroidProductionStatus(): Promise<AndroidProductionStatusResponseDto> {
+    const release = await this.fetchAndroidProductionRelease();
+    return {
+      status: release?.status ?? null,
+      versionCodes: release?.versionCodes ?? [],
+      userFraction: release?.userFraction ?? null,
+    };
+  }
+
+  /**
    * AUTONOMOUS, REAL-PRODUCTION ACTION — Android's counterpart to
    * autoBumpIosMinimumVersionIfLive() above, run on the same 30-minute
    * schedule. Only safe to enable once Managed Publishing is OFF for this
@@ -1008,6 +1032,7 @@ export class MobileReleasesService {
   private async fetchAndroidProductionRelease(): Promise<{
     status: string;
     versionCodes: number[];
+    userFraction: number | null;
   } | null> {
     const serviceAccountJson = this.requireAndroidPublisherConfig();
     const androidpublisher = google.androidpublisher({
@@ -1046,6 +1071,7 @@ export class MobileReleasesService {
       return {
         status: latest.release.status ?? '',
         versionCodes: (latest.release.versionCodes ?? []).map(Number),
+        userFraction: latest.release.userFraction ?? null,
       };
     } catch (error) {
       throw this.toReadableError(
