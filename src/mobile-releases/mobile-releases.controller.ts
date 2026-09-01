@@ -11,6 +11,7 @@ import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-togg
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { MobileReleasesService } from './mobile-releases.service';
 import {
+  AndroidProductionStatusResponseDto,
   IosAppStoreReviewSubmissionsResponseDto,
   IosTestflightHistoryResponseDto,
   IosTestflightStatusResponseDto,
@@ -101,6 +102,19 @@ export class MobileReleasesController {
   @Get('ios-testflight-status')
   getIosTestflightStatus(): Promise<IosTestflightStatusResponseDto> {
     return this.mobileReleasesService.getIosTestflightStatus();
+  }
+
+  @ApiOperation({
+    summary:
+      "Live Play Developer API production-track status for the current Android app. status: 'completed' only means genuinely live once Managed Publishing is off for this app.",
+  })
+  @ApiResponse({ status: 200, type: AndroidProductionStatusResponseDto })
+  @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
+    permissions: [PERMISSIONS.VIEW_MOBILE_RELEASES],
+  })
+  @Get('android-production-status')
+  getAndroidProductionStatus(): Promise<AndroidProductionStatusResponseDto> {
+    return this.mobileReleasesService.getAndroidProductionStatus();
   }
 
   @ApiOperation({
