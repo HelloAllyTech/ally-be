@@ -131,7 +131,7 @@ export class MobileReleasesController {
 
   @ApiOperation({
     summary:
-      'MANUAL, REAL-PRODUCTION ACTION: dispatch promote-android-production.yml to advance the Play Store production track staged rollout to rolloutPercentage%. Requires the Play Console service account to have "Release to production" permission, not just internal-track release.',
+      'MANUAL, REAL-PRODUCTION ACTION: dispatch promote-android-production.yml to advance the Play Store production track staged rollout to rolloutPercentage%. Requires the Play Console service account to have "Release to production" permission, not just internal-track release. Optional whatsNew sets the production release notes, which Google Play does not carry over from the internal track automatically.',
   })
   @ApiResponse({ status: 200, type: MobileDispatchResponseDto })
   @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
@@ -142,7 +142,10 @@ export class MobileReleasesController {
   promoteAndroid(
     @Body() body: PromoteAndroidRequestDto,
   ): Promise<MobileDispatchResponseDto> {
-    return this.mobileReleasesService.promoteAndroid(body.rolloutPercentage);
+    return this.mobileReleasesService.promoteAndroid(
+      body.rolloutPercentage,
+      body.whatsNew,
+    );
   }
 
   @ApiOperation({

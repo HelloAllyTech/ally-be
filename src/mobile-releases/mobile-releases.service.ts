@@ -533,9 +533,17 @@ export class MobileReleasesService {
    * internal-track release, in which case this workflow will fail even
    * though the GitHub dispatch itself succeeds. That's a Play Console
    * change, not something fixable here.
+   *
+   * `whatsNew`, when provided, sets the production release's "What's New"
+   * text — Google Play does not carry a release's notes across tracks
+   * automatically, so without this the production listing ends up with none
+   * at all even though the internal track has its own. Omitted (or left
+   * empty), the production release just has no release notes, same as
+   * before this parameter existed.
    */
   async promoteAndroid(
     rolloutPercentage: number,
+    whatsNew?: string,
   ): Promise<MobileDispatchResponseDto> {
     const headers = this.headers;
 
@@ -546,9 +554,14 @@ export class MobileReleasesService {
         `${GITHUB_API}/repos/${this.repo}/actions/workflows/${PROMOTE_ANDROID_WORKFLOW_FILE}/dispatches`,
         {
           ref: 'master',
-          // workflow_dispatch inputs must be strings, even for what's
-          // conceptually a number.
-          inputs: { rollout_percentage: String(rolloutPercentage) },
+          inputs: {
+            // workflow_dispatch inputs must be strings, even for what's
+            // conceptually a number.
+            rollout_percentage: String(rolloutPercentage),
+            // Empty string, not omitted, is how "not provided" is conveyed for this optional
+            // input — same convention submitIosAppStoreReview() below uses for whats_new.
+            whats_new: whatsNew ?? '',
+          },
         },
         { headers, timeout: 15_000 },
       );

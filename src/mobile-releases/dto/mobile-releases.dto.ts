@@ -262,6 +262,18 @@ export class PromoteAndroidRequestDto {
   @Min(1)
   @Max(100)
   rolloutPercentage!: number;
+
+  @ApiProperty({
+    required: false,
+    description:
+      'Optional "What\'s New" text for the production listing. Google Play doesn\'t carry a ' +
+      "release's notes across tracks automatically, so without this the production listing " +
+      "ends up with none at all. Forwarded to promote-android-production.yml's whats_new input.",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4000) // generous sanity cap; Play Store's own field limit applies and rejects via the usual error path if exceeded
+  whatsNew?: string;
 }
 
 export class IosWhatsNewSuggestionResponseDto {
