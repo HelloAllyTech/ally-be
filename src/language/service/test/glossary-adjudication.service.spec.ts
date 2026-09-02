@@ -98,6 +98,26 @@ describe('GlossaryAdjudicationService', () => {
     expect(out.rejected).toBe(1);
   });
 
+  // The 2026-09-02 preview rejected ALL 9 queued proposals for "restating a
+  // rule already present", quoting each proposal's own text back as the rule
+  // it restated — because the glossary summary lists pending entries, and the
+  // proposals under judgement ARE the pending entries.
+  it('never shows the adjudicator the proposals as existing glossary', async () => {
+    glossaryRepository.findAllForLanguage.mockResolvedValue([
+      section({
+        entries: [proposal('e1', '- yes: say `ஆமா` (avoid: `ஆமாம்`)')],
+      }),
+    ]);
+    getCompletion.mockResolvedValue(
+      JSON.stringify([{ index: 1, verdict: 'accept', reason: 'ok' }]),
+    );
+    await service.adjudicateLanguage(6);
+    expect(glossaryService.summarizeGlossary).toHaveBeenCalledWith(
+      expect.anything(),
+      { includePending: false },
+    );
+  });
+
   it('annotates a canonical rule as canonical', async () => {
     glossaryRepository.findAllForLanguage.mockResolvedValue([
       section({

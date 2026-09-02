@@ -1574,10 +1574,28 @@ export class LanguageGlossaryService {
     return Math.min(5, Math.max(1, Math.round(value)));
   }
 
-  /** Compact existing-glossary listing for the consolidation prompt. */
-  /** Public so the adjudication pass shows the model the same glossary view
-   * the consolidator saw, rather than formatting a second one. */
-  summarizeGlossary(sections: LanguageGlossarySection[]): string {
+  /**
+   * Compact existing-glossary listing for a prompt's "already covered" block.
+   *
+   * `includePending` decides whether proposals awaiting review are listed, and
+   * the two callers need opposite answers:
+   *
+   *   CONSOLIDATION wants them (true). A queued proposal is as much a
+   *   duplicate source as a published line — one Tamil overlay had 11 queued
+   *   and invisible, so the consolidator re-proposed them.
+   *
+   *   ADJUDICATION must NOT have them (false). The proposals being judged ARE
+   *   the pending entries, so including them puts every proposal into its own
+   *   "existing glossary" block. Measured 2026-09-02: the adjudicator rejected
+   *   all 9 queued proposals for "restating a rule already present", quoting
+   *   each proposal's own text back as the rule it restated. Requiring that
+   *   quote is what exposed it; without it the reasons looked plausible.
+   */
+  summarizeGlossary(
+    sections: LanguageGlossarySection[],
+    options: { includePending?: boolean } = {},
+  ): string {
+    const includePending = options.includePending !== false;
     if (sections.length === 0) return '(no glossary sections exist yet)';
     return sections
       .map((s) => {
@@ -1591,10 +1609,12 @@ export class LanguageGlossaryService {
         const body = (s.content ?? '').trim().slice(0, 8000);
         // Proposals awaiting review are duplicate sources too — one Tamil
         // overlay had 11 queued and invisible here.
-        const pending = (s.entries ?? [])
-          .filter((e) => e.status === GlossaryEntryStatus.PROPOSED)
-          .map((e) => e.markdown.trim())
-          .filter(Boolean);
+        const pending = includePending
+          ? (s.entries ?? [])
+              .filter((e) => e.status === GlossaryEntryStatus.PROPOSED)
+              .map((e) => e.markdown.trim())
+              .filter(Boolean)
+          : [];
         const pendingBlock = pending.length
           ? `\n(awaiting review, also do not restate)\n${pending.join('\n')}`
           : '';

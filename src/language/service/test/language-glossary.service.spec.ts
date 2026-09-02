@@ -606,6 +606,8 @@ describe('LanguageGlossaryService', () => {
       }[];
       const systemPrompt = messages.find((m) => m.role === 'system')!.content;
       expect(systemPrompt).toContain(`${longTail} LAST.`);
+      // Consolidation MUST see queued proposals (adjudication must not) —
+      // otherwise it re-proposes what is already waiting.
       expect(systemPrompt).toContain('- a queued proposal awaiting review');
     });
 

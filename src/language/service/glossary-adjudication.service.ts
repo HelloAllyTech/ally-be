@@ -318,7 +318,12 @@ export class GlossaryAdjudicationService {
       await this.glossaryService.resolvePromptByCode(
         GLOSSARY_ADJUDICATION_PROMPT_CODE,
       );
-    const existing = this.glossaryService.summarizeGlossary(sections);
+    // Pending entries excluded: the proposals under judgement ARE the pending
+    // entries, and including them made the adjudicator reject every proposal
+    // for restating itself.
+    const existing = this.glossaryService.summarizeGlossary(sections, {
+      includePending: false,
+    });
     const provider = this.llmProviderFactory.getProvider(engine.provider);
 
     for (let i = 0; i < proposals.length; i += GLOSSARY_ADJUDICATION_BATCH) {
