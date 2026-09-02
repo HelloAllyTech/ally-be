@@ -235,11 +235,19 @@ describe('MicrophoneChatGateway', () => {
         'connect_error',
         expect.any(Function),
       );
-      expect(mockSocket.on).toHaveBeenCalledWith(
+      expect(gatewayPrivate.sessions[mockSocket.id]).toBeDefined();
+    });
+
+    it('should NOT register its own disconnect listener', async () => {
+      await gateway.handleConnection(mockSocket);
+
+      // Nest already invokes handleDisconnect via OnGatewayDisconnect. A manual
+      // listener here made it run twice, concurrently, so every disconnect
+      // logged two end attempts and two audit events for one recording.
+      expect(mockSocket.on).not.toHaveBeenCalledWith(
         'disconnect',
         expect.any(Function),
       );
-      expect(gatewayPrivate.sessions[mockSocket.id]).toBeDefined();
     });
 
     it('should disconnect client when no user data is found', async () => {
@@ -251,18 +259,20 @@ describe('MicrophoneChatGateway', () => {
       expect(mockSocket.join).not.toHaveBeenCalled();
     });
 
-    it('should call handleDisconnect when disconnect event is triggered', async () => {
-      gatewayPrivate.handleDisconnect = jest.fn().mockResolvedValue(undefined);
-
+    it('should end a recording only once when disconnect is delivered twice', async () => {
       await gateway.handleConnection(mockSocket);
+      gatewayPrivate.sessions[mockSocket.id].chatId = 99;
 
-      // Get the disconnect callback and call it
-      const disconnectCallback = mockSocket.on.mock.calls.find(
-        (call: any) => call[0] === 'disconnect',
-      )[1];
-      disconnectCallback();
+      // Both notifications arrive before either has finished. The session must
+      // be claimed before the first await, or the loser reaches endChat too and
+      // fails with "Chat is not active" — which the audit trail then reports as
+      // a failure to end a call that ended cleanly.
+      await Promise.all([
+        gateway.handleDisconnect(mockSocket),
+        gateway.handleDisconnect(mockSocket),
+      ]);
 
-      expect(gatewayPrivate.handleDisconnect).toHaveBeenCalledWith(mockSocket);
+      expect(mockChatService.endChat).toHaveBeenCalledTimes(1);
     });
   });
 

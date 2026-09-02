@@ -262,22 +262,26 @@ export class MicrophoneChatGateway
       );
     });
 
-    client.on('disconnect', () => {
-      this.logger.info(
-        `Client disconnected from microphone chat: ${client.id}`,
-      );
-      this.handleDisconnect(client);
-    });
+    // NOTE: do not add a `client.on('disconnect')` here. Nest already calls
+    // `handleDisconnect` for us via OnGatewayDisconnect; a manual listener made
+    // it run twice, concurrently, and both invocations read the session before
+    // either deleted it — which is why every disconnect logged its end attempt
+    // and its audit event twice.
   }
 
   async handleDisconnect(client: Socket) {
-    this.logger.info(`Client disconnected: ${client.id}`);
+    this.logger.info(`Client disconnected from microphone chat: ${client.id}`);
     const clientId = client.id;
     const session = this.sessions[clientId];
     if (!session) {
       this.logger.error(`Session not found for client ${clientId}`);
       return;
     }
+    // Claim the session before any await. Two disconnect notifications for the
+    // same socket must not both reach endChat: the second one loses the race and
+    // fails with "Chat is not active", which reads in the audit trail as a
+    // failure to end a call that was in fact ended cleanly.
+    delete this.sessions[clientId];
     // only chat will be ended if valid chatId is provided
     // this will be triggered only from the platform where the chat is started
     if (
@@ -327,7 +331,6 @@ export class MicrophoneChatGateway
         userId: session.userId,
       },
     );
-    delete this.sessions[clientId];
   }
 
   sendMessagesToRoom(room: string, payload: MessagePayload) {
