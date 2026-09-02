@@ -99,6 +99,12 @@ export enum RoadmapBoardGroupBy {
   STAGE = 'stage',
   PRODUCT_GOAL = 'productGoal',
   OWNER = 'owner',
+  /**
+   * Who FILED the opportunity. Read-only lanes: unlike the other groupings, a card cannot be
+   * dragged between them, because createdBy is a historical fact rather than an assignment —
+   * see RoadmapBoardService.move, which refuses it.
+   */
+  CREATED_BY = 'createdBy',
 }
 
 /**

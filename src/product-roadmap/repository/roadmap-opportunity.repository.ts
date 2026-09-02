@@ -86,6 +86,9 @@ const LANE_KEY_SQL: Record<RoadmapBoardGroupBy, string> = {
   [RoadmapBoardGroupBy.STAGE]: 'opp."stage"',
   [RoadmapBoardGroupBy.PRODUCT_GOAL]: 'opp."productGoal"',
   [RoadmapBoardGroupBy.OWNER]: 'opp."owner"',
+  // ::text because every laneKey is compared and bucketed as a string; an integer id here
+  // would make the createdBy board's keys the one lane type that != its laneKeysFor values.
+  [RoadmapBoardGroupBy.CREATED_BY]: 'opp."createdBy"::text',
 };
 
 /**

@@ -161,6 +161,22 @@ describe('RoadmapBoardService', () => {
       expect(repository.reorderLane).not.toHaveBeenCalled();
     });
 
+    it('refuses a FILED-BY drop outright — who filed it is history, not an assignment', async () => {
+      await expect(
+        service.move(ACTOR, {
+          opportunityId: OPP,
+          groupBy: RoadmapBoardGroupBy.CREATED_BY,
+          lane: '42',
+        }),
+      ).rejects.toMatchObject({ status: 422 });
+
+      // Refused before the row is even loaded: nothing read, nothing written, nothing emitted.
+      expect(repository.findOne).not.toHaveBeenCalled();
+      expect(opportunityService.update).not.toHaveBeenCalled();
+      expect(repository.update).not.toHaveBeenCalled();
+      expect(notifications.emit).not.toHaveBeenCalled();
+    });
+
     it('404s for an unknown opportunity, whatever the grouping', async () => {
       repository.findOne.mockResolvedValue(null);
       await expect(
