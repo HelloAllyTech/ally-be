@@ -17,6 +17,7 @@ import {
   GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT,
   GLOSSARY_CONSOLIDATION_DIMENSIONS,
   GLOSSARY_CONSOLIDATION_PROMPT_CODE,
+  GLOSSARY_CONSOLIDATION_RECENCY_DAYS,
   GLOSSARY_GENERATION_PROMPT_CODE,
   GLOSSARY_LEXICAL_CONTRADICTION_MIN,
   GLOSSARY_MIN_CLUSTER_SUPPORT,
@@ -1158,6 +1159,10 @@ export class LanguageGlossaryService {
    * 13 of its 2,409 unconsumed annotations (1,675 of the hidden ones
    * non-fluency, i.e. immediately usable) and scheduled consolidation had
    * produced nothing for 8 days across every language.
+   *
+   * Bounded to GLOSSARY_CONSOLIDATION_RECENCY_DAYS: a rule reaches the agent's
+   * every-turn prompt, so it must generalize the agent we ship now, not one
+   * retired two models ago. See that constant for the measurement.
    */
   private unconsumedAnnotationsQuery(
     languageValue: string,
@@ -1170,6 +1175,9 @@ export class LanguageGlossaryService {
         dimensions: [...GLOSSARY_CONSOLIDATION_DIMENSIONS],
       })
       .andWhere('a.conditionedOut = false')
+      .andWhere('a.occurredAt > now() - make_interval(days => :recencyDays)', {
+        recencyDays: GLOSSARY_CONSOLIDATION_RECENCY_DAYS,
+      })
       .andWhere(excludeTestTenants('a."tenant_id"'));
     // Skipped when empty: `<> ALL('{}')` is true for every row, but an empty
     // array parameter gives Postgres no element type to infer.

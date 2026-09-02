@@ -515,6 +515,24 @@ describe('LanguageGlossaryService', () => {
       ).toBe(true);
     });
 
+    it('bounds the annotation read to the recency window', async () => {
+      // A rule lands in the every-turn prompt, so it must generalize the agent
+      // we ship now. Without this the read reached back to April across two
+      // retired agent models.
+      setAnnotationPool([annotation('a1')]);
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      await service.consolidateGlossary(6);
+
+      const recency = annotationQb.andWhere.mock.calls.find(
+        (c: any[]) =>
+          typeof c[0] === 'string' && c[0].includes('make_interval'),
+      );
+      expect(recency).toBeDefined();
+      expect(recency[0]).toContain('a.occurredAt > now()');
+      expect(recency[1].recencyDays).toBe(90);
+    });
+
     it('skips proposals duplicating existing content lines or proposals', async () => {
       setAnnotationPool([annotation('a1')]);
       glossaryRepository.findSection.mockResolvedValue(
