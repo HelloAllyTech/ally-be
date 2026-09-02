@@ -130,32 +130,22 @@ export class GlossaryAdjudicationService {
 
     const decided = new Map<
       string,
-      { verdict: AdjudicationVerdict; reason: string }
+      { verdict: AdjudicationVerdict; reason: string; rewrite?: string }
     >();
 
-    // Deterministic first: a non-binding form is rejected without spending a
-    // model call, because the compliance evidence is not a judgement call.
-    const needsModel: QueuedProposal[] = [];
-    for (const p of queued) {
-      if (classifyRuleForm(p.markdown) === 'pair_only_in_example') {
-        decided.set(p.entryId, {
-          verdict: 'rejected',
-          reason:
-            'form: the substitution sits in an example line, a shape measured at 4% agent compliance',
-        });
-        continue;
-      }
-      needsModel.push(p);
-    }
-
-    if (needsModel.length > 0) {
-      const modelVerdicts = await this.adjudicateWithModel(
-        languageId,
-        sections,
-        needsModel,
-      );
-      for (const [entryId, v] of modelVerdicts) decided.set(entryId, v);
-    }
+    // Form is ANNOTATED, not vetoed. It used to auto-reject the buried-pair
+    // shape before any model call, and a dry run on production then rejected
+    // all six queued proposals — every one legitimate — because a regex
+    // cannot tell an abstract opener from a substitution stated in prose. A
+    // deterministic pre-veto fails silently and totally; the adjudicator's
+    // reasoning is at least inspectable. So the classification travels to the
+    // model as evidence and the model rules.
+    const modelVerdicts = await this.adjudicateWithModel(
+      languageId,
+      sections,
+      queued,
+    );
+    for (const [entryId, v] of modelVerdicts) decided.set(entryId, v);
 
     const proposals: AdjudicatedProposal[] = [];
     let accepted = 0;
@@ -171,6 +161,10 @@ export class GlossaryAdjudicationService {
 
       if (apply && verdict === 'accepted') {
         try {
+          if (decision.rewrite) {
+            await this.rewriteProposal(languageId, p, decision.rewrite);
+            reason = `${reason} (rewritten to canonical form)`;
+          }
           await this.acceptMakingRoomIfNeeded(languageId, p, options);
         } catch (error) {
           // The cap still wins after re-tiering. Report, never force: the
@@ -215,6 +209,35 @@ export class GlossaryAdjudicationService {
       deferred,
       proposals,
     };
+  }
+
+  /**
+   * Replace a proposal's text with the adjudicator's canonical rewrite.
+   *
+   * The alternative to rewriting is rejecting substance for shape: a genuine
+   * substitution buried under an abstract opener is worth keeping, it just has
+   * to be restated in the form the agent actually follows (100% vs 4%
+   * compliance). Only the entry's markdown changes — provenance, support and
+   * id are untouched, so the rule stays traceable to the annotations that
+   * produced it.
+   */
+  private async rewriteProposal(
+    languageId: number,
+    p: QueuedProposal,
+    rewrite: string,
+  ): Promise<void> {
+    const section = await this.glossaryRepository.findSection(
+      languageId,
+      p.sectionCode,
+      p.profileId,
+    );
+    const entry = section?.entries?.find((e) => e.id === p.entryId);
+    if (!section || !entry) return;
+    entry.markdown = rewrite;
+    await this.glossaryRepository.save(section);
+    this.logger.log(
+      `[GLOSSARY_ADJUDICATE] language=${languageId} rewrote ${p.sectionCode}/${p.entryId} to canonical form`,
+    );
   }
 
   /**
@@ -279,10 +302,15 @@ export class GlossaryAdjudicationService {
     languageId: number,
     sections: LanguageGlossarySection[],
     proposals: QueuedProposal[],
-  ): Promise<Map<string, { verdict: AdjudicationVerdict; reason: string }>> {
+  ): Promise<
+    Map<
+      string,
+      { verdict: AdjudicationVerdict; reason: string; rewrite?: string }
+    >
+  > {
     const out = new Map<
       string,
-      { verdict: AdjudicationVerdict; reason: string }
+      { verdict: AdjudicationVerdict; reason: string; rewrite?: string }
     >();
     const language =
       await this.glossaryService.assertLanguageExists(languageId);
@@ -299,7 +327,8 @@ export class GlossaryAdjudicationService {
         .map(
           (p, n) =>
             `${n + 1}. [section=${p.sectionCode}${p.profileId ? '@overlay' : ''} ` +
-            `mode=${p.injectionMode} support=${p.support}]\n${p.markdown}`,
+            `mode=${p.injectionMode} support=${p.support} ` +
+            `form=${classifyRuleForm(p.markdown)}]\n${p.markdown}`,
         )
         .join('\n\n');
       const filled = systemPrompt
@@ -338,7 +367,11 @@ export class GlossaryAdjudicationService {
       for (const v of this.parseVerdicts(raw)) {
         const target = batch[v.index - 1];
         if (!target) continue;
-        out.set(target.entryId, { verdict: v.verdict, reason: v.reason });
+        out.set(target.entryId, {
+          verdict: v.verdict,
+          reason: v.reason,
+          rewrite: v.rewrite,
+        });
       }
     }
     return out;
@@ -354,6 +387,7 @@ export class GlossaryAdjudicationService {
     index: number;
     verdict: AdjudicationVerdict;
     reason: string;
+    rewrite?: string;
   }[] {
     const cleaned = (raw ?? '')
       .trim()
@@ -376,21 +410,29 @@ export class GlossaryAdjudicationService {
       index: number;
       verdict: AdjudicationVerdict;
       reason: string;
+      rewrite?: string;
     }[] = [];
     for (const item of list) {
       const row = item as {
         index?: unknown;
         verdict?: unknown;
         reason?: unknown;
+        rewrite?: unknown;
       };
       const index = Number(row.index);
       const verdict = String(row.verdict ?? '').toLowerCase();
       if (!Number.isFinite(index)) continue;
       if (verdict !== 'accept' && verdict !== 'reject') continue;
+      const rewrite =
+        typeof row.rewrite === 'string' && row.rewrite.trim()
+          ? row.rewrite.trim().slice(0, 600)
+          : undefined;
       out.push({
         index,
         verdict: verdict === 'accept' ? 'accepted' : 'rejected',
         reason: String(row.reason ?? '').slice(0, 300),
+        // A rewrite only means anything on an accept.
+        rewrite: verdict === 'accept' ? rewrite : undefined,
       });
     }
     return out;

@@ -73,9 +73,9 @@ describe('GlossaryAdjudicationService', () => {
     expect(getCompletion).not.toHaveBeenCalled();
   });
 
-  // The buried-pair shape measured 4% agent compliance; rejecting it needs no
-  // model call, and spending one would re-judge measured evidence.
-  it('rejects a non-binding rule form without any model call', async () => {
+  // Form is annotated, not vetoed: a deterministic pre-veto rejected all six
+  // real queued proposals in a production dry run, every one legitimate.
+  it('sends the form classification to the adjudicator instead of vetoing', async () => {
     glossaryRepository.findAllForLanguage.mockResolvedValue([
       section({
         entries: [
@@ -86,11 +86,80 @@ describe('GlossaryAdjudicationService', () => {
         ],
       }),
     ]);
+    getCompletion.mockResolvedValue(
+      JSON.stringify([
+        { index: 1, verdict: 'reject', reason: 'buried pair, 4% shape' },
+      ]),
+    );
     const out = await service.adjudicateLanguage(6);
-    expect(getCompletion).not.toHaveBeenCalled();
+    expect(getCompletion).toHaveBeenCalled();
+    const messages = getCompletion.mock.calls[0][0];
+    expect(messages[0].content).toContain('form=pair_only_in_example');
     expect(out.rejected).toBe(1);
-    expect(out.proposals[0].reason).toContain('4% agent compliance');
-    expect(glossaryService.rejectProposal).toHaveBeenCalled();
+  });
+
+  it('annotates a canonical rule as canonical', async () => {
+    glossaryRepository.findAllForLanguage.mockResolvedValue([
+      section({
+        entries: [proposal('e1', '- yes: say `ஆமா` (avoid: `ஆமாம்`)')],
+      }),
+    ]);
+    getCompletion.mockResolvedValue(
+      JSON.stringify([{ index: 1, verdict: 'accept', reason: 'ok' }]),
+    );
+    await service.adjudicateLanguage(6);
+    expect(getCompletion.mock.calls[0][0][0].content).toContain(
+      'form=canonical',
+    );
+  });
+
+  // Rewriting keeps good substance that arrived in a shape the agent ignores.
+  it('applies a canonical rewrite before accepting, preserving the entry id', async () => {
+    const entry = proposal(
+      'e1',
+      '- Contract connectives, apply everywhere:\n  e.g. ஆமா (not ஆமாம்)',
+    );
+    const sec = section({ entries: [entry] });
+    glossaryRepository.findAllForLanguage.mockResolvedValue([sec]);
+    glossaryRepository.findSection = jest.fn().mockResolvedValue(sec);
+    glossaryRepository.save = jest.fn().mockResolvedValue(sec);
+    getCompletion.mockResolvedValue(
+      JSON.stringify([
+        {
+          index: 1,
+          verdict: 'accept',
+          reason: 'good substance, bad shape',
+          rewrite: '- yes: say `ஆமா` (avoid: `ஆமாம்`)',
+        },
+      ]),
+    );
+    const out = await service.adjudicateLanguage(6);
+    expect(entry.markdown).toBe('- yes: say `ஆமா` (avoid: `ஆமாம்`)');
+    expect(entry.id).toBe('e1');
+    expect(glossaryRepository.save).toHaveBeenCalledWith(sec);
+    expect(out.accepted).toBe(1);
+    expect(out.proposals[0].reason).toContain('rewritten to canonical form');
+  });
+
+  it('ignores a rewrite offered alongside a reject', async () => {
+    const entry = proposal('e1', '- do not break character');
+    const sec = section({ entries: [entry] });
+    glossaryRepository.findAllForLanguage.mockResolvedValue([sec]);
+    glossaryRepository.findSection = jest.fn().mockResolvedValue(sec);
+    glossaryRepository.save = jest.fn().mockResolvedValue(sec);
+    getCompletion.mockResolvedValue(
+      JSON.stringify([
+        {
+          index: 1,
+          verdict: 'reject',
+          reason: 'actor behaviour',
+          rewrite: '- nope',
+        },
+      ]),
+    );
+    await service.adjudicateLanguage(6);
+    expect(entry.markdown).toBe('- do not break character');
+    expect(glossaryRepository.save).not.toHaveBeenCalled();
   });
 
   it('applies the adjudicator verdicts to accept and reject', async () => {
