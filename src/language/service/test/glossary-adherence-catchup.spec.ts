@@ -48,7 +48,11 @@ describe('GlossaryAdherenceService.catchUpUnscanned', () => {
     const s = sql();
     expect(s).toMatch(/language_glossary_sections/);
     expect(s).toMatch(/status = 'published'/);
-    expect(s).toMatch(/\(avoid:/);
+    // The group test must stay in step with parseAvoidTerms, which accepts
+    // `(not …)` and `(avoid …)` as well as `(avoid: …)`. Pinning the literal
+    // `(avoid:` here is what let a reworded glossary fall out of scanning
+    // entirely, so assert BOTH markers are covered.
+    expect(s).toMatch(/avoid\|not/);
   });
 
   it('requires at least one agent message to scan', async () => {
