@@ -203,6 +203,18 @@ export interface ListOpportunitiesResult {
 const EXCLUDE_BUGS_SQL = `opp."type" <> 'bug'`;
 
 /**
+ * The upper bound of a date range means "through the end of that day".
+ *
+ * The filter panel sends bare YYYY-MM-DD, which Postgres casts to midnight, so a plain
+ * `createdAt <= '2026-09-02'` excluded everything actually filed ON the 2nd — a range whose last
+ * day is today reliably came back missing its newest rows, which reads as the filter being broken
+ * rather than as an off-by-one. Timestamps are passed through untouched: `@IsISO8601` accepts a
+ * full instant too, and there the caller has already said exactly where the bound is.
+ */
+const endOfDayBound = (value: string): string =>
+  /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T23:59:59.999` : value;
+
+/**
  * How the ranking SQL refers to its weights and bases. Two shapes, because the same expression
  * is built for a named-parameter query builder (`:wVotes`) and for positional raw SQL (`$4`).
  */
@@ -939,7 +951,9 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
     if (o.dateFrom)
       qb.andWhere('opp."createdAt" >= :dateFrom', { dateFrom: o.dateFrom });
     if (o.dateTo)
-      qb.andWhere('opp."createdAt" <= :dateTo', { dateTo: o.dateTo });
+      qb.andWhere('opp."createdAt" <= :dateTo', {
+        dateTo: endOfDayBound(o.dateTo),
+      });
     if (o.releasedFrom) {
       qb.andWhere('opp."releasedAt" >= :releasedFrom', {
         releasedFrom: o.releasedFrom,
@@ -947,7 +961,7 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
     }
     if (o.releasedTo) {
       qb.andWhere('opp."releasedAt" <= :releasedTo', {
-        releasedTo: o.releasedTo,
+        releasedTo: endOfDayBound(o.releasedTo),
       });
     }
 
