@@ -76,6 +76,7 @@ import {
   GlossaryDedupeIndex,
   normalizeMarkdown,
 } from '../util/glossary-dedupe.util';
+import { excludeForeignScripts } from '../util/script-consistency.util';
 
 export interface GlossarySectionView {
   section: LanguageGlossarySection;
@@ -1179,6 +1180,12 @@ export class LanguageGlossaryService {
         recencyDays: GLOSSARY_CONSOLIDATION_RECENCY_DAYS,
       })
       .andWhere(excludeTestTenants('a."tenant_id"'));
+    // Evidence in a foreign script is not evidence about THIS language's
+    // lexicon — it records the agent drifting into another language. Filtered
+    // in SQL, before the row limit, for the same reason the consumed-set is:
+    // otherwise unusable rows spend the budget.
+    const foreignScript = excludeForeignScripts('a."aiText"', languageValue);
+    if (foreignScript) query.andWhere(foreignScript);
     // Skipped when empty: `<> ALL('{}')` is true for every row, but an empty
     // array parameter gives Postgres no element type to infer.
     if (consumedIds.length > 0) {
