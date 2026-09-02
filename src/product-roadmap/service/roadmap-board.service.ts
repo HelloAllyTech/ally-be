@@ -120,6 +120,17 @@ export class RoadmapBoardService {
     dto: MoveOpportunityDto,
   ): Promise<MonthBoardMoveResponseDto> {
     const groupBy = dto.groupBy ?? RoadmapBoardGroupBy.MONTH;
+
+    // The one grouping whose lanes are NOT a writable column: who filed an opportunity is a
+    // historical fact, and every other lane move is "a faster way to make an edit the drawer
+    // already offers" (see the docblock above). Refused before touching the row, so the client
+    // gets the explanation rather than a mystery 500 from moveByField's exhaustive switch.
+    if (groupBy === RoadmapBoardGroupBy.CREATED_BY) {
+      throw new UnprocessableEntityException(
+        'Who filed an opportunity cannot be changed, so cards on the filed-by board cannot be moved between lanes.',
+      );
+    }
+
     const existing = await this.opportunityRepository.findOne({
       where: { id: dto.opportunityId },
     });
@@ -373,6 +384,13 @@ export class RoadmapBoardService {
           ...(await this.taxonomyService.listOwners()).map((o) => o.name),
           null,
         ];
+      case RoadmapBoardGroupBy.CREATED_BY:
+        // Keys are user IDS as strings, matching LANE_KEY_SQL's ::text — the frontend owns
+        // turning them into names via the same facets.creators it already fetches. No catch-all
+        // lane: createdBy is NOT NULL (a deleted account still leaves its id behind).
+        return (await this.opportunityRepository.getFacets()).createdBy.map(
+          String,
+        );
     }
   }
 
