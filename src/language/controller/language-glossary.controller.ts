@@ -35,15 +35,29 @@ export class LanguageGlossaryController {
     return this.glossaryService.listSections(Number(id));
   }
 
-  @ApiOperation({ summary: 'Create or update a glossary section (draft edit)' })
+  @ApiOperation({
+    summary: 'Create or update a glossary section (draft edit)',
+    description:
+      "Pass profileId to target ONE variety profile's overlay instead of the " +
+      'global section. Consolidation creates overlay sections, so without it ' +
+      'the loop could produce sections no authoring endpoint could edit or ' +
+      're-tier.',
+  })
   @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
   @Put(':id/glossary/:sectionCode')
   async upsertSection(
     @Param('id') id: number,
     @Param('sectionCode') sectionCode: string,
     @Body() dto: UpsertGlossarySectionDto,
+    @Query('profileId') profileId?: string,
   ) {
-    return this.glossaryService.upsertSection(Number(id), sectionCode, dto);
+    return this.glossaryService.upsertSection(
+      Number(id),
+      sectionCode,
+      dto,
+      undefined,
+      profileId || null,
+    );
   }
 
   @ApiOperation({ summary: 'Publish a glossary section (Tier 0 cap enforced)' })

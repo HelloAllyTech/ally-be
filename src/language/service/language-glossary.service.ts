@@ -210,16 +210,28 @@ export class LanguageGlossaryService {
     return { sections: views, tier0Tokens, tier0TokenCap: TIER0_TOKEN_CAP };
   }
 
+  /**
+   * Create or edit a section — global, or one variety profile's overlay.
+   *
+   * `profileId` exists because consolidation CREATES overlay sections
+   * (`sectionCode` + `profileId`) while this method used to resolve the global
+   * section only. The loop could therefore produce sections no authoring
+   * endpoint could reach: found 2026-09-02 with 14 accepted-worthy Tamil rules
+   * stuck behind a full Tier 0 budget in overlay sections whose tier nobody
+   * could change by hand. Omit it for the global section, as before.
+   */
   async upsertSection(
     languageId: number,
     sectionCode: string,
     dto: UpsertGlossarySectionDto,
     updatedBy?: string,
+    profileId?: string | null,
   ): Promise<LanguageGlossarySection> {
     await this.assertLanguageExists(languageId);
     const existing = await this.glossaryRepository.findSection(
       languageId,
       sectionCode,
+      profileId ?? null,
     );
 
     // A manual injectionMode change pins the tier: the admin's explicit
@@ -234,6 +246,7 @@ export class LanguageGlossaryService {
       ...(existing ?? {
         languageId,
         sectionCode,
+        profileId: profileId ?? null,
         status: GlossarySectionStatus.DRAFT,
         createdBy: updatedBy,
       }),

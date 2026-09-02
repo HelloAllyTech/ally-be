@@ -48,6 +48,9 @@ describe('GlossaryAdjudicationService', () => {
       }),
       acceptProposal: jest.fn().mockResolvedValue({}),
       rejectProposal: jest.fn().mockResolvedValue({}),
+      retierGlossary: jest
+        .fn()
+        .mockResolvedValue({ views: [{ promoted: [], demoted: [] }] }),
     };
     service = new GlossaryAdjudicationService(
       glossaryService,
@@ -132,9 +135,54 @@ describe('GlossaryAdjudicationService', () => {
     );
   });
 
-  // The Tier 0 cap is authoritative — Tamil sat at 1996/2000 with good
-  // proposals queued. Defer and report; never retry or force.
-  it('defers rather than forces when the Tier 0 cap rejects the accept', async () => {
+  // Deferring on the cap alone was a dead end: a good rule sat in the queue
+  // forever while the mechanism to reallocate the budget went unused.
+  it('re-tiers to make room when the cap blocks an accept, then succeeds', async () => {
+    glossaryRepository.findAllForLanguage.mockResolvedValue([
+      section({
+        entries: [proposal('e1', '- yes: say `ஆமா` (avoid: `ஆமாம்`)')],
+      }),
+    ]);
+    getCompletion.mockResolvedValue(
+      JSON.stringify([{ index: 1, verdict: 'accept', reason: 'good' }]),
+    );
+    glossaryService.acceptProposal
+      .mockRejectedValueOnce(
+        new BadRequestException(
+          'Tier 0 glossary would be 2100 tokens, over the 2000-token cap.',
+        ),
+      )
+      .mockResolvedValueOnce({});
+    glossaryService.retierGlossary.mockResolvedValue({
+      views: [{ promoted: [], demoted: ['grammar'] }],
+    });
+
+    const out = await service.adjudicateLanguage(6);
+    expect(glossaryService.retierGlossary).toHaveBeenCalledWith(6, {
+      apply: true,
+    });
+    expect(glossaryService.acceptProposal).toHaveBeenCalledTimes(2);
+    expect(out).toMatchObject({ accepted: 1, deferred: 0 });
+  });
+
+  it('does not re-tier for a non-cap accept failure', async () => {
+    glossaryRepository.findAllForLanguage.mockResolvedValue([
+      section({
+        entries: [proposal('e1', '- yes: say `ஆமா` (avoid: `ஆமாம்`)')],
+      }),
+    ]);
+    getCompletion.mockResolvedValue(
+      JSON.stringify([{ index: 1, verdict: 'accept', reason: 'good' }]),
+    );
+    glossaryService.acceptProposal.mockRejectedValue(new Error('db down'));
+    const out = await service.adjudicateLanguage(6);
+    expect(glossaryService.retierGlossary).not.toHaveBeenCalled();
+    expect(out).toMatchObject({ deferred: 1 });
+  });
+
+  // When the allocation is already optimal the cap still wins, and what
+  // remains (raise the cap, trim content) is a decision, not a retry.
+  it('defers when the cap still refuses after re-tiering', async () => {
     glossaryRepository.findAllForLanguage.mockResolvedValue([
       section({
         entries: [proposal('e1', '- yes: say `ஆமா` (avoid: `ஆமாம்`)')],
@@ -151,7 +199,10 @@ describe('GlossaryAdjudicationService', () => {
     const out = await service.adjudicateLanguage(6);
     expect(out).toMatchObject({ accepted: 0, deferred: 1 });
     expect(out.proposals[0].reason).toContain('over the 2000-token cap');
-    expect(glossaryService.acceptProposal).toHaveBeenCalledTimes(1);
+    // Two attempts: the first hits the cap, then one re-tier, then one retry.
+    // It never loops — a cap that survives re-tiering is a decision to make.
+    expect(glossaryService.acceptProposal).toHaveBeenCalledTimes(2);
+    expect(glossaryService.retierGlossary).toHaveBeenCalledTimes(1);
   });
 
   // Silence must never read as approval.

@@ -171,15 +171,11 @@ export class GlossaryAdjudicationService {
 
       if (apply && verdict === 'accepted') {
         try {
-          await this.glossaryService.acceptProposal(
-            languageId,
-            p.sectionCode,
-            p.entryId,
-            options.adjudicatedBy ?? 'adjudicator',
-            p.profileId,
-          );
+          await this.acceptMakingRoomIfNeeded(languageId, p, options);
         } catch (error) {
-          // The Tier 0 cap is authoritative. Report, never force.
+          // The cap still wins after re-tiering. Report, never force: the
+          // remaining answers are raising the cap or trimming content, and
+          // both are decisions, not retries.
           verdict = 'deferred';
           reason =
             error instanceof BadRequestException
@@ -219,6 +215,63 @@ export class GlossaryAdjudicationService {
       deferred,
       proposals,
     };
+  }
+
+  /**
+   * Accept a proposal, re-tiering once if the Tier 0 cap is what blocks it.
+   *
+   * Deferring on the cap alone was a dead end: a good rule would sit in the
+   * queue forever while a mechanism to reallocate the budget went unused. The
+   * computed pass ranks sections by value per token and demotes the weakest to
+   * `retrieved` — on-demand rather than every-turn, which is where a rule that
+   * cannot pay for a permanent slot belongs.
+   *
+   * Re-tiered at most once per accept, and only after a cap failure, so a
+   * language whose allocation is already optimal pays nothing. If the cap
+   * still refuses, the error propagates: what remains is raising the cap or
+   * trimming content, and those are decisions rather than retries.
+   */
+  private async acceptMakingRoomIfNeeded(
+    languageId: number,
+    p: QueuedProposal,
+    options: { adjudicatedBy?: string },
+  ): Promise<void> {
+    const by = options.adjudicatedBy ?? 'adjudicator';
+    try {
+      await this.glossaryService.acceptProposal(
+        languageId,
+        p.sectionCode,
+        p.entryId,
+        by,
+        p.profileId,
+      );
+      return;
+    } catch (error) {
+      const isCap =
+        error instanceof BadRequestException &&
+        /token/i.test((error as Error).message);
+      if (!isCap) throw error;
+    }
+
+    const retier = await this.glossaryService.retierGlossary(languageId, {
+      apply: true,
+    });
+    const changed = retier.views.some(
+      (v) => v.promoted.length > 0 || v.demoted.length > 0,
+    );
+    this.logger.log(
+      `[GLOSSARY_ADJUDICATE] language=${languageId} cap blocked ${p.sectionCode} — ` +
+        `re-tier ${changed ? 'freed space, retrying' : 'proposed no change'}`,
+    );
+    // Retry regardless of `changed`: the surviving error is the honest signal
+    // to the caller, and it names the cap.
+    await this.glossaryService.acceptProposal(
+      languageId,
+      p.sectionCode,
+      p.entryId,
+      by,
+      p.profileId,
+    );
   }
 
   /** One adjudication call per batch; unparseable output defers, never guesses. */
