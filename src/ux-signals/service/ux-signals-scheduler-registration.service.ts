@@ -9,6 +9,12 @@ import { UxSignalsService } from './ux-signals.service';
 /**
  * Registers the UX Signals scan on the shared hourly scheduler.
  *
+ * Two jobs per tick, and only one of them is the scan. Every hour it first clears
+ * any scan row abandoned by a crash or a redeploy, because that row is what the
+ * admin panel reads as "a scan is running now" and nothing else would clear it
+ * until the next scan was attempted — up to a day later. Then, if the cadence is
+ * due, it runs a scan.
+ *
  * Registered hourly but *gated* to roughly daily inside the handler: the registry
  * offers 5min/15min/30min/hourly/monthly and no daily tick, so the cadence has to
  * live in the task. The gate reads the newest scan row rather than an in-memory
@@ -35,6 +41,18 @@ export class UxSignalsSchedulerRegistrationService implements OnModuleInit {
 
   onModuleInit(): void {
     scheduledTaskRegistry.register('hourly', 'ux-signals-scan', async () => {
+      // Before the due check, and unconditionally: a row left RUNNING by a crash
+      // or a redeploy is not waiting on the cadence, and the admin panel reads it
+      // as "a scan is running now" until something clears it. Sweeping only on
+      // the next scan attempt would leave that showing until tomorrow.
+      try {
+        await this.uxSignals.sweepAbandonedScans();
+      } catch (error) {
+        this.logger.warn(
+          `[UX-SIGNALS] Could not sweep abandoned scans: ${String(error)}`,
+        );
+      }
+
       if (!(await this.uxSignals.isDueForScheduledScan())) return;
 
       try {

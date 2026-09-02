@@ -7,40 +7,28 @@ import {
   UxSignalScanTrigger,
 } from '../enum/ux-signal.enum';
 
-/** What a scan did, as the admin surface reports it. */
-export class UxScanOutcomeDto {
-  @ApiProperty({ format: 'uuid' })
+/**
+ * The acknowledgement that a scan now exists and is running.
+ *
+ * Everything a caller needs to follow the run and nothing it has not earned yet:
+ * there are no counts here, because at this moment there are none. A shape that
+ * carried zeroes would be indistinguishable from a finished, quiet scan.
+ */
+export class UxScanStartedDto {
+  @ApiProperty({
+    format: 'uuid',
+    description: 'Poll GET /v1/ux-signals/scans and match on this id.',
+  })
   scanId!: string;
 
   @ApiProperty({
-    description:
-      'Observations that crossed a detector threshold, before triage clustered them.',
+    enum: UxSignalScanStatus,
+    description: 'Always `running` — the scan is claimed before this returns.',
   })
-  signalsDetected!: number;
+  status!: UxSignalScanStatus;
 
-  @ApiProperty({ description: 'Bug findings filed into the Bug Hunter queue.' })
-  findingsCreated!: number;
-
-  @ApiProperty({
-    description: 'Suggestions filed into the Analytics Suggestions queue.',
-  })
-  suggestionsCreated!: number;
-
-  @ApiProperty({
-    description:
-      'Items already open as a finding or pending as a suggestion. A healthy ' +
-      'steady state, not an error: a scan that detected nine signals and filed ' +
-      'nothing because all nine were already known is working correctly.',
-  })
-  skippedDuplicates!: number;
-
-  @ApiProperty({
-    type: [String],
-    description:
-      'Detectors whose query failed, by name. Reported rather than hidden so a ' +
-      'scan that found little can be told apart from one that could not look.',
-  })
-  failedDetectors!: string[];
+  @ApiProperty()
+  startedAt!: Date;
 }
 
 /** One row of the scan log. */
@@ -60,6 +48,15 @@ export class UxSignalScanDto {
   @ApiProperty() findingsCreated!: number;
   @ApiProperty() suggestionsCreated!: number;
   @ApiProperty() skippedDuplicates!: number;
+
+  @ApiProperty({
+    type: [String],
+    description:
+      'Detectors whose query failed, by name. Lifted out of `metadata` and onto ' +
+      'the row because this is how a finished scan reports itself now that the ' +
+      'scan endpoint returns before there is anything to report.',
+  })
+  failedDetectors!: string[];
 
   @ApiPropertyOptional({ nullable: true })
   error?: string | null;

@@ -90,18 +90,61 @@ export class UxSignalsService {
   ) {}
 
   /**
-   * Run a scan end to end.
+   * Start a scan and return the moment it is claimed, without waiting for it.
    *
-   * Throws rather than returning a partial result when PostHog is unreachable or
-   * the triage call comes back unparseable: a scan that half-ran must not record
-   * counts that read like a clean run, because those counts are what a human uses
-   * to judge whether the pipeline is working. The scan row keeps the error either
-   * way, so a failure is visible after the fact and not only in logs.
+   * A scan takes minutes — seven sequential detector queries, each with its own
+   * 30s timeout and one retry, then a triage call bounded at two more. Holding an
+   * HTTP connection open for that is a bet against every idle timeout between the
+   * browser and the app, and it is a bet that was already lost in production: the
+   * gateway hung up at 60s, the caller was told the scan "could not be completed",
+   * and the scan went on to file seven findings. Nobody watching learned anything
+   * true. So the wait now belongs to the caller, which can poll the scan row.
+   *
+   * The guards stay synchronous deliberately. "PostHog is not configured" and
+   * "one is already running" are answers the caller can act on immediately, and
+   * they are cheap to determine — deferring them into the background would turn
+   * two precise refusals into a scan row that fails a second later for a reason
+   * the caller has to go and read.
+   */
+  async startScan(
+    trigger: UxSignalScanTrigger,
+    userId: number | null = null,
+  ): Promise<UxSignalScan> {
+    const scan = await this.claim(trigger, userId);
+
+    // Deliberately not awaited: the response is the point. `executeScan` records
+    // its own failure on the row before rethrowing, so this catch exists only to
+    // keep a rejected background promise from surfacing as an unhandled one —
+    // including a rejection from the FAILED write itself.
+    void this.executeScan(scan).catch((error) => {
+      this.logger.warn(
+        `[UX-SIGNALS] Background scan ${scan.id} ended in failure: ${String(error)}`,
+      );
+    });
+
+    return scan;
+  }
+
+  /**
+   * Run a scan end to end and wait for it — the scheduled path, which has no
+   * connection to keep alive and wants the outcome for its log line.
    */
   async runScan(
     trigger: UxSignalScanTrigger,
     userId: number | null = null,
   ): Promise<UxScanOutcome> {
+    return this.executeScan(await this.claim(trigger, userId));
+  }
+
+  /**
+   * Everything that must be true before a scan exists, and the row that says one
+   * does. Shared by both entry points so the manual and scheduled paths cannot
+   * drift on what they refuse.
+   */
+  private async claim(
+    trigger: UxSignalScanTrigger,
+    userId: number | null,
+  ): Promise<UxSignalScan> {
     if (!this.configService.posthog.enabled) {
       throw new ServiceUnavailableException(
         'PostHog query access is not configured, so there is nothing to scan.',
@@ -111,7 +154,22 @@ export class UxSignalsService {
 
     const windowTo = isoDate(new Date());
     const windowFrom = isoDate(addDays(new Date(), -UX_SIGNAL_WINDOW_DAYS));
-    const scan = await this.claimScan(trigger, windowFrom, windowTo, userId);
+    return this.claimScan(trigger, windowFrom, windowTo, userId);
+  }
+
+  /**
+   * The scan itself, against an already-claimed row.
+   *
+   * Throws rather than returning a partial result when PostHog is unreachable or
+   * the triage call comes back unparseable: a scan that half-ran must not record
+   * counts that read like a clean run, because those counts are what a human uses
+   * to judge whether the pipeline is working. The scan row keeps the error either
+   * way, so a failure is visible after the fact and not only in logs — which is
+   * the only way it is visible at all on the background path.
+   */
+  private async executeScan(scan: UxSignalScan): Promise<UxScanOutcome> {
+    const { windowFrom, windowTo } = scan;
+    const userId = scan.startedBy ?? null;
 
     try {
       const { signals, failedDetectors, totalDetectors } =
@@ -212,6 +270,48 @@ export class UxSignalsService {
     return hoursSince >= UX_SIGNAL_SCHEDULE.MIN_HOURS_BETWEEN_SCANS;
   }
 
+  /**
+   * Mark RUNNING rows past the staleness cutoff as FAILED, and say how many.
+   *
+   * A scan whose process dies mid-run — a redeploy, a crash, an OOM — leaves its
+   * row RUNNING with nothing left to finish it. Until this ran on a timer the row
+   * was only cleared by the *next* scan attempt, which was survivable when a human
+   * pressing a button was the only trigger and stopped being so once the run
+   * outlived the request that started it: the admin surface reads this table, and
+   * a dead row there says "a scan is running now" indefinitely to everyone who
+   * looks. An hourly sweep bounds that at an hour.
+   *
+   * Counts first and writes only if there is something to write: this runs every
+   * hour forever, and an UPDATE that always matches nothing is pure noise in the
+   * query log.
+   */
+  async sweepAbandonedScans(): Promise<number> {
+    const cutoff = new Date(
+      Date.now() - UX_SIGNAL_SCHEDULE.STALE_RUNNING_MINUTES * 60_000,
+    );
+    const criteria = {
+      status: UxSignalScanStatus.RUNNING,
+      startedAt: LessThan(cutoff),
+    };
+
+    const stale = await this.scanRepository.count({ where: criteria });
+    if (stale === 0) return 0;
+
+    this.logger.warn(
+      `[UX-SIGNALS] Clearing ${stale} abandoned RUNNING scan row(s) older than ` +
+        `${UX_SIGNAL_SCHEDULE.STALE_RUNNING_MINUTES} minutes.`,
+    );
+    await this.scanRepository.update(criteria, {
+      status: UxSignalScanStatus.FAILED,
+      // Written for the admin who reads it on the panel, where it appears as the
+      // reason the last scan failed — not for a parser.
+      error: 'The scan was interrupted before it could report a result.',
+      finishedAt: new Date(),
+    });
+
+    return stale;
+  }
+
   // ── internals ──────────────────────────────────────────────────────────────
 
   /**
@@ -280,18 +380,7 @@ export class UxSignalsService {
       },
     });
     if (stale === inFlight) {
-      this.logger.warn(
-        `[UX-SIGNALS] Clearing ${stale} abandoned RUNNING scan row(s) older than ` +
-          `${UX_SIGNAL_SCHEDULE.STALE_RUNNING_MINUTES} minutes.`,
-      );
-      await this.scanRepository.update(
-        { status: UxSignalScanStatus.RUNNING, startedAt: LessThan(cutoff) },
-        {
-          status: UxSignalScanStatus.FAILED,
-          error: 'Abandoned: no result recorded before the staleness cutoff.',
-          finishedAt: new Date(),
-        },
-      );
+      await this.sweepAbandonedScans();
       return;
     }
 
