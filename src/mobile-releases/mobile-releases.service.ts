@@ -602,13 +602,12 @@ export class MobileReleasesService {
    * endpoint here — once submitted, Apple's review clock starts, and there
    * is no API-level "cancel submission" offered by this module.
    *
-   * It does NOT auto-release to real users: the workflow forces
-   * `releaseType: MANUAL` on the App Store Connect version, so even after
-   * Apple approves the build, a human still has to explicitly click
-   * "Release" in App Store Connect for it to actually reach users. It also
-   * does not prepare the App Store Connect listing itself (screenshots,
-   * release notes, etc.) — that is human content work assumed already done
-   * before this is ever called.
+   * It DOES auto-release to real users: the workflow forces
+   * `releaseType: AFTER_APPROVAL` on the App Store Connect version, so the
+   * moment Apple approves the build, it goes live to every real App Store
+   * user with no further click. It also does not prepare the App Store
+   * Connect listing itself (screenshots, release notes, etc.) — that is
+   * human content work assumed already done before this is ever called.
    *
    * DEPLOYMENT PREREQUISITE: same as promoteAndroid() above, dispatching a
    * workflow requires `Actions: write` scope on GITHUB_ACTIONS_TOKEN. A 403
@@ -845,12 +844,14 @@ export class MobileReleasesService {
    * "Live" here means `appVersionState === 'READY_FOR_DISTRIBUTION'`
    * specifically, verified against Apple's real App Store Connect API
    * schema before writing this rather than assumed: `COMPLETE` on a review
-   * submission only means Apple finished reviewing it, and this workflow
-   * forces releaseType MANUAL, so an approved version normally sits at
-   * `PENDING_DEVELOPER_RELEASE` until a human clicks Release in App Store
-   * Connect — exactly the gap this method waits out rather than jumping.
-   * Only once the version reaches READY_FOR_DISTRIBUTION is it safe to
-   * assume every user on the platform can actually download it.
+   * submission only means Apple finished reviewing it, not that it's
+   * downloadable yet — Apple still processes an approved version through
+   * `PROCESSING_FOR_DISTRIBUTION` before it reaches READY_FOR_DISTRIBUTION.
+   * The submission workflow now forces `releaseType: AFTER_APPROVAL`, so
+   * there's no human "click Release" step left in the chain at all — this
+   * scheduled check is the only thing verifying the version is actually
+   * live before the minimum version moves, not a redundant safety net on
+   * top of a manual gate that no longer exists.
    *
    * Deliberately iOS-only. The Play Developer API has no equivalent signal
    * for Android once Managed Publishing is enabled on this app (confirmed

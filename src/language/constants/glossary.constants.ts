@@ -70,5 +70,30 @@ export const TIER_SEVERITY_WEIGHTS: Record<string, number> = {
  * current tier — prevents cycle-to-cycle tier flapping. */
 export const TIER_HYSTERESIS = 0.15;
 
-/** Most-recent annotations considered per consolidation run (keeps the prompt bounded). */
+/**
+ * Most-recent UNCONSUMED annotations considered per consolidation run (keeps
+ * the prompt bounded). The consumed-set is excluded in SQL before this limit
+ * applies — capping the recent rows and dropping consumed ones afterwards let
+ * consumed rows spend the whole budget, which stalled the loop entirely
+ * (see `unconsumedAnnotationsQuery`).
+ */
 export const GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT = 200;
+
+/**
+ * How far back the consolidation read reaches.
+ *
+ * A glossary rule goes into the agent's every-turn prompt, so the evidence
+ * behind it has to describe the agent we ship NOW. An unbounded read does not:
+ * measured 2026-09-02, the unconsumed pool stretched back to 2026-04-06 and
+ * spanned two different agent LLMs per language, so 1,044 annotations would
+ * have written today's prompt from a retired model's mistakes.
+ *
+ * 90 days deliberately matches the scheduler's own worklist window
+ * (`queryCandidateLanguages`) — a language qualifies for consolidation on
+ * 90-day-recent annotations, so those are the annotations it should mine.
+ *
+ * Annotations older than this are never mined and stay permanently unconsumed;
+ * that is intended, not a leak. Rows with a NULL `occurredAt` (none exist in
+ * production) cannot satisfy a recency test and are excluded by the same token.
+ */
+export const GLOSSARY_CONSOLIDATION_RECENCY_DAYS = 90;

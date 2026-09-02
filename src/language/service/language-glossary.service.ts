@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { In, Repository } from 'typeorm';
+import { In, Repository, SelectQueryBuilder } from 'typeorm';
 import { LlmProviderFactory } from 'src/ai-chat/provider/llm-provider.factory';
 import { excludeTestTenants } from 'src/analytics/util/test-tenant.util';
 import { AppConfigService } from 'src/config/config.service';
@@ -17,6 +17,7 @@ import {
   GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT,
   GLOSSARY_CONSOLIDATION_DIMENSIONS,
   GLOSSARY_CONSOLIDATION_PROMPT_CODE,
+  GLOSSARY_CONSOLIDATION_RECENCY_DAYS,
   GLOSSARY_GENERATION_PROMPT_CODE,
   GLOSSARY_LEXICAL_CONTRADICTION_MIN,
   GLOSSARY_MIN_CLUSTER_SUPPORT,
@@ -71,6 +72,10 @@ import {
   compileTier0Glossary,
   countGlossaryTokens,
 } from '../util/glossary-compiler.util';
+import {
+  GlossaryDedupeIndex,
+  normalizeMarkdown,
+} from '../util/glossary-dedupe.util';
 
 export interface GlossarySectionView {
   section: LanguageGlossarySection;
@@ -638,44 +643,14 @@ export class LanguageGlossaryService {
     const sections =
       await this.glossaryRepository.findAllForLanguage(languageId);
 
-    const consumed = new Set<string>();
-    for (const section of sections) {
-      for (const entry of section.entries ?? []) {
-        for (const annotationId of entry.provenance?.annotationIds ?? []) {
-          consumed.add(annotationId as string);
-        }
-      }
-    }
-    // Engineering findings consume their annotations too — a reported
-    // production artifact should not be re-reported every cycle.
-    const recentBatches = await this.batchRepository.find({
-      where: { languageId },
-      order: { createdAt: 'DESC' },
-      take: 100,
-    });
-    for (const b of recentBatches) {
-      for (const finding of b.stats?.engineeringFindings ?? []) {
-        for (const id of finding.annotationIds ?? []) consumed.add(id);
-      }
-    }
-
-    // Cross-tenant read by design: the glossary is global per language, so it
-    // learns from every REAL tenant's judged sessions. Internal/demo/QA orgs
-    // (tenants.isTestOrganization) are excluded — measured 2026-08-20, test
-    // traffic was >50% of the Kannada style-annotation pool, so an unfiltered
-    // read learns style rules from our own testers, not the population.
-    const recent = await this.annotationRepository
-      .createQueryBuilder('a')
-      .where('a.language = :language', { language: language.value })
-      .andWhere('a.dimension IN (:...dimensions)', {
-        dimensions: [...GLOSSARY_CONSOLIDATION_DIMENSIONS],
-      })
-      .andWhere('a.conditionedOut = false')
-      .andWhere(excludeTestTenants('a."tenant_id"'))
-      .orderBy('a.occurredAt', 'DESC')
-      .take(GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT)
-      .getMany();
-    const unconsumed = recent.filter((a) => !consumed.has(a.id));
+    const consumedIds = await this.collectConsumedAnnotationIds(
+      languageId,
+      sections,
+    );
+    const unconsumed = await this.unconsumedAnnotationsQuery(
+      language.value,
+      consumedIds,
+    ).getMany();
     if (unconsumed.length === 0) return emptyResult;
     if (unconsumed.length < (options.minAnnotations ?? 0)) {
       this.logger.log(
@@ -778,6 +753,15 @@ export class LanguageGlossaryService {
     const touched: string[] = [];
     const batchEntries: ConsolidationBatchEntry[] = [];
 
+    // One index for the whole language: proposals are routed per sectionCode
+    // and per variety profile, so a per-section set let the same rule land
+    // twice under different sections, or once globally and once as an overlay.
+    const dedupe = new GlossaryDedupeIndex();
+    for (const section of sections) {
+      dedupe.addContent(section.content);
+      for (const entry of section.entries ?? []) dedupe.add(entry.markdown);
+    }
+
     for (const gen of consolidated) {
       // Route each proposal: overlay when every supporting tenant maps to the
       // SAME variety profile; global otherwise (multi-profile support means
@@ -845,26 +829,21 @@ export class LanguageGlossaryService {
             createdBy,
           });
 
-        // Dedupe against both existing proposals and lines already in the
-        // section's markdown content.
-        const existingKeys = new Set([
-          ...(section.entries ?? []).map((e) => normalizeMarkdown(e.markdown)),
-          ...(section.content ?? '')
-            .split('\n')
-            .map((line) => normalizeMarkdown(line))
-            .filter(Boolean),
-        ]);
+        // A section created in THIS run isn't in `sections`, and an overlay
+        // seeds its content from the global counterpart — fold both in so the
+        // index covers what this bucket is actually writing into.
+        dedupe.addContent(section.content);
+        for (const entry of section.entries ?? []) dedupe.add(entry.markdown);
 
         const corpora = await corporaFor(profileId ?? null);
         const newEntryIds: string[] = [];
         for (const { proposal, annos } of bucket) {
           const markdown = proposal.markdown.trim();
-          const key = normalizeMarkdown(markdown);
-          if (existingKeys.has(key)) {
+          if (dedupe.isDuplicate(markdown)) {
             skippedDuplicates++;
             continue;
           }
-          existingKeys.add(key);
+          dedupe.add(markdown);
           const annotationIds = annos.map((a) => a.id);
           const tenantIds = [
             ...new Set(annos.map((a) => a.tenantId).filter(Boolean)),
@@ -1127,32 +1106,100 @@ export class LanguageGlossaryService {
     });
   }
 
-  /** Unconsumed non-test style annotations — the scheduler's data-threshold gate. */
-  async countUnconsumedAnnotations(languageId: number): Promise<number> {
-    const language = await this.assertLanguageExists(languageId);
-    const sections =
-      await this.glossaryRepository.findAllForLanguage(languageId);
+  /**
+   * The consumed-set: annotations an existing entry already generalizes, plus
+   * those reported as an engineering finding. Both consume — a rule's
+   * provenance and a reported production artifact must not be re-mined next
+   * cycle. Shared by the run and the scheduler's gate so the gate counts what
+   * the run will actually see (they disagreed before: the gate ignored
+   * engineering findings and reported 106 unconsumed English annotations for a
+   * run that then saw 6).
+   */
+  private async collectConsumedAnnotationIds(
+    languageId: number,
+    sections?: LanguageGlossarySection[],
+  ): Promise<string[]> {
+    const resolved =
+      sections ??
+      (await this.glossaryRepository.findAllForLanguage(languageId));
     const consumed = new Set<string>();
-    for (const section of sections) {
+    for (const section of resolved) {
       for (const entry of section.entries ?? []) {
         for (const annotationId of entry.provenance?.annotationIds ?? []) {
           consumed.add(annotationId as string);
         }
       }
     }
-    const recent = await this.annotationRepository
+    const recentBatches = await this.batchRepository.find({
+      where: { languageId },
+      order: { createdAt: 'DESC' },
+      take: 100,
+    });
+    for (const b of recentBatches) {
+      for (const finding of b.stats?.engineeringFindings ?? []) {
+        for (const id of finding.annotationIds ?? []) consumed.add(id);
+      }
+    }
+    return [...consumed];
+  }
+
+  /**
+   * The consolidation read: the most recent UNCONSUMED style annotations from
+   * real tenants.
+   *
+   * Cross-tenant by design — the glossary is global per language, so it learns
+   * from every REAL tenant's judged sessions. Internal/demo/QA orgs
+   * (tenants.isTestOrganization) are excluded: measured 2026-08-20, test
+   * traffic was >50% of the Kannada style-annotation pool, so an unfiltered
+   * read learns style rules from our own testers, not the population.
+   *
+   * The consumed-set is excluded in SQL, BEFORE the limit. Applying the cap to
+   * the most recent rows and dropping consumed ones afterwards let consumed
+   * rows spend the whole budget: measured 2026-09-02, Tamil's window exposed
+   * 13 of its 2,409 unconsumed annotations (1,675 of the hidden ones
+   * non-fluency, i.e. immediately usable) and scheduled consolidation had
+   * produced nothing for 8 days across every language.
+   *
+   * Bounded to GLOSSARY_CONSOLIDATION_RECENCY_DAYS: a rule reaches the agent's
+   * every-turn prompt, so it must generalize the agent we ship now, not one
+   * retired two models ago. See that constant for the measurement.
+   */
+  private unconsumedAnnotationsQuery(
+    languageValue: string,
+    consumedIds: string[],
+  ): SelectQueryBuilder<LanguageErrorAnnotation> {
+    const query = this.annotationRepository
       .createQueryBuilder('a')
-      .select('a.id')
-      .where('a.language = :language', { language: language.value })
+      .where('a.language = :language', { language: languageValue })
       .andWhere('a.dimension IN (:...dimensions)', {
         dimensions: [...GLOSSARY_CONSOLIDATION_DIMENSIONS],
       })
       .andWhere('a.conditionedOut = false')
-      .andWhere(excludeTestTenants('a."tenant_id"'))
+      .andWhere('a.occurredAt > now() - make_interval(days => :recencyDays)', {
+        recencyDays: GLOSSARY_CONSOLIDATION_RECENCY_DAYS,
+      })
+      .andWhere(excludeTestTenants('a."tenant_id"'));
+    // Skipped when empty: `<> ALL('{}')` is true for every row, but an empty
+    // array parameter gives Postgres no element type to infer.
+    if (consumedIds.length > 0) {
+      query.andWhere('a.id::text <> ALL(:consumedIds)', { consumedIds });
+    }
+    return query
       .orderBy('a.occurredAt', 'DESC')
-      .take(GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT)
+      .take(GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT);
+  }
+
+  /** Unconsumed non-test style annotations — the scheduler's data-threshold gate. */
+  async countUnconsumedAnnotations(languageId: number): Promise<number> {
+    const language = await this.assertLanguageExists(languageId);
+    const consumedIds = await this.collectConsumedAnnotationIds(languageId);
+    const rows = await this.unconsumedAnnotationsQuery(
+      language.value,
+      consumedIds,
+    )
+      .select('a.id')
       .getMany();
-    return recent.filter((a) => !consumed.has(a.id)).length;
+    return rows.length;
   }
 
   /**
@@ -1480,8 +1527,27 @@ export class LanguageGlossaryService {
     if (sections.length === 0) return '(no glossary sections exist yet)';
     return sections
       .map((s) => {
-        const body = (s.content ?? '').trim().slice(0, 1500);
-        return `### ${s.sectionCode} (${s.injectionMode}, ${s.status}) "${s.title}"\n${body || '(empty)'}`;
+        // The prompt is told not to restate what the glossary covers, and this
+        // string is the only thing it can check that against — so it must be
+        // complete. A 1500-char slice silently hid the tail of the three
+        // largest sections in production (up to 1970 chars, and Indic scripts
+        // reach the limit fastest), leaving paraphrase duplicates unpreventable.
+        // The generous per-section cap is a prompt-size backstop only; a
+        // section that big is a curation problem the Tier 0 cap will surface.
+        const body = (s.content ?? '').trim().slice(0, 8000);
+        // Proposals awaiting review are duplicate sources too — one Tamil
+        // overlay had 11 queued and invisible here.
+        const pending = (s.entries ?? [])
+          .filter((e) => e.status === GlossaryEntryStatus.PROPOSED)
+          .map((e) => e.markdown.trim())
+          .filter(Boolean);
+        const pendingBlock = pending.length
+          ? `\n(awaiting review, also do not restate)\n${pending.join('\n')}`
+          : '';
+        return (
+          `### ${s.sectionCode} (${s.injectionMode}, ${s.status}) "${s.title}"\n` +
+          `${body || '(empty)'}${pendingBlock}`
+        );
       })
       .join('\n\n');
   }
@@ -1727,9 +1793,4 @@ export class LanguageGlossaryService {
         typeof (s as GeneratedSection).content === 'string',
     );
   }
-}
-
-/** Case/whitespace-insensitive identity for markdown-line dedupe. */
-function normalizeMarkdown(line: string | undefined): string {
-  return (line ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 }

@@ -177,7 +177,7 @@ export class MobileReleasesController {
 
   @ApiOperation({
     summary:
-      "MANUAL, REAL-PRODUCTION ACTION: dispatch submit-ios-app-store-review.yml to submit the current iOS build for Apple's FULL App Store review (real public distribution, not TestFlight). Does NOT auto-release to users — the workflow forces releaseType: MANUAL, so a human still has to explicitly release the build in App Store Connect after Apple approves it. Does not prepare the App Store Connect listing itself; that content work is assumed already done.",
+      "MANUAL, REAL-PRODUCTION ACTION: dispatch submit-ios-app-store-review.yml to submit the current iOS build for Apple's FULL App Store review (real public distribution, not TestFlight). DOES auto-release to users — the workflow forces releaseType: AFTER_APPROVAL, so the moment Apple approves the build, it goes live to every real App Store user with no further click. Does not prepare the App Store Connect listing itself; that content work is assumed already done.",
   })
   @ApiResponse({ status: 200, type: MobileDispatchResponseDto })
   @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
