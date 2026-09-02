@@ -11,6 +11,7 @@ import { PlatformAnalyticsService } from '../../service/platform-analytics.servi
 import { ScribeAnalyticsService } from '../../service/scribe-analytics.service';
 import { LanguageJudgeService } from '../../service/language-judge.service';
 import { LanguageAnalyticsService } from '../../service/language-analytics.service';
+import { GlossaryEffectAnalyticsService } from '../../service/glossary-effect-analytics.service';
 import { WeakMetricsAnalyticsService } from '../../service/weak-metrics-analytics.service';
 import { FeedbackGroundednessJudgeService } from '../../service/feedback-groundedness-judge.service';
 import { ActivationAnalyticsService } from '../../service/activation-analytics.service';
@@ -135,6 +136,10 @@ describe('AnalyticsController', () => {
         {
           provide: LanguageAnalyticsService,
           useValue: { getLanguageQuality: jest.fn() },
+        },
+        {
+          provide: GlossaryEffectAnalyticsService,
+          useValue: { getGlossaryEffect: jest.fn() },
         },
         {
           provide: WeakMetricsAnalyticsService,

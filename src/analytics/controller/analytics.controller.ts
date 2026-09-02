@@ -35,6 +35,11 @@ import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analy
 import { RoadmapDeliveryAnalyticsService } from '../service/roadmap-delivery-analytics.service';
 import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
 import { LanguageAnalyticsService } from '../service/language-analytics.service';
+import { GlossaryEffectAnalyticsService } from '../service/glossary-effect-analytics.service';
+import {
+  GlossaryEffectQueryDto,
+  GlossaryEffectResponseDto,
+} from '../dto/glossary-effect-analytics.dto';
 import {
   WeakMetricsQueryDto,
   WeakMetricsResponseDto,
@@ -233,6 +238,7 @@ export class AnalyticsController {
     private readonly scribeAnalyticsService: ScribeAnalyticsService,
     private readonly languageJudgeService: LanguageJudgeService,
     private readonly languageAnalyticsService: LanguageAnalyticsService,
+    private readonly glossaryEffectAnalyticsService: GlossaryEffectAnalyticsService,
     private readonly weakMetricsAnalyticsService: WeakMetricsAnalyticsService,
     private readonly feedbackGroundednessJudgeService: FeedbackGroundednessJudgeService,
     private readonly activationAnalyticsService: ActivationAnalyticsService,
@@ -1493,6 +1499,25 @@ export class AnalyticsController {
     @Query() query: LanguageQualityQueryDto,
   ): Promise<LanguageQualityResponseDto> {
     return this.languageAnalyticsService.getLanguageQuality(query);
+  }
+
+  @Get('glossary-effect')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Did the language glossary change anything? (super-admin)',
+    description:
+      'Adherence (deterministic avoid-term hits per 100 agent messages) and ' +
+      'naturalness (severity-weighted style errors per 100 judged turns) on ' +
+      "the same sessions, before vs after EACH language's own glossary " +
+      'go-live, segmented by agent model and pinned to one judge version. ' +
+      'Compare only cells sharing a language and an agentModel: pooling ' +
+      'across models reads a traffic-mix shift as a result.',
+  })
+  @ApiResponse({ status: 200, type: GlossaryEffectResponseDto })
+  async getGlossaryEffect(
+    @Query() query: GlossaryEffectQueryDto,
+  ): Promise<GlossaryEffectResponseDto> {
+    return this.glossaryEffectAnalyticsService.getGlossaryEffect(query);
   }
 
   @Get('language-quality/reference')

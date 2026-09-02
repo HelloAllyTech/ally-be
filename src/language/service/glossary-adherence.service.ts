@@ -394,12 +394,27 @@ export class GlossaryAdherenceService {
     return { scanned: rows.length, reported, skipped };
   }
 
-  /** Per-language rollup: session counts, violation rate, top violated terms. */
+  /**
+   * Per-language rollup: session counts, violation rate, top violated terms.
+   *
+   * `violationsPer100AgentMessages` is the comparable figure and the one to
+   * read. `avgViolationsPerSession` is kept for the existing dashboard but is
+   * not comparable across languages or periods: sessions run from 0 to 40+
+   * agent messages, so the same behaviour yields wildly different per-session
+   * averages. Measured 2026-09-02, Kannada averaged ~3.9 violations/session,
+   * which sounds mild and was actually ~53 per 100 agent messages — about one
+   * violation every two things the agent said.
+   */
   async languageSummary(languageId: number) {
     const [totals] = await this.dataSource.query(
       `SELECT count(*)::int AS "sessionCount",
               COALESCE(sum("totalViolations"), 0)::int AS "totalViolations",
               COALESCE(round(avg("totalViolations"), 2), 0)::float AS "avgViolationsPerSession",
+              COALESCE(sum("agentMessageCount"), 0)::int AS "agentMessageCount",
+              CASE WHEN COALESCE(sum("agentMessageCount"), 0) > 0
+                   THEN round(100.0 * sum("totalViolations")
+                              / sum("agentMessageCount"), 2)::float
+                   ELSE 0 END AS "violationsPer100AgentMessages",
               count(*) FILTER (WHERE "totalViolations" = 0)::int AS "cleanSessions"
        FROM glossary_adherence_reports WHERE "languageId" = $1`,
       [languageId],
@@ -433,6 +448,8 @@ export class GlossaryAdherenceService {
       sessionCount: number;
       totalViolations: number;
       avgViolationsPerSession: number;
+      agentMessageCount: number;
+      violationsPer100AgentMessages: number;
       cleanSessions: number;
     }[]
   > {
@@ -443,11 +460,16 @@ export class GlossaryAdherenceService {
               count(*)::int AS "sessionCount",
               COALESCE(sum(r."totalViolations"), 0)::int AS "totalViolations",
               COALESCE(round(avg(r."totalViolations"), 2), 0)::float AS "avgViolationsPerSession",
+              COALESCE(sum(r."agentMessageCount"), 0)::int AS "agentMessageCount",
+              CASE WHEN COALESCE(sum(r."agentMessageCount"), 0) > 0
+                   THEN round(100.0 * sum(r."totalViolations")
+                              / sum(r."agentMessageCount"), 2)::float
+                   ELSE 0 END AS "violationsPer100AgentMessages",
               count(*) FILTER (WHERE r."totalViolations" = 0)::int AS "cleanSessions"
        FROM glossary_adherence_reports r
        JOIN languages l ON l.id = r."languageId"
        GROUP BY r."languageId", l.label, l.value
-       ORDER BY "totalViolations" DESC`,
+       ORDER BY "violationsPer100AgentMessages" DESC`,
     );
   }
 }

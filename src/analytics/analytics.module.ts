@@ -79,6 +79,8 @@ import { DriftAnalyticsRepository } from './repository/drift-analytics.repositor
 import { DriftJudgeRepository } from './repository/drift-judge.repository';
 import { LanguageJudgeRepository } from './repository/language-judge.repository';
 import { LanguageAnalyticsRepository } from './repository/language-analytics.repository';
+import { GlossaryEffectAnalyticsRepository } from './repository/glossary-effect-analytics.repository';
+import { GlossaryEffectAnalyticsService } from './service/glossary-effect-analytics.service';
 import { LanguageAnalyticsService } from './service/language-analytics.service';
 // Analytics -> Weak performing metrics tab: the five simulator-quality metrics
 // under active repair, read from the judge tables plus deterministic measures
@@ -190,6 +192,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     LanguageBackfillSchedulerRegistrationService,
     LanguageAnalyticsService,
     LanguageAnalyticsRepository,
+    GlossaryEffectAnalyticsService,
+    GlossaryEffectAnalyticsRepository,
     PlatformAnalyticsRepository,
     TenantAnalyticsService,
     TenantAnalyticsRepository,
