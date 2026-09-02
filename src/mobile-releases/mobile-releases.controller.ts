@@ -15,13 +15,13 @@ import {
   IosAppStoreReviewSubmissionsResponseDto,
   IosTestflightHistoryResponseDto,
   IosTestflightStatusResponseDto,
-  IosWhatsNewSuggestionResponseDto,
   MobileCurrentVersionResponseDto,
   MobileDispatchResponseDto,
   MobileReleaseRunsResponseDto,
   MobileTriggerResponseDto,
   PromoteAndroidRequestDto,
   SubmitIosAppStoreReviewRequestDto,
+  WhatsNewSuggestionResponseDto,
 } from './dto/mobile-releases.dto';
 
 /**
@@ -164,15 +164,28 @@ export class MobileReleasesController {
 
   @ApiOperation({
     summary:
-      "LLM-drafted \"What's New in This Version\" text for the App Store submission, built from ally-mobile commit messages since the last release. Prefills the admin dashboard's submit-ios-app-store-review What's New field — still editable, never auto-submitted.",
+      "LLM-drafted \"What's New in This Version\" text, built from ally-mobile commit messages since the last release. Prefills the admin dashboard's submit-ios-app-store-review What's New field — still editable, never auto-submitted. Same draft android-whats-new-suggestion below returns — the generation doesn't depend on platform — exposed as its own endpoint so it carries this action's own permission gate.",
   })
-  @ApiResponse({ status: 200, type: IosWhatsNewSuggestionResponseDto })
+  @ApiResponse({ status: 200, type: WhatsNewSuggestionResponseDto })
   @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
     permissions: [PERMISSIONS.SUBMIT_APP_STORE_REVIEW],
   })
   @Get('ios-whats-new-suggestion')
-  getIosWhatsNewSuggestion(): Promise<IosWhatsNewSuggestionResponseDto> {
-    return this.mobileReleasesService.getIosWhatsNewSuggestion();
+  getIosWhatsNewSuggestion(): Promise<WhatsNewSuggestionResponseDto> {
+    return this.mobileReleasesService.getWhatsNewSuggestion();
+  }
+
+  @ApiOperation({
+    summary:
+      "LLM-drafted \"What's New in This Version\" text, built from ally-mobile commit messages since the last release — identical generation to ios-whats-new-suggestion above, just gated on the Android promotion permission instead. Prefills the admin dashboard's Promote Android What's New field — still editable, never auto-submitted.",
+  })
+  @ApiResponse({ status: 200, type: WhatsNewSuggestionResponseDto })
+  @RequireFeatureToggle(FeatureToggleKey.MOBILE_RELEASES, {
+    permissions: [PERMISSIONS.PROMOTE_MOBILE_RELEASES],
+  })
+  @Get('android-whats-new-suggestion')
+  getAndroidWhatsNewSuggestion(): Promise<WhatsNewSuggestionResponseDto> {
+    return this.mobileReleasesService.getWhatsNewSuggestion();
   }
 
   @ApiOperation({

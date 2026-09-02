@@ -113,6 +113,16 @@ export class AppConfigService {
    * actually released. Flip ANDROID_MIN_VERSION_AUTO_BUMP_ENABLED=true only
    * after confirming that in Play Console; the task no-ops (not errors)
    * while this is unset.
+   *
+   * SECOND, SEPARATE PRECONDITION, confirmed live: this task authenticates
+   * as the same ANDROID_SERVICE_ACCOUNT_JSON identity the release pipeline's
+   * uploads/promotions use, and the Play Developer API invalidates a service
+   * account's other open edits the instant a new one is created (Google's
+   * own concurrency-considerations docs). A tick landing mid-upload can kill
+   * that upload's edit out from under it — this already broke a real build
+   * once, from this same module's read-only status endpoint, before this
+   * task was even enabled. Do not flip this on until ally-be reads via a
+   * SEPARATE, read-only-scoped service account from the one CI writes with.
    */
   get androidMinVersionAutoBumpEnabled(): boolean {
     return (
