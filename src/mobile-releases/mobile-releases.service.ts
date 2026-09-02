@@ -331,20 +331,22 @@ export class MobileReleasesService {
 
   /**
    * LLM-drafted "What's New in This Version" text, built from the
-   * ally-mobile commit subjects since the last release point (the same
-   * "most recent commit that touched android/app/build.gradle on master"
-   * heuristic computeNextEligibleCheckAt uses). Read-only and uncached — a
-   * fresh suggestion each time is correct here since the commit history
-   * changes.
+   * ally-mobile commit subjects that actually shipped in the release
+   * currently sitting on the internal track — the range between the
+   * previous version-bump commit and the current one (see
+   * fetchCommitSubjectsSinceLastRelease's own doc comment for why that's
+   * the correct range, not "since the current bump"). Read-only and
+   * uncached — a fresh suggestion each time is correct here since the
+   * commit history changes.
    *
    * Shared by both the iOS submission and Android promotion controller
    * endpoints — the draft doesn't depend on platform (same commits, same
    * prompt, same non-technical audience), so there is exactly one
    * generation path even though there are two callers.
    *
-   * Zero non-merge commits since the last release point is a legitimate
-   * "nothing new" state, not an error: returns `{ suggestion: null }` rather
-   * than calling the model or throwing.
+   * Zero non-merge commits in that range is a legitimate "nothing new"
+   * state, not an error: returns `{ suggestion: null }` rather than calling
+   * the model or throwing.
    */
   async getWhatsNewSuggestion(): Promise<WhatsNewSuggestionResponseDto> {
     const headers = this.headers;
@@ -361,20 +363,39 @@ export class MobileReleasesService {
   }
 
   /**
-   * Non-merge commit subject lines (first line of each commit message) on
-   * `master` since the last release point, oldest-first as GitHub's compare
-   * API returns them. "Merge pull request" commits are filtered out — the
-   * same convention ally-mobile's scheduled-mobile-release.yml already uses
-   * when building Android release notes.
+   * Non-merge commit subject lines (first line of each commit message) that
+   * actually shipped in the CURRENT release — i.e. between the previous
+   * version-bump commit and the current one — oldest-first as GitHub's
+   * compare API returns them. "Merge pull request" commits are filtered
+   * out — the same convention ally-mobile's scheduled-mobile-release.yml
+   * already uses when building Android release notes.
+   *
+   * Deliberately NOT `currentReleaseSha...master`: that was the original
+   * (buggy) approach, and it breaks in exactly the moment this method
+   * matters most. Right after scheduled-mobile-release.yml lands a bump,
+   * the bump commit itself IS the current release's own version-bump
+   * commit, so "since the current bump" is empty until something new
+   * happens to land — even though the release that just shipped almost
+   * always has real, describable content (confirmed live: a real "fix the
+   * recorder losing a socket" commit went completely unsummarized this
+   * way, correctly returning commitSubjects.length === 0, but for the
+   * wrong reason — not "nothing shipped", but "looked at the wrong range").
    */
   private async fetchCommitSubjectsSinceLastRelease(
     headers: Record<string, string>,
   ): Promise<string[]> {
-    const lastReleaseSha = await this.fetchLastReleaseCommitSha(headers);
+    const { currentReleaseSha, previousReleaseSha } =
+      await this.fetchReleaseCommitShas(headers);
+    if (!previousReleaseSha) {
+      // No earlier release-point commit exists at all (e.g. the very first
+      // release ever) — nothing to diff against, and that's a legitimate
+      // "nothing to summarize" rather than an error.
+      return [];
+    }
 
     try {
       const { data } = await axios.get(
-        `${GITHUB_API}/repos/${this.repo}/compare/${lastReleaseSha}...master`,
+        `${GITHUB_API}/repos/${this.repo}/compare/${previousReleaseSha}...${currentReleaseSha}`,
         { headers, timeout: 15_000 },
       );
       const commits = data?.commits ?? [];
@@ -391,20 +412,20 @@ export class MobileReleasesService {
     } catch (error) {
       throw this.toReadableError(
         error,
-        `Could not compare ${lastReleaseSha}...master for ${this.repo}`,
+        `Could not compare ${previousReleaseSha}...${currentReleaseSha} for ${this.repo}`,
       );
     }
   }
 
   /**
-   * SHA of the most recent commit that touched android/app/build.gradle on
-   * master — same GitHub API call shape as computeNextEligibleCheckAt below
-   * (that method only needs the commit's date; this one needs its sha), used
-   * here as "the last release point" to diff master against.
+   * SHAs of the two most recent commits that touched android/app/build.gradle
+   * on master — the current release's own version-bump commit, and the one
+   * before it. `previousReleaseSha` is null only when there is no earlier
+   * release-point commit to find (e.g. the very first release ever).
    */
-  private async fetchLastReleaseCommitSha(
+  private async fetchReleaseCommitShas(
     headers: Record<string, string>,
-  ): Promise<string> {
+  ): Promise<{ currentReleaseSha: string; previousReleaseSha: string | null }> {
     try {
       const { data } = await axios.get(
         `${GITHUB_API}/repos/${this.repo}/commits`,
@@ -413,22 +434,25 @@ export class MobileReleasesService {
           params: {
             path: 'android/app/build.gradle',
             sha: 'master',
-            per_page: 1,
+            per_page: 2,
           },
           timeout: 15_000,
         },
       );
-      const sha = data?.[0]?.sha;
-      if (!sha) {
+      const currentReleaseSha = data?.[0]?.sha;
+      if (!currentReleaseSha) {
         throw new Error(
           'No commits found for android/app/build.gradle on master',
         );
       }
-      return String(sha);
+      return {
+        currentReleaseSha: String(currentReleaseSha),
+        previousReleaseSha: data?.[1]?.sha ? String(data[1].sha) : null,
+      };
     } catch (error) {
       throw this.toReadableError(
         error,
-        `Could not find the last release commit for ${this.repo}`,
+        `Could not find the release commits for ${this.repo}`,
       );
     }
   }

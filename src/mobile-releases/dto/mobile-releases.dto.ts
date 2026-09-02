@@ -316,13 +316,15 @@ export class WhatsNewSuggestionResponseDto {
   @ApiProperty({
     nullable: true,
     description:
-      'LLM-drafted "What\'s New in This Version" text, generated from ' +
-      'ally-mobile commit subjects since the last release (the most recent ' +
-      'commit that touched android/app/build.gradle on master), with ' +
-      '"Merge pull request" commits filtered out. Meant to prefill a What\'s ' +
-      'New field — still editable, never auto-submitted. null when there are ' +
-      'no new (non-merge) commits since the last release to summarize, which ' +
-      'is a normal state, not an error.',
+      'LLM-drafted "What\'s New in This Version" text, generated from the ' +
+      'ally-mobile commit subjects that actually shipped in the current ' +
+      'release (the commits between the previous and current version-bump ' +
+      'commits on master, not "since the current bump" — see ' +
+      "MobileReleasesService.fetchCommitSubjectsSinceLastRelease's own doc " +
+      'comment for why), with "Merge pull request" commits filtered out. ' +
+      "Meant to prefill a What's New field — still editable, never " +
+      'auto-submitted. null when that range has no new (non-merge) commits ' +
+      'to summarize, which is a normal state, not an error.',
   })
   suggestion!: string | null;
 }
