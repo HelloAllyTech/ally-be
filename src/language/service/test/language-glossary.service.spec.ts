@@ -34,6 +34,7 @@ describe('LanguageGlossaryService', () => {
   let promptVersionRepository: any;
   let annotationRepository: any;
   let annotationQb: any;
+  let setAnnotationPool: (rows: any[]) => void;
   let batchRepository: any;
   let attachmentRepository: any;
   let profileRepository: any;
@@ -66,13 +67,32 @@ describe('LanguageGlossaryService', () => {
         .mockResolvedValue({ prompt: 'Generate for {{languageName}}' }),
     };
     // Consolidation reads annotations via a query builder (it carries the raw
-    // test-tenant exclusion fragment). Tests stub the terminal getMany().
+    // test-tenant exclusion fragment). Tests stub the terminal getMany() with
+    // the full annotation pool; the mock applies the ONE predicate the
+    // consumed-set behaviour depends on — `consumedIds` — because that
+    // exclusion lives in SQL (it must be applied before the row limit, or
+    // consumed rows spend the whole budget and the loop starves). Without this
+    // the stub would hand back rows the real query cannot return, and the
+    // "already consumed" tests would pass against a filter that never ran.
+    const consumedIds = new Set<string>();
     annotationQb = {
       where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
+      andWhere: jest.fn((_sql: string, params?: Record<string, unknown>) => {
+        for (const id of (params?.consumedIds as string[]) ?? []) {
+          consumedIds.add(id);
+        }
+        return annotationQb;
+      }),
+      select: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
-      getMany: jest.fn().mockResolvedValue([]),
+      getMany: jest.fn(async () => []),
+    };
+    /** Stub the annotation pool; consumed ids are filtered as SQL would. */
+    setAnnotationPool = (rows: any[]) => {
+      annotationQb.getMany = jest.fn(async () =>
+        rows.filter((r) => !consumedIds.has(r.id)),
+      );
     };
     annotationRepository = {
       createQueryBuilder: jest.fn().mockReturnValue(annotationQb),
@@ -449,14 +469,14 @@ describe('LanguageGlossaryService', () => {
           ],
         }),
       ]);
-      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
+      setAnnotationPool([annotation('a1')]);
       const result = await service.consolidateGlossary(6);
       expect(result.annotationsConsidered).toBe(0);
       expect(getCompletion).not.toHaveBeenCalled();
     });
 
     it('lands markdown proposals with annotation + tenant provenance', async () => {
-      annotationQb.getMany.mockResolvedValue([
+      setAnnotationPool([
         annotation('a1'),
         annotation('a2', { tenantId: 'tenant-2' }),
       ]);
@@ -479,7 +499,7 @@ describe('LanguageGlossaryService', () => {
     });
 
     it('excludes test-organization tenants from the annotation read', async () => {
-      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
+      setAnnotationPool([annotation('a1')]);
       getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
 
       await service.consolidateGlossary(6);
@@ -496,7 +516,7 @@ describe('LanguageGlossaryService', () => {
     });
 
     it('skips proposals duplicating existing content lines or proposals', async () => {
-      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
+      setAnnotationPool([annotation('a1')]);
       glossaryRepository.findSection.mockResolvedValue(
         makeSection({
           sectionCode: 'clinical_terms',
@@ -510,8 +530,69 @@ describe('LanguageGlossaryService', () => {
       expect(result.skippedDuplicates).toBe(1);
     });
 
+    it('skips a proposal already covered by ANOTHER section of the language', async () => {
+      // The proposal is routed to clinical_terms, which is empty; the same
+      // rule already sits in core_style. Deduping per-section missed this and
+      // let one rule accumulate under several sectionCodes.
+      setAnnotationPool([annotation('a1')]);
+      glossaryRepository.findAllForLanguage.mockResolvedValue([
+        makeSection({
+          sectionCode: 'core_style',
+          content: '- anxiety: say "டென்ஷன்" (avoid: "பதட்டம்")',
+        }),
+      ]);
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      const result = await service.consolidateGlossary(6);
+      expect(result.proposed).toBe(0);
+      expect(result.skippedDuplicates).toBe(1);
+    });
+
+    it('shows the consolidation prompt the FULL existing glossary, proposals included', async () => {
+      // The prompt is told not to restate what the glossary covers, so the
+      // summary it checks against must be complete. A 1500-char slice hid the
+      // tail of the largest production sections.
+      const longTail = '- rule about spoken register number';
+      const longContent =
+        Array.from({ length: 60 }, (_, i) => `${longTail} ${i}.`).join('\n') +
+        `\n${longTail} LAST.`;
+      expect(longContent.length).toBeGreaterThan(1500);
+      glossaryRepository.findAllForLanguage.mockResolvedValue([
+        makeSection({
+          content: longContent,
+          entries: [
+            {
+              id: 'e1',
+              markdown: '- a queued proposal awaiting review',
+              status: GlossaryEntryStatus.PROPOSED,
+              provenance: { source: 'consolidation', annotationIds: ['old'] },
+            },
+          ],
+        }),
+      ]);
+      setAnnotationPool([annotation('a1')]);
+      // The default fixture template has no {{existingGlossary}} placeholder;
+      // the real seeded consolidation prompt does, and it is the substitution
+      // under test here.
+      promptVersionRepository.findOne.mockResolvedValue({
+        prompt: 'Existing glossary:\n{{existingGlossary}}',
+      });
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      await service.consolidateGlossary(6);
+
+      const calls = getCompletion.mock.calls;
+      const messages = calls[calls.length - 1][0] as {
+        role: string;
+        content: string;
+      }[];
+      const systemPrompt = messages.find((m) => m.role === 'system')!.content;
+      expect(systemPrompt).toContain(`${longTail} LAST.`);
+      expect(systemPrompt).toContain('- a queued proposal awaiting review');
+    });
+
     it('rejects unparseable consolidation output', async () => {
-      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
+      setAnnotationPool([annotation('a1')]);
       getCompletion.mockResolvedValue('here are your entries: ...');
       await expect(service.consolidateGlossary(6)).rejects.toThrow(
         BadRequestException,
@@ -552,7 +633,7 @@ describe('LanguageGlossaryService', () => {
         existingSection,
       ]);
       glossaryRepository.findSection.mockResolvedValue(existingSection);
-      annotationQb.getMany.mockResolvedValue([annotation('a-new')]);
+      setAnnotationPool([annotation('a-new')]);
       getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
 
       const result = await service.consolidateGlossary(6, 'admin');
@@ -672,7 +753,7 @@ describe('LanguageGlossaryService', () => {
     ];
 
     beforeEach(() => {
-      annotationQb.getMany.mockResolvedValue([
+      setAnnotationPool([
         annotation('a1', 'tenant-1'),
         annotation('a2', 'tenant-2'),
       ]);
@@ -851,7 +932,7 @@ describe('LanguageGlossaryService', () => {
     });
 
     it('routes production-artifact clusters to engineering findings, and consumes them', async () => {
-      annotationQb.getMany.mockResolvedValue([
+      setAnnotationPool([
         annotation('a1', 'tenant-1'),
         annotation('a2', 'tenant-1', {
           dimension: 'persona_social',
@@ -1025,7 +1106,7 @@ describe('LanguageGlossaryService', () => {
     });
 
     it('runs after auto-accept consolidation (best-effort)', async () => {
-      annotationQb.getMany.mockResolvedValue([
+      setAnnotationPool([
         {
           id: 'a9',
           tenantId: 'tenant-1',

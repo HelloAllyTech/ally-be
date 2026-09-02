@@ -70,5 +70,11 @@ export const TIER_SEVERITY_WEIGHTS: Record<string, number> = {
  * current tier — prevents cycle-to-cycle tier flapping. */
 export const TIER_HYSTERESIS = 0.15;
 
-/** Most-recent annotations considered per consolidation run (keeps the prompt bounded). */
+/**
+ * Most-recent UNCONSUMED annotations considered per consolidation run (keeps
+ * the prompt bounded). The consumed-set is excluded in SQL before this limit
+ * applies — capping the recent rows and dropping consumed ones afterwards let
+ * consumed rows spend the whole budget, which stalled the loop entirely
+ * (see `unconsumedAnnotationsQuery`).
+ */
 export const GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT = 200;
