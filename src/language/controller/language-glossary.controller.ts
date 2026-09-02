@@ -10,6 +10,7 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { UpsertGlossarySectionDto } from '../dto/glossary-section.dto';
 import { LanguageGlossaryService } from '../service/language-glossary.service';
 import { GlossaryAdherenceService } from '../service/glossary-adherence.service';
+import { GlossaryAdjudicationService } from '../service/glossary-adjudication.service';
 
 @ApiTags('Language')
 @ApiBearerAuth()
@@ -22,6 +23,7 @@ export class LanguageGlossaryController {
   constructor(
     private readonly glossaryService: LanguageGlossaryService,
     private readonly adherenceService: GlossaryAdherenceService,
+    private readonly adjudicationService: GlossaryAdjudicationService,
   ) {}
 
   @ApiOperation({
@@ -146,6 +148,28 @@ export class LanguageGlossaryController {
       undefined,
       profileId || null,
     );
+  }
+
+  @ApiOperation({
+    summary: 'Adjudicate the queued proposals for a language (AI review)',
+    description:
+      'Decides every proposal awaiting review: accepts language rules, ' +
+      'rejects persona/behaviour rules, restatements and rules that fight ' +
+      'real usage, and DEFERS anything the Tier 0 token cap will not fit or ' +
+      'the adjudicator was unsure about. Rule form is checked ' +
+      'deterministically first — a substitution buried in an example line is ' +
+      'rejected without a model call, because that shape measured 4% agent ' +
+      'compliance. Pass apply=false to preview the verdicts without applying.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Post(':id/glossary/proposals/adjudicate')
+  async adjudicateProposals(
+    @Param('id') id: number,
+    @Query('apply') apply?: string,
+  ) {
+    return this.adjudicationService.adjudicateLanguage(Number(id), {
+      apply: apply !== 'false',
+    });
   }
 
   @ApiOperation({ summary: 'Reject a consolidation proposal' })

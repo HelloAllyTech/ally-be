@@ -97,3 +97,14 @@ export const GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT = 200;
  * production) cannot satisfy a recency test and are excluded by the same token.
  */
 export const GLOSSARY_CONSOLIDATION_RECENCY_DAYS = 90;
+
+/** Registry prompt that adjudicates queued proposals (seeded by migration). */
+export const GLOSSARY_ADJUDICATION_PROMPT_CODE = 'glossary_adjudication';
+
+/**
+ * Proposals sent to the adjudicator in one call. Small on purpose: the
+ * adjudicator must weigh each proposal against the existing glossary, and a
+ * long list invites it to skim. Batches beyond this are adjudicated in
+ * successive calls.
+ */
+export const GLOSSARY_ADJUDICATION_BATCH = 25;

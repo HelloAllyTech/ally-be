@@ -1530,7 +1530,9 @@ export class LanguageGlossaryService {
   }
 
   /** Compact existing-glossary listing for the consolidation prompt. */
-  private summarizeGlossary(sections: LanguageGlossarySection[]): string {
+  /** Public so the adjudication pass shows the model the same glossary view
+   * the consolidator saw, rather than formatting a second one. */
+  summarizeGlossary(sections: LanguageGlossarySection[]): string {
     if (sections.length === 0) return '(no glossary sections exist yet)';
     return sections
       .map((s) => {
@@ -1696,7 +1698,8 @@ export class LanguageGlossaryService {
     return section;
   }
 
-  private async assertLanguageExists(languageId: number) {
+  /** Public so sibling glossary services resolve a language the same way. */
+  async assertLanguageExists(languageId: number) {
     const language = await this.languagesRepository.findOne({
       where: { id: languageId },
     });
@@ -1737,7 +1740,14 @@ export class LanguageGlossaryService {
     }
   }
 
-  private async resolvePromptByCode(promptCode: string) {
+  /**
+   * Resolve a registry prompt's current body + engine settings.
+   *
+   * Public so the adjudication pass reuses it rather than keeping a second
+   * copy of "which version and which model" — the same reasoning that keeps
+   * the judge tuple in one place on the analytics side.
+   */
+  async resolvePromptByCode(promptCode: string) {
     const row = await this.promptRepository.findOne({
       where: { promptCode },
     });
