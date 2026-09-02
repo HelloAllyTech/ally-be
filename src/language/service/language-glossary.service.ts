@@ -688,11 +688,43 @@ export class LanguageGlossaryService {
       GLOSSARY_MIN_CLUSTER_SUPPORT,
     );
     if (clusters.length === 0) {
+      // Record the attempt even though it produced nothing. The scheduler's
+      // cadence — both the weekly interval and the minimum gap — is measured
+      // from the last batch, so a path that returns without writing one leaves
+      // the clock frozen and re-runs on EVERY tick. Marathi and Kannada did
+      // exactly that: 2026-09-02, both consolidating twice within 30 minutes
+      // on a supposedly weekly cadence, because their unconsumed annotations
+      // (1 and 3, all `fluency` below the systematicity bar) can never cluster.
+      //
+      // An empty batch is also the honest audit record: "ran, found nothing"
+      // is what a reader needs to distinguish a quiet loop from a stalled one,
+      // which is the exact ambiguity that hid the original stall for 8 days.
+      const emptyBatch = await this.batchRepository.save(
+        this.batchRepository.create({
+          languageId,
+          autoAccepted: Boolean(options.autoAccept),
+          trigger: options.trigger ?? 'manual',
+          createdBy,
+          stats: {
+            annotationsConsidered: annotations.length,
+            tenants: 0,
+            proposed: 0,
+            autoAccepted: 0,
+            skippedDuplicates: 0,
+            overlayEntries: 0,
+          },
+          entries: [],
+        }),
+      );
       this.logger.log(
-        `[GLOSSARY_CONSOLIDATE] language=${language.value} skipped: ` +
+        `[GLOSSARY_CONSOLIDATE] language=${language.value} batch=${emptyBatch.id} skipped: ` +
           `${annotations.length} annotations formed no cluster above the support gate`,
       );
-      return { ...emptyResult, annotationsConsidered: annotations.length };
+      return {
+        ...emptyResult,
+        annotationsConsidered: annotations.length,
+        batchId: emptyBatch.id,
+      };
     }
 
     const { systemPrompt, engine } = await this.resolvePromptByCode(

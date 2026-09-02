@@ -891,6 +891,43 @@ describe('LanguageGlossaryService', () => {
       expect(saved.content ?? '').not.toContain('register vocabulary rule');
     });
 
+    // The scheduler measures BOTH its weekly interval and its minimum gap from
+    // the last batch. A path that returns without writing one freezes that
+    // clock and re-runs every tick — Marathi and Kannada did exactly that,
+    // consolidating twice in 30 minutes on a weekly cadence, because their
+    // fluency-only annotations can never clear the systematicity bar.
+    it('records a batch even when nothing clusters, so the cadence clock advances', async () => {
+      // All fluency, each a different category: systematicFluency (min 5
+      // same-category recurrences) drops every one, so nothing reaches the
+      // clusterer.
+      setAnnotationPool([
+        annotation('f1', 'tenant-1', {
+          dimension: 'fluency',
+          category: 'case_marking',
+        }),
+        annotation('f2', 'tenant-1', {
+          dimension: 'fluency',
+          category: 'tense_error',
+        }),
+        annotation('f3', 'tenant-1', {
+          dimension: 'fluency',
+          category: 'agreement',
+        }),
+      ]);
+
+      const result = await service.consolidateGlossary(6, 'scheduler', {
+        trigger: 'scheduled',
+      });
+
+      expect(result.proposed).toBe(0);
+      expect(result.batchId).not.toBeNull();
+      expect(getCompletion).not.toHaveBeenCalled(); // still no LLM spend
+      const batch = batchRepository.save.mock.calls.at(-1)[0];
+      expect(batch.trigger).toBe('scheduled');
+      expect(batch.entries).toEqual([]);
+      expect(batch.stats.proposed).toBe(0);
+    });
+
     it('skips the run (and the LLM) below minAnnotations', async () => {
       const result = await service.consolidateGlossary(6, undefined, {
         minAnnotations: 10,
