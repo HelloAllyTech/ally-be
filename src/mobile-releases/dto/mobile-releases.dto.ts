@@ -304,17 +304,25 @@ export class PromoteAndroidRequestDto {
   whatsNew?: string;
 }
 
-export class IosWhatsNewSuggestionResponseDto {
+/**
+ * Platform-agnostic despite the two call sites: the draft is generated from ally-mobile's
+ * own commit history, which isn't platform-specific, and the prompt has no per-platform
+ * branching either — an iOS submission and an Android promotion happening at the same
+ * moment would get the identical suggestion text. One generation path, two endpoints
+ * (ios-whats-new-suggestion / android-whats-new-suggestion) so each can carry its own
+ * permission gate matched to the action it actually prefills.
+ */
+export class WhatsNewSuggestionResponseDto {
   @ApiProperty({
     nullable: true,
     description:
       'LLM-drafted "What\'s New in This Version" text, generated from ' +
       'ally-mobile commit subjects since the last release (the most recent ' +
       'commit that touched android/app/build.gradle on master), with ' +
-      '"Merge pull request" commits filtered out. Meant to prefill the App ' +
-      "Store submission's What's New field — still editable, never " +
-      'auto-submitted. null when there are no new (non-merge) commits since ' +
-      'the last release to summarize, which is a normal state, not an error.',
+      '"Merge pull request" commits filtered out. Meant to prefill a What\'s ' +
+      'New field — still editable, never auto-submitted. null when there are ' +
+      'no new (non-merge) commits since the last release to summarize, which ' +
+      'is a normal state, not an error.',
   })
   suggestion!: string | null;
 }

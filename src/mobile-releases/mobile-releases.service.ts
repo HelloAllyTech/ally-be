@@ -15,7 +15,6 @@ import {
   IosTestflightHistoryEntryDto,
   IosTestflightHistoryResponseDto,
   IosTestflightStatusResponseDto,
-  IosWhatsNewSuggestionResponseDto,
   MOBILE_WORKFLOW_FILES,
   MOBILE_WORKFLOW_LABELS,
   MobileCurrentVersionResponseDto,
@@ -23,6 +22,7 @@ import {
   MobileReleaseRunDto,
   MobileTriggerResponseDto,
   MobileWorkflowFile,
+  WhatsNewSuggestionResponseDto,
 } from './dto/mobile-releases.dto';
 
 const GITHUB_API = 'https://api.github.com';
@@ -330,18 +330,23 @@ export class MobileReleasesService {
   }
 
   /**
-   * LLM-drafted "What's New in This Version" text for the App Store
-   * submission, built from the ally-mobile commit subjects since the last
-   * release point (the same "most recent commit that touched
-   * android/app/build.gradle on master" heuristic computeNextEligibleCheckAt
-   * uses). Read-only and uncached — a fresh suggestion each time is correct
-   * here since the commit history changes.
+   * LLM-drafted "What's New in This Version" text, built from the
+   * ally-mobile commit subjects since the last release point (the same
+   * "most recent commit that touched android/app/build.gradle on master"
+   * heuristic computeNextEligibleCheckAt uses). Read-only and uncached — a
+   * fresh suggestion each time is correct here since the commit history
+   * changes.
+   *
+   * Shared by both the iOS submission and Android promotion controller
+   * endpoints — the draft doesn't depend on platform (same commits, same
+   * prompt, same non-technical audience), so there is exactly one
+   * generation path even though there are two callers.
    *
    * Zero non-merge commits since the last release point is a legitimate
    * "nothing new" state, not an error: returns `{ suggestion: null }` rather
    * than calling the model or throwing.
    */
-  async getIosWhatsNewSuggestion(): Promise<IosWhatsNewSuggestionResponseDto> {
+  async getWhatsNewSuggestion(): Promise<WhatsNewSuggestionResponseDto> {
     const headers = this.headers;
     const commitSubjects =
       await this.fetchCommitSubjectsSinceLastRelease(headers);
