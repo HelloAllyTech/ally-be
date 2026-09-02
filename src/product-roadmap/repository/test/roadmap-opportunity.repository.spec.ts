@@ -103,3 +103,57 @@ describe('RoadmapOpportunityRepository.listOpportunities ordering', () => {
     }
   });
 });
+
+/**
+ * A date range is stated in whole days, so its upper bound has to INCLUDE the day named.
+ * Postgres casts a bare '2026-09-02' to midnight, so the plain `<=` dropped everything filed on
+ * the 2nd — a range ending today came back missing exactly the newest rows, which reads as the
+ * filter being broken rather than as an off-by-one.
+ */
+describe('RoadmapOpportunityRepository.applyFilters date bounds', () => {
+  const paramsFor = (options: Record<string, unknown>) => {
+    const params: Record<string, unknown> = {};
+    const qb = {
+      andWhere: (_sql: string, bound?: Record<string, unknown>) => {
+        Object.assign(params, bound ?? {});
+        return qb;
+      },
+    };
+
+    const dataSource = {
+      createEntityManager: jest.fn(),
+    } as unknown as DataSource;
+    const repository = new RoadmapOpportunityRepository(dataSource);
+    (
+      repository as unknown as {
+        applyFilters: (qb: unknown, o: unknown) => void;
+      }
+    ).applyFilters(qb, options);
+
+    return params;
+  };
+
+  it('extends a bare-date upper bound to the end of that day', () => {
+    expect(paramsFor({ dateTo: '2026-09-02' }).dateTo).toBe(
+      '2026-09-02T23:59:59.999',
+    );
+    expect(paramsFor({ releasedTo: '2026-09-02' }).releasedTo).toBe(
+      '2026-09-02T23:59:59.999',
+    );
+  });
+
+  it('leaves the lower bound at midnight, which already includes the whole day', () => {
+    expect(paramsFor({ dateFrom: '2026-09-01' }).dateFrom).toBe('2026-09-01');
+    expect(paramsFor({ releasedFrom: '2026-09-01' }).releasedFrom).toBe(
+      '2026-09-01',
+    );
+  });
+
+  it('passes a full timestamp through untouched', () => {
+    // @IsISO8601 accepts an instant too, and a caller who sent one has already said where the
+    // bound is — widening it to end-of-day there would filter differently than asked.
+    expect(paramsFor({ dateTo: '2026-09-02T10:00:00.000Z' }).dateTo).toBe(
+      '2026-09-02T10:00:00.000Z',
+    );
+  });
+});
