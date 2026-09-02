@@ -363,6 +363,136 @@ describe('UxSignalsService', () => {
     );
   });
 
+  /**
+   * The manual path returns as soon as the scan exists, because the run itself is
+   * minutes long and no gateway holds a connection that long. Production proved
+   * it: the caller was told the scan "could not be completed" while the scan went
+   * on to file seven findings.
+   */
+  describe('startScan', () => {
+    it('returns the claimed row without waiting for the scan to finish', async () => {
+      // Detection never settles here. If startScan awaited the run, this test
+      // would time out rather than fail — which is precisely the production bug.
+      detect.mockImplementation(() => new Promise(() => {}));
+
+      const scan = await service.startScan(UxSignalScanTrigger.MANUAL, 1);
+
+      expect(scan.id).toBe('scan-1');
+      expect(scan.status).toBe(UxSignalScanStatus.RUNNING);
+      expect(updateScan).not.toHaveBeenCalled();
+    });
+
+    it('still refuses up front when PostHog access is not configured', async () => {
+      // The cheap refusals stay synchronous: deferring them would turn a precise
+      // 503 into a scan row that fails a second later for a reason the caller has
+      // to go and read.
+      posthogEnabled = false;
+
+      await expect(
+        service.startScan(UxSignalScanTrigger.MANUAL, 1),
+      ).rejects.toThrow(ServiceUnavailableException);
+      expect(saveScan).not.toHaveBeenCalled();
+    });
+
+    it('still refuses up front while another scan is in flight', async () => {
+      countScans.mockImplementation(
+        async (options: { where: { startedAt?: unknown } }) =>
+          options.where?.startedAt ? 0 : 1,
+      );
+
+      await expect(
+        service.startScan(UxSignalScanTrigger.MANUAL, 1),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('records a background failure on the row without rejecting the caller', async () => {
+      // Nothing is awaiting the run any more, so an unhandled rejection is the
+      // hazard and the row is the only place the reason can land.
+      detect.mockRejectedValue(new Error('PostHog went away'));
+
+      await expect(
+        service.startScan(UxSignalScanTrigger.MANUAL, 1),
+      ).resolves.toEqual(expect.objectContaining({ id: 'scan-1' }));
+
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(updateScan).toHaveBeenCalledWith(
+        'scan-1',
+        expect.objectContaining({
+          status: UxSignalScanStatus.FAILED,
+          error: expect.stringContaining('PostHog went away'),
+        }),
+      );
+    });
+
+    it('completes the row in the background, so a poller sees the counts', async () => {
+      write.mockResolvedValue({
+        findingsCreated: 3,
+        suggestionsCreated: 2,
+        skippedDuplicates: 1,
+      });
+      triage.mockResolvedValue([
+        { kind: 'bug', title: 'A bug', body: 'x', route: '/inbox' },
+      ]);
+
+      await service.startScan(UxSignalScanTrigger.MANUAL, 1);
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(updateScan).toHaveBeenCalledWith(
+        'scan-1',
+        expect.objectContaining({
+          status: UxSignalScanStatus.COMPLETED,
+          findingsCreated: 3,
+          suggestionsCreated: 2,
+          skippedDuplicates: 1,
+        }),
+      );
+    });
+  });
+
+  /**
+   * The hourly sweep. A row left RUNNING by a crash or a redeploy has nothing
+   * left to finish it, and the admin panel reads that row as "a scan is running
+   * now" — so until this ran on a timer, a dead row said that to everyone who
+   * looked until the next scan was attempted.
+   */
+  describe('sweepAbandonedScans', () => {
+    it('fails rows past the staleness cutoff and reports how many', async () => {
+      countScans.mockResolvedValue(2);
+
+      await expect(service.sweepAbandonedScans()).resolves.toBe(2);
+
+      expect(updateScan).toHaveBeenCalledWith(
+        expect.objectContaining({ status: UxSignalScanStatus.RUNNING }),
+        expect.objectContaining({
+          status: UxSignalScanStatus.FAILED,
+          error: expect.stringContaining('interrupted'),
+        }),
+      );
+    });
+
+    it('writes nothing when no row is stale', async () => {
+      // It runs every hour forever; an UPDATE that always matches nothing is
+      // noise in the query log and nothing else.
+      countScans.mockResolvedValue(0);
+
+      await expect(service.sweepAbandonedScans()).resolves.toBe(0);
+      expect(updateScan).not.toHaveBeenCalled();
+    });
+
+    it('leaves a young RUNNING row alone', async () => {
+      // The cutoff is the whole guard: sweeping a live scan would mark a run
+      // failed while it was still working, and free the lock for a second one.
+      countScans.mockImplementation(
+        async (options: { where: { startedAt?: unknown } }) =>
+          options.where?.startedAt ? 0 : 1,
+      );
+
+      await expect(service.sweepAbandonedScans()).resolves.toBe(0);
+      expect(updateScan).not.toHaveBeenCalled();
+    });
+  });
+
   describe('isDueForScheduledScan', () => {
     it('is due when no scan has ever run', async () => {
       scanRows = [];
