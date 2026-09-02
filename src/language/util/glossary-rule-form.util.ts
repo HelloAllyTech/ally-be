@@ -18,26 +18,59 @@
  * still spends the Tier 0 token budget. Publishing it looks like progress and
  * changes nothing, which is worse than rejecting it.
  *
- * A rule is CANONICAL when it names the form to use and the form to avoid in
- * one line: `say X (avoid: Y)`, or `X (not Y)`. Those are the two shapes the
- * generation and consolidation prompts emit and the shapes
- * `parseAvoidTerms` can machine-check.
+ * A rule is CANONICAL when its OPENING LINE names both the form to use and the
+ * form to avoid — either in `(avoid: Y)` syntax, or in prose that points at
+ * concrete terms ("use `X` … not the formal `Y`"). Both bind; only the
+ * abstract opener with its pairs buried in an example does not.
+ *
+ * Getting this boundary wrong is expensive in the direction of over-rejection:
+ * a first cut treated every rule carrying an example as buried, and a dry run
+ * auto-rejected six perfectly good rules before any model saw them. Hence the
+ * narrower test below.
  */
 
-/** A rule that states its substitution inline, on the line itself. */
-const CANONICAL = /(\bsay\b[^\n]*|[^\n]*)\((?:avoid|not)\s*:?\s*[^)]+\)/i;
+/** The `(avoid: X)` / `(not X)` group the generation prompts emit. */
+const AVOID_GROUP = /\((?:avoid|not)\s*:?\s*[^)]+\)/i;
+
+/** A term the rule points at concretely: backticked, quoted or typographic. */
+const QUOTED_TERM = /`[^`]+`|"[^"]+"|'[^']+'|[“‘][^”’]+[”’]/;
+
+/** Words by which a line names the form to move AWAY from. */
+const CONTRAST = /\b(not|avoid|rather than|instead of|never)\b/i;
 
 /**
- * A rule whose actionable pair sits on a CONTINUATION line under a general
- * statement — the shape that measured 4% compliance. Detected as: the first
- * line carries no substitution, and a later `e.g.`-style line does.
+ * Does this line state the substitution itself?
+ *
+ * Either syntax counts. `- yes: say \`ஆமா\` (avoid: \`ஆமாம்\`)` is the shape the
+ * prompts emit, but prose does the same work: "Use the informal pronoun
+ * \`तुम\` … not the formal \`आप\`" names both forms just as concretely, and
+ * rejecting it as non-binding was wrong — the dry run on 2026-09-02 rejected
+ * six such rules before a model ever saw them.
+ *
+ * What the Kannada evidence actually condemned is a line with NO concrete
+ * term on it at all ("written Kannada keeps vowels that speech drops (schwa
+ * deletion). This is a pattern, apply it everywhere:") whose pairs live only
+ * in a following example. That is the 4% case, and it is what this must catch
+ * — not any rule that happens to carry an example.
+ */
+function statesSubstitution(line: string): boolean {
+  if (AVOID_GROUP.test(line)) return true;
+  return QUOTED_TERM.test(line) && CONTRAST.test(line);
+}
+
+/**
+ * A rule whose actionable pair sits ONLY on a continuation line, under an
+ * opening line that names no concrete form — the shape that measured 4%
+ * compliance.
  */
 function pairIsOnlyInExample(markdown: string): boolean {
   const lines = markdown.split('\n').filter((l) => l.trim().length > 0);
   if (lines.length < 2) return false;
-  const firstHasPair = CANONICAL.test(lines[0]);
-  const laterHasPair = lines.slice(1).some((l) => CANONICAL.test(l));
-  return !firstHasPair && laterHasPair;
+  if (statesSubstitution(lines[0])) return false;
+  // An opening line that at least points at a concrete term is prose guidance,
+  // not the buried-pattern shape; leave that judgement to the adjudicator.
+  if (QUOTED_TERM.test(lines[0])) return false;
+  return lines.slice(1).some((l) => statesSubstitution(l));
 }
 
 export type RuleForm = 'canonical' | 'pair_only_in_example' | 'no_substitution';
@@ -52,8 +85,8 @@ export function classifyRuleForm(markdown: string): RuleForm {
   if (!text) return 'no_substitution';
   if (pairIsOnlyInExample(text)) return 'pair_only_in_example';
   const firstLine = text.split('\n')[0];
-  if (CANONICAL.test(firstLine)) return 'canonical';
-  return CANONICAL.test(text) ? 'canonical' : 'no_substitution';
+  if (statesSubstitution(firstLine)) return 'canonical';
+  return statesSubstitution(text) ? 'canonical' : 'no_substitution';
 }
 
 /**
