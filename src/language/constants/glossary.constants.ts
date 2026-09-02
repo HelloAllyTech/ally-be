@@ -108,3 +108,16 @@ export const GLOSSARY_ADJUDICATION_PROMPT_CODE = 'glossary_adjudication';
  * successive calls.
  */
 export const GLOSSARY_ADJUDICATION_BATCH = 25;
+
+/**
+ * Consecutive passes that must agree before an unattended REJECT is applied.
+ *
+ * Rejecting consumes a proposal's annotations, so nothing re-derives the rule:
+ * a reject is permanent while an accept is revertible through the batch
+ * record. The adjudicator is not stable enough for that asymmetry to be safe
+ * on a single reading — measured 2026-09-02, one Tamil proposal was accepted
+ * at 15:00 and rejected at 16:00 on identical input. Two consecutive votes
+ * separate a clear-cut reject, which repeats, from a coin-flip, which does
+ * not; the coin-flip lands in `deferred` instead of being destroyed.
+ */
+export const GLOSSARY_REJECT_VOTES_REQUIRED = 2;

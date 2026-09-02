@@ -3,6 +3,7 @@ import { LlmProviderFactory } from 'src/ai-chat/provider/llm-provider.factory';
 import {
   GLOSSARY_ADJUDICATION_BATCH,
   GLOSSARY_ADJUDICATION_PROMPT_CODE,
+  GLOSSARY_REJECT_VOTES_REQUIRED,
 } from '../constants/glossary.constants';
 import {
   GlossaryEntryStatus,
@@ -38,6 +39,8 @@ interface QueuedProposal {
   markdown: string;
   injectionMode: string;
   support: number;
+  /** Consecutive reject votes already recorded on this entry. */
+  rejectVotes: number;
 }
 
 /**
@@ -61,11 +64,19 @@ interface QueuedProposal {
  *   - 8 were in the WRONG LANGUAGE entirely (Tamil rules under en-IN), from
  *     foreign-script evidence. Now prevented upstream by
  *     `excludeForeignScripts`, so this pass should never see them again.
- *   - Non-binding FORM is checked deterministically before any model call:
- *     a rule whose substitution is buried in an example line measured 4%
- *     compliance against 100% for the canonical one-liner, so publishing it
- *     spends Tier 0 tokens and changes nothing. See
+ *   - Rule FORM is ANNOTATED for the model, not vetoed before it. A first cut
+ *     auto-rejected the buried-pair shape and a production dry run then
+ *     rejected all six queued proposals, every one legitimate: a regex cannot
+ *     tell an abstract opener from a substitution stated in prose. See
  *     {@link classifyRuleForm}.
+ *
+ * REJECTS NEED TWO CONSECUTIVE VOTES. Rejecting consumes a proposal's
+ * annotations, so nothing re-derives the rule — a reject is permanent, while
+ * an accept is revertible through the batch record. The adjudicator is not
+ * consistent enough to be handed that asymmetry on one reading: the same Tamil
+ * proposal was accepted at 15:00 and rejected at 16:00 on identical input,
+ * both verdicts defensible. A clear-cut reject repeats across passes; a
+ * coin-flip does not, and lands in `deferred` instead of being destroyed.
  *
  * Tier 0 pressure is real and is reported, not fought: accepting into a
  * published `always` section can breach the token cap, and the cap is
@@ -99,6 +110,7 @@ export class GlossaryAdjudicationService {
           markdown: entry.markdown ?? '',
           injectionMode: section.injectionMode,
           support: entry.provenance?.annotationIds?.length ?? 0,
+          rejectVotes: entry.adjudication?.rejectVotes ?? 0,
         });
       }
     }
@@ -165,6 +177,8 @@ export class GlossaryAdjudicationService {
             await this.rewriteProposal(languageId, p, decision.rewrite);
             reason = `${reason} (rewritten to canonical form)`;
           }
+          // An accept ends any reject streak: the votes must be CONSECUTIVE.
+          await this.recordRejectVote(languageId, p, null);
           await this.acceptMakingRoomIfNeeded(languageId, p, options);
         } catch (error) {
           // The cap still wins after re-tiering. Report, never force: the
@@ -177,13 +191,27 @@ export class GlossaryAdjudicationService {
               : `deferred: accept failed — ${(error as Error).message}`;
         }
       } else if (apply && verdict === 'rejected') {
-        await this.glossaryService.rejectProposal(
-          languageId,
-          p.sectionCode,
-          p.entryId,
-          options.adjudicatedBy ?? 'adjudicator',
-          p.profileId,
-        );
+        // Two consecutive passes must agree before a permanent reject lands.
+        const votes = (p.rejectVotes ?? 0) + 1;
+        if (votes >= GLOSSARY_REJECT_VOTES_REQUIRED) {
+          await this.glossaryService.rejectProposal(
+            languageId,
+            p.sectionCode,
+            p.entryId,
+            options.adjudicatedBy ?? 'adjudicator',
+            p.profileId,
+          );
+          reason = `${reason} [confirmed on ${votes} consecutive passes]`;
+        } else {
+          await this.recordRejectVote(languageId, p, reason);
+          verdict = 'deferred';
+          reason =
+            `held for a second opinion (${votes}/${GLOSSARY_REJECT_VOTES_REQUIRED} ` +
+            `reject votes): ${reason}`;
+        }
+      } else if (apply && verdict === 'deferred') {
+        // A deferral is not agreement to reject either.
+        await this.recordRejectVote(languageId, p, null);
       }
 
       if (verdict === 'accepted') accepted++;
@@ -209,6 +237,40 @@ export class GlossaryAdjudicationService {
       deferred,
       proposals,
     };
+  }
+
+  /**
+   * Record (or clear) a proposal's consecutive reject-vote count.
+   *
+   * `reason === null` clears the streak, which any non-reject verdict must do
+   * — the votes only mean something if they are consecutive. Stored on the
+   * entry itself so the state survives restarts and is visible to anyone
+   * reading the section, rather than living in a process-local cache that two
+   * replicas would disagree about.
+   */
+  private async recordRejectVote(
+    languageId: number,
+    p: QueuedProposal,
+    reason: string | null,
+  ): Promise<void> {
+    // Nothing to clear: avoid a pointless write on the common path.
+    if (reason === null && (p.rejectVotes ?? 0) === 0) return;
+    const section = await this.glossaryRepository.findSection(
+      languageId,
+      p.sectionCode,
+      p.profileId,
+    );
+    const entry = section?.entries?.find((e) => e.id === p.entryId);
+    if (!section || !entry) return;
+    entry.adjudication =
+      reason === null
+        ? undefined
+        : {
+            rejectVotes: (p.rejectVotes ?? 0) + 1,
+            lastRejectReason: reason.slice(0, 300),
+            lastRejectAt: new Date().toISOString(),
+          };
+    await this.glossaryRepository.save(section);
   }
 
   /**

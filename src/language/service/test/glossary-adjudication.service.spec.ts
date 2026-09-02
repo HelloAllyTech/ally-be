@@ -12,7 +12,7 @@ const section = (over: any = {}) => ({
   ...over,
 });
 
-const proposal = (id: string, markdown: string) => ({
+const proposal = (id: string, markdown: string): any => ({
   id,
   markdown,
   status: GlossaryEntryStatus.PROPOSED,
@@ -29,6 +29,9 @@ describe('GlossaryAdjudicationService', () => {
     getCompletion = jest.fn();
     glossaryRepository = {
       findAllForLanguage: jest.fn().mockResolvedValue([]),
+      // The reject-vote recorder reads and writes the section.
+      findSection: jest.fn().mockResolvedValue(null),
+      save: jest.fn(async (v: any) => v),
     };
     glossaryService = {
       assertLanguageExists: jest
@@ -95,7 +98,11 @@ describe('GlossaryAdjudicationService', () => {
     expect(getCompletion).toHaveBeenCalled();
     const messages = getCompletion.mock.calls[0][0];
     expect(messages[0].content).toContain('form=pair_only_in_example');
-    expect(out.rejected).toBe(1);
+    // The model ruled reject; the gate holds it for a second pass, which is
+    // covered by its own tests. What matters here is that form reached the
+    // model at all rather than short-circuiting it.
+    expect(out.considered).toBe(1);
+    expect(out.proposals[0].reason).toContain('reject votes');
   });
 
   // The 2026-09-02 preview rejected ALL 9 queued proposals for "restating a
@@ -178,8 +185,9 @@ describe('GlossaryAdjudicationService', () => {
       ]),
     );
     await service.adjudicateLanguage(6);
+    // The rewrite must not be applied. A save DOES happen — the first-pass
+    // reject records its vote — so assert on the text, not the write.
     expect(entry.markdown).toBe('- do not break character');
-    expect(glossaryRepository.save).not.toHaveBeenCalled();
   });
 
   it('applies the adjudicator verdicts to accept and reject', async () => {
@@ -202,11 +210,13 @@ describe('GlossaryAdjudicationService', () => {
       ]),
     );
     const out = await service.adjudicateLanguage(6);
+    // The accept lands immediately (revertible); the reject is held for a
+    // second opinion (permanent), so it reports as deferred on pass one.
     expect(out).toMatchObject({
       considered: 2,
       accepted: 1,
-      rejected: 1,
-      deferred: 0,
+      rejected: 0,
+      deferred: 1,
     });
     expect(glossaryService.acceptProposal).toHaveBeenCalledWith(
       6,
@@ -215,13 +225,97 @@ describe('GlossaryAdjudicationService', () => {
       'adjudicator',
       null,
     );
+    expect(glossaryService.rejectProposal).not.toHaveBeenCalled();
+  });
+
+  // The gate exists because the same Tamil proposal was accepted at 15:00 and
+  // rejected at 16:00 on identical input — a coin-flip deciding a permanent
+  // outcome.
+  it('holds a first-pass reject and records the vote', async () => {
+    const entry = proposal('e1', '- do not break character');
+    const sec = section({ entries: [entry] });
+    glossaryRepository.findAllForLanguage.mockResolvedValue([sec]);
+    glossaryRepository.findSection = jest.fn().mockResolvedValue(sec);
+    glossaryRepository.save = jest.fn().mockResolvedValue(sec);
+    getCompletion.mockResolvedValue(
+      JSON.stringify([
+        { index: 1, verdict: 'reject', reason: '1. NOT A LANGUAGE RULE' },
+      ]),
+    );
+
+    const out = await service.adjudicateLanguage(6);
+    expect(out).toMatchObject({ rejected: 0, deferred: 1 });
+    expect(glossaryService.rejectProposal).not.toHaveBeenCalled();
+    expect(entry.adjudication).toMatchObject({ rejectVotes: 1 });
+    expect(entry.adjudication?.lastRejectReason).toContain(
+      'NOT A LANGUAGE RULE',
+    );
+    expect(out.proposals[0].reason).toContain('1/2 reject votes');
+  });
+
+  it('applies the reject once a second consecutive pass agrees', async () => {
+    const entry = {
+      ...proposal('e1', '- do not break character'),
+      adjudication: { rejectVotes: 1, lastRejectReason: 'prior pass' },
+    };
+    const sec = section({ entries: [entry] });
+    glossaryRepository.findAllForLanguage.mockResolvedValue([sec]);
+    glossaryRepository.findSection = jest.fn().mockResolvedValue(sec);
+    glossaryRepository.save = jest.fn().mockResolvedValue(sec);
+    getCompletion.mockResolvedValue(
+      JSON.stringify([
+        { index: 1, verdict: 'reject', reason: '1. NOT A LANGUAGE RULE' },
+      ]),
+    );
+
+    const out = await service.adjudicateLanguage(6);
+    expect(out).toMatchObject({ rejected: 1, deferred: 0 });
     expect(glossaryService.rejectProposal).toHaveBeenCalledWith(
       6,
       'core_style',
-      'e2',
+      'e1',
       'adjudicator',
       null,
     );
+    expect(out.proposals[0].reason).toContain(
+      'confirmed on 2 consecutive passes',
+    );
+  });
+
+  // Votes must be CONSECUTIVE: an accept in between resets the streak, so a
+  // proposal cannot be destroyed by two rejects separated by an accept.
+  it('an accept clears a prior reject vote', async () => {
+    const entry = {
+      ...proposal('e1', '- yes: say `ஆமா` (avoid: `ஆமாம்`)'),
+      adjudication: { rejectVotes: 1, lastRejectReason: 'prior pass' },
+    };
+    const sec = section({ entries: [entry] });
+    glossaryRepository.findAllForLanguage.mockResolvedValue([sec]);
+    glossaryRepository.findSection = jest.fn().mockResolvedValue(sec);
+    glossaryRepository.save = jest.fn().mockResolvedValue(sec);
+    getCompletion.mockResolvedValue(
+      JSON.stringify([{ index: 1, verdict: 'accept', reason: 'ok' }]),
+    );
+
+    const out = await service.adjudicateLanguage(6);
+    expect(out.accepted).toBe(1);
+    expect(entry.adjudication).toBeUndefined();
+  });
+
+  it('does not write a vote when preview mode is previewing', async () => {
+    const entry = proposal('e1', '- do not break character');
+    const sec = section({ entries: [entry] });
+    glossaryRepository.findAllForLanguage.mockResolvedValue([sec]);
+    glossaryRepository.findSection = jest.fn().mockResolvedValue(sec);
+    glossaryRepository.save = jest.fn().mockResolvedValue(sec);
+    getCompletion.mockResolvedValue(
+      JSON.stringify([{ index: 1, verdict: 'reject', reason: 'persona' }]),
+    );
+
+    const out = await service.adjudicateLanguage(6, { apply: false });
+    expect(out.rejected).toBe(1); // preview reports the raw verdict
+    expect(glossaryRepository.save).not.toHaveBeenCalled();
+    expect(entry.adjudication).toBeUndefined();
   });
 
   // Deferring on the cap alone was a dead end: a good rule sat in the queue

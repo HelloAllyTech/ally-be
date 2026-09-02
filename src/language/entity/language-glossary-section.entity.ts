@@ -37,6 +37,29 @@ export interface GlossaryEntry {
   markdown: string;
   status: GlossaryEntryStatus;
   importance?: number;
+  /**
+   * Unattended-adjudication state, so an irreversible verdict is not decided
+   * by one sample of a stochastic judge.
+   *
+   * Rejecting consumes a proposal's annotations by design, so nothing
+   * re-derives the rule — a reject is permanent. The adjudicator is not
+   * consistent enough to be trusted with that on one reading: on 2026-09-02
+   * the same Tamil proposal was ACCEPTED at 15:00 and REJECTED at 16:00 on
+   * identical input, and both verdicts were individually defensible (its own
+   * example line appears verbatim in an existing rule, but it also adds a
+   * novel "avoid non-standard forms" clause). A borderline call decided a
+   * permanent outcome by chance.
+   *
+   * So rejects need the same verdict on CONSECUTIVE passes: a clear-cut
+   * reject repeats, a coin-flip does not. Accepts apply on the first pass —
+   * they are reversible through the batch record.
+   */
+  adjudication?: {
+    /** Consecutive passes that voted to reject. Reset by any other verdict. */
+    rejectVotes: number;
+    lastRejectReason?: string;
+    lastRejectAt?: string;
+  };
   provenance?: {
     source: 'consolidation' | 'seed' | 'manual';
     annotationIds?: string[];
