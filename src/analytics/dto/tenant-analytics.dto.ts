@@ -1,5 +1,13 @@
-import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsArray,
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { ANALYTICS_RANGES, AnalyticsRange } from './platform-analytics.dto';
 
@@ -134,13 +142,24 @@ export const LEARNER_USAGE_SORT_FIELDS = [
   'email',
   'signupDate',
   'lastPracticeSessionAt',
+  'lastActivityAt',
+  'status',
   'roleplaySessionsStarted',
   'roleplaySessionsCompleted',
   'avgScore',
   'totalPracticeMinutes',
+  'roleplayPointsPerMinute',
   'coursesAssigned',
   'coursesStarted',
   'coursesCompleted',
+  'level',
+  'totalXp',
+  'itemsCompleted',
+  'itemsCompletedPct',
+  'quizzesPassed',
+  'avgQuizScorePct',
+  'readWatchCompleted',
+  'reflectionCompleted',
 ] as const;
 export type LearnerUsageSortField = (typeof LEARNER_USAGE_SORT_FIELDS)[number];
 
@@ -155,7 +174,7 @@ export type LearnerUsageStatus = (typeof LEARNER_USAGE_STATUSES)[number];
 export class LearnerUsageQueryDto {
   @ApiProperty({
     description:
-      'Time window for the period-scoped columns (roleplay sessions, avg score, practice minutes). Last-practice-session, signup date, and course columns are always all-time.',
+      'Time window for the period-scoped columns (roleplay sessions, avg score, practice minutes). Last-activity, signup date, level/XP, course and course-item columns are always all-time.',
     enum: ANALYTICS_RANGES,
     default: '30d',
     required: false,
@@ -173,8 +192,26 @@ export class LearnerUsageQueryDto {
   search?: string;
 
   @ApiProperty({
+    description:
+      'Status facet; omitted means every status. Accepts a comma-separated list (`?status=dormant,never_started`) or a repeated param — RTK Query\'s fetchBaseQuery comma-joins arrays, so the frontend sends the former. Applied in SQL, so `count` reflects the filter.',
+    enum: LEARNER_USAGE_STATUSES,
+    isArray: true,
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) => {
+    if (value === undefined) return undefined;
+    const parts = Array.isArray(value) ? value : String(value).split(',');
+    // A trailing/empty value means "no filter" rather than "match nothing".
+    return parts.map((v: string) => String(v).trim()).filter(Boolean);
+  })
+  @IsArray()
+  @IsIn(LEARNER_USAGE_STATUSES, { each: true })
+  status?: LearnerUsageStatus[];
+
+  @ApiProperty({
     enum: LEARNER_USAGE_SORT_FIELDS,
-    default: 'lastPracticeSessionAt',
+    default: 'lastActivityAt',
     required: false,
   })
   @IsOptional()
@@ -219,14 +256,21 @@ export class LearnerUsageRowDto {
   @ApiProperty({
     nullable: true,
     description:
-      'Days since lastPracticeSessionAt; null if the learner has never started a session',
+      'Last sign of life anywhere — the later of lastPracticeSessionAt and the most recent course activity. This is what status is derived from.',
+  })
+  lastActivityAt!: Date | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Days since lastActivityAt; null if the learner has never done anything',
   })
   daysSinceLastActivity!: number | null;
 
   @ApiProperty({
     enum: LEARNER_USAGE_STATUSES,
     description:
-      'never_started (no sessions ever) / active (≤14 days) / at_risk (15–30 days) / dormant (>30 days)',
+      'never_started (nothing ever) / active (≤14 days) / at_risk (15–30 days) / dormant (>30 days), measured on lastActivityAt',
   })
   status!: LearnerUsageStatus;
 
@@ -252,6 +296,13 @@ export class LearnerUsageRowDto {
   @ApiProperty({ description: 'Practice minutes in the window' })
   totalPracticeMinutes!: number;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Composite score summed over the window\'s completed sessions divided by those practice minutes. Null when the window holds no measurable practice time (never 0). Can be negative — composite scores go below zero.',
+  })
+  roleplayPointsPerMinute!: number | null;
+
   @ApiProperty({ description: 'Track 2.0 enrollments (all-time)' })
   coursesAssigned!: number;
 
@@ -267,6 +318,53 @@ export class LearnerUsageRowDto {
       'coursesCompleted / coursesAssigned as a percentage; null when nothing is assigned',
   })
   courseCompletionRatePct!: number | null;
+
+  @ApiProperty({ description: 'Level ladder position, 1-10 (all-time)' })
+  level!: number;
+
+  @ApiProperty({ description: 'Lifetime XP (all-time)' })
+  totalXp!: number;
+
+  @ApiProperty({
+    description:
+      'Course items across every enrolled course, locked ones included (all-time)',
+  })
+  itemsTotal!: number;
+
+  @ApiProperty({ description: 'Course items completed (all-time)' })
+  itemsCompleted!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'itemsCompleted / itemsTotal as a percentage; null when nothing is enrolled',
+  })
+  itemsCompletedPct!: number | null;
+
+  @ApiProperty({ description: 'Quiz items passed (all-time)' })
+  quizzesPassed!: number;
+
+  @ApiProperty({
+    description:
+      'Quiz items with at least one graded attempt — the denominator behind avgQuizScorePct',
+  })
+  quizzesAttempted!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Avg of the latest graded attempt per quiz item, so repeat failures show; null when nothing is graded',
+  })
+  avgQuizScorePct!: number | null;
+
+  @ApiProperty({ description: 'ARTICLE + VIDEO items completed (all-time)' })
+  readWatchCompleted!: number;
+
+  @ApiProperty({
+    description:
+      'JOURNAL + ANNOTATED_ARTIFACT + GAME items completed (all-time)',
+  })
+  reflectionCompleted!: number;
 }
 
 export class LearnerUsageResponseDto {

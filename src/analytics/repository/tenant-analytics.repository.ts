@@ -4,6 +4,7 @@ import {
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
 } from '../../learn/enum/scenario-session-status.enum';
+import { LearnerUsageStatus } from '../dto/tenant-analytics.dto';
 import { startOfUtcDay } from '../util/analytics-window.util';
 import { sessionDurationMsExpr } from '../util/session-eligibility.util';
 import { AnalyticsBucket } from './platform-analytics.repository';
@@ -46,22 +47,74 @@ export interface LearnerUsageRow {
   signupDate: Date;
   /** All-time (not window-scoped) — see {@link TenantAnalyticsRepository.getLearnerUsageRows}. */
   lastPracticeSessionAt: Date | null;
+  /**
+   * Last sign of life ANYWHERE — the later of `lastPracticeSessionAt` and the
+   * learner's most recent course activity. This, not roleplay alone, is what
+   * `status` is derived from; see {@link TenantAnalyticsRepository.getLearnerUsageRows}.
+   */
+  lastActivityAt: Date | null;
+  /** Whole days since `lastActivityAt`; null when the learner has never done anything. */
+  daysSinceLastActivity: number | null;
+  /** Derived in SQL so the status facet can be filtered before LIMIT/OFFSET. */
+  status: LearnerUsageStatus;
   roleplaySessionsStarted: number;
   roleplaySessionsCompleted: number;
   avgScore: number | null;
   totalDurationMs: number;
+  /**
+   * Composite score summed over the same completed-in-window sessions that
+   * `totalDurationMs` measures, divided by those minutes. Null when the window
+   * holds no measurable practice time — never 0, which would read as "scored
+   * nothing" rather than "nothing to score". Can be NEGATIVE: roleplay
+   * composite scores do go below zero.
+   */
+  roleplayPointsPerMinute: number | null;
   coursesAssigned: number;
   coursesStarted: number;
   coursesCompleted: number;
+  /** Level ladder position (1-10) and lifetime XP; 1 / 0 for a learner with no XP row yet. */
+  level: number;
+  totalXp: number;
+  /** Course ITEMS across every enrolled course — rows exist for locked items too. */
+  itemsTotal: number;
+  itemsCompleted: number;
+  /** itemsCompleted / itemsTotal as a percentage; null when nothing is enrolled. */
+  itemsCompletedPct: number | null;
+  /** Quiz items passed (the only item type with a graded result). */
+  quizzesPassed: number;
+  /** Quiz items with at least one graded attempt — the denominator behind `avgQuizScorePct`. */
+  quizzesAttempted: number;
+  /** Avg of the LATEST graded attempt per quiz item, so repeat failures show. */
+  avgQuizScorePct: number | null;
+  /** ARTICLE + VIDEO items completed. */
+  readWatchCompleted: number;
+  /** JOURNAL + ANNOTATED_ARTIFACT + GAME items completed. */
+  reflectionCompleted: number;
 }
 
 export interface LearnerUsageOptions {
   search?: string;
+  /** Status facet. Empty/undefined means no status filter. */
+  statuses?: LearnerUsageStatus[];
   sortBy?: string;
   order?: 'ASC' | 'DESC';
   limit: number;
   offset: number;
 }
+
+/**
+ * Learner-usage status thresholds, in whole days since `lastActivityAt`.
+ * A first cut, easy to retune once we see how tenant admins actually read the
+ * table — not derived from any product spec.
+ *
+ * Exported because the status expression lives in SQL (it has to: the facet
+ * filters and the pagination `count` both depend on it, so deriving it after
+ * LIMIT/OFFSET would filter one page and lie about the total) while the
+ * service still derives `daysSinceLastActivity` for the response. Both read
+ * these same two numbers so they cannot drift apart.
+ */
+export const ACTIVE_WITHIN_DAYS = 14;
+export const AT_RISK_WITHIN_DAYS = 30;
 
 /** Whitelisted sort targets — never interpolate the client's `sortBy` directly into SQL. */
 const LEARNER_USAGE_SORT_COLUMNS: Record<string, string> = {
@@ -76,9 +129,22 @@ const LEARNER_USAGE_SORT_COLUMNS: Record<string, string> = {
   // ms->minutes is a monotonic transform done in the service layer) rather
   // than this internal SQL alias.
   totalPracticeMinutes: '"totalDurationMs"',
+  roleplayPointsPerMinute: '"roleplayPointsPerMinute"',
   coursesAssigned: '"coursesAssigned"',
   coursesStarted: '"coursesStarted"',
   coursesCompleted: '"coursesCompleted"',
+  lastActivityAt: '"lastActivityAt"',
+  // Alphabetical status order is meaningless; rank puts the learners who need
+  // chasing first on an ASC sort. See `statusRank` in the SQL.
+  status: '"statusRank"',
+  level: '"level"',
+  totalXp: '"totalXp"',
+  itemsCompleted: '"itemsCompleted"',
+  itemsCompletedPct: '"itemsCompletedPct"',
+  quizzesPassed: '"quizzesPassed"',
+  avgQuizScorePct: '"avgQuizScorePct"',
+  readWatchCompleted: '"readWatchCompleted"',
+  reflectionCompleted: '"reflectionCompleted"',
 };
 
 export interface CourseUsageRow {
@@ -527,6 +593,29 @@ export class TenantAnalyticsRepository {
    * boundary can in principle show as completed without showing as started
    * that period; accepted as the same timestamp-field caveat already present
    * elsewhere in this file.
+   *
+   * `lastActivityAt` is GREATEST(last roleplay, last course activity), and it —
+   * not roleplay alone — is what `status` and `daysSinceLastActivity` derive
+   * from. A learner working through quizzes and articles every day without
+   * ever opening a roleplay used to render as "Never started", which defeated
+   * the point of the status column. GREATEST ignores NULLs in Postgres, so a
+   * learner with only one of the two still gets that one.
+   *
+   * `status` is computed HERE rather than in the service because the status
+   * facet has to filter before LIMIT/OFFSET — deriving it after pagination
+   * would filter a single page and report a `count` for the unfiltered set.
+   * The thresholds come from the exported {@link ACTIVE_WITHIN_DAYS} /
+   * {@link AT_RISK_WITHIN_DAYS} so SQL and service cannot disagree.
+   *
+   * The effort columns (`items*`, `quizzes*`, `readWatchCompleted`,
+   * `reflectionCompleted`) are all-time like the course columns. ROLEPLAY and
+   * CASE items are deliberately EXCLUDED from the type split: their sessions
+   * are rows in `scenario_sessions` and are already counted by the roleplay
+   * columns, so including them here would double-count the same work.
+   * `avgQuizScorePct` averages the LATEST graded attempt per quiz item, not
+   * `track_item_progress.score` — that column is only written on a pass
+   * (see TrackQuizService), so averaging it would hide exactly the learner who
+   * keeps failing.
    */
   async getLearnerUsageRows(
     tenantId: string,
@@ -535,11 +624,13 @@ export class TenantAnalyticsRepository {
     opts: LearnerUsageOptions,
   ): Promise<{ rows: LearnerUsageRow[]; count: number }> {
     const sortColumn =
-      LEARNER_USAGE_SORT_COLUMNS[opts.sortBy ?? ''] ??
-      '"lastPracticeSessionAt"';
+      LEARNER_USAGE_SORT_COLUMNS[opts.sortBy ?? ''] ?? '"lastActivityAt"';
     const order = opts.order ?? 'ASC';
     const nulls = order === 'ASC' ? 'NULLS FIRST' : 'NULLS LAST';
     const searchPattern = opts.search ? `%${opts.search}%` : null;
+    // Empty array and undefined both mean "no status filter" — an empty
+    // `statuses=` would otherwise match nothing and read as a broken table.
+    const statuses = opts.statuses?.length ? opts.statuses : null;
 
     const rows = await this.dataSource.query<
       (LearnerUsageRow & { totalCount: string })[]
@@ -576,7 +667,15 @@ export class TenantAnalyticsRepository {
             WHERE s.status = 'ENDED' AND s."eventStatus" = 'COMPLETED'
               AND COALESCE(s."endedAt", s."createdAt") >= $2
               AND COALESCE(s."endedAt", s."createdAt") < $3
-          ) AS "avgScore"
+          ) AS "avgScore",
+          -- Same FILTER as "durationMs" on purpose: the two are a ratio, so
+          -- they have to be summed over the identical session set or the rate
+          -- silently mixes numerator and denominator populations.
+          SUM(d."compositeScore") FILTER (
+            WHERE s.status = 'ENDED' AND s."eventStatus" = 'COMPLETED'
+              AND COALESCE(s."endedAt", s."createdAt") >= $2
+              AND COALESCE(s."endedAt", s."createdAt") < $3
+          ) AS "totalScore"
         FROM scenario_sessions s
         LEFT JOIN scenario_session_details d ON d."scenarioSessionId" = s.id
         WHERE s."tenant_id" = $1
@@ -593,34 +692,140 @@ export class TenantAnalyticsRepository {
         SELECT te."userId" AS user_id,
           COUNT(*) AS assigned,
           COUNT(*) FILTER (WHERE te."startedAt" IS NOT NULL) AS started,
-          COUNT(*) FILTER (WHERE te."completedAt" IS NOT NULL) AS completed
+          COUNT(*) FILTER (WHERE te."completedAt" IS NOT NULL) AS completed,
+          MAX(te."lastActivityAt") AS "lastCourseActivityAt"
         FROM track_enrollments te
         WHERE te."tenantId"::text = $1 AND te."deletedAt" IS NULL
         GROUP BY te."userId"
+      ),
+      progress AS (
+        SELECT up."userId" AS user_id,
+          up."totalXp"::int AS "totalXp",
+          up.level::int AS level
+        FROM user_progress up
+        WHERE up."tenant_id" = $1
+      ),
+      items AS (
+        SELECT tip."userId" AS user_id,
+          COUNT(*)::int AS "itemsTotal",
+          COUNT(*) FILTER (WHERE tip.status = 'COMPLETED')::int
+            AS "itemsCompleted",
+          COUNT(*) FILTER (
+            WHERE tip.status = 'COMPLETED' AND ti.type = 'QUIZ'
+          )::int AS "quizzesPassed",
+          COUNT(*) FILTER (
+            WHERE tip.status = 'COMPLETED' AND ti.type IN ('ARTICLE', 'VIDEO')
+          )::int AS "readWatchCompleted",
+          COUNT(*) FILTER (
+            WHERE tip.status = 'COMPLETED'
+              AND ti.type IN ('JOURNAL', 'ANNOTATED_ARTIFACT', 'GAME')
+          )::int AS "reflectionCompleted"
+        FROM track_item_progress tip
+        JOIN track_enrollments te ON te.id = tip."trackEnrollmentId"
+        JOIN track_items ti ON ti.id = tip."trackItemId"
+        WHERE te."tenantId"::text = $1
+          AND te."deletedAt" IS NULL
+          AND tip."deletedAt" IS NULL
+          AND ti."deletedAt" IS NULL
+        GROUP BY tip."userId"
+      ),
+      quiz_latest AS (
+        SELECT DISTINCT ON (tqa."trackItemProgressId")
+          tqa."userId" AS user_id,
+          tqa."scorePct"
+        FROM track_quiz_attempts tqa
+        JOIN track_item_progress tip ON tip.id = tqa."trackItemProgressId"
+        JOIN track_enrollments te ON te.id = tip."trackEnrollmentId"
+        WHERE te."tenantId"::text = $1
+          AND te."deletedAt" IS NULL
+          AND tip."deletedAt" IS NULL
+          AND tqa."deletedAt" IS NULL
+          AND tqa."scorePct" IS NOT NULL
+        ORDER BY tqa."trackItemProgressId", tqa."attemptNumber" DESC
+      ),
+      quizzes AS (
+        SELECT user_id,
+          COUNT(*)::int AS "quizzesAttempted",
+          AVG("scorePct")::float AS "avgQuizScorePct"
+        FROM quiz_latest
+        GROUP BY user_id
       ),
       joined AS (
         SELECT
           l.id, l.name, l.email, l."signupDate",
           rl."lastPracticeSessionAt" AS "lastPracticeSessionAt",
+          GREATEST(
+            rl."lastPracticeSessionAt", c."lastCourseActivityAt"
+          ) AS "lastActivityAt",
           COALESCE(rw.started, 0)::int AS "roleplaySessionsStarted",
           COALESCE(rw.completed, 0)::int AS "roleplaySessionsCompleted",
           rw."avgScore"::float AS "avgScore",
           COALESCE(rw."durationMs", 0)::bigint AS "totalDurationMs",
+          CASE
+            WHEN COALESCE(rw."durationMs", 0) > 0
+              THEN rw."totalScore"::float / (rw."durationMs"::float / 60000)
+            ELSE NULL
+          END AS "roleplayPointsPerMinute",
           COALESCE(c.assigned, 0)::int AS "coursesAssigned",
           COALESCE(c.started, 0)::int AS "coursesStarted",
-          COALESCE(c.completed, 0)::int AS "coursesCompleted"
+          COALESCE(c.completed, 0)::int AS "coursesCompleted",
+          COALESCE(pr.level, 1)::int AS "level",
+          COALESCE(pr."totalXp", 0)::int AS "totalXp",
+          COALESCE(i."itemsTotal", 0)::int AS "itemsTotal",
+          COALESCE(i."itemsCompleted", 0)::int AS "itemsCompleted",
+          CASE
+            WHEN COALESCE(i."itemsTotal", 0) > 0
+              THEN (i."itemsCompleted"::float / i."itemsTotal") * 100
+            ELSE NULL
+          END AS "itemsCompletedPct",
+          COALESCE(i."quizzesPassed", 0)::int AS "quizzesPassed",
+          COALESCE(q."quizzesAttempted", 0)::int AS "quizzesAttempted",
+          q."avgQuizScorePct" AS "avgQuizScorePct",
+          COALESCE(i."readWatchCompleted", 0)::int AS "readWatchCompleted",
+          COALESCE(i."reflectionCompleted", 0)::int AS "reflectionCompleted"
         FROM learners l
         LEFT JOIN roleplay_window rw ON rw.user_id = l.id
         LEFT JOIN roleplay_lifetime rl ON rl.user_id = l.id
         LEFT JOIN courses c ON c.user_id = l.id
+        LEFT JOIN progress pr ON pr.user_id = l.id
+        LEFT JOIN items i ON i.user_id = l.id
+        LEFT JOIN quizzes q ON q.user_id = l.id
+      ),
+      aged AS (
+        SELECT j.*,
+          FLOOR(
+            EXTRACT(
+              EPOCH FROM ((now() AT TIME ZONE 'UTC') - j."lastActivityAt")
+            ) / 86400
+          )::int AS "daysSinceLastActivity"
+        FROM joined j
+      ),
+      statused AS (
+        SELECT a.*,
+          CASE
+            WHEN a."daysSinceLastActivity" IS NULL THEN 0
+            WHEN a."daysSinceLastActivity" > ${AT_RISK_WITHIN_DAYS} THEN 1
+            WHEN a."daysSinceLastActivity" > ${ACTIVE_WITHIN_DAYS} THEN 2
+            ELSE 3
+          END AS "statusRank",
+          CASE
+            WHEN a."daysSinceLastActivity" IS NULL THEN 'never_started'
+            WHEN a."daysSinceLastActivity" > ${AT_RISK_WITHIN_DAYS}
+              THEN 'dormant'
+            WHEN a."daysSinceLastActivity" > ${ACTIVE_WITHIN_DAYS}
+              THEN 'at_risk'
+            ELSE 'active'
+          END AS status
+        FROM aged a
       )
       SELECT *, COUNT(*) OVER ()::int AS "totalCount"
-      FROM joined
+      FROM statused
       WHERE ($4::text IS NULL OR name ILIKE $4 OR email ILIKE $4)
+        AND ($7::text[] IS NULL OR status = ANY($7))
       ORDER BY ${sortColumn} ${order} ${nulls}
       LIMIT $5 OFFSET $6
       `,
-      [tenantId, start, end, searchPattern, opts.limit, opts.offset],
+      [tenantId, start, end, searchPattern, opts.limit, opts.offset, statuses],
     );
 
     return {
@@ -630,13 +835,35 @@ export class TenantAnalyticsRepository {
         email: r.email,
         signupDate: r.signupDate,
         lastPracticeSessionAt: r.lastPracticeSessionAt,
+        lastActivityAt: r.lastActivityAt,
+        daysSinceLastActivity:
+          r.daysSinceLastActivity != null
+            ? Number(r.daysSinceLastActivity)
+            : null,
+        status: r.status,
         roleplaySessionsStarted: Number(r.roleplaySessionsStarted) || 0,
         roleplaySessionsCompleted: Number(r.roleplaySessionsCompleted) || 0,
         avgScore: r.avgScore != null ? Number(r.avgScore) : null,
         totalDurationMs: Number(r.totalDurationMs) || 0,
+        roleplayPointsPerMinute:
+          r.roleplayPointsPerMinute != null
+            ? Number(r.roleplayPointsPerMinute)
+            : null,
         coursesAssigned: Number(r.coursesAssigned) || 0,
         coursesStarted: Number(r.coursesStarted) || 0,
         coursesCompleted: Number(r.coursesCompleted) || 0,
+        level: Number(r.level) || 1,
+        totalXp: Number(r.totalXp) || 0,
+        itemsTotal: Number(r.itemsTotal) || 0,
+        itemsCompleted: Number(r.itemsCompleted) || 0,
+        itemsCompletedPct:
+          r.itemsCompletedPct != null ? Number(r.itemsCompletedPct) : null,
+        quizzesPassed: Number(r.quizzesPassed) || 0,
+        quizzesAttempted: Number(r.quizzesAttempted) || 0,
+        avgQuizScorePct:
+          r.avgQuizScorePct != null ? Number(r.avgQuizScorePct) : null,
+        readWatchCompleted: Number(r.readWatchCompleted) || 0,
+        reflectionCompleted: Number(r.reflectionCompleted) || 0,
       })),
       count: rows.length > 0 ? Number(rows[0].totalCount) : 0,
     };
