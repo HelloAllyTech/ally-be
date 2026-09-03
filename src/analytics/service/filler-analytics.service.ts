@@ -3,7 +3,10 @@ import {
   FillerQualityPointDto,
   FillerQualityQueryDto,
 } from '../dto/platform-analytics.dto';
-import { FillerAnalyticsRepository } from '../repository/filler-analytics.repository';
+import {
+  FillerAnalyticsRepository,
+  FillerBucket,
+} from '../repository/filler-analytics.repository';
 
 /** Days covered by each rolling range. Mirrors the language dashboard's. */
 const RANGE_DAYS: Record<string, number> = {
@@ -27,7 +30,11 @@ export class FillerAnalyticsService {
     query: FillerQualityQueryDto,
   ): Promise<FillerQualityPointDto[]> {
     const { since, until } = this.resolveWindow(query);
-    return this.repo.findingRates({ since, until });
+    return this.repo.findingRates({
+      since,
+      until,
+      bucket: query.bucket as FillerBucket | undefined,
+    });
   }
 
   /**

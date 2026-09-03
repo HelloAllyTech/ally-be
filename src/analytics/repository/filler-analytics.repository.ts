@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+/** Granularities this endpoint will truncate to. */
+export type FillerBucket = 'day' | 'week' | 'month' | 'year';
+
 /**
  * Read surface over the thinking-filler judge's rows.
  *
@@ -29,6 +32,7 @@ export class FillerAnalyticsRepository {
   async findingRates(opts: {
     since: string;
     until: string;
+    bucket?: FillerBucket;
     language?: string;
     scenarioId?: number;
   }): Promise<
@@ -53,11 +57,16 @@ export class FillerAnalyticsRepository {
       params.push(opts.scenarioId);
       filter += ` AND j."scenarioId" = $${params.length}`;
     }
+    // Whitelisted before interpolation. `bucket` reaches here from a query
+    // string, and it is the one part of this SQL that is not a bound
+    // parameter.
+    const trunc = this.resolveBucket(opts.bucket);
 
     return this.dataSource.query(
       `WITH sessions AS (
          SELECT j.id,
-                to_char(j."occurredAt", 'YYYY-MM-DD') AS bucket,
+                to_char(date_trunc('${trunc}', j."occurredAt"), 'YYYY-MM-DD')
+                  AS bucket,
                 j."fillersJudged",
                 j."repeatedFillers",
                 j."distinctPhraseRatio"
@@ -109,6 +118,20 @@ export class FillerAnalyticsRepository {
         ORDER BY s.bucket`,
       params,
     );
+  }
+
+  /**
+   * Whitelist the granularity before it is interpolated into SQL.
+   *
+   * Anything unrecognised becomes `day` rather than throwing: this is the
+   * bucketing of a chart, so a stale client sending an unknown value should
+   * get the finest honest granularity, not an error page.
+   */
+  private resolveBucket(bucket?: FillerBucket): FillerBucket {
+    if (bucket === 'week') return 'week';
+    if (bucket === 'month') return 'month';
+    if (bucket === 'year') return 'year';
+    return 'day';
   }
 
   /**
