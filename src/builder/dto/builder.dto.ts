@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayNotEmpty,
   IsArray,
@@ -300,6 +300,39 @@ export class ListBuilderSessionsQueryDto {
   @IsEnum(BuilderSessionStatus, { each: true })
   @Type(() => String)
   status?: BuilderSessionStatus[];
+
+  @ApiPropertyOptional({
+    description:
+      'Switch from the default (non-archived) feed to the archived-only view.',
+    default: false,
+  })
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true')
+  @IsBoolean()
+  archived?: boolean = false;
+
+  // limit/offset apply only to the archived view — the default feed stays
+  // unpaginated.
+  @ApiPropertyOptional({
+    description: 'Archived view page size',
+    default: 25,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 25;
+
+  @ApiPropertyOptional({
+    description: 'Archived view page offset',
+    default: 0,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  offset?: number = 0;
 }
 
 export class ListBuilderLessonsQueryDto {

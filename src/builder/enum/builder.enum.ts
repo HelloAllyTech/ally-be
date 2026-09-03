@@ -36,6 +36,17 @@ export const BUILDER_ACTIVE_STATUSES: BuilderSessionStatus[] = [
 ];
 
 /**
+ * Terminal statuses — the complement of `BUILDER_ACTIVE_STATUSES` and the set
+ * an archive is valid from. A session still spending budget or waiting on an
+ * admin must stay in the default feed rather than be hideable.
+ */
+export const BUILDER_ARCHIVABLE_STATUSES: BuilderSessionStatus[] = [
+  BuilderSessionStatus.COMPLETED,
+  BuilderSessionStatus.FAILED,
+  BuilderSessionStatus.CANCELLED,
+];
+
+/**
  * Statuses in which the PRD is frozen: a build run is reading it as its
  * source of truth, so an admin edit would silently diverge from what the
  * agent is implementing.

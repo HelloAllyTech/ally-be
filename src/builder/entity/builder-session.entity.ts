@@ -28,6 +28,9 @@ import { BuilderSessionStatus, BuilderStage } from '../enum/builder.enum';
 @Index('idx_builder_sessions_status', ['status'], {
   where: '"deletedAt" IS NULL',
 })
+@Index('idx_builder_sessions_archived_at', ['archivedAt'], {
+  where: '"deletedAt" IS NULL',
+})
 export class BuilderSession extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -125,6 +128,15 @@ export class BuilderSession extends BaseWithoutTenantEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any> | null;
+
+  /**
+   * Set when the creator archives the session from their feed. Null = active.
+   * Archiving only ever hides a session from that admin's own default feed
+   * view — it does not touch status, and never cascades to the PRD,
+   * transcript, runs, events, PRs or reports underneath it.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  archivedAt?: Date | null;
 
   @Column({ type: 'int' })
   createdBy!: number;

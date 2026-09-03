@@ -125,6 +125,13 @@ export class BuilderController {
     @Query() query: ListBuilderSessionsQueryDto,
     @CurrentUser() user: TokenUser,
   ) {
+    if (query.archived) {
+      return this.sessionService.listOwnedArchivedSessions(user.id, {
+        statuses: query.status,
+        limit: query.limit ?? 25,
+        offset: query.offset ?? 0,
+      });
+    }
     return this.sessionService.listOwnedSessions(user.id, query.status);
   }
 
@@ -167,6 +174,34 @@ export class BuilderController {
     @CurrentUser() user: TokenUser,
   ) {
     return this.sessionService.cancelSession(sessionId, user.id);
+  }
+
+  @Post('sessions/:sessionId/archive')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary: 'Hide a finished session from the default feed',
+  })
+  archiveSession(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.sessionService.archiveSession(sessionId, user.id);
+  }
+
+  @Post('sessions/:sessionId/unarchive')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary: 'Restore an archived session to the default feed',
+  })
+  unarchiveSession(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.sessionService.unarchiveSession(sessionId, user.id);
   }
 
   @Patch('sessions/:sessionId/prd')
