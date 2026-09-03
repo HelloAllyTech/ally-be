@@ -21,6 +21,35 @@ jest.mock('src/logger/logger.service', () => ({
 const FIXED_NOW = new Date('2024-06-12T12:00:00.000Z');
 const TENANT_ID = 'tenant-1';
 
+const LEARNER_ROW = {
+  id: 7,
+  name: 'Asha Rao',
+  email: 'asha@example.com',
+  signupDate: new Date('2024-03-01T00:00:00.000Z'),
+  lastPracticeSessionAt: new Date('2024-05-01T00:00:00.000Z'),
+  lastActivityAt: new Date('2024-06-10T00:00:00.000Z'),
+  daysSinceLastActivity: 2,
+  status: 'active' as const,
+  roleplaySessionsStarted: 11,
+  roleplaySessionsCompleted: 9,
+  avgScore: 72.46,
+  totalDurationMs: 3_918_000,
+  roleplayPointsPerMinute: 4.0245,
+  coursesAssigned: 3,
+  coursesStarted: 3,
+  coursesCompleted: 2,
+  level: 4,
+  totalXp: 1234,
+  itemsTotal: 24,
+  itemsCompleted: 18,
+  itemsCompletedPct: 75,
+  quizzesPassed: 8,
+  quizzesAttempted: 11,
+  avgQuizScorePct: 78.44,
+  readWatchCompleted: 6,
+  reflectionCompleted: 4,
+};
+
 describe('TenantAnalyticsService', () => {
   let service: TenantAnalyticsService;
   let repo: jest.Mocked<TenantAnalyticsRepository>;
@@ -48,6 +77,7 @@ describe('TenantAnalyticsService', () => {
       getTenantDataFloor: jest
         .fn()
         .mockResolvedValue(new Date('2024-02-20T00:00:00.000Z')),
+      getLearnerUsageRows: jest.fn().mockResolvedValue({ rows: [], count: 0 }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -215,5 +245,136 @@ describe('TenantAnalyticsService', () => {
 
     expect(result.summary.newLearnersOnboarded).toBe(6);
     expect(result.summary.totalRegisteredLearners).toBe(42);
+  });
+  describe('getLearnerUsage', () => {
+    it('passes the status facet through to the repository rather than filtering the page', async () => {
+      await service.getLearnerUsage(TENANT_ID, {
+        range: '30d',
+        status: ['dormant', 'never_started'],
+      });
+
+      expect(repo.getLearnerUsageRows).toHaveBeenCalledWith(
+        TENANT_ID,
+        new Date('2024-05-14T00:00:00.000Z'),
+        new Date('2024-06-13T00:00:00.000Z'),
+        expect.objectContaining({ statuses: ['dormant', 'never_started'] }),
+      );
+    });
+
+    it('takes status and daysSinceLastActivity from the repository instead of recomputing them', async () => {
+      // The SQL derives both (the facet has to filter before LIMIT/OFFSET, or
+      // `count` would describe the unfiltered set). If this layer recomputed
+      // them the two could disagree on screen — a row filtered in as dormant
+      // showing an "Active" chip.
+      repo.getLearnerUsageRows.mockResolvedValue({
+        rows: [
+          { ...LEARNER_ROW, daysSinceLastActivity: 38, status: 'dormant' },
+        ],
+        count: 1,
+      });
+
+      const result = await service.getLearnerUsage(TENANT_ID, { range: '30d' });
+
+      expect(result.data[0].status).toBe('dormant');
+      expect(result.data[0].daysSinceLastActivity).toBe(38);
+    });
+
+    it('derives lastActivityAt independently of the roleplay-only timestamp', async () => {
+      // A learner who only ever does quizzes has no roleplay session at all
+      // and used to read as "never started".
+      repo.getLearnerUsageRows.mockResolvedValue({
+        rows: [
+          {
+            ...LEARNER_ROW,
+            lastPracticeSessionAt: null,
+            lastActivityAt: new Date('2024-06-11T00:00:00.000Z'),
+            daysSinceLastActivity: 1,
+            status: 'active',
+            roleplaySessionsStarted: 0,
+            roleplaySessionsCompleted: 0,
+          },
+        ],
+        count: 1,
+      });
+
+      const result = await service.getLearnerUsage(TENANT_ID, { range: '30d' });
+
+      expect(result.data[0].lastPracticeSessionAt).toBeNull();
+      expect(result.data[0].status).toBe('active');
+    });
+
+    it('rounds the effort percentages to one decimal and carries the counts through', async () => {
+      repo.getLearnerUsageRows.mockResolvedValue({
+        rows: [LEARNER_ROW],
+        count: 1,
+      });
+
+      const [row] = (await service.getLearnerUsage(TENANT_ID, { range: '30d' }))
+        .data;
+
+      expect(row.roleplayPointsPerMinute).toBe(4);
+      expect(row.avgQuizScorePct).toBe(78.4);
+      expect(row.itemsCompletedPct).toBe(75);
+      expect(row.level).toBe(4);
+      expect(row.totalXp).toBe(1234);
+      expect(row.quizzesPassed).toBe(8);
+      expect(row.quizzesAttempted).toBe(11);
+      expect(row.readWatchCompleted).toBe(6);
+      expect(row.reflectionCompleted).toBe(4);
+    });
+
+    it('leaves points-per-minute null when the window holds no practice time', async () => {
+      // The repository returns null rather than 0 when durationMs is 0 — a
+      // learner with no measurable practice has nothing to rate, which is not
+      // the same as rating zero.
+      repo.getLearnerUsageRows.mockResolvedValue({
+        rows: [
+          { ...LEARNER_ROW, totalDurationMs: 0, roleplayPointsPerMinute: null },
+        ],
+        count: 1,
+      });
+
+      const [row] = (await service.getLearnerUsage(TENANT_ID, { range: '30d' }))
+        .data;
+
+      expect(row.roleplayPointsPerMinute).toBeNull();
+      expect(row.totalPracticeMinutes).toBe(0);
+    });
+
+    it('carries a negative points-per-minute through instead of flooring it', async () => {
+      // Roleplay composite scores go below zero, so the rate can too.
+      repo.getLearnerUsageRows.mockResolvedValue({
+        rows: [{ ...LEARNER_ROW, roleplayPointsPerMinute: -2.36 }],
+        count: 1,
+      });
+
+      const [row] = (await service.getLearnerUsage(TENANT_ID, { range: '30d' }))
+        .data;
+
+      expect(row.roleplayPointsPerMinute).toBe(-2.4);
+    });
+
+    it('leaves an ungraded learner null rather than reporting a zero score', async () => {
+      repo.getLearnerUsageRows.mockResolvedValue({
+        rows: [
+          {
+            ...LEARNER_ROW,
+            avgQuizScorePct: null,
+            quizzesAttempted: 0,
+            quizzesPassed: 0,
+            itemsTotal: 0,
+            itemsCompleted: 0,
+            itemsCompletedPct: null,
+          },
+        ],
+        count: 1,
+      });
+
+      const [row] = (await service.getLearnerUsage(TENANT_ID, { range: '30d' }))
+        .data;
+
+      expect(row.avgQuizScorePct).toBeNull();
+      expect(row.itemsCompletedPct).toBeNull();
+    });
   });
 });
