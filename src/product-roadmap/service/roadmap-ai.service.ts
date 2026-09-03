@@ -12,6 +12,7 @@ import {
 } from 'src/learn/util/autofill-shared.util';
 import { AiService } from 'src/ai/service/ai.service';
 
+import { RoadmapReadinessTokenService } from './roadmap-readiness-token.service';
 import { RoadmapOpportunityRepository } from '../repository/roadmap-opportunity.repository';
 import { RoadmapProductGoalRepository } from '../repository/roadmap-taxonomy.repository';
 import {
@@ -60,6 +61,7 @@ export class RoadmapAiService {
     private readonly aiService: AiService,
     private readonly opportunityRepository: RoadmapOpportunityRepository,
     private readonly goalRepository: RoadmapProductGoalRepository,
+    private readonly readinessToken: RoadmapReadinessTokenService,
   ) {
     this.client = new Anthropic({
       apiKey: this.configService.anthropic.apiKey,
@@ -96,7 +98,10 @@ export class RoadmapAiService {
    * Size failing is enough on its own to offer one — that is the case where the redraft has
    * real work to do, narrowing a set of opportunities down to the one shippable slice.
    */
-  async checkReadiness(description: string): Promise<AiReadinessResponseDto> {
+  async checkReadiness(
+    description: string,
+    productGoal?: string | null,
+  ): Promise<AiReadinessResponseDto> {
     const criteria = ROADMAP_READINESS_CRITERIA;
     const rendered = criteria
       .map((c) => `- id: ${c.id}\n  criterion: ${c.label}\n  means: ${c.hint}`)
@@ -166,6 +171,16 @@ export class RoadmapAiService {
         needsRedraft && redraft
           ? redraft.slice(0, ROADMAP_LIMITS.DESCRIPTION_MAX)
           : null,
+      // Signed here rather than assembled by the caller so the thing that graded the draft is
+      // the thing that vouches for the grade. Issued even when items failed: the token records
+      // WHAT failed, and `create` needs that both to refuse the filing and — when a manager
+      // overrides — to stamp the row with the verdicts that were overridden.
+      token: this.readinessToken.issue({
+        description,
+        productGoal,
+        failedCriteria: results.filter((r) => !r.passed).map((r) => r.id),
+        proposedEffort: effort,
+      }),
     };
   }
 

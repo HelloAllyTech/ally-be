@@ -181,10 +181,19 @@ export class RoadmapOpportunityController {
   }
 
   /**
-   * Stays on the VOTE tier: anyone who can vote can file. `ownerUserId` is the one field on the
-   * body that needs more than that, so the manage answer is resolved here and handed to the
-   * service — the same shape comment and saved-view deletion use. Cheap: getUserPermissions is
-   * Redis-cached (see RoadmapAccessService).
+   * Stays on the VOTE tier: anyone who can vote can file. Two fields on the body need more than
+   * that, so both manage answers are resolved here and handed to the service — the same shape
+   * comment and saved-view deletion use. Cheap: both halves are cached (see RoadmapAccessService).
+   *
+   * TWO different manage answers, not one. `ownerUserId` has always been gated on the
+   * permission alone (`canManage`); `readinessOverride` needs the permission AND the
+   * product_roadmap_manage toggle (`canManageBoard`), because the permission alone sits on
+   * every platform admin and separates nobody. They are resolved in parallel and kept
+   * distinct rather than collapsed — collapsing them would silently retighten owner assignment,
+   * which is a permission change and does not belong in this one.
+   *
+   * `enforceReadiness` is true here and nowhere else: this is the IDEA-filing form, the only
+   * caller whose client shows a checklist. See create()'s note for why /bug-reports opts out.
    */
   @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
   @Post('opportunities')
@@ -199,8 +208,14 @@ export class RoadmapOpportunityController {
     @CurrentUser() user: TokenUser,
     @Body() dto: CreateOpportunityDto,
   ): Promise<OpportunityResponseDto> {
+    const [canManage, canManageBoard] = await Promise.all([
+      this.access.canManage(user.id),
+      this.access.canManageBoard(user.id),
+    ]);
     return this.opportunityService.create(user.id, dto, {
-      canManage: await this.access.canManage(user.id),
+      canManage,
+      canManageBoard,
+      enforceReadiness: true,
     });
   }
 

@@ -88,6 +88,15 @@ describe('RoadmapOpportunityService — reference images', () => {
       } as unknown as Repository<BugFinding>,
       s3Service as unknown as S3Service,
       { s3: { assetsBucket: BUCKET } } as never,
+      // Never consulted here: the readiness gate applies only to the /opportunities
+      // create call, which passes enforceReadiness. A throwing stub keeps that true.
+      {
+        verify: jest.fn(() => {
+          throw new Error(
+            'readiness token verified on a path that should not gate',
+          );
+        }),
+      } as never,
     );
 
     return { service, opportunityRepository, s3Service };

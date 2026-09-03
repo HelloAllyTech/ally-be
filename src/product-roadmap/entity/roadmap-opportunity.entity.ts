@@ -272,6 +272,38 @@ export class RoadmapOpportunity extends BaseWithoutTenantEntity {
   @Column({ type: 'jsonb', nullable: true })
   reporterContext?: Record<string, any> | null;
 
+  // ── readiness override ───────────────────────────────────────────────────────
+  /**
+   * Who filed this against a failing readiness verdict, or NULL for the ordinary case: it
+   * passed, or it predates the gate.
+   *
+   * NULL is doing double duty here and that is fine — "graded green" and "filed before any of
+   * this existed" are both "nothing to explain", and no backfill can honestly tell them apart
+   * for the rows already on the board. What matters is that a row someone waved through is
+   * distinguishable from one the checklist passed, which it now is.
+   *
+   * Integer users.id with no FK, per the convention documented on `createdBy` below.
+   */
+  @Column({ type: 'int', nullable: true })
+  readinessOverriddenBy?: number | null;
+
+  /** When that override was exercised. Set together with the column above, always. */
+  @Column({ type: 'timestamp', nullable: true })
+  readinessOverriddenAt?: Date | null;
+
+  /**
+   * The criterion ids that were red when the override was exercised — the size row included, as
+   * the literal id `size`.
+   *
+   * Stored rather than recomputed because it is not recomputable: the verdicts came from a
+   * model reading a draft at a moment, the criteria list is expected to change, and the
+   * description can be edited afterwards. Without this, "overridden" is a bare flag and nobody
+   * reviewing the board later can tell whether a curator waved through a missing user group or
+   * a draft the grader had simply misread.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  readinessFailedCriteria?: string[] | null;
+
   // ── audit ────────────────────────────────────────────────────────────────────
   // Integer users.id with NO foreign key, per ally-be convention. A removed Ally user
   // therefore leaves an unresolvable createdBy; response mappers fall back to a placeholder

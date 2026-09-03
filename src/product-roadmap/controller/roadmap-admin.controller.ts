@@ -503,16 +503,24 @@ export class RoadmapAdminController {
   }
 
   /**
-   * Grade a draft. One verdict per criterion, and every one of them must be green before the
-   * admin drawer enables "File opportunity" — so this fails closed by construction; see
-   * RoadmapAiService.checkReadiness.
+   * Grade a draft. One verdict per criterion, and every one of them must be green before it can
+   * be filed — so this fails closed by construction; see RoadmapAiService.checkReadiness.
+   *
+   * The response carries the verdict SIGNED (`token`), and `POST /opportunities` is what
+   * enforces it: the checklist used to be gated only by the admin drawer's `canSave`, which
+   * made it a discipline the client kept rather than a rule. See RoadmapReadinessTokenService.
+   *
+   * VOTE tier, matching who may file: a gate you cannot ask about is a gate nobody can pass.
    */
   @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
   @Post('ai/readiness')
   @ApiOperation({ summary: 'Grade a draft against the readiness checklist' })
   @ApiResponse({ status: 201, type: AiReadinessResponseDto })
   readiness(@Body() dto: AiDraftDto): Promise<AiReadinessResponseDto> {
-    return this.aiService.checkReadiness(dto.description);
+    // The goal is passed through so the signed verdict is BOUND to it — the drawer treats a
+    // goal change as invalidating the verdicts, and that rule is now enforced server-side. The
+    // grader itself still reads the description alone; see RoadmapReadinessTokenService.
+    return this.aiService.checkReadiness(dto.description, dto.productGoal);
   }
 
   /**

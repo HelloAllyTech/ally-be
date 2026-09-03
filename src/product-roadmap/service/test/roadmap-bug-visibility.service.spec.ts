@@ -74,6 +74,16 @@ describe('RoadmapOpportunityService — bugs stay off the board', () => {
       // Images play no part in bug visibility; these satisfy the constructor.
       { parseS3Url: jest.fn() } as never,
       { s3: { assetsBucket: 'ally-assets' } } as never,
+      // Never consulted on these paths: the readiness gate applies only to the
+      // /opportunities create call, which passes enforceReadiness. A throwing stub keeps
+      // that true — if one of these paths starts verifying tokens, the test says so.
+      {
+        verify: jest.fn(() => {
+          throw new Error(
+            'readiness token verified on a path that should not gate',
+          );
+        }),
+      } as never,
     );
 
     return { service, emit, bugFindingRepository };

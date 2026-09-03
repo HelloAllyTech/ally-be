@@ -39,6 +39,7 @@ import {
 } from './repository/roadmap-strategy.repository';
 
 import { RoadmapAccessService } from './service/roadmap-access.service';
+import { RoadmapReadinessTokenService } from './service/roadmap-readiness-token.service';
 import { RoadmapAiService } from './service/roadmap-ai.service';
 import { RoadmapAllocationService } from './service/roadmap-allocation.service';
 import { RoadmapCommentService } from './service/roadmap-comment.service';
@@ -153,6 +154,9 @@ import { AwsModule } from 'src/aws/aws.module';
     // services
     RoadmapNotificationService,
     RoadmapAccessService,
+    // Signs the readiness verdict on the way out of ai/readiness and verifies it on the way
+    // into POST /opportunities — the readiness gate's server-side half.
+    RoadmapReadinessTokenService,
     RoadmapVectorService,
     RoadmapImportService,
     RoadmapOpportunityService,

@@ -3,6 +3,7 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsNotEmpty,
   IsNumber,
   IsUrl,
@@ -336,6 +337,49 @@ export class CreateOpportunityDto {
   @IsOptional()
   @IsInt()
   ownerUserId?: number | null;
+
+  /**
+   * The `token` from this draft's `POST ai/readiness` response, verbatim.
+   *
+   * This is what makes the readiness checklist a real gate rather than a discipline the admin
+   * drawer chose to keep: it proves the draft being filed is the draft that was graded, and
+   * carries what the grader said about it. See RoadmapReadinessTokenService.
+   *
+   * Optional in the DTO, and not yet optional in spirit — ROADMAP_READINESS_REQUIRE_TOKEN says
+   * whether an omitted token is refused, and it is false for exactly one release so that the
+   * admin bundle already in production keeps working while ally-be deploys ahead of it. A token
+   * that IS sent is always verified.
+   */
+  @ApiPropertyOptional({
+    description:
+      'The `token` from POST ai/readiness for this exact draft. Required once the readiness ' +
+      'gate is fully enforced; a tampered, expired or stale token is always a 400.',
+  })
+  @IsOptional()
+  @IsString()
+  readinessToken?: string;
+
+  /**
+   * File despite a failing readiness verdict. Requires roadmap MANAGE access — the permission
+   * AND the product_roadmap_manage toggle — and is a 403 without it.
+   *
+   * BOTH halves, because the permission alone separates nobody: since the role collapse,
+   * EDIT_PRODUCT_ROADMAP sits on every platform admin, and the per-user toggle is the entire
+   * distinction between a curator and a read-only admin. Checking only the permission here
+   * would hand the override to every platform admin, which is not what it is for.
+   *
+   * Ignored (not an error) when the verdict passed anyway: an override of nothing is not a
+   * failure, and refusing it would make the client responsible for knowing whether it needed
+   * to ask — which is the reasoning it should not have to do twice.
+   */
+  @ApiPropertyOptional({
+    description:
+      'File despite failing readiness items. Requires edit:admin:product-roadmap plus the ' +
+      'product_roadmap_manage toggle (403 otherwise). Recorded on the row.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  readinessOverride?: boolean;
 
   /**
    * Reference images, attached at filing time.

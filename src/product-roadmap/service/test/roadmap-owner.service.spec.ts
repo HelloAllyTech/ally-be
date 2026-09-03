@@ -18,6 +18,7 @@ import { RoadmapVectorService } from '../roadmap-vector.service';
 import { RoadmapStrategyGoalService } from '../roadmap-strategy-goal.service';
 import { RoadmapGoalImpactService } from '../roadmap-goal-impact.service';
 import { RoadmapNotificationService } from '../roadmap-notification.service';
+import { RoadmapReadinessTokenService } from '../roadmap-readiness-token.service';
 import {
   CreateOpportunityDto,
   ListOpportunitiesQueryDto,
@@ -120,6 +121,18 @@ describe('RoadmapOpportunityService — owners', () => {
         {
           provide: AppConfigService,
           useValue: { s3: { assetsBucket: 'ally-assets' } },
+        },
+        // These calls do not pass `enforceReadiness`, so the gate must not run at all — a
+        // throwing stub is the assertion that it does not.
+        {
+          provide: RoadmapReadinessTokenService,
+          useValue: {
+            verify: jest.fn(() => {
+              throw new Error(
+                'readiness token verified on a path that should not gate',
+              );
+            }),
+          },
         },
       ],
     }).compile();

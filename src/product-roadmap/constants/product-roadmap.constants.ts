@@ -288,6 +288,53 @@ export const ROADMAP_READINESS_CRITERIA = [
 export const ROADMAP_FILEABLE_EFFORTS = ['s', 'm'] as const;
 
 /**
+ * How long a signed readiness verdict stays spendable.
+ *
+ * Generous rather than tight: the drawer stays open while someone reads five reasons, considers
+ * the rewrite, corrects a size and picks an owner, and every expiry costs a legitimate filer a
+ * re-run of a model call that will say the same thing. Short enough that a token cannot be
+ * hoarded and replayed against a draft written next week.
+ *
+ * Expiry fails CLOSED — an expired token is refused, not waved through — so the cost of being
+ * wrong here is an annoyance, never a hole. See RoadmapReadinessTokenService.
+ */
+export const ROADMAP_READINESS_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * Domain-separation label mixed into the readiness signing key.
+ *
+ * The key is DERIVED from JWT_ACCESS_SECRET rather than being a new env var of its own: a new
+ * secret means an infra change in three environments before this can ship at all, and a secret
+ * that is missing in one of them fails filings closed there. Deriving keeps the deploy to code.
+ *
+ * The label is what stops that from being secret reuse. A readiness token and an access token
+ * are signed with different keys — HMAC(jwt_secret, label) is not the jwt secret — so a readiness
+ * token can never be presented as an access token, or the reverse, whatever a future bug does
+ * with either verifier.
+ *
+ * Bump the version suffix to invalidate every token in flight (a criteria change that must not
+ * be spendable against old verdicts, say). Every open drawer then needs one more click of
+ * "Check readiness", which is the intended cost.
+ */
+export const ROADMAP_READINESS_TOKEN_KEY_LABEL = 'roadmap-readiness-token-v1';
+
+/**
+ * Whether `POST /opportunities` REFUSES a filing that carries no readiness token at all.
+ *
+ * False for one release, deliberately. ally-be deploys before any client (see the deploy
+ * ordering note in the wiki), so the moment this ships, the admin bundle in production is the
+ * previous one — which sends no token. Refusing it would take filing down for everyone until
+ * the web release lands, to enforce a rule whose whole purpose is tidiness.
+ *
+ * So the rollout is: ship this false, ship the client that sends tokens, watch for the
+ * `filed with no readiness token` warning to stop appearing in production logs, then flip it
+ * true in a follow-up release. Until it is true, a caller who simply omits the token is not
+ * gated — a TAMPERED or STALE or EXPIRED token is always refused, and the override permission
+ * below is enforced from day one either way.
+ */
+export const ROADMAP_READINESS_REQUIRE_TOKEN = false;
+
+/**
  * Marker raised by roadmap_enforce_monthly_cap(). The trigger's SQLSTATE is P0001, which
  * every RAISE EXCEPTION in the database shares, so the service keys off this prefix to
  * distinguish a cap breach from an unrelated failure. Changing it requires changing
