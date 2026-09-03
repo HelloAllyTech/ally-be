@@ -12,6 +12,8 @@ import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GithubActionsService } from 'src/bug-hunter/service/github-actions.service';
+import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderBuildRun } from '../entity/builder-build-run.entity';
 import { BuilderSessionRepository } from '../repository/builder-session.repository';
@@ -97,6 +99,7 @@ export class BuilderBuildService {
     @Inject(forwardRef(() => BuilderExemplarService))
     private readonly exemplarService: BuilderExemplarService,
     private readonly epicService: BuilderEpicService,
+    private readonly llmUsage: LlmUsageService,
   ) {}
 
   /**
@@ -1031,6 +1034,75 @@ export class BuilderBuildService {
     );
   }
 
+  /**
+   * One `llm_usage` row per engine invocation.
+   *
+   * The runner reports `modelUsage` keyed by model id, which is the shape the
+   * engine emits when a phase used more than one (a Sonnet coder that spawned a
+   * Haiku subagent bills both). One row each, so the store's per-model
+   * aggregates stay true rather than attributing a phase's whole spend to the
+   * tier that led it.
+   */
+  private async recordBuildUsage(
+    run: BuilderBuildRun,
+    cost: {
+      phase?: string;
+      model?: string;
+      modelUsage?: Record<string, any>;
+    },
+  ): Promise<void> {
+    const phase = cost.phase ?? 'build';
+    const usage = cost.modelUsage ?? {};
+
+    // Keyed by model id when the engine gives us that; otherwise the one model
+    // the phase declared, so a legacy `usage` blob still lands somewhere.
+    const perModel = Object.entries(usage).filter(
+      ([, value]) => value && typeof value === 'object',
+    );
+    const entries = perModel.length
+      ? perModel
+      : cost.model
+        ? [[cost.model, usage] as [string, any]]
+        : [];
+
+    for (const [model, stats] of entries) {
+      const input = Number(stats?.inputTokens ?? stats?.input_tokens ?? 0) || 0;
+      const output =
+        Number(stats?.outputTokens ?? stats?.output_tokens ?? 0) || 0;
+      const cacheRead =
+        Number(
+          stats?.cacheReadInputTokens ?? stats?.cache_read_input_tokens ?? 0,
+        ) || 0;
+      const cacheWrite =
+        Number(
+          stats?.cacheCreationInputTokens ??
+            stats?.cache_creation_input_tokens ??
+            0,
+        ) || 0;
+
+      // A phase that reported nothing measurable is not worth a row.
+      if (!input && !output && !cacheRead && !cacheWrite) continue;
+
+      await this.llmUsage.record({
+        provider: 'anthropic',
+        model: String(model),
+        task: LlmTask.BUILDER_BUILD,
+        promptTokens: input,
+        completionTokens: output,
+        totalTokens: input + output,
+        // Both counters: with only one, the real spend is unknowable — a cache
+        // read and a cache write cost very different amounts.
+        cachedTokens: cacheRead,
+        cacheCreationTokens: cacheWrite,
+        metadata: {
+          builderSessionId: run.sessionId,
+          builderRunId: run.id,
+          phase,
+        },
+      });
+    }
+  }
+
   private async failRun(run: BuilderBuildRun, message: string): Promise<void> {
     await this.settleRun(run, BuilderRunStatus.FAILED, message);
   }
@@ -1201,6 +1273,16 @@ export class BuilderBuildService {
       durationApiMs: positive(cost.durationApiMs),
       numTurns: positive(cost.numTurns),
     };
+
+    // Into the unified usage store as well. `LlmTask.BUILDER_BUILD` was declared
+    // when the module was written and never had a writer, so the coding half —
+    // by far the most expensive thing Builder does — was invisible to every
+    // cross-service token and cost query, visible only as a dollar figure on a
+    // run row. Recorded per phase so planner, coder and verifier are separable.
+    //
+    // Best-effort by construction: `record` swallows its own errors, and this is
+    // deliberately not awaited. Telemetry must never fail a run's billing.
+    void this.recordBuildUsage(run, cost);
 
     const runTotal = Object.values(phases).reduce(
       (sum, phase) => sum + (Number.isFinite(phase.usd) ? phase.usd : 0),

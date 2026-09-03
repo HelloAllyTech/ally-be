@@ -65,12 +65,13 @@ export class BuilderMetricsService {
    */
   async pipelineHealth(windowDays = 30): Promise<BuilderPipelineHealth> {
     const days = Math.min(365, Math.max(7, Math.floor(windowDays) || 30));
-    const [phases, gates, outcomes] = await Promise.all([
+    const [phases, gates, outcomes, loop] = await Promise.all([
       this.phaseTimings(days),
       this.gatePassRates(days),
       this.runOutcomes(days),
+      this.loopShape(days),
     ]);
-    return { windowDays: days, phases, gates, outcomes };
+    return { windowDays: days, phases, gates, outcomes, loop };
   }
 
   /**
@@ -134,17 +135,36 @@ export class BuilderMetricsService {
   private async gatePassRates(days: number): Promise<BuilderPipelineGate[]> {
     const rows = await this.dataSource.query(
       `
-      SELECT event.payload->>'repo'                           AS "repo",
-             event.payload->>'kind'                           AS "kind",
+      WITH ordered AS (
+        SELECT event."runId",
+               event.payload->>'repo'  AS repo,
+               event.payload->>'kind'  AS kind,
+               (event.payload->>'passed')::boolean AS passed,
+               -- Which attempt within its run this result belongs to. The gate
+               -- runs again after every remediation, so counting all results
+               -- together blurs "passed first time" into "passed eventually",
+               -- and those call for opposite fixes.
+               ROW_NUMBER() OVER (
+                 PARTITION BY event."runId",
+                              event.payload->>'repo',
+                              event.payload->>'kind'
+                 ORDER BY event.seq
+               ) AS attempt
+          FROM builder_build_events event
+         WHERE event.type = 'gate_result'
+           AND event."createdAt" >= NOW() - ($1 || ' days')::interval
+           AND event.payload->>'repo' IS NOT NULL
+      )
+      SELECT repo                                             AS "repo",
+             kind                                             AS "kind",
              COUNT(*)::int                                    AS "results",
-             SUM(CASE WHEN (event.payload->>'passed')::boolean
-                      THEN 1 ELSE 0 END)::int                 AS "passed"
-        FROM builder_build_events event
-       WHERE event.type = 'gate_result'
-         AND event."createdAt" >= NOW() - ($1 || ' days')::interval
-         AND event.payload->>'repo' IS NOT NULL
-       GROUP BY event.payload->>'repo', event.payload->>'kind'
-       ORDER BY "repo", "kind"
+             SUM(CASE WHEN passed THEN 1 ELSE 0 END)::int     AS "passed",
+             COUNT(*) FILTER (WHERE attempt = 1)::int         AS "firstAttempts",
+             SUM(CASE WHEN attempt = 1 AND passed
+                      THEN 1 ELSE 0 END)::int                 AS "firstAttemptsPassed"
+        FROM ordered
+       GROUP BY repo, kind
+       ORDER BY repo, kind
       `,
       [String(days)],
     );
@@ -152,12 +172,20 @@ export class BuilderMetricsService {
     return rows.map((row: Record<string, any>) => {
       const results = Number(row.results ?? 0);
       const passed = Number(row.passed ?? 0);
+      const firstAttempts = Number(row.firstAttempts ?? 0);
+      const firstAttemptsPassed = Number(row.firstAttemptsPassed ?? 0);
       return {
         repo: String(row.repo),
         kind: String(row.kind ?? 'unknown'),
         results,
         passed,
         passRate: results > 0 ? passed / results : null,
+        firstAttempts,
+        firstAttemptsPassed,
+        // The one that actually tracks whether the coder is shipping work it
+        // ran: passing eventually only says remediation works.
+        firstAttemptPassRate:
+          firstAttempts > 0 ? firstAttemptsPassed / firstAttempts : null,
       };
     });
   }
@@ -186,6 +214,58 @@ export class BuilderMetricsService {
       runs: Number(row.runs ?? 0),
       medianRunnerMinutes: this.numberOrNull(row.medianRunnerMinutes),
     }));
+  }
+
+  /**
+   * How many times round the loop a run goes.
+   *
+   * Code iterations and verify rounds are the two things the honest loop can
+   * spend four coder invocations and three verifier invocations on. If the
+   * median run needs two of either, the plan or the prompts are wrong in a way
+   * no amount of runner tuning will fix — this is the number that says so.
+   */
+  private async loopShape(days: number): Promise<BuilderPipelineLoop> {
+    const rows = await this.dataSource.query(
+      `
+      WITH per_run AS (
+        SELECT run.id,
+               -- Phase keys are code-1..4 and verify-1..3, so the highest
+               -- suffix present is how far round the loop that run went.
+               COALESCE(MAX(CASE WHEN phase.key LIKE 'code-%'
+                                 THEN SPLIT_PART(phase.key, '-', 2)::int END), 0)
+                 AS code_iterations,
+               COALESCE(MAX(CASE WHEN phase.key LIKE 'verify-%'
+                                 THEN SPLIT_PART(phase.key, '-', 2)::int END), 0)
+                 AS verify_rounds
+          FROM builder_build_runs run
+          CROSS JOIN LATERAL
+            jsonb_each(COALESCE(run.cost->'phases', '{}'::jsonb)) AS phase
+         WHERE run."createdAt" >= NOW() - ($1 || ' days')::interval
+         GROUP BY run.id
+      )
+      SELECT COUNT(*)::int                                     AS "runs",
+             PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY code_iterations
+             )                                                 AS "medianCodeIterations",
+             PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY verify_rounds
+             )                                                 AS "medianVerifyRounds",
+             COUNT(*) FILTER (WHERE code_iterations > 1)::int  AS "runsNeedingRemediation"
+        FROM per_run
+      `,
+      [String(days)],
+    );
+
+    const row = rows[0] ?? {};
+    const runs = Number(row.runs ?? 0);
+    return {
+      runs,
+      medianCodeIterations: this.numberOrNull(row.medianCodeIterations),
+      medianVerifyRounds: this.numberOrNull(row.medianVerifyRounds),
+      runsNeedingRemediation: Number(row.runsNeedingRemediation ?? 0),
+      remediationRate:
+        runs > 0 ? Number(row.runsNeedingRemediation ?? 0) / runs : null,
+    };
   }
 
   /**
@@ -441,6 +521,9 @@ export interface BuilderPipelineGate {
   results: number;
   passed: number;
   passRate: number | null;
+  firstAttempts: number;
+  firstAttemptsPassed: number;
+  firstAttemptPassRate: number | null;
 }
 
 export interface BuilderPipelineOutcome {
@@ -450,9 +533,18 @@ export interface BuilderPipelineOutcome {
   medianRunnerMinutes: number | null;
 }
 
+export interface BuilderPipelineLoop {
+  runs: number;
+  medianCodeIterations: number | null;
+  medianVerifyRounds: number | null;
+  runsNeedingRemediation: number;
+  remediationRate: number | null;
+}
+
 export interface BuilderPipelineHealth {
   windowDays: number;
   phases: BuilderPipelinePhase[];
   gates: BuilderPipelineGate[];
   outcomes: BuilderPipelineOutcome[];
+  loop: BuilderPipelineLoop;
 }

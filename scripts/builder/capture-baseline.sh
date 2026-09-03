@@ -25,8 +25,17 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 commands_json=/tmp/builder-repo-commands.json
 if ! curl -fsS "${API_ROOT}/repo-commands" \
   -H "x-api-key: ${ALLY_BE_API_KEY}" -o "$commands_json"; then
-  echo "Could not fetch repo commands; skipping baseline capture." >&2
-  exit 0
+  # Retry before believing it: a baseline that is merely absent is not free.
+  # `gate-verdict.mjs` counts every failure as new when there is no baseline, so
+  # one flaky curl here turns a repo's pre-existing red suite into a blocked
+  # gate and a remediation round spent "fixing" something the run did not break.
+  sleep 5
+  if ! curl -fsS "${API_ROOT}/repo-commands" \
+    -H "x-api-key: ${ALLY_BE_API_KEY}" -o "$commands_json"; then
+    echo "Could not fetch repo commands after a retry; no baseline will exist," >&2
+    echo "so every test failure at gate time will count as new." >&2
+    exit 1
+  fi
 fi
 
 for dir in repos/*/; do

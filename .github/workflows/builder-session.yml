@@ -211,5 +211,6 @@ jobs:
             /tmp/builder-gate/*.json
             /tmp/builder-gate-*.log
             /tmp/builder-baseline/*.json
+            /tmp/builder-baseline-*.log
           if-no-files-found: ignore
           retention-days: 14

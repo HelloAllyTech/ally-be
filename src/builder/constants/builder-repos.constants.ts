@@ -34,7 +34,10 @@ export const BUILDER_REPOS: BuilderRepoDefinition[] = [
     repo: 'ally-be',
     description:
       'NestJS + TypeORM backend owning the primary Postgres database, admin APIs, auth and permissions.',
-    test: 'npm test',
+    // --forceExit --detectOpenHandles for the same reason test.yml passes them:
+    // this suite leaks handles, and without the flags a leaked one hangs the
+    // gate until the 120-minute job timeout instead of reporting a result.
+    test: 'npm test -- --forceExit --detectOpenHandles',
     lint: 'npm run lint',
     typecheck: 'npm run build',
     e2eCapable: true,

@@ -64,6 +64,25 @@ export function extractFailures(log) {
     if (lintish) {
       found.add(`${lintish[1]}:${lintish[2]} ${lintish[3].slice(0, 80).trim()}`);
     }
+
+    // nx run-many summary. Without this an ally-web failure names nothing, so
+    // the gate treats it as unattributable and blocks even when the identical
+    // failure was already in the baseline — which is the whole point of having
+    // a baseline. Two shapes, both emitted by `nx run-many`:
+    //
+    //   "✖  nx run ally-admin-dashboard:test"
+    //   "   ✖  2/3 failed"                        (the tally, deliberately skipped)
+    //   "> nx run ally-admin-dashboard:test  [existing outputs match]"
+    const nxTarget = line.match(/^\s*[✖✗]\s+nx run\s+(\S+)/);
+    if (nxTarget) found.add(nxTarget[1]);
+
+    // "Failed tasks: ally-admin-dashboard:test, ally-helpline-dashboard:test"
+    const nxFailedList = line.match(/^\s*Failed tasks?:\s*(.+)$/i);
+    if (nxFailedList) {
+      for (const task of nxFailedList[1].split(/[,\s]+/)) {
+        if (task.includes(':')) found.add(task.trim());
+      }
+    }
   }
 
   return [...found];

@@ -31,7 +31,7 @@ describe('BuilderMetricsService', () => {
   describe('pipelineHealth', () => {
     it('keeps an unmeasured phase unmeasured rather than instant', async () => {
       dataSource.query.mockImplementation((sql: string) => {
-        if (sql.includes('jsonb_each')) {
+        if (sql.includes('phase.key') && !sql.includes('per_run')) {
           return Promise.resolve([
             {
               phase: 'plan',
@@ -64,7 +64,7 @@ describe('BuilderMetricsService', () => {
 
     it('reads numeric strings back as numbers', async () => {
       dataSource.query.mockImplementation((sql: string) => {
-        if (sql.includes('jsonb_each')) {
+        if (sql.includes('phase.key') && !sql.includes('per_run')) {
           return Promise.resolve([
             {
               phase: 'code-1',
@@ -108,6 +108,61 @@ describe('BuilderMetricsService', () => {
       expect(gates[0].passRate).toBe(0.5);
       // Zero results is not a 0% pass rate — it is no evidence either way.
       expect(gates[1].passRate).toBeNull();
+    });
+
+    it('separates passing first time from passing eventually', async () => {
+      dataSource.query.mockImplementation((sql: string) => {
+        if (sql.includes('gate_result')) {
+          return Promise.resolve([
+            {
+              repo: 'ally-be',
+              kind: 'test',
+              results: 2,
+              passed: 1,
+              firstAttempts: 1,
+              firstAttemptsPassed: 0,
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      });
+
+      const [gate] = (await service.pipelineHealth(30)).gates;
+
+      // Passed eventually, after a remediation round…
+      expect(gate.passRate).toBe(0.5);
+      // …but never first time, which is the number that says the coder shipped
+      // work it had not run. Conflating the two hides exactly that.
+      expect(gate.firstAttemptPassRate).toBe(0);
+    });
+
+    it('reports the loop shape, and says nothing when no run has phases', async () => {
+      dataSource.query.mockImplementation((sql: string) => {
+        if (sql.includes('per_run')) {
+          return Promise.resolve([
+            {
+              runs: 4,
+              medianCodeIterations: '2',
+              medianVerifyRounds: '1',
+              runsNeedingRemediation: 3,
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      });
+
+      const { loop } = await service.pipelineHealth(30);
+      expect(loop.medianCodeIterations).toBe(2);
+      expect(loop.medianVerifyRounds).toBe(1);
+      expect(loop.remediationRate).toBe(0.75);
+    });
+
+    it('does not divide by zero when the window holds no runs', async () => {
+      dataSource.query.mockResolvedValue([]);
+      const { loop } = await service.pipelineHealth(30);
+      expect(loop.runs).toBe(0);
+      expect(loop.remediationRate).toBeNull();
+      expect(loop.medianVerifyRounds).toBeNull();
     });
 
     it('clamps the window to a sane range', async () => {

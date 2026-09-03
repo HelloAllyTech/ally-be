@@ -70,6 +70,7 @@ describe('BuilderBuildService', () => {
     markStatus: jest.Mock;
     listBySession: jest.Mock;
   };
+  let llmUsage: { record: jest.Mock };
 
   beforeEach(() => {
     github = {
@@ -137,6 +138,8 @@ describe('BuilderBuildService', () => {
       markStatus: jest.fn(),
       listBySession: jest.fn().mockResolvedValue([]),
     };
+    // Build-half spend goes to the unified usage store as well as the run row.
+    llmUsage = { record: jest.fn().mockResolvedValue(undefined) };
 
     service = new BuilderBuildService(
       {
@@ -159,6 +162,7 @@ describe('BuilderBuildService', () => {
       redisService as any,
       exemplarService as any,
       epicService as any,
+      llmUsage as any,
     );
   });
 
@@ -578,6 +582,77 @@ describe('BuilderBuildService', () => {
         { id: 'session-1' },
         { totalCostUsd: '5.0000' },
       );
+    });
+
+    it('bills the unified usage store per model, not just the run row', async () => {
+      runRepository.findOne.mockResolvedValue({
+        id: 'run-1',
+        sessionId: 'session-1',
+        cost: null,
+        costUsd: '0',
+      });
+
+      await service.recordRunCost(
+        { id: 'run-1', sessionId: 'session-1' } as any,
+        {
+          phase: 'code-1',
+          model: 'claude-sonnet-5',
+          totalCostUsd: 8.92,
+          modelUsage: {
+            'claude-sonnet-5': {
+              inputTokens: 276,
+              outputTokens: 64655,
+              cacheReadInputTokens: 23383748,
+              cacheCreationInputTokens: 243366,
+            },
+            // A subagent the coder spawned. Its spend belongs to its own model,
+            // or the store's per-model aggregates lie.
+            'claude-haiku-4-5': { inputTokens: 17892, outputTokens: 15 },
+          },
+        },
+      );
+
+      expect(llmUsage.record).toHaveBeenCalledTimes(2);
+      expect(llmUsage.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'claude-sonnet-5',
+          task: 'builder_build',
+          promptTokens: 276,
+          completionTokens: 64655,
+          // Both counters: a cache read and a cache write cost very different
+          // amounts, so one number cannot express the spend.
+          cachedTokens: 23383748,
+          cacheCreationTokens: 243366,
+          metadata: expect.objectContaining({
+            phase: 'code-1',
+            builderRunId: 'run-1',
+          }),
+        }),
+      );
+      expect(llmUsage.record).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'claude-haiku-4-5' }),
+      );
+    });
+
+    it('writes no usage row for a phase that measured nothing', async () => {
+      runRepository.findOne.mockResolvedValue({
+        id: 'run-1',
+        sessionId: 'session-1',
+        cost: null,
+        costUsd: '0',
+      });
+
+      await service.recordRunCost(
+        { id: 'run-1', sessionId: 'session-1' } as any,
+        {
+          phase: 'plan',
+          model: 'claude-opus-5',
+          totalCostUsd: 2,
+          modelUsage: { 'claude-opus-5': { inputTokens: 0, outputTokens: 0 } },
+        },
+      );
+
+      expect(llmUsage.record).not.toHaveBeenCalled();
     });
 
     it('replaces a re-reported phase instead of double counting it', async () => {
