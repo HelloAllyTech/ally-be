@@ -19,6 +19,7 @@ import {
   AuthorizationEvents,
   UserRoleAssignedEventParams,
 } from 'src/authorization/type/authorization-event.type';
+import { LevelUpEvent, PROGRESS_EVENTS } from 'src/progress/progress.constants';
 
 @Injectable()
 export class BadgeEventConsumer {
@@ -112,6 +113,11 @@ export class BadgeEventConsumer {
       userId,
       tenantId,
     );
+  }
+
+  @OnEvent(PROGRESS_EVENTS.LEVEL_UP, { async: true })
+  async handleProgressLevelUp({ userId, level }: LevelUpEvent) {
+    await this.badgeAwardService.awardXpLevelBadgeByUserId(userId, level);
   }
 
   @OnEvent(AuthorizationEvents.USER_ROLE_ASSIGNED, { async: true })

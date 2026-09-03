@@ -22,6 +22,7 @@ import {
   previousWindow,
   resolveAnalyticsWindow,
 } from '../util/analytics-window.util';
+import { withReportingQuerySlot } from '../../common/util/reporting-query-slots.util';
 import {
   AiServiceName,
   computeServiceCostUsd,
@@ -119,45 +120,81 @@ export class HighlightsAnalyticsService {
       simsByBucket,
       usageRows,
     ] = await Promise.all([
-      this.repo.getActiveOrgCount(window.start, window.endExclusive),
-      this.repo.getTopOrgsByCompletedSims(window.start, window.endExclusive),
-      this.repo.getPracticeMinutesByBucket(
-        window.start,
-        window.endExclusive,
-        window.bucket,
-        tenantId,
+      withReportingQuerySlot(() =>
+        this.repo.getActiveOrgCount(window.start, window.endExclusive),
       ),
-      this.repo.getPlayTimeByBucket(
-        window.start,
-        window.endExclusive,
-        window.bucket,
-        tenantId,
+      withReportingQuerySlot(() =>
+        this.repo.getTopOrgsByCompletedSims(window.start, window.endExclusive),
       ),
-      this.repo.getPlayTimeOverall(window.start, window.endExclusive, tenantId),
-      this.repo.getQualityOverall(window.start, window.endExclusive, tenantId),
-      this.repo.getCsatTrendByBucket(
-        window.start,
-        window.endExclusive,
-        window.bucket,
-        tenantId,
+      withReportingQuerySlot(() =>
+        this.repo.getPracticeMinutesByBucket(
+          window.start,
+          window.endExclusive,
+          window.bucket,
+          tenantId,
+        ),
       ),
-      this.repo.getCsatOverall(window.start, window.endExclusive, tenantId),
-      this.repo.getTrackFunnelCounts(
-        window.start,
-        window.endExclusive,
-        tenantId,
+      withReportingQuerySlot(() =>
+        this.repo.getPlayTimeByBucket(
+          window.start,
+          window.endExclusive,
+          window.bucket,
+          tenantId,
+        ),
       ),
-      this.repo.getQuizPassCounts(window.start, window.endExclusive, tenantId),
-      this.repo.getCompletedSimulationsByBucket(
-        window.start,
-        window.endExclusive,
-        window.bucket,
-        tenantId,
+      withReportingQuerySlot(() =>
+        this.repo.getPlayTimeOverall(
+          window.start,
+          window.endExclusive,
+          tenantId,
+        ),
       ),
-      this.repo.getAiUsageByBucket(
-        window.start,
-        window.endExclusive,
-        window.bucket,
+      withReportingQuerySlot(() =>
+        this.repo.getQualityOverall(
+          window.start,
+          window.endExclusive,
+          tenantId,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getCsatTrendByBucket(
+          window.start,
+          window.endExclusive,
+          window.bucket,
+          tenantId,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getCsatOverall(window.start, window.endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getTrackFunnelCounts(
+          window.start,
+          window.endExclusive,
+          tenantId,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getQuizPassCounts(
+          window.start,
+          window.endExclusive,
+          tenantId,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getCompletedSimulationsByBucket(
+          window.start,
+          window.endExclusive,
+          window.bucket,
+          tenantId,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getAiUsageByBucket(
+          window.start,
+          window.endExclusive,
+          window.bucket,
+        ),
       ),
     ]);
 
@@ -298,28 +335,46 @@ export class HighlightsAnalyticsService {
       simsByBucket,
       usageRows,
     ] = await Promise.all([
-      this.repo.getActiveOrgCount(prev.start, prev.endExclusive),
-      this.repo.getPracticeMinutesByBucket(
-        prev.start,
-        prev.endExclusive,
-        window.bucket,
-        tenantId,
+      withReportingQuerySlot(() =>
+        this.repo.getActiveOrgCount(prev.start, prev.endExclusive),
       ),
-      this.repo.getPlayTimeOverall(prev.start, prev.endExclusive, tenantId),
-      this.repo.getQualityOverall(prev.start, prev.endExclusive, tenantId),
-      this.repo.getCsatOverall(prev.start, prev.endExclusive, tenantId),
-      this.repo.getTrackFunnelCounts(prev.start, prev.endExclusive, tenantId),
-      this.repo.getQuizPassCounts(prev.start, prev.endExclusive, tenantId),
-      this.repo.getCompletedSimulationsByBucket(
-        prev.start,
-        prev.endExclusive,
-        window.bucket,
-        tenantId,
+      withReportingQuerySlot(() =>
+        this.repo.getPracticeMinutesByBucket(
+          prev.start,
+          prev.endExclusive,
+          window.bucket,
+          tenantId,
+        ),
       ),
-      this.repo.getAiUsageByBucket(
-        prev.start,
-        prev.endExclusive,
-        window.bucket,
+      withReportingQuerySlot(() =>
+        this.repo.getPlayTimeOverall(prev.start, prev.endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getQualityOverall(prev.start, prev.endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getCsatOverall(prev.start, prev.endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getTrackFunnelCounts(prev.start, prev.endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getQuizPassCounts(prev.start, prev.endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getCompletedSimulationsByBucket(
+          prev.start,
+          prev.endExclusive,
+          window.bucket,
+          tenantId,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getAiUsageByBucket(
+          prev.start,
+          prev.endExclusive,
+          window.bucket,
+        ),
       ),
     ]);
 

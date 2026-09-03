@@ -46,6 +46,7 @@ import { LlmModule } from './llm/llm.module';
 import { ConversationalGuardrailsModule } from './conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from './case/case.module';
 import { TrackModule } from './track/track.module';
+import { ProgressModule } from './progress/progress.module';
 import { CohortModule } from './cohort/cohort.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
 import { ComfortAudioModule } from './comfort-audio/comfort-audio.module';
@@ -114,6 +115,7 @@ import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
     ScribeSessionReviewModule,
     BadgeModule,
     CommunityModule,
+    ProgressModule,
     ScenarioCharacterModule,
     PromptModule,
     LlmModule,
