@@ -222,6 +222,69 @@ export class GithubActionsService {
   }
 
   /**
+   * Merges a pull request, as the platform's own GitHub token.
+   *
+   * ## Why this exists at all
+   *
+   * The bot account that opens a fix PR holds `write` on the three protected
+   * repos, and their `master` requires an approving review — so the fix
+   * agent's own `gh pr merge --admin` cannot land anything there. In practice
+   * that made every backend and frontend fix end at a green PR with a human
+   * going to GitHub to merge it: 89 of the 122 bot PRs merged so far were
+   * clicked through by hand, almost all within the hour. The review was never
+   * the cost; the trip was.
+   *
+   * So this merges as the SERVER's token (the same one that dispatches
+   * production releases, which necessarily has more rights than the bot), at
+   * an admin's explicit request, from the Bug Hunter drawer. The decision
+   * stays human and is recorded; only the errand is removed.
+   *
+   * ## Why it does not force
+   *
+   * `merge_method: squash` and nothing else — no `--admin` equivalent, no
+   * bypass. The caller checks the rollup first, and if GitHub still refuses
+   * (a required review missing, a branch behind, a check that went red in the
+   * meantime) that refusal is surfaced verbatim rather than worked around.
+   * A one-click merge that could push past a red gate would be a worse thing
+   * than the errand it replaces.
+   *
+   * Returns GitHub's own message on refusal instead of throwing, because
+   * "Base branch was modified" and "At least 1 approving review is required"
+   * are both things the admin can act on and neither is an outage.
+   */
+  async mergePullRequest(
+    repo: string,
+    number: number,
+    commitTitle?: string,
+  ): Promise<{ merged: boolean; message: string | null }> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.put(
+        this.url(repo, `pulls/${number}/merge`),
+        {
+          merge_method: 'squash',
+          ...(commitTitle ? { commit_title: commitTitle } : {}),
+        },
+        { headers: this.headers, timeout: 30_000 },
+      );
+      return {
+        merged: Boolean(data?.merged),
+        message: data?.message ? String(data.message) : null,
+      };
+    } catch (error) {
+      // 405 (not mergeable) and 409 (head changed) are the expected refusals
+      // and both carry a message worth showing; anything else is logged and
+      // reported the same way, since the admin's next move is identical.
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response
+          ?.data?.message ??
+        (error instanceof Error ? error.message : String(error));
+      this.logger.warn(`Could not merge PR #${number} in ${repo}: ${message}`);
+      return { merged: false, message };
+    }
+  }
+
+  /**
    * Who authored a commit — used to tell Builder's own pushes from a person's.
    *
    * Returns `null` for "could not tell", which callers must NOT collapse into

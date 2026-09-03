@@ -88,6 +88,9 @@ describe('BugHunterController', () => {
       bugFindingService as never,
       bugFixSessionService as never,
       {} as never,
+      // Metrics service: every case here is about routing and gating, and no
+      // case calls the metrics route.
+      {} as never,
     );
   });
 

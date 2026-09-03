@@ -43,6 +43,78 @@ export const BUG_HUNT_STALE_ESCALATION_AFTER_MS = 4 * 60 * 60 * 1000;
  */
 export const BUG_HUNT_STALE_ESCALATION_QUIET_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * How long a declined bug stays "already answered".
+ *
+ * Dedup used to match open rows only, so a finding the verifier refuted or an
+ * admin rejected came back as a brand-new row the next time a sweep noticed
+ * the same code — the reviewer re-read and re-rejected the same non-bug
+ * nightly, and the queue's oldest items were the ones already dealt with.
+ * Matching declined rows too closes that loop, but it must not close it
+ * forever: a `wont_fix` is a priority call that can legitimately be revisited,
+ * and code changes underneath a `not_a_bug`. Thirty days is roughly "this
+ * month's decision still stands".
+ */
+export const BUG_FINDING_DECLINE_SUPPRESSION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * How long after a fix ships that the same bug reappearing counts as a
+ * REGRESSION rather than a new discovery.
+ *
+ * Seen live: a shutdown race in ally-ai-learn was fixed and released on 28
+ * August, kept happening in production, and the 2 September sweep filed it
+ * again as an ordinary new high-severity finding. Nothing connected the two,
+ * so the one fact that mattered — *the fix we shipped did not work* — was the
+ * one thing the queue did not say. Thirty days is long enough to catch a
+ * regression a weekly release cycle would surface and short enough that a bug
+ * genuinely reintroduced a quarter later reads as new, which it is.
+ */
+export const BUG_FINDING_REGRESSION_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * How many recent declines the sweep prompt carries as "known non-bugs".
+ *
+ * A cap, not a target, and for the same reason `UX_SIGNAL_CONTEXT_LIMITS` has
+ * one: this text is prepended to a protocol the agent has to actually follow,
+ * and a hundred rejected titles would crowd out the instructions. Only
+ * finder-error declines are eligible (see BUG_FINDING_FINDER_ERROR_REASONS),
+ * which is what keeps the list short enough for this cap to rarely bite.
+ */
+export const BUG_HUNT_KNOWN_NON_BUGS_LIMIT = 40;
+
+/** Chars of each declined title/reason kept in that block — enough to recognise a bug, not to re-read it. */
+export const BUG_HUNT_KNOWN_NON_BUG_EXCERPT = 160;
+
+/**
+ * Below this, a verified finding waits for a human even in AI mode.
+ *
+ * Verification now returns a self-assessed 0-1 certainty per verifier (see
+ * `buildSweepPrompt` Phase 2), which is only worth collecting if something
+ * acts on it. Stacks' "Escalate Low-Certainty Cases Using Confidence Scores"
+ * suggests 0.7 as the routing default and that is what this is — a starting
+ * point to calibrate against the accept-rate-by-confidence cut in
+ * `BugHunterMetricsService`, not a tuned number. Deliberately a plain
+ * constant: runtime configuration is worth building when someone needs to
+ * tune it without a deploy, and nobody does yet.
+ */
+export const BUG_HUNT_LOW_CONFIDENCE_THRESHOLD = 0.7;
+
+/** Default window for the metrics endpoint. A month covers enough sweeps for a rate to mean something. */
+export const BUG_HUNTER_METRICS_DEFAULT_DAYS = 30;
+
+/** Cap on the metrics window — a year of findings is a report, not a dashboard query. */
+export const BUG_HUNTER_METRICS_MAX_DAYS = 365;
+
+/**
+ * Cap on the free-text note beside a decline reason.
+ *
+ * Far shorter than the description cap, and for the opposite reason: a
+ * description is the fix agent's whole brief and benefits from detail, whereas
+ * this is a margin note on a closed decision. It also rides into the sweep
+ * prompt's known-non-bugs block, where length costs the protocol that follows.
+ */
+export const BUG_FINDING_DECISION_NOTE_MAX_LENGTH = 500;
+
 /** Prompt codes under src/prompts/bug_hunter/ — see toPromptCode('bug_hunter', <stem>). */
 export const BUG_HUNTER_PROMPT_CODES = {
   CLASSIFY_REPO: 'bug_hunter_classify_repo',
@@ -63,6 +135,24 @@ export const BUG_HUNTER_CLASSIFY_REPO_MAX_TOKENS = 300;
  * scoped to one finding, not a session-wide mode.
  */
 export const BUG_HUNT_ESCALATION_SUBAGENT = 'bug-escalation';
+
+/**
+ * Subagent that independently tries to refute one finding — defined once per
+ * repo at `.claude/agents/bug-verifier.md`.
+ *
+ * Separate from `BUG_HUNT_ESCALATION_SUBAGENT` because the two exist for
+ * opposite reasons. Escalation buys a STRONGER model for a hard fix.
+ * Verification buys INDEPENDENCE: a reader that never saw the finder's
+ * reasoning, cannot write code, and starts from the repo. Its value is what it
+ * has not been told, so it deliberately runs on the sweep's own cheap model
+ * and carries read-only tools.
+ *
+ * The interactive `bug-hunt.mjs` workflow always did this, with three parallel
+ * `agent()` calls. The CI sweep prompt that replaced it collapsed them into
+ * "try three times to refute it yourself", which is the same agent grading its
+ * own homework — this restores the property that was lost.
+ */
+export const BUG_HUNT_VERIFIER_SUBAGENT = 'bug-verifier';
 
 /**
  * Shared instruction for when to reach for `BUG_HUNT_ESCALATION_SUBAGENT`,

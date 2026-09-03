@@ -170,12 +170,18 @@ export class BugHunterPipelineController {
     // have moved between the dispatch and the runner actually starting, and the
     // mode decides whether this sweep is allowed to fix anything.
     const settings = await this.bugHunterService.getSettings();
+    // What this repo's reviewers already ruled were not bugs. Fetched here
+    // rather than baked into the workflow file for the same reason the whole
+    // protocol is served rather than copied: it changes every time someone
+    // triages, and a sweep should read the current state of the argument.
+    const knownNonBugs = await this.bugFindingService.listKnownNonBugs(repo);
     return buildSweepPrompt({
       repo,
       runId,
       apiBaseUrl: this.configService.publicApiBaseUrl,
       mode: settings.mode,
       deep: deep === 'true',
+      knownNonBugs,
     });
   }
 

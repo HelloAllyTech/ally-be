@@ -83,6 +83,32 @@ describe('BugHunterController — route gating', () => {
     },
   );
 
+  /**
+   * The two handlers added with the measurement and merge work, asserted by
+   * name as well as by the sweep below.
+   *
+   * The sweep already catches a missing gate, so this is about the OTHER
+   * mistake: putting one of these on the roadmap-read tier because it "only
+   * shows numbers" or "only presses a button someone could press on GitHub".
+   * `metrics` reports what the agent costs and how often it is wrong, and
+   * `mergeFinding` writes to a repo — both belong to whoever holds the
+   * toggle, not to every roadmap viewer.
+   */
+  it.each(['getMetrics', 'mergeFinding'])(
+    '%s is gated on the bug_hunter toggle and on no roadmap permission',
+    (name) => {
+      expect(handlers).toContain(name);
+      const { permissions, toggle } = gateOf(name);
+      expect(toggle?.featureKey).toBe(FeatureToggleKey.BUG_HUNTER);
+      // `@RequireFeatureToggle` sets SYSTEM_ACCESS itself, so "no permissions"
+      // is the wrong assertion here — what matters is that neither route
+      // picked up VIEW_PRODUCT_ROADMAP and so drifted onto the read tier.
+      expect(permissions?.permissions ?? []).not.toContain(
+        PERMISSIONS.VIEW_PRODUCT_ROADMAP,
+      );
+    },
+  );
+
   it('leaves every other handler on the bug_hunter toggle', () => {
     const others = handlers.filter(
       (name) => !ROADMAP_READ_HANDLERS.includes(name),
