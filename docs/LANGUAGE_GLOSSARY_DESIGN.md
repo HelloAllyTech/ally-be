@@ -488,7 +488,27 @@ bag, because a bag makes a rule and its reversal score 1.0 and silently suppress
 reversal.
 
 **Routing.** A proposal becomes a profile overlay when every supporting tenant maps to the
-same variety profile, and global when support spans profiles or is unattached.
+same variety profile, and global when support spans profiles or is unattached — **but only
+when the language has at least two attached variety profiles.**
+
+That gate exists because the single-profile signal has to carry information. With one
+attached profile, "every supporting tenant maps to the same profile" is a tautology: it
+reflects which tenants happen to send traffic, not evidence that the rule is
+variety-specific. Measured 2026-09-03, Tamil was the only language with a profile and had
+exactly one, so 65% of its published glossary had been routed into that single org's
+overlay — including plainly universal Tamil grammar (animacy agreement, the dative case on
+`காத்திரு`, colloquial conditional suffixes). Two consequences, both bad: a second Tamil
+tenant would have inherited none of it, and the global glossary could never grow, because
+every rule the language learned was routed away from it. en/hi/mr/kn were unaffected —
+they have no variety profiles at all.
+
+With two or more profiles the signal is real: the other populations existed and did not
+produce the error. Below that threshold, everything routes global.
+
+The 2,338 tokens already sitting in Tamil's overlays predate this gate. `grammar` was the
+only one with no global counterpart, so a global copy was published on 2026-09-03 to close
+the gap; the others (`core_style`, `pronouns_kinship`, `general_vocabulary`) each have a
+global a second tenant would inherit.
 
 **Statistics disposes.** Lexicon proposals are scored against the real learner corpus;
 `verdict='contradicted'` (the population itself uses the avoid-term,

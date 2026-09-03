@@ -759,6 +759,11 @@ export class LanguageGlossaryService {
     const { sections: consolidated, engineeringFindings: rawFindings } =
       this.parseConsolidationOutput(raw);
     const profileByTenant = await this.buildTenantProfileMap(languageId);
+    // Distinct variety profiles this language actually has tenants attached to
+    // — the gate on whether overlay routing can mean anything (see `target`).
+    const attachedProfileCount = new Set(
+      [...profileByTenant.values()].filter(Boolean),
+    ).size;
     // Distributional evidence corpora for the lexical gate, scoped to the
     // routing target: an overlay entry is judged against ITS population's
     // corpus (the profile's attached tenants), a global entry against every
@@ -838,7 +843,23 @@ export class LanguageGlossaryService {
             .map((t) => profileByTenant.get(t) ?? null),
         );
         const soleProfile = profiles.size === 1 ? [...profiles][0] : null;
-        const target = soleProfile ?? null;
+        // Overlay routing needs CONTRAST to carry information. When the
+        // language has fewer than two attached profiles, `profiles.size === 1`
+        // is unavoidable — it reflects which tenants happen to send traffic,
+        // not evidence that the rule is variety-specific — so an overlay would
+        // make a universal rule private to one org.
+        //
+        // Measured 2026-09-03: Tamil was the only language with a profile, it
+        // had exactly one, and 65% of its published glossary had accordingly
+        // been routed into that org's overlay — including plainly universal
+        // Tamil grammar (accusative case marking, the locative suffix). A
+        // second Tamil tenant would have inherited none of it, and the global
+        // glossary could never grow, because every rule the language learned
+        // was routed away from it.
+        //
+        // With two or more profiles the single-profile signal IS meaningful:
+        // the other populations existed and did not produce the error.
+        const target = attachedProfileCount >= 2 ? (soleProfile ?? null) : null;
         const bucket = byTarget.get(target) ?? [];
         bucket.push({ proposal, annos });
         byTarget.set(target, bucket);

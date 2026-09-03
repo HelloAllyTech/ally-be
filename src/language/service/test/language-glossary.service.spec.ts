@@ -816,6 +816,12 @@ describe('LanguageGlossaryService', () => {
       getCompletion.mockResolvedValue(JSON.stringify(twoProposalOutput));
       attachmentRepository.find.mockResolvedValue([
         { tenantId: 'tenant-2', profileId: 'p1', languageId: 6 },
+        // A SECOND attached profile, contributing no annotations here. Overlay
+        // routing is gated on the language having >= 2 profiles, because with
+        // one profile "all support came from it" is a tautology rather than
+        // evidence. tenant-3 supplies the contrast without changing which
+        // tenants support which proposal.
+        { tenantId: 'tenant-3', profileId: 'p2', languageId: 6 },
       ]);
     });
 
@@ -843,6 +849,30 @@ describe('LanguageGlossaryService', () => {
       expect(finalBatch.entries).toHaveLength(2);
       expect(finalBatch.entries.map((e: any) => e.profileId).sort()).toEqual(
         ['p1', null].sort(),
+      );
+    });
+
+    // The gap this closes: Tamil was the only language with a profile, had
+    // exactly one, and so every rule it ever learned — including universal
+    // grammar — was routed into that single org's overlay. A second tenant on
+    // the language would have inherited nothing, and the global glossary could
+    // never grow.
+    it('routes everything GLOBAL when the language has only one attached profile', async () => {
+      attachmentRepository.find.mockResolvedValue([
+        { tenantId: 'tenant-2', profileId: 'p1', languageId: 6 },
+      ]);
+
+      const result = await service.consolidateGlossary(6);
+
+      expect(result.proposed).toBe(2);
+      expect(result.overlayEntries).toBe(0);
+      const savedSections = glossaryRepository.save.mock.calls.map(
+        (c: any[]) => c[0],
+      );
+      expect(savedSections.some((s: any) => s.profileId)).toBe(false);
+      const global = savedSections.find((s: any) => !s.profileId);
+      expect(global.entries.map((e: any) => e.markdown).sort()).toEqual(
+        ['- global rule', '- overlay rule'].sort(),
       );
     });
 
