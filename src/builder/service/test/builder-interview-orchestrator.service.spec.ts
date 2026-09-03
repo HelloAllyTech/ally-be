@@ -44,6 +44,10 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     return frames;
   };
 
+  let sessionRepository: { update: jest.Mock };
+  let sessionService: { getSession: jest.Mock; syncReadinessStatus: jest.Mock };
+  let summariseCalls: number;
+
   beforeEach(() => {
     streams = [];
     requests = [];
@@ -57,6 +61,11 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
       })),
       checkpointMessage: jest.fn(),
       closeInterruptedMessages: jest.fn().mockResolvedValue(0),
+    };
+    sessionRepository = { update: jest.fn() };
+    sessionService = {
+      getSession: jest.fn().mockResolvedValue({ id: 'session-1', title: 'T' }),
+      syncReadinessStatus: jest.fn().mockResolvedValue('scoping'),
     };
     toolsService = {
       getToolDefinitions: jest.fn().mockReturnValue([]),
@@ -74,12 +83,7 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
       {
         getPromptByCode: jest.fn().mockResolvedValue('Interview them.'),
       } as any,
-      {
-        getSession: jest
-          .fn()
-          .mockResolvedValue({ id: 'session-1', title: 'T' }),
-        syncReadinessStatus: jest.fn().mockResolvedValue('scoping'),
-      } as any,
+      sessionService as any,
       {
         getOrCreateDoc: jest
           .fn()
@@ -99,14 +103,22 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
           .fn()
           .mockResolvedValue({ digests: [], chosen: [] }),
       } as any,
-      { update: jest.fn() } as any,
+      sessionRepository as any,
     );
 
+    // `create` is the non-streaming call the cheap-model summariser uses;
+    // `stream` is the turn itself. Both are needed once a history is long
+    // enough to be summarised.
+    summariseCalls = 0;
     (service as any).client = {
       messages: {
         stream: jest.fn((params: any) => {
           requests.push(JSON.parse(JSON.stringify(params.messages)));
           return streams.shift();
+        }),
+        create: jest.fn(async () => {
+          summariseCalls += 1;
+          return { content: [{ type: 'text', text: 'They want archiving.' }] };
         }),
       },
     };
@@ -292,5 +304,64 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     expect(
       messageRepository.closeInterruptedMessages.mock.invocationCallOrder[0],
     ).toBeLessThan(messageRepository.appendMessage.mock.invocationCallOrder[0]);
+  });
+
+  describe('long interviews', () => {
+    // 40 messages is the summarisation threshold; 60 puts the boundary well
+    // past it. Each is a complete user/assistant pair so the boundary can land
+    // on a user message without splitting a tool_use from its result.
+    const longHistory = () =>
+      Array.from({ length: 60 }, (_, i) => ({
+        id: `m-${i}`,
+        seq: i + 1,
+        role: i % 2 === 0 ? 'user' : 'assistant',
+        content: `turn ${i}`,
+        toolCalls: null,
+        toolResults: null,
+      }));
+
+    it('reuses a stored summary instead of paying for it again every turn', async () => {
+      messageRepository.listBySession.mockResolvedValue(longHistory());
+      // A summary already covering this boundary.
+      sessionService.getSession.mockResolvedValue({
+        id: 'session-1',
+        title: 'T',
+        metadata: {
+          interviewSummary: { uptoSeq: 44, text: 'They want archiving.' },
+        },
+      });
+      streams = [fakeStream([{ type: 'text', text: 'Noted.' }], 'end_turn')];
+
+      await drain();
+
+      // The stored digest is reused, so the cheap-model summariser never runs.
+      expect(summariseCalls).toBe(0);
+      const replayed = requests[0];
+      expect(JSON.stringify(replayed)).toContain('They want archiving.');
+    });
+
+    it('stores a summary it had to compute, so the next turn does not', async () => {
+      messageRepository.listBySession.mockResolvedValue(longHistory());
+      sessionService.getSession.mockResolvedValue({
+        id: 'session-1',
+        title: 'T',
+        metadata: {},
+      });
+      streams = [
+        fakeStream([{ type: 'text', text: 'A digest.' }], 'end_turn'),
+        fakeStream([{ type: 'text', text: 'Noted.' }], 'end_turn'),
+      ];
+
+      await drain();
+
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({
+          metadata: expect.objectContaining({
+            interviewSummary: expect.objectContaining({ uptoSeq: 44 }),
+          }),
+        }),
+      );
+    });
   });
 });

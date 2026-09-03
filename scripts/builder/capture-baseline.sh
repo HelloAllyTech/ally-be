@@ -8,13 +8,36 @@
 # in a repo with one flaky spec, or let the agent decide which failures to
 # excuse (which is exactly the self-reporting the gate exists to replace).
 #
-# Runs on the pristine clones, in the background, while the planner is
-# thinking: the wall clock is free there, and by the time the first gate needs
-# a baseline the planning pass has taken longer than this.
+# Two modes, because a baseline is only needed to EXCUSE a failure:
+#
+#   (no args)            Install every cloned repo's dependencies and stop.
+#                        Runs in the background during PLAN. Deps are needed by
+#                        the coder regardless, and the coder cannot start until
+#                        this finishes — so doing full suites here delayed every
+#                        run by the length of its slowest suite, whether or not
+#                        anything ever failed.
+#   --repo R --full      Run R's FULL suite on a pristine origin/master worktree
+#                        and write its baseline. Called by the gate, only when
+#                        an affected-test run has actually failed.
+#
+# The full suite is deliberately what a baseline is made of: the gate compares
+# failure *identities*, and a name present in the full set is pre-existing
+# whether or not the narrowed run would have reached it.
 #
 # Writes /tmp/builder-baseline/<repo>.json:
 #   {"repo":"…","checks":{"test":{"passed":false,"failures":["…"]}, …}}
 set -uo pipefail
+
+MODE=deps
+ONLY_REPO=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --full) MODE=full ;;
+    --repo) ONLY_REPO="${2:-}"; shift ;;
+    *) echo "Unknown argument '$1'." >&2; exit 1 ;;
+  esac
+  shift
+done
 
 OUT_DIR=/tmp/builder-baseline
 mkdir -p "$OUT_DIR"
@@ -25,22 +48,52 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 commands_json=/tmp/builder-repo-commands.json
 if ! curl -fsS "${API_ROOT}/repo-commands" \
   -H "x-api-key: ${ALLY_BE_API_KEY}" -o "$commands_json"; then
-  echo "Could not fetch repo commands; skipping baseline capture." >&2
-  exit 0
+  # Retry before believing it: a baseline that is merely absent is not free.
+  # `gate-verdict.mjs` counts every failure as new when there is no baseline, so
+  # one flaky curl here turns a repo's pre-existing red suite into a blocked
+  # gate and a remediation round spent "fixing" something the run did not break.
+  sleep 5
+  if ! curl -fsS "${API_ROOT}/repo-commands" \
+    -H "x-api-key: ${ALLY_BE_API_KEY}" -o "$commands_json"; then
+    echo "Could not fetch repo commands after a retry; no baseline will exist," >&2
+    echo "so every test failure at gate time will count as new." >&2
+    exit 1
+  fi
 fi
 
 for dir in repos/*/; do
   repo="$(basename "$dir")"
   [ -d "$dir" ] || continue
-
-  echo "=== baseline: ${repo} ==="
+  if [ -n "$ONLY_REPO" ] && [ "$repo" != "$ONLY_REPO" ]; then continue; fi
 
   # Dependencies first: a suite that cannot start is not a baseline failure,
   # it is an absent baseline, and the gate treats those differently.
+  echo "=== baseline deps: ${repo} ==="
   "${HERE}/install-repo-deps.sh" "$repo" || {
     echo "Dependency install failed for ${repo}; no baseline for it." >&2
     continue
   }
+
+  # Deps mode stops here. That is the whole job during PLAN.
+  [ "$MODE" = full ] || continue
+
+  # A pristine origin/master tree, so the baseline describes master and not the
+  # agent's work in progress. A worktree rather than a stash or a second clone:
+  # it shares the object store, so it costs a checkout rather than a fetch, and
+  # it cannot disturb the branch the coder has commits on.
+  base_dir="/tmp/builder-base-${repo}"
+  rm -rf "$base_dir"
+  if ! git -C "$dir" worktree add --detach "$base_dir" origin/master \
+    >/dev/null 2>&1; then
+    echo "Could not create a pristine worktree for ${repo}." >&2
+    continue
+  fi
+  # node_modules is the expensive part and master's tree needs the same set, so
+  # it is linked rather than installed again.
+  if [ -d "${dir}node_modules" ] && [ ! -e "${base_dir}/node_modules" ]; then
+    ln -s "$(cd "${dir}" && pwd)/node_modules" "${base_dir}/node_modules"
+  fi
+  echo "=== baseline suite: ${repo} (on origin/master) ==="
 
   node -e '
     const fs = require("fs");
@@ -48,7 +101,9 @@ for dir in repos/*/; do
     const all = JSON.parse(fs.readFileSync(file, "utf8")).repos ?? [];
     const entry = all.find((r) => r.repo === repo);
     if (!entry) process.exit(1);
-    const checks = { test: entry.test, lint: entry.lint, typecheck: entry.typecheck };
+    // Only `test`. lint and typecheck are hard gates — a pre-existing failure
+    // does not excuse them — so a baseline for those would never be consulted.
+    const checks = { test: entry.test };
     // Trailing newline matters: `while read` returns non-zero on a final line
     // without one, so the last check in the table would never run.
     fs.writeFileSync("/tmp/builder-baseline-cmds.sh",
@@ -62,7 +117,7 @@ for dir in repos/*/; do
   while IFS=$'\t' read -r kind command; do
     [ -n "${kind:-}" ] || continue
     log="/tmp/builder-baseline-${repo}-${kind}.log"
-    if (cd "$dir" && eval "$command") > "$log" 2>&1; then
+    if (cd "$base_dir" && eval "$command") > "$log" 2>&1; then
       passed=true
     else
       passed=false

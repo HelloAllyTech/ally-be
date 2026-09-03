@@ -61,6 +61,54 @@ jobs:
       - name: Run tests
         run: npm run test -- --forceExit --detectOpenHandles
 
+  # The Builder runner's own harnesses. They fake the engine and ally-be, so they
+  # need no credentials and no network — and until now nothing ran them: `npm
+  # test` is jest with `rootDir: src`, which cannot see scripts/. That gap is not
+  # theoretical. Two of the first three real Builder dispatches died on workflow
+  # plumbing (unparseable YAML, then a comma in a cache key), each burning a
+  # dispatch to learn something a local check would have caught in a second.
+  builder-runner:
+    name: Builder runner harnesses
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      # Every workflow in the repo, which is what catches an unparseable one
+      # before it costs a dispatch to discover.
+      #
+      # `-shellcheck=` turns off actionlint's shellcheck pass over embedded
+      # `run:` blocks. Not because it is wrong — because main.yaml,
+      # production-release.yaml and bug-hunt-sweep.yml carry about a hundred
+      # pre-existing SC2086/SC2129 quoting and style hits, and a job that is red
+      # from its first commit is a job everyone learns to ignore. The scripts
+      # this change owns are shellchecked properly in the next step; cleaning up
+      # the release pipeline's quoting is its own piece of work.
+      - name: Lint the workflows
+        run: |
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color -shellcheck=
+
+      # The Builder runner's own shell, with shellcheck for real. These are
+      # clean at -S warning and need to stay that way: run-engine.sh is 500
+      # lines of bash holding a $17 pipeline together.
+      - name: Shell lint the runner scripts
+        run: shellcheck -S warning scripts/builder/*.sh scripts/builder/test/*.sh
+
+      - name: Gate policy
+        run: node scripts/builder/test/gate-verdict.test.mjs
+
+      - name: Outcome gate
+        run: bash scripts/builder/test/outcome-gate.test.sh
+
+      - name: Engine loop dry run
+        run: bash scripts/builder/test/loop-dryrun.sh
+
   lint:
     name: Lint & format
     runs-on: ubuntu-22.04

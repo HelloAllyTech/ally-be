@@ -12,6 +12,8 @@ import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import { RedisService } from 'src/redis/service/redis.service';
 import { GithubActionsService } from 'src/bug-hunter/service/github-actions.service';
+import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderBuildRun } from '../entity/builder-build-run.entity';
 import { BuilderSessionRepository } from '../repository/builder-session.repository';
@@ -26,6 +28,7 @@ import { BuilderSettingsService } from './builder-settings.service';
 import { BuilderNotificationService } from './builder-notification.service';
 import { BuilderExemplarService } from './builder-exemplar.service';
 import { BuilderEpicService } from './builder-epic.service';
+import { BuilderPrdService } from './builder-prd.service';
 import {
   BUILDER_RUN_ACTIVE_STATUSES,
   BuilderEventType,
@@ -48,6 +51,10 @@ import {
   BUILDER_WORKFLOW_FILE,
   BUILDER_WORKFLOW_REF,
   BUILDER_WORKFLOW_REPO,
+  BUILDER_SIZE_PROFILES,
+  BuilderBuildSize,
+  classifyBuildSize,
+  prdTechnicalPlanLength,
 } from '../constants/builder.constants';
 
 /**
@@ -57,6 +64,23 @@ import {
  * workflow on purpose: run-engine.sh reads them at the boundary it stops on,
  * so the wait can be re-tuned here without a workflow merge.
  */
+/**
+ * What the runner is told about models and spending, in one object.
+ *
+ * Rides the single `models` workflow input: `workflow_dispatch` accepts at most
+ * 10 inputs and builder-session.yml is already at 9.
+ */
+export interface BuilderResolvedModels {
+  planner: string;
+  coder: string;
+  verifier: string;
+  size: BuilderBuildSize;
+  effort: 'low' | 'medium' | 'high';
+  plannerMaxTurns: number;
+  planWords: number;
+  budgets: { plan: number; code: number; verify: number; finalise: number };
+}
+
 export interface BuilderBudgetState {
   budgetUsd: number | null;
   spentUsd: number;
@@ -97,6 +121,8 @@ export class BuilderBuildService {
     @Inject(forwardRef(() => BuilderExemplarService))
     private readonly exemplarService: BuilderExemplarService,
     private readonly epicService: BuilderEpicService,
+    private readonly llmUsage: LlmUsageService,
+    private readonly prdService: BuilderPrdService,
   ) {}
 
   /**
@@ -148,7 +174,8 @@ export class BuilderBuildService {
     this.assertWithinBudget(session, settings.maxRunnerMinutes);
 
     const engine = overrides.engine ?? session.engine;
-    const models = this.resolveModels(session, settings, overrides);
+    const size = await this.classifySession(session);
+    const models = this.resolveModels(session, settings, overrides, size);
 
     // Carry the chosen engine/model onto the session so a resume run and the
     // UI both read the same thing without re-deriving it.
@@ -276,22 +303,74 @@ export class BuilderBuildService {
       plannerModel?: string;
       verifierModel?: string;
     } = {},
-  ): { planner: string; coder: string; verifier: string } {
+    size: BuilderBuildSize = BuilderBuildSize.MEDIUM,
+  ): BuilderResolvedModels {
     const config = this.configService.builder;
+    const profile = BUILDER_SIZE_PROFILES[size];
+
+    const coder =
+      overrides.model ??
+      session.model ??
+      settings.coderModel ??
+      settings.defaultModel ??
+      config.coderModel;
+    const plannerTier =
+      settings.plannerModel ?? config.plannerModel ?? config.coderModel;
+
     return {
+      // An explicit override always wins — an admin who picked a planner meant
+      // it. Otherwise a small build plans on the coder tier: Opus earns its
+      // price on cross-repo contracts, not on two routes and a checkbox.
       planner:
-        overrides.plannerModel ?? settings.plannerModel ?? config.plannerModel,
-      coder:
-        overrides.model ??
-        session.model ??
-        settings.coderModel ??
-        settings.defaultModel ??
-        config.coderModel,
+        overrides.plannerModel ??
+        (profile.plannerTier === 'coder' ? coder : plannerTier),
+      coder,
       verifier:
         overrides.verifierModel ??
         settings.verifierModel ??
         config.verifierModel,
+      // Read by run-engine.sh out of the same `models` input, because
+      // workflow_dispatch caps at 10 and the workflow already sits at 9.
+      size,
+      effort: profile.effort,
+      plannerMaxTurns: profile.maxTurns,
+      planWords: profile.planWords,
+      budgets: profile.maxBudgetUsd,
     };
+  }
+
+  /**
+   * Size a session's PRD.
+   *
+   * Failure is not fatal and lands on MEDIUM: an unreadable PRD is a reason to
+   * spend the default, not a reason to refuse a build.
+   */
+  private async classifySession(
+    session: BuilderSession,
+  ): Promise<BuilderBuildSize> {
+    try {
+      const doc = await this.prdService.getOrCreateDoc(
+        session.id,
+        session.createdBy,
+      );
+      const draft = (doc?.draft ?? {}) as Record<string, any>;
+      const milestones = await this.epicService.listBySession(session.id);
+      return classifyBuildSize({
+        requirementCount: Array.isArray(draft.requirements)
+          ? draft.requirements.length
+          : 0,
+        repoCount: (session.repos ?? []).length,
+        technicalPlanLength: prdTechnicalPlanLength(draft),
+        isEpic: milestones.length > 0,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Could not size the PRD for session ${session.id}; planning at the default tier: ${
+          (error as Error).message
+        }`,
+      );
+      return BuilderBuildSize.MEDIUM;
+    }
   }
 
   /**
@@ -981,10 +1060,23 @@ export class BuilderBuildService {
       if (current && !this.isActive(current.status)) return;
 
       if (remote.conclusion === 'success') {
-        // Success on GitHub without a /complete callback means the runner
-        // finished but never reported — treat it as done rather than leaving
-        // the session building forever.
-        await this.settleRun(run, BuilderRunStatus.SUCCEEDED, null);
+        // A green job without a /complete callback is NOT a success. `claude -p`
+        // exits 0 whenever the agent produces a final response, including when
+        // it ends its turn mid-protocol — so "the agent stopped after CODE
+        // without committing" and "the agent finished and opened PRs" reach
+        // this branch identically. Settling SUCCEEDED here reported builds that
+        // never shipped anything, and made the scoreboard's merge rate a
+        // measure of nothing.
+        //
+        // The run reports its own outcome or it did not finish. The workflow's
+        // outcome gate normally catches this first and posts a precise error;
+        // this is the net for when the runner died before that step ran.
+        await this.failRun(
+          run,
+          'The runner finished without reporting an outcome. It stopped ' +
+            'mid-protocol, so anything it had not pushed is gone with the ' +
+            'runner. Retry the build.',
+        );
       } else if (remote.conclusion === 'cancelled') {
         await this.settleRun(run, BuilderRunStatus.CANCELLED, null);
       } else {
@@ -1016,6 +1108,75 @@ export class BuilderBuildService {
     return (
       status === BuilderRunStatus.QUEUED || status === BuilderRunStatus.RUNNING
     );
+  }
+
+  /**
+   * One `llm_usage` row per engine invocation.
+   *
+   * The runner reports `modelUsage` keyed by model id, which is the shape the
+   * engine emits when a phase used more than one (a Sonnet coder that spawned a
+   * Haiku subagent bills both). One row each, so the store's per-model
+   * aggregates stay true rather than attributing a phase's whole spend to the
+   * tier that led it.
+   */
+  private async recordBuildUsage(
+    run: BuilderBuildRun,
+    cost: {
+      phase?: string;
+      model?: string;
+      modelUsage?: Record<string, any>;
+    },
+  ): Promise<void> {
+    const phase = cost.phase ?? 'build';
+    const usage = cost.modelUsage ?? {};
+
+    // Keyed by model id when the engine gives us that; otherwise the one model
+    // the phase declared, so a legacy `usage` blob still lands somewhere.
+    const perModel = Object.entries(usage).filter(
+      ([, value]) => value && typeof value === 'object',
+    );
+    const entries = perModel.length
+      ? perModel
+      : cost.model
+        ? [[cost.model, usage] as [string, any]]
+        : [];
+
+    for (const [model, stats] of entries) {
+      const input = Number(stats?.inputTokens ?? stats?.input_tokens ?? 0) || 0;
+      const output =
+        Number(stats?.outputTokens ?? stats?.output_tokens ?? 0) || 0;
+      const cacheRead =
+        Number(
+          stats?.cacheReadInputTokens ?? stats?.cache_read_input_tokens ?? 0,
+        ) || 0;
+      const cacheWrite =
+        Number(
+          stats?.cacheCreationInputTokens ??
+            stats?.cache_creation_input_tokens ??
+            0,
+        ) || 0;
+
+      // A phase that reported nothing measurable is not worth a row.
+      if (!input && !output && !cacheRead && !cacheWrite) continue;
+
+      await this.llmUsage.record({
+        provider: 'anthropic',
+        model: String(model),
+        task: LlmTask.BUILDER_BUILD,
+        promptTokens: input,
+        completionTokens: output,
+        totalTokens: input + output,
+        // Both counters: with only one, the real spend is unknowable — a cache
+        // read and a cache write cost very different amounts.
+        cachedTokens: cacheRead,
+        cacheCreationTokens: cacheWrite,
+        metadata: {
+          builderSessionId: run.sessionId,
+          builderRunId: run.id,
+          phase,
+        },
+      });
+    }
   }
 
   private async failRun(run: BuilderBuildRun, message: string): Promise<void> {
@@ -1151,6 +1312,9 @@ export class BuilderBuildService {
       model?: string;
       modelUsage?: Record<string, any>;
       totalCostUsd?: number;
+      durationMs?: number;
+      durationApiMs?: number;
+      numTurns?: number;
     },
   ): Promise<void> {
     // Re-read: earlier phases of this run have already written their share.
@@ -1159,15 +1323,42 @@ export class BuilderBuildService {
 
     const phases: Record<
       string,
-      { model?: string | null; usd: number; usage?: Record<string, any> | null }
+      {
+        model?: string | null;
+        usd: number;
+        usage?: Record<string, any> | null;
+        durationMs?: number | null;
+        durationApiMs?: number | null;
+        numTurns?: number | null;
+      }
     > = { ...((current.cost?.phases as Record<string, any>) ?? {}) };
 
     const usd = Number(cost.totalCostUsd ?? 0);
+    // A count of zero is real; a missing one is not. `?? null` rather than a
+    // `|| 0` fallback, so an older workflow that reports no timings leaves them
+    // absent instead of plotting a 0-second phase.
+    const positive = (value?: number) =>
+      Number.isFinite(Number(value)) && Number(value) >= 0
+        ? Number(value)
+        : null;
     phases[cost.phase ?? 'build'] = {
       model: cost.model ?? null,
       usd: Number.isFinite(usd) && usd > 0 ? usd : 0,
       usage: cost.modelUsage ?? null,
+      durationMs: positive(cost.durationMs),
+      durationApiMs: positive(cost.durationApiMs),
+      numTurns: positive(cost.numTurns),
     };
+
+    // Into the unified usage store as well. `LlmTask.BUILDER_BUILD` was declared
+    // when the module was written and never had a writer, so the coding half —
+    // by far the most expensive thing Builder does — was invisible to every
+    // cross-service token and cost query, visible only as a dollar figure on a
+    // run row. Recorded per phase so planner, coder and verifier are separable.
+    //
+    // Best-effort by construction: `record` swallows its own errors, and this is
+    // deliberately not awaited. Telemetry must never fail a run's billing.
+    void this.recordBuildUsage(run, cost);
 
     const runTotal = Object.values(phases).reduce(
       (sum, phase) => sum + (Number.isFinite(phase.usd) ? phase.usd : 0),

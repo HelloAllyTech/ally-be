@@ -39,6 +39,9 @@ import {
   BUILDER_EVENT_BATCH_MAX,
   BUILDER_LESSONS_IN_CONTEXT,
   BUILDER_MAX_CODE_ITERATIONS,
+  BUILDER_SIZE_PROFILES,
+  classifyBuildSize,
+  prdTechnicalPlanLength,
 } from '../constants/builder.constants';
 import {
   BUILDER_REPOS,
@@ -289,6 +292,31 @@ export class BuilderPipelineController {
     return { ok: true, updated };
   }
 
+  /**
+   * The advisory plan length for this run's size class.
+   *
+   * Re-derived from the same inputs the dispatch sized the run from, rather
+   * than stored on the run: `classifyBuildSize` is pure, the PRD is frozen once
+   * a build starts, and a column would need a migration plus a CHECK extension
+   * to hold a value that is already computable.
+   */
+  private async planWordsFor(
+    session: BuilderSession,
+    doc: { draft?: BuilderPrdDocument | null },
+  ): Promise<number> {
+    const draft = (doc?.draft ?? {}) as Record<string, any>;
+    const milestones = await this.epicService.listBySession(session.id);
+    const size = classifyBuildSize({
+      requirementCount: Array.isArray(draft.requirements)
+        ? draft.requirements.length
+        : 0,
+      repoCount: (session.repos ?? []).length,
+      technicalPlanLength: prdTechnicalPlanLength(draft),
+      isEpic: milestones.length > 0,
+    });
+    return BUILDER_SIZE_PROFILES[size].planWords;
+  }
+
   @Get('runs/:runId/plan-prompt')
   @Header('Content-Type', 'text/plain; charset=utf-8')
   @ApiOperation({
@@ -305,6 +333,9 @@ export class BuilderPipelineController {
     const resumeContext = run.resumeOfRunId
       ? await this.buildService.buildResumeContext(run.resumeOfRunId)
       : null;
+    const repoPacks = await this.knowledgeService.renderRepoPacks(
+      session.repos ?? undefined,
+    );
 
     return buildPlanPrompt({
       sessionId: session.id,
@@ -315,6 +346,8 @@ export class BuilderPipelineController {
       apiBaseUrl: this.configService.publicApiBaseUrl,
       lessons,
       resumeContext,
+      repoPacks,
+      planWords: await this.planWordsFor(session, doc),
     });
   }
 
@@ -545,6 +578,31 @@ export class BuilderPipelineController {
       await this.reportService.composeSessionReport(run.sessionId);
     }
     return { ok: true };
+  }
+
+  /**
+   * What the run looks like from the outside, for the workflow's own
+   * outcome gate to read after the engine exits.
+   *
+   * `claude -p` exits 0 whenever the agent produces a final response — including
+   * when it ends its turn mid-protocol. That makes "stopped without reporting"
+   * indistinguishable from success at the workflow level, so the workflow asks
+   * here instead of trusting its own exit code.
+   */
+  @Get('runs/:runId/status')
+  @ApiOperation({
+    summary: 'Run status, stage and PR count, for the runner outcome gate',
+  })
+  async getRunStatus(@Param('runId', ParseUUIDPipe) runId: string) {
+    const run = await this.buildService.getRunOrFail(runId);
+    const pullRequests = await this.pullRequestService.listBySession(
+      run.sessionId,
+    );
+    return {
+      runId: run.id,
+      status: run.status,
+      pullRequestCount: pullRequests.filter((pr) => pr.runId === run.id).length,
+    };
   }
 
   @Get('runs/:runId/budget')

@@ -68,6 +68,16 @@ concurrency:
 
 jobs:
   build:
+    # NOTE: a larger runner would help here — the gate is CPU-bound (jest and
+    # nx, per repo, per remediation round) and runner minutes cost cents against
+    # the tens of dollars of model spend a run already commits. Left on the
+    # standard label deliberately: no other workflow in this repo uses a larger
+    # one, GitHub does NOT fall back when a label is unavailable (the job queues
+    # indefinitely), and whether the org has them cannot be read without
+    # admin:org. Confirm availability first, then change this one line.
+    #
+    # In the meantime the gate's own commands carry --maxWorkers, which is the
+    # part that works on any runner.
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -76,6 +86,17 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       BUILDER_GH_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
       GH_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
+      # Tier 1 of `.claude/stacks-bridge.mjs`. Without it the bridge falls
+      # through to `gh auth token`, and BUILDER_GH_TOKEN is a PAT with no
+      # `read:org`, so the exchange 403s and every build phase runs with no
+      # product guidance at all — which is what the first real build reported.
+      STACKS_API_KEY: ${{ secrets.STACKS_API_KEY }}
+      # The gate is the hook. ally-be's pre-commit runs eslint plus
+      # `jest --findRelatedTests` on every commit the coder makes, and the
+      # coder commits once per repo per remediation round; the gate then runs
+      # the same checks once, on a clean tree, and is the thing `/complete`
+      # actually trusts. Paying for both is paying twice for the weaker one.
+      HUSKY: '0'
       BUILDER_SESSION_ID: ${{ inputs.session_id }}
       BUILDER_RUN_ID: ${{ inputs.run_id }}
       BUILDER_MODE: ${{ inputs.mode }}
@@ -157,6 +178,19 @@ jobs:
         if: always()
         run: protocol/scripts/builder/report-cost.sh
 
+      # `claude -p` exits 0 whenever the agent produces a final response —
+      # including when it ends its turn mid-protocol. That makes "stopped after
+      # CODE without committing" and "finished and opened PRs" the same green
+      # job, which is exactly how a $16 run reported success having shipped
+      # nothing. Both sibling agent workflows already gate on the outcome; this
+      # is Builder's.
+      #
+      # A deliberate pause is also exit 0, and is healthy — the marker file is
+      # how the engine itself tells the two apart, so we read it here too.
+      - name: Fail if the run ended without reporting an outcome
+        if: always()
+        run: protocol/scripts/builder/outcome-gate.sh
+
       # The runner-level net. Covers what the agent itself cannot report:
       # the runner dying, a bad clone, a wrong API key. ally-be ignores this
       # for a run already parked on a question, so a deliberate pause (which
@@ -164,6 +198,10 @@ jobs:
       - name: Report failure
         if: failure()
         run: |
+          if [ -f /tmp/builder-already-reported ]; then
+            echo "The outcome gate already reported precisely why this run failed."
+            exit 0
+          fi
           curl -sS -X POST \
             "${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}/complete" \
             -H "x-api-key: ${ALLY_BE_API_KEY}" \
@@ -183,5 +221,6 @@ jobs:
             /tmp/builder-gate/*.json
             /tmp/builder-gate-*.log
             /tmp/builder-baseline/*.json
+            /tmp/builder-baseline-*.log
           if-no-files-found: ignore
           retention-days: 14

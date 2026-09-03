@@ -77,10 +77,15 @@ for dir in repos/*/; do
     const all = JSON.parse(fs.readFileSync(file, "utf8")).repos ?? [];
     const entry = all.find((r) => r.repo === repo);
     if (!entry) process.exit(1);
+    // `affectedTest` where the repo has one. A full suite is what the BASELINE
+    // is computed with (comparing failure identities only means something
+    // across the same set), but running the full thing on every gate attempt
+    // costs ten to thirty minutes per round on a 2-core runner for work the
+    // branch did not touch.
     const rows = Object.entries({
       typecheck: entry.typecheck,
       lint: entry.lint,
-      test: entry.test,
+      test: entry.affectedTest || entry.test,
     }).filter(([, cmd]) => cmd);
     // Trailing newline matters: `while read` returns non-zero on a final line
     // without one, so the last check in the table would never run.
@@ -116,6 +121,16 @@ for dir in repos/*/; do
     --tally "${GATE_DIR}/${repo}.checks" \
     --repo "$repo" \
     --out "${GATE_DIR}/${repo}.json" || true
+
+  # A baseline is only needed to excuse a failure, so it is computed only when
+  # there is one to excuse. The happy path — which is most runs — never pays for
+  # a full suite at all.
+  if grep -q $'^test\tfalse\t' "${GATE_DIR}/${repo}.checks" 2>/dev/null \
+    && [ ! -f "${BASELINE_DIR}/${repo}.json" ]; then
+    echo "  test failed; computing a baseline to see whether it is ours"
+    "${HERE}/capture-baseline.sh" --repo "$repo" --full || \
+      echo "  could not baseline ${repo}; every failure will count as new" >&2
+  fi
 
   # Compare against the baseline and decide, per check, whether this run broke
   # it. Emits one gate_result event per check plus a repo verdict on stdout.

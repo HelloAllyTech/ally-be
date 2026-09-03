@@ -15,6 +15,16 @@ export interface BuilderRepoDefinition {
   description: string;
   test: string;
   lint: string;
+  /**
+   * The same suite narrowed to what this branch changed.
+   *
+   * The gate runs this instead of `test` on the happy path: a full pass of
+   * ally-be (421 spec files) plus ally-web (`nx run-many`, cache disabled) is
+   * ten to thirty minutes on a 2-core runner, repeated per remediation round.
+   * `test` is still the command a baseline is computed with, because comparing
+   * failure identities only means something across the same set.
+   */
+  affectedTest?: string;
   /** Null where the repo's test/build step already covers types. */
   typecheck: string | null;
   /** Whether the repo can be stood up in a runner for live E2E. */
@@ -34,7 +44,15 @@ export const BUILDER_REPOS: BuilderRepoDefinition[] = [
     repo: 'ally-be',
     description:
       'NestJS + TypeORM backend owning the primary Postgres database, admin APIs, auth and permissions.',
-    test: 'npm test',
+    // --forceExit --detectOpenHandles for the same reason test.yml passes them:
+    // this suite leaks handles, and without the flags a leaked one hangs the
+    // gate until the 120-minute job timeout instead of reporting a result.
+    // --maxWorkers=2: jest defaults to (cpus - 1), which on a 2-core runner is
+    // ONE worker, i.e. the whole suite serially. Two is the honest maximum
+    // there and roughly halves it; it is a no-op on a bigger machine.
+    test: 'npm test -- --forceExit --detectOpenHandles --maxWorkers=2',
+    affectedTest:
+      'npm test -- --forceExit --detectOpenHandles --maxWorkers=2 --changedSince=origin/master --passWithNoTests',
     lint: 'npm run lint',
     typecheck: 'npm run build',
     e2eCapable: true,
@@ -53,6 +71,9 @@ export const BUILDER_REPOS: BuilderRepoDefinition[] = [
     description:
       'Nx monorepo of the three frontends: admin dashboard, helpline and web. Shared libs under libs/.',
     test: 'npx nx run-many -t test --skip-nx-cache',
+    // No --skip-nx-cache here on purpose: between the baseline and the gate the
+    // local Nx cache is exactly what we want to hit.
+    affectedTest: 'npx nx affected -t test --base=origin/master',
     lint: 'npx nx run-many -t lint --skip-nx-cache',
     typecheck: 'npx tsc -b --pretty false',
     e2eCapable: true,

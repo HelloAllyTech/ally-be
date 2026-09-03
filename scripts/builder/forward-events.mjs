@@ -34,6 +34,8 @@ const RESULT_OUT = resultOutIndex > -1 ? process.argv[resultOutIndex + 1] : null
 /** Flush on either bound, whichever comes first. */
 const FLUSH_INTERVAL_MS = 2000;
 const FLUSH_SIZE = 20;
+/** Mirrors BUILDER_EVENT_BATCH_MAX in builder.constants.ts — the server 400s above it. */
+const MAX_BATCH = 100;
 const MAX_RETRIES = 3;
 /** Keep any single payload well under the server's own 8KB cap. */
 const MAX_FIELD_CHARS = 4000;
@@ -150,8 +152,13 @@ const post = async (events) => {
         },
       );
       if (response.ok) return;
-      // 4xx is our own bug and will not fix itself on a retry; 5xx might.
-      if (response.status < 500) return;
+      // 5xx might fix itself; a 4xx is our own bug and usually will not. But
+      // "usually" cost us: a batch over the server's 100-event cap answers 400,
+      // and dropping it silently loses the gate_result that `/complete {done}`
+      // refuses to finish without. One retry, so a transient 4xx (an expired
+      // token being refreshed, a cap we have since chunked under) gets a second
+      // chance without turning a real bug into three pointless round trips.
+      if (response.status < 500 && attempt >= 2) return;
     } catch {
       // Network blip — fall through to the retry.
     }
@@ -163,9 +170,18 @@ const post = async (events) => {
 const flush = async () => {
   if (flushing || !queue.length) return;
   flushing = true;
-  const batch = queue.splice(0, queue.length);
   try {
-    await post(batch);
+    // In chunks the server will accept. ally-be rejects a batch over
+    // BUILDER_EVENT_BATCH_MAX (100) with a 400, so draining the whole queue at
+    // once meant that a busy phase — exactly when events pile up past 100 while
+    // a flush is in flight — silently dropped the lot. A dropped `gate_result`
+    // is not cosmetic: it is the evidence `/complete {done}` refuses to finish
+    // without, so telemetry loss was failing runs whose gate had genuinely
+    // passed. Chunking here is the fix; the single 4xx retry in `post` is the
+    // belt to this pair of braces.
+    while (queue.length) {
+      await post(queue.splice(0, MAX_BATCH));
+    }
   } finally {
     flushing = false;
   }

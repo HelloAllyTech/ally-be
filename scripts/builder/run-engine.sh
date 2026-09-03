@@ -40,6 +40,29 @@ PLANNER_MODEL="$(model_for planner "claude-opus-5")"
 CODER_MODEL="$(model_for coder "claude-sonnet-5")"
 VERIFIER_MODEL="$(model_for verifier "claude-opus-5")"
 
+# The size profile rides the same input. ally-be sizes the PRD and decides what
+# planning is worth; the fallbacks below are what a hand-run workflow gets.
+BUILD_SIZE="$(model_for size "medium")"
+EFFORT="$(model_for effort "high")"
+PLANNER_TURNS="$(model_for plannerMaxTurns "60")"
+case "$PLANNER_TURNS" in '' | *[!0-9]*) PLANNER_TURNS=60 ;; esac
+
+# Per-phase dollar ceilings, enforced by the engine itself rather than only
+# checked between phases. The session ceiling still holds at every boundary
+# (hold_or_abort_if_over_budget); this stops one phase eating the whole session
+# before the next boundary is reached — which is exactly what happened on the
+# first real build, where CODE ran past the ceiling and the run stopped with
+# $16.77 spent and nothing pushed.
+budget_for() {
+  local phase="$1" fallback="$2" value
+  value="$(printf '%s' "$MODELS_JSON" | jq -r --arg p "$phase" '.budgets[$p] // empty' 2>/dev/null || true)"
+  printf '%s' "${value:-$fallback}"
+}
+PLAN_BUDGET="$(budget_for plan 10)"
+CODE_BUDGET="$(budget_for code 20)"
+VERIFY_BUDGET="$(budget_for verify 6)"
+FINALISE_BUDGET="$(budget_for finalise 5)"
+
 # Mirrors BUILDER_MAX_CODE_ITERATIONS / BUILDER_MAX_VERIFY_ROUNDS in
 # src/builder/constants/builder.constants.ts — change both together.
 MAX_CODE_ITERATIONS="${BUILDER_MAX_CODE_ITERATIONS:-4}"
@@ -89,11 +112,21 @@ report_phase_cost() {
     const [phase, model, file] = process.argv.slice(1);
     let raw = {};
     try { raw = JSON.parse(fs.readFileSync(file, "utf8")); } catch { process.exit(0); }
+    const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
     const body = {
       phase,
       model,
       modelUsage: raw.modelUsage ?? raw.usage ?? null,
       totalCostUsd: Number(raw.total_cost_usd ?? raw.totalCostUsd ?? 0) || 0,
+      // Already in the result frame and, until now, thrown away — which is why
+      // nothing could say where a 48-minute run spent its time. durationMs is
+      // the invocation wall clock and durationApiMs the part spent waiting on
+      // the model, so the difference is time inside tool calls: on the first
+      // real build that was 20 of the 33 minutes the coder took, nearly all of it
+      // full test suites the gate then ran a second time.
+      durationMs: num(raw.duration_ms ?? raw.durationMs),
+      durationApiMs: num(raw.duration_api_ms ?? raw.durationApiMs),
+      numTurns: num(raw.num_turns ?? raw.numTurns),
     };
     fs.writeFileSync("/tmp/builder-cost-body.json", JSON.stringify(body));
   ' "$phase" "$model" "$result_file" 2>/dev/null || return 0
@@ -208,6 +241,7 @@ exit_if_paused() {
 
 run_agent() {
   local prompt_file="$1" result_file="$2" model="$3" tools="$4" max_turns="$5"
+  local max_budget="${6:-}"
 
   case "$ENGINE" in
     claude-code)
@@ -215,11 +249,17 @@ run_agent() {
       # the transcript arrives as it happens rather than as one blob at the
       # end. The forwarder both relays it and passes it through, so the final
       # result object still lands in $result_file for the cost step.
+      # --max-budget-usd is the hard stop the loop could not previously
+      # express: /budget is only consulted at phase boundaries, so a phase that
+      # ran away was unstoppable until it finished. --effort scales reasoning to
+      # what the build is worth.
       claude -p "$(cat "$prompt_file")" \
         --permission-mode acceptEdits \
         --model "$model" \
         --allowedTools "$tools" \
         --max-turns "$max_turns" \
+        --effort "$EFFORT" \
+        ${max_budget:+--max-budget-usd "$max_budget"} \
         --output-format stream-json \
         --verbose \
       | node "$FORWARDER" --result-out "$result_file"
@@ -257,7 +297,7 @@ if [ "${BUILDER_MODE:-build}" = "fix" ]; then
   echo "::group::fix (${CODER_MODEL})"
   post_stage CODING
   run_agent "$PROMPT_FILE" "${RESULTS_DIR}/fix.json" \
-    "$CODER_MODEL" "$CODER_TOOLS" 200
+    "$CODER_MODEL" "$CODER_TOOLS" 200 "$CODE_BUDGET"
   report_phase_cost fix "$CODER_MODEL" "${RESULTS_DIR}/fix.json"
   echo "::endgroup::"
 
@@ -282,23 +322,30 @@ if [ "${BUILDER_MODE:-build}" = "fix" ]; then
   exit 1
 fi
 
-# ── Phase 0: baseline, in the background ────────────────────────────────────
+# ── Phase 0: dependencies, in the background ────────────────────────────────
 #
-# Which suites were ALREADY failing before this run touched anything. Captured
-# on the pristine clones, while the planner is thinking — the wall time is free
-# — because otherwise a repo with one pre-existing failure would make every
-# gate red and the only way past it would be to let the agent waive its own
+# Dependency installs only, during PLAN. The coder needs them regardless, so
+# this is genuinely free wall clock.
+#
+# The suites that make a BASELINE are no longer run here. They used to be, and
+# because the coder cannot start until this finishes, every run paid for the
+# slowest repo's full suite whether or not anything ever failed. The gate now
+# computes a baseline lazily, for one repo, only when a test has actually failed
+# and there is something to excuse — the reason a baseline exists at all being
+# that otherwise a repo with one pre-existing failure makes every gate red and
+# the only way past is to let the agent waive its own
 # test results.
 "${HERE}/capture-baseline.sh" >/tmp/builder-baseline.log 2>&1 &
 BASELINE_PID=$!
 
 # ── Phase 1: PLAN ───────────────────────────────────────────────────────────
 
+echo "Build sized ${BUILD_SIZE}: planner ${PLANNER_MODEL}, effort ${EFFORT}, ${PLANNER_TURNS} turns, \$${PLAN_BUDGET} ceiling."
 echo "::group::plan (${PLANNER_MODEL})"
 post_stage PLANNING
 if fetch_prompt "plan-prompt" /tmp/builder-plan-prompt.txt; then
   run_agent /tmp/builder-plan-prompt.txt "${RESULTS_DIR}/plan.json" \
-    "$PLANNER_MODEL" "$PLANNER_TOOLS" 60 || true
+    "$PLANNER_MODEL" "$PLANNER_TOOLS" "$PLANNER_TURNS" "$PLAN_BUDGET" || true
   report_phase_cost plan "$PLANNER_MODEL" "${RESULTS_DIR}/plan.json"
 
   # The plan is the last fenced ```plan block. Posted as the run's `plan`
@@ -328,7 +375,8 @@ echo "::endgroup::"
 exit_if_paused "planning"
 hold_or_abort_if_over_budget
 
-# Wait for the baseline before the first gate can need it.
+# The coder needs dependencies installed; it does not need a baseline, which
+# the gate now fetches for itself if a failure turns out to need excusing.
 wait "$BASELINE_PID" 2>/dev/null || true
 
 # ── Phase 2: CODE → GATE → VERIFY, with remediation ─────────────────────────
@@ -365,7 +413,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   fi
 
   run_agent "$code_prompt" "${RESULTS_DIR}/code-${attempt}.json" \
-    "$CODER_MODEL" "$CODER_TOOLS" 200
+    "$CODER_MODEL" "$CODER_TOOLS" 200 "$CODE_BUDGET"
   report_phase_cost "code-${attempt}" "$CODER_MODEL" "${RESULTS_DIR}/code-${attempt}.json"
   echo "::endgroup::"
 
@@ -411,7 +459,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
 
   run_agent /tmp/builder-verify-prompt.txt \
     "${RESULTS_DIR}/verify-${verify_round}.json" \
-    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 || true
+    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$VERIFY_BUDGET" || true
   report_phase_cost "verify-${verify_round}" "$VERIFIER_MODEL" \
     "${RESULTS_DIR}/verify-${verify_round}.json"
   revert_stray_writes
@@ -491,7 +539,7 @@ if ! fetch_prompt "finalise-prompt" /tmp/builder-finalise-prompt.txt; then
   exit 1
 fi
 run_agent /tmp/builder-finalise-prompt.txt "${RESULTS_DIR}/finalise.json" \
-  "$CODER_MODEL" "$CODER_TOOLS" 80
+  "$CODER_MODEL" "$CODER_TOOLS" 80 "$FINALISE_BUDGET"
 report_phase_cost finalise "$CODER_MODEL" "${RESULTS_DIR}/finalise.json"
 echo "::endgroup::"
 

@@ -133,6 +133,18 @@ surrounding code — the diff alone will not tell you whether a caller broke.
 Run any test or command you want to check a suspicion — you can read and
 execute, you just cannot edit.
 
+${
+  context.round > 1
+    ? `Because this is round ${context.round}, start with what actually changed
+since you last looked: \`git diff HEAD~1 --stat\` will usually show it, and the
+remediation commits are the newest ones on the branch. Re-reading the whole
+branch line by line every round is how a three-round run pays for the same
+review three times. Read the full diff only where a remediation touched
+something you had not already cleared.
+`
+    : ''
+}
+
 Be concrete. "Error handling could be better" is not actionable. "\`getUser\`
 now returns null for a deleted user, and \`AuthService.resolve\` at
 src/auth/auth.service.ts:112 dereferences it without a check" is.
