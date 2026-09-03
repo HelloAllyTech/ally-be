@@ -59,11 +59,16 @@ import {
   ListBugHunterNotificationsResponseDto,
   SetBugFindingStageDto,
   BugFindingRefDto,
+  RejectBugFindingDto,
+  BugHunterMetricsDto,
+  BugHunterMetricsQueryDto,
 } from '../dto/bug-hunter.dto';
 import {
   BUG_HUNT_SSE_PING_INTERVAL_MS,
   BUG_HUNT_SSE_POLL_INTERVAL_MS,
+  BUG_HUNTER_METRICS_DEFAULT_DAYS,
 } from '../constants/bug-hunter.constants';
+import { BugHunterMetricsService } from '../service/bug-hunter-metrics.service';
 import { effectiveStage } from '../util/bug-finding-stage.util';
 
 /**
@@ -98,6 +103,7 @@ export class BugHunterController {
     private readonly bugFindingService: BugFindingService,
     private readonly bugFixSessionService: BugFixSessionService,
     private readonly notificationService: BugHunterNotificationService,
+    private readonly metricsService: BugHunterMetricsService,
   ) {}
 
   @Get('settings')
@@ -296,6 +302,35 @@ export class BugHunterController {
     );
   }
 
+  @Post('findings/:id/merge')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      "Merge a fix's open, green PR without leaving the tab (super-duper-admin)",
+    description:
+      'Only valid from PR_OPENED. On ally-be, ally-web and ally-ai the fix agent cannot ' +
+      'merge its own work — master requires an approving review and the bot holds push ' +
+      'access — so every fix there ends at a green PR and, until now, a trip to GitHub. ' +
+      "This merges as the platform's own token at your explicit request. It refuses a PR " +
+      "whose checks are red, still running, or absent, and passes GitHub's own refusal " +
+      'through verbatim if it still says no. It does NOT deploy: releasing stays the ' +
+      'separate human step below.',
+  })
+  @ApiResponse({ status: 200, type: BugFindingDto })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Not at PR_OPENED, or the PR is red / still running / has no checks.',
+  })
+  async mergeFinding(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: TokenUser,
+  ): Promise<BugFindingDto> {
+    return this.toDto(
+      await this.bugFixSessionService.mergeFinding(id, user.id),
+    );
+  }
+
   @Post('findings/:id/release')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
@@ -404,16 +439,48 @@ export class BugHunterController {
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
   @ApiOperation({
     summary:
-      'Decline to fix a finding — it will never be picked up (super-duper-admin)',
+      'Decline to fix a finding, with a reason — it will never be picked up (super-duper-admin)',
     description:
-      'Valid from NEW or PENDING_APPROVAL. Terminal: rejected findings never re-enter the pipeline.',
+      'Valid from NEW or PENDING_APPROVAL. Terminal: rejected findings never re-enter the ' +
+      'pipeline, and a later sweep that re-finds the same bug touches this row rather than ' +
+      'opening a new one (for 30 days). `reason` is required because it has two readers — ' +
+      'the next sweep, which is shown finder-error declines as known non-bugs, and ' +
+      'GET /metrics, which divides by them to state how often Bug Hunter is right.',
   })
   @ApiResponse({ status: 200, type: BugFindingDto })
   async rejectFinding(
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RejectBugFindingDto,
     @CurrentUser() user: TokenUser,
   ): Promise<BugFindingDto> {
-    return this.toDto(await this.bugFindingService.reject(id, user.id));
+    return this.toDto(
+      await this.bugFindingService.reject(id, user.id, body.reason, body.note),
+    );
+  }
+
+  @Get('metrics')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'How often Bug Hunter is right, how fast, and at what cost (super-duper-admin)',
+    description:
+      'The finding-level funnel the tab could not compute in the browser: per source and ' +
+      'per repo, filed → judged → merged → released, with the accuracy rate, the decline ' +
+      'breakdown, stage latencies, the regression rate and cost per merged fix. ' +
+      'Findings are cohorted by DISCOVERY date so every rate shares one denominator, and ' +
+      'accuracy counts only findings somebody actually ruled on — see BugHunterMetricsService ' +
+      'for why both of those matter more here than anywhere else on the page. ' +
+      'Aggregated in Postgres over the whole window, unlike the run scorecard, whose ' +
+      'client-side newest-50 sum silently under-reports a busy month.',
+  })
+  @ApiResponse({ status: 200, type: BugHunterMetricsDto })
+  async getMetrics(
+    @Query() query: BugHunterMetricsQueryDto,
+  ): Promise<BugHunterMetricsDto> {
+    const metrics = await this.metricsService.report(
+      query.days ?? BUG_HUNTER_METRICS_DEFAULT_DAYS,
+    );
+    return metrics as unknown as BugHunterMetricsDto;
   }
 
   @Patch('findings/:id/description')
@@ -662,6 +729,22 @@ export function toSettingsDto(row: BugHunterSettings): BugHunterSettingsDto {
  *
  * `stage` is computed here rather than stored — see bug-finding-stage.util.ts.
  */
+/**
+ * The verifier certainty stored on `metadata`, or null.
+ *
+ * Postgres hands a JSONB number back as a number, but the pipeline writes this
+ * field over HTTP and a client that sends `"0.8"` would store a string. Both
+ * are read here rather than trusting one, and anything that is not a finite
+ * number in [0,1] comes back null — a malformed certainty must not render as a
+ * confident one.
+ */
+function readConfidence(metadata?: Record<string, any> | null): number | null {
+  const raw = metadata?.confidence;
+  if (raw == null || raw === '') return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : null;
+}
+
 export function toFindingDto(
   row: BugFinding & Partial<BugFindingEnrichment>,
 ): BugFindingDto {
@@ -696,6 +779,20 @@ export function toFindingDto(
     escalationAnsweredAt: row.escalationAnsweredAt ?? null,
     decidedBy: row.decidedBy ?? null,
     decidedAt: row.decidedAt ?? null,
+    decisionReason: row.decisionReason ?? null,
+    decisionNote: row.decisionNote ?? null,
+    // Lifted out of `metadata` rather than exposing the whole JSONB blob. The
+    // column is a scratchpad the pipeline writes freely (fix-attempt counts,
+    // vote tallies), and shipping it wholesale would make every key in it an
+    // accidental part of the API — see the entity's own note on which keys
+    // have readers.
+    confidence: readConfidence(row.metadata),
+    regressionOf:
+      typeof row.metadata?.regressionOf === 'string'
+        ? row.metadata.regressionOf
+        : null,
+    regressed: row.metadata?.regressed === true,
+    rediscoveredCount: Number(row.metadata?.rediscoveredCount ?? 0) || 0,
     sessionRunUrl: row.sessionRunUrl ?? null,
     sessionRunId: row.sessionRunId ?? null,
     releaseTag: row.releaseTag ?? null,

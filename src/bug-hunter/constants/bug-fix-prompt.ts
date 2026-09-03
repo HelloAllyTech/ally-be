@@ -103,7 +103,21 @@ export function buildFixSessionPrompt({
   // runs Jest, so a green suite here does not prove the native/on-device
   // behaviour that actually ships is fixed — see the class doc above.
   const mobileNeverMerges = repo === 'ally-mobile';
-  const allowMerge = !finding.touchesGuardedPath && !mobileNeverMerges;
+  // Three reasons a fix does not merge itself, and they are NOT
+  // interchangeable, because the reviewer needs to know which one applies:
+  //
+  //  - guarded path — a policy choice about this diff (migrations, auth,
+  //    payments), decided per finding;
+  //  - ally-mobile — a policy choice about the platform, since Jest cannot
+  //    prove an on-device fix works;
+  //  - `canBotMerge: false` — not a policy at all, just a fact about the
+  //    repo. `master` requires a review the bot cannot give, so
+  //    `gh pr merge --admin` fails. Telling the agent to merge anyway is what
+  //    made both fix sessions on 2026-09-02 end with a green PR and an
+  //    apology after half an hour of work.
+  const botCanMergeHere = commands.canBotMerge;
+  const allowMerge =
+    !finding.touchesGuardedPath && !mobileNeverMerges && botCanMergeHere;
   const runMinutes = BUG_FIX_SESSION_JOB_TIMEOUT_MINUTES;
 
   // The three Node repos (ally-be, ally-web, ally-mobile) install a husky
@@ -114,18 +128,20 @@ export function buildFixSessionPrompt({
   // Whether skipping it is safe depends entirely on what happens to the commit
   // next.
   //
-  // On the auto-merge path it is NOT safe. Step 9 lands the fix with `gh pr
-  // merge --admin`, and master's protection has `enforce_admins: false` — so
-  // the admin merge walks straight past the PR's own checks. The hook is
-  // therefore the last place the suite ever runs against this diff before it
-  // reaches master, and the only thing standing between a fix agent that
-  // merely *believes* step 5 was green and a red master.
+  // Skipping it is now safe on BOTH paths, which was not true before.
   //
-  // On the PR-only path it is pure duplication: the PR's own CI run does
-  // execute, a human reads it, and nothing merges until they do.
-  const commitHookNote = allowMerge
-    ? `\`git commit\` here may fire a pre-commit hook that re-runs lint and the whole test suite, which routinely takes several minutes. If it does, that is expected — it is NOT a hang, and it is NOT something to work around. Do not pass \`--no-verify\`: step 9 merges this with \`gh pr merge --admin\`, which bypasses the PR's own checks, so that hook is the last time the suite runs against your diff before it lands on master. Commit in the foreground and let it finish.`
-    : `\`git commit\` here may fire a pre-commit hook that re-runs lint and the whole test suite, which routinely takes several minutes. You already ran both yourself at step 5, and this fix is not being merged by you — it stays an open PR whose own CI run and human reviewer are the real gate — so commit with \`git commit --no-verify\` and spend the time on the PR description instead.`;
+  // It used to be unsafe on the auto-merge path because step 9 landed the fix
+  // with `gh pr merge --admin`, walking straight past the PR's own checks
+  // (master's protection has `enforce_admins: false`) — which made the hook
+  // the last place the suite ran against the diff before master. Step 9 now
+  // waits for the PR's checks and squash-merges instead, so the PR's own run
+  // is the gate on every path, and the hook is duplication of a suite the
+  // agent already ran itself at step 5.
+  //
+  // That is worth real minutes: ally-be's hook re-runs lint plus ~6,500 tests
+  // on a commit, and a session that spent them twice was the commonest way to
+  // approach the 60-minute cap.
+  const commitHookNote = `\`git commit\` here may fire a pre-commit hook that re-runs lint and the whole test suite, which routinely takes several minutes. You already ran both yourself at step 5, and the PR's own CI run is the gate that decides whether this lands${allowMerge ? ' (step 9 waits for it)' : ''} — so commit with \`git commit --no-verify\` and spend the time on the PR description instead. If you did NOT get a clean run at step 5, do not skip the hook: fix the suite first.`;
 
   return [
     `You are fixing ONE confirmed bug in the "${repo}" repo, checked out at master in your current working directory, at an admin's explicit request. This bug is already known to be real — do not re-litigate whether it is worth fixing. Read this repo's CLAUDE.md before you change anything.`,
@@ -163,10 +179,12 @@ export function buildFixSessionPrompt({
     `7. Never touch migrations, auth/permission gating, payment or financial code, or other security-sensitive services as an incidental "while I am in here" change — only the diff this bug requires.`,
     `8. Commit, push a branch, and open a PR with "gh pr create" whose description states the bug, the evidence, the fix, and the regression test that proves it. ${commitHookNote} Run ${report('pr_opened', 'opened a PR with the fix and its regression test')}, then PATCH the finding to status "pr_opened" with the PR URL in a "prUrl" field.`,
     allowMerge
-      ? `9. Merge it. An admin explicitly asked for this fix, so a green fix lands rather than queueing: run "gh pr merge --admin", then ${report('merged', 'merged the fix to master')}, then ${patch({ status: 'merged' })}, and finish with outcome "merged". Merge ONLY if step 5 was fully green AND your diff is genuinely limited to this bug — if it turned out to need a wider change than the bug described, leave the PR open, finish with outcome "pr_opened", and say so. Do NOT tag a release or deploy anything: promoting this to production is a separate decision an admin makes in the Bug Hunter tab.`
+      ? `9. Merge it, once CI agrees. An admin explicitly asked for this fix, so a green fix lands rather than queueing — but land it behind the PR's own checks, not around them: run "gh pr checks --watch --fail-fast" and let it finish, then "gh pr merge --squash". Do NOT use "gh pr merge --admin": this repo's master is unprotected, so an admin merge would make your own belief that step 5 was green the only thing between this diff and master, and the PR's run is a second opinion that costs you nothing but the wait. If the checks come back red, do not merge — leave the PR open, ${report('error', 'PR checks went red after the local suite passed')}, finish with outcome "pr_opened", and say which check failed. On a green merge: ${report('merged', 'merged the fix to master')}, then ${patch({ status: 'merged' })}, and finish with outcome "merged". Merge ONLY if your diff is genuinely limited to this bug — if it turned out to need a wider change than the bug described, leave the PR open, finish with outcome "pr_opened", and say so. Do NOT tag a release or deploy anything: promoting this to production is a separate decision an admin makes in the Bug Hunter tab.`
       : mobileNeverMerges
         ? `9. Do NOT merge. ally-mobile fixes always stay a reviewed PR: this pipeline only runs Jest, which cannot prove a native/on-device fix actually works, and a released mobile build is a frozen contract real users stay on for a long time. Leave the PR open and finish with outcome "pr_opened".`
-        : `9. Do NOT merge. This fix touches a guarded path (migrations, auth/permission gating, payments, or another security-sensitive service), which stays a reviewed PR regardless of who asked for it. Leave the PR open and finish with outcome "pr_opened", naming in your summary which guarded area it touches so the reviewer knows where to look.`,
+        : !botCanMergeHere
+          ? `9. Do NOT attempt to merge — you cannot, and trying wastes the end of your session. "${repo}"'s master requires an approving review and your token has push access only, so "gh pr merge --admin" has no admin rights to bypass it with and will fail. This is not a problem with your fix. Instead: make sure the PR is green (run "gh pr checks --watch --fail-fast" and report if it goes red), then ${patch({ status: 'pr_opened', prUrl: '<the PR url>' })} — Bug Hunter puts it in front of an admin as one click to merge, so leaving it green and open IS the finished outcome here. Finish with outcome "pr_opened" and say in your summary that it is ready to merge.`
+          : `9. Do NOT merge. This fix touches a guarded path (migrations, auth/permission gating, payments, or another security-sensitive service), which stays a reviewed PR regardless of who asked for it. Leave the PR open and finish with outcome "pr_opened", naming in your summary which guarded area it touches so the reviewer knows where to look.`,
     `10. Finally, close the run: curl -sS -X POST "${closeUrl}" -H "Content-Type: application/json" ${authHeader} -d '{"status":"completed","foundCount":1,"autoMergedCount":<1 if you merged else 0>,"prOpenedCount":<1 if you left a PR open or escalated else 0>,"dismissedCount":<1 if you dismissed or failed else 0>}'. Do this exactly once, whatever the outcome — a run left open looks to an admin like a session still working.`,
     ``,
     `Report progress throughout with POST ${reportUrl} (JSON body {repo, stage, summary, payload, findingId}, header ${authHeader}). Valid stages: fix_attempt, test_written, doc_updated, pr_opened, merged, escalated, error.`,

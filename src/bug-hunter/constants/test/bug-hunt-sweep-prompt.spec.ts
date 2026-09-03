@@ -1,6 +1,10 @@
 import { BugHunterMode } from '../../enum/bug-finding.enum';
 import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
-import { BUG_HUNT_MAX_AUTO_MERGES_PER_RUN } from '../bug-hunter.constants';
+import {
+  BUG_HUNT_LOW_CONFIDENCE_THRESHOLD,
+  BUG_HUNT_MAX_AUTO_MERGES_PER_RUN,
+  BUG_HUNT_VERIFIER_SUBAGENT,
+} from '../bug-hunter.constants';
 import { buildSweepPrompt } from '../bug-hunt-sweep-prompt';
 import { stageMentions } from './stage-mentions';
 
@@ -72,10 +76,14 @@ describe('buildSweepPrompt', () => {
       expect(build()).toMatch(/proven=true skip this phase/i);
     });
 
-    it('demands three independent refutation attempts, defaulting to refuted', () => {
+    it('gets its verdicts from independent verifiers rather than self-checking', () => {
+      // This replaced "try three times, independently, to REFUTE it" —
+      // wording that read as independence but described the SAME agent
+      // re-reading its own finding three times. The real thing is delegation;
+      // the detail is asserted in the "verification is independent" block.
       const p = build();
-      expect(p).toMatch(/three times, independently, to REFUTE/i);
-      expect(p).toMatch(/Default to refuted/i);
+      expect(p).toMatch(/TWO INDEPENDENT verdicts/i);
+      expect(p).toMatch(/Do NOT judge these findings yourself/i);
     });
   });
 
@@ -98,13 +106,128 @@ describe('buildSweepPrompt', () => {
     });
   });
 
+  describe('verification is independent, and scored', () => {
+    it('delegates each verdict to the verifier subagent instead of self-checking', () => {
+      // The property this restores. `bug-hunt.mjs` always ran three
+      // independent `agent()` calls; the CI prompt that replaced it said "try
+      // three times to refute it yourself", which is the same agent re-reading
+      // its own argument — last night that produced "I personally read the
+      // code for all 9 and confirmed 8" with nothing to calibrate it against.
+      const p = build();
+      expect(p).toContain(BUG_HUNT_VERIFIER_SUBAGENT);
+      expect(p).toMatch(/Do NOT judge these findings yourself/i);
+      expect(p).toMatch(/never saw your reasoning/i);
+    });
+
+    it('withholds the finder’s reasoning from the verifiers', () => {
+      // The verifier's whole value is what it has not been told.
+      expect(build()).toMatch(/never your rationale/i);
+    });
+
+    it('dismisses on a single refutation, and says why that asymmetry is deliberate', () => {
+      const p = build();
+      expect(p).toMatch(/If EITHER verifier refutes it, dismiss it/i);
+      expect(p).toMatch(/false positive costs a reviewer their trust/i);
+    });
+
+    it('requires a decision reason on every dismissal', () => {
+      // Without one, the dismissal teaches the next sweep nothing and the
+      // accuracy figure has no denominator.
+      const p = build();
+      expect(p).toMatch(/decisionReason is REQUIRED/i);
+      expect(p).toContain('not_a_bug');
+      expect(p).toContain('wrong_repo');
+    });
+
+    it('takes the lower of two certainties, not the average', () => {
+      expect(build()).toMatch(/The LOWER, not the average/i);
+    });
+
+    it('holds a low-confidence survivor for a human even in AI mode', () => {
+      const p = build({ mode: BugHunterMode.AI });
+      expect(p).toContain(String(BUG_HUNT_LOW_CONFIDENCE_THRESHOLD));
+      expect(p).toMatch(/pending_approval/);
+    });
+
+    it('still skips verification for proven findings', () => {
+      expect(build()).toMatch(/proven=true skip this phase/i);
+    });
+  });
+
+  describe('known non-bugs', () => {
+    const declined = [
+      {
+        title: 'useFieldAutosave retries forever',
+        file: 'src/hooks/useFieldAutosave.ts',
+        symbol: 'useFieldAutosave',
+        reason: 'not_a_bug',
+        note: "the code's own comment documents unlimited retry as intended",
+      },
+    ];
+
+    it('says nothing at all when there is nothing settled', () => {
+      // A heading with an empty list under it is prompt weight for no
+      // information, and this text competes with the protocol it precedes.
+      expect(build({ knownNonBugs: [] })).not.toMatch(/Already settled/i);
+    });
+
+    it('lists what reviewers already ruled out, with the reason', () => {
+      const p = build({ knownNonBugs: declined });
+      expect(p).toMatch(/Already settled/i);
+      expect(p).toContain('useFieldAutosave retries forever');
+      expect(p).toContain('not_a_bug');
+      expect(p).toContain('intended');
+    });
+
+    it('tells the agent its own reading is the thing more likely to be wrong', () => {
+      expect(build({ knownNonBugs: declined })).toMatch(
+        /your reading is wrong, not that the reviewer was/i,
+      );
+    });
+
+    it('still leaves room to re-file with an explanation', () => {
+      // A permanent veto would be wrong: code changes underneath a decision.
+      expect(build({ knownNonBugs: declined })).toMatch(
+        /you may still report it/i,
+      );
+    });
+
+    it('clips a long title rather than letting one entry dominate', () => {
+      const p = build({
+        knownNonBugs: [
+          { title: 'x'.repeat(400), reason: 'not_a_bug', note: null },
+        ],
+      });
+      expect(p).toContain('…');
+      expect(p).not.toContain('x'.repeat(300));
+    });
+
+    it('collapses a multi-line note into one bullet', () => {
+      const p = build({
+        knownNonBugs: [
+          {
+            title: 'Something',
+            reason: 'wont_fix',
+            note: 'first line\n\nsecond line',
+          },
+        ],
+      });
+      expect(p).toContain('first line second line');
+    });
+  });
+
   describe('merge policy', () => {
+    // ally-ai-learn is the only repo where the bot can actually land a merge
+    // (unprotected master), so it is the only place the auto-merge rules are
+    // reachable — see BUG_HUNT_REPOS.canBotMerge.
+    const mergeable = () => build({ repo: 'ally-ai-learn' });
+
     it('states the per-run auto-merge cap from the shared constant', () => {
-      expect(build()).toContain(String(BUG_HUNT_MAX_AUTO_MERGES_PER_RUN));
+      expect(mergeable()).toContain(String(BUG_HUNT_MAX_AUTO_MERGES_PER_RUN));
     });
 
     it('never permits merging a guarded path', () => {
-      expect(build()).toMatch(/touchesGuardedPath=false/);
+      expect(mergeable()).toMatch(/touchesGuardedPath=false/);
     });
 
     it('forbids tagging a release or deploying', () => {
@@ -113,7 +236,25 @@ describe('buildSweepPrompt', () => {
     });
 
     it('tells the agent not to merge something borderline', () => {
-      expect(build()).toMatch(/borderline/i);
+      expect(mergeable()).toMatch(/borderline/i);
+    });
+
+    it('merges behind the PR checks, never with --admin', () => {
+      const p = mergeable();
+      expect(p).toContain('gh pr checks --watch');
+      expect(p).toContain('gh pr merge --squash');
+      expect(p).not.toContain('gh pr merge --admin');
+    });
+
+    it('tells a protected repo it cannot merge, separately from the mobile rule', () => {
+      // Same fix as in the fix-session prompt: the sweep spent its Fix phase
+      // opening PRs and then failing at a merge its token could never perform.
+      const p = build({ repo: 'ally-be' });
+      expect(p).toMatch(/Do not attempt to merge anything here/i);
+      expect(p).toMatch(/push access only/i);
+      expect(p).not.toMatch(/you may merge at most/i);
+      // The mobile reasoning must not leak onto a backend repo.
+      expect(p).not.toMatch(/frozen contract/i);
     });
   });
 
@@ -177,8 +318,11 @@ describe('buildSweepPrompt', () => {
       expect(build()).not.toContain('verify_result');
     });
 
-    it('asks for a verify report on the findings it dismisses', () => {
-      expect(build()).toMatch(/report a verify stage saying why/i);
+    it('asks for a verify report on every finding, accepted or dismissed', () => {
+      // Widened deliberately: a finding the verifiers ACCEPTED is now worth a
+      // report too, because its confidence score is the thing a reader needs
+      // and there was previously no event carrying it.
+      expect(build()).toMatch(/Report a verify stage per finding either way/i);
     });
   });
 
