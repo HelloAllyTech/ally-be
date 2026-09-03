@@ -193,7 +193,7 @@ export class LearnerUsageQueryDto {
 
   @ApiProperty({
     description:
-      'Status facet; omitted means every status. Accepts a comma-separated list (`?status=dormant,never_started`) or a repeated param — RTK Query\'s fetchBaseQuery comma-joins arrays, so the frontend sends the former. Applied in SQL, so `count` reflects the filter.',
+      "Status facet; omitted means every status. Accepts a comma-separated list (`?status=dormant,never_started`) or a repeated param — RTK Query's fetchBaseQuery comma-joins arrays, so the frontend sends the former. Applied in SQL, so `count` reflects the filter.",
     enum: LEARNER_USAGE_STATUSES,
     isArray: true,
     required: false,
@@ -299,7 +299,7 @@ export class LearnerUsageRowDto {
   @ApiProperty({
     nullable: true,
     description:
-      'Composite score summed over the window\'s completed sessions divided by those practice minutes. Null when the window holds no measurable practice time (never 0). Can be negative — composite scores go below zero.',
+      "Composite score summed over the window's completed sessions divided by those practice minutes. Null when the window holds no measurable practice time (never 0). Can be negative — composite scores go below zero.",
   })
   roleplayPointsPerMinute!: number | null;
 
