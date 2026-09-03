@@ -574,6 +574,18 @@ export class BuilderController {
     return this.metricsService.scoreboard(Number(windowDays) || 30);
   }
 
+  @Get('pipeline-health')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.VIEW_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'Where a run spends its time and money — per phase, gate and outcome',
+  })
+  pipelineHealth(@Query('windowDays') windowDays?: string) {
+    return this.metricsService.pipelineHealth(Number(windowDays) || 30);
+  }
+
   @Get('exemplars')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
     permissions: [PERMISSIONS.VIEW_BUILDER],

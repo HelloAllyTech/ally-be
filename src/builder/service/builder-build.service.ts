@@ -1164,6 +1164,9 @@ export class BuilderBuildService {
       model?: string;
       modelUsage?: Record<string, any>;
       totalCostUsd?: number;
+      durationMs?: number;
+      durationApiMs?: number;
+      numTurns?: number;
     },
   ): Promise<void> {
     // Re-read: earlier phases of this run have already written their share.
@@ -1172,14 +1175,31 @@ export class BuilderBuildService {
 
     const phases: Record<
       string,
-      { model?: string | null; usd: number; usage?: Record<string, any> | null }
+      {
+        model?: string | null;
+        usd: number;
+        usage?: Record<string, any> | null;
+        durationMs?: number | null;
+        durationApiMs?: number | null;
+        numTurns?: number | null;
+      }
     > = { ...((current.cost?.phases as Record<string, any>) ?? {}) };
 
     const usd = Number(cost.totalCostUsd ?? 0);
+    // A count of zero is real; a missing one is not. `?? null` rather than a
+    // `|| 0` fallback, so an older workflow that reports no timings leaves them
+    // absent instead of plotting a 0-second phase.
+    const positive = (value?: number) =>
+      Number.isFinite(Number(value)) && Number(value) >= 0
+        ? Number(value)
+        : null;
     phases[cost.phase ?? 'build'] = {
       model: cost.model ?? null,
       usd: Number.isFinite(usd) && usd > 0 ? usd : 0,
       usage: cost.modelUsage ?? null,
+      durationMs: positive(cost.durationMs),
+      durationApiMs: positive(cost.durationApiMs),
+      numTurns: positive(cost.numTurns),
     };
 
     const runTotal = Object.values(phases).reduce(

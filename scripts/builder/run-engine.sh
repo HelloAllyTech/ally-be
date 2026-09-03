@@ -89,11 +89,21 @@ report_phase_cost() {
     const [phase, model, file] = process.argv.slice(1);
     let raw = {};
     try { raw = JSON.parse(fs.readFileSync(file, "utf8")); } catch { process.exit(0); }
+    const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
     const body = {
       phase,
       model,
       modelUsage: raw.modelUsage ?? raw.usage ?? null,
       totalCostUsd: Number(raw.total_cost_usd ?? raw.totalCostUsd ?? 0) || 0,
+      // Already in the result frame and, until now, thrown away — which is why
+      // nothing could say where a 48-minute run spent its time. durationMs is
+      // the invocation wall clock and durationApiMs the part spent waiting on
+      // the model, so the difference is time inside tool calls: on the first
+      // real build that was 20 of the 33 minutes the coder took, nearly all of it
+      // full test suites the gate then ran a second time.
+      durationMs: num(raw.duration_ms ?? raw.durationMs),
+      durationApiMs: num(raw.duration_api_ms ?? raw.durationApiMs),
+      numTurns: num(raw.num_turns ?? raw.numTurns),
     };
     fs.writeFileSync("/tmp/builder-cost-body.json", JSON.stringify(body));
   ' "$phase" "$model" "$result_file" 2>/dev/null || return 0

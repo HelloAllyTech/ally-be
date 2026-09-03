@@ -79,13 +79,24 @@ jobs:
         with:
           node-version: "24"
 
-      # Catches the two failure classes above, plus the shell ones the YAML
-      # parser cannot see.
+      # Every workflow in the repo, which is what catches an unparseable one
+      # before it costs a dispatch to discover.
+      #
+      # `-shellcheck=` turns off actionlint's shellcheck pass over embedded
+      # `run:` blocks. Not because it is wrong — because main.yaml,
+      # production-release.yaml and bug-hunt-sweep.yml carry about a hundred
+      # pre-existing SC2086/SC2129 quoting and style hits, and a job that is red
+      # from its first commit is a job everyone learns to ignore. The scripts
+      # this change owns are shellchecked properly in the next step; cleaning up
+      # the release pipeline's quoting is its own piece of work.
       - name: Lint the workflows
         run: |
           bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
-          ./actionlint -color
+          ./actionlint -color -shellcheck=
 
+      # The Builder runner's own shell, with shellcheck for real. These are
+      # clean at -S warning and need to stay that way: run-engine.sh is 500
+      # lines of bash holding a $17 pipeline together.
       - name: Shell lint the runner scripts
         run: shellcheck -S warning scripts/builder/*.sh scripts/builder/test/*.sh
 
