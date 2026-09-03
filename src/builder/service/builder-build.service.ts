@@ -981,10 +981,23 @@ export class BuilderBuildService {
       if (current && !this.isActive(current.status)) return;
 
       if (remote.conclusion === 'success') {
-        // Success on GitHub without a /complete callback means the runner
-        // finished but never reported — treat it as done rather than leaving
-        // the session building forever.
-        await this.settleRun(run, BuilderRunStatus.SUCCEEDED, null);
+        // A green job without a /complete callback is NOT a success. `claude -p`
+        // exits 0 whenever the agent produces a final response, including when
+        // it ends its turn mid-protocol — so "the agent stopped after CODE
+        // without committing" and "the agent finished and opened PRs" reach
+        // this branch identically. Settling SUCCEEDED here reported builds that
+        // never shipped anything, and made the scoreboard's merge rate a
+        // measure of nothing.
+        //
+        // The run reports its own outcome or it did not finish. The workflow's
+        // outcome gate normally catches this first and posts a precise error;
+        // this is the net for when the runner died before that step ran.
+        await this.failRun(
+          run,
+          'The runner finished without reporting an outcome. It stopped ' +
+            'mid-protocol, so anything it had not pushed is gone with the ' +
+            'runner. Retry the build.',
+        );
       } else if (remote.conclusion === 'cancelled') {
         await this.settleRun(run, BuilderRunStatus.CANCELLED, null);
       } else {

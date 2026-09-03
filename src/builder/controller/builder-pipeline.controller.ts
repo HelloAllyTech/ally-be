@@ -547,6 +547,31 @@ export class BuilderPipelineController {
     return { ok: true };
   }
 
+  /**
+   * What the run looks like from the outside, for the workflow's own
+   * outcome gate to read after the engine exits.
+   *
+   * `claude -p` exits 0 whenever the agent produces a final response — including
+   * when it ends its turn mid-protocol. That makes "stopped without reporting"
+   * indistinguishable from success at the workflow level, so the workflow asks
+   * here instead of trusting its own exit code.
+   */
+  @Get('runs/:runId/status')
+  @ApiOperation({
+    summary: 'Run status, stage and PR count, for the runner outcome gate',
+  })
+  async getRunStatus(@Param('runId', ParseUUIDPipe) runId: string) {
+    const run = await this.buildService.getRunOrFail(runId);
+    const pullRequests = await this.pullRequestService.listBySession(
+      run.sessionId,
+    );
+    return {
+      runId: run.id,
+      status: run.status,
+      pullRequestCount: pullRequests.filter((pr) => pr.runId === run.id).length,
+    };
+  }
+
   @Get('runs/:runId/budget')
   @ApiOperation({
     summary: 'Live spend against the session ceiling, checked between phases',

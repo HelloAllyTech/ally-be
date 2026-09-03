@@ -34,6 +34,8 @@ const RESULT_OUT = resultOutIndex > -1 ? process.argv[resultOutIndex + 1] : null
 /** Flush on either bound, whichever comes first. */
 const FLUSH_INTERVAL_MS = 2000;
 const FLUSH_SIZE = 20;
+/** Mirrors BUILDER_EVENT_BATCH_MAX in builder.constants.ts — the server 400s above it. */
+const MAX_BATCH = 100;
 const MAX_RETRIES = 3;
 /** Keep any single payload well under the server's own 8KB cap. */
 const MAX_FIELD_CHARS = 4000;
@@ -163,9 +165,17 @@ const post = async (events) => {
 const flush = async () => {
   if (flushing || !queue.length) return;
   flushing = true;
-  const batch = queue.splice(0, queue.length);
   try {
-    await post(batch);
+    // In chunks the server will accept. ally-be rejects a batch over
+    // BUILDER_EVENT_BATCH_MAX (100) with a 400, and `post` does not retry a
+    // 4xx — so draining the whole queue at once meant that a busy phase, which
+    // is exactly when events pile up past 100 while a flush is in flight,
+    // silently dropped the lot. A dropped `gate_result` is not cosmetic: it is
+    // the evidence `/complete {done}` refuses to finish without, so telemetry
+    // loss was failing runs whose gate had genuinely passed.
+    while (queue.length) {
+      await post(queue.splice(0, MAX_BATCH));
+    }
   } finally {
     flushing = false;
   }

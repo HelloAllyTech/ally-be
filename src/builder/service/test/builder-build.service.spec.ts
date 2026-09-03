@@ -427,6 +427,37 @@ describe('BuilderBuildService', () => {
       );
     });
 
+    it('fails a green job that never reported an outcome', async () => {
+      const run = {
+        id: 'run-1',
+        sessionId: 'session-1',
+        githubRunId: '99',
+        dispatchedAt: new Date(),
+        status: BuilderRunStatus.RUNNING,
+      };
+      runRepository.listActive.mockResolvedValue([run]);
+      runRepository.findOne.mockResolvedValue(run);
+      github.getRun.mockResolvedValue({
+        status: 'completed',
+        conclusion: 'success',
+      });
+
+      await service.reconcile();
+
+      // `claude -p` exits 0 whenever the agent produces a final response,
+      // including mid-protocol — so a green job proves the runner exited, not
+      // that it shipped anything. A run reports its own outcome or it did not
+      // finish. Settling SUCCEEDED here reported builds that opened no PR.
+      expect(runRepository.update).not.toHaveBeenCalledWith(
+        { id: 'run-1' },
+        expect.objectContaining({ status: BuilderRunStatus.SUCCEEDED }),
+      );
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: 'run-1' },
+        expect.objectContaining({ status: BuilderRunStatus.FAILED }),
+      );
+    });
+
     it('fails a dispatch GitHub never registered', async () => {
       runRepository.listActive.mockResolvedValue([
         {
