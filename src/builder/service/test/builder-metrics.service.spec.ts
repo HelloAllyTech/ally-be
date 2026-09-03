@@ -181,4 +181,61 @@ describe('BuilderMetricsService', () => {
       expect(dataSource.query).toHaveBeenCalledWith(expect.any(String), ['30']);
     });
   });
+
+  describe('scoreboard timing', () => {
+    it('separates machine time from waiting for a person', async () => {
+      dataSource.query.mockImplementation((sql: string) => {
+        if (sql.includes('builder_exemplars e')) {
+          return Promise.resolve([
+            {
+              sessionId: 's1',
+              title: 'A build that paused overnight',
+              repos: ['ally-be'],
+              createdAt: new Date(),
+              outcome: 'merged',
+              runCount: 2,
+              // 18 hours end to end, 40 minutes of it actually building.
+              durationHours: '18',
+              machineMinutes: '40',
+              humanWaitMinutes: '1040',
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      });
+
+      const [build] = (await service.scoreboard(30)).builds;
+
+      // Reporting only the wide number made Builder look slow when it was
+      // waiting; only the narrow one would hide that the feature took a day.
+      expect(build.durationHours).toBe(18);
+      expect(build.machineMinutes).toBe(40);
+      expect(build.humanWaitMinutes).toBe(1040);
+    });
+
+    it('does not claim a zero wait it could not measure', async () => {
+      dataSource.query.mockImplementation((sql: string) => {
+        if (sql.includes('builder_exemplars e')) {
+          return Promise.resolve([
+            {
+              sessionId: 's1',
+              title: 'An exemplar with no run rows',
+              repos: [],
+              createdAt: new Date(),
+              outcome: 'merged',
+              runCount: null,
+              durationHours: null,
+              machineMinutes: null,
+              humanWaitMinutes: null,
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      });
+
+      const [build] = (await service.scoreboard(30)).builds;
+      expect(build.machineMinutes).toBeNull();
+      expect(build.humanWaitMinutes).toBeNull();
+    });
+  });
 });

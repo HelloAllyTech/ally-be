@@ -305,13 +305,43 @@ export class BuilderMetricsService {
          e."failureTags"                                 AS "failureTags",
          r.run_count                                     AS "runCount",
          EXTRACT(EPOCH FROM (r.last_completed - r.first_dispatched)) / 3600
-                                                         AS "durationHours"
+                                                         AS "durationHours",
+         -- Machine time: the sum of each run's own wall clock. durationHours
+         -- above spans first dispatch to last completion, so on a session that
+         -- paused for a question it also counts however long the human took to
+         -- answer. Both are worth knowing and they are different numbers —
+         -- reporting only the wide one made Builder look slow when it was
+         -- waiting, and reporting only the narrow one would hide that the
+         -- feature still took two days to arrive.
+         r.machine_minutes                               AS "machineMinutes",
+         -- CASE, not GREATEST(x, 0): Postgres's GREATEST ignores NULLs, so a
+         -- session with no run rows to measure came back as a confident zero
+         -- rather than "not known". Same trap as the phase timings.
+         CASE
+           WHEN r.last_completed IS NULL
+             OR r.first_dispatched IS NULL
+             OR r.machine_minutes IS NULL
+           THEN NULL
+           ELSE GREATEST(
+             EXTRACT(EPOCH FROM (r.last_completed - r.first_dispatched)) / 60
+               - r.machine_minutes,
+             0
+           )
+         END                                             AS "humanWaitMinutes"
        FROM builder_exemplars e
        LEFT JOIN (
          SELECT "sessionId",
                 COUNT(*)::int        AS run_count,
                 MIN("dispatchedAt")  AS first_dispatched,
-                MAX("completedAt")   AS last_completed
+                MAX("completedAt")   AS last_completed,
+                SUM(
+                  EXTRACT(
+                    EPOCH FROM (
+                      COALESCE("completedAt", "startedAt", "dispatchedAt")
+                        - COALESCE("startedAt", "dispatchedAt")
+                    )
+                  ) / 60
+                )                    AS machine_minutes
            FROM builder_build_runs
           GROUP BY "sessionId"
        ) r ON r."sessionId" = e."sessionId"
@@ -335,6 +365,8 @@ export class BuilderMetricsService {
         row.runnerMinutes === null ? null : Number(row.runnerMinutes),
       durationHours:
         row.durationHours === null ? null : Number(row.durationHours),
+      machineMinutes: this.numberOrNull(row.machineMinutes),
+      humanWaitMinutes: this.numberOrNull(row.humanWaitMinutes),
       timeToMergeHours:
         row.timeToMergeHours === null ? null : Number(row.timeToMergeHours),
       failureTags: row.failureTags ?? [],
@@ -468,7 +500,12 @@ export interface BuilderScoreboardBuild {
   ciFailureCount: number;
   costUsd: number | null;
   runnerMinutes: number | null;
+  /** First dispatch to last completion — includes any wait for a human. */
   durationHours: number | null;
+  /** The sum of the runs' own wall clocks: machine time only. */
+  machineMinutes: number | null;
+  /** The remainder — what the session spent parked on a question. */
+  humanWaitMinutes: number | null;
   timeToMergeHours: number | null;
   failureTags: string[];
 }
