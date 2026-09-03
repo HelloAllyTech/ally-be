@@ -796,6 +796,15 @@ export class LanguageGlossaryService {
     let autoAccepted = 0;
     let overlayEntries = 0;
     let skippedDuplicates = 0;
+    // Proposals that restate an ALREADY-PUBLISHED line. Recorded rather than
+    // silently dropped: a dropped proposal never consumes its annotations, so
+    // the same rule is re-derived from the same evidence and re-dropped on
+    // every cycle, forever, while those rows occupy the bounded read window.
+    // Recording them here consumes the evidence (batch findings are part of
+    // the consumed-set) and leaves the collision visible — a published rule
+    // that keeps re-deriving is a rule that is not working.
+    const redundantFindings: { summary: string; annotationIds: string[] }[] =
+      [];
     const touched: string[] = [];
     const batchEntries: ConsolidationBatchEntry[] = [];
 
@@ -885,12 +894,27 @@ export class LanguageGlossaryService {
         const newEntryIds: string[] = [];
         for (const { proposal, annos } of bucket) {
           const markdown = proposal.markdown.trim();
-          if (dedupe.isDuplicate(markdown)) {
+          const annotationIds = annos.map((a) => a.id);
+          const duplicate = dedupe.duplicateOf(markdown);
+          if (duplicate) {
             skippedDuplicates++;
+            // A queued sibling is still undecided, and whichever lands
+            // consumes the evidence — dropping is correct there. A published
+            // match is the deadlock case.
+            if (duplicate.source === 'published' && annotationIds.length > 0) {
+              redundantFindings.push({
+                summary: (
+                  `Re-derived an already-published rule, so the published one ` +
+                  `is not preventing these errors. Proposed: ` +
+                  `"${markdown.slice(0, 160)}" — already published: ` +
+                  `"${duplicate.line.slice(0, 160)}"`
+                ).slice(0, 500),
+                annotationIds,
+              });
+            }
             continue;
           }
           dedupe.add(markdown);
-          const annotationIds = annos.map((a) => a.id);
           const tenantIds = [
             ...new Set(annos.map((a) => a.tenantId).filter(Boolean)),
           ];
@@ -962,12 +986,15 @@ export class LanguageGlossaryService {
 
     // Production-artifact clusters land on the batch as engineering findings
     // (v3 prompt contract) — visible to engineers, never glossary content.
-    const engineeringFindings = rawFindings.map((f) => ({
-      summary: f.summary.slice(0, 500),
-      annotationIds: (f.sourceAnnotationIndexes ?? [])
-        .map((i) => annotations[i - 1]?.id)
-        .filter((id): id is string => Boolean(id)),
-    }));
+    const engineeringFindings = [
+      ...rawFindings.map((f) => ({
+        summary: f.summary.slice(0, 500),
+        annotationIds: (f.sourceAnnotationIndexes ?? [])
+          .map((i) => annotations[i - 1]?.id)
+          .filter((id): id is string => Boolean(id)),
+      })),
+      ...redundantFindings,
+    ];
 
     const distinctTenants = new Set(
       annotations.map((a) => a.tenantId).filter(Boolean),

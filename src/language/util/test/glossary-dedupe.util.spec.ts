@@ -71,4 +71,42 @@ describe('GlossaryDedupeIndex', () => {
   it('keeps the near-duplicate bar high enough to require near-identity', () => {
     expect(GLOSSARY_NEAR_DUPLICATE_JACCARD).toBeGreaterThanOrEqual(0.8);
   });
+
+  // The caller's obligation differs by source: a queued sibling can simply be
+  // dropped (whichever lands consumes the evidence), while a PUBLISHED match
+  // means the rule is being re-derived because the published one isn't working.
+  describe('match source', () => {
+    it('reports a published-content match as published', () => {
+      const index = new GlossaryDedupeIndex();
+      index.addContent('- Use நீங்க, not நீங்கள்.');
+      const match = index.duplicateOf('- Use நீங்க, not நீங்கள்.');
+      expect(match?.source).toBe('published');
+    });
+
+    it('reports a queued-proposal match as a proposal', () => {
+      const index = new GlossaryDedupeIndex();
+      index.add('- Use நீங்க, not நீங்கள்.');
+      expect(index.duplicateOf('- Use நீங்க, not நீங்கள்.')?.source).toBe(
+        'proposal',
+      );
+    });
+
+    it('prefers published over proposal when both match', () => {
+      const index = new GlossaryDedupeIndex();
+      index.add('- Prefer டென்ஷன் over பதட்டம் in casual talk.');
+      index.addContent('- Prefer டென்ஷன் over பதட்டம் in casual talk!');
+      // Near-identity on both; the stricter obligation must win regardless of
+      // insertion order.
+      expect(
+        index.duplicateOf('- Prefer டென்ஷன் over பதட்டம் in casual talk')
+          ?.source,
+      ).toBe('published');
+    });
+
+    it('returns null for a genuinely new rule', () => {
+      const index = new GlossaryDedupeIndex();
+      index.addContent('- Use நீங்க, not நீங்கள்.');
+      expect(index.duplicateOf('- Mother takes she-forms: அவங்க.')).toBeNull();
+    });
+  });
 });

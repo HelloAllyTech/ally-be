@@ -546,6 +546,42 @@ describe('LanguageGlossaryService', () => {
       const result = await service.consolidateGlossary(6);
       expect(result.proposed).toBe(0);
       expect(result.skippedDuplicates).toBe(1);
+
+      // A PUBLISHED match consumes its evidence via a batch finding. Dropping
+      // it silently would leave the annotations unconsumed, so the same rule
+      // is re-derived and re-dropped on every cycle, forever, while those rows
+      // occupy the bounded read window.
+      const batch = batchRepository.save.mock.calls.at(-1)[0];
+      const findings = batch.stats.engineeringFindings;
+      expect(findings).toHaveLength(1);
+      expect(findings[0].annotationIds).toEqual(['a1']);
+      expect(findings[0].summary).toContain('already-published');
+      expect(findings[0].summary.length).toBeLessThanOrEqual(500);
+    });
+
+    it('does NOT record a finding when the match is a queued proposal', async () => {
+      setAnnotationPool([annotation('a1')]);
+      glossaryRepository.findSection.mockResolvedValue(
+        makeSection({
+          sectionCode: 'clinical_terms',
+          content: '',
+          entries: [
+            {
+              id: 'queued-1',
+              markdown: '- anxiety: say "டென்ஷன்" (avoid: "பதட்டம்")',
+              status: GlossaryEntryStatus.PROPOSED,
+            },
+          ],
+        }),
+      );
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      const result = await service.consolidateGlossary(6);
+      expect(result.skippedDuplicates).toBe(1);
+      // The sibling is still undecided; whichever lands consumes the evidence,
+      // so there is nothing to flag and nothing to consume here.
+      const batch = batchRepository.save.mock.calls.at(-1)[0];
+      expect(batch.stats.engineeringFindings).toBeUndefined();
     });
 
     it('skips a proposal already covered by ANOTHER section of the language', async () => {
