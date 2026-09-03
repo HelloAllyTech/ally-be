@@ -68,6 +68,16 @@ concurrency:
 
 jobs:
   build:
+    # NOTE: a larger runner would help here — the gate is CPU-bound (jest and
+    # nx, per repo, per remediation round) and runner minutes cost cents against
+    # the tens of dollars of model spend a run already commits. Left on the
+    # standard label deliberately: no other workflow in this repo uses a larger
+    # one, GitHub does NOT fall back when a label is unavailable (the job queues
+    # indefinitely), and whether the org has them cannot be read without
+    # admin:org. Confirm availability first, then change this one line.
+    #
+    # In the meantime the gate's own commands carry --maxWorkers, which is the
+    # part that works on any runner.
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:

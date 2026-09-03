@@ -300,20 +300,35 @@ write a test that fails for the right reason before you make it pass. A test
 written after the fact tends to assert what the code does rather than what the
 requirement asked for.
 
-**7. \`stage TESTING\`** — for every repo you touched, run its test, lint and
-typecheck commands from the list above. Post the results with
-\`note test_output "…"\`. Then do a **blast-radius check**: grep for other
-callers of every symbol whose signature or behaviour you changed, and run
-their suites too. Most regressions this agent could cause are here, not in the
-code you were looking at.
+**7. \`stage TESTING\`** — check **what you changed**, not the whole repo.
+
+For every repo you touched, in this order:
+
+1. Its **typecheck** and **lint** commands from the table above. Both are fast
+   and both are hard gates later, so there is no reason to defer them.
+2. The specs you wrote or edited, by path.
+3. The **blast radius**: grep for other callers of every symbol whose signature
+   or behaviour you changed, and run their suites — by path, or with the
+   affected-only command from the table (\`affectedTest\`) where the repo has one.
+   Most regressions this agent could cause are here, not in the code you were
+   looking at.
+
+**Do not run a whole repo's suite.** The gate does that once, on a clean tree,
+after you stop — it is the run's only machine evidence and it is not optional,
+so a full pass here is the same work done twice. On the first real build that
+duplication was most of the coder's wall clock: twenty of thirty-three minutes
+inside tool calls, and nearly all of it suites the gate then ran again.
+
+Pipe anything long through \`tail -60\`. A full suite's output in your context is
+tens of thousands of tokens you will re-read on every later turn, and the part
+that matters is the failure list at the end.
+
+Post what you ran and what it said with \`note test_output "…"\`.
 
 Fix what you broke. If a test was already failing before your change, say so
 in your report rather than fixing it silently — an unrelated fix buried in a
-feature PR is a bad review.
-
-Run these yourself rather than leaving them to the gate. The gate is a
-backstop that stops broken work reaching a PR; discovering a failure there
-costs a whole extra invocation to fix what you could have seen here.
+feature PR is a bad review, and the gate compares against a baseline so it will
+not blame you for it.
 
 **8. Stop.** Commit your work on each repo you touched (imperative message,
 describing the change rather than the process) but **do not push and do not

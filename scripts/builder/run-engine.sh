@@ -292,12 +292,18 @@ if [ "${BUILDER_MODE:-build}" = "fix" ]; then
   exit 1
 fi
 
-# ── Phase 0: baseline, in the background ────────────────────────────────────
+# ── Phase 0: dependencies, in the background ────────────────────────────────
 #
-# Which suites were ALREADY failing before this run touched anything. Captured
-# on the pristine clones, while the planner is thinking — the wall time is free
-# — because otherwise a repo with one pre-existing failure would make every
-# gate red and the only way past it would be to let the agent waive its own
+# Dependency installs only, during PLAN. The coder needs them regardless, so
+# this is genuinely free wall clock.
+#
+# The suites that make a BASELINE are no longer run here. They used to be, and
+# because the coder cannot start until this finishes, every run paid for the
+# slowest repo's full suite whether or not anything ever failed. The gate now
+# computes a baseline lazily, for one repo, only when a test has actually failed
+# and there is something to excuse — the reason a baseline exists at all being
+# that otherwise a repo with one pre-existing failure makes every gate red and
+# the only way past is to let the agent waive its own
 # test results.
 "${HERE}/capture-baseline.sh" >/tmp/builder-baseline.log 2>&1 &
 BASELINE_PID=$!
@@ -338,7 +344,8 @@ echo "::endgroup::"
 exit_if_paused "planning"
 hold_or_abort_if_over_budget
 
-# Wait for the baseline before the first gate can need it.
+# The coder needs dependencies installed; it does not need a baseline, which
+# the gate now fetches for itself if a failure turns out to need excusing.
 wait "$BASELINE_PID" 2>/dev/null || true
 
 # ── Phase 2: CODE → GATE → VERIFY, with remediation ─────────────────────────
