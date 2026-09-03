@@ -38,6 +38,18 @@ export const dataSourceOptions: DataSourceOptions = {
       process.env.DB_STATEMENT_TIMEOUT_MS,
       30_000,
     ),
+    // `pg` waits FOREVER for a free pooled connection by default, which turns a
+    // busy minute into an outage shaped like a hang: on 2026-09-03 the pool ran
+    // out and requests sat holding sockets instead of failing, so trivial reads
+    // (`tooltips/active`, `users/me/preferences`) died at the statement timeout
+    // while the queue behind them kept growing. Failing fast sheds load and
+    // surfaces saturation as itself — an error naming the pool, rather than a
+    // timeout that reads as a slow query and sends the next reader hunting
+    // through SQL that was never the problem.
+    connectionTimeoutMillis: parsePositiveInt(
+      process.env.DB_CONNECTION_TIMEOUT_MS,
+      10_000,
+    ),
   },
 };
 

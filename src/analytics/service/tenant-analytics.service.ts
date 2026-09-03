@@ -22,6 +22,7 @@ import {
   isoDate,
   resolveAnalyticsWindow,
 } from '../util/analytics-window.util';
+import { withReportingQuerySlot } from '../../common/util/reporting-query-slots.util';
 
 const MS_PER_MINUTE = 60_000;
 const MS_PER_DAY = 86_400_000;
@@ -110,43 +111,71 @@ export class TenantAnalyticsService {
       timeToFirstSession,
       mostUsedSimulations,
     ] = await Promise.all([
-      this.repo.getCompletedSimulationCount(
-        tenantId,
-        windowStart,
-        endExclusive,
+      withReportingQuerySlot(() =>
+        this.repo.getCompletedSimulationCount(
+          tenantId,
+          windowStart,
+          endExclusive,
+        ),
       ),
-      this.repo.getActiveUserCount(tenantId, windowStart, endExclusive),
-      this.repo.getCompletedSimulationsByBucket(
-        tenantId,
-        windowStart,
-        endExclusive,
-        bucket,
+      withReportingQuerySlot(() =>
+        this.repo.getActiveUserCount(tenantId, windowStart, endExclusive),
       ),
-      this.repo.getActiveUsersByBucket(
-        tenantId,
-        windowStart,
-        endExclusive,
-        bucket,
+      withReportingQuerySlot(() =>
+        this.repo.getCompletedSimulationsByBucket(
+          tenantId,
+          windowStart,
+          endExclusive,
+          bucket,
+        ),
       ),
-      this.repo.getNewLearnersOnboardedCount(
-        tenantId,
-        windowStart,
-        endExclusive,
+      withReportingQuerySlot(() =>
+        this.repo.getActiveUsersByBucket(
+          tenantId,
+          windowStart,
+          endExclusive,
+          bucket,
+        ),
       ),
-      this.repo.getNewLearnersOnboardedByBucket(
-        tenantId,
-        windowStart,
-        endExclusive,
-        bucket,
+      withReportingQuerySlot(() =>
+        this.repo.getNewLearnersOnboardedCount(
+          tenantId,
+          windowStart,
+          endExclusive,
+        ),
       ),
-      this.repo.getTotalRegisteredLearnersCount(tenantId),
-      this.repo.getSessionEngagementTotals(tenantId, windowStart, endExclusive),
-      this.repo.getTimeToFirstSessionStats(tenantId, windowStart, endExclusive),
-      this.repo.getMostUsedSimulations(
-        tenantId,
-        windowStart,
-        endExclusive,
-        MOST_USED_SIMULATIONS_LIMIT,
+      withReportingQuerySlot(() =>
+        this.repo.getNewLearnersOnboardedByBucket(
+          tenantId,
+          windowStart,
+          endExclusive,
+          bucket,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getTotalRegisteredLearnersCount(tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getSessionEngagementTotals(
+          tenantId,
+          windowStart,
+          endExclusive,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getTimeToFirstSessionStats(
+          tenantId,
+          windowStart,
+          endExclusive,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getMostUsedSimulations(
+          tenantId,
+          windowStart,
+          endExclusive,
+          MOST_USED_SIMULATIONS_LIMIT,
+        ),
       ),
     ]);
 

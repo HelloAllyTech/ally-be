@@ -53,6 +53,7 @@ import {
   resolveAnalyticsWindow,
   truncToBucket,
 } from '../util/analytics-window.util';
+import { withReportingQuerySlot } from '../../common/util/reporting-query-slots.util';
 
 /** Voice-to-voice latency target (ms) — the reference line on the trend. */
 const VOICE_LATENCY_TARGET_MS = 4000;
@@ -292,27 +293,41 @@ export class PlatformAnalyticsService {
       returningInWindow,
       simsInWindow,
     ] = await Promise.all([
-      this.repo.getNewUsersByBucket(windowStart, endExclusive, bucket),
-      this.repo.getUserCountBefore(windowStart),
-      this.repo.getDailyActivityPairs(activityStart, endExclusive),
-      this.repo.getSimulationsCompletedByBucket(
-        windowStart,
-        endExclusive,
-        bucket,
+      withReportingQuerySlot(() =>
+        this.repo.getNewUsersByBucket(windowStart, endExclusive, bucket),
       ),
-      this.repo.getActivePairsWithCreatedAtByBucket(
-        windowStart,
-        endExclusive,
-        bucket,
+      withReportingQuerySlot(() => this.repo.getUserCountBefore(windowStart)),
+      withReportingQuerySlot(() =>
+        this.repo.getDailyActivityPairs(activityStart, endExclusive),
       ),
-      this.repo.getUsersByRole(),
-      this.repo.getTotalUsers(),
+      withReportingQuerySlot(() =>
+        this.repo.getSimulationsCompletedByBucket(
+          windowStart,
+          endExclusive,
+          bucket,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getActivePairsWithCreatedAtByBucket(
+          windowStart,
+          endExclusive,
+          bucket,
+        ),
+      ),
+      withReportingQuerySlot(() => this.repo.getUsersByRole()),
+      withReportingQuerySlot(() => this.repo.getTotalUsers()),
       // Summary KPIs now cover the SELECTED window rather than a fixed rolling
       // 30 days / current week. A KPI strip that silently reports a different
       // period than the charts beside it invites exactly the wrong comparison.
-      this.repo.getActiveUserCountSince(windowStart, endExclusive),
-      this.repo.getReturningActiveUserCountSince(windowStart, endExclusive),
-      this.repo.getCompletedSimsSince(windowStart, endExclusive),
+      withReportingQuerySlot(() =>
+        this.repo.getActiveUserCountSince(windowStart, endExclusive),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getReturningActiveUserCountSince(windowStart, endExclusive),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getCompletedSimsSince(windowStart, endExclusive),
+      ),
     ]);
 
     const summary = {
@@ -386,10 +401,21 @@ export class PlatformAnalyticsService {
 
     const prev = previousWindow(window);
     const [totalUsersThen, active, returning, sims] = await Promise.all([
-      this.repo.getUserCountBefore(prev.endExclusive),
-      this.repo.getActiveUserCountSince(prev.start, prev.endExclusive),
-      this.repo.getReturningActiveUserCountSince(prev.start, prev.endExclusive),
-      this.repo.getCompletedSimsSince(prev.start, prev.endExclusive),
+      withReportingQuerySlot(() =>
+        this.repo.getUserCountBefore(prev.endExclusive),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getActiveUserCountSince(prev.start, prev.endExclusive),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getReturningActiveUserCountSince(
+          prev.start,
+          prev.endExclusive,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getCompletedSimsSince(prev.start, prev.endExclusive),
+      ),
     ]);
 
     return {
@@ -588,13 +614,17 @@ export class PlatformAnalyticsService {
     );
 
     const [points, byLanguage] = await Promise.all([
-      this.repo.getVoiceLatencyByBucket(
-        windowStart,
-        endExclusive,
-        bucket,
-        language,
+      withReportingQuerySlot(() =>
+        this.repo.getVoiceLatencyByBucket(
+          windowStart,
+          endExclusive,
+          bucket,
+          language,
+        ),
       ),
-      this.repo.getVoiceLatencyByLanguage(windowStart, endExclusive),
+      withReportingQuerySlot(() =>
+        this.repo.getVoiceLatencyByLanguage(windowStart, endExclusive),
+      ),
     ]);
 
     return {
@@ -779,13 +809,19 @@ export class PlatformAnalyticsService {
     const { start: windowStart, endExclusive, bucket } = window;
 
     const [rows, outcomeMix, freezeRows] = await Promise.all([
-      this.repo.getAgentJoinReliabilityByBucket(
-        windowStart,
-        endExclusive,
-        bucket,
+      withReportingQuerySlot(() =>
+        this.repo.getAgentJoinReliabilityByBucket(
+          windowStart,
+          endExclusive,
+          bucket,
+        ),
       ),
-      this.repo.getSessionOutcomeMix(windowStart, endExclusive),
-      this.repo.getSuspectedFreezeByBucket(windowStart, endExclusive, bucket),
+      withReportingQuerySlot(() =>
+        this.repo.getSessionOutcomeMix(windowStart, endExclusive),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getSuspectedFreezeByBucket(windowStart, endExclusive, bucket),
+      ),
     ]);
 
     // Merge over the UNION of buckets: join-reliability is keyed off the

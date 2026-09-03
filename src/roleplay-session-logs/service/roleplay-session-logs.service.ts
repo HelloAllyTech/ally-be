@@ -34,6 +34,7 @@ import {
   computeServiceCostUsd,
 } from '../../analytics/constants/llm-pricing.constants';
 import { GlossaryAdherenceService } from '../../language/service/glossary-adherence.service';
+import { withReportingQuerySlot } from '../../common/util/reporting-query-slots.util';
 
 /** Round a USD figure to cents, matching PlatformAnalyticsService. */
 const roundUsd = (n: number): number => Math.round(n * 100) / 100;
@@ -119,28 +120,60 @@ export class RoleplaySessionLogsService {
       glossaryAdherence,
       internalMonologue,
     ] = await Promise.all([
-      this.roleplaySessionLogsRepository.findSummary(id),
-      this.roleplaySessionLogsRepository.findEvents(id),
-      this.roleplaySessionLogsRepository.findTranscript(id),
-      this.roleplaySessionLogsRepository.getUsageBySession(id),
-      this.roleplaySessionLogsRepository.getLatencyBySession(id),
-      this.roleplaySessionLogsRepository.getRecordingBySession(id),
-      this.roleplaySessionLogsRepository.getFeedbackBySession(id),
-      this.roleplaySessionLogsRepository.findAgentTestCases(),
-      this.roleplaySessionLogsRepository.findLifecycleEvents(id),
-      this.roleplaySessionLogsRepository.getFreezeSignals(id),
-      this.roleplaySessionLogsRepository.findLanguageJudgment(id),
-      this.roleplaySessionLogsRepository.findDriftJudgment(id),
-      this.roleplaySessionLogsRepository.findWeakMetrics(id, {
-        rePromptGapSeconds: WEAK_METRICS_PARAMS.rePromptGapSeconds,
-        stasisJaccard: WEAK_METRICS_PARAMS.stasisJaccard,
-        stasisMinWordLength: WEAK_METRICS_PARAMS.stasisMinWordLength,
-      }),
-      this.roleplaySessionLogsRepository.findRunConfig(id),
-      this.roleplaySessionLogsRepository.getGlossaryActivity(id),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.findSummary(id),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.findEvents(id),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.findTranscript(id),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.getUsageBySession(id),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.getLatencyBySession(id),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.getRecordingBySession(id),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.getFeedbackBySession(id),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.findAgentTestCases(),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.findLifecycleEvents(id),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.getFreezeSignals(id),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.findLanguageJudgment(id),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.findDriftJudgment(id),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.findWeakMetrics(id, {
+          rePromptGapSeconds: WEAK_METRICS_PARAMS.rePromptGapSeconds,
+          stasisJaccard: WEAK_METRICS_PARAMS.stasisJaccard,
+          stasisMinWordLength: WEAK_METRICS_PARAMS.stasisMinWordLength,
+        }),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.findRunConfig(id),
+      ),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.getGlossaryActivity(id),
+      ),
       // Read-only preview (no upsert) — see GlossaryAdherenceService.previewAdherence.
       this.glossaryAdherenceService.previewAdherence(id),
-      this.roleplaySessionLogsRepository.findInternalMonologue(id),
+      withReportingQuerySlot(() =>
+        this.roleplaySessionLogsRepository.findInternalMonologue(id),
+      ),
     ]);
 
     // Suspected mid-session freeze: had a conversation and either the agent

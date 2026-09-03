@@ -18,6 +18,7 @@ import {
   previousWindow,
   resolveAnalyticsWindow,
 } from '../util/analytics-window.util';
+import { withReportingQuerySlot } from '../../common/util/reporting-query-slots.util';
 
 // UTC date maths and the range->window mapping live in analytics-window.util,
 // shared with the sibling analytics services.
@@ -170,26 +171,54 @@ export class ScribeAnalyticsService {
       sttProviderStats,
       summaryModelStats,
     ] = await Promise.all([
-      this.repo.getFailureRateByBucket(
-        windowStart,
-        endExclusive,
-        bucket,
-        tenantId,
+      withReportingQuerySlot(() =>
+        this.repo.getFailureRateByBucket(
+          windowStart,
+          endExclusive,
+          bucket,
+          tenantId,
+        ),
       ),
-      this.repo.getFirstAttemptFailureRateByBucket(
-        windowStart,
-        endExclusive,
-        bucket,
-        tenantId,
+      withReportingQuerySlot(() =>
+        this.repo.getFirstAttemptFailureRateByBucket(
+          windowStart,
+          endExclusive,
+          bucket,
+          tenantId,
+        ),
       ),
-      this.repo.getFailureBreakdown(windowStart, endExclusive, tenantId),
-      this.repo.getFailuresByMode(windowStart, endExclusive, tenantId),
-      this.repo.getFailuresByCaptureMethod(windowStart, endExclusive, tenantId),
-      this.repo.getFailureRetryableCounts(windowStart, endExclusive, tenantId),
-      this.repo.getFailureTimeoutCounts(windowStart, endExclusive, tenantId),
-      this.repo.getPhaseDropoff(windowStart, endExclusive, tenantId),
-      this.repo.getSttProviderStats(windowStart, endExclusive, tenantId),
-      this.repo.getSummaryModelStats(windowStart, endExclusive, tenantId),
+      withReportingQuerySlot(() =>
+        this.repo.getFailureBreakdown(windowStart, endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getFailuresByMode(windowStart, endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getFailuresByCaptureMethod(
+          windowStart,
+          endExclusive,
+          tenantId,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getFailureRetryableCounts(
+          windowStart,
+          endExclusive,
+          tenantId,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getFailureTimeoutCounts(windowStart, endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getPhaseDropoff(windowStart, endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getSttProviderStats(windowStart, endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getSummaryModelStats(windowStart, endExclusive, tenantId),
+      ),
     ]);
 
     const byBucket = new Map(rateRows.map((r) => [r.bucket, r]));
