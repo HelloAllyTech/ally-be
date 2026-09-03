@@ -46,6 +46,8 @@ import {
 } from '../dto/weak-metrics.dto';
 import { WeakMetricsAnalyticsService } from '../service/weak-metrics-analytics.service';
 import { FeedbackGroundednessJudgeService } from '../service/feedback-groundedness-judge.service';
+import { FillerAnalyticsService } from '../service/filler-analytics.service';
+import { FillerJudgeService } from '../service/filler-judge.service';
 import { LanguageJudgeService } from '../service/language-judge.service';
 import { PlatformAnalyticsService } from '../service/platform-analytics.service';
 import { ScribeAnalyticsService } from '../service/scribe-analytics.service';
@@ -67,6 +69,9 @@ import {
   ConversationDriftQueryDto,
   ConversationDriftResponseDto,
   DriftBackfillJobDto,
+  FillerBackfillJobDto,
+  FillerQualityPointDto,
+  FillerQualityQueryDto,
   LanguageBackfillJobDto,
   LanguageEvalReferenceDto,
   LanguageQualityQueryDto,
@@ -75,6 +80,7 @@ import {
   StartDriftBackfillDto,
   StartGroundednessBackfillDto,
   GroundednessBackfillJobDto,
+  StartFillerBackfillDto,
   StartLanguageBackfillDto,
   StartLatencyQueryDto,
   StartLatencyResponseDto,
@@ -237,6 +243,8 @@ export class AnalyticsController {
     private readonly platformAnalyticsService: PlatformAnalyticsService,
     private readonly scribeAnalyticsService: ScribeAnalyticsService,
     private readonly languageJudgeService: LanguageJudgeService,
+    private readonly fillerJudgeService: FillerJudgeService,
+    private readonly fillerAnalyticsService: FillerAnalyticsService,
     private readonly languageAnalyticsService: LanguageAnalyticsService,
     private readonly glossaryEffectAnalyticsService: GlossaryEffectAnalyticsService,
     private readonly weakMetricsAnalyticsService: WeakMetricsAnalyticsService,
@@ -1546,6 +1554,75 @@ export class AnalyticsController {
     @Body() body: SetLanguageEvalReferenceDto,
   ): Promise<LanguageEvalReferenceDto | null> {
     return this.languageAnalyticsService.setReference(body);
+  }
+
+  @Get('filler-quality')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Thinking-filler quality over time (super-admin)',
+    description:
+      'Finding rates per 100 played fillers, bucketed by day. The denominator ' +
+      'is played fillers, not sessions or turns: a session that played forty ' +
+      'and one that played two are not comparable units. No scalar quality ' +
+      'scores — rates are computed at read time from labelled findings.',
+  })
+  @ApiResponse({ status: 200, type: [FillerQualityPointDto] })
+  async getFillerQuality(
+    @Query() query: FillerQualityQueryDto,
+  ): Promise<FillerQualityPointDto[]> {
+    return this.fillerAnalyticsService.getFillerQuality(query);
+  }
+
+  @Post('filler-quality/backfill')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Run the thinking-filler judge backfill (super-admin)',
+    description:
+      'Kicks off an async thinking-filler judge backfill on ally-ai over ' +
+      'sessions that actually played a filler. Writes per-session denominator ' +
+      'rows and per-finding annotations. Returns a job id to poll. ' +
+      'The filler is the character first words, so response latency is ' +
+      'measured to it — this is what tells a fast filler from a good one.',
+  })
+  @ApiResponse({ status: 202, type: FillerBackfillJobDto })
+  async startFillerBackfill(
+    @Body() body: StartFillerBackfillDto,
+  ): Promise<FillerBackfillJobDto> {
+    return this.fillerJudgeService.startBackfill({
+      since: body.since,
+      until: body.until,
+      language: body.language,
+      scenarioId: body.scenarioId,
+      limit: body.limit,
+      rejudge: body.rejudge,
+      concurrency: body.concurrency,
+    });
+  }
+
+  @Get('filler-quality/backfill/:jobId')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Thinking-filler backfill job status (super-admin)',
+  })
+  @ApiResponse({ status: 200, type: FillerBackfillJobDto })
+  async fillerBackfillStatus(
+    @Param('jobId') jobId: string,
+  ): Promise<FillerBackfillJobDto> {
+    const job = await this.fillerJudgeService.getJob(jobId);
+    if (!job) {
+      return {
+        jobId,
+        status: 'error',
+        total: 0,
+        processed: 0,
+        judged: 0,
+        findings: 0,
+        skipped: 0,
+        failed: 0,
+        error: 'job not found (expired or unknown)',
+      };
+    }
+    return job;
   }
 
   @Post('language-quality/backfill')

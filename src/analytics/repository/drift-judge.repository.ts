@@ -210,9 +210,11 @@ export class DriftJudgeRepository {
       sender_id: number;
       content: string | null;
       interrupted: string | null;
+      utterance_kind: string | null;
     }[] = await this.dataSource.query(
       `SELECT "senderId" AS sender_id, content,
-                metadata->>'interrupted' AS interrupted
+                metadata->>'interrupted' AS interrupted,
+                metadata->>'utteranceKind' AS utterance_kind
            FROM scenario_session_messages
           WHERE "scenarioSessionId" = $1
           ORDER BY COALESCE("startSeconds", 0), id`,
@@ -225,6 +227,24 @@ export class DriftJudgeRepository {
     let lastCounselor = '';
     for (const r of rows) {
       const content = r.content ?? '';
+      // A thinking filler and an interim reply are also stored as AI-sender
+      // messages, so before `utteranceKind` existed every "Hmm" took a turn
+      // index and was judged as if it were the character's real reply. That
+      // inflated `turnsJudged` — the denominator under every error rate — and
+      // invited spurious annotations on utterances that are SUPPOSED to be
+      // contentless. Skip them: they are latency masking, not turns, and the
+      // filler judge evaluates them on their own terms.
+      //
+      // Only an explicit marker excludes a line. A message with no marker is
+      // from a worker that predates the field, and is far more likely to be a
+      // real reply than a filler — dropping those would silently shrink the
+      // historical corpus.
+      if (
+        r.sender_id === AI_SENDER_ID &&
+        (r.utterance_kind === 'filler' || r.utterance_kind === 'interim')
+      ) {
+        continue;
+      }
       if (r.sender_id === AI_SENDER_ID) {
         transcript.push({
           role: 'client',

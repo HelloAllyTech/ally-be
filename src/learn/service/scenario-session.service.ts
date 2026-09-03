@@ -2144,8 +2144,20 @@ export class ScenarioSessionService {
         // rather than becoming `false`: the language judge conditions on
         // presence, and an older worker's silence must not read as "this turn
         // was not interrupted". See MessageRequest.interrupted.
-        ...(chatMessage.interrupted !== undefined && {
-          metadata: { interrupted: chatMessage.interrupted },
+        // Both are stored only when the worker actually reported them.
+        // Undefined stays absent rather than becoming a default: the judges
+        // condition on presence, and an older worker's silence must not read as
+        // "not interrupted" or "this was a real reply". See MessageRequest.
+        ...((chatMessage.interrupted !== undefined ||
+          chatMessage.utterance_kind !== undefined) && {
+          metadata: {
+            ...(chatMessage.interrupted !== undefined && {
+              interrupted: chatMessage.interrupted,
+            }),
+            ...(chatMessage.utterance_kind !== undefined && {
+              utteranceKind: chatMessage.utterance_kind,
+            }),
+          },
         }),
       });
     return this.scenarioSessionMessagesRepository.save(scenarioSessionMessage);

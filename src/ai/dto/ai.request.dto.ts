@@ -41,6 +41,21 @@ export type MessageRequest = {
    * the turn completed.
    */
   interrupted?: boolean;
+  /**
+   * Which KIND of client utterance this line is: 'reply' (the real generated
+   * reply), 'filler' (a thinking filler — a short back-channel spoken while the
+   * reply was still forming) or 'interim' (a non-committal holding reply).
+   *
+   * All three arrive as CLIENT lines and one turn can emit all three in a row,
+   * so without this they are indistinguishable except by position — and
+   * position stops being reliable the moment a continuation filler plays. The
+   * values match `metadata.firstAudioSource` on the turn-metrics row.
+   *
+   * Undefined means unknown (an older worker, or a COUNSELOR turn) and is
+   * deliberately distinct from 'reply': treating that silence as a real reply
+   * would mislabel every filler already in the backlog.
+   */
+  utterance_kind?: string;
 };
 
 export type EnhanceTextRequest = {

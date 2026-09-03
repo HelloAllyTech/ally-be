@@ -42,6 +42,11 @@ export enum LlmTask {
   EMBEDDING = 'embedding',
   DRIFT_JUDGE = 'drift_judge',
   LANGUAGE_JUDGE = 'language_judge',
+  // Thinking-filler judge in ally-ai: scores whether a filler sounded like the
+  // character and fitted the turn. Its own label rather than folded into
+  // LANGUAGE_JUDGE because it runs on a different cadence over a different
+  // slice — sharing one would make both lines unreadable.
+  FILLER_JUDGE = 'filler_judge',
   // Analytics Agent (admin Analytics -> Analytics Agent tab): one planning call
   // (question -> SQL) and one narration call (rows -> answer) per question.
   // Separate labels because the planner carries the whole schema catalogue and
