@@ -28,6 +28,7 @@ import { BuilderSettingsService } from './builder-settings.service';
 import { BuilderNotificationService } from './builder-notification.service';
 import { BuilderExemplarService } from './builder-exemplar.service';
 import { BuilderEpicService } from './builder-epic.service';
+import { BuilderPrdService } from './builder-prd.service';
 import {
   BUILDER_RUN_ACTIVE_STATUSES,
   BuilderEventType,
@@ -50,6 +51,10 @@ import {
   BUILDER_WORKFLOW_FILE,
   BUILDER_WORKFLOW_REF,
   BUILDER_WORKFLOW_REPO,
+  BUILDER_SIZE_PROFILES,
+  BuilderBuildSize,
+  classifyBuildSize,
+  prdTechnicalPlanLength,
 } from '../constants/builder.constants';
 
 /**
@@ -59,6 +64,23 @@ import {
  * workflow on purpose: run-engine.sh reads them at the boundary it stops on,
  * so the wait can be re-tuned here without a workflow merge.
  */
+/**
+ * What the runner is told about models and spending, in one object.
+ *
+ * Rides the single `models` workflow input: `workflow_dispatch` accepts at most
+ * 10 inputs and builder-session.yml is already at 9.
+ */
+export interface BuilderResolvedModels {
+  planner: string;
+  coder: string;
+  verifier: string;
+  size: BuilderBuildSize;
+  effort: 'low' | 'medium' | 'high';
+  plannerMaxTurns: number;
+  planWords: number;
+  budgets: { plan: number; code: number; verify: number; finalise: number };
+}
+
 export interface BuilderBudgetState {
   budgetUsd: number | null;
   spentUsd: number;
@@ -100,6 +122,7 @@ export class BuilderBuildService {
     private readonly exemplarService: BuilderExemplarService,
     private readonly epicService: BuilderEpicService,
     private readonly llmUsage: LlmUsageService,
+    private readonly prdService: BuilderPrdService,
   ) {}
 
   /**
@@ -151,7 +174,8 @@ export class BuilderBuildService {
     this.assertWithinBudget(session, settings.maxRunnerMinutes);
 
     const engine = overrides.engine ?? session.engine;
-    const models = this.resolveModels(session, settings, overrides);
+    const size = await this.classifySession(session);
+    const models = this.resolveModels(session, settings, overrides, size);
 
     // Carry the chosen engine/model onto the session so a resume run and the
     // UI both read the same thing without re-deriving it.
@@ -279,22 +303,74 @@ export class BuilderBuildService {
       plannerModel?: string;
       verifierModel?: string;
     } = {},
-  ): { planner: string; coder: string; verifier: string } {
+    size: BuilderBuildSize = BuilderBuildSize.MEDIUM,
+  ): BuilderResolvedModels {
     const config = this.configService.builder;
+    const profile = BUILDER_SIZE_PROFILES[size];
+
+    const coder =
+      overrides.model ??
+      session.model ??
+      settings.coderModel ??
+      settings.defaultModel ??
+      config.coderModel;
+    const plannerTier =
+      settings.plannerModel ?? config.plannerModel ?? config.coderModel;
+
     return {
+      // An explicit override always wins — an admin who picked a planner meant
+      // it. Otherwise a small build plans on the coder tier: Opus earns its
+      // price on cross-repo contracts, not on two routes and a checkbox.
       planner:
-        overrides.plannerModel ?? settings.plannerModel ?? config.plannerModel,
-      coder:
-        overrides.model ??
-        session.model ??
-        settings.coderModel ??
-        settings.defaultModel ??
-        config.coderModel,
+        overrides.plannerModel ??
+        (profile.plannerTier === 'coder' ? coder : plannerTier),
+      coder,
       verifier:
         overrides.verifierModel ??
         settings.verifierModel ??
         config.verifierModel,
+      // Read by run-engine.sh out of the same `models` input, because
+      // workflow_dispatch caps at 10 and the workflow already sits at 9.
+      size,
+      effort: profile.effort,
+      plannerMaxTurns: profile.maxTurns,
+      planWords: profile.planWords,
+      budgets: profile.maxBudgetUsd,
     };
+  }
+
+  /**
+   * Size a session's PRD.
+   *
+   * Failure is not fatal and lands on MEDIUM: an unreadable PRD is a reason to
+   * spend the default, not a reason to refuse a build.
+   */
+  private async classifySession(
+    session: BuilderSession,
+  ): Promise<BuilderBuildSize> {
+    try {
+      const doc = await this.prdService.getOrCreateDoc(
+        session.id,
+        session.createdBy,
+      );
+      const draft = (doc?.draft ?? {}) as Record<string, any>;
+      const milestones = await this.epicService.listBySession(session.id);
+      return classifyBuildSize({
+        requirementCount: Array.isArray(draft.requirements)
+          ? draft.requirements.length
+          : 0,
+        repoCount: (session.repos ?? []).length,
+        technicalPlanLength: prdTechnicalPlanLength(draft),
+        isEpic: milestones.length > 0,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Could not size the PRD for session ${session.id}; planning at the default tier: ${
+          (error as Error).message
+        }`,
+      );
+      return BuilderBuildSize.MEDIUM;
+    }
   }
 
   /**

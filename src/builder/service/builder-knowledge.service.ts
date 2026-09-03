@@ -159,6 +159,40 @@ export class BuilderKnowledgeService {
    * read, so the same trap learned five times became five rows competing for
    * one fixed context budget.
    */
+  /**
+   * Just the repo knowledge packs, for the build phases.
+   *
+   * The interview has had these since the module was written; the planner and
+   * coder never did, so every build phase rediscovered repo structure by
+   * reading files. On the first real build the planner spent $7.85 and 19
+   * minutes largely doing that.
+   *
+   * Rendered separately from `buildContextBlock` rather than reusing it because
+   * the build phases have no use for the feature-toggle registry that block
+   * also carries, and a prompt prefix is not the place for tokens nobody reads.
+   */
+  async renderRepoPacks(repos?: string[]): Promise<string> {
+    const maps = await this.repoMapRepository.listAll();
+    const byRepo = new Map(maps.map((map) => [map.repo, map]));
+    const relevant = (
+      repos?.length
+        ? repos.map((repo) => byRepo.get(repo)).filter(Boolean)
+        : maps
+    ) as BuilderRepoMap[];
+
+    if (!relevant.length) return '';
+
+    const parts = ['# Repo knowledge packs\n'];
+    for (const map of relevant) {
+      parts.push(
+        `\n## ${map.repo}${
+          map.commitSha ? ` (at ${map.commitSha.slice(0, 7)})` : ''
+        }\n\n${map.mapMd}`,
+      );
+    }
+    return parts.join('\n');
+  }
+
   async recordLesson(params: {
     sessionId?: string | null;
     /** @deprecated pass `repos` — a single repo loses multi-repo attribution. */

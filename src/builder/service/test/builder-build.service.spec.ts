@@ -71,6 +71,7 @@ describe('BuilderBuildService', () => {
     listBySession: jest.Mock;
   };
   let llmUsage: { record: jest.Mock };
+  let prdService: { getOrCreateDoc: jest.Mock };
 
   beforeEach(() => {
     github = {
@@ -140,6 +141,13 @@ describe('BuilderBuildService', () => {
     };
     // Build-half spend goes to the unified usage store as well as the run row.
     llmUsage = { record: jest.fn().mockResolvedValue(undefined) };
+    // Sizing reads the PRD to decide what planning is worth. A small default,
+    // so a test that does not care gets the cheap planner and says nothing.
+    prdService = {
+      getOrCreateDoc: jest
+        .fn()
+        .mockResolvedValue({ draft: { requirements: [], technicalPlan: '' } }),
+    };
 
     service = new BuilderBuildService(
       {
@@ -163,7 +171,79 @@ describe('BuilderBuildService', () => {
       exemplarService as any,
       epicService as any,
       llmUsage as any,
+      prdService as any,
     );
+  });
+
+  describe('sizing a build', () => {
+    const dispatchedModels = () =>
+      JSON.parse(
+        github.dispatchWorkflow.mock.calls[0][0].inputs.models as string,
+      );
+
+    it('plans a small PRD on the coder tier, not Opus', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          requirements: [{ id: 'R1' }, { id: 'R2' }],
+          technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'small' }] },
+        },
+      });
+
+      await service.startBuild(readySession() as any, 1);
+
+      const models = dispatchedModels();
+      // The first real build was exactly this shape and paid $7.85 for an Opus
+      // plan of a two-route change.
+      expect(models.planner).toBe('claude-sonnet-5');
+      expect(models.size).toBe('small');
+      expect(models.effort).toBe('low');
+      expect(models.plannerMaxTurns).toBe(20);
+      expect(models.budgets.plan).toBe(2);
+    });
+
+    it('keeps Opus for a cross-repo build', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          requirements: Array.from({ length: 6 }, (_, i) => ({ id: `R${i}` })),
+          technicalPlan: {
+            repos: [
+              { repo: 'ally-be', changesMd: 'x'.repeat(2000) },
+              { repo: 'ally-web', changesMd: 'y'.repeat(2000) },
+            ],
+          },
+        },
+      });
+
+      await service.startBuild(
+        readySession({ repos: ['ally-be', 'ally-web'] }) as any,
+        1,
+      );
+
+      expect(dispatchedModels().planner).toBe('claude-opus-5');
+    });
+
+    it('lets an explicit planner override win over sizing', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: { requirements: [{ id: 'R1' }], technicalPlan: null },
+      });
+
+      await service.startBuild(readySession() as any, 1, {
+        plannerModel: 'claude-opus-5',
+      });
+
+      // An admin who picked a planner meant it.
+      expect(dispatchedModels().planner).toBe('claude-opus-5');
+    });
+
+    it('plans at the default tier when the PRD cannot be read', async () => {
+      prdService.getOrCreateDoc.mockRejectedValue(new Error('gone'));
+
+      await service.startBuild(readySession() as any, 1);
+
+      // An unreadable PRD is a reason to spend the default, not to refuse.
+      expect(dispatchedModels().size).toBe('medium');
+      expect(github.dispatchWorkflow).toHaveBeenCalled();
+    });
   });
 
   describe('startBuild', () => {

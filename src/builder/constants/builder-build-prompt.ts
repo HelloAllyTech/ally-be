@@ -323,6 +323,15 @@ Pipe anything long through \`tail -60\`. A full suite's output in your context i
 tens of thousands of tokens you will re-read on every later turn, and the part
 that matters is the failure list at the end.
 
+The same applies to everything you read. This phase is charged for its whole
+context on every turn, and a coding pass runs well over a hundred turns:
+
+- Prefer \`Grep\` and a \`Read\` with a line range over reading a whole file. A
+  2,000-line service read in full is paid for a hundred more times.
+- When a \`Task\` subagent finishes, write down what you needed from it in a few
+  lines and work from that, not from its full transcript.
+- Do not re-read a file you have already read unless you changed it.
+
 Post what you ran and what it said with \`note test_output "…"\`.
 
 Fix what you broke. If a test was already failing before your change, say so
