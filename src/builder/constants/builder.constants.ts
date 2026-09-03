@@ -13,6 +13,15 @@ export const BUILDER_SSE_PING_INTERVAL_MS = 15_000;
 export const BUILDER_MAX_TOKENS = 8192;
 
 /**
+ * How long the interviewer's system prompt is memoised.
+ *
+ * It was re-read from the database and the filesystem on every turn. A minute
+ * of staleness after someone edits the prompt is nobody's problem; the turn
+ * latency is what a person actually waits through.
+ */
+export const BUILDER_SYSTEM_PROMPT_TTL_MS = 60_000;
+
+/**
  * Output cap for one interview model pass, deliberately larger than the
  * shared cap above.
  *
