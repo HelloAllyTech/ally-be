@@ -10,6 +10,8 @@ import { HighlightsAnalyticsService } from '../../service/highlights-analytics.s
 import { PlatformAnalyticsService } from '../../service/platform-analytics.service';
 import { ScribeAnalyticsService } from '../../service/scribe-analytics.service';
 import { LanguageJudgeService } from '../../service/language-judge.service';
+import { FillerJudgeService } from '../../service/filler-judge.service';
+import { FillerAnalyticsService } from '../../service/filler-analytics.service';
 import { LanguageAnalyticsService } from '../../service/language-analytics.service';
 import { GlossaryEffectAnalyticsService } from '../../service/glossary-effect-analytics.service';
 import { WeakMetricsAnalyticsService } from '../../service/weak-metrics-analytics.service';
@@ -132,6 +134,14 @@ describe('AnalyticsController', () => {
         {
           provide: LanguageJudgeService,
           useValue: { startBackfill: jest.fn(), getJob: jest.fn() },
+        },
+        {
+          provide: FillerJudgeService,
+          useValue: { startBackfill: jest.fn(), getJob: jest.fn() },
+        },
+        {
+          provide: FillerAnalyticsService,
+          useValue: { getFillerQuality: jest.fn() },
         },
         {
           provide: LanguageAnalyticsService,

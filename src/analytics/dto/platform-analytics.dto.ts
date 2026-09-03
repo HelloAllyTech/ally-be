@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -9,7 +10,7 @@ import {
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import { MAX_CUSTOM_RANGE_DAYS } from '../util/analytics-window.util';
 
@@ -824,6 +825,133 @@ export class LanguageBackfillJobDto {
       'how a backfill that judged nothing went unnoticed for ten minutes.',
   })
   failed!: number;
+}
+
+export class FillerQualityQueryDto extends AnalyticsWindowQueryDto {}
+
+export class FillerQualityPointDto {
+  @ApiProperty({ description: 'Bucket start date (ISO yyyy-mm-dd)' })
+  bucket!: string;
+  @ApiProperty({ description: 'Played fillers judged in this bucket.' })
+  fillersJudged!: number;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'character_fit findings per 100 played fillers — "did it sound like ' +
+      'this character". Excludes findings conditioned out because the ' +
+      'scenario configured no style; those are counted separately.',
+  })
+  characterFitPer100!: number | null;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'context_fit findings per 100 — "did it fit what the learner just said".',
+  })
+  contextFitPer100!: number | null;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'safety findings per 100 — the filler committed to something the real ' +
+      'reply, generated separately and afterwards, could contradict.',
+  })
+  safetyPer100!: number | null;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'Findings per 100 that were conditioned out because the character had ' +
+      'no configured style. A CONFIGURATION gap, not a model failure — worth ' +
+      'seeing, worth keeping out of the model-facing rates.',
+  })
+  unconfiguredStylePer100!: number | null;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: 'Share of played fillers that repeated a recent phrase.',
+  })
+  repeatedPct!: number | null;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'Distinct phrases / total played. A session can mask every gap ' +
+      'perfectly and still sound like a soundboard; only this shows it.',
+  })
+  distinctPhraseRatio!: number | null;
+}
+
+export class FillerBackfillJobDto {
+  @ApiProperty() jobId!: string;
+  @ApiProperty({ description: 'queued | running | done | error' })
+  status!: string;
+  @ApiProperty() total!: number;
+  @ApiProperty() processed!: number;
+  @ApiProperty() judged!: number;
+  @ApiProperty({ description: 'Total findings persisted so far.' })
+  findings!: number;
+  @ApiProperty({
+    description:
+      'Sessions the selector matched but whose filler lines carry no ' +
+      '`utteranceKind` marker — an older worker. Skipped rather than judged: ' +
+      'a zero-denominator row reads like a clean session when it is really an ' +
+      'unmeasurable one.',
+  })
+  skipped!: number;
+  @ApiProperty({
+    description:
+      'Sessions whose judge call errored or timed out. Separate from ' +
+      '`processed`, which counts attempts.',
+  })
+  failed!: number;
+  @ApiProperty({ required: false, nullable: true }) error?: string | null;
+}
+
+export class StartFillerBackfillDto {
+  @ApiPropertyOptional({
+    description: 'ISO date lower bound on session start.',
+  })
+  @IsOptional()
+  @IsString()
+  since?: string;
+
+  @ApiPropertyOptional({
+    description: 'ISO date upper bound on session start.',
+  })
+  @IsOptional()
+  @IsString()
+  until?: string;
+
+  @ApiPropertyOptional({ description: 'languages.value filter, e.g. ta-IN.' })
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @ApiPropertyOptional({ description: 'Restrict to one scenario.' })
+  @IsOptional()
+  @IsInt()
+  scenarioId?: number;
+
+  @ApiPropertyOptional({ description: 'Cap on sessions this run takes on.' })
+  @IsOptional()
+  @IsInt()
+  limit?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Re-judge sessions this judge version already covered. Off by default ' +
+      'so a restarted run costs only what it has not already done.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  rejudge?: boolean;
+
+  @ApiPropertyOptional({ description: 'Override the concurrency pool size.' })
+  @IsOptional()
+  @IsInt()
+  concurrency?: number;
 }
 
 export class AgentJoinReliabilityQueryDto extends AnalyticsWindowQueryDto {}

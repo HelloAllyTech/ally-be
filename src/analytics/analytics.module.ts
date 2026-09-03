@@ -68,6 +68,7 @@ import { ScribeAnalyticsService } from './service/scribe-analytics.service';
 import { DriftJudgeService } from './service/drift-judge.service';
 import { DriftBackfillSchedulerRegistrationService } from './service/drift-backfill-scheduler-registration.service';
 import { JudgeBacklogDrainService } from './service/judge-backlog-drain.service';
+import { FillerJudgeService } from './service/filler-judge.service';
 import { LanguageJudgeService } from './service/language-judge.service';
 import { LanguageBackfillSchedulerRegistrationService } from './service/language-backfill-scheduler-registration.service';
 import { PlatformAnalyticsRepository } from './repository/platform-analytics.repository';
@@ -77,6 +78,9 @@ import { ScribeAnalyticsRepository } from './repository/scribe-analytics.reposit
 import { LlmUsageRepository } from './repository/llm-usage.repository';
 import { DriftAnalyticsRepository } from './repository/drift-analytics.repository';
 import { DriftJudgeRepository } from './repository/drift-judge.repository';
+import { FillerAnalyticsService } from './service/filler-analytics.service';
+import { FillerAnalyticsRepository } from './repository/filler-analytics.repository';
+import { FillerJudgeRepository } from './repository/filler-judge.repository';
 import { LanguageJudgeRepository } from './repository/language-judge.repository';
 import { LanguageAnalyticsRepository } from './repository/language-analytics.repository';
 import { GlossaryEffectAnalyticsRepository } from './repository/glossary-effect-analytics.repository';
@@ -189,6 +193,10 @@ import { TenantModule } from 'src/tenant/tenant.module';
     JudgeBacklogDrainService,
     LanguageJudgeService,
     LanguageJudgeRepository,
+    FillerJudgeService,
+    FillerJudgeRepository,
+    FillerAnalyticsRepository,
+    FillerAnalyticsService,
     LanguageBackfillSchedulerRegistrationService,
     LanguageAnalyticsService,
     LanguageAnalyticsRepository,
