@@ -56,3 +56,15 @@ rules:
     why: >
       AGENTS.md and CLAUDE.md must stay byte-identical. `mirror` asserts equality rather
       than requiring a companion edit.
+
+  - id: language-glossary-architecture
+    watch:
+      - "src/language/**"
+    requires: docs/LANGUAGE_GLOSSARY_DESIGN.md
+    why: >
+      The glossary is an unattended loop: it consolidates, adjudicates and re-tiers its
+      own content with no reviewer in the path. The architecture doc is the only place
+      the cadences, gates and irreversibility rules are written down, and it drifted six
+      weeks without anything failing because it used to live outside this repo. By then
+      it described a human-in-the-loop pipeline that no longer existed, and reading it
+      produced confidently wrong conclusions.
