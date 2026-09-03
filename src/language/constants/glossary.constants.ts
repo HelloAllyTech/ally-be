@@ -121,3 +121,23 @@ export const GLOSSARY_ADJUDICATION_BATCH = 25;
  * not; the coin-flip lands in `deferred` instead of being destroyed.
  */
 export const GLOSSARY_REJECT_VOTES_REQUIRED = 2;
+
+/**
+ * Ceiling on the exponential wait before a DEFERRED proposal is re-adjudicated,
+ * in hours. Matches the weekly consolidation cadence: a proposal nothing can
+ * decide should be reconsidered no more often than new evidence arrives.
+ *
+ * A deferral leaves the entry `PROPOSED`, so without a backoff the hourly
+ * scheduler re-sends it to gemini-2.5-pro every hour, forever, for an outcome
+ * that cannot change until something else does — and the adjudication prompt
+ * deliberately routes uncertainty here ("an omitted proposal is held for a
+ * human, and that is a safe outcome"), so the stuck set only grows. Measured
+ * 2026-09-03: three Tamil proposals deferred on the Tier 0 cap, each re-billed
+ * ~168 times a week with the full glossary in the prompt.
+ *
+ * Backoff doubles per CONSECUTIVE deferral for the same reason and resets when
+ * the reason changes, so a transient provider error retries within the hour
+ * while a cap breach settles to weekly. Nothing is dropped: the proposal stays
+ * queued and visible, it is just not re-asked at a rate that cannot pay off.
+ */
+export const GLOSSARY_DEFER_BACKOFF_MAX_HOURS = 168;

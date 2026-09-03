@@ -1,6 +1,10 @@
 import { BadRequestException } from '@nestjs/common';
 import { GlossaryEntryStatus } from '../../entity/language-glossary-section.entity';
-import { GlossaryAdjudicationService } from '../glossary-adjudication.service';
+import {
+  deferBackoffHours,
+  deferReasonKey,
+  GlossaryAdjudicationService,
+} from '../glossary-adjudication.service';
 
 const section = (over: any = {}) => ({
   sectionCode: 'core_style',
@@ -299,7 +303,9 @@ describe('GlossaryAdjudicationService', () => {
 
     const out = await service.adjudicateLanguage(6);
     expect(out.accepted).toBe(1);
-    expect(entry.adjudication).toBeUndefined();
+    // The streak is zeroed rather than the object removed: deferral history
+    // lives alongside it and must survive a reject-streak reset.
+    expect(entry.adjudication).toEqual({ rejectVotes: 0 });
   });
 
   it('does not write a vote when preview mode is previewing', async () => {
@@ -476,5 +482,135 @@ describe('GlossaryAdjudicationService', () => {
     ]);
     const out = await service.adjudicateLanguage(6);
     expect(out.considered).toBe(0);
+  });
+
+  // A deferral leaves the entry PROPOSED, so without a backoff the hourly pass
+  // re-sends an unchangeable verdict to gemini-2.5-pro forever.
+  describe('defer backoff', () => {
+    it('doubles the wait per consecutive deferral and caps at a week', () => {
+      expect(deferBackoffHours(1)).toBe(1);
+      expect(deferBackoffHours(2)).toBe(2);
+      expect(deferBackoffHours(3)).toBe(4);
+      expect(deferBackoffHours(4)).toBe(8);
+      // 2**19 would be 524288h; the ceiling is the weekly cadence.
+      expect(deferBackoffHours(20)).toBe(168);
+      // Defensive: a corrupt/zero count must not produce a negative wait.
+      expect(deferBackoffHours(0)).toBe(1);
+    });
+
+    const deferred = (over: any) => {
+      const entry = proposal('e1', '- some rule');
+      entry.adjudication = { rejectVotes: 0, ...over };
+      return entry;
+    };
+
+    it('withholds a proposal still inside its wait, and calls no model', async () => {
+      const entry = deferred({
+        deferrals: 3, // 4h wait
+        lastDeferredAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        lastDeferReason: 'would breach the tier 0 cap (#/#)',
+      });
+      glossaryRepository.findAllForLanguage.mockResolvedValue([
+        section({ entries: [entry] }),
+      ]);
+
+      const out = await service.adjudicateLanguage(6, {
+        respectBackoff: true,
+      });
+
+      expect(out.considered).toBe(0);
+      expect(getCompletion).not.toHaveBeenCalled();
+    });
+
+    it('reconsiders once the wait has elapsed', async () => {
+      const entry = deferred({
+        deferrals: 3, // 4h wait
+        lastDeferredAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+        lastDeferReason: 'would breach the tier 0 cap (#/#)',
+      });
+      glossaryRepository.findAllForLanguage.mockResolvedValue([
+        section({ entries: [entry] }),
+      ]);
+      getCompletion.mockResolvedValue(
+        JSON.stringify([{ index: 1, verdict: 'accept', reason: 'ok' }]),
+      );
+
+      const out = await service.adjudicateLanguage(6, {
+        respectBackoff: true,
+      });
+
+      expect(out.considered).toBe(1);
+      expect(getCompletion).toHaveBeenCalled();
+    });
+
+    // A human asking explicitly should not be told to come back in a week.
+    it('ignores the backoff when not asked to respect it', async () => {
+      const entry = deferred({
+        deferrals: 8,
+        lastDeferredAt: new Date().toISOString(),
+        lastDeferReason: 'would breach the tier 0 cap (#/#)',
+      });
+      glossaryRepository.findAllForLanguage.mockResolvedValue([
+        section({ entries: [entry] }),
+      ]);
+      getCompletion.mockResolvedValue(
+        JSON.stringify([{ index: 1, verdict: 'accept', reason: 'ok' }]),
+      );
+
+      const out = await service.adjudicateLanguage(6);
+
+      expect(out.considered).toBe(1);
+    });
+
+    // Cap-breach reasons carry live token counts, so the identity that drives
+    // the streak has to ignore digits or the backoff would never accumulate.
+    it('treats reasons differing only in numbers as the same reason', () => {
+      expect(deferReasonKey('would breach the cap (2065/2000)')).toBe(
+        deferReasonKey('would breach the cap (2071/2000)'),
+      );
+      expect(deferReasonKey('cap breach')).not.toBe(
+        deferReasonKey('adjudicator returned no verdict'),
+      );
+      expect(deferReasonKey(null)).toBe('');
+    });
+
+    it('escalates the streak for a repeated reason', async () => {
+      const entry = deferred({
+        deferrals: 2,
+        lastDeferredAt: new Date(
+          Date.now() - 99 * 60 * 60 * 1000,
+        ).toISOString(),
+        lastDeferReason: 'adjudicator returned no verdict for this proposal',
+      });
+      const sec = section({ entries: [entry] });
+      glossaryRepository.findAllForLanguage.mockResolvedValue([sec]);
+      glossaryRepository.findSection.mockResolvedValue(sec);
+      // The model omits it -> deferred with the same reason as before.
+      getCompletion.mockResolvedValue(JSON.stringify([]));
+
+      await service.adjudicateLanguage(6, { respectBackoff: true });
+
+      expect(entry.adjudication.deferrals).toBe(3);
+    });
+
+    it('resets the streak when the reason genuinely changes', async () => {
+      const entry = deferred({
+        deferrals: 6,
+        lastDeferredAt: new Date(
+          Date.now() - 999 * 60 * 60 * 1000,
+        ).toISOString(),
+        lastDeferReason: 'something else entirely',
+      });
+      const sec = section({ entries: [entry] });
+      glossaryRepository.findAllForLanguage.mockResolvedValue([sec]);
+      glossaryRepository.findSection.mockResolvedValue(sec);
+      getCompletion.mockResolvedValue(JSON.stringify([]));
+
+      await service.adjudicateLanguage(6, { respectBackoff: true });
+
+      expect(entry.adjudication.deferrals).toBe(1);
+      // And a deferral is not agreement to reject.
+      expect(entry.adjudication.rejectVotes).toBe(0);
+    });
   });
 });

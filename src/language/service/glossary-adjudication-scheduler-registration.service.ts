@@ -69,6 +69,13 @@ export class GlossaryAdjudicationSchedulerRegistrationService implements OnModul
         const result = await this.adjudicationService.adjudicateLanguage(id, {
           apply: mode === 'apply',
           adjudicatedBy: 'scheduler',
+          // The unattended pass respects the post-deferral backoff. Without
+          // it a proposal nothing can decide — a Tier 0 cap breach, a model
+          // omission — is re-sent to gemini-2.5-pro every hour forever, with
+          // the whole glossary in the prompt, for an outcome that cannot
+          // change. An admin calling the endpoint by hand still gets an
+          // immediate answer.
+          respectBackoff: true,
         });
         if (result.considered === 0) continue;
         this.logger.info(

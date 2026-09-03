@@ -3,6 +3,7 @@ import { LlmProviderFactory } from 'src/ai-chat/provider/llm-provider.factory';
 import {
   GLOSSARY_ADJUDICATION_BATCH,
   GLOSSARY_ADJUDICATION_PROMPT_CODE,
+  GLOSSARY_DEFER_BACKOFF_MAX_HOURS,
   GLOSSARY_REJECT_VOTES_REQUIRED,
 } from '../constants/glossary.constants';
 import {
@@ -41,7 +42,31 @@ interface QueuedProposal {
   support: number;
   /** Consecutive reject votes already recorded on this entry. */
   rejectVotes: number;
+  /** Consecutive deferrals for the same reason, and when the last one was. */
+  deferrals: number;
+  lastDeferredAt: string | null;
+  lastDeferReason: string | null;
 }
+
+/**
+ * Reason identity for backoff purposes: digits stripped, so a cap breach
+ * reported as "2065/2000" and later "2071/2000" counts as the SAME reason and
+ * keeps backing off, while a genuinely different cause resets the clock.
+ */
+export const deferReasonKey = (reason: string | null | undefined): string =>
+  (reason ?? '').replace(/\d+/g, '#').slice(0, 300);
+
+/** Hours to wait after the Nth consecutive deferral: 1, 2, 4, 8 … capped. */
+export const deferBackoffHours = (deferrals: number): number =>
+  Math.min(2 ** Math.max(0, deferrals - 1), GLOSSARY_DEFER_BACKOFF_MAX_HOURS);
+
+/** True when this proposal is still inside its post-deferral wait. */
+const withinBackoff = (p: QueuedProposal, now: number): boolean => {
+  if (p.deferrals <= 0 || !p.lastDeferredAt) return false;
+  const last = Date.parse(p.lastDeferredAt);
+  if (Number.isNaN(last)) return false;
+  return now - last < deferBackoffHours(p.deferrals) * 3_600_000;
+};
 
 /**
  * Decides the proposal queue, because nobody else can.
@@ -95,9 +120,18 @@ export class GlossaryAdjudicationService {
     private readonly llmProviderFactory: LlmProviderFactory,
   ) {}
 
-  /** Everything still awaiting a decision, from an already-loaded section set. */
+  /**
+   * Everything still awaiting a decision, from an already-loaded section set.
+   *
+   * With `respectBackoff`, proposals still inside their post-deferral wait are
+   * withheld — they stay queued and visible, they are just not re-sent to the
+   * model at a rate that cannot pay off. The scheduler uses this; an admin
+   * hitting the endpoint by hand does not, because a human asking explicitly
+   * should get an answer now.
+   */
   private queuedProposals(
     sections: LanguageGlossarySection[],
+    respectBackoff = false,
   ): QueuedProposal[] {
     const queued: QueuedProposal[] = [];
     for (const section of sections) {
@@ -111,10 +145,22 @@ export class GlossaryAdjudicationService {
           injectionMode: section.injectionMode,
           support: entry.provenance?.annotationIds?.length ?? 0,
           rejectVotes: entry.adjudication?.rejectVotes ?? 0,
+          deferrals: entry.adjudication?.deferrals ?? 0,
+          lastDeferredAt: entry.adjudication?.lastDeferredAt ?? null,
+          lastDeferReason: entry.adjudication?.lastDeferReason ?? null,
         });
       }
     }
-    return queued;
+    if (!respectBackoff) return queued;
+    const now = Date.now();
+    const ready = queued.filter((p) => !withinBackoff(p, now));
+    const withheld = queued.length - ready.length;
+    if (withheld > 0) {
+      this.logger.log(
+        `[GLOSSARY_ADJUDICATE] ${withheld} proposal(s) withheld by defer backoff`,
+      );
+    }
+    return ready;
   }
 
   /**
@@ -125,12 +171,20 @@ export class GlossaryAdjudicationService {
    */
   async adjudicateLanguage(
     languageId: number,
-    options: { apply?: boolean; adjudicatedBy?: string } = {},
+    options: {
+      apply?: boolean;
+      adjudicatedBy?: string;
+      /** Withhold proposals still inside their post-deferral wait. */
+      respectBackoff?: boolean;
+    } = {},
   ): Promise<AdjudicateResult> {
     const apply = options.apply !== false;
     const sections =
       await this.glossaryRepository.findAllForLanguage(languageId);
-    const queued = this.queuedProposals(sections);
+    const queued = this.queuedProposals(
+      sections,
+      options.respectBackoff === true,
+    );
     const empty: AdjudicateResult = {
       considered: 0,
       accepted: 0,
@@ -210,8 +264,9 @@ export class GlossaryAdjudicationService {
             `reject votes): ${reason}`;
         }
       } else if (apply && verdict === 'deferred') {
-        // A deferral is not agreement to reject either.
-        await this.recordRejectVote(languageId, p, null);
+        // A deferral is not agreement to reject either — but it IS worth
+        // remembering, so an unchangeable verdict is not re-billed hourly.
+        await this.recordDeferral(languageId, p, reason);
       }
 
       if (verdict === 'accepted') accepted++;
@@ -262,14 +317,60 @@ export class GlossaryAdjudicationService {
     );
     const entry = section?.entries?.find((e) => e.id === p.entryId);
     if (!section || !entry) return;
+    // Deferral history is PRESERVED across a reject-streak reset. The two
+    // counters answer different questions — "is this reject consistent?" and
+    // "how long until re-asking is worth it?" — and clearing the whole object
+    // let an accept that later failed the cap reset a backoff it never
+    // decided anything about.
+    const defer =
+      entry.adjudication?.deferrals === undefined
+        ? {}
+        : {
+            deferrals: entry.adjudication.deferrals,
+            lastDeferredAt: entry.adjudication.lastDeferredAt,
+            lastDeferReason: entry.adjudication.lastDeferReason,
+          };
     entry.adjudication =
       reason === null
-        ? undefined
+        ? { rejectVotes: 0, ...defer }
         : {
             rejectVotes: (p.rejectVotes ?? 0) + 1,
             lastRejectReason: reason.slice(0, 300),
             lastRejectAt: new Date().toISOString(),
+            ...defer,
           };
+    await this.glossaryRepository.save(section);
+  }
+
+  /**
+   * Record a deferral so the same unchangeable verdict is not re-billed every
+   * hour. Consecutive deferrals for the SAME reason double the wait
+   * (capped at GLOSSARY_DEFER_BACKOFF_MAX_HOURS); a different reason resets
+   * the streak, so a transient provider error retries within the hour while a
+   * Tier 0 cap breach settles to weekly.
+   *
+   * A deferral also ends any reject streak — it is not agreement to reject.
+   */
+  private async recordDeferral(
+    languageId: number,
+    p: QueuedProposal,
+    reason: string,
+  ): Promise<void> {
+    const section = await this.glossaryRepository.findSection(
+      languageId,
+      p.sectionCode,
+      p.profileId,
+    );
+    const entry = section?.entries?.find((e) => e.id === p.entryId);
+    if (!section || !entry) return;
+    const key = deferReasonKey(reason);
+    const same = key === deferReasonKey(p.lastDeferReason);
+    entry.adjudication = {
+      rejectVotes: 0,
+      deferrals: same ? (p.deferrals ?? 0) + 1 : 1,
+      lastDeferredAt: new Date().toISOString(),
+      lastDeferReason: key,
+    };
     await this.glossaryRepository.save(section);
   }
 

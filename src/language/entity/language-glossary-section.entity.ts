@@ -59,6 +59,15 @@ export interface GlossaryEntry {
     rejectVotes: number;
     lastRejectReason?: string;
     lastRejectAt?: string;
+    /**
+     * Consecutive deferrals for the SAME reason — drives the re-adjudication
+     * backoff. A deferral leaves the entry `PROPOSED`, so without this the
+     * hourly pass re-bills an unchangeable verdict forever
+     * (see GLOSSARY_DEFER_BACKOFF_MAX_HOURS). Reset when the reason changes.
+     */
+    deferrals?: number;
+    lastDeferredAt?: string;
+    lastDeferReason?: string;
   };
   provenance?: {
     source: 'consolidation' | 'seed' | 'manual';
@@ -151,7 +160,11 @@ export class LanguageGlossarySection extends BaseWithoutTenantEntity {
   @Column({ type: 'boolean', default: false })
   tierPinned!: boolean;
 
-  /** Consolidation-assigned score; drives Tier 0 slot allocation + eviction. */
+  /** ⚠️ WRITE-ONLY since the tiering knapsack landed. Consolidation still sets
+   * it, nothing reads it: Tier 0 admission and eviction come from
+   * `computeTierAssignment` (score/token density under the cap), not from this
+   * column. Kept because it is cheap and a per-rule score may yet want a home;
+   * do not reintroduce it as a placement input without reading that util. */
   @Column({ type: 'int', nullable: true })
   importance?: number;
 

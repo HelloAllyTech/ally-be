@@ -49,6 +49,7 @@ describe('GlossaryAdjudicationSchedulerRegistrationService', () => {
     expect(adjudication.adjudicateLanguage).toHaveBeenCalledWith(6, {
       apply: true,
       adjudicatedBy: 'scheduler',
+      respectBackoff: true,
     });
     expect(adjudication.adjudicateLanguage).toHaveBeenCalledTimes(2);
   });
@@ -59,6 +60,7 @@ describe('GlossaryAdjudicationSchedulerRegistrationService', () => {
     expect(adjudication.adjudicateLanguage).toHaveBeenCalledWith(6, {
       apply: false,
       adjudicatedBy: 'scheduler',
+      respectBackoff: true,
     });
   });
 
