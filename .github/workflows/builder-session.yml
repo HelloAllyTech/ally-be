@@ -179,44 +179,7 @@ jobs:
       # how the engine itself tells the two apart, so we read it here too.
       - name: Fail if the run ended without reporting an outcome
         if: always()
-        run: |
-          set -uo pipefail
-
-          if [ -f /tmp/builder-paused ]; then
-            echo "Run parked on a question. That is a deliberate pause, not an abandonment."
-            exit 0
-          fi
-
-          STATE=$(curl -sS -H "x-api-key: ${ALLY_BE_API_KEY}" \
-            "${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}/status" || echo '')
-          STATUS=$(printf '%s' "$STATE" | jq -r '.status // "unknown"' 2>/dev/null || echo unknown)
-          PRS=$(printf '%s' "$STATE" | jq -r '.pullRequestCount // 0' 2>/dev/null || echo 0)
-          echo "Run ${BUILDER_RUN_ID} is '${STATUS}' with ${PRS} pull request(s) after the engine exited."
-
-          # `unknown` means ally-be was unreachable, not that the agent failed.
-          # Never fail a run over a reporting hiccup — reconcile still backs us.
-          if [ "$STATUS" = "unknown" ]; then
-            echo "Could not read the run back; leaving it to reconcile."
-            exit 0
-          fi
-
-          # Anything terminal is a run that reported for itself, whatever it said.
-          if [ "$STATUS" != "QUEUED" ] && [ "$STATUS" != "RUNNING" ]; then
-            exit 0
-          fi
-
-          echo "::error::The build ended while the run was still '${STATUS}' — it stopped mid-protocol without reporting an outcome."
-          REASON="The build ended while the run was still '${STATUS}'. The agent stopped mid-protocol without completing, so anything it had not pushed is gone with the runner. Retry the build."
-          curl -sS -X POST \
-            "${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}/complete" \
-            -H "x-api-key: ${ALLY_BE_API_KEY}" \
-            -H 'Content-Type: application/json' \
-            -d "{\"outcome\":\"failed\",\"error\":\"${REASON}\"}" || true
-
-          # The generic reporter below would otherwise post a second, vaguer
-          # error on top of this one.
-          touch /tmp/builder-already-reported
-          exit 1
+        run: protocol/scripts/builder/outcome-gate.sh
 
       # The runner-level net. Covers what the agent itself cannot report:
       # the runner dying, a bad clone, a wrong API key. ally-be ignores this
