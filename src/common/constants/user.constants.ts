@@ -118,6 +118,12 @@ export enum PreferenceName {
    * are gated by the per-user `character_library` feature toggle instead.
    */
   CHARACTER_LIBRARY_ENABLED = 'CHARACTER_LIBRARY_ENABLED',
+  /**
+   * Org-level switch for the learner Progress dashboard and its nav indicator.
+   * OFF when the row is absent, which is the launch state for every tenant — the
+   * feature is rolled out org by org rather than all at once.
+   */
+  PROGRESS_DASHBOARD_ENABLED = 'PROGRESS_DASHBOARD_ENABLED',
 }
 
 export enum PreferenceRelatedEntity {

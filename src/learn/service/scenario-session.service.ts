@@ -1356,6 +1356,7 @@ export class ScenarioSessionService {
         tenantId: session.tenantId,
         date: endedAt,
         durationMinutes,
+        scenarioSessionId: session.id,
       } as ScenarioSessionLeaderboardEndedEventParams,
     );
   }
