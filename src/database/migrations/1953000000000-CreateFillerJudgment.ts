@@ -17,8 +17,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * character improves every latency chart while making the roleplay worse. These
  * rows are the only place that failure becomes visible.
  */
-export class CreateFillerJudgment1950300000000 implements MigrationInterface {
-  name = 'CreateFillerJudgment1950300000000';
+export class CreateFillerJudgment1953000000000 implements MigrationInterface {
+  name = 'CreateFillerJudgment1953000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
