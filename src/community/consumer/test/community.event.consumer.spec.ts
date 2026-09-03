@@ -589,6 +589,7 @@ describe('CommunityEventConsumer', () => {
         tenantId: mockTenantId,
         date: mockDate,
         durationMinutes: mockDurationMinutes,
+        scenarioSessionId: 'scenario-session-1',
       });
 
       expect(userDailyScoreRepository.upsertDailyScore).toHaveBeenCalledWith(
@@ -620,6 +621,7 @@ describe('CommunityEventConsumer', () => {
         tenantId: mockTenantId,
         date: new Date('2025-01-15'),
         durationMinutes: 0.5,
+        scenarioSessionId: 'scenario-session-1',
       });
 
       // The pre-read computed the day in Node-local time while the upsert used
@@ -639,6 +641,7 @@ describe('CommunityEventConsumer', () => {
         tenantId: mockTenantId,
         date: new Date(),
         durationMinutes: 0.5,
+        scenarioSessionId: 'scenario-session-1',
       });
 
       expect(eventEmitter.emit).toHaveBeenCalledWith(
@@ -658,6 +661,7 @@ describe('CommunityEventConsumer', () => {
           tenantId: mockTenantId,
           date: new Date(),
           durationMinutes: 15,
+          scenarioSessionId: 'scenario-session-1',
         }),
       ).resolves.not.toThrow();
 
