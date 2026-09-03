@@ -80,11 +80,15 @@ export class GlossaryEffectAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
   /**
-   * When each language's glossary went live: the earliest published section.
+   * When each language's glossary went live: the earliest published GLOBAL
+   * section. Tenant/variety-profile overlay rows (`profileId` non-null) are
+   * excluded — they are published independently, per tenant, by
+   * consolidation, and an early overlay must not become the date every
+   * tenant's sessions get bucketed against (confounder #4 above).
    *
    * Sections are versioned in place, so `createdAt` survives later edits and
    * republishes — which is what makes it a stable intervention date. A
-   * language with no published section is absent, not dated `now()`.
+   * language with no published global section is absent, not dated `now()`.
    */
   async goLiveByLanguage(): Promise<GlossaryGoLiveRow[]> {
     return this.dataSource.query(
@@ -95,6 +99,7 @@ export class GlossaryEffectAnalyticsRepository {
          FROM language_glossary_sections s
          JOIN languages l ON l.id = s."languageId"
         WHERE s.status = 'published'
+          AND s."profileId" IS NULL
         GROUP BY s."languageId", l.value, l.label
         ORDER BY min(s."createdAt")`,
     );
@@ -112,6 +117,7 @@ export class GlossaryEffectAnalyticsRepository {
         SELECT s."languageId" AS lid, min(s."createdAt") AS at
           FROM language_glossary_sections s
          WHERE s.status = 'published'
+           AND s."profileId" IS NULL
          GROUP BY s."languageId"
       ),
       spine AS (
