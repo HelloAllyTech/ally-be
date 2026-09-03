@@ -70,6 +70,8 @@ describe('BuilderBuildService', () => {
     markStatus: jest.Mock;
     listBySession: jest.Mock;
   };
+  let llmUsage: { record: jest.Mock };
+  let prdService: { getOrCreateDoc: jest.Mock };
 
   beforeEach(() => {
     github = {
@@ -137,6 +139,15 @@ describe('BuilderBuildService', () => {
       markStatus: jest.fn(),
       listBySession: jest.fn().mockResolvedValue([]),
     };
+    // Build-half spend goes to the unified usage store as well as the run row.
+    llmUsage = { record: jest.fn().mockResolvedValue(undefined) };
+    // Sizing reads the PRD to decide what planning is worth. A small default,
+    // so a test that does not care gets the cheap planner and says nothing.
+    prdService = {
+      getOrCreateDoc: jest
+        .fn()
+        .mockResolvedValue({ draft: { requirements: [], technicalPlan: '' } }),
+    };
 
     service = new BuilderBuildService(
       {
@@ -159,7 +170,80 @@ describe('BuilderBuildService', () => {
       redisService as any,
       exemplarService as any,
       epicService as any,
+      llmUsage as any,
+      prdService as any,
     );
+  });
+
+  describe('sizing a build', () => {
+    const dispatchedModels = () =>
+      JSON.parse(
+        github.dispatchWorkflow.mock.calls[0][0].inputs.models as string,
+      );
+
+    it('plans a small PRD on the coder tier, not Opus', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          requirements: [{ id: 'R1' }, { id: 'R2' }],
+          technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'small' }] },
+        },
+      });
+
+      await service.startBuild(readySession() as any, 1);
+
+      const models = dispatchedModels();
+      // The first real build was exactly this shape and paid $7.85 for an Opus
+      // plan of a two-route change.
+      expect(models.planner).toBe('claude-sonnet-5');
+      expect(models.size).toBe('small');
+      expect(models.effort).toBe('low');
+      expect(models.plannerMaxTurns).toBe(20);
+      expect(models.budgets.plan).toBe(2);
+    });
+
+    it('keeps Opus for a cross-repo build', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          requirements: Array.from({ length: 6 }, (_, i) => ({ id: `R${i}` })),
+          technicalPlan: {
+            repos: [
+              { repo: 'ally-be', changesMd: 'x'.repeat(2000) },
+              { repo: 'ally-web', changesMd: 'y'.repeat(2000) },
+            ],
+          },
+        },
+      });
+
+      await service.startBuild(
+        readySession({ repos: ['ally-be', 'ally-web'] }) as any,
+        1,
+      );
+
+      expect(dispatchedModels().planner).toBe('claude-opus-5');
+    });
+
+    it('lets an explicit planner override win over sizing', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: { requirements: [{ id: 'R1' }], technicalPlan: null },
+      });
+
+      await service.startBuild(readySession() as any, 1, {
+        plannerModel: 'claude-opus-5',
+      });
+
+      // An admin who picked a planner meant it.
+      expect(dispatchedModels().planner).toBe('claude-opus-5');
+    });
+
+    it('plans at the default tier when the PRD cannot be read', async () => {
+      prdService.getOrCreateDoc.mockRejectedValue(new Error('gone'));
+
+      await service.startBuild(readySession() as any, 1);
+
+      // An unreadable PRD is a reason to spend the default, not to refuse.
+      expect(dispatchedModels().size).toBe('medium');
+      expect(github.dispatchWorkflow).toHaveBeenCalled();
+    });
   });
 
   describe('startBuild', () => {
@@ -427,6 +511,37 @@ describe('BuilderBuildService', () => {
       );
     });
 
+    it('fails a green job that never reported an outcome', async () => {
+      const run = {
+        id: 'run-1',
+        sessionId: 'session-1',
+        githubRunId: '99',
+        dispatchedAt: new Date(),
+        status: BuilderRunStatus.RUNNING,
+      };
+      runRepository.listActive.mockResolvedValue([run]);
+      runRepository.findOne.mockResolvedValue(run);
+      github.getRun.mockResolvedValue({
+        status: 'completed',
+        conclusion: 'success',
+      });
+
+      await service.reconcile();
+
+      // `claude -p` exits 0 whenever the agent produces a final response,
+      // including mid-protocol — so a green job proves the runner exited, not
+      // that it shipped anything. A run reports its own outcome or it did not
+      // finish. Settling SUCCEEDED here reported builds that opened no PR.
+      expect(runRepository.update).not.toHaveBeenCalledWith(
+        { id: 'run-1' },
+        expect.objectContaining({ status: BuilderRunStatus.SUCCEEDED }),
+      );
+      expect(runRepository.update).toHaveBeenCalledWith(
+        { id: 'run-1' },
+        expect.objectContaining({ status: BuilderRunStatus.FAILED }),
+      );
+    });
+
     it('fails a dispatch GitHub never registered', async () => {
       runRepository.listActive.mockResolvedValue([
         {
@@ -547,6 +662,77 @@ describe('BuilderBuildService', () => {
         { id: 'session-1' },
         { totalCostUsd: '5.0000' },
       );
+    });
+
+    it('bills the unified usage store per model, not just the run row', async () => {
+      runRepository.findOne.mockResolvedValue({
+        id: 'run-1',
+        sessionId: 'session-1',
+        cost: null,
+        costUsd: '0',
+      });
+
+      await service.recordRunCost(
+        { id: 'run-1', sessionId: 'session-1' } as any,
+        {
+          phase: 'code-1',
+          model: 'claude-sonnet-5',
+          totalCostUsd: 8.92,
+          modelUsage: {
+            'claude-sonnet-5': {
+              inputTokens: 276,
+              outputTokens: 64655,
+              cacheReadInputTokens: 23383748,
+              cacheCreationInputTokens: 243366,
+            },
+            // A subagent the coder spawned. Its spend belongs to its own model,
+            // or the store's per-model aggregates lie.
+            'claude-haiku-4-5': { inputTokens: 17892, outputTokens: 15 },
+          },
+        },
+      );
+
+      expect(llmUsage.record).toHaveBeenCalledTimes(2);
+      expect(llmUsage.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model: 'claude-sonnet-5',
+          task: 'builder_build',
+          promptTokens: 276,
+          completionTokens: 64655,
+          // Both counters: a cache read and a cache write cost very different
+          // amounts, so one number cannot express the spend.
+          cachedTokens: 23383748,
+          cacheCreationTokens: 243366,
+          metadata: expect.objectContaining({
+            phase: 'code-1',
+            builderRunId: 'run-1',
+          }),
+        }),
+      );
+      expect(llmUsage.record).toHaveBeenCalledWith(
+        expect.objectContaining({ model: 'claude-haiku-4-5' }),
+      );
+    });
+
+    it('writes no usage row for a phase that measured nothing', async () => {
+      runRepository.findOne.mockResolvedValue({
+        id: 'run-1',
+        sessionId: 'session-1',
+        cost: null,
+        costUsd: '0',
+      });
+
+      await service.recordRunCost(
+        { id: 'run-1', sessionId: 'session-1' } as any,
+        {
+          phase: 'plan',
+          model: 'claude-opus-5',
+          totalCostUsd: 2,
+          modelUsage: { 'claude-opus-5': { inputTokens: 0, outputTokens: 0 } },
+        },
+      );
+
+      expect(llmUsage.record).not.toHaveBeenCalled();
     });
 
     it('replaces a re-reported phase instead of double counting it', async () => {

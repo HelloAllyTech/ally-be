@@ -27,6 +27,13 @@ export interface PlanPromptContext {
   repos: BuilderRepoDefinition[];
   apiBaseUrl: string;
   lessons: string[];
+  /**
+   * The repo knowledge packs, so planning does not begin by rediscovering how
+   * the repos are laid out. Empty string when none have been generated.
+   */
+  repoPacks?: string;
+  /** Advisory length ceiling, scaled to how big the build actually is. */
+  planWords?: number;
   /** Resume only — what the previous run had already done. */
   resumeContext?: string | null;
 }
@@ -160,7 +167,31 @@ Plan the remainder. Do not re-plan what is already built.
 `.trim()
     : '';
 
-  return [header, protocol, resumeBlock, lessonsBlock, renderPrd(context.prd)]
+  // Packs before the PRD and before the protocol's tail: this is reference
+  // material the planner reads once, and it is the same bytes for every run in
+  // a session, so it belongs in the stable part of the prompt.
+  const packsBlock = context.repoPacks?.trim() ?? '';
+
+  const lengthBlock = context.planWords
+    ? `
+## Length
+
+Aim for about ${context.planWords} words. A plan is read by a coder that has the
+PRD in front of it already, so restating the requirements is waste — spend the
+words on what the PRD could not know: which files, which existing patterns to
+follow, what will break, and the workstream map.
+`.trim()
+    : '';
+
+  return [
+    header,
+    protocol,
+    lengthBlock,
+    resumeBlock,
+    lessonsBlock,
+    packsBlock,
+    renderPrd(context.prd),
+  ]
     .filter(Boolean)
     .join('\n\n---\n\n');
 }

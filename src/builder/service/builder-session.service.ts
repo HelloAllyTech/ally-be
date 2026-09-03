@@ -6,7 +6,7 @@ import {
   NotFoundException,
   forwardRef,
 } from '@nestjs/common';
-import { In, MoreThanOrEqual } from 'typeorm';
+import { In, IsNull, MoreThanOrEqual, Not } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import { BuilderSession } from '../entity/builder-session.entity';
@@ -18,6 +18,7 @@ import { BuilderSettingsService } from './builder-settings.service';
 import { BuilderBuildService } from './builder-build.service';
 import {
   BUILDER_ACTIVE_STATUSES,
+  BUILDER_ARCHIVABLE_STATUSES,
   BuilderPrdVersionAuthor,
   BuilderSessionStatus,
 } from '../enum/builder.enum';
@@ -164,7 +165,11 @@ export class BuilderSessionService {
     return session;
   }
 
-  /** The caller's sessions, newest first — mission control's list. */
+  /**
+   * The caller's non-archived sessions, newest first — mission control's
+   * default list. Unpaginated, unchanged shape: an archive is a separate,
+   * paginated view (`listOwnedArchivedSessions`), not a param on this one.
+   */
   listOwnedSessions(
     userId: number,
     statuses?: BuilderSessionStatus[],
@@ -172,10 +177,37 @@ export class BuilderSessionService {
     return this.sessionRepository.find({
       where: {
         createdBy: userId,
+        archivedAt: IsNull(),
         ...(statuses?.length ? { status: In(statuses) } : {}),
       },
       order: { updatedAt: 'DESC' },
     });
+  }
+
+  /**
+   * The caller's archived sessions, newest-archived first, paged. Ordered by
+   * `archivedAt` rather than `updatedAt`: unarchiving bumps `updatedAt`, which
+   * would otherwise reshuffle this list's order every time something leaves it.
+   */
+  async listOwnedArchivedSessions(
+    userId: number,
+    params: {
+      statuses?: BuilderSessionStatus[];
+      limit: number;
+      offset: number;
+    },
+  ): Promise<{ sessions: BuilderSession[]; totalCount: number }> {
+    const [sessions, totalCount] = await this.sessionRepository.findAndCount({
+      where: {
+        createdBy: userId,
+        archivedAt: Not(IsNull()),
+        ...(params.statuses?.length ? { status: In(params.statuses) } : {}),
+      },
+      order: { archivedAt: 'DESC' },
+      take: params.limit,
+      skip: params.offset,
+    });
+    return { sessions, totalCount };
   }
 
   /** Session + transcript + PRD + readiness: what the session view resumes from. */
@@ -347,6 +379,51 @@ export class BuilderSessionService {
 
     this.logger.info(
       `Builder session ${sessionId} cancelled by user ${userId}`,
+    );
+    return this.getSession(sessionId, userId);
+  }
+
+  /**
+   * Hide a finished session from the caller's default feed. Only ever a list
+   * filter — it never touches the PRD, transcript, runs, events, PRs or
+   * reports underneath the session. A no-op (not an error) if the session is
+   * already archived, so a double-click or a retried request can't fail.
+   */
+  async archiveSession(
+    sessionId: string,
+    userId: number,
+  ): Promise<BuilderSession> {
+    const session = await this.getSession(sessionId, userId);
+    if (session.archivedAt) {
+      return session;
+    }
+    if (!BUILDER_ARCHIVABLE_STATUSES.includes(session.status)) {
+      throw new BadRequestException(
+        `Only COMPLETED, FAILED or CANCELLED sessions can be archived — this one is ${session.status}.`,
+      );
+    }
+    await this.sessionRepository.update(
+      { id: session.id },
+      { archivedAt: new Date(), updatedBy: userId },
+    );
+    return this.getSession(sessionId, userId);
+  }
+
+  /**
+   * Restore an archived session to the default feed. A no-op (not an error)
+   * if it is not archived, mirroring `archiveSession`.
+   */
+  async unarchiveSession(
+    sessionId: string,
+    userId: number,
+  ): Promise<BuilderSession> {
+    const session = await this.getSession(sessionId, userId);
+    if (!session.archivedAt) {
+      return session;
+    }
+    await this.sessionRepository.update(
+      { id: session.id },
+      { archivedAt: null, updatedBy: userId },
     );
     return this.getSession(sessionId, userId);
   }

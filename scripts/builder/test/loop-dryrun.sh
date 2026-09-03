@@ -278,7 +278,18 @@ run_scenario() {
   DRYRUN_GATE_FAIL="$gate_fail" \
     node "${WORK}/server.mjs" &
   SERVER_PID=$!
-  sleep 0.6
+
+  # Poll for the port rather than guessing at it. `sleep 0.6` lost the race on a
+  # loaded machine — the first scenario's plan-prompt fetch would hit a socket
+  # nothing was listening on yet, the engine would carry on without a planning
+  # pass, and four assertions would fail in a way that looked like a real
+  # regression in run-engine.sh. A harness that cries wolf under load is worse
+  # than no harness, and this one now gates CI.
+  for _ in $(seq 1 100); do
+    curl -fsS "http://127.0.0.1:${PORT}/api/v1/builder/pipeline/runs/x/prompt" \
+      >/dev/null 2>&1 && break
+    sleep 0.1
+  done
 
   echo "prompt body" > "${WORK}/run/build-prompt.txt"
 

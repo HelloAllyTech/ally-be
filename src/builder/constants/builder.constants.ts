@@ -13,6 +13,15 @@ export const BUILDER_SSE_PING_INTERVAL_MS = 15_000;
 export const BUILDER_MAX_TOKENS = 8192;
 
 /**
+ * How long the interviewer's system prompt is memoised.
+ *
+ * It was re-read from the database and the filesystem on every turn. A minute
+ * of staleness after someone edits the prompt is nobody's problem; the turn
+ * latency is what a person actually waits through.
+ */
+export const BUILDER_SYSTEM_PROMPT_TTL_MS = 60_000;
+
+/**
  * Output cap for one interview model pass, deliberately larger than the
  * shared cap above.
  *
@@ -238,3 +247,121 @@ export const BUILDER_BUDGET_HOLD_SECONDS = 20 * 60;
  * the runner is otherwise doing nothing.
  */
 export const BUILDER_BUDGET_HOLD_POLL_SECONDS = 15;
+
+/**
+ * How big a build is, which decides what it is worth spending on planning it.
+ *
+ * The planner was a fixed Opus pass with 60 turns and no output ceiling
+ * regardless of what it was planning. On the first real build — two routes and
+ * a checkbox — it spent $7.85 and 19 minutes producing a 29 KB plan, then that
+ * plan rode in the coder's prompt and was re-read on all 148 of its turns.
+ *
+ * Sized from the PRD rather than guessed at, because the PRD is the only
+ * statement of scope that exists before the work starts.
+ */
+export enum BuilderBuildSize {
+  SMALL = 'small',
+  MEDIUM = 'medium',
+  LARGE = 'large',
+}
+
+/**
+ * Per-size planning budget.
+ *
+ * `planWords` is advisory and goes in the prompt; `maxTurns` and `maxBudgetUsd`
+ * are enforced by the runner, so a planner that ignores the advice still cannot
+ * run away with the session.
+ */
+export const BUILDER_SIZE_PROFILES: Record<
+  BuilderBuildSize,
+  {
+    plannerTier: 'coder' | 'planner';
+    effort: 'low' | 'medium' | 'high';
+    maxTurns: number;
+    planWords: number;
+    maxBudgetUsd: {
+      plan: number;
+      code: number;
+      verify: number;
+      finalise: number;
+    };
+  }
+> = {
+  // A small build does not need an Opus plan; it needs the coder to start.
+  [BuilderBuildSize.SMALL]: {
+    plannerTier: 'coder',
+    effort: 'low',
+    maxTurns: 20,
+    planWords: 800,
+    maxBudgetUsd: { plan: 2, code: 8, verify: 3, finalise: 3 },
+  },
+  [BuilderBuildSize.MEDIUM]: {
+    plannerTier: 'planner',
+    effort: 'medium',
+    maxTurns: 40,
+    planWords: 1500,
+    maxBudgetUsd: { plan: 5, code: 12, verify: 4, finalise: 4 },
+  },
+  // Unchanged from the behaviour every run used to get.
+  [BuilderBuildSize.LARGE]: {
+    plannerTier: 'planner',
+    effort: 'high',
+    maxTurns: 60,
+    planWords: 3000,
+    maxBudgetUsd: { plan: 10, code: 20, verify: 6, finalise: 5 },
+  },
+};
+
+/**
+ * How much technical plan a PRD actually carries.
+ *
+ * `technicalPlan` is an object ({repos:[{repo,changesMd}], dataModelMd, apiMd}),
+ * so stringifying it gives "[object Object]" — 15 characters no matter how
+ * detailed the plan is, which would have made every PRD look small.
+ */
+export function prdTechnicalPlanLength(draft: Record<string, any>): number {
+  const plan = draft?.technicalPlan;
+  if (!plan) return 0;
+  if (typeof plan === 'string') return plan.length;
+
+  const repoPlans = Array.isArray(plan.repos) ? plan.repos : [];
+  return (
+    repoPlans.reduce(
+      (total: number, entry: any) =>
+        total + String(entry?.changesMd ?? '').length,
+      0,
+    ) +
+    String(plan.dataModelMd ?? '').length +
+    String(plan.apiMd ?? '').length
+  );
+}
+
+/**
+ * Classify a PRD.
+ *
+ * Requirements times repos, because cross-repo work is where planning earns its
+ * keep: a contract that spans ally-be and ally-web is the case a coder gets
+ * wrong without a plan. Epic mode is always large — it was decomposed precisely
+ * because it was too big to hold at once.
+ */
+export function classifyBuildSize(input: {
+  requirementCount: number;
+  repoCount: number;
+  technicalPlanLength: number;
+  isEpic?: boolean;
+}): BuilderBuildSize {
+  if (input.isEpic) return BuilderBuildSize.LARGE;
+
+  const spread =
+    Math.max(1, input.requirementCount) * Math.max(1, input.repoCount);
+  if (spread >= 24 || input.technicalPlanLength >= 6000) {
+    return BuilderBuildSize.LARGE;
+  }
+  if (
+    (input.requirementCount <= 4 && input.repoCount <= 1) ||
+    (spread <= 8 && input.technicalPlanLength < 2000)
+  ) {
+    return BuilderBuildSize.SMALL;
+  }
+  return BuilderBuildSize.MEDIUM;
+}

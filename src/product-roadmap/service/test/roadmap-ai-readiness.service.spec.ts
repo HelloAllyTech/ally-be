@@ -33,7 +33,14 @@ describe('RoadmapAiService.checkReadiness', () => {
       error: jest.fn(),
       log: jest.fn(),
     };
-    return { service, runJson };
+    // Signing is RoadmapReadinessTokenService's job and has its own suite; here it only has to
+    // not be undefined. The stub echoes what it was asked to sign so the two assertions about
+    // what lands IN the token can read it without a key.
+    const issue = jest.fn((input) => JSON.stringify(input));
+    (service as unknown as { readinessToken: unknown }).readinessToken = {
+      issue,
+    };
+    return { service, runJson, issue };
   };
 
   const passingAnswer = (over: Partial<ModelAnswer> = {}): ModelAnswer => ({

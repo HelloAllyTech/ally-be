@@ -82,6 +82,8 @@ describe('BugFindingService.persistFindings', () => {
       | 'findByReportedBugId'
       | 'listStaleNeedsInput'
       | 'findOpenByDedupeKey'
+      | 'findRecentlyDeclinedByDedupeKey'
+      | 'findRecentlyShippedByDedupeKey'
       | 'update'
       | 'save'
       | 'create'
@@ -100,6 +102,11 @@ describe('BugFindingService.persistFindings', () => {
       findByReportedBugId: jest.fn().mockResolvedValue(null),
       listStaleNeedsInput: jest.fn().mockResolvedValue([]),
       findOpenByDedupeKey: jest.fn().mockResolvedValue(null),
+      // The two other halves of the dedupe question: a bug somebody already
+      // declined, and a bug we already fixed. Default to "no history", which
+      // is the ordinary case for a genuinely new finding.
+      findRecentlyDeclinedByDedupeKey: jest.fn().mockResolvedValue(null),
+      findRecentlyShippedByDedupeKey: jest.fn().mockResolvedValue(null),
       update: jest.fn().mockResolvedValue(undefined),
       create: jest.fn().mockImplementation((v) => v),
       save: jest
@@ -135,6 +142,156 @@ describe('BugFindingService.persistFindings', () => {
     await service.persistFindings(RUN, REPO, [raw()]);
     expect(repo.save).not.toHaveBeenCalled();
     expect(repo.update).toHaveBeenCalledWith('existing-1', { runId: RUN });
+  });
+
+  /**
+   * The sweep re-reads the same code every night, so a decision that only
+   * lived on an open row lasted exactly one night. These are the two other
+   * things a dedupe-key match can mean.
+   */
+  describe('a bug somebody already declined', () => {
+    const rejected = row({
+      id: 'declined-1',
+      status: BugFindingStatus.REJECTED,
+      decisionReason: 'not_a_bug' as never,
+      metadata: null,
+    });
+
+    it('does not re-file it', async () => {
+      repo.findRecentlyDeclinedByDedupeKey.mockResolvedValue(rejected);
+      const [result] = await service.persistFindings(RUN, REPO, [raw()]);
+
+      expect(repo.save).not.toHaveBeenCalled();
+      // The declined row comes back rather than nothing, so the caller can
+      // still zip its findings to ids in order — and so the sweep sees a
+      // `rejected` status and knows to leave it alone.
+      expect(result).toBeDefined();
+    });
+
+    it('counts the rediscovery so an argument going in circles is visible', async () => {
+      repo.findRecentlyDeclinedByDedupeKey.mockResolvedValue(
+        row({ ...rejected, metadata: { rediscoveredCount: 2 } } as never),
+      );
+      await service.persistFindings(RUN, REPO, [raw()]);
+
+      expect(repo.update).toHaveBeenCalledWith(
+        'declined-1',
+        expect.objectContaining({
+          metadata: expect.objectContaining({ rediscoveredCount: 3 }),
+        }),
+      );
+    });
+
+    it('says so on the timeline rather than dropping the finder’s work silently', async () => {
+      const events = jest.fn().mockResolvedValue(undefined);
+      service = new BugFindingService(
+        repo as unknown as BugFindingRepository,
+        notifications as unknown as BugHunterNotificationService,
+        roadmapRepository(),
+        userRepository(),
+        bugHunterService({ appendFindingEvent: events }),
+      );
+      repo.findRecentlyDeclinedByDedupeKey.mockResolvedValue(rejected);
+
+      await service.persistFindings(RUN, REPO, [raw()]);
+
+      expect(events).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'declined-1',
+          stage: BugHuntEventStage.RECURRENCE_SUPPRESSED,
+        }),
+      );
+    });
+
+    it('takes precedence over the shipped-fix lookup, so a settled bug is not called a regression', async () => {
+      repo.findRecentlyDeclinedByDedupeKey.mockResolvedValue(rejected);
+      repo.findRecentlyShippedByDedupeKey.mockResolvedValue(
+        row({ id: 'old-fix', status: BugFindingStatus.RELEASED }),
+      );
+
+      await service.persistFindings(RUN, REPO, [raw({ symbol: 'retryLoop' })]);
+
+      expect(notifications.notify).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('a fix that did not hold', () => {
+    const shipped = row({
+      id: 'old-fix',
+      status: BugFindingStatus.RELEASED,
+      prUrl: 'https://github.com/HelloAllyTech/ally-be/pull/1',
+      releasedAt: new Date(Date.now() - 11 * 86_400_000),
+    });
+
+    beforeEach(() => {
+      repo.findRecentlyShippedByDedupeKey.mockResolvedValue(shipped);
+    });
+
+    it('files the new bug linked to the fix that failed', async () => {
+      await service.persistFindings(RUN, REPO, [raw({ symbol: 'retryLoop' })]);
+
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ regressionOf: 'old-fix' }),
+        }),
+      );
+    });
+
+    it('marks the earlier fix as regressed, so either drawer tells the story', async () => {
+      await service.persistFindings(RUN, REPO, [raw({ symbol: 'retryLoop' })]);
+
+      expect(repo.update).toHaveBeenCalledWith(
+        'old-fix',
+        expect.objectContaining({
+          metadata: expect.objectContaining({ regressed: true }),
+        }),
+      );
+    });
+
+    it('tells an admin, because trying the same fix again is probably wrong', async () => {
+      // The live case: an ally-ai-learn shutdown race was released on 28
+      // August, kept firing, and the 2 September sweep filed it as an
+      // ordinary new bug. Filed quietly, the one fact that mattered was the
+      // one nobody saw.
+      await service.persistFindings(RUN, REPO, [raw({ symbol: 'retryLoop' })]);
+
+      expect(notifications.notify).toHaveBeenCalledWith(
+        expect.objectContaining({
+          level: BugHunterNotificationLevel.ACTION_NEEDED,
+          title: expect.stringMatching(/didn't hold/i),
+        }),
+      );
+    });
+
+    it('will not claim a regression from a fuzzy description match alone', async () => {
+      // With no symbol and no file the dedupe key is a prose fingerprint,
+      // which is right for collapsing rewordings and far too loose for
+      // telling someone their fix broke.
+      await service.persistFindings(RUN, REPO, [
+        raw({ symbol: undefined, file: undefined }),
+      ]);
+
+      expect(notifications.notify).not.toHaveBeenCalled();
+      expect(repo.create).toHaveBeenCalledWith(
+        expect.not.objectContaining({
+          metadata: expect.objectContaining({ regressionOf: 'old-fix' }),
+        }),
+      );
+    });
+
+    it('still files the finding when the annotations fail', async () => {
+      // Every write in the regression path annotates a row that already
+      // exists; losing the bug because the note failed would be the wrong
+      // trade.
+      repo.update.mockRejectedValueOnce(new Error('db blip'));
+
+      const [saved] = await service.persistFindings(RUN, REPO, [
+        raw({ symbol: 'retryLoop' }),
+      ]);
+
+      expect(saved).toBeDefined();
+      expect(repo.save).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('the symbol transition', () => {
@@ -885,4 +1042,202 @@ describe('BugFindingService.enrich', () => {
     ]);
     expect(enriched[1].stageOverriddenByName).toBe('Three');
   });
+});
+
+/**
+ * The decline path, which is the commonest action on the whole tab and until
+ * now recorded only who and when.
+ */
+describe('BugFindingService.reject', () => {
+  const build = (finding: BugFinding) => {
+    const events = jest.fn().mockResolvedValue(undefined);
+    const repo = {
+      findOne: jest
+        .fn()
+        .mockResolvedValueOnce(finding)
+        .mockResolvedValue({
+          ...finding,
+          status: BugFindingStatus.REJECTED,
+        } as BugFinding),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new BugFindingService(
+      repo as unknown as BugFindingRepository,
+      {
+        notify: jest.fn(),
+        wasRaisedSince: jest.fn(),
+      } as unknown as BugHunterNotificationService,
+      roadmapRepository(),
+      userRepository(),
+      bugHunterService({ appendFindingEvent: events }),
+    );
+    return { service, repo, events };
+  };
+
+  it('stores the reason and the note alongside who decided', async () => {
+    const { service, repo } = build(
+      row({ status: BugFindingStatus.PENDING_APPROVAL }),
+    );
+
+    await service.reject(
+      'existing-1',
+      7,
+      'not_a_bug' as never,
+      '  the guard upstream makes this unreachable  ',
+    );
+
+    expect(repo.update).toHaveBeenCalledWith(
+      'existing-1',
+      expect.objectContaining({
+        status: BugFindingStatus.REJECTED,
+        decidedBy: 7,
+        decisionReason: 'not_a_bug',
+        // Trimmed, so a note of only spaces is stored as absence rather than
+        // as whitespace that renders an empty line in the sweep prompt.
+        decisionNote: 'the guard upstream makes this unreachable',
+      }),
+    );
+  });
+
+  it('stores no note rather than an empty one', async () => {
+    const { service, repo } = build(
+      row({ status: BugFindingStatus.PENDING_APPROVAL }),
+    );
+
+    await service.reject('existing-1', 7, 'wont_fix' as never, '   ');
+
+    expect(repo.update).toHaveBeenCalledWith(
+      'existing-1',
+      expect.objectContaining({ decisionNote: null }),
+    );
+  });
+
+  it('records the decision on the timeline, with its reason', async () => {
+    // A rejection used to appear on the drawer's work log as a bare status
+    // change — the one event on that timeline where nothing further will ever
+    // happen, and the one with no explanation beside it.
+    const { service, events } = build(
+      row({ status: BugFindingStatus.PENDING_APPROVAL }),
+    );
+
+    await service.reject('existing-1', 7, 'duplicate' as never, null);
+
+    expect(events).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stage: BugHuntEventStage.DECISION_RECORDED,
+        summary: expect.stringContaining('duplicate'),
+      }),
+    );
+  });
+
+  it('still refuses to reject from a status that has moved on', async () => {
+    const { service } = build(row({ status: BugFindingStatus.FIXING }));
+
+    await expect(
+      service.reject('existing-1', 7, 'not_a_bug' as never),
+    ).rejects.toThrow(ForbiddenException);
+  });
+});
+
+describe('BugFindingService.setStatus — a declined bug stays declined', () => {
+  const build = (finding: BugFinding) => {
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(finding),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    return new BugFindingService(
+      repo as unknown as BugFindingRepository,
+      {
+        notify: jest.fn(),
+        wasRaisedSince: jest.fn(),
+      } as unknown as BugHunterNotificationService,
+      roadmapRepository(),
+      userRepository(),
+      bugHunterService(),
+    );
+  };
+
+  it.each([BugFindingStatus.REJECTED, BugFindingStatus.DISMISSED])(
+    'refuses to move a %s finding back into the pipeline',
+    async (status) => {
+      // The enforcement half of the dedupe suppression: the sweep is TOLD to
+      // leave a declined row alone, and this is what happens if it does not.
+      const service = build(row({ status }));
+
+      await expect(
+        service.setStatus('existing-1', { status: BugFindingStatus.FIXING }),
+      ).rejects.toThrow(ForbiddenException);
+    },
+  );
+
+  it('names the reason in the refusal, so the agent can report something useful', async () => {
+    const service = build(
+      row({
+        status: BugFindingStatus.REJECTED,
+        decisionReason: 'wont_fix' as never,
+      }),
+    );
+
+    await expect(
+      service.setStatus('existing-1', { status: BugFindingStatus.FIXING }),
+    ).rejects.toThrow(/wont_fix/);
+  });
+
+  it('allows a repeated dismissal, because a retried PATCH is not a revival', async () => {
+    const service = build(row({ status: BugFindingStatus.DISMISSED }));
+
+    await expect(
+      service.setStatus('existing-1', {
+        status: BugFindingStatus.DISMISSED,
+      }),
+    ).resolves.toBeDefined();
+  });
+});
+
+describe('BugFindingService.setStatus — verifier confidence', () => {
+  const build = () => {
+    const repo = {
+      findOne: jest.fn().mockResolvedValue(row({ metadata: { foo: 1 } })),
+      update: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new BugFindingService(
+      repo as unknown as BugFindingRepository,
+      {
+        notify: jest.fn(),
+        wasRaisedSince: jest.fn(),
+      } as unknown as BugHunterNotificationService,
+      roadmapRepository(),
+      userRepository(),
+      bugHunterService(),
+    );
+    return { service, repo };
+  };
+
+  it('stores a valid certainty without clobbering the rest of metadata', async () => {
+    const { service, repo } = build();
+
+    await service.setStatus('existing-1', { confidence: 0.42 });
+
+    expect(repo.update).toHaveBeenCalledWith(
+      'existing-1',
+      expect.objectContaining({
+        metadata: expect.objectContaining({ foo: 1, confidence: 0.42 }),
+      }),
+    );
+  });
+
+  it.each([95, -1, 1.5, Number.NaN])(
+    'discards %p rather than storing it',
+    async (value) => {
+      // A model reporting 95 instead of 0.95 would otherwise read as maximum
+      // confidence — the wrong direction to fail in, since confidence is what
+      // decides whether a human looks before an agent writes code.
+      const { service, repo } = build();
+
+      await service.setStatus('existing-1', { confidence: value });
+
+      const patch = repo.update.mock.calls[0][1] as Record<string, unknown>;
+      expect(patch.metadata).toBeUndefined();
+    },
+  );
 });

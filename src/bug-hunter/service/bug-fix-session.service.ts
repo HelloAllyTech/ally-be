@@ -427,6 +427,134 @@ export class BugFixSessionService {
    * one, so anything derived from local state would break the first time
    * somebody cut a release by hand.
    */
+  /**
+   * Merges a fix's open PR, at an admin's explicit request.
+   *
+   * ## Why this button exists
+   *
+   * On ally-be, ally-web and ally-ai the fix agent cannot merge its own work:
+   * `master` wants an approving review and the bot account holds `write`, so
+   * `gh pr merge --admin` has nothing to bypass with. Every fix on those
+   * repos therefore ends at a green PR — and 89 of the 122 bot PRs merged so
+   * far were clicked through by hand on GitHub, nearly all within the hour of
+   * the PR opening. The judgement was never the bottleneck; leaving the tool
+   * to go and press a button somewhere else was.
+   *
+   * ## What it deliberately does NOT do
+   *
+   * It does not force. The checks are read first and a PR that is not green
+   * is refused here rather than merged past, and if GitHub itself still says
+   * no (a required review, a stale base branch) that refusal is passed
+   * straight through. The human decision and the CI gate both survive; only
+   * the errand is removed.
+   *
+   * A guarded-path fix is mergeable through this button, unlike through the
+   * agent — that is the point of the guard. `touchesGuardedPath` means "a
+   * person must look at this", and a person pressing this having read the
+   * diff is exactly the condition it was asking for. `decidedBy` records who.
+   */
+  async mergeFinding(findingId: string, userId: number): Promise<BugFinding> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (finding.status !== BugFindingStatus.PR_OPENED) {
+      throw new ForbiddenException(
+        finding.status === BugFindingStatus.MERGED ||
+          finding.status === BugFindingStatus.RELEASED
+          ? 'This fix is already merged.'
+          : `Only a fix with an open PR can be merged from here — this one is ${finding.status}.`,
+      );
+    }
+    if (!finding.repo || !finding.prUrl) {
+      throw new BadRequestException(
+        'This finding has no pull request recorded, so there is nothing to merge.',
+      );
+    }
+    const prNumber = BugFixSessionService.prNumberFrom(finding.prUrl);
+    if (!prNumber) {
+      throw new BadRequestException(
+        `Could not read a PR number out of ${finding.prUrl}.`,
+      );
+    }
+
+    const pr = await this.github.getPullRequest(finding.repo, prNumber);
+    if (!pr) {
+      throw new BadRequestException(
+        `Could not read ${finding.prUrl} from GitHub. Try again, or merge it there.`,
+      );
+    }
+    if (pr.merged) {
+      // Somebody already merged it on GitHub between the page loading and the
+      // click. Settle the row rather than erroring: the outcome the admin
+      // wanted is the one that already happened.
+      await this.bugFindingService.setStatus(finding.id, {
+        status: BugFindingStatus.MERGED,
+      });
+      await this.releaseLinkedRoadmapOpportunity(finding);
+      return this.bugFindingService.getOne(finding.id);
+    }
+    if (pr.state === 'closed') {
+      throw new ForbiddenException(
+        `${finding.prUrl} is closed without being merged. Start a fresh fix session if this bug still needs fixing.`,
+      );
+    }
+
+    // A null rollup means GitHub could not be read, which is NOT the same as
+    // green — refuse rather than merge blind. `none` (no CI configured at all)
+    // and `pending` are also refused: a merge is the one action here that
+    // cannot be undone from this tab.
+    const rollup = pr.headSha
+      ? await this.github.getCheckRollup(finding.repo, pr.headSha)
+      : null;
+    if (!rollup) {
+      throw new BadRequestException(
+        "Couldn't read this PR's checks from GitHub, so I won't merge it blind. Try again in a moment.",
+      );
+    }
+    if (rollup.state === 'failure') {
+      throw new ForbiddenException(
+        `This PR's checks are red (${rollup.failed.slice(0, 3).join(', ')}). Fix or retry the session before merging.`,
+      );
+    }
+    if (rollup.state === 'pending') {
+      throw new ForbiddenException(
+        "This PR's checks are still running. Give them a minute and try again.",
+      );
+    }
+    if (rollup.state === 'none') {
+      throw new ForbiddenException(
+        'This PR has no CI checks at all, so nothing has verified the fix. Merge it on GitHub if that is really what you want.',
+      );
+    }
+
+    const result = await this.github.mergePullRequest(
+      finding.repo,
+      prNumber,
+      `fix: ${finding.title.slice(0, 120)} (#${prNumber})`,
+    );
+    if (!result.merged) {
+      // GitHub's own words. "At least 1 approving review is required" is
+      // actionable and a generic failure line is not.
+      throw new BadRequestException(
+        `GitHub would not merge this PR: ${result.message ?? 'no reason given'}`,
+      );
+    }
+
+    await this.findingRepository.update(finding.id, {
+      status: BugFindingStatus.MERGED,
+      decidedBy: userId,
+      decidedAt: new Date(),
+    });
+    await this.releaseLinkedRoadmapOpportunity(finding);
+    await this.bugHunterService.appendFindingEvent({
+      findingId: finding.id,
+      repo: finding.repo,
+      stage: BugHuntEventStage.MERGED,
+      summary: `User ${userId} merged ${finding.prUrl} from the Bug Hunter tab.`,
+      payload: { prUrl: finding.prUrl, mergedBy: userId, prNumber },
+    });
+
+    return this.bugFindingService.getOne(finding.id);
+  }
+
   async release(findingId: string, userId: number): Promise<BugFinding> {
     const finding = await this.bugFindingService.getOne(findingId);
     if (

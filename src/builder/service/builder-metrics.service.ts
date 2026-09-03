@@ -50,6 +50,238 @@ export class BuilderMetricsService {
   }
 
   /**
+   * Where a run's time and money actually go, per phase.
+   *
+   * The scoreboard answers "is Builder getting better"; this answers "and what
+   * would make it faster". They are different questions and conflating them is
+   * how you get a dashboard that shows a run took 48 minutes without a hint of
+   * which 48.
+   *
+   * Reads `builder_build_runs.cost.phases`, which the runner writes as it goes.
+   * Timings are nullable there — a run dispatched against an older workflow
+   * reports cost with no durations — so every aggregate ignores nulls rather
+   * than counting them as zero. A phase with no timings shows an invocation
+   * count and no clock, which is the truth.
+   */
+  async pipelineHealth(windowDays = 30): Promise<BuilderPipelineHealth> {
+    const days = Math.min(365, Math.max(7, Math.floor(windowDays) || 30));
+    const [phases, gates, outcomes, loop] = await Promise.all([
+      this.phaseTimings(days),
+      this.gatePassRates(days),
+      this.runOutcomes(days),
+      this.loopShape(days),
+    ]);
+    return { windowDays: days, phases, gates, outcomes, loop };
+  }
+
+  /**
+   * One row per phase key (plan, code-1, verify-2, finalise, …).
+   *
+   * `apiMs` vs `wallMs` is the load-bearing pair: the gap between them is time
+   * inside tool calls, which on the first real build was most of the coder's
+   * wall clock and nearly all of it test suites the gate then ran again.
+   */
+  private async phaseTimings(days: number): Promise<BuilderPipelinePhase[]> {
+    const rows = await this.dataSource.query(
+      `
+      SELECT phase.key                                        AS "phase",
+             phase.value->>'model'                            AS "model",
+             COUNT(*)::int                                    AS "invocations",
+             ROUND(SUM((phase.value->>'usd')::numeric), 4)    AS "totalCostUsd",
+             PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY (phase.value->>'usd')::numeric
+             )                                                AS "medianCostUsd",
+             PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY (phase.value->>'durationMs')::numeric
+             )                                                AS "medianWallMs",
+             PERCENTILE_CONT(0.95) WITHIN GROUP (
+               ORDER BY (phase.value->>'durationMs')::numeric
+             )                                                AS "p95WallMs",
+             PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY (phase.value->>'durationApiMs')::numeric
+             )                                                AS "medianApiMs",
+             PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY (phase.value->>'numTurns')::numeric
+             )                                                AS "medianTurns"
+        FROM builder_build_runs run
+        CROSS JOIN LATERAL jsonb_each(COALESCE(run.cost->'phases', '{}'::jsonb)) AS phase
+       WHERE run."createdAt" >= NOW() - ($1 || ' days')::interval
+       GROUP BY phase.key, phase.value->>'model'
+       ORDER BY SUM((phase.value->>'usd')::numeric) DESC NULLS LAST
+      `,
+      [String(days)],
+    );
+
+    return rows.map((row: Record<string, any>) => ({
+      phase: String(row.phase),
+      model: row.model ?? null,
+      invocations: Number(row.invocations ?? 0),
+      totalCostUsd: this.numberOrNull(row.totalCostUsd),
+      medianCostUsd: this.numberOrNull(row.medianCostUsd),
+      medianWallMs: this.numberOrNull(row.medianWallMs),
+      p95WallMs: this.numberOrNull(row.p95WallMs),
+      medianApiMs: this.numberOrNull(row.medianApiMs),
+      medianTurns: this.numberOrNull(row.medianTurns),
+    }));
+  }
+
+  /**
+   * How often the machine gate passes, per repo and check.
+   *
+   * Lint and typecheck failing often means the coder is shipping work it never
+   * ran; tests failing often means the blast radius is wider than the plan saw.
+   * They call for different fixes, so they are counted separately.
+   */
+  private async gatePassRates(days: number): Promise<BuilderPipelineGate[]> {
+    const rows = await this.dataSource.query(
+      `
+      WITH ordered AS (
+        SELECT event."runId",
+               event.payload->>'repo'  AS repo,
+               event.payload->>'kind'  AS kind,
+               (event.payload->>'passed')::boolean AS passed,
+               -- Which attempt within its run this result belongs to. The gate
+               -- runs again after every remediation, so counting all results
+               -- together blurs "passed first time" into "passed eventually",
+               -- and those call for opposite fixes.
+               ROW_NUMBER() OVER (
+                 PARTITION BY event."runId",
+                              event.payload->>'repo',
+                              event.payload->>'kind'
+                 ORDER BY event.seq
+               ) AS attempt
+          FROM builder_build_events event
+         WHERE event.type = 'gate_result'
+           AND event."createdAt" >= NOW() - ($1 || ' days')::interval
+           AND event.payload->>'repo' IS NOT NULL
+      )
+      SELECT repo                                             AS "repo",
+             kind                                             AS "kind",
+             COUNT(*)::int                                    AS "results",
+             SUM(CASE WHEN passed THEN 1 ELSE 0 END)::int     AS "passed",
+             COUNT(*) FILTER (WHERE attempt = 1)::int         AS "firstAttempts",
+             SUM(CASE WHEN attempt = 1 AND passed
+                      THEN 1 ELSE 0 END)::int                 AS "firstAttemptsPassed"
+        FROM ordered
+       GROUP BY repo, kind
+       ORDER BY repo, kind
+      `,
+      [String(days)],
+    );
+
+    return rows.map((row: Record<string, any>) => {
+      const results = Number(row.results ?? 0);
+      const passed = Number(row.passed ?? 0);
+      const firstAttempts = Number(row.firstAttempts ?? 0);
+      const firstAttemptsPassed = Number(row.firstAttemptsPassed ?? 0);
+      return {
+        repo: String(row.repo),
+        kind: String(row.kind ?? 'unknown'),
+        results,
+        passed,
+        passRate: results > 0 ? passed / results : null,
+        firstAttempts,
+        firstAttemptsPassed,
+        // The one that actually tracks whether the coder is shipping work it
+        // ran: passing eventually only says remediation works.
+        firstAttemptPassRate:
+          firstAttempts > 0 ? firstAttemptsPassed / firstAttempts : null,
+      };
+    });
+  }
+
+  /** How runs end, by status and mode — the abandonment counter included. */
+  private async runOutcomes(days: number): Promise<BuilderPipelineOutcome[]> {
+    const rows = await this.dataSource.query(
+      `
+      SELECT run.status                                       AS "status",
+             run.mode                                         AS "mode",
+             COUNT(*)::int                                    AS "runs",
+             PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY run."runnerMinutes"
+             )                                                AS "medianRunnerMinutes"
+        FROM builder_build_runs run
+       WHERE run."createdAt" >= NOW() - ($1 || ' days')::interval
+       GROUP BY run.status, run.mode
+       ORDER BY COUNT(*) DESC
+      `,
+      [String(days)],
+    );
+
+    return rows.map((row: Record<string, any>) => ({
+      status: String(row.status),
+      mode: String(row.mode),
+      runs: Number(row.runs ?? 0),
+      medianRunnerMinutes: this.numberOrNull(row.medianRunnerMinutes),
+    }));
+  }
+
+  /**
+   * How many times round the loop a run goes.
+   *
+   * Code iterations and verify rounds are the two things the honest loop can
+   * spend four coder invocations and three verifier invocations on. If the
+   * median run needs two of either, the plan or the prompts are wrong in a way
+   * no amount of runner tuning will fix — this is the number that says so.
+   */
+  private async loopShape(days: number): Promise<BuilderPipelineLoop> {
+    const rows = await this.dataSource.query(
+      `
+      WITH per_run AS (
+        SELECT run.id,
+               -- Phase keys are code-1..4 and verify-1..3, so the highest
+               -- suffix present is how far round the loop that run went.
+               COALESCE(MAX(CASE WHEN phase.key LIKE 'code-%'
+                                 THEN SPLIT_PART(phase.key, '-', 2)::int END), 0)
+                 AS code_iterations,
+               COALESCE(MAX(CASE WHEN phase.key LIKE 'verify-%'
+                                 THEN SPLIT_PART(phase.key, '-', 2)::int END), 0)
+                 AS verify_rounds
+          FROM builder_build_runs run
+          CROSS JOIN LATERAL
+            jsonb_each(COALESCE(run.cost->'phases', '{}'::jsonb)) AS phase
+         WHERE run."createdAt" >= NOW() - ($1 || ' days')::interval
+         GROUP BY run.id
+      )
+      SELECT COUNT(*)::int                                     AS "runs",
+             PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY code_iterations
+             )                                                 AS "medianCodeIterations",
+             PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY verify_rounds
+             )                                                 AS "medianVerifyRounds",
+             COUNT(*) FILTER (WHERE code_iterations > 1)::int  AS "runsNeedingRemediation"
+        FROM per_run
+      `,
+      [String(days)],
+    );
+
+    const row = rows[0] ?? {};
+    const runs = Number(row.runs ?? 0);
+    return {
+      runs,
+      medianCodeIterations: this.numberOrNull(row.medianCodeIterations),
+      medianVerifyRounds: this.numberOrNull(row.medianVerifyRounds),
+      runsNeedingRemediation: Number(row.runsNeedingRemediation ?? 0),
+      remediationRate:
+        runs > 0 ? Number(row.runsNeedingRemediation ?? 0) / runs : null,
+    };
+  }
+
+  /**
+   * `null` stays `null`.
+   *
+   * `Number(null)` is 0, and a phase with no recorded timing plotted as a
+   * zero-second phase reads as "instant" rather than "not measured" — the same
+   * trap that once made a week with nothing merged look like a cost win.
+   */
+  private numberOrNull(value: unknown): number | null {
+    if (value === null || value === undefined) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  /**
    * One row per archived build.
    *
    * Duration is measured from the session's first dispatch to its last run
@@ -73,13 +305,43 @@ export class BuilderMetricsService {
          e."failureTags"                                 AS "failureTags",
          r.run_count                                     AS "runCount",
          EXTRACT(EPOCH FROM (r.last_completed - r.first_dispatched)) / 3600
-                                                         AS "durationHours"
+                                                         AS "durationHours",
+         -- Machine time: the sum of each run's own wall clock. durationHours
+         -- above spans first dispatch to last completion, so on a session that
+         -- paused for a question it also counts however long the human took to
+         -- answer. Both are worth knowing and they are different numbers —
+         -- reporting only the wide one made Builder look slow when it was
+         -- waiting, and reporting only the narrow one would hide that the
+         -- feature still took two days to arrive.
+         r.machine_minutes                               AS "machineMinutes",
+         -- CASE, not GREATEST(x, 0): Postgres's GREATEST ignores NULLs, so a
+         -- session with no run rows to measure came back as a confident zero
+         -- rather than "not known". Same trap as the phase timings.
+         CASE
+           WHEN r.last_completed IS NULL
+             OR r.first_dispatched IS NULL
+             OR r.machine_minutes IS NULL
+           THEN NULL
+           ELSE GREATEST(
+             EXTRACT(EPOCH FROM (r.last_completed - r.first_dispatched)) / 60
+               - r.machine_minutes,
+             0
+           )
+         END                                             AS "humanWaitMinutes"
        FROM builder_exemplars e
        LEFT JOIN (
          SELECT "sessionId",
                 COUNT(*)::int        AS run_count,
                 MIN("dispatchedAt")  AS first_dispatched,
-                MAX("completedAt")   AS last_completed
+                MAX("completedAt")   AS last_completed,
+                SUM(
+                  EXTRACT(
+                    EPOCH FROM (
+                      COALESCE("completedAt", "startedAt", "dispatchedAt")
+                        - COALESCE("startedAt", "dispatchedAt")
+                    )
+                  ) / 60
+                )                    AS machine_minutes
            FROM builder_build_runs
           GROUP BY "sessionId"
        ) r ON r."sessionId" = e."sessionId"
@@ -103,6 +365,8 @@ export class BuilderMetricsService {
         row.runnerMinutes === null ? null : Number(row.runnerMinutes),
       durationHours:
         row.durationHours === null ? null : Number(row.durationHours),
+      machineMinutes: this.numberOrNull(row.machineMinutes),
+      humanWaitMinutes: this.numberOrNull(row.humanWaitMinutes),
       timeToMergeHours:
         row.timeToMergeHours === null ? null : Number(row.timeToMergeHours),
       failureTags: row.failureTags ?? [],
@@ -236,7 +500,12 @@ export interface BuilderScoreboardBuild {
   ciFailureCount: number;
   costUsd: number | null;
   runnerMinutes: number | null;
+  /** First dispatch to last completion — includes any wait for a human. */
   durationHours: number | null;
+  /** The sum of the runs' own wall clocks: machine time only. */
+  machineMinutes: number | null;
+  /** The remainder — what the session spent parked on a question. */
+  humanWaitMinutes: number | null;
   timeToMergeHours: number | null;
   failureTags: string[];
 }
@@ -269,4 +538,50 @@ export interface BuilderScoreboard {
   trends: BuilderScoreboardTrend[];
   totals: BuilderScoreboardTotals;
   failureTags: { tag: string; count: number }[];
+}
+
+export interface BuilderPipelinePhase {
+  phase: string;
+  model: string | null;
+  invocations: number;
+  totalCostUsd: number | null;
+  medianCostUsd: number | null;
+  medianWallMs: number | null;
+  p95WallMs: number | null;
+  medianApiMs: number | null;
+  medianTurns: number | null;
+}
+
+export interface BuilderPipelineGate {
+  repo: string;
+  kind: string;
+  results: number;
+  passed: number;
+  passRate: number | null;
+  firstAttempts: number;
+  firstAttemptsPassed: number;
+  firstAttemptPassRate: number | null;
+}
+
+export interface BuilderPipelineOutcome {
+  status: string;
+  mode: string;
+  runs: number;
+  medianRunnerMinutes: number | null;
+}
+
+export interface BuilderPipelineLoop {
+  runs: number;
+  medianCodeIterations: number | null;
+  medianVerifyRounds: number | null;
+  runsNeedingRemediation: number;
+  remediationRate: number | null;
+}
+
+export interface BuilderPipelineHealth {
+  windowDays: number;
+  phases: BuilderPipelinePhase[];
+  gates: BuilderPipelineGate[];
+  outcomes: BuilderPipelineOutcome[];
+  loop: BuilderPipelineLoop;
 }

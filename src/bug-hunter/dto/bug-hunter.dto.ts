@@ -12,6 +12,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
   Min,
   ValidateIf,
@@ -21,6 +22,7 @@ import { Transform, Type } from 'class-transformer';
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 import {
+  BugFindingDecisionReason,
   BugFindingSeverity,
   BugFindingSource,
   BugFindingStatus,
@@ -31,7 +33,12 @@ import {
   RoadmapOpportunitySource,
   RoadmapOpportunityStage,
 } from 'src/product-roadmap/enum/roadmap-opportunity.enum';
-import { BUG_FINDING_DESCRIPTION_MAX_LENGTH } from '../constants/bug-hunter.constants';
+import {
+  BUG_FINDING_DECISION_NOTE_MAX_LENGTH,
+  BUG_FINDING_DESCRIPTION_MAX_LENGTH,
+  BUG_HUNTER_METRICS_DEFAULT_DAYS,
+  BUG_HUNTER_METRICS_MAX_DAYS,
+} from '../constants/bug-hunter.constants';
 
 export class BugHuntEventDto {
   @ApiProperty()
@@ -255,6 +262,89 @@ export class PatchBugFindingDto {
   @IsOptional()
   @IsString()
   escalationQuestion?: string;
+
+  @ApiPropertyOptional({
+    enum: BugFindingDecisionReason,
+    description:
+      'Why the Verify phase refuted this, sent alongside `status: dismissed`. ' +
+      'Counted against the finder in the accuracy metric for not_a_bug / ' +
+      'wrong_repo / duplicate, and shown back to the next sweep as a known ' +
+      'non-bug — so a dismissal without one is a decision nothing can learn from.',
+  })
+  @IsOptional()
+  @IsEnum(BugFindingDecisionReason)
+  decisionReason?: BugFindingDecisionReason;
+
+  @ApiPropertyOptional({
+    description: 'One or two sentences on what the verifier actually checked.',
+    maxLength: BUG_FINDING_DECISION_NOTE_MAX_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(BUG_FINDING_DECISION_NOTE_MAX_LENGTH)
+  decisionNote?: string;
+
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 1,
+    description:
+      "The LOWEST verifier certainty for this finding, 0-1. Below the platform's " +
+      'low-confidence threshold the finding waits for a human even in AI mode. ' +
+      'Values outside [0,1] are discarded rather than clamped — a model reporting ' +
+      '95 instead of 0.95 would otherwise read as maximum confidence, which is the ' +
+      'wrong direction to fail in.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1)
+  confidence?: number;
+
+  @ApiPropertyOptional({
+    type: [Object],
+    description:
+      'The individual refute verdicts behind `confidence`, so a reader can tell ' +
+      '"all three were unsure" from "two were certain and one dissented".',
+  })
+  @IsOptional()
+  @IsArray()
+  verifierVotes?: Record<string, any>[];
+}
+
+/**
+ * An admin declining a bug.
+ *
+ * `reason` is REQUIRED, which makes this the one triage action that cannot be
+ * taken without saying something — a deliberate cost on the commonest button
+ * on the page. It buys the two things the tab could not do before: stop the
+ * next sweep re-filing the same non-bug nightly, and answer how often Bug
+ * Hunter is actually right. The UI keeps the cost to one keystroke (a
+ * pick-list, one reason for a whole bulk batch) rather than making the field
+ * optional, because an optional field is empty exactly when the reviewer was
+ * in a hurry.
+ */
+export class RejectBugFindingDto {
+  @ApiProperty({
+    enum: BugFindingDecisionReason,
+    description:
+      'not_a_bug / wrong_repo / duplicate mean the finder got it wrong and count ' +
+      'against its accuracy; wont_fix / too_risky mean it was right and the answer ' +
+      'is still no, which is a priority call and is not held against it.',
+  })
+  @IsEnum(BugFindingDecisionReason)
+  reason!: BugFindingDecisionReason;
+
+  @ApiPropertyOptional({
+    description:
+      'Anything the six reasons cannot carry, in your own words. Optional on ' +
+      'purpose: a mandatory note pushes people towards whichever reason needs ' +
+      'least typing, which corrupts the field that is actually counted.',
+    maxLength: BUG_FINDING_DECISION_NOTE_MAX_LENGTH,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(BUG_FINDING_DECISION_NOTE_MAX_LENGTH)
+  note?: string;
 }
 
 export class BugHuntModelUsageDto {
@@ -599,6 +689,45 @@ export class BugFindingDto {
 
   @ApiProperty({ nullable: true })
   decidedAt!: Date | null;
+
+  @ApiProperty({
+    enum: BugFindingDecisionReason,
+    nullable: true,
+    description:
+      'Why this was declined. Null on anything not declined, and on rows declined before the reason was recorded.',
+  })
+  decisionReason!: BugFindingDecisionReason | null;
+
+  @ApiProperty({ nullable: true })
+  decisionNote!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    minimum: 0,
+    maximum: 1,
+    description:
+      "The Verify phase's lowest verifier certainty. Null on a proven finding (nothing to verify) and on rows predating verifier scoring.",
+  })
+  confidence!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'The id of the earlier finding this one is a return of — set when a shipped fix did not hold.',
+  })
+  regressionOf!: string | null;
+
+  @ApiProperty({
+    description:
+      "True on the EARLIER finding whose fix came back. Distinct from `regressionOf`, which points the other way: this row's fix failed, that row is the failure.",
+  })
+  regressed!: boolean;
+
+  @ApiProperty({
+    description:
+      'How many sweeps have re-found this bug since it was declined. A high count is the sweep arguing with a human.',
+  })
+  rediscoveredCount!: number;
 
   @ApiProperty({
     nullable: true,
@@ -967,6 +1096,169 @@ export class BugHuntRunDto {
 
   @ApiProperty()
   createdAt!: Date;
+}
+
+// ── metrics (GET /v1/bug-hunter/metrics) ──────────────────────────────────
+
+export class BugHunterMetricsQueryDto {
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: BUG_HUNTER_METRICS_MAX_DAYS,
+    default: BUG_HUNTER_METRICS_DEFAULT_DAYS,
+    description:
+      'Days of history. Findings are cohorted by DISCOVERY date, so "filed" and every ' +
+      'rate over it share one denominator — see BugHunterMetricsService.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(BUG_HUNTER_METRICS_MAX_DAYS)
+  days?: number;
+}
+
+export class BugHunterFunnelDto {
+  @ApiProperty({
+    nullable: true,
+    description:
+      'The source or repo this row aggregates. Null for a finding with no repo yet.',
+  })
+  key!: string | null;
+
+  @ApiProperty()
+  filed!: number;
+
+  @ApiProperty({ description: 'Refuted by the Verify phase.' })
+  dismissed!: number;
+
+  @ApiProperty({ description: 'Declined by a human.' })
+  rejected!: number;
+
+  @ApiProperty({
+    description:
+      'Reached a fix at all — explicitly in Manual mode, implicitly in AI mode.',
+  })
+  approved!: number;
+
+  @ApiProperty({
+    description: 'Reached master. A released fix counts here too.',
+  })
+  merged!: number;
+
+  @ApiProperty()
+  released!: number;
+
+  @ApiProperty({
+    description:
+      'The agent gave up, the release went red, or a human stopped it.',
+  })
+  failed!: number;
+
+  @ApiProperty({
+    description:
+      'Still in the pipeline — neither declined, shipped, nor failed.',
+  })
+  open!: number;
+
+  @ApiProperty({
+    description:
+      'Declines where the finder was judged wrong (not_a_bug / wrong_repo / duplicate).',
+  })
+  finderErrors!: number;
+
+  @ApiProperty({
+    description:
+      'Declines with no reason stored — rows decided before the column existed.',
+  })
+  reasonNotRecorded!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      '1 - finderErrors / judged, where judged counts only findings somebody actually ruled ' +
+      'on. Null when nothing has been judged: 0/0 is not 0% accurate.',
+  })
+  accuracy!: number | null;
+
+  @ApiProperty()
+  lowConfidence!: number;
+
+  @ApiProperty()
+  unscored!: number;
+}
+
+export class BugHunterDeclineDto {
+  @ApiProperty()
+  reason!: string;
+
+  @ApiProperty()
+  count!: number;
+
+  @ApiProperty({
+    description: 'True when this reason means the finder was wrong.',
+  })
+  finderError!: boolean;
+}
+
+export class BugHunterStageLatencyDto {
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Median, not mean — one stalled bug should not describe the month.',
+  })
+  medianHours!: number | null;
+
+  @ApiProperty({ nullable: true })
+  p90Hours!: number | null;
+
+  @ApiProperty({ description: 'Findings the figures are computed from.' })
+  sampled!: number;
+}
+
+export class BugHunterMetricsDto {
+  @ApiProperty()
+  windowDays!: number;
+
+  @ApiProperty()
+  since!: string;
+
+  @ApiProperty()
+  totalFiled!: number;
+
+  @ApiProperty({ type: BugHunterFunnelDto })
+  overall!: BugHunterFunnelDto;
+
+  @ApiProperty({ type: [BugHunterFunnelDto] })
+  bySource!: BugHunterFunnelDto[];
+
+  @ApiProperty({ type: [BugHunterFunnelDto] })
+  byRepo!: BugHunterFunnelDto[];
+
+  @ApiProperty({ type: [BugHunterDeclineDto] })
+  declines!: BugHunterDeclineDto[];
+
+  @ApiProperty({
+    type: Object,
+    description:
+      'filedToDecided / filedToMerged / mergedToReleased, each a BugHunterStageLatencyDto.',
+  })
+  latency!: Record<string, BugHunterStageLatencyDto>;
+
+  @ApiProperty({
+    type: Object,
+    description:
+      'filed (new findings that are a fix coming back), fixesThatFailed (fixes shipped in ' +
+      'the window that have since returned), and rate = fixesThatFailed / merged.',
+  })
+  regressions!: Record<string, number | null>;
+
+  @ApiProperty({
+    type: Object,
+    description:
+      'totalUsd, runs, fixSessionRuns, fixSessionUsd and perMergedFixUsd. Aggregated in ' +
+      "Postgres over the whole window, unlike the tab's newest-50 client-side sum.",
+  })
+  cost!: Record<string, number | null>;
 }
 
 export class BugHuntRunDetailDto extends BugHuntRunDto {

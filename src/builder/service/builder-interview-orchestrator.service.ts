@@ -22,6 +22,7 @@ import { BuilderSseFrame } from '../type/builder-sse.type';
 import { CreateBuilderMessageDto } from '../dto/builder.dto';
 import {
   BUILDER_INTERVIEW_MAX_TOKENS,
+  BUILDER_SYSTEM_PROMPT_TTL_MS,
   BUILDER_INTERVIEW_SUMMARY_AFTER_MESSAGES,
   BUILDER_INTERVIEW_SUMMARY_KEEP_RECENT,
   BUILDER_MAX_TRUNCATION_RETRIES,
@@ -70,6 +71,13 @@ const BUILDER_TRUNCATION_ERROR =
  */
 @Injectable()
 export class BuilderInterviewOrchestratorService {
+  /**
+   * Process-wide, not per-instance: the service is a singleton, but making the
+   * cache static also keeps it shared if that ever changes.
+   */
+  private static systemPromptCache: { text: string; expiresAt: number } | null =
+    null;
+
   private readonly logger = LoggerService.getInstance(
     BuilderInterviewOrchestratorService.name,
   );
@@ -605,11 +613,27 @@ export class BuilderInterviewOrchestratorService {
    * rather than failing the turn.
    */
   private async buildSystemPrompt(): Promise<string> {
+    // Memoised for a minute. This is one or two queries plus a filesystem read,
+    // and it ran on every single turn for a template that changes when someone
+    // edits a prompt in the admin UI — a minute of staleness there is nobody's
+    // problem, and the turn is the latency a person is actually sitting through.
+    const now = Date.now();
+    if (
+      BuilderInterviewOrchestratorService.systemPromptCache &&
+      BuilderInterviewOrchestratorService.systemPromptCache.expiresAt > now
+    ) {
+      return BuilderInterviewOrchestratorService.systemPromptCache.text;
+    }
+
     try {
       const template = await this.promptSharedService.getPromptByCode(
         BUILDER_PROMPTS.INTERVIEWER_SYSTEM,
       );
       if (template) {
+        BuilderInterviewOrchestratorService.systemPromptCache = {
+          text: template,
+          expiresAt: now + BUILDER_SYSTEM_PROMPT_TTL_MS,
+        };
         return template;
       }
     } catch (error) {
@@ -668,10 +692,31 @@ export class BuilderInterviewOrchestratorService {
       }
       if (boundary <= 0) return this.rebuildAnthropicHistory(history);
 
-      const summary = await this.summariseTurns(
-        session,
-        history.slice(0, boundary),
-      );
+      // Reuse a stored summary that already covers this boundary. Without
+      // this the summary was recomputed from scratch on EVERY turn past the
+      // fortieth — one extra model call per turn, for a digest of messages
+      // that cannot change, since the turns being summarised are all in the
+      // past.
+      const boundarySeq = history[boundary - 1]?.seq ?? 0;
+      const cached = (session.metadata ?? {}) as Record<string, any>;
+      const stored = cached.interviewSummary as
+        | { uptoSeq?: number; text?: string }
+        | undefined;
+
+      let summary: string | null =
+        stored?.text && stored.uptoSeq === boundarySeq ? stored.text : null;
+
+      if (!summary) {
+        summary = await this.summariseTurns(
+          session,
+          history.slice(0, boundary),
+        );
+        if (summary) {
+          // Best-effort: a summary that fails to persist is recomputed next
+          // turn, which is the old behaviour rather than a new failure.
+          void this.persistInterviewSummary(session, boundarySeq, summary);
+        }
+      }
       if (!summary) return this.rebuildAnthropicHistory(history);
 
       return [
@@ -688,6 +733,41 @@ export class BuilderInterviewOrchestratorService {
         }`,
       );
       return this.rebuildAnthropicHistory(history);
+    }
+  }
+
+  /**
+   * Remember a summary against the boundary it covers.
+   *
+   * Keyed by the seq of the last summarised message, so a summary is reused
+   * only while the boundary has not moved — and the boundary only moves when
+   * enough new turns arrive to push it, at which point the digest genuinely
+   * needs redoing.
+   */
+  private async persistInterviewSummary(
+    session: BuilderSession,
+    uptoSeq: number,
+    text: string,
+  ): Promise<void> {
+    try {
+      const metadata = {
+        ...((session.metadata ?? {}) as Record<string, any>),
+        interviewSummary: { uptoSeq, text },
+      };
+      session.metadata = metadata;
+      await this.sessionRepository.update(
+        { id: session.id },
+        // `metadata` is jsonb, which TypeORM's DeepPartial reads as an
+        // entity-shaped object unless it is widened — the same treatment
+        // `builder_build_runs.cost` needs.
+        { metadata: metadata as Record<string, any> },
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not store the interview summary for ${session.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 

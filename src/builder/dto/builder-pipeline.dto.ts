@@ -147,6 +147,29 @@ export class RecordBuilderRunCostDto {
   @IsOptional()
   @IsNumber()
   totalCostUsd?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Wall clock of this engine invocation, in ms. With durationApiMs this is ' +
+      'what makes a slow run diagnosable: the difference between them is time ' +
+      'spent inside tool calls rather than waiting on the model.',
+  })
+  @IsOptional()
+  @IsNumber()
+  durationMs?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Of the wall clock, the part spent waiting on the model, in ms',
+  })
+  @IsOptional()
+  @IsNumber()
+  durationApiMs?: number;
+
+  @ApiPropertyOptional({ description: 'Agent turns this invocation took' })
+  @IsOptional()
+  @IsNumber()
+  numTurns?: number;
 }
 
 export class BuilderFeedbackOutcomeDto {

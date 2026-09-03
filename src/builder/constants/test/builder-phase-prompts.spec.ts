@@ -107,6 +107,42 @@ describe('the coder prompt', () => {
   });
 });
 
+describe('the coder prompt, on testing scope', () => {
+  const render = () =>
+    flat(
+      buildBuildPrompt({
+        ...base,
+        mode: 'build',
+        sessionUrl: 'https://admin.example.com/builder/session-1',
+        lessons: [],
+      }),
+    );
+
+  it('tells the coder not to run a whole repo suite', () => {
+    // The first real build spent 20 of the coder's 33 minutes inside tool
+    // calls, nearly all of it suites the gate then ran a second time. The gate
+    // is not optional, so a full pass here is the same work twice.
+    expect(render()).toMatch(/Do not run a whole repo's suite/i);
+    expect(render()).toMatch(/the same work done twice/i);
+  });
+
+  it('names the narrowed alternatives rather than just forbidding the broad one', () => {
+    const prompt = render();
+    expect(prompt).toMatch(/blast radius/i);
+    expect(prompt).toContain('affectedTest');
+  });
+
+  it('tells it to tail long output instead of carrying it in context', () => {
+    expect(render()).toContain('tail -60');
+  });
+
+  it('no longer tells it to pre-empt the gate with a full run', () => {
+    expect(render()).not.toMatch(
+      /Run these yourself rather than leaving them to the gate/i,
+    );
+  });
+});
+
 describe('the plan prompt', () => {
   const render = () =>
     buildPlanPrompt({ ...base, lessons: ['[L-1] Migrations need a CHECK'] });

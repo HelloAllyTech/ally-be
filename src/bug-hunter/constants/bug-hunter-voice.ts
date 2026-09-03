@@ -217,6 +217,33 @@ export const findingReleased = (
   body: `I released it as ${releaseTag} in ${repo}.`,
 });
 
+/**
+ * A bug it already fixed and shipped is happening again.
+ *
+ * This earns ACTION_NEEDED rather than PROBLEM, which is a departure from the
+ * level rule that reserves it for "I am blocked and cannot continue". Nothing
+ * is technically blocked here — Bug Hunter has filed the new finding and could
+ * be told to fix it again. But a fix that did not hold is the one outcome
+ * where doing the same thing again is probably wrong, and the useful next move
+ * is a person deciding whether the root cause was ever understood. Filed
+ * quietly, it reads as an ordinary new bug, which is exactly how the
+ * ally-ai-learn shutdown race went round twice.
+ *
+ * It states the days deliberately: "I fixed this eleven days ago" is the fact
+ * that makes a reader stop, and it is not recoverable from the row.
+ */
+export const fixDidNotHold = (
+  findingTitle: string,
+  repo: Maybe<string>,
+  daysSinceFix: number,
+): BugHunterMessage => ({
+  title: `My fix didn't hold: ${findingTitle}`,
+  body:
+    `I fixed this ${daysSinceFix === 0 ? 'earlier today' : `${daysSinceFix} day${daysSinceFix === 1 ? '' : 's'} ago`}` +
+    ` in ${repo ?? 'an unassigned repo'} and it is happening again. I have filed it as a new bug linked to the old one. ` +
+    `Before I try the same fix twice, it is worth someone checking whether the root cause was the one I found.`,
+});
+
 /** The deploy went red. The fix is still on master, which is the part that matters. */
 export const findingReleaseFailed = (
   findingTitle: string,

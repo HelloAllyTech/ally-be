@@ -24,6 +24,7 @@ import { BugHuntSweepService } from './service/bug-hunt-sweep.service';
 import { BugHunterService } from './service/bug-hunter.service';
 import { BugFindingService } from './service/bug-finding.service';
 import { BugHunterFinderDataService } from './service/bug-hunter-finder-data.service';
+import { BugHunterMetricsService } from './service/bug-hunter-metrics.service';
 import { BugFixSessionService } from './service/bug-fix-session.service';
 import { BugHunterRepoClassifierService } from './service/bug-hunter-repo-classifier.service';
 import { GithubActionsService } from './service/github-actions.service';
@@ -85,6 +86,7 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
     BugHunterService,
     BugFindingService,
     BugHunterFinderDataService,
+    BugHunterMetricsService,
     GithubActionsService,
     BugHunterNotificationService,
     BugFixSessionService,

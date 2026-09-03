@@ -370,6 +370,24 @@ export class AiReadinessResponseDto {
    */
   @ApiProperty({ nullable: true })
   redraft!: string | null;
+
+  /**
+   * This verdict, signed, to be handed back on `POST /opportunities` as `readinessToken`.
+   *
+   * The gate is enforced on the WRITE, not here — see RoadmapReadinessTokenService for why the
+   * server signs the reading the filer was shown instead of re-grading on create. Clients send
+   * it back verbatim and never read it: it is opaque, and the same verdicts are already in
+   * `results` in a form built for rendering.
+   *
+   * Issued whether or not the draft passed. A failing token is what lets a manager's override
+   * be recorded against the specific items it waved through.
+   */
+  @ApiProperty({
+    description:
+      'Opaque. Send back verbatim as `readinessToken` when filing. Expires; re-run the check ' +
+      'if the draft changes.',
+  })
+  token!: string;
 }
 
 export class AiEnhanceResponseDto {
