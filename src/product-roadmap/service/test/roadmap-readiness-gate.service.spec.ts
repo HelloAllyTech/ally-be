@@ -14,6 +14,7 @@ import { RoadmapVectorService } from '../roadmap-vector.service';
 import { RoadmapNotificationService } from '../roadmap-notification.service';
 import { RoadmapReadinessTokenService } from '../roadmap-readiness-token.service';
 import { RoadmapOpportunityRepository } from '../../repository/roadmap-opportunity.repository';
+import { RoadmapAllocationRepository } from '../../repository/roadmap-allocation.repository';
 import {
   RoadmapOpportunityEffort,
   RoadmapOpportunityType,
@@ -70,6 +71,11 @@ describe('RoadmapOpportunityService — readiness gate', () => {
         {
           provide: RoadmapOpportunityRepository,
           useValue: opportunityRepository,
+        },
+        // These tests are about the readiness gate, not voters; this satisfies the constructor.
+        {
+          provide: RoadmapAllocationRepository,
+          useValue: { votersForOpportunity: jest.fn() },
         },
         {
           provide: RoadmapStrategyGoalService,

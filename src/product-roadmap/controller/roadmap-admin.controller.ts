@@ -34,6 +34,7 @@ import {
   AiDraftDto,
   AiGenerateClaudePromptDto,
   AiSummariseDto,
+  OpportunityInterviewTurnDto,
   RoadmapImportRequestDto,
   CreateInterviewNoteDto,
   CreateTaxonomyItemDto,
@@ -49,6 +50,7 @@ import {
   AiReviewResponseDto,
   AiTextResponseDto,
   DuplicatesResponseDto,
+  OpportunityInterviewTurnResponseDto,
   PruneVectorsResponseDto,
   RoadmapImportResultDto,
   ReindexResponseDto,
@@ -590,6 +592,35 @@ export class RoadmapAdminController {
   @ApiResponse({ status: 201, type: AiTextResponseDto })
   async summarise(@Body() dto: AiSummariseDto): Promise<AiTextResponseDto> {
     return { text: await this.aiService.summariseTranscript(dto.transcript) };
+  }
+
+  /**
+   * MANAGE-GATED, unlike every other ai/* route here, which sit on the VOTE tier.
+   *
+   * Not a security judgement — an interview writes nothing until its draft is filed through
+   * `POST /opportunities`, which has its own VOTE gate. It is a rollout one: this is an
+   * experimental second way to file, and putting it on the manage tier keeps it in front of the
+   * handful of admins who can also fix what it produces while the interview itself is still
+   * being tuned. Widening it later is a one-line change; narrowing it after everyone has found
+   * it is not.
+   */
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Post('ai/opportunity-interview')
+  @ApiOperation({
+    summary: 'One turn of the guided opportunity interview',
+    description:
+      'Stateless: the client sends the whole conversation each turn and gets back the next ' +
+      'question plus a verdict on each readiness criterion. Send an empty `messages` array to ' +
+      'get the opening question. Once every criterion is met the response also carries a ' +
+      'draft and a readiness token to file it with.',
+  })
+  @ApiResponse({ status: 201, type: OpportunityInterviewTurnResponseDto })
+  async opportunityInterview(
+    @Body() dto: OpportunityInterviewTurnDto,
+  ): Promise<OpportunityInterviewTurnResponseDto> {
+    return this.aiService.interviewTurn(dto.messages);
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {

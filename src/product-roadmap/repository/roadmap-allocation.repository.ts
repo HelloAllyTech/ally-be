@@ -82,6 +82,27 @@ export class RoadmapAllocationRepository extends Repository<RoadmapAllocation> {
   }
 
   /**
+   * Per-user vote totals on one opportunity, across every period — the breakdown behind
+   * priorityScore, which is just SUM(votes) over these same rows. Highest votes first;
+   * ties broken by userId so the order is stable across calls.
+   */
+  async votersForOpportunity(
+    opportunityId: string,
+  ): Promise<{ userId: number; votes: number }[]> {
+    const rows = await this.dataSource.query<
+      { userId: number; votes: string }[]
+    >(
+      `SELECT "userId", SUM(votes) AS votes
+         FROM roadmap_allocations
+        WHERE "opportunityId" = $1
+        GROUP BY "userId"
+        ORDER BY SUM(votes) DESC, "userId" ASC`,
+      [opportunityId],
+    );
+    return rows.map((r) => ({ userId: r.userId, votes: Number(r.votes) }));
+  }
+
+  /**
    * Every allocation on an opportunity, in a deterministic order.
    *
    * The ORDER BY is not cosmetic: split and merge lock these rows, and taking them in a

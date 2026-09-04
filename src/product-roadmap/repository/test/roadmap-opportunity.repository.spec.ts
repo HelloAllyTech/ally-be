@@ -157,3 +157,59 @@ describe('RoadmapOpportunityRepository.applyFilters date bounds', () => {
     );
   });
 });
+
+/**
+ * "unsized" is a filter-only sentinel meaning `effort IS NULL`, not a value the column can hold —
+ * so it must never reach the IN list. Three branches, because a NULL check cannot be expressed as
+ * an IN member: sizes only, sentinel only, and both (where the two have to be OR'd or the query
+ * asks for rows that are simultaneously sized and unsized, and returns nothing).
+ */
+describe('RoadmapOpportunityRepository.applyFilters effort', () => {
+  const clausesFor = (options: Record<string, unknown>) => {
+    const clauses: { sql: string; params?: Record<string, unknown> }[] = [];
+    const qb = {
+      andWhere: (sql: string, params?: Record<string, unknown>) => {
+        clauses.push({ sql, params });
+        return qb;
+      },
+    };
+
+    const dataSource = {
+      createEntityManager: jest.fn(),
+    } as unknown as DataSource;
+    const repository = new RoadmapOpportunityRepository(dataSource);
+    (
+      repository as unknown as {
+        applyFilters: (qb: unknown, o: unknown) => void;
+      }
+    ).applyFilters(qb, options);
+
+    return clauses.filter((c) => c.sql.includes('effort'));
+  };
+
+  it('matches sizes with a plain IN, which excludes unsized rows', () => {
+    expect(clausesFor({ effort: ['s', 'm'] })).toEqual([
+      { sql: 'opp."effort" IN (:...effort)', params: { effort: ['s', 'm'] } },
+    ]);
+  });
+
+  it('translates the sentinel alone into a NULL check with no bound values', () => {
+    expect(clausesFor({ effort: ['unsized'] })).toEqual([
+      { sql: 'opp."effort" IS NULL', params: undefined },
+    ]);
+  });
+
+  it('ORs the two together, and keeps the sentinel out of the IN list', () => {
+    expect(clausesFor({ effort: ['m', 'unsized'] })).toEqual([
+      {
+        sql: '(opp."effort" IN (:...effort) OR opp."effort" IS NULL)',
+        params: { effort: ['m'] },
+      },
+    ]);
+  });
+
+  it('adds no effort clause at all when nothing is selected', () => {
+    expect(clausesFor({ effort: [] })).toEqual([]);
+    expect(clausesFor({})).toEqual([]);
+  });
+});

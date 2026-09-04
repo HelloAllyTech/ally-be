@@ -56,6 +56,7 @@ describe('RoadmapOpportunityService.createBugReport', () => {
 
     const service = new RoadmapOpportunityService(
       opportunityRepository as unknown as RoadmapOpportunityRepository,
+      {} as never, // allocationRepository — unused by these tests
       // Ranking is not what these tests are about; countGoals feeds the response mapper and
       // getRankContext feeds the read paths.
       {
@@ -164,6 +165,7 @@ describe('RoadmapOpportunityService.createBugReport', () => {
 
     const service = new RoadmapOpportunityService(
       opportunityRepository as unknown as RoadmapOpportunityRepository,
+      {} as never, // allocationRepository — unused by these tests
       // Ranking is not what these tests are about; countGoals feeds the response mapper and
       // getRankContext feeds the read paths.
       {

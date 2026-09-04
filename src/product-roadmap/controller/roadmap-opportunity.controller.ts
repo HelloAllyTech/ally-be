@@ -51,6 +51,7 @@ import {
   OpportunityResponseDto,
   RoadmapFacetsDto,
   RoadmapReferenceImageUploadUrlResponseDto,
+  RoadmapVoterDto,
   SetAllocationResponseDto,
   OpenBuilderSessionResponseDto,
 } from '../dto/roadmap-response.dto';
@@ -178,6 +179,21 @@ export class RoadmapOpportunityController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<OpportunityResponseDto> {
     return this.opportunityService.findOne(user.id, id);
+  }
+
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @Get('opportunities/:id/voters')
+  @ApiOperation({
+    summary: "The votes behind an opportunity's priorityScore, by admin",
+    description:
+      'Highest votes first. A separate call from the opportunity itself, fetched on demand ' +
+      '(e.g. a hover) rather than on every list row.',
+  })
+  @ApiResponse({ status: 200, type: [RoadmapVoterDto] })
+  findVoters(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RoadmapVoterDto[]> {
+    return this.opportunityService.getVoters(id);
   }
 
   /**

@@ -60,6 +60,16 @@ export const ROADMAP_LIMITS = {
   INTERVIEW_SUMMARY_MAX: 5000,
   /** Cap on transcript text handed to the LLM for summarisation. */
   INTERVIEW_TRANSCRIPT_MAX: 50000,
+  /**
+   * One turn of the opportunity interview. The transcript rides on every request because the
+   * interview is deliberately stateless (no session table for an experimental surface), so
+   * these two caps are what stop a long conversation turning into an unbounded prompt.
+   *
+   * 60 messages is ~30 exchanges — far past the ~8 questions the five criteria need, so hitting
+   * it means something is wrong rather than that someone was thorough.
+   */
+  OPPORTUNITY_INTERVIEW_MESSAGE_MAX: 60,
+  OPPORTUNITY_INTERVIEW_CONTENT_MAX: 4000,
   SAVED_VIEW_NAME_MAX: 100,
   GOAL_NAME_MAX: 200,
   OWNER_NAME_MAX: 200,
@@ -204,6 +214,13 @@ export const ROADMAP_PROMPT_CODES = {
   GOAL_IMPACT: 'roadmap_goal_impact',
   SUMMARISE_INTERVIEW: 'roadmap_summarise_interview',
   GENERATE_CLAUDE_PROMPT: 'roadmap_generate_claude_prompt',
+  /**
+   * The interviewer that walks an admin to a fileable draft one question at a time. Grades the
+   * SAME ROADMAP_READINESS_CRITERIA the filing gate grades — see the prompt file for why that
+   * matters: an interview with its own private rubric can hand over a draft the gate then
+   * rejects, which is the one failure this surface exists to prevent.
+   */
+  OPPORTUNITY_INTERVIEW: 'roadmap_opportunity_interview',
 } as const;
 
 /**
@@ -286,6 +303,15 @@ export const ROADMAP_READINESS_CRITERIA = [
  * an explicit act, visible in the row that turns green.
  */
 export const ROADMAP_FILEABLE_EFFORTS = ['s', 'm'] as const;
+
+/**
+ * Sentinel the effort FILTER accepts alongside the real RoadmapOpportunityEffort values, to mean
+ * "opportunities nobody has sized" — i.e. `effort IS NULL`. Not a member of the enum itself:
+ * `effort` on the entity is nullable and NULL is not a size, so widening the enum to include it
+ * would let a row's own `effort` column be set to the string "unsized", which is not what "not
+ * sized yet" means.
+ */
+export const ROADMAP_EFFORT_UNSIZED = 'unsized';
 
 /**
  * How long a signed readiness verdict stays spendable.
