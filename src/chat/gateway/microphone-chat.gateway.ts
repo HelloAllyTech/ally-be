@@ -379,6 +379,28 @@ export class MicrophoneChatGateway
     });
   }
 
+  /**
+   * Diagnostic sink. The mobile recording screen reports which of its start
+   * conditions are unmet when a session has not begun; we log one line beside
+   * that socket's own connect line and do nothing else — no persistence, no
+   * side effects, no reply. It exists because production could show us
+   * counsellors connecting and SESSION_CREATED going out, but never why
+   * START_AUDIO_CHAT failed to follow.
+   *
+   * Payload is booleans, a permission-status string and the app version. If a
+   * client ever sends more than that, it still only reaches a log line — so
+   * keep it that way, and delete this once the cause is known.
+   */
+  @SubscribeMessage(ChatEvents.SCRIBE_START_DIAGNOSTIC)
+  scribeStartDiagnostic(client: Socket, payload: Record<string, unknown>) {
+    const session = this.sessions[client.id];
+    this.logger.warn(
+      `Scribe start diagnostic | client ${client.id} | user ${
+        session?.userId ?? 'unknown'
+      } | ${JSON.stringify(payload)}`,
+    );
+  }
+
   @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
   async startAudioChat(
