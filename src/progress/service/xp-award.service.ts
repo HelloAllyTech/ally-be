@@ -81,6 +81,12 @@ export class XpAwardService {
       if (minuteXp === 0 && completionXp === 0) return;
 
       await this.dataSource.transaction(async (manager) => {
+        await this.xpEventRepository.lockUserDay(
+          manager,
+          userId,
+          tenantId,
+          awardedOn,
+        );
         const alreadyToday =
           await this.xpEventRepository.getPracticeXpAwardedOn(
             manager,
@@ -187,6 +193,12 @@ export class XpAwardService {
       const awardedOn = toBusinessDateString(now);
 
       await this.dataSource.transaction(async (manager) => {
+        await this.xpEventRepository.lockUserDay(
+          manager,
+          userId,
+          tenantId,
+          awardedOn,
+        );
         const already =
           await this.xpEventRepository.countPersonalBestsAwardedOn(
             manager,

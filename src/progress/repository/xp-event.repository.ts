@@ -64,6 +64,32 @@ export class XpEventRepository extends Repository<XpEvent> {
   }
 
   /**
+   * Serialises this user's daily-cap check-then-insert inside the current transaction.
+   *
+   * MUST be called before getPracticeXpAwardedOn()/countPersonalBestsAwardedOn(). Without
+   * it, two SCENARIO_SESSION_ENDED events for the same learner arriving close together —
+   * plausible since the unfinalised-session sweeper fires them without waiting on
+   * listeners — can both read the same stale "already awarded today" total under READ
+   * COMMITTED, both pass the cap check, and both insert: the ledger's unique index only
+   * dedupes the *same* sourceId, not the daily total.
+   *
+   * An advisory lock rather than SELECT ... FOR UPDATE because there may be no
+   * `xp_events` row for today yet to lock. pg_advisory_xact_lock releases automatically
+   * at COMMIT or ROLLBACK, so there is no unlock path to forget.
+   */
+  async lockUserDay(
+    manager: EntityManager,
+    userId: number,
+    tenantId: string,
+    awardedOn: string,
+  ): Promise<void> {
+    await manager.query(
+      `SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))`,
+      [`xp-events:${userId}:${tenantId}`, awardedOn],
+    );
+  }
+
+  /**
    * Practice XP already banked today, used to apply the daily cap. Counts the minute
    * award and its streak bonus only — completion, track and personal-best awards are
    * bounded by their own rules and are deliberately outside the cap.
