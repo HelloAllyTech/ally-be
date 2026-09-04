@@ -119,6 +119,21 @@ describe('buildFixSessionPrompt', () => {
     expect(prompt).not.toContain('gh pr merge --squash');
   });
 
+  it('still flags the guarded path on a repo the bot cannot merge to at all', () => {
+    // ally-be, ally-web and ally-ai all have canBotMerge: false, so a
+    // guarded-path finding on any of them hit the "cannot merge here" branch
+    // before ever reaching the guarded-path-specific one — the reviewer got
+    // told the bot has no merge rights but never which sensitive area to look
+    // at, even though the finding genuinely touches one.
+    for (const repo of ['ally-be', 'ally-web', 'ally-ai']) {
+      const prompt = build({ touchesGuardedPath: true }, repo);
+
+      expect(prompt).toMatch(/Do NOT attempt to merge/i);
+      expect(prompt).toMatch(/guarded path/i);
+      expect(prompt).toMatch(/which guarded area it touches/i);
+    }
+  });
+
   it('never merges an ally-mobile fix, guarded path or not', () => {
     // ally-mobile IS fixable — Bug Hunter opens a PR there — but this pipeline
     // only runs Jest, which cannot verify the native/on-device behaviour that
