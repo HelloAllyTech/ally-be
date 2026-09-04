@@ -105,6 +105,18 @@ describe('FillerAnalyticsRepository.findingRates', () => {
     expect(sqlOf()).toContain('CASE WHEN SUM(s."fillersJudged") > 0');
   });
 
+  it('treats `until` as the whole day, not just its midnight instant', async () => {
+    // `until` arrives as a bare date (e.g. '2026-09-01'), which Postgres casts
+    // to midnight. A plain `occurredAt <= $2` would therefore exclude every
+    // row from that day — the newest day on every rolling chart, and the last
+    // day of any custom range an admin picks.
+    await repository.findingRates(window);
+    const sql = sqlOf();
+
+    expect(sql).not.toMatch(/occurredAt"\s*<=\s*\$2/);
+    expect(sql).toMatch(/occurredAt"\s*<\s*\(\$2::date \+ INTERVAL '1 day'\)/);
+  });
+
   it('applies the language filter as a bound parameter', async () => {
     await repository.findingRates({ ...window, language: 'ml' });
 

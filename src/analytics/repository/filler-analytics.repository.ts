@@ -28,6 +28,11 @@ export class FillerAnalyticsRepository {
    * to, which is a configuration gap. Counting them would make a push to
    * configure more scenarios look like a model regression. They are surfaced
    * separately so the configuration gap stays visible rather than vanishing.
+   *
+   * `since`/`until` are both INCLUSIVE calendar dates (`yyyy-mm-dd`). Postgres
+   * casts a bare date literal to midnight, so `until` is widened to the start
+   * of the following day before comparison — a plain `<=` would silently drop
+   * every row from `until` itself.
    */
   async findingRates(opts: {
     since: string;
@@ -71,7 +76,8 @@ export class FillerAnalyticsRepository {
                 j."repeatedFillers",
                 j."distinctPhraseRatio"
            FROM filler_judgment_sessions j
-          WHERE j."occurredAt" >= $1 AND j."occurredAt" <= $2${filter}
+          WHERE j."occurredAt" >= $1
+            AND j."occurredAt" < ($2::date + INTERVAL '1 day')${filter}
        ),
        findings AS (
          SELECT a."sessionJudgmentId",
