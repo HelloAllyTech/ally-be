@@ -15,6 +15,7 @@ import { RoleplayVolumeAnalyticsRepository } from './repository/roleplay-volume-
 // Analytics → Product management tab: reads the internal product roadmap rather
 // than learner activity, so it is neither tenant-scoped nor windowed.
 import { RoadmapDeliveryAnalyticsService } from './service/roadmap-delivery-analytics.service';
+import { ShipVolumeAnalyticsService } from './service/ship-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsRepository } from './repository/roadmap-delivery-analytics.repository';
 // Testing-tab endpoints: candidates for the leadership Highlights tab, kept on a
 // separate admin tab until they have proved they change a decision.
@@ -144,6 +145,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     RoleplayVolumeAnalyticsRepository,
     RoadmapDeliveryAnalyticsService,
     RoadmapDeliveryAnalyticsRepository,
+    // No repository: this one reads GitHub's statistics API, not our database.
+    ShipVolumeAnalyticsService,
     ActivationAnalyticsService,
     ActivationAnalyticsRepository,
     CompletionRateAnalyticsService,

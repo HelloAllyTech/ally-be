@@ -33,6 +33,7 @@ import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.ser
 import { CertificationAnalyticsService } from '../service/certification-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsService } from '../service/roadmap-delivery-analytics.service';
+import { ShipVolumeAnalyticsService } from '../service/ship-volume-analytics.service';
 import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
 import { LanguageAnalyticsService } from '../service/language-analytics.service';
 import { GlossaryEffectAnalyticsService } from '../service/glossary-effect-analytics.service';
@@ -116,6 +117,10 @@ import {
   RoleplayVolumeResponseDto,
 } from '../dto/roleplay-volume-analytics.dto';
 import { RoadmapDeliveryResponseDto } from '../dto/roadmap-delivery-analytics.dto';
+import {
+  ShipVolumeQueryDto,
+  ShipVolumeResponseDto,
+} from '../dto/ship-volume-analytics.dto';
 import {
   ScribeAnalyticsQueryDto,
   ScribeOverviewResponseDto,
@@ -240,6 +245,7 @@ export class AnalyticsController {
     private readonly certificationAnalyticsService: CertificationAnalyticsService,
     private readonly roleplayVolumeAnalyticsService: RoleplayVolumeAnalyticsService,
     private readonly roadmapDeliveryAnalyticsService: RoadmapDeliveryAnalyticsService,
+    private readonly shipVolumeAnalyticsService: ShipVolumeAnalyticsService,
     private readonly platformAnalyticsService: PlatformAnalyticsService,
     private readonly scribeAnalyticsService: ScribeAnalyticsService,
     private readonly languageJudgeService: LanguageJudgeService,
@@ -734,6 +740,44 @@ export class AnalyticsController {
   })
   async getRoadmapDelivery(): Promise<RoadmapDeliveryResponseDto> {
     return this.roadmapDeliveryAnalyticsService.getRoadmapDelivery();
+  }
+
+  @Get('ship-volume')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Changed lines shipped per week, by repo (super-admin)',
+    description:
+      'How much code landed on each Ally repo\'s default branch per week — ' +
+      "GitHub's own `/stats/code_frequency` for `ally-be`, `ally-web`, " +
+      '`ally-ai`, `ally-ai-learn`, `ally-mobile`, `infra` and the developer ' +
+      'wiki, summed into one axis and split by repo. Plotted as CHURN ' +
+      '(additions + deletions, deletions made positive) rather than net, ' +
+      'because a week that removes 40k lines did real work a net figure would ' +
+      'show as nearly nothing; both parts are returned. Weeks are ' +
+      'SUNDAY-anchored because that is how GitHub buckets the underlying ' +
+      "statistics, so these numbers agree with GitHub's own Insights pages. " +
+      'This is an OUTPUT measure and callers should present it as one: churn ' +
+      'says how much code moved, never whether the right thing moved, and the ' +
+      'outcome counterpart on the same tab is `roadmap-delivery`. There is ' +
+      'deliberately NO author split — the same API would give one, and a ' +
+      'per-person line count is the standard way this metric does damage. ' +
+      'Takes no `tenantId`: it measures our own engineering, not customer ' +
+      'data. Two failure modes the caller MUST render: the current week is ' +
+      'flagged `partial` (it can only grow), and any repo whose statistics ' +
+      'could not be read appears in `unavailableRepos` — churn is a sum across ' +
+      'repos, so a missing one silently shortens every bar. GitHub answers 202 ' +
+      'while it recomputes a repo after a push, in which case the last good ' +
+      'series is served from cache and flagged `servedFromCache`.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Weekly ship volume retrieved successfully',
+    type: ShipVolumeResponseDto,
+  })
+  async getShipVolume(
+    @Query() query: ShipVolumeQueryDto,
+  ): Promise<ShipVolumeResponseDto> {
+    return this.shipVolumeAnalyticsService.getShipVolume(query);
   }
 
   /* ------------------------------------------------------------------------ */
