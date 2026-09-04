@@ -45,6 +45,7 @@ describe('XpAwardService', () => {
           provide: XpEventRepository,
           useValue: {
             insertAwards: jest.fn().mockResolvedValue(0),
+            lockUserDay: jest.fn().mockResolvedValue(undefined),
             getPracticeXpAwardedOn: jest.fn().mockResolvedValue(0),
             countPersonalBestsAwardedOn: jest.fn().mockResolvedValue(0),
           },
@@ -182,6 +183,29 @@ describe('XpAwardService', () => {
       );
     });
 
+    /**
+     * THE REGRESSION CASE. Without the lock, two SCENARIO_SESSION_ENDED events for the
+     * same learner arriving close together — plausible via the unfinalised-session
+     * sweeper — can both read the same stale "already awarded today" total and both pass
+     * the daily cap. Do not delete this test.
+     */
+    it("takes the advisory lock BEFORE reading today's practice total", async () => {
+      xpEventRepository.insertAwards.mockResolvedValue(20);
+      const order: string[] = [];
+      xpEventRepository.lockUserDay.mockImplementation(async () => {
+        order.push('lock');
+      });
+      xpEventRepository.getPracticeXpAwardedOn.mockImplementation(async () => {
+        order.push('read');
+        return 0;
+      });
+
+      await awardSession(10 * 60 * 1000);
+
+      // Reversed, and two concurrent awards both read a stale total and both pass the cap.
+      expect(order).toEqual(['lock', 'read']);
+    });
+
     it('adds nothing to the rollup when the ledger rejected every row as a duplicate', async () => {
       xpEventRepository.insertAwards.mockResolvedValue(0);
 
@@ -271,6 +295,36 @@ describe('XpAwardService', () => {
       });
 
       expect(xpEventRepository.insertAwards).not.toHaveBeenCalled();
+    });
+
+    /**
+     * THE REGRESSION CASE. Same race as the practice cap: without the lock, two
+     * concurrent personal-best awards for the same learner can both read "0 today" and
+     * both insert, pushing the learner past the one-per-day cap. Do not delete this test.
+     */
+    it("takes the advisory lock BEFORE reading today's personal-best count", async () => {
+      xpEventRepository.insertAwards.mockResolvedValue(
+        XP_AWARD.PER_SKILL_PERSONAL_BEST,
+      );
+      const order: string[] = [];
+      xpEventRepository.lockUserDay.mockImplementation(async () => {
+        order.push('lock');
+      });
+      xpEventRepository.countPersonalBestsAwardedOn.mockImplementation(
+        async () => {
+          order.push('read');
+          return 0;
+        },
+      );
+
+      await service.awardSkillPersonalBest({
+        userId: USER_ID,
+        tenantId: TENANT_CODE,
+        scenarioSessionId: SESSION_ID,
+      });
+
+      // Reversed, and two concurrent awards both read a stale count and both pass the cap.
+      expect(order).toEqual(['lock', 'read']);
     });
   });
 
