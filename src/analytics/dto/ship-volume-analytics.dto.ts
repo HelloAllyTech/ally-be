@@ -14,7 +14,8 @@ export class ShipVolumeTotalsDto {
   added!: number;
 
   @ApiProperty({
-    description: 'Lines removed, as a POSITIVE count (GitHub reports it negative)',
+    description:
+      'Lines removed, as a POSITIVE count (GitHub reports it negative)',
   })
   deleted!: number;
 
@@ -30,7 +31,10 @@ export class ShipVolumeTotalsDto {
 
 /** One repo's share of a week's churn. */
 export class ShipVolumeRepoDto extends ShipVolumeTotalsDto {
-  @ApiProperty({ description: 'Repository name, without the org', example: 'ally-be' })
+  @ApiProperty({
+    description: 'Repository name, without the org',
+    example: 'ally-be',
+  })
   repo!: string;
 }
 
@@ -70,12 +74,15 @@ export class ShipVolumeWeekDto extends ShipVolumeTotalsDto {
 
 /** A repo whose statistics could not be read this time. */
 export class ShipVolumeUnavailableRepoDto {
-  @ApiProperty({ description: 'Repository name, without the org', example: 'ally-mobile' })
+  @ApiProperty({
+    description: 'Repository name, without the org',
+    example: 'ally-mobile',
+  })
   repo!: string;
 
   @ApiProperty({
     description:
-      '`computing` — GitHub is still building this repo\'s statistics cache and ' +
+      "`computing` — GitHub is still building this repo's statistics cache and " +
       'answered 202; retrying in a few seconds usually succeeds. `unreachable` — ' +
       'the request failed (auth, rate limit, network). `not_configured` — no ' +
       'GITHUB_TOKEN in this environment.',

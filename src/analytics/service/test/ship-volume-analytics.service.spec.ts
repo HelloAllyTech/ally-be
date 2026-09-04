@@ -97,13 +97,15 @@ describe('ShipVolumeAnalyticsService', () => {
   });
 
   it('flags only the current week as partial', async () => {
-    respondPerRepo({ 'ally-be': [week('2026-08-23', 10, 0), week('2026-08-30', 10, 0)] });
+    respondPerRepo({
+      'ally-be': [week('2026-08-23', 10, 0), week('2026-08-30', 10, 0)],
+    });
 
     const result = await service.getShipVolume({ weeks: 12 });
 
-    expect(result.weeks.filter((w) => w.partial).map((w) => w.weekStart)).toEqual([
-      '2026-08-30',
-    ]);
+    expect(
+      result.weeks.filter((w) => w.partial).map((w) => w.weekStart),
+    ).toEqual(['2026-08-30']);
     expect(result.currentWeekStart).toBe('2026-08-30');
   });
 
@@ -142,10 +144,15 @@ describe('ShipVolumeAnalyticsService', () => {
 
   describe('when GitHub is still computing a repo (202)', () => {
     it('serves the cached series and says it did', async () => {
-      respondPerRepo({ 'ally-be': [week('2026-08-30', 10, 0)], 'ally-web': {} });
+      respondPerRepo({
+        'ally-be': [week('2026-08-30', 10, 0)],
+        'ally-web': {},
+      });
       redis.get.mockImplementation((key: string) =>
         Promise.resolve(
-          key.endsWith('ally-web') ? JSON.stringify([week('2026-08-30', 700, 100)]) : null,
+          key.endsWith('ally-web')
+            ? JSON.stringify([week('2026-08-30', 700, 100)])
+            : null,
         ),
       );
 
@@ -161,7 +168,10 @@ describe('ShipVolumeAnalyticsService', () => {
     });
 
     it('reports the repo as absent from the axis when there is no cache to fall back on', async () => {
-      respondPerRepo({ 'ally-be': [week('2026-08-30', 10, 0)], 'ally-web': {} });
+      respondPerRepo({
+        'ally-be': [week('2026-08-30', 10, 0)],
+        'ally-web': {},
+      });
 
       const result = await service.getShipVolume({ weeks: 12 });
 
@@ -224,9 +234,9 @@ describe('ShipVolumeAnalyticsService', () => {
 
     expect(mockedAxios.get).not.toHaveBeenCalled();
     expect(result.unavailableRepos).toHaveLength(SHIP_VOLUME_REPOS.length);
-    expect(result.unavailableRepos.every((r) => r.reason === 'not_configured')).toBe(
-      true,
-    );
+    expect(
+      result.unavailableRepos.every((r) => r.reason === 'not_configured'),
+    ).toBe(true);
     expect(result.weeks).toHaveLength(12);
     expect(result.plotted.churn).toBe(0);
   });

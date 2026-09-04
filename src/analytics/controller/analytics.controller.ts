@@ -747,7 +747,7 @@ export class AnalyticsController {
   @ApiOperation({
     summary: 'Changed lines shipped per week, by repo (super-admin)',
     description:
-      'How much code landed on each Ally repo\'s default branch per week — ' +
+      "How much code landed on each Ally repo's default branch per week — " +
       "GitHub's own `/stats/code_frequency` for `ally-be`, `ally-web`, " +
       '`ally-ai`, `ally-ai-learn`, `ally-mobile`, `infra` and the developer ' +
       'wiki, summed into one axis and split by repo. Plotted as CHURN ' +

@@ -93,7 +93,10 @@ export class ShipVolumeAnalyticsService {
     // (weekStart -> repo -> totals). Only weeks on the axis are kept; the API
     // hands back the repo's whole life, which for the wiki is a couple of years.
     const inWindow = new Set(axis);
-    const cells = new Map<string, Map<string, { added: number; deleted: number }>>();
+    const cells = new Map<
+      string,
+      Map<string, { added: number; deleted: number }>
+    >();
     const churnByRepo = new Map<string, number>();
 
     for (const { repo, weeks } of series) {
@@ -158,8 +161,11 @@ export class ShipVolumeAnalyticsService {
     });
 
     const unavailableRepos: ShipVolumeUnavailableRepoDto[] = series
-      .filter((s): s is RepoSeries & { problem: NonNullable<RepoSeries['problem']> } =>
-        Boolean(s.problem),
+      .filter(
+        (
+          s,
+        ): s is RepoSeries & { problem: NonNullable<RepoSeries['problem']> } =>
+          Boolean(s.problem),
       )
       .map(({ repo, problem }) => ({ repo, ...problem }));
 
@@ -251,7 +257,8 @@ export class ShipVolumeAnalyticsService {
   private async fetchCodeFrequency(
     repo: string,
   ): Promise<
-    { weeks: CodeFrequencyWeek[]; reason?: never } | { weeks?: never; reason: 'computing' | 'unreachable' }
+    | { weeks: CodeFrequencyWeek[]; reason?: never }
+    | { weeks?: never; reason: 'computing' | 'unreachable' }
   > {
     try {
       const { data, status } = await axios.get(
@@ -275,7 +282,10 @@ export class ShipVolumeAnalyticsService {
 
       return { weeks: data.filter(isCodeFrequencyWeek) };
     } catch (error) {
-      this.logger.error(`ship-volume: could not read ${repo} statistics`, error);
+      this.logger.error(
+        `ship-volume: could not read ${repo} statistics`,
+        error,
+      );
       return { reason: 'unreachable' };
     }
   }
@@ -304,14 +314,19 @@ export class ShipVolumeAnalyticsService {
       const parsed: unknown = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed.filter(isCodeFrequencyWeek) : null;
     } catch (error) {
-      this.logger.warn(`ship-volume: could not read cached ${repo} series`, error);
+      this.logger.warn(
+        `ship-volume: could not read cached ${repo} series`,
+        error,
+      );
       return null;
     }
   }
 }
 
 const isCodeFrequencyWeek = (row: unknown): row is CodeFrequencyWeek =>
-  Array.isArray(row) && row.length >= 3 && row.every((n) => typeof n === 'number');
+  Array.isArray(row) &&
+  row.length >= 3 &&
+  row.every((n) => typeof n === 'number');
 
 /**
  * The Sundays of the last `weeks` weeks, oldest first, ending with the week
