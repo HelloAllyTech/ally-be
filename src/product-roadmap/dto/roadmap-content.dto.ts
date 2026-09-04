@@ -1,8 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsObject,
   IsOptional,
@@ -11,6 +13,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { ROADMAP_LIMITS } from '../constants/product-roadmap.constants';
 import { RoadmapSavedViewState } from '../type/roadmap-saved-view.type';
@@ -208,6 +211,45 @@ export class AiSummariseDto {
   @MinLength(1)
   @MaxLength(ROADMAP_LIMITS.INTERVIEW_TRANSCRIPT_MAX)
   transcript!: string;
+}
+
+/** One turn of the opportunity interview, in the order it was said. */
+export class OpportunityInterviewMessageDto {
+  @ApiProperty({ enum: ['admin', 'agent'] })
+  @IsIn(['admin', 'agent'])
+  role!: 'admin' | 'agent';
+
+  @ApiProperty({ maxLength: ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_CONTENT_MAX })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_CONTENT_MAX)
+  content!: string;
+}
+
+/**
+ * The whole interview so far, sent on every turn.
+ *
+ * STATELESS BY DESIGN: this surface is experimental, and a session table plus a message table
+ * plus a migration is a lot of durable schema to commit to an idea that may not survive contact
+ * with its first ten users. The cost is that closing the drawer loses the conversation, which
+ * the drawer warns about — see OpportunityInterviewDrawer in ally-web.
+ *
+ * `messages` may be empty: that is how the client asks for the OPENING question, so the agent
+ * writes the first turn rather than the frontend hardcoding a greeting that would then drift
+ * from the prompt.
+ */
+export class OpportunityInterviewTurnDto {
+  @ApiProperty({
+    type: [OpportunityInterviewMessageDto],
+    maxItems: ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_MESSAGE_MAX,
+    description:
+      'Empty on the first call, which asks for the opening question.',
+  })
+  @IsArray()
+  @ArrayMaxSize(ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_MESSAGE_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => OpportunityInterviewMessageDto)
+  messages!: OpportunityInterviewMessageDto[];
 }
 
 /**

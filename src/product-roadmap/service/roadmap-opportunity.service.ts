@@ -33,6 +33,7 @@ import {
   RoadmapOpportunityRepository,
   RoadmapOpportunityRow,
 } from '../repository/roadmap-opportunity.repository';
+import { RoadmapAllocationRepository } from '../repository/roadmap-allocation.repository';
 import {
   BUG_REPORT_DEFAULT_PRODUCT_GOAL,
   ROADMAP_FILEABLE_EFFORTS,
@@ -56,6 +57,7 @@ import {
   RoadmapFacetsDto,
   RoadmapReferenceImageUploadUrlResponseDto,
   RoadmapUserRefDto,
+  RoadmapVoterDto,
 } from '../dto/roadmap-response.dto';
 import { currentPeriodKey } from '../util/roadmap-period.util';
 import { effectiveMonthOf, isMonthPinned } from '../util/roadmap-month.util';
@@ -79,6 +81,7 @@ export class RoadmapOpportunityService {
 
   constructor(
     private readonly opportunityRepository: RoadmapOpportunityRepository,
+    private readonly allocationRepository: RoadmapAllocationRepository,
     private readonly strategyGoalService: RoadmapStrategyGoalService,
     private readonly goalImpactService: RoadmapGoalImpactService,
     private readonly vectorService: RoadmapVectorService,
@@ -122,6 +125,27 @@ export class RoadmapOpportunityService {
     );
     if (!row) throw new NotFoundException(`Opportunity ${id} not found`);
     return (await this.toResponseList([row]))[0];
+  }
+
+  /**
+   * Per-admin breakdown behind `priorityScore` — who cast the votes that sum to it, across
+   * every period. Highest votes first. A separate call rather than a field on
+   * OpportunityResponseDto: that DTO serves the list and board too, where fetching this per
+   * row would be a query per card for a breakdown nobody asked to see yet.
+   */
+  async getVoters(opportunityId: string): Promise<RoadmapVoterDto[]> {
+    const rows =
+      await this.allocationRepository.votersForOpportunity(opportunityId);
+    const users = await this.resolveUsers(rows.map((r) => r.userId));
+    return rows.map((r) => {
+      const user = users.get(r.userId) ?? this.unknownUser(r.userId);
+      return {
+        userId: r.userId,
+        name: user.name,
+        email: user.email,
+        votes: r.votes,
+      };
+    });
   }
 
   /**

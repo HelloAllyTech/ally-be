@@ -4,6 +4,7 @@ import { RoadmapOpportunity } from '../entity/roadmap-opportunity.entity';
 import { RoadmapEmbeddingStatus } from '../enum/roadmap-opportunity.enum';
 import {
   ROADMAP_BOARD_DEFAULTS,
+  ROADMAP_EFFORT_UNSIZED,
   ROADMAP_LIST_DEFAULTS,
 } from '../constants/product-roadmap.constants';
 
@@ -116,6 +117,8 @@ export interface ListOpportunitiesOptions {
   stage?: string[];
   /** Who filed it — 'staff' or 'consumer'. Admin-side filtering only, see the entity docblock. */
   source?: string[];
+  /** Rough size — S/M/L/XL/XXL. */
+  effort?: string[];
   productGoal?: string[];
   owner?: string[];
   createdBy?: number[];
@@ -928,6 +931,22 @@ export class RoadmapOpportunityRepository extends Repository<RoadmapOpportunity>
       qb.andWhere('opp."stage" IN (:...stage)', { stage: o.stage });
     if (o.source?.length)
       qb.andWhere('opp."source" IN (:...source)', { source: o.source });
+    if (o.effort?.length) {
+      // "unsized" is a filter-only sentinel for `effort IS NULL`, not a real value the column
+      // ever holds — see ROADMAP_EFFORT_UNSIZED. Split it out so the IN clause only ever sees
+      // real enum values, and OR in the NULL check when it was selected alongside them.
+      const sizes = o.effort.filter((e) => e !== ROADMAP_EFFORT_UNSIZED);
+      const includeUnsized = o.effort.includes(ROADMAP_EFFORT_UNSIZED);
+      if (sizes.length && includeUnsized) {
+        qb.andWhere('(opp."effort" IN (:...effort) OR opp."effort" IS NULL)', {
+          effort: sizes,
+        });
+      } else if (sizes.length) {
+        qb.andWhere('opp."effort" IN (:...effort)', { effort: sizes });
+      } else if (includeUnsized) {
+        qb.andWhere('opp."effort" IS NULL');
+      }
+    }
     if (o.productGoal?.length) {
       qb.andWhere('opp."productGoal" IN (:...productGoal)', {
         productGoal: o.productGoal,

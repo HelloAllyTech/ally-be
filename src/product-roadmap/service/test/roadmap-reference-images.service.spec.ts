@@ -64,6 +64,7 @@ describe('RoadmapOpportunityService — reference images', () => {
 
     const service = new RoadmapOpportunityService(
       opportunityRepository as unknown as RoadmapOpportunityRepository,
+      {} as never, // allocationRepository — unused by these tests
       {
         countGoals: jest.fn().mockResolvedValue(0),
         getRankContext: jest.fn().mockResolvedValue({

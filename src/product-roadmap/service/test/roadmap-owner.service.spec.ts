@@ -14,6 +14,7 @@ import { AppConfigService } from 'src/config/config.service';
 
 import { RoadmapOpportunityService } from '../roadmap-opportunity.service';
 import { RoadmapOpportunityRepository } from '../../repository/roadmap-opportunity.repository';
+import { RoadmapAllocationRepository } from '../../repository/roadmap-allocation.repository';
 import { RoadmapVectorService } from '../roadmap-vector.service';
 import { RoadmapStrategyGoalService } from '../roadmap-strategy-goal.service';
 import { RoadmapGoalImpactService } from '../roadmap-goal-impact.service';
@@ -84,6 +85,11 @@ describe('RoadmapOpportunityService — owners', () => {
         {
           provide: RoadmapOpportunityRepository,
           useValue: opportunityRepository,
+        },
+        // Voters play no part in owner resolution; this satisfies the constructor.
+        {
+          provide: RoadmapAllocationRepository,
+          useValue: { votersForOpportunity: jest.fn() },
         },
         { provide: getRepositoryToken(User), useValue: userRepository },
         {

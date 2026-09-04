@@ -283,6 +283,14 @@ export class SetAllocationResponseDto {
   @ApiProperty({ type: VoteBudgetDto }) budget!: VoteBudgetDto;
 }
 
+/** One admin's vote total on one opportunity, across every period. */
+export class RoadmapVoterDto {
+  @ApiProperty() userId!: number;
+  @ApiProperty() name!: string;
+  @ApiProperty() email!: string;
+  @ApiProperty() votes!: number;
+}
+
 export class RoadmapFacetsDto {
   @ApiProperty({ type: [RoadmapUserRefDto] }) creators!: RoadmapUserRefDto[];
   @ApiProperty({ type: [String] }) goals!: string[];
@@ -392,6 +400,66 @@ export class AiReadinessResponseDto {
 
 export class AiEnhanceResponseDto {
   @ApiProperty() enhanced!: string;
+}
+
+/** One criterion's live verdict, as the interview's checklist renders it. */
+export class OpportunityInterviewGateDto {
+  @ApiProperty({ description: 'A ROADMAP_READINESS_CRITERIA id' })
+  id!: string;
+
+  @ApiProperty({
+    description:
+      'True only when the conversation so far actually establishes it',
+  })
+  met!: boolean;
+
+  @ApiProperty({ description: 'What satisfied it, or what is still missing' })
+  note!: string;
+}
+
+/** The draft an interview hands over once every gate is met. */
+export class OpportunityInterviewDraftDto {
+  @ApiProperty() description!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'One of the live product goal names, or null when none fit',
+  })
+  productGoal!: string | null;
+
+  @ApiProperty({ enum: RoadmapOpportunityEffort, nullable: true })
+  effort!: RoadmapOpportunityEffort | null;
+}
+
+export class OpportunityInterviewTurnResponseDto {
+  @ApiProperty({
+    description: "The agent's next question, or its hand-over line",
+  })
+  reply!: string;
+
+  @ApiProperty({
+    type: [OpportunityInterviewGateDto],
+    description:
+      'One entry per readiness criterion, in the criteria order — the same five the filing ' +
+      'gate grades, so a completed interview cannot produce a draft that gate would reject.',
+  })
+  gates!: OpportunityInterviewGateDto[];
+
+  @ApiPropertyOptional({
+    type: OpportunityInterviewDraftDto,
+    nullable: true,
+    description: 'Null until every gate is met.',
+  })
+  draft!: OpportunityInterviewDraftDto | null;
+
+  /**
+   * The signed readiness verdict for `draft.description`, to be handed back on
+   * `POST /opportunities` as `readinessToken` — exactly as the "Check readiness" button's token
+   * is. Issued only alongside a draft, and only because the interview grades the SAME criteria:
+   * a token minted from a private rubric would be a signature over a check nobody ran.
+   */
+  @ApiPropertyOptional({ nullable: true })
+  readinessToken!: string | null;
 }
 
 export class AiTextResponseDto {

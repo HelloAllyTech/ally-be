@@ -9,6 +9,7 @@ import {
   IsUrl,
   Max,
   IsEnum,
+  IsIn,
   IsInt,
   IsISO8601,
   IsObject,
@@ -32,6 +33,7 @@ import {
 } from '../enum/roadmap-opportunity.enum';
 import {
   ROADMAP_BOARD_DEFAULTS,
+  ROADMAP_EFFORT_UNSIZED,
   ROADMAP_LIMITS,
   ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES,
 } from '../constants/product-roadmap.constants';
@@ -111,6 +113,21 @@ export class RoadmapOpportunityFiltersDto {
   @IsArray()
   @IsEnum(RoadmapOpportunitySource, { each: true })
   source?: RoadmapOpportunitySource[];
+
+  @ApiPropertyOptional({
+    enum: [...Object.values(RoadmapOpportunityEffort), ROADMAP_EFFORT_UNSIZED],
+    isArray: true,
+    description:
+      'Rough size — S/M/L/XL/XXL — plus the sentinel "unsized" for opportunities nobody has ' +
+      'sized yet (effort IS NULL).',
+  })
+  @IsOptional()
+  @Transform(toArray)
+  @IsArray()
+  @IsIn([...Object.values(RoadmapOpportunityEffort), ROADMAP_EFFORT_UNSIZED], {
+    each: true,
+  })
+  effort?: (RoadmapOpportunityEffort | typeof ROADMAP_EFFORT_UNSIZED)[];
 
   @ApiPropertyOptional({
     description: 'Product goal NAMES (not ids)',
