@@ -286,8 +286,18 @@ export class AuthService {
     if (!email) {
       throw new BadRequestException('Email is required');
     }
+    // Trim + lowercase before the lookup: accounts are stored normalised
+    // this way (see `UserService.bulkAddUsers`), but mobile keyboards
+    // routinely auto-capitalise the first letter of an email field. A
+    // literal-match query against a normalised account made a real,
+    // correctly-typed login silently 404 here, which read to the user as
+    // "the OTP email never arrived".
+    const normalizedEmail = this.normalizeEmail(email);
     const user = await this.userRepository.findOne({
-      where: { email, status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]) },
+      where: {
+        email: normalizedEmail,
+        status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]),
+      },
     });
 
     if (!user) {
@@ -463,6 +473,10 @@ export class AuthService {
     );
   }
 
+  private normalizeEmail(email: string): string {
+    return email.trim().toLowerCase();
+  }
+
   private getOtpKey(email: string) {
     return `otp:${email}`;
   }
@@ -602,7 +616,10 @@ export class AuthService {
     authProvider: AuthProvider,
   ): Promise<AuthenticationResponseDto> {
     const user = await this.userRepository.findOne({
-      where: { email, status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]) },
+      where: {
+        email: this.normalizeEmail(email),
+        status: In([UserStatus.ACTIVE, UserStatus.SUSPENDED]),
+      },
     });
 
     if (!user) {

@@ -402,6 +402,31 @@ describe('AuthService', () => {
       );
     });
 
+    it('should find the user when the submitted email differs only in case/whitespace from the stored email', async () => {
+      // Simulates a real (case-sensitive) column match: only the exact,
+      // normalised email resolves to a user.
+      userRepository.findOne.mockImplementation((options: any) =>
+        Promise.resolve(
+          options.where.email === 'test@example.com' ? mockUser : null,
+        ),
+      );
+      groupService.getUserGroupNames.mockResolvedValue([UserRole.CLIENT]);
+      (AuthUtil.generateOtp as jest.Mock).mockReturnValue('123456');
+      redisService.get.mockResolvedValue(null);
+
+      // As typed on a mobile keyboard that auto-capitalises the first
+      // letter of the field, with a stray trailing space.
+      const result = await authService.generateOtpV2({
+        email: ' Test@Example.com ',
+        allowedRoles: [UserRole.CLIENT],
+      });
+
+      expect(result).toEqual({
+        success: true,
+        expiresIn: 300,
+      });
+    });
+
     it('should throw BadRequestException when email is missing', async () => {
       await expect(
         authService.generateOtpV2({
