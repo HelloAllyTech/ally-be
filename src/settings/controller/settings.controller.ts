@@ -223,6 +223,46 @@ export class SettingsController {
     );
   }
 
+  @Get('progress-dashboard-enabled')
+  @ApiOperation({
+    summary:
+      'Whether the Learner Progress screen (XP/levels) is enabled for the org (own org unless the caller has SYSTEM_ACCESS)',
+  })
+  @ApiQuery({ name: 'tenantId', required: false, type: String })
+  @ApiResponse({ status: 200 })
+  // Authenticated-only, same reasoning as character-library-enabled: the
+  // answer is a single boolean about the caller's own org, and both web and
+  // mobile need it before they know whether to show the Progress widget.
+  @AuthPermissions([])
+  getProgressDashboardEnabled(@Query('tenantId') tenantId?: string) {
+    return this.service.getProgressDashboardEnabled(tenantId);
+  }
+
+  @Put('progress-dashboard-enabled')
+  @ApiOperation({
+    summary:
+      'Enable or disable the Learner Progress screen for an org (platform admin only)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        tenantId: { type: 'string' },
+        enabled: { type: 'boolean' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200 })
+  @AuthPermissions([PERMISSIONS.EDIT_GLOBAL_SETTINGS])
+  updateProgressDashboardEnabled(
+    @Body() body: { tenantId: string; enabled: boolean },
+  ) {
+    return this.service.updateProgressDashboardEnabled(
+      body.tenantId,
+      body.enabled,
+    );
+  }
+
   @Put('custom-fields-enabled')
   @ApiOperation({
     summary: 'Enable or disable the custom fields feature (superadmin only)',
