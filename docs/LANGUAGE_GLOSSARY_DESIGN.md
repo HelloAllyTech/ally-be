@@ -541,6 +541,14 @@ proposal, Tier 0 cap breach — lands in `deferred`. Cap pressure is reported, n
 proposal that would breach the cap is deferred with its reason after one re-tier attempt,
 because the cap is authoritative and the answer is re-tiering or trimming, not squeezing.
 
+Every path that lands in `deferred` — including an accept that only fails at the cap after
+its re-tier attempt — records the deferral on the entry (`deferrals`, `lastDeferredAt`,
+`lastDeferReason`). Consecutive deferrals for the same reason double the wait (1h, 2h, 4h…
+capped), so a scheduler run running `respectBackoff: true` stops re-billing the model hourly
+for a proposal stuck behind the same unchanged reason; a genuinely different reason resets
+the streak. Skipping this bookkeeping on any deferred path silently defeats the backoff for
+that path.
+
 ### 6.4 Tiering — automated knapsack (replaces `importance`)
 
 `computeTierAssignment` (`tier-assignment.util.ts`), triggered by
