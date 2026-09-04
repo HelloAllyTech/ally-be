@@ -547,6 +547,11 @@ const COUNSELOR_PERMISSIONS = [
   PERMISSIONS.VIEW_SETTINGS_CHAT_TYPES,
   PERMISSIONS.EDIT_ENHANCEMENT,
   PERMISSIONS.VIEW_CHAT_NUDGE,
+  // Keep these two together. Rating a tag without being able to read the tag
+  // list is not a coherent permission set, and the split cost counsellors their
+  // call-log page: GET /chats/tags 403'd for every one of them until
+  // GrantViewTagsToTagRaters1954000000000.
+  PERMISSIONS.VIEW_TAGS,
   PERMISSIONS.EDIT_TAG_POSITIVITY_RATINGS,
 
   PERMISSIONS.VIEW_ANALYTICS,
