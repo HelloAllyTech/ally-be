@@ -799,6 +799,77 @@ export class SettingsService {
     return { success: true };
   }
 
+  /**
+   * Org-level switch for the Learner Progress screen (XP/levels). OFF until a
+   * platform admin turns it on for that org — see
+   * PreferenceName.PROGRESS_DASHBOARD_ENABLED. Read the same way
+   * TenantFeatureService.isEnabledForTenant does (same `preference` row), so a
+   * flip here takes effect immediately for the guard as well.
+   */
+  async getProgressDashboardEnabled(tenantId?: string): Promise<boolean> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    const rawTenantId = hasSystemAccess
+      ? (tenantId ?? ExecutionManager.getTenantId())
+      : ExecutionManager.getTenantId();
+    if (!rawTenantId) return false;
+    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+
+    const preference = await this.preferenceService.getPreference(
+      PreferenceName.PROGRESS_DASHBOARD_ENABLED,
+      resolvedTenantId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+
+    if (!preference?.value) return false;
+    return (
+      (preference.value as CustomFieldsEnabledPreferenceValue).enabled ?? false
+    );
+  }
+
+  async updateProgressDashboardEnabled(
+    tenantId: string,
+    enabled: boolean,
+  ): Promise<{ success: boolean }> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    // Only a platform admin may grant this — a tenant admin must not be able to
+    // switch it on for themselves. The `??` on the staff branch matters: the
+    // helpline app's own Org Settings screen sends no tenantId at all.
+    const scopedTenantId = hasSystemAccess
+      ? (tenantId ?? ExecutionManager.getTenantId())
+      : ExecutionManager.getTenantId();
+    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
+    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+
+    const existing = await this.preferenceService.getPreference(
+      PreferenceName.PROGRESS_DASHBOARD_ENABLED,
+      resolvedId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+    if (existing) {
+      await this.preferenceService.updatePreference(existing.id, { enabled });
+    } else {
+      await this.preferenceService.createPreference({
+        name: PreferenceName.PROGRESS_DASHBOARD_ENABLED,
+        relatedId: resolvedId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { enabled },
+        tenantId: ExecutionManager.getTenantId(),
+      });
+    }
+    return { success: true };
+  }
+
   async getScribeNoteCreationEnabled(tenantId?: string): Promise<boolean> {
     const userId = ExecutionManager.getUserId();
     if (!userId) throw new BadRequestException('User ID is required');
