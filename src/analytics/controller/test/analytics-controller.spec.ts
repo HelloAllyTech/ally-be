@@ -6,6 +6,7 @@ import { UsageLevelAnalyticsService } from '../../service/usage-level-analytics.
 import { CertificationAnalyticsService } from '../../service/certification-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../../service/roleplay-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsService } from '../../service/roadmap-delivery-analytics.service';
+import { ShipVolumeAnalyticsService } from '../../service/ship-volume-analytics.service';
 import { HighlightsAnalyticsService } from '../../service/highlights-analytics.service';
 import { PlatformAnalyticsService } from '../../service/platform-analytics.service';
 import { ScribeAnalyticsService } from '../../service/scribe-analytics.service';
@@ -122,6 +123,10 @@ describe('AnalyticsController', () => {
         {
           provide: RoadmapDeliveryAnalyticsService,
           useValue: { getRoadmapDelivery: jest.fn() },
+        },
+        {
+          provide: ShipVolumeAnalyticsService,
+          useValue: { getShipVolume: jest.fn() },
         },
         {
           provide: PlatformAnalyticsService,
