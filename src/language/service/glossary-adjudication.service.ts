@@ -243,6 +243,13 @@ export class GlossaryAdjudicationService {
             error instanceof BadRequestException
               ? `deferred: ${(error as Error).message}`
               : `deferred: accept failed — ${(error as Error).message}`;
+          // This branch mutates verdict away from 'accepted' after the
+          // if/else-if chain below has already been decided against the
+          // pre-mutation value, so the `apply && verdict === 'deferred'`
+          // branch that normally calls recordDeferral is never reached for
+          // this case — it has to happen here instead, or this proposal's
+          // deferral streak never advances and defer backoff never kicks in.
+          await this.recordDeferral(languageId, p, reason);
         }
       } else if (apply && verdict === 'rejected') {
         // Two consecutive passes must agree before a permanent reject lands.

@@ -372,11 +372,11 @@ describe('GlossaryAdjudicationService', () => {
   // When the allocation is already optimal the cap still wins, and what
   // remains (raise the cap, trim content) is a decision, not a retry.
   it('defers when the cap still refuses after re-tiering', async () => {
-    glossaryRepository.findAllForLanguage.mockResolvedValue([
-      section({
-        entries: [proposal('e1', '- yes: say `ஆமா` (avoid: `ஆமாம்`)')],
-      }),
-    ]);
+    const sec = section({
+      entries: [proposal('e1', '- yes: say `ஆமா` (avoid: `ஆமாம்`)')],
+    });
+    glossaryRepository.findAllForLanguage.mockResolvedValue([sec]);
+    glossaryRepository.findSection.mockResolvedValue(sec);
     getCompletion.mockResolvedValue(
       JSON.stringify([{ index: 1, verdict: 'accept', reason: 'good' }]),
     );
@@ -392,6 +392,10 @@ describe('GlossaryAdjudicationService', () => {
     // It never loops — a cap that survives re-tiering is a decision to make.
     expect(glossaryService.acceptProposal).toHaveBeenCalledTimes(2);
     expect(glossaryService.retierGlossary).toHaveBeenCalledTimes(1);
+    // The bookkeeping that makes backoff possible: without it, this same
+    // stuck proposal gets re-billed to the model every hour forever.
+    const entry = sec.entries.find((e: any) => e.id === 'e1');
+    expect(entry.adjudication.deferrals).toBe(1);
   });
 
   // Silence must never read as approval.
