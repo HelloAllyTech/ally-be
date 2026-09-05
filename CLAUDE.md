@@ -70,13 +70,8 @@ taking a whole task description and returning full chunk bodies. Setup, citation
   released mobile build sends verbatim locks those users out — that is how a role removal
   once broke login for everyone. Strict validation is for values that *widen* access.
 - **Never edit a merged migration.** Add a new one.
-- **Every AI call has a registry row.** `src/llm/constants/ai-task-registry.constants.ts`
-  is the canonical map of what calls a model and which model it uses — it feeds the admin
-  **AI Tasks** tab and is what anyone costing a feature reads. Adding an LLM, embedding,
-  transcription, speech or image call without a row makes that map wrong, and a wrong map
-  is worse than none because it still looks authoritative. A jest guard fails on a new
-  `LlmTask` with no row; `.docs-map.yml` fails a PR that touches a client call site and
-  not the registry. Recipe: [`docs/ai-task-registry.md`](docs/ai-task-registry.md).
+- **Every AI call has a registry row** in `src/llm/constants/ai-task-registry.constants.ts`
+  — a jest guard and `.docs-map.yml` both fail without one. See the routing table above.
 - **HIPAA.** No PII/PHI outside the designated audit loggers.
 - **Module-load-time work in a shared module breaks unrelated suites.** Resolve values
   lazily inside the function that needs them, especially for anything read from a barrel.
