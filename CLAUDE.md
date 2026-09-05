@@ -39,6 +39,7 @@ taking a whole task description and returning full chunk bodies. Setup, citation
 | Changing the DB schema | [`DATA_SCHEMA.md`](DATA_SCHEMA.md) §the affected domain, then the migration recipe below |
 | Auth, roles, permissions | **[Gotchas](https://tech.helloally.ai/#/wiki/memory.md) — this area has bitten us four times.** See the roles note below |
 | Adding or editing a prompt | [`docs/prompts-folder.md`](docs/prompts-folder.md), then [`docs/prompts-api.md`](docs/prompts-api.md) |
+| **Adding, removing or re-pointing an AI/LLM call** | [`docs/ai-task-registry.md`](docs/ai-task-registry.md) — then add your row to `src/llm/constants/ai-task-registry.constants.ts` **in the same PR**. CI enforces both halves |
 | Calling ally-ai | `src/ai/` — service-to-service auth is `X-API-Key` |
 | Real-time / WebSocket work | `src/**/*.gateway.ts` — namespaces are `/microphone-chat`, `/cloud-telephony-chat`, `/scenario-report` |
 | Writing or fixing tests | [`TESTING.md`](TESTING.md); Docker variant in [`DOCKER_TESTING_SETUP.md`](DOCKER_TESTING_SETUP.md) |
@@ -69,6 +70,13 @@ taking a whole task description and returning full chunk bodies. Setup, citation
   released mobile build sends verbatim locks those users out — that is how a role removal
   once broke login for everyone. Strict validation is for values that *widen* access.
 - **Never edit a merged migration.** Add a new one.
+- **Every AI call has a registry row.** `src/llm/constants/ai-task-registry.constants.ts`
+  is the canonical map of what calls a model and which model it uses — it feeds the admin
+  **AI Tasks** tab and is what anyone costing a feature reads. Adding an LLM, embedding,
+  transcription, speech or image call without a row makes that map wrong, and a wrong map
+  is worse than none because it still looks authoritative. A jest guard fails on a new
+  `LlmTask` with no row; `.docs-map.yml` fails a PR that touches a client call site and
+  not the registry. Recipe: [`docs/ai-task-registry.md`](docs/ai-task-registry.md).
 - **HIPAA.** No PII/PHI outside the designated audit loggers.
 - **Module-load-time work in a shared module breaks unrelated suites.** Resolve values
   lazily inside the function that needs them, especially for anything read from a barrel.

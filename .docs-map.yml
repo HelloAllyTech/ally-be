@@ -48,6 +48,26 @@ rules:
       hand — and a cookbook that has drifted from the dashboard is worse than none,
       because both look authoritative.
 
+  - id: ai-task-registry
+    watch:
+      - "src/**/service/*-ai.service.ts"
+      - "src/**/service/*autofill*.service.ts"
+      - "src/**/service/*-orchestrator.service.ts"
+      - "src/builder/service/builder-*.service.ts"
+      # Every provider layer, not just the ones that existed when this rule was
+      # written: `src/llm-agent/` was added by the character-interview
+      # multi-provider change and would have slipped through a narrower list.
+      - "src/**/provider/*.ts"
+      - "src/**/providers/*.ts"
+      - "src/learn/enum/llm-task.enum.ts"
+    requires: src/llm/constants/ai-task-registry.constants.ts
+    why: >
+      The AI task registry is the one place that says which platform actions call a model
+      and which model each one uses — it feeds the admin AI Tasks tab and is what anyone
+      costing a feature reads. A new or re-pointed LLM call that skips it makes the map
+      quietly wrong, and a wrong map is worse than no map because it still looks
+      authoritative. See docs/ai-task-registry.md.
+
   - id: agent-entrypoints-in-sync
     watch:
       - "AGENTS.md"

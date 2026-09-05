@@ -24,8 +24,10 @@ import {
   LlmModelInfo,
   LlmRuntime,
 } from '../constants/llm-model-registry.constants';
+import { AiTaskResponseDto } from '../dto/ai-task.dto';
 import { CreateLlmModelDto, UpdateLlmModelDto } from '../dto/llm-model.dto';
 import { LlmModels } from '../entity/llm-models.entity';
+import { AiTaskService } from '../service/ai-task.service';
 import { LlmModelService } from '../service/llm-model.service';
 
 @ApiTags('LLM')
@@ -33,7 +35,31 @@ import { LlmModelService } from '../service/llm-model.service';
 @ApiSecurity('access-token')
 @Controller({ path: 'llm', version: '1' })
 export class LlmController {
-  constructor(private readonly llmModelService: LlmModelService) {}
+  constructor(
+    private readonly llmModelService: LlmModelService,
+    private readonly aiTaskService: AiTaskService,
+  ) {}
+
+  /**
+   * The AI task registry: every action on the platform that reaches a model over
+   * an API, and which model serves it.
+   *
+   * Read-only and derived from code — there is nothing to edit here, which is
+   * the point. The list lives in `ai-task-registry.constants.ts`; a call added
+   * without a row there fails CI rather than quietly going unmapped.
+   *
+   * Gated on VIEW_ADMIN_LANGUAGES like the model catalog, since it describes the
+   * same configuration surface from the other direction.
+   */
+  @Get('tasks')
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_LANGUAGES])
+  @ApiOperation({
+    summary:
+      'List every AI/LLM call the platform makes and the model each one uses.',
+  })
+  getAiTasks(): AiTaskResponseDto[] {
+    return this.aiTaskService.getTasks();
+  }
 
   /**
    * Canonical list of selectable LLM models (the model registry). Optionally
