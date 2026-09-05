@@ -17,6 +17,7 @@ export enum FeatureToggleKey {
   // Content & simulation config (formerly SUPER_ADMIN-tier)
   MANAGE_SCENARIO_LANGUAGES = 'manage_scenario_languages',
   AI_LAB = 'ai_lab',
+  AI_TASKS = 'ai_tasks',
   COMPETENCIES = 'competencies',
   ROLEPLAY_SESSION_LOGS = 'roleplay_session_logs',
   ORG_DETAIL_CONTENT_TABS = 'org_detail_content_tabs',
@@ -149,6 +150,13 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     key: FeatureToggleKey.AI_LAB,
     label: 'AI Lab',
     description: 'Access the AI Lab experimentation tables.',
+    legacyGrants: SUPER_ADMIN_TIER,
+  },
+  {
+    key: FeatureToggleKey.AI_TASKS,
+    label: 'AI Tasks',
+    description:
+      'View the AI task registry: every platform action that calls a model and which model serves it.',
     legacyGrants: SUPER_ADMIN_TIER,
   },
   {
