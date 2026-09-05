@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  HttpException,
   NotFoundException,
   Param,
   ParseUUIDPipe,
@@ -31,6 +32,15 @@ import {
   CHARACTER_INTERVIEW_TURN_LOCK_PREFIX,
   CHARACTER_INTERVIEW_TURN_LOCK_TTL_SECONDS,
 } from '../constants/character-interview.constants';
+
+/**
+ * Shown when a turn failed before the orchestrator could start streaming and
+ * the cause is not something written for a reader (see the catch below).
+ */
+const CHARACTER_INTERVIEW_STREAM_FAILED_ERROR =
+  'That turn could not be started. Your answers are all still here — send ' +
+  'your message again. If it keeps happening, ask an administrator to check ' +
+  'the server logs.';
 
 /**
  * Character-library interview agent (SSE chat, modeled on CopilotController).
@@ -161,16 +171,26 @@ export class CharacterInterviewController {
         }
       } catch (error) {
         // Errors inside the generator are already surfaced as `error` frames;
-        // this catches pre-stream failures (404/403, model auth, …). A missing
-        // session is tagged `session_not_found` so the client can silently
-        // re-create the session and replay the turn instead of dead-ending.
-        const message = error instanceof Error ? error.message : String(error);
+        // this catches pre-stream failures (404/403, the tenant caps, a failed
+        // write). A missing session is tagged `session_not_found` so the
+        // client can silently re-create the session and replay the turn
+        // instead of dead-ending.
+        const detail = error instanceof Error ? error.message : String(error);
         const code =
           error instanceof NotFoundException
             ? 'session_not_found'
             : 'stream_failed';
+        // An HttpException's message was written for whoever is reading it —
+        // "this interview no longer exists", the tenant cap wording. Anything
+        // else is an internal failure whose text belongs in the log alone: a
+        // TypeORM or SDK string tells an admin nothing and exposes how the
+        // service is put together.
+        const message =
+          error instanceof HttpException
+            ? detail
+            : CHARACTER_INTERVIEW_STREAM_FAILED_ERROR;
         this.logger.error(
-          `Interview stream failed for session ${sessionId}: ${message}`,
+          `Interview stream failed for session ${sessionId}: ${detail}`,
         );
         safeWrite('error', { code, message });
       }

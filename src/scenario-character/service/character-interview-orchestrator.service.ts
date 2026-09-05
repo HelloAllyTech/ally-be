@@ -11,6 +11,11 @@ import {
 } from 'src/llm-agent/service/agent-llm.factory';
 import { IAgentLlmProvider } from 'src/llm-agent/provider/agent-llm-provider.interface';
 import {
+  AgentProviderFailure,
+  classifyAgentProviderError,
+  describeAgentProviderError,
+} from 'src/llm-agent/util/agent-provider-error.util';
+import {
   AgentContentBlock,
   AgentMessage,
   AgentStreamRequest,
@@ -68,6 +73,80 @@ const CHARACTER_INTERVIEW_INVALID_TOOL_CALL_ERROR =
 const CHARACTER_INTERVIEW_EMPTY_TURN_ERROR =
   'That turn came back empty — nothing was written and nothing was asked. ' +
   'Send your message again.';
+
+/**
+ * What the admin is told when the provider call itself failed.
+ *
+ * The vendor's own error text never reaches this screen. A raw SDK payload —
+ * `400 {"type":"error","error":{"type":"invalid_request_error","message":"Your
+ * credit balance is too low…"}}` is the one that prompted this — is unreadable
+ * to the person in front of it, names a vendor the product deliberately does
+ * not expose, offers no next step, and puts the platform's billing state in
+ * front of a customer's admin. It is also persisted into the transcript, so
+ * one leak renders on every reload of that interview until the session is
+ * abandoned.
+ *
+ * These are kept distinct rather than collapsed into one apology because the
+ * next step genuinely differs: three of them are "send it again", one needs an
+ * administrator, and one cannot be retried at all. The vendor's words still
+ * survive in the log, where the person who can act on them is looking.
+ */
+const CHARACTER_INTERVIEW_PROVIDER_ERRORS: Record<
+  AgentProviderFailure,
+  string
+> = {
+  [AgentProviderFailure.QUOTA]:
+    'The interview agent has reached its usage limit with the AI service ' +
+    'behind it, so the turn could not run. Your answers are all still here. ' +
+    'This one needs an administrator — once the limit is lifted or the ' +
+    'interviewer prompt is pointed at another model, the interview carries ' +
+    'on from where it stopped.',
+  [AgentProviderFailure.AUTH]:
+    'The interview agent could not sign in to the AI service behind it, so ' +
+    'the turn could not run. Your answers are all still here. Ask an ' +
+    "administrator to check the interviewer prompt's model setting and this " +
+    "environment's API keys.",
+  [AgentProviderFailure.RATE_LIMIT]:
+    'The AI service behind the interview agent is busy right now, so the ' +
+    'turn was dropped. Your answers are all still here — wait a few seconds ' +
+    'and send your message again.',
+  [AgentProviderFailure.UNAVAILABLE]:
+    'The AI service behind the interview agent could not be reached, so the ' +
+    'turn was dropped. Your answers are all still here — send your message ' +
+    'again in a minute.',
+  [AgentProviderFailure.REQUEST_TOO_LARGE]:
+    'This interview has grown longer than the model can read in one go, so ' +
+    'the turn could not run. Your answers are all still here, but sending ' +
+    'again will hit the same limit — ask an administrator to switch the ' +
+    'interviewer prompt to a model with more room, or start a fresh ' +
+    'interview.',
+  [AgentProviderFailure.UNKNOWN]:
+    'That turn could not be completed — the AI service behind the interview ' +
+    'agent returned something unexpected. Your answers are all still here; ' +
+    'send your message again. If it keeps happening, ask an administrator to ' +
+    'check the server logs.',
+};
+
+/**
+ * Stable `code` on the error frame, one per failure kind.
+ *
+ * The client renders the message rather than branching on these, but a code is
+ * what lets it start to (a retry affordance on the transient three, none on
+ * the other two) without parsing prose, and it is what makes a failure
+ * countable in the logs. `interview_error` is kept for the unrecognised case
+ * because that is the code this stream already emitted for every failure.
+ */
+const CHARACTER_INTERVIEW_PROVIDER_ERROR_CODES: Record<
+  AgentProviderFailure,
+  string
+> = {
+  [AgentProviderFailure.QUOTA]: 'provider_quota_exhausted',
+  [AgentProviderFailure.AUTH]: 'provider_auth_failed',
+  [AgentProviderFailure.RATE_LIMIT]: 'provider_rate_limited',
+  [AgentProviderFailure.UNAVAILABLE]: 'provider_unavailable',
+  [AgentProviderFailure.REQUEST_TOO_LARGE]: 'request_too_large',
+  [AgentProviderFailure.UNKNOWN]: 'interview_error',
+};
 
 /** Shown to the admin when the configured model cannot be run at all. */
 const CHARACTER_INTERVIEW_MISCONFIGURED_ERROR =
@@ -352,8 +431,11 @@ export class CharacterInterviewOrchestratorService {
               `Interview tool "${name}" failed for session ${sessionId}: ${message}`,
             );
             outcome = {
+              // The model gets the real reason — it is what lets it retry the
+              // call differently — but the summary goes over the wire to the
+              // browser, so it carries the tool name and nothing else.
               modelResult: { ok: false, error: 'tool_failed', message },
-              summary: `Tool ${name} failed: ${message}`,
+              summary: `Tool ${name} failed.`,
             };
           }
 
@@ -469,14 +551,23 @@ export class CharacterInterviewOrchestratorService {
       }
     } catch (error) {
       turnErrored = true;
-      const message = error instanceof Error ? error.message : String(error);
-      turnError = message;
+      // Classified rather than relayed: what the provider threw is written to
+      // the log, and what the admin is shown is our own copy for that kind of
+      // failure. `turnError` is persisted on the assistant row, so this is
+      // also what a reload of the interview renders.
+      const failure = classifyAgentProviderError(error);
+      turnError = CHARACTER_INTERVIEW_PROVIDER_ERRORS[failure];
       this.logger.error(
-        `Interview turn failed for session ${sessionId}: ${message}`,
+        `Interview turn failed for session ${sessionId} on ` +
+          `${providerName}/${model} (${failure}): ` +
+          describeAgentProviderError(error),
       );
       yield {
         event: 'error',
-        data: { code: 'interview_error', message },
+        data: {
+          code: CHARACTER_INTERVIEW_PROVIDER_ERROR_CODES[failure],
+          message: turnError,
+        },
       };
     }
 
