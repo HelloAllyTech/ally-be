@@ -755,10 +755,20 @@ export class AppConfigService {
     return {
       // Character-library interview agent model. Same family as the copilot
       // default so there is one model to upgrade.
+      //
+      // Anthropic, OpenAI and Gemini models all run — the turn loop goes
+      // through `AgentLlmProviderFactory`. The prompt row for
+      // `character_interview.interviewer_system` overrides both of these when
+      // it carries its own provider/model, which is the supported way to
+      // change them per environment; these are the fallback.
       model: this.configService.get<string>(
         'CHARACTER_INTERVIEW_MODEL',
         'claude-sonnet-4-6',
       ),
+      // Usually left unset: the provider is inferred from the model id, which
+      // is unambiguous for every model any of the three actually ships. Set it
+      // only for a model id whose name doesn't say who runs it.
+      provider: this.configService.get<string>('CHARACTER_INTERVIEW_PROVIDER'),
       // Hard cap on tool-use round-trips per interview turn. A normal turn is
       // 1-2 (commentary + ask_question); the final turn legitimately chains
       // get_voices + a validation-retried save_character_draft.

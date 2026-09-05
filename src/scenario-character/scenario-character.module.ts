@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { ScenarioCharacter } from './entity/scenario-character.entity';
 import { CharacterInterviewSession } from './entity/character-interview-session.entity';
 import { CharacterInterviewMessage } from './entity/character-interview-message.entity';
@@ -26,6 +27,7 @@ import { CharacterInterviewMessageRepository } from './repository/character-inte
     ]),
     PromptModule,
     LlmUsageModule,
+    LlmAgentModule,
   ],
   controllers: [ScenarioCharacterController, CharacterInterviewController],
   providers: [

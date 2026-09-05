@@ -2,9 +2,12 @@ import { CharacterInterviewOrchestratorService } from '../character-interview-or
 import { CharacterInterviewMessageRole } from '../../enum/character-interview.enum';
 
 /**
- * Turn-loop tests with a fully mocked Anthropic client. These cover what the
+ * Turn-loop tests with a fully mocked provider adapter. These cover what the
  * loop does with a response it cannot use — the model running out of output
  * room mid-`save_character_draft` — not the model itself.
+ *
+ * The loop is provider-agnostic, so these drive the neutral stream protocol
+ * (`text_delta`s then one `final`) rather than any SDK's own event shape.
  */
 describe('CharacterInterviewOrchestratorService — truncated turns', () => {
   const MAX_ITERATIONS = 8;
@@ -22,18 +25,18 @@ describe('CharacterInterviewOrchestratorService — truncated turns', () => {
     async *[Symbol.asyncIterator]() {
       for (const block of blocks) {
         if (block.type === 'text') {
-          yield {
-            type: 'content_block_delta',
-            delta: { type: 'text_delta', text: block.text },
-          };
+          yield { type: 'text_delta', text: block.text };
         }
       }
+      yield {
+        type: 'final',
+        message: {
+          content: blocks,
+          stopReason,
+          usage: { inputTokens: 10, outputTokens: 5 },
+        },
+      };
     },
-    finalMessage: async () => ({
-      content: blocks,
-      stop_reason: stopReason,
-      usage: { input_tokens: 10, output_tokens: 5 },
-    }),
   });
 
   const draftBlock = (id: string) => ({
@@ -73,7 +76,10 @@ describe('CharacterInterviewOrchestratorService — truncated turns', () => {
           maxToolIterations: MAX_ITERATIONS,
         },
       } as any,
-      { getPromptByCode: jest.fn().mockResolvedValue('SYSTEM') } as any,
+      {
+        getPromptByCode: jest.fn().mockResolvedValue('SYSTEM'),
+        getPromptLlmConfig: jest.fn().mockResolvedValue({}),
+      } as any,
       {
         getSession: jest
           .fn()
@@ -85,16 +91,16 @@ describe('CharacterInterviewOrchestratorService — truncated turns', () => {
       } as any,
       { listBySession: jest.fn().mockResolvedValue([]), appendMessage } as any,
       { record: jest.fn() } as any,
+      {
+        create: jest.fn().mockReturnValue({
+          name: 'anthropic',
+          stream: (request: any) => {
+            requests.push(JSON.parse(JSON.stringify(request.messages)));
+            return streamMock(request);
+          },
+        }),
+      } as any,
     );
-
-    (service as any).client = {
-      messages: {
-        stream: (params: any) => {
-          requests.push(JSON.parse(JSON.stringify(params.messages)));
-          return streamMock(params);
-        },
-      },
-    };
   });
 
   it('discards a truncated draft and asks the model to write a tighter one', async () => {
@@ -192,6 +198,40 @@ describe('CharacterInterviewOrchestratorService — truncated turns', () => {
     expect(assistantRow.metadata.errorMessage).toContain(
       'no character was created',
     );
+  });
+
+  it('retries an unreadable tool call rather than losing the turn', async () => {
+    // Gemini returns MALFORMED_FUNCTION_CALL intermittently against a schema
+    // this size. The candidate is empty, so treating it as a normal turn ends
+    // a twenty-question interview with "nothing was asked".
+    streamMock
+      .mockReturnValueOnce(makeStream([], 'invalid_tool_call'))
+      .mockReturnValueOnce(makeStream([draftBlock('tu-1')], 'tool_use'))
+      .mockReturnValueOnce(
+        makeStream([{ type: 'text', text: 'Asha is ready.' }], 'end_turn'),
+      );
+
+    const frames = await collect();
+
+    expect(frames.map((frame) => frame.event)).not.toContain('error');
+    expect(toolsExecute).toHaveBeenCalledTimes(1);
+    // Retried verbatim: there is nothing partial to replay and nothing to tell
+    // the model, which cannot see the malformed call either.
+    expect(requests[1]).toEqual(requests[0]);
+  });
+
+  it('gives up on an unreadable tool call with its own message', async () => {
+    streamMock.mockReturnValue(makeStream([], 'invalid_tool_call'));
+
+    const frames = await collect();
+
+    const error = frames.find((frame) => frame.event === 'error');
+    expect(error?.data.code).toBe('invalid_tool_call');
+    // Not reported as an empty turn — the two are indistinguishable from the
+    // response alone but need different advice.
+    expect(error?.data.message).toContain('could not read');
+    expect(streamMock).toHaveBeenCalledTimes(3);
+    expect(appendMessage.mock.calls[1][1].metadata.errored).toBe(true);
   });
 
   it('flags a turn that came back with nothing in it', async () => {
