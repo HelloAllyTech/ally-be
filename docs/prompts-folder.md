@@ -80,7 +80,7 @@ A fourth shape looks like an agent prompt but is read like a one-shot: `roadmap/
 drives a multi-turn interview, yet each turn is an independent `getPromptByCode` call with the
 whole transcript rendered into the user message. There is no session table and no message rows,
 so nothing needs replaying and there are no `tool_use` blocks to keep paired — the trap
-`rebuildAnthropicHistory` exists for in the Builder and Character interviews.
+`rebuildAnthropicHistory` (Builder) and `rebuildHistory` (Character) exist for.
 
 Two rules matter when writing one:
 

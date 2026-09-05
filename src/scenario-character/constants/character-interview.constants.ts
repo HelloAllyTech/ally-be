@@ -32,6 +32,18 @@ export const CHARACTER_INTERVIEW_MAX_TOKENS = 24_000;
 export const CHARACTER_INTERVIEW_MAX_TRUNCATION_RETRIES = 2;
 
 /**
+ * How many times one turn may come back with an unreadable tool call before it
+ * gives up.
+ *
+ * Gemini returns `MALFORMED_FUNCTION_CALL` intermittently against a tool
+ * schema this size — measured at roughly one call in three on
+ * gemini-2.5-flash with the interview tools. It is transient and carries no
+ * partial result, so the fix is to send the identical request again rather
+ * than to tell the model anything: two retries put a turn's odds past 95%.
+ */
+export const CHARACTER_INTERVIEW_MAX_INVALID_TOOL_CALL_RETRIES = 2;
+
+/**
  * Per-tenant interview caps. These bound LLM spend now that the agent is
  * reachable by customer admins and not just Ally staff — a platform admin is
  * not capped.
