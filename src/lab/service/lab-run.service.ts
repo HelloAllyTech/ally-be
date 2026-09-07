@@ -157,9 +157,10 @@ export class LabRunService {
    * in the picker and un-runnable in the lab.
    *
    * `modelId` is passed explicitly: an AI Lab run is a deliberate test of one
-   * named model, so it must not be re-resolved through the config chain.
-   * Fallback is off for the same reason — silently answering from a different
-   * model would make the whole feature lie.
+   * named model, so it must not be re-resolved through the config chain. The
+   * registry row carries `neverFallback` for the same reason — silently
+   * answering from a different model would make the whole feature lie about
+   * what it measured.
    */
   private async runModel(
     modelId: string,

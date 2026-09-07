@@ -590,10 +590,9 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
       'refusing to answer from outside the passages is an instruction-following problem. ' +
       'Falls back to Gemini when the Anthropic key is missing, and says so in the metadata.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-4-6',
-    configuredBy:
-      'KNOWLEDGE_AGENT__DEFAULT_MODEL / KNOWLEDGE_AGENT__DEFAULT_PROVIDER',
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'KNOWLEDGE_AGENT__DEFAULT_MODEL / KNOWLEDGE_AGENT__DEFAULT_PROVIDER',
     promptOverride: 'ally_ai_knowledge_whatsapp_answer',
   },
   {
@@ -605,8 +604,8 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
       'Runs concurrently with the answer call on every question, so its latency is hidden ' +
       'but its cost is not. Biased towards false positives on purpose.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-haiku-4-5-20251001',
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
     configuredBy: 'KNOWLEDGE_AGENT__CRISIS_MODEL',
   },
   {
@@ -616,8 +615,8 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     trigger: "...and the question isn't in English",
     detail: 'Restates it in English so it embeds against the English corpus.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-haiku-4-5-20251001',
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
     configuredBy: 'KNOWLEDGE_AGENT__TRANSLATE_MODEL',
   },
   {
@@ -921,6 +920,10 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     task: LlmTask.AI_LAB_RUN,
     runtime: LlmRuntime.ALLY_BE,
     tier: LlmModelTier.REASONING,
+    // The one task that must never be served by a substitute. An AI Lab run is
+    // a deliberate test of one named model; answering from a different one
+    // would make the whole feature lie about what it measured.
+    neverFallback: true,
     trigger: 'An admin runs a skill in AI Lab',
     detail:
       'Model comes from the skill row and the provider is inferred from it. OpenAI and ' +
