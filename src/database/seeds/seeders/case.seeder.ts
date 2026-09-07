@@ -59,7 +59,7 @@ export async function seedCases(
       { title: fixture.title },
       {
         description: fixture.description,
-        status: defaults.caseStatus,
+        status: fixture.status ?? defaults.caseStatus,
         isGlobal: true,
         totalScenarios: fixture.scenarioKeys.length,
         createdBy: adminUserId,

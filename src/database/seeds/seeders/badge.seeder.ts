@@ -2,10 +2,16 @@ import { DataSource } from 'typeorm';
 import { Badge } from '../../../badge/entity/badge.entity';
 import { BadgeGroup } from '../../../badge/entity/badge-group.entity';
 import { BadgeTenant } from '../../../badge/entity/badge-tenant.entity';
+import { BadgeUser } from '../../../badge/entity/badge-user.entity';
+import { BadgeViewedStatus } from '../../../badge/constants/badge.constants';
 import { Group } from '../../../authorization/entity/group.entity';
 import { Tenant } from '../../../tenant/entity/tenant.entity';
+import { User } from '../../../user/entity/user.entity';
 import { getRepo, log, upsert } from '../helpers';
-import { badges, defaults } from '../fixtures';
+import { badges, earnedBadges, defaults } from '../fixtures';
+
+const daysAgo = (n: number): Date =>
+  new Date(Date.now() - n * 24 * 60 * 60 * 1000);
 
 export async function seedBadges(
   ds: DataSource,
@@ -28,7 +34,7 @@ export async function seedBadges(
       { name: fixture.name },
       {
         description: fixture.description,
-        status: defaults.badgeStatus,
+        status: fixture.status ?? defaults.badgeStatus,
         visibilityType: defaults.badgeVisibility,
         category: fixture.category,
         achievementParams: { count: fixture.count },
@@ -56,4 +62,51 @@ export async function seedBadges(
     }
   }
   log(`badges: ${badges.length}`);
+
+  await seedEarnedBadges(ds);
+}
+
+async function seedEarnedBadges(ds: DataSource): Promise<void> {
+  const badgeRepo = getRepo(ds, Badge);
+  const badgeUserRepo = getRepo(ds, BadgeUser);
+  const userRepo = getRepo(ds, User);
+
+  const badgeIdByName = new Map(
+    (await badgeRepo.find()).map((b) => [b.name, b.id]),
+  );
+  const userIdByEmail = new Map(
+    (await userRepo.find()).map((u) => [u.email, u.id]),
+  );
+
+  let created = 0;
+  let skipped = 0;
+  for (const fixture of earnedBadges) {
+    const badgeId = badgeIdByName.get(fixture.badgeName);
+    const userId = userIdByEmail.get(fixture.email);
+    if (!badgeId || !userId) {
+      skipped++;
+      continue;
+    }
+
+    const existing = await badgeUserRepo.findOne({
+      where: { userId, badgeId },
+    });
+    if (existing) continue;
+
+    const created_ = badgeUserRepo.create({
+      userId,
+      badgeId,
+      viewedStatus:
+        fixture.viewed === false
+          ? BadgeViewedStatus.UNVIEWED
+          : BadgeViewedStatus.VIEWED,
+      createdAt: daysAgo(fixture.earnedDaysAgo),
+    });
+    await badgeUserRepo.save(created_);
+    created++;
+  }
+
+  log(
+    `earned badges: ${created} created, ${skipped} skipped (missing user/badge)`,
+  );
 }

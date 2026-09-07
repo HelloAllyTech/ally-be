@@ -11,7 +11,68 @@ import { User } from '../../../user/entity/user.entity';
 import { ReviewStatus } from '../../../review/type/review.type';
 import { getRepo, log } from '../helpers';
 import { reviews, ReviewCommentFixture } from '../fixtures';
-import { TENANT_CODE } from '../config';
+
+/**
+ * One-time repair: every review/thread/comment/reaction row written before
+ * this fix hardcoded tenantId to the literal string 'ally' (the tenant
+ * *code*) instead of the session's actual tenant *UUID* — every tenant-scoped
+ * query compares against the UUID, so this made every seeded review
+ * invisible everywhere, including in the 'ally' tenant itself. 'ally' can
+ * never be a legitimate UUID, so this predicate can't misfire against a
+ * correctly-tenanted row.
+ */
+async function repairMistenantedReviews(ds: DataSource): Promise<number> {
+  const BAD_TENANT_ID = 'ally';
+  const result = await ds.query(
+    `
+    UPDATE "scenario_session_reviews" r
+    SET "tenant_id" = s."tenant_id"
+    FROM "scenario_sessions" s
+    WHERE s.id = r."scenarioSessionId" AND r."tenant_id" = $1
+    `,
+    [BAD_TENANT_ID],
+  );
+  const reviewsRepaired = result[1] ?? 0;
+
+  await ds.query(
+    `
+    UPDATE "scenario_session_review_threads" t
+    SET "tenant_id" = r."tenant_id"
+    FROM "scenario_session_reviews" r
+    WHERE r.id = t."reviewId" AND t."tenant_id" = $1
+    `,
+    [BAD_TENANT_ID],
+  );
+  await ds.query(
+    `
+    UPDATE "scenario_session_review_comments" c
+    SET "tenant_id" = t."tenant_id"
+    FROM "scenario_session_review_threads" t
+    WHERE t.id = c."reviewThreadId" AND c."tenant_id" = $1
+    `,
+    [BAD_TENANT_ID],
+  );
+  await ds.query(
+    `
+    UPDATE "scenario_session_review_reactions" rx
+    SET "tenant_id" = r."tenant_id"
+    FROM "scenario_session_reviews" r
+    WHERE r.id = rx."reviewId" AND rx."tenant_id" = $1
+    `,
+    [BAD_TENANT_ID],
+  );
+  await ds.query(
+    `
+    UPDATE "scenario_session_review_comment_reactions" cr
+    SET "tenant_id" = c."tenant_id"
+    FROM "scenario_session_review_comments" c
+    WHERE c.id = cr."reviewCommentId" AND cr."tenant_id" = $1
+    `,
+    [BAD_TENANT_ID],
+  );
+
+  return reviewsRepaired;
+}
 
 export async function seedReviews(ds: DataSource): Promise<void> {
   const sessionRepo = getRepo(ds, ScenarioSessions);
@@ -23,6 +84,9 @@ export async function seedReviews(ds: DataSource): Promise<void> {
   const commentReactionRepo = getRepo(ds, ScenarioSessionReviewCommentReaction);
   const readStatusRepo = getRepo(ds, ScenarioSessionReviewReadStatus);
   const userRepo = getRepo(ds, User);
+
+  const reviewsRepaired = await repairMistenantedReviews(ds);
+  log(`reviews: repaired ${reviewsRepaired} mis-tenanted row(s)`);
 
   const allUsers = await userRepo.find();
   const userIdByEmail = new Map(allUsers.map((u) => [u.email, u.id]));
@@ -64,10 +128,10 @@ export async function seedReviews(ds: DataSource): Promise<void> {
       reviewRepo.create({
         scenarioSessionId: session.id,
         createdBy: authorId,
-        status: ReviewStatus.IN_REVIEW,
+        status: fixture.status ?? ReviewStatus.IN_REVIEW,
         note: fixture.note ?? null,
         noteEditedAt: fixture.note ? new Date() : null,
-        tenantId: TENANT_CODE,
+        tenantId: session.tenantId,
       }),
     );
     reviewsCreated++;
@@ -98,7 +162,7 @@ export async function seedReviews(ds: DataSource): Promise<void> {
           messageId,
           selection,
           createdBy: threadAuthorId,
-          tenantId: TENANT_CODE,
+          tenantId: review.tenantId,
         }),
       );
       threadsCreated++;
@@ -109,6 +173,7 @@ export async function seedReviews(ds: DataSource): Promise<void> {
           commentReactionRepo,
           resolveUserId,
           thread.id,
+          thread.tenantId,
           commentFixture,
           undefined,
         );
@@ -122,6 +187,7 @@ export async function seedReviews(ds: DataSource): Promise<void> {
             commentReactionRepo,
             resolveUserId,
             thread.id,
+            thread.tenantId,
             reply,
             topLevelId,
           );
@@ -140,7 +206,7 @@ export async function seedReviews(ds: DataSource): Promise<void> {
           reviewId: review.id,
           reaction: reaction.reaction,
           createdBy: reactorId,
-          tenantId: TENANT_CODE,
+          tenantId: review.tenantId,
         }),
       );
       reactionsCreated++;
@@ -174,6 +240,7 @@ async function createComment(
   >,
   resolveUserId: (email: string) => number | undefined,
   threadId: string,
+  tenantId: string,
   fixture:
     | ReviewCommentFixture
     | {
@@ -192,7 +259,8 @@ async function createComment(
       content: fixture.content,
       createdBy: authorId,
       parentCommentId,
-      tenantId: TENANT_CODE,
+      hidden: 'hidden' in fixture ? (fixture.hidden ?? false) : false,
+      tenantId,
     }),
   );
 
@@ -204,7 +272,7 @@ async function createComment(
         reviewCommentId: comment.id,
         reaction: reaction.reaction,
         createdBy: reactorId,
-        tenantId: TENANT_CODE,
+        tenantId,
       }),
     );
   }

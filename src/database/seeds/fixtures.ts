@@ -18,10 +18,13 @@ import { CaseStatus } from '../../case/type/cases.type';
 import {
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
+  ScenarioSessionAbandonReason,
+  ScenarioSessionEndReason,
 } from '../../learn/enum/scenario-session-status.enum';
 import { SessionEventDetectionType } from '../../session-event/enum/session-event-detection.enum';
 import { SessionEventVisibilityType } from '../../session-event/enum/session-event-visibility-type.enum';
 import { BehaviorInstructionCategory } from '../../learn/enum/behavior-instruction.enum';
+import { ReviewStatus } from '../../review/type/review.type';
 import { TENANT_CODE, TENANT_NAME, ADMIN_EMAIL } from './config';
 
 export interface TenantFixture {
@@ -76,6 +79,11 @@ export interface ScenarioBehaviorInstructionFixture {
 export interface ScenarioTranslationFixture {
   openingStatements?: string[];
   characterProfileText?: string;
+  // Also required for the language switcher: SCENARIO_SESSION_TRANSLATABLE_FIELDS
+  // and the admin translation tabs read these, not just openingStatements.
+  title?: string;
+  description?: string;
+  reminders?: string[];
 }
 
 export interface ScenarioFixture {
@@ -99,6 +107,7 @@ export interface PathwayFixture {
   title: string;
   description: string;
   scenarioKeys: string[];
+  status?: ScenarioPathStatus;
 }
 
 export interface BadgeFixture {
@@ -107,12 +116,21 @@ export interface BadgeFixture {
   category: BadgeCategory;
   count: number;
   groupNames: UserRole[];
+  status?: BadgeStatus;
+}
+
+export interface EarnedBadgeFixture {
+  email: string;
+  badgeName: string;
+  earnedDaysAgo: number;
+  viewed?: boolean;
 }
 
 export interface CaseFixture {
   title: string;
   description: string;
   scenarioKeys: string[];
+  status?: CaseStatus;
 }
 
 export interface SessionFixture {
@@ -132,6 +150,12 @@ export interface SessionFixture {
     eventCode: string;
     occurredAtTurnIndex: number;
   }>;
+  // Only meaningful when status/eventStatus is ABANDONED — why the session
+  // was never closed out (see ScenarioSessionAbandonReason's doc comment).
+  abandonedReason?: ScenarioSessionAbandonReason;
+  // Only meaningful for a normally-ENDED/COMPLETED session force-exited by
+  // the stall watchdog rather than a clean finish.
+  endReason?: ScenarioSessionEndReason;
 }
 
 export interface SimulationCreditsFixture {
@@ -150,6 +174,9 @@ export interface ReviewCommentFixture {
   content: string;
   reactions?: Array<{ email: string; reaction: string }>;
   replies?: ReviewCommentReplyFixture[];
+  // Exercises BaseReviewComment.hidden — a moderated-out comment that must
+  // exist in the DB but never surface in the normal feed.
+  hidden?: boolean;
 }
 
 export interface ReviewThreadFixture {
@@ -170,6 +197,9 @@ export interface ReviewFixture {
   reactions?: Array<{ email: string; reaction: string }>;
   readByEmails?: string[];
   threads: ReviewThreadFixture[];
+  // Defaults to IN_REVIEW. HIDDEN exercises the moderated-out review state —
+  // it must exist in the DB but never surface in the normal feed.
+  status?: ReviewStatus;
 }
 
 // Four tenants spanning the shapes a real deployment sees: the internal/demo
@@ -549,12 +579,37 @@ export const scenarios: ScenarioFixture[] = [
     triggerWarningNames: ['Grief and bereavement'],
     translationsByLanguage: {
       'hi-IN': {
+        title: 'लगातार उदासी से निपटना',
+        description:
+          'अंजलि की मदद करने का अभ्यास करें, जो लगातार उदासी, कम ऊर्जा और रुचि की कमी का अनुभव कर रही है।',
         openingStatements: [
           'मुझे लंबे समय से खुद जैसा महसूस नहीं हुआ है।',
           'ऐसा लगता है जैसे अब किसी चीज़ में खुशी नहीं मिलती।',
         ],
         characterProfileText:
           'अंजलि एक 24 वर्षीय स्नातक छात्रा है जो पिछले कई महीनों से लगातार उदासी, थकान और किसी भी चीज़ में रुचि न होने का अनुभव कर रही है।',
+        reminders: [
+          'सहानुभूति के साथ सुनें',
+          'समाधान देने में जल्दबाजी न करें',
+        ],
+      },
+      'mr-IN': {
+        title: 'सतत उदासीनतेला सामोरे जाणे',
+        description:
+          'अंजलीला मदत करण्याचा सराव करा, जी सतत उदासीनता, कमी ऊर्जा आणि आवडीचा अभाव अनुभवत आहे.',
+        openingStatements: [
+          'माझ्यात बराच काळ आधीसारखं वाटलेलं नाही.',
+          'असं वाटतं की आता कशातच आनंद मिळत नाही.',
+        ],
+      },
+      'ta-IN': {
+        title: 'தொடர்ச்சியான மனச்சோர்வை சமாளித்தல்',
+        description:
+          'தொடர்ச்சியான மனச்சோர்வு மற்றும் ஆர்வமின்மையை அனுபவிக்கும் அஞ்சலிக்கு உதவும் பயிற்சி.',
+        openingStatements: [
+          'நான் நீண்ட காலமாக என்னைப் போலவே உணரவில்லை.',
+          'எதிலும் மகிழ்ச்சி கிடைப்பது போல் தெரியவில்லை.',
+        ],
       },
     },
     behaviorInstructions: [
@@ -615,12 +670,24 @@ export const scenarios: ScenarioFixture[] = [
     triggerWarningNames: ['Grief and bereavement'],
     translationsByLanguage: {
       'hi-IN': {
+        title: 'शोक से गुजर रहे ग्राहक का साथ देना',
+        description:
+          'रोहन का साथ देने का अभ्यास करें, जिनकी माँ का हाल ही में निधन हो गया है।',
         openingStatements: [
           'मेरी माँ का छह हफ्ते पहले निधन हो गया।',
           'मैं बार-बार आखिरी दिनों को याद करता रहता हूँ।',
         ],
         characterProfileText:
           'रोहन एक 38 वर्षीय शिक्षक है जिनकी माँ की छह सप्ताह पहले एक छोटी बीमारी के बाद मृत्यु हो गई। वह अपराध बोध और अनिद्रा से जूझ रहे हैं।',
+      },
+      'mr-IN': {
+        title: 'दुःखातून जाणाऱ्या क्लायंटला साथ देणे',
+        description:
+          'रोहनला साथ देण्याचा सराव करा, ज्यांच्या आईचे नुकतेच निधन झाले आहे.',
+        openingStatements: [
+          'माझ्या आईचे सहा आठवड्यांपूर्वी निधन झाले.',
+          'मी वारंवार शेवटच्या दिवसांचा विचार करत राहतो.',
+        ],
       },
     },
     behaviorInstructions: [
@@ -678,6 +745,17 @@ export const scenarios: ScenarioFixture[] = [
       ],
       characterProfileText:
         'Imran is a 45-year-old shop owner whose business took on heavy debt during a slow year. He is presenting with irritability, sleep disturbance, and reluctance to discuss finances directly.',
+    },
+    translationsByLanguage: {
+      'hi-IN': {
+        title: 'वित्तीय चिंता से जूझ रहे ग्राहक का साथ देना',
+        description:
+          'इमरान का साथ देने का अभ्यास करें, जिनके व्यापार का कर्ज़ उन्हें चिड़चिड़ा और चिंतित बना रहा है।',
+        openingStatements: [
+          'इस साल व्यापार ठीक नहीं चला और मैंने जितना चाहता था उससे ज़्यादा कर्ज़ ले लिया है।',
+          'मैं पैसों के बारे में किसी से बात नहीं करता, यहाँ तक कि अपनी पत्नी से भी नहीं।',
+        ],
+      },
     },
     behaviorInstructions: [
       {
@@ -786,6 +864,26 @@ export const scenarios: ScenarioFixture[] = [
       ],
       characterProfileText:
         'Devika is a 29-year-old software engineer presenting with escalating work-related anxiety and panic episodes before client calls. She is hesitant to disclose fully until confidentiality is clearly explained.',
+    },
+    translationsByLanguage: {
+      'hi-IN': {
+        title: 'हिचकिचाते ग्राहक को गोपनीयता समझाना',
+        description:
+          'देविका के साथ पहला सत्र शुरू करने का अभ्यास करें, जो कार्यस्थल पर बदनामी के डर से खुलकर बात करने से हिचकिचा रही हैं।',
+        openingStatements: [
+          'मेरी कंपनी ने इसे एक सुविधा के रूप में शुरू किया है, इसलिए मुझे थोड़ी चिंता है कि मैं जो कहती हूँ उसे कौन देखता है।',
+          'मैं काम के तनाव के बारे में बात करना चाहती हूँ, लेकिन पहले मुझे यह जानना है कि यह निजी रहेगा।',
+        ],
+      },
+      'ta-IN': {
+        title: 'தயங்கும் வாடிக்கையாளருக்கு ரகசியத்தன்மையை விளக்குதல்',
+        description:
+          'பணியிட களங்கத்தை பற்றி கவலைப்படும் தேவிகாவுடன் முதல் அமர்வைத் தொடங்கும் பயிற்சி.',
+        openingStatements: [
+          'எனது நிறுவனம் இதை ஒரு நலனாக அமைத்துள்ளது, எனவே நான் சொல்வதை யார் பார்க்கிறார்கள் என்று சற்று கவலைப்படுகிறேன்.',
+          'நான் வேலை மன அழுத்தத்தைப் பற்றி பேச விரும்புகிறேன், ஆனால் இது தனிப்பட்டதாக இருக்கும் என்பதை முதலில் அறிய வேண்டும்.',
+        ],
+      },
     },
     behaviorInstructions: [
       {
@@ -979,8 +1077,137 @@ export const scenarios: ScenarioFixture[] = [
       },
     ],
   },
+
+  // Status-lifecycle variety — every scenario until now was ACTIVE or DRAFT;
+  // COMING_SOON and ARCHIVED were never exercised. Neither goes into any
+  // case/pathway/track.
+  {
+    key: 'crisis-call-de-escalation',
+    title: 'Holding a Crisis Call Steady',
+    description:
+      'Practice staying grounded with a caller in acute distress, assessing for immediate risk while keeping the conversation collaborative.',
+    competencyName: 'Assessment of Harm & Response Planning',
+    coverImageUrl: COVER_IMG_SUPPORTIVE_HANDS,
+    status: ScenarioStatus.COMING_SOON,
+    difficultyLevel: ScenarioDifficultyLevel.HARD,
+    category: ScenarioCategory.ORIGINALS,
+    triggerWarningNames: ['Suicidal ideation'],
+    metadata: {
+      ...sharedScenarioMetadata,
+      name: 'Naomi Fernandes',
+      age: 29,
+      gender: 'female',
+      profession: 'Freelance Designer',
+      currentLocation: 'Goa, India',
+      openingStatements: [
+        'I did not think I would actually call this number.',
+        'I am not okay right now.',
+      ],
+      characterProfileText:
+        'Naomi is calling a crisis line during an acute episode of distress. She is ambivalent about being helped and needs to feel heard before she can engage with safety planning.',
+    },
+    behaviorInstructions: [
+      {
+        category: BehaviorInstructionCategory.SHOULD_DO,
+        behaviorNames: [
+          'Asks directly about harm to self/others/from others',
+          'Assesses intent, means, prior attempts',
+          'Develops collaborative safety plan',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Stay calm and collaborative. Ask directly about safety once trust is established.',
+          },
+        ],
+      },
+      {
+        category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+        behaviorNames: [
+          'Does not ask about harm to self or others',
+          'Expresses shock or disbelief in response to disclosure',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Do not react with alarm to disclosures — it can shut the caller down.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    key: 'substance-use-first-conversation',
+    title: 'First Conversation About Drinking',
+    description:
+      'Practice a first, low-pressure conversation with a client who is starting to question their own drinking, without pushing them toward a label.',
+    competencyName: 'Strengthen Coping Strategies',
+    coverImageUrl: COVER_IMG_CALM_LANDSCAPE,
+    status: ScenarioStatus.ARCHIVED,
+    difficultyLevel: ScenarioDifficultyLevel.MEDIUM,
+    category: ScenarioCategory.OTHER,
+    triggerWarningNames: ['Substance use'],
+    metadata: {
+      ...sharedScenarioMetadata,
+      name: 'Vikram Desai',
+      age: 41,
+      gender: 'male',
+      profession: 'Sales Manager',
+      currentLocation: 'Mumbai, India',
+      openingStatements: [
+        'I do not think I have a problem, exactly.',
+        'But my wife has started saying something about it.',
+      ],
+      characterProfileText:
+        'Vikram drinks most evenings to unwind and is beginning to notice it costing him at home, but is not ready to call it a problem.',
+    },
+    behaviorInstructions: [
+      {
+        category: BehaviorInstructionCategory.SHOULD_DO,
+        behaviorNames: [
+          'Asks about past/current coping',
+          'Praises positive coping strategies',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Explore what drinking is currently doing for him before discussing change.',
+          },
+        ],
+      },
+      {
+        category: BehaviorInstructionCategory.SHOULD_NOT_DO,
+        behaviorNames: [
+          'Dismisses coping strategies',
+          'Judges past problem-solving attempts',
+        ],
+        stateInstructions: [
+          {
+            stateId: '1',
+            instruction:
+              'Avoid labelling him as having "a problem" before he does.',
+          },
+        ],
+      },
+    ],
+  },
 ];
 
+// Pathways (scenario_paths) and Cases (cases) are schema-identical ordered
+// bundles of roleplays — this is not an accident of these fixtures, it is
+// the state of the product (case_items/scenario_path_items are byte-for-byte
+// the same entity modulo the FK name). The only differences are structural:
+// a Track can embed a Case (track_items.case_id) but not a Pathway, and only
+// Cases support cohort restrictions (case_cohort_restrictions). Pathways are
+// the older primitive and their eventual sunset is an open decision — see
+// docs/courses-certification-plan.md §2. The fixtures below deliberately
+// give each primitive distinct membership so the two surfaces don't look
+// like a rendering bug of one another; "Mood and Grief Presentations" below
+// is the case the seeded track ("New Counselor Foundations") already embeds
+// — that embedding is the one difference that's actually visible today.
 export const pathways: PathwayFixture[] = [
   {
     title: 'Mental Health Counseling Fundamentals',
@@ -996,6 +1223,23 @@ export const pathways: PathwayFixture[] = [
       'confidentiality-conversation',
       'risk-assessment-safety-planning',
     ],
+  },
+  {
+    title: 'Advanced Practice: Complex Presentations',
+    description:
+      'A three-scenario progression through harder, multi-layered presentations for counselors past the fundamentals.',
+    scenarioKeys: [
+      'retirement-identity-loss',
+      'family-conflict-mediation',
+      'financial-stress-anxiety',
+    ],
+  },
+  {
+    title: 'Legacy: Intro to Counseling Basics',
+    description:
+      'Retired introductory path, superseded by "Mental Health Counseling Fundamentals" — kept for historical reference.',
+    scenarioKeys: ['confidentiality-conversation', 'coping-with-depression'],
+    status: ScenarioPathStatus.ARCHIVED,
   },
 ];
 
@@ -1014,6 +1258,13 @@ export const cases: CaseFixture[] = [
       'confidentiality-conversation',
       'risk-assessment-safety-planning',
     ],
+  },
+  {
+    title: 'Financial Stress & Life Transitions',
+    description:
+      'Draft case pairing financial-anxiety and retirement-identity presentations — still being sequenced before publishing.',
+    scenarioKeys: ['financial-stress-anxiety', 'retirement-identity-loss'],
+    status: CaseStatus.DRAFT,
   },
 ];
 
@@ -1642,6 +1893,84 @@ export const sessions: SessionFixture[] = [
     ],
     events: [{ eventCode: 'SS-LISTEN', occurredAtTurnIndex: 4 }],
   },
+
+  // Session lifecycle variety — status/eventStatus ABANDONED and endReason
+  // were previously entirely unexercised (see ScenarioSessionStatus's doc
+  // comment for why this is a real, deliberately-added third lifecycle state).
+  {
+    roomKey: 'coping-with-depression-abandoned',
+    scenarioKey: 'coping-with-depression',
+    counselorEmail: 'fatima.siddiqui@northwindbh.org',
+    status: ScenarioSessionStatus.ABANDONED,
+    eventStatus: ScenarioSessionEventStatus.ABANDONED,
+    abandonedReason: ScenarioSessionAbandonReason.STUCK_ACTIVE_SWEEP,
+    durationMinutes: 3,
+    transcript: [
+      {
+        from: 'counselor',
+        content: 'Hi, thanks for coming in. Where would you like to start?',
+      },
+      {
+        from: 'client',
+        content: 'I am not sure, actually. Give me a second.',
+      },
+    ],
+  },
+  {
+    roomKey: 'processing-grief-room-finished',
+    scenarioKey: 'processing-grief',
+    status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.ABANDONED,
+    abandonedReason: ScenarioSessionAbandonReason.ROOM_FINISHED_WITHOUT_END,
+    durationMinutes: 6,
+    transcript: [
+      {
+        from: 'counselor',
+        content: 'Hi, thank you for being here. How are you doing today?',
+      },
+      {
+        from: 'client',
+        content: 'Okay, I think. Still getting used to everything.',
+      },
+      {
+        from: 'counselor',
+        content: 'That makes sense. Take whatever time you need.',
+      },
+      {
+        from: 'client',
+        content:
+          'Can we talk about the funeral arrangements? That has been hard.',
+      },
+    ],
+  },
+  {
+    roomKey: 'risk-assessment-interrupted',
+    scenarioKey: 'risk-assessment-safety-planning',
+    counselorEmail: 'priya.nair@northwindbh.org',
+    status: ScenarioSessionStatus.ENDED,
+    eventStatus: ScenarioSessionEventStatus.COMPLETED,
+    endReason: ScenarioSessionEndReason.TECHNICAL_INTERRUPTION,
+    score: 63,
+    durationMinutes: 11,
+    transcript: [
+      {
+        from: 'counselor',
+        content: 'Hi, thanks for coming in. What has been going on for you?',
+      },
+      {
+        from: 'client',
+        content: 'I have been having a hard time lately, more than usual.',
+      },
+      {
+        from: 'counselor',
+        content: 'I am glad you are telling me. Can you say more about that?',
+      },
+      {
+        from: 'client',
+        content: 'I do not really know how to put it into words yet.',
+      },
+    ],
+  },
 ];
 
 export const simulationCreditsDefault: SimulationCreditsFixture = {
@@ -1649,11 +1978,43 @@ export const simulationCreditsDefault: SimulationCreditsFixture = {
   consumedCredits: 0,
 };
 
+// Real gate (scenario-session.service.ts): a session start is blocked when
+// consumedCredits + 20 > creditLimit — 20 credits are reserved per start
+// (1200s default session TTL / 60s-per-credit). So a user can be genuinely
+// "blocked" while still under their limit (e.g. 58/60), and the boundary
+// case (40+20 = 60, not > 60) still has exactly one session left.
 export const simulationCreditsByEmail: Record<
   string,
   SimulationCreditsFixture
 > = {
   'learner@example.com': { creditLimit: 120, consumedCredits: 23 },
+  'lucia.fernandez@riversidewellness.io': {
+    creditLimit: 240,
+    consumedCredits: 96,
+  },
+  'fatima.siddiqui@northwindbh.org': {
+    creditLimit: 60,
+    consumedCredits: 40,
+  },
+  'priya.nair@northwindbh.org': {
+    creditLimit: 60,
+    consumedCredits: 58,
+  },
+  'daniel.reyes@northwindbh.org': {
+    creditLimit: 90,
+    consumedCredits: 90,
+  },
+  'omar.hassan@riversidewellness.io': {
+    creditLimit: 30,
+    consumedCredits: 12,
+  },
+  // Over-consumed (SimulationCreditsService.update itself rejects
+  // limit < consumed, so this state is seed-only) — exercises negative-
+  // remaining rendering.
+  'simran.kaur@brightpathcounseling.net': {
+    creditLimit: 60,
+    consumedCredits: 61,
+  },
 };
 
 // Shared-for-review entries on the two completed sessions. Each review has a
@@ -1957,6 +2318,97 @@ export const reviews: ReviewFixture[] = [
       },
     ],
   },
+
+  // Non-'ally' reviews — confirm the tenantId-derived-from-session fix above
+  // actually surfaces reviews outside the default tenant, and give
+  // SIMULATION_REVIEWER accounts something to review in their own tenant.
+  {
+    sessionRoomId: 'seed-room-risk-assessment-ended',
+    authorEmail: 'daniel.reyes@northwindbh.org',
+    reactions: [{ email: 'priya.nair@northwindbh.org', reaction: '👍' }],
+    readByEmails: ['wei.zhang@northwindbh.org'],
+    threads: [
+      {
+        turnIndex: 'general',
+        authorEmail: 'wei.zhang@northwindbh.org',
+        comments: [
+          {
+            authorEmail: 'wei.zhang@northwindbh.org',
+            content:
+              'Strong safety-assessment session overall — the direct question about intent was asked clearly and without hesitation.',
+            replies: [
+              {
+                authorEmail: 'james.okafor@northwindbh.org',
+                content:
+                  'Agreed. Also good that a concrete follow-up plan was offered rather than ending on the disclosure itself.',
+              },
+            ],
+          },
+        ],
+      },
+      {
+        turnIndex: 4,
+        selection: { startIndex: 0, endIndex: 40 },
+        authorEmail: 'wei.zhang@northwindbh.org',
+        comments: [
+          {
+            authorEmail: 'wei.zhang@northwindbh.org',
+            content:
+              'Good instinct naming what she said back to her before asking about intent — that softened a hard question.',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    sessionRoomId: 'seed-room-financial-stress-anxiety-ended',
+    authorEmail: 'priya.nair@northwindbh.org',
+    status: ReviewStatus.HIDDEN,
+    threads: [
+      {
+        turnIndex: 'general',
+        authorEmail: 'wei.zhang@northwindbh.org',
+        comments: [
+          {
+            authorEmail: 'wei.zhang@northwindbh.org',
+            content:
+              'Flagged for a tone check — holding for a follow-up conversation before this goes back to the counselor.',
+            hidden: true,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    sessionRoomId: 'seed-room-coping-with-depression-riverside-ended',
+    authorEmail: 'aisha.bello@riversidewellness.io',
+    reactions: [
+      { email: 'lucia.fernandez@riversidewellness.io', reaction: '❤️' },
+      { email: 'omar.hassan@riversidewellness.io', reaction: '👏' },
+    ],
+    readByEmails: ['omar.hassan@riversidewellness.io'],
+    threads: [
+      {
+        turnIndex: 'general',
+        authorEmail: 'lucia.fernandez@riversidewellness.io',
+        comments: [
+          {
+            authorEmail: 'lucia.fernandez@riversidewellness.io',
+            content:
+              'Nice unhurried pacing throughout — you let her sit with "not myself" instead of rushing to define it for her.',
+            reactions: [
+              { email: 'aisha.bello@riversidewellness.io', reaction: '🙏' },
+            ],
+          },
+          {
+            authorEmail: 'omar.hassan@riversidewellness.io',
+            content:
+              'Agreed. Consider a brief check on sleep/appetite next time — useful baseline data for a first depression-focused session.',
+          },
+        ],
+      },
+    ],
+  },
 ];
 
 export const badges: BadgeFixture[] = [
@@ -2025,6 +2477,80 @@ export const badges: BadgeFixture[] = [
     category: BadgeCategory.COMMENTS_REACTIONS_RECEIVED,
     count: 5,
     groupNames: [UserRole.LEARNER],
+  },
+  {
+    // Being authored — not yet awardable, and not awarded to anyone. Exercises
+    // the DRAFT badge-lifecycle state (BadgeStatus has no ARCHIVED value).
+    name: 'Feedback Champion',
+    description: 'Give 25 comments or reactions.',
+    category: BadgeCategory.COMMENTS_REACTIONS_GIVEN,
+    count: 25,
+    groupNames: [UserRole.LEARNER],
+    status: BadgeStatus.DRAFT,
+  },
+];
+
+// Which learners have actually earned which badges — until now `badges` only
+// defined what CAN be earned; nobody ever had. Each pick is backed by that
+// learner's already-seeded activity (session count, track/pathway completion,
+// review comments/reactions). Dates spread out and a few left UNVIEWED so a
+// "new badge" indicator has something to render. Never awards an XP_LEVEL
+// badge — UserProgress/XpEvent aren't seeded, so those can't be plausibly
+// earned yet.
+export const earnedBadges: EarnedBadgeFixture[] = [
+  {
+    email: 'learner@example.com',
+    badgeName: 'Simulation Starter',
+    earnedDaysAgo: 21,
+  },
+  {
+    email: 'learner@example.com',
+    badgeName: 'Consistent Start',
+    earnedDaysAgo: 18,
+  },
+  {
+    email: 'learner@example.com',
+    badgeName: 'Community Contributor',
+    earnedDaysAgo: 12,
+  },
+  {
+    email: 'learner@example.com',
+    badgeName: 'Crowd Favorite',
+    earnedDaysAgo: 9,
+    viewed: false,
+  },
+  {
+    email: 'priya.nair@northwindbh.org',
+    badgeName: 'Simulation Starter',
+    earnedDaysAgo: 6,
+  },
+  {
+    email: 'priya.nair@northwindbh.org',
+    badgeName: 'Consistent Start',
+    earnedDaysAgo: 4,
+    viewed: false,
+  },
+  {
+    email: 'daniel.reyes@northwindbh.org',
+    badgeName: 'Simulation Starter',
+    earnedDaysAgo: 7,
+  },
+  {
+    email: 'lucia.fernandez@riversidewellness.io',
+    badgeName: 'Simulation Starter',
+    earnedDaysAgo: 14,
+  },
+  {
+    email: 'aisha.bello@riversidewellness.io',
+    badgeName: 'Simulation Starter',
+    earnedDaysAgo: 3,
+    viewed: false,
+  },
+  {
+    // Earned before her tenant's suspension — badges survive tenant status.
+    email: 'simran.kaur@brightpathcounseling.net',
+    badgeName: 'Simulation Starter',
+    earnedDaysAgo: 30,
   },
 ];
 

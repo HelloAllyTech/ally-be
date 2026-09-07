@@ -13,7 +13,9 @@ import { UserPreferences } from '../../user/entity/user-preferences.entity';
 import { AdminTenant } from '../../user/entity/admin-tenant.entity';
 import { Group } from '../../authorization/entity/group.entity';
 import { UserGroup } from '../../authorization/entity/user-group.entity';
+import { AdminFeatureToggle } from '../../authorization/entity/admin-feature-toggle.entity';
 import { Scenarios } from '../../learn/entity/scenarios.entity';
+import { ScenarioVersion } from '../../learn/entity/scenario-version.entity';
 import { ScenarioTenants } from '../../learn/entity/scenario-tenants.entity';
 import { ScenarioVoices } from '../../learn/entity/scenario-voices.entity';
 import { ScenarioSessions } from '../../learn/entity/scenario-sessions.entity';
@@ -34,6 +36,7 @@ import { ScenarioPathTenant } from '../../scenario-path/entity/scenario-path-ten
 import { Badge } from '../../badge/entity/badge.entity';
 import { BadgeGroup } from '../../badge/entity/badge-group.entity';
 import { BadgeTenant } from '../../badge/entity/badge-tenant.entity';
+import { BadgeUser } from '../../badge/entity/badge-user.entity';
 import { Case } from '../../case/entity/case.entity';
 import { CaseItem } from '../../case/entity/case-item.entity';
 import { CaseTenant } from '../../case/entity/case-tenant.entity';
@@ -86,6 +89,20 @@ import { RoadmapOpportunityOwner } from '../../product-roadmap/entity/roadmap-op
 import { LabSkill } from '../../lab/entity/lab-skill.entity';
 import { LabVariable } from '../../lab/entity/lab-variable.entity';
 import { LabValue } from '../../lab/entity/lab-value.entity';
+import { LabRun } from '../../lab/entity/lab-run.entity';
+import { LabRunAssignment } from '../../lab/entity/lab-run-assignment.entity';
+import { LabEvaluator } from '../../lab/entity/lab-evaluator.entity';
+import { LabQuestionSet } from '../../lab/entity/lab-question-set.entity';
+import { LabQuestionSetQuestion } from '../../lab/entity/lab-question-set-question.entity';
+import { LabEvalQuestion } from '../../lab/entity/lab-eval-question.entity';
+import { LabEvalAnswer } from '../../lab/entity/lab-eval-answer.entity';
+import { LabAutoEvaluation } from '../../lab/entity/lab-auto-evaluation.entity';
+import { ScribeSessionReview } from '../../scribe-session-review/entity/review.entity';
+import { ScribeSessionReviewThread } from '../../scribe-session-review/entity/thread.entity';
+import { ScribeSessionReviewComment } from '../../scribe-session-review/entity/comment.entity';
+import { ScribeSessionReviewReaction } from '../../scribe-session-review/entity/reaction.entity';
+import { ScribeSessionReviewCommentReaction } from '../../scribe-session-review/entity/comment-reaction.entity';
+import { ScribeSessionReviewReadStatus } from '../../scribe-session-review/entity/read-status.entity';
 
 export const SEED_ENTITIES = [
   Tenant,
@@ -94,7 +111,9 @@ export const SEED_ENTITIES = [
   AdminTenant,
   Group,
   UserGroup,
+  AdminFeatureToggle,
   Scenarios,
+  ScenarioVersion,
   ScenarioTenants,
   ScenarioVoices,
   ScenarioSessions,
@@ -115,6 +134,7 @@ export const SEED_ENTITIES = [
   Badge,
   BadgeGroup,
   BadgeTenant,
+  BadgeUser,
   Case,
   CaseItem,
   CaseTenant,
@@ -139,6 +159,20 @@ export const SEED_ENTITIES = [
   LabSkill,
   LabVariable,
   LabValue,
+  LabRun,
+  LabRunAssignment,
+  LabEvaluator,
+  LabQuestionSet,
+  LabQuestionSetQuestion,
+  LabEvalQuestion,
+  LabEvalAnswer,
+  LabAutoEvaluation,
+  ScribeSessionReview,
+  ScribeSessionReviewThread,
+  ScribeSessionReviewComment,
+  ScribeSessionReviewReaction,
+  ScribeSessionReviewCommentReaction,
+  ScribeSessionReviewReadStatus,
   ScenarioCharacter,
   ScenarioTranslations,
   TriggerWarnings,

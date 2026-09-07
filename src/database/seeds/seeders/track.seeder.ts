@@ -284,6 +284,85 @@ export async function seedTracks(
     `tracks: 1 ("${track.title}", ${orderedItems.length} items across 3 sections)`,
   );
 
+  // Track status-lifecycle variety — until now every track was ACTIVE.
+  // Neither of these gets enrollments; they exist purely so the DRAFT/ARCHIVED
+  // filters in the track library aren't perpetually empty.
+  const riskAssessmentScenario = await scenarioRepo.findOne({
+    where: { title: 'Assessing Risk and Building a Safety Plan' },
+  });
+  const draftTrack = await upsert(
+    trackRepo,
+    { title: 'Advanced Risk Practice (in development)' },
+    {
+      description:
+        'A follow-on track for risk-assessment practice, still being sequenced with the content team before publishing.',
+      status: TrackStatus.DRAFT,
+      isGlobal: true,
+      totalItems: 1,
+      estimatedDurationMinutes: 30,
+      createdBy: adminUserId,
+      updatedBy: adminUserId,
+    },
+  );
+  const draftTrackSection = await upsert(
+    sectionRepo,
+    { trackId: draftTrack.id, title: 'Practice' },
+    { order: 1 },
+  );
+  await upsert(
+    itemRepo,
+    {
+      trackId: draftTrack.id,
+      trackSectionId: draftTrackSection.id,
+      title: 'Practice: Assessing Risk and Building a Safety Plan',
+    },
+    {
+      type: TrackItemType.ROLEPLAY,
+      order: 1,
+      scenarioId: riskAssessmentScenario?.id,
+      completionCriteria: {
+        minScore: 70,
+        minDurationSeconds: 300,
+      } as TrackItemCompletionCriteria,
+    },
+  );
+
+  const archivedTrack = await upsert(
+    trackRepo,
+    { title: 'Legacy Onboarding 2024' },
+    {
+      description:
+        'Retired onboarding track, superseded by "New Counselor Foundations".',
+      status: TrackStatus.ARCHIVED,
+      isGlobal: true,
+      totalItems: 1,
+      estimatedDurationMinutes: 15,
+      createdBy: adminUserId,
+      updatedBy: adminUserId,
+    },
+  );
+  const archivedTrackSection = await upsert(
+    sectionRepo,
+    { trackId: archivedTrack.id, title: 'Orientation' },
+    { order: 1 },
+  );
+  await upsert(
+    itemRepo,
+    {
+      trackId: archivedTrack.id,
+      trackSectionId: archivedTrackSection.id,
+      title: 'Welcome (2024 edition)',
+    },
+    {
+      type: TrackItemType.ARTICLE,
+      order: 1,
+      content: {
+        html: '<p>This is the retired 2024 onboarding article, kept for historical reference.</p>',
+      } as TrackItemContent,
+      completionCriteria: { minReadSeconds: 30 } as TrackItemCompletionCriteria,
+    },
+  );
+
   // ---- Learner progress: four learners at four different points in the track ----
   const learnerEmails = [
     'priya.nair@northwindbh.org',
