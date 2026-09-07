@@ -1,5 +1,6 @@
 import { ElevenLabsVoiceSyncService } from '../../service/elevenlabs-voice-sync.service';
 import { TtsCatalogService } from '../../service/tts-catalog.service';
+import { VideoActorCatalogService } from '../../service/video-actor-catalog.service';
 import { ElevenLabsVoiceType } from '../../constants/elevenlabs-voice-type.constants';
 import { Test, TestingModule } from '@nestjs/testing';
 import { LearnController } from '../learn.controller';
@@ -318,6 +319,18 @@ describe('LearnController', () => {
           // controller only delegates, so a stub is enough here too.
           provide: TtsCatalogService,
           useValue: { getCatalog: jest.fn() },
+        },
+        {
+          // The video-actor face catalogue, same story: the controller only
+          // delegates to it, so a stub keeps this module compiling without
+          // reaching a vendor.
+          provide: VideoActorCatalogService,
+          useValue: {
+            getProviders: jest.fn(),
+            getFaces: jest.fn(),
+            getAllFaces: jest.fn(),
+            importFaceCover: jest.fn(),
+          },
         },
         {
           provide: LlmConfigService,

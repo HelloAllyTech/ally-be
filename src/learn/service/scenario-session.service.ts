@@ -795,6 +795,10 @@ export class ScenarioSessionService {
         // permission to render, never a promise that video will arrive — the
         // client keeps the static card until a track actually shows up.
         videoActorEnabled: scenario?.metadata?.videoActorEnabled === true,
+        // Which vendor renders the face. Undefined leaves the worker on its
+        // deployment-wide VIDEO_ACTOR_PROVIDER, so an existing roleplay that
+        // never picked one behaves exactly as it does today.
+        videoActorProvider: scenario?.metadata?.videoActorProvider,
         // Opt-out: only an explicit false hides the learner's Live tab.
         liveTabEnabled: scenario?.metadata?.liveTabEnabled !== false,
         stateNames,

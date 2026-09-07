@@ -34,6 +34,7 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'comfortAudioVolume',
   'videoActorEnabled',
   'videoActorAvatarId',
+  'videoActorProvider',
   'historyTrimEnabled',
   'continuousBackchanneling',
   'interimReplyEnabled',
@@ -164,6 +165,10 @@ export const mapCreateScenarioRequestToEntity = (
       // AND its own global kill-switch.
       videoActorEnabled: scenario.videoActorEnabled === true,
       videoActorAvatarId: scenario.videoActorAvatarId,
+      // Passthrough, unlike videoActorEnabled above: an absent vendor means
+      // "use the deployment default", which is a real and common choice, so it
+      // must survive as undefined rather than being coerced.
+      videoActorProvider: scenario.videoActorProvider,
       historyTrimEnabled: scenario.historyTrimEnabled,
       continuousBackchanneling: scenario.continuousBackchanneling,
       interimReplyEnabled: scenario.interimReplyEnabled,

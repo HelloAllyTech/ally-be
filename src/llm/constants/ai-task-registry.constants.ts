@@ -403,8 +403,12 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     hotPath: true,
     kind: AiTaskKind.VIDEO,
     provider: 'multiple',
-    defaultModel: 'tavus/phoenix-3 (test_pattern when unset — no vendor)',
-    configuredBy: 'VIDEO_ACTOR_PROVIDER (ally-ai-learn app/core/config.py)',
+    defaultModel:
+      'bey, or tavus/phoenix-3 (test_pattern when unset — no vendor)',
+    configuredBy:
+      "scenarios.metadata.videoActorProvider per roleplay (Studio: the roleplay's " +
+      'Video Actor vendor), falling back to VIDEO_ACTOR_PROVIDER in ally-ai-learn ' +
+      'app/core/config.py when a roleplay names none',
   },
 ];
 

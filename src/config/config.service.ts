@@ -871,6 +871,29 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * Read-only vendor credentials for the video-actor face catalogue.
+   *
+   * Listing faces is a plain GET on each vendor and is not metered — it is the
+   * rendering that costs. These keys are the same ones ally-ai-learn dispatches
+   * with, deliberately: a face this catalogue offers must be one the worker can
+   * actually render, and two different keys would mean two different accounts
+   * and a picker full of ids that fail at session start.
+   *
+   * `videoActorApiKey` is the pre-existing single-vendor value, kept as the
+   * fallback so a deployment that configured only one key keeps working.
+   */
+  get videoActorCatalog() {
+    return {
+      beyApiKey:
+        this.configService.get<string>('VIDEO_ACTOR_BEY_API_KEY') ??
+        this.configService.get<string>('VIDEO_ACTOR_API_KEY'),
+      tavusApiKey:
+        this.configService.get<string>('VIDEO_ACTOR_TAVUS_API_KEY') ??
+        this.configService.get<string>('VIDEO_ACTOR_API_KEY'),
+    };
+  }
+
   get scenarioSessionAudioStorage() {
     return {
       bucket: this.configService.get<string>(

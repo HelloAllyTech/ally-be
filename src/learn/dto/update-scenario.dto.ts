@@ -41,6 +41,7 @@ import { KnowledgeSourceDto } from './knowledge-source.dto';
 import { SimulationStateDto } from './simulation-state.dto';
 import { StateNamesDto } from './state-names.dto';
 import { sanitizeDescriptionHtml } from 'src/common/util/sanitize-html.util';
+import { VideoActorProvider } from '../enum/video-actor-provider.enum';
 
 export class UpdateScenarioDto {
   @ApiProperty({
@@ -343,6 +344,17 @@ export class UpdateScenarioDto {
   @IsOptional()
   @IsString()
   videoActorAvatarId?: string;
+
+  @ApiProperty({
+    description:
+      "Which hosted vendor renders this roleplay's face. One of the `value`s from GET /learn/scenarios/video-actor-providers (`bey`, `tavus`). When unset, falls back to the deployment-wide VIDEO_ACTOR_PROVIDER. Pair it with a videoActorAvatarId from that same vendor — face ids are not portable between vendors, and a mismatched pair degrades the session to audio-only. Only meaningful when videoActorEnabled is true.",
+    example: 'bey',
+    required: false,
+    enum: VideoActorProvider,
+  })
+  @IsOptional()
+  @IsEnum(VideoActorProvider)
+  videoActorProvider?: VideoActorProvider;
 
   @ApiProperty({
     description:

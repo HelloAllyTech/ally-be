@@ -52,6 +52,13 @@ import {
   TtsCatalogEntry,
   TtsCatalogService,
 } from '../service/tts-catalog.service';
+import {
+  VideoActorCatalogService,
+  VideoActorCoverMedia,
+  VideoActorFaceEntry,
+  VideoActorProviderEntry,
+} from '../service/video-actor-catalog.service';
+import { ImportVideoActorFaceCoverDto } from '../dto/import-video-actor-face-cover.dto';
 import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
@@ -115,6 +122,7 @@ export class LearnController {
   constructor(
     private readonly elevenLabsVoiceSyncService: ElevenLabsVoiceSyncService,
     private readonly ttsCatalogService: TtsCatalogService,
+    private readonly videoActorCatalogService: VideoActorCatalogService,
     private readonly scenarioService: ScenarioService,
     private readonly scenarioSessionService: ScenarioSessionService,
     private readonly scenarioTenantService: ScenarioTenantService,
@@ -240,6 +248,59 @@ export class LearnController {
         order,
       },
       tokenUser,
+    );
+  }
+
+  // Declared BEFORE `scenarios/:id`: NestJS matches routes in declaration
+  // order, so a literal segment registered after the parameterised route is
+  // swallowed by it — the request resolves as id="video-actor-providers" and
+  // never reaches this handler. Both routes are auth-gated, so that failure
+  // looks like a 401 rather than a 404.
+  @ApiOperation({
+    summary: 'Video-actor providers a roleplay can be pointed at',
+    description:
+      'Served from the backend rather than hardcoded in the client so adding a vendor is a backend change only. `value` is what gets stored in the roleplay; `label` is what the picker shows.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Get('scenarios/video-actor-providers')
+  getVideoActorProviders(): VideoActorProviderEntry[] {
+    return this.videoActorCatalogService.getProviders();
+  }
+
+  @ApiOperation({
+    summary: 'Selectable faces for one video-actor provider',
+    description:
+      'Normalised across vendors: `value` is the face id to store, `label` its name, and `thumbnailImageUrl`/`thumbnailVideoUrl` are present only where the vendor publishes preview media — Tavus does, Beyond Presence does not. Render the name alone when they are absent; never branch on the provider. Listing is a plain unmetered GET on the vendor, so this costs nothing beyond the request. An unreachable or unconfigured vendor yields an empty list rather than an error, so the Studio panel still loads and an id can be typed by hand.',
+  })
+  @ApiQuery({
+    name: 'provider',
+    required: false,
+    description:
+      'Restrict to one vendor. OMIT IT for the picker: the roster is meant to be browsed as faces, with the vendor derived from whichever face is chosen, because "Tavus or Beyond Presence?" is a question an author has no basis to answer. One vendor being down or unconfigured yields its share as empty rather than emptying the whole list.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Get('scenarios/video-actor-faces')
+  async getVideoActorFaces(
+    @Query('provider') provider?: string,
+  ): Promise<VideoActorFaceEntry[]> {
+    return provider
+      ? this.videoActorCatalogService.getFaces(provider)
+      : this.videoActorCatalogService.getAllFaces();
+  }
+
+  @ApiOperation({
+    summary: "Copy a face's preview media into our storage, for use as a cover",
+    description:
+      "Returns `{ coverImageUrl, coverVideoUrl }` pointing at OUR bucket, not the vendor's. A cover image is long-lived learner-facing content and vendor CDN paths are account-scoped, so a roleplay card must not depend on one. Either key is absent when the vendor publishes no such asset — Beyond Presence publishes none at all, so bey yields an empty object and the caller should leave the cover untouched.",
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('scenarios/video-actor-face-cover')
+  async importVideoActorFaceCover(
+    @Body() body: ImportVideoActorFaceCoverDto,
+  ): Promise<VideoActorCoverMedia> {
+    return this.videoActorCatalogService.importFaceCover(
+      body.provider,
+      body.faceId,
     );
   }
 
