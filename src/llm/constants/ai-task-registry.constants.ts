@@ -391,16 +391,19 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     trigger: 'The character speaks with a face (EXPERIMENTAL, off by default)',
     detail:
       "Renders lip-synced video from the agent's TTS audio for the whole time it " +
-      'is speaking, so it bills per minute of speech and not per call. OFF at two ' +
-      'independent gates — VIDEO_ACTOR_ENABLED globally and videoActorEnabled per ' +
-      'roleplay, both default false — so this row costs nothing today. The shipped ' +
-      'default provider (test_pattern) renders in-process and reaches no vendor at ' +
-      'all; the hosted ones below are what carry a bill. Any failure falls back to ' +
-      'an audio-only session.',
+      'is speaking, so it bills PER MINUTE OF SPEECH rather than per call — about ' +
+      '$0.37/min on Tavus, i.e. roughly $4-5 for one 12-minute roleplay against cents ' +
+      'for everything else in that session combined. That makes it the most expensive ' +
+      'row in this table by an order of magnitude, which is why it is gated three ways ' +
+      "and why it belongs only on roleplays where reading the character's face is part " +
+      'of what is being assessed. It costs nothing today: no roleplay sets the flag and ' +
+      'no admin holds the video_actor toggle. The default provider (test_pattern) ' +
+      'renders in-process and reaches no vendor at all. Any failure falls back to an ' +
+      'audio-only session.',
     hotPath: true,
     kind: AiTaskKind.VIDEO,
     provider: 'multiple',
-    defaultModel: 'test_pattern (in-process, no vendor)',
+    defaultModel: 'tavus/phoenix-3 (test_pattern when unset — no vendor)',
     configuredBy: 'VIDEO_ACTOR_PROVIDER (ally-ai-learn app/core/config.py)',
   },
 ];
