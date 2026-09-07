@@ -141,9 +141,8 @@ import { SessionEventTranslationService } from 'src/session-event/service/sessio
 import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
-import { OpenAIAutofillService } from './openai-autofil-service';
-import { AnthropicAutofillService } from './anthropic-autofill.service';
 import { ENHANCE_AUTO_IMPROVE_INSTRUCTION } from '../util/autofill-shared.util';
+import { AutofillService } from './autofill.service';
 import {
   EnhanceScenarioFieldDto,
   EnhanceScenarioFieldResponseDto,
@@ -167,7 +166,6 @@ import {
   LlmRuntime,
   LlmProviderName,
 } from 'src/llm/constants/llm-model-registry.constants';
-import { modelSupportsTemperature } from 'src/common/util/llm-model.util';
 import {
   buildAvailableLanguagesMap,
   getDistinctScenarioLanguageIds,
@@ -214,8 +212,7 @@ export class ScenarioService {
     private scenarioReportService: ScenarioReportService,
     private scenarioBehaviorInstructionService: ScenarioBehaviorInstructionService,
     private competencyService: CompetencyService,
-    private openAIAutofillService: OpenAIAutofillService,
-    private anthropicAutofillService: AnthropicAutofillService,
+    private autofillService: AutofillService,
     private behaviorService: BehaviorService,
     private permissionsService: PermissionsService,
     private readonly auditLogService: AuditLogService,
@@ -3267,79 +3264,6 @@ export class ScenarioService {
   }
 
   /**
-   * Resolve which autofill service + model + temperature to use for a
-   * prompt-driven studio-AI call (generate / enhance / agent-builder copilot).
-   *
-   * Precedence (later wins): code default → prompt-level config (from Prompt
-   * Management) → the request's explicit override. This lets an author set a
-   * per-prompt model/temperature that applies whenever the UI doesn't send an
-   * explicit one (e.g. the Agent Builder Copilot, which sends none).
-   *
-   * Only OpenAI + Anthropic run autofill; a prompt-level Gemini provider is
-   * ignored here (no Gemini autofill executor) so the call never breaks.
-   * Temperature is dropped for models that reject a custom one (OpenAI
-   * reasoning models).
-   */
-  private async resolveAutofillLlm(
-    promptCode: string,
-    req: { provider?: string; model?: string; temperature?: number },
-  ): Promise<{
-    service: OpenAIAutofillService | AnthropicAutofillService;
-    provider: 'openai' | 'anthropic';
-    model?: string;
-    temperature?: number;
-  }> {
-    const registry = new Map<
-      'openai' | 'anthropic',
-      OpenAIAutofillService | AnthropicAutofillService
-    >([
-      ['openai', this.openAIAutofillService],
-      ['anthropic', this.anthropicAutofillService],
-    ]);
-    const isRunnable = (p?: string): p is 'openai' | 'anthropic' =>
-      p === 'openai' || p === 'anthropic';
-
-    const promptCfg =
-      await this.promptSharedService.getPromptLlmConfig(promptCode);
-
-    if (req.provider && !isRunnable(req.provider)) {
-      this.logger.warn(
-        `Unrecognized autofill provider "${req.provider}", falling back to openai`,
-      );
-    }
-
-    // Provider: request → prompt-level (if autofill-runnable) → openai.
-    let provider: 'openai' | 'anthropic' = 'openai';
-    if (isRunnable(req.provider)) provider = req.provider;
-    else if (isRunnable(promptCfg.provider)) provider = promptCfg.provider;
-
-    // Model: request → prompt-level (only when its provider matches the resolved
-    // provider — a Claude model can't run on OpenAI) → service default.
-    let model = req.model;
-    if (!model && promptCfg.model && promptCfg.provider === provider) {
-      model = promptCfg.model;
-    }
-
-    // Temperature: request → prompt-level; dropped for no-temperature models.
-    let temperature =
-      typeof req.temperature === 'number'
-        ? req.temperature
-        : promptCfg.temperature;
-    const providerDefault =
-      provider === 'anthropic'
-        ? this.configService.anthropic?.autofillModel
-        : this.configService.openai?.autofillModel;
-    if (
-      typeof temperature === 'number' &&
-      !modelSupportsTemperature(model ?? providerDefault)
-    ) {
-      temperature = undefined;
-    }
-
-    return { service: registry.get(provider)!, provider, model, temperature };
-  }
-
-  /**
    * Field-level Enhance: improve the existing content of a single scenario
    * field. Unlike {@link generateField} this never invents content — it takes
    * the field's current value plus the other field values as grounding context
@@ -3407,23 +3331,17 @@ export class ScenarioService {
       };
     }
 
-    const {
-      service: autofillService,
-      model: effectiveModel,
-      temperature,
-    } = await this.resolveAutofillLlm(promptCode, {
-      provider,
-      model,
-      temperature: enhanceScenarioFieldDto.temperature,
-    });
-
-    const content = await autofillService.enhanceFieldContent(
+    // Provider and model resolve inside the completion layer, from the prompt
+    // row then the platform tier — so there is no provider to pick here, and a
+    // prompt row selecting Gemini is no longer silently ignored.
+    const content = await this.autofillService.enhanceFieldContent(
       fieldName,
       promptCode,
       variables,
       expectJson,
-      effectiveModel,
-      temperature,
+      model,
+      enhanceScenarioFieldDto.temperature,
+      provider,
     );
 
     this.logger.info(`Enhancement completed for ${fieldName}`);
@@ -3536,24 +3454,15 @@ export class ScenarioService {
       field === AgentBuilderField.LINGUISTIC_STYLE_SAMPLES ||
       field === AgentBuilderField.ALLOWED_FILLER_WORDS;
 
-    // Honor the prompt's per-prompt model/temperature (the wizard sends none),
-    // with any explicit request override winning.
-    const {
-      service: autofillService,
-      model: effectiveModel,
-      temperature,
-    } = await this.resolveAutofillLlm(promptCode, {
-      provider: dto.provider,
-      model,
-      temperature: dto.temperature,
-    });
-
-    const raw = await autofillService.generateContentFromPrompt(
+    // The prompt row's own model/temperature is honoured inside the completion
+    // layer (the wizard sends none); an explicit request override still wins.
+    const raw = await this.autofillService.generateContentFromPrompt(
       promptCode,
       variables,
       expectJson,
-      effectiveModel,
-      temperature,
+      model,
+      dto.temperature,
+      dto.provider,
     );
 
     return { field, value: this.parseAgentBuilderField(field, raw) };

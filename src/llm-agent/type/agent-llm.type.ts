@@ -74,6 +74,22 @@ export interface AgentStreamRequest {
   /** Dropped by the adapters for models that reject a custom temperature. */
   temperature?: number;
   /**
+   * Demand a bare JSON object rather than prose.
+   *
+   * Each provider reaches this differently and none of the mechanisms
+   * translate, which is the reason it is a flag here rather than something a
+   * caller does in its prompt: OpenAI has a real json_object response format,
+   * Gemini has a JSON response mime type, and Anthropic has neither — it gets
+   * a single forced tool whose input IS the object, the same approach ally-ai's
+   * dispatch module uses.
+   *
+   * This replaces the assistant-turn prefill trick (`{` as a trailing assistant
+   * message) that the autofill path used. The Claude 4.6+ family rejects that
+   * outright with "This model does not support assistant message prefill", so
+   * every JSON-expecting autofill on an Anthropic model was a 400.
+   */
+  jsonMode?: boolean;
+  /**
    * Per-request deadline handed to the SDK.
    *
    * Passed to the provider's own request options rather than raced against in

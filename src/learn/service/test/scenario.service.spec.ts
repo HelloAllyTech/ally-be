@@ -52,8 +52,7 @@ import { ScenarioBehaviorInstructionService } from '../scenario-behavior-instruc
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
 import { CompetencyService } from '../competency.service';
-import { OpenAIAutofillService } from '../openai-autofil-service';
-import { AnthropicAutofillService } from '../anthropic-autofill.service';
+import { AutofillService } from '../autofill.service';
 import { BehaviorService } from '../behavior.service';
 import { EnhanceableField } from 'src/learn/enum/enhanceable-field.enum';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
@@ -88,8 +87,7 @@ describe('ScenarioService', () => {
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let triggerWarningsService: jest.Mocked<TriggerWarningsService>;
-  let openAIAutofillService: jest.Mocked<OpenAIAutofillService>;
-  let anthropicAutofillService: jest.Mocked<AnthropicAutofillService>;
+  let autofillService: jest.Mocked<AutofillService>;
   let openaiTranslationsService: jest.Mocked<OpenAITranslationsService>;
   let scenarioBehaviorInstructionService: jest.Mocked<ScenarioBehaviorInstructionService>;
 
@@ -316,12 +314,7 @@ describe('ScenarioService', () => {
       createCompetency: jest.fn(),
     };
 
-    const mockOpenAIAutofillService = {
-      enhanceFieldContent: jest.fn(),
-      generateContentFromPrompt: jest.fn(),
-    };
-
-    const mockAnthropicAutofillService = {
+    const mockAutofillService = {
       enhanceFieldContent: jest.fn(),
       generateContentFromPrompt: jest.fn(),
     };
@@ -438,12 +431,8 @@ describe('ScenarioService', () => {
           useValue: mockCompetencyService,
         },
         {
-          provide: OpenAIAutofillService,
-          useValue: mockOpenAIAutofillService,
-        },
-        {
-          provide: AnthropicAutofillService,
-          useValue: mockAnthropicAutofillService,
+          provide: AutofillService,
+          useValue: mockAutofillService,
         },
         {
           provide: BehaviorService,
@@ -510,8 +499,7 @@ describe('ScenarioService', () => {
     sharedLanguageService = module.get(SharedLanguageService);
     scenarioSharedService = module.get(ScenarioSharedService);
     triggerWarningsService = module.get(TriggerWarningsService);
-    openAIAutofillService = module.get(OpenAIAutofillService);
-    anthropicAutofillService = module.get(AnthropicAutofillService);
+    autofillService = module.get(AutofillService);
     openaiTranslationsService = module.get(OpenAITranslationsService);
     scenarioBehaviorInstructionService = module.get(
       ScenarioBehaviorInstructionService,
@@ -5788,7 +5776,7 @@ describe('ScenarioService', () => {
     };
 
     it('returns the improved content and routes to OpenAI by default', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         'A richer, improved backstory.',
       );
 
@@ -5798,13 +5786,11 @@ describe('ScenarioService', () => {
         fieldName: EnhanceableField.CHARACTER_PROFILE_TEXT,
         content: 'A richer, improved backstory.',
       });
-      expect(openAIAutofillService.enhanceFieldContent).toHaveBeenCalledTimes(
-        1,
-      );
+      expect(autofillService.enhanceFieldContent).toHaveBeenCalledTimes(1);
     });
 
     it('uses the generic enhance prompt with field label + current value, and model', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue('improved');
+      autofillService.enhanceFieldContent.mockResolvedValue('improved');
 
       await service.enhanceField({
         ...baseDto,
@@ -5812,7 +5798,7 @@ describe('ScenarioService', () => {
         model: 'gpt-4o',
       } as any);
 
-      const call = openAIAutofillService.enhanceFieldContent.mock.calls[0];
+      const call = autofillService.enhanceFieldContent.mock.calls[0];
       expect(call[0]).toBe(EnhanceableField.CHARACTER_PROFILE_TEXT);
       expect(call[1]).toBe('enhance_field'); // prompt-management code
       expect(call[2]).toMatchObject({
@@ -5825,17 +5811,16 @@ describe('ScenarioService', () => {
     });
 
     it('falls back to the auto-improve directive when guidance is blank', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue('improved');
+      autofillService.enhanceFieldContent.mockResolvedValue('improved');
 
       await service.enhanceField(baseDto as any);
 
-      const variables =
-        openAIAutofillService.enhanceFieldContent.mock.calls[0][2];
+      const variables = autofillService.enhanceFieldContent.mock.calls[0][2];
       expect(variables.guidance).toMatch(/improve the overall quality/i);
     });
 
     it('uses the structured state prompt (JSON) for the STATE field', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         '{"name":"Withdrawn","guidelines":"..."}',
       );
 
@@ -5848,7 +5833,7 @@ describe('ScenarioService', () => {
         guidance: 'make it vivid',
       } as any);
 
-      const call = openAIAutofillService.enhanceFieldContent.mock.calls[0];
+      const call = autofillService.enhanceFieldContent.mock.calls[0];
       expect(call[1]).toBe('enhance_state');
       expect(call[2]).toMatchObject({
         currentName: 'Withdrawn',
@@ -5859,7 +5844,7 @@ describe('ScenarioService', () => {
     });
 
     it('normalises prose-wrapped JSON from the model into clean state JSON', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         'Sure!\n{"name":"Reserved","guidelines":"Quiet and brief."}\nHope that helps.',
       );
 
@@ -5875,7 +5860,7 @@ describe('ScenarioService', () => {
     });
 
     it('falls back to the original value when the model omits a state key', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         '{"guidelines":"Improved guidelines."}',
       );
 
@@ -5894,7 +5879,7 @@ describe('ScenarioService', () => {
     });
 
     it('throws when the model returns no parseable JSON for a state', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         'I cannot do that.',
       );
 
@@ -5925,11 +5910,11 @@ describe('ScenarioService', () => {
           currentValue: JSON.stringify({ name: '  ', guidelines: '' }),
         } as any),
       ).rejects.toThrow(BadRequestException);
-      expect(openAIAutofillService.enhanceFieldContent).not.toHaveBeenCalled();
+      expect(autofillService.enhanceFieldContent).not.toHaveBeenCalled();
     });
 
     it('re-translates the improved content into each target language', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         'Improved primary.',
       );
       openaiTranslationsService.translateText
@@ -5961,7 +5946,7 @@ describe('ScenarioService', () => {
     });
 
     it('does not translate when translateTo is omitted', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         'Improved primary.',
       );
 
@@ -5975,7 +5960,7 @@ describe('ScenarioService', () => {
     });
 
     it('enhances reminders through the same generic field path, using its own field label', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         'Maintain eye contact.\nAsk open-ended questions.',
       );
 
@@ -5984,7 +5969,7 @@ describe('ScenarioService', () => {
         currentValue: 'Maintain eye contact.\nAsk questions.',
       } as any);
 
-      const call = openAIAutofillService.enhanceFieldContent.mock.calls[0];
+      const call = autofillService.enhanceFieldContent.mock.calls[0];
       expect(call[0]).toBe(EnhanceableField.REMINDERS);
       const variables = call[2];
       expect(variables.fieldLabel).toContain('Reminders');
@@ -5994,20 +5979,22 @@ describe('ScenarioService', () => {
       });
     });
 
-    it('routes to Anthropic when provider is anthropic', async () => {
-      anthropicAutofillService.enhanceFieldContent.mockResolvedValue(
-        'improved',
-      );
+    it('passes an explicit model through instead of picking a provider', async () => {
+      // Provider selection used to live here, choosing between two services.
+      // It moved into LlmTargetResolverService, which derives the provider from
+      // the resolved model — so what this layer still owns is handing the
+      // override down untouched.
+      autofillService.enhanceFieldContent.mockResolvedValue('improved');
 
       await service.enhanceField({
         ...baseDto,
-        provider: 'anthropic',
+        model: 'claude-sonnet-4-6',
       } as any);
 
-      expect(
-        anthropicAutofillService.enhanceFieldContent,
-      ).toHaveBeenCalledTimes(1);
-      expect(openAIAutofillService.enhanceFieldContent).not.toHaveBeenCalled();
+      expect(autofillService.enhanceFieldContent).toHaveBeenCalledTimes(1);
+      expect(autofillService.enhanceFieldContent.mock.calls[0][4]).toBe(
+        'claude-sonnet-4-6',
+      );
     });
 
     it('throws BadRequestException when currentValue is blank', async () => {
@@ -6017,7 +6004,7 @@ describe('ScenarioService', () => {
           currentValue: '   ',
         } as any),
       ).rejects.toThrow(BadRequestException);
-      expect(openAIAutofillService.enhanceFieldContent).not.toHaveBeenCalled();
+      expect(autofillService.enhanceFieldContent).not.toHaveBeenCalled();
     });
   });
 

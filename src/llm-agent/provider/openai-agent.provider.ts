@@ -57,6 +57,10 @@ export class OpenAiAgentProvider implements IAgentLlmProvider {
         modelSupportsTemperature(request.model)
           ? { temperature: request.temperature }
           : {}),
+        // A real API-enforced JSON mode; nothing to fall back on in the prompt.
+        ...(request.jsonMode
+          ? { response_format: { type: 'json_object' as const } }
+          : {}),
         stream: true,
         // Without this the usage block never arrives on a streamed call and
         // every interview turn would record zero tokens.

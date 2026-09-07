@@ -23,6 +23,11 @@ export interface LlmCompletionRequest {
   messages?: AgentMessage[];
   maxTokens: number;
   temperature?: number;
+  /**
+   * Demand a bare JSON object. Each provider reaches it differently and the
+   * adapters own that difference — see `AgentStreamRequest.jsonMode`.
+   */
+  jsonMode?: boolean;
   timeoutMs?: number;
   /** Prompt row whose provider/model may override the task row. */
   promptCode?: string;
@@ -179,6 +184,7 @@ export class LlmCompletionService {
       ...(target.temperature !== undefined
         ? { temperature: target.temperature }
         : {}),
+      ...(request.jsonMode ? { jsonMode: true } : {}),
       ...(request.timeoutMs !== undefined
         ? { timeoutMs: request.timeoutMs }
         : {}),

@@ -75,6 +75,11 @@ export class GeminiAgentProvider implements IAgentLlmProvider {
         modelSupportsTemperature(request.model)
           ? { temperature: request.temperature }
           : {}),
+        // Gemini's JSON mode is a response mime type. No schema is supplied:
+        // the neutral contract here is "a JSON object", and callers that need a
+        // specific shape validate it themselves — the same tolerance the
+        // autofill parser already has.
+        ...(request.jsonMode ? { responseMimeType: 'application/json' } : {}),
       },
     });
 

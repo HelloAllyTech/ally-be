@@ -96,6 +96,7 @@ import { LlmUsageProcessor } from './processor/llm-usage.processor';
 import { SessionMemoryProcessor } from './processor/session-memory.processor';
 import { SupervisorNoteProcessor } from './processor/supervisor-note.processor';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { ScenarioSessionBehaviorInstructions } from './entity/scenario-session-behavior-instructions.entity';
 import { Competency } from './entity/competency.entity';
 import { CompetencyRepository } from './repository/competency.repository';
@@ -125,8 +126,7 @@ import { ScenarioBehaviorInstructionTranslationRepository } from './repository/s
 import { BehaviorTranslationService } from './service/behavior-translation.service';
 import { ScenarioBehaviorInstructionTranslationService } from './service/scenario-behavior-instruction-translation.service';
 import { BehaviorInstructionTranslationService } from './service/behavior-instruction-translation.service';
-import { OpenAIAutofillService } from './service/openai-autofil-service';
-import { AnthropicAutofillService } from './service/anthropic-autofill.service';
+import { AutofillService } from './service/autofill.service';
 import { ScenarioTranslationGateway } from './gateway/scenario-translation.gateway';
 import { ScenarioTranslationNotificationService } from './service/scenario-translation-notification.service';
 
@@ -196,6 +196,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     AiChatModule,
     AuditModule,
     LlmUsageModule,
+    LlmAgentModule,
     TranscriptTranslationModule,
     // forwardRef: SettingsModule -> (forwardRef) UserModule -> (forwardRef)
     // LearnModule already forms a cycle; this edge closes it, so it needs
@@ -284,8 +285,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     BehaviorInstructionTranslationService,
     BehaviorTranslationService,
     ScenarioBehaviorInstructionTranslationService,
-    OpenAIAutofillService,
-    AnthropicAutofillService,
+    AutofillService,
     ScenarioSessionRecordingRepository,
     ScenarioSessionRecordingService,
     ScenarioTranslationNotificationService,
