@@ -32,6 +32,8 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'comfortAudioEnabled',
   'comfortAudioUrl',
   'comfortAudioVolume',
+  'videoActorEnabled',
+  'videoActorAvatarId',
   'historyTrimEnabled',
   'continuousBackchanneling',
   'interimReplyEnabled',
@@ -155,6 +157,13 @@ export const mapCreateScenarioRequestToEntity = (
       comfortAudioEnabled: scenario.comfortAudioEnabled,
       comfortAudioUrl: scenario.comfortAudioUrl,
       comfortAudioVolume: scenario.comfortAudioVolume,
+      // Opt-in per roleplay, and stricter than the comfort-audio lines above
+      // on purpose: `=== true` rather than a passthrough, so an undefined from
+      // a client that has never heard of this experiment can never be read
+      // downstream as consent to publish video. ally-ai-learn gates on this
+      // AND its own global kill-switch.
+      videoActorEnabled: scenario.videoActorEnabled === true,
+      videoActorAvatarId: scenario.videoActorAvatarId,
       historyTrimEnabled: scenario.historyTrimEnabled,
       continuousBackchanneling: scenario.continuousBackchanneling,
       interimReplyEnabled: scenario.interimReplyEnabled,

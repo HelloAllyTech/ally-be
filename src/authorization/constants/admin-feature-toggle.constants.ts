@@ -92,6 +92,18 @@ export enum FeatureToggleKey {
   // SUPER_ADMIN-tier specifically so MULTI_TENANT_ADMIN, who holds the
   // underlying CRUD permission for library content, cannot trigger them.
   OPERATIONAL_ADMIN_ACTIONS = 'operational_admin_actions',
+
+  // AI video actor: who may see the per-roleplay "AI video actor" toggle in
+  // Simulation Studio. Gates AUTHORING VISIBILITY only — it does not turn video
+  // on for anyone. A session publishes video only when ally-ai-learn's global
+  // VIDEO_ACTOR_ENABLED is on AND that roleplay's own videoActorEnabled is
+  // true, and the roleplay flag is off for every roleplay.
+  //
+  // Deliberately has NO backfill migration, unlike a key that gates existing
+  // behaviour: nobody has ever had this surface, so "missing row means false"
+  // is the intended state and every platform admin starts without it. Grant it
+  // per-admin from Admin User Management.
+  VIDEO_ACTOR = 'video_actor',
 }
 
 export interface FeatureToggleLegacyGrants {
@@ -322,6 +334,16 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     description:
       'Bulk/operational actions that act across every tenant (translation backfills, V2V test sessions) — deliberately excluded from tenant-restricted admins.',
     legacyGrants: SUPER_ADMIN_TIER,
+  },
+  {
+    key: FeatureToggleKey.VIDEO_ACTOR,
+    label: 'AI Video Actor (experimental)',
+    description:
+      "Show the experimental per-roleplay 'AI video actor' toggle in Simulation Studio, which gives a character a lip-synced video track alongside its voice. Granting this only reveals the toggle — each roleplay is still off until an author turns it on, and the platform-level switch must be on too. Experimental: it adds start-up latency and bandwidth, and lip-sync is materially worse outside English.",
+    // Inert, like every key added after the role-collapse cutover. Recorded as
+    // SDA-only because that is the tier this authoring surface would have sat
+    // in; no migration reads it, and nobody is granted the key by default.
+    legacyGrants: SDA_ONLY,
   },
 ];
 

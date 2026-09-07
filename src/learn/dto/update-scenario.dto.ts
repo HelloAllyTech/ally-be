@@ -326,6 +326,26 @@ export class UpdateScenarioDto {
 
   @ApiProperty({
     description:
+      "EXPERIMENTAL. Publish an AI video actor for this roleplay: a synchronized video track alongside the character's voice, so the learner sees a face instead of a static call card. Gated by the global VIDEO_ACTOR_ENABLED kill-switch in ally-ai-learn (itself off by default) — both must be on. Defaults to false (opt-in) when unspecified, so every existing roleplay stays audio-only.",
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  videoActorEnabled?: boolean;
+
+  @ApiProperty({
+    description:
+      'Which face a hosted video-actor provider should render for this roleplay. When unset, falls back to the deployment-wide VIDEO_ACTOR_AVATAR_ID. Ignored by the in-process test renderer. Only meaningful when videoActorEnabled is true.',
+    example: 'avatar_9f3c2b',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  videoActorAvatarId?: string;
+
+  @ApiProperty({
+    description:
       'Trim conversation history sent to the agent to the last few dialogues (older turns dropped) to reduce turn latency. Defaults to false (opt-in) when unspecified.',
     example: false,
     required: false,
