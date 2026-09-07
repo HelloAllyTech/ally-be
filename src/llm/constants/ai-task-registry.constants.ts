@@ -586,13 +586,16 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     runtime: LlmRuntime.ALLY_AI,
     trigger: 'A worker sends the WhatsApp bot a question',
     detail:
-      'Answers only from retrieved corpus passages, or declines. Claude by default because ' +
-      'refusing to answer from outside the passages is an instruction-following problem. ' +
-      'Falls back to Gemini when the Anthropic key is missing, and says so in the metadata.',
+      'Answers only from retrieved corpus passages, or declines. Ran on Claude because ' +
+      'refusing to answer from outside the passages is an instruction-following problem, ' +
+      'until that credential expired and took the bot silent — OpenAI is the one provider ' +
+      'whose key is required in that service. Falls back to OpenAI whatever is selected, ' +
+      'and says so in the metadata.',
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-5-mini',
-    configuredBy: 'KNOWLEDGE_AGENT__DEFAULT_MODEL / KNOWLEDGE_AGENT__DEFAULT_PROVIDER',
+    configuredBy:
+      'KNOWLEDGE_AGENT__DEFAULT_MODEL / KNOWLEDGE_AGENT__DEFAULT_PROVIDER',
     promptOverride: 'ally_ai_knowledge_whatsapp_answer',
   },
   {
