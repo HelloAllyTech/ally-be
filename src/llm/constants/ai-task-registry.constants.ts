@@ -1150,15 +1150,27 @@ export const AI_TASK_REGISTRY_EXEMPT_TASKS: ReadonlySet<LlmTask> = new Set([
 ]);
 
 /**
- * The tier a task resolves at, read by `LlmCompletionService` so a call site
- * cannot declare one thing while this screen displays another.
+ * Everything `LlmCompletionService` needs from a task's registry row.
+ *
+ * Returned together, and deliberately not as two lookups. `neverFallback` used
+ * to be fetched separately and was simply never wired in, so the two rows that
+ * set it — the AI Lab run and the LLM preview, the two calls whose whole point
+ * is testing ONE named model — silently fell back anyway. A preview then
+ * reported `ok: true` for a model that does not exist, having quietly tested a
+ * different one. One lookup makes forgetting the second field impossible.
  *
  * Throws rather than defaulting for an unknown id. A caller reaching here with
  * a taskId that has no row is a call with no registry entry — the exact gap the
  * CI guards exist to close — and quietly serving it the cheap tier would hide
  * that instead of surfacing it.
  */
-export const tierForAiTask = (taskId: string): LlmModelTier => {
+export interface AiTaskCallConfig {
+  tier: LlmModelTier;
+  /** True when a substitute model would make the result a lie, not a degradation. */
+  neverFallback: boolean;
+}
+
+export const callConfigForAiTask = (taskId: string): AiTaskCallConfig => {
   const entry = AI_TASK_REGISTRY.find((row) => row.id === taskId);
   if (!entry?.tier) {
     throw new Error(
@@ -1166,5 +1178,9 @@ export const tierForAiTask = (taskId: string): LlmModelTier => {
         `a tier to the existing one) in ai-task-registry.constants.ts.`,
     );
   }
-  return entry.tier;
+  return { tier: entry.tier, neverFallback: Boolean(entry.neverFallback) };
 };
+
+/** The tier alone, for callers that only need a default model. */
+export const tierForAiTask = (taskId: string): LlmModelTier =>
+  callConfigForAiTask(taskId).tier;

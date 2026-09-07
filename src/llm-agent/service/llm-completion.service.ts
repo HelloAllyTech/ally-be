@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
-import { tierForAiTask } from 'src/llm/constants/ai-task-registry.constants';
+import { callConfigForAiTask } from 'src/llm/constants/ai-task-registry.constants';
 import {
   LlmTargetResolverService,
   LlmTargetSource,
@@ -105,11 +105,16 @@ export class LlmCompletionService {
   ) {}
 
   async complete(request: LlmCompletionRequest): Promise<LlmCompletionResult> {
+    // Read from the registry row, not passed in: the AI Tasks screen shows the
+    // same values, and two sources would eventually disagree. Both fields come
+    // from one lookup — fetching them separately is how `neverFallback` got
+    // left out, which let a preview pass for a model that does not exist.
+    const { tier, neverFallback } = callConfigForAiTask(request.taskId);
+
     const target = await this.resolver.resolve({
       taskId: request.taskId,
-      // Read from the registry row, not passed in: the AI Tasks screen shows
-      // the same value, and two sources would eventually disagree.
-      tier: tierForAiTask(request.taskId),
+      tier,
+      neverFallback,
       promptCode: request.promptCode,
       model: request.model,
       provider: request.provider,

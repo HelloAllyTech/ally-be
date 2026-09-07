@@ -218,6 +218,75 @@ describe('LlmCompletionService', () => {
     });
   });
 
+  describe('reading the registry row, not just the resolved target', () => {
+    /**
+     * The gap both real bugs slipped through: every test above mocks the
+     * resolver, so they prove the service HONOURS `fallbackEnabled` without
+     * proving anything about where that value comes from. It came from
+     * nowhere — `neverFallback` sat on the registry row, was read by the AI
+     * Tasks screen, and was never passed into the resolver. So the AI Lab run
+     * and the LLM preview, the two calls whose entire purpose is testing one
+     * named model, fell back silently: a preview returned ok:true for
+     * `gpt-4o-mini-does-not-exist` having quietly answered from gpt-4o-mini.
+     */
+    const capturingService = () => {
+      const resolved: any[] = [];
+      const resolver = {
+        resolve: jest.fn(async (opts: any) => {
+          resolved.push(opts);
+          return {
+            provider: 'openai',
+            model: 'gpt-4o-mini',
+            source: LlmTargetSource.TIER,
+            fallbackEnabled: !opts.neverFallback,
+            tierModel: 'gpt-4o-mini',
+          };
+        }),
+      };
+      const factory = {
+        create: jest.fn(() => ({
+          name: 'openai',
+          stream: () => streamOf('ok')(),
+        })),
+        isConfigured: jest.fn(() => true),
+      };
+      const service = new LlmCompletionService(
+        resolver as any,
+        factory as any,
+        { record: jest.fn() } as any,
+      );
+      return { service, resolved };
+    };
+
+    it.each(['ai-lab-run', 'llm-preview'])(
+      'carries neverFallback from the %s row into resolution',
+      async (taskId) => {
+        const { service, resolved } = capturingService();
+
+        await service.complete({ ...request, taskId, task: null });
+
+        expect(resolved[0].neverFallback).toBe(true);
+      },
+    );
+
+    it('leaves neverFallback off for a task that allows degrading', async () => {
+      const { service, resolved } = capturingService();
+
+      await service.complete({ ...request, taskId: 'track-quiz-grading' });
+
+      expect(resolved[0].neverFallback).toBe(false);
+    });
+
+    it('takes the tier from the row rather than the caller', async () => {
+      const { service, resolved } = capturingService();
+
+      // voice-note-extract is the FAST tier; a caller cannot override it.
+      await service.complete({ ...request, taskId: 'voice-note-extract' });
+
+      expect(resolved[0].tier).toBe('fast');
+    });
+  });
+
   describe('when it must NOT fall back', () => {
     it('rethrows a 400 — the request was rejected, not the provider', async () => {
       const badRequest = Object.assign(new Error('bad shape'), { status: 400 });
