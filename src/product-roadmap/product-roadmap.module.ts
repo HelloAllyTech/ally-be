@@ -62,6 +62,7 @@ import { RoadmapCollaborationController } from './controller/roadmap-collaborati
 import { RoadmapOpportunityController } from './controller/roadmap-opportunity.controller';
 import { RoadmapGateway } from './gateway/roadmap.gateway';
 import { AwsModule } from 'src/aws/aws.module';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 
 /**
  * Product Roadmap — the internal vote-based prioritisation board, rebuilt from the standalone
@@ -117,6 +118,7 @@ import { AwsModule } from 'src/aws/aws.module';
     PromptModule,
     // LlmUsageService — token/cost accounting, which is mandatory for every LLM call here.
     LlmUsageModule,
+    LlmAgentModule,
     /**
      * BuilderSessionService — "Open in Builder Agent" on an opportunity.
      *

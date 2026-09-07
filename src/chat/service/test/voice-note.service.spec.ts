@@ -7,6 +7,7 @@ import { VoiceNoteService } from '../voice-note.service';
 import { AppConfigService } from 'src/config/config.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { SettingsService } from 'src/settings/service/settings.service';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 
 const mockTranscriptionsCreate = jest.fn();
 const mockMessagesCreate = jest.fn();
@@ -19,12 +20,30 @@ jest.mock('openai', () => ({
   toFile: jest.fn().mockResolvedValue('file-handle'),
 }));
 
-jest.mock('@anthropic-ai/sdk', () => ({
-  __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    messages: { create: mockMessagesCreate },
-  })),
-}));
+/**
+ * Extraction seam. `mockMessagesCreate` keeps the provider-shaped
+ * request/response these tests were written against; the injected
+ * LlmCompletionService translates at the edge. Which model runs, and the usage
+ * row it produces, belong to that service and are covered by its own spec —
+ * what matters here is the tenant gate, the failure path, and the field
+ * coercion.
+ */
+const llmCompletion = {
+  complete: jest.fn(async (request: any) => {
+    const response = await mockMessagesCreate({
+      system: request.system,
+      messages: [{ role: 'user', content: request.prompt }],
+    });
+    const block = response?.content?.[0];
+    return {
+      text: (block?.type === 'text' ? block.text : '').trim(),
+      provider: 'openai',
+      model: 'gpt-test',
+      source: 'tier',
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+  }),
+};
 
 describe('VoiceNoteService', () => {
   let service: VoiceNoteService;
@@ -62,6 +81,7 @@ describe('VoiceNoteService', () => {
           },
         },
         { provide: SettingsService, useValue: settingsService },
+        { provide: LlmCompletionService, useValue: llmCompletion },
       ],
     }).compile();
 

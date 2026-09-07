@@ -1,11 +1,10 @@
 import { randomUUID } from 'crypto';
 import { Injectable } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
-import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { renderTemplate } from 'src/learn/util/autofill-shared.util';
 import { TrackEnrollmentRepository } from '../repository/track-enrollment.repository';
 import { TrackItemProgressRepository } from '../repository/track-item-progress.repository';
@@ -13,6 +12,8 @@ import { TrackItemRepository } from '../repository/track-item.repository';
 import { TrackSectionRepository } from '../repository/track-section.repository';
 
 const PROMPT_CODE = 'track_memory_fold';
+/** AI-task-registry row id; the key for per-task model config. */
+const AI_TASK_ID = 'track-memory-fold';
 const FACTS_PROMPT_CODE = 'track_memory_facts';
 const FOLD_TIMEOUT_MS = 30_000;
 const FOLD_MAX_TOKENS = 1024;
@@ -98,23 +99,14 @@ export interface TrackEnrollmentMemory {
 @Injectable()
 export class TrackMemoryService {
   private readonly logger = LoggerService.getInstance(TrackMemoryService.name);
-  private readonly client: Anthropic;
-  private readonly model: string;
-
   constructor(
-    private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
-    private readonly llmUsage: LlmUsageService,
+    private readonly llmCompletion: LlmCompletionService,
     private readonly trackEnrollmentRepository: TrackEnrollmentRepository,
     private readonly trackItemProgressRepository: TrackItemProgressRepository,
     private readonly trackItemRepository: TrackItemRepository,
     private readonly trackSectionRepository: TrackSectionRepository,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
-    this.model = this.configService.anthropic.autofillModel;
-  }
+  ) {}
 
   /**
    * Fold one session's memory into the enrollment's consolidated memory.
@@ -335,28 +327,18 @@ export class TrackMemoryService {
         newDisclosures: newDisclosures.map((d) => `- ${d}`).join('\n'),
       });
 
-      const response = await this.client.messages.create(
-        {
-          model: this.model,
-          max_tokens: FACTS_MAX_TOKENS,
-          messages: [{ role: 'user', content: prompt }],
-        },
-        { timeout: FOLD_TIMEOUT_MS },
-      );
-      const input = response.usage?.input_tokens ?? 0;
-      const output = response.usage?.output_tokens ?? 0;
-      void this.llmUsage.record({
-        provider: 'anthropic',
-        model: this.model,
+      const response = await this.llmCompletion.complete({
+        taskId: AI_TASK_ID,
         task: LlmTask.TRACK_MEMORY_FOLD,
-        promptTokens: input,
-        completionTokens: output,
-        totalTokens: input + output,
-        metadata: { ...usageMetadata, stage: 'facts' },
+        tier: LlmModelTier.REASONING,
+        promptCode: FACTS_PROMPT_CODE,
+        prompt,
+        maxTokens: FACTS_MAX_TOKENS,
+        timeoutMs: FOLD_TIMEOUT_MS,
+        usageMetadata: { ...usageMetadata, stage: 'facts' },
       });
 
-      const block = response.content[0];
-      const raw = (block?.type === 'text' ? block.text : '').trim();
+      const raw = response.text;
       const jsonStart = raw.indexOf('[');
       const parsed = JSON.parse(
         raw.slice(jsonStart, raw.lastIndexOf(']') + 1),
@@ -517,29 +499,18 @@ export class TrackMemoryService {
           .join('\n\n'),
       });
 
-      const response = await this.client.messages.create(
-        {
-          model: this.model,
-          max_tokens: FOLD_MAX_TOKENS,
-          messages: [{ role: 'user', content: prompt }],
-        },
-        { timeout: FOLD_TIMEOUT_MS },
-      );
-
-      const input = response.usage?.input_tokens ?? 0;
-      const output = response.usage?.output_tokens ?? 0;
-      void this.llmUsage.record({
-        provider: 'anthropic',
-        model: this.model,
+      const response = await this.llmCompletion.complete({
+        taskId: AI_TASK_ID,
         task: LlmTask.TRACK_MEMORY_FOLD,
-        promptTokens: input,
-        completionTokens: output,
-        totalTokens: input + output,
-        metadata: usageMetadata,
+        tier: LlmModelTier.REASONING,
+        promptCode: PROMPT_CODE,
+        prompt,
+        maxTokens: FOLD_MAX_TOKENS,
+        timeoutMs: FOLD_TIMEOUT_MS,
+        usageMetadata,
       });
 
-      const block = response.content[0];
-      const text = (block?.type === 'text' ? block.text : '').trim();
+      const text = response.text;
       if (!text) throw new Error('empty fold response');
       return text.slice(0, CONSOLIDATED_MAX_CHARS);
     } catch (error) {

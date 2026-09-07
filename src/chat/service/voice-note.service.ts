@@ -8,12 +8,14 @@ import {
 import { ErrorCode } from 'src/exception/error-code.enum';
 import { VoiceNoteExtractionFailedException } from 'src/exception/custom.exception';
 import { FAILURE_MESSAGES } from 'src/exception/failure-messages';
-import Anthropic from '@anthropic-ai/sdk';
 import OpenAI, { toFile } from 'openai';
 
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
+import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
+import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { SettingsService } from 'src/settings/service/settings.service';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
 import {
@@ -29,7 +31,9 @@ const MAX_LABEL_LEN = 200;
 const MAX_HINT_LEN = 500;
 const MAX_OPTIONS = 100;
 const MAX_TRANSCRIPT_CHARS = 40_000;
-const ANTHROPIC_MAX_TOKENS = 4096;
+const EXTRACTION_MAX_TOKENS = 4096;
+/** AI-task-registry row id; the key for per-task model config. */
+const AI_TASK_ID = 'voice-note-extract';
 
 // OpenAI's transcription API infers the container from the filename extension,
 // so we derive the extension from the real MIME type rather than trusting the
@@ -124,21 +128,16 @@ export class VoiceNoteService {
   private readonly logger = LoggerService.getInstance(VoiceNoteService.name);
 
   private readonly openai: OpenAI;
-  private readonly anthropic: Anthropic;
   private readonly transcriptionModel: string;
-  private readonly extractionModel: string;
 
   constructor(
     private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
     private readonly settingsService: SettingsService,
+    private readonly llmCompletion: LlmCompletionService,
   ) {
     this.openai = new OpenAI({ apiKey: this.configService.openai.apiKey });
-    this.anthropic = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
     this.transcriptionModel = this.configService.openai.transcriptionModel;
-    this.extractionModel = this.configService.anthropic.autofillModel;
   }
 
   /**
@@ -259,22 +258,30 @@ export class VoiceNoteService {
 
     const startedAt = Date.now();
     let raw: string;
+    let model: string;
     try {
-      const response = await this.anthropic.messages.create({
-        model: this.extractionModel,
-        max_tokens: ANTHROPIC_MAX_TOKENS,
+      // No assistant-turn prefill: the Claude 4.6+ family rejects a trailing
+      // assistant message with a 400 and it does not translate across
+      // providers. The system prompt instructs a bare JSON object instead;
+      // parseJsonObject strips any markdown fences the model may add.
+      //
+      // FAST tier: a counsellor is watching a spinner on a scribe note, and
+      // the model is filling fields from a transcript it has been handed
+      // rather than reasoning about them.
+      const response = await this.llmCompletion.complete({
+        taskId: AI_TASK_ID,
+        task: LlmTask.VOICE_NOTE_EXTRACT,
+        tier: LlmModelTier.FAST,
+        promptCode: SYSTEM_PROMPT_CODE,
         system,
-        // No assistant-turn prefill: the 4.6+ model family (incl. the default
-        // claude-sonnet-4-6) rejects a trailing assistant message with a 400.
-        // The system prompt instructs a bare JSON object instead; parseJsonObject
-        // strips any markdown fences the model may add.
-        messages: [{ role: 'user', content: user }],
+        prompt: user,
+        maxTokens: EXTRACTION_MAX_TOKENS,
       });
-      const block = response.content[0];
-      raw = block?.type === 'text' ? block.text : '';
+      raw = response.text;
+      model = response.model;
     } catch (error) {
       this.logger.error(
-        `[VOICE_NOTE] extraction failed model=${this.extractionModel} ` +
+        `[VOICE_NOTE] extraction failed ` +
           `elapsedMs=${Date.now() - startedAt}: ${(error as any)?.message ?? error}`,
         error as any,
       );
@@ -284,7 +291,7 @@ export class VoiceNoteService {
     const parsed = this.parseJsonObject(raw);
     const values = this.coerceValues(parsed, fields);
     this.logger.info(
-      `[VOICE_NOTE] extracted model=${this.extractionModel} ` +
+      `[VOICE_NOTE] extracted model=${model} ` +
         `requested=${fields.length} filled=${values.length} elapsedMs=${Date.now() - startedAt}`,
     );
     return values;

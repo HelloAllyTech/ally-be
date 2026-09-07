@@ -1,10 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
-import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import {
   renderTemplate,
   stripMarkdownFences,
@@ -12,8 +11,10 @@ import {
 import { OpenEndedQuestion } from '../type/quiz.type';
 import { TRACK_QUIZ_LLM_GRADING_TIMEOUT_MS } from '../constants/track.constant';
 
-const ANTHROPIC_MAX_TOKENS = 1024;
+const MAX_TOKENS = 1024;
 const PROMPT_CODE = 'track_quiz_open_ended_grading_user';
+/** AI-task-registry row id; the key for per-task model config. */
+const AI_TASK_ID = 'track-quiz-grading';
 
 export interface OpenEndedGrading {
   score: number;
@@ -22,9 +23,13 @@ export interface OpenEndedGrading {
 }
 
 /**
- * Grades one open-ended quiz answer against the trainer's rubric. Same
- * Anthropic + PromptSharedService + LlmUsageService pattern as
- * AnthropicAutofillService; JSON forced via assistant-prefill `{`.
+ * Grades one open-ended quiz answer against the trainer's rubric.
+ *
+ * Runs through LlmCompletionService, so which model grades is resolved config
+ * (prompt row -> task row -> platform tier) rather than a client this service
+ * constructs. REASONING tier: a wrong grade is shown to a learner as their
+ * result, and nothing here is latency-sensitive.
+ *
  * Throws on failure — the caller decides the PENDING_GRADING fallback.
  */
 @Injectable()
@@ -32,19 +37,10 @@ export class TrackQuizLlmGraderService {
   private readonly logger = LoggerService.getInstance(
     TrackQuizLlmGraderService.name,
   );
-  private readonly client: Anthropic;
-  private readonly model: string;
-
   constructor(
-    private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
-    private readonly llmUsage: LlmUsageService,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
-    this.model = this.configService.anthropic.autofillModel;
-  }
+    private readonly llmCompletion: LlmCompletionService,
+  ) {}
 
   async gradeOpenEndedAnswer(
     question: OpenEndedQuestion,
@@ -67,23 +63,22 @@ export class TrackQuizLlmGraderService {
     });
 
     const startedAt = Date.now();
-    // No assistant-turn prefill: the 4.6+ model family (incl. the default
-    // claude-sonnet-4-6) rejects a trailing assistant message with a 400.
-    // The prompt demands a bare JSON object; fences are stripped defensively.
-    const response = await this.client.messages.create(
-      {
-        model: this.model,
-        max_tokens: ANTHROPIC_MAX_TOKENS,
-        messages: [{ role: 'user', content: prompt }],
-      },
-      { timeout: TRACK_QUIZ_LLM_GRADING_TIMEOUT_MS },
-    );
+    // No assistant-turn prefill: the Claude 4.6+ family rejects a trailing
+    // assistant message with a 400, and it would not translate across
+    // providers anyway. The prompt demands a bare JSON object; fences are
+    // stripped defensively because every model family fences sometimes.
+    const response = await this.llmCompletion.complete({
+      taskId: AI_TASK_ID,
+      task: LlmTask.TRACK_QUIZ_GRADING,
+      tier: LlmModelTier.REASONING,
+      promptCode: PROMPT_CODE,
+      prompt,
+      maxTokens: MAX_TOKENS,
+      timeoutMs: TRACK_QUIZ_LLM_GRADING_TIMEOUT_MS,
+      usageMetadata: { questionId: question.id },
+    });
 
-    this.recordUsage(response.usage, { questionId: question.id });
-
-    const block = response.content[0];
-    const raw = block?.type === 'text' ? block.text : '';
-    const cleaned = stripMarkdownFences(raw).trim();
+    const cleaned = stripMarkdownFences(response.text).trim();
     const jsonStart = cleaned.indexOf('{');
     if (jsonStart < 0) {
       throw new Error('LLM grading response contained no JSON object');
@@ -100,23 +95,5 @@ export class TrackQuizLlmGraderService {
       `[TRACK_QUIZ] graded open-ended question=${question.id} score=${parsed.score}/${maxScore} elapsedMs=${Date.now() - startedAt}`,
     );
     return parsed;
-  }
-
-  private recordUsage(
-    usage: Anthropic.Messages.Usage | undefined,
-    metadata?: Record<string, any>,
-  ): void {
-    const input = usage?.input_tokens ?? 0;
-    const output = usage?.output_tokens ?? 0;
-    void this.llmUsage.record({
-      provider: 'anthropic',
-      model: this.model,
-      task: LlmTask.TRACK_QUIZ_GRADING,
-      promptTokens: input,
-      completionTokens: output,
-      totalTokens: input + output,
-      cachedTokens: usage?.cache_read_input_tokens ?? undefined,
-      metadata,
-    });
   }
 }

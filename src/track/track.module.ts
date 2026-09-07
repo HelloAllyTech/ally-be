@@ -7,6 +7,7 @@ import { AwsModule } from 'src/aws/aws.module';
 import { CaseModule } from 'src/case/case.module';
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { TrackAdminController } from './controller/track-admin.controller';
 import { TrackLearnerController } from './controller/track-learner.controller';
 import { TrackService } from './service/track.service';
@@ -46,6 +47,7 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     AwsModule,
     forwardRef(() => PromptModule),
     LlmUsageModule,
+    LlmAgentModule,
     CohortModule,
   ],
   controllers: [TrackAdminController, TrackLearnerController],

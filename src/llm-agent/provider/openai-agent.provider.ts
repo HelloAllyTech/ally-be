@@ -45,22 +45,27 @@ export class OpenAiAgentProvider implements IAgentLlmProvider {
   async *stream(request: AgentStreamRequest): AsyncGenerator<AgentStreamEvent> {
     const client = this.clientOverride ?? new OpenAI({ apiKey: this.apiKey });
 
-    const stream = await client.chat.completions.create({
-      model: request.model,
-      messages: this.toOpenAiMessages(request),
-      max_completion_tokens: request.maxTokens,
-      ...(request.tools?.length
-        ? { tools: this.toOpenAiTools(request.tools) }
-        : {}),
-      ...(request.temperature !== undefined &&
-      modelSupportsTemperature(request.model)
-        ? { temperature: request.temperature }
-        : {}),
-      stream: true,
-      // Without this the usage block never arrives on a streamed call and
-      // every interview turn would record zero tokens.
-      stream_options: { include_usage: true },
-    });
+    const stream = await client.chat.completions.create(
+      {
+        model: request.model,
+        messages: this.toOpenAiMessages(request),
+        max_completion_tokens: request.maxTokens,
+        ...(request.tools?.length
+          ? { tools: this.toOpenAiTools(request.tools) }
+          : {}),
+        ...(request.temperature !== undefined &&
+        modelSupportsTemperature(request.model)
+          ? { temperature: request.temperature }
+          : {}),
+        stream: true,
+        // Without this the usage block never arrives on a streamed call and
+        // every interview turn would record zero tokens.
+        stream_options: { include_usage: true },
+      },
+      ...(request.timeoutMs !== undefined
+        ? [{ timeout: request.timeoutMs }]
+        : []),
+    );
 
     let text = '';
     let finishReason: string | undefined;

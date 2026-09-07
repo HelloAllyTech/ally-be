@@ -1,12 +1,14 @@
 import { Injectable, ServiceUnavailableException } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 
-import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { renderTemplate } from 'src/learn/util/autofill-shared.util';
+
+/** AI-task-registry row id; the key for per-task model config. */
+const AI_TASK_ID = 'mobile-release-whats-new';
 
 /**
  * Prompt code resolved through PromptSharedService (folder file, or a
@@ -39,19 +41,11 @@ export class MobileReleaseWhatsNewAiService {
   private readonly logger = LoggerService.getInstance(
     MobileReleaseWhatsNewAiService.name,
   );
-  private readonly client: Anthropic;
-  private readonly model: string;
 
   constructor(
-    private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
-    private readonly llmUsage: LlmUsageService,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
-    this.model = this.configService.anthropic.autofillModel;
-  }
+    private readonly llmCompletion: LlmCompletionService,
+  ) {}
 
   /**
    * `commitSubjects` is the non-merge commit subject lines since the last
@@ -75,44 +69,27 @@ export class MobileReleaseWhatsNewAiService {
     });
 
     try {
-      const response = await this.client.messages.create(
-        {
-          model: this.model,
-          max_tokens: WHATS_NEW_LLM.MAX_TOKENS,
-          system: systemPrompt,
-          messages: [
-            { role: 'user', content: "Generate the What's New text." },
-          ],
-        },
-        // Bounded rather than left to the socket: an admin is waiting
-        // synchronously on this request.
-        { timeout: WHATS_NEW_LLM.TIMEOUT_MS },
-      );
-
-      // Cost accounting is mandatory in ally-be; an un-metered LLM call is a
-      // billing blind spot. Fire-and-forget: metering must never fail the
-      // request.
-      const input = response.usage?.input_tokens ?? 0;
-      const output = response.usage?.output_tokens ?? 0;
-      void this.llmUsage.record({
-        provider: 'anthropic',
-        model: this.model,
+      const response = await this.llmCompletion.complete({
+        taskId: AI_TASK_ID,
         task: LlmTask.MOBILE_RELEASE_WHATS_NEW,
-        promptTokens: input,
-        completionTokens: output,
-        totalTokens: input + output,
-        cachedTokens: response.usage?.cache_read_input_tokens ?? undefined,
-        metadata: {
+        tier: LlmModelTier.FAST,
+        promptCode: WHATS_NEW_PROMPT_CODE,
+        system: systemPrompt,
+        prompt: "Generate the What's New text.",
+        maxTokens: WHATS_NEW_LLM.MAX_TOKENS,
+        // Bounded rather than left to the socket: an unbounded hang is
+        // indistinguishable to the caller from a run that will never answer.
+        timeoutMs: WHATS_NEW_LLM.TIMEOUT_MS,
+        usageMetadata: {
           feature: 'mobile-releases',
           label: 'ios-whats-new-suggestion',
         },
       });
 
-      const block = response.content?.[0];
-      if (!block || block.type !== 'text' || !block.text.trim()) {
+      if (!response.text) {
         throw new Error('Model returned no usable text content');
       }
-      return block.text.trim();
+      return response.text;
     } catch (error) {
       this.logger.error(
         `Could not generate the iOS What's New suggestion: ${

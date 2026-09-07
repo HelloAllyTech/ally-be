@@ -2,6 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TIME } from '../common/constants/time.constants';
 import { BUILDER_MODEL_DEFAULTS } from '../builder/constants/builder.constants';
+import {
+  LLM_TIER_ENV_VAR,
+  LLM_TIER_FLOOR,
+  LlmModelTier,
+} from '../llm/constants/llm-tier.constants';
 
 export type AwsLogServiceKey = 'ally-be' | 'ally-ai' | 'ally-ai-learn';
 
@@ -597,6 +602,27 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * Platform model tiers — the layer every LLM caller falls back to when no
+   * per-task row and no per-prompt row names a model.
+   *
+   * Two vars rather than one per task on purpose: a task declares its tier at
+   * the call site and per-task selection lives in `llm_task_configs`, so this
+   * is the only place a model id is compiled in. See llm-tier.constants.ts.
+   */
+  get llmTiers(): Record<LlmModelTier, string> {
+    return Object.values(LlmModelTier).reduce(
+      (acc, tier) => ({
+        ...acc,
+        [tier]: this.configService.get<string>(
+          LLM_TIER_ENV_VAR[tier],
+          LLM_TIER_FLOOR[tier],
+        ),
+      }),
+      {} as Record<LlmModelTier, string>,
+    );
+  }
+
   get anthropic() {
     const autofillModel = this.configService.get<string>(
       'ANTHROPIC_AUTOFILL_MODEL',
@@ -753,17 +779,21 @@ export class AppConfigService {
 
   get characterInterview() {
     return {
-      // Character-library interview agent model. Same family as the copilot
-      // default so there is one model to upgrade.
+      // Character-library interview agent model.
       //
       // Anthropic, OpenAI and Gemini models all run — the turn loop goes
       // through `AgentLlmProviderFactory`. The prompt row for
-      // `character_interview.interviewer_system` overrides both of these when
-      // it carries its own provider/model, which is the supported way to
-      // change them per environment; these are the fallback.
+      // `character_interview.interviewer_system` overrides this when it carries
+      // its own provider/model, which is the supported way to change it per
+      // environment; this is the fallback.
+      //
+      // Defaults to the REASONING tier rather than a vendor's model id. It used
+      // to name claude-sonnet-4-6, which meant an expired Anthropic credential
+      // took the interview down even though the loop can run three providers —
+      // the fallback pointed at the thing that had failed.
       model: this.configService.get<string>(
         'CHARACTER_INTERVIEW_MODEL',
-        'claude-sonnet-4-6',
+        this.llmTiers[LlmModelTier.REASONING],
       ),
       // Usually left unset: the provider is inferred from the model id, which
       // is unambiguous for every model any of the three actually ships. Set it

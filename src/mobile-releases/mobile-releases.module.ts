@@ -9,12 +9,14 @@ import { IosMinVersionAutoBumpSchedulerRegistrationService } from './ios-min-ver
 import { MobileReleaseWhatsNewAiService } from './mobile-release-whats-new-ai.service';
 import { MobileReleasesController } from './mobile-releases.controller';
 import { MobileReleasesService } from './mobile-releases.service';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 
 @Module({
   imports: [
     AppConfigModule,
     PromptModule,
     LlmUsageModule,
+    LlmAgentModule,
     AppVersionModule,
     NotificationModule,
   ],

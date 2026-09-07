@@ -33,17 +33,22 @@ export class AnthropicAgentProvider implements IAgentLlmProvider {
     const client =
       this.clientOverride ?? new Anthropic({ apiKey: this.apiKey });
 
-    const stream = client.messages.stream({
-      model: request.model,
-      max_tokens: request.maxTokens,
-      system: request.system,
-      messages: request.messages as any,
-      ...(request.tools?.length ? { tools: request.tools as any } : {}),
-      ...(request.temperature !== undefined &&
-      modelSupportsTemperature(request.model)
-        ? { temperature: request.temperature }
-        : {}),
-    });
+    const stream = client.messages.stream(
+      {
+        model: request.model,
+        max_tokens: request.maxTokens,
+        system: request.system,
+        messages: request.messages as any,
+        ...(request.tools?.length ? { tools: request.tools as any } : {}),
+        ...(request.temperature !== undefined &&
+        modelSupportsTemperature(request.model)
+          ? { temperature: request.temperature }
+          : {}),
+      },
+      ...(request.timeoutMs !== undefined
+        ? [{ timeout: request.timeoutMs }]
+        : []),
+    );
 
     for await (const event of stream as AsyncIterable<any>) {
       if (

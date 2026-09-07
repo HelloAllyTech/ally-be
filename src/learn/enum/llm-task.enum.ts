@@ -100,6 +100,15 @@ export enum LlmTask {
   GENERATE_COVER_IMAGE = 'generate_cover_image',
   TRANSLATE_TEXT = 'translate_text',
   TRANSLATE_OBJECT = 'translate_object',
+  // Scribe voice note: turning one dictation transcript into note fields.
+  // Previously recorded NO usage row at all — the call went straight to the
+  // Anthropic SDK and skipped the sink — so scribe dictation cost was
+  // invisible. Labelled now that it resolves through LlmCompletionService.
+  VOICE_NOTE_EXTRACT = 'voice_note_extract',
+  // AI Lab: one run of a saved skill against its chosen model. Also recorded
+  // nothing before; the AI Lab's own run rows tracked cost, so it was absent
+  // from platform-wide LLM spend.
+  AI_LAB_RUN = 'ai_lab_run',
 
   // STT (speech-to-text) tasks.
   AGENT_STT = 'agent_stt', // live agent listening (per turn)

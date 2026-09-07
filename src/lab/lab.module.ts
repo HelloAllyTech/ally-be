@@ -49,6 +49,7 @@ import { LabRunController } from './controller/lab-run.controller';
 import { LabEvaluatorController } from './controller/lab-evaluator.controller';
 import { LabEvalPortalController } from './controller/lab-eval-portal.controller';
 import { LabQuestionSetController } from './controller/lab-question-set.controller';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 
 /**
  * AI Lab: a super-duper-admin workspace for authoring reusable system prompts
@@ -60,6 +61,7 @@ import { LabQuestionSetController } from './controller/lab-question-set.controll
  */
 @Module({
   imports: [
+    LlmAgentModule,
     TypeOrmModule.forFeature([
       LabSkill,
       LabVariable,

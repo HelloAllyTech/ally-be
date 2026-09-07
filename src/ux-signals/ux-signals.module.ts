@@ -18,6 +18,7 @@ import { UxSignalWriterService } from './service/ux-signal-writer.service';
 import { UxSignalsAiService } from './service/ux-signals-ai.service';
 import { UxSignalsSchedulerRegistrationService } from './service/ux-signals-scheduler-registration.service';
 import { UxSignalsService } from './service/ux-signals.service';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 
 /**
  * UX Signals — "read how people actually experience the product, and file what
@@ -67,6 +68,7 @@ import { UxSignalsService } from './service/ux-signals.service';
     AppConfigModule,
     PromptModule,
     LlmUsageModule,
+    LlmAgentModule,
   ],
   controllers: [UxSignalsController],
   providers: [

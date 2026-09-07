@@ -12,33 +12,55 @@ jest.mock('src/logger/logger.service', () => ({
   },
 }));
 
+/**
+ * The LLM seam.
+ *
+ * `mockCreate` still takes and returns the provider-shaped request/response
+ * these tests were written against, with the fake `complete` translating at the
+ * edge. That keeps every prompt-content and failure-path assertion below
+ * pointed at what this service actually decides — the order sessions are folded
+ * in, which facts are withheld, what happens when the call fails — rather than
+ * at the plumbing that moved into LlmCompletionService.
+ *
+ * Usage recording is deliberately NOT faked here: it now belongs to
+ * LlmCompletionService and is covered by its own spec. What this service still
+ * owns is passing the right task label and tier, asserted directly on the
+ * request.
+ */
 const mockCreate = jest.fn();
-jest.mock('@anthropic-ai/sdk', () => ({
-  __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    messages: { create: (...args: any[]) => mockCreate(...args) },
-  })),
-}));
 
 describe('TrackMemoryService', () => {
-  const configService = {
-    anthropic: { apiKey: 'test-key', autofillModel: 'claude-test' },
+  const llmCompletion = {
+    complete: jest.fn(async (request: any) => {
+      const response = await mockCreate({
+        messages: [{ role: 'user', content: request.prompt }],
+      });
+      const text = response?.content?.[0]?.text ?? '';
+      return {
+        text: String(text).trim(),
+        provider: 'openai',
+        model: 'gpt-test',
+        source: 'tier',
+        usage: {
+          inputTokens: response?.usage?.input_tokens ?? 0,
+          outputTokens: response?.usage?.output_tokens ?? 0,
+        },
+      };
+    }),
   };
   const promptSharedService = {
     getPromptByCode: jest
       .fn()
       .mockResolvedValue('Fold these:\n{{sessionMemories}}'),
   };
-  const llmUsage = { record: jest.fn() };
   const trackEnrollmentRepository = { findOne: jest.fn(), update: jest.fn() };
   const trackItemProgressRepository = { findOne: jest.fn() };
   const trackItemRepository = { find: jest.fn() };
   const trackSectionRepository = { find: jest.fn() };
 
   const service = new TrackMemoryService(
-    configService as any,
     promptSharedService as any,
-    llmUsage as any,
+    llmCompletion as any,
     trackEnrollmentRepository as any,
     trackItemProgressRepository as any,
     trackItemRepository as any,
@@ -116,8 +138,14 @@ describe('TrackMemoryService', () => {
     expect(prompt.indexOf('memory of item one')).toBeLessThan(
       prompt.indexOf('memory of item two'),
     );
-    expect(llmUsage.record).toHaveBeenCalledWith(
-      expect.objectContaining({ task: 'track_memory_fold', totalTokens: 150 }),
+    // The label and tier are this service's call to make; the usage row they
+    // end up on is LlmCompletionService's.
+    expect(llmCompletion.complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        taskId: 'track-memory-fold',
+        task: 'track_memory_fold',
+        tier: 'reasoning',
+      }),
     );
     const [, patch] = trackEnrollmentRepository.update.mock.calls[0];
     expect(patch.memory.summary).toBe('consolidated memory');

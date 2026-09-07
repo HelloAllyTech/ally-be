@@ -1,11 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import { In } from 'typeorm';
-import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import {
   renderTemplate,
   stripMarkdownFences,
@@ -15,6 +14,9 @@ import { AiService } from 'src/ai/service/ai.service';
 import { RoadmapReadinessTokenService } from './roadmap-readiness-token.service';
 import { RoadmapOpportunityRepository } from '../repository/roadmap-opportunity.repository';
 import { RoadmapProductGoalRepository } from '../repository/roadmap-taxonomy.repository';
+
+/** AI-task-registry row id; the key for per-task model config. */
+const AI_TASK_ID = 'roadmap-ai';
 import {
   RoadmapOpportunityEffort,
   RoadmapOpportunityType,
@@ -54,23 +56,15 @@ const MAX_TOKENS = {
 @Injectable()
 export class RoadmapAiService {
   private readonly logger = LoggerService.getInstance(RoadmapAiService.name);
-  private readonly client: Anthropic;
-  private readonly model: string;
 
   constructor(
-    private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
-    private readonly llmUsage: LlmUsageService,
+    private readonly llmCompletion: LlmCompletionService,
     private readonly aiService: AiService,
     private readonly opportunityRepository: RoadmapOpportunityRepository,
     private readonly goalRepository: RoadmapProductGoalRepository,
     private readonly readinessToken: RoadmapReadinessTokenService,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
-    this.model = this.configService.anthropic.autofillModel;
-  }
+  ) {}
 
   /**
    * Grade a draft against ROADMAP_READINESS_CRITERIA. One entry per criterion, always.
@@ -639,9 +633,9 @@ export class RoadmapAiService {
   }
 
   /**
-   * JSON-shaped call. Anthropic has no JSON mode and this model rejects assistant prefill
-   * (see run()), so correctness rests on the system prompt asking for bare JSON plus the
-   * defensive parsing below. Returns null rather than throwing when the model misbehaves —
+   * JSON-shaped call. Correctness rests on the system prompt asking for bare JSON plus the
+   * defensive parsing below, which holds across model families rather than depending on one
+   * provider's JSON mode. Returns null rather than throwing when the model misbehaves —
    * every caller degrades to an empty result.
    */
   private async runJson<T>(
@@ -684,20 +678,21 @@ export class RoadmapAiService {
   }
 
   /**
-   * One Anthropic call. The prompt FILE is the system prompt and the payload is a separate user
+   * One LLM call. The prompt FILE is the system prompt and the payload is a separate user
    * message — matching the standalone app exactly (`system: prompt` + one user turn).
    *
    * This is why the prompt files contain no {{placeholders}}: an admin editing a prompt in
    * Prompt Management cannot accidentally delete an interpolation slot and silently break the
    * feature. renderTemplate is still applied so a future prompt CAN use variables if wanted.
    *
-   * ⚠️ NO ASSISTANT PREFILL. AnthropicAutofillService forces JSON by prefilling the assistant
-   * turn with `{`, but claude-sonnet-4-6 REJECTS that outright:
-   *   400 invalid_request_error — "This model does not support assistant message prefill.
-   *   The conversation must end with a user message."
-   * So the conversation always ends with the user turn and JSON is obtained the way the
-   * standalone app did it: the system prompt says "output ONLY a JSON object, no fences", and
-   * runJson() parses defensively. Do not reintroduce the prefill.
+   * ⚠️ NO ASSISTANT PREFILL. Forcing JSON by prefilling the assistant turn with `{` is
+   * rejected outright by the Claude 4.6+ family, and has no equivalent on the other
+   * providers this can now resolve to. The conversation always ends with the user turn and
+   * JSON comes from the system prompt saying "output ONLY a JSON object, no fences" plus
+   * runJson()'s defensive parsing. Do not reintroduce the prefill.
+   *
+   * REASONING tier: these calls draft opportunities and adjudicate split/merge decisions an
+   * admin then acts on, and none of them sit in front of a live user turn.
    */
   private async run(
     promptCode: string,
@@ -713,31 +708,17 @@ export class RoadmapAiService {
     }
     const systemPrompt = renderTemplate(template, variables);
 
-    const response = await this.client.messages.create({
-      model: this.model,
-      max_tokens: maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userMessage }],
-    });
-
-    // Cost accounting is mandatory in ally-be; an un-metered LLM call is a billing blind spot.
-    // Same shape as AnthropicAutofillService.recordUsage, and fire-and-forget for the same
-    // reason: metering must never fail the user's request.
-    const input = response.usage?.input_tokens ?? 0;
-    const output = response.usage?.output_tokens ?? 0;
-    void this.llmUsage.record({
-      provider: 'anthropic',
-      model: this.model,
+    const response = await this.llmCompletion.complete({
+      taskId: AI_TASK_ID,
       task,
-      promptTokens: input,
-      completionTokens: output,
-      totalTokens: input + output,
-      cachedTokens: response.usage?.cache_read_input_tokens ?? undefined,
-      metadata: { feature: 'product-roadmap', label },
+      tier: LlmModelTier.REASONING,
+      promptCode,
+      system: systemPrompt,
+      prompt: userMessage,
+      maxTokens,
+      usageMetadata: { feature: 'product-roadmap', label },
     });
 
-    const block = response.content?.[0];
-    if (!block || block.type !== 'text') return null;
-    return block.text;
+    return response.text || null;
   }
 }

@@ -73,6 +73,15 @@ export interface AgentStreamRequest {
   tools?: AgentToolDefinition[];
   /** Dropped by the adapters for models that reject a custom temperature. */
   temperature?: number;
+  /**
+   * Per-request deadline handed to the SDK.
+   *
+   * Passed to the provider's own request options rather than raced against in
+   * the caller, because a race leaves the HTTP request running and its tokens
+   * billable. Honoured by the Anthropic and OpenAI adapters; the Gemini SDK
+   * takes a timeout at client construction, not per call, so it ignores this.
+   */
+  timeoutMs?: number;
 }
 
 /**

@@ -43,6 +43,7 @@ import { ChatSchedulerRegistrationService } from './service/chat-scheduler-regis
 import { ScribeSessionReviewModule } from 'src/scribe-session-review/scribe-session-review.module';
 import { CustomFieldsModule } from '../custom-fields/custom-fields.module';
 import { PromptModule } from '../prompt/prompt.module';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { PromptModule } from '../prompt/prompt.module';
     ScribeSessionReviewModule,
     forwardRef(() => CustomFieldsModule),
     PromptModule,
+    LlmAgentModule,
   ],
   controllers: [ChatController, AudioUploadController],
   providers: [

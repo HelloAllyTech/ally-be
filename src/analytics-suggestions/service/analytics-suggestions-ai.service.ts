@@ -1,11 +1,13 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 
-import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
+
+/** AI-task-registry row id; the key for per-task model config. */
+const AI_TASK_ID = 'analytics-suggestions';
 import {
   renderTemplate,
   stripMarkdownFences,
@@ -31,19 +33,31 @@ export class AnalyticsSuggestionsAiService {
   private readonly logger = LoggerService.getInstance(
     AnalyticsSuggestionsAiService.name,
   );
-  private readonly client: Anthropic;
-  readonly model: string;
+  /**
+   * The model that served the most recent call.
+   *
+   * Read by the caller to stamp the rows this run produced. It has to come
+   * from the call rather than from config read at construction: the model is
+   * resolved per call now, and a fallback means the row would otherwise claim
+   * a model that did not produce it.
+   */
+  private lastModel?: string;
+
+  /**
+   * Model that produced the latest result, for provenance on saved rows.
+   *
+   * Only ever read after a successful call, so the fallback is unreachable in
+   * practice. It returns a string rather than throwing because provenance must
+   * never be the reason a completed run fails to save.
+   */
+  get model(): string {
+    return this.lastModel ?? 'unknown';
+  }
 
   constructor(
-    private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
-    private readonly llmUsage: LlmUsageService,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
-    this.model = this.configService.anthropic.suggestionsModel;
-  }
+    private readonly llmCompletion: LlmCompletionService,
+  ) {}
 
   /**
    * One generation call.
@@ -120,36 +134,22 @@ export class AnalyticsSuggestionsAiService {
     }
     const systemPrompt = renderTemplate(template, {});
 
-    const response = await this.client.messages.create(
-      {
-        model: this.model,
-        max_tokens: SUGGESTION_LLM.MAX_TOKENS,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-      },
-      // Bounded rather than left to the socket: the caller is a person waiting on
-      // a synchronous request, and an unbounded hang is indistinguishable to them
-      // from a run that will never answer.
-      { timeout: SUGGESTION_LLM.TIMEOUT_MS },
-    );
-
-    // Cost accounting is mandatory in ally-be; an un-metered LLM call is a
-    // billing blind spot. Fire-and-forget: metering must never fail the request.
-    const input = response.usage?.input_tokens ?? 0;
-    const output = response.usage?.output_tokens ?? 0;
-    void this.llmUsage.record({
-      provider: 'anthropic',
-      model: this.model,
+    const response = await this.llmCompletion.complete({
+      taskId: AI_TASK_ID,
       task: LlmTask.ANALYTICS_SUGGESTIONS,
-      promptTokens: input,
-      completionTokens: output,
-      totalTokens: input + output,
-      cachedTokens: response.usage?.cache_read_input_tokens ?? undefined,
-      metadata: { feature: 'analytics-suggestions', label: 'generate' },
+      tier: LlmModelTier.REASONING,
+      promptCode: SUGGESTION_PROMPT_CODES.GENERATE,
+      system: systemPrompt,
+      prompt: userMessage,
+      maxTokens: SUGGESTION_LLM.MAX_TOKENS,
+      // Bounded rather than left to the socket: an unbounded hang is
+      // indistinguishable to the caller from a run that will never answer.
+      timeoutMs: SUGGESTION_LLM.TIMEOUT_MS,
+      usageMetadata: { feature: 'analytics-suggestions', label: 'generate' },
     });
 
-    const block = response.content?.[0];
-    if (!block || block.type !== 'text') return null;
-    return block.text;
+    this.lastModel = response.model;
+
+    return response.text || null;
   }
 }

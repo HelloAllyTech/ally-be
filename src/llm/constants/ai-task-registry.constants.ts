@@ -684,7 +684,7 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     // Not a fixed vendor: the interviewer prompt row wins, then
     // CHARACTER_INTERVIEW_PROVIDER, then inference from the model id.
     provider: 'resolved',
-    defaultModel: 'claude-sonnet-4-6',
+    defaultModel: 'gpt-5-mini',
     configuredBy: 'CHARACTER_INTERVIEW_MODEL / CHARACTER_INTERVIEW_PROVIDER',
     promptOverride: 'character_interview_interviewer_system',
     configPath: 'characterInterview.model',
@@ -778,7 +778,7 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'voice-note-extract',
-    task: null,
+    task: LlmTask.VOICE_NOTE_EXTRACT,
     runtime: LlmRuntime.ALLY_BE,
     trigger: '...and the dictation is turned into note fields',
     kind: AiTaskKind.COMPLETION,
@@ -869,7 +869,7 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'ai-lab-run',
-    task: null,
+    task: LlmTask.AI_LAB_RUN,
     runtime: LlmRuntime.ALLY_BE,
     trigger: 'An admin runs a skill in AI Lab',
     detail:

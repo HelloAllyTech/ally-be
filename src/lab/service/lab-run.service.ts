@@ -1,6 +1,4 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
-import OpenAI from 'openai';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -13,6 +11,12 @@ import { CreateLabRunDto } from '../dto/lab-run.dto';
 import { LabListQueryDto } from '../dto/lab-query.dto';
 import { estimateCostUsd } from '../constants/lab-pricing.constants';
 import { LabRunProducer } from '../producer/lab-run.producer';
+import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
+import { LlmTask } from 'src/learn/enum/llm-task.enum';
+
+/** AI-task-registry row id; the key for per-task model config. */
+const AI_TASK_ID = 'ai-lab-run';
 
 /** Text + token usage returned by a provider call. */
 export interface ModelResult {
@@ -42,10 +46,7 @@ const escapeRegExp = (s: string): string =>
 @Injectable()
 export class LabRunService {
   private readonly logger = LoggerService.getInstance(LabRunService.name);
-  private readonly anthropic: Anthropic;
-  private readonly openai: OpenAI;
   /** Fallback model when a skill has no model set (Anthropic). */
-  private readonly defaultModel: string;
 
   constructor(
     private readonly runRepository: LabRunRepository,
@@ -53,13 +54,8 @@ export class LabRunService {
     private readonly assignmentRepository: LabRunAssignmentRepository,
     private readonly configService: AppConfigService,
     private readonly runProducer: LabRunProducer,
-  ) {
-    this.anthropic = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
-    this.openai = new OpenAI({ apiKey: this.configService.openai.apiKey });
-    this.defaultModel = this.configService.anthropic.autofillModel;
-  }
+    private readonly llmCompletion: LlmCompletionService,
+  ) {}
 
   async list(
     query: LabListQueryDto,
@@ -140,16 +136,30 @@ export class LabRunService {
     return this.runModel(modelId, prompt, opts);
   }
 
-  /** Default model used when a caller doesn't specify one. */
+  /**
+   * Default model used when a caller doesn't specify one.
+   *
+   * The REASONING tier rather than a vendor's id: an AI Lab skill with no model
+   * set used to inherit ANTHROPIC_AUTOFILL_MODEL, so an expired Anthropic key
+   * failed every unpinned skill in the library.
+   */
   getDefaultModel(): string {
-    return this.defaultModel;
+    return this.configService.llmTiers[LlmModelTier.REASONING];
   }
 
   /**
-   * Execute the prompt on the given model, routing to the right provider SDK
-   * by the model's registry entry. AI Lab runs support Anthropic and OpenAI
-   * (the providers this runtime can execute); anything else throws. Applies the
-   * skill's optional generation params and returns the output plus token usage.
+   * Execute the prompt on the given model.
+   *
+   * Goes through LlmCompletionService, so the provider follows from the model
+   * id and the set of runnable providers is whatever that layer supports —
+   * previously this held its own Anthropic and OpenAI clients and threw for
+   * anything else, which is why a Gemini model in the catalog was selectable
+   * in the picker and un-runnable in the lab.
+   *
+   * `modelId` is passed explicitly: an AI Lab run is a deliberate test of one
+   * named model, so it must not be re-resolved through the config chain.
+   * Fallback is off for the same reason — silently answering from a different
+   * model would make the whole feature lie.
    */
   private async runModel(
     modelId: string,
@@ -157,7 +167,11 @@ export class LabRunService {
     opts: RunOptions = {},
   ): Promise<ModelResult> {
     const registryEntry = LLM_MODEL_REGISTRY.find((m) => m.model === modelId);
-    const provider = registryEntry?.provider ?? 'anthropic';
+    // The provider is no longer derived here: it follows from the model id
+    // inside the resolver, which also covers models the catalog has not caught
+    // up with. This used to default to 'anthropic' for an unknown model, which
+    // sent every uncatalogued id to the one SDK whose key had expired.
+    //
     // Temperature is only safe on models that support it (reasoning models
     // reject a non-default temperature).
     const temperature =
@@ -165,60 +179,26 @@ export class LabRunService {
         ? opts.temperature
         : undefined;
 
-    if (provider === 'openai') {
-      const response = await this.openai.chat.completions.create(
-        {
-          model: modelId,
-          messages: [
-            ...(opts.systemPrompt
-              ? [{ role: 'system' as const, content: opts.systemPrompt }]
-              : []),
-            { role: 'user' as const, content: prompt },
-          ],
-          // max_completion_tokens (not the deprecated max_tokens) so reasoning
-          // models accept it too; omitted when the skill sets no cap.
-          ...(opts.maxTokens ? { max_completion_tokens: opts.maxTokens } : {}),
-          ...(temperature != null ? { temperature } : {}),
-        },
-        { timeout: RUN_TIMEOUT_MS },
-      );
-      return {
-        text: response.choices?.[0]?.message?.content ?? '',
-        usage: response.usage
-          ? {
-              promptTokens: response.usage.prompt_tokens ?? 0,
-              completionTokens: response.usage.completion_tokens ?? 0,
-            }
-          : null,
-      };
-    }
+    const response = await this.llmCompletion.complete({
+      taskId: AI_TASK_ID,
+      task: LlmTask.AI_LAB_RUN,
+      tier: LlmModelTier.REASONING,
+      model: modelId,
+      ...(opts.systemPrompt ? { system: opts.systemPrompt } : {}),
+      prompt,
+      maxTokens: opts.maxTokens ?? RUN_MAX_TOKENS,
+      ...(temperature != null ? { temperature } : {}),
+      timeoutMs: RUN_TIMEOUT_MS,
+      usageMetadata: { feature: 'ai-lab' },
+    });
 
-    if (provider === 'anthropic') {
-      const response = await this.anthropic.messages.create(
-        {
-          model: modelId,
-          max_tokens: opts.maxTokens ?? RUN_MAX_TOKENS,
-          ...(opts.systemPrompt ? { system: opts.systemPrompt } : {}),
-          ...(temperature != null ? { temperature } : {}),
-          messages: [{ role: 'user', content: prompt }],
-        },
-        { timeout: RUN_TIMEOUT_MS },
-      );
-      const block = response.content[0];
-      return {
-        text: block?.type === 'text' ? block.text : '',
-        usage: response.usage
-          ? {
-              promptTokens: response.usage.input_tokens ?? 0,
-              completionTokens: response.usage.output_tokens ?? 0,
-            }
-          : null,
-      };
-    }
-
-    throw new Error(
-      `AI Lab runs do not support the "${provider}" provider (model ${modelId})`,
-    );
+    return {
+      text: response.text,
+      usage: {
+        promptTokens: response.usage.inputTokens,
+        completionTokens: response.usage.outputTokens,
+      },
+    };
   }
 
   /**
@@ -238,7 +218,7 @@ export class LabRunService {
 
     const values = dto.variableValues ?? [];
     const resolvedPrompt = this.resolvePrompt(skill.content, values);
-    const modelId = skill.model || this.defaultModel;
+    const modelId = skill.model || this.getDefaultModel();
     const userId = Number(ExecutionManager.getUserId() ?? 0);
     const async = this.runProducer.isEnabled();
 
