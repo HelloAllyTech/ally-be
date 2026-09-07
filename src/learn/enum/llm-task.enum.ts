@@ -109,6 +109,11 @@ export enum LlmTask {
   // nothing before; the AI Lab's own run rows tracked cost, so it was absent
   // from platform-wide LLM spend.
   AI_LAB_RUN = 'ai_lab_run',
+  // LLM Preview: one 32-token round trip proving a model still answers.
+  // Individually trivial, but the monthly liveness sweep runs it across the
+  // whole catalog, so it is worth being able to see rather than inferring it
+  // from a gap in the numbers.
+  LLM_PREVIEW = 'llm_preview',
 
   // STT (speech-to-text) tasks.
   AGENT_STT = 'agent_stt', // live agent listening (per turn)

@@ -934,8 +934,12 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'llm-preview',
-    task: null,
+    task: LlmTask.LLM_PREVIEW,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.FAST,
+    // A preview answered by a substitute would report a model as working that
+    // nobody tested — worse than an error, because it is believed.
+    neverFallback: true,
     trigger: 'An admin tests a prompt in LLM Preview',
     detail:
       'The bench for trying a prompt against a chosen model before saving it.',
