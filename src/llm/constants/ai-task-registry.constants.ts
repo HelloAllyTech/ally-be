@@ -661,44 +661,45 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     id: 'autofill-field',
     task: LlmTask.AUTOFILL_FIELD,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
     trigger: 'An author clicks Generate on a simulation field',
     detail:
-      'Runs on Anthropic instead when the prompt row selects it — provider, model and ' +
-      'temperature all resolve per prompt. A prompt-level Gemini provider is ignored: ' +
-      'there is no Gemini autofill executor, so the call falls back rather than breaking.',
+      'Provider, model and temperature all resolve per prompt. Any of the three ' +
+      'providers runs it: the provider follows from the model id, so a prompt row ' +
+      'selecting Gemini now works — it used to be silently ignored, because the old ' +
+      'autofill pair could only reach OpenAI and Anthropic.',
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-5-mini',
-    configuredBy: 'OPENAI_AUTOFILL_MODEL / ANTHROPIC_AUTOFILL_MODEL',
+    configuredBy: 'LLM_REASONING_MODEL',
     promptOverride: "the field's own prompt row",
-    configPath: 'openai.autofillModel',
   },
   {
     id: 'autofill-enhance-field',
     task: LlmTask.AUTOFILL_ENHANCE_FIELD,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
     trigger: 'An author clicks Enhance on a field',
     detail:
       "Rewrites the field's current value; unlike Generate it never invents content.",
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-5-mini',
-    configuredBy: 'OPENAI_AUTOFILL_MODEL / ANTHROPIC_AUTOFILL_MODEL',
+    configuredBy: 'LLM_REASONING_MODEL',
     promptOverride: "the field's own prompt row",
-    configPath: 'openai.autofillModel',
   },
   {
     id: 'autofill-agent-field',
     task: LlmTask.AUTOFILL_AGENT_FIELD,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
     trigger: 'The Agent Builder Copilot generates fields',
     detail: 'Fans out one abortable call per field, in parallel.',
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-5-mini',
-    configuredBy: 'OPENAI_AUTOFILL_MODEL / ANTHROPIC_AUTOFILL_MODEL',
+    configuredBy: 'LLM_REASONING_MODEL',
     promptOverride: "the field's own prompt row",
-    configPath: 'openai.autofillModel',
   },
   {
     id: 'roleplay-copilot',
@@ -717,7 +718,6 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     id: 'character-interview',
     task: LlmTask.CHARACTER_INTERVIEW,
     runtime: LlmRuntime.ALLY_BE,
-    tier: LlmModelTier.REASONING,
     trigger: 'An author builds a character in the interview agent',
     detail:
       'Streamed turn, capped at 8 tool round-trips. Anthropic, OpenAI and Gemini all run ' +
@@ -731,6 +731,12 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     defaultModel: 'gpt-5-mini',
     configuredBy: 'CHARACTER_INTERVIEW_MODEL / CHARACTER_INTERVIEW_PROVIDER',
     promptOverride: 'character_interview_interviewer_system',
+    // Keeps a configPath, unlike the tiered rows: this call drives
+    // AgentLlmProviderFactory directly rather than going through
+    // LlmCompletionService, so `characterInterview.model` is genuinely what it
+    // reads. Giving it a tier would make this screen resolve it through a chain
+    // its call site does not use, and the two would diverge the moment anyone
+    // set CHARACTER_INTERVIEW_MODEL.
     configPath: 'characterInterview.model',
   },
   {

@@ -200,12 +200,19 @@ describe('AiTaskService', () => {
       expect(scribe?.effectiveModel).toBe('gpt-4o-mini');
     });
 
-    it('leaves no migrated row pointing at config nothing reads', () => {
-      // Every tiered row resolves through the chain, so a configPath on one
-      // would be dead weight that could disagree with what runs.
+    it('leaves no tiered row pointing at config nothing reads', () => {
+      // A tiered row resolves through the chain, so ANY configPath on it is
+      // dead weight — and worse than dead, because AiTaskService would fall
+      // back to it and print a value no call site reads.
+      //
+      // This has now happened twice: the nine services migrated off
+      // `anthropic.autofillModel` kept pointing at it, and then the autofill
+      // rows kept pointing at `openai.autofillModel` after the pair collapsed.
+      // Both times the screen went on confidently reporting the old model. The
+      // assertion is deliberately wider than either case.
       const contradictory = AI_TASK_REGISTRY.filter(
-        (entry) => entry.tier && entry.configPath?.startsWith('anthropic.'),
-      ).map((entry) => entry.id);
+        (entry) => entry.tier && entry.configPath,
+      ).map((entry) => `${entry.id} -> ${entry.configPath}`);
 
       expect(contradictory).toEqual([]);
     });
