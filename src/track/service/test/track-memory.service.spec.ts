@@ -138,13 +138,13 @@ describe('TrackMemoryService', () => {
     expect(prompt.indexOf('memory of item one')).toBeLessThan(
       prompt.indexOf('memory of item two'),
     );
-    // The label and tier are this service's call to make; the usage row they
-    // end up on is LlmCompletionService's.
+    // Which task this is, is this service's call to make. The tier comes from
+    // the registry row (so the AI Tasks screen cannot disagree with it) and the
+    // usage row is LlmCompletionService's.
     expect(llmCompletion.complete).toHaveBeenCalledWith(
       expect.objectContaining({
         taskId: 'track-memory-fold',
         task: 'track_memory_fold',
-        tier: 'reasoning',
       }),
     );
     const [, patch] = trackEnrollmentRepository.update.mock.calls[0];

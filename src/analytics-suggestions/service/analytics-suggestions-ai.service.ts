@@ -3,7 +3,6 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
-import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
 import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 
 /** AI-task-registry row id; the key for per-task model config. */
@@ -137,7 +136,6 @@ export class AnalyticsSuggestionsAiService {
     const response = await this.llmCompletion.complete({
       taskId: AI_TASK_ID,
       task: LlmTask.ANALYTICS_SUGGESTIONS,
-      tier: LlmModelTier.REASONING,
       promptCode: SUGGESTION_PROMPT_CODES.GENERATE,
       system: systemPrompt,
       prompt: userMessage,

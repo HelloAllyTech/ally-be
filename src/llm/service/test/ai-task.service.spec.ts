@@ -3,10 +3,15 @@ import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { AppConfigService } from 'src/config/config.service';
 import {
   AI_TASK_REGISTRY,
+  tierForAiTask,
   AI_TASK_REGISTRY_EXEMPT_TASKS,
 } from '../../constants/ai-task-registry.constants';
 import { AiTaskModelSource } from '../../dto/ai-task.dto';
 import { AiTaskService } from '../ai-task.service';
+import {
+  LlmTargetResolverService,
+  LlmTargetSource,
+} from '../llm-target-resolver.service';
 
 /**
  * These are the guards that make "keep the AI task registry updated" a rule the
@@ -32,7 +37,8 @@ const configStub = {
     suggestionsModel: 'claude-sonnet-4-6',
   },
   roleplayStudio: { copilotModel: 'claude-sonnet-4-6' },
-  characterInterview: { model: 'claude-sonnet-4-6' },
+  characterInterview: { model: 'gpt-5-mini' },
+  llmTiers: { fast: 'gpt-4o-mini', reasoning: 'gpt-5-mini' },
   promptTranslation: { defaultModel: 'gemini-2.5-pro' },
   aiChat: { model: 'gpt-4o-mini' },
   builder: {
@@ -52,6 +58,21 @@ describe('AiTaskService', () => {
       providers: [
         AiTaskService,
         { provide: AppConfigService, useValue: configStub },
+        {
+          // A resolver where no prompt row names a model: the default state,
+          // so every tiered row lands on its platform tier.
+          provide: LlmTargetResolverService,
+          useValue: {
+            resolve: jest.fn(async ({ taskId, tier }: any) => ({
+              provider: 'openai',
+              model: configStub.llmTiers[tier as 'fast' | 'reasoning'],
+              source: LlmTargetSource.TIER,
+              fallbackEnabled: true,
+              tierModel: configStub.llmTiers[tier as 'fast' | 'reasoning'],
+              taskId,
+            })),
+          },
+        },
       ],
     }).compile();
 
@@ -144,28 +165,75 @@ describe('AiTaskService', () => {
       // rather than throwing, so nothing else would have told you.
     });
 
-    it('marks ally-be rows as resolved from this deployment', () => {
-      const autofill = service
-        .getTasks()
-        .find((task) => task.id === 'autofill-field');
+    it('marks a config-path row as resolved from this deployment', async () => {
+      const rows = await service.getTasks();
+      const autofill = rows.find((task) => task.id === 'autofill-field');
 
       expect(autofill?.effectiveModel).toBe('gpt-5-mini');
       expect(autofill?.modelSource).toBe(AiTaskModelSource.DEPLOYMENT);
     });
 
-    it('marks rows another service executes as documented, not resolved', () => {
-      const agentTurn = service
-        .getTasks()
-        .find((task) => task.id === 'agent-turn');
+    it('marks rows another service executes as documented, not resolved', async () => {
+      const rows = await service.getTasks();
+      const agentTurn = rows.find((task) => task.id === 'agent-turn');
 
       expect(agentTurn?.modelSource).toBe(AiTaskModelSource.DOCUMENTED);
       expect(agentTurn?.effectiveModel).toBe(agentTurn?.defaultModel);
     });
 
-    it('falls back to the documented default when a path goes stale', () => {
-      const stale = new AiTaskService({} as AppConfigService);
-      const rows = stale.getTasks();
+    it('resolves a tiered row through the chain instead of a dead config path', async () => {
+      // The bug this pins: these rows used to carry
+      // `configPath: 'anthropic.autofillModel'`, which the migrated services
+      // stopped reading. The screen went on printing claude-sonnet-4-6 for
+      // tasks that were actually running an OpenAI model — a dashboard being
+      // confidently wrong about the thing it exists to report.
+      const rows = await service.getTasks();
 
+      const quiz = rows.find((task) => task.id === 'track-quiz-grading');
+      expect(quiz?.effectiveModel).toBe('gpt-5-mini');
+      expect(quiz?.modelSource).toBe(AiTaskModelSource.DEPLOYMENT);
+      // The Provider column has to agree with the model: these rows used to
+      // say `anthropic` while running an OpenAI model.
+      expect(quiz?.provider).toBe('openai');
+
+      const scribe = rows.find((task) => task.id === 'voice-note-extract');
+      expect(scribe?.effectiveModel).toBe('gpt-4o-mini');
+    });
+
+    it('leaves no migrated row pointing at config nothing reads', () => {
+      // Every tiered row resolves through the chain, so a configPath on one
+      // would be dead weight that could disagree with what runs.
+      const contradictory = AI_TASK_REGISTRY.filter(
+        (entry) => entry.tier && entry.configPath?.startsWith('anthropic.'),
+      ).map((entry) => entry.id);
+
+      expect(contradictory).toEqual([]);
+    });
+
+    it('gives every tiered row a tier the completion service can read', () => {
+      const broken = AI_TASK_REGISTRY.filter((entry) => entry.tier)
+        .filter((entry) => {
+          try {
+            return tierForAiTask(entry.id) !== entry.tier;
+          } catch {
+            return true;
+          }
+        })
+        .map((entry) => entry.id);
+
+      expect(broken).toEqual([]);
+    });
+
+    it('falls back to the documented default when a path goes stale', async () => {
+      const stale = new AiTaskService(
+        {} as AppConfigService,
+        {
+          resolve: jest.fn().mockRejectedValue(new Error('no config')),
+        } as any,
+      );
+      const rows = await stale.getTasks();
+
+      // A single unresolvable row must not blank the screen.
       expect(rows.every((row) => Boolean(row.effectiveModel))).toBe(true);
       expect(
         rows.every((row) => row.modelSource === AiTaskModelSource.DOCUMENTED),

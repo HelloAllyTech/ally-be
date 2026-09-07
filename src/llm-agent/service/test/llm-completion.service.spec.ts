@@ -40,7 +40,7 @@ describe('LlmCompletionService', () => {
       provider: 'anthropic',
       model: 'claude-sonnet-4-6',
       temperature: undefined,
-      source: LlmTargetSource.TASK,
+      source: LlmTargetSource.PROMPT,
       fallbackEnabled: true,
       tierModel: 'gpt-4o-mini',
       ...(opts.target ?? {}),
@@ -91,7 +91,7 @@ describe('LlmCompletionService', () => {
         text: 'hi',
         provider: 'anthropic',
         model: 'claude-sonnet-4-6',
-        source: LlmTargetSource.TASK,
+        source: LlmTargetSource.PROMPT,
       });
       expect(result.fellBackFrom).toBeUndefined();
     });
@@ -110,7 +110,7 @@ describe('LlmCompletionService', () => {
           completionTokens: 3,
           metadata: expect.objectContaining({
             aiTaskId: 'track-quiz-grading',
-            modelSource: LlmTargetSource.TASK,
+            modelSource: LlmTargetSource.PROMPT,
           }),
         }),
       );
@@ -230,7 +230,7 @@ describe('LlmCompletionService', () => {
       expect(factory.create).toHaveBeenCalledTimes(1);
     });
 
-    it('rethrows for a task that opted out of fallback', async () => {
+    it('rethrows for a task the registry pins', async () => {
       const { service } = build({
         target: { fallbackEnabled: false },
         providers: {

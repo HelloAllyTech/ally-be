@@ -606,9 +606,10 @@ export class AppConfigService {
    * Platform model tiers — the layer every LLM caller falls back to when no
    * per-task row and no per-prompt row names a model.
    *
-   * Two vars rather than one per task on purpose: a task declares its tier at
-   * the call site and per-task selection lives in `llm_task_configs`, so this
-   * is the only place a model id is compiled in. See llm-tier.constants.ts.
+   * Two vars rather than one per task on purpose: a task's tier is on its
+   * AI-task-registry row and a per-prompt override lives on the prompt row, so
+   * this is the only place a model id is compiled in. See
+   * llm-tier.constants.ts.
    */
   get llmTiers(): Record<LlmModelTier, string> {
     return Object.values(LlmModelTier).reduce(

@@ -13,7 +13,6 @@ import OpenAI, { toFile } from 'openai';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
 import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { SettingsService } from 'src/settings/service/settings.service';
@@ -271,7 +270,6 @@ export class VoiceNoteService {
       const response = await this.llmCompletion.complete({
         taskId: AI_TASK_ID,
         task: LlmTask.VOICE_NOTE_EXTRACT,
-        tier: LlmModelTier.FAST,
         promptCode: SYSTEM_PROMPT_CODE,
         system,
         prompt: user,

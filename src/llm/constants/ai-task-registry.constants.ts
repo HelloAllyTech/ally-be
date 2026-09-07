@@ -1,4 +1,5 @@
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import { LlmModelTier } from './llm-tier.constants';
 import { LlmRuntime } from './llm-model-registry.constants';
 
 /**
@@ -26,15 +27,30 @@ import { LlmRuntime } from './llm-model-registry.constants';
  * Neither can catch a call that adds no task label and no new client — those
  * rely on review, which is why `detail` is worth filling in properly.
  *
- * ## Why a code constant and not a table
+ * ## What is code here, and what is a table
  *
- * Every value here is derived from code: a default in `config.service.ts`, a
- * pydantic Field in `ally-ai/app/core/config.py`, a `--model` flag in a workflow
- * file. A table would be a second copy of those, free to drift, with nothing to
- * catch it. The registry stays in code beside the enum it is keyed on, and
- * `AiTaskService` overlays this deployment's actual env values at read time for
- * the rows ally-be itself runs — so the admin screen shows what IS configured,
- * not only what was written down.
+ * The DESCRIPTION of a call stays in code: what triggers it, which runtime
+ * executes it, whether it sits on the live voice path, what kind of call it is.
+ * Those are properties of the code, so a table holding them would be a second
+ * copy free to drift with nothing to catch it. `tier` belongs here for the same
+ * reason — "this call can afford reasoning tokens" is a fact about the call
+ * site, not an operator's preference.
+ *
+ * The SELECTION of a model is config, and deliberately not a new table. It
+ * used to be a default in `config.service.ts` per service, which meant
+ * switching a task was a code change — and because ten services shared one
+ * Anthropic-named default, an expired credential took all ten down at once with
+ * no lever to move them. It now resolves through
+ *
+ *   explicit call argument -> prompt row -> platform tier -> compiled-in floor
+ *
+ * reusing surfaces that already existed: `prompts.provider/model/temperature`
+ * (admin-editable in System Skills) and two env vars.
+ *
+ * So `AiTaskService` no longer reads a config path for tiered rows. It asks
+ * `LlmTargetResolverService` what will actually serve the task, which is what
+ * keeps this screen honest — those rows previously advertised
+ * `anthropic.autofillModel` long after the services stopped reading it.
  *
  * ## Models here are DEFAULTS, not facts
  *
@@ -89,6 +105,31 @@ export interface AiTaskEntry {
   task: LlmTask | null;
   /** Which service executes the call. */
   runtime: LlmRuntime;
+  /**
+   * What the call needs when nothing selects a model for it.
+   *
+   * Set on every row that resolves through `LlmCompletionService`, which reads
+   * it FROM HERE rather than taking it as an argument. That is deliberate: a
+   * tier passed at the call site could disagree with the tier this screen
+   * displays, and a dashboard that misreports which model serves a task is
+   * exactly what this registry exists to prevent. One value, two readers.
+   *
+   * Absent means the call resolves its model some other way — the voice
+   * runtime's per-session config, a prompt row that must name a model, or an
+   * agentic coding harness whose model is not ours to pick.
+   */
+  tier?: LlmModelTier;
+  /**
+   * True for a task whose output is stored and compared over time, where a
+   * quiet substitution on another model is worse than a visible failure.
+   *
+   * Lives here rather than in config because it is a property of the call, not
+   * an operator's preference: a judge score is only comparable within one
+   * (model, prompt version) pair, and nothing downstream can tell after the
+   * fact that a different model produced one row. Absent means fallback is
+   * allowed, which is the right default for anything a person reads once.
+   */
+  neverFallback?: boolean;
   /**
    * What the user or the system did, in the words someone outside the codebase
    * would use. Not the function name.
@@ -674,6 +715,7 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     id: 'character-interview',
     task: LlmTask.CHARACTER_INTERVIEW,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
     trigger: 'An author builds a character in the interview agent',
     detail:
       'Streamed turn, capped at 8 tool round-trips. Anthropic, OpenAI and Gemini all run ' +
@@ -742,26 +784,28 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     id: 'track-quiz-grading',
     task: LlmTask.TRACK_QUIZ_GRADING,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
     trigger: 'A learner submits an open-ended quiz answer',
     detail: "Graded against the item's rubric.",
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-4-6',
-    configuredBy: 'ANTHROPIC_AUTOFILL_MODEL',
-    configPath: 'anthropic.autofillModel',
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'track_quiz_open_ended_grading_user',
   },
   {
     id: 'track-memory-fold',
     task: LlmTask.TRACK_MEMORY_FOLD,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
     trigger: 'A learner finishes a track item',
     detail:
       'Folds per-session memories into one evolving memory per track enrollment.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-4-6',
-    configuredBy: 'ANTHROPIC_AUTOFILL_MODEL',
-    configPath: 'anthropic.autofillModel',
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'its own fold and facts prompt rows',
   },
   {
     id: 'voice-note-transcribe',
@@ -780,12 +824,13 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     id: 'voice-note-extract',
     task: LlmTask.VOICE_NOTE_EXTRACT,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.FAST,
     trigger: '...and the dictation is turned into note fields',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-4-6',
-    configuredBy: 'ANTHROPIC_AUTOFILL_MODEL',
-    configPath: 'anthropic.autofillModel',
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy: 'LLM_FAST_MODEL',
+    promptOverride: 'the scribe field-extraction system prompt',
   },
   {
     id: 'coaching-chat',
@@ -817,68 +862,73 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     id: 'analytics-suggestions',
     task: LlmTask.ANALYTICS_SUGGESTIONS,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
     trigger: 'An admin clicks Generate on the Suggestions tab',
     detail:
       'A whole analytics window in, at most ten roadmap suggestions out — the one place a ' +
       'larger model may be worth the latency, so it has its own env var.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-4-6',
-    configuredBy: 'ANTHROPIC_SUGGESTIONS_MODEL',
-    configPath: 'anthropic.suggestionsModel',
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'analytics_suggestions_generate',
   },
   {
     id: 'ux-signals',
     task: LlmTask.UX_SIGNALS,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
     trigger: 'Scheduled: the UX Signals scan triages PostHog',
     detail:
       'Threshold-crossing detectors become bug findings and roadmap suggestions. Its token ' +
       'profile tracks detector count, not date range.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-4-6',
-    configuredBy: 'ANTHROPIC_SUGGESTIONS_MODEL',
-    configPath: 'anthropic.suggestionsModel',
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'ux_signals_triage',
   },
   {
     id: 'mobile-release-whats-new',
     task: LlmTask.MOBILE_RELEASE_WHATS_NEW,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.FAST,
     trigger: 'An admin drafts App Store "What\'s New" copy',
     detail:
       'Turns ally-mobile commit subjects since the last release into release notes.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-4-6',
-    configuredBy: 'ANTHROPIC_AUTOFILL_MODEL',
-    configPath: 'anthropic.autofillModel',
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy: 'LLM_FAST_MODEL',
+    promptOverride: 'mobile_release_whats_new',
   },
   {
     id: 'roadmap-ai',
     task: null,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
     trigger: 'Someone runs the guided opportunity interview',
     detail:
       "Interview turns, opportunity drafting, and the Builder drawer's split/merge guard.",
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-4-6',
-    configuredBy: 'ANTHROPIC_AUTOFILL_MODEL',
-    configPath: 'anthropic.autofillModel',
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: 'the prompt row for each roadmap call',
   },
   {
     id: 'ai-lab-run',
     task: LlmTask.AI_LAB_RUN,
     runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
     trigger: 'An admin runs a skill in AI Lab',
     detail:
       'Model comes from the skill row and the provider is inferred from it. OpenAI and ' +
       'Anthropic only — anything else throws rather than silently substituting.',
     kind: AiTaskKind.COMPLETION,
     provider: 'resolved',
-    defaultModel: 'lab_skills.model',
-    configuredBy: 'lab_skills.model, falling back to ANTHROPIC_AUTOFILL_MODEL',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'lab_skills.model, else LLM_REASONING_MODEL',
   },
   {
     id: 'llm-preview',
@@ -1092,3 +1142,23 @@ export const AI_TASK_REGISTRY: AiTaskEntry[] = [
 export const AI_TASK_REGISTRY_EXEMPT_TASKS: ReadonlySet<LlmTask> = new Set([
   LlmTask.UNKNOWN,
 ]);
+
+/**
+ * The tier a task resolves at, read by `LlmCompletionService` so a call site
+ * cannot declare one thing while this screen displays another.
+ *
+ * Throws rather than defaulting for an unknown id. A caller reaching here with
+ * a taskId that has no row is a call with no registry entry — the exact gap the
+ * CI guards exist to close — and quietly serving it the cheap tier would hide
+ * that instead of surfacing it.
+ */
+export const tierForAiTask = (taskId: string): LlmModelTier => {
+  const entry = AI_TASK_REGISTRY.find((row) => row.id === taskId);
+  if (!entry?.tier) {
+    throw new Error(
+      `AI task "${taskId}" has no tier in the AI task registry. Add a row (or ` +
+        `a tier to the existing one) in ai-task-registry.constants.ts.`,
+    );
+  }
+  return entry.tier;
+};

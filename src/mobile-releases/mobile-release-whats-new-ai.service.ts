@@ -3,7 +3,6 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
-import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
 import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { renderTemplate } from 'src/learn/util/autofill-shared.util';
 
@@ -72,7 +71,6 @@ export class MobileReleaseWhatsNewAiService {
       const response = await this.llmCompletion.complete({
         taskId: AI_TASK_ID,
         task: LlmTask.MOBILE_RELEASE_WHATS_NEW,
-        tier: LlmModelTier.FAST,
         promptCode: WHATS_NEW_PROMPT_CODE,
         system: systemPrompt,
         prompt: "Generate the What's New text.",

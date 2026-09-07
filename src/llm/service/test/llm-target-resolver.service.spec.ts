@@ -14,13 +14,7 @@ describe('LlmTargetResolverService', () => {
   const tiers = { fast: 'gpt-4o-mini', reasoning: 'gpt-5-mini' };
   const configService = { llmTiers: tiers } as any;
 
-  const build = (
-    taskRows: Record<string, any> = {},
-    promptConfig: Record<string, any> = {},
-  ) => {
-    const taskConfigRepository = {
-      findAllByTaskId: jest.fn(async () => new Map(Object.entries(taskRows))),
-    };
+  const build = (promptConfig: Record<string, any> = {}) => {
     const promptSharedService = {
       getPromptLlmConfig: jest.fn(
         async (code: string) => promptConfig[code] ?? {},
@@ -28,10 +22,9 @@ describe('LlmTargetResolverService', () => {
     };
     const service = new LlmTargetResolverService(
       configService,
-      taskConfigRepository as any,
       promptSharedService as any,
     );
-    return { service, taskConfigRepository, promptSharedService };
+    return { service, promptSharedService };
   };
 
   const base = { taskId: 'some-task', tier: LlmModelTier.FAST };
@@ -49,7 +42,7 @@ describe('LlmTargetResolverService', () => {
       });
     });
 
-    it('serves the tier matching the tier the CALLER asked for', async () => {
+    it('serves the tier the registry row asked for', async () => {
       const { service } = build();
 
       const target = await service.resolve({
@@ -65,25 +58,8 @@ describe('LlmTargetResolverService', () => {
       expect(target.model).not.toBe(tiers.fast);
     });
 
-    it('prefers the task row over the tier', async () => {
-      const { service } = build({
-        'some-task': { model: 'claude-sonnet-4-6', fallbackEnabled: true },
-      });
-
-      const target = await service.resolve(base);
-
-      expect(target).toMatchObject({
-        model: 'claude-sonnet-4-6',
-        provider: 'anthropic',
-        source: LlmTargetSource.TASK,
-      });
-    });
-
-    it('prefers the prompt row over the task row', async () => {
-      const { service } = build(
-        { 'some-task': { model: 'gpt-4o', fallbackEnabled: true } },
-        { my_prompt: { model: 'gemini-2.5-flash' } },
-      );
+    it('prefers the prompt row over the tier', async () => {
+      const { service } = build({ my_prompt: { model: 'gemini-2.5-flash' } });
 
       const target = await service.resolve({
         ...base,
@@ -98,10 +74,7 @@ describe('LlmTargetResolverService', () => {
     });
 
     it('prefers an explicit call argument over every configured layer', async () => {
-      const { service } = build(
-        { 'some-task': { model: 'gpt-4o', fallbackEnabled: true } },
-        { my_prompt: { model: 'gemini-2.5-flash' } },
-      );
+      const { service } = build({ my_prompt: { model: 'gemini-2.5-flash' } });
 
       const target = await service.resolve({
         ...base,
@@ -116,132 +89,79 @@ describe('LlmTargetResolverService', () => {
     });
 
     it('ignores a layer that sets no model, rather than treating it as a choice', async () => {
-      const { service } = build(
-        { 'some-task': { model: 'gpt-4o', fallbackEnabled: true } },
-        // A prompt row with a temperature but no model: a real state, because
-        // the columns are independently nullable.
-        { my_prompt: { temperature: 0.4 } },
-      );
+      // A prompt row with a temperature but no model: a real state, because
+      // `prompts.model` and `prompts.temperature` are independently nullable.
+      const { service } = build({ my_prompt: { temperature: 0.4 } });
 
       const target = await service.resolve({
         ...base,
         promptCode: 'my_prompt',
       });
 
-      expect(target.source).toBe(LlmTargetSource.TASK);
-      expect(target.model).toBe('gpt-4o');
+      expect(target.source).toBe(LlmTargetSource.TIER);
+      expect(target.model).toBe('gpt-4o-mini');
       // The temperature still applies even though the model came from below it.
       expect(target.temperature).toBe(0.4);
-    });
-
-    it('only consults the row belonging to the task being resolved', async () => {
-      const { service } = build({
-        'another-task': { model: 'claude-sonnet-4-6', fallbackEnabled: true },
-      });
-
-      const target = await service.resolve(base);
-
-      expect(target.source).toBe(LlmTargetSource.TIER);
     });
   });
 
   describe('provider resolution', () => {
     it('honours an explicit provider on the winning layer', async () => {
       const { service } = build({
-        'some-task': {
-          provider: 'openai',
-          model: 'some-unlisted-model',
-          fallbackEnabled: true,
-        },
+        my_prompt: { provider: 'openai', model: 'some-unlisted-model' },
       });
 
-      const target = await service.resolve(base);
+      const target = await service.resolve({
+        ...base,
+        promptCode: 'my_prompt',
+      });
 
       expect(target.provider).toBe('openai');
     });
 
     it('infers the provider from the model id when none is set', async () => {
-      const { service } = build({
-        'some-task': { model: 'claude-haiku-4-5', fallbackEnabled: true },
-      });
+      const { service } = build({ my_prompt: { model: 'claude-haiku-4-5' } });
 
-      expect((await service.resolve(base)).provider).toBe('anthropic');
+      const target = await service.resolve({
+        ...base,
+        promptCode: 'my_prompt',
+      });
+      expect(target.provider).toBe('anthropic');
     });
   });
 
   describe('fallback flag', () => {
-    it('defaults to enabled when the task has no row', async () => {
+    it('defaults to enabled', async () => {
       const { service } = build();
 
       expect((await service.resolve(base)).fallbackEnabled).toBe(true);
     });
 
-    it('respects a task that opted out', async () => {
-      // Judges opt out: a score from an unpinned model corrupts a series that
-      // is only comparable within one (MODEL, PROMPT_VERSION) pair.
-      const { service } = build({
-        'some-task': { model: 'gemini-2.5-pro', fallbackEnabled: false },
-      });
+    it('respects a registry row that pins its model', async () => {
+      // Judges pin: a score from an unpinned model corrupts a series that is
+      // only comparable within one (MODEL, PROMPT_VERSION) pair.
+      const { service } = build();
 
-      expect((await service.resolve(base)).fallbackEnabled).toBe(false);
+      const target = await service.resolve({ ...base, neverFallback: true });
+      expect(target.fallbackEnabled).toBe(false);
     });
   });
 
   describe('degradation', () => {
-    it('serves the tier default when the config table cannot be read', async () => {
-      const { service } = build();
-      (service as any).taskConfigRepository = undefined;
-      const taskConfigRepository = {
-        findAllByTaskId: jest.fn().mockRejectedValue(new Error('db down')),
-      };
-      const resolver = new LlmTargetResolverService(
-        configService,
-        taskConfigRepository as any,
-        { getPromptLlmConfig: jest.fn(async () => ({})) } as any,
-      );
-
-      // A resolver that threw here would take down every LLM call in the
-      // process to protect config that is almost always absent.
-      const target = await resolver.resolve(base);
-
-      expect(target.model).toBe('gpt-4o-mini');
-      expect(target.source).toBe(LlmTargetSource.TIER);
-    });
-
     it('ignores an unreadable prompt row rather than failing the call', async () => {
-      const taskConfigRepository = {
-        findAllByTaskId: jest.fn(async () => new Map()),
-      };
-      const resolver = new LlmTargetResolverService(
-        configService,
-        taskConfigRepository as any,
-        {
-          getPromptLlmConfig: jest.fn().mockRejectedValue(new Error('nope')),
-        } as any,
-      );
+      const resolver = new LlmTargetResolverService(configService, {
+        getPromptLlmConfig: jest.fn().mockRejectedValue(new Error('nope')),
+      } as any);
 
+      // The tier default is a correct answer, just not the tuned one — far
+      // better than taking the call down over a config read.
       const target = await resolver.resolve({
         ...base,
         promptCode: 'my_prompt',
       });
 
       expect(target.source).toBe(LlmTargetSource.TIER);
-    });
-  });
-
-  describe('caching', () => {
-    it('reads the table once across calls, then again after invalidate', async () => {
-      const { service, taskConfigRepository } = build();
-
-      await service.resolve(base);
-      await service.resolve(base);
-      expect(taskConfigRepository.findAllByTaskId).toHaveBeenCalledTimes(1);
-
-      // An admin switching a task is usually doing it BECAUSE the task is
-      // failing, so the edit has to apply without waiting out a TTL.
-      service.invalidate();
-      await service.resolve(base);
-      expect(taskConfigRepository.findAllByTaskId).toHaveBeenCalledTimes(2);
+      expect(target.model).toBe('gpt-4o-mini');
     });
   });
 });

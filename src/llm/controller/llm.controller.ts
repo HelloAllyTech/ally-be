@@ -57,7 +57,7 @@ export class LlmController {
     summary:
       'List every AI/LLM call the platform makes and the model each one uses.',
   })
-  getAiTasks(): AiTaskResponseDto[] {
+  async getAiTasks(): Promise<AiTaskResponseDto[]> {
     return this.aiTaskService.getTasks();
   }
 

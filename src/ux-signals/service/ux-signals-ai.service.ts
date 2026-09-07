@@ -3,7 +3,6 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
-import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
 import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import {
   renderTemplate,
@@ -129,7 +128,6 @@ export class UxSignalsAiService {
     const response = await this.llmCompletion.complete({
       taskId: AI_TASK_ID,
       task: LlmTask.UX_SIGNALS,
-      tier: LlmModelTier.REASONING,
       promptCode: UX_SIGNAL_PROMPT_CODES.TRIAGE,
       system: systemPrompt,
       prompt: userMessage,

@@ -16,9 +16,9 @@
  * tier resolves to is config, so retiering the platform is two env vars and no
  * call site learns a vendor's name.
  *
- * This is deliberately NOT a task -> model map. Per-task selection lives in
- * `llm_task_configs`, keyed by AI-task-registry row id and editable by an
- * admin; a map here would be a second registry to drift against it.
+ * This is deliberately NOT a task -> model map. Which tier a task uses is on
+ * its AI-task-registry row, and a per-prompt override lives on the prompt row;
+ * a map here would be a third place to look and the first to go stale.
  */
 export enum LlmModelTier {
   /**

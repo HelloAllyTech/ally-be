@@ -3,7 +3,6 @@ import { In } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
-import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
 import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import {
   renderTemplate,
@@ -711,7 +710,6 @@ export class RoadmapAiService {
     const response = await this.llmCompletion.complete({
       taskId: AI_TASK_ID,
       task,
-      tier: LlmModelTier.REASONING,
       promptCode,
       system: systemPrompt,
       prompt: userMessage,

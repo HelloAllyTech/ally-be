@@ -3,7 +3,6 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
-import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
 import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { renderTemplate } from 'src/learn/util/autofill-shared.util';
 import { TrackEnrollmentRepository } from '../repository/track-enrollment.repository';
@@ -330,7 +329,6 @@ export class TrackMemoryService {
       const response = await this.llmCompletion.complete({
         taskId: AI_TASK_ID,
         task: LlmTask.TRACK_MEMORY_FOLD,
-        tier: LlmModelTier.REASONING,
         promptCode: FACTS_PROMPT_CODE,
         prompt,
         maxTokens: FACTS_MAX_TOKENS,
@@ -502,7 +500,6 @@ export class TrackMemoryService {
       const response = await this.llmCompletion.complete({
         taskId: AI_TASK_ID,
         task: LlmTask.TRACK_MEMORY_FOLD,
-        tier: LlmModelTier.REASONING,
         promptCode: PROMPT_CODE,
         prompt,
         maxTokens: FOLD_MAX_TOKENS,

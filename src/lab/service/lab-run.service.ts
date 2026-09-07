@@ -11,9 +11,9 @@ import { CreateLabRunDto } from '../dto/lab-run.dto';
 import { LabListQueryDto } from '../dto/lab-query.dto';
 import { estimateCostUsd } from '../constants/lab-pricing.constants';
 import { LabRunProducer } from '../producer/lab-run.producer';
-import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
 import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import { tierForAiTask } from 'src/llm/constants/ai-task-registry.constants';
 
 /** AI-task-registry row id; the key for per-task model config. */
 const AI_TASK_ID = 'ai-lab-run';
@@ -144,7 +144,7 @@ export class LabRunService {
    * failed every unpinned skill in the library.
    */
   getDefaultModel(): string {
-    return this.configService.llmTiers[LlmModelTier.REASONING];
+    return this.configService.llmTiers[tierForAiTask(AI_TASK_ID)];
   }
 
   /**
@@ -182,7 +182,6 @@ export class LabRunService {
     const response = await this.llmCompletion.complete({
       taskId: AI_TASK_ID,
       task: LlmTask.AI_LAB_RUN,
-      tier: LlmModelTier.REASONING,
       model: modelId,
       ...(opts.systemPrompt ? { system: opts.systemPrompt } : {}),
       prompt,

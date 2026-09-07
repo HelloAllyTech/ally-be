@@ -3,24 +3,21 @@ import { AppConfigService } from 'src/config/config.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { providerForModel } from 'src/llm-agent/service/agent-llm.factory';
 import { LlmModelTier } from '../constants/llm-tier.constants';
-import { LlmTaskConfigRepository } from '../repository/llm-task-config.repository';
 
 /** Which layer of the chain supplied the model that will run. */
 export enum LlmTargetSource {
-  /** The call site passed an explicit model — a test bench, a replay. */
+  /** The call site passed an explicit model — an AI Lab run, a replay. */
   REQUEST = 'request',
-  /** The prompt row's own provider/model, set in prompt management. */
+  /** The prompt row's own provider/model, set in System Skills. */
   PROMPT = 'prompt',
-  /** The per-task row in `llm_task_configs`, set on the AI Tasks screen. */
-  TASK = 'task',
   /** The platform tier default (LLM_FAST_MODEL / LLM_REASONING_MODEL). */
   TIER = 'tier',
 }
 
 export interface ResolveLlmTargetOptions {
-  /** AI-task-registry row id. The key everything else hangs off. */
+  /** AI-task-registry row id. Identifies the call in logs and on the screen. */
   taskId: string;
-  /** What this call needs when nothing selects a model for it. */
+  /** What this call needs when no prompt row names a model. From the registry. */
   tier: LlmModelTier;
   /** Prompt whose row may carry a provider/model/temperature. */
   promptCode?: string;
@@ -28,6 +25,11 @@ export interface ResolveLlmTargetOptions {
   model?: string;
   provider?: string;
   temperature?: number;
+  /**
+   * True for a task whose output is stored and compared over time, where a
+   * quiet substitution is worse than a failure. Comes from the registry row.
+   */
+  neverFallback?: boolean;
 }
 
 export interface ResolvedLlmTarget {
@@ -50,44 +52,33 @@ export interface ResolvedLlmTarget {
  *
  * The chain, highest priority first:
  *
- *   explicit argument -> prompt row -> task row -> platform tier -> floor
+ *   explicit argument -> prompt row -> platform tier -> compiled-in floor
  *
- * Each layer is skipped when it names nothing, which is what every nullable
- * model column in this schema already means. The layers are ordered by how
- * specific the intent is, not by how easy they are to read: a call site that
- * passes a model has been told to use exactly that one, a prompt row is a
- * decision about a particular prompt, and a task row is a decision about the
- * task as a whole.
+ * Deliberately no per-task config table. One was built and removed: the AI
+ * Tasks screen is a read-only report, so nothing would have written it, and an
+ * unwritten table is just a second place a model id could be recorded — the
+ * duplication this work exists to remove. The rungs that remain are both
+ * pre-existing surfaces: `prompts.provider/model/temperature`, already
+ * admin-editable in System Skills and already loaded on these call paths, and
+ * two env vars for the tiers.
  *
- * `source` comes back with the value because "gpt-4o-mini" alone does not tell
- * an admin whether their edit took effect. The AI Tasks screen shows it, which
- * is the difference between a registry and a document.
+ * Each layer is skipped when it names nothing, which is what the nullable model
+ * column on `prompts` already means. `source` comes back with the value because
+ * "gpt-4o-mini" alone does not tell an admin whether a prompt-row override took
+ * effect — and reporting that honestly is the difference between a registry and
+ * a document.
  */
 @Injectable()
 export class LlmTargetResolverService {
   private readonly logger = new Logger(LlmTargetResolverService.name);
 
-  /**
-   * Task rows, cached briefly.
-   *
-   * These are read on request paths and change a few times a month, so a
-   * per-call query would be pure overhead. The TTL is short enough that an
-   * admin who switches a task sees it take effect while still on the screen —
-   * which matters, because the reason to switch a task is usually that it is
-   * currently failing.
-   */
-  private cache?: { at: number; rows: Map<string, TaskRowSelection> };
-  private static readonly CACHE_TTL_MS = 30_000;
-
   constructor(
     private readonly configService: AppConfigService,
-    private readonly taskConfigRepository: LlmTaskConfigRepository,
     private readonly promptSharedService: PromptSharedService,
   ) {}
 
   async resolve(options: ResolveLlmTargetOptions): Promise<ResolvedLlmTarget> {
     const tierModel = this.configService.llmTiers[options.tier];
-    const taskRow = await this.taskRow(options.taskId);
     const promptRow = options.promptCode
       ? await this.promptRow(options.promptCode)
       : undefined;
@@ -96,7 +87,6 @@ export class LlmTargetResolverService {
     const layers: [LlmTargetSource, Selection | undefined][] = [
       [LlmTargetSource.REQUEST, options],
       [LlmTargetSource.PROMPT, promptRow],
-      [LlmTargetSource.TASK, taskRow],
       [LlmTargetSource.TIER, { model: tierModel }],
     ];
 
@@ -111,12 +101,12 @@ export class LlmTargetResolverService {
       // infer from the model id, which is what the agent factory does for
       // models the catalog has not caught up with yet.
       provider: winner.provider?.trim() || providerForModel(model) || 'openai',
-      // Temperature resolves independently: a layer may set a temperature
-      // without setting a model (a prompt row tuning the task's own default),
-      // and the providers already drop it for models that reject one.
-      temperature: this.resolveTemperature(options, promptRow, taskRow),
+      // Temperature resolves independently: a prompt row may tune a
+      // temperature without naming a model, and the providers already drop it
+      // for models that reject one.
+      temperature: this.resolveTemperature(options, promptRow),
       source,
-      fallbackEnabled: taskRow?.fallbackEnabled ?? true,
+      fallbackEnabled: !options.neverFallback,
       tierModel,
     };
   }
@@ -126,43 +116,6 @@ export class LlmTargetResolverService {
   ): number | undefined {
     return layers.find((layer) => typeof layer?.temperature === 'number')
       ?.temperature;
-  }
-
-  private async taskRow(taskId: string): Promise<TaskRowSelection | undefined> {
-    const now = Date.now();
-    if (
-      !this.cache ||
-      now - this.cache.at > LlmTargetResolverService.CACHE_TTL_MS
-    ) {
-      try {
-        const rows = await this.taskConfigRepository.findAllByTaskId();
-        this.cache = {
-          at: now,
-          rows: new Map(
-            [...rows].map(([id, row]) => [
-              id,
-              {
-                provider: row.provider ?? undefined,
-                model: row.model ?? undefined,
-                temperature: row.temperature ?? undefined,
-                fallbackEnabled: row.fallbackEnabled,
-              },
-            ]),
-          ),
-        };
-      } catch (error) {
-        // A resolver that throws when Postgres hiccups would take down every
-        // LLM call with it, to protect config that is almost always absent.
-        // Serving the tier default is the correct degradation.
-        this.logger.warn(
-          `[LLM-TARGET] Could not read llm_task_configs; using tier defaults. ${
-            (error as Error)?.message ?? error
-          }`,
-        );
-        return undefined;
-      }
-    }
-    return this.cache.rows.get(taskId);
   }
 
   private async promptRow(promptCode: string): Promise<Selection | undefined> {
@@ -175,6 +128,8 @@ export class LlmTargetResolverService {
         temperature: config.temperature,
       };
     } catch (error) {
+      // A prompt row that cannot be read must not take the call down with it:
+      // the tier default is a correct answer, just not the tuned one.
       this.logger.warn(
         `[LLM-TARGET] Could not read prompt config for "${promptCode}". ${
           (error as Error)?.message ?? error
@@ -183,19 +138,10 @@ export class LlmTargetResolverService {
       return undefined;
     }
   }
-
-  /** Drops the cache so an admin's edit applies to the next call. */
-  invalidate(): void {
-    this.cache = undefined;
-  }
 }
 
 interface Selection {
   provider?: string;
   model?: string;
   temperature?: number;
-}
-
-interface TaskRowSelection extends Selection {
-  fallbackEnabled: boolean;
 }

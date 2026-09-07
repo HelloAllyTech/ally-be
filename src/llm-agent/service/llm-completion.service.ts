@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
-import { LlmModelTier } from 'src/llm/constants/llm-tier.constants';
+import { tierForAiTask } from 'src/llm/constants/ai-task-registry.constants';
 import {
   LlmTargetResolverService,
   LlmTargetSource,
@@ -15,8 +15,6 @@ export interface LlmCompletionRequest {
   taskId: string;
   /** Usage label written to `llm_usage.task`. Null for calls that record none. */
   task: LlmTask | null;
-  /** Tier used when no row selects a model. A property of the call, not config. */
-  tier: LlmModelTier;
   /** System instruction. Empty string when the prompt carries everything. */
   system?: string;
   /** Convenience for the common single-user-turn shape. */
@@ -104,7 +102,9 @@ export class LlmCompletionService {
   async complete(request: LlmCompletionRequest): Promise<LlmCompletionResult> {
     const target = await this.resolver.resolve({
       taskId: request.taskId,
-      tier: request.tier,
+      // Read from the registry row, not passed in: the AI Tasks screen shows
+      // the same value, and two sources would eventually disagree.
+      tier: tierForAiTask(request.taskId),
       promptCode: request.promptCode,
       model: request.model,
       provider: request.provider,

@@ -5,6 +5,7 @@ import {
   AiTaskEntry,
 } from '../constants/ai-task-registry.constants';
 import { AiTaskResponseDto, AiTaskModelSource } from '../dto/ai-task.dto';
+import { LlmTargetResolverService } from './llm-target-resolver.service';
 
 /**
  * Serves the AI task registry, with this deployment's real model values
@@ -28,21 +29,36 @@ import { AiTaskResponseDto, AiTaskModelSource } from '../dto/ai-task.dto';
 export class AiTaskService {
   private readonly logger = new Logger(AiTaskService.name);
 
-  constructor(private readonly configService: AppConfigService) {}
+  constructor(
+    private readonly configService: AppConfigService,
+    private readonly resolver: LlmTargetResolverService,
+  ) {}
 
   /**
    * The whole registry, newest resolution applied. Small (tens of rows) and
    * derived from constants, so it is computed per request rather than cached —
    * there is nothing to invalidate and nothing to gain.
    */
-  getTasks(): AiTaskResponseDto[] {
-    return AI_TASK_REGISTRY.map((entry) => this.toDto(entry));
+  async getTasks(): Promise<AiTaskResponseDto[]> {
+    // One table read for the whole screen rather than one per row: the resolver
+    // caches it, and 71 sequential lookups on an admin page would be the same
+    // query 71 times.
+    return Promise.all(AI_TASK_REGISTRY.map((entry) => this.toDto(entry)));
   }
 
-  private toDto(entry: AiTaskEntry): AiTaskResponseDto {
-    const resolved = entry.configPath
-      ? this.resolveConfiguredModel(entry.configPath)
+  private async toDto(entry: AiTaskEntry): Promise<AiTaskResponseDto> {
+    // A row with a tier resolves through the same chain the call site uses, so
+    // this screen reports what will ACTUALLY serve the task. Rows without one
+    // keep the old config-path overlay (or stay documented) — see the entry
+    // docs for which calls those are.
+    const chain = entry.tier
+      ? await this.resolveThroughChain(entry)
       : undefined;
+    const resolved =
+      chain ??
+      (entry.configPath
+        ? this.resolveConfiguredModel(entry.configPath)
+        : undefined);
 
     return {
       id: entry.id,
@@ -61,6 +77,35 @@ export class AiTaskService {
       configuredBy: entry.configuredBy,
       promptOverride: entry.promptOverride ?? null,
     };
+  }
+
+  /**
+   * Ask the resolver what will serve this task, and translate the rung it
+   * answered from into the screen's vocabulary.
+   *
+   * Resolution can throw — an unusable provider, a model nothing claims — and a
+   * single bad row must not blank the whole screen. On failure the row falls
+   * back to its documented default, which is the same trade-off
+   * `resolveConfiguredModel` already makes for a stale config path.
+   */
+  private async resolveThroughChain(
+    entry: AiTaskEntry,
+  ): Promise<string | undefined> {
+    try {
+      const target = await this.resolver.resolve({
+        taskId: entry.id,
+        tier: entry.tier!,
+        promptCode: entry.promptOverride ?? undefined,
+        neverFallback: entry.neverFallback,
+      });
+      return target.model;
+    } catch (error) {
+      this.logger.warn(
+        `[AI-TASKS] Could not resolve "${entry.id}"; showing its documented ` +
+          `default. ${(error as Error)?.message ?? error}`,
+      );
+      return undefined;
+    }
   }
 
   /**
