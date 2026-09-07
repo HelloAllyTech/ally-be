@@ -36,7 +36,6 @@ const configStub = {
     autofillModel: 'claude-sonnet-4-6',
     suggestionsModel: 'claude-sonnet-4-6',
   },
-  roleplayStudio: { copilotModel: 'claude-sonnet-4-6' },
   characterInterview: { model: 'gpt-5-mini' },
   llmTiers: { fast: 'gpt-4o-mini', reasoning: 'gpt-5-mini' },
   promptTranslation: { defaultModel: 'gemini-2.5-pro' },
@@ -229,6 +228,38 @@ describe('AiTaskService', () => {
         .map((entry) => entry.id);
 
       expect(broken).toEqual([]);
+    });
+
+    it("lets a prompt row beat a row's own config default", async () => {
+      // The character interview reads `characterInterview.model` but its
+      // prompt row wins first, which is what its orchestrator actually does.
+      // Reporting only the env var made this screen claim gpt-5-mini while the
+      // interview ran the Gemini model the prompt row names.
+      const resolver = {
+        resolve: jest.fn(async (opts: any) => ({
+          provider: 'gemini',
+          model: opts.promptCode ? 'gemini-2.5-pro' : opts.fallbackModel,
+          source: LlmTargetSource.PROMPT,
+          fallbackEnabled: true,
+          tierModel: opts.fallbackModel,
+        })),
+      };
+      const service = new AiTaskService(configStub as any, resolver as any);
+
+      const rows = await service.getTasks();
+      const interview = rows.find((t) => t.id === 'character-interview');
+
+      expect(interview?.effectiveModel).toBe('gemini-2.5-pro');
+      // The floor handed to the resolver is the row's own config value, not a
+      // platform tier — this call does not share the tiers.
+      const call = resolver.resolve.mock.calls.find(
+        ([o]: any[]) => o.taskId === 'character-interview',
+      );
+      expect(call?.[0]).toMatchObject({
+        fallbackModel: 'gpt-5-mini',
+        promptCode: 'character_interview_interviewer_system',
+      });
+      expect(call?.[0].tier).toBeUndefined();
     });
 
     it('falls back to the documented default when a path goes stale', async () => {

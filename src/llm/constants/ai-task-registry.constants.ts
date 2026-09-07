@@ -705,19 +705,6 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     promptOverride: "the field's own prompt row",
   },
   {
-    id: 'roleplay-copilot',
-    task: null,
-    runtime: LlmRuntime.ALLY_BE,
-    trigger: 'An author chats with the Roleplay Studio copilot',
-    detail:
-      'Streamed interviewer with a tool loop, capped at 16 round-trips per turn.',
-    kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-4-6',
-    configuredBy: 'ROLEPLAY_COPILOT_MODEL',
-    configPath: 'roleplayStudio.copilotModel',
-  },
-  {
     id: 'character-interview',
     task: LlmTask.CHARACTER_INTERVIEW,
     runtime: LlmRuntime.ALLY_BE,

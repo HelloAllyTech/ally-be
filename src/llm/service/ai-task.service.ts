@@ -47,18 +47,32 @@ export class AiTaskService {
   }
 
   private async toDto(entry: AiTaskEntry): Promise<AiTaskResponseDto> {
-    // A row with a tier resolves through the same chain the call site uses, so
-    // this screen reports what will ACTUALLY serve the task. Rows without one
-    // keep the old config-path overlay (or stay documented) — see the entry
-    // docs for which calls those are.
-    const chain = entry.tier
-      ? await this.resolveThroughChain(entry)
+    // What the config path says, if the row has one. For a tiered row this is
+    // absent by construction (the id guard asserts it), and for the rest it is
+    // the default the call site reads.
+    const configured = entry.configPath
+      ? this.resolveConfiguredModel(entry.configPath)
       : undefined;
-    const resolved =
-      chain ??
-      (entry.configPath
-        ? this.resolveConfiguredModel(entry.configPath)
-        : undefined);
+
+    // A row resolves through the same chain its call site uses whenever this
+    // process can know the answer — so the screen reports what will ACTUALLY
+    // serve the task rather than a default something may already have
+    // overridden. Two shapes qualify:
+    //
+    //  * a tiered row, whose floor is the platform tier
+    //  * a row with its own config default AND a prompt override, whose floor
+    //    is that config value — the character interview, which reads
+    //    `characterInterview.model` but lets its prompt row win first
+    //
+    // Before this, such a row had to pick one truth: resolve the prompt row and
+    // go blind to the env var, or read the env var and go blind to the
+    // override. It showed gpt-5-mini while the interview actually ran the
+    // Gemini model its prompt row names.
+    const chain =
+      entry.tier || (configured && entry.promptOverride)
+        ? await this.resolveThroughChain(entry, configured)
+        : undefined;
+    const resolved = chain ?? configured;
 
     return {
       id: entry.id,
@@ -90,11 +104,13 @@ export class AiTaskService {
    */
   private async resolveThroughChain(
     entry: AiTaskEntry,
+    fallbackModel?: string,
   ): Promise<string | undefined> {
     try {
       const target = await this.resolver.resolve({
         taskId: entry.id,
-        tier: entry.tier!,
+        ...(entry.tier ? { tier: entry.tier } : {}),
+        ...(fallbackModel ? { fallbackModel } : {}),
         promptCode: entry.promptOverride ?? undefined,
         neverFallback: entry.neverFallback,
       });

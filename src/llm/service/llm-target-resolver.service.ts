@@ -17,8 +17,25 @@ export enum LlmTargetSource {
 export interface ResolveLlmTargetOptions {
   /** AI-task-registry row id. Identifies the call in logs and on the screen. */
   taskId: string;
-  /** What this call needs when no prompt row names a model. From the registry. */
-  tier: LlmModelTier;
+  /**
+   * What this call needs when no prompt row names a model. From the registry.
+   *
+   * Optional only so a caller can supply `fallbackModel` instead — see below.
+   * One of the two must be present or there is no floor to land on.
+   */
+  tier?: LlmModelTier;
+  /**
+   * A concrete model to use as the floor instead of the tier.
+   *
+   * For calls that own their own default rather than sharing the platform
+   * tiers: the character interview drives AgentLlmProviderFactory directly and
+   * reads `characterInterview.model`. Without this, the AI Tasks screen had to
+   * choose between resolving the prompt row (accurate about the override,
+   * blind to that env var) and reading the env var (accurate about the
+   * default, blind to the override). It now does both, in the order the
+   * orchestrator itself uses.
+   */
+  fallbackModel?: string;
   /** Prompt whose row may carry a provider/model/temperature. */
   promptCode?: string;
   /** Explicit override from the call site. Beats every configured layer. */
@@ -78,7 +95,15 @@ export class LlmTargetResolverService {
   ) {}
 
   async resolve(options: ResolveLlmTargetOptions): Promise<ResolvedLlmTarget> {
-    const tierModel = this.configService.llmTiers[options.tier];
+    const tierModel =
+      options.fallbackModel?.trim() ||
+      (options.tier ? this.configService.llmTiers[options.tier] : undefined);
+    if (!tierModel) {
+      throw new Error(
+        `Cannot resolve AI task "${options.taskId}": no tier and no fallback ` +
+          `model, so there is no floor to land on.`,
+      );
+    }
     const promptRow = options.promptCode
       ? await this.promptRow(options.promptCode)
       : undefined;
