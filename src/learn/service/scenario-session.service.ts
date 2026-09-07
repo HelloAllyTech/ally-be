@@ -789,6 +789,12 @@ export class ScenarioSessionService {
         // Opt-in: only an explicit true shows the learner's Supervisor tab.
         supervisorNotesEnabled:
           scenario?.metadata?.supervisorNotesEnabled === true,
+        // Opt-in: only an explicit true lets the learner's call card make room
+        // for a video track. The agent decides independently whether to
+        // publish one (it has its own global kill-switch), so a true here is
+        // permission to render, never a promise that video will arrive — the
+        // client keeps the static card until a track actually shows up.
+        videoActorEnabled: scenario?.metadata?.videoActorEnabled === true,
         // Opt-out: only an explicit false hides the learner's Live tab.
         liveTabEnabled: scenario?.metadata?.liveTabEnabled !== false,
         stateNames,

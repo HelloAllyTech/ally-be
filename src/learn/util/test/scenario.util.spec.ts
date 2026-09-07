@@ -92,6 +92,10 @@ describe('Scenario Util', () => {
           // Written as an explicit false rather than left undefined, so the
           // stored metadata says which way the toggle was resolved.
           supervisorNotesEnabled: false,
+          // Same shape again: unset on the DTO means this roleplay stays
+          // audio-only, written as an explicit false so the stored metadata
+          // records how the toggle resolved rather than leaving it ambiguous.
+          videoActorEnabled: false,
           timerMode: true,
           maxTimeValue: '1:30:00',
           optGuardrails: scenario.optGuardrails,
@@ -279,6 +283,55 @@ describe('Scenario Util', () => {
       const result = mapCreateScenarioRequestToEntity(scenario, 212);
 
       expect(result.metadata.summaryChecklistEnabled).toBe(true);
+    });
+
+    it('should leave videoActorEnabled off when the DTO omits it', () => {
+      // The case that covers every roleplay in the database: no key, no video.
+      const scenario: CreateScenarioDto = {
+        title: 'An ordinary roleplay',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, 214);
+
+      expect(result.metadata.videoActorEnabled).toBe(false);
+    });
+
+    it('should treat a truthy non-boolean videoActorEnabled as off', () => {
+      // `=== true`, not a passthrough: a client sending a stray truthy value
+      // has not consented to publish video, and the worker gates on this key.
+      const scenario: CreateScenarioDto = {
+        title: 'A roleplay with a malformed flag',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        videoActorEnabled: 'yes',
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, 215);
+
+      expect(result.metadata.videoActorEnabled).toBe(false);
+    });
+
+    it('should carry videoActorEnabled through when the DTO opts in', () => {
+      const scenario: CreateScenarioDto = {
+        title: 'A roleplay with a face',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        videoActorEnabled: true,
+        videoActorAvatarId: 'avatar_9f3c2b',
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, 216);
+
+      expect(result.metadata.videoActorEnabled).toBe(true);
+      expect(result.metadata.videoActorAvatarId).toBe('avatar_9f3c2b');
     });
 
     it('should not include summaryChecklistEnabled when experienceMode is FEEDBACK', () => {

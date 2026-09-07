@@ -69,6 +69,13 @@ export enum AiTaskKind {
   SPEECH = 'speech',
   /** Text -> image. */
   IMAGE = 'image',
+  /**
+   * Speech -> lip-synced streaming video. Billed per minute of rendered video
+   * rather than per token, and an order of magnitude above the per-minute
+   * speech spend beside it, which is the whole reason it is not folded into
+   * SPEECH.
+   */
+  VIDEO = 'video',
 }
 
 export interface AiTaskEntry {
@@ -335,6 +342,25 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     provider: 'openai',
     defaultModel: 'text-embedding-3-small',
     configuredBy: 'OPENAI_EMBEDDING_MODEL',
+  },
+  {
+    id: 'video-actor',
+    task: null,
+    runtime: LlmRuntime.AI_LEARN,
+    trigger: 'The character speaks with a face (EXPERIMENTAL, off by default)',
+    detail:
+      "Renders lip-synced video from the agent's TTS audio for the whole time it " +
+      'is speaking, so it bills per minute of speech and not per call. OFF at two ' +
+      'independent gates — VIDEO_ACTOR_ENABLED globally and videoActorEnabled per ' +
+      'roleplay, both default false — so this row costs nothing today. The shipped ' +
+      'default provider (test_pattern) renders in-process and reaches no vendor at ' +
+      'all; the hosted ones below are what carry a bill. Any failure falls back to ' +
+      'an audio-only session.',
+    hotPath: true,
+    kind: AiTaskKind.VIDEO,
+    provider: 'multiple',
+    defaultModel: 'test_pattern (in-process, no vendor)',
+    configuredBy: 'VIDEO_ACTOR_PROVIDER (ally-ai-learn app/core/config.py)',
   },
 ];
 
