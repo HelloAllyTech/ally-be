@@ -55,6 +55,8 @@ import { OrgEngagementAnalyticsService } from './service/org-engagement-analytic
 import { OrgEngagementAnalyticsRepository } from './repository/org-engagement-analytics.repository';
 import { RoleplayCostAnalyticsService } from './service/roleplay-cost-analytics.service';
 import { RoleplayCostAnalyticsRepository } from './repository/roleplay-cost-analytics.repository';
+import { CodingAgentCostAnalyticsService } from './service/coding-agent-cost-analytics.service';
+import { CodingAgentCostAnalyticsRepository } from './repository/coding-agent-cost-analytics.repository';
 import { QualitySentimentAnalyticsService } from './service/quality-sentiment-analytics.service';
 import { QualitySentimentAnalyticsRepository } from './repository/quality-sentiment-analytics.repository';
 // Roleplay Quality Index: the composite behind the "Roleplay quality" card,
@@ -185,6 +187,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     OrgEngagementAnalyticsRepository,
     RoleplayCostAnalyticsService,
     RoleplayCostAnalyticsRepository,
+    CodingAgentCostAnalyticsService,
+    CodingAgentCostAnalyticsRepository,
     QualitySentimentAnalyticsService,
     QualitySentimentAnalyticsRepository,
     QualityIndexAnalyticsService,

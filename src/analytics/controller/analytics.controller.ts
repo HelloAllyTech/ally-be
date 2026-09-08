@@ -208,6 +208,10 @@ import {
   RoleplayCostResponseDto,
 } from '../dto/roleplay-cost-analytics.dto';
 import {
+  CodingAgentCostQueryDto,
+  CodingAgentCostResponseDto,
+} from '../dto/coding-agent-cost-analytics.dto';
+import {
   QualitySentimentQueryDto,
   QualitySentimentResponseDto,
 } from '../dto/quality-sentiment-analytics.dto';
@@ -219,6 +223,7 @@ import { UsageLadderAnalyticsService } from '../service/usage-ladder-analytics.s
 import { PracticeDepthAnalyticsService } from '../service/practice-depth-analytics.service';
 import { OrgEngagementAnalyticsService } from '../service/org-engagement-analytics.service';
 import { RoleplayCostAnalyticsService } from '../service/roleplay-cost-analytics.service';
+import { CodingAgentCostAnalyticsService } from '../service/coding-agent-cost-analytics.service';
 import { QualitySentimentAnalyticsService } from '../service/quality-sentiment-analytics.service';
 import { ChartPreferenceService } from '../service/chart-preference.service';
 import {
@@ -278,6 +283,7 @@ export class AnalyticsController {
     private readonly practiceDepthAnalyticsService: PracticeDepthAnalyticsService,
     private readonly orgEngagementAnalyticsService: OrgEngagementAnalyticsService,
     private readonly roleplayCostAnalyticsService: RoleplayCostAnalyticsService,
+    private readonly codingAgentCostAnalyticsService: CodingAgentCostAnalyticsService,
     private readonly qualitySentimentAnalyticsService: QualitySentimentAnalyticsService,
     private readonly chartPreferenceService: ChartPreferenceService,
   ) {}
@@ -599,6 +605,35 @@ export class AnalyticsController {
     @Query() query: RoleplayCostQueryDto,
   ): Promise<RoleplayCostResponseDto> {
     return this.roleplayCostAnalyticsService.getRoleplayCost(query);
+  }
+
+  @Get('coding-agent-cost')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Bug Hunter + Builder AI cost, over time and by model (super-admin)',
+    description:
+      'The platform-wide "AI cost" chart (GET token-consumption) has no filter ' +
+      'to isolate one feature and no time axis at all — this is the dedicated ' +
+      'view for the two autonomous coding agents specifically: a day/week/' +
+      'month trend comparing the two, plus a whole-window per-model ' +
+      'breakdown within each. `service` is not the discriminator — both ' +
+      'features write `service: llm` — the real one is `task` (`bug_hunter` ' +
+      'vs the `builder_*` family). Every figure is an ESTIMATE priced at read ' +
+      'time from a hand-maintained table that ignores prompt-cache discounts ' +
+      'and negotiated rates; `unpricedCalls` counts calls with no pricing ' +
+      'entry, which contribute $0 and understate the total whenever nonzero. ' +
+      'Platform-wide always, same reasoning as roleplay-cost.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Coding-agent cost retrieved successfully',
+    type: CodingAgentCostResponseDto,
+  })
+  async getCodingAgentCost(
+    @Query() query: CodingAgentCostQueryDto,
+  ): Promise<CodingAgentCostResponseDto> {
+    return this.codingAgentCostAnalyticsService.getCodingAgentCost(query);
   }
 
   @Get('quality-sentiment')
