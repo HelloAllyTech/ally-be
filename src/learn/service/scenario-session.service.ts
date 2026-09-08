@@ -799,6 +799,14 @@ export class ScenarioSessionService {
         // deployment-wide VIDEO_ACTOR_PROVIDER, so an existing roleplay that
         // never picked one behaves exactly as it does today.
         videoActorProvider: scenario?.metadata?.videoActorProvider,
+        // WHICH face. Without this the worker resolves no avatar id, falls back
+        // to its deployment-wide VIDEO_ACTOR_AVATAR_ID (unset in prod), and
+        // `_start_hosted` bails with "needs an avatar id" — an audio-only
+        // session that looks configured from every other angle. It was missing
+        // from this payload while the picker, the metadata write and the
+        // worker's read of `videoActorAvatarId` were all in place, so the face
+        // an author chose never reached the thing that renders it.
+        videoActorAvatarId: scenario?.metadata?.videoActorAvatarId,
         // Opt-out: only an explicit false hides the learner's Live tab.
         liveTabEnabled: scenario?.metadata?.liveTabEnabled !== false,
         stateNames,
