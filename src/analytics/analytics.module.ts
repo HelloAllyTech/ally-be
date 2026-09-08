@@ -10,6 +10,8 @@ import { UsageLevelAnalyticsService } from './service/usage-level-analytics.serv
 import { UsageLevelAnalyticsRepository } from './repository/usage-level-analytics.repository';
 import { CertificationAnalyticsService } from './service/certification-analytics.service';
 import { CertificationAnalyticsRepository } from './repository/certification-analytics.repository';
+import { XpGrowthAnalyticsService } from './service/xp-growth-analytics.service';
+import { XpGrowthAnalyticsRepository } from './repository/xp-growth-analytics.repository';
 import { RoleplayVolumeAnalyticsService } from './service/roleplay-volume-analytics.service';
 import { RoleplayVolumeAnalyticsRepository } from './repository/roleplay-volume-analytics.repository';
 // Analytics → Product management tab: reads the internal product roadmap rather
@@ -141,6 +143,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     UsageLevelAnalyticsRepository,
     CertificationAnalyticsService,
     CertificationAnalyticsRepository,
+    XpGrowthAnalyticsService,
+    XpGrowthAnalyticsRepository,
     RoleplayVolumeAnalyticsService,
     RoleplayVolumeAnalyticsRepository,
     RoadmapDeliveryAnalyticsService,
@@ -232,6 +236,7 @@ import { TenantModule } from 'src/tenant/tenant.module';
   exports: [
     PlatformAnalyticsService,
     HighlightsAnalyticsService,
+    XpGrowthAnalyticsService,
     ActivationAnalyticsService,
     CompletionRateAnalyticsService,
     LanguageMixAnalyticsService,
