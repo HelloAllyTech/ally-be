@@ -1,5 +1,26 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import {
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+} from 'class-validator';
+
+/**
+ * A cluster a competency belongs to. Names are the natural key on the
+ * competency side of the API: the editor creates a cluster by typing its name,
+ * so the server find-or-creates by name (case-insensitively) rather than
+ * making the client do a create-then-link round-trip.
+ */
+export class CompetencyClusterRefDto {
+  @ApiProperty({ description: 'ID of the cluster' })
+  id!: string;
+
+  @ApiProperty({ description: 'Name of the cluster' })
+  name!: string;
+}
 
 export class CreateCompetencyDto {
   @ApiPropertyOptional({
@@ -22,6 +43,20 @@ export class CreateCompetencyDto {
   @IsOptional()
   @IsBoolean()
   isCustom?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Clusters this competency belongs to, by name. Unknown names create the ' +
+      'cluster. Ignored for custom competencies, which are private to their ' +
+      'owner and never grouped.',
+    example: ['Core Communication'],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  clusterNames?: string[];
 }
 
 export class UpdateCompetencyDto {
@@ -32,6 +67,20 @@ export class UpdateCompetencyDto {
   @IsNotEmpty()
   @IsString()
   name!: string;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Replaces the clusters this competency belongs to, by name. Unknown ' +
+      'names create the cluster; an empty array removes it from all of them. ' +
+      'Omit to leave clustering alone.',
+    example: ['Core Communication'],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  clusterNames?: string[];
 }
 
 export class CreateCompetencyResponseDto {
@@ -45,6 +94,12 @@ export class CreateCompetencyResponseDto {
     description: 'Whether this is a user-owned custom competency',
   })
   isCustom!: boolean;
+
+  @ApiPropertyOptional({
+    type: [CompetencyClusterRefDto],
+    description: 'Clusters this competency belongs to (may be several)',
+  })
+  clusters?: CompetencyClusterRefDto[];
 }
 
 export class CompetencyResponseDto {
@@ -58,6 +113,12 @@ export class CompetencyResponseDto {
     description: 'Whether this is a user-owned custom competency',
   })
   isCustom!: boolean;
+
+  @ApiPropertyOptional({
+    type: [CompetencyClusterRefDto],
+    description: 'Clusters this competency belongs to (may be several)',
+  })
+  clusters?: CompetencyClusterRefDto[];
 }
 
 export class GetCompetenciesResponseDto {

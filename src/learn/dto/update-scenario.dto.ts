@@ -11,6 +11,7 @@ import {
   ValidateNested,
   IsObject,
   ArrayMaxSize,
+  ArrayUnique,
   ValidateIf,
   IsNotEmpty,
   MaxLength,
@@ -769,6 +770,23 @@ export class UpdateScenarioDto {
   @IsOptional()
   @IsUUID()
   competencyId?: string;
+
+  @ApiProperty({
+    description:
+      'Competency IDs this simulation assesses. A cluster picked in the ' +
+      'builder arrives here already expanded to its member competencies — the ' +
+      'cluster itself is never stored, so re-clustering later cannot change ' +
+      'what a published simulation assesses. `competencyId` is kept in sync as ' +
+      'competencyIds[0] for clients that only read the scalar.',
+    example: ['123e4567-e89b-12d3-a456-426614174000'],
+    required: false,
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  competencyIds?: string[];
 
   @ApiProperty({
     description: 'Knowledge sources',

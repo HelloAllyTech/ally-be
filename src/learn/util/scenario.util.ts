@@ -82,6 +82,7 @@ export const SCENARIO_ROOT_FIELDS: (keyof UpdateScenarioDto)[] = [
   'isGlobal',
   'difficultyLevel',
   'competencyId',
+  'competencyIds',
   'category',
   'partnerOrgName',
 ];
@@ -122,6 +123,42 @@ export const hydrateAdminScenarioFromVersionConfig = (
   return hydrated;
 };
 
+/**
+ * Keeps the two competency columns consistent.
+ *
+ * A simulation can assess several competencies (`competencyIds`) — that is what
+ * selecting a cluster in the builder produces, already expanded. The older
+ * scalar `competencyId` is still read by the room-metadata builder and by
+ * clients that predate the array, so it always mirrors `competencyIds[0]`.
+ *
+ * Callers may send either key:
+ *  - `competencyIds` present → it wins, and the scalar is derived from it. An
+ *    empty array is a deliberate "no competency" and clears both.
+ *  - only `competencyId` → the array is derived from it, so a single-select
+ *    caller still lands in the shape analytics expands.
+ *  - neither → returns nothing, leaving whatever is stored untouched (an
+ *    absent key must never clear a selection on a partial update).
+ */
+export const resolveCompetencySelection = (dto: {
+  competencyId?: string;
+  competencyIds?: string[];
+}): { competencyId?: string | null; competencyIds?: string[] | null } => {
+  if (dto.competencyIds !== undefined) {
+    const ids = [...new Set(dto.competencyIds.filter(Boolean))];
+    return {
+      competencyIds: ids.length > 0 ? ids : null,
+      competencyId: ids[0] ?? null,
+    };
+  }
+  if (dto.competencyId !== undefined) {
+    return {
+      competencyId: dto.competencyId ?? null,
+      competencyIds: dto.competencyId ? [dto.competencyId] : null,
+    };
+  }
+  return {};
+};
+
 export const mapCreateScenarioRequestToEntity = (
   scenario: CreateScenarioDto,
   userId: number,
@@ -139,7 +176,7 @@ export const mapCreateScenarioRequestToEntity = (
     prompt: scenario.prompt,
     isGlobal: scenario.isGlobal,
     difficultyLevel: scenario.difficultyLevel,
-    competencyId: scenario.competencyId,
+    ...resolveCompetencySelection(scenario),
     category: scenario.category,
     partnerOrgName: scenario.partnerOrgName,
     metadata: {
@@ -507,6 +544,10 @@ export const mapUpdateScenarioRequestToEntity = (
     updatedBy: userId,
   };
 
+  // competencyId/competencyIds are deliberately NOT in this list: copying them
+  // independently would let a caller sending only one of the two leave the
+  // pair disagreeing. resolveCompetencySelection below derives both from
+  // whichever key arrived.
   const updateScenarioObjectFields = [
     'title',
     'description',
@@ -517,7 +558,6 @@ export const mapUpdateScenarioRequestToEntity = (
     'prompt',
     'isGlobal',
     'difficultyLevel',
-    'competencyId',
     'category',
     'partnerOrgName',
   ];
@@ -529,6 +569,8 @@ export const mapUpdateScenarioRequestToEntity = (
       ] as any;
     }
   }
+
+  Object.assign(updateData, resolveCompetencySelection(updateScenarioDto));
 
   // Handle metadata fields - merge with existing metadata
   const metadataUpdates: Record<string, any> = {};

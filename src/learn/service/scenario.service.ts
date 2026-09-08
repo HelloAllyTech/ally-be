@@ -927,11 +927,7 @@ export class ScenarioService {
         createScenarioDto.behaviorInstructions,
       );
     }
-    if (createScenarioDto.competencyId) {
-      await this.competencyService.validateCompetencyId(
-        createScenarioDto.competencyId,
-      );
-    }
+    await this.validateCompetencySelection(createScenarioDto);
     if (
       createScenarioDto.timerMode === true &&
       createScenarioDto.maxTimeValue
@@ -1181,6 +1177,26 @@ export class ScenarioService {
       this.logger.error(JSON.stringify(invalidBehaviorInstructions));
       throw new BadRequestException('Invalid behavior instructions');
     }
+  }
+
+  /**
+   * Validates every competency the caller named. `competencyIds` carries the
+   * whole selection — a cluster arrives here already expanded — so each id has
+   * to exist, not just the scalar mirror. Checked in parallel: a large cluster
+   * is a lookup per competency, and sequentially that is a round-trip each on
+   * every save.
+   */
+  private async validateCompetencySelection(
+    dto: CreateScenarioDto | UpdateScenarioDto,
+  ): Promise<void> {
+    const ids = new Set(
+      [...(dto.competencyIds ?? []), dto.competencyId].filter(
+        (id): id is string => Boolean(id),
+      ),
+    );
+    await Promise.all(
+      [...ids].map((id) => this.competencyService.validateCompetencyId(id)),
+    );
   }
 
   private validateMaxTimeValue(maxTimeValue: string): void {
@@ -1870,11 +1886,7 @@ export class ScenarioService {
         updateScenarioDto.behaviorInstructions,
       );
     }
-    if (updateScenarioDto.competencyId) {
-      await this.competencyService.validateCompetencyId(
-        updateScenarioDto.competencyId,
-      );
-    }
+    await this.validateCompetencySelection(updateScenarioDto);
     if (
       updateScenarioDto.timerMode === true &&
       updateScenarioDto.maxTimeValue

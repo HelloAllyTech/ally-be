@@ -26,6 +26,8 @@ import { CompetencyBehaviorType } from '../enum/competency-behavior.enum';
 import { BehaviorRepository } from '../repository/behavior.repository';
 import { BehaviorInstructionCategory } from '../enum/behavior-instruction.enum';
 import { COMPETENCY_BEHAVIOR_INSTRUCTION_PRESETS } from '../constants/competency-behavior-instruction-templates.constants';
+import { CompetencyClusterService } from './competency-cluster.service';
+import { CompetencyClusterRefDto } from '../dto/competency.dto';
 
 // Postgres unique-violation SQLSTATE. TypeORM surfaces it on the thrown error
 // directly and/or on the wrapped driver error.
@@ -45,6 +47,7 @@ export class CompetencyService {
     private readonly competencyBehaviorRepository: CompetencyBehaviorRepository,
     private readonly behaviorRepository: BehaviorRepository,
     private readonly scenariosRepository: ScenariosRepository,
+    private readonly competencyClusterService: CompetencyClusterService,
   ) {}
 
   async createCompetency(
@@ -71,10 +74,24 @@ export class CompetencyService {
       createdBy,
     });
     const saved = await this.competencyRepository.save(competency);
+
+    // Clusters arrive as names so the editor can create one by typing it.
+    // Custom competencies never reach here (they return above): they're
+    // private to their owner, so grouping them into a shared framework would
+    // leak a name every other admin can see but not resolve.
+    if (createCompetencyDto.clusterNames?.length) {
+      await this.competencyClusterService.setClustersForCompetency(
+        saved.id,
+        createCompetencyDto.clusterNames,
+        createdBy,
+      );
+    }
+
     return {
       id: saved.id,
       name: saved.name,
       isCustom: saved.isCustom,
+      clusters: await this.getClustersFor(saved.id),
     };
   }
 
@@ -126,8 +143,15 @@ export class CompetencyService {
       options,
       scope,
     );
+    // One query for the whole page's memberships rather than one per row.
+    const clustersByCompetency =
+      await this.competencyClusterService.getClustersByCompetency(
+        data.map((c) => c.id),
+      );
     return {
-      data: data.map((c) => this.mapToResponseDto(c)),
+      data: data.map((c) =>
+        this.mapToResponseDto(c, clustersByCompetency.get(c.id) ?? []),
+      ),
       count,
     };
   }
@@ -137,7 +161,7 @@ export class CompetencyService {
     if (!competency) {
       throw new NotFoundException(`Competency with id ${id} not found`);
     }
-    return this.mapToResponseDto(competency);
+    return this.mapToResponseDto(competency, await this.getClustersFor(id));
   }
 
   async updateCompetency(
@@ -152,7 +176,18 @@ export class CompetencyService {
     this.assertCanManage(competency, userId);
     competency.name = updateCompetencyDto.name;
     const saved = await this.competencyRepository.save(competency);
-    return this.mapToResponseDto(saved);
+
+    // Absent key = leave clustering alone; an empty array = remove it from
+    // every cluster. A custom competency is never grouped (see createCompetency).
+    if (updateCompetencyDto.clusterNames !== undefined && !saved.isCustom) {
+      await this.competencyClusterService.setClustersForCompetency(
+        saved.id,
+        updateCompetencyDto.clusterNames,
+        userId,
+      );
+    }
+
+    return this.mapToResponseDto(saved, await this.getClustersFor(saved.id));
   }
 
   async deleteCompetency(id: string, userId?: number): Promise<void> {
@@ -338,11 +373,25 @@ export class CompetencyService {
     }
   }
 
-  private mapToResponseDto(competency: Competency): CompetencyResponseDto {
+  private async getClustersFor(
+    competencyId: string,
+  ): Promise<CompetencyClusterRefDto[]> {
+    const byCompetency =
+      await this.competencyClusterService.getClustersByCompetency([
+        competencyId,
+      ]);
+    return byCompetency.get(competencyId) ?? [];
+  }
+
+  private mapToResponseDto(
+    competency: Competency,
+    clusters: CompetencyClusterRefDto[] = [],
+  ): CompetencyResponseDto {
     return {
       id: competency.id,
       name: competency.name,
       isCustom: competency.isCustom,
+      clusters,
     };
   }
 }

@@ -7,6 +7,7 @@ import {
   collectProviderConfigIds,
   resolveSessionSttConfig,
   resolveSessionLlmConfig,
+  resolveCompetencySelection,
 } from '../scenario.util';
 import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
 import { CreateScenarioDto } from '../../dto/create-scenario.dto';
@@ -1143,5 +1144,51 @@ describe('resolveSessionLlmConfig — catalog rung', () => {
         broken,
       ),
     ).toEqual({ provider: 'openai', config: { model: 'gpt-4o' } });
+  });
+});
+
+describe('resolveCompetencySelection', () => {
+  it('derives the scalar from the array so the two never disagree', () => {
+    expect(
+      resolveCompetencySelection({ competencyIds: ['c-1', 'c-2', 'c-3'] }),
+    ).toEqual({ competencyIds: ['c-1', 'c-2', 'c-3'], competencyId: 'c-1' });
+  });
+
+  it('lets the array win over a scalar the caller also sent', () => {
+    // The web builder sends both; the array is the real selection, so a stale
+    // scalar must not survive as competencyId.
+    expect(
+      resolveCompetencySelection({
+        competencyId: 'stale',
+        competencyIds: ['c-1'],
+      }),
+    ).toEqual({ competencyIds: ['c-1'], competencyId: 'c-1' });
+  });
+
+  it('expands a scalar-only caller into the array shape', () => {
+    expect(resolveCompetencySelection({ competencyId: 'c-1' })).toEqual({
+      competencyId: 'c-1',
+      competencyIds: ['c-1'],
+    });
+  });
+
+  it('clears both columns on an empty array', () => {
+    // Nulls, not undefined: an update has to actually write the clear.
+    expect(resolveCompetencySelection({ competencyIds: [] })).toEqual({
+      competencyIds: null,
+      competencyId: null,
+    });
+  });
+
+  it('de-duplicates repeated ids', () => {
+    // Overlapping clusters can offer the same competency twice.
+    expect(
+      resolveCompetencySelection({ competencyIds: ['c-1', 'c-2', 'c-1'] }),
+    ).toEqual({ competencyIds: ['c-1', 'c-2'], competencyId: 'c-1' });
+  });
+
+  it('touches neither column when the caller sends no competency key', () => {
+    // A partial update that never mentions competencies must not clear them.
+    expect(resolveCompetencySelection({})).toEqual({});
   });
 });

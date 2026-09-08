@@ -15,7 +15,19 @@ export class GetAdminScenarioDto extends Scenarios {
   behaviorInstructions?: BehaviorInstructionWithBehaviorsDto[];
   triggerWarnings?: TriggerWarnings[];
   terminationEvents?: TerminationEventDto[];
+  /**
+   * First entry of `competencies`, kept for readers that predate
+   * multi-competency selection.
+   */
   competency?: CompetencyResponseDto;
+
+  @ApiPropertyOptional({
+    type: [CompetencyResponseDto],
+    description:
+      'Every competency this simulation assesses, hydrated from ' +
+      'scenarios.competencyIds (a cluster pick is stored expanded)',
+  })
+  competencies?: CompetencyResponseDto[];
 
   @ApiPropertyOptional({
     description:

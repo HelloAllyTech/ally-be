@@ -467,8 +467,22 @@ export class ScenarioSharedService {
       promptData.roleInstructions = scenario.prompt;
     }
 
-    if (scenario?.competency?.name) {
-      promptData.competency = scenario.competency?.name;
+    // {competency} in the actor/evaluator prompts is a display string. With a
+    // cluster selected the simulation covers several competencies, so name all
+    // of them rather than silently dropping to the first — a prompt claiming
+    // one competency's name for a roleplay that assesses a dozen is worse than
+    // no value at all.
+    const competencyNames = (
+      scenario?.competencies?.length
+        ? scenario.competencies
+        : scenario?.competency
+          ? [scenario.competency]
+          : []
+    )
+      .map((competency) => competency?.name)
+      .filter((name): name is string => Boolean(name?.trim()));
+    if (competencyNames.length > 0) {
+      promptData.competency = competencyNames.join(', ');
     }
 
     // Drop per-language maps; learn payload uses same key as scenario API but
@@ -1026,11 +1040,27 @@ export class ScenarioSharedService {
       throw new NotFoundException('Scenario not found');
     }
 
-    if (result?.competencyId) {
-      const competency = await this.competencyService.getCompetency(
-        result.competencyId,
-      );
-      result.competency = competency;
+    // Hydrate the full selection. `competencyIds` is the source of truth (a
+    // cluster pick lands here already expanded); a scenario saved before it
+    // existed has only the scalar, so fall back to that. `competency` stays
+    // populated as the first entry for readers that predate the array.
+    const competencyIds = result?.competencyIds?.length
+      ? result.competencyIds
+      : result?.competencyId
+        ? [result.competencyId]
+        : [];
+    if (competencyIds.length > 0) {
+      // A deleted competency should not 404 the whole simulation, so a missing
+      // one is dropped rather than thrown.
+      const competencies = (
+        await Promise.all(
+          competencyIds.map((id) =>
+            this.competencyService.getCompetency(id).catch(() => null),
+          ),
+        )
+      ).filter((competency) => competency !== null);
+      result.competencies = competencies;
+      result.competency = competencies[0];
     }
 
     const behaviorInstructions =

@@ -103,6 +103,12 @@ import { Competency } from './entity/competency.entity';
 import { CompetencyRepository } from './repository/competency.repository';
 import { CompetencyService } from './service/competency.service';
 import { CompetencyController } from './controller/competency.controller';
+import { CompetencyCluster } from './entity/competency-cluster.entity';
+import { CompetencyClusterMember } from './entity/competency-cluster-member.entity';
+import { CompetencyClusterRepository } from './repository/competency-cluster.repository';
+import { CompetencyClusterMemberRepository } from './repository/competency-cluster-member.repository';
+import { CompetencyClusterService } from './service/competency-cluster.service';
+import { CompetencyClusterController } from './controller/competency-cluster.controller';
 import { AgentTestCase } from './entity/agent-test-case.entity';
 import { AgentTestCaseRepository } from './repository/agent-test-case.repository';
 import { AgentTestCaseService } from './service/agent-test-case.service';
@@ -169,6 +175,8 @@ import { SettingsModule } from 'src/settings/settings.module';
       ScenarioSessionBehaviorInstructions,
       Competency,
       CompetencyBehavior,
+      CompetencyCluster,
+      CompetencyClusterMember,
       AgentTestCase,
       BehaviorTranslation,
       ScenarioBehaviorInstructionTranslation,
@@ -211,6 +219,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     FillerTagController,
     ScenarioSessionChatController,
     CompetencyController,
+    CompetencyClusterController,
     AgentTestCaseController,
     ScenarioSessionRecordingController,
     ScenarioSessionEvaluationWebhookController,
@@ -276,6 +285,9 @@ import { SettingsModule } from 'src/settings/settings.module';
     CompetencyService,
     CompetencyRepository,
     CompetencyBehaviorRepository,
+    CompetencyClusterService,
+    CompetencyClusterRepository,
+    CompetencyClusterMemberRepository,
     AgentTestCaseService,
     AgentTestCaseRepository,
     ScenarioSessionEvaluationService,

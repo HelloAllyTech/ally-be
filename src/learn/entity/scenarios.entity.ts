@@ -60,8 +60,11 @@ export class Scenarios extends BaseWithoutTenantEntity {
   @Column({ default: false })
   isPublic!: boolean;
 
+  // Nullable in both senses: the column allows NULL, and clearing a selection
+  // has to write NULL rather than leave the old id behind — so the type admits
+  // null and not just undefined.
   @Column({ type: 'uuid', nullable: true })
-  competencyId?: string;
+  competencyId?: string | null;
 
   // Roleplay Studio v2 first-class multi-competency tagging. competencyId
   // mirrors competencyIds[0] for back-compat; v1 scenarios leave this null.
