@@ -105,6 +105,17 @@ const TAVUS_API_URL = 'https://tavusapi.com/v2';
 const BEY_API_URL = 'https://api.bey.dev/v1';
 
 /**
+ * Page cap on the Beyond Presence roster walk.
+ *
+ * Their list endpoint is paginated 10 at a time and reports `has_more` with a
+ * `next_cursor`. This runs inside a request an author is waiting on, so the
+ * walk is bounded rather than trusting a vendor to terminate it: 20 pages is
+ * 200 faces, far more than a picker can usefully show, and each page is
+ * additionally bounded by CATALOG_TIMEOUT_MS.
+ */
+const BEY_MAX_PAGES = 20;
+
+/**
  * How long to wait on a vendor before giving up.
  *
  * This serves an author staring at a picker in Studio, so a slow vendor must
@@ -304,15 +315,31 @@ export class VideoActorCatalogService {
       return [];
     }
 
-    const body = await this.getJson(`${BEY_API_URL}/avatar`, {
-      'x-api-key': apiKey,
-    });
-    // bey has returned both a bare array and a `{ data: [...] }` envelope from
-    // this path; accept either rather than depending on which one today's
-    // deployment answers with.
-    const avatars: BeyAvatar[] = Array.isArray(body)
-      ? body
-      : (body?.data ?? []);
+    // PAGINATED, 10 to a page. Reading only the first page hid 11 of our 21
+    // avatars from the picker — including bey's own default face ("Ege",
+    // b9be11b8-...), which an author could therefore never select even though
+    // it renders perfectly. So follow `next_cursor` until `has_more` is false.
+    const avatars: BeyAvatar[] = [];
+    let cursor: string | undefined;
+    for (let page = 0; page < BEY_MAX_PAGES; page += 1) {
+      const url = cursor
+        ? `${BEY_API_URL}/avatar?cursor=${encodeURIComponent(cursor)}`
+        : `${BEY_API_URL}/avatar`;
+      const body = await this.getJson(url, { 'x-api-key': apiKey });
+      // bey has returned both a bare array and a `{ data: [...] }` envelope
+      // from this path; accept either rather than depending on which one
+      // today's deployment answers with. A bare array carries no cursor, so
+      // it is necessarily the whole roster.
+      if (Array.isArray(body)) {
+        avatars.push(...body);
+        break;
+      }
+      avatars.push(...(body?.data ?? []));
+      if (!body?.has_more || !body?.next_cursor) {
+        break;
+      }
+      cursor = body.next_cursor as string;
+    }
 
     return avatars
       .filter((avatar) => !!avatar.id && avatar.status === 'available')
