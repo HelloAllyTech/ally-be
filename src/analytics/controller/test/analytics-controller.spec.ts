@@ -35,6 +35,7 @@ import { UsageLadderAnalyticsService } from '../../service/usage-ladder-analytic
 import { PracticeDepthAnalyticsService } from '../../service/practice-depth-analytics.service';
 import { OrgEngagementAnalyticsService } from '../../service/org-engagement-analytics.service';
 import { RoleplayCostAnalyticsService } from '../../service/roleplay-cost-analytics.service';
+import { CodingAgentCostAnalyticsService } from '../../service/coding-agent-cost-analytics.service';
 import { QualitySentimentAnalyticsService } from '../../service/quality-sentiment-analytics.service';
 import { ChartPreferenceService } from '../../service/chart-preference.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
@@ -243,6 +244,10 @@ describe('AnalyticsController', () => {
         {
           provide: RoleplayCostAnalyticsService,
           useValue: { getRoleplayCost: jest.fn() },
+        },
+        {
+          provide: CodingAgentCostAnalyticsService,
+          useValue: { getCodingAgentCost: jest.fn() },
         },
         {
           provide: QualitySentimentAnalyticsService,
