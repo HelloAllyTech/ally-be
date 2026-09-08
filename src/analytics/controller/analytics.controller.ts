@@ -19,6 +19,7 @@ import { ActivationAnalyticsService } from '../service/activation-analytics.serv
 import { CoachingLoopAnalyticsService } from '../service/coaching-loop-analytics.service';
 import { CohortAnalyticsService } from '../service/cohort-analytics.service';
 import { CompetencyMapAnalyticsService } from '../service/competency-map-analytics.service';
+import { XpGrowthAnalyticsService } from '../service/xp-growth-analytics.service';
 import { CompletionRateAnalyticsService } from '../service/completion-rate-analytics.service';
 import { LanguageMixAnalyticsService } from '../service/language-mix-analytics.service';
 import { OrgHealthAnalyticsService } from '../service/org-health-analytics.service';
@@ -112,6 +113,10 @@ import {
   CertificationQueryDto,
   CertificationResponseDto,
 } from '../dto/certification-analytics.dto';
+import {
+  XpGrowthQueryDto,
+  XpGrowthResponseDto,
+} from '../dto/xp-growth-analytics.dto';
 import {
   RoleplayVolumeQueryDto,
   RoleplayVolumeResponseDto,
@@ -243,6 +248,7 @@ export class AnalyticsController {
     private readonly cohortAnalyticsService: CohortAnalyticsService,
     private readonly usageLevelAnalyticsService: UsageLevelAnalyticsService,
     private readonly certificationAnalyticsService: CertificationAnalyticsService,
+    private readonly xpGrowthAnalyticsService: XpGrowthAnalyticsService,
     private readonly roleplayVolumeAnalyticsService: RoleplayVolumeAnalyticsService,
     private readonly roadmapDeliveryAnalyticsService: RoadmapDeliveryAnalyticsService,
     private readonly shipVolumeAnalyticsService: ShipVolumeAnalyticsService,
@@ -390,6 +396,45 @@ export class AnalyticsController {
     @Query() query: CertificationQueryDto,
   ): Promise<CertificationResponseDto> {
     return this.certificationAnalyticsService.getCertification(query);
+  }
+
+  @Get('xp-growth')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Cumulative platform XP over time (super-admin)',
+    description:
+      'How much XP the platform has awarded to its learners, as a running ' +
+      'lifetime total per period, with the XP earned in each period and the ' +
+      'distinct learners who earned it alongside. Summed from `xp_events`, the ' +
+      "append-only ledger, which is the record — a session's XP contribution " +
+      'cannot be rebuilt from detection rows after the fact, so nothing here ' +
+      'is re-derived from source data. Bucketed on `awardedOn` (the calendar ' +
+      'day an award counts against) rather than on `createdAt`, so backfilled ' +
+      'history lands on the day it was earned instead of piling onto the day ' +
+      'the Progress dashboard shipped. Test organisations are excluded, as ' +
+      'everywhere on these surfaces; `tenantId` narrows to one org. The window ' +
+      'defaults to all time in monthly buckets and honours ' +
+      '`range`/`bucket`/`from`/`to` — `bucket` is the day/week/month/year ' +
+      'grain the chart control drives. The cumulative line always opens at ' +
+      '`summary.baselineXp` (XP earned before the window), so narrowing the ' +
+      'window narrows what is shown without redefining the quantity — and an ' +
+      'all-time window is no exception, because its left edge is the platform ' +
+      'data floor (first user or session) rather than the first award, so any ' +
+      'XP predating that floor becomes the opening balance instead of ' +
+      'vanishing. One caveat the numbers cannot state themselves: the launch ' +
+      'backfill deliberately awarded neither the streak multiplier nor skill ' +
+      "personal bests, so pre-launch XP is a floor and the curve's LEVEL is " +
+      'not comparable across the launch boundary — its shape is.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'XP growth series retrieved successfully',
+    type: XpGrowthResponseDto,
+  })
+  async getXpGrowth(
+    @Query() query: XpGrowthQueryDto,
+  ): Promise<XpGrowthResponseDto> {
+    return this.xpGrowthAnalyticsService.getXpGrowth(query);
   }
 
   @Get('usage-ladder')

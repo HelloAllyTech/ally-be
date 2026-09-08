@@ -4,6 +4,7 @@ import { AnalyticsService } from '../../service/analytics.service';
 import { CohortAnalyticsService } from '../../service/cohort-analytics.service';
 import { UsageLevelAnalyticsService } from '../../service/usage-level-analytics.service';
 import { CertificationAnalyticsService } from '../../service/certification-analytics.service';
+import { XpGrowthAnalyticsService } from '../../service/xp-growth-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../../service/roleplay-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsService } from '../../service/roadmap-delivery-analytics.service';
 import { ShipVolumeAnalyticsService } from '../../service/ship-volume-analytics.service';
@@ -115,6 +116,10 @@ describe('AnalyticsController', () => {
         {
           provide: CertificationAnalyticsService,
           useValue: { getCertification: jest.fn() },
+        },
+        {
+          provide: XpGrowthAnalyticsService,
+          useValue: { getXpGrowth: jest.fn() },
         },
         {
           provide: RoleplayVolumeAnalyticsService,
