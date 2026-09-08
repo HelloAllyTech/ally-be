@@ -11,6 +11,19 @@ The ally-be project uses Jest for testing and provides Docker-based test infrast
 
 ## Quick Start
 
+> **Run one suite at a time.** Jest's config lives in [`jest.config.js`](jest.config.js),
+> which caps the pool at 3 workers **locally** (each worker is a Node process running
+> ts-jest over this codebase; the default of `cores - 1` is 9 on a 10-core machine).
+> CI is deliberately exempt — it resolves Jest's own default. The cap bounds a single
+> run; it does not make two concurrent runs safe, and running this suite alongside
+> ally-web's Vitest suite has exhausted a 16 GB machine.
+>
+> Override either way with `JEST_MAX_WORKERS` (`=1` to serialise while debugging a
+> cross-file leak, higher on a machine with headroom).
+>
+> Prefer scoping to what you changed — `npx jest src/learn`, or
+> `npx jest --findRelatedTests <files>`, which is what the pre-commit hook runs.
+
 ### Run All Unit Tests
 ```bash
 ./test-docker.sh all
