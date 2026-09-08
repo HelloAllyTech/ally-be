@@ -84,6 +84,12 @@ jobs:
       ALLY_BE_API_URL: ${{ inputs.api_base_url || vars.ALLY_BE_API_URL }}
       ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      # Only consumed when BUILDER_ENGINE=gemini (install-engine.sh /
+      # run-engine.sh). A plain Google AI Studio key, not the Workspace/Vertex
+      # OAuth path — that path additionally needs GOOGLE_CLOUD_PROJECT and a
+      # Gemini Code Assist license on the project, which is a per-org setup
+      # step this workflow does not attempt.
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       BUILDER_GH_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
       GH_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
       # Tier 1 of `.claude/stacks-bridge.mjs`. Without it the bridge falls

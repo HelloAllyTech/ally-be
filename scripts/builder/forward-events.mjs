@@ -134,6 +134,109 @@ const normaliseClaudeCode = (record) => {
   return events;
 };
 
+/**
+ * Gemini CLI's `--output-format stream-json` schema, read directly from a
+ * real local install's compiled TypeScript declarations
+ * (@google/gemini-cli-core's dist/src/output/types.d.ts, v0.22.5) — not yet
+ * exercised against a real successful run (see install-engine.sh's gemini
+ * case for why), so treat the mapping below as unverified until one
+ * completes, the same caution Claude Code's own shape doesn't need because
+ * years of real runs have already exercised it.
+ *
+ * Two confirmed gaps, not guesses:
+ *  - Gemini's tool events carry no id correlating a `tool_use` to its later
+ *    `tool_result`, so — same as Claude Code's own normalise above — they're
+ *    emitted as independent events rather than paired.
+ *  - Gemini's terminal `result` event's `stats` has token counts only, no
+ *    cost figure at all (unlike Claude Code's `total_cost_usd`). This
+ *    normaliser reports `totalCostUsd: 0` for a Gemini-engine run rather than
+ *    fabricating a number — real cost tracking for this engine needs a
+ *    separate per-model pricing table, not built here.
+ */
+const normaliseGemini = (record) => {
+  const events = [];
+
+  if (record?.type === 'message' && record.role === 'assistant' && record.content?.trim()) {
+    events.push({ type: 'text', payload: { text: truncate(record.content) } });
+    return events;
+  }
+
+  if (record?.type === 'tool_use') {
+    const name = String(record.tool_name ?? 'tool');
+    const params = record.parameters ?? {};
+
+    // Gemini's built-in Edit tool uses the same file_path/old_string/
+    // new_string shape as Claude Code's — confirmed from the installed
+    // package's tools/edit.d.ts, not inferred from the tool name alone.
+    if (typeof params.file_path === 'string' && ('old_string' in params || 'content' in params)) {
+      events.push({
+        type: 'file_edit',
+        payload: {
+          path: String(params.file_path),
+          operation: 'old_string' in params ? 'edit' : 'write',
+          oldText: truncate(params.old_string ?? ''),
+          newText: truncate(params.new_string ?? params.content ?? ''),
+        },
+      });
+      return events;
+    }
+
+    events.push({
+      type: 'tool_call',
+      payload: {
+        name,
+        summary: truncate(
+          params.command ?? params.file_path ?? params.pattern ?? params.path ?? '',
+        ),
+      },
+    });
+    return events;
+  }
+
+  if (record?.type === 'tool_result') {
+    events.push({
+      type: 'tool_result',
+      payload: {
+        isError: record.status === 'error',
+        text: truncate(record.output ?? record.error?.message ?? ''),
+      },
+    });
+    return events;
+  }
+
+  // A mid-stream warning/error, distinct from the terminal result's own
+  // error field below. Surfaced rather than swallowed — this codebase's
+  // stance throughout is that a real failure belongs in the visible feed,
+  // not silently dropped telemetry.
+  if (record?.type === 'error') {
+    events.push({ type: 'text', payload: { text: truncate(`[gemini] ${record.message ?? ''}`) } });
+    return events;
+  }
+
+  if (record?.type === 'result') {
+    const stats = record.stats ?? {};
+    lastResult = {
+      usage: {
+        input_tokens: stats.input_tokens ?? null,
+        output_tokens: stats.output_tokens ?? null,
+        cached_tokens: stats.cached ?? null,
+      },
+      // Confirmed absent from Gemini's own stats — see the doc comment above.
+      total_cost_usd: 0,
+      duration_ms: stats.duration_ms ?? null,
+      // Tool-call count, not a turn count — the closest field Gemini reports;
+      // named num_turns only so report_phase_cost's existing reader picks it
+      // up, not because the two concepts are equivalent.
+      num_turns: stats.tool_calls ?? null,
+    };
+  }
+
+  return events;
+};
+
+const normalise = (record) =>
+  process.env.BUILDER_ENGINE === 'gemini' ? normaliseGemini(record) : normaliseClaudeCode(record);
+
 const post = async (events) => {
   if (!API_URL || !API_KEY || !RUN_ID || !events.length) return;
 
@@ -211,7 +314,7 @@ readline.on('line', (line) => {
   }
 
   try {
-    queue.push(...normaliseClaudeCode(record));
+    queue.push(...normalise(record));
   } catch {
     // A shape we did not anticipate is not worth stopping for.
     return;

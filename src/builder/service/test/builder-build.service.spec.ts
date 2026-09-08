@@ -340,6 +340,68 @@ describe('BuilderBuildService', () => {
     });
   });
 
+  describe('engine resolution', () => {
+    const dispatchedEngine = () =>
+      github.dispatchWorkflow.mock.calls[0][0].inputs.engine as string;
+
+    it('lets an explicit override win over everything else', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'gemini',
+      });
+
+      await service.startBuild(
+        readySession({ engine: 'claude-code' }) as any,
+        1,
+        {
+          engine: 'codex',
+        },
+      );
+
+      expect(dispatchedEngine()).toBe('codex');
+    });
+
+    it("falls through to the session's own engine when no override is given", async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'gemini',
+      });
+
+      await service.startBuild(
+        readySession({ engine: 'claude-code' }) as any,
+        1,
+      );
+
+      expect(dispatchedEngine()).toBe('claude-code');
+    });
+
+    it("falls through to the admin's configured default when the session has none — the field a settings picker used to change and nothing read", async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'gemini',
+      });
+
+      await service.startBuild(readySession({ engine: null }) as any, 1);
+
+      expect(dispatchedEngine()).toBe('gemini');
+    });
+
+    it('falls all the way back to claude-code when nothing at all is configured', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: null,
+      });
+
+      await service.startBuild(readySession({ engine: null }) as any, 1);
+
+      expect(dispatchedEngine()).toBe('claude-code');
+    });
+  });
+
   describe('spend and concurrency guards', () => {
     it('refuses a dispatch while another is already starting for the session', async () => {
       // Two admins answering the last question of a group at once, or one

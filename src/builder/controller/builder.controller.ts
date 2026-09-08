@@ -642,6 +642,9 @@ export class BuilderController {
         ...(dto.verifierModel !== undefined
           ? { verifierModel: dto.verifierModel || null }
           : {}),
+        ...(dto.defaultEngine !== undefined
+          ? { defaultEngine: dto.defaultEngine || null }
+          : {}),
       },
       user.id,
     );

@@ -173,7 +173,16 @@ export class BuilderBuildService {
     await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
     this.assertWithinBudget(session, settings.maxRunnerMinutes);
 
-    const engine = overrides.engine ?? session.engine;
+    // settings.defaultEngine existed on the entity but was never actually
+    // consulted here — the admin-facing "default engine" picker changed a
+    // column nothing read. Falling through to it (and finally to the
+    // hardcoded default, for a settings row that predates the field) is what
+    // makes that picker do something.
+    const engine =
+      overrides.engine ??
+      session.engine ??
+      settings.defaultEngine ??
+      'claude-code';
     const size = await this.classifySession(session);
     const models = this.resolveModels(session, settings, overrides, size);
 

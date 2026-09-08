@@ -287,6 +287,15 @@ export class UpdateBuilderSettingsDto {
   @IsString()
   @MaxLength(80)
   verifierModel?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Which coding engine a new build runs on when the session/dispatch doesn't say (null = claude-code).",
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(40)
+  defaultEngine?: string;
 }
 
 export class ListBuilderSessionsQueryDto {

@@ -265,6 +265,33 @@ run_agent() {
       | node "$FORWARDER" --result-out "$result_file"
       ;;
 
+    # Confirmed against a real local install (0.22.5) of @google/gemini-cli:
+    # `--yolo` is the acceptEdits equivalent (auto-approves every tool call,
+    # no separate sandbox flag needed since the GH runner is already the
+    # isolation boundary — same trust model Claude Code's own acceptEdits
+    # uses). `-o stream-json` is confirmed real (its event schema is what
+    # forward-events.mjs's normaliseGemini() is built against).
+    #
+    # Two params this case cannot honour, both confirmed absent from the
+    # installed binary rather than just unused here:
+    #   - $max_turns: no turn/step-count flag exists. The workflow's own job
+    #     timeout-minutes is the only backstop for a Gemini-engine run.
+    #   - $max_budget: no dollar-ceiling flag exists, and Gemini's own usage
+    #     stats carry no cost figure either (see normaliseGemini()) — a
+    #     Gemini-engine run's spend is not enforceable mid-run the way
+    #     --max-budget-usd enforces it for Claude Code.
+    # $tools is also unused: Gemini's built-in tool names do not correspond
+    # to Claude Code's ("Bash,Read,Write,Edit,Glob,Grep,Task"), and --yolo
+    # already means "run any tool without asking" — a wrong or partial
+    # translation of that allowlist would be worse than none.
+    gemini)
+      gemini "$(cat "$prompt_file")" \
+        --model "$model" \
+        --yolo \
+        --output-format stream-json \
+      | node "$FORWARDER" --result-out "$result_file"
+      ;;
+
     *)
       echo "Unknown BUILDER_ENGINE '${ENGINE}'." >&2
       exit 1
