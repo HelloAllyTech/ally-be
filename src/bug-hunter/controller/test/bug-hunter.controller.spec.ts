@@ -91,6 +91,8 @@ describe('BugHunterController', () => {
       // Metrics service: every case here is about routing and gating, and no
       // case calls the metrics route.
       {} as never,
+      // Model settings service: no case here reads/writes settings/models.
+      {} as never,
     );
   });
 

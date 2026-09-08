@@ -19,6 +19,8 @@ describe('BugHunterPipelineController', () => {
       {} as never,
       {} as never,
       {} as never,
+      // Model settings service: no case here reads GET pipeline/models.
+      {} as never,
     );
   });
 

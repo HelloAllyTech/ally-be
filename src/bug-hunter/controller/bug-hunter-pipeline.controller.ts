@@ -46,6 +46,8 @@ import { toEventDto, toRunDto, toFindingDto } from './bug-hunter.controller';
 import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
 import { BUG_HUNT_REPOS } from '../constants/bug-hunt-repos.constants';
 import { buildSweepPrompt } from '../constants/bug-hunt-sweep-prompt';
+import { BugHunterModelSettingsService } from '../service/bug-hunter-model-settings.service';
+import { BugHunterModelSettingsDto } from '../dto/bug-hunter.dto';
 
 /**
  * The Bug Hunter MACHINE surface — start/report/close plus the findings
@@ -72,6 +74,7 @@ export class BugHunterPipelineController {
     private readonly finderDataService: BugHunterFinderDataService,
     private readonly bugFixSessionService: BugFixSessionService,
     private readonly configService: AppConfigService,
+    private readonly modelSettingsService: BugHunterModelSettingsService,
   ) {}
 
   @Get('pipeline/prod-logs')
@@ -135,6 +138,22 @@ export class BugHunterPipelineController {
     repos: Record<string, { test: string; lint: string; fixable: boolean }>;
   } {
     return { repos: BUG_HUNT_REPOS };
+  }
+
+  @Get('pipeline/models')
+  @ApiOperation({
+    summary:
+      'Which models the sweep/fix session and its escalation subagent should run on (pipeline only)',
+    description:
+      'Fetched at runtime by `bug-hunt-sweep.yml`/`bug-fix-session.yml`, on every trigger path — ' +
+      'including the nightly cron sweep, which never goes through `workflow_dispatch` and so ' +
+      'cannot receive this as a dispatch input. Takes an optional `?repo=` for parity with this ' +
+      "controller's other endpoints, but does not read it yet: Bug Hunter's model settings are " +
+      "platform-wide, same as Builder's.",
+  })
+  @ApiResponse({ status: 200, type: BugHunterModelSettingsDto })
+  async getModels(): Promise<BugHunterModelSettingsDto> {
+    return this.modelSettingsService.get();
   }
 
   @Get('pipeline/sweep-prompt')

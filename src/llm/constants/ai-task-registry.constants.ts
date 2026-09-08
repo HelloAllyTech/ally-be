@@ -1089,7 +1089,8 @@ const BUG_HUNTER_TASKS: AiTaskEntry[] = [
     kind: AiTaskKind.COMPLETION,
     provider: 'anthropic',
     defaultModel: 'claude-sonnet-5',
-    configuredBy: '.github/workflows/bug-hunt-sweep.yml (--model)',
+    configuredBy:
+      'GlobalSettings (bug_hunter.models.defaultModel) via GET pipeline/models, read by .github/workflows/bug-hunt-sweep.yml',
   },
   {
     id: 'bug-hunter-verify',
@@ -1114,7 +1115,8 @@ const BUG_HUNTER_TASKS: AiTaskEntry[] = [
     kind: AiTaskKind.COMPLETION,
     provider: 'anthropic',
     defaultModel: 'claude-sonnet-5',
-    configuredBy: '.github/workflows/bug-fix-session.yml (--model)',
+    configuredBy:
+      'GlobalSettings (bug_hunter.models.defaultModel) via GET pipeline/models, read by .github/workflows/bug-fix-session.yml',
   },
   {
     id: 'bug-hunter-escalate',
@@ -1125,7 +1127,8 @@ const BUG_HUNTER_TASKS: AiTaskEntry[] = [
     kind: AiTaskKind.COMPLETION,
     provider: 'anthropic',
     defaultModel: 'claude-opus-5',
-    configuredBy: '.claude/agents/bug-escalation.md (model:)',
+    configuredBy:
+      'GlobalSettings (bug_hunter.models.escalationModel) via GET pipeline/models, written into .claude/agents/bug-escalation.md (model:) at runtime',
   },
 ];
 

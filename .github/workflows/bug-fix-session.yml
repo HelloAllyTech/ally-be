@@ -109,6 +109,34 @@ jobs:
           test -s /tmp/fix-prompt.txt
           echo "Fetched $(wc -c < /tmp/fix-prompt.txt) bytes of protocol."
 
+      - name: Resolve configured models
+        id: models
+        env:
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -euo pipefail
+          # Bug Hunter's model tiers are admin-editable (GlobalSettings, via
+          # GET pipeline/models) rather than hardcoded here, for the same
+          # reason the fix protocol itself is fetched at runtime instead of
+          # copied into this file: a change takes effect on the next session,
+          # not after five PRs.
+          RESP=$(curl -sSf -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/models?repo=${{ inputs.repo }}")
+          DEFAULT_MODEL=$(printf '%s' "$RESP" | jq -r '.defaultModel')
+          ESCALATION_MODEL=$(printf '%s' "$RESP" | jq -r '.escalationModel')
+          if [ -z "$DEFAULT_MODEL" ] || [ "$DEFAULT_MODEL" = "null" ] || [ -z "$ESCALATION_MODEL" ] || [ "$ESCALATION_MODEL" = "null" ]; then
+            echo "::error::Could not resolve Bug Hunter's configured models from ally-be."
+            exit 1
+          fi
+          echo "default_model=$DEFAULT_MODEL" >> "$GITHUB_OUTPUT"
+          # The committed frontmatter becomes just a fallback the moment this
+          # runs — this endpoint is now the one source of truth for the
+          # escalation model too, so it can no longer drift across this
+          # file's five otherwise-identical copies the way it used to be able
+          # to (nothing kept them in sync before).
+          sed -i.bak "s/^model: .*/model: $ESCALATION_MODEL/" .claude/agents/bug-escalation.md
+          rm -f .claude/agents/bug-escalation.md.bak
+
       - name: Run the fix session
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -118,7 +146,7 @@ jobs:
           set -euo pipefail
           claude -p "$(cat /tmp/fix-prompt.txt)" \
             --permission-mode acceptEdits \
-            --model claude-sonnet-5 \
+            --model "${{ steps.models.outputs.default_model }}" \
             --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
             --max-turns 120 \
             --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'

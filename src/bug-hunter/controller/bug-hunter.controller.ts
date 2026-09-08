@@ -34,6 +34,7 @@ import {
 import { BugFixSessionService } from '../service/bug-fix-session.service';
 import { BugHunterNotificationService } from '../service/bug-hunter-notification.service';
 import { BugHunterSettings } from '../entity/bug-hunter-settings.entity';
+import { BugHunterModelSettingsService } from '../service/bug-hunter-model-settings.service';
 import { BugHuntRun } from '../entity/bug-hunt-run.entity';
 import { BugHuntEvent } from '../entity/bug-hunt-event.entity';
 import { BugFinding } from '../entity/bug-finding.entity';
@@ -62,6 +63,8 @@ import {
   RejectBugFindingDto,
   BugHunterMetricsDto,
   BugHunterMetricsQueryDto,
+  BugHunterModelSettingsDto,
+  UpdateBugHunterModelSettingsDto,
 } from '../dto/bug-hunter.dto';
 import {
   BUG_HUNT_SSE_PING_INTERVAL_MS,
@@ -104,6 +107,7 @@ export class BugHunterController {
     private readonly bugFixSessionService: BugFixSessionService,
     private readonly notificationService: BugHunterNotificationService,
     private readonly metricsService: BugHunterMetricsService,
+    private readonly modelSettingsService: BugHunterModelSettingsService,
   ) {}
 
   @Get('settings')
@@ -587,6 +591,36 @@ export class BugHunterController {
     @CurrentUser() user: TokenUser,
   ): Promise<{ unreadCount: number }> {
     return this.notificationService.markAllRead(user.id);
+  }
+
+  @Get('settings/models')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'Read which models the sweep/fix session and its escalation subagent run on (super-duper-admin)',
+  })
+  @ApiResponse({ status: 200, type: BugHunterModelSettingsDto })
+  async getModelSettings(): Promise<BugHunterModelSettingsDto> {
+    return this.modelSettingsService.get();
+  }
+
+  @Patch('settings/models')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary: 'Change the default or escalation model (super-duper-admin)',
+    description:
+      'Takes effect on the next run: `bug-hunt-sweep.yml`/`bug-fix-session.yml` resolve these ' +
+      'live from GET pipeline/models before invoking `claude -p`, rather than reading a value ' +
+      'baked into the workflow at dispatch time — the same reason the sweep/fix protocol itself ' +
+      'is fetched at runtime instead of copied into the workflow file. Either field left out of ' +
+      'the body keeps its current value.',
+  })
+  @ApiResponse({ status: 200, type: BugHunterModelSettingsDto })
+  async updateModelSettings(
+    @Body() body: UpdateBugHunterModelSettingsDto,
+    @CurrentUser() user: TokenUser,
+  ): Promise<BugHunterModelSettingsDto> {
+    return this.modelSettingsService.update(body, user.id);
   }
 
   @Post('runs/trigger')

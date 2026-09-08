@@ -7,6 +7,8 @@ import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
 import { User } from 'src/user/entity/user.entity';
+import { GlobalSettings } from 'src/settings/entity/global-settings.entity';
+import { GlobalSettingsRepository } from 'src/settings/repository/global-settings.repository';
 
 import { BugHunterController } from './controller/bug-hunter.controller';
 import { BugHunterPipelineController } from './controller/bug-hunter-pipeline.controller';
@@ -30,6 +32,7 @@ import { BugHunterRepoClassifierService } from './service/bug-hunter-repo-classi
 import { GithubActionsService } from './service/github-actions.service';
 import { BugHunterNotificationService } from './service/bug-hunter-notification.service';
 import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-session-scheduler-registration.service';
+import { BugHunterModelSettingsService } from './service/bug-hunter-model-settings.service';
 
 /**
  * Bug Hunter: the kill switch, the comprehensive findings table, run history,
@@ -54,6 +57,15 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
  * roadmap opportunity the moment a reported bug's finding merges — by
  * whichever of the three merge routes gets there first (see the shared
  * `releaseLinkedRoadmapOpportunity` util).
+ *
+ * `GlobalSettingsRepository` is registered locally, same reasoning as
+ * `WhatsAppModule`: `SettingsModule` does not export it, and a TypeORM
+ * repository is a stateless wrapper over the shared DataSource, so a second
+ * instance over the same entity is safe. It backs
+ * `BugHunterModelSettingsService` — the sweep/fix-session model tiers live
+ * there rather than as new columns on `BugHunterSettings`, so this feature
+ * doesn't repeat the bespoke-settings-table pattern Builder's own
+ * `builder_settings` already copied from this module.
  */
 @Module({
   imports: [
@@ -69,6 +81,7 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
       // UserModule, matching how RoadmapOpportunity is taken here: the point is
       // to avoid pulling a module graph in for two `SELECT name` lookups.
       User,
+      GlobalSettings,
     ]),
     NotificationModule,
     LogsModule,
@@ -81,6 +94,7 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
     BugHuntRunRepository,
     BugHuntEventRepository,
     BugHunterSettingsRepository,
+    GlobalSettingsRepository,
     BugFindingRepository,
     BugHunterNotificationRepository,
     BugHunterService,
@@ -92,6 +106,7 @@ import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-ses
     BugFixSessionService,
     BugHunterRepoClassifierService,
     BugFixSessionSchedulerRegistrationService,
+    BugHunterModelSettingsService,
   ],
   exports: [
     BugHunterService,

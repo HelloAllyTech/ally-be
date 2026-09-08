@@ -477,6 +477,32 @@ export class UpdateBugHunterSettingsDto {
   mode!: BugHunterMode;
 }
 
+export class BugHunterModelSettingsDto {
+  @ApiProperty({
+    description:
+      'Model the main sweep/fix-session `claude -p` invocation runs on.',
+  })
+  defaultModel!: string;
+
+  @ApiProperty({
+    description:
+      'Model pinned into the bug-escalation subagent before each run.',
+  })
+  escalationModel!: string;
+}
+
+export class UpdateBugHunterModelSettingsDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  defaultModel?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  escalationModel?: string;
+}
+
 /**
  * Everything that is true of a bug because a PERSON filed it, rather than a
  * finder discovering it. Null on every sweep-found row.

@@ -168,6 +168,38 @@ jobs:
           test -s /tmp/sweep-prompt.txt
           echo "Fetched $(wc -c < /tmp/sweep-prompt.txt) bytes of protocol."
 
+      - name: Resolve configured models
+        if: steps.cfg.outputs.skip != 'true'
+        id: models
+        env:
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -euo pipefail
+          # Bug Hunter's model tiers are admin-editable (GlobalSettings, via
+          # GET pipeline/models) rather than hardcoded here, for the same
+          # reason the sweep protocol itself is fetched at runtime instead of
+          # copied into this file: a change takes effect on the next run, not
+          # after five PRs. Fetched here rather than passed as a
+          # workflow_dispatch input (Builder's approach for its own model
+          # settings) because that would miss the cron-triggered path above,
+          # which never goes through workflow_dispatch at all.
+          RESP=$(curl -sSf -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/models?repo=${{ steps.cfg.outputs.repo }}")
+          DEFAULT_MODEL=$(printf '%s' "$RESP" | jq -r '.defaultModel')
+          ESCALATION_MODEL=$(printf '%s' "$RESP" | jq -r '.escalationModel')
+          if [ -z "$DEFAULT_MODEL" ] || [ "$DEFAULT_MODEL" = "null" ] || [ -z "$ESCALATION_MODEL" ] || [ "$ESCALATION_MODEL" = "null" ]; then
+            echo "::error::Could not resolve Bug Hunter's configured models from ally-be."
+            exit 1
+          fi
+          echo "default_model=$DEFAULT_MODEL" >> "$GITHUB_OUTPUT"
+          # The committed frontmatter becomes just a fallback the moment this
+          # runs — this endpoint is now the one source of truth for the
+          # escalation model too, so it can no longer drift across this
+          # file's five otherwise-identical copies the way it used to be able
+          # to (nothing kept them in sync before).
+          sed -i.bak "s/^model: .*/model: $ESCALATION_MODEL/" .claude/agents/bug-escalation.md
+          rm -f .claude/agents/bug-escalation.md.bak
+
       - name: Run the sweep
         if: steps.cfg.outputs.skip != 'true'
         env:
@@ -178,7 +210,7 @@ jobs:
           set -euo pipefail
           claude -p "$(cat /tmp/sweep-prompt.txt)" \
             --permission-mode acceptEdits \
-            --model claude-sonnet-5 \
+            --model "${{ steps.models.outputs.default_model }}" \
             --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
             --max-turns 300 \
             --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
