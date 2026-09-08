@@ -15,6 +15,19 @@ import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
  * Any trend chart on responseLatencyMs should split by firstAudioSource —
  * otherwise a rise in filler coverage reads as a latency improvement.
  *
+ * `metadata->>'speechTransport'` ('room' | 'avatar', with
+ * `speechTransportProvider` naming the vendor) says which audio output carried
+ * the turn, and it MUST be split on for the same reason `source` must be: the
+ * two are not the same measurement. On 'room' the latency is timed to the first
+ * frame actually published. On 'avatar' the agent's speech is routed to a
+ * vendor's renderer, and livekit reports "speaking" when the first frame is
+ * handed TO THE VENDOR — so the vendor's transport, render and republish time
+ * is excluded and the number is optimistic by an unmeasured amount (bey took
+ * 12.7-16.7s just to publish its first video in local testing). No vendor
+ * exposes a "playback started" signal, so the number cannot currently be
+ * corrected; it can only be identified. Note a single session can carry both,
+ * since the video actor attaches mid-session.
+ *
  * Append-only and wide-by-design (one column per stage) so Metabase can chart
  * percentiles / stacked component breakdowns without pivoting an EAV table.
  */
