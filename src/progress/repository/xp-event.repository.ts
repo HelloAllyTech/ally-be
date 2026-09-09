@@ -66,7 +66,7 @@ export class XpEventRepository extends Repository<XpEvent> {
   /**
    * Serialises this user's daily-cap check-then-insert inside the current transaction.
    *
-   * MUST be called before getPracticeXpAwardedOn()/countPersonalBestsAwardedOn(). Without
+   * MUST be called before any of the cap reads below. Without
    * it, two SCENARIO_SESSION_ENDED events for the same learner arriving close together —
    * plausible since the unfinalised-session sweeper fires them without waiting on
    * listeners — can both read the same stale "already awarded today" total under READ
@@ -90,11 +90,105 @@ export class XpEventRepository extends Repository<XpEvent> {
   }
 
   /**
-   * Practice XP already banked today, used to apply the daily cap. Counts the minute
-   * award and its streak bonus only — completion, track and personal-best awards are
-   * bounded by their own rules and are deliberately outside the cap.
+   * XP already banked today under the given rules, used to apply a daily cap.
+   *
+   * Takes the rule set rather than naming one, because every source now has its own
+   * cap and they are all evaluated the same way. Passing an empty set returns 0 rather
+   * than summing the whole day — an empty `= ANY('{}')` matches nothing in Postgres, but
+   * being explicit stops a caller with a mis-built rule list silently reading zero and
+   * concluding it has full allowance.
    */
-  async getPracticeXpAwardedOn(
+  async getXpAwardedOn(
+    manager: EntityManager,
+    userId: number,
+    tenantId: string,
+    awardedOn: string,
+    rules: readonly string[],
+  ): Promise<number> {
+    if (rules.length === 0) return 0;
+
+    const rows: { total: string | null }[] = await manager.query(
+      `SELECT COALESCE(SUM("xp"), 0) AS total FROM "xp_events" ` +
+        `WHERE "userId" = $1 AND "tenant_id" = $2 AND "awardedOn" = $3 ` +
+        `AND "rule" = ANY($4::character varying[])`,
+      [userId, tenantId, awardedOn, rules],
+    );
+    return Number(rows[0]?.total ?? 0);
+  }
+
+  /**
+   * Total XP banked today across every rule except those explicitly outside the daily
+   * ceiling. Used for the overall ceiling, which sits above the per-source caps.
+   */
+  async getCappedXpAwardedOn(
+    manager: EntityManager,
+    userId: number,
+    tenantId: string,
+    awardedOn: string,
+    exemptRules: readonly string[],
+  ): Promise<number> {
+    const rows: { total: string | null }[] = await manager.query(
+      `SELECT COALESCE(SUM("xp"), 0) AS total FROM "xp_events" ` +
+        `WHERE "userId" = $1 AND "tenant_id" = $2 AND "awardedOn" = $3 ` +
+        `AND NOT ("rule" = ANY($4::character varying[]))`,
+      [userId, tenantId, awardedOn, exemptRules],
+    );
+    return Number(rows[0]?.total ?? 0);
+  }
+
+  /**
+   * How many distinct days in [start, end] earned XP under a qualifying rule.
+   *
+   * Bonus rules are excluded by the caller so the weekly consistency award cannot make
+   * its own day qualify — without that the rule feeds itself, since a day qualifies by
+   * earning XP and qualifying pays XP.
+   */
+  async countQualifyingDaysBetween(
+    manager: EntityManager,
+    userId: number,
+    tenantId: string,
+    startDate: string,
+    endDate: string,
+    excludedRules: readonly string[],
+  ): Promise<number> {
+    const rows: { count: string }[] = await manager.query(
+      `SELECT COUNT(DISTINCT "awardedOn")::int AS count FROM "xp_events" ` +
+        `WHERE "userId" = $1 AND "tenant_id" = $2 ` +
+        `AND "awardedOn" >= $3::date AND "awardedOn" <= $4::date ` +
+        `AND "xp" > 0 ` +
+        `AND NOT ("rule" = ANY($5::character varying[]))`,
+      [userId, tenantId, startDate, endDate, excludedRules],
+    );
+    return Number(rows[0]?.count ?? 0);
+  }
+
+  /** Whether a once-per-period award has already landed, by its synthetic source id. */
+  async hasAward(
+    manager: EntityManager,
+    userId: number,
+    tenantId: string,
+    rule: string,
+    sourceType: string,
+    sourceId: string,
+  ): Promise<boolean> {
+    const rows: { exists: boolean }[] = await manager.query(
+      `SELECT EXISTS (SELECT 1 FROM "xp_events" ` +
+        `WHERE "userId" = $1 AND "tenant_id" = $2 AND "rule" = $3 ` +
+        `AND "sourceType" = $4 AND "sourceId" = $5) AS "exists"`,
+      [userId, tenantId, rule, sourceType, sourceId],
+    );
+    return Boolean(rows[0]?.exists);
+  }
+
+  /**
+   * Practice minutes already credited today, read back from the ledger rather than from
+   * `user_daily_scores`.
+   *
+   * The depth milestones have to fire off the same number the minute award used, and
+   * the daily-scores row is written by a different listener on the same event — reading
+   * it here would race, and would count minutes the cap refused to pay for.
+   */
+  async getPracticeMinutesAwardedOn(
     manager: EntityManager,
     userId: number,
     tenantId: string,
@@ -103,28 +197,25 @@ export class XpEventRepository extends Repository<XpEvent> {
     const rows: { total: string | null }[] = await manager.query(
       `SELECT COALESCE(SUM("xp"), 0) AS total FROM "xp_events" ` +
         `WHERE "userId" = $1 AND "tenant_id" = $2 AND "awardedOn" = $3 ` +
-        `AND "rule" = ANY($4::character varying[])`,
-      [
-        userId,
-        tenantId,
-        awardedOn,
-        [XP_RULE.PRACTICE_MINUTE, XP_RULE.STREAK_MULTIPLIER],
-      ],
+        `AND "rule" = $4`,
+      [userId, tenantId, awardedOn, XP_RULE.PRACTICE_MINUTE],
     );
+    // One XP per minute, so the practice-rule total is the minute count.
     return Number(rows[0]?.total ?? 0);
   }
 
-  /** Whether a skill personal best has already been awarded today. */
-  async countPersonalBestsAwardedOn(
+  /** How many awards of one rule already landed today, for per-day count limits. */
+  async countRuleAwardedOn(
     manager: EntityManager,
     userId: number,
     tenantId: string,
     awardedOn: string,
+    rule: string,
   ): Promise<number> {
     const rows: { count: string }[] = await manager.query(
       `SELECT COUNT(*)::int AS count FROM "xp_events" ` +
         `WHERE "userId" = $1 AND "tenant_id" = $2 AND "awardedOn" = $3 AND "rule" = $4`,
-      [userId, tenantId, awardedOn, XP_RULE.SKILL_PERSONAL_BEST],
+      [userId, tenantId, awardedOn, rule],
     );
     return Number(rows[0]?.count ?? 0);
   }

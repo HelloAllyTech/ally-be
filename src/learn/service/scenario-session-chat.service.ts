@@ -1,4 +1,5 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Observable, Subject, startWith } from 'rxjs';
 import { In } from 'typeorm';
 import {
@@ -31,6 +32,12 @@ import {
   StreamEventType,
 } from '../type/scenario-session-chat.type';
 import { LoggerService } from 'src/logger/logger.service';
+import {
+  DEBRIEF_MIN_SUBSTANTIVE_REPLIES,
+  DebriefEngagementEvent,
+  DebriefThreadQualifiedEventParams,
+  isSubstantiveDebriefReply,
+} from '../type/debrief-engagement-event.type';
 
 @Injectable()
 export class ScenarioSessionChatService {
@@ -44,7 +51,46 @@ export class ScenarioSessionChatService {
     private readonly aiChatService: AiChatService,
     private readonly configService: AppConfigService,
     private readonly scenarioSessionMessageRepo: ScenarioSessionMessagesRepository,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
+
+  /**
+   * Announces a debrief thread that has become substantive, so it can earn XP.
+   *
+   * Emitted on every reply past the floor rather than only on the one that crosses it.
+   * The award is idempotent on the session, so the repeats cost a short no-op
+   * transaction — and if the crossing emit is lost, or its listener throws, the next
+   * reply recovers it. Under-paying a learner for work they actually did is the worse
+   * failure.
+   *
+   * Never throws: the debrief conversation must not break because a reward did not fire.
+   */
+  private announceDebriefEngagement(
+    messages: ScenarioSessionChatMessage[],
+    userId: number,
+    tenantId: string,
+    scenarioSessionId: string,
+  ): void {
+    try {
+      const substantiveReplies = messages.filter(
+        (message) =>
+          message.senderId === userId &&
+          isSubstantiveDebriefReply(message.content),
+      ).length;
+
+      if (substantiveReplies < DEBRIEF_MIN_SUBSTANTIVE_REPLIES) return;
+
+      this.eventEmitter.emit(DebriefEngagementEvent.THREAD_QUALIFIED, {
+        userId,
+        tenantId,
+        scenarioSessionId,
+      } as DebriefThreadQualifiedEventParams);
+    } catch (error) {
+      this.logger.error(
+        `Failed to announce debrief engagement for session ${scenarioSessionId}: ${error}`,
+      );
+    }
+  }
 
   async streamChat(
     scenarioSessionId: string,
@@ -80,6 +126,13 @@ export class ScenarioSessionChatService {
       where: { chatId: chat.id },
       order: { createdAt: 'ASC' },
     });
+
+    this.announceDebriefEngagement(
+      allMessages,
+      userId,
+      tenantId,
+      scenarioSessionId,
+    );
 
     const chatHistory = await this.buildChatHistoryWithSummarization(
       chat,

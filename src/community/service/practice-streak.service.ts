@@ -19,6 +19,7 @@ import {
 } from '../constant/community.constant';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { BadgeStreakMilestoneSharedService } from 'src/badge/service/badge-streak-milestone-shared.service';
+import { WEEKLY_CONSISTENCY_DAYS } from 'src/progress/progress.constants';
 
 /** Number of buckets shown by default for each grouping. */
 const DEFAULT_BUCKET_COUNT: Record<PracticeStreakGroupBy, number> = {
@@ -81,6 +82,7 @@ export class PracticeStreakService {
     dailyGoalMinutes: number,
     today: string,
     nextMilestone: PracticeStreakSummaryDto['nextMilestone'],
+    daysActiveThisWeek: number,
   ): PracticeStreakSummaryDto {
     const roundedMinutesToday = Math.round(minutesToday * 100) / 100;
     const practicedToday = roundedMinutesToday > 0;
@@ -116,6 +118,13 @@ export class PracticeStreakService {
         Math.round(Math.max(0, dailyGoalMinutes - roundedMinutesToday) * 100) /
         100,
       atRisk: streaks.currentStreak > 0 && !streakSecuredToday,
+      daysActiveThisWeek,
+      weeklyGoalDays: WEEKLY_CONSISTENCY_DAYS,
+      weeklyGoalMet: daysActiveThisWeek >= WEEKLY_CONSISTENCY_DAYS,
+      daysToWeeklyGoal: Math.max(
+        0,
+        WEEKLY_CONSISTENCY_DAYS - daysActiveThisWeek,
+      ),
       currentStreak: streaks.currentStreak,
       longestStreak: streaks.longestStreak,
       streakStartDate: streaks.streakStartDate,
@@ -137,11 +146,13 @@ export class PracticeStreakService {
   ): Promise<PracticeStreakSummaryDto> {
     const today = toBusinessDateString();
 
-    const [streaks, minutesToday, dailyGoalMinutes] = await Promise.all([
-      this.userDailyScoreRepository.getUserStreaks(userId, tenantId, today),
-      this.userDailyScoreRepository.getMinutesOnDate(userId, tenantId, today),
-      this.resolveDailyGoalMinutes(tenantId),
-    ]);
+    const [streaks, minutesToday, dailyGoalMinutes, daysActiveThisWeek] =
+      await Promise.all([
+        this.userDailyScoreRepository.getUserStreaks(userId, tenantId, today),
+        this.userDailyScoreRepository.getMinutesOnDate(userId, tenantId, today),
+        this.resolveDailyGoalMinutes(tenantId),
+        this.userDailyScoreRepository.countActiveDaysThisWeek(userId, tenantId),
+      ]);
 
     const nextMilestone =
       await this.badgeStreakMilestoneSharedService.getNextMilestone(
@@ -156,6 +167,7 @@ export class PracticeStreakService {
       dailyGoalMinutes,
       today,
       nextMilestone,
+      daysActiveThisWeek,
     );
   }
 

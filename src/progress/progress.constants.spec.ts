@@ -1,11 +1,17 @@
 import {
-  DAILY_PRACTICE_XP_CAP,
+  DAILY_SOURCE_CAPS,
+  DAILY_XP_CEILING,
+  depthMilestonesCrossed,
+  isEngagedSession,
   LEVEL_THRESHOLDS,
   MAX_LEVEL,
+  MIN_LEARNER_TURNS_FOR_XP,
   MIN_SESSION_SECONDS_FOR_XP,
+  PER_SESSION_MINUTE_CEILING,
   practiceXpForSession,
   resolveLevel,
-  STREAK_MULTIPLIER_MIN_DAYS,
+  TRACK_ITEM_XP,
+  trackItemXp,
   XP_AWARD,
 } from './progress.constants';
 
@@ -75,44 +81,126 @@ describe('progress constants', () => {
   });
 
   describe('practiceXpForSession', () => {
+    /** Enough turns that the engagement gate is never what fails a case below. */
+    const engagedTurns = (seconds: number) =>
+      Math.max(MIN_LEARNER_TURNS_FOR_XP, Math.ceil(seconds / 60));
+
     it('awards nothing at all for a session below the minimum duration', () => {
-      const result = practiceXpForSession(MIN_SESSION_SECONDS_FOR_XP - 1, 10);
-      expect(result).toEqual({
+      const seconds = MIN_SESSION_SECONDS_FOR_XP - 1;
+      expect(practiceXpForSession(seconds, engagedTurns(seconds))).toEqual({
         minuteXp: 0,
-        streakBonusXp: 0,
         completionXp: 0,
       });
     });
 
     it('rounds minutes down so a partial minute cannot be farmed', () => {
-      const result = practiceXpForSession(119, 0);
+      const result = practiceXpForSession(119, engagedTurns(119));
       expect(result.minuteXp).toBe(1 * XP_AWARD.PER_PRACTICE_MINUTE);
     });
 
     it('adds the completion bonus once the session qualifies', () => {
-      const result = practiceXpForSession(600, 0);
+      const result = practiceXpForSession(600, engagedTurns(600));
       expect(result.completionXp).toBe(XP_AWARD.PER_SESSION_COMPLETED);
     });
 
-    it('withholds the streak bonus below the streak threshold', () => {
-      const result = practiceXpForSession(600, STREAK_MULTIPLIER_MIN_DAYS - 1);
-      expect(result.streakBonusXp).toBe(0);
+    it('withholds everything from a session the learner was not present in', () => {
+      // Long enough to qualify on duration, but nobody spoke.
+      expect(practiceXpForSession(600, 0)).toEqual({
+        minuteXp: 0,
+        completionXp: 0,
+      });
     });
 
-    it('applies the streak bonus from the threshold day onward', () => {
-      const result = practiceXpForSession(600, STREAK_MULTIPLIER_MIN_DAYS);
-      // 10 minutes = 10 XP, +25% = 2.5 -> 3
-      expect(result.minuteXp).toBe(10);
-      expect(result.streakBonusXp).toBe(3);
+    it('caps the minutes one session can bank', () => {
+      const seconds = 6 * 60 * 60;
+      const result = practiceXpForSession(seconds, engagedTurns(seconds));
+      expect(result.minuteXp).toBe(PER_SESSION_MINUTE_CEILING);
+    });
+  });
+
+  describe('isEngagedSession', () => {
+    it('rejects a session with no turns', () => {
+      expect(isEngagedSession(600, 0)).toBe(false);
     });
 
-    it('can outrun the daily practice cap, so the cap is what bounds a long session', () => {
-      // Six hours is far beyond any real roleplay. This function deliberately does not
-      // apply the cap itself — it reports the raw award and the service clamps it — so
-      // the guard only works if the raw number can exceed the cap.
-      const result = practiceXpForSession(6 * 60 * 60, 30);
-      const practiceTotal = result.minuteXp + result.streakBonusXp;
-      expect(practiceTotal).toBeGreaterThan(DAILY_PRACTICE_XP_CAP);
+    it('rejects a session below the turn floor however long it ran', () => {
+      expect(isEngagedSession(3600, MIN_LEARNER_TURNS_FOR_XP - 1)).toBe(false);
+    });
+
+    it('rejects a handful of turns spread over an idle hour', () => {
+      expect(isEngagedSession(3600, 5)).toBe(false);
+    });
+
+    it('accepts a short conversation with real back-and-forth', () => {
+      expect(isEngagedSession(120, 8)).toBe(true);
+    });
+
+    it('rejects a non-finite duration rather than dividing by it', () => {
+      expect(isEngagedSession(Number.NaN, 100)).toBe(false);
+      expect(isEngagedSession(0, 100)).toBe(false);
+    });
+  });
+
+  describe('trackItemXp', () => {
+    it('pays nothing for a roleplay item, whose session already paid', () => {
+      expect(trackItemXp('ROLEPLAY')).toBe(0);
+    });
+
+    it('pays graded work more than passive consumption', () => {
+      expect(trackItemXp('QUIZ')).toBeGreaterThan(trackItemXp('VIDEO'));
+      expect(trackItemXp('ANNOTATED_ARTIFACT')).toBeGreaterThan(
+        trackItemXp('ARTICLE'),
+      );
+    });
+
+    it('pays nothing for an unknown type rather than guessing', () => {
+      expect(trackItemXp('NOT_A_TYPE')).toBe(0);
+      expect(trackItemXp(undefined)).toBe(0);
+    });
+
+    it('has a weight for every component type', () => {
+      Object.values(TRACK_ITEM_XP).forEach((xp) => {
+        expect(Number.isInteger(xp)).toBe(true);
+        expect(xp).toBeGreaterThanOrEqual(0);
+      });
+    });
+  });
+
+  describe('depthMilestonesCrossed', () => {
+    it('returns the milestones a day newly crossed', () => {
+      expect(depthMilestonesCrossed(0, 40).map((m) => m.minutes)).toEqual([
+        15, 30,
+      ]);
+    });
+
+    it('does not re-report a milestone already behind us', () => {
+      expect(depthMilestonesCrossed(20, 35).map((m) => m.minutes)).toEqual([
+        30,
+      ]);
+    });
+
+    it('returns nothing when the day crossed none', () => {
+      expect(depthMilestonesCrossed(31, 45)).toEqual([]);
+    });
+  });
+
+  describe('daily caps', () => {
+    it('sums to more than the ceiling, so no learner can bank every source', () => {
+      const sum = DAILY_SOURCE_CAPS.reduce((total, s) => total + s.cap, 0);
+      expect(sum).toBeGreaterThan(DAILY_XP_CEILING);
+    });
+
+    it('gives every capped source a positive cap below the ceiling', () => {
+      DAILY_SOURCE_CAPS.forEach((source) => {
+        expect(source.cap).toBeGreaterThan(0);
+        expect(source.cap).toBeLessThanOrEqual(DAILY_XP_CEILING);
+        expect(source.rules.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('never puts one rule under two caps', () => {
+      const rules = DAILY_SOURCE_CAPS.flatMap((s) => s.rules);
+      expect(new Set(rules).size).toBe(rules.length);
     });
   });
 });

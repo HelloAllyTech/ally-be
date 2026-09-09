@@ -1,12 +1,35 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { UserDailyScores } from '../entity/user-daily-scores.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { LeaderboardEntryDto } from '../dto/leaderboard.dto';
 import { LeaderboardResult, UserRankResult } from '../type/leaderboard.type';
-import { scorePoints } from '../constant/community.constant';
-import { toBusinessDateString } from 'src/common/util/date.util';
+import {
+  businessWeekBounds,
+  toBusinessDateString,
+} from 'src/common/util/date.util';
 import { StreakStatsRow } from '../type/practice-streak.type';
+import {
+  NON_QUALIFYING_RULES,
+  WEEKLY_CONSISTENCY_DAYS,
+} from 'src/progress/progress.constants';
+
+/**
+ * Every spelling of a tenant that could appear in `xp_events."tenant_id"`.
+ *
+ * `tenant_id` is a varchar across most of the schema and holds a mix of tenant uuids
+ * and short codes. The progress module canonicalises to the uuid before writing, but
+ * the leaderboard is called with whatever the request carried — so matching on the
+ * request value alone would silently return an empty board for half the callers.
+ */
+const TENANT_ALIASES_CTE = `
+  tenant_ids AS (
+    SELECT t.id::text AS tid FROM tenants t WHERE t.id::text = $1 OR t.code = $1
+    UNION
+    SELECT t.code FROM tenants t WHERE t.id::text = $1 OR t.code = $1
+    UNION
+    SELECT $1
+  )`;
 
 export interface UpsertDailyScoreResult {
   /** The business-timezone calendar day (YYYY-MM-DD) this write landed on. */
@@ -24,9 +47,11 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
   }
 
   /**
-   * Upserts daily score for play time.
-   * Awards: minutesToAdd points + 1 active day bonus (when minutesPlayed reaches >= 1)
-   * Active day bonus is awarded only when cumulative minutesPlayed crosses the 1 minute threshold
+   * Upserts the day's practice minutes.
+   *
+   * `totalScore` is no longer maintained — it was a second points currency alongside XP,
+   * and nothing reads it since the leaderboard moved to xp_events. The column is left in
+   * place so historical rows stay readable.
    *
    * Returns whether this write crossed the active-day threshold. A day can only
    * cross once, so callers can use it to trigger once-per-active-day work
@@ -43,21 +68,10 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     const rows = await this.query(
       `
       INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
-      VALUES (
-        uuid_generate_v4(), $1, $2, $3::date, $4,
-        $4 + CASE WHEN $4 >= 1.00 THEN 1.00 ELSE 0.00 END,
-        NOW(), NOW()
-      )
+      VALUES (uuid_generate_v4(), $1, $2, $3::date, $4, 0, NOW(), NOW())
       ON CONFLICT ("userId", "tenant_id", "date")
       DO UPDATE SET
         "minutesPlayed" = user_daily_scores."minutesPlayed" + $4,
-        "totalScore" = user_daily_scores."totalScore" + $4 +
-          CASE
-            WHEN user_daily_scores."minutesPlayed" < 1.00
-             AND user_daily_scores."minutesPlayed" + $4 >= 1.00
-            THEN ${scorePoints.ACTIVE_DAY_BONUS}
-            ELSE 0
-          END,
         "updatedAt" = NOW()
       RETURNING
         "date"::text AS "businessDate",
@@ -75,59 +89,6 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     };
   }
 
-  /**
-   * Increments totalScore by a specified amount (for reactions/comments).
-   * Creates a new row if one doesn't exist for today (without active day bonus).
-   */
-  async incrementTotalScore(
-    userId: number,
-    tenantId: string,
-    amount: number,
-  ): Promise<void> {
-    const normalizedDate = toBusinessDateString();
-
-    await this.query(
-      `
-      INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
-      VALUES (uuid_generate_v4(), $1, $2, $3::date, 0, $4, NOW(), NOW())
-      ON CONFLICT ("userId", "tenant_id", "date")
-      DO UPDATE SET
-        "totalScore" = user_daily_scores."totalScore" + $4,
-        "updatedAt" = NOW()
-      `,
-      [userId, tenantId, normalizedDate, amount],
-    );
-  }
-
-  /**
-   * Decrements totalScore by a specified amount.
-   * Used when removing reactions/comments - decrements from today's score.
-   * Creates a new row if one doesn't exist for today.
-   */
-  async decrementTotalScore(
-    userId: number,
-    tenantId: string,
-    amount: number,
-    em?: EntityManager,
-  ): Promise<void> {
-    const normalizedDate = toBusinessDateString();
-
-    const userDailyScoreRepo = em
-      ? em.getRepository(UserDailyScores)
-      : this.dataSource.getRepository(UserDailyScores);
-    await userDailyScoreRepo.query(
-      `
-      INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
-      VALUES (uuid_generate_v4(), $1, $2, $3::date, 0, $4, NOW(), NOW())
-      ON CONFLICT ("userId", "tenant_id", "date")
-      DO UPDATE SET
-        "totalScore" = user_daily_scores."totalScore" + $4,
-        "updatedAt" = NOW()
-      `,
-      [userId, tenantId, normalizedDate, -amount],
-    );
-  }
-
   async getLeaderboardWithUserDetails(
     tenantId: string,
     startDate: Date,
@@ -137,15 +98,23 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
   ): Promise<LeaderboardResult> {
     const limit = pagination?.limit ?? 50;
     const offset = pagination?.offset ?? 0;
-    const businessToday = toBusinessDateString();
+    const week = businessWeekBounds();
 
     const leaderboardData = await this.query(
       `
-      WITH aggregated_scores AS (
+      WITH ${TENANT_ALIASES_CTE},
+      aggregated_scores AS (
         SELECT
           u.id as "userId",
           COALESCE(SUM(uds."minutesPlayed"), 0) as "minutesPlayed",
-          COALESCE(SUM(uds."totalScore"), 0) as score
+          COALESCE((
+            SELECT SUM(xe."xp")
+            FROM xp_events xe
+            WHERE xe."userId" = u.id
+              AND xe."tenant_id" IN (SELECT tid FROM tenant_ids)
+              AND xe."awardedOn" >= $2
+              AND xe."awardedOn" <= $3
+          ), 0) as score
         FROM users u
         LEFT JOIN user_daily_scores uds
           ON uds."userId" = u.id
@@ -187,31 +156,19 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
         ORDER BY rs.rank ASC, u.name ASC, rs."userId" ASC
         LIMIT $4 OFFSET $5
       ),
-      active_days AS (
-        SELECT DISTINCT uds."userId", uds."date"::date AS active_day
-        FROM user_daily_scores uds
-        JOIN page p ON p."userId" = uds."userId"
-        WHERE uds.tenant_id = $1
-          AND uds."minutesPlayed" >= 1.00
-      ),
-      islands AS (
-        SELECT
-          "userId",
-          active_day,
-          active_day - (ROW_NUMBER() OVER (PARTITION BY "userId" ORDER BY active_day))::int AS island
-        FROM active_days
-      ),
-      runs AS (
-        SELECT "userId", COUNT(*)::int AS run_length, MAX(active_day) AS last_day
-        FROM islands
-        GROUP BY "userId", island
-      ),
-      streaks AS (
-        SELECT
-          "userId",
-          COALESCE(MAX(run_length) FILTER (WHERE last_day >= $6::date - 1), 0)::int AS current_streak
-        FROM runs
-        GROUP BY "userId"
+      -- Regularity is days-with-XP inside the current ISO week, not a chain of
+      -- consecutive practice days. Any kind of effort keeps it alive, and a single
+      -- missed day no longer resets anything.
+      weekly_activity AS (
+        SELECT xe."userId", COUNT(DISTINCT xe."awardedOn")::int AS days_active
+        FROM xp_events xe
+        JOIN page p ON p."userId" = xe."userId"
+        WHERE xe."tenant_id" IN (SELECT tid FROM tenant_ids)
+          AND xe."awardedOn" >= $6::date
+          AND xe."awardedOn" <= $7::date
+          AND xe."xp" > 0
+          AND NOT (xe."rule" = ANY($8::character varying[]))
+        GROUP BY xe."userId"
       )
       SELECT
         p."userId",
@@ -221,7 +178,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
         p."profileImageUrl",
         p.status,
         COALESCE(bu.badge_count, 0) as "badgeCount",
-        COALESCE(s.current_streak, 0) as "currentStreak"
+        COALESCE(s.days_active, 0) as "daysActiveThisWeek"
       FROM page p
       LEFT JOIN (
         SELECT "userId", COUNT(*) as badge_count
@@ -229,10 +186,19 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
         WHERE badge_users."deletedAt" IS NULL
         GROUP BY "userId"
       ) bu ON bu."userId" = p."userId"
-      LEFT JOIN streaks s ON s."userId" = p."userId"
+      LEFT JOIN weekly_activity s ON s."userId" = p."userId"
       ORDER BY p.rank ASC, p.name ASC, p."userId" ASC
       `,
-      [tenantId, startDate, endDate, limit, offset, businessToday],
+      [
+        tenantId,
+        startDate,
+        endDate,
+        limit,
+        offset,
+        week.start,
+        week.end,
+        NON_QUALIFYING_RULES,
+      ],
     );
 
     const countResult = await this.query(
@@ -253,16 +219,22 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
 
     const totalCount = parseInt(countResult[0]?.count) || 0;
 
-    const data: LeaderboardEntryDto[] = leaderboardData.map((row: any) => ({
-      userId: row.userId,
-      name: row.name,
-      status: row.status,
-      profileImageUrl: row.profileImageUrl || undefined,
-      rank: hideRankInCommunity ? undefined : parseInt(row.rank) || 0,
-      minutesPlayed: parseInt(row.minutesPlayed) || 0,
-      badgeCount: parseInt(row.badgeCount) || 0,
-      currentStreak: parseInt(row.currentStreak) || 0,
-    }));
+    const data: LeaderboardEntryDto[] = leaderboardData.map((row: any) => {
+      const daysActiveThisWeek = parseInt(row.daysActiveThisWeek) || 0;
+      return {
+        userId: row.userId,
+        name: row.name,
+        status: row.status,
+        profileImageUrl: row.profileImageUrl || undefined,
+        rank: hideRankInCommunity ? undefined : parseInt(row.rank) || 0,
+        minutesPlayed: parseInt(row.minutesPlayed) || 0,
+        badgeCount: parseInt(row.badgeCount) || 0,
+        daysActiveThisWeek,
+        weeklyGoalDays: WEEKLY_CONSISTENCY_DAYS,
+        weeklyGoalMet: daysActiveThisWeek >= WEEKLY_CONSISTENCY_DAYS,
+        currentStreak: daysActiveThisWeek,
+      };
+    });
 
     return { data, totalCount };
   }
@@ -276,11 +248,19 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
   ): Promise<UserRankResult | null> {
     const result = await this.query(
       `
-      WITH aggregated_scores AS (
+      WITH ${TENANT_ALIASES_CTE},
+      aggregated_scores AS (
         SELECT
           u.id as "userId",
           COALESCE(SUM(uds."minutesPlayed"), 0) as "minutesPlayed",
-          COALESCE(SUM(uds."totalScore"), 0) as score
+          COALESCE((
+            SELECT SUM(xe."xp")
+            FROM xp_events xe
+            WHERE xe."userId" = u.id
+              AND xe."tenant_id" IN (SELECT tid FROM tenant_ids)
+              AND xe."awardedOn" >= $2
+              AND xe."awardedOn" <= $3
+          ), 0) as score
         FROM users u
         LEFT JOIN user_daily_scores uds
           ON uds."userId" = u.id
@@ -330,9 +310,12 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       return null;
     }
 
-    // One user, so reuse the shared streak definition rather than duplicating
-    // the CTE here — the leaderboard row and "my rank" must never disagree.
-    const streaks = await this.getUserStreaks(userId, tenantId);
+    // One user, so reuse the shared definition rather than duplicating the CTE here —
+    // the leaderboard row and "my rank" must never disagree.
+    const daysActiveThisWeek = await this.countActiveDaysThisWeek(
+      userId,
+      tenantId,
+    );
 
     const row = result[0];
     return {
@@ -343,8 +326,40 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       rank: hideRankInCommunity ? undefined : parseInt(row.rank) || 0,
       minutesPlayed: parseInt(row.minutesPlayed) || 0,
       badgeCount: parseInt(row.badgeCount) || 0,
-      currentStreak: streaks.currentStreak,
+      daysActiveThisWeek,
+      weeklyGoalDays: WEEKLY_CONSISTENCY_DAYS,
+      weeklyGoalMet: daysActiveThisWeek >= WEEKLY_CONSISTENCY_DAYS,
+      currentStreak: daysActiveThisWeek,
     };
+  }
+
+  /**
+   * Distinct days in the current ISO week on which this learner earned XP.
+   *
+   * The single definition of regularity, shared by the leaderboard page and "my rank".
+   * Bonus rules are excluded for the same reason they are excluded when the weekly
+   * award is paid: a day has to be earned by work actually done that day.
+   */
+  async countActiveDaysThisWeek(
+    userId: number,
+    tenantId: string,
+  ): Promise<number> {
+    const week = businessWeekBounds();
+    const rows = await this.query(
+      `
+      WITH ${TENANT_ALIASES_CTE}
+      SELECT COUNT(DISTINCT xe."awardedOn")::int AS count
+      FROM xp_events xe
+      WHERE xe."userId" = $2
+        AND xe."tenant_id" IN (SELECT tid FROM tenant_ids)
+        AND xe."awardedOn" >= $3::date
+        AND xe."awardedOn" <= $4::date
+        AND xe."xp" > 0
+        AND NOT (xe."rule" = ANY($5::character varying[]))
+      `,
+      [tenantId, userId, week.start, week.end, NON_QUALIFYING_RULES],
+    );
+    return Number(rows[0]?.count ?? 0);
   }
 
   async getTotalSimulationMinutesPerUser(
@@ -440,8 +455,13 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
 
   /**
    * Computes consecutive-active-days streak statistics for a set of users in a
-   * single tenant, using the "gaps and islands" technique. An active day is one
-   * where minutesPlayed >= 1.00.
+   * single tenant, using the "gaps and islands" technique.
+   *
+   * An active day is one that **earned XP**, of any kind — practice, a course
+   * component, a debrief conversation, a peer comment. It used to mean a day with at
+   * least a minute of roleplay, which meant a learner could spend an evening on quizzes
+   * and reading and still watch their streak break. Bonus rules are excluded so a day
+   * has to be earned by work actually done on it.
    *
    * The current streak is the run whose most recent day is `businessToday` or the
    * day before (the day before is allowed so the streak is not shown as broken
@@ -471,12 +491,14 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
 
     const rows = await this.query(
       `
-      WITH active_days AS (
-        SELECT DISTINCT "userId", "date"::date AS active_day
-        FROM user_daily_scores
-        WHERE tenant_id = $1
-          AND ($2::int[] IS NULL OR "userId" = ANY($2::int[]))
-          AND "minutesPlayed" >= 1.00
+      WITH ${TENANT_ALIASES_CTE},
+      active_days AS (
+        SELECT DISTINCT xe."userId", xe."awardedOn"::date AS active_day
+        FROM xp_events xe
+        WHERE xe."tenant_id" IN (SELECT tid FROM tenant_ids)
+          AND ($2::int[] IS NULL OR xe."userId" = ANY($2::int[]))
+          AND xe."xp" > 0
+          AND NOT (xe."rule" = ANY($4::character varying[]))
       ),
       islands AS (
         SELECT
@@ -507,7 +529,7 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       FROM runs
       GROUP BY "userId"
       `,
-      [tenantId, userIds ?? null, businessToday],
+      [tenantId, userIds ?? null, businessToday, NON_QUALIFYING_RULES],
     );
 
     return rows.map((row: any) => ({

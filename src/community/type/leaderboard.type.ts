@@ -29,6 +29,11 @@ export interface UserRankResult {
   rank?: number;
   minutesPlayed: number;
   badgeCount: number;
-  /** All-time consecutive-active-days streak, not window-scoped. */
+  /** Days this ISO week on which the learner earned XP, of any kind. */
+  daysActiveThisWeek: number;
+  /** Active days needed this week for the consistency bonus. */
+  weeklyGoalDays: number;
+  weeklyGoalMet: boolean;
+  /** @deprecated Carries daysActiveThisWeek for released clients. */
   currentStreak: number;
 }
