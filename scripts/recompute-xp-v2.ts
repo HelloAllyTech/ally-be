@@ -27,9 +27,15 @@
  *
  * ── The engagement gate on history ──────────────────────────────────────────────────
  * Sessions are gated on learner turn count exactly as they are live. Sessions with no
- * transcript rows therefore earn nothing. That is correct for an abandoned tab and
- * wrong for a session whose messages were never persisted; the report counts them
- * separately so the size of that second group is visible before anyone applies this.
+ * transcript rows therefore earn nothing, and that is the single biggest risk in
+ * repricing: it is correct for an abandoned tab and destructive for a session whose
+ * messages were simply never persisted, and this script cannot tell the two apart.
+ *
+ * On the seeded local database only 5 of 90 completed sessions carry any learner
+ * transcript rows, which takes 13 of 14 learners to zero. That is a seeding artifact —
+ * seeds do not write transcripts — but it is exactly the shape the real failure would
+ * take. Before anyone runs this against production, count the completed sessions with
+ * no rows in `scenario_session_messages` and establish which of the two cases they are.
  */
 
 import { DataSource } from 'typeorm';
@@ -138,7 +144,9 @@ track_days AS (
   JOIN track_items ti ON ti.id = tip."trackItemId"
   JOIN track_enrollments te ON te.id = tip."trackEnrollmentId"
   LEFT JOIN tenant_of tt ON tt.spelling = te."tenantId"::text
-  WHERE tip."status" = 'COMPLETED' AND tip."completedAt" IS NOT NULL
+  WHERE tip."status" = 'COMPLETED'
+    AND tip."completedAt" IS NOT NULL
+    AND tip."deletedAt" IS NULL
   GROUP BY 1, 2, 3
 ),
 combined AS (
@@ -166,6 +174,42 @@ capped AS (
   FROM combined
 )
 SELECT user_id, tenant_id, day, raw_xp, day_xp FROM capped WHERE day_xp > 0
+`;
+
+/**
+ * How completed sessions fare against the engagement gate.
+ *
+ * The decisive number before anyone reprices history. A session with no transcript rows
+ * fails the gate, and there are two very different reasons it might have none: nobody
+ * spoke, or the messages were never persisted for it. The first is the gate working; the
+ * second is history we would be destroying. Only the totals can tell them apart, so they
+ * are counted rather than assumed.
+ */
+const GATE_SQL = `
+SELECT
+  COUNT(*)::int AS completed,
+  COUNT(*) FILTER (WHERE turns = 0)::int AS no_transcript,
+  COUNT(*) FILTER (WHERE turns > 0 AND turns < $1)::int AS below_turn_floor,
+  COUNT(*) FILTER (
+    WHERE turns >= $1 AND seconds > 0 AND turns / (seconds / 60.0) < $2
+  )::int AS below_rate_floor,
+  COUNT(*) FILTER (WHERE seconds < $3)::int AS too_short,
+  COUNT(*) FILTER (
+    WHERE seconds >= $3 AND turns >= $1 AND seconds > 0
+      AND turns / (seconds / 60.0) >= $2
+  )::int AS passes
+FROM (
+  SELECT
+    GREATEST(0, EXTRACT(EPOCH FROM (s."endedAt" - s."startedAt"))
+      - COALESCE(s."totalPausedMs", 0) / 1000.0) AS seconds,
+    COALESCE((
+      SELECT COUNT(*) FROM scenario_session_messages m
+      WHERE m."scenarioSessionId" = s.id AND m."senderId" > 0
+    ), 0) AS turns
+  FROM scenario_sessions s
+  WHERE s."eventStatus" = 'COMPLETED'
+    AND s."endedAt" IS NOT NULL AND s."startedAt" IS NOT NULL
+) t
 `;
 
 async function main(): Promise<void> {
@@ -245,6 +289,13 @@ async function main(): Promise<void> {
       });
     }
 
+    const [gate] = await dataSource.query(GATE_SQL, [
+      MIN_LEARNER_TURNS_FOR_XP,
+      MIN_LEARNER_TURNS_PER_MINUTE,
+      MIN_SESSION_SECONDS_FOR_XP,
+    ]);
+
+    reportGate(gate);
     report(learners, dailyRows.length);
 
     if (!APPLY) {
@@ -280,6 +331,34 @@ function isoWeekKey(day: Date): string {
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * p))];
+}
+
+function reportGate(gate: {
+  completed: number;
+  no_transcript: number;
+  below_turn_floor: number;
+  below_rate_floor: number;
+  too_short: number;
+  passes: number;
+}): void {
+  const pct = (n: number) =>
+    gate.completed > 0 ? `${((n / gate.completed) * 100).toFixed(1)}%` : 'n/a';
+
+  console.log('Engagement gate, over every completed session\n');
+  console.log(`completed sessions         ${gate.completed}`);
+  console.log(`  pass the gate            ${gate.passes} (${pct(gate.passes)})`);
+  console.log(`  no transcript rows       ${gate.no_transcript} (${pct(gate.no_transcript)})`);
+  console.log(`  below the turn floor     ${gate.below_turn_floor} (${pct(gate.below_turn_floor)})`);
+  console.log(`  below the rate floor     ${gate.below_rate_floor} (${pct(gate.below_rate_floor)})`);
+  console.log(`  under the minimum length ${gate.too_short} (${pct(gate.too_short)})`);
+  if (gate.no_transcript > gate.passes) {
+    console.log('');
+    console.log('!! More sessions have no transcript than pass the gate. Before applying');
+    console.log('!! anything, establish whether those sessions genuinely had no learner');
+    console.log('!! turns or simply never had their messages persisted. Repricing on the');
+    console.log('!! second would delete history rather than correct it.');
+  }
+  console.log('');
 }
 
 function report(learners: LearnerRow[], dayCount: number): void {
