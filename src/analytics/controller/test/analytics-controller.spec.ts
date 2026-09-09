@@ -5,6 +5,7 @@ import { CohortAnalyticsService } from '../../service/cohort-analytics.service';
 import { UsageLevelAnalyticsService } from '../../service/usage-level-analytics.service';
 import { CertificationAnalyticsService } from '../../service/certification-analytics.service';
 import { XpGrowthAnalyticsService } from '../../service/xp-growth-analytics.service';
+import { GoalsXpAnalyticsService } from '../../service/goals-xp-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../../service/roleplay-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsService } from '../../service/roadmap-delivery-analytics.service';
 import { ShipVolumeAnalyticsService } from '../../service/ship-volume-analytics.service';
@@ -121,6 +122,10 @@ describe('AnalyticsController', () => {
         {
           provide: XpGrowthAnalyticsService,
           useValue: { getXpGrowth: jest.fn() },
+        },
+        {
+          provide: GoalsXpAnalyticsService,
+          useValue: { getGoalsXp: jest.fn() },
         },
         {
           provide: RoleplayVolumeAnalyticsService,

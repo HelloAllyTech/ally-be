@@ -12,6 +12,9 @@ import { CertificationAnalyticsService } from './service/certification-analytics
 import { CertificationAnalyticsRepository } from './repository/certification-analytics.repository';
 import { XpGrowthAnalyticsService } from './service/xp-growth-analytics.service';
 import { XpGrowthAnalyticsRepository } from './repository/xp-growth-analytics.repository';
+import { GoalsXpAnalyticsService } from './service/goals-xp-analytics.service';
+import { GoalsXpAnalyticsRepository } from './repository/goals-xp-analytics.repository';
+import { AnalyticsXpGoal } from './entity/analytics-xp-goal.entity';
 import { RoleplayVolumeAnalyticsService } from './service/roleplay-volume-analytics.service';
 import { RoleplayVolumeAnalyticsRepository } from './repository/roleplay-volume-analytics.repository';
 // Analytics → Product management tab: reads the internal product roadmap rather
@@ -123,6 +126,7 @@ import { TenantModule } from 'src/tenant/tenant.module';
       DashboardGroup,
       AnalyticsChartPreference,
       AnalyticsQualityThreshold,
+      AnalyticsXpGoal,
     ]),
     ChatModule,
     TenantModule,
@@ -147,6 +151,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     CertificationAnalyticsRepository,
     XpGrowthAnalyticsService,
     XpGrowthAnalyticsRepository,
+    GoalsXpAnalyticsService,
+    GoalsXpAnalyticsRepository,
     RoleplayVolumeAnalyticsService,
     RoleplayVolumeAnalyticsRepository,
     RoadmapDeliveryAnalyticsService,
@@ -241,6 +247,7 @@ import { TenantModule } from 'src/tenant/tenant.module';
     PlatformAnalyticsService,
     HighlightsAnalyticsService,
     XpGrowthAnalyticsService,
+    GoalsXpAnalyticsService,
     ActivationAnalyticsService,
     CompletionRateAnalyticsService,
     LanguageMixAnalyticsService,
