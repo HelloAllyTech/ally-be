@@ -12,6 +12,23 @@ import {
   MAX_CHARACTER_KNOWLEDGE_SOURCES_COUNT,
   MAX_CHARACTER_LINGUISTIC_STYLE_SAMPLES_COUNT,
 } from '../constants/scenario-character.constants';
+import { KnowledgeChunkPassage } from 'src/ai/dto/knowledge.dto';
+import { KbSearchDto } from 'src/knowledge-base/dto/knowledge-base.dto';
+import {
+  KbCharacterTopic,
+  KbCorpus,
+  KbRetrievalConsumer,
+} from 'src/knowledge-base/enum/knowledge-base.enum';
+import { KnowledgeBaseService } from 'src/knowledge-base/service/knowledge-base.service';
+
+/**
+ * How many served chunk ids a session carries.
+ *
+ * A ~25-question interview searching a few times per phase will not approach this; the cap
+ * exists so a pathological loop cannot grow an unbounded array on a row rewritten every turn.
+ * Oldest ids fall off first, which at worst re-sends a passage from early in the interview.
+ */
+const MAX_SERVED_CHUNK_IDS = 200;
 
 /** Mutable per-turn context threaded through tool executions. */
 export interface InterviewToolExecutionContext {
@@ -156,6 +173,7 @@ export class CharacterInterviewToolsService {
   constructor(
     private readonly sessionRepository: CharacterInterviewSessionRepository,
     private readonly dataSource: DataSource,
+    private readonly knowledgeBaseService: KnowledgeBaseService,
   ) {}
 
   getToolDefinitions(): any[] {
@@ -226,6 +244,52 @@ export class CharacterInterviewToolsService {
           'is rejected under any other. The answers go into ' +
           "save_character_draft.voices, keyed by that voice's languageId.",
         input_schema: { type: 'object', properties: {} },
+      },
+      {
+        name: 'search_corpus',
+        description:
+          'Search the character-library corpus — clinical and lived-experience ' +
+          'reference material an Ally admin has curated — for passages that can ' +
+          'make the next question specific or the draft real. Read-only; the ' +
+          'turn does NOT end, so search and then continue in the same turn.\n\n' +
+          'Search when a phase turns on knowledge you should not invent: how a ' +
+          'condition actually presents, what a day in some life is really like, ' +
+          'how someone in that situation actually talks. Query in your own words, ' +
+          'as a full question — not keywords. Pass `topics` for the part of the ' +
+          'person you are working on; it boosts material a curator mapped there ' +
+          'without hiding anything else.\n\n' +
+          'An EMPTY result is a real, useful answer and not an error to retry. It ' +
+          'means the corpus does not cover this. Do not rephrase and search again ' +
+          'more than once, and NEVER present invented detail as though it came ' +
+          'from the corpus — say what you are drawing on instead.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description:
+                'The question you want answered, in full words (e.g. "how does ' +
+                'early-stage dementia change how someone speaks?")',
+            },
+            topics: {
+              type: 'array',
+              description:
+                'Which part of the character this is about. Boosts, never ' +
+                'restricts.',
+              items: {
+                type: 'string',
+                enum: [
+                  'identity',
+                  'life_context',
+                  'inner_life',
+                  'history_and_presenting_concern',
+                  'speech_and_language',
+                ],
+              },
+            },
+          },
+          required: ['query'],
+        },
       },
       {
         name: 'save_character_draft',
@@ -335,6 +399,8 @@ export class CharacterInterviewToolsService {
         return this.executeAskQuestion(input);
       case 'get_voices':
         return this.executeGetVoices();
+      case 'search_corpus':
+        return this.executeSearchCorpus(input, context);
       case 'save_character_draft':
         return this.executeSaveCharacterDraft(input, context);
       default:
@@ -459,6 +525,163 @@ export class CharacterInterviewToolsService {
       .getRepository(Languages)
       .findOne({ where: { value: 'en-IN' } });
     return english ? String(english.id) : '1';
+  }
+
+  /**
+   * Retrieve grounding passages for the interview, and remember what this session has
+   * already been shown.
+   *
+   * TWO THINGS ARE DELIBERATE HERE.
+   *
+   * An empty result comes back as ok:TRUE with an explicit note, never ok:false. Every other
+   * tool uses ok:false to mean "you got this wrong, repair and retry", and the model obliges —
+   * so reporting "the corpus has nothing on this" as a failure would send it into a rephrase
+   * loop against a corpus that genuinely does not cover the topic, burning turns to arrive
+   * back where it started. "I found nothing" is a correct answer to a good question.
+   *
+   * A passage this session has already been given comes back as a REFERENCE rather than its
+   * full text. The interview loop resends the entire transcript every turn, so an 800-token
+   * passage retrieved twice is not paid for twice — it is paid for on every turn from then
+   * on, twice over. Tracking the served chunk ids costs a jsonb write and removes that
+   * entirely; the model still learns the passage matched its new query, which is the part
+   * carrying information.
+   */
+  private async executeSearchCorpus(
+    input: Record<string, any>,
+    context: InterviewToolExecutionContext,
+  ): Promise<InterviewToolExecutionOutcome> {
+    const query = String(input?.query ?? '').trim();
+    if (!query) {
+      return {
+        modelResult: { ok: false, error: 'A query is required to search.' },
+        summary: 'Corpus search skipped - no query',
+      };
+    }
+
+    const topics = this.normalizeCharacterTopics(input?.topics);
+
+    let passages: KnowledgeChunkPassage[];
+    try {
+      ({ passages } = await this.knowledgeBaseService.search(
+        {
+          corpus: KbCorpus.CHARACTER_LIBRARY,
+          query,
+          characterTopics: topics,
+        } as KbSearchDto,
+        {
+          consumer: KbRetrievalConsumer.INTERVIEW_AGENT,
+          sessionId: context.session.id,
+          userId: context.userId,
+        },
+      ));
+    } catch (error) {
+      // The interview is worth more than its grounding. A vector store that is down must
+      // degrade the questions, not end the session - and the model has to be TOLD that is
+      // what happened, or it will read an empty result as "the corpus has nothing" and say
+      // so to the admin, which would be a lie about the library's contents.
+      const message = error instanceof Error ? error.message : 'unknown error';
+      this.logger.warn(
+        `Interview session ${context.session.id}: corpus search failed - ${message}`,
+      );
+      return {
+        modelResult: {
+          ok: false,
+          error:
+            'The reference corpus could not be reached, so this search returned ' +
+            'nothing. This is NOT evidence the corpus lacks the material - do not ' +
+            'tell the admin it has nothing. Carry on from what you already know.',
+        },
+        summary: 'Corpus search failed (retrieval unavailable)',
+      };
+    }
+
+    const alreadyServed = new Set(this.servedChunkIds(context.session));
+    const fresh: string[] = [];
+
+    const results = passages.map((passage) => {
+      const seen = alreadyServed.has(passage.chunk_id);
+      if (!seen) fresh.push(passage.chunk_id);
+      return {
+        chunkId: passage.chunk_id,
+        document: passage.document_title,
+        ...(passage.section_path ? { section: passage.section_path } : {}),
+        similarity: Number(passage.similarity.toFixed(4)),
+        ...(seen
+          ? {
+              text: null,
+              note: 'Already provided earlier in this interview - reuse it from above rather than asking for it again.',
+            }
+          : { text: passage.text }),
+      };
+    });
+
+    if (fresh.length) {
+      await this.rememberServedChunks(context.session, fresh);
+    }
+
+    return {
+      modelResult: {
+        ok: true,
+        passages: results,
+        ...(results.length
+          ? {}
+          : {
+              note:
+                'The corpus has nothing on this. That is a real answer, not a ' +
+                'failure - draw on what the admin has told you, and do not imply ' +
+                'any of it came from reference material.',
+            }),
+      },
+      summary: results.length
+        ? `Corpus: ${results.length} passage(s) for "${query}"`
+        : `Corpus: nothing found for "${query}"`,
+    };
+  }
+
+  /** Only the topics the schema defines; anything else is dropped rather than sent on. */
+  private normalizeCharacterTopics(raw: unknown): KbCharacterTopic[] {
+    if (!Array.isArray(raw)) return [];
+    const allowed = new Set<string>(Object.values(KbCharacterTopic));
+    return raw
+      .map((value) => String(value ?? '').trim())
+      .filter((value) => allowed.has(value)) as KbCharacterTopic[];
+  }
+
+  private servedChunkIds(session: CharacterInterviewSession): string[] {
+    const served = session.metadata?.servedChunkIds;
+    return Array.isArray(served) ? served.map((id) => String(id)) : [];
+  }
+
+  /**
+   * Append to the session's served set.
+   *
+   * Read-modify-write on a jsonb column, safe here only because one interview turn runs at a
+   * time per session - the orchestrator's loop is sequential and a session has a single
+   * admin. Capped because the set is a token optimisation, not a record: an unbounded array
+   * on a hot row would eventually cost more to carry than the duplicate passages it saves.
+   */
+  private async rememberServedChunks(
+    session: CharacterInterviewSession,
+    chunkIds: string[],
+  ): Promise<void> {
+    const merged = [...this.servedChunkIds(session), ...chunkIds].slice(
+      -MAX_SERVED_CHUNK_IDS,
+    );
+    session.metadata = { ...(session.metadata ?? {}), servedChunkIds: merged };
+    try {
+      await this.sessionRepository.update(
+        { id: session.id },
+        { metadata: session.metadata },
+      );
+    } catch (error) {
+      // Losing the set costs tokens, never correctness - the next search just resends a
+      // passage the model already has. Not worth failing a turn over.
+      this.logger.warn(
+        `Interview session ${session.id}: could not record served chunks - ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+    }
   }
 
   private async executeGetVoices(): Promise<InterviewToolExecutionOutcome> {
