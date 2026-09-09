@@ -6,6 +6,7 @@ import { ProgressController } from './controller/progress.controller';
 import { ProgressEventConsumer } from './consumer/progress.event.consumer';
 import { UserProgress } from './entity/user-progress.entity';
 import { XpEvent } from './entity/xp-event.entity';
+import { SessionEngagementRepository } from './repository/session-engagement.repository';
 import { UserProgressRepository } from './repository/user-progress.repository';
 import { XpEventRepository } from './repository/xp-event.repository';
 import { ProgressService } from './service/progress.service';
@@ -35,6 +36,7 @@ import { XpAwardService } from './service/xp-award.service';
     ProgressEventConsumer,
     XpEventRepository,
     UserProgressRepository,
+    SessionEngagementRepository,
   ],
   exports: [ProgressService, ProgressSharedService],
 })

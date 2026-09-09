@@ -11,6 +11,8 @@ interface TrackItemCompletedEvent {
   userId: number;
   tenantId: string;
   trackItemId: string;
+  /** One of TrackItemType — sets the item's XP weight. */
+  itemType?: string;
 }
 
 @Injectable()
@@ -49,7 +51,8 @@ export class ProgressEventConsumer {
    *
    * The emit happens inside `completeItem`'s transaction, so this handler uses only
    * what the payload carries and never re-reads the progress row: from another
-   * connection that row may not be committed yet.
+   * connection that row may not be committed yet. `itemType` is on the payload already,
+   * which is what lets the award be weighted without touching the emitter.
    */
   @OnEvent(TRACK_EVENTS.ITEM_COMPLETED, { async: true })
   async handleTrackItemCompleted(
@@ -59,6 +62,7 @@ export class ProgressEventConsumer {
       userId: event.userId,
       tenantId: event.tenantId,
       trackItemId: event.trackItemId,
+      itemType: event.itemType,
     });
   }
 }
