@@ -22,7 +22,10 @@ import { TrackJournalService } from '../service/track-journal.service';
 import { TrackAnnotationService } from '../service/track-annotation.service';
 import { TrackGameService } from '../service/track-game.service';
 import { VideoProgressDto } from '../dto/video-progress.dto';
-import { SubmitQuizAttemptDto } from '../dto/submit-quiz-attempt.dto';
+import {
+  QuizAnswerDto,
+  SubmitQuizAttemptDto,
+} from '../dto/submit-quiz-attempt.dto';
 import { SubmitAnnotationAttemptDto } from '../dto/submit-annotation-attempt.dto';
 import { SaveJournalDraftsDto } from '../dto/journal-entry.dto';
 import { GameResultDto } from '../dto/game-result.dto';
@@ -146,6 +149,24 @@ export class TrackLearnerController {
     return this.trackEnrollmentService.reportVideoProgress(
       itemId,
       dto.watchedPct,
+    );
+  }
+
+  @ApiOperation({
+    summary:
+      "Answer a video's quiz interjection (gates playback; does not complete the item)",
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_TRACK])
+  @Post('tracks/items/:itemId/interjections/:interjectionId/answer')
+  async submitInterjectionAnswer(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Param('interjectionId') interjectionId: string,
+    @Body() dto: QuizAnswerDto,
+  ) {
+    return this.trackEnrollmentService.submitInterjectionAnswer(
+      itemId,
+      interjectionId,
+      dto,
     );
   }
 

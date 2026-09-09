@@ -29,8 +29,9 @@ import {
   TrackItemType,
   TrackStatus,
   VideoContent,
+  VideoSource,
 } from '../type/track.type';
-import { QuizContent } from '../type/quiz.type';
+import { QuizAnswer, QuizContent } from '../type/quiz.type';
 import { AnnotationContent } from '../type/annotation.type';
 import { TrackSharedService, TrackWithStructure } from './track-shared.service';
 import { TrackProgressService } from './track-progress.service';
@@ -38,11 +39,15 @@ import { TrackLocalizationService } from './track-localization.service';
 import { TrackTranslation } from '../entity/track-translation.entity';
 import { TrackTranslationFallbackReason } from '../type/track-translation.type';
 import { GameContent } from '../type/game.type';
-import { sanitizeQuizForLearner } from './track-quiz.sanitizer';
+import {
+  sanitizeQuizForLearner,
+  sanitizeQuizQuestionForLearner,
+} from './track-quiz.sanitizer';
 import {
   buildAnnotationAttemptView,
   sanitizeAnnotationForLearner,
 } from './track-annotation.sanitizer';
+import { autogradeQuestion } from './track-quiz.autograder';
 
 @Injectable()
 export class TrackEnrollmentService {
@@ -514,6 +519,10 @@ export class TrackEnrollmentService {
       case TrackItemType.VIDEO: {
         const video = item.content as VideoContent;
         const sourceVideo = sourceItem.content as VideoContent | undefined;
+        // Interjections only ever fire on S3-hosted video — see
+        // `validateInterjections` — so a non-S3 source simply carries none.
+        const interjections =
+          video.source === VideoSource.S3 ? (video.interjections ?? []) : [];
         return {
           type: item.type,
           trackItemProgressId: progress.id,
@@ -522,6 +531,12 @@ export class TrackEnrollmentService {
           durationSeconds: video.durationSeconds ?? null,
           requiredWatchPct: item.completionCriteria?.watchPct ?? 90,
           maxWatchedPct: progress.meta?.maxWatchedPct ?? 0,
+          interjections: interjections.map((interjection) => ({
+            id: interjection.id,
+            timestampSeconds: interjection.timestampSeconds,
+            question: sanitizeQuizQuestionForLearner(interjection.question),
+            answered: progress.meta?.answeredInterjections?.[interjection.id],
+          })),
           /**
            * A video is a file, not text — it is only in the learner's language
            * if the trainer supplied a localised cut. `localizeItem` swaps the
@@ -613,6 +628,47 @@ export class TrackEnrollmentService {
       sectionCompleted: false,
       trackCompleted: false,
     };
+  }
+
+  /**
+   * Grade one video interjection answer and record it on the progress row.
+   * Gates playback only — an interjection never completes or scores the
+   * VIDEO item itself; that stays entirely driven by `reportVideoProgress`'s
+   * watch-percentage logic.
+   */
+  async submitInterjectionAnswer(
+    trackItemId: string,
+    interjectionId: string,
+    answer: QuizAnswer,
+  ) {
+    const { item, progress } = await this.getPermittedItemProgress(trackItemId);
+    if (item.type !== TrackItemType.VIDEO) {
+      throw new BadRequestException('This component is not a video');
+    }
+
+    const video = item.content as VideoContent;
+    const interjection = (video.interjections ?? []).find(
+      (candidate) => candidate.id === interjectionId,
+    );
+    if (!interjection) {
+      throw new NotFoundException('Interjection not found');
+    }
+
+    const grading = autogradeQuestion(interjection.question, answer);
+    await this.trackItemProgressRepository.update(progress.id, {
+      meta: {
+        ...(progress.meta ?? {}),
+        answeredInterjections: {
+          ...(progress.meta?.answeredInterjections ?? {}),
+          [interjectionId]: {
+            passed: !!grading.correct,
+            pointsAwarded: grading.pointsAwarded,
+          },
+        },
+      },
+    });
+
+    return { correct: grading.correct, grading };
   }
 
   /** First non-completed unlocked item — the "continue" pointer. */
@@ -771,6 +827,7 @@ export class TrackEnrollmentService {
         return {
           durationSeconds: video?.durationSeconds ?? null,
           source: video?.source ?? null,
+          interjectionCount: video?.interjections?.length ?? 0,
         };
       }
       case TrackItemType.JOURNAL: {

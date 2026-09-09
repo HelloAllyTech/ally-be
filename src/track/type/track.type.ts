@@ -1,4 +1,5 @@
 import { AssignmentStatus } from 'src/common/type/common.type';
+import { QuizQuestion } from './quiz.type';
 
 export enum TrackStatus {
   DRAFT = 'DRAFT',
@@ -64,10 +65,23 @@ export interface ArticleContent {
   imageUrls?: string[];
 }
 
+/**
+ * A quiz question pinned to a moment in a VIDEO item. The player hard-pauses
+ * at `timestampSeconds` and requires an answer before resuming. Restricted to
+ * S3-hosted video (see `validateInterjections`) since third-party embeds
+ * (YouTube/Vimeo/Loom) give us no reliable playback-position control.
+ */
+export interface VideoInterjection {
+  id: string;
+  timestampSeconds: number;
+  question: QuizQuestion;
+}
+
 export interface VideoContent {
   source: VideoSource;
   url: string;
   durationSeconds?: number;
+  interjections?: VideoInterjection[];
 }
 
 export interface JournalPrompt {
@@ -108,4 +122,9 @@ export interface TrackItemProgressMeta {
   bestGameScore?: number;
   /** GAME: how many runs they have finished, for the same reason. */
   gamePlayCount?: number;
+  /** VIDEO: per-interjection result, keyed by VideoInterjection.id. */
+  answeredInterjections?: Record<
+    string,
+    { passed: boolean; pointsAwarded?: number }
+  >;
 }

@@ -48,6 +48,72 @@ export function questionPoints(question: QuizQuestion): number {
 
 /**
  * Strip everything a learner must not see (correct answers, accepted answers,
+ * rubric, explanations) from a single question. Shared by `sanitizeQuizForLearner`
+ * (a whole quiz attempt, one question at a time) and by standalone questions —
+ * e.g. a video interjection — that have no quiz-level settings of their own.
+ *
+ * `seedText` scopes the ORDERING/MATCHING "always shuffled" shuffle (and
+ * MCQ option shuffle when `shuffleOptions` is set) so the order is stable
+ * across reloads; callers with no natural attempt to scope to (a standalone
+ * interjection question is answered once, not attempted) can omit it and get
+ * a shuffle stable per question id instead. `shuffleOptions` defaults to
+ * `false` — there is no quiz-level setting to inherit outside a quiz.
+ */
+export function sanitizeQuizQuestionForLearner(
+  question: QuizQuestion,
+  options?: { seedText?: string; shuffleOptions?: boolean },
+): LearnerQuizQuestion {
+  const seedText = options?.seedText ?? question.id;
+  const shuffleOptions = options?.shuffleOptions ?? false;
+  const base: LearnerQuizQuestion = {
+    id: question.id,
+    type: question.type,
+    prompt: question.prompt,
+    points: questionPoints(question),
+  };
+  switch (question.type) {
+    case QuizQuestionType.MCQ_SINGLE:
+    case QuizQuestionType.MCQ_MULTI: {
+      base.options = shuffleOptions
+        ? seededShuffle(question.options, `o:${seedText}:${question.id}`)
+        : question.options;
+      return base;
+    }
+    case QuizQuestionType.TRUE_FALSE:
+      return base;
+    case QuizQuestionType.ORDERING: {
+      // Always shuffled — presenting the authored (correct) order would
+      // give the answer away.
+      base.items = seededShuffle(
+        question.items,
+        `i:${seedText}:${question.id}`,
+      );
+      return base;
+    }
+    case QuizQuestionType.MATCHING: {
+      base.left = question.left;
+      base.right = seededShuffle(
+        question.right,
+        `r:${seedText}:${question.id}`,
+      );
+      return base;
+    }
+    case QuizQuestionType.FILL_BLANK: {
+      base.template = question.template;
+      base.blankIds = question.blanks.map((blank) => blank.id);
+      return base;
+    }
+    case QuizQuestionType.OPEN_ENDED: {
+      base.minWords = question.minWords;
+      return base;
+    }
+    default:
+      return base;
+  }
+}
+
+/**
+ * Strip everything a learner must not see (correct answers, accepted answers,
  * rubric, explanations) and apply the configured shuffles. `seedText` scopes
  * shuffling to an attempt so the order is stable across reloads mid-attempt.
  */
@@ -61,53 +127,12 @@ export function sanitizeQuizForLearner(
     questions = seededShuffle(questions, `q:${seedText}`);
   }
 
-  const sanitized: LearnerQuizQuestion[] = questions.map((question) => {
-    const base: LearnerQuizQuestion = {
-      id: question.id,
-      type: question.type,
-      prompt: question.prompt,
-      points: questionPoints(question),
-    };
-    switch (question.type) {
-      case QuizQuestionType.MCQ_SINGLE:
-      case QuizQuestionType.MCQ_MULTI: {
-        base.options = settings.shuffleOptions
-          ? seededShuffle(question.options, `o:${seedText}:${question.id}`)
-          : question.options;
-        return base;
-      }
-      case QuizQuestionType.TRUE_FALSE:
-        return base;
-      case QuizQuestionType.ORDERING: {
-        // Always shuffled — presenting the authored (correct) order would
-        // give the answer away.
-        base.items = seededShuffle(
-          question.items,
-          `i:${seedText}:${question.id}`,
-        );
-        return base;
-      }
-      case QuizQuestionType.MATCHING: {
-        base.left = question.left;
-        base.right = seededShuffle(
-          question.right,
-          `r:${seedText}:${question.id}`,
-        );
-        return base;
-      }
-      case QuizQuestionType.FILL_BLANK: {
-        base.template = question.template;
-        base.blankIds = question.blanks.map((blank) => blank.id);
-        return base;
-      }
-      case QuizQuestionType.OPEN_ENDED: {
-        base.minWords = question.minWords;
-        return base;
-      }
-      default:
-        return base;
-    }
-  });
+  const sanitized: LearnerQuizQuestion[] = questions.map((question) =>
+    sanitizeQuizQuestionForLearner(question, {
+      shuffleOptions: settings.shuffleOptions,
+      seedText,
+    }),
+  );
 
   return {
     settings: {

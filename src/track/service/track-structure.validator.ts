@@ -4,6 +4,7 @@ import {
   JournalContent,
   TrackItemType,
   VideoContent,
+  VideoInterjection,
   VideoSource,
 } from '../type/track.type';
 import {
@@ -187,6 +188,54 @@ function validateVideoContent(
   if (!Object.values(VideoSource).includes(content.source)) {
     fail(`Video component "${title}" has an invalid source.`);
   }
+  validateInterjections(content, title);
+}
+
+/**
+ * Interjections hard-pause playback, which we can only guarantee on our own
+ * S3-hosted player — third-party embeds (YouTube/Vimeo/Loom) give us no
+ * reliable control over the playhead. Each interjection's question is a full
+ * quiz question, validated the same way a quiz component's questions are;
+ * open-ended is excluded because grading it needs the LLM grader, which has
+ * no place gating video playback.
+ */
+function validateInterjections(video: VideoContent, title: string): void {
+  const interjections = video.interjections;
+  if (!interjections || interjections.length === 0) return;
+
+  if (video.source !== VideoSource.S3) {
+    fail(
+      `Video component "${title}": quiz interjections are only supported for uploaded (S3) video.`,
+    );
+  }
+
+  const seenIds = new Set<string>();
+  interjections.forEach((interjection, index) => {
+    const label = `Video component "${title}" interjection ${index + 1}`;
+    if (!interjection.id) fail(`${label}: missing id.`);
+    if (seenIds.has(interjection.id)) {
+      fail(`${label}: duplicate id ${interjection.id}.`);
+    }
+    seenIds.add(interjection.id);
+
+    if (
+      typeof interjection.timestampSeconds !== 'number' ||
+      interjection.timestampSeconds < 0
+    ) {
+      fail(`${label}: timestampSeconds must be zero or greater.`);
+    }
+    if (
+      video.durationSeconds !== undefined &&
+      interjection.timestampSeconds > video.durationSeconds
+    ) {
+      fail(`${label}: timestampSeconds is beyond the video's duration.`);
+    }
+
+    if (interjection.question?.type === QuizQuestionType.OPEN_ENDED) {
+      fail(`${label}: open-ended questions are not supported here.`);
+    }
+    validateQuizQuestion(interjection.question, label);
+  });
 }
 
 function validateJournalContent(
@@ -560,6 +609,7 @@ export function computeStructuralSignature(
           quiz: quizStructuralSignature(item),
           annotation: annotationStructuralSignature(item),
           game: gameStructuralSignature(item),
+          video: videoStructuralSignature(item),
           completionCriteria: item.completionCriteria ?? null,
         })),
     }));
@@ -608,27 +658,60 @@ function gameStructuralSignature(item: UpsertTrackItemDto): unknown {
   return { gameKey: (item.content as GameContent).gameKey };
 }
 
+/**
+ * Answer-key-only signature for a single quiz question, shared by the quiz
+ * item's own signature and by video interjections (which each carry one full
+ * question). Prompt/explanation text is deliberately excluded — it stays
+ * content-safe.
+ */
+function quizQuestionStructuralSignature(question: QuizQuestion): unknown {
+  return {
+    id: question.id,
+    type: question.type,
+    correct:
+      (question as McqSingleQuestion | McqMultiQuestion).correctOptionIds ??
+      (question as TrueFalseQuestion).correctAnswer ??
+      (question as OrderingQuestion).correctOrder ??
+      (question as MatchingQuestion).correctPairs ??
+      (question as FillBlankQuestion).blanks?.map((b) => ({
+        id: b.id,
+        acceptedAnswers: b.acceptedAnswers,
+        caseSensitive: b.caseSensitive ?? false,
+      })) ??
+      null,
+  };
+}
+
 function quizStructuralSignature(item: UpsertTrackItemDto): unknown {
   if (item.type !== TrackItemType.QUIZ || !item.content) return null;
   const quiz = item.content as QuizContent;
   return {
     passScore: quiz.settings?.passScore,
     maxAttempts: quiz.settings?.maxAttempts ?? null,
-    questions: (quiz.questions ?? []).map((question) => ({
-      id: question.id,
-      type: question.type,
-      // answer-key fields only; prompt/explanation text stays content-safe
-      correct:
-        (question as McqSingleQuestion | McqMultiQuestion).correctOptionIds ??
-        (question as TrueFalseQuestion).correctAnswer ??
-        (question as OrderingQuestion).correctOrder ??
-        (question as MatchingQuestion).correctPairs ??
-        (question as FillBlankQuestion).blanks?.map((b) => ({
-          id: b.id,
-          acceptedAnswers: b.acceptedAnswers,
-          caseSensitive: b.caseSensitive ?? false,
-        })) ??
-        null,
-    })),
+    questions: (quiz.questions ?? []).map((question) =>
+      quizQuestionStructuralSignature(question),
+    ),
+  };
+}
+
+/**
+ * Structural for a video: the source (switching away from S3 would strand
+ * interjections the player can no longer pause for) plus each interjection's
+ * timestamp and answer key. Interjection ids are included so deleting one
+ * (which would orphan any stored `answeredInterjections` entry) is structural
+ * too; the question's prompt/explanation text stays content-safe.
+ */
+function videoStructuralSignature(item: UpsertTrackItemDto): unknown {
+  if (item.type !== TrackItemType.VIDEO || !item.content) return null;
+  const video = item.content as VideoContent;
+  return {
+    source: video.source,
+    interjections: (video.interjections ?? []).map(
+      (interjection: VideoInterjection) => ({
+        id: interjection.id,
+        timestampSeconds: interjection.timestampSeconds,
+        question: quizQuestionStructuralSignature(interjection.question),
+      }),
+    ),
   };
 }

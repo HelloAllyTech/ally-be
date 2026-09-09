@@ -63,6 +63,38 @@ function quizItem(overrides: Record<string, any> = {}) {
   } as any;
 }
 
+function videoItem(overrides: Record<string, any> = {}) {
+  return {
+    type: TrackItemType.VIDEO,
+    order: 1,
+    title: 'Video',
+    content: {
+      source: 's3',
+      url: 'https://example.com/video.mp4',
+      durationSeconds: 120,
+      ...overrides,
+    },
+  } as any;
+}
+
+function mcqInterjection(overrides: Record<string, any> = {}) {
+  return {
+    id: 'int1',
+    timestampSeconds: 10,
+    question: {
+      id: 'q1',
+      type: 'mcq_single',
+      prompt: 'Pick',
+      options: [
+        { id: 'a', text: 'A' },
+        { id: 'b', text: 'B' },
+      ],
+      correctOptionIds: ['a'],
+    },
+    ...overrides,
+  };
+}
+
 describe('validateTrackStructure', () => {
   it('accepts a valid tree', () => {
     expect(() => validateTrackStructure(baseSections())).not.toThrow();
@@ -194,6 +226,53 @@ describe('computeStructuralSignature', () => {
     );
   });
 
+  it('changes when a video interjection answer key changes', () => {
+    const before: UpsertTrackSectionDto[] = [
+      {
+        id: 's1',
+        title: 'S',
+        order: 1,
+        items: [
+          {
+            ...videoItem({ interjections: [mcqInterjection()] }),
+            id: 'i1',
+          },
+        ],
+      },
+    ];
+    const after = JSON.parse(JSON.stringify(before));
+    after[0].items[0].content.interjections[0].question.correctOptionIds = [
+      'b',
+    ];
+    expect(computeStructuralSignature(after)).not.toEqual(
+      computeStructuralSignature(before),
+    );
+  });
+
+  it('is stable when only an interjection question prompt/explanation changes', () => {
+    const before: UpsertTrackSectionDto[] = [
+      {
+        id: 's1',
+        title: 'S',
+        order: 1,
+        items: [
+          {
+            ...videoItem({ interjections: [mcqInterjection()] }),
+            id: 'i1',
+          },
+        ],
+      },
+    ];
+    const after = JSON.parse(JSON.stringify(before));
+    after[0].items[0].content.interjections[0].question.prompt =
+      'Reworded prompt';
+    after[0].items[0].content.interjections[0].question.explanation =
+      'new explanation';
+    expect(computeStructuralSignature(after)).toEqual(
+      computeStructuralSignature(before),
+    );
+  });
+
   it('changes when the game an item runs is swapped', () => {
     const before: UpsertTrackSectionDto[] = [
       { id: 's1', title: 'S', order: 1, items: [{ ...gameItem(), id: 'i1' }] },
@@ -251,5 +330,122 @@ describe('validateTrackStructure - game', () => {
     // score gate in through completionCriteria, because nothing reads it.
     const item = gameItem({ completionCriteria: { minScore: 500 } });
     expect(() => validateTrackStructure(wrap(item))).not.toThrow();
+  });
+});
+
+describe('validateTrackStructure - video interjections', () => {
+  const wrap = (item: any): UpsertTrackSectionDto[] => [
+    { title: 'S', order: 1, items: [item] },
+  ];
+
+  it('accepts a video with a valid MCQ interjection', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(videoItem({ interjections: [mcqInterjection()] })),
+      ),
+    ).not.toThrow();
+  });
+
+  it('accepts a video with no interjections at all', () => {
+    expect(() => validateTrackStructure(wrap(videoItem()))).not.toThrow();
+  });
+
+  it('rejects interjections on a non-S3 video source', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          videoItem({
+            source: 'youtube',
+            interjections: [mcqInterjection()],
+          }),
+        ),
+      ),
+    ).toThrow(/uploaded \(S3\) video/);
+  });
+
+  it('rejects duplicate interjection ids', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          videoItem({
+            interjections: [
+              mcqInterjection({ id: 'dup' }),
+              mcqInterjection({ id: 'dup', timestampSeconds: 20 }),
+            ],
+          }),
+        ),
+      ),
+    ).toThrow(/duplicate id/i);
+  });
+
+  it('rejects a negative timestamp', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          videoItem({
+            interjections: [mcqInterjection({ timestampSeconds: -1 })],
+          }),
+        ),
+      ),
+    ).toThrow(/timestampSeconds/);
+  });
+
+  it('rejects a timestamp beyond the video duration', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          videoItem({
+            durationSeconds: 60,
+            interjections: [mcqInterjection({ timestampSeconds: 61 })],
+          }),
+        ),
+      ),
+    ).toThrow(/duration/);
+  });
+
+  it('rejects an open-ended interjection question', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          videoItem({
+            interjections: [
+              mcqInterjection({
+                question: {
+                  id: 'q1',
+                  type: 'open_ended',
+                  prompt: 'Explain',
+                  rubric: { guidance: 'Be thorough', maxScore: 10 },
+                },
+              }),
+            ],
+          }),
+        ),
+      ),
+    ).toThrow(/open-ended/);
+  });
+
+  it('delegates to the shared quiz-question validator for an invalid interjection question', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          videoItem({
+            interjections: [
+              mcqInterjection({
+                question: {
+                  id: 'q1',
+                  type: 'mcq_single',
+                  prompt: 'Pick',
+                  options: [
+                    { id: 'a', text: 'A' },
+                    { id: 'b', text: 'B' },
+                  ],
+                  correctOptionIds: [],
+                },
+              }),
+            ],
+          }),
+        ),
+      ),
+    ).toThrow(/exactly one correct option/);
   });
 });
