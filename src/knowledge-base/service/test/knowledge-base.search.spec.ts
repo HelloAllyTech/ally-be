@@ -32,6 +32,7 @@ describe('KnowledgeBaseService.search', () => {
   let service: KnowledgeBaseService;
   let documentRepository: { retrievableIds: jest.Mock };
   let aiService: { searchKnowledgeChunks: jest.Mock };
+  let retrievalRepository: { record: jest.Mock };
 
   const build = (
     ids: { preferred: string[]; rest: string[] },
@@ -43,6 +44,7 @@ describe('KnowledgeBaseService.search', () => {
       aiService.searchKnowledgeChunks.mockResolvedValueOnce({ passages }),
     );
     aiService.searchKnowledgeChunks.mockResolvedValue({ passages: [] });
+    retrievalRepository = { record: jest.fn().mockResolvedValue('r1') };
     service = new KnowledgeBaseService(
       documentRepository as any,
       {} as any,
@@ -50,6 +52,7 @@ describe('KnowledgeBaseService.search', () => {
       aiService as any,
       {} as any,
       {} as any,
+      retrievalRepository as any,
     );
   };
 
@@ -228,5 +231,209 @@ describe('KnowledgeBaseService.search', () => {
       tags: ['dementia'],
       characterTopics: undefined,
     });
+  });
+});
+
+/**
+ * The retrieval log's job is to make retrieval's numbers answerable from data — the floor
+ * above all, which was set by reasoning and turned out to be one paraphrase from rejecting a
+ * direct hit. These assert the two things that would quietly destroy that: recording only the
+ * survivors (so the drops that explain a thin result are invisible), and letting a logging
+ * failure reach the caller (so analytics can break a working search).
+ */
+describe('KnowledgeBaseService.search — retrieval log', () => {
+  let service: KnowledgeBaseService;
+  let documentRepository: { retrievableIds: jest.Mock };
+  let aiService: { searchKnowledgeChunks: jest.Mock };
+  let retrievalRepository: { record: jest.Mock };
+
+  const build = (
+    ids: { preferred: string[]; rest: string[] },
+    responses: any[][],
+  ) => {
+    documentRepository = { retrievableIds: jest.fn().mockResolvedValue(ids) };
+    aiService = { searchKnowledgeChunks: jest.fn() };
+    responses.forEach((passages) =>
+      aiService.searchKnowledgeChunks.mockResolvedValueOnce({ passages }),
+    );
+    aiService.searchKnowledgeChunks.mockResolvedValue({ passages: [] });
+    retrievalRepository = { record: jest.fn().mockResolvedValue('r1') };
+    service = new KnowledgeBaseService(
+      documentRepository as any,
+      {} as any,
+      {} as any,
+      aiService as any,
+      {} as any,
+      {} as any,
+      retrievalRepository as any,
+    );
+  };
+
+  const recorded = () => retrievalRepository.record.mock.calls[0];
+
+  it('records the floor that was actually used, not the current default', async () => {
+    // A row storing "the default" would be worthless the first time the default moved —
+    // which is the entire reason this table exists.
+    build({ preferred: [], rest: ['d1'] }, [[]]);
+    await service.search({
+      corpus: KbCorpus.CHARACTER_LIBRARY,
+      query: 'q',
+      minSimilarity: 0.31,
+    } as any);
+    expect(recorded()[0].minSimilarity).toBe(0.31);
+  });
+
+  it('records dropped candidates with the reason, not just the survivors', async () => {
+    const overlapping = [
+      passage({
+        chunk_id: 'a',
+        document_id: 'd1',
+        char_start: 0,
+        char_end: 100,
+      }),
+      passage({
+        chunk_id: 'b',
+        document_id: 'd1',
+        char_start: 80,
+        char_end: 180,
+      }),
+      passage({
+        chunk_id: 'c',
+        document_id: 'd1',
+        char_start: 200,
+        char_end: 300,
+      }),
+      passage({
+        chunk_id: 'd',
+        document_id: 'd1',
+        char_start: 400,
+        char_end: 500,
+      }),
+      passage({
+        chunk_id: 'e',
+        document_id: 'd1',
+        char_start: 600,
+        char_end: 700,
+      }),
+    ];
+    build({ preferred: [], rest: ['d1'] }, [overlapping]);
+
+    const result = await service.search({
+      corpus: KbCorpus.CHARACTER_LIBRARY,
+      query: 'q',
+      limit: 8,
+    } as any);
+
+    // Three returned (the per-document cap), one dropped for overlap, one for the cap.
+    expect(result.passages.map((p) => p.chunk_id)).toEqual(['a', 'c', 'd']);
+    expect(recorded()[1].map((p: any) => [p.chunkId, p.outcome])).toEqual([
+      ['a', 'returned'],
+      ['b', 'dropped_span_overlap'],
+      ['c', 'returned'],
+      ['d', 'returned'],
+      ['e', 'dropped_document_cap'],
+    ]);
+  });
+
+  it('distinguishes "the boost filled it" from "the corpus had nothing"', async () => {
+    // null vs 0 on secondPassHits. Collapsing them would make a working boost and an empty
+    // corpus look identical in every aggregate.
+    const four = Array.from({ length: 4 }, (_, i) =>
+      passage({
+        chunk_id: `p${i}`,
+        document_id: `d${i}`,
+        char_start: i * 100,
+        char_end: i * 100 + 50,
+      }),
+    );
+    build({ preferred: ['d0', 'd1', 'd2', 'd3'], rest: ['dr'] }, [four]);
+    await service.search({
+      corpus: KbCorpus.CHARACTER_LIBRARY,
+      query: 'q',
+      limit: 4,
+      characterTopics: ['identity'],
+    } as any);
+    expect(recorded()[0].secondPassHits).toBeNull();
+
+    build({ preferred: ['dp'], rest: ['dr'] }, [[], []]);
+    await service.search({
+      corpus: KbCorpus.CHARACTER_LIBRARY,
+      query: 'q',
+      limit: 4,
+      characterTopics: ['identity'],
+    } as any);
+    expect(recorded()[0].secondPassHits).toBe(0);
+  });
+
+  it('labels which pass each candidate came from', async () => {
+    build({ preferred: ['dp'], rest: ['dr'] }, [
+      [passage({ chunk_id: 'mapped', document_id: 'dp' })],
+      [passage({ chunk_id: 'unmapped', document_id: 'dr' })],
+    ]);
+    await service.search({
+      corpus: KbCorpus.CHARACTER_LIBRARY,
+      query: 'q',
+      limit: 4,
+      characterTopics: ['identity'],
+    } as any);
+    expect(recorded()[1].map((p: any) => [p.chunkId, p.pass])).toEqual([
+      ['mapped', 'preferred'],
+      ['unmapped', 'rest'],
+    ]);
+  });
+
+  it('records a retrieval that found nothing', async () => {
+    // The most diagnostically valuable row there is: reading the queries that returned
+    // nothing is how a corpus gap gets found. A skipped row would hide exactly those.
+    build({ preferred: [], rest: ['d1'] }, [[]]);
+    await service.search({
+      corpus: KbCorpus.CHARACTER_LIBRARY,
+      query: 'nothing covers this',
+    } as any);
+    expect(retrievalRepository.record).toHaveBeenCalledTimes(1);
+    expect(recorded()[0].returnedCount).toBe(0);
+    expect(recorded()[1]).toEqual([]);
+  });
+
+  it('defaults the consumer to the admin preview rather than the agent', async () => {
+    // An unattributed retrieval must not be filed as agent traffic — that is the population
+    // the floor gets calibrated against.
+    build({ preferred: [], rest: ['d1'] }, [[]]);
+    await service.search({
+      corpus: KbCorpus.CHARACTER_LIBRARY,
+      query: 'q',
+    } as any);
+    expect(recorded()[0].consumer).toBe('admin_preview');
+  });
+
+  it('carries the interview session and consumer through when given them', async () => {
+    build({ preferred: [], rest: ['d1'] }, [[]]);
+    await service.search(
+      { corpus: KbCorpus.CHARACTER_LIBRARY, query: 'q' } as any,
+      {
+        consumer: 'interview_agent' as any,
+        sessionId: 'session-1',
+        userId: 42,
+      },
+    );
+    expect(recorded()[0]).toMatchObject({
+      consumer: 'interview_agent',
+      sessionId: 'session-1',
+      createdBy: 42,
+    });
+  });
+
+  it('returns passages even when the log write fails', async () => {
+    // Analytics are worth a table, not a retrieval. A locked table must not turn a working
+    // search into a 500 for the admin who asked.
+    build({ preferred: [], rest: ['d1'] }, [[passage({ chunk_id: 'a' })]]);
+    retrievalRepository.record.mockRejectedValue(new Error('table is locked'));
+
+    const result = await service.search({
+      corpus: KbCorpus.CHARACTER_LIBRARY,
+      query: 'q',
+    } as any);
+
+    expect(result.passages.map((p) => p.chunk_id)).toEqual(['a']);
   });
 });

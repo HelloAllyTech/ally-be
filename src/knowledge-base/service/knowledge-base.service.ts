@@ -32,12 +32,33 @@ import {
   KbCorpus,
   KbDocumentSourceType,
   KbDocumentStatus,
+  KbRetrievalConsumer,
+  KbRetrievalPass,
 } from '../enum/knowledge-base.enum';
+
+/**
+ * Who is retrieving, and on whose behalf. Not part of the DTO because none of it comes from
+ * the request body — the consumer is decided by which code path called, and letting a client
+ * assert it would let the admin preview file its experiments as agent traffic.
+ */
+export interface RetrievalContext {
+  consumer?: KbRetrievalConsumer;
+  sessionId?: string | null;
+  userId?: number | null;
+}
 import { KbIngestProducer } from '../producer/kb-ingest.producer';
 import { KbDocumentChunkRepository } from '../repository/kb-document-chunk.repository';
 import { KbDocumentRepository } from '../repository/kb-document.repository';
 import { KbIngestService } from './kb-ingest.service';
-import { concatDistinct, shapePassages } from '../util/retrieval';
+import {
+  concatDistinct,
+  shapePassages,
+  shapeWithDecisions,
+} from '../util/retrieval';
+import {
+  KbRetrievalRepository,
+  RetrievalPassageRecord,
+} from '../repository/kb-retrieval.repository';
 
 /** MIME types accepted for an uploaded corpus document, mapped to their source type. */
 const UPLOAD_CONTENT_TYPES: Record<string, KbDocumentSourceType> = {
@@ -60,6 +81,7 @@ export class KnowledgeBaseService {
     private readonly aiService: AiService,
     private readonly s3Service: S3Service,
     private readonly configService: AppConfigService,
+    private readonly retrievalRepository: KbRetrievalRepository,
   ) {}
 
   private getBucket(): string {
@@ -471,8 +493,14 @@ export class KnowledgeBaseService {
    *    if the first pass came back short. Mapped material therefore wins ties and near-ties
    *    without ever hiding the unmapped passage that turns out to matter.
    * 3. The ranking is shaped for reading, not scoring — see `shapePassages`.
+   *
+   * And every retrieval is recorded — see `KbRetrieval`. Not for an audit trail: the numbers
+   * above (the floor most of all) were chosen by reasoning, and the first measurement showed
+   * the floor was one paraphrase from rejecting a direct hit. The log is how they stop being
+   * guesses.
    */
-  async search(dto: KbSearchDto) {
+  async search(dto: KbSearchDto, context: RetrievalContext = {}) {
+    const startedAt = Date.now();
     const { preferred, rest } = await this.documentRepository.retrievableIds({
       corpus: dto.corpus,
       tags: dto.tags,
@@ -505,18 +533,19 @@ export class KnowledgeBaseService {
       limit,
       perDocumentLimit: KB_MAX_PASSAGES_PER_DOCUMENT,
     });
-    const second =
-      shapedFirst.length < limit && rest.length
-        ? await this.searchDocuments(
-            dto.corpus,
-            dto.query,
-            rest,
-            fetchLimit,
-            minSimilarity,
-          )
-        : [];
+    const topUpRan = shapedFirst.length < limit && rest.length > 0;
+    const second = topUpRan
+      ? await this.searchDocuments(
+          dto.corpus,
+          dto.query,
+          rest,
+          fetchLimit,
+          minSimilarity,
+        )
+      : [];
 
-    const passages = shapePassages(concatDistinct(first, second), {
+    const candidates = concatDistinct(first, second);
+    const { kept: passages, decisions } = shapeWithDecisions(candidates, {
       limit,
       perDocumentLimit: KB_MAX_PASSAGES_PER_DOCUMENT,
     });
@@ -528,7 +557,64 @@ export class KnowledgeBaseService {
         `returned=${passages.length}/${limit}`,
     );
 
+    const firstPassChunkIds = new Set(first.map((p) => p.chunk_id));
+    await this.recordRetrieval(
+      {
+        corpus: dto.corpus,
+        consumer: context.consumer ?? KbRetrievalConsumer.ADMIN_PREVIEW,
+        query: dto.query,
+        characterTopics: dto.characterTopics ?? [],
+        tags: dto.tags ?? [],
+        minSimilarity,
+        requestedLimit: limit,
+        fetchLimit,
+        preferredDocumentCount: preferred.length,
+        restDocumentCount: rest.length,
+        firstPassHits: first.length,
+        // Null, not zero, when the top-up never ran — see KbRetrieval.secondPassHits.
+        secondPassHits: topUpRan ? second.length : null,
+        returnedCount: passages.length,
+        latencyMs: Date.now() - startedAt,
+        sessionId: context.sessionId ?? null,
+        createdBy: context.userId ?? null,
+      },
+      decisions.map((decision, index) => ({
+        chunkId: decision.passage.chunk_id,
+        documentId: decision.passage.document_id,
+        rank: index + 1,
+        similarity: decision.passage.similarity,
+        pass: firstPassChunkIds.has(decision.passage.chunk_id)
+          ? KbRetrievalPass.PREFERRED
+          : KbRetrievalPass.REST,
+        outcome: decision.outcome,
+      })),
+    );
+
     return { passages };
+  }
+
+  /**
+   * Persist one retrieval, and never let that failure become the caller's.
+   *
+   * Analytics are worth a table, not a retrieval. A full disk, a lock, a schema not yet
+   * migrated on one instance — any of those would otherwise turn a working search into a 500
+   * for an admin who asked a question, which is a straightforwardly worse product than having
+   * no distribution to calibrate against. Warned rather than swallowed silently, so a log that
+   * has quietly stopped writing is visible before someone builds a decision on the gap.
+   */
+  private async recordRetrieval(
+    retrieval: Parameters<KbRetrievalRepository['record']>[0],
+    passages: RetrievalPassageRecord[],
+  ): Promise<void> {
+    try {
+      await this.retrievalRepository.record(retrieval, passages);
+    } catch (error) {
+      this.logger.warn(
+        `[KB_RETRIEVAL] could not record the retrieval log: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+    }
   }
 
   private async searchDocuments(

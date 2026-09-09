@@ -96,3 +96,49 @@ export enum KbChunkUploadStatus {
   SUCCESS = 'success',
   FAILED = 'failed',
 }
+
+/**
+ * Who asked for a retrieval.
+ *
+ * Recorded because the alternative is reading one population's behaviour as another's. The
+ * admin retrieval preview exists for an operator to probe thresholds — deliberately odd
+ * queries, repeated, often against material they just uploaded — and the interview agent's
+ * queries are the ones a floor should actually be calibrated against. Pooled, an afternoon of
+ * threshold-tuning would move every distribution the tuning was meant to inform.
+ *
+ * This is the same trap the language judge fell into: a metric that looked like a quality
+ * change was a traffic-mix change, and only segmenting by the model that ran showed it.
+ * Segment every retrieval trend by `consumer` before believing it.
+ */
+export enum KbRetrievalConsumer {
+  /** The character interview agent's search_corpus tool. */
+  INTERVIEW_AGENT = 'interview_agent',
+  /** The admin retrieval preview — POST /knowledge-base/search. */
+  ADMIN_PREVIEW = 'admin_preview',
+}
+
+/**
+ * What became of one candidate passage.
+ *
+ * Every candidate the vector search returned is recorded, not only the ones that survived,
+ * because the dropped ones carry most of the diagnostic value: a corpus where shaping is
+ * constantly discarding near-duplicates is a corpus whose chunk profile is wrong, and that is
+ * invisible if only the survivors are stored.
+ */
+export enum KbRetrievalOutcome {
+  RETURNED = 'returned',
+  /** Overlapped the character span of a higher-ranked passage from the same document. */
+  DROPPED_SPAN_OVERLAP = 'dropped_span_overlap',
+  /** Its document had already contributed KB_MAX_PASSAGES_PER_DOCUMENT passages. */
+  DROPPED_DOCUMENT_CAP = 'dropped_document_cap',
+  /** Ranked below the limit once the survivors above it were counted. */
+  DROPPED_OVER_LIMIT = 'dropped_over_limit',
+}
+
+/** Which of the two passes a candidate came from — the curator's boost, or the top-up. */
+export enum KbRetrievalPass {
+  /** A document mapped to one of the asked-about character topics. */
+  PREFERRED = 'preferred',
+  /** The rest of the corpus, searched only when the first pass came back short. */
+  REST = 'rest',
+}
