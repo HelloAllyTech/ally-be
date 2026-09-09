@@ -176,9 +176,38 @@ export const NON_QUALIFYING_RULES: readonly string[] = [
   XP_RULE.DAILY_DEPTH_MILESTONE,
 ];
 
+/**
+ * What makes a comment on a peer's session worth XP.
+ *
+ * Comments are the softest signal in the model — cheap to produce and hard to judge —
+ * so they are bounded twice: this floor, and the peer daily cap above. The floor is
+ * about excluding the reflex reply ("nice one", an emoji), not about grading insight;
+ * grading it would mean an LLM marking sincerity, which is neither cheap nor fair.
+ * Reactions never earn XP at all.
+ */
+export const PEER_COMMENT_MIN_CHARS = 40;
+
+export const isSubstantivePeerComment = (content: string): boolean =>
+  (content ?? '').trim().length >= PEER_COMMENT_MIN_CHARS;
+
 export const MAX_LEVEL = 10;
 
-/** Cumulative XP required to have reached each level. Index 0 is level 1. */
+/**
+ * Cumulative XP required to have reached each level. Index 0 is level 1.
+ *
+ * NOT yet rescaled for v2, deliberately. v2 adds four earning sources, so totals will
+ * inflate and the ladder should stretch to match — but production says the curve is
+ * already mis-scaled in the other direction, and doubling it would make that worse:
+ * at the time of writing 134 learners had earned 18,434 XP between them, an average
+ * lifetime total of ~138, against a level-2 threshold of 100 and a level-10 threshold
+ * of 11,287. Essentially the whole population sits at level 1 or 2 and the top of the
+ * ladder is unreachable.
+ *
+ * `scripts/recompute-xp-v2.ts` prints the exact inflation ratio off real history.
+ * Scale this array by that ratio only after deciding whether holding today's pacing is
+ * what you actually want, because today's pacing is what produced the numbers above.
+ * Whatever is chosen, change the array and the generating formula in one diff.
+ */
 export const LEVEL_THRESHOLDS: readonly number[] = [
   0, // level 1
   100, // level 2

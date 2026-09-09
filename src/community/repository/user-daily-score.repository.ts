@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { UserDailyScores } from '../entity/user-daily-scores.entity';
 import { Pagination } from 'src/common/type/common.type';
 import { LeaderboardEntryDto } from '../dto/leaderboard.dto';
 import { LeaderboardResult, UserRankResult } from '../type/leaderboard.type';
-import { scorePoints } from '../constant/community.constant';
 import {
   businessWeekBounds,
   toBusinessDateString,
@@ -48,9 +47,11 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
   }
 
   /**
-   * Upserts daily score for play time.
-   * Awards: minutesToAdd points + 1 active day bonus (when minutesPlayed reaches >= 1)
-   * Active day bonus is awarded only when cumulative minutesPlayed crosses the 1 minute threshold
+   * Upserts the day's practice minutes.
+   *
+   * `totalScore` is no longer maintained — it was a second points currency alongside XP,
+   * and nothing reads it since the leaderboard moved to xp_events. The column is left in
+   * place so historical rows stay readable.
    *
    * Returns whether this write crossed the active-day threshold. A day can only
    * cross once, so callers can use it to trigger once-per-active-day work
@@ -67,21 +68,10 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
     const rows = await this.query(
       `
       INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
-      VALUES (
-        uuid_generate_v4(), $1, $2, $3::date, $4,
-        $4 + CASE WHEN $4 >= 1.00 THEN 1.00 ELSE 0.00 END,
-        NOW(), NOW()
-      )
+      VALUES (uuid_generate_v4(), $1, $2, $3::date, $4, 0, NOW(), NOW())
       ON CONFLICT ("userId", "tenant_id", "date")
       DO UPDATE SET
         "minutesPlayed" = user_daily_scores."minutesPlayed" + $4,
-        "totalScore" = user_daily_scores."totalScore" + $4 +
-          CASE
-            WHEN user_daily_scores."minutesPlayed" < 1.00
-             AND user_daily_scores."minutesPlayed" + $4 >= 1.00
-            THEN ${scorePoints.ACTIVE_DAY_BONUS}
-            ELSE 0
-          END,
         "updatedAt" = NOW()
       RETURNING
         "date"::text AS "businessDate",
@@ -97,59 +87,6 @@ export class UserDailyScoreRepository extends Repository<UserDailyScores> {
       minutesAfter: parseFloat(row.minutesAfter) || 0,
       crossedActiveThreshold: row.crossedActiveThreshold === true,
     };
-  }
-
-  /**
-   * Increments totalScore by a specified amount (for reactions/comments).
-   * Creates a new row if one doesn't exist for today (without active day bonus).
-   */
-  async incrementTotalScore(
-    userId: number,
-    tenantId: string,
-    amount: number,
-  ): Promise<void> {
-    const normalizedDate = toBusinessDateString();
-
-    await this.query(
-      `
-      INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
-      VALUES (uuid_generate_v4(), $1, $2, $3::date, 0, $4, NOW(), NOW())
-      ON CONFLICT ("userId", "tenant_id", "date")
-      DO UPDATE SET
-        "totalScore" = user_daily_scores."totalScore" + $4,
-        "updatedAt" = NOW()
-      `,
-      [userId, tenantId, normalizedDate, amount],
-    );
-  }
-
-  /**
-   * Decrements totalScore by a specified amount.
-   * Used when removing reactions/comments - decrements from today's score.
-   * Creates a new row if one doesn't exist for today.
-   */
-  async decrementTotalScore(
-    userId: number,
-    tenantId: string,
-    amount: number,
-    em?: EntityManager,
-  ): Promise<void> {
-    const normalizedDate = toBusinessDateString();
-
-    const userDailyScoreRepo = em
-      ? em.getRepository(UserDailyScores)
-      : this.dataSource.getRepository(UserDailyScores);
-    await userDailyScoreRepo.query(
-      `
-      INSERT INTO user_daily_scores ("id", "userId", "tenant_id", "date", "minutesPlayed", "totalScore", "createdAt", "updatedAt")
-      VALUES (uuid_generate_v4(), $1, $2, $3::date, 0, $4, NOW(), NOW())
-      ON CONFLICT ("userId", "tenant_id", "date")
-      DO UPDATE SET
-        "totalScore" = user_daily_scores."totalScore" + $4,
-        "updatedAt" = NOW()
-      `,
-      [userId, tenantId, normalizedDate, -amount],
-    );
   }
 
   async getLeaderboardWithUserDetails(
