@@ -74,7 +74,7 @@ Module path = `src/<module>/entity/`.
 
 | Table | Base | Key columns | Notes |
 |-------|------|-------------|-------|
-| `users` | BaseEntity | `id` (int PK), `email` (uniq), `username` (uniq), `phone` (uniq), `name`, `status` (`UserStatus`), `password` (select:false), `external_id`, `profile_image_url`, `metadata` (jsonb), `suspended_by/at`, `terms_*` | Unique `(tenant_id, external_id)` where not null |
+| `users` | BaseEntity | `id` (int PK), `email` (uniq), `username` (uniq), `phone` (uniq), `name`, `status` (`UserStatus`), `password` (select:false), `external_id`, `profile_image_url`, `metadata` (jsonb), `suspended_by/at`, `terms_*`, `lastActiveAt` (timestamp, nullable) | Unique `(tenant_id, external_id)` where not null. `lastActiveAt` is written by `LastActiveService` on a 15-min-throttled cadence from `JwtStrategy.validate()` — not a precise last-request time, just enough for the engagement-reminder evaluator (§3.7) to detect sustained disengagement via `COALESCE(lastActiveAt, createdAt)` |
 | `user_preferences` | BaseEntity | `id` (uuid), `user_id` (uniq), `data` (jsonb) | One row per user |
 | `admin_tenants` | BaseWithoutTenant | `user_id`, `tenant_id`, `deleted_at` | Which users administer which tenants; unique `(user_id, tenant_id)` |
 | `tenants` | (custom) | `id` (uuid), `name` (uniq), `code` (uniq), `status` (`TenantStatus`: ACTIVE/INACTIVE/SUSPENDED), `metadata`, `settings` (jsonb), `logo_url`, `deleted_at` | The organization root entity |
@@ -248,6 +248,19 @@ Each subsystem has the full set of tables: `*_reviews` (`status`: HIDDEN/IN_REVI
 > Everything the `progress` module writes or reads is resolved to the tenant **uuid** first via
 > `ProgressTenantResolver`. Keying on the raw value would give one learner two `user_progress`
 > rows, one per spelling, each showing part of their XP.
+
+**Engagement reminders** (`src/engagement-reminder/`, `src/notification/`) — an hourly
+evaluator (`EngagementReminderEvaluatorService`, registered on the `scheduledTaskRegistry`
+`'hourly'` bucket like `StreakReminderService` above) nudges learners inactive for
+`INACTIVITY_DAYS_THRESHOLD` days (default 7) in tenants that opt in via
+`tenants.settings->'engagementReminder'->>'remindersEnabled'` (default off, same pattern as
+`practiceStreak`). Fixed thresholds/copy for v1 — no per-tenant rule configuration or admin
+UI yet.
+
+| Table | Base | Key columns | Notes |
+|-------|------|-------------|-------|
+| `in_app_notifications` | BaseEntity | `id` (uuid), `userId`, `type` (varchar, e.g. `ENGAGEMENT_REMINDER`), `title`, `body` (text), `data` (jsonb, nullable — deep-link hints only, no PII/PHI), `readAt` (timestamp, nullable) | Generic in-app feed (nav-sidebar bell on web, Notifications screen on mobile), not specific to engagement reminders. **Also doubles as the evaluator's own dedup/cooldown record** — "already reminded in the last `REMINDER_COOLDOWN_DAYS`" is a `NOT EXISTS` against this table, so there is no separate deliveries table. Idx `(userId, type, createdAt)`, `(userId, readAt)` |
+| `user_device_tokens` | BaseEntity | `id` (uuid), `userId`, `token` (unique), `platform` (`IOS`/`ANDROID`) | FCM registration tokens, one row per (user, device). Upserted on `token` (not `(userId, token)`) so a device re-registering under a different user doesn't leave stale duplicates; self-cleaned by `PushService` when FCM reports a token as no-longer-registered, and deleted client-side on logout |
 
 ### 3.8 Analytics, prompts, content & platform ops (`analytics`, `prompt`, `audit`, `reference-document`, `conversational-guardrails`, `tooltip`)
 

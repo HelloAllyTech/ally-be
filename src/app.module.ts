@@ -40,6 +40,7 @@ import { ScenarioSessionReviewModule } from './scenario-session-review/scenario-
 import { ScribeSessionReviewModule } from './scribe-session-review/scribe-session-review.module';
 import { BadgeModule } from './badge/badge.module';
 import { CommunityModule } from './community/community.module';
+import { EngagementReminderModule } from './engagement-reminder/engagement-reminder.module';
 import { ScenarioCharacterModule } from './scenario-character/scenario-character.module';
 import { PromptModule } from './prompt/prompt.module';
 import { LlmModule } from './llm/llm.module';
@@ -115,6 +116,7 @@ import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
     ScribeSessionReviewModule,
     BadgeModule,
     CommunityModule,
+    EngagementReminderModule,
     ProgressModule,
     ScenarioCharacterModule,
     PromptModule,

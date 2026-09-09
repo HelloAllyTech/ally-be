@@ -235,6 +235,19 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * Base64-encoded Firebase service-account JSON, used by `PushService` to
+   * send FCM data messages (engagement reminders today). Empty on
+   * environments that haven't set it up — `PushService` no-ops rather than
+   * throwing, same pattern as `githubToken`/`githubActionsToken` above.
+   */
+  get firebaseServiceAccountJsonBase64(): string {
+    return this.configService.get<string>(
+      'FIREBASE_SERVICE_ACCOUNT_JSON_BASE64',
+      '',
+    );
+  }
+
   get aws() {
     return {
       region: this.configService.get<string>('AWS_REGION'),

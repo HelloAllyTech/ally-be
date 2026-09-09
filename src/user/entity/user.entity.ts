@@ -61,4 +61,10 @@ export class User extends BaseEntity {
 
   @Column({ nullable: true })
   profileImageUrl?: string;
+
+  // Throttled write from JwtStrategy.validate() (LastActiveService, 15-min
+  // throttle) — not a precise last-request timestamp, just enough to detect
+  // sustained disengagement for the engagement-reminder evaluator.
+  @Column({ type: 'timestamp', nullable: true })
+  lastActiveAt?: Date;
 }
