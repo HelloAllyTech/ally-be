@@ -154,6 +154,152 @@ describe('GoalsXpAnalyticsService', () => {
     });
   });
 
+  describe('upcoming periods', () => {
+    it('extends the series through a future period with a goal, flagged upcoming', async () => {
+      repo.getGoalsByGrain.mockResolvedValue(
+        new Map([
+          ['2026-08-01', 1_000],
+          ['2026-10-01', 3_000],
+        ]),
+      );
+
+      const res = await service.getGoalsXp({});
+
+      expect(res.points.map((p) => p.periodStart)).toEqual([
+        '2026-06-01',
+        '2026-07-01',
+        '2026-08-01',
+        '2026-09-01',
+        '2026-10-01',
+      ]);
+      expect(res.points.map((p) => p.upcoming)).toEqual([
+        false,
+        false,
+        false,
+        true,
+        true,
+      ]);
+      expect(res.points.map((p) => p.inProgress)).toEqual([
+        false,
+        false,
+        true,
+        false,
+        false,
+      ]);
+      const oct = res.points.find((p) => p.periodStart === '2026-10-01');
+      expect(oct).toMatchObject({ goalXp: 3_000, hasGoal: true, actualXp: 0 });
+    });
+
+    it('marks a non-contiguous gap period upcoming with no goal, not lumped with in-progress', async () => {
+      repo.getGoalsByGrain.mockResolvedValue(
+        new Map([
+          ['2026-10-01', 1_000],
+          ['2026-12-01', 2_000],
+        ]),
+      );
+
+      const res = await service.getGoalsXp({});
+      const nov = res.points.find((p) => p.periodStart === '2026-11-01');
+
+      expect(nov).toMatchObject({
+        upcoming: true,
+        hasGoal: false,
+        goalXp: null,
+        inProgress: false,
+      });
+    });
+
+    it("does not extend the series when no goal is set past today's period", async () => {
+      const res = await service.getGoalsXp({});
+      expect(res.points.map((p) => p.periodStart)).toEqual([
+        '2026-06-01',
+        '2026-07-01',
+        '2026-08-01',
+      ]);
+    });
+  });
+
+  describe('quarter/year goal derivation from month rows', () => {
+    it('sums a quarter goal only when every constituent month has one', async () => {
+      repo.getGoalsByGrain.mockImplementation(async (grain) => {
+        if (grain === 'month') {
+          return new Map([
+            ['2026-07-01', 1_000],
+            ['2026-08-01', 1_500],
+            ['2026-09-01', 2_000],
+          ]);
+        }
+        return new Map();
+      });
+
+      const res = await service.getGoalsXp({ grain: 'quarter' });
+      const q3 = res.points.find((p) => p.periodStart === '2026-07-01');
+
+      expect(q3).toMatchObject({ goalXp: 4_500, hasGoal: true });
+    });
+
+    it('treats a partially-covered quarter as no goal rather than a partial sum', async () => {
+      repo.getGoalsByGrain.mockImplementation(async (grain) => {
+        if (grain === 'month') {
+          return new Map([
+            ['2026-07-01', 1_000],
+            ['2026-08-01', 1_500],
+            // 2026-09-01 missing — Q3 2026 is incomplete
+          ]);
+        }
+        return new Map();
+      });
+
+      const res = await service.getGoalsXp({ grain: 'quarter' });
+      const q3 = res.points.find((p) => p.periodStart === '2026-07-01');
+
+      expect(q3).toMatchObject({ goalXp: null, hasGoal: false });
+    });
+
+    it('prefers a native quarter/year goal row over a derived one', async () => {
+      repo.getGoalsByGrain.mockImplementation(async (grain) => {
+        if (grain === 'month') {
+          return new Map([
+            ['2026-07-01', 1_000],
+            ['2026-08-01', 1_500],
+            ['2026-09-01', 2_000],
+          ]);
+        }
+        if (grain === 'quarter') {
+          return new Map([['2026-07-01', 9_999]]);
+        }
+        return new Map();
+      });
+
+      const res = await service.getGoalsXp({ grain: 'quarter' });
+      const q3 = res.points.find((p) => p.periodStart === '2026-07-01');
+
+      expect(q3).toMatchObject({ goalXp: 9_999, hasGoal: true });
+    });
+
+    it('extends the quarter series into the future for a fully-covered upcoming quarter', async () => {
+      repo.getGoalsByGrain.mockImplementation(async (grain) => {
+        if (grain === 'month') {
+          return new Map([
+            ['2026-10-01', 1_000],
+            ['2026-11-01', 1_000],
+            ['2026-12-01', 1_000],
+          ]);
+        }
+        return new Map();
+      });
+
+      const res = await service.getGoalsXp({ grain: 'quarter' });
+      const q4 = res.points.find((p) => p.periodStart === '2026-10-01');
+
+      expect(q4).toMatchObject({
+        goalXp: 3_000,
+        hasGoal: true,
+        upcoming: true,
+      });
+    });
+  });
+
   describe('scoping', () => {
     it('is always platform-wide — Goals has no tenant filter', async () => {
       const res = await service.getGoalsXp({});

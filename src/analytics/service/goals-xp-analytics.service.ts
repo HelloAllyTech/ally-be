@@ -54,6 +54,44 @@ function generatePeriodStarts(
 }
 
 /**
+ * Sums `monthGoals` into quarter/year buckets, but only for a bucket whose
+ * every constituent month has a goal row — a partial quarter/year is reported
+ * as no goal at all rather than a summed figure that understates the real
+ * target. Same "never fabricate a target" rule as `goalXp` itself.
+ */
+function deriveGrainGoals(
+  monthGoals: Map<string, number>,
+  grain: Exclude<XpGoalGrain, 'month'>,
+): Map<string, number> {
+  const derived = new Map<string, number>();
+  const buckets = new Map<string, Date>();
+  for (const iso of monthGoals.keys()) {
+    const bucketStart = truncToGrain(new Date(`${iso}T00:00:00Z`), grain);
+    buckets.set(isoDate(bucketStart), bucketStart);
+  }
+
+  for (const [bucketIso, bucketStart] of buckets) {
+    let sum = 0;
+    let complete = true;
+    for (
+      let cur = bucketStart;
+      cur < nextPeriod(bucketStart, grain);
+      cur = nextPeriod(cur, 'month')
+    ) {
+      const monthGoal = monthGoals.get(isoDate(cur));
+      if (monthGoal === undefined) {
+        complete = false;
+        break;
+      }
+      sum += monthGoal;
+    }
+    if (complete) derived.set(bucketIso, sum);
+  }
+
+  return derived;
+}
+
+/**
  * Actual XP earned vs. a goal, per month/quarter/year.
  *
  * Goals are read-only here — see {@link AnalyticsXpGoal} for why they are set
@@ -72,17 +110,29 @@ export class GoalsXpAnalyticsService {
     const now = new Date();
     const start = truncToGrain(dataFloor, grain);
     const currentPeriodStart = truncToGrain(now, grain);
-    const endExclusive = nextPeriod(currentPeriodStart, grain);
 
-    const [actualRows, goals] = await Promise.all([
-      this.repository.getActualXpByPeriod(grain, start, endExclusive),
-      this.repository.getGoalsByGrain(grain),
-    ]);
+    const goals = await this.getGoalsForGrain(grain);
+
+    const currentPeriodIso = isoDate(currentPeriodStart);
+    let furthestGoalIso = currentPeriodIso;
+    for (const iso of goals.keys()) {
+      if (iso > furthestGoalIso) furthestGoalIso = iso;
+    }
+    const furthestGoalStart = truncToGrain(
+      new Date(`${furthestGoalIso}T00:00:00Z`),
+      grain,
+    );
+    const endExclusive = nextPeriod(furthestGoalStart, grain);
+
+    const actualRows = await this.repository.getActualXpByPeriod(
+      grain,
+      start,
+      endExclusive,
+    );
     const actualByPeriod = new Map(
       actualRows.map((r) => [r.periodStart, r.actualXp]),
     );
 
-    const currentPeriodIso = isoDate(currentPeriodStart);
     const points: GoalsXpPointDto[] = generatePeriodStarts(
       start,
       endExclusive,
@@ -97,6 +147,7 @@ export class GoalsXpAnalyticsService {
         goalXp,
         hasGoal: goalXp !== null,
         inProgress: iso === currentPeriodIso,
+        upcoming: iso > currentPeriodIso,
       };
     });
 
@@ -106,5 +157,24 @@ export class GoalsXpAnalyticsService {
       scoping: { tenantId: null, unscopedSections: [] },
       computedAt: now.toISOString(),
     };
+  }
+
+  /**
+   * Goal rows for `grain`. For quarter/year, native rows (if any are ever
+   * seeded) win over goals derived by summing constituent months — see
+   * {@link deriveGrainGoals}.
+   */
+  private async getGoalsForGrain(
+    grain: XpGoalGrain,
+  ): Promise<Map<string, number>> {
+    if (grain === 'month') {
+      return this.repository.getGoalsByGrain('month');
+    }
+
+    const [monthGoals, nativeGoals] = await Promise.all([
+      this.repository.getGoalsByGrain('month'),
+      this.repository.getGoalsByGrain(grain),
+    ]);
+    return new Map([...deriveGrainGoals(monthGoals, grain), ...nativeGoals]);
   }
 }
