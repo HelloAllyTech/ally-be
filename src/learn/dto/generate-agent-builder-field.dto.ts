@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
+  IsArray,
   IsEnum,
   IsInt,
   IsNotEmpty,
@@ -19,6 +20,11 @@ import { AgentBuilderField } from '../enum/agent-builder-field.enum';
  * a states-enabled main-agent prompt is selected — states) concurrently, each
  * rendering its own editable prompt template with the shared runtime
  * variables below.
+ *
+ * The three language-scoped fields (opening statements, linguistic style
+ * samples, allowed filler words) are fired once per language the client
+ * speaks, with `languageId` naming the language to write in. The wizard learns
+ * that list from the `spoken_languages` field, which it fires first.
  */
 export class GenerateAgentBuilderFieldDto {
   @ApiProperty({
@@ -67,6 +73,58 @@ export class GenerateAgentBuilderFieldDto {
   numKnowledgeSources?: number;
 
   @ApiProperty({
+    description:
+      'Language to generate in, for the language-scoped fields ' +
+      '(opening_statements / linguistic_style_samples / allowed_filler_words). ' +
+      'A `languages.id` as a string, from the `spoken_languages` field or the ' +
+      'scenario-voice language catalog. Ignored by every other field; when ' +
+      'omitted (or unknown) the language-scoped fields fall back to English.',
+    required: false,
+    example: '1',
+  })
+  @IsString()
+  @IsOptional()
+  languageId?: string;
+
+  @ApiProperty({
+    description:
+      'Languages to cast a voice for (`languages.id` strings), used by the ' +
+      '`language_voices` field only. Normally the ids `spoken_languages` ' +
+      'returned; when omitted, every voiced language in the catalog is offered.',
+    required: false,
+    example: ['1', '2'],
+  })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  languageIds?: string[];
+
+  @ApiProperty({
+    description:
+      "The generated persona's gender, so `language_voices` can cast a voice " +
+      'that matches the client the wizard just wrote. Free text; blank means ' +
+      'unknown rather than any particular gender.',
+    required: false,
+    example: 'female',
+  })
+  @IsString()
+  @IsOptional()
+  personaGender?: string;
+
+  @ApiProperty({
+    description:
+      "The generated persona's age in years, matched against a voice's age " +
+      'band by `language_voices`.',
+    required: false,
+    example: 34,
+  })
+  @IsInt()
+  @Min(1)
+  @Max(120)
+  @IsOptional()
+  personaAge?: number;
+
+  @ApiProperty({
     description: 'Model override for generation',
     required: false,
   })
@@ -111,7 +169,10 @@ export class GenerateAgentBuilderFieldResponseDto {
       '[{id,name,guidelines,scoreLower,scoreUpper,ragEnabled}] for states ' +
       '(ids + contiguous score bands assigned server-side); ' +
       'string[] for linguistic_style_samples / allowed_filler_words ' +
-      '(English only — the frontend keys these into languageId "1").',
+      '(written in the requested `languageId`, which the frontend keys them ' +
+      'under); [{languageId,label,code}] for spoken_languages; ' +
+      '[{languageId,languageLabel,voiceId,voiceName,voiceGender}] for ' +
+      'language_voices.',
   })
   value!: unknown;
 }

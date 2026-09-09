@@ -55,6 +55,10 @@ import { CompetencyService } from '../competency.service';
 import { AutofillService } from '../autofill.service';
 import { BehaviorService } from '../behavior.service';
 import { EnhanceableField } from 'src/learn/enum/enhanceable-field.enum';
+import {
+  AgentBuilderField,
+  MAX_SPOKEN_LANGUAGES,
+} from 'src/learn/enum/agent-builder-field.enum';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { TokenUser } from 'src/auth/type/auth.types';
 
@@ -164,6 +168,7 @@ describe('ScenarioService', () => {
       save: jest.fn(),
       update: jest.fn(),
       getScenarioVoices: jest.fn(),
+      getLanguagesWithVoices: jest.fn(),
     };
 
     const s3CoverImageUrlPattern =
@@ -6062,6 +6067,428 @@ describe('ScenarioService', () => {
         expect(['openai', 'anthropic']).toContain(m.provider);
         expect(typeof m.supportsTemperature).toBe('boolean');
       }
+    });
+  });
+
+  describe('generateAgentBuilderField — language handling', () => {
+    const catalog = [
+      {
+        language_id: 1,
+        value: 'en-IN',
+        label: 'English',
+        translationCode: 'en',
+        voices: [],
+      },
+      {
+        language_id: 4,
+        value: 'hi-IN',
+        label: 'Hindi',
+        translationCode: 'hi',
+        voices: [],
+      },
+      {
+        language_id: 7,
+        value: 'mr-IN',
+        label: 'Marathi',
+        translationCode: 'mr',
+        voices: [],
+      },
+    ];
+
+    const brief = 'Suchi speaks English, Hindi and Marathi.';
+
+    beforeEach(() => {
+      (
+        scenarioVoiceRepository.getLanguagesWithVoices as jest.Mock
+      ).mockResolvedValue(catalog);
+    });
+
+    /** Variables the prompt template was rendered with. */
+    const renderedVariables = (): Record<string, string> =>
+      autofillService.generateContentFromPrompt.mock.calls[0][1];
+
+    it('tells the prompt which language to write in', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        '{"samples":["मुझे नहीं पता."]}',
+      );
+
+      const result = await service.generateAgentBuilderField({
+        field: AgentBuilderField.LINGUISTIC_STYLE_SAMPLES,
+        actorDescription: brief,
+        languageId: '4',
+      });
+
+      expect(renderedVariables()).toMatchObject({
+        languageName: 'Hindi',
+        languageCode: 'hi',
+      });
+      expect(result.value).toEqual(['मुझे नहीं पता.']);
+    });
+
+    it('falls back to English when the languageId is unknown or absent', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        '{"fillers":["um"]}',
+      );
+
+      await service.generateAgentBuilderField({
+        field: AgentBuilderField.ALLOWED_FILLER_WORDS,
+        actorDescription: brief,
+        languageId: '999',
+      });
+
+      expect(renderedVariables()).toMatchObject({
+        languageName: 'English',
+        languageCode: 'en',
+      });
+    });
+
+    it('does not query the catalog for language-agnostic fields', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue('A title');
+
+      await service.generateAgentBuilderField({
+        field: AgentBuilderField.BACKSTORY,
+        actorDescription: brief,
+      });
+
+      expect(
+        scenarioVoiceRepository.getLanguagesWithVoices,
+      ).not.toHaveBeenCalled();
+      expect(renderedVariables().languageName).toBeUndefined();
+    });
+
+    it('offers the whole catalog to spoken_languages and resolves the ids it picks', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        '{"languageIds":["7","4","1"]}',
+      );
+
+      const result = await service.generateAgentBuilderField({
+        field: AgentBuilderField.SPOKEN_LANGUAGES,
+        actorDescription: brief,
+      });
+
+      expect(renderedVariables().availableLanguages).toBe(
+        '- 1 | English | en\n- 4 | Hindi | hi\n- 7 | Marathi | mr',
+      );
+      // Resolved against the catalog, so the studio's own tab order is kept
+      // whatever order the model answered in.
+      expect(result.value).toEqual([
+        { languageId: '1', label: 'English', code: 'en' },
+        { languageId: '4', label: 'Hindi', code: 'hi' },
+        { languageId: '7', label: 'Marathi', code: 'mr' },
+      ]);
+    });
+
+    it('drops unknown ids and duplicates from the spoken_languages answer', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        '{"languageIds":["4","4","999","ta"]}',
+      );
+
+      const result = await service.generateAgentBuilderField({
+        field: AgentBuilderField.SPOKEN_LANGUAGES,
+        actorDescription: brief,
+      });
+
+      expect(result.value).toEqual([
+        { languageId: '4', label: 'Hindi', code: 'hi' },
+      ]);
+    });
+
+    it('keeps one variant per language when the catalog voices several', async () => {
+      (
+        scenarioVoiceRepository.getLanguagesWithVoices as jest.Mock
+      ).mockResolvedValue([
+        ...catalog,
+        {
+          language_id: 12,
+          value: 'en-GB',
+          label: 'English (UK)',
+          translationCode: 'en',
+          voices: [],
+        },
+        {
+          language_id: 13,
+          value: 'en-US',
+          label: 'English (US)',
+          translationCode: 'en',
+          voices: [],
+        },
+      ]);
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        '{"languageIds":["1","12","13","4"]}',
+      );
+
+      const result = await service.generateAgentBuilderField({
+        field: AgentBuilderField.SPOKEN_LANGUAGES,
+        actorDescription: brief,
+      });
+
+      expect(result.value).toEqual([
+        { languageId: '1', label: 'English', code: 'en' },
+        { languageId: '4', label: 'Hindi', code: 'hi' },
+      ]);
+    });
+
+    it('falls back to English when spoken_languages answers with nothing usable', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        'I could not tell.',
+      );
+
+      const result = await service.generateAgentBuilderField({
+        field: AgentBuilderField.SPOKEN_LANGUAGES,
+        actorDescription: brief,
+      });
+
+      expect(result.value).toEqual([
+        { languageId: '1', label: 'English', code: 'en' },
+      ]);
+    });
+
+    describe('language_voices casting', () => {
+      const voicedCatalog = [
+        {
+          language_id: 1,
+          value: 'en-IN',
+          label: 'English',
+          translationCode: 'en',
+          voices: [
+            {
+              id: 'v-en-f',
+              name: 'Anushka',
+              provider: 'SARVAM',
+              gender: 'female',
+              age: 'adult',
+            },
+            {
+              id: 'v-en-m',
+              name: 'Abhilash',
+              provider: 'SARVAM',
+              gender: 'male',
+              age: 'adult',
+            },
+          ],
+        },
+        {
+          language_id: 4,
+          value: 'hi-IN',
+          label: 'Hindi',
+          translationCode: 'hi',
+          voices: [
+            {
+              id: 'v-hi-m',
+              name: 'Raju',
+              provider: 'ELEVENLABS',
+              gender: 'male',
+            },
+          ],
+        },
+        {
+          language_id: 7,
+          value: 'mr-IN',
+          label: 'Marathi',
+          translationCode: 'mr',
+          voices: [],
+        },
+      ];
+
+      beforeEach(() => {
+        (
+          scenarioVoiceRepository.getLanguagesWithVoices as jest.Mock
+        ).mockResolvedValue(voicedCatalog);
+      });
+
+      it('offers only the requested languages that actually have voices', async () => {
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{"1":"v-en-f"}}',
+        );
+
+        await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1', '7'],
+          personaGender: 'female',
+          personaAge: 34,
+        });
+
+        const vars = renderedVariables();
+        expect(vars.voiceCandidates).toContain('language_id 1 (English):');
+        expect(vars.voiceCandidates).toContain(
+          '- v-en-f | Anushka | SARVAM | female | adult',
+        );
+        // Not requested.
+        expect(vars.voiceCandidates).not.toContain('Hindi');
+        // Requested but has no voices — nothing to choose from.
+        expect(vars.voiceCandidates).not.toContain('Marathi');
+        expect(vars.personaGender).toBe('female');
+        expect(vars.personaAge).toBe('34');
+      });
+
+      it('resolves the cast ids to voice names for the mapping', async () => {
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{"1":"v-en-f","4":"v-hi-m"}}',
+        );
+
+        const result = await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1', '4'],
+          personaGender: 'female',
+        });
+
+        expect(result.value).toEqual([
+          {
+            languageId: '1',
+            languageLabel: 'English',
+            voiceId: 'v-en-f',
+            voiceName: 'Anushka',
+            voiceGender: 'female',
+          },
+          {
+            languageId: '4',
+            languageLabel: 'Hindi',
+            voiceId: 'v-hi-m',
+            voiceName: 'Raju',
+            voiceGender: 'male',
+          },
+        ]);
+      });
+
+      it("drops a voice id that isn't one of that language's own voices", async () => {
+        // v-hi-m is real, but under English it would dispatch Hindi TTS for an
+        // English session.
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{"1":"v-hi-m","4":"made-up"}}',
+        );
+
+        const result = await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1', '4'],
+        });
+
+        expect(result.value).toEqual([]);
+      });
+
+      it('leaves a language the model skipped out of the answer', async () => {
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{"1":"v-en-f"}}',
+        );
+
+        const result = await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1', '4'],
+        });
+
+        expect(result.value).toEqual([
+          {
+            languageId: '1',
+            languageLabel: 'English',
+            voiceId: 'v-en-f',
+            voiceName: 'Anushka',
+            voiceGender: 'female',
+          },
+        ]);
+      });
+
+      it('matches a decorated key the model wrote instead of the bare id', async () => {
+        // Observed from gpt-5-mini against the real catalog: it echoed the
+        // candidate-block heading as the key.
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{"Language 1":"v-en-f","language_id 4":"v-hi-m"}}',
+        );
+
+        const result = await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1', '4'],
+        });
+
+        expect(
+          (result.value as { languageId: string; voiceId: string }[]).map(
+            (pick) => [pick.languageId, pick.voiceId],
+          ),
+        ).toEqual([
+          ['1', 'v-en-f'],
+          ['4', 'v-hi-m'],
+        ]);
+      });
+
+      it('matches a key written as the language label', async () => {
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{"Hindi":"v-hi-m"}}',
+        );
+
+        const result = await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1', '4'],
+        });
+
+        expect(result.value).toEqual([
+          {
+            languageId: '4',
+            languageLabel: 'Hindi',
+            voiceId: 'v-hi-m',
+            voiceName: 'Raju',
+            voiceGender: 'male',
+          },
+        ]);
+      });
+
+      it('tolerates a bare map without the documented wrapper', async () => {
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"1":"v-en-f"}',
+        );
+
+        const result = await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1'],
+        });
+
+        expect(result.value).toHaveLength(1);
+      });
+
+      it('offers the whole voiced catalog when no languages are named', async () => {
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{}}',
+        );
+
+        await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+        });
+
+        const candidates = renderedVariables().voiceCandidates;
+        expect(candidates).toContain('English');
+        expect(candidates).toContain('Hindi');
+        expect(candidates).not.toContain('Marathi');
+      });
+    });
+
+    it('caps the fan-out at MAX_SPOKEN_LANGUAGES', async () => {
+      const bigCatalog = Array.from({ length: 9 }, (_, i) => ({
+        language_id: i + 1,
+        value: `l${i + 1}`,
+        label: `Language ${i + 1}`,
+        translationCode: `l${i + 1}`,
+        voices: [],
+      }));
+      (
+        scenarioVoiceRepository.getLanguagesWithVoices as jest.Mock
+      ).mockResolvedValue(bigCatalog);
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        JSON.stringify({
+          languageIds: bigCatalog.map((l) => String(l.language_id)),
+        }),
+      );
+
+      const result = await service.generateAgentBuilderField({
+        field: AgentBuilderField.SPOKEN_LANGUAGES,
+        actorDescription: brief,
+      });
+
+      expect(result.value).toHaveLength(MAX_SPOKEN_LANGUAGES);
     });
   });
 });

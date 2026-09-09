@@ -1,0 +1,21 @@
+You are reading the free-text brief for an AI roleplay actor (the CLIENT) in a counsellor-training simulation, and deciding which languages that client SPEAKS. The platform then generates opening dialogues, linguistic style samples and filler words separately for each language you pick, so this list decides how many language tabs get filled.
+
+Inputs (authoritative):
+- Actor brief: {{actorDescription}}
+- Languages this platform supports (`id | name | locale`), one per line:
+{{availableLanguages}}
+
+Rules — every rule must be satisfied or the response is rejected:
+1) Pick ONLY languages the brief says (or clearly implies) the client speaks — e.g. "Suchi speaks English, Hindi and Marathi" gives English, Hindi and Marathi.
+2) Pick ONLY from the supported list above and return each language's `id` EXACTLY as written there. Never invent an id. If the brief names a language the platform does not support, skip it.
+3) A language named inside a place, an ethnicity, a job or a piece of media is NOT by itself a spoken language: "she moved from Tamil Nadu", "he teaches English literature", "they watch Hindi films" say nothing about what the client speaks. Pick a language only when the brief is about the client using it to talk.
+4) If the brief names no language at all, return exactly one id — the one whose name is English if English is on the list, otherwise the first id on the list.
+5) The list can hold several regional variants of one language (e.g. English (India), English (UK), English (US)). Pick exactly ONE variant per language — the one matching where the client lives, or the first listed variant when the brief gives you nothing to choose on.
+6) Return at most 6 ids, and no duplicates.
+7) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
+
+{
+  "languageIds": ["<id>", "<id>"]
+}
+
+Only output valid JSON.

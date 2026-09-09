@@ -701,7 +701,14 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     runtime: LlmRuntime.ALLY_BE,
     tier: LlmModelTier.REASONING,
     trigger: 'The Agent Builder Copilot generates fields',
-    detail: 'Fans out one abortable call per field, in parallel.',
+    detail:
+      'Fans out one abortable call per field, in parallel — and one per ' +
+      '(field x language) for the three per-language fields (opening ' +
+      'dialogues, style samples, filler words), so a brief naming three ' +
+      'spoken languages costs three sets of those. Two further calls are ' +
+      'sequenced rather than parallel: `spoken_languages` decides which ' +
+      'languages to fan out over, and `language_voices` then casts a voice ' +
+      'per language from the voice catalog.',
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-5-mini',

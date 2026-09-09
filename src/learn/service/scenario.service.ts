@@ -155,12 +155,17 @@ import {
 } from '../enum/enhanceable-field.enum';
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
-import { AgentBuilderField } from '../enum/agent-builder-field.enum';
+import {
+  AgentBuilderField,
+  isLanguageScopedAgentBuilderField,
+  MAX_SPOKEN_LANGUAGES,
+} from '../enum/agent-builder-field.enum';
 import {
   GenerateAgentBuilderFieldDto,
   GenerateAgentBuilderFieldResponseDto,
 } from '../dto/generate-agent-builder-field.dto';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
+import { ScenarioVoiceLanguage } from '../type/scenario-language-voice.type';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
   LlmRuntime,
@@ -3440,6 +3445,17 @@ export class ScenarioService {
    * field has its own editable prompt template (src/prompts/agent_builder/)
    * and is fired independently in parallel by the frontend, so the results
    * paint into the form as each returns. Provider routing mirrors generateField.
+   *
+   * Three of the fields are about language rather than a form field of their
+   * own. `spoken_languages` reads the brief against the studio's language
+   * catalog and answers which languages the client speaks; the language-scoped
+   * fields (opening dialogues / linguistic style samples / filler words) then
+   * take a `languageId` and are generated natively in that language — one call
+   * per language, so a brief saying "speaks English, Hindi and Marathi" fills
+   * three language tabs instead of one. `language_voices` casts one voice per
+   * spoken language from the catalog, against the brief and the persona the
+   * wizard just generated, filling the mandatory Language-Voice mapping that
+   * those languages are otherwise unreachable through at runtime.
    */
   async generateAgentBuilderField(
     dto: GenerateAgentBuilderFieldDto,
@@ -3454,6 +3470,40 @@ export class ScenarioService {
       numKnowledgeSources: String(numKnowledgeSources),
     };
 
+    // Language plumbing. `spoken_languages` reads the whole catalog and picks
+    // the subset the brief says the client speaks; the language-scoped fields
+    // are each told the ONE language to write in. Every other field is
+    // language-agnostic and skips the catalog query entirely.
+    let catalog: ScenarioVoiceLanguage[] = [];
+    if (
+      field === AgentBuilderField.SPOKEN_LANGUAGES ||
+      field === AgentBuilderField.LANGUAGE_VOICES ||
+      isLanguageScopedAgentBuilderField(field)
+    ) {
+      catalog = await this.getAgentBuilderLanguageCatalog();
+    }
+    if (field === AgentBuilderField.SPOKEN_LANGUAGES) {
+      variables.availableLanguages = catalog
+        .map(
+          (lang) =>
+            `- ${lang.language_id} | ${lang.label} | ${this.languageLocale(lang)}`,
+        )
+        .join('\n');
+    } else if (field === AgentBuilderField.LANGUAGE_VOICES) {
+      catalog = this.voiceCastingCatalog(catalog, dto.languageIds);
+      variables.voiceCandidates = this.formatVoiceCandidates(catalog);
+      variables.personaGender = dto.personaGender?.trim() ?? '';
+      variables.personaAge =
+        typeof dto.personaAge === 'number' ? String(dto.personaAge) : '';
+    } else if (isLanguageScopedAgentBuilderField(field)) {
+      const language = this.resolveAgentBuilderLanguage(
+        catalog,
+        dto.languageId,
+      );
+      variables.languageName = language.label;
+      variables.languageCode = language.code;
+    }
+
     // The prompt-file basename equals the enum value; toPromptCode maps it to
     // src/prompts/agent_builder/<field>.txt (editable in Prompt Management).
     const promptCode = toPromptCode('agent_builder', field);
@@ -3464,7 +3514,9 @@ export class ScenarioService {
       field === AgentBuilderField.KNOWLEDGE_SOURCES ||
       field === AgentBuilderField.STATES ||
       field === AgentBuilderField.LINGUISTIC_STYLE_SAMPLES ||
-      field === AgentBuilderField.ALLOWED_FILLER_WORDS;
+      field === AgentBuilderField.ALLOWED_FILLER_WORDS ||
+      field === AgentBuilderField.SPOKEN_LANGUAGES ||
+      field === AgentBuilderField.LANGUAGE_VOICES;
 
     // The prompt row's own model/temperature is honoured inside the completion
     // layer (the wizard sends none); an explicit request override still wins.
@@ -3477,7 +3529,226 @@ export class ScenarioService {
       dto.provider,
     );
 
+    if (field === AgentBuilderField.SPOKEN_LANGUAGES) {
+      return { field, value: this.parseSpokenLanguages(raw, catalog) };
+    }
+    if (field === AgentBuilderField.LANGUAGE_VOICES) {
+      return { field, value: this.parseLanguageVoices(raw, catalog) };
+    }
     return { field, value: this.parseAgentBuilderField(field, raw) };
+  }
+
+  /**
+   * The language catalog the copilot generates against: exactly the active,
+   * voiced languages the studio renders tabs for (see
+   * getScenarioVoiceLanguagesForAdmin), so a generated language is always one
+   * the trainer can then see and edit.
+   */
+  private getAgentBuilderLanguageCatalog(): Promise<ScenarioVoiceLanguage[]> {
+    return this.getScenarioVoiceLanguagesForAdmin(true, true) as Promise<
+      ScenarioVoiceLanguage[]
+    >;
+  }
+
+  /** BCP-47 locale for a catalog row, preferring translationCode over value. */
+  private languageLocale(lang: ScenarioVoiceLanguage): string {
+    return (lang.translationCode || lang.value || '').trim();
+  }
+
+  /**
+   * The catalog's English row, else its first row — the studio's own primary
+   * resolution (useResolvedPrimaryLanguageId) mirrored server-side, so an
+   * unknown/absent languageId degrades to the language the wizard used to
+   * generate before it was language-aware rather than to nothing.
+   */
+  private primaryCatalogLanguage(
+    catalog: ScenarioVoiceLanguage[],
+  ): ScenarioVoiceLanguage | undefined {
+    return (
+      catalog.find(
+        (lang) =>
+          this.languageLocale(lang).toLowerCase().startsWith('en') ||
+          lang.label?.trim().toLowerCase() === 'english',
+      ) ?? catalog[0]
+    );
+  }
+
+  /** Resolve the requested languageId to a name + locale for the prompt. */
+  private resolveAgentBuilderLanguage(
+    catalog: ScenarioVoiceLanguage[],
+    languageId?: string,
+  ): { label: string; code: string } {
+    const requested = (languageId ?? '').trim();
+    const match =
+      (requested
+        ? catalog.find((lang) => String(lang.language_id) === requested)
+        : undefined) ?? this.primaryCatalogLanguage(catalog);
+    // No catalog at all (no voiced languages configured): keep the pre-
+    // language-aware behaviour of writing English rather than an empty slot.
+    return {
+      label: match?.label?.trim() || 'English',
+      code: match ? this.languageLocale(match) || 'en' : 'en',
+    };
+  }
+
+  /**
+   * Coerce the `spoken_languages` response into the catalog rows the wizard
+   * fans out over. Filtering the catalog BY the returned ids validates them,
+   * drops duplicates and hallucinated ids, and keeps the studio's own tab
+   * order; an unusable answer falls back to the primary (English) language so
+   * the wizard still generates one full set.
+   */
+  private parseSpokenLanguages(
+    raw: string,
+    catalog: ScenarioVoiceLanguage[],
+  ): { languageId: string; label: string; code: string }[] {
+    const parsed = this.parseFirstJsonObject(raw);
+    let ids: unknown[] = [];
+    if (Array.isArray(parsed)) {
+      ids = parsed;
+    } else if (Array.isArray(parsed?.languageIds)) {
+      ids = parsed.languageIds;
+    } else if (parsed && typeof parsed === 'object') {
+      const arrayValue = Object.values(parsed).find((v) => Array.isArray(v));
+      if (Array.isArray(arrayValue)) ids = arrayValue;
+    }
+    const wanted = new Set(
+      ids
+        .filter((id) => typeof id === 'string' || typeof id === 'number')
+        .map((id) => String(id).trim())
+        .filter(Boolean),
+    );
+    let matched = catalog.filter((lang) =>
+      wanted.has(String(lang.language_id)),
+    );
+    // One variant per language. A catalog can voice several regional variants
+    // of the same language (English (India) / (UK) / (US) all carry locale
+    // `en`), and a brief saying "speaks English" invites the model to pick all
+    // of them — three identical tabs and three times the calls. The prompt asks
+    // for one; this makes it so, keeping the first in the studio's tab order.
+    const seenBaseLocales = new Set<string>();
+    matched = matched.filter((lang) => {
+      const base = this.languageLocale(lang).split('-')[0].toLowerCase();
+      if (!base) return true;
+      if (seenBaseLocales.has(base)) return false;
+      seenBaseLocales.add(base);
+      return true;
+    });
+    if (matched.length === 0) {
+      const primary = this.primaryCatalogLanguage(catalog);
+      matched = primary ? [primary] : [];
+    }
+    return matched.slice(0, MAX_SPOKEN_LANGUAGES).map((lang) => ({
+      languageId: String(lang.language_id),
+      label: lang.label,
+      code: this.languageLocale(lang),
+    }));
+  }
+
+  /**
+   * The languages `language_voices` casts for: the requested ids (normally the
+   * ones `spoken_languages` answered), narrowed to those that actually have
+   * voices. Requesting nothing offers the whole catalog rather than nothing, so
+   * a caller that skipped language detection still gets a usable mapping.
+   */
+  private voiceCastingCatalog(
+    catalog: ScenarioVoiceLanguage[],
+    languageIds?: string[],
+  ): ScenarioVoiceLanguage[] {
+    const wanted = new Set(
+      (languageIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean),
+    );
+    const scoped =
+      wanted.size > 0
+        ? catalog.filter((lang) => wanted.has(String(lang.language_id)))
+        : catalog;
+    return scoped.filter((lang) => (lang.voices ?? []).length > 0);
+  }
+
+  /**
+   * The candidate block the casting prompt reads. Gender and age are printed
+   * even when blank — a voice nobody recorded a gender for is a real option the
+   * prompt is told to rank above a mismatch, so hiding the gap would make it
+   * indistinguishable from a match.
+   */
+  private formatVoiceCandidates(catalog: ScenarioVoiceLanguage[]): string {
+    return catalog
+      .map((lang) => {
+        const rows = (lang.voices ?? [])
+          .map((voice) => {
+            const gender = (voice as { gender?: string }).gender ?? '';
+            const age = (voice as { age?: string }).age ?? '';
+            const provider = (voice as { provider?: string }).provider ?? '';
+            return `  - ${voice.id} | ${voice.name} | ${provider} | ${gender} | ${age}`;
+          })
+          .join('\n');
+        return `language_id ${lang.language_id} (${lang.label}):\n${rows}`;
+      })
+      .join('\n');
+  }
+
+  /**
+   * Coerce the `language_voices` response into resolved picks. Every voice id
+   * is checked against the voices of the language it was returned under, so a
+   * hallucinated id — or one borrowed from another language, which would
+   * dispatch the wrong TTS entirely — is dropped rather than saved. A language
+   * the model skipped is simply absent; the wizard fills those gaps itself.
+   */
+  private parseLanguageVoices(
+    raw: string,
+    catalog: ScenarioVoiceLanguage[],
+  ): {
+    languageId: string;
+    languageLabel: string;
+    voiceId: string;
+    voiceName: string;
+    voiceGender: string;
+  }[] {
+    const parsed = this.parseFirstJsonObject(raw);
+    const map: Record<string, unknown> =
+      parsed && typeof parsed.voices === 'object' && parsed.voices !== null
+        ? (parsed.voices as Record<string, unknown>)
+        : parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : {};
+
+    // Key leniency, not politeness: gpt-5-mini answered `"Language 1"` against
+    // an earlier candidate heading rather than `"1"`, which a strict lookup
+    // silently turned into "the model picked nothing". Match the bare id, the
+    // digits inside a decorated key, or the language's own label.
+    const findRequested = (
+      languageId: string,
+      label: string,
+    ): unknown | undefined => {
+      if (languageId in map) return map[languageId];
+      const wantedLabel = label.trim().toLowerCase();
+      for (const [key, value] of Object.entries(map)) {
+        const trimmed = key.trim();
+        if (trimmed.toLowerCase() === wantedLabel) return value;
+        const digits = trimmed.match(/\d+/g);
+        if (digits?.length === 1 && digits[0] === languageId) return value;
+      }
+      return undefined;
+    };
+
+    return catalog.flatMap((lang) => {
+      const languageId = String(lang.language_id);
+      const requested = findRequested(languageId, lang.label ?? '');
+      if (typeof requested !== 'string' || !requested.trim()) return [];
+      const voice = (lang.voices ?? []).find(
+        (candidate) => candidate.id === requested.trim(),
+      );
+      if (!voice) return [];
+      return [
+        {
+          languageId,
+          languageLabel: lang.label,
+          voiceId: voice.id,
+          voiceName: voice.name,
+          voiceGender: (voice as { gender?: string }).gender ?? '',
+        },
+      ];
+    });
   }
 
   /**

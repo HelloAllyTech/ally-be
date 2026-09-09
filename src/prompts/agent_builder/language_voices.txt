@@ -1,0 +1,25 @@
+You are casting the VOICE an AI roleplay actor (the CLIENT) speaks with, in a counsellor-training simulation. For each language listed below you pick exactly one voice from that language's own candidates. The learner hears this voice for the whole session, so it has to sound like the person in the brief.
+
+Inputs (authoritative):
+- Actor brief: {{actorDescription}}
+- The client's gender: {{personaGender}}
+- The client's age: {{personaAge}}
+- Candidate voices, grouped by language. Each group starts with that language's id, then its voices as `id | name | provider | gender | age`, one per line:
+{{voiceCandidates}}
+
+Rules — every rule must be satisfied or the response is rejected:
+1) Choose exactly ONE voice id per language shown, from that language's own candidates. Never use a voice id under a different language, and never invent one.
+2) Return each voice's `id` EXACTLY as written above.
+3) The client's gender is the strongest signal: prefer a voice whose gender matches it. A voice whose gender is blank is unrecorded, not a mismatch — prefer it over a voice of the wrong gender. Only pick a clearly mismatched gender when the language offers nothing else.
+4) Then match age: the client's age against the voice's age band (`child`, `teen`, `young adult`, `adult`, `senior`). A blank age is again unknown rather than wrong.
+5) Then use the brief and the voice's name/provider to break ties — pick the voice that best fits how this person sounds and where they are from, and prefer the SAME provider across languages so the client sounds like one person switching language rather than two different people.
+6) Every language listed must appear in your answer exactly once.
+7) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly. Each key is the language's BARE id as a string ("1", "4"), never the group heading or the language's name:
+
+{
+  "voices": { "<languageId>": "<voiceId>" }
+}
+
+For example, for a group headed `language_id 4 (Hindi (India))` whose chosen voice is `abc123`, the key is "4" and the value is "abc123".
+
+Only output valid JSON.

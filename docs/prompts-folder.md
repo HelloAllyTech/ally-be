@@ -60,6 +60,36 @@ prompt for a long-running agent rather than a one-shot generation. Two things di
   down. Copy that pattern rather than throwing; the agent working slightly worse beats the
   tab not opening.
 
+### Copilot field prompts (`agent_builder/`)
+
+`agent_builder/` is a one-shot folder with an extra naming contract: each file's **basename
+must equal a value of the `AgentBuilderField` enum**, because the wizard names a field and
+the server derives the prompt code from it (`toPromptCode('agent_builder', field)`). Renaming
+one of these files renames the API's field value; adding a file does nothing until the enum
+knows about it.
+
+Three of them — `opening_statements`, `linguistic_style_samples`, `allowed_filler_words` — are
+**language-scoped**: they are fired once per language the actor brief says the client speaks,
+and get `{{languageName}}` / `{{languageCode}}` on top of the shared variables. Write them to
+produce native content for that language rather than a translation of the English set. Since
+`renderTemplate` leaves an unknown `{{placeholder}}` empty, a language-scoped prompt should
+still read sensibly if the language variables are absent — a dashboard-overridden copy
+predating them keeps working.
+
+Two more are about the language set rather than a form field. `spoken_languages.txt` is handed
+the studio's language catalog in `{{availableLanguages}}` and answers with ids from it, which
+is what the fan-out iterates. `language_voices.txt` then casts one voice per language from
+`{{voiceCandidates}}` against `{{personaGender}}` / `{{personaAge}}`, filling the mandatory
+Language–Voice mapping. Both are **id-returning prompts**, and that is where they bite:
+
+- Print the id the answer must use in a form the model won't paraphrase, and say so in the
+  output rule. An earlier `language_voices` candidate block headed each group
+  `Language 4 — Hindi:` and gpt-5-mini duly answered `{"Language 4": …}`, which a strict
+  lookup read as "picked nothing".
+- Validate every returned id against the list you offered, per group. A voice id that is real
+  but belongs to another language would dispatch the wrong TTS for the whole session, so
+  `parseLanguageVoices` checks membership rather than existence.
+
 ### Code-read one-shot prompts
 
 A third shape sits between the two: a folder like `analytics_suggestions/` or `ux_signals/`
