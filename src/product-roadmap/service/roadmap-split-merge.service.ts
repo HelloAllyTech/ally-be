@@ -14,7 +14,6 @@ import {
   isReshapeableStage,
   unreshapeableMessage,
 } from '../util/roadmap-stage.util';
-import { VOTES_PER_MONTH } from '../constants/product-roadmap.constants';
 import {
   MergeOpportunitiesDto,
   SplitPartDto,
@@ -255,23 +254,11 @@ export class RoadmapSplitMergeService {
       for (const [key, votes] of rollup) {
         const [userIdRaw, periodKey] = key.split('|');
 
-        // A rollup can NEVER legitimately exceed the cap: a user's total across ALL
-        // opportunities in a month is already capped at 100, so their total across a subset
-        // cannot be higher. If it is, the data is corrupt (a breach that predates the trigger,
-        // or a writer that bypassed this service).
-        //
-        // Deliberately throw rather than clamp. Clamping would silently destroy votes and
-        // quietly break the conservation invariant this whole class exists to preserve — and
-        // the operator would never know. A failed merge inside a transaction leaves the board
-        // untouched and demands attention, which is the correct outcome.
-        if (votes > VOTES_PER_MONTH) {
-          throw new ConflictException(
-            `Cannot merge: user ${userIdRaw} holds ${votes} votes across these opportunities ` +
-              `in ${periodKey}, above the ${VOTES_PER_MONTH}-vote cap. That should be ` +
-              `impossible — investigate the allocation data before retrying.`,
-          );
-        }
-
+        // No fixed-cap sanity check here anymore: under the vote-grant ledger a user's
+        // cumulative spend keeps accruing (daily + monthly grants), so there's no longer a
+        // ceiling a rollup total could be compared against. The real invariant — this
+        // operation cannot create or destroy votes — is the totalAfter/totalBefore assertion
+        // below; that one still holds exactly as before.
         totalAfter += votes;
         await manager.save(
           manager.create(RoadmapAllocation, {

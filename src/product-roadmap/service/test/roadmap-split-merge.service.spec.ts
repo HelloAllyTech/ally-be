@@ -392,10 +392,11 @@ describe('RoadmapSplitMergeService', () => {
       );
     });
 
-    it('throws rather than clamping when a rollup would exceed the cap', async () => {
-      // Impossible with sane data (a user's monthly total is already capped), so it means the
-      // allocation data is corrupt. Clamping would silently destroy votes and break the
-      // conservation invariant with nobody noticing.
+    it('conserves a rollup total well past the old 100-vote cap', async () => {
+      // Under the vote-grant ledger a user's balance keeps accruing (daily + monthly grants),
+      // so a rollup exceeding 100 is now perfectly legitimate — this used to be the "impossible,
+      // investigate" case (see the removed ceiling check in RoadmapSplitMergeService). The only
+      // invariant that still applies is conservation: total in equals total out.
       setupMerge(
         [
           { userId: 1, opportunityId: SRC, periodKey: '2026-07', votes: 80 },
@@ -404,9 +405,17 @@ describe('RoadmapSplitMergeService', () => {
         [A],
       );
 
-      await expect(
-        service.merge(ACTOR, { primaryId: SRC, sourceIds: [A] }),
-      ).rejects.toThrow(/above the 100-vote cap/);
+      await service.merge(ACTOR, { primaryId: SRC, sourceIds: [A] });
+
+      const byUserPeriod = savedAllocations.reduce<Record<string, number>>(
+        (acc, r) => {
+          const key = `${r.userId}|${r.periodKey}`;
+          acc[key] = (acc[key] ?? 0) + (r.votes ?? 0);
+          return acc;
+        },
+        {},
+      );
+      expect(byUserPeriod['1|2026-07']).toBe(120);
     });
 
     it('removes every source from the vector index', async () => {

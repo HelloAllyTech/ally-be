@@ -8,6 +8,7 @@ import { User } from 'src/user/entity/user.entity';
 import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
 
 import { RoadmapAllocation } from './entity/roadmap-allocation.entity';
+import { RoadmapVoteGrant } from './entity/roadmap-vote-grant.entity';
 import { RoadmapInterviewNote } from './entity/roadmap-interview-note.entity';
 import { RoadmapOpportunity } from './entity/roadmap-opportunity.entity';
 import { RoadmapOpportunityComment } from './entity/roadmap-opportunity-comment.entity';
@@ -21,6 +22,7 @@ import { RoadmapUserMap } from './entity/roadmap-user-map.entity';
 import { RoadmapUserTabOrder } from './entity/roadmap-user-tab-order.entity';
 
 import { RoadmapAllocationRepository } from './repository/roadmap-allocation.repository';
+import { RoadmapVoteGrantRepository } from './repository/roadmap-vote-grant.repository';
 import {
   RoadmapInterviewNoteRepository,
   RoadmapOpportunityCommentRepository,
@@ -56,6 +58,7 @@ import { RoadmapTaxonomyService } from './service/roadmap-taxonomy.service';
 import { RoadmapStrategyGoalService } from './service/roadmap-strategy-goal.service';
 import { RoadmapGoalImpactService } from './service/roadmap-goal-impact.service';
 import { RoadmapVectorService } from './service/roadmap-vector.service';
+import { RoadmapVoteGrantSchedulerRegistrationService } from './service/roadmap-vote-grant-scheduler-registration.service';
 
 import { RoadmapAdminController } from './controller/roadmap-admin.controller';
 import { RoadmapCollaborationController } from './controller/roadmap-collaboration.controller';
@@ -74,8 +77,9 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
  *   vote:admin:product-roadmap  → SUPER_ADMIN, SUPER_DUPER_ADMIN
  *   edit:admin:product-roadmap  → SUPER_DUPER_ADMIN only
  *
- * Schema: migrations 1871000000000 (tables) / …001 (monthly-cap trigger) / …002 (taxonomy
- * seed) / …003 (permission grants).
+ * Schema: migrations 1871000000000 (tables) / …001 (superseded monthly-cap trigger) / …002
+ * (taxonomy seed) / …003 (permission grants) / 1962000000000 (vote-grant ledger) / 1962100000000
+ * (vote-grant balance trigger, replacing …001).
  *
  * Semantic duplicate detection lives in ally-ai's Weaviate (`RoadmapOpportunity` collection);
  * Postgres here is the system of record and the vector index is derived.
@@ -99,6 +103,7 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
       RoadmapOpportunityOwner,
       RoadmapOpportunity,
       RoadmapAllocation,
+      RoadmapVoteGrant,
       RoadmapOpportunityComment,
       RoadmapInterviewNote,
       RoadmapSavedView,
@@ -149,6 +154,7 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
     RoadmapOpportunityOwnerRepository,
     RoadmapOpportunityRepository,
     RoadmapAllocationRepository,
+    RoadmapVoteGrantRepository,
     RoadmapOpportunityCommentRepository,
     RoadmapInterviewNoteRepository,
     RoadmapSavedViewRepository,
@@ -173,6 +179,7 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
     RoadmapGoalImpactService,
     RoadmapInterviewNoteService,
     RoadmapAiService,
+    RoadmapVoteGrantSchedulerRegistrationService,
     // realtime
     RoadmapGateway,
   ],

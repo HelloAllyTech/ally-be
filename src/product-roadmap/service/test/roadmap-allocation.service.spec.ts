@@ -8,6 +8,7 @@ import { DataSource } from 'typeorm';
 
 import { RoadmapAllocationService } from '../roadmap-allocation.service';
 import { RoadmapAllocationRepository } from '../../repository/roadmap-allocation.repository';
+import { RoadmapVoteGrantRepository } from '../../repository/roadmap-vote-grant.repository';
 import { RoadmapNotificationService } from '../roadmap-notification.service';
 import { RoadmapAllocation } from '../../entity/roadmap-allocation.entity';
 import { RoadmapOpportunity } from '../../entity/roadmap-opportunity.entity';
@@ -28,10 +29,11 @@ describe('RoadmapAllocationService', () => {
     remove: jest.Mock;
     query: jest.Mock;
   };
-  let allocationRepository: {
-    lockUserPeriod: jest.Mock;
-    sumForPeriodExcluding: jest.Mock;
-    sumForPeriod: jest.Mock;
+  let allocationRepository: { lockUser: jest.Mock };
+  let grantRepository: {
+    availableBalance: jest.Mock;
+    consume: jest.Mock;
+    refund: jest.Mock;
   };
   let notifications: { emit: jest.Mock };
 
@@ -60,12 +62,14 @@ describe('RoadmapAllocationService', () => {
       transaction: jest.fn(async (cb: (m: typeof manager) => unknown) =>
         cb(manager),
       ),
+      manager,
     } as unknown as DataSource;
 
-    allocationRepository = {
-      lockUserPeriod: jest.fn(),
-      sumForPeriodExcluding: jest.fn(async () => 0),
-      sumForPeriod: jest.fn(async () => 0),
+    allocationRepository = { lockUser: jest.fn() };
+    grantRepository = {
+      availableBalance: jest.fn(async () => 100),
+      consume: jest.fn(),
+      refund: jest.fn(),
     };
 
     notifications = { emit: jest.fn() };
@@ -78,6 +82,7 @@ describe('RoadmapAllocationService', () => {
           provide: RoadmapAllocationRepository,
           useValue: allocationRepository,
         },
+        { provide: RoadmapVoteGrantRepository, useValue: grantRepository },
         { provide: RoadmapNotificationService, useValue: notifications },
       ],
     }).compile();
@@ -87,21 +92,20 @@ describe('RoadmapAllocationService', () => {
 
   afterEach(() => jest.clearAllMocks());
 
-  describe('the monthly cap', () => {
-    it('allows a total of exactly 100', async () => {
+  describe('the vote-grant balance', () => {
+    it('allows spending exactly the available balance', async () => {
       givenExistingAllocation(null);
-      allocationRepository.sumForPeriodExcluding.mockResolvedValue(60);
+      grantRepository.availableBalance.mockResolvedValue(40);
 
       const result = await service.setVotes(USER, OPP_ID, 40);
 
       expect(result.votes).toBe(40);
-      expect(result.budget.used).toBe(100);
-      expect(result.budget.remaining).toBe(0);
+      expect(grantRepository.consume).toHaveBeenCalledWith(manager, USER, 40);
     });
 
-    it('rejects 101 with a 422 carrying remaining and cap, and writes nothing', async () => {
+    it('rejects spending 1 more than available, and writes nothing', async () => {
       givenExistingAllocation(null);
-      allocationRepository.sumForPeriodExcluding.mockResolvedValue(60);
+      grantRepository.availableBalance.mockResolvedValue(40);
 
       await expect(service.setVotes(USER, OPP_ID, 41)).rejects.toBeInstanceOf(
         UnprocessableEntityException,
@@ -110,64 +114,82 @@ describe('RoadmapAllocationService', () => {
       // answers instead and the client gets a 500-shaped error.
       expect(manager.save).not.toHaveBeenCalled();
       expect(manager.remove).not.toHaveBeenCalled();
+      expect(grantRepository.consume).not.toHaveBeenCalled();
     });
 
-    it('surfaces remaining/cap in the 422 body so the UI can show the real balance', async () => {
+    it('surfaces the live balance in the 422 body so the UI can show it', async () => {
       givenExistingAllocation(null);
-      allocationRepository.sumForPeriodExcluding.mockResolvedValue(85);
+      grantRepository.availableBalance.mockResolvedValue(15);
 
       await expect(service.setVotes(USER, OPP_ID, 20)).rejects.toMatchObject({
-        response: { remaining: 15, cap: 100 },
+        response: { available: 15 },
       });
     });
 
     /**
-     * THE REGRESSION CASE. Raising your own existing vote must not count that row twice.
-     * If the self-exclusion is wrong (here, or in the DB trigger's
-     * `id IS DISTINCT FROM NEW.id AND "opportunityId" IS DISTINCT FROM NEW."opportunityId"`),
-     * a legitimate edit fails with a spurious cap error. Do not delete this test.
+     * THE REGRESSION CASE. Raising your own existing vote spends only the DELTA, not the new
+     * total — if this were wrong (here, or in the DB trigger's
+     * `id IS DISTINCT FROM NEW.id AND "opportunityId" IS DISTINCT FROM NEW."opportunityId"`
+     * self-exclusion), a legitimate edit would fail or over-spend. Do not delete this test.
      */
-    it('lets a user raise their own vote 40 -> 60 while holding 40 elsewhere', async () => {
+    it('lets a user raise their own vote 40 -> 60, spending only the +20 delta', async () => {
       givenExistingAllocation(40);
-      // 40 committed on OTHER opportunities; this row is excluded from the sum.
-      allocationRepository.sumForPeriodExcluding.mockResolvedValue(40);
+      grantRepository.availableBalance.mockResolvedValue(20);
 
       const result = await service.setVotes(USER, OPP_ID, 60);
 
       expect(result.votes).toBe(60);
-      expect(result.budget.used).toBe(100);
-      expect(allocationRepository.sumForPeriodExcluding).toHaveBeenCalledWith(
-        manager,
-        USER,
-        expect.any(String),
-        OPP_ID, // <- the exclusion
-      );
+      expect(grantRepository.consume).toHaveBeenCalledWith(manager, USER, 20);
     });
 
-    it('takes the advisory lock BEFORE reading the total', async () => {
+    it('refunds a fresh grant when a user lowers their vote', async () => {
+      givenExistingAllocation(50);
+
+      await service.setVotes(USER, OPP_ID, 30);
+
+      expect(grantRepository.refund).toHaveBeenCalledWith(manager, USER, 20);
+      expect(grantRepository.consume).not.toHaveBeenCalled();
+    });
+
+    it('takes the advisory lock BEFORE reading the balance', async () => {
       givenExistingAllocation(null);
       const order: string[] = [];
-      allocationRepository.lockUserPeriod.mockImplementation(async () => {
+      allocationRepository.lockUser.mockImplementation(async () => {
         order.push('lock');
       });
-      allocationRepository.sumForPeriodExcluding.mockImplementation(
-        async () => {
-          order.push('sum');
-          return 0;
-        },
-      );
+      // Only the PRE-CHECK read matters for this ordering assertion — setVotes also reads the
+      // balance again afterwards to report it in the response, which is irrelevant here.
+      grantRepository.availableBalance.mockImplementationOnce(async () => {
+        order.push('balance');
+        return 100;
+      });
 
       await service.setVotes(USER, OPP_ID, 10);
 
-      // Reversed, and two concurrent writes both read a stale sum and both pass the check.
-      expect(order).toEqual(['lock', 'sum']);
+      // Reversed, and two concurrent writes both read a stale balance and both pass the check.
+      expect(order).toEqual(['lock', 'balance']);
+    });
+
+    it('writes the allocation row BEFORE consuming grants, so the trigger sees the pre-spend balance', async () => {
+      givenExistingAllocation(null);
+      const order: string[] = [];
+      manager.save.mockImplementation(async () => {
+        order.push('save');
+      });
+      grantRepository.consume.mockImplementation(async () => {
+        order.push('consume');
+      });
+
+      await service.setVotes(USER, OPP_ID, 10);
+
+      expect(order).toEqual(['save', 'consume']);
     });
 
     it('maps the DB trigger breach to a 409 rather than a 500', async () => {
       givenExistingAllocation(null);
       manager.save.mockRejectedValue(
         new Error(
-          'ROADMAP_MONTHLY_CAP_EXCEEDED: user 7 already holds 100 of 100 votes in 2026-07',
+          'ROADMAP_VOTE_BALANCE_EXCEEDED: user 7 wants 5 more votes but only 0 are available',
         ),
       );
 
@@ -187,7 +209,7 @@ describe('RoadmapAllocationService', () => {
   });
 
   describe('votes: 0', () => {
-    it('deletes the row instead of storing a zero', async () => {
+    it('deletes the row instead of storing a zero, and refunds the freed votes', async () => {
       givenExistingAllocation(30);
 
       await service.setVotes(USER, OPP_ID, 0);
@@ -198,6 +220,7 @@ describe('RoadmapAllocationService', () => {
         votes: 30,
       });
       expect(manager.save).not.toHaveBeenCalled();
+      expect(grantRepository.refund).toHaveBeenCalledWith(manager, USER, 30);
     });
 
     it('is a no-op when there was no allocation', async () => {
@@ -206,6 +229,8 @@ describe('RoadmapAllocationService', () => {
       const result = await service.setVotes(USER, OPP_ID, 0);
 
       expect(manager.remove).not.toHaveBeenCalled();
+      expect(grantRepository.consume).not.toHaveBeenCalled();
+      expect(grantRepository.refund).not.toHaveBeenCalled();
       expect(result.votes).toBe(0);
     });
   });
@@ -301,25 +326,12 @@ describe('RoadmapAllocationService', () => {
   });
 
   describe('getBudget', () => {
-    it('reports the remaining votes for the current period', async () => {
-      allocationRepository.sumForPeriod.mockResolvedValue(73);
+    it('reports the live available balance', async () => {
+      grantRepository.availableBalance.mockResolvedValue(27);
 
       const budget = await service.getBudget(USER);
 
-      expect(budget).toMatchObject({
-        votesPerMonth: 100,
-        used: 73,
-        remaining: 27,
-      });
-    });
-
-    it('never reports negative remaining, even if the data is over cap', async () => {
-      // Defensive: a pre-trigger breach in migrated data must not render as "-20 votes left".
-      allocationRepository.sumForPeriod.mockResolvedValue(120);
-
-      const budget = await service.getBudget(USER);
-
-      expect(budget.remaining).toBe(0);
+      expect(budget).toMatchObject({ available: 27 });
     });
   });
 });

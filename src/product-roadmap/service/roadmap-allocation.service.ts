@@ -14,10 +14,8 @@ import {
   RoadmapOpportunityType,
 } from '../enum/roadmap-opportunity.enum';
 import { RoadmapAllocationRepository } from '../repository/roadmap-allocation.repository';
-import {
-  VOTES_PER_MONTH,
-  ROADMAP_CAP_ERROR_MARKER,
-} from '../constants/product-roadmap.constants';
+import { RoadmapVoteGrantRepository } from '../repository/roadmap-vote-grant.repository';
+import { ROADMAP_VOTE_BALANCE_EXCEEDED_MARKER } from '../constants/product-roadmap.constants';
 import { currentPeriodKey } from '../util/roadmap-period.util';
 import {
   VoteBudgetDto,
@@ -34,22 +32,17 @@ export class RoadmapAllocationService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly allocationRepository: RoadmapAllocationRepository,
+    private readonly grantRepository: RoadmapVoteGrantRepository,
     private readonly notifications: RoadmapNotificationService,
   ) {}
 
-  /** The caller's remaining votes for the current period. */
+  /** The caller's live, spendable vote balance. */
   async getBudget(userId: number): Promise<VoteBudgetDto> {
-    const periodKey = currentPeriodKey();
-    const used = await this.allocationRepository.sumForPeriod(
+    const available = await this.grantRepository.availableBalance(
+      this.dataSource.manager,
       userId,
-      periodKey,
     );
-    return {
-      periodKey,
-      votesPerMonth: VOTES_PER_MONTH,
-      used,
-      remaining: Math.max(0, VOTES_PER_MONTH - used),
-    };
+    return { available };
   }
 
   /**
@@ -59,9 +52,17 @@ export class RoadmapAllocationService {
    * `votes: 0` deletes the row rather than storing a zero, so "no vote" has exactly one
    * representation and every SUM stays honest.
    *
-   * Concurrency: the advisory lock is taken FIRST, before reading the total. Without it two
-   * debounced writes from the same person in two tabs both read a stale sum, both pass this
-   * check, and the DB trigger then rejects one with a 500-shaped error instead of a clean 422.
+   * Concurrency: the advisory lock is taken FIRST, before reading the balance. Without it two
+   * debounced writes from the same person in two tabs both read a stale balance, both pass
+   * this check, and the DB trigger then rejects one with a 500-shaped error instead of a clean
+   * 422.
+   *
+   * ORDERING WITHIN THE TRANSACTION: the roadmap_allocations write happens BEFORE
+   * grantRepository.consume()/refund(). The DB trigger validates a positive delta against the
+   * live grant balance at the instant the allocations row is written — if consume() ran first,
+   * that same spend would already be missing from the balance the trigger reads, double
+   * counting the request against itself. See migration 1962100000000's docblock for the full
+   * reasoning; don't reorder these two steps.
    */
   async setVotes(
     userId: number,
@@ -72,11 +73,7 @@ export class RoadmapAllocationService {
 
     try {
       return await this.dataSource.transaction(async (manager) => {
-        await this.allocationRepository.lockUserPeriod(
-          manager,
-          userId,
-          periodKey,
-        );
+        await this.allocationRepository.lockUser(manager, userId);
 
         const opportunity = await manager.findOne(RoadmapOpportunity, {
           where: { id: opportunityId },
@@ -109,24 +106,22 @@ export class RoadmapAllocationService {
         const existing = await manager.findOne(RoadmapAllocation, {
           where: { userId, opportunityId, periodKey },
         });
+        const previousVotes = existing?.votes ?? 0;
+        const delta = votes - previousVotes;
 
-        const usedElsewhere =
-          await this.allocationRepository.sumForPeriodExcluding(
+        if (delta > 0) {
+          const available = await this.grantRepository.availableBalance(
             manager,
             userId,
-            periodKey,
-            opportunityId,
           );
-
-        if (usedElsewhere + votes > VOTES_PER_MONTH) {
-          throw new UnprocessableEntityException({
-            message:
-              `Monthly vote cap exceeded: you have ${usedElsewhere} of ${VOTES_PER_MONTH} ` +
-              `votes cast elsewhere in ${periodKey}.`,
-            remaining: Math.max(0, VOTES_PER_MONTH - usedElsewhere),
-            cap: VOTES_PER_MONTH,
-            periodKey,
-          });
+          if (delta > available) {
+            throw new UnprocessableEntityException({
+              message:
+                `Not enough votes: you have ${available} available and this would spend ` +
+                `${delta} more.`,
+              available,
+            });
+          }
         }
 
         if (votes === 0) {
@@ -145,19 +140,23 @@ export class RoadmapAllocationService {
           );
         }
 
+        if (delta > 0) {
+          await this.grantRepository.consume(manager, userId, delta);
+        } else if (delta < 0) {
+          await this.grantRepository.refund(manager, userId, -delta);
+        }
+
         const [scoreRow] = await manager.query<{ total: string | null }[]>(
           `SELECT COALESCE(SUM(votes), 0) AS total FROM roadmap_allocations WHERE "opportunityId" = $1`,
           [opportunityId],
         );
         const priorityScore = Number(scoreRow?.total ?? 0);
 
-        const used = usedElsewhere + votes;
-        const budget: VoteBudgetDto = {
-          periodKey,
-          votesPerMonth: VOTES_PER_MONTH,
-          used,
-          remaining: Math.max(0, VOTES_PER_MONTH - used),
-        };
+        const available = await this.grantRepository.availableBalance(
+          manager,
+          userId,
+        );
+        const budget: VoteBudgetDto = { available };
 
         this.notifications.emit({
           kind: 'ALLOCATION_CHANGED',
@@ -171,28 +170,28 @@ export class RoadmapAllocationService {
         return { opportunityId, periodKey, votes, priorityScore, budget };
       });
     } catch (error) {
-      throw this.translateCapError(error);
+      throw this.translateBalanceError(error);
     }
   }
 
   /**
    * Map the DB trigger's breach into a 409 instead of letting it surface as a 500.
    *
-   * This should be unreachable — the service checks the cap under the advisory lock — so
+   * This should be unreachable — the service checks the balance under the advisory lock — so
    * reaching it means either a writer that bypassed this service or a bug in the lock. Log it
    * loudly rather than swallowing it: a silently-translated 409 here would hide the fact that
    * the friendly path is broken.
    */
-  private translateCapError(error: unknown): unknown {
+  private translateBalanceError(error: unknown): unknown {
     const message = (error as { message?: string })?.message ?? '';
-    if (!message.includes(ROADMAP_CAP_ERROR_MARKER)) return error;
+    if (!message.includes(ROADMAP_VOTE_BALANCE_EXCEEDED_MARKER)) return error;
 
     this.logger.error(
-      `[ROADMAP] Monthly cap was enforced by the DB TRIGGER, not the service. ` +
+      `[ROADMAP] Vote balance was enforced by the DB TRIGGER, not the service. ` +
         `That means a writer bypassed RoadmapAllocationService or the advisory lock failed. ${message}`,
     );
     return new ConflictException(
-      'Monthly vote cap exceeded. Refresh to see your current balance.',
+      'Not enough votes available. Refresh to see your current balance.',
     );
   }
 }
