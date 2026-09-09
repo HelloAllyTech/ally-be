@@ -135,15 +135,18 @@ const normaliseClaudeCode = (record) => {
 };
 
 /**
- * Gemini CLI's `--output-format stream-json` schema, read directly from a
+ * Gemini CLI's `--output-format stream-json` schema. Originally read from a
  * real local install's compiled TypeScript declarations
- * (@google/gemini-cli-core's dist/src/output/types.d.ts, v0.22.5) — not yet
- * exercised against a real successful run (see install-engine.sh's gemini
- * case for why), so treat the mapping below as unverified until one
- * completes, the same caution Claude Code's own shape doesn't need because
- * years of real runs have already exercised it.
+ * (@google/gemini-cli-core's dist/src/output/types.d.ts, v0.22.5); the
+ * envelope, `init`/`message`/`tool_use`/`tool_result`/`result` shapes, and
+ * the real tool param shapes below (`run_shell_command`'s `command`,
+ * `read_file`'s `file_path`, `write_file`'s `file_path`+`content`) are now
+ * additionally confirmed against one real successful trivial run — a single
+ * shell command, a read, and a write, no multi-round tool_use/tool_result
+ * loop and no real `edit` (old_string/new_string) call, so treat those two
+ * as still resting on the source schema alone.
  *
- * Two confirmed gaps, not guesses:
+ * Confirmed gaps, not guesses:
  *  - Gemini's tool events carry no id correlating a `tool_use` to its later
  *    `tool_result`, so — same as Claude Code's own normalise above — they're
  *    emitted as independent events rather than paired.
@@ -152,9 +155,30 @@ const normaliseClaudeCode = (record) => {
  *    normaliser reports `totalCostUsd: 0` for a Gemini-engine run rather than
  *    fabricating a number — real cost tracking for this engine needs a
  *    separate per-model pricing table, not built here.
+ *  - Assistant text arrives as `delta: true` fragments ("OK", then ".", each
+ *    its own record) rather than complete blocks the way Claude Code's own
+ *    stream-json does — confirmed by the same real run. `geminiTextBuffer`
+ *    accumulates them and flushes as one event the moment anything else
+ *    arrives (a tool call, the terminal result, or stream end), so the feed
+ *    reads as sentences instead of a word-by-word trickle.
  */
+let geminiTextBuffer = '';
+const flushGeminiBuffer = () => {
+  if (!geminiTextBuffer) return [];
+  const text = geminiTextBuffer;
+  geminiTextBuffer = '';
+  return [{ type: 'text', payload: { text: truncate(text) } }];
+};
+
 const normaliseGemini = (record) => {
-  const events = [];
+  if (record?.type === 'message' && record.role === 'assistant' && record.delta === true) {
+    geminiTextBuffer += record.content ?? '';
+    return [];
+  }
+
+  // Anything else ends a run of deltas, if one was in progress — flush it
+  // first so streamed commentary is ordered before whatever follows it.
+  const events = flushGeminiBuffer();
 
   if (record?.type === 'message' && record.role === 'assistant' && record.content?.trim()) {
     events.push({ type: 'text', payload: { text: truncate(record.content) } });
@@ -327,6 +351,10 @@ readline.on('line', (line) => {
 
 readline.on('close', async () => {
   clearInterval(timer);
+  // A Gemini run whose last assistant message was still mid-delta when the
+  // stream ended must not lose it — a no-op for Claude Code, whose buffer is
+  // always empty.
+  queue.push(...flushGeminiBuffer());
   await flush();
   if (RESULT_OUT && lastResult) {
     try {

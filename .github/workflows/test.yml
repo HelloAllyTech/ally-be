@@ -103,6 +103,9 @@ jobs:
       - name: Gate policy
         run: node scripts/builder/test/gate-verdict.test.mjs
 
+      - name: Engine output normalisers
+        run: node scripts/builder/test/forward-events.test.mjs
+
       - name: Outcome gate
         run: bash scripts/builder/test/outcome-gate.test.sh
 
