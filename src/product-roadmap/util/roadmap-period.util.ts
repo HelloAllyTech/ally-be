@@ -22,3 +22,13 @@ const PERIOD_KEY_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
 export function isValidPeriodKey(value: string): boolean {
   return PERIOD_KEY_PATTERN.test(value);
 }
+
+/**
+ * The daily vote grant's day key, as 'YYYY-MM-DD' — same UTC-only, server-computed rule as
+ * currentPeriodKey(), and for the same reason: a client-derived key would let a tab open across
+ * midnight, or a user outside UTC, land a grant in the wrong day and double up (or miss) one.
+ * Used as the idempotency key in RoadmapVoteGrantRepository.grantDaily().
+ */
+export function currentDayKey(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}

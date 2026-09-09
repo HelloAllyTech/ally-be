@@ -7,13 +7,16 @@ import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.e
  *
  * Invariants, and where each is enforced:
  *
- *  - SUM(votes) per (userId, periodKey) ≤ 100 — a cross-row invariant, so it lives in the
- *    trigger roadmap_enforce_monthly_cap() (migration 1871000000001, renamed onto this column
- *    by 1940700000000) PLUS a pg_advisory_xact_lock in RoadmapAllocationService. Neither
- *    layer alone is sufficient: a CHECK cannot see other rows, and a service-only
- *    read-then-write races under READ COMMITTED.
- *  - 0 ≤ votes ≤ 100 — CHECK constraint. Note the trigger does NOT catch a negative value
- *    (0 + -5 is under the cap), so this CHECK is the only guard there.
+ *  - A user's total spend can never exceed their live vote-grant balance — a cross-row
+ *    invariant (spanning roadmap_vote_grants, not just this table), so it lives in the
+ *    trigger roadmap_enforce_vote_grant_balance() (migration 1962100000000, replacing the
+ *    old flat-100/month roadmap_enforce_monthly_cap() from 1871000000001) PLUS a
+ *    pg_advisory_xact_lock in RoadmapAllocationService. Neither layer alone is sufficient: a
+ *    CHECK cannot see other rows, and a service-only read-then-write races under READ
+ *    COMMITTED. There is no fixed per-row ceiling anymore — see RoadmapVoteGrant.
+ *  - votes ≥ 0 — CHECK constraint (`CHK_roadmap_allocations_votes`, loosened from `<= 100` by
+ *    1962100000000). Note the balance trigger does NOT catch a negative value (a decrease
+ *    always passes it), so this CHECK is the only guard there.
  *  - periodKey matches ^[0-9]{4}-(0[1-9]|1[0-2])$ — CHECK constraint.
  *  - votes may only be cast on a stage=new opportunity — service-level, because split/merge
  *    must redistribute votes on opportunities that have already moved on. In the source this
@@ -37,7 +40,8 @@ import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.e
 ])
 // The priority-score aggregate: SUM(votes) GROUP BY "opportunityId".
 @Index('idx_roadmap_allocations_opportunity', ['opportunityId'])
-// The monthly-cap lookup.
+// Per-user, per-month lookups (analytics, split/merge rollups) — no longer the cap check,
+// which now reads roadmap_vote_grants instead.
 @Index('idx_roadmap_allocations_user_period', ['userId', 'periodKey'])
 @Index('idx_roadmap_allocations_period', ['periodKey'])
 export class RoadmapAllocation extends BaseWithoutTenantEntity {

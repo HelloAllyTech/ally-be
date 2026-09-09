@@ -8,11 +8,22 @@ import { TIME } from 'src/common/constants/time.constants';
  */
 
 /**
- * Votes each user may cast per calendar month. Unused votes LAPSE — there is no rollover;
- * the period key simply changes. Mirrored on the frontend, and enforced by both
- * roadmap_enforce_monthly_cap() and RoadmapAllocationService.
+ * Vote grant tuning — replaces the old flat VOTES_PER_MONTH cap with three independently
+ * expiring credit streams instead of one number that resets on the 1st:
+ *
+ *  - ROADMAP_VOTE_GRANT_MONTHLY new votes on the 1st of every UTC calendar month
+ *  - ROADMAP_VOTE_GRANT_DAILY   new votes every UTC calendar day
+ *  - each grant spendable for ROADMAP_VOTE_GRANT_EXPIRY_DAYS days from issuance, then it lapses
+ *    unused — there is no rollover, and no way to "save up" past 30 days
+ *
+ * Issued by RoadmapVoteGrantSchedulerRegistrationService ('daily'/'monthly' scheduler
+ * intervals), spent FIFO-by-expiry by RoadmapAllocationService, and validated as a backstop by
+ * roadmap_enforce_vote_grant_balance() (migration 1962100000000). See RoadmapVoteGrant's
+ * docblock for the full ledger shape.
  */
-export const VOTES_PER_MONTH = 100;
+export const ROADMAP_VOTE_GRANT_MONTHLY = 50;
+export const ROADMAP_VOTE_GRANT_DAILY = 5;
+export const ROADMAP_VOTE_GRANT_EXPIRY_DAYS = 30;
 
 /**
  * The `productGoal` every bug report is filed under. `productGoal` is a required text
@@ -361,12 +372,13 @@ export const ROADMAP_READINESS_TOKEN_KEY_LABEL = 'roadmap-readiness-token-v1';
 export const ROADMAP_READINESS_REQUIRE_TOKEN = false;
 
 /**
- * Marker raised by roadmap_enforce_monthly_cap(). The trigger's SQLSTATE is P0001, which
- * every RAISE EXCEPTION in the database shares, so the service keys off this prefix to
- * distinguish a cap breach from an unrelated failure. Changing it requires changing
- * migration 1871000000001 too.
+ * Marker raised by roadmap_enforce_vote_grant_balance(). The trigger's SQLSTATE is P0001,
+ * which every RAISE EXCEPTION in the database shares, so the service keys off this prefix to
+ * distinguish a balance breach from an unrelated failure. Changing it requires changing
+ * migration 1962100000000 too.
  */
-export const ROADMAP_CAP_ERROR_MARKER = 'ROADMAP_MONTHLY_CAP_EXCEEDED';
+export const ROADMAP_VOTE_BALANCE_EXCEEDED_MARKER =
+  'ROADMAP_VOTE_BALANCE_EXCEEDED';
 
 /** Advisory-lock namespace for serialising a user's allocation writes within a period. */
 export const ROADMAP_ALLOCATION_LOCK_NAMESPACE = 'roadmap:allocation';

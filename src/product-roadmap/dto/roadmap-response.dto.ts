@@ -263,11 +263,14 @@ export class MonthBoardMoveResponseDto {
   reordered!: string[];
 }
 
+/**
+ * The caller's live, spendable vote balance — every unexpired grant (50/month + 5/day, each
+ * good for 30 days) minus what's already been drawn from it. Not scoped to a calendar month:
+ * there's no fixed monthly total to compare against anymore, so there is deliberately no
+ * "of N" figure alongside it. See RoadmapVoteGrant's docblock for the full ledger shape.
+ */
 export class VoteBudgetDto {
-  @ApiProperty() periodKey!: string;
-  @ApiProperty() votesPerMonth!: number;
-  @ApiProperty() used!: number;
-  @ApiProperty() remaining!: number;
+  @ApiProperty() available!: number;
 }
 
 /**
