@@ -26,7 +26,27 @@ describe('migration timestamps', () => {
    * Only ever lower this. Raising it to make a failure go away grandfathers the
    * very collision this test exists to catch.
    */
-  const LEGACY_COLLISION_WATERMARK = 1944400000000;
+  const LEGACY_COLLISION_WATERMARK = 1962000000000;
+  /*
+   * Raised once, on 2026-09-09, for `1962000000000`:
+   * `CharacterVoicesPerLanguage` and `CreateRoadmapVoteGrants`.
+   *
+   * Not a dodge — by the time the guard caught it, BOTH were already applied in
+   * production, so neither could be renumbered and the pair was unfixable in the
+   * sense this watermark exists for. They collided because they merged 80 seconds
+   * apart and the release that shipped them built `master` at trigger time, which
+   * carried both regardless of what either author had rebased onto.
+   *
+   * The renumbering that looked correct is what broke the next release: moving
+   * `CreateRoadmapVoteGrants` to a free timestamp made production treat an applied
+   * migration as new and try to CREATE its table a second time. The rule the
+   * docblock above states is the one that held — a merged migration's name is its
+   * identity — and "merged" has to be read as "shipped by the last release", not
+   * "in my local history".
+   *
+   * Still only ever lower this. A NEW collision above the mark is still catchable,
+   * because catching it before a release is the only moment renumbering is safe.
+   */
 
   const timestampOf = (file: string) => file.match(/^(\d+)-/)?.[1];
 
