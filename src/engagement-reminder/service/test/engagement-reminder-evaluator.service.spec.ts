@@ -120,9 +120,7 @@ describe('EngagementReminderEvaluatorService', () => {
         .mockResolvedValueOnce([{ id: 'tenant-1' }])
         .mockResolvedValueOnce([learner(1)]);
       deviceTokenService.getTokensForUser.mockResolvedValueOnce(['token-1']);
-      pushService.sendDataMessage.mockRejectedValueOnce(
-        new Error('FCM down'),
-      );
+      pushService.sendDataMessage.mockRejectedValueOnce(new Error('FCM down'));
 
       await expect(service.evaluate()).resolves.not.toThrow();
       expect(notificationService.create).toHaveBeenCalledTimes(1);

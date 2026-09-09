@@ -9,9 +9,7 @@ describe('NotificationFeedController', () => {
   let notificationService: Partial<
     Record<keyof InAppNotificationService, jest.Mock>
   >;
-  let deviceTokenService: Partial<
-    Record<keyof DeviceTokenService, jest.Mock>
-  >;
+  let deviceTokenService: Partial<Record<keyof DeviceTokenService, jest.Mock>>;
 
   const user = { id: 42, username: 'alice', tenantId: 'tenant-1' };
 
