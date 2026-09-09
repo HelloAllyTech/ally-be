@@ -110,6 +110,18 @@ The same reasoning applies to what a tool *returns*: `get_voices` reports each v
 `languageId` precisely so the prompt never has to infer the key it files a voice under.
 If a prompt has to derive an id, expect it to guess wrong.
 
+**Normalise keys and unwrap values; do not assume one call is self-consistent.** A production
+`save_character_draft` keyed `voices` and `languageCharacteristics` by numeric id and
+`linguisticStyleSamples` by locale (`"en-IN"`) — in the same call — and wrapped each sample as
+`{ "sample": "…" }` instead of a plain string. Stating the shape in the prompt is necessary and
+not sufficient; the validator resolves locales and bare codes to `languages.id` and pulls a
+string out of `{sample|text|value|utterance|line}`.
+
+A wrong key is worse than a rejected one. Storing `{"en-IN": [...]}` succeeds, and then nothing
+renders it, because every language-keyed form field looks up by numeric id — the failure is a
+silently empty tab, reported as a saved draft. Prefer normalising to a shape the reader can find
+over accepting whatever arrived.
+
 ### Code-read one-shot prompts
 
 A third shape sits between the two: a folder like `analytics_suggestions/` or `ux_signals/`

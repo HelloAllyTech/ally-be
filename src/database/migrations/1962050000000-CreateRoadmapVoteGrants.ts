@@ -19,8 +19,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * the first 50-vote grant arrives on the normal 1st-of-month schedule. Both are explicit
  * product decisions for this cutover, not oversights.
  */
-export class CreateRoadmapVoteGrants1962000000000 implements MigrationInterface {
-  name = 'CreateRoadmapVoteGrants1962000000000';
+export class CreateRoadmapVoteGrants1962050000000 implements MigrationInterface {
+  name = 'CreateRoadmapVoteGrants1962050000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
