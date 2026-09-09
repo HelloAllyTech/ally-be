@@ -14,8 +14,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * — a template row disappearing must never be observable from content that
  * already copied out of it.
  */
-export class CreateTrackComponentTemplates1959000000000 implements MigrationInterface {
-  name = 'CreateTrackComponentTemplates1959000000000';
+export class CreateTrackComponentTemplates1960000000000 implements MigrationInterface {
+  name = 'CreateTrackComponentTemplates1960000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
