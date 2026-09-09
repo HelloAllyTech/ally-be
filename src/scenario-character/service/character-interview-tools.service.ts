@@ -48,9 +48,48 @@ const GENDER_IDENTITY_VALUES = [
  * working; rejecting it would strand the admin mid-draft over a contract
  * change they cannot see.
  */
+/**
+ * How a per-language key the model sent becomes a `languages.id`.
+ *
+ * Observed in production: one `save_character_draft` call keyed `voices` and
+ * `languageCharacteristics` by numeric id and `linguisticStyleSamples` by
+ * LOCALE (`"en-IN"`) — in the same call. A locale key is not a rejection, it
+ * just stores content the studio can never render, since every language-keyed
+ * form field looks up by numeric id. Same silent-invisibility class as a
+ * language that is no longer enabled.
+ */
+export type LanguageKeyResolver = (key: string) => string;
+
+/** Pull a sample out of whatever container the model wrapped it in. */
+const asText = (raw: unknown): string => {
+  if (typeof raw === 'string') return raw.trim();
+  // Also observed in production: `[{ "sample": "..." }]` rather than
+  // `["..."]`. Dropping these emptied every language and lost the whole set.
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const field of ['sample', 'text', 'value', 'utterance', 'line']) {
+      const candidate = (raw as Record<string, unknown>)[field];
+      if (typeof candidate === 'string' && candidate.trim()) {
+        return candidate.trim();
+      }
+    }
+  }
+  return '';
+};
+
+/**
+ * Coerce a per-language map the model sent, tolerating the shape the tool
+ * schema asked for BEFORE characters went per-language.
+ *
+ * The interviewer prompt is file-backed and may be dashboard-overridden in
+ * production, so a deployed prompt can still be asking for a flat string or a
+ * flat array. Filing such an answer under `fallbackKey` keeps the interview
+ * working; rejecting it would strand the admin mid-draft over a contract
+ * change they cannot see.
+ */
 const objectOfStrings = (
   value: unknown,
   fallbackKey: string,
+  resolveKey: LanguageKeyResolver,
 ): Record<string, string> => {
   if (typeof value === 'string') {
     return value.trim() ? { [fallbackKey]: value.trim() } : {};
@@ -58,8 +97,8 @@ const objectOfStrings = (
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   const out: Record<string, string> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    const languageId = String(key).trim() || fallbackKey;
-    const text = typeof raw === 'string' ? raw.trim() : '';
+    const languageId = resolveKey(String(key).trim()) || fallbackKey;
+    const text = asText(raw);
     if (text) out[languageId] = text;
   }
   return out;
@@ -69,11 +108,10 @@ const objectOfStrings = (
 const objectOfStringArrays = (
   value: unknown,
   fallbackKey: string,
+  resolveKey: LanguageKeyResolver,
 ): Record<string, string[]> => {
   const clean = (raw: unknown): string[] =>
-    (Array.isArray(raw) ? raw : [])
-      .map((item) => (typeof item === 'string' ? item.trim() : ''))
-      .filter(Boolean);
+    (Array.isArray(raw) ? raw : []).map((item) => asText(item)).filter(Boolean);
 
   if (Array.isArray(value)) {
     const list = clean(value);
@@ -82,8 +120,9 @@ const objectOfStringArrays = (
   if (!value || typeof value !== 'object') return {};
   const out: Record<string, string[]> = {};
   for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
-    const languageId = String(key).trim() || fallbackKey;
-    const list = clean(raw);
+    const languageId = resolveKey(String(key).trim()) || fallbackKey;
+    // A single string where a list was asked for is still one sample.
+    const list = typeof raw === 'string' ? clean([raw]) : clean(raw);
     if (list.length) out[languageId] = list;
   }
   return out;
@@ -375,6 +414,40 @@ export class CharacterInterviewToolsService {
    * own language, else English, else id 1. Never a guess that could file a
    * Marathi voice under English — that is the bug this model change removes.
    */
+  /**
+   * Maps whatever the model used as a per-language key onto a `languages.id`:
+   * a numeric id passes through, a locale (`en-IN`) or a bare code (`hi`)
+   * resolves, and anything unrecognised is left alone for the caller's
+   * fallback to handle.
+   */
+  private async buildLanguageKeyResolver(): Promise<LanguageKeyResolver> {
+    const languages = await this.dataSource.getRepository(Languages).find();
+    const byCode = new Map<string, string>();
+    for (const language of languages) {
+      for (const code of [language.value, language.translationCode]) {
+        const normalized = String(code ?? '')
+          .trim()
+          .toLowerCase();
+        // First writer wins, so a specific locale is not shadowed by a bare
+        // code registered on another row.
+        if (normalized && !byCode.has(normalized)) {
+          byCode.set(normalized, String(language.id));
+        }
+      }
+    }
+
+    return (key: string): string => {
+      const raw = String(key ?? '').trim();
+      if (!raw) return raw;
+      if (/^\d+$/.test(raw)) return raw;
+      const exact = byCode.get(raw.toLowerCase());
+      if (exact) return exact;
+      // "en-IN" -> "en" when only the bare code is registered.
+      const base = raw.split(/[-_]/)[0].toLowerCase();
+      return byCode.get(base) ?? raw;
+    };
+  }
+
   private async resolveFallbackLanguageKey(voiceId?: string): Promise<string> {
     if (voiceId) {
       const voice = await this.dataSource
@@ -485,10 +558,12 @@ export class CharacterInterviewToolsService {
     const fallbackLanguageKey = await this.resolveFallbackLanguageKey(
       str(input?.voiceId) || undefined,
     );
+    const resolveLanguageKey = await this.buildLanguageKeyResolver();
 
     const languageCharacteristics = objectOfStrings(
       input?.languageCharacteristics,
       fallbackLanguageKey,
+      resolveLanguageKey,
     );
     for (const [languageId, value] of Object.entries(languageCharacteristics)) {
       if (value.length > 1000) {
@@ -501,6 +576,7 @@ export class CharacterInterviewToolsService {
     const samplesByLanguage = objectOfStringArrays(
       input?.linguisticStyleSamples,
       fallbackLanguageKey,
+      resolveLanguageKey,
     );
     const linguisticStyleSamples = Object.values(samplesByLanguage).flat();
     for (const [languageId, samples] of Object.entries(samplesByLanguage)) {
@@ -543,6 +619,7 @@ export class CharacterInterviewToolsService {
     const voices = objectOfStrings(
       input?.voices ?? (str(input?.voiceId) ? { '': str(input.voiceId) } : {}),
       fallbackLanguageKey,
+      resolveLanguageKey,
     );
     for (const [languageId, voiceId] of Object.entries(voices)) {
       const voice = await this.dataSource

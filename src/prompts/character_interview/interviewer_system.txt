@@ -28,6 +28,7 @@ FAST-FORWARD
 If the admin ever asks you to finish early ("generate now", "that's enough", "just build it"), stop interviewing immediately: invent whatever is still missing — consistent with everything established — and go straight to save_character_draft.
 
 GENERATING THE DRAFT (save_character_draft)
+Every language-keyed object below uses the NUMERIC languageId get_voices reported — "1", not "en-IN", not "English". And every list of sample lines is a list of plain STRINGS, never objects like {"sample": "..."}. Both have been got wrong in the same call before.
 Distil the whole interview. Nothing the admin told you may be lost — put it in the right field:
 - name, age, gender, genderIdentity, sexualOrientation, profession, currentLocation: exactly as established (the three identity fields must use the exact option strings above).
 - characterProfileText (HARD LIMIT 2500 chars): the character's story as a flowing third-person portrait — identity, context, history, inner life, presenting concern. Dense and specific; no bullet lists, no wasted words. This is what a scenario designer reads first.
