@@ -105,6 +105,8 @@ export class KnowledgeBaseService {
   private toResponse(entity: KbDocument): KbDocumentResponseDto {
     return {
       id: entity.id,
+      corpus: entity.corpus,
+      characterTopics: entity.characterTopics ?? [],
       title: entity.title,
       sourceType: entity.sourceType,
       sourceUrl: entity.sourceUrl ?? null,
@@ -167,6 +169,11 @@ export class KnowledgeBaseService {
     this.validateSource(dto);
 
     const document = this.documentRepository.create({
+      // Explicit, not left to the column default. The default exists for rows written before
+      // this column did; a row written now must say which corpus it belongs to, or the day the
+      // default changes every new document silently lands in the wrong one.
+      corpus: dto.corpus,
+      characterTopics: dto.characterTopics ?? [],
       title: dto.title.trim(),
       sourceType: dto.sourceType,
       sourceUrl: dto.sourceUrl ?? null,
@@ -277,6 +284,11 @@ export class KnowledgeBaseService {
         ...(dto.title !== undefined ? { title: dto.title.trim() } : {}),
         ...(dto.tags !== undefined ? { tags: dto.tags } : {}),
         ...(dto.language !== undefined ? { language: dto.language } : {}),
+        // Free to change: a ranking hint read at query time, so it invalidates no chunk and
+        // triggers no re-index. An empty array is a real value — "no hint" — not a no-op.
+        ...(dto.characterTopics !== undefined
+          ? { characterTopics: dto.characterTopics }
+          : {}),
         updatedBy: userId,
       },
     );

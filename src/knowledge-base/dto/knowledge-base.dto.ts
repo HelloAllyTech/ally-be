@@ -80,6 +80,18 @@ export class CreateKbDocumentDto {
   @IsEnum(KbCorpus)
   corpus: KbCorpus = KbCorpus.WHATSAPP_QA;
 
+  @ApiPropertyOptional({
+    enum: KbCharacterTopic,
+    isArray: true,
+    description:
+      'Which parts of a character this grounds. A ranking hint, not a restriction; ' +
+      'empty is the default and a fine answer. Character library only.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(KbCharacterTopic, { each: true })
+  characterTopics?: KbCharacterTopic[];
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -146,6 +158,21 @@ export class UpdateKbDocumentDto {
   @IsString()
   @MaxLength(16)
   language?: string;
+
+  @ApiPropertyOptional({
+    enum: KbCharacterTopic,
+    isArray: true,
+    description:
+      'Which parts of a character this document helps ground. Editable after upload, ' +
+      'and cheap to change: it is a RANKING hint read at query time, so it never ' +
+      'invalidates a chunk or triggers a re-index — unlike the content, and unlike ' +
+      '`corpus`, which is immutable. An empty array clears the hint, which is a ' +
+      'legitimate choice rather than a missing value.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(KbCharacterTopic, { each: true })
+  characterTopics?: KbCharacterTopic[];
 }
 
 export class ReplaceKbDocumentContentDto {
@@ -239,6 +266,9 @@ export class GetKbDocumentsQueryDto {
 
 export class KbDocumentResponseDto {
   @ApiProperty() id!: string;
+  @ApiProperty({ enum: KbCorpus }) corpus!: KbCorpus;
+  @ApiProperty({ enum: KbCharacterTopic, isArray: true })
+  characterTopics!: KbCharacterTopic[];
   @ApiProperty() title!: string;
   @ApiProperty({ enum: KbDocumentSourceType })
   sourceType!: KbDocumentSourceType;
