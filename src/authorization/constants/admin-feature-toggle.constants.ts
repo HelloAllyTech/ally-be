@@ -104,6 +104,11 @@ export enum FeatureToggleKey {
   // is the intended state and every platform admin starts without it. Grant it
   // per-admin from Admin User Management.
   VIDEO_ACTOR = 'video_actor',
+
+  // Component Library: the global, cross-tenant library of reusable
+  // Track/Course item templates (Journal, Quiz, Article, Video, Annotated
+  // Artifact) a course author can save, browse and insert from.
+  COMPONENT_LIBRARY = 'component_library',
 }
 
 export interface FeatureToggleLegacyGrants {
@@ -344,6 +349,13 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     // SDA-only because that is the tier this authoring surface would have sat
     // in; no migration reads it, and nobody is granted the key by default.
     legacyGrants: SDA_ONLY,
+  },
+  {
+    key: FeatureToggleKey.COMPONENT_LIBRARY,
+    label: 'Component Library',
+    description:
+      'Manage the shared, cross-tenant library of reusable course component templates (Journal, Quiz, Article, Video, Annotated Artifact).',
+    legacyGrants: SUPER_ADMIN_TIER,
   },
 ];
 

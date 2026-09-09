@@ -10,6 +10,9 @@ import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { TrackAdminController } from './controller/track-admin.controller';
 import { TrackLearnerController } from './controller/track-learner.controller';
+import { TrackComponentTemplateController } from './controller/track-component-template.controller';
+import { TrackComponentTemplateService } from './service/track-component-template.service';
+import { TrackComponentTemplateRepository } from './repository/track-component-template.repository';
 import { TrackService } from './service/track.service';
 import { TrackSharedService } from './service/track-shared.service';
 import { TrackTenantService } from './service/track-tenant.service';
@@ -50,9 +53,15 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     LlmAgentModule,
     CohortModule,
   ],
-  controllers: [TrackAdminController, TrackLearnerController],
+  controllers: [
+    TrackAdminController,
+    TrackLearnerController,
+    TrackComponentTemplateController,
+  ],
   providers: [
     TrackService,
+    TrackComponentTemplateService,
+    TrackComponentTemplateRepository,
     TrackSharedService,
     TrackTenantService,
     TrackMediaService,

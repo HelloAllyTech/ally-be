@@ -112,38 +112,59 @@ export function validateTrackItem(item: UpsertTrackItemDto): void {
         fail(`Case component "${item.title}" must reference a case.`);
       }
       return;
+    default:
+      validateTrackItemContent({
+        type: item.type,
+        content: item.content,
+        title: item.title,
+      });
+  }
+}
+
+/**
+ * Per-type content validation, factored out of `validateTrackItem` so a caller
+ * that only has `{ type, content }` — no full track item, no order, no
+ * section — can still run the exact same checks. The Component Library
+ * templates service is the first such caller: a template has content but no
+ * position in a tree.
+ *
+ * Deliberately does not accept ROLEPLAY/CASE here — those validate a
+ * reference id, not `content`, and are handled by `validateTrackItem` above
+ * before falling through to this helper.
+ */
+export function validateTrackItemContent({
+  type,
+  content,
+  title = 'Component',
+}: {
+  type: TrackItemType;
+  content: unknown;
+  title?: string;
+}): void {
+  switch (type) {
     case TrackItemType.QUIZ:
-      validateQuizContent(item.content as QuizContent | undefined, item.title);
+      validateQuizContent(content as QuizContent | undefined, title);
       return;
     case TrackItemType.ARTICLE:
-      validateArticleContent(
-        item.content as ArticleContent | undefined,
-        item.title,
-      );
+      validateArticleContent(content as ArticleContent | undefined, title);
       return;
     case TrackItemType.VIDEO:
-      validateVideoContent(
-        item.content as VideoContent | undefined,
-        item.title,
-      );
+      validateVideoContent(content as VideoContent | undefined, title);
       return;
     case TrackItemType.JOURNAL:
-      validateJournalContent(
-        item.content as JournalContent | undefined,
-        item.title,
-      );
+      validateJournalContent(content as JournalContent | undefined, title);
       return;
     case TrackItemType.ANNOTATED_ARTIFACT:
       validateAnnotationContent(
-        item.content as AnnotationContent | undefined,
-        item.title,
+        content as AnnotationContent | undefined,
+        title,
       );
       return;
     case TrackItemType.GAME:
-      validateGameContent(item.content as GameContent | undefined, item.title);
+      validateGameContent(content as GameContent | undefined, title);
       return;
     default:
-      fail(`Unknown component type: ${item.type}`);
+      fail(`Unknown component type: ${type}`);
   }
 }
 
