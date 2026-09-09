@@ -41,6 +41,7 @@ describe('BugHunterModelSettingsService', () => {
       } as never);
 
       await expect(service.get()).resolves.toEqual({
+        engine: DEFAULT_BUG_HUNTER_MODEL_SETTINGS.engine,
         defaultModel: 'claude-sonnet-5',
         escalationModel: DEFAULT_BUG_HUNTER_MODEL_SETTINGS.escalationModel,
       });
@@ -57,6 +58,7 @@ describe('BugHunterModelSettingsService', () => {
       );
 
       expect(result).toEqual({
+        engine: DEFAULT_BUG_HUNTER_MODEL_SETTINGS.engine,
         defaultModel: DEFAULT_BUG_HUNTER_MODEL_SETTINGS.defaultModel,
         escalationModel: 'claude-opus-5',
       });
@@ -75,6 +77,7 @@ describe('BugHunterModelSettingsService', () => {
       repo.findOne.mockResolvedValue({
         id: 'settings-1',
         value: {
+          engine: 'claude-code',
           defaultModel: 'claude-sonnet-5',
           escalationModel: 'claude-opus-5',
         },
@@ -86,6 +89,7 @@ describe('BugHunterModelSettingsService', () => {
       );
 
       expect(result).toEqual({
+        engine: 'claude-code',
         defaultModel: 'claude-haiku-4-5',
         escalationModel: 'claude-opus-5',
       });
@@ -94,6 +98,25 @@ describe('BugHunterModelSettingsService', () => {
         { value: result, updatedBy: 9 },
       );
       expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('lets a partial patch switch the engine without touching the models', async () => {
+      repo.findOne.mockResolvedValue({
+        id: 'settings-1',
+        value: {
+          engine: 'claude-code',
+          defaultModel: 'claude-sonnet-5',
+          escalationModel: 'claude-opus-5',
+        },
+      } as never);
+
+      const result = await service.update({ engine: 'gemini' }, 3);
+
+      expect(result).toEqual({
+        engine: 'gemini',
+        defaultModel: 'claude-sonnet-5',
+        escalationModel: 'claude-opus-5',
+      });
     });
   });
 });

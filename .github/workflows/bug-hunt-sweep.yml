@@ -26,6 +26,8 @@
 #
 # Required repository secrets:
 #   ANTHROPIC_API_KEY   — for Claude Code
+#   GEMINI_API_KEY      — only consumed when the configured engine is "gemini"
+#                         (GET pipeline/models). A plain Google AI Studio key.
 #   ALLY_BE_API_KEY     — ally-be's platform API_KEY, for the pipeline endpoints
 #   BUG_HUNTER_GH_TOKEN — may push branches, open PRs and merge here. NOT the
 #                         default GITHUB_TOKEN: a PR opened with that token does
@@ -109,9 +111,6 @@ jobs:
           git config user.name "ally-bug-hunter[bot]"
           git config user.email "bug-hunter@helloally.ai"
 
-      - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code@2.1.220
-
       - name: Resolve inputs
         id: cfg
         env:
@@ -185,35 +184,72 @@ jobs:
           # which never goes through workflow_dispatch at all.
           RESP=$(curl -sSf -H "x-api-key: $ALLY_BE_API_KEY" \
             "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/models?repo=${{ steps.cfg.outputs.repo }}")
+          ENGINE=$(printf '%s' "$RESP" | jq -r '.engine')
           DEFAULT_MODEL=$(printf '%s' "$RESP" | jq -r '.defaultModel')
           ESCALATION_MODEL=$(printf '%s' "$RESP" | jq -r '.escalationModel')
           if [ -z "$DEFAULT_MODEL" ] || [ "$DEFAULT_MODEL" = "null" ] || [ -z "$ESCALATION_MODEL" ] || [ "$ESCALATION_MODEL" = "null" ]; then
             echo "::error::Could not resolve Bug Hunter's configured models from ally-be."
             exit 1
           fi
+          [ -n "$ENGINE" ] && [ "$ENGINE" != "null" ] || ENGINE="claude-code"
+          echo "engine=$ENGINE" >> "$GITHUB_OUTPUT"
           echo "default_model=$DEFAULT_MODEL" >> "$GITHUB_OUTPUT"
-          # The committed frontmatter becomes just a fallback the moment this
-          # runs — this endpoint is now the one source of truth for the
-          # escalation model too, so it can no longer drift across this
-          # file's five otherwise-identical copies the way it used to be able
-          # to (nothing kept them in sync before).
-          sed -i.bak "s/^model: .*/model: $ESCALATION_MODEL/" .claude/agents/bug-escalation.md
-          rm -f .claude/agents/bug-escalation.md.bak
+          if [ "$ENGINE" = "gemini" ]; then
+            # Gemini CLI has no equivalent to the Task-tool subagent dispatch
+            # `.claude/agents/bug-escalation.md` relies on, so a gemini-engine
+            # sweep skips escalation entirely rather than rewriting frontmatter
+            # a claude-code-only mechanism will never read.
+            echo "Engine is gemini — leaving bug-escalation.md untouched (escalation is claude-code only)."
+          else
+            # The committed frontmatter becomes just a fallback the moment this
+            # runs — this endpoint is now the one source of truth for the
+            # escalation model too, so it can no longer drift across this
+            # file's five otherwise-identical copies the way it used to be able
+            # to (nothing kept them in sync before).
+            sed -i.bak "s/^model: .*/model: $ESCALATION_MODEL/" .claude/agents/bug-escalation.md
+            rm -f .claude/agents/bug-escalation.md.bak
+          fi
+
+      - name: Install the coding engine
+        if: steps.cfg.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.models.outputs.engine }}" = "gemini" ]; then
+            npm install -g @google/gemini-cli@0.22.5
+            gemini --version
+          else
+            npm install -g @anthropic-ai/claude-code@2.1.220
+            claude --version
+          fi
 
       - name: Run the sweep
         if: steps.cfg.outputs.skip != 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Only consumed when engine=gemini. A plain Google AI Studio key —
+          # see run-engine.sh's own note on why this isn't Vertex/Workspace auth.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
           GH_TOKEN: ${{ secrets.BUG_HUNTER_GH_TOKEN }}
         run: |
           set -euo pipefail
-          claude -p "$(cat /tmp/sweep-prompt.txt)" \
-            --permission-mode acceptEdits \
-            --model "${{ steps.models.outputs.default_model }}" \
-            --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
-            --max-turns 300 \
-            --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
+          if [ "${{ steps.models.outputs.engine }}" = "gemini" ]; then
+            # No --max-turns / Task-tool equivalent — see the engine-resolution
+            # step above for why escalation is simply skipped on this engine.
+            # `.response` (not `.result`) is Gemini's non-streaming json field.
+            gemini "$(cat /tmp/sweep-prompt.txt)" \
+              --model "${{ steps.models.outputs.default_model }}" \
+              --approval-mode auto_edit \
+              --allowed-tools "run_shell_command,read_file,write_file,replace,list_directory,glob,search_file_content" \
+              --output-format json | tee /tmp/claude-result.json | jq -r '.response // empty'
+          else
+            claude -p "$(cat /tmp/sweep-prompt.txt)" \
+              --permission-mode acceptEdits \
+              --model "${{ steps.models.outputs.default_model }}" \
+              --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
+              --max-turns 300 \
+              --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
+          fi
 
       - name: Report actual token cost
         # Best-effort: the pipeline's own /close call (inside the prompt

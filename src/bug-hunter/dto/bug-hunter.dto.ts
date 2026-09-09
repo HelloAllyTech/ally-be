@@ -480,18 +480,28 @@ export class UpdateBugHunterSettingsDto {
 export class BugHunterModelSettingsDto {
   @ApiProperty({
     description:
-      'Model the main sweep/fix-session `claude -p` invocation runs on.',
+      'Which CLI the sweep/fix session runs on: "claude-code" or "gemini".',
+  })
+  engine!: string;
+
+  @ApiProperty({
+    description: 'Model the main sweep/fix-session invocation runs on.',
   })
   defaultModel!: string;
 
   @ApiProperty({
     description:
-      'Model pinned into the bug-escalation subagent before each run.',
+      'Model pinned into the bug-escalation subagent before each run. Ignored when engine is "gemini" — escalation has no Gemini equivalent yet, so a gemini-engine run skips it.',
   })
   escalationModel!: string;
 }
 
 export class UpdateBugHunterModelSettingsDto {
+  @ApiPropertyOptional({ description: '"claude-code" or "gemini".' })
+  @IsOptional()
+  @IsString()
+  engine?: string;
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
