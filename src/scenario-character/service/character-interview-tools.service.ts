@@ -38,6 +38,57 @@ const GENDER_IDENTITY_VALUES = [
   'Trans Man/Male',
   'Trans Woman/Female',
 ];
+/**
+ * Coerce a per-language map the model sent, tolerating the shape the tool
+ * schema asked for BEFORE characters went per-language.
+ *
+ * The interviewer prompt is file-backed and may be dashboard-overridden in
+ * production, so a deployed prompt can still be asking for a flat string or a
+ * flat array. Filing such an answer under `fallbackKey` keeps the interview
+ * working; rejecting it would strand the admin mid-draft over a contract
+ * change they cannot see.
+ */
+const objectOfStrings = (
+  value: unknown,
+  fallbackKey: string,
+): Record<string, string> => {
+  if (typeof value === 'string') {
+    return value.trim() ? { [fallbackKey]: value.trim() } : {};
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const languageId = String(key).trim() || fallbackKey;
+    const text = typeof raw === 'string' ? raw.trim() : '';
+    if (text) out[languageId] = text;
+  }
+  return out;
+};
+
+/** The same leniency for `{ "<languageId>": string[] }`. */
+const objectOfStringArrays = (
+  value: unknown,
+  fallbackKey: string,
+): Record<string, string[]> => {
+  const clean = (raw: unknown): string[] =>
+    (Array.isArray(raw) ? raw : [])
+      .map((item) => (typeof item === 'string' ? item.trim() : ''))
+      .filter(Boolean);
+
+  if (Array.isArray(value)) {
+    const list = clean(value);
+    return list.length ? { [fallbackKey]: list } : {};
+  }
+  if (!value || typeof value !== 'object') return {};
+  const out: Record<string, string[]> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    const languageId = String(key).trim() || fallbackKey;
+    const list = clean(raw);
+    if (list.length) out[languageId] = list;
+  }
+  return out;
+};
+
 const SEXUAL_ORIENTATION_VALUES = [
   'Asexual',
   'Bisexual',
@@ -126,11 +177,15 @@ export class CharacterInterviewToolsService {
       {
         name: 'get_voices',
         description:
-          'List the active TTS voices (id, name, provider, language). Call ' +
-          'this before asking the voice question, then present the fitting ' +
-          'voices via ask_question (kind="singleSelect" or "dropdown", one ' +
-          'option per voice with id = voice id, label = "Name — Language"). ' +
-          'The chosen id goes into save_character_draft.voiceId.',
+          'List the active TTS voices (id, name, provider, languageId, ' +
+          'language). Call this before the voice questions, then ask ONE ' +
+          'question PER language the character speaks via ask_question ' +
+          '(kind="singleSelect" or "dropdown", one option per voice with ' +
+          'id = voice id, label = "Name — Language", description = why it ' +
+          'fits). Offer a language only the voices actually cover, and offer ' +
+          "a language's own voices only — a voice belongs to one language and " +
+          'is rejected under any other. The answers go into ' +
+          "save_character_draft.voices, keyed by that voice's languageId.",
         input_schema: { type: 'object', properties: {} },
       },
       {
@@ -170,23 +225,35 @@ export class CharacterInterviewToolsService {
                 'consistent. HARD LIMIT 2500 chars; put overflow depth into ' +
                 'knowledgeSources instead.',
             },
-            voiceId: {
-              type: 'string',
+            voices: {
+              type: 'object',
               description:
-                'Voice id chosen from get_voices (omit if the admin skipped voice)',
+                'Chosen voice per language: { "<languageId>": "<voiceId>" }, ' +
+                "the languageId taken from get_voices. Only that language's " +
+                'own voices are accepted. Omit a language the admin skipped, ' +
+                'and omit the object entirely if they skipped voice.',
+              additionalProperties: { type: 'string' },
             },
             languageCharacteristics: {
-              type: 'string',
+              type: 'object',
               description:
-                'Free-text speech-style guidance: dialect, register, ' +
-                'code-mixing norms, pace, verbal tics (≤1000 chars)',
+                'Speech-style guidance PER LANGUAGE, keyed by languageId: ' +
+                'dialect, register, code-mixing norms, pace, verbal tics ' +
+                '(≤1000 chars each). Write each in terms of how they speak ' +
+                'THAT language.',
+              additionalProperties: { type: 'string' },
             },
             linguisticStyleSamples: {
-              type: 'array',
-              items: { type: 'string' },
+              type: 'object',
               description:
-                'Sample utterances in the character’s literal voice ' +
-                '(≤20 items, ≤300 chars each)',
+                'Sample utterances PER LANGUAGE, keyed by languageId ' +
+                "(≤20 per language, ≤300 chars each). Write each language's " +
+                "samples in that language's own script — not translations of " +
+                'the English ones.',
+              additionalProperties: {
+                type: 'array',
+                items: { type: 'string' },
+              },
             },
             knowledgeSources: {
               type: 'array',
@@ -303,6 +370,24 @@ export class CharacterInterviewToolsService {
       .filter(Boolean) as { id: string; label: string; description?: string }[];
   }
 
+  /**
+   * The language a flat, pre-per-language answer belongs to: the named voice's
+   * own language, else English, else id 1. Never a guess that could file a
+   * Marathi voice under English — that is the bug this model change removes.
+   */
+  private async resolveFallbackLanguageKey(voiceId?: string): Promise<string> {
+    if (voiceId) {
+      const voice = await this.dataSource
+        .getRepository(ScenarioVoices)
+        .findOne({ where: { id: voiceId } });
+      if (voice?.languageId != null) return String(voice.languageId);
+    }
+    const english = await this.dataSource
+      .getRepository(Languages)
+      .findOne({ where: { value: 'en-IN' } });
+    return english ? String(english.id) : '1';
+  }
+
   private async executeGetVoices(): Promise<InterviewToolExecutionOutcome> {
     const voices = await this.dataSource
       .getRepository(ScenarioVoices)
@@ -321,7 +406,13 @@ export class CharacterInterviewToolsService {
           id: voice.id,
           name: voice.name,
           provider: voice.provider,
+          // The key the draft must file this voice under. Without it the
+          // model had only a display label to go on and would have had to
+          // guess the id.
+          languageId: voice.languageId ?? null,
           language: languageById.get(voice.languageId)?.label ?? null,
+          gender: (voice.config as Record<string, unknown>)?.gender ?? null,
+          age: (voice.config as Record<string, unknown>)?.age ?? null,
         })),
       },
       summary: `Listed ${voices.length} active voice(s)`,
@@ -383,25 +474,42 @@ export class CharacterInterviewToolsService {
           'Compress it and move the overflow depth into knowledgeSources.',
       );
     }
-    const languageCharacteristics = str(input?.languageCharacteristics);
-    if (languageCharacteristics.length > 1000) {
-      errors.push('languageCharacteristics must be ≤1000 chars');
+    // Per-language maps now. Kept lenient about the container the model sends
+    // — a flat string or array is what the previous contract asked for, and a
+    // dashboard-overridden interviewer prompt may still be asking for it — so
+    // an old-shaped answer is filed under the language its voice implies
+    // rather than rejected.
+    // Where a flat, old-shaped answer gets filed: the language of the voice
+    // the model named, else English. Resolved once so a legacy draft's voice,
+    // style and samples cannot land under different languages.
+    const fallbackLanguageKey = await this.resolveFallbackLanguageKey(
+      str(input?.voiceId) || undefined,
+    );
+
+    const languageCharacteristics = objectOfStrings(
+      input?.languageCharacteristics,
+      fallbackLanguageKey,
+    );
+    for (const [languageId, value] of Object.entries(languageCharacteristics)) {
+      if (value.length > 1000) {
+        errors.push(
+          `languageCharacteristics["${languageId}"] must be ≤1000 chars`,
+        );
+      }
     }
 
-    const linguisticStyleSamples = (
-      Array.isArray(input?.linguisticStyleSamples)
-        ? input.linguisticStyleSamples
-        : []
-    )
-      .map((sample: unknown) => str(sample))
-      .filter(Boolean);
-    if (
-      linguisticStyleSamples.length >
-      MAX_CHARACTER_LINGUISTIC_STYLE_SAMPLES_COUNT
-    ) {
-      errors.push(
-        `linguisticStyleSamples must have ≤${MAX_CHARACTER_LINGUISTIC_STYLE_SAMPLES_COUNT} items`,
-      );
+    const samplesByLanguage = objectOfStringArrays(
+      input?.linguisticStyleSamples,
+      fallbackLanguageKey,
+    );
+    const linguisticStyleSamples = Object.values(samplesByLanguage).flat();
+    for (const [languageId, samples] of Object.entries(samplesByLanguage)) {
+      if (samples.length > MAX_CHARACTER_LINGUISTIC_STYLE_SAMPLES_COUNT) {
+        errors.push(
+          `linguisticStyleSamples["${languageId}"] must have ` +
+            `≤${MAX_CHARACTER_LINGUISTIC_STYLE_SAMPLES_COUNT} items`,
+        );
+      }
     }
     if (linguisticStyleSamples.some((sample) => sample.length > 300)) {
       errors.push('each linguistic style sample must be ≤300 chars');
@@ -428,16 +536,29 @@ export class CharacterInterviewToolsService {
       errors.push('each knowledge source text must be ≤2500 chars');
     }
 
-    // voiceId must be a real, active catalog voice — a made-up id would save
-    // fine but point the character at nothing.
-    const voiceId = str(input?.voiceId) || undefined;
-    if (voiceId) {
+    // Every voice must be a real, active catalog voice AND belong to the
+    // language it is filed under. A made-up id would save fine but point the
+    // character at nothing; an id borrowed from another language dispatches
+    // that language's TTS into a session in this one.
+    const voices = objectOfStrings(
+      input?.voices ?? (str(input?.voiceId) ? { '': str(input.voiceId) } : {}),
+      fallbackLanguageKey,
+    );
+    for (const [languageId, voiceId] of Object.entries(voices)) {
       const voice = await this.dataSource
         .getRepository(ScenarioVoices)
         .findOne({ where: { id: voiceId, active: true } });
       if (!voice) {
         errors.push(
-          `voiceId "${voiceId}" is not an active voice — call get_voices and use a real id, or omit voiceId`,
+          `voices["${languageId}"] = "${voiceId}" is not an active voice — ` +
+            'call get_voices and use a real id, or omit that language',
+        );
+        continue;
+      }
+      if (voice.languageId != null && String(voice.languageId) !== languageId) {
+        errors.push(
+          `voices["${languageId}"] = "${voice.name}" belongs to language ` +
+            `${voice.languageId} — file each voice under its own languageId`,
         );
       }
     }
@@ -464,9 +585,13 @@ export class CharacterInterviewToolsService {
       profession,
       currentLocation,
       characterProfileText,
-      ...(voiceId ? { voiceId } : {}),
-      ...(languageCharacteristics ? { languageCharacteristics } : {}),
-      ...(linguisticStyleSamples.length ? { linguisticStyleSamples } : {}),
+      ...(Object.keys(voices).length ? { voices } : {}),
+      ...(Object.keys(languageCharacteristics).length
+        ? { languageCharacteristics }
+        : {}),
+      ...(Object.keys(samplesByLanguage).length
+        ? { linguisticStyleSamples: samplesByLanguage }
+        : {}),
       ...(knowledgeSources.length ? { knowledgeSources } : {}),
     };
 

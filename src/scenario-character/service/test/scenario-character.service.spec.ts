@@ -4,7 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { In } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 import { ScenarioCharacterService } from '../scenario-character.service';
 import { ScenarioCharacterRepository } from '../../repository/scenario-character.repository';
 import { CharacterLibraryAccessService } from '../character-library-access.service';
@@ -65,8 +65,19 @@ describe('ScenarioCharacterService', () => {
       tenantId,
     });
 
+  // Voice-language validation reads scenario_voices straight off the
+  // DataSource; `voiceRows` is what that lookup returns.
+  let voiceRows: { id: string; name: string; languageId: number | null }[] = [];
+  const mockDataSource = { getRepository: jest.fn() };
+
   beforeEach(async () => {
     jest.resetAllMocks();
+    voiceRows = [];
+    // Re-applied after resetAllMocks, which strips implementations.
+    mockDataSource.getRepository.mockImplementation(() => ({
+      find: jest.fn(async () => voiceRows),
+      findOne: jest.fn(async () => voiceRows[0] ?? null),
+    }));
     (LoggerService.getInstance as jest.Mock).mockReturnValue({
       info: jest.fn(),
       warn: jest.fn(),
@@ -82,6 +93,7 @@ describe('ScenarioCharacterService', () => {
           provide: CharacterLibraryAccessService,
           useValue: mockAccessService,
         },
+        { provide: DataSource, useValue: mockDataSource },
       ],
     }).compile();
 
@@ -221,6 +233,87 @@ describe('ScenarioCharacterService', () => {
       const res = await service.createScenarioCharacter(createDto);
 
       expect(res).toEqual(mockCharacter);
+    });
+  });
+
+  describe('per-language voice validation', () => {
+    /**
+     * The guard the single-voiceId model could not have. The picker offers the
+     * whole catalog across languages, so a character could hold a Marathi
+     * voice which the applying code filed under English — a Marathi TTS voice
+     * dispatched into an English session, caught by nothing.
+     */
+    beforeEach(() => {
+      (ExecutionManager.getUserId as jest.Mock).mockReturnValue(42);
+    });
+
+    const dto = (voices: Record<string, string>) =>
+      ({
+        name: 'Suchi',
+        age: 34,
+        gender: 'female',
+        currentLocation: 'Pune',
+        genderIdentity: 'Female/Woman',
+        sexualOrientation: 'Heterosexual (straight)',
+        voices,
+      }) as any;
+
+    it('accepts a voice filed under its own language', async () => {
+      voiceRows = [{ id: 'v-mr', name: 'Marathi - Abhilash', languageId: 5 }];
+      mockRepo.create.mockReturnValue({ id: 'c1' });
+      mockRepo.save.mockResolvedValue({ id: 'c1' });
+
+      await expect(
+        service.createScenarioCharacter(dto({ '5': 'v-mr' })),
+      ).resolves.toEqual({ id: 'c1' });
+    });
+
+    it('rejects a voice filed under another language', async () => {
+      voiceRows = [{ id: 'v-mr', name: 'Marathi - Abhilash', languageId: 5 }];
+
+      await expect(
+        service.createScenarioCharacter(dto({ '1': 'v-mr' })),
+      ).rejects.toThrow(/belongs to language 5, not 1/);
+      expect(mockRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('rejects a voice that does not exist', async () => {
+      voiceRows = [];
+
+      await expect(
+        service.createScenarioCharacter(dto({ '1': 'made-up' })),
+      ).rejects.toThrow(/does not exist/);
+    });
+
+    it('allows a voice whose language nobody recorded', async () => {
+      // A gap in the catalog, not a mismatch — the pickers already rank an
+      // unrecorded gender ahead of a wrong one; same principle.
+      voiceRows = [{ id: 'v-x', name: 'Legacy', languageId: null }];
+      mockRepo.create.mockReturnValue({ id: 'c1' });
+      mockRepo.save.mockResolvedValue({ id: 'c1' });
+
+      await expect(
+        service.createScenarioCharacter(dto({ '3': 'v-x' })),
+      ).resolves.toBeTruthy();
+    });
+
+    it('validates on update too, before anything is written', async () => {
+      voiceRows = [{ id: 'v-mr', name: 'Marathi - Abhilash', languageId: 5 }];
+      mockRepo.findOne.mockResolvedValue({ id: 'c1', tenantId: null });
+
+      await expect(
+        service.updateScenarioCharacter('c1', dto({ '2': 'v-mr' })),
+      ).rejects.toThrow(/file each voice under its own|belongs to language/);
+      expect(mockRepo.update).not.toHaveBeenCalled();
+    });
+
+    it('skips the lookup entirely when no voices are set', async () => {
+      mockRepo.create.mockReturnValue({ id: 'c1' });
+      mockRepo.save.mockResolvedValue({ id: 'c1' });
+
+      await service.createScenarioCharacter(dto({}));
+
+      expect(mockDataSource.getRepository).not.toHaveBeenCalled();
     });
   });
 

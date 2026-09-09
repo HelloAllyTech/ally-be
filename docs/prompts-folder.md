@@ -90,6 +90,26 @@ Language–Voice mapping. Both are **id-returning prompts**, and that is where t
   but belongs to another language would dispatch the wrong TTS for the whole session, so
   `parseLanguageVoices` checks membership rather than existence.
 
+### Agent prompts coupled to a tool contract (`character_interview/`)
+
+`character_interview/interviewer_system.txt` is an agent prompt (above) with one extra
+hazard: the shape it tells the model to produce is also validated in code, in
+`CharacterInterviewToolsService`. The two are one contract in two files, and only one of
+them is deployable.
+
+That asymmetry decides how to change it. Because the prompt row may be
+**dashboard-overridden in production**, a deployed prompt can still be asking for the
+previous shape long after the validator moved on — so when the contract changes, the
+validator has to accept the old shape as well as the new one. When characters went
+per-language (`voices` / `languageCharacteristics` / `linguisticStyleSamples` keyed by
+`languages.id`), `executeSaveCharacterDraft` kept coercing a flat string or array, filing
+it under the language its named voice implies. Rejecting it instead would strand an admin
+mid-interview over a contract change they cannot see or fix.
+
+The same reasoning applies to what a tool *returns*: `get_voices` reports each voice's
+`languageId` precisely so the prompt never has to infer the key it files a voice under.
+If a prompt has to derive an id, expect it to guess wrong.
+
 ### Code-read one-shot prompts
 
 A third shape sits between the two: a folder like `analytics_suggestions/` or `ux_signals/`
