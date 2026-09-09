@@ -20,6 +20,7 @@ import { CoachingLoopAnalyticsService } from '../service/coaching-loop-analytics
 import { CohortAnalyticsService } from '../service/cohort-analytics.service';
 import { CompetencyMapAnalyticsService } from '../service/competency-map-analytics.service';
 import { XpGrowthAnalyticsService } from '../service/xp-growth-analytics.service';
+import { GoalsXpAnalyticsService } from '../service/goals-xp-analytics.service';
 import { CompletionRateAnalyticsService } from '../service/completion-rate-analytics.service';
 import { LanguageMixAnalyticsService } from '../service/language-mix-analytics.service';
 import { OrgHealthAnalyticsService } from '../service/org-health-analytics.service';
@@ -117,6 +118,10 @@ import {
   XpGrowthQueryDto,
   XpGrowthResponseDto,
 } from '../dto/xp-growth-analytics.dto';
+import {
+  GoalsXpQueryDto,
+  GoalsXpResponseDto,
+} from '../dto/goals-xp-analytics.dto';
 import {
   RoleplayVolumeQueryDto,
   RoleplayVolumeResponseDto,
@@ -254,6 +259,7 @@ export class AnalyticsController {
     private readonly usageLevelAnalyticsService: UsageLevelAnalyticsService,
     private readonly certificationAnalyticsService: CertificationAnalyticsService,
     private readonly xpGrowthAnalyticsService: XpGrowthAnalyticsService,
+    private readonly goalsXpAnalyticsService: GoalsXpAnalyticsService,
     private readonly roleplayVolumeAnalyticsService: RoleplayVolumeAnalyticsService,
     private readonly roadmapDeliveryAnalyticsService: RoadmapDeliveryAnalyticsService,
     private readonly shipVolumeAnalyticsService: ShipVolumeAnalyticsService,
@@ -441,6 +447,33 @@ export class AnalyticsController {
     @Query() query: XpGrowthQueryDto,
   ): Promise<XpGrowthResponseDto> {
     return this.xpGrowthAnalyticsService.getXpGrowth(query);
+  }
+
+  @Get('xp-goals')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Actual XP earned vs. goal, by month/quarter/year (super-admin)',
+    description:
+      'Actual platform XP earned per period (from `xp_events`, the same ' +
+      'ledger as `xp-growth`) alongside a goal figure for that period, where ' +
+      'one has been set. Goals are NOT editable through this API — they are ' +
+      'seeded directly into `analytics_xp_goals` by migration, one row per ' +
+      '(grain, periodStart). A period with no goal row comes back with ' +
+      '`goalXp: null` and `hasGoal: false` so the chart can render an ' +
+      'explicit "no goal set" placeholder rather than a fabricated zero. ' +
+      'Platform-wide only — no tenant filter. The window runs from the ' +
+      "platform data floor through today's period, which is included and " +
+      'flagged (`inProgress: true`) since it can still rise.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'XP vs goal series retrieved successfully',
+    type: GoalsXpResponseDto,
+  })
+  async getGoalsXp(
+    @Query() query: GoalsXpQueryDto,
+  ): Promise<GoalsXpResponseDto> {
+    return this.goalsXpAnalyticsService.getGoalsXp(query);
   }
 
   @Get('usage-ladder')
