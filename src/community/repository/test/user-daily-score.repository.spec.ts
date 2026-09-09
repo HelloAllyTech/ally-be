@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { DataSource, EntityManager } from 'typeorm';
+import { XP_RULE } from 'src/progress/progress.constants';
 import { UserDailyScoreRepository } from '../user-daily-score.repository';
 
 describe('UserDailyScoreRepository', () => {
@@ -296,7 +297,8 @@ describe('UserDailyScoreRepository', () => {
         rank: '1',
         minutesPlayed: '120',
         badgeCount: '5',
-        currentStreak: '4',
+        status: 'ACTIVE',
+        daysActiveThisWeek: '4',
       },
       {
         userId: 2,
@@ -324,9 +326,13 @@ describe('UserDailyScoreRepository', () => {
         userId: 1,
         name: 'John Doe',
         profileImageUrl: 'https://example.com/avatar.jpg',
+        status: 'ACTIVE',
         rank: 1,
         minutesPlayed: 120,
         badgeCount: 5,
+        daysActiveThisWeek: 4,
+        weeklyGoalDays: 4,
+        weeklyGoalMet: true,
         currentStreak: 4,
       });
       expect(result.data[1].profileImageUrl).toBeUndefined(); // null converted to undefined
@@ -344,8 +350,8 @@ describe('UserDailyScoreRepository', () => {
         mockEndDate,
       );
 
-      // Default limit is 50, offset is 0. The trailing param is the business
-      // date the streak CTE compares against, in place of CURRENT_DATE.
+      // Default limit is 50, offset is 0. The trailing params bound the current ISO
+      // week for the regularity count, and name the bonus rules it must ignore.
       expect(mockQuery).toHaveBeenCalledWith(expect.any(String), [
         mockTenantId,
         mockStartDate,
@@ -353,6 +359,8 @@ describe('UserDailyScoreRepository', () => {
         50,
         0,
         expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        expect.arrayContaining([XP_RULE.WEEKLY_CONSISTENCY]),
       ]);
     });
 
@@ -375,6 +383,8 @@ describe('UserDailyScoreRepository', () => {
         10,
         20,
         expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        expect.arrayContaining([XP_RULE.WEEKLY_CONSISTENCY]),
       ]);
     });
 
@@ -566,17 +576,16 @@ describe('UserDailyScoreRepository', () => {
         rank: '5',
         minutesPlayed: '60',
         badgeCount: '3',
+        status: 'ACTIVE',
       },
     ];
 
     it('should return user rank when user has activity', async () => {
       mockQuery
         .mockResolvedValueOnce(mockRankResult)
-        // Second call is the shared streak lookup, reused so "my rank" and the
-        // leaderboard row can never disagree.
-        .mockResolvedValueOnce([
-          { userId: 1, currentStreak: '4', longestStreak: '9' },
-        ]);
+        // Second call is the shared weekly-activity lookup, reused so "my rank" and
+        // the leaderboard row can never disagree.
+        .mockResolvedValueOnce([{ count: 4 }]);
 
       const result = await repository.getUserRankWithDetails(
         mockUserId,
@@ -589,9 +598,13 @@ describe('UserDailyScoreRepository', () => {
         userId: 1,
         name: 'John Doe',
         profileImageUrl: 'https://example.com/avatar.jpg',
+        status: 'ACTIVE',
         rank: 5,
         minutesPlayed: 60,
         badgeCount: 3,
+        daysActiveThisWeek: 4,
+        weeklyGoalDays: 4,
+        weeklyGoalMet: true,
         currentStreak: 4,
       });
     });
@@ -891,9 +904,12 @@ describe('UserDailyScoreRepository', () => {
         'tenant-1',
         [1, 2],
         TODAY,
+        expect.arrayContaining([XP_RULE.WEEKLY_CONSISTENCY]),
       ]);
+      // Matches every spelling the tenant can carry: xp_events holds the canonical
+      // uuid, while callers pass whatever the request carried.
       expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('tenant_id = $1'),
+        expect.stringContaining('tenant_ids AS ('),
         expect.any(Array),
       );
     });
@@ -907,6 +923,7 @@ describe('UserDailyScoreRepository', () => {
         'tenant-1',
         null,
         TODAY,
+        expect.arrayContaining([XP_RULE.WEEKLY_CONSISTENCY]),
       ]);
     });
 
@@ -916,19 +933,25 @@ describe('UserDailyScoreRepository', () => {
       await repository.getStreakStatsForUsers('tenant-1', [1], TODAY);
 
       expect(mockQuery).toHaveBeenCalledWith(
-        expect.stringContaining('SELECT DISTINCT "userId", "date"::date'),
+        expect.stringContaining(
+          'SELECT DISTINCT xe."userId", xe."awardedOn"::date',
+        ),
         expect.any(Array),
       );
     });
 
-    it('should build the gaps-and-islands SQL over the active-day threshold', async () => {
+    it('should build the gaps-and-islands SQL over XP-earning days', async () => {
       mockQuery.mockResolvedValue([]);
 
       await repository.getStreakStatsForUsers('tenant-1', [1], TODAY);
 
       const [sql] = mockQuery.mock.calls[0];
-      expect(sql).toContain('"minutesPlayed" >= 1.00');
-      expect(sql).toContain('WITH active_days AS');
+      // A day counts because it earned XP of any kind, not because it had roleplay
+      // minutes in it — a learner can keep a streak alive on quizzes alone.
+      expect(sql).toContain('FROM xp_events xe');
+      expect(sql).toContain('xe."xp" > 0');
+      expect(sql).not.toContain('"minutesPlayed" >= 1.00');
+      expect(sql).toContain('active_days AS');
       expect(sql).toContain('islands AS');
       expect(sql).toContain('runs AS');
       expect(sql).toContain('ROW_NUMBER() OVER (PARTITION BY "userId"');

@@ -22,6 +22,9 @@ describe('LeaderboardService', () => {
     rank: 1,
     minutesPlayed: 120,
     badgeCount: 5,
+    daysActiveThisWeek: 4,
+    weeklyGoalDays: 4,
+    weeklyGoalMet: true,
     currentStreak: 4,
   };
 
@@ -35,6 +38,9 @@ describe('LeaderboardService', () => {
       rank: 2,
       minutesPlayed: 100,
       badgeCount: 3,
+      daysActiveThisWeek: 4,
+      weeklyGoalDays: 4,
+      weeklyGoalMet: true,
       currentStreak: 4,
     },
     {
@@ -45,6 +51,9 @@ describe('LeaderboardService', () => {
       rank: 3,
       minutesPlayed: 80,
       badgeCount: 1,
+      daysActiveThisWeek: 4,
+      weeklyGoalDays: 4,
+      weeklyGoalMet: true,
       currentStreak: 4,
     },
   ];
@@ -347,6 +356,9 @@ describe('LeaderboardService', () => {
         rank: 5,
         minutesPlayed: 60,
         badgeCount: 3,
+        daysActiveThisWeek: 4,
+        weeklyGoalDays: 4,
+        weeklyGoalMet: true,
         currentStreak: 4,
       };
 
@@ -415,6 +427,9 @@ describe('LeaderboardService', () => {
         rank: undefined, // rank is hidden
         minutesPlayed: 120,
         badgeCount: 3,
+        daysActiveThisWeek: 4,
+        weeklyGoalDays: 4,
+        weeklyGoalMet: true,
         currentStreak: 4,
       });
 
@@ -475,6 +490,9 @@ describe('LeaderboardService', () => {
         rank: 10,
         minutesPlayed: 200,
         badgeCount: 5,
+        daysActiveThisWeek: 4,
+        weeklyGoalDays: 4,
+        weeklyGoalMet: true,
         currentStreak: 4,
         hideRankInCommunity: false,
       };
@@ -513,6 +531,9 @@ describe('LeaderboardService', () => {
         rank: 25,
         minutesPlayed: 500,
         badgeCount: 10,
+        daysActiveThisWeek: 4,
+        weeklyGoalDays: 4,
+        weeklyGoalMet: true,
         currentStreak: 4,
         hideRankInCommunity: false,
       };
@@ -551,6 +572,9 @@ describe('LeaderboardService', () => {
         rank: 1,
         minutesPlayed: 1000,
         badgeCount: 20,
+        daysActiveThisWeek: 4,
+        weeklyGoalDays: 4,
+        weeklyGoalMet: true,
         currentStreak: 4,
         hideRankInCommunity: false,
       };
@@ -589,6 +613,9 @@ describe('LeaderboardService', () => {
         rank: 5,
         minutesPlayed: 60,
         badgeCount: 0,
+        daysActiveThisWeek: 4,
+        weeklyGoalDays: 4,
+        weeklyGoalMet: true,
         currentStreak: 4,
       };
 

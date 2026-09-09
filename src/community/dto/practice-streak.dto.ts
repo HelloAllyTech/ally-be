@@ -167,7 +167,33 @@ export class PracticeStreakSummaryDto {
 
   @ApiProperty({
     description:
-      'Current consecutive-active-days streak (days with >= 1 minute practiced), counting up to today.',
+      'Days active in the current ISO week, where a day is active if it earned XP of any kind. This, not the consecutive-day streak, is what the weekly consistency bonus pays against.',
+    example: 3,
+  })
+  daysActiveThisWeek!: number;
+
+  @ApiProperty({
+    description: 'Active days needed this week to earn the consistency bonus.',
+    example: 4,
+  })
+  weeklyGoalDays!: number;
+
+  @ApiProperty({
+    description:
+      'Whether the weekly consistency bonus has been earned already.',
+  })
+  weeklyGoalMet!: boolean;
+
+  @ApiProperty({
+    description:
+      'Active days still needed this week. Zero once the goal is met.',
+    example: 1,
+  })
+  daysToWeeklyGoal!: number;
+
+  @ApiProperty({
+    description:
+      'Current consecutive-active-days streak, counting up to today. An active day is one that earned XP of any kind — practice, a course component, a debrief conversation — not roleplay minutes alone.',
     example: 4,
   })
   currentStreak!: number;
