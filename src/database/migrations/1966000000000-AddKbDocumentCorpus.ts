@@ -16,8 +16,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Not an enum type: the values are read by application code that already validates them,
  * and a Postgres enum would need a migration to add the third consumer.
  */
-export class AddKbDocumentCorpus1963000000000 implements MigrationInterface {
-  name = 'AddKbDocumentCorpus1963000000000';
+export class AddKbDocumentCorpus1966000000000 implements MigrationInterface {
+  name = 'AddKbDocumentCorpus1966000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

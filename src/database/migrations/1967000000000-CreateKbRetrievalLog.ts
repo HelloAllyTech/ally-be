@@ -13,8 +13,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * this table grows per retrieval times per candidate, and the production database has
  * already been saturated once by unbounded query load.
  */
-export class CreateKbRetrievalLog1964000000000 implements MigrationInterface {
-  name = 'CreateKbRetrievalLog1964000000000';
+export class CreateKbRetrievalLog1967000000000 implements MigrationInterface {
+  name = 'CreateKbRetrievalLog1967000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
