@@ -26,6 +26,7 @@ import {
   GetKbChunksResponseDto,
   GetKbDocumentsQueryDto,
   GetKbDocumentsResponseDto,
+  GetKbStatsQueryDto,
   KbDocumentResponseDto,
   KbSearchDto,
   KbStatsResponseDto,
@@ -103,8 +104,8 @@ export class KnowledgeBaseController {
   })
   @ApiOperation({ summary: 'Corpus totals by status, for the stats strip' })
   @ApiResponse({ status: 200, type: KbStatsResponseDto })
-  stats(): Promise<KbStatsResponseDto> {
-    return this.knowledgeBaseService.stats();
+  stats(@Query() dto: GetKbStatsQueryDto): Promise<KbStatsResponseDto> {
+    return this.knowledgeBaseService.stats(dto);
   }
 
   @Post('search')

@@ -3,11 +3,22 @@ import { Brackets, DataSource, Repository } from 'typeorm';
 import { resolveSort } from 'src/common/util/sort.util';
 import { KbDocument } from '../entity/kb-document.entity';
 import {
+  KbCorpus,
   KbDocumentSourceType,
   KbDocumentStatus,
 } from '../enum/knowledge-base.enum';
 
 export interface ListKbDocumentsOptions {
+  /**
+   * Required HERE even though the DTOs default it, and that asymmetry is deliberate. The
+   * DTO default exists for one reason — the shipped dashboard does not send the field yet
+   * and ally-be deploys first — so it belongs at the HTTP edge, where the compatibility
+   * problem actually is. Inside, every screen and every retrieval is about exactly one
+   * corpus, and a default would only ever serve a caller who forgot: the WhatsApp coverage
+   * report was exactly that caller, counting other corpora's documents as its own uncited
+   * material until the compiler caught it.
+   */
+  corpus: KbCorpus;
   limit?: number;
   offset?: number;
   search?: string;
@@ -41,9 +52,10 @@ export class KbDocumentRepository extends Repository<KbDocument> {
   }
 
   async list(
-    options: ListKbDocumentsOptions = {},
+    options: ListKbDocumentsOptions,
   ): Promise<{ documents: KbDocument[]; count: number }> {
     const {
+      corpus,
       limit = 25,
       offset = 0,
       search,
@@ -60,6 +72,8 @@ export class KbDocumentRepository extends Repository<KbDocument> {
     );
 
     const query = this.createQueryBuilder('doc');
+
+    query.andWhere('doc.corpus = :corpus', { corpus });
 
     if (!includeArchived) {
       query.andWhere('doc.archivedAt IS NULL');
@@ -128,12 +142,57 @@ export class KbDocumentRepository extends Repository<KbDocument> {
     return { documents, count };
   }
 
-  /** Counts by status, for the corpus stats strip. */
-  async countsByStatus(): Promise<Record<string, number>> {
+  /**
+   * The retrievable documents of one corpus, split by whether a curator mapped them to
+   * the topic being asked about.
+   *
+   * This split IS the boost. Retrieval searches `preferred` first and tops up from
+   * `rest`, so a curator's hint wins ties without ever hiding the unmapped passage that
+   * turns out to matter. Archived documents appear in neither: their vectors are deleted,
+   * so returning their ids would only ask ally-ai about chunks it no longer holds.
+   *
+   * Returning ids rather than a filter flag is what keeps the corpus boundary honest —
+   * ally-ai's search takes `document_ids`, so the scope becomes the query itself.
+   */
+  async retrievableIds(options: {
+    corpus: KbCorpus;
+    tags?: string[];
+    characterTopics?: string[];
+  }): Promise<{ preferred: string[]; rest: string[] }> {
+    const query = this.createQueryBuilder('doc')
+      .select(['doc.id', 'doc.characterTopics'])
+      .where('doc.corpus = :corpus', { corpus: options.corpus })
+      .andWhere('doc.archivedAt IS NULL')
+      // Only an indexed document has vectors to match against; the others are still
+      // extracting or have failed, and asking about them returns nothing at a cost.
+      .andWhere('doc.status = :status', { status: KbDocumentStatus.INDEXED });
+
+    if (options.tags?.length) {
+      // `&&` overlap, matching the list filter's semantics rather than inventing a
+      // second meaning for the same field.
+      query.andWhere('doc.tags && :tags', { tags: options.tags });
+    }
+
+    const rows = await query.getMany();
+    const wanted = new Set(options.characterTopics ?? []);
+    const preferred: string[] = [];
+    const rest: string[] = [];
+    for (const row of rows) {
+      const mapped =
+        wanted.size > 0 &&
+        (row.characterTopics ?? []).some((topic) => wanted.has(topic));
+      (mapped ? preferred : rest).push(row.id);
+    }
+    return { preferred, rest };
+  }
+
+  /** Counts by status, for one corpus's stats strip. */
+  async countsByStatus(corpus: KbCorpus): Promise<Record<string, number>> {
     const rows = await this.createQueryBuilder('doc')
       .select('doc.status', 'status')
       .addSelect('COUNT(*)', 'count')
-      .where('doc.archivedAt IS NULL')
+      .where('doc.corpus = :corpus', { corpus })
+      .andWhere('doc.archivedAt IS NULL')
       .groupBy('doc.status')
       .getRawMany<{ status: string; count: string }>();
 
@@ -143,11 +202,14 @@ export class KbDocumentRepository extends Repository<KbDocument> {
     }, {});
   }
 
-  async totals(): Promise<{ chunkCount: number; indexedChunkCount: number }> {
+  async totals(
+    corpus: KbCorpus,
+  ): Promise<{ chunkCount: number; indexedChunkCount: number }> {
     const row = await this.createQueryBuilder('doc')
       .select('COALESCE(SUM(doc.chunkCount), 0)', 'chunkCount')
       .addSelect('COALESCE(SUM(doc.indexedChunkCount), 0)', 'indexedChunkCount')
-      .where('doc.archivedAt IS NULL')
+      .where('doc.corpus = :corpus', { corpus })
+      .andWhere('doc.archivedAt IS NULL')
       .getRawOne<{ chunkCount: string; indexedChunkCount: string }>();
 
     return {

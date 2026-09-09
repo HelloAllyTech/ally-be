@@ -1,26 +1,57 @@
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import {
+  KbCharacterTopic,
+  KbCorpus,
   KbDocumentSourceType,
   KbDocumentStatus,
 } from '../enum/knowledge-base.enum';
 
 /**
- * One document in the WhatsApp Q&A bot's knowledge corpus, and the system of record for it.
+ * One document in a knowledge corpus, and the system of record for it.
  *
  * ally-ai's KnowledgeChunk collection is a DERIVED index over the chunks of these rows —
  * same ownership rule as reference documents and roadmap opportunities. Postgres is truth;
  * vectors can always be rebuilt from here.
  *
+ * `corpus` is what separates one consumer's material from another's. The WhatsApp Q&A bot
+ * was the first, and this table was named and documented for it; the pipeline itself never
+ * cared. Retrieval resolves ONE corpus's document ids here and passes them to ally-ai as
+ * the query's own `document_ids`, so scope is an argument rather than a filter — see
+ * KbCorpus.
+ *
  * NO tenant. The bot is open to anyone with the number, so there is no tenant to scope by
- * and the corpus is deliberately global. A future private per-tenant corpus should be a new
- * collection rather than a filter added to the shared one — retrieval that forgets a filter
- * leaks, and an un-set filter is the easiest thing in the world to forget.
+ * and both corpora are deliberately Ally-global. A future PRIVATE per-tenant corpus is a
+ * different problem from `corpus` and should be a new collection rather than a filter added
+ * to the shared one — retrieval that forgets a tenant filter leaks, and an un-set filter is
+ * the easiest thing in the world to forget.
  */
 @Entity('kb_documents')
 export class KbDocument extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  /**
+   * Which consumer's material this is. Immutable in practice: moving a document between
+   * corpora would change what every recorded citation over it meant.
+   */
+  @Index('idx_kb_documents_corpus')
+  @Column({ type: 'varchar', length: 32, default: KbCorpus.WHATSAPP_QA })
+  corpus!: KbCorpus;
+
+  /**
+   * Which parts of a character this document helps ground — a curator's hint that
+   * BOOSTS those topics in retrieval rather than restricting to them. Empty means
+   * "no hint", which is a perfectly good answer and the default. Only meaningful
+   * for the character-library corpus.
+   */
+  @Column({
+    name: 'character_topics',
+    type: 'text',
+    array: true,
+    default: () => "'{}'",
+  })
+  characterTopics!: KbCharacterTopic[];
 
   @Index('idx_kb_documents_title')
   @Column({ type: 'text' })
