@@ -462,8 +462,10 @@ export class AnalyticsController {
       '`goalXp: null` and `hasGoal: false` so the chart can render an ' +
       'explicit "no goal set" placeholder rather than a fabricated zero. ' +
       'Platform-wide only — no tenant filter. The window runs from the ' +
-      "platform data floor through today's period, which is included and " +
-      'flagged (`inProgress: true`) since it can still rise.',
+      "platform data floor through at least today's period (flagged " +
+      '`inProgress: true`, since it can still rise), and further still ' +
+      'through any future period that already has a goal set, flagged ' +
+      '`upcoming: true` with `actualXp: 0` since nothing has happened yet.',
   })
   @ApiResponse({
     status: 200,

@@ -54,6 +54,14 @@ export class GoalsXpPointDto {
       'figure can only rise and is not a fair comparison against a completed period.',
   })
   inProgress!: boolean;
+
+  @ApiProperty({
+    description:
+      "True for a period after today's. Nothing has happened yet, so " +
+      '`actualXp` is a true zero rather than a measured figure — shown only ' +
+      'when the period has a goal set, as an upcoming target.',
+  })
+  upcoming!: boolean;
 }
 
 export class GoalsXpResponseDto {
@@ -64,7 +72,10 @@ export class GoalsXpResponseDto {
     type: [GoalsXpPointDto],
     description:
       'Oldest first, one point per period from the platform data floor ' +
-      'through the in-progress period.',
+      'through the furthest period with a recorded goal (native, or for ' +
+      'quarter/year derived from fully-covered constituent months) — at ' +
+      "least through today's in-progress period, further still when a " +
+      'future goal has been set.',
   })
   points!: GoalsXpPointDto[];
 
