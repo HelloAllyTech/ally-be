@@ -110,6 +110,21 @@ The same reasoning applies to what a tool *returns*: `get_voices` reports each v
 `languageId` precisely so the prompt never has to infer the key it files a voice under.
 If a prompt has to derive an id, expect it to guess wrong.
 
+**A tool the deployed prompt has never heard of must be harmless.** `search_corpus` was added
+to the tool belt in the same change as the grounding guidance that tells the model when to use
+it — but if the production prompt row is dashboard-overridden, only the tool ships. An unused
+tool is inert, which is why this is safe; the reverse is not. Guidance that reaches the model
+without the tool existing would produce calls to a tool that isn't there. **Add the tool first,
+then the guidance, and treat the dashboard override as the thing that actually ships.**
+
+**`ok:false` means "repair and retry" — so never use it for an honest negative.** The model
+obliges an `ok:false`, which is right for a validation failure and wrong for a retrieval that
+found nothing: it becomes a rephrase loop against a corpus that genuinely lacks the material.
+`search_corpus` returns `ok:true` with an empty list and an explicit note. It reserves
+`ok:false` for retrieval being *unreachable*, and says so in those words, because an agent that
+cannot tell "the library has nothing" from "the library could not be read" will tell an admin
+their corpus is empty when it is not.
+
 **Normalise keys and unwrap values; do not assume one call is self-consistent.** A production
 `save_character_draft` keyed `voices` and `languageCharacteristics` by numeric id and
 `linguisticStyleSamples` by locale (`"en-IN"`) — in the same call — and wrapped each sample as

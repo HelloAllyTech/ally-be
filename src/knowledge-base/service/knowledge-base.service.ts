@@ -14,11 +14,14 @@ import { ConfigurationException } from 'src/exception/configuration.exception';
 import {
   KB_DOCUMENT_S3_PREFIX,
   KB_MAX_FILE_SIZE_BYTES,
+  KB_MAX_PASSAGES_PER_DOCUMENT,
+  KB_MIN_SIMILARITY_DEFAULT,
 } from '../constants/knowledge-base.constants';
 import {
   CreateKbDocumentDto,
   CreateKbUploadUrlDto,
   GetKbDocumentsQueryDto,
+  GetKbStatsQueryDto,
   KbDocumentResponseDto,
   KbSearchDto,
   ReplaceKbDocumentContentDto,
@@ -26,13 +29,36 @@ import {
 } from '../dto/knowledge-base.dto';
 import { KbDocument } from '../entity/kb-document.entity';
 import {
+  KbCorpus,
   KbDocumentSourceType,
   KbDocumentStatus,
+  KbRetrievalConsumer,
+  KbRetrievalPass,
 } from '../enum/knowledge-base.enum';
+
+/**
+ * Who is retrieving, and on whose behalf. Not part of the DTO because none of it comes from
+ * the request body — the consumer is decided by which code path called, and letting a client
+ * assert it would let the admin preview file its experiments as agent traffic.
+ */
+export interface RetrievalContext {
+  consumer?: KbRetrievalConsumer;
+  sessionId?: string | null;
+  userId?: number | null;
+}
 import { KbIngestProducer } from '../producer/kb-ingest.producer';
 import { KbDocumentChunkRepository } from '../repository/kb-document-chunk.repository';
 import { KbDocumentRepository } from '../repository/kb-document.repository';
 import { KbIngestService } from './kb-ingest.service';
+import {
+  concatDistinct,
+  shapePassages,
+  shapeWithDecisions,
+} from '../util/retrieval';
+import {
+  KbRetrievalRepository,
+  RetrievalPassageRecord,
+} from '../repository/kb-retrieval.repository';
 
 /** MIME types accepted for an uploaded corpus document, mapped to their source type. */
 const UPLOAD_CONTENT_TYPES: Record<string, KbDocumentSourceType> = {
@@ -55,6 +81,7 @@ export class KnowledgeBaseService {
     private readonly aiService: AiService,
     private readonly s3Service: S3Service,
     private readonly configService: AppConfigService,
+    private readonly retrievalRepository: KbRetrievalRepository,
   ) {}
 
   private getBucket(): string {
@@ -78,6 +105,8 @@ export class KnowledgeBaseService {
   private toResponse(entity: KbDocument): KbDocumentResponseDto {
     return {
       id: entity.id,
+      corpus: entity.corpus,
+      characterTopics: entity.characterTopics ?? [],
       title: entity.title,
       sourceType: entity.sourceType,
       sourceUrl: entity.sourceUrl ?? null,
@@ -140,6 +169,11 @@ export class KnowledgeBaseService {
     this.validateSource(dto);
 
     const document = this.documentRepository.create({
+      // Explicit, not left to the column default. The default exists for rows written before
+      // this column did; a row written now must say which corpus it belongs to, or the day the
+      // default changes every new document silently lands in the wrong one.
+      corpus: dto.corpus,
+      characterTopics: dto.characterTopics ?? [],
       title: dto.title.trim(),
       sourceType: dto.sourceType,
       sourceUrl: dto.sourceUrl ?? null,
@@ -206,6 +240,7 @@ export class KnowledgeBaseService {
 
   async list(dto: GetKbDocumentsQueryDto) {
     const { documents, count } = await this.documentRepository.list({
+      corpus: dto.corpus,
       limit: dto.limit,
       offset: dto.offset,
       search: dto.search,
@@ -249,6 +284,11 @@ export class KnowledgeBaseService {
         ...(dto.title !== undefined ? { title: dto.title.trim() } : {}),
         ...(dto.tags !== undefined ? { tags: dto.tags } : {}),
         ...(dto.language !== undefined ? { language: dto.language } : {}),
+        // Free to change: a ranking hint read at query time, so it invalidates no chunk and
+        // triggers no re-index. An empty array is a real value — "no hint" — not a no-op.
+        ...(dto.characterTopics !== undefined
+          ? { characterTopics: dto.characterTopics }
+          : {}),
         updatedBy: userId,
       },
     );
@@ -335,7 +375,7 @@ export class KnowledgeBaseService {
     if (document.archivedAt) return this.toResponse(document);
 
     try {
-      await this.aiService.deleteKnowledgeChunksByDocument(id);
+      await this.aiService.deleteKnowledgeChunksByDocument(id, document.corpus);
     } catch (error) {
       // Reported, not swallowed: if the vectors survive, an "archived" document keeps answering
       // questions, which is precisely what the admin just asked it to stop doing.
@@ -447,20 +487,174 @@ export class KnowledgeBaseService {
     };
   }
 
-  /** Retrieval preview: exactly what the agent would see, with no generation cost. */
-  async search(dto: KbSearchDto) {
-    const response = await this.aiService.searchKnowledgeChunks({
-      query: dto.query,
-      limit: dto.limit ?? 8,
-      min_similarity: dto.minSimilarity ?? 0.35,
+  /**
+   * The one retrieval path. Everything that grounds an answer on this corpus goes through
+   * here — the WhatsApp answering agent, the character interview's search tool, and the admin
+   * preview, which is the same call with no generation after it and is therefore worth
+   * trusting as a preview.
+   *
+   * Three things happen that a bare vector search does not do:
+   *
+   * 1. Scope becomes the query. `retrievableIds` resolves ONE corpus's indexed, unarchived
+   *    document ids in Postgres and they travel as ally-ai's `document_ids`. There is no
+   *    "search everything" branch to fall into — an empty id set returns no passages rather
+   *    than the whole shared collection, which is the failure this shape exists to make
+   *    impossible.
+   * 2. Curator hints boost rather than filter. Documents mapped to the asked-about
+   *    `characterTopics` are searched first; the rest of the corpus tops the result up only
+   *    if the first pass came back short. Mapped material therefore wins ties and near-ties
+   *    without ever hiding the unmapped passage that turns out to matter.
+   * 3. The ranking is shaped for reading, not scoring — see `shapePassages`.
+   *
+   * And every retrieval is recorded — see `KbRetrieval`. Not for an audit trail: the numbers
+   * above (the floor most of all) were chosen by reasoning, and the first measurement showed
+   * the floor was one paraphrase from rejecting a direct hit. The log is how they stop being
+   * guesses.
+   */
+  async search(dto: KbSearchDto, context: RetrievalContext = {}) {
+    const startedAt = Date.now();
+    const { preferred, rest } = await this.documentRepository.retrievableIds({
+      corpus: dto.corpus,
+      tags: dto.tags,
+      characterTopics: dto.characterTopics,
     });
-    return { passages: response.passages };
+
+    const limit = dto.limit ?? 8;
+    const minSimilarity =
+      dto.minSimilarity ?? KB_MIN_SIMILARITY_DEFAULT[dto.corpus];
+
+    // Over-fetch, because shaping only ever removes passages: asking for `limit` and then
+    // dropping the overlapping neighbours would quietly return three passages for a limit of
+    // eight. Capped so a large limit cannot turn into an unbounded ally-ai query.
+    const fetchLimit = Math.min(limit * 3, 50);
+
+    const first = preferred.length
+      ? await this.searchDocuments(
+          dto.corpus,
+          dto.query,
+          preferred,
+          fetchLimit,
+          minSimilarity,
+        )
+      : [];
+
+    // Only top up when shaping the first pass would not already fill the limit. Checked
+    // against the SHAPED count rather than the raw one, or a first pass of eight
+    // near-duplicates from one document would suppress the top-up and then collapse to two.
+    const shapedFirst = shapePassages(first, {
+      limit,
+      perDocumentLimit: KB_MAX_PASSAGES_PER_DOCUMENT,
+    });
+    const topUpRan = shapedFirst.length < limit && rest.length > 0;
+    const second = topUpRan
+      ? await this.searchDocuments(
+          dto.corpus,
+          dto.query,
+          rest,
+          fetchLimit,
+          minSimilarity,
+        )
+      : [];
+
+    const candidates = concatDistinct(first, second);
+    const { kept: passages, decisions } = shapeWithDecisions(candidates, {
+      limit,
+      perDocumentLimit: KB_MAX_PASSAGES_PER_DOCUMENT,
+    });
+
+    this.logger.info(
+      `[KB_RETRIEVAL] corpus=${dto.corpus} preferred_docs=${preferred.length} ` +
+        `rest_docs=${rest.length} topics=${(dto.characterTopics ?? []).join(',') || 'none'} ` +
+        `min_similarity=${minSimilarity} raw=${first.length}+${second.length} ` +
+        `returned=${passages.length}/${limit}`,
+    );
+
+    const firstPassChunkIds = new Set(first.map((p) => p.chunk_id));
+    await this.recordRetrieval(
+      {
+        corpus: dto.corpus,
+        consumer: context.consumer ?? KbRetrievalConsumer.ADMIN_PREVIEW,
+        query: dto.query,
+        characterTopics: dto.characterTopics ?? [],
+        tags: dto.tags ?? [],
+        minSimilarity,
+        requestedLimit: limit,
+        fetchLimit,
+        preferredDocumentCount: preferred.length,
+        restDocumentCount: rest.length,
+        firstPassHits: first.length,
+        // Null, not zero, when the top-up never ran — see KbRetrieval.secondPassHits.
+        secondPassHits: topUpRan ? second.length : null,
+        returnedCount: passages.length,
+        latencyMs: Date.now() - startedAt,
+        sessionId: context.sessionId ?? null,
+        createdBy: context.userId ?? null,
+      },
+      decisions.map((decision, index) => ({
+        chunkId: decision.passage.chunk_id,
+        documentId: decision.passage.document_id,
+        rank: index + 1,
+        similarity: decision.passage.similarity,
+        pass: firstPassChunkIds.has(decision.passage.chunk_id)
+          ? KbRetrievalPass.PREFERRED
+          : KbRetrievalPass.REST,
+        outcome: decision.outcome,
+      })),
+    );
+
+    return { passages };
   }
 
-  async stats() {
+  /**
+   * Persist one retrieval, and never let that failure become the caller's.
+   *
+   * Analytics are worth a table, not a retrieval. A full disk, a lock, a schema not yet
+   * migrated on one instance — any of those would otherwise turn a working search into a 500
+   * for an admin who asked a question, which is a straightforwardly worse product than having
+   * no distribution to calibrate against. Warned rather than swallowed silently, so a log that
+   * has quietly stopped writing is visible before someone builds a decision on the gap.
+   */
+  private async recordRetrieval(
+    retrieval: Parameters<KbRetrievalRepository['record']>[0],
+    passages: RetrievalPassageRecord[],
+  ): Promise<void> {
+    try {
+      await this.retrievalRepository.record(retrieval, passages);
+    } catch (error) {
+      this.logger.warn(
+        `[KB_RETRIEVAL] could not record the retrieval log: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`,
+      );
+    }
+  }
+
+  private async searchDocuments(
+    corpus: KbCorpus,
+    query: string,
+    documentIds: string[],
+    limit: number,
+    minSimilarity: number,
+  ) {
+    const response = await this.aiService.searchKnowledgeChunks(
+      {
+        query,
+        limit,
+        min_similarity: minSimilarity,
+        // Scopes WITHIN the corpus — the corpus itself is the collection. This is the
+        // curator's topic boost: the mapped documents on the first pass, the rest on the
+        // second.
+        document_ids: documentIds,
+      },
+      corpus,
+    );
+    return response.passages ?? [];
+  }
+
+  async stats(dto: GetKbStatsQueryDto) {
     const [byStatus, totals] = await Promise.all([
-      this.documentRepository.countsByStatus(),
-      this.documentRepository.totals(),
+      this.documentRepository.countsByStatus(dto.corpus),
+      this.documentRepository.totals(dto.corpus),
     ]);
     return {
       byStatus,

@@ -44,6 +44,18 @@ export interface KnowledgeChunkDeleteResponse {
   deleted: number;
 }
 
+/**
+ * Which corpus a chunk-index call is about. Resolves on ally-ai's side to that corpus's
+ * OWN Weaviate collection, so it is not a filter that could be forgotten — omitting it
+ * reads the WhatsApp collection, which holds only WhatsApp material, and the failure is
+ * an empty result rather than another corpus's passages.
+ *
+ * Declared as a union here rather than imported from `src/knowledge-base`: `src/ai` is a
+ * transport layer and must not depend on a domain module. The values are
+ * `KbCorpus`'s, which is assignable to this, so the compiler still couples them.
+ */
+export type KnowledgeCorpus = 'whatsapp_qa' | 'character_library';
+
 export interface KnowledgeChunkSearchRequest {
   query: string;
   limit?: number;

@@ -2,7 +2,10 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Brackets, In, Repository } from 'typeorm';
 import { CreateKbDocumentDto } from 'src/knowledge-base/dto/knowledge-base.dto';
-import { KbDocumentSourceType } from 'src/knowledge-base/enum/knowledge-base.enum';
+import {
+  KbCorpus,
+  KbDocumentSourceType,
+} from 'src/knowledge-base/enum/knowledge-base.enum';
 import { KnowledgeBaseService } from 'src/knowledge-base/service/knowledge-base.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
@@ -479,6 +482,11 @@ export class WhatsAppConversationService {
     );
 
     const { documents, count } = await this.knowledgeBaseService.list({
+      // This report is about the bot's own answers, so it counts the bot's own
+      // corpus. Other corpora are indexed in the same tables and would show up
+      // here as documents with zero citations, reading as unused material when
+      // they were simply never in scope.
+      corpus: KbCorpus.WHATSAPP_QA,
       limit: COVERAGE_DOCUMENT_LIMIT,
       includeArchived: true,
     });

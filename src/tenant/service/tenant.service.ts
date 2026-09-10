@@ -234,6 +234,9 @@ export class TenantService {
       enableAudioUpload: dto.enableAudioUpload,
       // dto.enableDictationMode is intentionally not forwarded — retired.
       hideRankInCommunity: dto.hideRankInCommunity,
+      // engagementReminderEnabled is deliberately NOT self-service — it's
+      // admin-console-only (SUPER_DUPER_ADMIN via PATCH :id), not something a
+      // tenant ADMIN can flip on their own org.
     };
     return this.updateTenant(tenantId, settingsOnly);
   }
@@ -277,6 +280,8 @@ export class TenantService {
       ...tenant,
       enabledDashboardIds: dashboardIdsList[0]?.dashboardIds ?? [],
       hideRankInCommunity: tenant.settings?.hideRankInCommunity ?? false,
+      engagementReminderEnabled:
+        tenant.settings?.engagementReminder?.remindersEnabled ?? false,
       enableAudioUpload: !hiddenChatTypes.includes(ChatTypes.AUDIO_UPLOAD),
       enableMicrophoneMode: !hiddenChatTypes.includes(
         ChatTypes.MICROPHONE_CHAT,
@@ -374,6 +379,8 @@ export class TenantService {
         userCount: userCountMap.get(tenant.id) || 0,
         enabledDashboardIds,
         hideRankInCommunity: tenant.settings?.hideRankInCommunity ?? false,
+        engagementReminderEnabled:
+          tenant.settings?.engagementReminder?.remindersEnabled ?? false,
         enableAudioUpload: !hiddenChatTypes.includes(ChatTypes.AUDIO_UPLOAD),
         enableMicrophoneMode: !hiddenChatTypes.includes(
           ChatTypes.MICROPHONE_CHAT,
@@ -452,6 +459,7 @@ export class TenantService {
       enableMicrophoneMode,
       enableAudioUpload,
       hideRankInCommunity,
+      engagementReminderEnabled,
       ...tenantUpdateData
     } = updateTenantDto;
 
@@ -466,14 +474,27 @@ export class TenantService {
       );
     }
 
-    // Handle hideRankInCommunity - merge into current settings if true
+    // Settings-blob fields merge into the existing JSON rather than replacing
+    // it — see updateSettings() (PUT :id/settings) for the raw, full-replace
+    // sibling of this method, which callers must merge into themselves.
     let settingsUpdate: Record<string, any> | undefined;
-    if (hideRankInCommunity !== undefined) {
+    if (
+      hideRankInCommunity !== undefined ||
+      engagementReminderEnabled !== undefined
+    ) {
       const currentSettings = tenant.settings ?? {};
-      settingsUpdate = {
-        ...currentSettings,
-        hideRankInCommunity: hideRankInCommunity,
-      };
+      settingsUpdate = { ...currentSettings };
+      if (hideRankInCommunity !== undefined) {
+        settingsUpdate.hideRankInCommunity = hideRankInCommunity;
+      }
+      if (engagementReminderEnabled !== undefined) {
+        // Nested, matching what EngagementReminderEvaluatorService reads via
+        // settings->'engagementReminder'->>'remindersEnabled'.
+        settingsUpdate.engagementReminder = {
+          ...currentSettings.engagementReminder,
+          remindersEnabled: engagementReminderEnabled,
+        };
+      }
     }
 
     const updatedTenantData = {

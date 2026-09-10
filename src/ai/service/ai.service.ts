@@ -31,6 +31,7 @@ import {
   KnowledgeChunkBulkUpsertResponse,
   KnowledgeChunkDeleteResponse,
   KnowledgeChunkSearchRequest,
+  KnowledgeCorpus,
   KnowledgeChunkSearchResponse,
 } from '../dto/knowledge.dto';
 import {
@@ -80,6 +81,18 @@ import {
 } from '../dto/ai.response.dto';
 import { ScribeSessionMode } from 'src/common/constants/chat.constants';
 import { WorkerType } from 'src/user/enum/user.enum';
+
+/**
+ * Append the corpus to a chunk-index endpoint.
+ *
+ * A query parameter rather than a body field so it reads the same on the POSTs and on the
+ * DELETE, which has no body at all — one shape for every route means there is no route where
+ * passing it is awkward and therefore tempting to skip.
+ */
+function withCorpus(endpoint: string, corpus: KnowledgeCorpus): string {
+  const separator = endpoint.includes('?') ? '&' : '?';
+  return `${endpoint}${separator}corpus=${encodeURIComponent(corpus)}`;
+}
 
 @Injectable()
 export class AiService {
@@ -307,7 +320,15 @@ export class AiService {
   }
 
   // ── WhatsApp Q&A knowledge corpus ──────────────────────────────────────────
-  // ally-ai owns the `KnowledgeChunk` collection; ally-be's Postgres is the system of record.
+  // ally-ai owns the chunk collections; ally-be's Postgres is the system of record.
+  //
+  // Every one of these takes a `corpus`, which ally-ai resolves to that corpus's own Weaviate
+  // collection — one per corpus, not one collection with a scope argument. That is what makes the
+  // boundary structural: there is no filter to leave unset, so a character-library document can
+  // never be retrieved by the WhatsApp bot. See ally-ai migration 005 for why (a similarity
+  // threshold only means something against one chunk-size distribution; filtered ANN search is
+  // weaker than unfiltered; and re-chunking one corpus must not touch the other's live index).
+  //
   // Every call here passes an EXPLICIT timeout for the same reason as the roadmap block above:
   // makeRequest defaults to 5 minutes, which is far longer than any of these paths can afford.
 
@@ -321,12 +342,15 @@ export class AiService {
    * Returns per-chunk succeeded/failed — never throws for a per-item problem — so the caller can
    * advance indexedChunkCount and retry only what actually failed.
    */
-  async bulkUpsertKnowledgeChunks(request: KnowledgeChunkBulkUpsertRequest) {
+  async bulkUpsertKnowledgeChunks(
+    request: KnowledgeChunkBulkUpsertRequest,
+    corpus: KnowledgeCorpus,
+  ) {
     return this.makeRequest<
       KnowledgeChunkBulkUpsertResponse,
       KnowledgeChunkBulkUpsertRequest
     >(
-      ENDPOINTS.KNOWLEDGE_CHUNK_BULK_UPSERT,
+      withCorpus(ENDPOINTS.KNOWLEDGE_CHUNK_BULK_UPSERT, corpus),
       request,
       true,
       'post',
@@ -342,9 +366,15 @@ export class AiService {
    * Skipping it leaves the previous generation retrievable, which after an edit means the bot can
    * answer with — and cite — text the document no longer contains.
    */
-  async deleteKnowledgeChunksByDocument(documentId: string) {
+  async deleteKnowledgeChunksByDocument(
+    documentId: string,
+    corpus: KnowledgeCorpus,
+  ) {
     return this.makeRequest<KnowledgeChunkDeleteResponse, undefined>(
-      `${ENDPOINTS.KNOWLEDGE_CHUNK_DELETE_BY_DOCUMENT}/${documentId}`,
+      withCorpus(
+        `${ENDPOINTS.KNOWLEDGE_CHUNK_DELETE_BY_DOCUMENT}/${documentId}`,
+        corpus,
+      ),
       undefined,
       true,
       'delete',
@@ -355,12 +385,15 @@ export class AiService {
   }
 
   /** Retrieval only, no LLM. Backs the admin retrieval console. */
-  async searchKnowledgeChunks(request: KnowledgeChunkSearchRequest) {
+  async searchKnowledgeChunks(
+    request: KnowledgeChunkSearchRequest,
+    corpus: KnowledgeCorpus,
+  ) {
     return this.makeRequest<
       KnowledgeChunkSearchResponse,
       KnowledgeChunkSearchRequest
     >(
-      ENDPOINTS.KNOWLEDGE_CHUNK_SEARCH,
+      withCorpus(ENDPOINTS.KNOWLEDGE_CHUNK_SEARCH, corpus),
       request,
       true,
       'post',

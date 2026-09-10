@@ -35,11 +35,18 @@ export const ENDPOINTS = {
   ROADMAP_OPPORTUNITY_BULK_UPSERT: 'api/v1/roadmap-opportunities/bulk-upsert',
   ROADMAP_OPPORTUNITY_IDS: 'api/v1/roadmap-opportunities/ids',
 
-  // ── WhatsApp Q&A knowledge corpus ─────────────────────────────────────────
+  // ── Knowledge corpora (WhatsApp Q&A, character library) ───────────────────
   // Same ownership rule as the roadmap collection above: ally-ai owns the `KnowledgeChunk`
   // Weaviate collection, ally-be's Postgres (kb_documents + kb_document_chunks) stays the
   // system of record, and the vector store is a DERIVED index. The Weaviate object uuid IS
   // the kb_document_chunks.id, which is what lets a citation resolve back to an exact passage.
+  //
+  // ONE COLLECTION PER CORPUS, not one collection with a scope argument: every call below takes
+  // a `corpus` that ally-ai resolves to its own Weaviate collection. So the boundary is
+  // structural — there is no filter to leave unset, and the WhatsApp bot cannot retrieve a
+  // character-library passage even if a caller forgets everything. `document_ids` still exists
+  // on the search call, but it scopes WITHIN a corpus (the curator's topic boost), which is a
+  // ranking concern rather than a correctness one.
   KNOWLEDGE_CHUNK_BULK_UPSERT: 'api/v1/knowledge-chunks/bulk-upsert',
   KNOWLEDGE_CHUNK_SEARCH: 'api/v1/knowledge-chunks/search',
   KNOWLEDGE_CHUNK_DELETE_BY_DOCUMENT: 'api/v1/knowledge-chunks/document',
