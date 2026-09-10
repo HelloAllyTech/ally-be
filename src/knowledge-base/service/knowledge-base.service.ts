@@ -843,6 +843,20 @@ export class KnowledgeBaseService {
         query,
         limit,
         min_similarity: minSimilarity,
+        // The character library is Ally-global by construction — craft guidance and
+        // observational material, curated once for every tenant's characters — so its
+        // retrieval asks for global documents ONLY.
+        //
+        // Stated rather than left to the default, because the default is not wrong so much as
+        // out of date. `audience` is optional on this request and ally-ai treats an omission as
+        // unrestricted, which was exactly right while the only caller was an admin tuning
+        // console. This path now has a second caller — the interview agent's search_corpus —
+        // and an agent inheriting "unrestricted" would retrieve a tenant-targeted document for
+        // an interview it has nothing to do with. The WhatsApp corpus keeps the console
+        // default, which is its own feature's decision to make.
+        ...(corpus === KbCorpus.CHARACTER_LIBRARY
+          ? { audience: { tenant_id: null, include_global: true } }
+          : {}),
         // Scopes WITHIN the corpus — the corpus itself is the collection. This is the
         // curator's topic boost: the mapped documents on the first pass, the rest on the
         // second.
