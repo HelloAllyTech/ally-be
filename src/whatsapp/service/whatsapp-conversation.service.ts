@@ -329,6 +329,14 @@ export class WhatsAppConversationService {
         phoneE164: `${ERASED_PHONE_PREFIX}${contactId}`,
         phoneLast4: '0000',
         locale: null,
+        // The organisation link goes with the number. It names a specific worker at a specific
+        // customer next to their message history, which is exactly the identifiable data erasure
+        // exists to remove — keeping it would leave the row re-identifiable from the user record.
+        // A later message from the same number re-resolves it onto a fresh contact row.
+        userId: null,
+        tenantId: null,
+        identifiedAt: null,
+        identitySource: null,
       },
     );
 

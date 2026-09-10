@@ -90,6 +90,12 @@ export class WaAnalyticsRepository extends Repository<WaMessage> {
       template: outcomes[WaHandledBy.TEMPLATE] ?? 0,
       errors: outcomes[WaHandledBy.ERROR] ?? 0,
       rateLimited: outcomes[WaHandledBy.RATE_LIMITED] ?? 0,
+      // Enumerated rather than left to fall out of `outcomes`, because this is the number that
+      // says whether real workers are being locked out: a number that is not on any Ally profile
+      // gets refused, and nothing else on this dashboard would show it. It is deliberately NOT
+      // folded into `declined` — that means the corpus is thin, this means somebody has to add a
+      // phone number to a profile.
+      unidentified: outcomes[WaHandledBy.UNIDENTIFIED] ?? 0,
       // Share of questions that actually reached the corpus, so a period dominated by greetings does
       // not read as a corpus failure.
       declineRate:

@@ -383,19 +383,6 @@ export class KnowledgeBaseService {
     return this.toResponse(updated, tenantIds);
   }
 
-  /** The audience to stamp onto chunks at ingest time. Read by KbIngestService. */
-  async audienceFor(
-    documentId: string,
-    isGlobal: boolean,
-  ): Promise<{ isGlobal: boolean; tenantIds: string[] }> {
-    return {
-      isGlobal,
-      tenantIds: isGlobal
-        ? []
-        : await this.documentTenantRepository.tenantIdsForDocument(documentId),
-    };
-  }
-
   private async findOrFail(id: string): Promise<KbDocument> {
     const document = await this.documentRepository.findOne({ where: { id } });
     if (!document) {
