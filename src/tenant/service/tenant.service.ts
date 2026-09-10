@@ -234,7 +234,9 @@ export class TenantService {
       enableAudioUpload: dto.enableAudioUpload,
       // dto.enableDictationMode is intentionally not forwarded — retired.
       hideRankInCommunity: dto.hideRankInCommunity,
-      engagementReminderEnabled: dto.engagementReminderEnabled,
+      // engagementReminderEnabled is deliberately NOT self-service — it's
+      // admin-console-only (SUPER_DUPER_ADMIN via PATCH :id), not something a
+      // tenant ADMIN can flip on their own org.
     };
     return this.updateTenant(tenantId, settingsOnly);
   }
