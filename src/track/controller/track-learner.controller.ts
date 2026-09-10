@@ -21,6 +21,7 @@ import { TrackQuizService } from '../service/track-quiz.service';
 import { TrackJournalService } from '../service/track-journal.service';
 import { TrackAnnotationService } from '../service/track-annotation.service';
 import { TrackGameService } from '../service/track-game.service';
+import { TrackProgressDashboardService } from '../service/track-progress-dashboard.service';
 import { VideoProgressDto } from '../dto/video-progress.dto';
 import {
   QuizAnswerDto,
@@ -45,6 +46,7 @@ export class TrackLearnerController {
     private readonly trackJournalService: TrackJournalService,
     private readonly trackAnnotationService: TrackAnnotationService,
     private readonly trackGameService: TrackGameService,
+    private readonly trackProgressDashboardService: TrackProgressDashboardService,
   ) {}
 
   @ApiOperation({ summary: 'List tracks available to the learner' })
@@ -75,6 +77,18 @@ export class TrackLearnerController {
       trackId,
       languageCode,
     );
+  }
+
+  @ApiOperation({
+    summary:
+      'Progress + consolidated feedback dashboard for an enrolled course',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_TRACK])
+  @Get('tracks/:trackId/progress')
+  async getTrackProgressDashboard(
+    @Param('trackId', ParseUUIDPipe) trackId: string,
+  ) {
+    return this.trackProgressDashboardService.getDashboard(trackId);
   }
 
   @ApiOperation({ summary: 'Enroll in a track (idempotent)' })
