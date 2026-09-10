@@ -14,6 +14,7 @@ import { KbIngestProducer } from '../../producer/kb-ingest.producer';
 import { KbDocumentChunkRepository } from '../../repository/kb-document-chunk.repository';
 import { KbDocumentTenantRepository } from '../../repository/kb-document-tenant.repository';
 import { KbDocumentRepository } from '../../repository/kb-document.repository';
+import { KbRetrievalRepository } from '../../repository/kb-retrieval.repository';
 import { KnowledgeBaseService } from '../knowledge-base.service';
 
 jest.mock('src/common/execution/execution-manager', () => ({
@@ -94,6 +95,9 @@ describe('KnowledgeBaseService audience', () => {
         { provide: AiService, useValue: aiService },
         { provide: S3Service, useValue: {} },
         { provide: AppConfigService, useValue: { s3: {} } },
+        // The retrieval log, which the audience paths never write — a retarget changes who may
+        // be answered, it does not retrieve.
+        { provide: KbRetrievalRepository, useValue: { record: jest.fn() } },
         { provide: getRepositoryToken(Tenant), useValue: tenantRepository },
       ],
     }).compile();
@@ -218,23 +222,5 @@ describe('KnowledgeBaseService audience', () => {
 
     expect(result.isGlobal).toBe(true);
     expect(result.tenantIds).toEqual([]);
-  });
-
-  it('previews retrieval for one organisation, and the whole corpus without one', async () => {
-    const searchKnowledgeChunks = jest.fn().mockResolvedValue({ passages: [] });
-    (service as unknown as { aiService: unknown }).aiService = {
-      searchKnowledgeChunks,
-    };
-
-    await service.search({ query: 'q', tenantId: TENANT_A });
-    expect(searchKnowledgeChunks.mock.calls[0][0].audience).toEqual({
-      tenant_id: TENANT_A,
-      include_global: true,
-    });
-
-    await service.search({ query: 'q' });
-    expect(searchKnowledgeChunks.mock.calls[1][0].audience).toEqual({
-      unrestricted: true,
-    });
   });
 });

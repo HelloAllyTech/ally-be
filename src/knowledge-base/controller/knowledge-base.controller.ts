@@ -26,6 +26,7 @@ import {
   GetKbChunksResponseDto,
   GetKbDocumentsQueryDto,
   GetKbDocumentsResponseDto,
+  GetKbStatsQueryDto,
   KbDocumentResponseDto,
   KbSearchDto,
   KbStatsResponseDto,
@@ -34,6 +35,8 @@ import {
   UpdateKbDocumentAudienceDto,
   UpdateKbDocumentDto,
 } from '../dto/knowledge-base.dto';
+import { ExecutionManager } from '../../common/execution/execution-manager';
+import { KbRetrievalConsumer } from '../enum/knowledge-base.enum';
 import { KnowledgeBaseService } from '../service/knowledge-base.service';
 
 /**
@@ -104,8 +107,8 @@ export class KnowledgeBaseController {
   })
   @ApiOperation({ summary: 'Corpus totals by status, for the stats strip' })
   @ApiResponse({ status: 200, type: KbStatsResponseDto })
-  stats(): Promise<KbStatsResponseDto> {
-    return this.knowledgeBaseService.stats();
+  stats(@Query() dto: GetKbStatsQueryDto): Promise<KbStatsResponseDto> {
+    return this.knowledgeBaseService.stats(dto);
   }
 
   @Post('search')
@@ -119,7 +122,14 @@ export class KnowledgeBaseController {
       'without spending generation tokens or being confounded by the prompt.',
   })
   search(@Body() dto: KbSearchDto) {
-    return this.knowledgeBaseService.search(dto);
+    // Tagged ADMIN_PREVIEW explicitly rather than by default. An operator probing thresholds
+    // here generates deliberately strange, repeated queries against material they just
+    // uploaded; filed as agent traffic it would move the very distribution the probing is
+    // meant to read. See KbRetrievalConsumer.
+    return this.knowledgeBaseService.search(dto, {
+      consumer: KbRetrievalConsumer.ADMIN_PREVIEW,
+      userId: Number(ExecutionManager.getUserId() ?? 0) || null,
+    });
   }
 
   // ORDER MATTERS: 'chunks/:chunkId' must stay above 'documents/:id' patterns that could also

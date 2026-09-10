@@ -23,8 +23,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * that was previously removed inserts a fresh row rather than colliding with the
  * soft-deleted one — the same reason the cohort tables index that way.
  */
-export class AddKbDocumentAudience1966000000000 implements MigrationInterface {
-  name = 'AddKbDocumentAudience1966000000000';
+export class AddKbDocumentAudience1969000000000 implements MigrationInterface {
+  name = 'AddKbDocumentAudience1969000000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

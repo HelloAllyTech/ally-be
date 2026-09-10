@@ -40,6 +40,7 @@ describe('TenantController', () => {
     ...mockTenant,
     enabledDashboardIds: [],
     hideRankInCommunity: false,
+    engagementReminderEnabled: false,
     enableAudioUpload: true,
     enableMicrophoneMode: true,
     enableDictationMode: true,
@@ -50,6 +51,7 @@ describe('TenantController', () => {
     userCount: 5,
     enabledDashboardIds: [],
     hideRankInCommunity: false,
+    engagementReminderEnabled: false,
     enableAudioUpload: true,
     enableMicrophoneMode: true,
     enableDictationMode: true,
@@ -60,6 +62,7 @@ describe('TenantController', () => {
     userCount: 5,
     enabledDashboardIds: [],
     hideRankInCommunity: false,
+    engagementReminderEnabled: false,
     enableAudioUpload: true,
     enableMicrophoneMode: true,
   };

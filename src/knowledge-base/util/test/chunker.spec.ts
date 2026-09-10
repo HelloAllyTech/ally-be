@@ -1,7 +1,9 @@
 import {
   KB_CHUNK_MAX_TOKENS,
+  KB_CHUNK_PROFILES,
   KB_CHUNK_TARGET_TOKENS,
 } from '../../constants/knowledge-base.constants';
+import { KbCorpus } from '../../enum/knowledge-base.enum';
 import { ExtractedDocument } from '../../extractor/extracted-document.type';
 import { chunkDocument, countTokens } from '../chunker';
 
@@ -300,5 +302,76 @@ describe('chunkDocument', () => {
       expect(countTokens(longProse(1))).toBeGreaterThan(20);
       expect(countTokens(longProse(1))).toBeLessThan(KB_CHUNK_TARGET_TOKENS);
     });
+  });
+});
+
+describe('per-corpus chunk profiles', () => {
+  /**
+   * Sizing differs because what reads the passage differs: a 1600-character WhatsApp reply
+   * grounds on one clinical idea, while a drafted character needs a whole observation held
+   * together. The splitting hierarchy is deliberately NOT parameterised — a passage that
+   * respects headings and sentences is right for both.
+   */
+  const character = KB_CHUNK_PROFILES[KbCorpus.CHARACTER_LIBRARY];
+  const whatsapp = KB_CHUNK_PROFILES[KbCorpus.WHATSAPP_QA];
+
+  it('defaults to the WhatsApp profile when no profile is given', () => {
+    const text = longProse(30);
+    expect(chunkDocument(doc({ text }))).toEqual(
+      chunkDocument(doc({ text }), whatsapp),
+    );
+  });
+
+  it('produces fewer, larger chunks for the character library', () => {
+    const text = longProse(40);
+    const qa = chunkDocument(doc({ text }), whatsapp);
+    const library = chunkDocument(doc({ text }), character);
+
+    expect(library.length).toBeLessThan(qa.length);
+    const largest = Math.max(...library.map((c) => c.tokenCount));
+    expect(largest).toBeGreaterThan(whatsapp.targetTokens);
+    expect(largest).toBeLessThanOrEqual(character.maxTokens);
+  });
+
+  it('keeps every invariant under the larger profile', () => {
+    const text = longProse(40);
+    const chunks = chunkDocument(doc({ text }), character);
+
+    expect(chunks.length).toBeGreaterThan(1);
+    chunks.forEach((chunk, i) => {
+      // Offsets still name the exact characters the text came from — the whole citation
+      // chain rests on this, and a changed profile must not quietly break it.
+      expect(text.slice(chunk.charStart, chunk.charEnd)).toBe(chunk.text);
+      expect(chunk.chunkIndex).toBe(i);
+      expect(chunk.charEnd).toBeGreaterThan(chunk.charStart);
+    });
+  });
+
+  it('still respects section boundaries under the larger profile', () => {
+    const first = longProse(2);
+    const text = `Identity\n\n${first}\n\nSpeech\n\n${longProse(2)}`;
+    const chunks = chunkDocument(
+      doc({
+        text,
+        sections: [
+          { path: 'Identity', start: 0, end: text.indexOf('Speech') },
+          { path: 'Speech', start: text.indexOf('Speech'), end: text.length },
+        ],
+      }),
+      character,
+    );
+
+    expect(chunks.length).toBeGreaterThan(1);
+    expect(new Set(chunks.map((c) => c.sectionPath))).toEqual(
+      new Set(['Identity', 'Speech']),
+    );
+  });
+
+  it('overlaps neighbours in every profile, so a straddling thought survives', () => {
+    const chunks = chunkDocument(doc({ text: longProse(40) }), character);
+    expect(chunks.length).toBeGreaterThan(1);
+    // Adjacent chunks share characters — which is exactly why retrieval has to drop
+    // span-overlapping neighbours (see util/retrieval.ts).
+    expect(chunks[1].charStart).toBeLessThan(chunks[0].charEnd);
   });
 });

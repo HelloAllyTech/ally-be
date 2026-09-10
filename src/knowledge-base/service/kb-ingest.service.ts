@@ -5,12 +5,14 @@ import { KnowledgeChunkItemRequest } from 'src/ai/dto/knowledge.dto';
 import { S3Service } from 'src/aws/service/s3.service';
 import { LoggerService } from 'src/logger/logger.service';
 import {
+  KB_CHUNK_PROFILES,
   KB_INDEX_BATCH_SIZE,
   KB_MAX_CHUNKS_PER_DOCUMENT,
 } from '../constants/knowledge-base.constants';
 import { KbDocument } from '../entity/kb-document.entity';
 import {
   KbChunkUploadStatus,
+  KbCorpus,
   KbDocumentSourceType,
   KbDocumentStatus,
 } from '../enum/knowledge-base.enum';
@@ -165,7 +167,9 @@ export class KbIngestService {
       { status: KbDocumentStatus.CHUNKING },
     );
 
-    const chunks = chunkDocument(extracted);
+    // Sized by the corpus, not by the document: how big a passage should be is a property of
+    // what will read it. `corpus` is immutable, so a document's chunks are stable.
+    const chunks = chunkDocument(extracted, KB_CHUNK_PROFILES[document.corpus]);
 
     if (!chunks.length) {
       throw new Error(
@@ -205,7 +209,7 @@ export class KbIngestService {
     // retrievable. The alternative — write new, then delete old — has a window where BOTH
     // generations are retrievable, and a duplicated passage produces a confidently wrong citation
     // to text the document no longer contains. A missing passage merely produces an honest decline.
-    await this.deleteVectors(document.id);
+    await this.deleteVectors(document.id, document.corpus);
 
     const indexed = await this.indexChunks(document, rows, chunkVersion);
 
@@ -262,9 +266,12 @@ export class KbIngestService {
     return saved;
   }
 
-  private async deleteVectors(documentId: string): Promise<void> {
+  private async deleteVectors(
+    documentId: string,
+    corpus: KbCorpus,
+  ): Promise<void> {
     try {
-      await this.aiService.deleteKnowledgeChunksByDocument(documentId);
+      await this.aiService.deleteKnowledgeChunksByDocument(documentId, corpus);
     } catch (error) {
       // Surfaced, not swallowed: proceeding to write the new generation while the old one may
       // still be live is exactly the double-retrieval case the ordering above exists to avoid.
@@ -314,9 +321,10 @@ export class KbIngestService {
       }));
 
       try {
-        const response = await this.aiService.bulkUpsertKnowledgeChunks({
-          items,
-        });
+        const response = await this.aiService.bulkUpsertKnowledgeChunks(
+          { items },
+          document.corpus,
+        );
         await this.chunkRepository.markIndexed(
           response.succeeded.map((s) => s.chunk_id),
         );

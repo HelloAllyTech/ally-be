@@ -635,8 +635,11 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     runtime: LlmRuntime.ALLY_AI,
     trigger: 'Anything is embedded for semantic search',
     detail:
-      'Knowledge chunks and roadmap opportunities. 1536 dimensions — Weaviate never ' +
-      'vectorises for itself, so this model and that schema are coupled.',
+      'Both knowledge corpora (WhatsApp Q&A and the character library, one Weaviate ' +
+      'collection each) plus roadmap opportunities — every corpus embeds with THIS model, ' +
+      'because a query vector from another model lands in a different space and makes every ' +
+      'similarity number meaningless rather than merely worse. 1536 dimensions; Weaviate ' +
+      'never vectorises for itself, so this model and those schemas are coupled.',
     kind: AiTaskKind.EMBEDDING,
     provider: 'openai',
     defaultModel: 'text-embedding-3-small',

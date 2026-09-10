@@ -19,6 +19,8 @@ import {
   KB_MAX_PASTE_CHARS,
 } from '../constants/knowledge-base.constants';
 import {
+  KbCharacterTopic,
+  KbCorpus,
   KbDocumentSourceType,
   KbDocumentStatus,
 } from '../enum/knowledge-base.enum';
@@ -60,6 +62,37 @@ export class KbUploadUrlResponseDto {
 }
 
 export class CreateKbDocumentDto {
+  @ApiPropertyOptional({
+    enum: KbCorpus,
+    default: KbCorpus.WHATSAPP_QA,
+    description:
+      'Which corpus this document belongs to. Immutable once set: moving a ' +
+      'document between corpora would change what every citation recorded over ' +
+      'it meant, and its chunks are sized for the corpus it was ingested into.\n\n' +
+      'Defaulted rather than required, and the reason is a deploy window, not ' +
+      'convenience: the shipped admin dashboard does not send this field, and ' +
+      'ally-be deploys before ally-web — so requiring it would 400 every upload ' +
+      'in the WhatsApp Corpus tab until the dashboard caught up. Safe to default ' +
+      'because each corpus has its OWN Weaviate collection, so an omitted value ' +
+      'files a document under the WhatsApp corpus (visible, wrong, fixable) ' +
+      "rather than leaking it into another corpus's retrieval.",
+  })
+  @IsOptional()
+  @IsEnum(KbCorpus)
+  corpus: KbCorpus = KbCorpus.WHATSAPP_QA;
+
+  @ApiPropertyOptional({
+    enum: KbCharacterTopic,
+    isArray: true,
+    description:
+      'Which parts of a character this grounds. A ranking hint, not a restriction; ' +
+      'empty is the default and a fine answer. Character library only.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(KbCharacterTopic, { each: true })
+  characterTopics?: KbCharacterTopic[];
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -168,6 +201,21 @@ export class UpdateKbDocumentDto {
   @IsString()
   @MaxLength(16)
   language?: string;
+
+  @ApiPropertyOptional({
+    enum: KbCharacterTopic,
+    isArray: true,
+    description:
+      'Which parts of a character this document helps ground. Editable after upload, ' +
+      'and cheap to change: it is a RANKING hint read at query time, so it never ' +
+      'invalidates a chunk or triggers a re-index — unlike the content, and unlike ' +
+      '`corpus`, which is immutable. An empty array clears the hint, which is a ' +
+      'legitimate choice rather than a missing value.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(KbCharacterTopic, { each: true })
+  characterTopics?: KbCharacterTopic[];
 }
 
 export class ReplaceKbDocumentContentDto {
@@ -183,6 +231,19 @@ export class ReplaceKbDocumentContentDto {
 }
 
 export class GetKbDocumentsQueryDto {
+  @ApiPropertyOptional({
+    enum: KbCorpus,
+    default: KbCorpus.WHATSAPP_QA,
+    description:
+      'Which corpus to list. Every corpus screen shows exactly one.\n\n' +
+      'Defaulted for the deploy window — see CreateKbDocumentDto.corpus. The ' +
+      'failure mode of an omitted value is a screen showing the WhatsApp corpus, ' +
+      'which is obvious to whoever is looking at it.',
+  })
+  @IsOptional()
+  @IsEnum(KbCorpus)
+  corpus: KbCorpus = KbCorpus.WHATSAPP_QA;
+
   @ApiPropertyOptional({ default: 25 })
   @IsOptional()
   @Type(() => Number)
@@ -258,6 +319,9 @@ export class GetKbDocumentsQueryDto {
 
 export class KbDocumentResponseDto {
   @ApiProperty() id!: string;
+  @ApiProperty({ enum: KbCorpus }) corpus!: KbCorpus;
+  @ApiProperty({ enum: KbCharacterTopic, isArray: true })
+  characterTopics!: KbCharacterTopic[];
   @ApiProperty() title!: string;
   @ApiProperty({ enum: KbDocumentSourceType })
   sourceType!: KbDocumentSourceType;
@@ -319,6 +383,19 @@ export class GetKbChunksResponseDto {
 }
 
 export class KbSearchDto {
+  @ApiPropertyOptional({
+    enum: KbCorpus,
+    default: KbCorpus.WHATSAPP_QA,
+    description:
+      "Which corpus to search. Resolves to that corpus's own Weaviate " +
+      'collection, so there is no "all corpora" search and no filter that could ' +
+      'be left unset — a search can only ever return passages from one corpus.\n\n' +
+      'Defaulted for the deploy window; see CreateKbDocumentDto.corpus.',
+  })
+  @IsOptional()
+  @IsEnum(KbCorpus)
+  corpus: KbCorpus = KbCorpus.WHATSAPP_QA;
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
@@ -343,13 +420,60 @@ export class KbSearchDto {
 
   @ApiPropertyOptional({
     description:
-      'Retrieve as a worker from this organisation would — its documents plus the global ' +
-      'ones. Omitted, this searches the WHOLE corpus regardless of targeting, which is the ' +
-      'right default for a console whose job is to show what is indexed.',
+      'Retrieve as a worker from this organisation would — the documents targeted at it ' +
+      'plus the ones available to everyone. This is WHO is asking, which is a different ' +
+      'scope from `corpus` (WHICH documents exist): a corpus is one of a few fixed sets ' +
+      'and gets its own collection, an organisation is one of hundreds sharing the same ' +
+      'documents and gets a filter.\n\nOmitted, the search ignores targeting entirely — ' +
+      'right for a console whose job is to show what is indexed, and not what any worker ' +
+      'receives.',
   })
   @IsOptional()
   @IsUUID('4')
   tenantId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Narrow to documents carrying ANY of these tags — same overlap semantics as ' +
+      'the corpus list filter. Topical metadata about the material (e.g. "dementia", ' +
+      '"adolescent"), resolved to document ids in Postgres the way `corpus` is.\n\n' +
+      "Deliberately NOT a map of interview question to tag. The interview's " +
+      'phases live in a prompt that changes without a migration, so tags keyed to ' +
+      'them would go quietly stale; and hand-partitioning mostly costs recall, ' +
+      'excluding the passage that was relevant in a way nobody anticipated. ' +
+      'Which tags to ask for is a decision for the caller — a prompt change, not ' +
+      'a schema change.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+
+  @ApiPropertyOptional({
+    enum: KbCharacterTopic,
+    isArray: true,
+    description:
+      'Which parts of a character this query is about. A BOOST, not a filter: documents a ' +
+      'curator mapped to any of these topics are searched first, and the rest of the corpus ' +
+      'tops the result up if that comes back short. Omitting it searches the whole corpus in ' +
+      'one pass, which is what the admin retrieval preview wants.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsEnum(KbCharacterTopic, { each: true })
+  characterTopics?: KbCharacterTopic[];
+}
+
+/**
+ * The stats strip is per corpus for the same reason the list is: totals that silently
+ * summed both corpora told the WhatsApp admin that documents they cannot see are indexed.
+ */
+export class GetKbStatsQueryDto {
+  @ApiPropertyOptional({ enum: KbCorpus, default: KbCorpus.WHATSAPP_QA })
+  @IsOptional()
+  @IsEnum(KbCorpus)
+  corpus: KbCorpus = KbCorpus.WHATSAPP_QA;
 }
 
 export class KbStatsResponseDto {

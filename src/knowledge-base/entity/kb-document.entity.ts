@@ -1,34 +1,68 @@
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import {
+  KbCharacterTopic,
+  KbCorpus,
   KbDocumentSourceType,
   KbDocumentStatus,
 } from '../enum/knowledge-base.enum';
 
 /**
- * One document in the WhatsApp Q&A bot's knowledge corpus, and the system of record for it.
+ * One document in a knowledge corpus, and the system of record for it.
  *
  * ally-ai's KnowledgeChunk collection is a DERIVED index over the chunks of these rows —
  * same ownership rule as reference documents and roadmap opportunities. Postgres is truth;
  * vectors can always be rebuilt from here.
  *
- * NO tenant COLUMN, and that is not the same as no audience. A document is targetable at one,
- * some or all organisations via `isGlobal` plus `kb_document_tenants` — the same two-part shape
- * scenarios, tracks and cases already use — rather than by owning a single tenant, because the
- * corpus is curated centrally and the same clinical guide is usually shared by every customer.
+ * `corpus` is what separates one consumer's material from another's. The WhatsApp Q&A bot
+ * was the first, and this table was named and documented for it; the pipeline itself never
+ * cared. Retrieval resolves ONE corpus's document ids here and passes them to ally-ai as
+ * the query's own `document_ids`, so corpus scope is an argument rather than a filter — see
+ * KbCorpus.
  *
- * This replaced the original decision that a private per-tenant corpus should be a NEW vector
- * collection rather than a filter on the shared one, on the grounds that "retrieval that forgets
- * a filter leaks, and an un-set filter is the easiest thing in the world to forget". A collection
- * per tenant does not survive one document shared by three of them, so that warning is answered
- * structurally instead: ally-ai's retrieval takes a REQUIRED audience argument, and this service
- * refuses to answer a WhatsApp contact whose organisation it could not resolve rather than
- * falling back to something plausible.
+ * NO tenant COLUMN, which is not the same as no audience. Within a corpus, a document is
+ * targetable at one, some or all organisations via `isGlobal` plus `kb_document_tenants` —
+ * the same two-part shape scenarios, tracks and cases already use — rather than by owning a
+ * single tenant, because the material is curated centrally and the same clinical guide is
+ * usually shared by many customers.
+ *
+ * The two scopes are different mechanisms on purpose. A CORPUS is one of a few fixed,
+ * disjoint sets, so it gets its own vector collection and its ids travel as the query's
+ * scope. An ORGANISATION is one of hundreds and a single document belongs to several, so it
+ * gets a filter inside the collection. That is also what retires the older rule here — that
+ * a per-tenant corpus should be a NEW collection rather than a filter, because "retrieval
+ * that forgets a filter leaks, and an un-set filter is the easiest thing in the world to
+ * forget". A collection per tenant does not survive one document shared by three of them,
+ * so the warning is answered structurally instead: ally-ai's retrieval takes a REQUIRED
+ * audience argument, and this platform refuses to answer a WhatsApp contact whose
+ * organisation it could not resolve rather than falling back to something plausible.
  */
 @Entity('kb_documents')
 export class KbDocument extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
+
+  /**
+   * Which consumer's material this is. Immutable in practice: moving a document between
+   * corpora would change what every recorded citation over it meant.
+   */
+  @Index('idx_kb_documents_corpus')
+  @Column({ type: 'varchar', length: 32, default: KbCorpus.WHATSAPP_QA })
+  corpus!: KbCorpus;
+
+  /**
+   * Which parts of a character this document helps ground — a curator's hint that
+   * BOOSTS those topics in retrieval rather than restricting to them. Empty means
+   * "no hint", which is a perfectly good answer and the default. Only meaningful
+   * for the character-library corpus.
+   */
+  @Column({
+    name: 'character_topics',
+    type: 'text',
+    array: true,
+    default: () => "'{}'",
+  })
+  characterTopics!: KbCharacterTopic[];
 
   @Index('idx_kb_documents_title')
   @Column({ type: 'text' })
