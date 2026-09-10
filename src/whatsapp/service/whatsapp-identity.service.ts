@@ -6,21 +6,13 @@ import { UserStatus } from 'src/user/constants/user-status.constants';
 import { User } from 'src/user/entity/user.entity';
 import { WaContact } from '../entity/wa-contact.entity';
 import { WaIdentitySource } from '../enum/whatsapp.enum';
-
-/**
- * The shortest number of digits two numbers must share before they are considered the same person.
- *
- * TEN, because that is the length of a national mobile number in India and most of the region
- * Ally operates in, and because a profile stores a number in whatever shape its owner typed it:
- * `+91 98765 43210`, `919876543210` and `9876543210` are all the same phone and all appear in
- * real data. Comparing the last ten digits is what makes those three match.
- *
- * It is a deliberate floor rather than a maximum. Fewer digits would start matching different
- * people — an eight-digit suffix collides across a large user base — and requiring the full
- * string would mean only numbers typed in exactly the WhatsApp shape ever resolve, which in
- * practice would be almost none of them.
- */
-const PHONE_MATCH_DIGITS = 10;
+import {
+  PHONE_MATCH_DIGITS,
+  isSamePhone,
+  phoneDigits,
+  phoneKey,
+} from '../util/phone';
+import { WhatsAppPhoneMappingService } from './whatsapp-phone-mapping.service';
 
 /** Every match candidate is checked in JS as well, and this many is already an ambiguity. */
 const MAX_CANDIDATES = 5;
@@ -55,12 +47,8 @@ export class WhatsAppIdentityService {
     private readonly userRepository: Repository<User>,
     @InjectRepository(WaContact)
     private readonly contactRepository: Repository<WaContact>,
+    private readonly mappingService: WhatsAppPhoneMappingService,
   ) {}
-
-  /** Digits only. Both sides of every comparison go through this. */
-  static digits(value: string): string {
-    return (value ?? '').replace(/\D/g, '');
-  }
 
   /**
    * Resolve a number to a user and organisation, or null.
@@ -77,10 +65,9 @@ export class WhatsAppIdentityService {
    * not on any user-facing critical path.
    */
   async resolveByPhone(phoneE164: string): Promise<ResolvedIdentity | null> {
-    const digits = WhatsAppIdentityService.digits(phoneE164);
-    if (digits.length < PHONE_MATCH_DIGITS) return null;
-
-    const suffix = digits.slice(-PHONE_MATCH_DIGITS);
+    const digits = phoneDigits(phoneE164);
+    const suffix = phoneKey(digits);
+    if (!suffix) return null;
 
     const candidates = await this.userRepository
       .createQueryBuilder('user')
@@ -95,13 +82,11 @@ export class WhatsAppIdentityService {
       .limit(MAX_CANDIDATES)
       .getMany();
 
-    const matches = candidates.filter((user) => {
-      const stored = WhatsAppIdentityService.digits(user.phone ?? '');
-      if (stored.length < PHONE_MATCH_DIGITS) return false;
-      // One must be a tail of the other: '919876543210' vs '9876543210' is the same phone,
-      // '449876543210' vs '919876543210' is not, even though both end in the same ten digits.
-      return stored.endsWith(digits) || digits.endsWith(stored);
-    });
+    // SQL matched on the key; `isSamePhone` is the check that then rejects the near-miss —
+    // '449876543210' is not '919876543210' even though both end in the same ten digits.
+    const matches = candidates.filter((user) =>
+      isSamePhone(user.phone, digits),
+    );
 
     if (matches.length !== 1) {
       if (matches.length > 1) {
@@ -126,19 +111,28 @@ export class WhatsAppIdentityService {
   /**
    * Resolve and persist, returning the contact as it now stands.
    *
-   * Runs on EVERY inbound message rather than only on first contact, so a number added to a
-   * profile after someone first messaged starts working on their next question instead of
-   * needing a support ticket. The write only happens when something actually changed, so an
-   * already-linked contact costs one read.
+   * TWO SOURCES, IN THIS ORDER. An admin's mapping (`wa_phone_mappings`) is checked first and a
+   * `users.phone` match second, because the first is a deliberate statement made for this
+   * purpose while the second is incidental — a profile field that may hold an old handset, or a
+   * personal number on a work account. Where they disagree the mapping wins, and the
+   * disagreement is shown in the mapping table rather than resolved out of sight.
    *
-   * An ADMIN link is never overwritten. Someone linked that contact by hand knowing the number
-   * does not match, and letting the automatic path undo it on the next message would make the
-   * manual route pointless.
+   * Runs on EVERY inbound message rather than only on first contact, so a number mapped (or
+   * added to a profile) after someone first messaged starts working on their next question
+   * instead of needing a support ticket. The write only happens when something actually
+   * changed, so an already-linked contact costs two cheap reads.
    */
   async identify(contact: WaContact): Promise<WaContact> {
-    if (contact.identitySource === WaIdentitySource.ADMIN) return contact;
-
-    const resolved = await this.resolveByPhone(contact.phoneE164);
+    const mapped = await this.mappingService.resolve(contact.phoneE164);
+    // The mapping's own `userId` is a snapshot for attribution and may be null — a mapped
+    // number often belongs to someone with no Ally account at all, which is the case mappings
+    // exist for. The organisation is what matters and it comes from the mapping.
+    const resolved = mapped
+      ? { userId: mapped.userId ?? null, tenantId: mapped.tenantId }
+      : await this.resolveByPhone(contact.phoneE164);
+    const nextSource = mapped
+      ? WaIdentitySource.MAPPING
+      : WaIdentitySource.PHONE;
 
     const nextUserId = resolved?.userId ?? null;
     const nextTenantId = resolved?.tenantId ?? null;
@@ -152,10 +146,14 @@ export class WhatsAppIdentityService {
     if (
       currentUserId === nextUserId &&
       currentTenantId === nextTenantId &&
+      // Compared too, so a number that used to resolve through a profile and is now covered by
+      // an explicit mapping has that recorded — the ids can be identical while WHY they are set
+      // has changed, and that is the difference between "we derived this" and "someone said so".
+      (nextTenantId === null || contact.identitySource === nextSource) &&
       // A contact that has never been resolved has a null identifiedAt even when both ids
       // already match (both null), so the no-change path below must not treat "still
       // unrecognised" as needing a write.
-      (nextUserId === null || contact.identifiedAt != null)
+      (nextTenantId === null || contact.identifiedAt != null)
     ) {
       return contact;
     }
@@ -166,19 +164,20 @@ export class WhatsAppIdentityService {
         userId: nextUserId,
         tenantId: nextTenantId,
         identifiedAt: resolved ? new Date() : null,
-        identitySource: resolved ? WaIdentitySource.PHONE : null,
+        identitySource: resolved ? nextSource : null,
       },
     );
 
     if (resolved) {
       this.logger.info(
-        `WhatsApp contact ending ${contact.phoneLast4} linked to user ` +
-          `${resolved.userId} (organisation ${resolved.tenantId})`,
+        `WhatsApp contact ending ${contact.phoneLast4} linked to organisation ` +
+          `${resolved.tenantId} via ${nextSource}` +
+          (resolved.userId ? ` (user ${resolved.userId})` : ''),
       );
-    } else if (currentUserId) {
-      // A link that USED to resolve and now does not — someone cleared the number off the
-      // profile, or the account was suspended. Worth a line, because from the worker's side the
-      // bot simply stops recognising them.
+    } else if (currentTenantId) {
+      // A link that USED to resolve and now does not — a mapping was removed, the number was
+      // cleared off the profile, or the account was suspended. Worth a line, because from the
+      // worker's side the bot simply stops recognising them.
       this.logger.warn(
         `WhatsApp contact ending ${contact.phoneLast4} no longer resolves to an active user; ` +
           `its organisation link has been cleared`,
@@ -190,7 +189,7 @@ export class WhatsAppIdentityService {
       userId: nextUserId,
       tenantId: nextTenantId,
       identifiedAt: resolved ? new Date() : null,
-      identitySource: resolved ? WaIdentitySource.PHONE : null,
+      identitySource: resolved ? nextSource : null,
     } as WaContact;
   }
 }

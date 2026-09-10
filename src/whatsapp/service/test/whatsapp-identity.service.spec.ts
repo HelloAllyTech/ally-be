@@ -5,6 +5,7 @@ import { User } from '../../../user/entity/user.entity';
 import { WaContact } from '../../entity/wa-contact.entity';
 import { WaIdentitySource } from '../../enum/whatsapp.enum';
 import { WhatsAppIdentityService } from '../whatsapp-identity.service';
+import { WhatsAppPhoneMappingService } from '../whatsapp-phone-mapping.service';
 
 /**
  * Identity resolution decides which organisation's documents answer a worker's question, so every
@@ -16,6 +17,7 @@ import { WhatsAppIdentityService } from '../whatsapp-identity.service';
 describe('WhatsAppIdentityService', () => {
   let service: WhatsAppIdentityService;
   let contactRepository: { update: jest.Mock };
+  let mappingService: { resolve: jest.Mock };
   let candidates: Partial<User>[];
   let capturedParams: Record<string, unknown>;
 
@@ -31,6 +33,8 @@ describe('WhatsAppIdentityService', () => {
     candidates = [];
     capturedParams = {};
     contactRepository = { update: jest.fn().mockResolvedValue(undefined) };
+    // No mapping by default: most tests here are about the profile-match path.
+    mappingService = { resolve: jest.fn().mockResolvedValue(null) };
 
     const queryBuilder: Record<string, jest.Mock> = {
       select: jest.fn().mockReturnThis(),
@@ -54,6 +58,7 @@ describe('WhatsAppIdentityService', () => {
           provide: getRepositoryToken(WaContact),
           useValue: contactRepository,
         },
+        { provide: WhatsAppPhoneMappingService, useValue: mappingService },
       ],
     }).compile();
 
@@ -132,21 +137,72 @@ describe('WhatsAppIdentityService', () => {
       );
     });
 
-    it('never overwrites a link an admin made by hand', async () => {
-      // Someone linked this contact knowing the number does not match. Letting the automatic
-      // path undo that on the next message would make the manual route pointless.
+    it('prefers an admin mapping over the profile match', async () => {
+      // The mapping was typed for this purpose; the profile field is incidental and often an
+      // old handset. Where they disagree the deliberate statement wins.
+      mappingService.resolve.mockResolvedValue({
+        tenantId: 'tenant-mapped',
+        userId: null,
+      });
+      candidates = [{ id: 7, tenantId: 'tenant-a', phone: '919876543210' }];
+
+      const result = await service.identify(contact());
+
+      expect(result.tenantId).toBe('tenant-mapped');
+      expect(contactRepository.update).toHaveBeenCalledWith(
+        { id: 'contact-1' },
+        expect.objectContaining({
+          tenantId: 'tenant-mapped',
+          identitySource: WaIdentitySource.MAPPING,
+        }),
+      );
+    });
+
+    it('resolves a mapped number that belongs to nobody with an account', async () => {
+      // The case mappings exist for: most people this bot serves never log into Ally, so a
+      // mapping must not need a user to point at.
+      mappingService.resolve.mockResolvedValue({
+        tenantId: 'tenant-mapped',
+        userId: null,
+      });
       candidates = [];
 
-      const result = await service.identify(
+      const result = await service.identify(contact());
+
+      expect(result.tenantId).toBe('tenant-mapped');
+      expect(result.userId).toBeNull();
+    });
+
+    it('records the change when a mapping takes over from a profile match', async () => {
+      // The ids can be identical while WHY they are set has changed, and "someone said so" is
+      // a different fact from "we derived this".
+      mappingService.resolve.mockResolvedValue({
+        tenantId: 'tenant-a',
+        userId: 7,
+      });
+
+      await service.identify(
         contact({
-          userId: 9,
-          tenantId: 'tenant-z',
-          identitySource: WaIdentitySource.ADMIN,
+          userId: 7,
+          tenantId: 'tenant-a',
+          identifiedAt: new Date(),
+          identitySource: WaIdentitySource.PHONE,
         }),
       );
 
-      expect(result.tenantId).toBe('tenant-z');
-      expect(contactRepository.update).not.toHaveBeenCalled();
+      expect(contactRepository.update).toHaveBeenCalledWith(
+        { id: 'contact-1' },
+        expect.objectContaining({ identitySource: WaIdentitySource.MAPPING }),
+      );
+    });
+
+    it('falls back to the profile match when nothing is mapped', async () => {
+      candidates = [{ id: 7, tenantId: 'tenant-a', phone: '919876543210' }];
+
+      const result = await service.identify(contact());
+
+      expect(result.tenantId).toBe('tenant-a');
+      expect(result.identitySource).toBe(WaIdentitySource.PHONE);
     });
 
     it('writes nothing when the link is already correct', async () => {

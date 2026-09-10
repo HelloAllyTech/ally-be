@@ -41,15 +41,17 @@ export enum WaHandledBy {
 /**
  * How a contact came to be linked to an organisation.
  *
- * Recorded because the two have different trust and different failure modes: a PHONE match is
- * automatic and can silently stop matching if someone edits their profile, while an ADMIN link
- * was a deliberate human act and must not be undone by the automatic path.
+ * Recorded because the two have different trust and different failure modes. A MAPPING is a
+ * deliberate human statement, made in the admin console and stored in `wa_phone_mappings`; a
+ * PHONE match is derived from whatever happens to be on somebody's Ally profile, and can stop
+ * matching the moment they edit it. When both exist and disagree, the mapping wins — and the
+ * disagreement is surfaced in the mapping table rather than resolved silently.
  */
 export enum WaIdentitySource {
+  /** An admin mapped this number to an organisation. */
+  MAPPING = 'mapping',
   /** Matched against a user's stored phone number. */
   PHONE = 'phone',
-  /** Linked by hand by an admin. */
-  ADMIN = 'admin',
 }
 
 export enum WaMessageStatus {

@@ -16,11 +16,13 @@ import {
 } from './consumer/whatsapp-inbound.consumer';
 import { WhatsAppAdminController } from './controller/whatsapp-admin.controller';
 import { WhatsAppConversationController } from './controller/whatsapp-conversation.controller';
+import { WhatsAppPhoneMappingController } from './controller/whatsapp-phone-mapping.controller';
 import { WhatsAppWebhookController } from './controller/whatsapp-webhook.controller';
 import { WaContact } from './entity/wa-contact.entity';
 import { WaConversation } from './entity/wa-conversation.entity';
 import { WaKeywordTemplate } from './entity/wa-keyword-template.entity';
 import { WaMessage } from './entity/wa-message.entity';
+import { WaPhoneMapping } from './entity/wa-phone-mapping.entity';
 import { WaUnansweredQuestion } from './entity/wa-unanswered-question.entity';
 import { WhatsAppInboundProducer } from './producer/whatsapp-inbound.producer';
 import { MetaWhatsAppProvider } from './provider/meta-whatsapp.provider';
@@ -28,6 +30,7 @@ import { WaAnalyticsRepository } from './repository/wa-analytics.repository';
 import { WhatsAppAdminService } from './service/whatsapp-admin.service';
 import { WhatsAppConversationService } from './service/whatsapp-conversation.service';
 import { WhatsAppIdentityService } from './service/whatsapp-identity.service';
+import { WhatsAppPhoneMappingService } from './service/whatsapp-phone-mapping.service';
 import { WhatsAppInboundService } from './service/whatsapp-inbound.service';
 import { WhatsAppRateLimitService } from './service/whatsapp-rate-limit.service';
 import { WhatsAppRetentionService } from './service/whatsapp-retention.service';
@@ -56,6 +59,7 @@ import { WHATSAPP_PROVIDER } from './type/whatsapp-provider.interface';
       WaMessage,
       WaKeywordTemplate,
       WaUnansweredQuestion,
+      WaPhoneMapping,
       GlobalSettings,
       // The User and Tenant ENTITIES, not their modules. Identity resolution needs one query
       // over `users.phone` and one name lookup, and importing UserModule for that would pull a
@@ -74,6 +78,7 @@ import { WHATSAPP_PROVIDER } from './type/whatsapp-provider.interface';
     WhatsAppWebhookController,
     WhatsAppAdminController,
     WhatsAppConversationController,
+    WhatsAppPhoneMappingController,
   ],
   providers: [
     GlobalSettingsRepository,
@@ -81,6 +86,7 @@ import { WHATSAPP_PROVIDER } from './type/whatsapp-provider.interface';
     WhatsAppTemplateService,
     WhatsAppRateLimitService,
     WhatsAppIdentityService,
+    WhatsAppPhoneMappingService,
     WhatsAppInboundProducer,
     WhatsAppInboundService,
     WhatsAppAdminService,
