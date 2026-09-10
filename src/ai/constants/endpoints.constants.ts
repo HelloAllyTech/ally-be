@@ -51,6 +51,9 @@ export const ENDPOINTS = {
   KNOWLEDGE_CHUNK_SEARCH: 'api/v1/knowledge-chunks/search',
   KNOWLEDGE_CHUNK_DELETE_BY_DOCUMENT: 'api/v1/knowledge-chunks/document',
   KNOWLEDGE_CHUNK_IDS: 'api/v1/knowledge-chunks/ids',
+  // Also `.../document`, like the delete above: the document id and `/audience` are
+  // appended by the caller.
+  KNOWLEDGE_CHUNK_SET_AUDIENCE: 'api/v1/knowledge-chunks/document',
   KNOWLEDGE_AGENT_ANSWER: 'api/v1/knowledge-agent/answer',
   KNOWLEDGE_AGENT_CRISIS_CHECK: 'api/v1/knowledge-agent/crisis-check',
 } as const;

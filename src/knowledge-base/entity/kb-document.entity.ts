@@ -17,14 +17,25 @@ import {
  * `corpus` is what separates one consumer's material from another's. The WhatsApp Q&A bot
  * was the first, and this table was named and documented for it; the pipeline itself never
  * cared. Retrieval resolves ONE corpus's document ids here and passes them to ally-ai as
- * the query's own `document_ids`, so scope is an argument rather than a filter — see
+ * the query's own `document_ids`, so corpus scope is an argument rather than a filter — see
  * KbCorpus.
  *
- * NO tenant. The bot is open to anyone with the number, so there is no tenant to scope by
- * and both corpora are deliberately Ally-global. A future PRIVATE per-tenant corpus is a
- * different problem from `corpus` and should be a new collection rather than a filter added
- * to the shared one — retrieval that forgets a tenant filter leaks, and an un-set filter is
- * the easiest thing in the world to forget.
+ * NO tenant COLUMN, which is not the same as no audience. Within a corpus, a document is
+ * targetable at one, some or all organisations via `isGlobal` plus `kb_document_tenants` —
+ * the same two-part shape scenarios, tracks and cases already use — rather than by owning a
+ * single tenant, because the material is curated centrally and the same clinical guide is
+ * usually shared by many customers.
+ *
+ * The two scopes are different mechanisms on purpose. A CORPUS is one of a few fixed,
+ * disjoint sets, so it gets its own vector collection and its ids travel as the query's
+ * scope. An ORGANISATION is one of hundreds and a single document belongs to several, so it
+ * gets a filter inside the collection. That is also what retires the older rule here — that
+ * a per-tenant corpus should be a NEW collection rather than a filter, because "retrieval
+ * that forgets a filter leaks, and an un-set filter is the easiest thing in the world to
+ * forget". A collection per tenant does not survive one document shared by three of them,
+ * so the warning is answered structurally instead: ally-ai's retrieval takes a REQUIRED
+ * audience argument, and this platform refuses to answer a WhatsApp contact whose
+ * organisation it could not resolve rather than falling back to something plausible.
  */
 @Entity('kb_documents')
 export class KbDocument extends BaseWithoutTenantEntity {
@@ -106,6 +117,24 @@ export class KbDocument extends BaseWithoutTenantEntity {
 
   @Column({ type: 'text', array: true, default: () => "'{}'" })
   tags!: string[];
+
+  /**
+   * Available to every organisation, present and future.
+   *
+   * Default FALSE, matching `tracks`/`cases`/`scenario_paths`, so a document created by a caller
+   * that forgot the field reaches nobody rather than everybody: an unreachable document is a
+   * visible bug an admin can fix with one click, where an over-shared one is invisible. The
+   * migration that added this column set every document that already existed to `true`, because
+   * the corpus WAS global at that point — that is what the old rows mean, not a guess.
+   *
+   * `isGlobal = false` with no rows in `kb_document_tenants` is a real, savable state that means
+   * the document is indexed and retrievable by nobody. The corpus table names it rather than
+   * hiding it, since it is otherwise indistinguishable from a document that simply never gets
+   * asked about.
+   */
+  @Index('idx_kb_documents_is_global')
+  @Column({ type: 'boolean', name: 'is_global', default: false })
+  isGlobal!: boolean;
 
   @Index('idx_kb_documents_status')
   @Column({

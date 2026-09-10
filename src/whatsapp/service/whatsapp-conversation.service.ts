@@ -9,6 +9,7 @@ import {
 import { KnowledgeBaseService } from 'src/knowledge-base/service/knowledge-base.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
+import { Tenant } from 'src/tenant/entity/tenant.entity';
 import { WaContact } from '../entity/wa-contact.entity';
 import { WaConversation } from '../entity/wa-conversation.entity';
 import { WaMessage } from '../entity/wa-message.entity';
@@ -45,6 +46,8 @@ export class WhatsAppConversationService {
     private readonly messageRepository: Repository<WaMessage>,
     @InjectRepository(WaUnansweredQuestion)
     private readonly unansweredRepository: Repository<WaUnansweredQuestion>,
+    @InjectRepository(Tenant)
+    private readonly tenantRepository: Repository<Tenant>,
     private readonly analyticsRepository: WaAnalyticsRepository,
     private readonly knowledgeBaseService: KnowledgeBaseService,
   ) {}
@@ -75,6 +78,11 @@ export class WhatsAppConversationService {
     const query = this.conversationRepository
       .createQueryBuilder('c')
       .innerJoin(WaContact, 'contact', 'contact.id = c.contact_id')
+      // LEFT join, because most contacts legitimately have no organisation: the bot answers
+      // whoever writes to it, and only a number that appears on someone's Ally profile resolves.
+      // An inner join here would hide every unrecognised thread from the log — which is the half
+      // of the log an admin most needs, since those are the people who got refused.
+      .leftJoin(Tenant, 'tenant', 'tenant.id::text = contact.tenant_id')
       .select([
         'c.id AS id',
         'c.contact_id AS "contactId"',
@@ -86,6 +94,10 @@ export class WhatsAppConversationService {
         'contact.phone_last4 AS "phoneLast4"',
         'contact.consent_status AS "consentStatus"',
         'contact.blocked_at AS "blockedAt"',
+        'contact.tenant_id AS "tenantId"',
+        // The name, not just the id: "why did this thread get refused" and "which customer is
+        // this" are the two questions this column exists to answer, and a uuid answers neither.
+        'tenant.name AS "tenantName"',
       ])
       .orderBy(sort.column, sort.direction)
       .limit(limit)
@@ -176,8 +188,21 @@ export class WhatsAppConversationService {
         'locale',
         'blockedAt',
         'messageCount',
+        'tenantId',
+        'identifiedAt',
+        'identitySource',
       ],
     });
+
+    // Resolved separately rather than joined: it is one lookup on a detail view, and the
+    // contact select above is deliberately narrow so the full phone number cannot be pulled in
+    // by accident alongside a widening join.
+    const tenant = contact?.tenantId
+      ? await this.tenantRepository.findOne({
+          where: { id: contact.tenantId },
+          select: ['id', 'name'],
+        })
+      : null;
 
     const messages = await this.messageRepository.find({
       where: { conversationId: id },
@@ -186,7 +211,14 @@ export class WhatsAppConversationService {
 
     return {
       conversation,
-      contact,
+      contact: contact
+        ? {
+            ...contact,
+            // Named rather than left as an id, and NULL is meaningful here: it is why the thread
+            // was answered with "I cannot recognise this number" instead of from the corpus.
+            organisation: tenant ? { id: tenant.id, name: tenant.name } : null,
+          }
+        : contact,
       messages: messages.map((message) => ({
         id: message.id,
         direction: message.direction,
@@ -300,6 +332,14 @@ export class WhatsAppConversationService {
         phoneE164: `${ERASED_PHONE_PREFIX}${contactId}`,
         phoneLast4: '0000',
         locale: null,
+        // The organisation link goes with the number. It names a specific worker at a specific
+        // customer next to their message history, which is exactly the identifiable data erasure
+        // exists to remove — keeping it would leave the row re-identifiable from the user record.
+        // A later message from the same number re-resolves it onto a fresh contact row.
+        userId: null,
+        tenantId: null,
+        identifiedAt: null,
+        identitySource: null,
       },
     );
 

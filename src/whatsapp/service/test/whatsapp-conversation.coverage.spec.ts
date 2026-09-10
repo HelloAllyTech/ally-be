@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { KnowledgeBaseService } from '../../../knowledge-base/service/knowledge-base.service';
+import { Tenant } from '../../../tenant/entity/tenant.entity';
 import { WaContact } from '../../entity/wa-contact.entity';
 import { WaConversation } from '../../entity/wa-conversation.entity';
 import { WaMessage } from '../../entity/wa-message.entity';
@@ -45,6 +46,7 @@ describe('WhatsAppConversationService.corpusCoverage', () => {
           provide: getRepositoryToken(WaUnansweredQuestion),
           useValue: noopRepo(),
         },
+        { provide: getRepositoryToken(Tenant), useValue: noopRepo() },
         { provide: WaAnalyticsRepository, useValue: analyticsRepository },
         { provide: KnowledgeBaseService, useValue: knowledgeBaseService },
       ],

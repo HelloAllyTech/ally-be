@@ -48,11 +48,16 @@ describe('KnowledgeBaseService.search', () => {
     service = new KnowledgeBaseService(
       documentRepository as any,
       {} as any,
+      // documentTenantRepository — the organisation assignment, unused on this path: the
+      // audience travels as a filter on the query, not as a per-row lookup.
+      {} as any,
       {} as any,
       aiService as any,
       {} as any,
       {} as any,
       retrievalRepository as any,
+      // tenantRepository, for the existence check on a write path this spec never takes.
+      {} as any,
     );
   };
 
@@ -72,6 +77,58 @@ describe('KnowledgeBaseService.search', () => {
     expect(
       aiService.searchKnowledgeChunks.mock.calls[0][0].document_ids,
     ).toEqual(['d1', 'd2']);
+  });
+
+  it('carries WHO is asking alongside WHICH documents are in scope', async () => {
+    // Two different scopes on one query. The corpus decides which documents exist; the
+    // audience decides whether this organisation may be answered from them. ally-ai refuses
+    // a request carrying neither, so the omission cannot be silent.
+    build({ preferred: [], rest: ['d1'] }, [[passage()]]);
+
+    await service.search({
+      corpus: KbCorpus.WHATSAPP_QA,
+      query: 'q',
+      tenantId: 'tenant-a',
+    } as any);
+
+    expect(aiService.searchKnowledgeChunks.mock.calls[0][0].audience).toEqual({
+      tenant_id: 'tenant-a',
+      include_global: true,
+    });
+  });
+
+  it('ignores targeting when no organisation is named', async () => {
+    // The admin console's job is to show what is INDEXED, which is deliberately not what a
+    // worker receives — and the result echoes which of the two ran.
+    build({ preferred: [], rest: ['d1'] }, [[passage()]]);
+
+    await service.search({ corpus: KbCorpus.WHATSAPP_QA, query: 'q' } as any);
+
+    expect(aiService.searchKnowledgeChunks.mock.calls[0][0].audience).toEqual({
+      unrestricted: true,
+    });
+  });
+
+  it('keeps the audience on the top-up pass', async () => {
+    // A second pass that dropped it would answer out of another organisation's material
+    // precisely when the first pass came back short.
+    build({ preferred: ['d1'], rest: ['d2'] }, [[passage()], [passage()]]);
+
+    await service.search({
+      corpus: KbCorpus.WHATSAPP_QA,
+      query: 'q',
+      tenantId: 'tenant-a',
+    } as any);
+
+    expect(aiService.searchKnowledgeChunks.mock.calls.length).toBeGreaterThan(
+      1,
+    );
+    for (const call of aiService.searchKnowledgeChunks.mock.calls) {
+      expect(call[0].audience).toEqual({
+        tenant_id: 'tenant-a',
+        include_global: true,
+      });
+    }
   });
 
   it('returns nothing, and asks ally-ai nothing, when the corpus has no retrievable documents', async () => {
@@ -261,11 +318,16 @@ describe('KnowledgeBaseService.search — retrieval log', () => {
     service = new KnowledgeBaseService(
       documentRepository as any,
       {} as any,
+      // documentTenantRepository — the organisation assignment, unused on this path: the
+      // audience travels as a filter on the query, not as a per-row lookup.
+      {} as any,
       {} as any,
       aiService as any,
       {} as any,
       {} as any,
       retrievalRepository as any,
+      // tenantRepository, for the existence check on a write path this spec never takes.
+      {} as any,
     );
   };
 

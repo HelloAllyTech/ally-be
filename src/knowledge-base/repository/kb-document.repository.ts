@@ -25,6 +25,8 @@ export interface ListKbDocumentsOptions {
   status?: KbDocumentStatus;
   sourceType?: KbDocumentSourceType;
   tags?: string[];
+  /** Only what this organisation can retrieve: its own targeted documents plus the global ones. */
+  tenantId?: string;
   includeArchived?: boolean;
   sortBy?: string;
   sortDir?: string;
@@ -62,6 +64,7 @@ export class KbDocumentRepository extends Repository<KbDocument> {
       status,
       sourceType,
       tags,
+      tenantId,
       includeArchived = false,
     } = options;
     const sort = resolveSort(
@@ -88,6 +91,21 @@ export class KbDocumentRepository extends Repository<KbDocument> {
       // `&&` is array overlap: match a document carrying ANY of the requested tags. Requiring all
       // of them would make multi-tag filtering almost always empty.
       query.andWhere('doc.tags && :tags', { tags });
+    }
+    if (tenantId) {
+      // "What can this customer see" — the global corpus PLUS anything targeted at them, which
+      // is exactly the disjunction retrieval applies. An EXISTS subquery rather than a join, so
+      // a document targeted at several organisations cannot appear twice in the page and skew
+      // the count.
+      query.andWhere(
+        `(doc."is_global" = true OR EXISTS (
+            SELECT 1 FROM kb_document_tenants dt
+            WHERE dt.document_id = doc.id
+              AND dt.tenant_id = :tenantId
+              AND dt."deletedAt" IS NULL
+          ))`,
+        { tenantId },
+      );
     }
     if (search?.trim()) {
       const term = `%${search.trim().toLowerCase()}%`;
@@ -121,6 +139,7 @@ export class KbDocumentRepository extends Repository<KbDocument> {
         'doc.statusMessage',
         'doc.chunkCount',
         'doc.indexedChunkCount',
+        'doc.isGlobal',
         'doc.contentHash',
         'doc.chunkVersion',
         'doc.archivedAt',

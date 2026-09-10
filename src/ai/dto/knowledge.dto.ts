@@ -8,6 +8,28 @@
 
 // ── Chunk index ─────────────────────────────────────────────────────────────
 
+/**
+ * Who a retrieval is for, or who a document is for.
+ *
+ * Sent as an object rather than as two loose optional fields because ally-ai requires it on the
+ * answering path and 422s a request that omits it. That is the point: the audience filter cannot
+ * be forgotten into a default, since both plausible defaults are silently wrong — "everything"
+ * answers one customer's worker out of another customer's documents, and "global only" would stop
+ * an organisation's own material from ever being retrieved while the bot kept replying
+ * confidently.
+ */
+export interface KnowledgeAudienceRequest {
+  /** The asker's organisation. Null reaches no organisation-targeted document. */
+  tenant_id?: string | null;
+  /** Include documents available to every organisation. */
+  include_global?: boolean;
+  /**
+   * Ignore targeting entirely. ADMIN TOOLING ONLY — set from the permission-gated corpus
+   * console, never from the WhatsApp path.
+   */
+  unrestricted?: boolean;
+}
+
 export interface KnowledgeChunkItemRequest {
   chunk_id: string;
   document_id: string;
@@ -23,6 +45,25 @@ export interface KnowledgeChunkItemRequest {
   language: string;
   tags: string[];
   token_count: number;
+  /** Mirrored from kb_documents.is_global so retrieval can filter inside the vector query. */
+  is_global: boolean;
+  /** Mirrored from kb_document_tenants. Empty when the document is global. */
+  tenant_ids: string[];
+}
+
+export interface KnowledgeChunkAudienceRequest {
+  is_global: boolean;
+  tenant_ids: string[];
+}
+
+export interface KnowledgeChunkAudienceResponse {
+  document_id: string;
+  /**
+   * Chunks retargeted. 0 is legitimate rather than a failure: a document that is queued,
+   * mid-ingest or archived has no vectors to update, and the audience travels with the chunks on
+   * the next ingest anyway.
+   */
+  updated: number;
 }
 
 export interface KnowledgeChunkBulkUpsertRequest {
@@ -62,6 +103,8 @@ export interface KnowledgeChunkSearchRequest {
   min_similarity?: number;
   document_ids?: string[];
   language?: string;
+  /** Optional here, unlike on the answer request — ally-ai defaults this console to unrestricted. */
+  audience?: KnowledgeAudienceRequest;
 }
 
 export interface KnowledgeChunkPassage {
@@ -110,6 +153,8 @@ export interface KnowledgeAnswerRequest {
   max_answer_chars?: number;
   translate_query?: boolean;
   document_ids?: string[];
+  /** REQUIRED by ally-ai. A request without it is refused with a 422 rather than defaulted. */
+  audience: KnowledgeAudienceRequest;
 }
 
 export interface KnowledgeCitation {
