@@ -26,9 +26,7 @@ export class AddWaContactIdentity1969100000000 implements MigrationInterface {
   name = 'AddWaContactIdentity1969100000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(
-      `ALTER TABLE "wa_contacts" ADD "user_id" integer`,
-    );
+    await queryRunner.query(`ALTER TABLE "wa_contacts" ADD "user_id" integer`);
     await queryRunner.query(
       `ALTER TABLE "wa_contacts" ADD "tenant_id" character varying(64)`,
     );
@@ -58,7 +56,9 @@ export class AddWaContactIdentity1969100000000 implements MigrationInterface {
     await queryRunner.query(
       `ALTER TABLE "wa_contacts" DROP COLUMN "identified_at"`,
     );
-    await queryRunner.query(`ALTER TABLE "wa_contacts" DROP COLUMN "tenant_id"`);
+    await queryRunner.query(
+      `ALTER TABLE "wa_contacts" DROP COLUMN "tenant_id"`,
+    );
     await queryRunner.query(`ALTER TABLE "wa_contacts" DROP COLUMN "user_id"`);
   }
 }
