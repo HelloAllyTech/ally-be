@@ -88,6 +88,7 @@ describe('TenantService', () => {
     ...mockTenant,
     enabledDashboardIds: [],
     hideRankInCommunity: false,
+    engagementReminderEnabled: false,
     enableAudioUpload: true,
     enableMicrophoneMode: true,
     // Retired feature: the response always reports it disabled.
@@ -646,6 +647,31 @@ describe('TenantService', () => {
       expect(result).toEqual(
         expect.objectContaining({
           hideRankInCommunity: false,
+        }),
+      );
+    });
+
+    it('should merge engagementReminderEnabled into current tenant settings, nested under engagementReminder.remindersEnabled', async () => {
+      const updateDto = { engagementReminderEnabled: true };
+      const tenantWithSettings = {
+        ...mockTenant,
+        settings: { existingSetting: 'value' },
+      } as Tenant;
+
+      tenantRepository.findOne
+        .mockResolvedValueOnce(tenantWithSettings)
+        .mockResolvedValueOnce(tenantWithSettings);
+
+      await service.updateTenant('test-tenant-id', updateDto as any);
+
+      expect(mockEntityManager.update).toHaveBeenCalledWith(
+        Tenant,
+        'test-tenant-id',
+        expect.objectContaining({
+          settings: {
+            existingSetting: 'value',
+            engagementReminder: { remindersEnabled: true },
+          },
         }),
       );
     });

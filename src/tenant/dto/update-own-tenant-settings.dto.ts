@@ -47,4 +47,14 @@ export class UpdateOwnTenantSettingsDto {
   @IsBoolean()
   @IsOptional()
   hideRankInCommunity?: boolean;
+
+  @ApiProperty({
+    description:
+      'Send automated engagement-reminder nudges (in-app + push) to ' +
+      'learners inactive for a threshold number of days. Default off.',
+    required: false,
+  })
+  @IsBoolean()
+  @IsOptional()
+  engagementReminderEnabled?: boolean;
 }

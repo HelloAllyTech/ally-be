@@ -49,6 +49,12 @@ export class TenantResponseDto {
   hideRankInCommunity!: boolean;
 
   @ApiProperty({
+    description: 'Whether automated engagement-reminder nudges are enabled',
+    example: false,
+  })
+  engagementReminderEnabled!: boolean;
+
+  @ApiProperty({
     description:
       'Whether this is an internal/demo/QA organization excluded from analytics',
     example: false,
