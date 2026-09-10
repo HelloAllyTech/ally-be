@@ -86,6 +86,7 @@ import { RoadmapSavedView } from '../../product-roadmap/entity/roadmap-saved-vie
 import { RoadmapUserTabOrder } from '../../product-roadmap/entity/roadmap-user-tab-order.entity';
 import { RoadmapProductGoal } from '../../product-roadmap/entity/roadmap-product-goal.entity';
 import { RoadmapOpportunityOwner } from '../../product-roadmap/entity/roadmap-opportunity-owner.entity';
+import { RoadmapVoteGrant } from '../../product-roadmap/entity/roadmap-vote-grant.entity';
 import { LabSkill } from '../../lab/entity/lab-skill.entity';
 import { LabVariable } from '../../lab/entity/lab-variable.entity';
 import { LabValue } from '../../lab/entity/lab-value.entity';
@@ -156,6 +157,7 @@ export const SEED_ENTITIES = [
   RoadmapInterviewNote,
   RoadmapSavedView,
   RoadmapUserTabOrder,
+  RoadmapVoteGrant,
   LabSkill,
   LabVariable,
   LabValue,
