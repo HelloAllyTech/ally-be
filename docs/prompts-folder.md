@@ -125,6 +125,29 @@ found nothing: it becomes a rephrase loop against a corpus that genuinely lacks 
 cannot tell "the library has nothing" from "the library could not be read" will tell an admin
 their corpus is empty when it is not.
 
+**Do not forbid the retry — that is the agentic half of agentic RAG.** The first version of the
+grounding guidance said "do not rephrase and retry more than once", written to prevent a loop.
+It prevented the recovery instead. Single-shot cosine similarity is brittle across paraphrase:
+in production, one indexed document answered "guidance on writing good speech samples" and
+returned nothing at all for "how specific should a character be, and why is a generic one bad?"
+— against a section titled "Specific beats representative, every time". The guidance now asks
+for ONE more search at a different ANGLE (a different level of abstraction or vocabulary, not a
+reword of the same sentence), capped at two, and tells the agent explicitly that IT judges
+relevance rather than the score.
+
+The same finding moved the similarity floor down rather than up, and the reasoning is worth
+keeping because the intuitive version is wrong. A high floor looks like a safety measure for an
+agent that cannot decline — but this agent can, and does: it reads the passage and the prompt
+tells it to report finding nothing rather than invent. A high floor does not make grounding
+safer, it removes the agent's judgement by never showing it the passage. Precision belongs to
+the agent, recall to retrieval.
+
+**Say what to search FOR, in the agent's own terms.** Left to itself the interview agent asked
+subject-matter questions ("common speech-related changes in early dementia") while the corpus
+held craft guidance ("what makes a speech sample useful"), so good material went unfound. The
+guidance now names both kinds and when each applies: craft before you WRITE something, subject
+before you ASK about something.
+
 **Normalise keys and unwrap values; do not assume one call is self-consistent.** A production
 `save_character_draft` keyed `voices` and `languageCharacteristics` by numeric id and
 `linguisticStyleSamples` by locale (`"en-IN"`) — in the same call — and wrapped each sample as
