@@ -553,6 +553,21 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     configuredBy: 'FEEDBACK_GROUNDEDNESS_JUDGE__MODEL',
   },
   {
+    id: 'rag-quality-judge',
+    task: LlmTask.RAG_QUALITY_JUDGE,
+    runtime: LlmRuntime.ALLY_AI,
+    trigger: 'Scheduled: corpus retrievals are judged',
+    detail:
+      'Did the passages retrieved actually answer the query, and what was a short ' +
+      'retrieval missing? The similarity floor is calibrated from these labels, because ' +
+      'a similarity score is not a measure of usefulness — the character corpus returned ' +
+      'nothing for a question one of its own section titles answered.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-pro',
+    configuredBy: 'RAG_QUALITY_JUDGE__MODEL',
+  },
+  {
     id: 'filler-judge',
     task: LlmTask.FILLER_JUDGE,
     runtime: LlmRuntime.ALLY_AI,

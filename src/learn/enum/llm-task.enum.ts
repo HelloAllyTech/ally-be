@@ -47,6 +47,12 @@ export enum LlmTask {
   // LANGUAGE_JUDGE because it runs on a different cadence over a different
   // slice — sharing one would make both lines unreadable.
   FILLER_JUDGE = 'filler_judge',
+  // RAG-quality judge in ally-ai: labels whether the passages a corpus
+  // retrieval returned actually answered the query, and what a short retrieval
+  // was missing. Its own label because the unit is a retrieval rather than a
+  // session — far more rows, each a fraction of the tokens — so folded into
+  // another judge's line it would swamp the count and dilute the cost.
+  RAG_QUALITY_JUDGE = 'rag_quality_judge',
   // Analytics Agent (admin Analytics -> Analytics Agent tab): one planning call
   // (question -> SQL) and one narration call (rows -> answer) per question.
   // Separate labels because the planner carries the whole schema catalogue and

@@ -8,9 +8,10 @@
  *
  * Retrieval is never "the shared corpus minus a filter": callers resolve the documents of
  * ONE corpus in Postgres and pass those ids to ally-ai's search, so the scope is the query
- * itself. A filter can be forgotten; a required argument cannot. The single `KnowledgeChunk`
- * collection stays shared, because Postgres is the system of record and the vector index is
- * derived from it.
+ * itself. A filter can be forgotten; a required argument cannot. Each corpus also gets its
+ * OWN Weaviate collection rather than a discriminator on a shared one — a similarity
+ * threshold only means something against one distribution, and chunk size differs per corpus
+ * (400 tokens for a 1600-character WhatsApp reply, 800 for a character vignette).
  */
 export enum KbCorpus {
   /** Grounds the WhatsApp Q&A bot's answers. */

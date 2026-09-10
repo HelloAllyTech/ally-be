@@ -460,6 +460,44 @@ export class GroundednessBackfillJobDto {
   failed!: number;
 }
 
+export class RagQualityBackfillJobDto {
+  @ApiProperty() jobId!: string;
+  @ApiProperty({ description: 'queued | running | done | error' })
+  status!: string;
+  @ApiProperty({ description: 'Retrievals selected for this run' })
+  total!: number;
+  @ApiProperty() processed!: number;
+  @ApiProperty({ description: 'Retrievals that came back labelled' })
+  judged!: number;
+  @ApiProperty({
+    description:
+      'Retrievals skipped because their passages outlived their chunk text — a ' +
+      're-chunk deletes the old generation. Skipped rather than judged on what ' +
+      'was left: a partial passage list reads as a retrieval that found less ' +
+      'than it actually did.',
+  })
+  skipped!: number;
+  @ApiProperty({ description: 'Passages that carried a relevance label' })
+  passagesJudged!: number;
+  @ApiProperty({
+    description: 'Of those, the ones the judge found irrelevant or tangential',
+  })
+  passagesUnhelpful!: number;
+  @ApiProperty({
+    description:
+      'Retrievals the judge called nothing_useful. Read WITH the `missing` text ' +
+      'on the rows: a corpus gap and a floor set too tight arrive as the same count.',
+  })
+  retrievalsUnhelpful!: number;
+  @ApiProperty({ nullable: true }) error!: string | null;
+  @ApiProperty({
+    description:
+      'Retrievals whose judge call errored or timed out. Separate from ' +
+      '`processed`, which counts attempts.',
+  })
+  failed!: number;
+}
+
 export class DriftBackfillJobDto {
   @ApiProperty() jobId!: string;
   @ApiProperty({ description: 'queued | running | done | error' })

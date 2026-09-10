@@ -12,6 +12,8 @@ import { KbDocumentChunk } from './entity/kb-document-chunk.entity';
 import { KbDocumentTenant } from './entity/kb-document-tenant.entity';
 import { KbDocument } from './entity/kb-document.entity';
 import { KbRetrievalPassage } from './entity/kb-retrieval-passage.entity';
+import { KbRetrievalJudgment } from './entity/kb-retrieval-judgment.entity';
+import { KbRetrievalPassageJudgment } from './entity/kb-retrieval-passage-judgment.entity';
 import { KbRetrieval } from './entity/kb-retrieval.entity';
 import { KbIngestProducer } from './producer/kb-ingest.producer';
 import { KbDocumentChunkRepository } from './repository/kb-document-chunk.repository';
@@ -37,6 +39,8 @@ import { KnowledgeBaseService } from './service/knowledge-base.service';
       KbDocumentChunk,
       KbRetrieval,
       KbRetrievalPassage,
+      KbRetrievalJudgment,
+      KbRetrievalPassageJudgment,
       KbDocumentTenant,
       // Registered for one existence check when a document is targeted at organisations —
       // cheaper than importing the tenant module, which would couple two modules that

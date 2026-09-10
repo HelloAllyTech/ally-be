@@ -28,7 +28,12 @@ describe('JudgeBacklogDrainService', () => {
   ) => {
     const store = new Map<string, string>();
     if (opts.state) {
-      for (const family of ['drift', 'groundedness', 'language']) {
+      for (const family of [
+        'drift',
+        'groundedness',
+        'language',
+        'rag-quality',
+      ]) {
         store.set(`judge:backlog:${family}`, JSON.stringify(opts.state));
       }
     }
@@ -50,12 +55,19 @@ describe('JudgeBacklogDrainService', () => {
         .fn()
         .mockResolvedValue({ attempted: 0, measured: 0 }),
     };
+    const ragQuality = {
+      getJob: jest.fn().mockResolvedValue(undefined),
+      startBackfill: jest.fn().mockResolvedValue({ jobId: 'new-rag-job' }),
+    };
     const rows = opts.eligible === false ? [] : [{ id: 's1' }];
     const driftRepo = { selectSessions: jest.fn().mockResolvedValue(rows) };
     const groundednessRepo = {
       selectSessions: jest.fn().mockResolvedValue(rows),
     };
     const languageRepo = { selectSessions: jest.fn().mockResolvedValue(rows) };
+    const ragQualityRepo = {
+      selectRetrievals: jest.fn().mockResolvedValue(rows),
+    };
     const redis = {
       get: jest.fn(async (k: string) => store.get(k) ?? null),
       set: jest.fn(async (k: string, v: string) => {
@@ -67,12 +79,23 @@ describe('JudgeBacklogDrainService', () => {
       analytics as never,
       groundedness as never,
       language as never,
+      ragQuality as never,
       driftRepo as never,
       groundednessRepo as never,
       languageRepo as never,
+      ragQualityRepo as never,
       redis as never,
     );
-    return { service, analytics, groundedness, language, driftRepo, store };
+    return {
+      service,
+      analytics,
+      groundedness,
+      language,
+      ragQuality,
+      driftRepo,
+      ragQualityRepo,
+      store,
+    };
   };
 
   const tick = async (service: JudgeBacklogDrainService) => {

@@ -103,6 +103,8 @@ import { WeakMetricsAnalyticsRepository } from './repository/weak-metrics-analyt
 // a learner is graded by is actually true of their session.
 import { FeedbackGroundednessJudgeService } from './service/feedback-groundedness-judge.service';
 import { FeedbackGroundednessRepository } from './repository/feedback-groundedness.repository';
+import { RagQualityJudgeService } from './service/rag-quality-judge.service';
+import { RagQualityRepository } from './repository/rag-quality.repository';
 import { MetabaseService } from './service/metabase.service';
 import { AppConfigModule } from '../config/config.module';
 import { ProviderFactory } from '../factory/provider.factory';
@@ -141,6 +143,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     WeakMetricsAnalyticsRepository,
     FeedbackGroundednessJudgeService,
     FeedbackGroundednessRepository,
+    RagQualityJudgeService,
+    RagQualityRepository,
     HighlightsAnalyticsService,
     HighlightsAnalyticsRepository,
     CohortAnalyticsService,
