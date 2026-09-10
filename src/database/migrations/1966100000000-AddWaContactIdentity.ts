@@ -6,7 +6,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * `wa_contacts` was deliberately not a user record: the bot is open to anyone with the
  * number, so a phone number plus consent state was all it needed. That holds only while
  * the corpus is global to everyone. Now that a document can be targeted at particular
- * organisations (see AddKbDocumentAudience1963000000000), answering a question means
+ * organisations (see AddKbDocumentAudience1966000000000), answering a question means
  * knowing which organisation is asking, and the number is the only identifier WhatsApp
  * gives us.
  *
@@ -22,8 +22,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * platform spells that column both ways — `kb_document_tenants.tenant_id` is a uuid —
  * and taking the source's type is what keeps the per-message comparison cast-free.
  */
-export class AddWaContactIdentity1963100000000 implements MigrationInterface {
-  name = 'AddWaContactIdentity1963100000000';
+export class AddWaContactIdentity1966100000000 implements MigrationInterface {
+  name = 'AddWaContactIdentity1966100000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(

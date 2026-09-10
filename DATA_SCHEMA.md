@@ -362,10 +362,10 @@ Three things about this domain that are not visible from the columns:
 - **The corpus is targeted per organisation, and the bot refuses what it cannot scope.** A document
   is available to all organisations (`kb_documents.is_global`) or to the ones named in
   `kb_document_tenants` — the same two-part shape as `scenario_tenants`/`track_tenants`/`case_tenants`
-  (migration `1963000000000`, which backfilled every pre-existing document to `is_global = true`
+  (migration `1966000000000`, which backfilled every pre-existing document to `is_global = true`
   because the corpus WAS global at that point). Answering therefore needs to know which organisation
   is asking, which `wa_contacts.user_id`/`tenant_id` supply by matching the sender's number against
-  `users.phone` on every inbound message (migration `1963100000000`). An unresolved contact is
+  `users.phone` on every inbound message (migration `1966100000000`). An unresolved contact is
   answered with `settings.unrecognisedNumberText` and recorded as `handled_by = unidentified` — never
   from the global corpus, which would mean the same question got a different answer depending on
   whether we happened to recognise the sender. The audience is mirrored onto every `KnowledgeChunk`
