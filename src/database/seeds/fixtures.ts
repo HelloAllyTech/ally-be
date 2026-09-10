@@ -279,6 +279,15 @@ export const users: UserFixture[] = [
     roles: [UserRole.SIMULATION_REVIEWER],
     tenantCode: TENANT_CODE,
   },
+  {
+    // A normal learner who also holds EVALUATOR, which is the only shape that
+    // role is meant to take — it grants nothing on its own, so an
+    // EVALUATOR-only account would sign in to an empty app.
+    email: 'evaluator@example.com',
+    name: 'Nisha Rao',
+    roles: [UserRole.LEARNER, UserRole.EVALUATOR],
+    tenantCode: TENANT_CODE,
+  },
 
   // Northwind Behavioral Health — enterprise customer
   {

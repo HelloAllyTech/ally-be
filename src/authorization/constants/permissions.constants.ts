@@ -238,6 +238,12 @@ const PERMISSIONS = {
   EDIT_SCRIBE_REVIEW_THREAD: 'edit:scribe-review-thread',
   SCRIBE_REVIEWER_ACCESS: 'scribe-reviewer:access',
 
+  // === EVALUATION ===
+  // Marks the account as an evaluator: the consumer apps show it the extra
+  // evaluation questions attached to particular screens and events. Additive —
+  // it grants nothing else, and every evaluator also holds a normal app role.
+  EVALUATOR_ACCESS: 'evaluator:access',
+
   // === BADGES ===
   VIEW_USER_BADGES: 'view:user:badges',
   EDIT_USER_BADGES: 'edit:user:badges',
@@ -773,6 +779,16 @@ const SCRIBE_REVIEWER_PERMISSIONS = [
   PERMISSIONS.SCRIBE_REVIEWER_ACCESS,
 ];
 
+/**
+ * Deliberately a single permission.
+ *
+ * EVALUATOR is layered on top of an account's real app role (LEARNER,
+ * COUNSELOR, ...), so anything it duplicated from those would be dead weight at
+ * best and a quiet privilege grant at worst. All it has to answer is "does this
+ * person get asked the evaluation questions?".
+ */
+const EVALUATOR_PERMISSIONS = [PERMISSIONS.EVALUATOR_ACCESS];
+
 export {
   PERMISSIONS,
   SUPER_ADMIN_PERMISSIONS,
@@ -784,4 +800,5 @@ export {
   CLIENT_PERMISSIONS,
   SIMULATION_REVIEWER_PERMISSIONS,
   SCRIBE_REVIEWER_PERMISSIONS,
+  EVALUATOR_PERMISSIONS,
 };
