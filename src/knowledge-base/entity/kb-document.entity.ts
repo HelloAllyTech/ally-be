@@ -12,10 +12,18 @@ import {
  * same ownership rule as reference documents and roadmap opportunities. Postgres is truth;
  * vectors can always be rebuilt from here.
  *
- * NO tenant. The bot is open to anyone with the number, so there is no tenant to scope by
- * and the corpus is deliberately global. A future private per-tenant corpus should be a new
- * collection rather than a filter added to the shared one — retrieval that forgets a filter
- * leaks, and an un-set filter is the easiest thing in the world to forget.
+ * NO tenant COLUMN, and that is not the same as no audience. A document is targetable at one,
+ * some or all organisations via `isGlobal` plus `kb_document_tenants` — the same two-part shape
+ * scenarios, tracks and cases already use — rather than by owning a single tenant, because the
+ * corpus is curated centrally and the same clinical guide is usually shared by every customer.
+ *
+ * This replaced the original decision that a private per-tenant corpus should be a NEW vector
+ * collection rather than a filter on the shared one, on the grounds that "retrieval that forgets
+ * a filter leaks, and an un-set filter is the easiest thing in the world to forget". A collection
+ * per tenant does not survive one document shared by three of them, so that warning is answered
+ * structurally instead: ally-ai's retrieval takes a REQUIRED audience argument, and this service
+ * refuses to answer a WhatsApp contact whose organisation it could not resolve rather than
+ * falling back to something plausible.
  */
 @Entity('kb_documents')
 export class KbDocument extends BaseWithoutTenantEntity {
@@ -75,6 +83,24 @@ export class KbDocument extends BaseWithoutTenantEntity {
 
   @Column({ type: 'text', array: true, default: () => "'{}'" })
   tags!: string[];
+
+  /**
+   * Available to every organisation, present and future.
+   *
+   * Default FALSE, matching `tracks`/`cases`/`scenario_paths`, so a document created by a caller
+   * that forgot the field reaches nobody rather than everybody: an unreachable document is a
+   * visible bug an admin can fix with one click, where an over-shared one is invisible. The
+   * migration that added this column set every document that already existed to `true`, because
+   * the corpus WAS global at that point — that is what the old rows mean, not a guess.
+   *
+   * `isGlobal = false` with no rows in `kb_document_tenants` is a real, savable state that means
+   * the document is indexed and retrievable by nobody. The corpus table names it rather than
+   * hiding it, since it is otherwise indistinguishable from a document that simply never gets
+   * asked about.
+   */
+  @Index('idx_kb_documents_is_global')
+  @Column({ type: 'boolean', name: 'is_global', default: false })
+  isGlobal!: boolean;
 
   @Index('idx_kb_documents_status')
   @Column({

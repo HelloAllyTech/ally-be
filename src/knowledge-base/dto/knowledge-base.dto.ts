@@ -8,6 +8,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  IsUUID,
   IsUrl,
   Max,
   MaxLength,
@@ -104,6 +105,48 @@ export class CreateKbDocumentDto {
   @IsArray()
   @IsString({ each: true })
   tags?: string[];
+
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Available to every organisation. Defaults to FALSE, so a caller that omits both this ' +
+      'and tenantIds creates a document nobody can retrieve — a visible, one-click-fixable ' +
+      'state, unlike an accidentally over-shared one.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  isGlobal?: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Organisations this document is available to. Ignored when isGlobal is true, rather ' +
+      'than rejected: an admin who ticks "all organisations" after picking a few should not ' +
+      'have to undo the picks.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  tenantIds?: string[];
+}
+
+export class UpdateKbDocumentAudienceDto {
+  @ApiProperty({ description: 'Available to every organisation' })
+  @IsBoolean()
+  isGlobal!: boolean;
+
+  @ApiPropertyOptional({
+    type: [String],
+    default: [],
+    description:
+      'Organisations that may retrieve it when isGlobal is false. An empty list with ' +
+      'isGlobal false is accepted: "available to nobody" is a legitimate way to take a ' +
+      'document out of circulation without archiving it.',
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  tenantIds?: string[];
 }
 
 export class UpdateKbDocumentDto {
@@ -179,6 +222,16 @@ export class GetKbDocumentsQueryDto {
   tags?: string[];
 
   @ApiPropertyOptional({
+    description:
+      'Only documents this organisation can retrieve — its own plus the global ones. This is ' +
+      'the "what does this customer actually see" view, which is the question an admin asks ' +
+      'when a worker reports a gap.',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  tenantId?: string;
+
+  @ApiPropertyOptional({
     default: false,
     description:
       'Include archived documents; the management list wants them, the picker does not',
@@ -224,6 +277,16 @@ export class KbDocumentResponseDto {
   statusMessage!: string | null;
   @ApiProperty() chunkCount!: number;
   @ApiProperty() indexedChunkCount!: number;
+  @ApiProperty({ description: 'Available to every organisation' })
+  isGlobal!: boolean;
+  @ApiProperty({
+    type: [String],
+    description:
+      'Organisations it is targeted at. Always empty when isGlobal is true — the rows are ' +
+      'not consulted in that case, so returning them would invite a UI that shows a global ' +
+      'document as restricted.',
+  })
+  tenantIds!: string[];
   @ApiProperty() isArchived!: boolean;
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
@@ -277,6 +340,16 @@ export class KbSearchDto {
   @IsOptional()
   @Type(() => Number)
   minSimilarity?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Retrieve as a worker from this organisation would — its documents plus the global ' +
+      'ones. Omitted, this searches the WHOLE corpus regardless of targeting, which is the ' +
+      'right default for a console whose job is to show what is indexed.',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  tenantId?: string;
 }
 
 export class KbStatsResponseDto {

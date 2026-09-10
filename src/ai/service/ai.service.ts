@@ -27,6 +27,8 @@ import {
   CrisisCheckResponse,
   KnowledgeAnswerRequest,
   KnowledgeAnswerResponse,
+  KnowledgeChunkAudienceRequest,
+  KnowledgeChunkAudienceResponse,
   KnowledgeChunkBulkUpsertRequest,
   KnowledgeChunkBulkUpsertResponse,
   KnowledgeChunkDeleteResponse,
@@ -351,6 +353,35 @@ export class AiService {
       undefined,
       false,
       30_000,
+    );
+  }
+
+  /**
+   * Retarget an indexed document at one, some or all organisations.
+   *
+   * 60s: this is a paged sweep that updates one Weaviate object per chunk, so a 300-page book is
+   * hundreds of small writes rather than one call. Still an admin-path operation, not a
+   * request-path one — nothing a worker is waiting on depends on it.
+   *
+   * A failure MUST be surfaced to the admin rather than swallowed. The half-applied state is the
+   * dangerous one: some passages of a document still answer for an organisation that was just
+   * removed from it, which is invisible from every screen except the one that reported success.
+   */
+  async setKnowledgeChunkAudience(
+    documentId: string,
+    request: KnowledgeChunkAudienceRequest,
+  ) {
+    return this.makeRequest<
+      KnowledgeChunkAudienceResponse,
+      KnowledgeChunkAudienceRequest
+    >(
+      `${ENDPOINTS.KNOWLEDGE_CHUNK_SET_AUDIENCE}/${documentId}/audience`,
+      request,
+      true,
+      'put',
+      undefined,
+      false,
+      60_000,
     );
   }
 

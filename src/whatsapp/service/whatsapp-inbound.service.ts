@@ -25,6 +25,7 @@ import {
   WhatsAppProvider,
 } from '../type/whatsapp-provider.interface';
 import { WhatsAppBotSettings } from '../type/whatsapp-settings.type';
+import { WhatsAppIdentityService } from './whatsapp-identity.service';
 import { WhatsAppRateLimitService } from './whatsapp-rate-limit.service';
 import { WhatsAppSettingsService } from './whatsapp-settings.service';
 import { WhatsAppTemplateService } from './whatsapp-template.service';
@@ -104,10 +105,16 @@ function isRetryableSendFailure(error: unknown): boolean {
  *   4. rate limit    — after dedupe, so a redelivery never consumes budget.
  *   5. consent gate  — before the LLM, so a first-time worker sees the disclaimer.
  *   6. templates     — before retrieval, so a crisis reply never depends on a model call.
- *   7. retrieval     — the expensive part, reached only when nothing above handled it, run
+ *   7. identity      — AFTER the safety and compliance steps, never before them. The corpus is
+ *                      targeted per organisation, so an unrecognised number cannot be answered at
+ *                      all; but STOP must still work for it and a crisis keyword must still reach
+ *                      the crisis reply, so this gate sits below both — and it runs the LLM crisis
+ *                      classifier itself before refusing, so the second safety layer is not lost
+ *                      for exactly the people we cannot identify.
+ *   8. retrieval     — the expensive part, reached only when nothing above handled it, run
  *                      concurrently with the LLM crisis classifier (step 6 is keywords; this is the
  *                      second layer, and it wins over any answer that comes back beside it).
- *   8. send          — persisted as `queued` BEFORE the send, so a crash is visible.
+ *   9. send          — persisted as `queued` BEFORE the send, so a crash is visible.
  *
  * THE ONE INVARIANT: this service throws only BEFORE it has sent anything. After a send it records
  * the failure and returns normally. Throwing after a send guarantees an SQS redelivery that answers
@@ -133,6 +140,7 @@ export class WhatsAppInboundService {
     private readonly settingsService: WhatsAppSettingsService,
     private readonly templateService: WhatsAppTemplateService,
     private readonly rateLimitService: WhatsAppRateLimitService,
+    private readonly identityService: WhatsAppIdentityService,
     private readonly aiService: AiService,
     private readonly promptSharedService: PromptSharedService,
     private readonly eventEmitter: EventEmitter2,
@@ -291,9 +299,28 @@ export class WhatsAppInboundService {
         return;
       }
 
-      // ── 7. Retrieval + answer ────────────────────────────────────────────
+      // ── 7. Identity ──────────────────────────────────────────────────────
+      // Which organisation is asking. Documents are targeted at one, some or all of them, so
+      // there is no corpus to answer from until this is known. Re-resolved on every message, so
+      // a number added to someone's Ally profile after they first wrote starts working on their
+      // next question rather than needing a support ticket.
+      const identified = await this.identityService.identify(contact);
+
+      if (!identified.tenantId) {
+        await this.refuseUnidentified(
+          identified,
+          conversation,
+          inboundId,
+          inbound.text,
+          settings,
+          startedAt,
+        );
+        return;
+      }
+
+      // ── 8. Retrieval + answer ────────────────────────────────────────────
       await this.answerFromCorpus(
-        contact,
+        identified,
         conversation,
         inboundId,
         inbound.text,
@@ -395,6 +422,90 @@ export class WhatsAppInboundService {
 
   // ────────────────────────────────────────────────────────────── retrieval
 
+  // ────────────────────────────────────────────────────────────── identity
+
+  /**
+   * Tell a contact we cannot recognise their number — but check for a crisis first.
+   *
+   * THE CRISIS CHECK COMES BEFORE THE REFUSAL, and that ordering is the point of this method
+   * existing at all. Someone in danger is not less in danger for being unrecognised, and the
+   * keyword rules that already ran are only the first layer of the safety net; the classifier is
+   * the second. Skipping it here would remove that layer for precisely the people we know least
+   * about, which is the wrong population to economise on.
+   *
+   * Nothing is written to the unanswered queue. That queue is a record of what the CORPUS failed
+   * to cover, and filling it with questions nobody attempted would make the one signal an admin
+   * uses to judge coverage useless. The refusal is countable on its own through
+   * `WaHandledBy.UNIDENTIFIED`.
+   */
+  private async refuseUnidentified(
+    contact: WaContact,
+    conversation: WaConversation,
+    inboundId: string,
+    question: string,
+    settings: WhatsAppBotSettings,
+    startedAt: number,
+  ): Promise<void> {
+    if (settings.crisisClassifierEnabled) {
+      try {
+        const prompts = await this.loadPromptOverrides();
+        const crisis = await this.aiService.checkWhatsAppCrisis({
+          message: question,
+          prompts,
+        });
+
+        if (crisis?.is_crisis) {
+          await this.reply(
+            contact,
+            conversation,
+            inboundId,
+            this.settingsService.renderPlaceholders(
+              settings.crisisEscalationText,
+              settings,
+            ),
+            WaHandledBy.CRISIS,
+            startedAt,
+          );
+
+          this.eventEmitter.emit('exception', {
+            statusCode: 200,
+            timestamp: new Date().toISOString(),
+            path: 'whatsapp/crisis',
+            message:
+              `The crisis classifier fired on the WhatsApp bot for an UNRECOGNISED number ` +
+              `(contact ends ${contact.phoneLast4}, confidence ` +
+              `${crisis.confidence.toFixed(2)}, signal "${crisis.signal}"). The fixed safety ` +
+              `reply was sent. This number is not linked to any Ally account, so there is no ` +
+              `worker record to follow up through — the number itself is the only handle.`,
+            type: 'WhatsApp Crisis Classifier',
+          } as NotificationErrorType);
+          return;
+        }
+      } catch (error) {
+        // Swallowed on purpose: the refusal below still has to go out. A classifier that is
+        // down must not turn "we cannot recognise you" into no reply at all.
+        this.logger.warn(
+          `Crisis classifier did not run for an unrecognised number (contact ends ` +
+            `${contact.phoneLast4}): ${
+              error instanceof Error ? error.message : 'unknown error'
+            }`,
+        );
+      }
+    }
+
+    await this.reply(
+      contact,
+      conversation,
+      inboundId,
+      this.settingsService.renderPlaceholders(
+        settings.unrecognisedNumberText,
+        settings,
+      ),
+      WaHandledBy.UNIDENTIFIED,
+      startedAt,
+    );
+  }
+
   private async answerFromCorpus(
     contact: WaContact,
     conversation: WaConversation,
@@ -421,6 +532,13 @@ export class WhatsAppInboundService {
         question,
         history,
         prompts,
+        // The gate above guarantees this is set. Sent explicitly rather than left to a default
+        // because ally-ai has none — a request without an audience is refused there, which is
+        // what keeps "we forgot to scope the corpus" from ever being a silent condition.
+        audience: {
+          tenant_id: contact.tenantId,
+          include_global: true,
+        },
         top_k: settings.retrieval.topK,
         min_similarity: settings.retrieval.minSimilarity,
         decline_similarity: settings.retrieval.declineSimilarity,

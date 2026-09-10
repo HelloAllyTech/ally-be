@@ -25,8 +25,31 @@ export enum WaHandledBy {
   RATE_LIMITED = 'rate_limited',
   /** An image, audio note or document — nothing we can read. */
   UNSUPPORTED_MEDIA = 'unsupported_media',
+  /**
+   * The number is not linked to an Ally account, so the corpus could not be scoped to an
+   * organisation and no answer was attempted.
+   *
+   * Counted on its own rather than folded into DECLINED, because the two have opposite fixes and
+   * look identical from a usage chart otherwise: DECLINED means the corpus is thin, this means a
+   * real worker cannot get in and someone needs to add their number to their Ally profile.
+   */
+  UNIDENTIFIED = 'unidentified',
   /** Something failed and the fallback message went out. */
   ERROR = 'error',
+}
+
+/**
+ * How a contact came to be linked to an organisation.
+ *
+ * Recorded because the two have different trust and different failure modes: a PHONE match is
+ * automatic and can silently stop matching if someone edits their profile, while an ADMIN link
+ * was a deliberate human act and must not be undone by the automatic path.
+ */
+export enum WaIdentitySource {
+  /** Matched against a user's stored phone number. */
+  PHONE = 'phone',
+  /** Linked by hand by an admin. */
+  ADMIN = 'admin',
 }
 
 export enum WaMessageStatus {

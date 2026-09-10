@@ -16,6 +16,7 @@ import {
 } from '../enum/knowledge-base.enum';
 import { ExtractedDocument, extractDocument } from '../extractor';
 import { KbDocumentChunkRepository } from '../repository/kb-document-chunk.repository';
+import { KbDocumentTenantRepository } from '../repository/kb-document-tenant.repository';
 import { KbDocumentRepository } from '../repository/kb-document.repository';
 import { Chunk, chunkDocument } from '../util/chunker';
 
@@ -35,6 +36,7 @@ export class KbIngestService {
   constructor(
     private readonly documentRepository: KbDocumentRepository,
     private readonly chunkRepository: KbDocumentChunkRepository,
+    private readonly documentTenantRepository: KbDocumentTenantRepository,
     private readonly aiService: AiService,
     private readonly s3Service: S3Service,
   ) {}
@@ -281,6 +283,15 @@ export class KbIngestService {
     rows: { id: string; [key: string]: any }[],
     chunkVersion: number,
   ): Promise<number> {
+    // The audience is read ONCE and stamped onto every chunk of this generation. Read here
+    // rather than passed in because ingest runs on a queue, potentially minutes after the
+    // document was created — the audience as it stands now is the correct one, and a value
+    // captured at enqueue time would be stale for exactly the admin who fixed a mis-targeted
+    // document while it was still processing.
+    const tenantIds = document.isGlobal
+      ? []
+      : await this.documentTenantRepository.tenantIdsForDocument(document.id);
+
     for (let i = 0; i < rows.length; i += KB_INDEX_BATCH_SIZE) {
       const batch = rows.slice(i, i + KB_INDEX_BATCH_SIZE);
       const items: KnowledgeChunkItemRequest[] = batch.map((row) => ({
@@ -298,6 +309,8 @@ export class KbIngestService {
         language: document.language ?? '',
         tags: document.tags ?? [],
         token_count: row.tokenCount,
+        is_global: document.isGlobal,
+        tenant_ids: tenantIds,
       }));
 
       try {

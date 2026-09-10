@@ -5,6 +5,9 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
+import { Tenant } from 'src/tenant/entity/tenant.entity';
 import { AiService } from 'src/ai/service/ai.service';
 import { S3Service } from 'src/aws/service/s3.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -22,6 +25,7 @@ import {
   KbDocumentResponseDto,
   KbSearchDto,
   ReplaceKbDocumentContentDto,
+  UpdateKbDocumentAudienceDto,
   UpdateKbDocumentDto,
 } from '../dto/knowledge-base.dto';
 import { KbDocument } from '../entity/kb-document.entity';
@@ -31,6 +35,7 @@ import {
 } from '../enum/knowledge-base.enum';
 import { KbIngestProducer } from '../producer/kb-ingest.producer';
 import { KbDocumentChunkRepository } from '../repository/kb-document-chunk.repository';
+import { KbDocumentTenantRepository } from '../repository/kb-document-tenant.repository';
 import { KbDocumentRepository } from '../repository/kb-document.repository';
 import { KbIngestService } from './kb-ingest.service';
 
@@ -51,10 +56,16 @@ export class KnowledgeBaseService {
   constructor(
     private readonly documentRepository: KbDocumentRepository,
     private readonly chunkRepository: KbDocumentChunkRepository,
+    private readonly documentTenantRepository: KbDocumentTenantRepository,
     private readonly ingestProducer: KbIngestProducer,
     private readonly aiService: AiService,
     private readonly s3Service: S3Service,
     private readonly configService: AppConfigService,
+    // The Tenant entity's plain repository rather than TenantsRepository: this needs one
+    // existence check, and importing the tenant module for it would couple two modules that
+    // otherwise share nothing (and this codebase has a live circular-import DI trap).
+    @InjectRepository(Tenant)
+    private readonly tenantRepository: Repository<Tenant>,
   ) {}
 
   private getBucket(): string {
@@ -75,7 +86,10 @@ export class KnowledgeBaseService {
     return Number(userId);
   }
 
-  private toResponse(entity: KbDocument): KbDocumentResponseDto {
+  private toResponse(
+    entity: KbDocument,
+    tenantIds: string[] = [],
+  ): KbDocumentResponseDto {
     return {
       id: entity.id,
       title: entity.title,
@@ -93,10 +107,77 @@ export class KnowledgeBaseService {
       statusMessage: entity.statusMessage ?? null,
       chunkCount: entity.chunkCount,
       indexedChunkCount: entity.indexedChunkCount,
+      isGlobal: entity.isGlobal,
+      // Empty for a global document even when rows exist. The rows are not consulted while
+      // isGlobal is true, and returning them would invite a UI that renders a document
+      // available to everyone as if it were restricted to three organisations.
+      tenantIds: entity.isGlobal ? [] : tenantIds,
       isArchived: entity.archivedAt != null,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };
+  }
+
+  /**
+   * A response with the document's organisations loaded.
+   *
+   * The single-document path. `list` loads a page's worth in one query instead — see there.
+   */
+  private async respond(entity: KbDocument): Promise<KbDocumentResponseDto> {
+    if (entity.isGlobal) return this.toResponse(entity);
+    const tenantIds = await this.documentTenantRepository.tenantIdsForDocument(
+      entity.id,
+    );
+    return this.toResponse(entity, tenantIds);
+  }
+
+  /**
+   * Reject organisation ids that do not exist, before anything is written.
+   *
+   * Checked rather than trusted because the ids reach a Weaviate filter, where a nonexistent one
+   * is indistinguishable from a real one that simply never matches: the document would look
+   * correctly targeted in the admin UI and be retrievable by nobody.
+   */
+  private async assertTenantsExist(tenantIds: string[]): Promise<void> {
+    if (!tenantIds.length) return;
+    const unique = [...new Set(tenantIds)];
+    const found = await this.tenantRepository.count({
+      where: { id: In(unique) },
+    });
+    if (found !== unique.length) {
+      throw new BadRequestException(
+        'One or more of those organisations no longer exists. Reload the page and pick again.',
+      );
+    }
+  }
+
+  /**
+   * Push a document's audience onto its indexed chunks.
+   *
+   * Separate from the Postgres write, and deliberately AFTER it: Postgres is the system of record,
+   * so a vector index that lags is recoverable (a reindex re-sends the audience with the chunks)
+   * while a vector index that leads is not.
+   *
+   * Failures are RETHROWN as a 500 rather than logged. The half-applied state is the one that
+   * matters: passages of a document still answering for an organisation an admin just removed,
+   * on a screen that said the change was saved.
+   */
+  private async syncAudienceToIndex(
+    document: KbDocument,
+    tenantIds: string[],
+  ): Promise<void> {
+    try {
+      await this.aiService.setKnowledgeChunkAudience(document.id, {
+        is_global: document.isGlobal,
+        tenant_ids: document.isGlobal ? [] : tenantIds,
+      });
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `The organisations were saved, but the search index could not be updated, so ` +
+          `retrieval may still use the previous audience. Use Retry on the document to ` +
+          `re-index it: ${error instanceof Error ? error.message : 'unknown error'}`,
+      );
+    }
   }
 
   /**
@@ -139,6 +220,10 @@ export class KnowledgeBaseService {
     const userId = this.currentUserId();
     this.validateSource(dto);
 
+    const isGlobal = dto.isGlobal ?? false;
+    const tenantIds = isGlobal ? [] : (dto.tenantIds ?? []);
+    await this.assertTenantsExist(tenantIds);
+
     const document = this.documentRepository.create({
       title: dto.title.trim(),
       sourceType: dto.sourceType,
@@ -149,6 +234,7 @@ export class KnowledgeBaseService {
       sizeBytes: dto.sizeBytes ?? null,
       language: dto.language ?? null,
       tags: dto.tags ?? [],
+      isGlobal,
       // Pasted text is stored up front so the row is self-sufficient; the extractor still runs over
       // it to derive sections, and every other source type fills this in during ingest.
       rawText:
@@ -160,13 +246,24 @@ export class KnowledgeBaseService {
     });
 
     const saved = await this.documentRepository.save(document);
+    // Written BEFORE the ingest is queued, so the consumer that indexes the chunks reads the
+    // final audience and stamps it onto every one of them. Queued first, the first generation of
+    // chunks would carry an empty audience and the document would be retrievable by nobody until
+    // something happened to re-index it.
+    if (tenantIds.length) {
+      await this.documentTenantRepository.replaceForDocument(
+        saved.id,
+        tenantIds,
+      );
+    }
+
     await this.ingestProducer.enqueue({
       documentId: saved.id,
       action: 'ingest',
     });
 
     this.logger.info(`Knowledge-base document created: ${saved.id}`);
-    return this.toResponse(saved);
+    return this.toResponse(saved, tenantIds);
   }
 
   private validateSource(dto: CreateKbDocumentDto): void {
@@ -212,15 +309,91 @@ export class KnowledgeBaseService {
       status: dto.status,
       sourceType: dto.sourceType,
       tags: dto.tags,
+      tenantId: dto.tenantId,
       includeArchived: dto.includeArchived,
       sortBy: dto.sortBy,
       sortDir: dto.sortDir,
     });
-    return { documents: documents.map((d) => this.toResponse(d)), count };
+
+    // One query for the page's organisations rather than one per row: the corpus table renders
+    // that cell on every line.
+    const byDocument = await this.documentTenantRepository.tenantIdsByDocument(
+      documents.filter((d) => !d.isGlobal).map((d) => d.id),
+    );
+
+    return {
+      documents: documents.map((d) =>
+        this.toResponse(d, byDocument.get(d.id) ?? []),
+      ),
+      count,
+    };
   }
 
   async get(id: string): Promise<KbDocumentResponseDto> {
-    return this.toResponse(await this.findOrFail(id));
+    return this.respond(await this.findOrFail(id));
+  }
+
+  /**
+   * Retarget a document at one, some or all organisations.
+   *
+   * Deliberately NOT part of PATCH /documents/:id, which documents itself as metadata-only and
+   * "never triggers a re-index". This one does touch the index — it rewrites the audience on
+   * every chunk — so it is its own endpoint rather than a field that quietly behaves differently
+   * from its neighbours.
+   *
+   * Order: validate, write Postgres, then push to the index. An archived document is allowed
+   * through: archiving deleted its vectors, so the sweep updates nothing, and the audience is
+   * waiting correctly for whenever it is unarchived and re-indexed.
+   */
+  async setAudience(
+    id: string,
+    dto: UpdateKbDocumentAudienceDto,
+  ): Promise<KbDocumentResponseDto> {
+    const document = await this.findOrFail(id);
+    const userId = this.currentUserId();
+
+    const tenantIds = dto.isGlobal ? [] : (dto.tenantIds ?? []);
+    await this.assertTenantsExist(tenantIds);
+
+    const { added, removed } =
+      await this.documentTenantRepository.replaceForDocument(id, tenantIds);
+    const globalChanged = document.isGlobal !== dto.isGlobal;
+
+    if (globalChanged) {
+      await this.documentRepository.update(
+        { id },
+        { isGlobal: dto.isGlobal, updatedBy: userId },
+      );
+    }
+
+    const updated = { ...document, isGlobal: dto.isGlobal } as KbDocument;
+
+    // Nothing changed, so nothing is swept. An admin who opens the panel and saves without
+    // editing should not trigger hundreds of vector writes over a 300-page book.
+    if (!globalChanged && !added.length && !removed.length) {
+      return this.toResponse(updated, tenantIds);
+    }
+
+    await this.syncAudienceToIndex(updated, tenantIds);
+
+    this.logger.info(
+      `Document ${id} retargeted: isGlobal=${dto.isGlobal}, ` +
+        `+${added.length}/-${removed.length} organisation(s)`,
+    );
+    return this.toResponse(updated, tenantIds);
+  }
+
+  /** The audience to stamp onto chunks at ingest time. Read by KbIngestService. */
+  async audienceFor(
+    documentId: string,
+    isGlobal: boolean,
+  ): Promise<{ isGlobal: boolean; tenantIds: string[] }> {
+    return {
+      isGlobal,
+      tenantIds: isGlobal
+        ? []
+        : await this.documentTenantRepository.tenantIdsForDocument(documentId),
+    };
   }
 
   private async findOrFail(id: string): Promise<KbDocument> {
@@ -253,7 +426,7 @@ export class KnowledgeBaseService {
       },
     );
 
-    return this.toResponse({ ...document, ...dto } as KbDocument);
+    return this.respond({ ...document, ...dto } as KbDocument);
   }
 
   /**
@@ -282,7 +455,7 @@ export class KnowledgeBaseService {
       this.logger.info(
         `Content unchanged for document ${id}; skipping re-index`,
       );
-      return this.toResponse(document);
+      return this.respond(document);
     }
 
     await this.documentRepository.update(
@@ -332,7 +505,7 @@ export class KnowledgeBaseService {
    */
   async archive(id: string): Promise<KbDocumentResponseDto> {
     const document = await this.findOrFail(id);
-    if (document.archivedAt) return this.toResponse(document);
+    if (document.archivedAt) return this.respond(document);
 
     try {
       await this.aiService.deleteKnowledgeChunksByDocument(id);
@@ -360,7 +533,7 @@ export class KnowledgeBaseService {
   /** Unarchive and re-index, since archiving deleted the vectors. */
   async unarchive(id: string): Promise<KbDocumentResponseDto> {
     const document = await this.findOrFail(id);
-    if (!document.archivedAt) return this.toResponse(document);
+    if (!document.archivedAt) return this.respond(document);
 
     await this.documentRepository.update(
       { id },
@@ -453,6 +626,13 @@ export class KnowledgeBaseService {
       query: dto.query,
       limit: dto.limit ?? 8,
       min_similarity: dto.minSimilarity ?? 0.35,
+      // With no organisation named this previews the WHOLE corpus, which is what a console
+      // whose job is "show me what is indexed" should do. Naming one previews what a worker
+      // from that organisation would actually retrieve — the question an admin asks when a
+      // customer reports a gap.
+      audience: dto.tenantId
+        ? { tenant_id: dto.tenantId, include_global: true }
+        : { unrestricted: true },
     });
     return { passages: response.passages };
   }

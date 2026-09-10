@@ -31,6 +31,7 @@ import {
   KbStatsResponseDto,
   KbUploadUrlResponseDto,
   ReplaceKbDocumentContentDto,
+  UpdateKbDocumentAudienceDto,
   UpdateKbDocumentDto,
 } from '../dto/knowledge-base.dto';
 import { KnowledgeBaseService } from '../service/knowledge-base.service';
@@ -179,6 +180,37 @@ export class KnowledgeBaseController {
     @Body() dto: UpdateKbDocumentDto,
   ): Promise<KbDocumentResponseDto> {
     return this.knowledgeBaseService.update(id, dto);
+  }
+
+  @Put('documents/:id/tenants')
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
+  })
+  @ApiOperation({
+    summary: 'Target the document at one, some or all organisations',
+    description:
+      'Replaces the whole assignment — send the organisations the document should end up ' +
+      'with, not a delta. Rewrites the audience on every indexed chunk in place rather than ' +
+      're-chunking, so citations already recorded in the conversation log keep resolving. ' +
+      'A no-op save touches nothing. Separate from PATCH /documents/:id, which is ' +
+      'metadata-only and never reaches the search index.',
+  })
+  @ApiResponse({ status: 200, type: KbDocumentResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: 'An organisation id does not exist',
+  })
+  @ApiResponse({
+    status: 500,
+    description:
+      'Saved in Postgres but the search index could not be updated — retrieval may still ' +
+      'use the previous audience, so this is reported rather than swallowed',
+  })
+  setAudience(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateKbDocumentAudienceDto,
+  ): Promise<KbDocumentResponseDto> {
+    return this.knowledgeBaseService.setAudience(id, dto);
   }
 
   @Put('documents/:id/content')

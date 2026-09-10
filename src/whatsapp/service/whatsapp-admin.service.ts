@@ -258,6 +258,13 @@ export class WhatsAppAdminService {
     const answer = await this.aiService.answerKnowledgeQuestion({
       question: dto.question,
       history: [],
+      // With no organisation named the preview searches the WHOLE corpus, targeting included.
+      // That is right for a tuning console — its job is to show what is indexed — but it is NOT
+      // what any real worker gets, so a question about what one customer can actually see has to
+      // name them. The reply below reports which of the two ran.
+      audience: dto.tenantId
+        ? { tenant_id: dto.tenantId, include_global: true }
+        : { unrestricted: true },
       top_k: retrieval.topK,
       min_similarity: retrieval.minSimilarity,
       decline_similarity: retrieval.declineSimilarity,
@@ -292,6 +299,13 @@ export class WhatsAppAdminService {
       model: answer.model,
       promptVersion: answer.prompt_version,
       latencyMs: Date.now() - startedAt,
+      // Echoed back so the console can say which corpus answered. Without it, "the bot found
+      // this fine" from an unscoped preview is indistinguishable from what a specific
+      // customer's worker would get, and that is the exact confusion this whole feature
+      // introduces.
+      audience: dto.tenantId
+        ? { tenantId: dto.tenantId, includesGlobal: true }
+        : { tenantId: null, includesGlobal: true },
     };
   }
 }
