@@ -233,11 +233,13 @@ describe('KnowledgeBaseService.search', () => {
       corpus: KbCorpus.CHARACTER_LIBRARY,
       query: 'q',
     } as any);
-    // 0.45, corrected down from 0.5 after a measured on-topic query scored 0.5056 —
-    // see KB_MIN_SIMILARITY_DEFAULT.
+    // 0.35 for BOTH corpora. It was 0.5, then 0.45, and both were wrong: a production query
+    // returned nothing against a document that plainly answered it, while an equivalent
+    // phrasing cleared the same floor. Precision is the agent's job (it reads the passage and
+    // can decline); recall is retrieval's. See KB_MIN_SIMILARITY_DEFAULT.
     expect(
       aiService.searchKnowledgeChunks.mock.calls[0][0].min_similarity,
-    ).toBe(0.45);
+    ).toBe(0.35);
 
     build({ preferred: [], rest: ['d1'] }, [[]]);
     await service.search({ corpus: KbCorpus.WHATSAPP_QA, query: 'q' } as any);

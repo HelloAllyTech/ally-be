@@ -292,10 +292,35 @@ export class KnowledgeBaseService {
       );
     }
 
-    await this.ingestProducer.enqueue({
-      documentId: saved.id,
-      action: 'ingest',
-    });
+    // The row is committed before the message is sent, so a failed enqueue would otherwise
+    // leave a phantom: a document sitting at PENDING that no consumer will ever pick up,
+    // rendering in the corpus as "Queued" forever. That is not hypothetical — the ingest queue
+    // was unprovisioned in production for the knowledge base's entire life, so every upload
+    // 500'd AND left one of these behind, and the only way to notice was to read the table.
+    //
+    // Marked FAILED with the real reason rather than deleted: the admin asked for this
+    // document, and a row they can see and retry is more use than a silent disappearance. The
+    // error is still surfaced, so the request does not pretend to have succeeded.
+    try {
+      await this.ingestProducer.enqueue({
+        documentId: saved.id,
+        action: 'ingest',
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Unknown queueing failure';
+      await this.documentRepository.update(
+        { id: saved.id },
+        {
+          status: KbDocumentStatus.FAILED,
+          statusMessage: `Could not be queued for indexing: ${message}`,
+        },
+      );
+      this.logger.error(
+        `Knowledge-base document ${saved.id} saved but not queued: ${message}`,
+      );
+      throw error;
+    }
 
     this.logger.info(`Knowledge-base document created: ${saved.id}`);
     return this.toResponse(saved, tenantIds);

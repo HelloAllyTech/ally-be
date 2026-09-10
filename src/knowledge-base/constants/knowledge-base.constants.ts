@@ -115,37 +115,42 @@ export const KB_URL_FETCH_TIMEOUT_MS = 20_000;
 export const KB_URL_MAX_BYTES = 10 * 1024 * 1024;
 
 /**
- * Default cosine similarity floor per corpus, and the reason they differ.
+ * Default cosine similarity floor per corpus. Both are PERMISSIVE, for different reasons.
  *
- * The WhatsApp bot answers a question it was asked. A weak passage there is recoverable: the
- * answering prompt can see it doesn't address the question and decline, and declining is a
- * first-class outcome on that path (`KnowledgeDeclineReason`). Recall is worth more than
- * precision, so 0.35 stands.
+ * The WhatsApp bot answers a question it was asked, and a weak passage there is recoverable:
+ * the answering prompt sees it doesn't address the question and declines, which is a
+ * first-class outcome on that path (`KnowledgeDeclineReason`). Recall beats precision, so 0.35.
  *
- * The character interview has no such backstop. Nobody asked a question; the agent is drafting
- * a person, and a loosely-related passage does not get declined — it gets absorbed. A book about
- * adolescent anxiety retrieved at 0.38 while interviewing about an 80-year-old with dementia
- * will still contribute plausible-sounding detail, and the failure is invisible: the draft reads
- * *better* for being more specific, and only a clinician notices the specifics belong to someone
- * else. Grounding that can't be declined has to be grounding that was actually close, so the
- * floor is higher and retrieving nothing is an acceptable answer.
+ * The character corpus is 0.35 as well, and getting here took two wrong turns worth recording
+ * because the reasoning that produced them is seductive.
  *
- * 0.45 rather than the 0.5 first chosen, and the correction came from a measurement rather than
- * a second opinion. An unambiguously on-topic local query ("why does someone with dementia keep
- * asking the same question?" against a passage explicitly about exactly that) scored 0.5056 with
- * text-embedding-3-small. A floor of 0.5 would have admitted it by six thousandths — which means
- * the floor was not selecting for "actually close", it was one paraphrase away from rejecting a
- * direct hit. 0.45 keeps a real margin over the Q&A corpus's 0.35 without sitting on top of the
- * scores relevant material actually produces.
+ * It was first set to 0.5 on the argument that the interview agent has no decline step, so
+ * grounding it cannot refuse had better be grounding that was actually close. Then 0.45, after
+ * an unambiguously on-topic query measured 0.5056 — the floor was one paraphrase from
+ * rejecting a direct hit.
  *
- * Still a starting point, not a tuned value: it is calibrated against one measurement on one
- * passage, and the character corpus has no real content yet. `KbSearchDto.minSimilarity`
- * overrides it per request and the retrieval preview shows the scores, so this is meant to be
- * revisited against real material rather than trusted.
+ * Both numbers were wrong, and so was the argument. In production, with one indexed document,
+ * "how specific should a character be, and why is a generic one bad?" returned raw=0+0 against
+ * a document containing a section titled "Specific beats representative, every time". The same
+ * document answered "guidance on writing good speech samples" at the same floor. One phrasing
+ * cleared it, an equivalent one did not: single-shot cosine similarity is brittle across
+ * paraphrase, and a floor tuned to look safe mostly buys silence.
+ *
+ * The argument was backwards too. The interview agent CAN decline — it reads the passage and
+ * decides, and the prompt tells it to say it found nothing rather than invent. A high floor
+ * does not make grounding safer; it removes the agent's ability to judge, because the passage
+ * never reaches it. Precision belongs to the agent's judgement, recall to the retrieval layer.
+ * That is what makes this agentic RAG rather than a threshold pretending to be one, and it is
+ * why the floor is now permissive and the agent is told to weigh what comes back.
+ *
+ * Still not a tuned value — `kb_retrievals` + `kb_retrieval_passages` exist to replace it with
+ * a precision/recall curve over real traffic. `KbSearchDto.minSimilarity` overrides it per
+ * request and the retrieval preview now exposes it, so "nothing matched" can be distinguished
+ * from "the floor was too tight" without reading a log.
  */
 export const KB_MIN_SIMILARITY_DEFAULT: Record<KbCorpus, number> = {
   [KbCorpus.WHATSAPP_QA]: 0.35,
-  [KbCorpus.CHARACTER_LIBRARY]: 0.45,
+  [KbCorpus.CHARACTER_LIBRARY]: 0.35,
 };
 
 /**
