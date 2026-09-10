@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -298,7 +298,17 @@ export class GetKbDocumentsQueryDto {
       'Include archived documents; the management list wants them, the picker does not',
   })
   @IsOptional()
-  @Type(() => Boolean)
+  // NOT `@Type(() => Boolean)`. On a query parameter the incoming value is a STRING, and
+  // `Boolean("false")` is `true` — so `?includeArchived=false` arrived as true and archived
+  // documents were ALWAYS included. That made the WhatsApp Corpus tab's "Show archived"
+  // checkbox inert in both positions from the day it shipped, and it is why three archived
+  // documents kept rendering in the character panel after being archived.
+  //
+  // Explicit string comparison instead, and only "true" is true: an absent parameter, an empty
+  // one, or any typo all mean "no", which is the safe direction for a flag that widens a list.
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.toLowerCase() === 'true' : value,
+  )
   @IsBoolean()
   includeArchived?: boolean;
 

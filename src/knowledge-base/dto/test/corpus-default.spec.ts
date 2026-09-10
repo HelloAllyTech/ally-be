@@ -80,3 +80,57 @@ describe('corpus defaults on the HTTP edge', () => {
     expect(errors.map((e) => e.property)).toContain('corpus');
   });
 });
+
+/**
+ * `includeArchived` on a query string.
+ *
+ * `@Type(() => Boolean)` was the obvious-looking choice and is wrong: a query parameter arrives
+ * as a STRING, and `Boolean("false")` is `true`. So `?includeArchived=false` was read as true
+ * and archived documents were ALWAYS returned — which made the WhatsApp Corpus tab's "Show
+ * archived" checkbox inert in both positions from the day it shipped, and kept three archived
+ * documents rendering in the character panel after they had been archived.
+ */
+describe('includeArchived on a query string', () => {
+  const parse = async (value: unknown) => {
+    const dto = plainToInstance(GetKbDocumentsQueryDto, {
+      corpus: KbCorpus.CHARACTER_LIBRARY,
+      includeArchived: value,
+    });
+    const errors = await validate(dto as object);
+    return { includeArchived: dto.includeArchived, errors };
+  };
+
+  it('reads the string "false" as false, which Boolean() does not', async () => {
+    const { includeArchived, errors } = await parse('false');
+    expect(includeArchived).toBe(false);
+    expect(errors).toHaveLength(0);
+  });
+
+  it('reads the string "true" as true', async () => {
+    expect((await parse('true')).includeArchived).toBe(true);
+  });
+
+  it('is case-insensitive, since a hand-typed URL is a real caller', async () => {
+    expect((await parse('TRUE')).includeArchived).toBe(true);
+    expect((await parse('False')).includeArchived).toBe(false);
+  });
+
+  it('treats anything unrecognised as false — the safe direction for a widening flag', async () => {
+    expect((await parse('yes')).includeArchived).toBe(false);
+    expect((await parse('1')).includeArchived).toBe(false);
+    expect((await parse('')).includeArchived).toBe(false);
+  });
+
+  it('still accepts a real boolean, for a JSON caller', async () => {
+    expect((await parse(true)).includeArchived).toBe(true);
+    expect((await parse(false)).includeArchived).toBe(false);
+  });
+
+  it('leaves it undefined when absent, so the repository default applies', async () => {
+    const dto = plainToInstance(GetKbDocumentsQueryDto, {
+      corpus: KbCorpus.CHARACTER_LIBRARY,
+    });
+    expect(dto.includeArchived).toBeUndefined();
+    expect(await validate(dto as object)).toHaveLength(0);
+  });
+});
