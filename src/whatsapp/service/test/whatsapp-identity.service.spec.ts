@@ -210,5 +210,16 @@ describe('WhatsAppIdentityService', () => {
 
       expect(contactRepository.update).not.toHaveBeenCalled();
     });
+
+    it('does not rewrite a brand-new contact whose fields are absent rather than null', async () => {
+      // `resolveContact` creates a row without these fields at all, and `undefined === null`
+      // is false — so the guard has to normalise, or every first message from an unknown
+      // number costs a pointless write.
+      candidates = [];
+
+      await service.identify(contact());
+
+      expect(contactRepository.update).not.toHaveBeenCalled();
+    });
   });
 });

@@ -143,9 +143,15 @@ export class WhatsAppIdentityService {
     const nextUserId = resolved?.userId ?? null;
     const nextTenantId = resolved?.tenantId ?? null;
 
+    // Normalised before comparing: a contact row just created by `resolveContact` has these
+    // fields ABSENT rather than null, and `undefined === null` is false — so without this a
+    // brand-new number would write null over null on its first message every time.
+    const currentUserId = contact.userId ?? null;
+    const currentTenantId = contact.tenantId ?? null;
+
     if (
-      contact.userId === nextUserId &&
-      contact.tenantId === nextTenantId &&
+      currentUserId === nextUserId &&
+      currentTenantId === nextTenantId &&
       // A contact that has never been resolved has a null identifiedAt even when both ids
       // already match (both null), so the no-change path below must not treat "still
       // unrecognised" as needing a write.
@@ -169,7 +175,7 @@ export class WhatsAppIdentityService {
         `WhatsApp contact ending ${contact.phoneLast4} linked to user ` +
           `${resolved.userId} (organisation ${resolved.tenantId})`,
       );
-    } else if (contact.userId) {
+    } else if (currentUserId) {
       // A link that USED to resolve and now does not — someone cleared the number off the
       // profile, or the account was suspended. Worth a line, because from the worker's side the
       // bot simply stops recognising them.
