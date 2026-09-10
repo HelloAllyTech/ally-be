@@ -50,7 +50,17 @@ export interface RagRetrievalJudgment {
 export class RagQualityRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  /** The rubric from prompt management; null falls back to ally-ai's inline default. */
+  /**
+   * The rubric from prompt management; null falls back to ally-ai's inline default, which is
+   * where it lives today — no `rag_quality_rubric` row is seeded, so this returns null until
+   * someone deliberately creates one.
+   *
+   * The seam is here on purpose: a label that proves wrong mid-backfill can be corrected
+   * without a deploy. But note the hazard before using it. `judge_prompt_version` is pinned in
+   * ally-ai and does NOT track a dashboard edit, so an override changes what the labels mean
+   * while every row still says v1 — two rubrics under one version, silently. Bump the version
+   * in ally-ai alongside any override that changes a definition rather than its wording.
+   */
   async fetchRubric(): Promise<string | null> {
     const rows = await this.dataSource.query(
       `SELECT pv.prompt
