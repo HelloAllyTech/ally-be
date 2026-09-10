@@ -25,6 +25,8 @@ import { TrackAnnotationService } from './service/track-annotation.service';
 import { TrackGameService } from './service/track-game.service';
 import { TrackMemoryService } from './service/track-memory.service';
 import { TrackJournalService } from './service/track-journal.service';
+import { TrackProgressDashboardService } from './service/track-progress-dashboard.service';
+import { TrackProgressDashboardRepository } from './repository/track-progress-dashboard.repository';
 import { TrackRepository } from './repository/track.repository';
 import { TrackSectionRepository } from './repository/track-section.repository';
 import { TrackItemRepository } from './repository/track-item.repository';
@@ -73,6 +75,8 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     TrackGameService,
     TrackMemoryService,
     TrackJournalService,
+    TrackProgressDashboardService,
+    TrackProgressDashboardRepository,
     TrackRepository,
     TrackSectionRepository,
     TrackItemRepository,
