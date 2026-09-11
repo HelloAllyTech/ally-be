@@ -138,6 +138,25 @@ export const ALLOWED_TABLES: Readonly<Record<string, string>> = Object.freeze({
   lab_runs: 'AI Lab executions, with model, status, tokens and cost.',
   dashboards: 'Analytics dashboard registry.',
   blogs: 'Platform blog posts (title, status, publication date).',
+
+  // Corpus retrieval quality (RAG). Raw tables rather than
+  // `analytics_agent_`-prefixed views, and the reason is that the view rule
+  // exists to keep a test org's USAGE out of a metric: none of these four
+  // carries a tenant column, because a corpus document is global or targeted
+  // by an explicit join and a retrieval belongs to the corpus, not to an org.
+  // The population that would distort these numbers is not a test tenant but
+  // the admin retrieval preview, and `consumer` separates that — which is why
+  // every purpose line below says so. No learner or help-seeker text is
+  // reachable here: the queries are typed by an admin or composed by the
+  // interview agent about a fictional character.
+  kb_retrievals:
+    'One row per corpus retrieval: the query as issued, the similarity floor used, per-pass hit counts and what was returned. SEGMENT BY `consumer` (interview_agent vs admin_preview) before reading any trend — the preview is an operator probing thresholds.',
+  kb_retrieval_passages:
+    'Every candidate passage a retrieval considered, INCLUDING the ones shaping discarded (`outcome`), with its `similarity` and which pass it came from. Join to kb_retrieval_passage_judgments on passage_id for the similarity/relevance distribution.',
+  kb_retrieval_judgments:
+    'LLM-judge verdict per retrieval: `sufficiency` (sufficient/partial/nothing_useful) and `missing` — what the judge would have needed. Rows exist once per (retrieval, judge_model, judge_prompt_version); pin both when comparing, and read counts alongside rates, since a corpus can be judged a handful of times a day.',
+  kb_retrieval_passage_judgments:
+    'LLM-judge label per candidate passage: `relevance` (relevant/tangential/irrelevant) and `superficial_match` (scored well on shared wording while answering something else). Joined to `similarity`, this is what turns the similarity floor into a precision curve. Every row already cleared the floor, so these labels measure precision and never the recall of what the floor rejected.',
 });
 
 /**
