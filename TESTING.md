@@ -14,9 +14,17 @@ The ally-be project uses Jest for testing and provides Docker-based test infrast
 > **Run one suite at a time.** Jest's config lives in [`jest.config.js`](jest.config.js),
 > which caps the pool at 3 workers **locally** (each worker is a Node process running
 > ts-jest over this codebase; the default of `cores - 1` is 9 on a 10-core machine).
-> CI is deliberately exempt — it resolves Jest's own default. The cap bounds a single
+> CI is exempt from the CAP — it resolves Jest's own default. The cap bounds a single
 > run; it does not make two concurrent runs safe, and running this suite alongside
 > ally-web's Vitest suite has exhausted a 16 GB machine.
+>
+> `workerIdleMemoryLimit` (1 GB) applies **everywhere, CI included**, and is a different
+> setting with a different purpose: it recycles a worker that has ballooned, between test
+> files. This suite warns about the leak on every run ("a worker process has failed to
+> exit gracefully"), and a runner is not immune — CI died at ~3.9 GB with "Ineffective
+> mark-compacts near heap limit" (exit 134) after reporting every suite PASSED, then
+> passed on re-run. A red master that clears on a retry teaches people to retry rather
+> than look, which is worse than a red one that stays red.
 >
 > Override either way with `JEST_MAX_WORKERS` (`=1` to serialise while debugging a
 > cross-file leak, higher on a machine with headroom).
