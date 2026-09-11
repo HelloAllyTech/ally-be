@@ -7,10 +7,30 @@ import {
 } from './platform-analytics.dto';
 
 /** Consumers a retrieval can come from — see `consumer` on kb_retrievals. */
-export const RAG_CONSUMERS = ['interview_agent', 'admin_preview'] as const;
+export const RAG_CONSUMERS = [
+  'interview_agent',
+  'admin_preview',
+  'whatsapp_bot',
+  'reference_search',
+  'roadmap_matcher',
+] as const;
 export type RagConsumerParam = (typeof RAG_CONSUMERS)[number];
 
-export const RAG_CORPORA = ['whatsapp_qa', 'character_library'] as const;
+/**
+ * Every corpus the log holds, including the two it cannot judge.
+ *
+ * `reference_documents` and `roadmap_opportunities` are real vector searches whose passage
+ * text lives in ally-ai's own collections, so no relevance label exists for them. They are
+ * here for their score distribution and their volume, and the response's `judged` count is
+ * what says so — a zero there beside a non-zero `retrievals` is the honest shape of
+ * "logged but not judged", not a gap in the judge.
+ */
+export const RAG_CORPORA = [
+  'whatsapp_qa',
+  'character_library',
+  'reference_documents',
+  'roadmap_opportunities',
+] as const;
 export type RagCorpusParam = (typeof RAG_CORPORA)[number];
 
 /**

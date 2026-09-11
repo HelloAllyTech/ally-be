@@ -2,7 +2,7 @@ import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.e
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import {
   KbCharacterTopic,
-  KbCorpus,
+  KbLoggedCorpus,
   KbRetrievalConsumer,
   KbRetrievalDisposition,
 } from '../enum/knowledge-base.enum';
@@ -40,9 +40,15 @@ export class KbRetrieval extends BaseWithoutTenantEntity {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
+  /**
+   * Wider than {@link KbCorpus}: the log also holds retrievals from surfaces this module does
+   * not ingest — the staff document search and roadmap duplicate detection. Those cannot be
+   * judged from here (their text lives in ally-ai's collections), and the judge's selector
+   * excludes them by name rather than picking them up and skipping them.
+   */
   @Index('idx_kb_retrievals_corpus')
   @Column({ type: 'varchar', length: 32 })
-  corpus!: KbCorpus;
+  corpus!: KbLoggedCorpus;
 
   /**
    * Segment by this before believing any trend. An operator probing thresholds in the admin

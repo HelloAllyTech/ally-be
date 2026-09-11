@@ -25,6 +25,54 @@ export enum KbCorpus {
 }
 
 /**
+ * Retrieval surfaces that are NOT corpora of `kb_documents`.
+ *
+ * Kept out of {@link KbCorpus} deliberately. That enum means "material this module ingests,
+ * chunks and indexes", and it keys the chunk profiles and similarity floors — adding a value
+ * there for a collection we neither ingest nor chunk would force an invented chunk profile for
+ * it, which is a lie the type system would then enforce everywhere.
+ *
+ * These two are real vector searches all the same, and leaving them unlogged left the same
+ * hole the WhatsApp bot's path did: a similarity threshold governing a live feature with no
+ * distribution behind it.
+ *
+ * `reference_documents` — the staff-facing document search (ally-ai's ReferenceDocument
+ * collection). Its unit of retrieval is a WHOLE DOCUMENT, not a chunk, and it is governed by a
+ * DISTANCE threshold rather than a similarity floor; the emitter converts (1 - distance) so the
+ * stored number means the same thing as everywhere else here.
+ *
+ * `roadmap_opportunities` — duplicate detection over the product roadmap: is this draft already
+ * in the index? Staff-authored text on both sides, so nothing sensitive.
+ *
+ * NEITHER IS JUDGED, and cannot be from this database: the passage text lives in ally-ai's
+ * collections, not in `kb_document_chunks`, so the judge's selector excludes them explicitly
+ * rather than picking them up and skipping them as "text gone" — which would look like a bug
+ * in the judge instead of a boundary of it.
+ */
+export enum KbExternalCorpus {
+  REFERENCE_DOCUMENTS = 'reference_documents',
+  ROADMAP_OPPORTUNITIES = 'roadmap_opportunities',
+}
+
+/**
+ * Anything the retrieval log will accept in its `corpus` column: the corpora this module owns,
+ * plus the external surfaces that report into it.
+ */
+export type KbLoggedCorpus = KbCorpus | KbExternalCorpus;
+
+/** Every value the log accepts, for validating a payload that crossed a service. */
+export const KB_LOGGED_CORPORA: string[] = [
+  ...Object.values(KbCorpus),
+  ...Object.values(KbExternalCorpus),
+];
+
+/**
+ * Corpora whose passages live in `kb_document_chunks`, and therefore the only ones the
+ * relevance judge can read. Everything else is logged for its distribution and its volume.
+ */
+export const KB_JUDGEABLE_CORPORA: string[] = Object.values(KbCorpus);
+
+/**
  * What part of a character a document helps ground.
  *
  * A curator who uploads a dementia caregiving handbook and a book on adolescent anxiety
@@ -126,6 +174,14 @@ export enum KbRetrievalConsumer {
    * `querySensitive = true`: the query is a health worker's own question.
    */
   WHATSAPP_BOT = 'whatsapp_bot',
+  /**
+   * The staff-facing reference-document search. Marked sensitive: a counsellor typing into a
+   * search box mid-call can put case details in the query, and nothing downstream needs the
+   * text to read the distribution.
+   */
+  REFERENCE_SEARCH = 'reference_search',
+  /** Roadmap duplicate detection. Staff-authored product text, nothing sensitive. */
+  ROADMAP_MATCHER = 'roadmap_matcher',
 }
 
 /**

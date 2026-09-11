@@ -66,6 +66,17 @@ describe('RagQualityRepository', () => {
       expect(sql).toContain('length(btrim(r.query)) > 0');
     });
 
+    it('offers only corpora whose passage text lives in this database', async () => {
+      // The staff document search and roadmap duplicate detection report into the same log,
+      // but their passages live in ally-ai's collections. Excluded BY NAME: left to fail the
+      // text join they would be counted as "passages outlived their chunk text", which reads
+      // as a bug in the judge rather than a boundary of it.
+      await repository.selectRetrievals({ sinceDays: 30 });
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toContain('r.corpus = ANY(');
+      expect(params).toContainEqual(['whatsapp_qa', 'character_library']);
+    });
+
     it('scopes "already judged" to one model and rubric version', async () => {
       // What makes an interrupted run resumable, and lets a new rubric coexist with the old.
       await repository.selectRetrievals({
@@ -78,14 +89,22 @@ describe('RagQualityRepository', () => {
       expect(sql).toContain('NOT EXISTS');
       expect(sql).toContain('kb_retrieval_judgments');
       expect(sql).toContain('judge_prompt_version');
-      expect(params).toEqual(['gemini-2.5-pro', 'v1']);
+      // $1 is the judgeable-corpus list; the pinned pair follows it.
+      expect(params).toEqual([
+        ['whatsapp_qa', 'character_library'],
+        'gemini-2.5-pro',
+        'v1',
+      ]);
     });
 
     it('can narrow to one consumer, so a batch can be sampled across both', async () => {
       await repository.selectRetrievals({ consumer: 'interview_agent' });
       const [sql, params] = query.mock.calls[0];
-      expect(sql).toContain('r.consumer = $1');
-      expect(params).toEqual(['interview_agent']);
+      expect(sql).toContain('r.consumer = $2');
+      expect(params).toEqual([
+        ['whatsapp_qa', 'character_library'],
+        'interview_agent',
+      ]);
     });
   });
 

@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { KB_JUDGEABLE_CORPORA } from '../../knowledge-base/enum/knowledge-base.enum';
+
 /** A retrieval worth judging, with the slice dimensions its labels will carry. */
 export interface RagRetrievalRow {
   id: string;
@@ -103,6 +105,7 @@ export class RagQualityRepository {
       return `$${params.length}`;
     };
 
+    const judgeable = KB_JUDGEABLE_CORPORA;
     let sql = `
       SELECT r.id,
              r.corpus,
@@ -112,7 +115,14 @@ export class RagQualityRepository {
              r.returned_count,
              r."createdAt" AS occurred_at
         FROM kb_retrievals r
-       WHERE length(btrim(r.query)) > 0`;
+       WHERE length(btrim(r.query)) > 0
+         -- Only corpora whose passages live in kb_document_chunks. The staff document search
+         -- and roadmap duplicate detection report into this log too, but their text lives in
+         -- ally-ai's own collections, so the judge has nothing to read. Excluded BY NAME
+         -- rather than left to fail the text join, which would count them as "passages
+         -- outlived their chunk text" and read as a bug in the judge instead of a boundary
+         -- of it.
+         AND r.corpus = ANY(${p(judgeable)})`;
 
     if (opts.consumer) sql += ` AND r.consumer = ${p(opts.consumer)}`;
     if (opts.corpus) sql += ` AND r.corpus = ${p(opts.corpus)}`;

@@ -8,11 +8,12 @@ import {
   RetrievalLogPassage,
 } from '../../learn/interface/learn-message.interface';
 import {
-  KbCorpus,
+  KB_LOGGED_CORPORA,
   KbRetrievalConsumer,
   KbRetrievalDisposition,
   KbRetrievalOutcome,
   KbRetrievalPass,
+  KbLoggedCorpus,
 } from '../enum/knowledge-base.enum';
 import { KbRetrievalRepository } from '../repository/kb-retrieval.repository';
 
@@ -97,7 +98,13 @@ export class RetrievalLogProcessor extends BaseEventProcessor {
 
   async process(message: RetrievalLogMessage): Promise<void> {
     const event = message?.data?.retrieval_log;
-    const corpus = RetrievalLogProcessor.toEnum(KbCorpus, event?.corpus);
+    // Wider than KbCorpus: an external surface (reference documents, roadmap duplicate
+    // detection) reports here too, and its collection is not one this module ingests.
+    const corpus =
+      typeof event?.corpus === 'string' &&
+      KB_LOGGED_CORPORA.includes(event.corpus)
+        ? (event.corpus as KbLoggedCorpus)
+        : null;
     const consumer = RetrievalLogProcessor.toEnum(
       KbRetrievalConsumer,
       event?.consumer,
