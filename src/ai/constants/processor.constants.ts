@@ -9,5 +9,6 @@ export const PROCESSOR_EVENT_TYPES = {
   SESSION_MEMORY: 'session_memory',
   SUPERVISOR_NOTE: 'supervisor_note',
   RETRIEVAL_LOG: 'retrieval_log',
+  WM_RECALL: 'wm_recall',
   UNKNOWN_EVENT: 'UNKNOWN_EVENT',
 } as const;

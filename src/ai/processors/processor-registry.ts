@@ -12,6 +12,7 @@ import { LlmUsageProcessor } from 'src/learn/processor/llm-usage.processor';
 import { SessionMemoryProcessor } from 'src/learn/processor/session-memory.processor';
 import { SupervisorNoteProcessor } from 'src/learn/processor/supervisor-note.processor';
 import { RetrievalLogProcessor } from 'src/knowledge-base/processor/retrieval-log.processor';
+import { WmRecallProcessor } from 'src/learn/processor/wm-recall.processor';
 
 @Injectable()
 export class ProcessorRegistry {
@@ -30,6 +31,7 @@ export class ProcessorRegistry {
     private readonly sessionMemoryProcessor: SessionMemoryProcessor,
     private readonly supervisorNoteProcessor: SupervisorNoteProcessor,
     private readonly retrievalLogProcessor: RetrievalLogProcessor,
+    private readonly wmRecallProcessor: WmRecallProcessor,
   ) {
     this.registerProcessors();
   }
@@ -45,6 +47,7 @@ export class ProcessorRegistry {
     this.registerProcessor(this.sessionMemoryProcessor);
     this.registerProcessor(this.supervisorNoteProcessor);
     this.registerProcessor(this.retrievalLogProcessor);
+    this.registerProcessor(this.wmRecallProcessor);
 
     this.logger.info(`Registered ${this.processors.size} event processors`);
   }

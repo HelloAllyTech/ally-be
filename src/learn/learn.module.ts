@@ -97,6 +97,8 @@ import { LlmUsageProcessor } from './processor/llm-usage.processor';
 import { SessionMemoryProcessor } from './processor/session-memory.processor';
 import { SupervisorNoteProcessor } from './processor/supervisor-note.processor';
 import { RetrievalLogProcessor } from 'src/knowledge-base/processor/retrieval-log.processor';
+import { WmRecallProcessor } from './processor/wm-recall.processor';
+import { WmRecallSelection } from './entity/wm-recall-selection.entity';
 import { KbRetrievalRepository } from 'src/knowledge-base/repository/kb-retrieval.repository';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
@@ -154,6 +156,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     LlmModule,
     CohortModule,
     TypeOrmModule.forFeature([
+      WmRecallSelection,
       Scenarios,
       PreviewMonologueRun,
       ScenarioSessions,
@@ -247,6 +250,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     SessionMemoryProcessor,
     SupervisorNoteProcessor,
     RetrievalLogProcessor,
+    WmRecallProcessor,
     KbRetrievalRepository,
     ScenarioVoicesRepository,
     SttConfigsRepository,
@@ -319,6 +323,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     SessionMemoryProcessor,
     SupervisorNoteProcessor,
     RetrievalLogProcessor,
+    WmRecallProcessor,
     ScenarioSessionService,
     SimulationCreditsService,
     ScenarioSharedService,
