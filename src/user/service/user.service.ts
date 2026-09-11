@@ -302,6 +302,7 @@ export class UserService {
       tenantId: user.user_tenant_id,
       createdAt: user.user_createdAt,
       updatedAt: user.user_updatedAt,
+      lastActiveAt: user.user_lastActiveAt ?? null,
       roles: rolesMap.get(user.user_id) || [],
       creditLimit: user.simulation_credit_limit,
       consumedCredits: user.simulation_consumed_credits,
