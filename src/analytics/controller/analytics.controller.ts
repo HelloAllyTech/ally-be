@@ -49,6 +49,7 @@ import {
 } from '../dto/weak-metrics.dto';
 import { WeakMetricsAnalyticsService } from '../service/weak-metrics-analytics.service';
 import { FeedbackGroundednessJudgeService } from '../service/feedback-groundedness-judge.service';
+import { RagQualityAnalyticsService } from '../service/rag-quality-analytics.service';
 import { FillerAnalyticsService } from '../service/filler-analytics.service';
 import { FillerJudgeService } from '../service/filler-judge.service';
 import { LanguageJudgeService } from '../service/language-judge.service';
@@ -98,6 +99,10 @@ import {
   VoiceLatencyByScenarioQueryDto,
   VoiceLatencyByScenarioResponseDto,
 } from '../dto/platform-analytics.dto';
+import {
+  RagQualityQueryDto,
+  RagQualityResponseDto,
+} from '../dto/rag-quality-analytics.dto';
 import {
   AnalyticsHighlightsQueryDto,
   AnalyticsHighlightsResponseDto,
@@ -272,6 +277,7 @@ export class AnalyticsController {
     private readonly glossaryEffectAnalyticsService: GlossaryEffectAnalyticsService,
     private readonly weakMetricsAnalyticsService: WeakMetricsAnalyticsService,
     private readonly feedbackGroundednessJudgeService: FeedbackGroundednessJudgeService,
+    private readonly ragQualityAnalyticsService: RagQualityAnalyticsService,
     private readonly activationAnalyticsService: ActivationAnalyticsService,
     private readonly completionRateAnalyticsService: CompletionRateAnalyticsService,
     private readonly languageMixAnalyticsService: LanguageMixAnalyticsService,
@@ -1541,6 +1547,44 @@ export class AnalyticsController {
     @Query() query: WeakMetricsQueryDto,
   ): Promise<WeakMetricsResponseDto> {
     return this.weakMetricsAnalyticsService.getWeakMetrics(query);
+  }
+
+  @Get('rag-quality')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Corpus retrieval quality, as the judge labelled it (super-admin)',
+    description:
+      'What the retrieval log plus its LLM-judge labels say about whether retrieval is ' +
+      'working: sufficiency per retrieval, relevance per passage, and the precision curve ' +
+      'that settles what the similarity floor should be. ' +
+      'SUFFICIENCY AND RELEVANCE LEAD, NOT VOLUME — retrieval count is the gameable number ' +
+      'here, since an operator probing thresholds in the admin preview can double it in an ' +
+      'afternoon without anything improving. ' +
+      'EVERYTHING IS A COUNT. `coverage.belowReportingFloor` is true when the judged sample ' +
+      'is too small for a percentage to mean anything; show the counts and suppress the ' +
+      'rates rather than reporting 83% of six. ' +
+      'SEGMENT BY CONSUMER before believing any of it: `byConsumer` is in every response for ' +
+      'that reason, and `consumer` narrows the whole payload. ' +
+      'The floor curve carries an asymmetry worth stating: every judged passage already ' +
+      'cleared the floor in force when it was retrieved, so `relevant`/`irrelevant` measure ' +
+      'PRECISION and `relevantLost` estimates what a HIGHER floor would have discarded. What ' +
+      'a LOWER floor would have found is not in the log at all — that needs the same queries ' +
+      're-run, which the retrieval preview does by hand. ' +
+      '`gaps` is the qualitative half and usually the most actionable: the judge naming what ' +
+      'it would have needed is the only thing that separates a corpus gap from a floor set ' +
+      'too tight, because both arrive as an empty retrieval. ' +
+      'Judgments are scoped to one pinned (model, rubric) pair; `judgeVersions` reports every ' +
+      'pair present, and more than one means the window mixes two judges.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'RAG quality retrieved successfully',
+    type: RagQualityResponseDto,
+  })
+  async getRagQuality(
+    @Query() query: RagQualityQueryDto,
+  ): Promise<RagQualityResponseDto> {
+    return this.ragQualityAnalyticsService.getRagQuality(query);
   }
 
   @Post('feedback-groundedness/backfill')

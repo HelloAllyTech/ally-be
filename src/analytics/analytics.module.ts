@@ -104,6 +104,8 @@ import { WeakMetricsAnalyticsRepository } from './repository/weak-metrics-analyt
 import { FeedbackGroundednessJudgeService } from './service/feedback-groundedness-judge.service';
 import { FeedbackGroundednessRepository } from './repository/feedback-groundedness.repository';
 import { RagQualityJudgeService } from './service/rag-quality-judge.service';
+import { RagQualityAnalyticsService } from './service/rag-quality-analytics.service';
+import { RagQualityAnalyticsRepository } from './repository/rag-quality-analytics.repository';
 import { RagQualityRepository } from './repository/rag-quality.repository';
 import { MetabaseService } from './service/metabase.service';
 import { AppConfigModule } from '../config/config.module';
@@ -145,6 +147,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     FeedbackGroundednessRepository,
     RagQualityJudgeService,
     RagQualityRepository,
+    RagQualityAnalyticsService,
+    RagQualityAnalyticsRepository,
     HighlightsAnalyticsService,
     HighlightsAnalyticsRepository,
     CohortAnalyticsService,
