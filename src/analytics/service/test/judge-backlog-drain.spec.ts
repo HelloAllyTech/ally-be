@@ -33,6 +33,7 @@ describe('JudgeBacklogDrainService', () => {
         'groundedness',
         'language',
         'rag-quality',
+        'recall-quality',
       ]) {
         store.set(`judge:backlog:${family}`, JSON.stringify(opts.state));
       }
@@ -59,6 +60,10 @@ describe('JudgeBacklogDrainService', () => {
       getJob: jest.fn().mockResolvedValue(undefined),
       startBackfill: jest.fn().mockResolvedValue({ jobId: 'new-rag-job' }),
     };
+    const recallQuality = {
+      getJob: jest.fn().mockResolvedValue(undefined),
+      startBackfill: jest.fn().mockResolvedValue({ jobId: 'new-recall-job' }),
+    };
     const rows = opts.eligible === false ? [] : [{ id: 's1' }];
     const driftRepo = { selectSessions: jest.fn().mockResolvedValue(rows) };
     const groundednessRepo = {
@@ -67,6 +72,9 @@ describe('JudgeBacklogDrainService', () => {
     const languageRepo = { selectSessions: jest.fn().mockResolvedValue(rows) };
     const ragQualityRepo = {
       selectRetrievals: jest.fn().mockResolvedValue(rows),
+    };
+    const recallQualityRepo = {
+      selectTurns: jest.fn().mockResolvedValue(rows),
     };
     const redis = {
       get: jest.fn(async (k: string) => store.get(k) ?? null),
@@ -80,10 +88,12 @@ describe('JudgeBacklogDrainService', () => {
       groundedness as never,
       language as never,
       ragQuality as never,
+      recallQuality as never,
       driftRepo as never,
       groundednessRepo as never,
       languageRepo as never,
       ragQualityRepo as never,
+      recallQualityRepo as never,
       redis as never,
     );
     return {
@@ -92,8 +102,10 @@ describe('JudgeBacklogDrainService', () => {
       groundedness,
       language,
       ragQuality,
+      recallQuality,
       driftRepo,
       ragQualityRepo,
+      recallQualityRepo,
       store,
     };
   };

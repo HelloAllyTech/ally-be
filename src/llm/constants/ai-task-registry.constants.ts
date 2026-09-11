@@ -568,6 +568,22 @@ const ALLY_AI_TASKS: AiTaskEntry[] = [
     configuredBy: 'RAG_QUALITY_JUDGE__MODEL',
   },
   {
+    id: 'recall-quality-judge',
+    task: LlmTask.RECALL_QUALITY_JUDGE,
+    runtime: LlmRuntime.ALLY_AI,
+    trigger: "Scheduled: the client's working-memory recall is judged",
+    detail:
+      'Did the client recall the fact the turn called for, or was it sitting just below the ' +
+      "cap? One call per TURN rather than per session, so this family's row count is the " +
+      'highest of the six — read its cost against turns, not sessions. Separates a ranking ' +
+      'failure (a passed-over fact answered better) from a corpus gap (nothing apt in the ' +
+      'pool at all), because those have different fixes.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-pro',
+    configuredBy: 'RECALL_QUALITY_JUDGE__MODEL',
+  },
+  {
     id: 'filler-judge',
     task: LlmTask.FILLER_JUDGE,
     runtime: LlmRuntime.ALLY_AI,

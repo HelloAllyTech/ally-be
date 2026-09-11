@@ -53,6 +53,11 @@ export enum LlmTask {
   // session — far more rows, each a fraction of the tokens — so folded into
   // another judge's line it would swamp the count and dilute the cost.
   RAG_QUALITY_JUDGE = 'rag_quality_judge',
+  // Recall-quality judge in ally-ai: did the voice agent's client recall the
+  // backstory fact the turn called for, or was it ranked below the cap of five?
+  // Its own label because the unit is a TURN — a 30-turn session produces 30
+  // calls — so folded into another judge's line it would swamp every count.
+  RECALL_QUALITY_JUDGE = 'recall_quality_judge',
   // Analytics Agent (admin Analytics -> Analytics Agent tab): one planning call
   // (question -> SQL) and one narration call (rows -> answer) per question.
   // Separate labels because the planner carries the whole schema catalogue and

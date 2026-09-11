@@ -106,6 +106,8 @@ import { FeedbackGroundednessRepository } from './repository/feedback-groundedne
 import { RagQualityJudgeService } from './service/rag-quality-judge.service';
 import { RagQualityAnalyticsService } from './service/rag-quality-analytics.service';
 import { RagQualityAnalyticsRepository } from './repository/rag-quality-analytics.repository';
+import { RecallQualityJudgeService } from './service/recall-quality-judge.service';
+import { RecallQualityRepository } from './repository/recall-quality.repository';
 import { RagQualityRepository } from './repository/rag-quality.repository';
 import { MetabaseService } from './service/metabase.service';
 import { AppConfigModule } from '../config/config.module';
@@ -149,6 +151,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     RagQualityRepository,
     RagQualityAnalyticsService,
     RagQualityAnalyticsRepository,
+    RecallQualityJudgeService,
+    RecallQualityRepository,
     HighlightsAnalyticsService,
     HighlightsAnalyticsRepository,
     CohortAnalyticsService,

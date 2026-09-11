@@ -498,6 +498,44 @@ export class RagQualityBackfillJobDto {
   failed!: number;
 }
 
+export class RecallQualityBackfillJobDto {
+  @ApiProperty() jobId!: string;
+  @ApiProperty({ description: 'queued | running | done | error' })
+  status!: string;
+  @ApiProperty({ description: 'Turns selected for this run' })
+  total!: number;
+  @ApiProperty() processed!: number;
+  @ApiProperty({ description: 'Turns that came back with a verdict' })
+  judged!: number;
+  @ApiProperty({
+    description:
+      'Turns skipped because the transcript could not support the turn index. A verdict on ' +
+      'the wrong turn is worse than none, because nothing downstream could tell it was wrong.',
+  })
+  skipped!: number;
+  @ApiProperty({
+    description:
+      'A passed-over fact answered the turn better than anything recalled — a RANKING ' +
+      'failure, where the material was there and the scoring buried it.',
+  })
+  missedBetter!: number;
+  @ApiProperty({
+    description:
+      'Neither list held anything apt — a CORPUS gap, fixed by writing more backstory ' +
+      'rather than by retuning a weight.',
+  })
+  nothingApt!: number;
+  @ApiProperty({
+    description:
+      'Turns that called for no particular backstory. Read the failure counts against THIS: ' +
+      'a session of acknowledgements is not evidence that recall works.',
+  })
+  noDemand!: number;
+  @ApiProperty({ nullable: true }) error!: string | null;
+  @ApiProperty({ description: 'Turns whose judge call errored or timed out' })
+  failed!: number;
+}
+
 export class DriftBackfillJobDto {
   @ApiProperty() jobId!: string;
   @ApiProperty({ description: 'queued | running | done | error' })

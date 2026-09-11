@@ -6,10 +6,12 @@ import { PlatformAnalyticsService } from './platform-analytics.service';
 import { FeedbackGroundednessJudgeService } from './feedback-groundedness-judge.service';
 import { LanguageJudgeService } from './language-judge.service';
 import { RagQualityJudgeService } from './rag-quality-judge.service';
+import { RecallQualityJudgeService } from './recall-quality-judge.service';
 import { DriftJudgeRepository } from '../repository/drift-judge.repository';
 import { FeedbackGroundednessRepository } from '../repository/feedback-groundedness.repository';
 import { LanguageJudgeRepository } from '../repository/language-judge.repository';
 import { RagQualityRepository } from '../repository/rag-quality.repository';
+import { RecallQualityRepository } from '../repository/recall-quality.repository';
 
 /**
  * Drains the judge backlog on its own, so backfilling stops being something a
@@ -143,6 +145,29 @@ const RAG_QUALITY_TARGET = {
 };
 
 /**
+ * Recall quality reads the SHORTEST window of any family, and that is deliberate.
+ *
+ * There is no history to reach back for: `wm_recall_selections` starts empty, so everything in
+ * it is new data by construction. Seven days keeps it that way — the ranking's weights are the
+ * subject, and a turn judged from before a coefficient changed describes a ranking nobody is
+ * running. When a weight moves, the window rolls past the old regime on its own rather than
+ * averaging the two.
+ */
+const RECALL_QUALITY_WINDOW_DAYS = 7;
+
+/**
+ * Per tick. Smaller than the corpus families because the unit is a TURN, not a session: a
+ * single 30-turn session contributes 30 rows, so a day of real traffic is thousands. This
+ * fills the tick without letting one family monopolise the judge ceiling the other five share.
+ */
+const RECALL_QUALITY_CHUNK = 60;
+
+const RECALL_QUALITY_TARGET = {
+  judgeModel: 'gemini-2.5-pro',
+  judgePromptVersion: 'v1',
+};
+
+/**
  * Consecutive unproductive runs before this stops trying.
  *
  * A drainer that restarts a failing job forever is a way to spend money on
@@ -165,10 +190,12 @@ export class JudgeBacklogDrainService implements OnModuleInit {
     private readonly groundedness: FeedbackGroundednessJudgeService,
     private readonly language: LanguageJudgeService,
     private readonly ragQuality: RagQualityJudgeService,
+    private readonly recallQuality: RecallQualityJudgeService,
     private readonly driftRepo: DriftJudgeRepository,
     private readonly groundednessRepo: FeedbackGroundednessRepository,
     private readonly languageRepo: LanguageJudgeRepository,
     private readonly ragQualityRepo: RagQualityRepository,
+    private readonly recallQualityRepo: RecallQualityRepository,
     private readonly redis: RedisService,
   ) {}
 
@@ -178,6 +205,7 @@ export class JudgeBacklogDrainService implements OnModuleInit {
       await this.drainGroundedness();
       await this.drainLanguage();
       await this.drainRagQuality();
+      await this.drainRecallQuality();
       await this.drainRoundTripWer();
     });
   }
@@ -463,6 +491,60 @@ export class JudgeBacklogDrainService implements OnModuleInit {
     });
     this.logger.debug(
       `[backlog] rag-quality started job=${job.jobId} strikes=${next.unproductive}`,
+    );
+  }
+
+  /**
+   * Judge whether the voice agent's client recalled what each turn called for.
+   *
+   * The sixth family, and the first that judges a TURN rather than a session or a retrieval.
+   * It exists because the recall ranking's five weights were never tunable from anything but
+   * argument: the scores were computed and discarded every turn until the selection log
+   * shipped.
+   *
+   * Nothing here reaches into history. The table it reads began empty, so every row is new
+   * data, and the seven-day window keeps a weight change from being averaged against the
+   * regime it replaced.
+   */
+  private async drainRecallQuality(): Promise<void> {
+    const state = await this.readState('recall-quality');
+    const lastJob = state.jobId
+      ? await this.recallQuality.getJob(state.jobId).catch(() => undefined)
+      : undefined;
+
+    const { start, next } = await this.shouldStart(
+      'recall-quality',
+      lastJob,
+      state,
+    );
+    if (!start) {
+      await this.writeState('recall-quality', next);
+      return;
+    }
+
+    const eligible = await this.recallQualityRepo.selectTurns({
+      sinceDays: RECALL_QUALITY_WINDOW_DAYS,
+      unjudgedForVersion: RECALL_QUALITY_TARGET,
+      limit: 1,
+    });
+    if (eligible.length === 0) {
+      await this.writeState('recall-quality', { unproductive: 0 });
+      return;
+    }
+
+    const job = await this.recallQuality.startBackfill(
+      RECALL_QUALITY_WINDOW_DAYS,
+      RECALL_QUALITY_TARGET,
+      undefined,
+      RECALL_QUALITY_CHUNK,
+    );
+    await this.writeState('recall-quality', {
+      jobId: job.jobId,
+      unproductive: next.unproductive,
+      lastProcessed: undefined,
+    });
+    this.logger.debug(
+      `[backlog] recall-quality started job=${job.jobId} strikes=${next.unproductive}`,
     );
   }
 
