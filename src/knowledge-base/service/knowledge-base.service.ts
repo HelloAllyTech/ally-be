@@ -790,6 +790,10 @@ export class KnowledgeBaseService {
         latencyMs: Date.now() - startedAt,
         sessionId: context.sessionId ?? null,
         createdBy: context.userId ?? null,
+        // An admin's console query or the interview agent's own composed question — neither is
+        // someone else's words, so neither is withheld. The WhatsApp bot's rows arrive from
+        // ally-ai with this set.
+        querySensitive: false,
       },
       decisions.map((decision, index) => ({
         chunkId: decision.passage.chunk_id,

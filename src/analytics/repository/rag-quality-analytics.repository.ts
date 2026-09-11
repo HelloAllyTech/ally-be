@@ -40,7 +40,8 @@ export interface RagFloorRow {
 }
 
 export interface RagGapRow {
-  query: string;
+  query: string | null;
+  query_sensitive: boolean;
   sufficiency: string;
   missing: string | null;
   consumer: string;
@@ -230,7 +231,11 @@ export class RagQualityAnalyticsRepository {
     const params: unknown[] = [];
     const scope = this.retrievalScope(f, params);
     return this.dataSource.query(
-      `SELECT r.query,
+      // The query is WITHHELD IN SQL, not in the client, for a sensitive row. A health
+      // worker's question is PHI-adjacent here, and a redaction that lives in a React
+      // component is one careless `{gap.query}` away from being undone.
+      `SELECT CASE WHEN r.query_sensitive THEN NULL ELSE r.query END AS query,
+              r.query_sensitive,
               j.sufficiency,
               j.missing,
               r.consumer,

@@ -96,6 +96,8 @@ import { StartMetricsProcessor } from './processor/start-metrics.processor';
 import { LlmUsageProcessor } from './processor/llm-usage.processor';
 import { SessionMemoryProcessor } from './processor/session-memory.processor';
 import { SupervisorNoteProcessor } from './processor/supervisor-note.processor';
+import { RetrievalLogProcessor } from 'src/knowledge-base/processor/retrieval-log.processor';
+import { KbRetrievalRepository } from 'src/knowledge-base/repository/kb-retrieval.repository';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { ScenarioSessionBehaviorInstructions } from './entity/scenario-session-behavior-instructions.entity';
@@ -244,6 +246,8 @@ import { SettingsModule } from 'src/settings/settings.module';
     LlmUsageProcessor,
     SessionMemoryProcessor,
     SupervisorNoteProcessor,
+    RetrievalLogProcessor,
+    KbRetrievalRepository,
     ScenarioVoicesRepository,
     SttConfigsRepository,
     SttConfigService,
@@ -314,6 +318,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     LlmUsageProcessor,
     SessionMemoryProcessor,
     SupervisorNoteProcessor,
+    RetrievalLogProcessor,
     ScenarioSessionService,
     SimulationCreditsService,
     ScenarioSharedService,

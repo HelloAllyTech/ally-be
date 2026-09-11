@@ -139,17 +139,21 @@ export const ALLOWED_TABLES: Readonly<Record<string, string>> = Object.freeze({
   dashboards: 'Analytics dashboard registry.',
   blogs: 'Platform blog posts (title, status, publication date).',
 
-  // Corpus retrieval quality (RAG). Raw tables rather than
-  // `analytics_agent_`-prefixed views, and the reason is that the view rule
-  // exists to keep a test org's USAGE out of a metric: none of these four
-  // carries a tenant column, because a corpus document is global or targeted
-  // by an explicit join and a retrieval belongs to the corpus, not to an org.
-  // The population that would distort these numbers is not a test tenant but
-  // the admin retrieval preview, and `consumer` separates that — which is why
-  // every purpose line below says so. No learner or help-seeker text is
-  // reachable here: the queries are typed by an admin or composed by the
-  // interview agent about a fictional character.
-  kb_retrievals:
+  // Corpus retrieval quality (RAG).
+  //
+  // `analytics_agent_kb_retrievals` is a VIEW, and for a different reason than the
+  // others here: not test-tenant filtering (a retrieval has no tenant) but PHI.
+  // Since the WhatsApp bot began reporting its own retrievals, this table holds
+  // health workers' own questions, and the view nulls `query` on any row flagged
+  // sensitive. Model-authored SQL could otherwise reach the column inside an
+  // aggregate, so the fence belongs in the relation rather than in a rule someone
+  // has to remember. Queries typed by an admin or composed by the interview agent
+  // are not sensitive and stay readable.
+  //
+  // The three judgment/passage tables are raw: they carry no query text at all.
+  // Segment every one of them by `consumer` — the admin preview is an operator
+  // probing thresholds, not traffic.
+  analytics_agent_kb_retrievals:
     'One row per corpus retrieval: the query as issued, the similarity floor used, per-pass hit counts and what was returned. SEGMENT BY `consumer` (interview_agent vs admin_preview) before reading any trend — the preview is an operator probing thresholds.',
   kb_retrieval_passages:
     'Every candidate passage a retrieval considered, INCLUDING the ones shaping discarded (`outcome`), with its `similarity` and which pass it came from. Join to kb_retrieval_passage_judgments on passage_id for the similarity/relevance distribution.',

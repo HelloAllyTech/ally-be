@@ -4,6 +4,7 @@ import {
   KbCharacterTopic,
   KbCorpus,
   KbRetrievalConsumer,
+  KbRetrievalDisposition,
 } from '../enum/knowledge-base.enum';
 
 /**
@@ -110,6 +111,48 @@ export class KbRetrieval extends BaseWithoutTenantEntity {
 
   @Column({ type: 'int', name: 'latency_ms' })
   latencyMs!: number;
+
+  /**
+   * The threshold the CONSUMER declines under, when it has one.
+   *
+   * Distinct from `minSimilarity`, which is the search floor. The WhatsApp bot searches at one
+   * number and refuses to answer under a second, higher one, so a passage can clear retrieval
+   * and still never reach a worker. Calibrating that corpus means seeing both.
+   */
+  @Column({ type: 'real', name: 'decline_similarity', nullable: true })
+  declineSimilarity?: number | null;
+
+  /**
+   * What the consumer did with the result. Null for consumers with no decline step — the admin
+   * preview shows whatever comes back, and the interview agent decides in its own reasoning
+   * rather than at a threshold.
+   */
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  disposition?: KbRetrievalDisposition | null;
+
+  /**
+   * Language the query was searched in. The bot translates a worker's question before
+   * retrieving, and a weak result on a failed translation says nothing about the corpus.
+   */
+  @Column({
+    type: 'varchar',
+    length: 16,
+    name: 'query_language',
+    nullable: true,
+  })
+  queryLanguage?: string | null;
+
+  /**
+   * True when `query` is someone's own words rather than an operator's or an agent's.
+   *
+   * The WhatsApp bot's queries are health workers' questions, so they are PHI-adjacent by
+   * default here. The flag exists so every read surface can withhold the text from one rule in
+   * data rather than each caller having to know which consumers are sensitive: the analytics
+   * response returns null for these, and `analytics_agent_kb_retrievals` nulls the column
+   * before the Analytics Agent's model-authored SQL can reach it.
+   */
+  @Column({ type: 'boolean', name: 'query_sensitive', default: false })
+  querySensitive!: boolean;
 
   /** The interview session this served, when a session drove it. */
   @Index('idx_kb_retrievals_session_id')

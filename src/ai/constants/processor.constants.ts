@@ -8,5 +8,6 @@ export const PROCESSOR_EVENT_TYPES = {
   LLM_USAGE: 'llm_usage',
   SESSION_MEMORY: 'session_memory',
   SUPERVISOR_NOTE: 'supervisor_note',
+  RETRIEVAL_LOG: 'retrieval_log',
   UNKNOWN_EVENT: 'UNKNOWN_EVENT',
 } as const;

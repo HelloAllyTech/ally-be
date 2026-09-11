@@ -116,6 +116,42 @@ export enum KbRetrievalConsumer {
   INTERVIEW_AGENT = 'interview_agent',
   /** The admin retrieval preview — POST /knowledge-base/search. */
   ADMIN_PREVIEW = 'admin_preview',
+  /**
+   * The WhatsApp Q&A bot, reported by ally-ai rather than written here.
+   *
+   * That path retrieves INSIDE ally-ai in one call and never passes through this service, so
+   * until it emitted its own log the platform's highest-volume retrieval surface was the one
+   * nothing measured — and `whatsapp_qa`'s floor was the one with least evidence behind it.
+   * The rows arrive over the same SQS queue as llm_usage, best-effort, and carry
+   * `querySensitive = true`: the query is a health worker's own question.
+   */
+  WHATSAPP_BOT = 'whatsapp_bot',
+}
+
+/**
+ * What the CONSUMER did with what it got back.
+ *
+ * Recorded because a retrieval's usefulness is not visible in its hit count. The WhatsApp bot
+ * declines deterministically when the top similarity sits under its decline threshold, and that
+ * decision — not the raw hits — is what a health worker experiences. A corpus that returns six
+ * passages and declines on all of them looks healthy in every count except this one.
+ *
+ * Null for consumers that have no decline step of their own: the admin preview shows whatever
+ * comes back, and the interview agent judges passages in its own reasoning rather than at a
+ * threshold.
+ */
+export enum KbRetrievalDisposition {
+  /** Passages were used to ground an answer. */
+  ANSWERED = 'answered',
+  /** Nothing cleared the search floor at all. */
+  DECLINED_NO_HITS = 'declined_no_hits',
+  /** Hits existed but the best one sat below the decline threshold. */
+  DECLINED_BELOW_THRESHOLD = 'declined_below_threshold',
+  /**
+   * Query translation failed, so retrieval ran on untranslated text. A weak result here says
+   * nothing about corpus coverage and must never be counted as a gap.
+   */
+  DECLINED_TRANSLATION_FAILED = 'declined_translation_failed',
 }
 
 /**
