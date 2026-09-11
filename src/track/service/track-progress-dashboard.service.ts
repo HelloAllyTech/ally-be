@@ -114,6 +114,7 @@ export class TrackProgressDashboardService {
         scenarioSessionId: row.scenarioSessionId,
         compositeScore: row.compositeScore,
         occurredAt: row.occurredAt,
+        evaluationMarkdown: row.evaluationMarkdown,
       })),
     };
   }

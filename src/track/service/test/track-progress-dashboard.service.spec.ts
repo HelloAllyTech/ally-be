@@ -45,6 +45,7 @@ describe('TrackProgressDashboardService.getDashboard', () => {
     overrides: Partial<{
       compositeScore: number | null;
       skillCoverage: { category: string; percentage: number }[] | null;
+      evaluationMarkdown: string | null;
     }> = {},
   ) => ({
     trackItemId: 'item-1',
@@ -53,6 +54,7 @@ describe('TrackProgressDashboardService.getDashboard', () => {
     compositeScore: 80,
     occurredAt: '2026-08-02T00:00:00.000Z',
     skillCoverage: [{ category: 'Listening Engagement', percentage: 80 }],
+    evaluationMarkdown: '## What worked\nGood rapport building.',
     ...overrides,
   });
 
@@ -193,5 +195,19 @@ describe('TrackProgressDashboardService.getDashboard', () => {
 
     expect(result.evaluatedRoleplaySessionCount).toBe(2);
     expect(result.averageCompositeScore).toBe(70);
+  });
+
+  it('passes evaluationMarkdown through per session, including null', async () => {
+    trackProgressDashboardRepository.getRoleplayFeedback.mockResolvedValue([
+      roleplayRow({ evaluationMarkdown: 'Great work on rapport.' }),
+      roleplayRow({ evaluationMarkdown: null }),
+    ]);
+
+    const result = await service.getDashboard(TRACK_ID);
+
+    expect(result.roleplaySessions.map((s) => s.evaluationMarkdown)).toEqual([
+      'Great work on rapport.',
+      null,
+    ]);
   });
 });

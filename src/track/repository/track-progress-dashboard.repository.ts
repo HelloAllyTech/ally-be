@@ -13,6 +13,7 @@ export interface RoleplayFeedbackRow {
   compositeScore: number | null;
   occurredAt: string | null;
   skillCoverage: { category: string; percentage: number }[] | null;
+  evaluationMarkdown: string | null;
 }
 
 /**
@@ -52,6 +53,7 @@ export class TrackProgressDashboardRepository {
         s.id                                       AS "scenarioSessionId",
         d."compositeScore"                        AS "compositeScore",
         d.summary->'feedback'->'skillCoverage'    AS "skillCoverage",
+        d."evaluationMarkdown"                    AS "evaluationMarkdown",
         COALESCE(s."startedAt", s."createdAt")     AS "occurredAt"
       FROM track_item_progress tip
       JOIN track_items ti ON ti.id = tip."trackItemId"
@@ -81,6 +83,7 @@ export class TrackProgressDashboardRepository {
       compositeScore: this.num(r.compositeScore),
       occurredAt: this.iso(r.occurredAt),
       skillCoverage: this.parseSkillCoverage(r.skillCoverage),
+      evaluationMarkdown: (r.evaluationMarkdown as string | null) ?? null,
     }));
   }
 

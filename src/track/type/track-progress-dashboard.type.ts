@@ -44,6 +44,8 @@ export interface TrackRoleplaySessionFeedback {
   scenarioSessionId: string;
   compositeScore: number | null;
   occurredAt: string | null;
+  /** Human-readable judge feedback for this session (markdown). */
+  evaluationMarkdown: string | null;
 }
 
 export interface TrackProgressDashboard {
