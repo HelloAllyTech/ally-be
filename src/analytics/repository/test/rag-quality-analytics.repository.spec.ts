@@ -108,6 +108,18 @@ describe('RagQualityAnalyticsRepository', () => {
     expect(query).toHaveBeenCalledTimes(1);
   });
 
+  it('withholds a sensitive query in SQL, not in the client', async () => {
+    // Since the WhatsApp bot began reporting its retrievals, this table holds health workers'
+    // own questions. A redaction that lived in a React component would be one careless
+    // {gap.query} away from being undone.
+    await repository.gaps(filter, 10);
+    const [sql] = query.mock.calls[0];
+    expect(sql).toContain(
+      'CASE WHEN r.query_sensitive THEN NULL ELSE r.query END',
+    );
+    expect(sql).toContain('r.query_sensitive');
+  });
+
   it('orders gaps by when the retrieval happened, not when it was judged', async () => {
     // A backfill catching up would otherwise push month-old rows to the top of a list that
     // reads as recent.

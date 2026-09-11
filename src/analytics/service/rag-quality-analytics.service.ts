@@ -154,7 +154,10 @@ export class RagQualityAnalyticsService {
         relevantLost: Number(r.relevant_lost),
       })),
       gaps: gaps.map((r) => ({
+        // Null when withheld. The panel says so rather than rendering an empty string, and
+        // the judge's own `missing` text carries the useful half either way.
         query: r.query,
+        querySensitive: Boolean(r.query_sensitive),
         sufficiency: r.sufficiency,
         missing: r.missing ?? null,
         consumer: r.consumer,

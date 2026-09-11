@@ -124,8 +124,20 @@ export class RagFloorPointDto {
 
 /** A retrieval the judge found wanting, with what it said was missing. */
 export class RagGapDto {
-  @ApiProperty({ description: 'The query as issued' })
-  query!: string;
+  @ApiProperty({
+    description:
+      "The query as issued, or NULL when withheld. The WhatsApp bot's queries are health " +
+      "workers' own questions, so they are withheld in SQL rather than in the client.",
+    nullable: true,
+    type: String,
+  })
+  query!: string | null;
+
+  @ApiProperty({
+    description:
+      "True when the query was withheld because it is someone's own words.",
+  })
+  querySensitive!: boolean;
 
   @ApiProperty({ description: 'sufficient | partial | nothing_useful' })
   sufficiency!: string;

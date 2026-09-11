@@ -166,6 +166,56 @@ export interface LlmUsageMessage {
   data: { llm_usage?: LlmUsageEventData };
 }
 
+/**
+ * One candidate passage, as ally-ai reports it. Mirrors kb_retrieval_passages.
+ *
+ * `outcome` says what shaping did with it, so a discard is reported rather than dropped —
+ * that is where the diagnostic value lives: a retrieval that answered on three passages looks
+ * identical whether it discarded nothing or discarded something better.
+ */
+export interface RetrievalLogPassage {
+  chunk_id: string;
+  document_id: string;
+  rank: number;
+  similarity: number;
+  pass?: string;
+  outcome?: string;
+}
+
+/**
+ * A retrieval performed OUTSIDE this service, reported for the log.
+ *
+ * The WhatsApp bot retrieves inside ally-ai in a single call, so its retrievals never reach
+ * the writer in KnowledgeBaseService. Without this message the platform's highest-volume RAG
+ * path was the one nothing measured.
+ */
+export interface RetrievalLogEventData {
+  corpus: string;
+  consumer: string;
+  query: string;
+  /** True when `query` is someone's own words — a health worker's question, not an operator's. */
+  query_sensitive?: boolean;
+  query_language?: string | null;
+  min_similarity: number;
+  decline_similarity?: number | null;
+  /** answered | declined_no_hits | declined_below_threshold | declined_translation_failed */
+  disposition?: string | null;
+  requested_limit: number;
+  fetch_limit?: number;
+  returned_count: number;
+  latency_ms: number;
+  tags?: string[];
+  session_id?: string | null;
+  passages?: RetrievalLogPassage[];
+}
+
+export interface RetrievalLogMessage {
+  message_type: string;
+  timestamp?: number;
+  room_id?: string;
+  data: { retrieval_log?: RetrievalLogEventData };
+}
+
 export interface LearnBehaviorInstructionData {
   timestamp: Date;
   behavior_instruction_data: LearnBehaviorInstruction;
