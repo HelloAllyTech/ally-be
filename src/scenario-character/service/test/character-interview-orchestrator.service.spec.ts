@@ -234,6 +234,39 @@ describe('CharacterInterviewOrchestratorService — truncated turns', () => {
     expect(appendMessage.mock.calls[1][1].metadata.errored).toBe(true);
   });
 
+  /**
+   * The controller stops consuming as soon as the admin's SSE stream is gone,
+   * so that the session's turn mutex is freed then and there rather than being
+   * held for the rest of a draft nobody will read — that stale lock is what
+   * met the next answer with "another interview turn is already streaming".
+   * Abandoning the generator must still leave the transcript coherent.
+   */
+  it('writes the transcript row when the consumer abandons the turn', async () => {
+    streamMock.mockReturnValue(
+      makeStream([{ type: 'text', text: 'Working on it' }], 'end_turn'),
+    );
+
+    const frames: any[] = [];
+    for await (const frame of service.streamTurn(
+      'sess-1',
+      { message: 'Build her now.' } as any,
+      7,
+    )) {
+      frames.push(frame);
+      if (frame.event === 'token') break;
+    }
+
+    expect(frames.map((frame) => frame.event)).not.toContain('done');
+    const assistantRows = appendMessage.mock.calls.filter(
+      ([, row]) => row.role === CharacterInterviewMessageRole.ASSISTANT,
+    );
+    expect(assistantRows).toHaveLength(1);
+    expect(assistantRows[0][1].metadata.errored).toBe(true);
+    expect(assistantRows[0][1].metadata.errorMessage).toContain(
+      'send your message again',
+    );
+  });
+
   it('flags a turn that came back with nothing in it', async () => {
     streamMock.mockReturnValue(makeStream([], 'end_turn'));
 

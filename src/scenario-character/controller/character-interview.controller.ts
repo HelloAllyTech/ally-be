@@ -168,6 +168,15 @@ export class CharacterInterviewController {
         );
         for await (const frame of frames) {
           safeWrite(frame.event, frame.data);
+          // The admin's stream is gone — Stop, a reload, a closed tab, a
+          // dropped connection. Nobody will read the rest of this turn, and
+          // running it to completion holds the per-session turn lock for as
+          // long as the model takes (a final draft is 30-60s+), so the very
+          // next thing they do is met with "another interview turn is already
+          // streaming for this session" and a wait of up to the lock's TTL.
+          // Ending the loop closes the generator — which still writes the
+          // turn's transcript row — and releases the lock below, now.
+          if (clientGone) break;
         }
       } catch (error) {
         // Errors inside the generator are already surfaced as `error` frames;

@@ -75,6 +75,15 @@ const CHARACTER_INTERVIEW_EMPTY_TURN_ERROR =
   'Send your message again.';
 
 /**
+ * Persisted (never streamed — there is nobody left to stream to) when the
+ * admin's tab goes away mid-turn and the turn is stopped rather than left
+ * running behind the session's turn lock.
+ */
+const CHARACTER_INTERVIEW_ABANDONED_ERROR =
+  'That turn stopped when the interview was closed or interrupted. Your ' +
+  'answers are all still here — send your message again to carry on.';
+
+/**
  * What the admin is told when the provider call itself failed.
  *
  * The vendor's own error text never reaches this screen. A raw SDK payload —
@@ -279,6 +288,12 @@ export class CharacterInterviewOrchestratorService {
     let turnError: string | null = null;
     let truncations = 0;
     let invalidToolCalls = 0;
+    // False until the turn reaches its own end (normally, or through the
+    // error classifier below). It stays false when the consumer abandons the
+    // generator mid-turn — the controller does that as soon as the admin's
+    // stream is gone — which is what the `finally` writes a transcript row
+    // for.
+    let turnCompleted = false;
 
     try {
       for (let iteration = 0; iteration < maxIterations; iteration++) {
@@ -549,6 +564,7 @@ export class CharacterInterviewOrchestratorService {
           };
         }
       }
+      turnCompleted = true;
     } catch (error) {
       turnErrored = true;
       // Classified rather than relayed: what the provider threw is written to
@@ -569,6 +585,41 @@ export class CharacterInterviewOrchestratorService {
           message: turnError,
         },
       };
+      turnCompleted = true;
+    } finally {
+      // The consumer walked away mid-turn: the admin closed the tab, hit
+      // Stop, or their connection dropped, and the controller ended the loop
+      // so the session's turn lock is freed now instead of at its TTL. Nobody
+      // is listening for frames any more, but the work this turn did still
+      // belongs in the transcript — without a row here a resumed interview
+      // shows the admin's own message answered by silence, and the next turn
+      // sends the model a history it cannot make sense of.
+      if (!turnCompleted) {
+        this.logger.warn(
+          `Interview session ${sessionId}: turn abandoned mid-stream after ` +
+            `${iterations} iteration(s); persisting what it produced.`,
+        );
+        try {
+          await this.persistAssistantTurn(sessionId, userId, {
+            textParts,
+            toolCalls: allToolCalls,
+            toolResults: allToolResults,
+            questions,
+            characterDraft,
+            provider: providerName,
+            model,
+            iterations,
+            stopReason,
+            errored: true,
+            error: CHARACTER_INTERVIEW_ABANDONED_ERROR,
+          });
+        } catch (error) {
+          this.logger.error(
+            `Interview session ${sessionId}: could not persist the abandoned ` +
+              `turn: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      }
     }
 
     // Last backstop against a silent turn. Every known way of producing one is
@@ -592,27 +643,23 @@ export class CharacterInterviewOrchestratorService {
     }
 
     // Persist the assistant message even for aborted turns.
-    const assistantMessage: CharacterInterviewMessage =
-      await this.messageRepository.appendMessage(sessionId, {
-        role: CharacterInterviewMessageRole.ASSISTANT,
-        content: textParts.join('\n\n') || null,
-        toolCalls: allToolCalls.length > 0 ? allToolCalls : null,
-        toolResults: allToolResults.length > 0 ? allToolResults : null,
-        metadata: {
-          provider: providerName,
-          model,
-          iterations,
-          stopReason,
-          errored: turnErrored,
-          // Persisted, not just streamed: an `error` frame only reaches the
-          // tab that was open when it happened, so without the message on the
-          // row a reload renders a failed turn as no turn at all.
-          ...(turnError ? { errorMessage: turnError } : {}),
-          ...(questions.length > 0 ? { questions } : {}),
-          ...(characterDraft ? { characterDraft } : {}),
-        },
-        createdBy: userId,
-      });
+    const assistantMessage = await this.persistAssistantTurn(
+      sessionId,
+      userId,
+      {
+        textParts,
+        toolCalls: allToolCalls,
+        toolResults: allToolResults,
+        questions,
+        characterDraft,
+        provider: providerName,
+        model,
+        iterations,
+        stopReason,
+        errored: turnErrored,
+        error: turnError,
+      },
+    );
 
     yield {
       event: 'done',
@@ -621,6 +668,50 @@ export class CharacterInterviewOrchestratorService {
         sessionStatus: context.session.status,
       },
     };
+  }
+
+  /**
+   * Writes the turn's assistant row. One place, because two paths reach it:
+   * the turn ending on its own, and the turn being abandoned when the admin's
+   * stream goes away.
+   */
+  private async persistAssistantTurn(
+    sessionId: string,
+    userId: number,
+    turn: {
+      textParts: string[];
+      toolCalls: Record<string, any>[];
+      toolResults: Record<string, any>[];
+      questions: Record<string, any>[];
+      characterDraft: Record<string, any> | null;
+      provider: string;
+      model: string;
+      iterations: number;
+      stopReason: string | null;
+      errored: boolean;
+      error: string | null;
+    },
+  ): Promise<CharacterInterviewMessage> {
+    return this.messageRepository.appendMessage(sessionId, {
+      role: CharacterInterviewMessageRole.ASSISTANT,
+      content: turn.textParts.join('\n\n') || null,
+      toolCalls: turn.toolCalls.length > 0 ? turn.toolCalls : null,
+      toolResults: turn.toolResults.length > 0 ? turn.toolResults : null,
+      metadata: {
+        provider: turn.provider,
+        model: turn.model,
+        iterations: turn.iterations,
+        stopReason: turn.stopReason,
+        errored: turn.errored,
+        // Persisted, not just streamed: an `error` frame only reaches the tab
+        // that was open when it happened, so without the message on the row a
+        // reload renders a failed turn as no turn at all.
+        ...(turn.error ? { errorMessage: turn.error } : {}),
+        ...(turn.questions.length > 0 ? { questions: turn.questions } : {}),
+        ...(turn.characterDraft ? { characterDraft: turn.characterDraft } : {}),
+      },
+      createdBy: userId,
+    });
   }
 
   /**
