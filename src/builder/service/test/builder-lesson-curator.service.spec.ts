@@ -72,6 +72,11 @@ describe('BuilderLessonCuratorService', () => {
       dataSource,
       lessonRepository,
       llmCompletion as any,
+      // Lock always granted: the contention path has its own test below.
+      {
+        acquireLock: jest.fn().mockResolvedValue(true),
+        releaseLock: jest.fn().mockResolvedValue(undefined),
+      } as any,
     );
   });
 

@@ -1,3 +1,4 @@
+import { BuilderNotificationKind } from '../enum/builder.enum';
 // Per-session interview turn mutex (SET NX EX) — serializes concurrent
 // /messages/stream calls so parallel turns can't interleave tool loops over
 // one transcript.
@@ -102,6 +103,11 @@ export const BUILDER_MILESTONES_MAX = 6;
  * scheduler offers no daily tick and both no-op cheaply when idle — the
  * curator on one COUNT, the sweep on one indexed query.
  */
+/** Curator mutex, so an hourly job on N pods is still one pass. */
+export const BUILDER_CURATE_LOCK = 'builder-curate';
+/** Slightly over the cadence: a dead pod must not hold it until the heat death. */
+export const BUILDER_CURATE_LOCK_TTL_SECONDS = 70 * 60;
+
 export const BUILDER_CURATE_INTERVAL = 'hourly';
 export const BUILDER_CURATE_TASK = 'builder-lesson-curate';
 export const BUILDER_OUTCOME_INTERVAL = 'hourly';
@@ -247,6 +253,27 @@ export const BUILDER_PROMPTS = {
   CODER_GUIDANCE: 'builder_coder_guidance',
   FINALISE_GUIDANCE: 'builder_finalise_guidance',
 } as const;
+
+/* ── Notifications ──────────────────────────────────────────────────────── */
+
+/**
+ * Which notification kinds are worth interrupting someone for.
+ *
+ * Everything is recorded in the inbox; only these are announced. The ones left
+ * out are good news that keeps — a finished build, a set of pull requests — and
+ * announcing those too is how a channel gets muted. A muted channel is worse
+ * than no channel: it still looks like coverage.
+ *
+ * What is in: a paused question and a spend ceiling both have a person waiting
+ * on the other side, a failure ends the work, and a fix run means Builder is
+ * about to push to a pull request somebody may be reviewing right now.
+ */
+export const BUILDER_ANNOUNCED_KINDS: BuilderNotificationKind[] = [
+  BuilderNotificationKind.QUESTION_PENDING,
+  BuilderNotificationKind.BUILD_FAILED,
+  BuilderNotificationKind.BUDGET_REACHED,
+  BuilderNotificationKind.FIX_RUN_STARTED,
+];
 
 /* ── Lane A evidence lookups ─────────────────────────────────────────────── */
 
@@ -458,3 +485,17 @@ export function classifyBuildSize(input: {
   }
   return BuilderBuildSize.MEDIUM;
 }
+
+/**
+ * How many undelivered steering notes one session can hold.
+ *
+ * A ceiling rather than a queue depth that matters: steers are typed by a
+ * person watching a build, so a hundred of them means something has gone
+ * wrong — a stuck client retrying, or a build nobody should have started.
+ * Capping the read keeps one bad session from pasting an unbounded amount of
+ * text into a phase prompt, which is the failure that would actually hurt.
+ */
+export const BUILDER_STEER_MAX_PENDING = 20;
+
+/** Longest single steering note. Roughly a paragraph — this is a correction, not a new PRD. */
+export const BUILDER_STEER_MAX_LENGTH = 2000;

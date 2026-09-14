@@ -9,6 +9,7 @@ import {
   IsObject,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
@@ -235,4 +236,30 @@ export class UpsertBuilderRepoMapDto {
   @IsOptional()
   @IsObject()
   stats?: Record<string, any>;
+}
+
+/**
+ * The runner saying it has put these notes into a phase prompt.
+ *
+ * Acknowledged after the append, never before: a crash between fetching and
+ * appending must leave the notes pending so the next boundary delivers them.
+ * A person's correction going silently missing is the one failure this whole
+ * surface exists to prevent.
+ */
+export class AckBuilderSteersDto {
+  @ApiProperty({
+    type: [String],
+    description: 'Steering note ids that reached the prompt',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  ids!: string[];
+
+  @ApiPropertyOptional({
+    description: 'The phase the run was entering, for the audit trail',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  phase?: string;
 }

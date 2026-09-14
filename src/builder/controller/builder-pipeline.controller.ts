@@ -16,6 +16,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import { BuilderBuildService } from '../service/builder-build.service';
 import { BuilderEventService } from '../service/builder-event.service';
+import { BuilderSteerService } from '../service/builder-steer.service';
 import { BuilderQuestionService } from '../service/builder-question.service';
 import { BuilderPullRequestService } from '../service/builder-pull-request.service';
 import { BuilderReportService } from '../service/builder-report.service';
@@ -54,6 +55,7 @@ import { BuilderBuildRun } from '../entity/builder-build-run.entity';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderPrdDocument } from '../type/builder-prd.type';
 import {
+  AckBuilderSteersDto,
   IngestBuilderEventsDto,
   RecordBuilderPrsDto,
   RecordBuilderQuestionsDto,
@@ -89,6 +91,7 @@ export class BuilderPipelineController {
     private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
     private readonly buildService: BuilderBuildService,
+    private readonly steerService: BuilderSteerService,
     private readonly eventService: BuilderEventService,
     private readonly questionService: BuilderQuestionService,
     private readonly pullRequestService: BuilderPullRequestService,
@@ -654,6 +657,46 @@ export class BuilderPipelineController {
   async budgetHold(@Param('runId', ParseUUIDPipe) runId: string) {
     const run = await this.buildService.getRunOrFail(runId);
     return this.buildService.recordBudgetHold(run);
+  }
+
+  /**
+   * Corrections an admin sent while this run was going, polled at phase
+   * boundaries alongside the budget check.
+   *
+   * A read, not a delivery: the runner appends what it gets to the next
+   * phase's prompt and only then acknowledges. If it dies in between, the
+   * notes stay pending and the next boundary delivers them — which is the
+   * right failure, because the one thing this surface must never do is
+   * swallow a person's correction silently.
+   */
+  @Get('runs/:runId/steer')
+  @ApiOperation({ summary: 'Steering notes waiting for this run' })
+  async getSteers(@Param('runId', ParseUUIDPipe) runId: string) {
+    const run = await this.buildService.getRunOrFail(runId);
+    const pending = await this.steerService.listPending(run.sessionId);
+    return {
+      notes: pending.map((steer) => ({
+        id: steer.id,
+        note: steer.note,
+        at: steer.createdAt?.toISOString() ?? null,
+      })),
+    };
+  }
+
+  @Post('runs/:runId/steer/ack')
+  @ApiOperation({ summary: 'These steering notes reached a phase prompt' })
+  async ackSteers(
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Body() dto: AckBuilderSteersDto,
+  ) {
+    const run = await this.buildService.getRunOrFail(runId);
+    const delivered = await this.steerService.acknowledge(
+      run.sessionId,
+      run.id,
+      dto.ids,
+      dto.phase,
+    );
+    return { ok: true, delivered };
   }
 
   @Get('repo-commands')

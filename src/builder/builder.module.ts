@@ -9,6 +9,7 @@ import { BugHunterModule } from 'src/bug-hunter/bug-hunter.module';
 import { AnalyticsAgentModule } from 'src/analytics-agent/analytics-agent.module';
 import { LogsModule } from 'src/logs/logs.module';
 import { UxSignalsModule } from 'src/ux-signals/ux-signals.module';
+import { NotificationModule } from 'src/notification/notification.module';
 import { BuilderSession } from './entity/builder-session.entity';
 import { BuilderMessage } from './entity/builder-message.entity';
 import { BuilderPrdDoc } from './entity/builder-prd-doc.entity';
@@ -25,6 +26,7 @@ import { BuilderPrFeedback } from './entity/builder-pr-feedback.entity';
 import { BuilderReport } from './entity/builder-report.entity';
 import { BuilderSettings } from './entity/builder-settings.entity';
 import { BuilderNotification } from './entity/builder-notification.entity';
+import { BuilderSteer } from './entity/builder-steer.entity';
 import { BuilderController } from './controller/builder.controller';
 import { BuilderPipelineController } from './controller/builder-pipeline.controller';
 import { BuilderGateway } from './gateway/builder.gateway';
@@ -49,6 +51,7 @@ import { BuilderMetricsService } from './service/builder-metrics.service';
 import { BuilderEpicService } from './service/builder-epic.service';
 import { BuilderResearchService } from './service/builder-research.service';
 import { BuilderNotificationService } from './service/builder-notification.service';
+import { BuilderSteerService } from './service/builder-steer.service';
 import { BuilderSchedulerRegistrationService } from './service/builder-scheduler-registration.service';
 import { BuilderSessionRepository } from './repository/builder-session.repository';
 import { BuilderMessageRepository } from './repository/builder-message.repository';
@@ -69,6 +72,7 @@ import {
   BuilderPrFeedbackRepository,
   BuilderQuestionRepository,
   BuilderReportRepository,
+  BuilderSteerRepository,
 } from './repository/builder-build.repository';
 
 /**
@@ -107,6 +111,7 @@ import {
       BuilderReport,
       BuilderSettings,
       BuilderNotification,
+      BuilderSteer,
     ]),
     PromptModule,
     LlmUsageModule,
@@ -128,6 +133,8 @@ import {
     // UxSignalReadService: the fourth evidence source, and the only one that
     // speaks for users rather than for the system.
     UxSignalsModule,
+    // SlackService: the inbox is a pull surface, so a paused build needs a push.
+    NotificationModule,
   ],
   controllers: [BuilderController, BuilderPipelineController],
   providers: [
@@ -153,6 +160,7 @@ import {
     BuilderEpicService,
     BuilderResearchService,
     BuilderNotificationService,
+    BuilderSteerService,
     BuilderSchedulerRegistrationService,
     BuilderSessionRepository,
     BuilderMessageRepository,
@@ -168,6 +176,7 @@ import {
     BuilderPrFeedbackRepository,
     BuilderReportRepository,
     BuilderNotificationRepository,
+    BuilderSteerRepository,
   ],
   exports: [BuilderSessionService, BuilderKnowledgeService],
 })

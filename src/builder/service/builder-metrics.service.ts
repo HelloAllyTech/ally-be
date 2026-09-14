@@ -190,19 +190,31 @@ export class BuilderMetricsService {
     });
   }
 
-  /** How runs end, by status and mode — the abandonment counter included. */
+  /**
+   * How runs end, by status, mode and the size the classifier gave them.
+   *
+   * Size is in the grouping because it is what turns this panel from a tally
+   * into a tuning input. The sizing pass already picks the planner tier off a
+   * PRD; whether it should also pick the coder is a question about whether
+   * small builds succeed on the cheap tier, and that cannot be asked of rows
+   * that record the outcome but not what the run was thought to be. Null for
+   * every run dispatched before the column existed — an honest gap, not a
+   * backfilled guess.
+   */
   private async runOutcomes(days: number): Promise<BuilderPipelineOutcome[]> {
     const rows = await this.dataSource.query(
       `
       SELECT run.status                                       AS "status",
              run.mode                                         AS "mode",
+             run.size                                         AS "size",
+             run.model                                        AS "coderModel",
              COUNT(*)::int                                    AS "runs",
              PERCENTILE_CONT(0.5) WITHIN GROUP (
                ORDER BY run."runnerMinutes"
              )                                                AS "medianRunnerMinutes"
         FROM builder_build_runs run
        WHERE run."createdAt" >= NOW() - ($1 || ' days')::interval
-       GROUP BY run.status, run.mode
+       GROUP BY run.status, run.mode, run.size, run.model
        ORDER BY COUNT(*) DESC
       `,
       [String(days)],
@@ -211,6 +223,8 @@ export class BuilderMetricsService {
     return rows.map((row: Record<string, any>) => ({
       status: String(row.status),
       mode: String(row.mode),
+      size: row.size ?? null,
+      coderModel: row.coderModel ?? null,
       runs: Number(row.runs ?? 0),
       medianRunnerMinutes: this.numberOrNull(row.medianRunnerMinutes),
     }));
@@ -566,6 +580,10 @@ export interface BuilderPipelineGate {
 export interface BuilderPipelineOutcome {
   status: string;
   mode: string;
+  /** What `classifyBuildSize` made of the PRD. Null before the column existed. */
+  size: string | null;
+  /** The coder-tier model that ran, so outcomes can be read per size per tier. */
+  coderModel: string | null;
   runs: number;
   medianRunnerMinutes: number | null;
 }

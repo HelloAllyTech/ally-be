@@ -24,6 +24,7 @@ import {
   BuilderQuestionRepository,
 } from '../repository/builder-build.repository';
 import { BuilderEventService } from './builder-event.service';
+import { BuilderSteerService } from './builder-steer.service';
 import { BuilderSettingsService } from './builder-settings.service';
 import { BuilderNotificationService } from './builder-notification.service';
 import { BuilderExemplarService } from './builder-exemplar.service';
@@ -111,6 +112,7 @@ export class BuilderBuildService {
     private readonly runRepository: BuilderBuildRunRepository,
     private readonly eventRepository: BuilderBuildEventRepository,
     private readonly questionRepository: BuilderQuestionRepository,
+    private readonly steerService: BuilderSteerService,
     private readonly pullRequestRepository: BuilderPullRequestRepository,
     private readonly settingsService: BuilderSettingsService,
     private readonly notificationService: BuilderNotificationService,
@@ -417,9 +419,14 @@ export class BuilderBuildService {
       resumeOfRunId: pausedRun.id,
       branches: pausedRun.branches ?? undefined,
       models: {
+        ...models,
         planner: pausedRun.plannerModel ?? models.planner,
         coder: pausedRun.model ?? models.coder,
         verifier: pausedRun.verifierModel ?? models.verifier,
+        // The paused run's own sizing, so the pair reads as one build. A
+        // resume re-derived from a PRD edited mid-pause would record two
+        // different sizes for one piece of work.
+        size: (pausedRun.size as BuilderBuildSize) ?? models.size,
       },
     });
   }
@@ -528,7 +535,7 @@ export class BuilderBuildService {
     mode: BuilderRunMode;
     userId: number;
     repos: string[];
-    models: { planner: string; coder: string; verifier: string };
+    models: BuilderResolvedModels;
     resumeOfRunId?: string;
     branches?: Record<string, string>;
     pullRequestId?: string;
@@ -570,7 +577,7 @@ export class BuilderBuildService {
     mode: BuilderRunMode;
     userId: number;
     repos: string[];
-    models: { planner: string; coder: string; verifier: string };
+    models: BuilderResolvedModels;
     resumeOfRunId?: string;
     branches?: Record<string, string>;
     pullRequestId?: string;
@@ -595,6 +602,7 @@ export class BuilderBuildService {
         model: models.coder,
         plannerModel: models.planner,
         verifierModel: models.verifier,
+        size: models.size,
         // A milestone pushes to its own branch family (`<slug>-m2`), so the
         // slices stay separately reviewable rather than piling into one branch.
         branchSlug: params.branchSlugOverride ?? session.slug,
@@ -979,6 +987,18 @@ export class BuilderBuildService {
       { runId: run.id, status: BuilderQuestionStatus.PENDING },
       { status: BuilderQuestionStatus.SUPERSEDED },
     );
+
+    // Steering notes go the same way. A correction nobody will ever read must
+    // not sit at PENDING forever — and must not read as delivered either,
+    // because it never was. Best-effort: cancelling is the point of this call
+    // and a tidy-up failure must not stop it.
+    await this.steerService.supersedePending(run.sessionId).catch((error) => {
+      this.logger.warn(
+        `Could not supersede steering notes for session ${run.sessionId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    });
 
     let githubRunId = run.githubRunId;
     if (!githubRunId && this.github.isConfigured) {
