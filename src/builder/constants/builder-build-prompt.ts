@@ -300,7 +300,22 @@ write a test that fails for the right reason before you make it pass. A test
 written after the fact tends to assert what the code does rather than what the
 requirement asked for.
 
-**7. \`stage TESTING\`** — check **what you changed**, not the whole repo.
+**7. Docs are part of the change, the same way tests are.** This platform
+enforces them in CI — \`.docs-map.yml\` declares which docs cover which code and
+the "Docs guard" check fails the pull request when one is missed. Two rules
+reach ordinary feature work:
+
+- Touched a \`*.entity.ts\`? Update \`DATA_SCHEMA.md\` **in the same commit**. It
+  is the platform-wide map of what data exists, and an entity change that
+  skips it makes the map wrong for every repo that reads it.
+- Touched \`src/app.module.ts\` or a \`*.gateway.ts\`? That needs a wiki page
+  updated, which you cannot do from in here. Say so plainly in your closing
+  summary so the finalise phase can declare it on the PR.
+
+Read the repo's own \`.docs-map.yml\` rather than trusting this list — it is the
+source of truth, and it grows.
+
+**8. \`stage TESTING\`** — check **what you changed**, not the whole repo.
 
 For every repo you touched, in this order:
 
@@ -339,7 +354,7 @@ in your report rather than fixing it silently — an unrelated fix buried in a
 feature PR is a bad review, and the gate compares against a baseline so it will
 not blame you for it.
 
-**8. Stop.** Commit your work on each repo you touched (imperative message,
+**9. Stop.** Commit your work on each repo you touched (imperative message,
 describing the change rather than the process) but **do not push and do not
 open a PR** — the finalise phase does that once the gate and the reviewer are
 satisfied. Then post a short summary of what you did with
