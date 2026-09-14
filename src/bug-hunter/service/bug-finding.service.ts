@@ -304,6 +304,11 @@ export class BugFindingService {
     return this.findingRepository.listNewReportedBugs();
   }
 
+  /** What is already known broken — for another agent about to propose work. */
+  listOpenForRepo(repo?: string): Promise<BugFinding[]> {
+    return this.findingRepository.listOpenForRepo(repo);
+  }
+
   listApprovedForRepo(repo: string): Promise<BugFinding[]> {
     return this.findingRepository.listApprovedForRepo(repo);
   }

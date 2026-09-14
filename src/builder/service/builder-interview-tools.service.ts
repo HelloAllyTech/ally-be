@@ -15,9 +15,11 @@ import {
 import { BuilderPrdService } from './builder-prd.service';
 import { BuilderGithubReadService } from './builder-github-read.service';
 import { BuilderStacksService } from './builder-stacks.service';
+import { BuilderEvidenceService } from './builder-evidence.service';
 import {
   BUILDER_REPO_NAMES,
   BUILDER_REPOS,
+  BUILDER_WIKI_REPO,
 } from '../constants/builder-repos.constants';
 import { BUILDER_STACKS_DEFAULT_RESULTS } from '../constants/builder.constants';
 
@@ -79,6 +81,7 @@ export class BuilderInterviewToolsService {
     private readonly prdService: BuilderPrdService,
     private readonly githubRead: BuilderGithubReadService,
     private readonly stacks: BuilderStacksService,
+    private readonly evidence: BuilderEvidenceService,
   ) {}
 
   getToolDefinitions(): any[] {
@@ -286,6 +289,87 @@ export class BuilderInterviewToolsService {
           'actually exist.',
         input_schema: { type: 'object', properties: {} },
       },
+      {
+        name: 'wiki_search',
+        description:
+          'Search the platform wiki — the source of truth for architecture, ' +
+          'service topology and SDLC rules. Use it before asserting how the ' +
+          'platform fits together, especially for work spanning repos. The ' +
+          'code says what exists; the wiki says why and how it connects.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', description: 'What to look for' },
+          },
+          required: ['query'],
+        },
+      },
+      {
+        name: 'wiki_read',
+        description:
+          'Read one wiki page by path, e.g. "wiki/platform/architecture.md". ' +
+          'Follow up a wiki_search hit with this.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', description: 'Path within the wiki repo' },
+          },
+          required: ['path'],
+        },
+      },
+      {
+        name: 'analytics_ask',
+        description:
+          'Ask a question about production data in plain English and get a ' +
+          'narrated answer. Use it to check whether a problem is real and how ' +
+          'big before the PRD asserts either — "how many sessions hit this ' +
+          'path last month" beats "users often…". Read-only and row-capped.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            question: {
+              type: 'string',
+              description: 'One question, in English',
+            },
+          },
+          required: ['question'],
+        },
+      },
+      {
+        name: 'prod_errors',
+        description:
+          'What a service is throwing in production over the last day, ' +
+          'grouped into counted error shapes rather than raw lines. Use it ' +
+          'when the work is about reliability, or to check whether an area is ' +
+          'already failing before proposing changes to it.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            repo: {
+              type: 'string',
+              description: 'ally-be, ally-ai or ally-ai-learn',
+            },
+            search: {
+              type: 'string',
+              description: 'Optional substring to narrow to one area',
+            },
+          },
+          required: ['repo'],
+        },
+      },
+      {
+        name: 'bug_findings_search',
+        description:
+          'Open Bug Hunter findings — what is already known broken. Check ' +
+          'before writing requirements for an area, so the PRD does not ' +
+          're-specify something already being fixed.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            repo: { type: 'string', description: 'Optional repo filter' },
+          },
+        },
+      },
     ];
   }
 
@@ -364,6 +448,47 @@ export class BuilderInterviewToolsService {
           },
           summary: 'Listed repo commands',
         };
+      case 'wiki_search':
+        return this.wrapResearch(
+          await this.githubRead.searchCode(
+            String(input?.query ?? ''),
+            BUILDER_WIKI_REPO,
+          ),
+          (result) =>
+            `Wiki: "${input?.query}" — ${result.results?.length ?? 0} hit(s)`,
+        );
+      case 'wiki_read':
+        return this.wrapResearch(
+          await this.githubRead.readFile(
+            BUILDER_WIKI_REPO,
+            String(input?.path ?? ''),
+          ),
+          () => `Read wiki page ${input?.path}`,
+        );
+      case 'analytics_ask':
+        return this.wrapResearch(
+          await this.evidence.analyticsAsk(
+            String(input?.question ?? ''),
+            context.userId,
+          ),
+          (result) => `Analytics: ${result.outcome ?? 'answered'}`,
+        );
+      case 'prod_errors':
+        return this.wrapResearch(
+          await this.evidence.prodErrors(
+            String(input?.repo ?? ''),
+            input?.search ? String(input.search) : undefined,
+          ),
+          (result) =>
+            `Production errors in ${input?.repo}: ${result.shapes?.length ?? 0} shape(s)`,
+        );
+      case 'bug_findings_search':
+        return this.wrapResearch(
+          await this.evidence.openFindings(
+            input?.repo ? String(input.repo) : undefined,
+          ),
+          (result) => `Open findings: ${result.findings?.length ?? 0}`,
+        );
       default:
         return {
           modelResult: { ok: false, error: `Unknown tool "${name}"` },

@@ -6,6 +6,8 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { AuthModule } from 'src/auth/auth.module';
 import { GithubModule } from 'src/github/github.module';
 import { BugHunterModule } from 'src/bug-hunter/bug-hunter.module';
+import { AnalyticsAgentModule } from 'src/analytics-agent/analytics-agent.module';
+import { LogsModule } from 'src/logs/logs.module';
 import { BuilderSession } from './entity/builder-session.entity';
 import { BuilderMessage } from './entity/builder-message.entity';
 import { BuilderPrdDoc } from './entity/builder-prd-doc.entity';
@@ -30,6 +32,7 @@ import { BuilderPrdService } from './service/builder-prd.service';
 import { BuilderKnowledgeService } from './service/builder-knowledge.service';
 import { BuilderGithubReadService } from './service/builder-github-read.service';
 import { BuilderStacksService } from './service/builder-stacks.service';
+import { BuilderEvidenceService } from './service/builder-evidence.service';
 import { BuilderInterviewToolsService } from './service/builder-interview-tools.service';
 import { BuilderInterviewOrchestratorService } from './service/builder-interview-orchestrator.service';
 import { BuilderBuildService } from './service/builder-build.service';
@@ -116,6 +119,11 @@ import {
     // Bug Hunter findings. A domain dependency, unlike the GitHub client that
     // used to be smuggled through this same import.
     BugHunterModule,
+    // Lane A evidence sources: production numbers, production errors. Read
+    // through each owner's own service rather than its HTTP surface, which is
+    // gated for a logged-in human.
+    AnalyticsAgentModule,
+    LogsModule,
   ],
   controllers: [BuilderController, BuilderPipelineController],
   providers: [
@@ -125,6 +133,7 @@ import {
     BuilderKnowledgeService,
     BuilderGithubReadService,
     BuilderStacksService,
+    BuilderEvidenceService,
     BuilderInterviewToolsService,
     BuilderInterviewOrchestratorService,
     BuilderBuildService,

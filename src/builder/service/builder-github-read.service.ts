@@ -7,7 +7,7 @@ import {
   BUILDER_GITHUB_SEARCH_MAX_RESULTS,
   BUILDER_GITHUB_TREE_MAX_ENTRIES,
 } from '../constants/builder.constants';
-import { isBuilderRepo } from '../constants/builder-repos.constants';
+import { isBuilderReadableRepo } from '../constants/builder-repos.constants';
 
 /**
  * Read-only GitHub REST access for the interview agent: search code, read a
@@ -56,7 +56,7 @@ export class BuilderGithubReadService {
     if (!this.isConfigured) {
       return this.notConfigured();
     }
-    if (repo && !isBuilderRepo(repo)) {
+    if (repo && !isBuilderReadableRepo(repo)) {
       return { ok: false, error: 'unknown_repo', repo };
     }
     const scope = repo ? `repo:${this.org}/${repo}` : `org:${this.org}`;
@@ -96,7 +96,7 @@ export class BuilderGithubReadService {
     if (!this.isConfigured) {
       return this.notConfigured();
     }
-    if (!isBuilderRepo(repo)) {
+    if (!isBuilderReadableRepo(repo)) {
       return { ok: false, error: 'unknown_repo', repo };
     }
     try {
@@ -153,7 +153,7 @@ export class BuilderGithubReadService {
     if (!this.isConfigured) {
       return this.notConfigured();
     }
-    if (!isBuilderRepo(repo)) {
+    if (!isBuilderReadableRepo(repo)) {
       return { ok: false, error: 'unknown_repo', repo };
     }
     try {

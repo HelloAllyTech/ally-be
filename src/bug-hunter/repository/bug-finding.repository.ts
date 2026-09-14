@@ -391,6 +391,22 @@ export class BugFindingRepository extends Repository<BugFinding> {
   }
 
   /** Human-reported bugs still at NEW — the reported-bugs finder's read queue (see BugHunterFinderDataService). */
+  /**
+   * Everything still open, newest first — optionally for one repo.
+   *
+   * For callers outside Bug Hunter that want to know what is already known
+   * broken before proposing work. Capped: this feeds an agent's context, and
+   * an unbounded list would crowd out the reasoning it is meant to inform.
+   */
+  listOpenForRepo(repo?: string, limit = 25): Promise<BugFinding[]> {
+    const query = this.createQueryBuilder('f')
+      .where('f.status IN (:...statuses)', { statuses: OPEN_STATUSES })
+      .orderBy('f.createdAt', 'DESC')
+      .take(limit);
+    if (repo) query.andWhere('f.repo = :repo', { repo });
+    return query.getMany();
+  }
+
   listNewReportedBugs(limit = 50): Promise<BugFinding[]> {
     return this.find({
       where: {

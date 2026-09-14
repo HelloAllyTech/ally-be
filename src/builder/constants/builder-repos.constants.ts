@@ -127,3 +127,24 @@ export function findBuilderRepo(
 export function isBuilderRepo(repo: string): boolean {
   return BUILDER_REPO_NAMES.includes(repo);
 }
+
+/**
+ * The wiki, which Builder may READ but never build in.
+ *
+ * Deliberately not a `BuilderRepoDefinition`: it has no test, lint or
+ * typecheck command, a PRD must not be able to name it as somewhere to
+ * implement a feature, and its pull requests are opened by `wiki-pr.sh` rather
+ * than `gh pr create` — the same reasoning that kept it out of the build's
+ * clone list and into `.wiki-tmp` instead.
+ *
+ * It is here because the interview needs it. Stacks answers product judgement
+ * and the code answers what exists; platform architecture — how the services
+ * fit together, which is exactly what a cross-repo PRD gets wrong — lives only
+ * on the wiki.
+ */
+export const BUILDER_WIKI_REPO = 'helloallytech.github.io';
+
+/** Repos the interview may read from, which is a wider set than it may build in. */
+export function isBuilderReadableRepo(repo: string): boolean {
+  return isBuilderRepo(repo) || repo === BUILDER_WIKI_REPO;
+}

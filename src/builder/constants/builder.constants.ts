@@ -248,6 +248,27 @@ export const BUILDER_PROMPTS = {
   FINALISE_GUIDANCE: 'builder_finalise_guidance',
 } as const;
 
+/* ── Lane A evidence lookups ─────────────────────────────────────────────── */
+
+/**
+ * Deadline on one evidence lookup.
+ *
+ * Well under what the sources allow themselves — the analytics agent alone
+ * budgets 120s per ally-ai call and makes two. The admin is watching a cursor,
+ * and a slow answer is worse than an honest "that took too long".
+ */
+export const BUILDER_EVIDENCE_TIMEOUT_MS = 25_000;
+
+/** How far back production errors are read. */
+export const BUILDER_EVIDENCE_ERROR_WINDOW_HOURS = 24;
+
+/**
+ * Most error shapes returned. Small on purpose: the long tail of one-off
+ * errors is noise for a PRD, and the context it would occupy is the context
+ * the next question is written in.
+ */
+export const BUILDER_EVIDENCE_MAX_SHAPES = 12;
+
 /* ── Model tiering ──────────────────────────────────────────────────────── */
 
 /**
