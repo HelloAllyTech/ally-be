@@ -11,7 +11,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import {
   CheckRollup,
   GithubActionsService,
-} from 'src/bug-hunter/service/github-actions.service';
+} from 'src/github/service/github-actions.service';
 import { BuilderPullRequest } from '../entity/builder-pull-request.entity';
 import { BuilderPrFeedback } from '../entity/builder-pr-feedback.entity';
 import {

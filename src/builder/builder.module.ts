@@ -4,7 +4,7 @@ import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { AuthModule } from 'src/auth/auth.module';
-import { BugHunterModule } from 'src/bug-hunter/bug-hunter.module';
+import { GithubModule } from 'src/github/github.module';
 import { BuilderSession } from './entity/builder-session.entity';
 import { BuilderMessage } from './entity/builder-message.entity';
 import { BuilderPrdDoc } from './entity/builder-prd-doc.entity';
@@ -78,9 +78,10 @@ import {
  * (a machine-auth controller, a reconcile tick, prompt-over-HTTP) follows from
  * that split.
  *
- * `BugHunterModule` is imported for `GithubActionsService` — the same
- * dispatch/cancel client, reused rather than forked. Pulling it into a shared
- * `src/github/` module is worthwhile once a third caller appears.
+ * `GithubModule` supplies the dispatch/cancel client. It used to reach that
+ * through `BugHunterModule`, which said "Builder depends on Bug Hunter" when
+ * what it depended on was an HTTP client; the client now has its own module
+ * and the two agents share a dependency rather than one another.
  */
 @Module({
   imports: [
@@ -109,7 +110,7 @@ import {
     // transcript digest.
     LlmAgentModule,
     AuthModule,
-    BugHunterModule,
+    GithubModule,
   ],
   controllers: [BuilderController, BuilderPipelineController],
   providers: [

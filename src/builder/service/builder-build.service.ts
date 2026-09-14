@@ -11,7 +11,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import { RedisService } from 'src/redis/service/redis.service';
-import { GithubActionsService } from 'src/bug-hunter/service/github-actions.service';
+import { GithubActionsService } from 'src/github/service/github-actions.service';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { BuilderSession } from '../entity/builder-session.entity';
