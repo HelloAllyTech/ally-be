@@ -171,6 +171,7 @@ export class BuilderPipelineController {
     const milestone = await this.resolveMilestoneBlock(run);
 
     return buildBuildPrompt({
+      guidance: await this.guidance(BUILDER_PROMPTS.CODER_GUIDANCE),
       sessionId: session.id,
       runId: run.id,
       branchSlug: run.branchSlug,

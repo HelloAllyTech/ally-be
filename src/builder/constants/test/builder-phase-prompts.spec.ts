@@ -425,6 +425,35 @@ describe('the verify prompt', () => {
         }),
       );
 
+    const coder = (guidance?: string | null) =>
+      flat(
+        buildBuildPrompt({
+          ...base,
+          mode: 'build',
+          sessionUrl: 'https://admin.example.com/builder/session-1',
+          lessons: [],
+          guidance,
+        }),
+      );
+
+    it('uses a tunable coder block when one is supplied', () => {
+      expect(coder('## Conduct\n\n- Be brief.')).toContain('Be brief.');
+    });
+
+    it('falls back to the compiled coder default on a null lookup', () => {
+      // "Never edit a merged migration" quietly vanishing is the exact shape
+      // of failure this fallback exists for: the run still succeeds.
+      const prompt = coder(null);
+      expect(prompt).toContain('Never edit a merged migration');
+      expect(prompt).toContain('Guarded paths');
+    });
+
+    it('never emits a coder prompt with an empty conduct section', () => {
+      for (const value of [null, undefined, '', '  \n  ']) {
+        expect(coder(value as any)).toContain('Never edit a merged migration');
+      }
+    });
+
     it('uses the tunable block when prompt management supplies one', () => {
       expect(finalise('## Conduct\n\n- Say less.')).toContain('Say less.');
     });

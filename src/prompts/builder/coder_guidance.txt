@@ -1,11 +1,9 @@
 ## Conduct
 
-- **Never invent a requirement.** If the PRD does not say it, it is not in
-  scope. A build that does more than was asked is harder to review and more
-  likely to be rejected than one that does less.
-- **Match the code around you.** Comment density, naming, error handling and
-  test style are local conventions, not global ones — read a neighbouring file
-  before inventing a shape.
-- **No secrets** in code, logs, events or commit messages.
-- **When a decision is genuinely ambiguous, pause and ask.** One pause costs a
-  teardown; a wrong assumption costs the review.
+- **Guarded paths** (listed per repo above) cover auth, permissions,
+  migrations and payments. A change there gets extra scrutiny in your report
+  and must never be incidental — if the PRD did not ask for it, do not do it.
+- **Never edit a merged migration.** Add a new one.
+- **No secrets** in code, logs, events or PR bodies.
+- If you conclude the PRD asks for something wrong or impossible, stop and say
+  so via `ask`. Building the wrong thing carefully is the expensive failure.

@@ -15,6 +15,12 @@ import { BuilderRepoDefinition } from './builder-repos.constants';
  */
 
 export interface BuildPromptContext {
+  /**
+   * Tunable conduct guidance from prompt management. Null when the row and the
+   * file are both missing, in which case DEFAULT_CODER_GUIDANCE is used — never
+   * an empty block, which would silently drop the section.
+   */
+  guidance?: string | null;
   sessionId: string;
   runId: string;
   branchSlug: string;
@@ -229,6 +235,29 @@ export const renderRepoCommands = (repos: BuilderRepoDefinition[]): string =>
     )
     .join('\n');
 
+/**
+ * The compiled-in conduct block.
+ *
+ * The fallback, not the source of truth — `builder_coder_guidance` is, and it
+ * ships as a file carrying this same text. It exists so a missing row, an
+ * unreachable database or a typo in the prompt code degrades to the behaviour
+ * we already had rather than to a prompt with a hole where its conduct rules
+ * should be. A coding agent that has quietly lost "never edit a merged
+ * migration" still runs, still opens a pull request, and is simply worse.
+ *
+ * It references the guarded-path table rendered above it, so it is
+ * interpolated in that same position rather than anywhere a caller likes.
+ */
+export const DEFAULT_CODER_GUIDANCE = `## Conduct
+
+- **Guarded paths** (listed per repo above) cover auth, permissions,
+  migrations and payments. A change there gets extra scrutiny in your report
+  and must never be incidental — if the PRD did not ask for it, do not do it.
+- **Never edit a merged migration.** Add a new one.
+- **No secrets** in code, logs, events or PR bodies.
+- If you conclude the PRD asks for something wrong or impossible, stop and say
+  so via \`ask\`. Building the wrong thing carefully is the expensive failure.`;
+
 export function buildBuildPrompt(context: BuildPromptContext): string {
   const isResume = context.mode === 'resume';
 
@@ -396,15 +425,7 @@ branches in \`branches\`. Then **exit 0**. Pausing is a success, not a failure �
 the run ends here and a fresh run resumes from your branches when the answer
 arrives. Uncommitted work at this point is work thrown away.
 
-## Conduct
-
-- **Guarded paths** (listed per repo above) cover auth, permissions,
-  migrations and payments. A change there gets extra scrutiny in your report
-  and must never be incidental — if the PRD did not ask for it, do not do it.
-- **Never edit a merged migration.** Add a new one.
-- **No secrets** in code, logs, events or PR bodies.
-- If you conclude the PRD asks for something wrong or impossible, stop and say
-  so via \`ask\`. Building the wrong thing carefully is the expensive failure.
+${context.guidance?.trim() || DEFAULT_CODER_GUIDANCE}
 `.trim();
 
   const resumeBlock = isResume
