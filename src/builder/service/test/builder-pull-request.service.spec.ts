@@ -267,6 +267,85 @@ describe('BuilderPullRequestService', () => {
       });
     });
 
+    /**
+     * The second guard: a check that IS ours and still cannot be satisfied.
+     *
+     * The docs guard wants a `Wiki-PR:` trailer pointing at a pull request in
+     * a repo the runner cannot clone, so left as PENDING it spends every one
+     * of `maxFixRunsPerPr` attempts changing nothing. These pin that it is
+     * recorded, not acted on — and, more importantly, that the suppression is
+     * per check rather than per commit.
+     */
+    describe('a failing check no fix run could satisfy', () => {
+      const docsRed = { state: 'failure', failed: ['docs-guard'], total: 2 };
+
+      it('records it as OBSERVED even though Builder wrote the commit', async () => {
+        await reconcileWith({}, openPr(), docsRed);
+
+        expect(feedbackRepository.upsertIfNew).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: BuilderPrFeedbackKind.CI_FAILURE,
+            externalId: 'abc1234def:docs-guard',
+            status: BuilderPrFeedbackStatus.OBSERVED,
+          }),
+        );
+      });
+
+      it('says why, so the row does not read as Builder ignoring CI', async () => {
+        await reconcileWith({}, openPr(), docsRed);
+
+        const [row] = feedbackRepository.upsertIfNew.mock.calls.find(
+          ([call]: [any]) => call.kind === BuilderPrFeedbackKind.CI_FAILURE,
+        );
+        expect(row.body).toContain('Wiki-PR');
+      });
+
+      it('matches the name GitHub actually reports, whichever spelling', async () => {
+        // The job id is `docs-guard`; the workflow's own name is "Docs guard".
+        // Which one reaches the checks API is GitHub's business, not ours.
+        await reconcileWith({}, openPr(), {
+          state: 'failure',
+          failed: ['Docs guard'],
+          total: 2,
+        });
+
+        expect(feedbackRepository.upsertIfNew).toHaveBeenCalledWith(
+          expect.objectContaining({
+            status: BuilderPrFeedbackStatus.OBSERVED,
+          }),
+        );
+      });
+
+      it('still counts a real failure on the same commit as work', async () => {
+        // The case that makes this per-check: one push fails the docs guard
+        // AND a test. Suppressing the commit would sink the test failure too.
+        await reconcileWith({}, openPr(), {
+          state: 'failure',
+          failed: ['docs-guard', 'unit tests'],
+          total: 3,
+        });
+
+        const rows = feedbackRepository.upsertIfNew.mock.calls
+          .map(([call]: [any]) => call)
+          .filter(
+            (call: any) => call.kind === BuilderPrFeedbackKind.CI_FAILURE,
+          );
+
+        expect(rows).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              externalId: 'abc1234def:docs-guard',
+              status: BuilderPrFeedbackStatus.OBSERVED,
+            }),
+            expect.objectContaining({
+              externalId: 'abc1234def:unit tests',
+              status: BuilderPrFeedbackStatus.PENDING,
+            }),
+          ]),
+        );
+      });
+    });
+
     it('records a human review comment', async () => {
       github.listPullRequestFeedback.mockResolvedValue([
         {

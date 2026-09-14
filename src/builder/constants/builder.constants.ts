@@ -170,6 +170,47 @@ export const BUILDER_DISPATCH_LOCK_TTL_SECONDS = 60;
 export const BUILDER_RECONCILE_INTERVAL = '5min';
 export const BUILDER_RECONCILE_TASK = 'builder-run-reconcile';
 
+/* ── Checks a fix run must not be dispatched for ────────────────────────── */
+
+/**
+ * Failing checks that are real, belong in the timeline, and are still not
+ * Builder's to fix from inside a code repo.
+ *
+ * `docs-guard` is the whole of the list today. Its `repo-page-architecture`
+ * rule fires whenever a build touches `src/app.module.ts` or a gateway — which
+ * every build that adds a module does — and satisfying it needs a `Wiki-PR:`
+ * trailer pointing at a pull request in a repo the runner cannot clone. A fix
+ * run can repair the in-repo half (`DATA_SCHEMA.md`) and never the other, so
+ * left as PENDING it burns all `maxFixRunsPerPr` attempts and leaves the pull
+ * request exactly as red as it started.
+ *
+ * Recording it OBSERVED keeps it visible and out of `countPending`, which is
+ * the same treatment a failure somebody else pushed already gets, and for the
+ * same reason: it is true, and it is not ours to act on.
+ *
+ * DELETE THIS ONCE BUILDER OPENS WIKI PRs ITSELF. At that point the check
+ * becomes fixable and suppressing it would hide a real failure.
+ */
+export const BUILDER_UNFIXABLE_CHECKS: readonly string[] = ['docs-guard'];
+
+/**
+ * Whether a check name is one of the above.
+ *
+ * Normalised rather than compared literally because the name reaching us is
+ * GitHub's, not ours: the job id (`docs-guard`) is what the checks API
+ * reports, the workflow's own `name:` is "Docs guard", and which one a caller
+ * sees has changed with GitHub's rendering before. Matching a name that has
+ * drifted costs a wasted fix run; matching one case-insensitively costs
+ * nothing.
+ */
+export const isUnfixableCheck = (check: string): boolean => {
+  const normalised = String(check ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, '-');
+  return BUILDER_UNFIXABLE_CHECKS.includes(normalised);
+};
+
 // Prompt registry code (src/prompts/builder/interviewer_system.txt).
 export const BUILDER_PROMPT_DIR = 'builder';
 export const BUILDER_PROMPTS = {

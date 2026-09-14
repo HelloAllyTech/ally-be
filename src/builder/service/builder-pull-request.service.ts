@@ -20,6 +20,7 @@ import {
   BuilderPrFeedbackStatus,
 } from '../enum/builder.enum';
 import { isBuilderRepo } from '../constants/builder-repos.constants';
+import { isUnfixableCheck } from '../constants/builder.constants';
 
 /**
  * The pull requests a session opened, and keeping them current.
@@ -209,6 +210,18 @@ export class BuilderPullRequestService {
    * GitHub blip would permanently sink a real failure of our own — and guessing
    * PENDING is the very push we are guarding against. The tick is skipped
    * instead; this is polled, so the next one picks it up.
+   *
+   * ## The unfixable-check guard
+   *
+   * A second, independent reason to record rather than act: some checks are
+   * ours and still cannot be satisfied from inside a code repo. The docs guard
+   * wants a `Wiki-PR:` trailer pointing at a pull request in a repo the runner
+   * cannot clone, so a fix run spends an attempt, changes nothing it could
+   * change, and leaves the PR as red as it found it — three times over, up to
+   * `maxFixRunsPerPr`. See `BUILDER_UNFIXABLE_CHECKS`.
+   *
+   * Decided per check, not per commit, because one push routinely fails both:
+   * the docs guard, which we cannot fix, and a real test, which we must.
    */
   private async ingestFeedback(
     pullRequest: BuilderPullRequest,
@@ -228,23 +241,42 @@ export class BuilderPullRequestService {
         // `login` is null for a commit whose email is not linked to a GitHub
         // account — a definite answer, and definitely not our bot, so it falls
         // through to the git author name rather than to "unknown".
-        const status = this.isOwnActor(
-          headAuthor.login ?? headAuthor.name ?? '',
-        )
-          ? BuilderPrFeedbackStatus.PENDING
-          : BuilderPrFeedbackStatus.OBSERVED;
+        const ours = this.isOwnActor(headAuthor.login ?? headAuthor.name ?? '');
 
         for (const check of rollup.failed) {
+          // Two independent reasons a failure is not ours to act on, and the
+          // check-level one is decided per check rather than per commit: a
+          // push of ours can fail the docs guard AND a real test at once, and
+          // the test half must still earn its fix run.
+          const unfixable = isUnfixableCheck(check);
+          const status =
+            ours && !unfixable
+              ? BuilderPrFeedbackStatus.PENDING
+              : BuilderPrFeedbackStatus.OBSERVED;
+
+          const shortSha = headSha.slice(0, 7);
+          let body: string;
+          if (unfixable) {
+            body =
+              `The check "${check}" failed on ${shortSha}. A fix run cannot ` +
+              `satisfy it — it needs a Wiki-PR trailer pointing at a pull ` +
+              `request in the wiki repo, which a build cannot open. Recorded ` +
+              `for a human.`;
+          } else if (!ours) {
+            body =
+              `The check "${check}" failed on ${shortSha}, pushed by ` +
+              `${headAuthor.login ?? headAuthor.name ?? 'someone else'}. Left for them.`;
+          } else {
+            body = `The check "${check}" failed on ${shortSha}.`;
+          }
+
           await this.feedbackRepository.upsertIfNew({
             pullRequestId: pullRequest.id,
             sessionId: pullRequest.sessionId,
             kind: BuilderPrFeedbackKind.CI_FAILURE,
             externalId: `${headSha}:${check}`,
             author: 'ci',
-            body:
-              status === BuilderPrFeedbackStatus.OBSERVED
-                ? `The check "${check}" failed on ${headSha.slice(0, 7)}, pushed by ${headAuthor.login ?? headAuthor.name ?? 'someone else'}. Left for them.`
-                : `The check "${check}" failed on ${headSha.slice(0, 7)}.`,
+            body,
             status,
           });
         }
