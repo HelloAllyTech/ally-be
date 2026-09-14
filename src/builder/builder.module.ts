@@ -5,6 +5,7 @@ import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { AuthModule } from 'src/auth/auth.module';
 import { GithubModule } from 'src/github/github.module';
+import { BugHunterModule } from 'src/bug-hunter/bug-hunter.module';
 import { BuilderSession } from './entity/builder-session.entity';
 import { BuilderMessage } from './entity/builder-message.entity';
 import { BuilderPrdDoc } from './entity/builder-prd-doc.entity';
@@ -111,6 +112,10 @@ import {
     LlmAgentModule,
     AuthModule,
     GithubModule,
+    // For BugFindingService only: the gate's excused failures are filed as
+    // Bug Hunter findings. A domain dependency, unlike the GitHub client that
+    // used to be smuggled through this same import.
+    BugHunterModule,
   ],
   controllers: [BuilderController, BuilderPipelineController],
   providers: [
