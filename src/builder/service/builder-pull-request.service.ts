@@ -1,10 +1,17 @@
-import { Inject, Injectable, forwardRef } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  forwardRef,
+} from '@nestjs/common';
 import { In } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import {
   CheckRollup,
   GithubActionsService,
-} from 'src/bug-hunter/service/github-actions.service';
+} from 'src/github/service/github-actions.service';
 import { BuilderPullRequest } from '../entity/builder-pull-request.entity';
 import { BuilderPrFeedback } from '../entity/builder-pr-feedback.entity';
 import {
@@ -20,6 +27,7 @@ import {
   BuilderPrFeedbackStatus,
 } from '../enum/builder.enum';
 import { isBuilderRepo } from '../constants/builder-repos.constants';
+import { isUnfixableCheck } from '../constants/builder.constants';
 
 /**
  * The pull requests a session opened, and keeping them current.
@@ -47,6 +55,136 @@ export class BuilderPullRequestService {
     @Inject(forwardRef(() => BuilderBuildService))
     private readonly buildService: BuilderBuildService,
   ) {}
+
+  /**
+   * Merge one of this session's pull requests, at an admin's explicit request.
+   *
+   * ## Why this exists
+   *
+   * Builder opens pull requests and stops — `builder-pull-request.entity.ts`
+   * says so plainly: "runs, a human reviews, someone merges". On ally-be,
+   * ally-web and ally-ai it could not do otherwise even if it should: `master`
+   * wants an approving review and the bot holds only `write`, so there is
+   * nothing for it to bypass.
+   *
+   * Bug Hunter measured what that costs. Of 122 bot pull requests, 89 were
+   * merged by hand, nearly all within the hour of opening. The judgement was
+   * never the bottleneck; leaving the tool to go and press a button somewhere
+   * else was. This removes the errand and nothing else.
+   *
+   * ## What it deliberately does not do
+   *
+   * It does not force. Checks are read first and anything that is not green is
+   * refused here rather than merged past, and when GitHub itself says no — a
+   * required review, a stale base — that refusal is passed straight through
+   * rather than retried with `--admin`. Both gates survive; only the walk to
+   * another tab is gone.
+   */
+  async mergePullRequest(
+    sessionId: string,
+    pullRequestId: string,
+    userId: number,
+  ): Promise<BuilderPullRequest> {
+    const row = await this.repository.findOne({
+      where: { id: pullRequestId },
+    });
+    if (!row || row.sessionId !== sessionId) {
+      throw new NotFoundException(
+        `Pull request ${pullRequestId} is not part of session ${sessionId}.`,
+      );
+    }
+    if (row.merged) {
+      return row;
+    }
+    if (row.state === 'closed') {
+      throw new ForbiddenException(
+        `${row.prUrl} is closed without being merged. Nothing to merge here — ` +
+          'start a fresh run if the work is still wanted.',
+      );
+    }
+
+    const remote = await this.github.getPullRequest(row.repo, row.prNumber);
+    if (!remote) {
+      throw new BadRequestException(
+        `Could not read ${row.prUrl} from GitHub. Try again, or merge it there.`,
+      );
+    }
+    if (remote.merged) {
+      // Somebody merged it between the page loading and the click. Settle the
+      // row rather than erroring: the outcome they wanted already happened.
+      await this.repository.update(
+        { id: row.id },
+        { merged: true, mergedAt: new Date(), state: 'closed' },
+      );
+      return (await this.repository.findOne({ where: { id: row.id } })) ?? row;
+    }
+    if (remote.state === 'closed') {
+      throw new ForbiddenException(
+        `${row.prUrl} is closed without being merged.`,
+      );
+    }
+
+    // A null rollup means GitHub could not be read, which is NOT the same as
+    // green. `none` and `pending` are refused for the same reason: a merge is
+    // the one action here that cannot be undone from this tab.
+    const rollup = remote.headSha
+      ? await this.github.getCheckRollup(row.repo, remote.headSha)
+      : null;
+    if (!rollup) {
+      throw new BadRequestException(
+        "Couldn't read this pull request's checks from GitHub, so I won't " +
+          'merge it blind. Try again in a moment.',
+      );
+    }
+    if (rollup.state === 'failure') {
+      throw new ForbiddenException(
+        `This pull request's checks are red (${rollup.failed
+          .slice(0, 3)
+          .join(', ')}). Fix them before merging.`,
+      );
+    }
+    if (rollup.state === 'pending') {
+      throw new ForbiddenException(
+        "This pull request's checks are still running. Give them a minute.",
+      );
+    }
+    if (rollup.state === 'none') {
+      throw new ForbiddenException(
+        'This pull request has no checks at all, so nothing has verified it. ' +
+          'Merge it on GitHub if that is really what you want.',
+      );
+    }
+
+    const result = await this.github.mergePullRequest(
+      row.repo,
+      row.prNumber,
+      row.title ?? undefined,
+    );
+    if (!result.merged) {
+      // GitHub's own refusal, relayed rather than worked around. A required
+      // review or a moved base is exactly the case this button must not force.
+      throw new ForbiddenException(
+        result.message ??
+          'GitHub would not merge this pull request, and did not say why.',
+      );
+    }
+
+    await this.repository.update(
+      { id: row.id },
+      {
+        merged: true,
+        mergedAt: new Date(),
+        state: 'closed',
+        decidedBy: userId,
+      },
+    );
+    this.logger.info(
+      `[BUILDER] ${row.repo}#${row.prNumber} merged from the drawer by user ${userId}.`,
+    );
+    // Feedback on a merged pull request is no longer anyone's to act on.
+    await this.staleFeedback(row.id);
+    return (await this.repository.findOne({ where: { id: row.id } })) ?? row;
+  }
 
   /**
    * Record what the runner opened. Upserted per repo: a resume run pushes
@@ -209,6 +347,18 @@ export class BuilderPullRequestService {
    * GitHub blip would permanently sink a real failure of our own — and guessing
    * PENDING is the very push we are guarding against. The tick is skipped
    * instead; this is polled, so the next one picks it up.
+   *
+   * ## The unfixable-check guard
+   *
+   * A second, independent reason to record rather than act: some checks are
+   * ours and still cannot be satisfied from inside a code repo. The docs guard
+   * wants a `Wiki-PR:` trailer pointing at a pull request in a repo the runner
+   * cannot clone, so a fix run spends an attempt, changes nothing it could
+   * change, and leaves the PR as red as it found it — three times over, up to
+   * `maxFixRunsPerPr`. See `BUILDER_UNFIXABLE_CHECKS`.
+   *
+   * Decided per check, not per commit, because one push routinely fails both:
+   * the docs guard, which we cannot fix, and a real test, which we must.
    */
   private async ingestFeedback(
     pullRequest: BuilderPullRequest,
@@ -228,23 +378,42 @@ export class BuilderPullRequestService {
         // `login` is null for a commit whose email is not linked to a GitHub
         // account — a definite answer, and definitely not our bot, so it falls
         // through to the git author name rather than to "unknown".
-        const status = this.isOwnActor(
-          headAuthor.login ?? headAuthor.name ?? '',
-        )
-          ? BuilderPrFeedbackStatus.PENDING
-          : BuilderPrFeedbackStatus.OBSERVED;
+        const ours = this.isOwnActor(headAuthor.login ?? headAuthor.name ?? '');
 
         for (const check of rollup.failed) {
+          // Two independent reasons a failure is not ours to act on, and the
+          // check-level one is decided per check rather than per commit: a
+          // push of ours can fail the docs guard AND a real test at once, and
+          // the test half must still earn its fix run.
+          const unfixable = isUnfixableCheck(check);
+          const status =
+            ours && !unfixable
+              ? BuilderPrFeedbackStatus.PENDING
+              : BuilderPrFeedbackStatus.OBSERVED;
+
+          const shortSha = headSha.slice(0, 7);
+          let body: string;
+          if (unfixable) {
+            body =
+              `The check "${check}" failed on ${shortSha}. A fix run cannot ` +
+              `satisfy it — it needs a Wiki-PR trailer pointing at a pull ` +
+              `request in the wiki repo, which a build cannot open. Recorded ` +
+              `for a human.`;
+          } else if (!ours) {
+            body =
+              `The check "${check}" failed on ${shortSha}, pushed by ` +
+              `${headAuthor.login ?? headAuthor.name ?? 'someone else'}. Left for them.`;
+          } else {
+            body = `The check "${check}" failed on ${shortSha}.`;
+          }
+
           await this.feedbackRepository.upsertIfNew({
             pullRequestId: pullRequest.id,
             sessionId: pullRequest.sessionId,
             kind: BuilderPrFeedbackKind.CI_FAILURE,
             externalId: `${headSha}:${check}`,
             author: 'ci',
-            body:
-              status === BuilderPrFeedbackStatus.OBSERVED
-                ? `The check "${check}" failed on ${headSha.slice(0, 7)}, pushed by ${headAuthor.login ?? headAuthor.name ?? 'someone else'}. Left for them.`
-                : `The check "${check}" failed on ${headSha.slice(0, 7)}.`,
+            body,
             status,
           });
         }

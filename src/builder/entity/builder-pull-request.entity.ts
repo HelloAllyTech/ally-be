@@ -81,6 +81,18 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
   @Column({ type: 'boolean', default: false })
   merged!: boolean;
 
+  /**
+   * Who pressed Merge in the Builder drawer, when that is how it merged.
+   *
+   * NULL for a pull request merged on GitHub, which is most of them — the
+   * column records a decision made *here*, not the merge itself, and
+   * conflating the two would make "did anyone use this button" unanswerable.
+   * The CI gate and the required review both still apply; the button removes
+   * the errand, never the judgement.
+   */
+  @Column({ type: 'int', nullable: true })
+  decidedBy?: number | null;
+
   @Column({ type: 'timestamp', nullable: true })
   mergedAt?: Date | null;
 }

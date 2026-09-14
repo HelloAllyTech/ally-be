@@ -26,10 +26,42 @@ export interface BuilderPrdRequirement {
  * assumptions block readiness on purpose: an unexamined inference is exactly
  * the thing that produces a technically-complete build of the wrong feature.
  */
+/**
+ * What backs an assumption the interview marked confirmed.
+ *
+ * `status: 'confirmed'` used to be a bare claim — confirmed by what, nobody
+ * could say. Now that the interview can consult production numbers, CloudWatch
+ * and Bug Hunter's findings, "confirmed" can mean something checkable, and the
+ * check belongs beside the claim rather than in a log.
+ *
+ * It sits in the PRD deliberately, not in an audit table. The raw calls are
+ * already persisted on `builder_messages.toolCalls`; what was missing was the
+ * link from a specific claim to the specific lookup that settled it, in the
+ * document a human reviews. A reviewer seeing "used by 412 sessions" with no
+ * provenance has to take it on trust; seeing it dated and attributed, they can
+ * tell a measured fact from a plausible-sounding one — and tell when it went
+ * stale, which is the failure this really guards against.
+ */
+export interface BuilderPrdEvidence {
+  /** The tool that produced it — analytics_ask, prod_errors, bug_findings_search… */
+  source: string;
+  /** The finding, in one line, as the agent read it. */
+  detail: string;
+  /** When it was looked up. A number true in March may not be true in September. */
+  at: string;
+}
+
 export interface BuilderPrdAssumption {
   id: string;
   text: string;
   status: 'confirmed' | 'unconfirmed';
+  /**
+   * Present when a lookup settled this, absent when a human simply asserted
+   * it. Both are legitimate — an admin saying "we have decided to support
+   * this" is not weaker evidence, it is a different kind — so an absent value
+   * means "not measured", never "unverified".
+   */
+  evidence?: BuilderPrdEvidence;
 }
 
 export interface BuilderPrdRepoPlan {

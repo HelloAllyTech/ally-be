@@ -31,7 +31,27 @@ export interface FinalisePromptContext {
   /** The reviewer's non-blocking notes, worth surfacing to a human. */
   verifierNotes?: string | null;
   planMd?: string | null;
+  /**
+   * Tunable conduct guidance from prompt management. Null when the row and the
+   * file are both missing, in which case DEFAULT_FINALISE_GUIDANCE is used —
+   * never an empty block, which would quietly drop the section.
+   */
+  guidance?: string | null;
 }
+
+/**
+ * The compiled-in conduct block.
+ *
+ * This is the fallback, not the source of truth: `builder_finalise_guidance`
+ * is, and it ships as a file with this same text. It exists so a missing row,
+ * an unreachable database or a typo in the prompt code degrades to the
+ * behaviour we already had rather than to a prompt with a hole in it.
+ */
+export const DEFAULT_FINALISE_GUIDANCE = `## Conduct
+
+- **No secrets** in code, logs, events or PR bodies.
+- A PR body is read by someone who has not seen any of this. Write what they
+  need to review it, not a narration of how the run went.`;
 
 export function buildFinalisePrompt(context: FinalisePromptContext): string {
   const header = `${buildPromptHeader({
@@ -69,6 +89,7 @@ The body must carry:
 - any deviation from the PRD, with your reasoning;
 - a link to ${context.sessionUrl};
 - the line **"Opened by Builder — human review and merge required."**
+- a \`Wiki-PR:\` trailer — see "The docs guard" below. Every PR needs one.
 
 Then record them with \`prs\`.
 
@@ -91,6 +112,69 @@ Include in the metrics:
 
 **5. \`complete '{"outcome":"done"}'\`** — exactly once, last.
 
+## The docs guard
+
+Every repo here runs a "Docs guard" check on the pull request. It reads
+\`.docs-map.yml\` and fails when a change touches code a doc is declared to
+cover and the doc did not move with it. A red guard is a red PR, and nothing
+downstream can clear it for you — so deal with it here, before you open one.
+
+**Before you push**, for each repo you touched, read its \`.docs-map.yml\` and
+check the rules whose \`watch\` globs match your diff:
+
+- The rule requires a file **in this repo** (\`DATA_SCHEMA.md\`,
+  \`docs/*.md\`) — the coding phase should already have updated it. If it did
+  not, update it now and commit that on the branch. This is the half you can
+  actually fix.
+- The rule requires a **wiki page** (\`requires: wiki:...\`) — write it, using
+  the flow below. The wiki is cloned for you at \`.wiki-tmp\` (repo root, beside
+  \`repos/\`, not inside it).
+
+**Every PR body ends with a \`Wiki-PR:\` trailer**, on its own line, last.
+
+### When a wiki rule fired
+
+The ordering matters and is not the obvious one — \`wiki-pr.sh\` needs the code
+PR's URL, so the code PR has to exist *before* the trailer can be written:
+
+1. \`gh pr create\` as above, without the trailer. Note the URL it prints.
+2. Edit the page under \`.wiki-tmp/wiki/\` — the one the rule names. Write what
+   changed, in the voice of the page you are editing; do not append a
+   changelog entry to a reference page.
+3. Check you may push to the wiki before running anything:
+   \`gh api repos/helloallytech/helloallytech.github.io --jq '.permissions.push'\`
+   If that is not \`true\`, **stop here** and use the "could not" trailer below.
+   Do not proceed — \`wiki-pr.sh\` responds to missing write access by forking
+   the repo to whoever this runner's token belongs to, and an agent creating
+   repositories in somebody's account unattended is not a thing this run gets
+   to decide. A person running the same script can make that call; you cannot.
+
+   If it is \`true\`, then from inside the code repo you changed, run:
+   \`../../.wiki-tmp/scripts/wiki-pr.sh "<the PR url from step 1>"\`
+   It opens the wiki PR, links it to yours so the two merge together, and
+   prints the trailer line to use.
+4. \`gh pr edit <url> --body\` — re-send the body with that trailer appended.
+
+The wiki is **public**. No secrets, credentials, internal hostnames, IP
+addresses or cloud region details on a page, ever — the same rule the repo's
+own CLAUDE.md states, and worth re-reading before you write.
+
+### When it did not, or you could not
+
+\`\`\`
+Wiki-PR: none — <one line saying why>
+\`\`\`
+
+Either no wiki rule matched this diff, or something stopped you. **Check that
+\`.wiki-tmp\` exists before relying on it** — it is absent on a run whose
+workflow predates it as well as on a run whose clone failed, and both look the
+same from here. \`wiki-pr.sh\` erroring is the third case. Say which, and say
+what page still needs writing: "repo-page-architecture fired — repos/ally-be.md
+needs the new module listed; wiki clone was not present". A trailer is not a
+way of dismissing the requirement; it is how you hand it over.
+
+Never use the \`docs:skip\` label. That is a human's call, not yours.
+
 ## End-to-end
 
 Worth doing only when it can prove something the unit tests cannot. Bring up
@@ -107,11 +191,7 @@ Skip it — with \`note e2e_skipped "<reason>"\` — when any of these hold:
 Skipping with a stated reason is a fine outcome. Failing the build because a
 docker-compose service was slow is not.
 
-## Conduct
-
-- **No secrets** in code, logs, events or PR bodies.
-- A PR body is read by someone who has not seen any of this. Write what they
-  need to review it, not a narration of how the run went.
+${context.guidance?.trim() || DEFAULT_FINALISE_GUIDANCE}
 `.trim();
 
   const evidenceBlock = [

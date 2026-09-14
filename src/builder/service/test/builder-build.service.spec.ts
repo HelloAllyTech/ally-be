@@ -163,6 +163,9 @@ describe('BuilderBuildService', () => {
       runRepository as any,
       eventRepository as any,
       questionRepository as any,
+      // Steering notes get superseded when a run is cancelled; nothing else in
+      // these tests touches them.
+      { supersedePending: jest.fn().mockResolvedValue(0) } as any,
       pullRequestRepository as any,
       settingsService as any,
       notificationService as any,

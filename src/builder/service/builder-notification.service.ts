@@ -3,6 +3,9 @@ import { LoggerService } from 'src/logger/logger.service';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderNotificationRepository } from '../repository/builder-build.repository';
 import { BuilderNotificationKind } from '../enum/builder.enum';
+import { SlackService } from 'src/notification/service/slack.service';
+import { AppConfigService } from 'src/config/config.service';
+import { BUILDER_ANNOUNCED_KINDS } from '../constants/builder.constants';
 
 /**
  * What happened while the admin was elsewhere.
@@ -22,7 +25,11 @@ export class BuilderNotificationService {
     BuilderNotificationService.name,
   );
 
-  constructor(private readonly repository: BuilderNotificationRepository) {}
+  constructor(
+    private readonly repository: BuilderNotificationRepository,
+    private readonly slack: SlackService,
+    private readonly configService: AppConfigService,
+  ) {}
 
   private async notify(
     session: BuilderSession,
@@ -42,6 +49,51 @@ export class BuilderNotificationService {
       // Never let a notification failure break the thing it is reporting on.
       this.logger.warn(
         `Could not record Builder notification (${kind}) for session ${session.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    await this.announce(session, kind, message);
+  }
+
+  /**
+   * Say it somewhere a person will see without going looking.
+   *
+   * The in-app inbox is a pull surface: it works only for someone already
+   * looking at Builder, which is exactly who does not need telling. A build
+   * paused on a question is indistinguishable from a build still working until
+   * something says otherwise, and the docstring on this class has named that
+   * as the worst failure mode since it was written — while every notification
+   * stayed a database row nobody was pushed toward.
+   *
+   * Not every kind is worth interrupting for. A completed build is good news
+   * that keeps; a question, a failure, a spend ceiling and a fix run touching
+   * a pull request someone may be reviewing all have somebody waiting on the
+   * other side. Announcing everything is how a channel gets muted, and a muted
+   * channel is worse than no channel because it still looks like coverage.
+   *
+   * Best-effort after the row is written, never before, and never able to
+   * throw: a Slack outage must not lose the notification or fail the thing it
+   * was reporting on. The row is the record; this is the tap on the shoulder.
+   */
+  private async announce(
+    session: BuilderSession,
+    kind: BuilderNotificationKind,
+    message: string,
+  ): Promise<void> {
+    if (!BUILDER_ANNOUNCED_KINDS.includes(kind)) return;
+    try {
+      const url = `${this.configService.adminBaseUrl}/builder/${session.id}`;
+      await this.slack.sendMessage(
+        `${message}\n${url}`,
+        // Undefined means the platform default channel — SlackService's own
+        // fallback, not a second one restated here.
+        this.configService.builder.slackChannel,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not announce Builder notification (${kind}): ${
           error instanceof Error ? error.message : String(error)
         }`,
       );

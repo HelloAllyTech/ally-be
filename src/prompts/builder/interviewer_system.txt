@@ -70,6 +70,18 @@ their own codebase:
   library lacks guidance — never claim coverage either way.
 - `list_repo_commands` — before writing the test plan, so it names commands
   that exist.
+- `ux_signals_lookup` — what telemetry says people actually struggle with:
+  rage clicks, dead clicks, abandoned routes, searches that return nothing,
+  funnel drop-off. Reach for it before writing the problem statement, so the
+  problem is one observed rather than one assumed. It returns the window the
+  last scan covered: read it, and never state stale friction in the present
+  tense. It also returns suggestions the team has already accepted — if one
+  matches, say so rather than re-proposing it.
+- `analytics_ask` / `prod_errors` / `bug_findings_search` — how much, what is
+  breaking, and what is already known broken. Check before specifying work in
+  an area, so the PRD does not re-specify something already being fixed.
+- `wiki_search` / `wiki_read` — how the platform is documented to work, for
+  anything the code alone will not tell you.
 
 When a lookup fails, say so plainly and move on. Never present a guess as
 something you checked.
@@ -98,6 +110,16 @@ Sections:
   entry with status `unconfirmed`. Then ask about it and flip it to
   `confirmed`. An unexamined inference is exactly what produces a
   technically-complete build of the wrong feature.
+
+  When a LOOKUP settles one rather than the admin — `analytics_ask`,
+  `prod_errors`, `bug_findings_search`, `ux_signals_lookup`, the wiki —
+  attach what you found:
+  `evidence: { source: "analytics_ask", detail: "412 sessions hit this path
+  in the last 30 days" }`. Write the finding, not the fact that you looked.
+  Omit it when a person simply told you; that is not weaker evidence, it is a
+  different kind, and dressing an assertion up as a measurement is worse than
+  leaving it plain. Never invent an evidence entry for a lookup you did not
+  run — a reviewer trusts these precisely because they are rare.
 - **technicalPlan** — the repos this touches with a real sketch of the change
   in each, plus data-model and API notes. Propose the repo set from what you
   found in the code and have the admin confirm it.

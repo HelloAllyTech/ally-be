@@ -1,8 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { BuilderExemplarService } from './builder-exemplar.service';
 import { BuilderKnowledgeService } from './builder-knowledge.service';
@@ -20,7 +19,10 @@ import {
   BuilderLessonCategory,
   BuilderPrFeedbackKind,
 } from '../enum/builder.enum';
-import { BUILDER_MAX_TOKENS } from '../constants/builder.constants';
+import {
+  BUILDER_AI_TASKS,
+  BUILDER_MAX_TOKENS,
+} from '../constants/builder.constants';
 
 /**
  * The feedback half of the flywheel: turn what happened to a build into
@@ -46,9 +48,6 @@ export class BuilderOutcomeService {
     BuilderOutcomeService.name,
   );
 
-  // Exposed for tests (mocked with a fake client), matching the orchestrator.
-  protected client: Anthropic;
-
   constructor(
     private readonly configService: AppConfigService,
     private readonly sessionRepository: BuilderSessionRepository,
@@ -59,12 +58,8 @@ export class BuilderOutcomeService {
     private readonly exemplarService: BuilderExemplarService,
     private readonly knowledgeService: BuilderKnowledgeService,
     private readonly curatorService: BuilderLessonCuratorService,
-    private readonly llmUsage: LlmUsageService,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
-  }
+    private readonly llmCompletion: LlmCompletionService,
+  ) {}
 
   /**
    * The hourly catch-up.
@@ -202,63 +197,55 @@ export class BuilderOutcomeService {
       path?: string | null;
     }[],
   ): Promise<OutcomeAnalysis | null> {
-    const model = this.configService.builder.mechanicalModel;
     const activeLessons = await this.lessonRepository.listActiveForRepos(
       exemplar.repos ?? undefined,
     );
 
     try {
-      const response = await this.client.messages.create({
-        model,
-        max_tokens: BUILDER_MAX_TOKENS,
-        system: OUTCOME_SYSTEM_PROMPT,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              `## The build\n${exemplar.title} (${exemplar.repos?.join(', ') ?? 'unknown repos'})`,
-              `Outcome: ${exemplar.outcome}`,
-              '',
-              '## What people and CI said',
-              feedback.length
-                ? feedback
-                    .map(
-                      (item) =>
-                        `- (${item.kind}${item.path ? `, ${item.path}` : ''}) ${
-                          item.body ?? ''
-                        }`,
-                    )
-                    .join('\n')
-                : '(nothing recorded)',
-              '',
-              '## Lessons this build already had access to',
-              activeLessons.length
-                ? activeLessons
-                    .map((lesson) => `- [${lesson.id}] ${lesson.lesson}`)
-                    .join('\n')
-                : '(none)',
-              '',
-              'Return the JSON object and nothing else.',
-            ].join('\n'),
-          },
-        ],
-      });
+      const result = await this.llmCompletion.complete({
+        taskId: BUILDER_AI_TASKS.OUTCOME_CATEGORISE,
 
-      const input = response.usage?.input_tokens ?? 0;
-      const output = response.usage?.output_tokens ?? 0;
-      void this.llmUsage.record({
-        provider: 'anthropic',
-        model,
         task: LlmTask.BUILDER_OUTCOME_CATEGORISE,
-        promptTokens: input,
-        completionTokens: output,
-        totalTokens: input + output,
-        metadata: { builderSessionId: sessionId, feedback: feedback.length },
+
+        maxTokens: BUILDER_MAX_TOKENS,
+
+        model: this.configService.builder.mechanicalModel,
+
+        system: OUTCOME_SYSTEM_PROMPT,
+
+        usageMetadata: {
+          builderSessionId: sessionId,
+          feedback: feedback.length,
+        },
+
+        prompt: [
+          `## The build\n${exemplar.title} (${exemplar.repos?.join(', ') ?? 'unknown repos'})`,
+          `Outcome: ${exemplar.outcome}`,
+          '',
+          '## What people and CI said',
+          feedback.length
+            ? feedback
+                .map(
+                  (item) =>
+                    `- (${item.kind}${item.path ? `, ${item.path}` : ''}) ${
+                      item.body ?? ''
+                    }`,
+                )
+                .join('\n')
+            : '(nothing recorded)',
+          '',
+          '## Lessons this build already had access to',
+          activeLessons.length
+            ? activeLessons
+                .map((lesson) => `- [${lesson.id}] ${lesson.lesson}`)
+                .join('\n')
+            : '(none)',
+          '',
+          'Return the JSON object and nothing else.',
+        ].join('\n'),
       });
 
-      const text = response.content
-        .map((block) => (block.type === 'text' ? block.text : ''))
-        .join('\n');
+      const text = result.text;
       return parseAnalysis(text, new Set(activeLessons.map((l) => l.id)));
     } catch (error) {
       this.logger.warn(

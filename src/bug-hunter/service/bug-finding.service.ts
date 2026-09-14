@@ -304,6 +304,11 @@ export class BugFindingService {
     return this.findingRepository.listNewReportedBugs();
   }
 
+  /** What is already known broken — for another agent about to propose work. */
+  listOpenForRepo(repo?: string): Promise<BugFinding[]> {
+    return this.findingRepository.listOpenForRepo(repo);
+  }
+
   listApprovedForRepo(repo: string): Promise<BugFinding[]> {
     return this.findingRepository.listApprovedForRepo(repo);
   }
@@ -347,6 +352,80 @@ export class BugFindingService {
   /** A coordinated fix's ordered steps — empty for an ordinary single-repo bug. */
   listSteps(parentFindingId: string): Promise<BugFinding[]> {
     return this.findingRepository.listChildren(parentFindingId);
+  }
+
+  /**
+   * Record a test that was ALREADY failing when another agent found it.
+   *
+   * Builder's gate computes this set and throws it away. Before starting a
+   * build it runs each touched repo's full suite on a pristine `origin/master`
+   * worktree, then compares failure *identities* so it can tell "you broke
+   * this" from "this was red before you started" — the second kind is excused,
+   * because a pre-existing failure must not block every build in the repo. But
+   * excused is not the same as unknown: nobody is told, and the next build
+   * pays to rediscover it.
+   *
+   * So it lands here instead, as an ordinary finding Bug Hunter triages like
+   * any other. Separate from `persistFindings` deliberately: that path belongs
+   * to a Discover round and needs a bug-hunt `runId`, which Builder has no
+   * business inventing. Bug Hunter owns its own intake, and a caller from
+   * another agent supplies facts rather than rows.
+   *
+   * Dedupe is the load-bearing part. One flaky spec excused across twenty
+   * builds must be ONE finding, not twenty in a queue a person reads daily —
+   * so this reuses the same key and open-row lookup the Discover path uses,
+   * and returns the existing row untouched when it matches. An agent that
+   * makes another agent's queue worse is not worth the wiring.
+   */
+  async recordPreExistingFailure(input: {
+    repo: string;
+    /** The failing test's identity, as the gate parsed it. */
+    failure: string;
+    /** What produced it — a Builder session/run, for the trail back. */
+    discoveredBy: string;
+  }): Promise<BugFinding | null> {
+    const failure = input.failure.trim();
+    if (!failure) return null;
+
+    // Keyed on the failure identity via `symbol`, which is what makes the same
+    // spec across many builds one row. No file: the gate reports test names,
+    // and guessing a path from one would make the key less stable, not more.
+    const dedupeKey = BugFindingRepository.dedupeKey(
+      null,
+      BugFindingSource.TEST_FAILURE,
+      failure,
+      failure,
+    );
+    const existing = await this.findingRepository.findOpenByDedupeKey(
+      input.repo,
+      dedupeKey,
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const saved = await this.findingRepository.save(
+      this.findingRepository.create({
+        repo: input.repo,
+        source: BugFindingSource.TEST_FAILURE,
+        status: BugFindingStatus.NEW,
+        title: `Pre-existing test failure: ${failure}`.slice(0, 200),
+        description:
+          `\`${failure}\` was already failing on \`master\` in ${input.repo} ` +
+          `before ${input.discoveredBy} made any change, so that build's gate ` +
+          `excused it. It has not been fixed and nothing else was watching it.`,
+        symbol: failure,
+        dedupeKey,
+        // Proven: this is not a judgement about whether something looks wrong,
+        // it is a suite that ran on an untouched checkout and failed.
+        proven: true,
+        touchesGuardedPath: false,
+      }),
+    );
+    this.logger.info(
+      `[BUG_HUNTER] Recorded pre-existing failure in ${input.repo} from ${input.discoveredBy}: ${failure}`,
+    );
+    return saved;
   }
 
   /**

@@ -2,8 +2,14 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { AuthModule } from 'src/auth/auth.module';
+import { GithubModule } from 'src/github/github.module';
 import { BugHunterModule } from 'src/bug-hunter/bug-hunter.module';
+import { AnalyticsAgentModule } from 'src/analytics-agent/analytics-agent.module';
+import { LogsModule } from 'src/logs/logs.module';
+import { UxSignalsModule } from 'src/ux-signals/ux-signals.module';
+import { NotificationModule } from 'src/notification/notification.module';
 import { BuilderSession } from './entity/builder-session.entity';
 import { BuilderMessage } from './entity/builder-message.entity';
 import { BuilderPrdDoc } from './entity/builder-prd-doc.entity';
@@ -20,6 +26,7 @@ import { BuilderPrFeedback } from './entity/builder-pr-feedback.entity';
 import { BuilderReport } from './entity/builder-report.entity';
 import { BuilderSettings } from './entity/builder-settings.entity';
 import { BuilderNotification } from './entity/builder-notification.entity';
+import { BuilderSteer } from './entity/builder-steer.entity';
 import { BuilderController } from './controller/builder.controller';
 import { BuilderPipelineController } from './controller/builder-pipeline.controller';
 import { BuilderGateway } from './gateway/builder.gateway';
@@ -28,6 +35,7 @@ import { BuilderPrdService } from './service/builder-prd.service';
 import { BuilderKnowledgeService } from './service/builder-knowledge.service';
 import { BuilderGithubReadService } from './service/builder-github-read.service';
 import { BuilderStacksService } from './service/builder-stacks.service';
+import { BuilderEvidenceService } from './service/builder-evidence.service';
 import { BuilderInterviewToolsService } from './service/builder-interview-tools.service';
 import { BuilderInterviewOrchestratorService } from './service/builder-interview-orchestrator.service';
 import { BuilderBuildService } from './service/builder-build.service';
@@ -43,6 +51,7 @@ import { BuilderMetricsService } from './service/builder-metrics.service';
 import { BuilderEpicService } from './service/builder-epic.service';
 import { BuilderResearchService } from './service/builder-research.service';
 import { BuilderNotificationService } from './service/builder-notification.service';
+import { BuilderSteerService } from './service/builder-steer.service';
 import { BuilderSchedulerRegistrationService } from './service/builder-scheduler-registration.service';
 import { BuilderSessionRepository } from './repository/builder-session.repository';
 import { BuilderMessageRepository } from './repository/builder-message.repository';
@@ -63,6 +72,7 @@ import {
   BuilderPrFeedbackRepository,
   BuilderQuestionRepository,
   BuilderReportRepository,
+  BuilderSteerRepository,
 } from './repository/builder-build.repository';
 
 /**
@@ -77,9 +87,10 @@ import {
  * (a machine-auth controller, a reconcile tick, prompt-over-HTTP) follows from
  * that split.
  *
- * `BugHunterModule` is imported for `GithubActionsService` — the same
- * dispatch/cancel client, reused rather than forked. Pulling it into a shared
- * `src/github/` module is worthwhile once a third caller appears.
+ * `GithubModule` supplies the dispatch/cancel client. It used to reach that
+ * through `BugHunterModule`, which said "Builder depends on Bug Hunter" when
+ * what it depended on was an HTTP client; the client now has its own module
+ * and the two agents share a dependency rather than one another.
  */
 @Module({
   imports: [
@@ -100,11 +111,30 @@ import {
       BuilderReport,
       BuilderSettings,
       BuilderNotification,
+      BuilderSteer,
     ]),
     PromptModule,
     LlmUsageModule,
+    // The interview's provider-agnostic LLM access: AgentLlmProviderFactory
+    // for the streamed tool loop, LlmCompletionService for the one-shot
+    // transcript digest.
+    LlmAgentModule,
     AuthModule,
+    GithubModule,
+    // For BugFindingService only: the gate's excused failures are filed as
+    // Bug Hunter findings. A domain dependency, unlike the GitHub client that
+    // used to be smuggled through this same import.
     BugHunterModule,
+    // Lane A evidence sources: production numbers, production errors. Read
+    // through each owner's own service rather than its HTTP surface, which is
+    // gated for a logged-in human.
+    AnalyticsAgentModule,
+    LogsModule,
+    // UxSignalReadService: the fourth evidence source, and the only one that
+    // speaks for users rather than for the system.
+    UxSignalsModule,
+    // SlackService: the inbox is a pull surface, so a paused build needs a push.
+    NotificationModule,
   ],
   controllers: [BuilderController, BuilderPipelineController],
   providers: [
@@ -114,6 +144,7 @@ import {
     BuilderKnowledgeService,
     BuilderGithubReadService,
     BuilderStacksService,
+    BuilderEvidenceService,
     BuilderInterviewToolsService,
     BuilderInterviewOrchestratorService,
     BuilderBuildService,
@@ -129,6 +160,7 @@ import {
     BuilderEpicService,
     BuilderResearchService,
     BuilderNotificationService,
+    BuilderSteerService,
     BuilderSchedulerRegistrationService,
     BuilderSessionRepository,
     BuilderMessageRepository,
@@ -144,6 +176,7 @@ import {
     BuilderPrFeedbackRepository,
     BuilderReportRepository,
     BuilderNotificationRepository,
+    BuilderSteerRepository,
   ],
   exports: [BuilderSessionService, BuilderKnowledgeService],
 })

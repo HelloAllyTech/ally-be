@@ -6,6 +6,7 @@ import {
   AgentStreamEvent,
   AgentStreamRequest,
 } from '../type/agent-llm.type';
+import { flattenSystem } from '../util/agent-system.util';
 import { IAgentLlmProvider } from './agent-llm-provider.interface';
 
 const STOP_REASONS: Record<string, AgentStopReason> = {
@@ -160,7 +161,9 @@ export class OpenAiAgentProvider implements IAgentLlmProvider {
   }
 
   private toOpenAiMessages(request: AgentStreamRequest): any[] {
-    const messages: any[] = [{ role: 'system', content: request.system }];
+    const messages: any[] = [
+      { role: 'system', content: flattenSystem(request.system) },
+    ];
 
     for (const message of request.messages) {
       if (typeof message.content === 'string') {

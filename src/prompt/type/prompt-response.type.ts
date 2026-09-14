@@ -33,6 +33,11 @@ export type PromptResponse = {
   /** When true, this prompt declares a States section; studio renders the state editor. */
   hasStates?: boolean;
   usesBlocks?: string[];
+  /**
+   * Runtimes that read this prompt. Absent means undeclared, which the model
+   * picker treats as "could be any", offering only universally-runnable models.
+   */
+  runtimes?: string[];
   /** Prompt-level LLM provider override ('openai' | 'gemini' | 'anthropic'). */
   provider?: string;
   /** Prompt-level LLM model override. */

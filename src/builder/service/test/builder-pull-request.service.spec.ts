@@ -78,6 +78,9 @@ describe('BuilderPullRequestService', () => {
         login: 'ally-builder[bot]',
         name: 'Ally Builder',
       }),
+      mergePullRequest: jest
+        .fn()
+        .mockResolvedValue({ merged: true, message: null }),
     };
     buildService = {
       dispatchFixRun: jest.fn().mockResolvedValue({ id: 'run-2' }),
@@ -264,6 +267,85 @@ describe('BuilderPullRequestService', () => {
         await reconcileWith({}, openPr(), redCi);
 
         expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
+      });
+    });
+
+    /**
+     * The second guard: a check that IS ours and still cannot be satisfied.
+     *
+     * The docs guard wants a `Wiki-PR:` trailer pointing at a pull request in
+     * a repo the runner cannot clone, so left as PENDING it spends every one
+     * of `maxFixRunsPerPr` attempts changing nothing. These pin that it is
+     * recorded, not acted on — and, more importantly, that the suppression is
+     * per check rather than per commit.
+     */
+    describe('a failing check no fix run could satisfy', () => {
+      const docsRed = { state: 'failure', failed: ['docs-guard'], total: 2 };
+
+      it('records it as OBSERVED even though Builder wrote the commit', async () => {
+        await reconcileWith({}, openPr(), docsRed);
+
+        expect(feedbackRepository.upsertIfNew).toHaveBeenCalledWith(
+          expect.objectContaining({
+            kind: BuilderPrFeedbackKind.CI_FAILURE,
+            externalId: 'abc1234def:docs-guard',
+            status: BuilderPrFeedbackStatus.OBSERVED,
+          }),
+        );
+      });
+
+      it('says why, so the row does not read as Builder ignoring CI', async () => {
+        await reconcileWith({}, openPr(), docsRed);
+
+        const [row] = feedbackRepository.upsertIfNew.mock.calls.find(
+          ([call]: [any]) => call.kind === BuilderPrFeedbackKind.CI_FAILURE,
+        );
+        expect(row.body).toContain('Wiki-PR');
+      });
+
+      it('matches the name GitHub actually reports, whichever spelling', async () => {
+        // The job id is `docs-guard`; the workflow's own name is "Docs guard".
+        // Which one reaches the checks API is GitHub's business, not ours.
+        await reconcileWith({}, openPr(), {
+          state: 'failure',
+          failed: ['Docs guard'],
+          total: 2,
+        });
+
+        expect(feedbackRepository.upsertIfNew).toHaveBeenCalledWith(
+          expect.objectContaining({
+            status: BuilderPrFeedbackStatus.OBSERVED,
+          }),
+        );
+      });
+
+      it('still counts a real failure on the same commit as work', async () => {
+        // The case that makes this per-check: one push fails the docs guard
+        // AND a test. Suppressing the commit would sink the test failure too.
+        await reconcileWith({}, openPr(), {
+          state: 'failure',
+          failed: ['docs-guard', 'unit tests'],
+          total: 3,
+        });
+
+        const rows = feedbackRepository.upsertIfNew.mock.calls
+          .map(([call]: [any]) => call)
+          .filter(
+            (call: any) => call.kind === BuilderPrFeedbackKind.CI_FAILURE,
+          );
+
+        expect(rows).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              externalId: 'abc1234def:docs-guard',
+              status: BuilderPrFeedbackStatus.OBSERVED,
+            }),
+            expect.objectContaining({
+              externalId: 'abc1234def:unit tests',
+              status: BuilderPrFeedbackStatus.PENDING,
+            }),
+          ]),
+        );
       });
     });
 
@@ -473,6 +555,117 @@ describe('BuilderPullRequestService', () => {
 
       expect(updated).toBe(0);
       expect(feedbackRepository.update).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The merge button.
+   *
+   * Builder opens pull requests and stops, and on the repos that matter it
+   * could not merge even if it should — `master` wants an approving review and
+   * the bot holds only `write`. What it can remove is the errand: Bug Hunter
+   * measured 89 of 122 bot pull requests merged by hand, nearly all within the
+   * hour. So these pin the refusals, not the happy path — every one of them is
+   * a case where merging anyway would be worse than not having the button.
+   */
+  describe('mergePullRequest', () => {
+    const green = { state: 'success', failed: [], total: 3 };
+
+    const arrange = (pr: any, remote: any, rollup: any = green) => {
+      repository.findOne.mockResolvedValue(pr);
+      github.getPullRequest.mockResolvedValue(remote);
+      github.getCheckRollup.mockResolvedValue(rollup);
+    };
+
+    it('merges a green PR and records who decided', async () => {
+      arrange(openPr(), {
+        merged: false,
+        state: 'open',
+        headSha: 'abc1234',
+      });
+      github.mergePullRequest.mockResolvedValue({
+        merged: true,
+        message: null,
+      });
+
+      await service.mergePullRequest('session-1', 'pr-1', 7);
+
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({ merged: true, decidedBy: 7 }),
+      );
+    });
+
+    it('refuses red checks rather than merging past them', async () => {
+      arrange(
+        openPr(),
+        { merged: false, state: 'open', headSha: 'abc1234' },
+        { state: 'failure', failed: ['unit tests'], total: 3 },
+      );
+
+      await expect(
+        service.mergePullRequest('session-1', 'pr-1', 7),
+      ).rejects.toThrow(/red/i);
+      expect(github.mergePullRequest).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the checks cannot be read — unreadable is not green', async () => {
+      arrange(openPr(), { merged: false, state: 'open', headSha: 'abc' }, null);
+
+      await expect(
+        service.mergePullRequest('session-1', 'pr-1', 7),
+      ).rejects.toThrow(/blind/i);
+      expect(github.mergePullRequest).not.toHaveBeenCalled();
+    });
+
+    it('refuses a PR with no checks at all', async () => {
+      arrange(
+        openPr(),
+        { merged: false, state: 'open', headSha: 'abc' },
+        { state: 'none', failed: [], total: 0 },
+      );
+
+      await expect(
+        service.mergePullRequest('session-1', 'pr-1', 7),
+      ).rejects.toThrow(/no checks/i);
+    });
+
+    it("relays GitHub's refusal instead of forcing past it", async () => {
+      // A required review is exactly the gate this button must not bypass.
+      arrange(openPr(), { merged: false, state: 'open', headSha: 'abc' });
+      github.mergePullRequest.mockResolvedValue({
+        merged: false,
+        message: 'At least 1 approving review is required.',
+      });
+
+      await expect(
+        service.mergePullRequest('session-1', 'pr-1', 7),
+      ).rejects.toThrow(/approving review/i);
+      expect(repository.update).not.toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({ merged: true }),
+      );
+    });
+
+    it('settles the row when somebody merged it on GitHub first', async () => {
+      // The outcome the admin wanted already happened; erroring would be perverse.
+      arrange(openPr(), { merged: true, state: 'closed', headSha: 'abc' });
+
+      await service.mergePullRequest('session-1', 'pr-1', 7);
+
+      expect(github.mergePullRequest).not.toHaveBeenCalled();
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({ merged: true }),
+      );
+    });
+
+    it("refuses a pull request that is not this session's", async () => {
+      repository.findOne.mockResolvedValue(openPr({ sessionId: 'other' }));
+
+      await expect(
+        service.mergePullRequest('session-1', 'pr-1', 7),
+      ).rejects.toThrow(/not part of session/i);
     });
   });
 });

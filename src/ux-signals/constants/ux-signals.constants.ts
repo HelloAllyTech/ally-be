@@ -179,3 +179,16 @@ export const UX_SIGNAL_FUNNELS = [
     complete: 'learn_module_opened',
   },
 ] as const;
+
+/**
+ * How much friction one read returns.
+ *
+ * The default is a reading list, not an export: a caller asking "what are
+ * users struggling with" wants the head of the queue, and a model handed
+ * eighty cards will summarise rather than cite. MAX exists so a caller that
+ * genuinely wants the backlog can ask without the cap being a code change.
+ */
+export const UX_SIGNAL_EVIDENCE_LIMITS = {
+  DEFAULT: 15,
+  MAX: 50,
+} as const;

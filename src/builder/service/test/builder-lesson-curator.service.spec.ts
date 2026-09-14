@@ -39,7 +39,11 @@ describe('BuilderLessonCuratorService', () => {
   let updates: { where: any; set: any }[];
   let reply: string;
 
+  let llmCompletion: { complete: jest.Mock };
+
   beforeEach(() => {
+    // Stands in for the model: whatever `reply` holds comes back as text.
+    llmCompletion = { complete: jest.fn(async () => ({ text: reply })) };
     updates = [];
     reply = '[]';
 
@@ -67,18 +71,13 @@ describe('BuilderLessonCuratorService', () => {
       } as any,
       dataSource,
       lessonRepository,
-      { record: jest.fn() } as any,
+      llmCompletion as any,
+      // Lock always granted: the contention path has its own test below.
+      {
+        acquireLock: jest.fn().mockResolvedValue(true),
+        releaseLock: jest.fn().mockResolvedValue(undefined),
+      } as any,
     );
-
-    // Stand in for the model: whatever `reply` holds comes back as its text.
-    (service as any).client = {
-      messages: {
-        create: jest.fn(async () => ({
-          content: [{ type: 'text', text: reply }],
-          usage: { input_tokens: 10, output_tokens: 5 },
-        })),
-      },
-    };
   });
 
   const withCandidates = (count: number, active: any[] = []) => {
@@ -98,7 +97,7 @@ describe('BuilderLessonCuratorService', () => {
 
     expect(result.skipped).toBe('nothing new');
     // The no-op path is the common one, so it must not cost a model call.
-    expect((service as any).client.messages.create).not.toHaveBeenCalled();
+    expect(llmCompletion.complete).not.toHaveBeenCalled();
   });
 
   it('waits for a batch rather than spending a call per build', async () => {
@@ -107,7 +106,7 @@ describe('BuilderLessonCuratorService', () => {
     const result = await service.consolidate();
 
     expect(result.skipped).toBe('below the batch threshold');
-    expect((service as any).client.messages.create).not.toHaveBeenCalled();
+    expect(llmCompletion.complete).not.toHaveBeenCalled();
   });
 
   it('runs on demand below the threshold when forced', async () => {
@@ -115,7 +114,7 @@ describe('BuilderLessonCuratorService', () => {
 
     await service.consolidate(true);
 
-    expect((service as any).client.messages.create).toHaveBeenCalled();
+    expect(llmCompletion.complete).toHaveBeenCalled();
   });
 
   it('folds a duplicate into the rule it agrees with, counting the agreement', async () => {
@@ -183,7 +182,7 @@ describe('BuilderLessonCuratorService', () => {
   it('promotes everything uncurated when the model is unavailable', async () => {
     // An uncurated lesson still beats a lost one.
     withCandidates(10);
-    (service as any).client.messages.create = jest
+    llmCompletion.complete = jest
       .fn()
       .mockRejectedValue(new Error('anthropic down'));
 

@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { NotificationModule } from 'src/notification/notification.module';
 import { LogsModule } from 'src/logs/logs.module';
+import { GithubModule } from 'src/github/github.module';
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
@@ -29,7 +30,6 @@ import { BugHunterFinderDataService } from './service/bug-hunter-finder-data.ser
 import { BugHunterMetricsService } from './service/bug-hunter-metrics.service';
 import { BugFixSessionService } from './service/bug-fix-session.service';
 import { BugHunterRepoClassifierService } from './service/bug-hunter-repo-classifier.service';
-import { GithubActionsService } from './service/github-actions.service';
 import { BugHunterNotificationService } from './service/bug-hunter-notification.service';
 import { BugFixSessionSchedulerRegistrationService } from './service/bug-fix-session-scheduler-registration.service';
 import { BugHunterModelSettingsService } from './service/bug-hunter-model-settings.service';
@@ -69,6 +69,7 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
  */
 @Module({
   imports: [
+    GithubModule,
     TypeOrmModule.forFeature([
       BugHuntRun,
       BugHuntEvent,
@@ -101,21 +102,12 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     BugFindingService,
     BugHunterFinderDataService,
     BugHunterMetricsService,
-    GithubActionsService,
     BugHunterNotificationService,
     BugFixSessionService,
     BugHunterRepoClassifierService,
     BugFixSessionSchedulerRegistrationService,
     BugHunterModelSettingsService,
   ],
-  exports: [
-    BugHunterService,
-    BugFindingService,
-    BugHunterNotificationService,
-    // Builder dispatches its own workflow through the same client rather than
-    // forking a second GitHub REST wrapper. Worth extracting to a shared
-    // `src/github/` module once a third caller appears.
-    GithubActionsService,
-  ],
+  exports: [BugHunterService, BugFindingService, BugHunterNotificationService],
 })
 export class BugHunterModule {}

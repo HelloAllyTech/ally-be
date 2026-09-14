@@ -16,6 +16,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import { BuilderBuildService } from '../service/builder-build.service';
 import { BuilderEventService } from '../service/builder-event.service';
+import { BuilderSteerService } from '../service/builder-steer.service';
 import { BuilderQuestionService } from '../service/builder-question.service';
 import { BuilderPullRequestService } from '../service/builder-pull-request.service';
 import { BuilderReportService } from '../service/builder-report.service';
@@ -33,12 +34,14 @@ import { buildBuildPrompt } from '../constants/builder-build-prompt';
 import { buildPlanPrompt } from '../constants/builder-plan-prompt';
 import { buildRemediatePrompt } from '../constants/builder-remediate-prompt';
 import { buildFinalisePrompt } from '../constants/builder-finalise-prompt';
+import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { buildVerifyPrompt } from '../constants/builder-verify-prompt';
 import { buildFixPrompt } from '../constants/builder-fix-prompt';
 import {
   BUILDER_EVENT_BATCH_MAX,
   BUILDER_LESSONS_IN_CONTEXT,
   BUILDER_MAX_CODE_ITERATIONS,
+  BUILDER_PROMPTS,
   BUILDER_SIZE_PROFILES,
   classifyBuildSize,
   prdTechnicalPlanLength,
@@ -52,6 +55,7 @@ import { BuilderBuildRun } from '../entity/builder-build-run.entity';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderPrdDocument } from '../type/builder-prd.type';
 import {
+  AckBuilderSteersDto,
   IngestBuilderEventsDto,
   RecordBuilderPrsDto,
   RecordBuilderQuestionsDto,
@@ -85,7 +89,9 @@ export class BuilderPipelineController {
 
   constructor(
     private readonly configService: AppConfigService,
+    private readonly promptSharedService: PromptSharedService,
     private readonly buildService: BuilderBuildService,
+    private readonly steerService: BuilderSteerService,
     private readonly eventService: BuilderEventService,
     private readonly questionService: BuilderQuestionService,
     private readonly pullRequestService: BuilderPullRequestService,
@@ -168,6 +174,7 @@ export class BuilderPipelineController {
     const milestone = await this.resolveMilestoneBlock(run);
 
     return buildBuildPrompt({
+      guidance: await this.guidance(BUILDER_PROMPTS.CODER_GUIDANCE),
       sessionId: session.id,
       runId: run.id,
       branchSlug: run.branchSlug,
@@ -402,7 +409,29 @@ export class BuilderPipelineController {
       gateSummary: phase.gateSummary,
       verifierNotes: phase.verifierNotes,
       planMd: phase.planMd,
+      guidance: await this.guidance(BUILDER_PROMPTS.FINALISE_GUIDANCE),
     });
+  }
+
+  /**
+   * A tunable guidance block, or null to let the caller's compiled default win.
+   *
+   * Swallows its own failure deliberately. A prompt-management outage must not
+   * fail a build that is already an hour in and has a working tree to push —
+   * the run continues on the text it shipped with, which is the same text the
+   * row holds until someone edits it.
+   */
+  private async guidance(promptCode: string): Promise<string | null> {
+    try {
+      return await this.promptSharedService.getPromptByCode(promptCode);
+    } catch (error) {
+      this.logger.warn(
+        `Could not load guidance "${promptCode}", using the compiled default: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
   }
 
   @Get('runs/:runId/verify-prompt')
@@ -628,6 +657,46 @@ export class BuilderPipelineController {
   async budgetHold(@Param('runId', ParseUUIDPipe) runId: string) {
     const run = await this.buildService.getRunOrFail(runId);
     return this.buildService.recordBudgetHold(run);
+  }
+
+  /**
+   * Corrections an admin sent while this run was going, polled at phase
+   * boundaries alongside the budget check.
+   *
+   * A read, not a delivery: the runner appends what it gets to the next
+   * phase's prompt and only then acknowledges. If it dies in between, the
+   * notes stay pending and the next boundary delivers them — which is the
+   * right failure, because the one thing this surface must never do is
+   * swallow a person's correction silently.
+   */
+  @Get('runs/:runId/steer')
+  @ApiOperation({ summary: 'Steering notes waiting for this run' })
+  async getSteers(@Param('runId', ParseUUIDPipe) runId: string) {
+    const run = await this.buildService.getRunOrFail(runId);
+    const pending = await this.steerService.listPending(run.sessionId);
+    return {
+      notes: pending.map((steer) => ({
+        id: steer.id,
+        note: steer.note,
+        at: steer.createdAt?.toISOString() ?? null,
+      })),
+    };
+  }
+
+  @Post('runs/:runId/steer/ack')
+  @ApiOperation({ summary: 'These steering notes reached a phase prompt' })
+  async ackSteers(
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Body() dto: AckBuilderSteersDto,
+  ) {
+    const run = await this.buildService.getRunOrFail(runId);
+    const delivered = await this.steerService.acknowledge(
+      run.sessionId,
+      run.id,
+      dto.ids,
+      dto.phase,
+    );
+    return { ok: true, delivered };
   }
 
   @Get('repo-commands')

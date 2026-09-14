@@ -1,17 +1,20 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { BuilderLesson } from '../entity/builder-lesson.entity';
 import { BuilderLessonRepository } from '../repository/builder-knowledge.repository';
 import {
   BuilderLessonCategory,
   BuilderLessonStatus,
 } from '../enum/builder.enum';
+import { RedisService } from 'src/redis/service/redis.service';
 import {
+  BUILDER_AI_TASKS,
+  BUILDER_CURATE_LOCK,
+  BUILDER_CURATE_LOCK_TTL_SECONDS,
   BUILDER_LESSON_ACTIVE_CAP,
   BUILDER_LESSON_CANDIDATE_TRIGGER,
   BUILDER_MAX_TOKENS,
@@ -43,19 +46,13 @@ export class BuilderLessonCuratorService {
     BuilderLessonCuratorService.name,
   );
 
-  // Exposed for tests (mocked with a fake client), matching the orchestrator.
-  protected client: Anthropic;
-
   constructor(
     private readonly configService: AppConfigService,
     private readonly dataSource: DataSource,
     private readonly lessonRepository: BuilderLessonRepository,
-    private readonly llmUsage: LlmUsageService,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
-  }
+    private readonly llmCompletion: LlmCompletionService,
+    private readonly redisService: RedisService,
+  ) {}
 
   /**
    * Curate if there is anything to curate.
@@ -64,6 +61,39 @@ export class BuilderLessonCuratorService {
    * is the common one and has to be cheap: one COUNT, no model call.
    */
   async consolidate(force = false): Promise<{
+    considered: number;
+    applied: number;
+    skipped: string | null;
+  }> {
+    // One pod at a time. This runs hourly on every pod, reads the candidate
+    // set, asks a model what to do with it and applies the answer — so two
+    // pods overlapping would send the same candidates to two models and apply
+    // both replies to the same rows. The transaction below keeps each write
+    // consistent; it does nothing about two passes deciding independently and
+    // the loser's promotions and merges landing on top of the winner's.
+    //
+    // A lock rather than a revision token: the problem here is a scheduled job
+    // running twice, not two editors racing over one document. TTL slightly
+    // over the cadence so a pod that dies mid-pass cannot hold it forever, and
+    // NX so the second pod simply does not run — there is nothing to queue,
+    // the work will still be there next hour.
+    const locked = await this.redisService.acquireLock(
+      BUILDER_CURATE_LOCK,
+      BUILDER_CURATE_LOCK_TTL_SECONDS,
+    );
+    if (!locked) {
+      return { considered: 0, applied: 0, skipped: 'another pod is curating' };
+    }
+    try {
+      return await this.consolidateLocked(force);
+    } finally {
+      await this.redisService
+        .releaseLock(BUILDER_CURATE_LOCK)
+        .catch(() => undefined);
+    }
+  }
+
+  private async consolidateLocked(force: boolean): Promise<{
     considered: number;
     applied: number;
     skipped: string | null;
@@ -125,45 +155,27 @@ export class BuilderLessonCuratorService {
     candidates: BuilderLesson[],
     active: BuilderLesson[],
   ): Promise<CuratorOperation[]> {
-    const model = this.configService.builder.mechanicalModel;
-    const response = await this.client.messages.create({
-      model,
-      max_tokens: BUILDER_MAX_TOKENS,
-      system: CURATOR_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            '## Active rules',
-            active.length
-              ? active.map((lesson) => renderLesson(lesson)).join('\n')
-              : '(none yet)',
-            '',
-            '## New candidates',
-            candidates.map((lesson) => renderLesson(lesson)).join('\n'),
-            '',
-            'Return the JSON operations array and nothing else.',
-          ].join('\n'),
-        },
-      ],
-    });
-
-    const input = response.usage?.input_tokens ?? 0;
-    const output = response.usage?.output_tokens ?? 0;
-    void this.llmUsage.record({
-      provider: 'anthropic',
-      model,
+    const result = await this.llmCompletion.complete({
+      taskId: BUILDER_AI_TASKS.LESSON_CURATION,
       task: LlmTask.BUILDER_LESSON_CURATION,
-      promptTokens: input,
-      completionTokens: output,
-      totalTokens: input + output,
-      metadata: { candidates: candidates.length, active: active.length },
+      maxTokens: BUILDER_MAX_TOKENS,
+      model: this.configService.builder.mechanicalModel,
+      system: CURATOR_SYSTEM_PROMPT,
+      usageMetadata: { candidates: candidates.length, active: active.length },
+      prompt: [
+        '## Active rules',
+        active.length
+          ? active.map((lesson) => renderLesson(lesson)).join('\n')
+          : '(none yet)',
+        '',
+        '## New candidates',
+        candidates.map((lesson) => renderLesson(lesson)).join('\n'),
+        '',
+        'Return the JSON operations array and nothing else.',
+      ].join('\n'),
     });
 
-    const text = response.content
-      .map((block) => (block.type === 'text' ? block.text : ''))
-      .join('\n');
-    return parseOperations(text);
+    return parseOperations(result.text);
   }
 
   /**

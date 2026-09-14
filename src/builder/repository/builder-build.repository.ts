@@ -7,12 +7,15 @@ import { BuilderPullRequest } from '../entity/builder-pull-request.entity';
 import { BuilderPrFeedback } from '../entity/builder-pr-feedback.entity';
 import { BuilderReport } from '../entity/builder-report.entity';
 import { BuilderNotification } from '../entity/builder-notification.entity';
+import { BuilderSteer } from '../entity/builder-steer.entity';
+import { BUILDER_STEER_MAX_PENDING } from '../constants/builder.constants';
 import {
   BUILDER_RUN_ACTIVE_STATUSES,
   BuilderPrFeedbackKind,
   BuilderPrFeedbackStatus,
   BuilderQuestionStatus,
   BuilderRunStatus,
+  BuilderSteerStatus,
 } from '../enum/builder.enum';
 
 @Injectable()
@@ -27,6 +30,14 @@ export class BuilderBuildRunRepository extends Repository<BuilderBuildRun> {
 
   findLatest(sessionId: string): Promise<BuilderBuildRun | null> {
     return this.findOne({ where: { sessionId }, order: { sequence: 'DESC' } });
+  }
+
+  /** The session's run that is still going, if one is. */
+  findActiveForSession(sessionId: string): Promise<BuilderBuildRun | null> {
+    return this.findOne({
+      where: { sessionId, status: In(BUILDER_RUN_ACTIVE_STATUSES) },
+      order: { sequence: 'DESC' },
+    });
   }
 
   /** Runs the reconcile pass still has to settle. */
@@ -313,6 +324,30 @@ export class BuilderNotificationRepository extends Repository<BuilderNotificatio
 
   countUnread(adminId: number): Promise<number> {
     return this.count({ where: { adminId, readAt: IsNull() } });
+  }
+}
+
+@Injectable()
+export class BuilderSteerRepository extends Repository<BuilderSteer> {
+  constructor(dataSource: DataSource) {
+    super(BuilderSteer, dataSource.createEntityManager());
+  }
+
+  /** Oldest first: a person's corrections are read in the order they wrote them. */
+  listPending(sessionId: string): Promise<BuilderSteer[]> {
+    return this.find({
+      where: { sessionId, status: BuilderSteerStatus.PENDING },
+      order: { createdAt: 'ASC' },
+      take: BUILDER_STEER_MAX_PENDING,
+    });
+  }
+
+  listBySession(sessionId: string): Promise<BuilderSteer[]> {
+    return this.find({
+      where: { sessionId },
+      order: { createdAt: 'DESC' },
+      take: 100,
+    });
   }
 }
 

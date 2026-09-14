@@ -36,6 +36,26 @@ export class Prompt extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', nullable: true })
   category?: string;
 
+  /**
+   * Which runtimes actually read this prompt (`ai-learn`, `ally-ai`, `ally-be`).
+   *
+   * Exists so the model picker can offer what this prompt can really run.
+   * Without it the picker has to assume every prompt might be read anywhere and
+   * offer only the intersection — models EVERY runtime supports — which is
+   * correct but too narrow for a prompt with one consumer. Builder's interview
+   * is the case that forced it: ally-be runs Anthropic perfectly well, but the
+   * intersection excludes it (ai-learn cannot), so Builder could be moved off
+   * Claude from the UI and never back.
+   *
+   * NULL means undeclared, and undeclared keeps the conservative intersection.
+   * That is deliberate: every prompt that existed before this column is NULL,
+   * so nothing changes for any of them until someone says otherwise. Declared
+   * in the prompt's `.meta.json` sidecar, beside the name that already lives
+   * there.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  runtimes?: string[];
+
   @Column({ nullable: true })
   currentVersion?: number;
 

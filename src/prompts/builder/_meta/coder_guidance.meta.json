@@ -1,0 +1,6 @@
+{
+  "name": "Builder Coder — Guidance",
+  "description": "Tunable conduct guidance for the Builder coding phase: scope discipline, matching local conventions, secrets, and when to pause. Interpolated into the build prompt, whose protocol (stage names, curl helpers, the complete contract) stays in code because the runner depends on it.",
+  "category": "Builder",
+  "runtimes": ["ally-be"]
+}

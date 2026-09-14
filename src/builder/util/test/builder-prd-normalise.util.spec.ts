@@ -266,3 +266,70 @@ describe('builder PRD normalisation', () => {
     });
   });
 });
+
+/**
+ * Evidence on an assumption.
+ *
+ * `status: 'confirmed'` was a bare claim — confirmed by what, nobody could
+ * say. Now that the interview can consult production numbers, CloudWatch and
+ * Bug Hunter's findings, a confirmation can carry its basis, in the document a
+ * human reviews rather than in a log they never open.
+ *
+ * The rejection cases matter most. A half-read citation looks like provenance
+ * and carries none, which is worse for a reviewer than no citation at all.
+ */
+describe('normalisePrdDocument — assumption evidence', () => {
+  const withAssumption = (assumption: Record<string, unknown>) =>
+    normalisePrdDocument({
+      assumptions: [{ id: 'a1', text: 'This path is used', ...assumption }],
+    } as never).assumptions[0];
+
+  it('keeps a well-formed citation', () => {
+    const result = withAssumption({
+      status: 'confirmed',
+      evidence: {
+        source: 'analytics_ask',
+        detail: '412 sessions in the last 30 days',
+        at: '2026-09-14T00:00:00.000Z',
+      },
+    });
+
+    expect(result.evidence).toEqual({
+      source: 'analytics_ask',
+      detail: '412 sessions in the last 30 days',
+      at: '2026-09-14T00:00:00.000Z',
+    });
+  });
+
+  it('stamps the date when the agent omits it', () => {
+    // The date is what makes a stale figure visible six months later, so it is
+    // not left to the model to remember.
+    const result = withAssumption({
+      evidence: { source: 'prod_errors', detail: '30 failures a day' },
+    });
+
+    expect(result.evidence?.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('drops a citation with no source rather than storing half of one', () => {
+    expect(
+      withAssumption({ evidence: { detail: 'something was measured' } })
+        .evidence,
+    ).toBeUndefined();
+  });
+
+  it('drops a citation with no finding — "I looked" is not evidence', () => {
+    expect(
+      withAssumption({ evidence: { source: 'analytics_ask' } }).evidence,
+    ).toBeUndefined();
+  });
+
+  it('leaves an assumption a human confirmed with no evidence at all', () => {
+    // An admin saying "we have decided to support this" is not weaker
+    // evidence, it is a different kind. Absent means "not measured".
+    const result = withAssumption({ status: 'confirmed' });
+
+    expect(result.status).toBe('confirmed');
+    expect(result.evidence).toBeUndefined();
+  });
+});

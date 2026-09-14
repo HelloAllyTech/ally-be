@@ -82,3 +82,38 @@ export interface UxScanOutcome {
   /** Detectors whose query failed, by name — never a silent absence. */
   failedDetectors: string[];
 }
+
+/**
+ * Friction as the platform can evidence it — the read side's one answer shape.
+ *
+ * `scan` is null when no scan has ever completed, and that is not the same as
+ * empty lists: a caller must be able to say "nothing has looked yet" rather
+ * than "nothing is wrong". Everything else is a projection of rows the two
+ * review tabs already show; nothing here is computed or stored.
+ */
+export interface UxSignalFrictionEvidence {
+  scan: {
+    windowFrom: string;
+    windowTo: string;
+    startedAt: string | null;
+  } | null;
+  findings: {
+    id: string;
+    title: string;
+    /** The route the signal fired on, parsed back out of `symbol`. */
+    route: string | null;
+    /** Null on a finding filed before the detector had a severity to give. */
+    severity: string | null;
+    status: string;
+    detectedAt: string | null;
+  }[];
+  suggestions: {
+    id: string;
+    title: string;
+    rationale: string;
+    suggestedGoal: string | null;
+    status: string;
+    /** The human-readable window label the card carries in the review queue. */
+    window: string;
+  }[];
+}

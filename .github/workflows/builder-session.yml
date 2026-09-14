@@ -134,6 +134,31 @@ jobs:
             echo "::endgroup::"
           done
 
+      # The wiki, deliberately NOT under repos/ and deliberately not in
+      # BUILDER_REPOS.
+      #
+      # It is a docs side-channel, not a build target. Listing it as a repo
+      # would put it in the gate (it has no test, lint or typecheck), let a PRD
+      # name it as a place to implement a feature, and route its pull request
+      # through `gh pr create` — when wiki PRs are opened by wiki-pr.sh, which
+      # links them to the source PR so they merge together.
+      #
+      # `.wiki-tmp` is the path the platform's own docs flow uses (see ally-be
+      # CLAUDE.md), so the command the finalise phase runs is the same one a
+      # human runs. Shallow: nothing here needs history.
+      #
+      # Failure is not fatal. A build that cannot reach the wiki should open
+      # its pull requests and declare the gap in the trailer, not lose two
+      # hours of work to a clone.
+      - name: Clone the wiki (docs side-channel)
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          git clone --depth=1 \
+            "https://x-access-token:${BUILDER_GH_TOKEN}@github.com/${GITHUB_REPOSITORY_OWNER}/helloallytech.github.io.git" \
+            .wiki-tmp \
+            || echo "Wiki clone failed — finalise will declare the docs gap instead."
+
       - name: Configure git identity
         run: |
           git config --global user.name "ally-builder[bot]"

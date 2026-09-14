@@ -55,6 +55,19 @@ export class BuilderBuildRun extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', length: 80, nullable: true })
   verifierModel?: string | null;
 
+  /**
+   * What `classifyBuildSize` made of the PRD — the input that chose the
+   * planner tier, the effort, the turn caps and the per-phase budgets.
+   *
+   * Stored because the three model columns above are useless for tuning
+   * without it. "Does a small build succeed on the cheap tier" is the question
+   * that decides whether model selection should widen past the planner, and it
+   * cannot be asked of a table that records which model ran but not what the
+   * run was thought to be. Nullable for runs dispatched before this existed.
+   */
+  @Column({ type: 'varchar', length: 8, nullable: true })
+  size?: string | null;
+
   /** Slug shared by every branch this run pushes (`builder/<slug>`). */
   @Column({ type: 'varchar', length: 80 })
   branchSlug!: string;

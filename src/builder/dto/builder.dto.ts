@@ -23,6 +23,7 @@ import {
 } from '../enum/builder.enum';
 import {
   BUILDER_SLUG_MAX_LENGTH,
+  BUILDER_STEER_MAX_LENGTH,
   BUILDER_TITLE_MAX_LENGTH,
 } from '../constants/builder.constants';
 
@@ -196,6 +197,18 @@ export class RaiseBuilderBudgetDto {
   @IsNumber()
   @Min(0)
   budgetUsd!: number;
+}
+
+export class SteerBuilderRunDto {
+  @ApiProperty({
+    description:
+      "A correction for a build already in flight, in the admin's own words. It reaches the run at its next phase boundary and rides on the prompt for the phase after — a coding pass in progress cannot be interrupted. This is a redirection, not a PRD change: anything longer than a paragraph belongs in the PRD.",
+    maxLength: BUILDER_STEER_MAX_LENGTH,
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(BUILDER_STEER_MAX_LENGTH)
+  note!: string;
 }
 
 export class AnswerBuilderQuestionDto {

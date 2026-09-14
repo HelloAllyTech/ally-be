@@ -14,6 +14,7 @@ import { UxSignalsController } from './controller/ux-signals.controller';
 import { UxSignalScan } from './entity/ux-signal-scan.entity';
 import { PosthogQueryService } from './service/posthog-query.service';
 import { UxSignalDetectorService } from './service/ux-signal-detector.service';
+import { UxSignalReadService } from './service/ux-signal-read.service';
 import { UxSignalWriterService } from './service/ux-signal-writer.service';
 import { UxSignalsAiService } from './service/ux-signals-ai.service';
 import { UxSignalsSchedulerRegistrationService } from './service/ux-signals-scheduler-registration.service';
@@ -74,6 +75,7 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
   providers: [
     PosthogQueryService,
     UxSignalDetectorService,
+    UxSignalReadService,
     UxSignalsAiService,
     UxSignalWriterService,
     UxSignalsService,
@@ -81,5 +83,10 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
     BugFindingRepository,
     RoadmapProductGoalRepository,
   ],
+  // The read side only. In-process callers ask what telemetry says is broken —
+  // Builder's interview does, to ground a PRD in real friction — and get back
+  // a projection of the same rows the two review tabs show. Nothing that can
+  // start a scan or write a queue leaves this module.
+  exports: [UxSignalReadService],
 })
 export class UxSignalsModule {}

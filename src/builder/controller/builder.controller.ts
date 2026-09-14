@@ -30,6 +30,7 @@ import { BuilderKnowledgeService } from '../service/builder-knowledge.service';
 import { BuilderInterviewOrchestratorService } from '../service/builder-interview-orchestrator.service';
 import { BuilderBuildService } from '../service/builder-build.service';
 import { BuilderEventService } from '../service/builder-event.service';
+import { BuilderSteerService } from '../service/builder-steer.service';
 import { BuilderQuestionService } from '../service/builder-question.service';
 import { BuilderPullRequestService } from '../service/builder-pull-request.service';
 import { BuilderReportService } from '../service/builder-report.service';
@@ -49,6 +50,7 @@ import {
   ListBuilderSessionsQueryDto,
   PatchBuilderPrdDto,
   RaiseBuilderBudgetDto,
+  SteerBuilderRunDto,
   StartBuilderBuildDto,
   UpdateBuilderSessionDto,
   UpdateBuilderSettingsDto,
@@ -98,6 +100,7 @@ export class BuilderController {
     private readonly researchService: BuilderResearchService,
     private readonly prdVersionRepository: BuilderPrdVersionRepository,
     private readonly runRepository: BuilderBuildRunRepository,
+    private readonly steerService: BuilderSteerService,
     private readonly redisService: RedisService,
   ) {}
 
@@ -174,6 +177,30 @@ export class BuilderController {
     @CurrentUser() user: TokenUser,
   ) {
     return this.sessionService.cancelSession(sessionId, user.id);
+  }
+
+  @Post('sessions/:sessionId/pull-requests/:pullRequestId/merge')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary: "Merge one of this session's pull requests",
+    description:
+      'Reads the checks first and refuses anything that is not green; passes ' +
+      "GitHub's own refusal through rather than forcing past it. The human " +
+      'decision and the CI gate both survive — this removes the walk to ' +
+      'another tab, not the review.',
+  })
+  mergePullRequest(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Param('pullRequestId', ParseUUIDPipe) pullRequestId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.pullRequestService.mergePullRequest(
+      sessionId,
+      pullRequestId,
+      user.id,
+    );
   }
 
   @Post('sessions/:sessionId/archive')
@@ -321,6 +348,61 @@ export class BuilderController {
   ) {
     await this.sessionService.getSession(sessionId, user.id);
     return this.buildService.getSessionBudget(sessionId);
+  }
+
+  /**
+   * Redirect a build instead of cancelling it.
+   *
+   * Cancel was the only lever over a running build, and it discards the whole
+   * working tree — nothing is pushed before FINALISE — plus the spend that
+   * produced it. A note reaches the run at its next phase boundary.
+   *
+   * Deliberately not gated on a live run. A correction written a second after
+   * a phase ended is exactly the one worth keeping, and a retry of a failed
+   * run is a new run that still needs it.
+   */
+  @Post('sessions/:sessionId/steer')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary:
+      'Send a correction to a build; delivered at the next phase boundary',
+  })
+  async steer(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Body() dto: SteerBuilderRunDto,
+    @CurrentUser() user: TokenUser,
+  ) {
+    await this.sessionService.getSession(sessionId, user.id);
+    const active = await this.runRepository.findActiveForSession(sessionId);
+    const steer = await this.steerService.add(sessionId, dto.note, {
+      runId: active?.id ?? null,
+      userId: user.id,
+    });
+    return {
+      id: steer.id,
+      status: steer.status,
+      // Said plainly rather than implied: the build has not changed course,
+      // it has been told. A control that promises more than it does is worse
+      // than one that promises nothing.
+      delivery: active
+        ? 'The build will read this when its current phase finishes.'
+        : 'Nothing is running; the next build on this session will read it first.',
+    };
+  }
+
+  @Get('sessions/:sessionId/steer')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.VIEW_BUILDER],
+  })
+  @ApiOperation({ summary: 'Steering notes on a session, newest first' })
+  async listSteers(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    await this.sessionService.getSession(sessionId, user.id);
+    return this.steerService.listForSession(sessionId);
   }
 
   @Get('sessions/:sessionId/runs')

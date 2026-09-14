@@ -37,7 +37,11 @@ describe('BuilderOutcomeService', () => {
   let curatorService: any;
   let reply: string;
 
+  let llmCompletion: { complete: jest.Mock };
+
   beforeEach(() => {
+    // Stands in for the model: whatever `reply` holds comes back as text.
+    llmCompletion = { complete: jest.fn(async () => ({ text: reply })) };
     reply = JSON.stringify({
       tags: ['review_correctness'],
       lessons: [
@@ -79,17 +83,8 @@ describe('BuilderOutcomeService', () => {
       exemplarService,
       knowledgeService,
       curatorService,
-      { record: jest.fn() } as any,
+      llmCompletion as any,
     );
-
-    (service as any).client = {
-      messages: {
-        create: jest.fn(async () => ({
-          content: [{ type: 'text', text: reply }],
-          usage: { input_tokens: 10, output_tokens: 5 },
-        })),
-      },
-    };
   });
 
   const withFeedback = (items: Record<string, any>[]) =>
@@ -100,7 +95,7 @@ describe('BuilderOutcomeService', () => {
     // so would cost a model call per clean build.
     await service.processSession('session-1');
 
-    expect((service as any).client.messages.create).not.toHaveBeenCalled();
+    expect(llmCompletion.complete).not.toHaveBeenCalled();
     expect(knowledgeService.recordLesson).not.toHaveBeenCalled();
   });
 
@@ -113,7 +108,7 @@ describe('BuilderOutcomeService', () => {
 
     await service.processSession('session-1');
 
-    expect((service as any).client.messages.create).not.toHaveBeenCalled();
+    expect(llmCompletion.complete).not.toHaveBeenCalled();
   });
 
   it('turns a review comment into a candidate lesson', async () => {

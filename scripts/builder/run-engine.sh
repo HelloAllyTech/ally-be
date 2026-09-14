@@ -229,6 +229,65 @@ hold_or_abort_if_over_budget() {
   done
 }
 
+# ── Steering: what a person told the build while it was running ─────────────
+#
+# The admin's only lever over a live build used to be Cancel, which throws away
+# the working tree and the hour that produced it. A steer is the middle option:
+# a sentence, delivered here, riding on the next phase's prompt.
+#
+# Phase boundaries only, and that is not a limitation to work around — a coding
+# agent is one long invocation with no point during it at which text can be
+# inserted. A note written while the coder runs waits for CODE to end.
+#
+# Fetch, append, THEN acknowledge. If this runner dies between the fetch and
+# the append the notes stay pending and the next boundary delivers them. If the
+# read marked them delivered instead, that same crash would swallow a person's
+# correction in silence, which is the one failure this whole surface exists to
+# prevent.
+#
+# Notes accumulate in STEER_FILE rather than being consumed once: the remediate
+# and verify prompts are fetched fresh from the server, so a correction given
+# before CODE has to still be there at REMEDIATE. A steer is standing guidance
+# for the rest of the run, not a one-shot message.
+STEER_FILE=/tmp/builder-steers.md
+
+collect_steers() {
+  local phase="$1" payload ids count
+  payload="$(curl -fsS "${API}/steer" -H "x-api-key: ${ALLY_BE_API_KEY}" 2>/dev/null || echo '')"
+  [ -n "$payload" ] || return 0
+
+  count="$(printf '%s' "$payload" | jq -r '.notes | length' 2>/dev/null || echo 0)"
+  case "$count" in '' | *[!0-9]*) count=0 ;; esac
+  [ "$count" -gt 0 ] || return 0
+
+  {
+    printf '\n### From the admin, during the run (%s)\n\n' "$phase"
+    printf '%s' "$payload" | jq -r '.notes[] | "- " + .note'
+  } >> "$STEER_FILE"
+
+  echo "Picked up ${count} steering note(s) at ${phase}." >&2
+
+  ids="$(printf '%s' "$payload" | jq -c '{ids: [.notes[].id], phase: "'"${phase}"'"}')"
+  curl -sS -X POST "${API}/steer/ack" \
+    -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+    -d "$ids" >/dev/null 2>&1 || true
+}
+
+# Everything collected so far, appended to whatever prompt is about to run.
+# Last in the file on purpose: it is the most recent thing anyone said, and a
+# correction buried above the plan reads as part of the plan.
+apply_steers() {
+  local prompt_file="$1"
+  [ -s "$STEER_FILE" ] || return 0
+  {
+    printf '\n\n---\n\n## Corrections from the admin\n\n'
+    printf 'These arrived after the run started. They override the PRD and the\n'
+    printf 'plan where they conflict. If one cannot be done within this run,\n'
+    printf 'say so in the run report rather than silently skipping it.\n'
+    cat "$STEER_FILE"
+  } >> "$prompt_file"
+}
+
 # A pause is a deliberate exit 0 — the agent has committed its work, posted its
 # questions and touched the marker. Verifying half-built work would produce
 # objections about a change the agent was in the middle of making.
@@ -401,6 +460,7 @@ echo "::endgroup::"
 
 exit_if_paused "planning"
 hold_or_abort_if_over_budget
+collect_steers "code"
 
 # The coder needs dependencies installed; it does not need a baseline, which
 # the gate now fetches for itself if a failure turns out to need excusing.
@@ -439,6 +499,10 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
     fi
   fi
 
+  # Last append, so the most recent thing a person said sits at the bottom of
+  # the prompt rather than buried inside the plan.
+  apply_steers "$code_prompt"
+
   run_agent "$code_prompt" "${RESULTS_DIR}/code-${attempt}.json" \
     "$CODER_MODEL" "$CODER_TOOLS" 200 "$CODE_BUDGET"
   report_phase_cost "code-${attempt}" "$CODER_MODEL" "${RESULTS_DIR}/code-${attempt}.json"
@@ -446,6 +510,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
 
   exit_if_paused "coding"
   hold_or_abort_if_over_budget
+  collect_steers "gate"
 
   # ---- GATE ----
   echo "::group::test gate (attempt ${attempt})"
@@ -483,6 +548,11 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
     verdict=pass
     break
   fi
+
+  # The reviewer gets them too: a steer changes what "correct" means for this
+  # run, and a verifier judging the diff against the PRD alone would raise
+  # objections to work the admin explicitly asked for.
+  apply_steers /tmp/builder-verify-prompt.txt
 
   run_agent /tmp/builder-verify-prompt.txt \
     "${RESULTS_DIR}/verify-${verify_round}.json" \

@@ -1241,3 +1241,93 @@ describe('BugFindingService.setStatus — verifier confidence', () => {
     },
   );
 });
+
+/**
+ * Findings filed by another agent.
+ *
+ * Builder's gate already computes which failures predate a build — it runs each
+ * touched repo's suite on a pristine master worktree and compares failure
+ * identities — and excuses them, because a pre-existing failure must not block
+ * every build in the repo. That set was being discarded. Filing it here costs
+ * nothing extra and means somebody finds out.
+ *
+ * The dedupe assertions are the important ones. This fires on every gate of
+ * every build, so one flaky spec across twenty builds must be ONE row in a
+ * queue a person reads daily. An agent that makes another agent's queue worse
+ * is not worth the wiring.
+ */
+describe('BugFindingService.recordPreExistingFailure', () => {
+  const PRE_REPO = 'ally-be';
+  let preRepo: {
+    findOpenByDedupeKey: jest.Mock;
+    create: jest.Mock;
+    save: jest.Mock;
+  };
+  let preService: BugFindingService;
+
+  beforeEach(() => {
+    preRepo = {
+      findOpenByDedupeKey: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockImplementation((v) => v),
+      save: jest
+        .fn()
+        .mockImplementation((v) => Promise.resolve({ id: 'new-1', ...v })),
+    };
+    preService = new BugFindingService(
+      preRepo as unknown as BugFindingRepository,
+      { notify: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+  });
+
+  const call = (over: Record<string, any> = {}) =>
+    preService.recordPreExistingFailure({
+      repo: PRE_REPO,
+      failure: 'auth.service.spec.ts > refuses an expired token',
+      discoveredBy: 'Builder run run-1',
+      ...over,
+    });
+
+  it('files an unseen failure as a new proven finding', async () => {
+    const saved = await call();
+
+    expect(preRepo.save).toHaveBeenCalledTimes(1);
+    expect(saved?.source).toBe(BugFindingSource.TEST_FAILURE);
+    // Proven, because a suite ran on an untouched checkout and failed — this
+    // is not a judgement that something looks wrong.
+    expect(saved?.proven).toBe(true);
+  });
+
+  it('returns the existing row instead of filing a second one', async () => {
+    const existing = { id: 'already-known' };
+    preRepo.findOpenByDedupeKey.mockResolvedValue(existing);
+
+    expect(await call()).toBe(existing);
+    expect(preRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('keys on the failure identity, so the same spec dedupes across builds', async () => {
+    await call({ discoveredBy: 'Builder run run-1' });
+    const firstKey = preRepo.findOpenByDedupeKey.mock.calls[0][1];
+    preRepo.findOpenByDedupeKey.mockClear();
+    await call({ discoveredBy: 'Builder run run-99' });
+
+    // Different build, same failing spec — the key must not vary with it.
+    expect(preRepo.findOpenByDedupeKey.mock.calls[0][1]).toBe(firstKey);
+  });
+
+  it('ignores an empty failure name rather than filing a blank finding', async () => {
+    expect(await call({ failure: '   ' })).toBeNull();
+    expect(preRepo.save).not.toHaveBeenCalled();
+  });
+
+  it('names the build that found it, so the row explains itself', async () => {
+    await call();
+
+    const created = preRepo.create.mock.calls[0][0];
+    expect(created.description).toContain('Builder run run-1');
+    expect(created.description).toContain(PRE_REPO);
+  });
+});

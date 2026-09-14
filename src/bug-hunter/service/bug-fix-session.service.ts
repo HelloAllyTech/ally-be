@@ -28,7 +28,7 @@ import { BugFinding } from '../entity/bug-finding.entity';
 import { BugFindingRepository } from '../repository/bug-finding.repository';
 import { BugHunterService } from './bug-hunter.service';
 import { BugFindingService } from './bug-finding.service';
-import { GithubActionsService } from './github-actions.service';
+import { GithubActionsService } from 'src/github/service/github-actions.service';
 import {
   BugHunterRepoClassifierService,
   RepoClassification,

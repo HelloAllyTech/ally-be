@@ -732,18 +732,35 @@ export class AppConfigService {
         'BUILDER_DEFAULT_BUDGET_USD',
         25,
       ),
+      // Where a paused or failed build announces itself. Unset falls through
+      // to SLACK_CHANNEL, the platform default, so the announcements work the
+      // day they ship and moving them to a dedicated channel later is a
+      // setting rather than a deploy. Separable because the two audiences are
+      // different: the platform channel carries operational alerts for
+      // everyone, and a build waiting on an answer concerns whoever started
+      // it. Announcements get muted when they land in the wrong room, and a
+      // muted channel is worse than no channel because it still looks like
+      // coverage.
+      slackChannel: this.configService.get<string>('BUILDER_SLACK_CHANNEL'),
     };
   }
 
   /**
    * Where the admin console is served from, used to build deep links a person
-   * follows from outside the app — a Builder pull-request body pointing back
-   * at the session that produced it. Falls back to the local dev port so a
-   * missing setting yields an obviously-wrong link rather than a silent one.
+   * follows from outside the app — a Builder pull-request body, or a Slack
+   * announcement, pointing back at the session that produced it.
+   *
+   * Reads `ADMIN_APP_BASE_URL`, the variable `app.adminBaseUrl` and the
+   * evaluator emails have always used and which `env.validation.ts` marks
+   * required, so the value is guaranteed present wherever the app boots. This
+   * getter originally invented `ADMIN_BASE_URL` instead, which was set
+   * nowhere: every Builder link it produced pointed at localhost, and did so
+   * silently because the fallback is a valid URL. A second name for a value we
+   * already have is not configuration, it is a second thing to forget.
    */
   get adminBaseUrl(): string {
     return this.configService.get<string>(
-      'ADMIN_BASE_URL',
+      'ADMIN_APP_BASE_URL',
       'http://localhost:8081',
     );
   }
