@@ -10,6 +10,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
 import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
+import { checkForAndRecordReversals } from '../util/check-for-reversals.util';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import {
@@ -543,7 +544,9 @@ export class BugFixSessionService {
       decidedBy: userId,
       decidedAt: new Date(),
     });
+    finding.status = BugFindingStatus.MERGED;
     await this.releaseLinkedRoadmapOpportunity(finding);
+    await this.checkForAndRecordReversals(finding);
     await this.bugHunterService.appendFindingEvent({
       findingId: finding.id,
       repo: finding.repo,
@@ -759,7 +762,9 @@ export class BugFixSessionService {
           await this.findingRepository.update(parent.id, {
             status: BugFindingStatus.MERGED,
           });
+          parent.status = BugFindingStatus.MERGED;
           await this.releaseLinkedRoadmapOpportunity(parent);
+          await this.checkForAndRecordReversals(parent);
           await this.notificationService.notify({
             level: BugHunterNotificationLevel.ACTION_NEEDED,
             ...planReadyToRelease(
@@ -889,6 +894,8 @@ export class BugFixSessionService {
           status: BugFindingStatus.RELEASED,
           releasedAt: new Date(),
         });
+        parent.status = BugFindingStatus.RELEASED;
+        await this.checkForAndRecordReversals(parent);
         await this.notificationService.notify({
           level: BugHunterNotificationLevel.INFO,
           ...planReleased(parent.title, steps),
@@ -1074,7 +1081,9 @@ export class BugFixSessionService {
         await this.findingRepository.update(finding.id, {
           status: BugFindingStatus.MERGED,
         });
+        finding.status = BugFindingStatus.MERGED;
         await this.releaseLinkedRoadmapOpportunity(finding);
+        await this.checkForAndRecordReversals(finding);
         await this.bugHunterService.appendFindingEvent({
           findingId: finding.id,
           repo: finding.repo,
@@ -1103,6 +1112,20 @@ export class BugFixSessionService {
   private releaseLinkedRoadmapOpportunity(finding: BugFinding): Promise<void> {
     return releaseLinkedRoadmapOpportunity(
       this.roadmapOpportunityRepository,
+      finding,
+      this.logger,
+    );
+  }
+
+  /**
+   * Sibling of `releaseLinkedRoadmapOpportunity` above with a different guard
+   * — this one keys off `repo` + `dedupeKey` rather than `reportedBugId`, and
+   * applies to every MERGED/RELEASED write below including the RELEASED-only
+   * ones that have no roadmap-release counterpart.
+   */
+  private checkForAndRecordReversals(finding: BugFinding): Promise<void> {
+    return checkForAndRecordReversals(
+      this.findingRepository,
       finding,
       this.logger,
     );
@@ -1191,6 +1214,10 @@ export class BugFixSessionService {
       ...(succeeded ? { releasedAt: new Date() } : {}),
       ...(runUrl ? { releaseRunUrl: runUrl } : {}),
     });
+    if (succeeded) {
+      finding.status = BugFindingStatus.RELEASED;
+      await this.checkForAndRecordReversals(finding);
+    }
     await this.bugHunterService.appendFindingEvent({
       findingId: finding.id,
       repo: finding.repo,

@@ -22,6 +22,7 @@ describe('BugHunterMetricsService', () => {
     decisionReason: null,
     lowConfidence: 0,
     unscored: 0,
+    reversed: 0,
     ...over,
   });
 
@@ -193,6 +194,62 @@ describe('BugHunterMetricsService', () => {
 
     expect(metrics.overall.lowConfidence).toBe(2);
     expect(metrics.overall.unscored).toBe(1);
+  });
+
+  it('computes reversal rate as reversed over finder-error declines', async () => {
+    const metrics = await build([
+      row({
+        count: 2,
+        status: BugFindingStatus.REJECTED,
+        decisionReason: BugFindingDecisionReason.NOT_A_BUG,
+        reversed: 1,
+      }),
+    ]).report(30);
+
+    expect(metrics.overall.finderErrors).toBe(2);
+    expect(metrics.overall.reversed).toBe(1);
+    expect(metrics.overall.reversalRate).toBeCloseTo(0.5);
+  });
+
+  it('reports no reversal rate when nothing was ever dismissed as a finder error', async () => {
+    const metrics = await build([
+      row({
+        count: 3,
+        status: BugFindingStatus.REJECTED,
+        decisionReason: BugFindingDecisionReason.WONT_FIX,
+      }),
+    ]).report(30);
+
+    expect(metrics.overall.finderErrors).toBe(0);
+    expect(metrics.overall.reversalRate).toBeNull();
+  });
+
+  it('sums reversals per finder across multiple sources', async () => {
+    const metrics = await build([
+      row({
+        count: 1,
+        source: BugFindingSource.CODE_REVIEW,
+        status: BugFindingStatus.REJECTED,
+        decisionReason: BugFindingDecisionReason.DUPLICATE,
+        reversed: 1,
+      }),
+      row({
+        count: 1,
+        source: BugFindingSource.TEST_FAILURE,
+        status: BugFindingStatus.REJECTED,
+        decisionReason: BugFindingDecisionReason.NOT_A_BUG,
+        reversed: 0,
+      }),
+    ]).report(30);
+
+    const codeReview = metrics.bySource.find(
+      (entry) => entry.key === BugFindingSource.CODE_REVIEW,
+    );
+    const testFailure = metrics.bySource.find(
+      (entry) => entry.key === BugFindingSource.TEST_FAILURE,
+    );
+    expect(codeReview?.reversalRate).toBe(1);
+    expect(testFailure?.reversalRate).toBe(0);
   });
 
   it('asks the repositories for the window it was given', async () => {

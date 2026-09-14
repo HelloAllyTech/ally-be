@@ -69,6 +69,8 @@ export interface FindingOutcomeCount {
   lowConfidence: number;
   /** Findings carrying no confidence at all — proven ones, and rows predating verifier scoring. */
   unscored: number;
+  /** Findings in this cell whose dismissal was later proven wrong — see `reversed_at`. */
+  reversed: number;
   count: number;
 }
 
@@ -334,6 +336,33 @@ export class BugFindingRepository extends Repository<BugFinding> {
   }
 
   /**
+   * Declined findings for this exact bug (`repo` + `dedupeKey`) whose decline
+   * was a finder error and that have not already been marked reversed — the
+   * candidates `checkForAndRecordReversals` flips to reversed once a
+   * same-dedupe-key finding actually ships.
+   *
+   * `excludeFindingId` keeps the just-shipped finding itself out of its own
+   * result set — relevant when a finding was previously declined, reopened,
+   * and then shipped under the same row.
+   */
+  findReversibleFinderErrors(
+    repo: string,
+    dedupeKey: string,
+    excludeFindingId: string,
+  ): Promise<BugFinding[]> {
+    return this.createQueryBuilder('f')
+      .where('f.repo = :repo', { repo })
+      .andWhere('f.dedupeKey = :dedupeKey', { dedupeKey })
+      .andWhere('f.status IN (:...statuses)', { statuses: DECLINED_STATUSES })
+      .andWhere('f.decision_reason IN (:...reasons)', {
+        reasons: BUG_FINDING_FINDER_ERROR_REASONS,
+      })
+      .andWhere('f.reversedAt IS NULL')
+      .andWhere('f.id != :excludeFindingId', { excludeFindingId })
+      .getMany();
+  }
+
+  /**
    * Recent declines for one repo where the FINDER was judged wrong, newest
    * first — the sweep prompt's "known non-bugs" block.
    *
@@ -524,6 +553,10 @@ export class BugFindingRepository extends Repository<BugFinding> {
         .addSelect(
           `COUNT(*) FILTER (WHERE NULLIF(f.metadata->>'confidence', '') IS NULL)::int`,
           'unscored',
+        )
+        .addSelect(
+          `COUNT(*) FILTER (WHERE f.reversed_at IS NOT NULL)::int`,
+          'reversed',
         )
         // Child steps excluded for the same reason the table hides them: a
         // coordinated three-repo fix is ONE bug, and counting its steps would

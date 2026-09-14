@@ -55,6 +55,7 @@ describe('BugFixSessionService', () => {
     listChildren: jest.Mock;
     listCoordinatingParents: jest.Mock;
     listReleasingParents: jest.Mock;
+    findReversibleFinderErrors: jest.Mock;
   };
   let bugFindingService: { getOne: jest.Mock };
   let bugHunterService: {
@@ -87,6 +88,7 @@ describe('BugFixSessionService', () => {
       listChildren: jest.fn().mockResolvedValue([]),
       listCoordinatingParents: jest.fn().mockResolvedValue([]),
       listReleasingParents: jest.fn().mockResolvedValue([]),
+      findReversibleFinderErrors: jest.fn().mockResolvedValue([]),
     };
     bugFindingService = { getOne: jest.fn() };
     bugHunterService = {
@@ -783,6 +785,67 @@ describe('BugFixSessionService', () => {
       expect(roadmapOpportunityRepository.update).not.toHaveBeenCalled();
     });
 
+    it('reverses a matching finder-error dismissal once a same-dedupe-key finding merges', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                dedupeKey: 'dupe-key-1',
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        htmlUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+        mergedAt: new Date('2026-08-19T12:00:00.000Z'),
+      });
+      findingRepository.findReversibleFinderErrors.mockResolvedValue([
+        findingRow({ id: 'dismissed-1', dedupeKey: 'dupe-key-1' }),
+      ]);
+
+      await service.reconcile();
+
+      expect(findingRepository.findReversibleFinderErrors).toHaveBeenCalledWith(
+        'ally-web',
+        'dupe-key-1',
+        'finding-1',
+      );
+      expect(findingRepository.update).toHaveBeenCalledWith('dismissed-1', {
+        reversedAt: expect.any(Date),
+        reversedByFindingId: 'finding-1',
+      });
+    });
+
+    it('does not look for reversals on a finding with no dedupeKey', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                dedupeKey: null,
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        htmlUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+        mergedAt: new Date('2026-08-19T12:00:00.000Z'),
+      });
+
+      await service.reconcile();
+
+      expect(
+        findingRepository.findReversibleFinderErrors,
+      ).not.toHaveBeenCalled();
+    });
+
     it('still persists the finding as MERGED when the roadmap-opportunity update fails', async () => {
       findingRepository.find.mockImplementation(({ where }: any) =>
         where.status === BugFindingStatus.PR_OPENED
@@ -891,6 +954,44 @@ describe('BugFixSessionService', () => {
           title: expect.stringMatching(/live in production/i),
         }),
       );
+    });
+
+    it('reverses a matching finder-error dismissal once a same-dedupe-key finding releases', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.RELEASING
+          ? [
+              findingRow({
+                status: BugFindingStatus.RELEASING,
+                repo: 'ally-be',
+                dedupeKey: 'dupe-key-2',
+                releaseTag: 'v1.4.2',
+                releaseRunId: '99',
+                dispatchedAt: new Date(Date.now() - 60_000),
+              }),
+            ]
+          : [],
+      );
+      github.getRun.mockResolvedValue({
+        id: '99',
+        htmlUrl: 'https://github.com/run/99',
+        status: 'completed',
+        conclusion: 'success',
+      });
+      findingRepository.findReversibleFinderErrors.mockResolvedValue([
+        findingRow({ id: 'dismissed-2', dedupeKey: 'dupe-key-2' }),
+      ]);
+
+      await service.reconcile();
+
+      expect(findingRepository.findReversibleFinderErrors).toHaveBeenCalledWith(
+        'ally-be',
+        'dupe-key-2',
+        'finding-1',
+      );
+      expect(findingRepository.update).toHaveBeenCalledWith('dismissed-2', {
+        reversedAt: expect.any(Date),
+        reversedByFindingId: 'finding-1',
+      });
     });
 
     it('settles a red release as RELEASE_FAILED, not FAILED — the fix is still merged', async () => {
@@ -1048,6 +1149,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       listChildren: jest.fn().mockResolvedValue([]),
       listCoordinatingParents: jest.fn().mockResolvedValue([]),
       listReleasingParents: jest.fn().mockResolvedValue([]),
+      findReversibleFinderErrors: jest.fn().mockResolvedValue([]),
     };
     bugFindingService = { getOne: jest.fn() };
     bugHunterService = {

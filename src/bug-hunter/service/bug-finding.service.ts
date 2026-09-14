@@ -18,6 +18,7 @@ import {
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import { BugHunterService } from './bug-hunter.service';
 import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
+import { checkForAndRecordReversals } from '../util/check-for-reversals.util';
 import { effectiveStage } from '../util/bug-finding-stage.util';
 import {
   fixDidNotHold,
@@ -900,6 +901,11 @@ export class BugFindingService {
         this.logger,
       );
     }
+    await checkForAndRecordReversals(
+      this.findingRepository,
+      after,
+      this.logger,
+    );
 
     return after;
   }
