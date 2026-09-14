@@ -120,6 +120,7 @@ export class AnthropicAgentProvider implements IAgentLlmProvider {
           inputTokens: usage?.input_tokens ?? 0,
           outputTokens: usage?.output_tokens ?? 0,
           cachedTokens: usage?.cache_read_input_tokens ?? undefined,
+          cacheCreationTokens: usage?.cache_creation_input_tokens ?? undefined,
         },
       },
     };

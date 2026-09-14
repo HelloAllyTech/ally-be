@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { AuthModule } from 'src/auth/auth.module';
 import { BugHunterModule } from 'src/bug-hunter/bug-hunter.module';
 import { BuilderSession } from './entity/builder-session.entity';
@@ -103,6 +104,10 @@ import {
     ]),
     PromptModule,
     LlmUsageModule,
+    // The interview's provider-agnostic LLM access: AgentLlmProviderFactory
+    // for the streamed tool loop, LlmCompletionService for the one-shot
+    // transcript digest.
+    LlmAgentModule,
     AuthModule,
     BugHunterModule,
   ],

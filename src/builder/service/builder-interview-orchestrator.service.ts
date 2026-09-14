@@ -1,10 +1,27 @@
 import { Injectable } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
 import { AppConfigService } from 'src/config/config.service';
+import {
+  AgentLlmProviderFactory,
+  normaliseAgentProvider,
+  providerForModel,
+} from 'src/llm-agent/service/agent-llm.factory';
+import { IAgentLlmProvider } from 'src/llm-agent/provider/agent-llm-provider.interface';
+import {
+  AgentStreamRequest,
+  AgentSystemBlock,
+  AgentTurnResult,
+  AgentUsage,
+} from 'src/llm-agent/type/agent-llm.type';
+import {
+  AgentProviderFailure,
+  classifyAgentProviderError,
+  describeAgentProviderError,
+} from 'src/llm-agent/util/agent-provider-error.util';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { BuilderMessage } from '../entity/builder-message.entity';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderMessageRepository } from '../repository/builder-message.repository';
@@ -27,6 +44,7 @@ import {
   BUILDER_INTERVIEW_SUMMARY_KEEP_RECENT,
   BUILDER_MAX_TRUNCATION_RETRIES,
   BUILDER_PROMPTS,
+  BUILDER_AI_TASKS,
 } from '../constants/builder.constants';
 
 /**
@@ -48,6 +66,60 @@ const BUILDER_TRUNCATION_NUDGE =
 const BUILDER_EMPTY_TURN_ERROR =
   'That turn came back empty — nothing was written and nothing was asked. ' +
   'Send your message again.';
+
+/**
+ * Shown to the admin when the model kept producing unreadable tool calls.
+ *
+ * Deliberately says the model rather than the request: the admin's message was
+ * fine, and a turn that reads as their fault invites them to rewrite something
+ * that was never the problem.
+ */
+const BUILDER_INVALID_TOOL_CALL_ERROR =
+  'The model garbled its own tool call several times in a row, so that turn ' +
+  'did nothing and the PRD is unchanged. Send your message again — this ' +
+  'usually clears on its own.';
+
+/**
+ * What the admin is told when the provider call itself failed.
+ *
+ * One line per cause, because the actions differ: a quota needs an
+ * administrator, a rate limit needs a minute, and an oversized request needs
+ * the admin to do something smaller. Relaying the provider's own message
+ * instead tells them about an API they have no access to.
+ */
+const BUILDER_PROVIDER_ERRORS: Record<AgentProviderFailure, string> = {
+  [AgentProviderFailure.QUOTA]:
+    'The account behind the interview model is out of credit, so the turn ' +
+    'could not run. Your answers are all still here. An administrator needs ' +
+    'to top it up.',
+  [AgentProviderFailure.AUTH]:
+    "The interview model rejected this environment's credentials, so the " +
+    'turn could not run. Your answers are all still here. An administrator ' +
+    'needs to check the API key.',
+  [AgentProviderFailure.RATE_LIMIT]:
+    'The interview model is rate-limiting us right now. Nothing was lost — ' +
+    'send your message again in a minute.',
+  [AgentProviderFailure.UNAVAILABLE]:
+    'The interview model is unavailable at the moment. Nothing was lost — ' +
+    'send your message again shortly.',
+  [AgentProviderFailure.REQUEST_TOO_LARGE]:
+    'This interview has grown past what the model will accept in one ' +
+    'request. Nothing was lost. Writing the finished sections into the PRD ' +
+    'and starting a fresh session for what is left is the way out.',
+  [AgentProviderFailure.UNKNOWN]:
+    'That turn failed before anything was saved, so the PRD is unchanged. ' +
+    'Send your message again.',
+};
+
+/** SSE error codes, so a client can branch without parsing the copy above. */
+const BUILDER_PROVIDER_ERROR_CODES: Record<AgentProviderFailure, string> = {
+  [AgentProviderFailure.QUOTA]: 'provider_quota_exhausted',
+  [AgentProviderFailure.AUTH]: 'provider_auth_failed',
+  [AgentProviderFailure.RATE_LIMIT]: 'provider_rate_limited',
+  [AgentProviderFailure.UNAVAILABLE]: 'provider_unavailable',
+  [AgentProviderFailure.REQUEST_TOO_LARGE]: 'request_too_large',
+  [AgentProviderFailure.UNKNOWN]: 'interview_error',
+};
 
 /** Shown to the admin when a turn overruns the cap past recovering. */
 const BUILDER_TRUNCATION_ERROR =
@@ -82,9 +154,6 @@ export class BuilderInterviewOrchestratorService {
     BuilderInterviewOrchestratorService.name,
   );
 
-  // Exposed for tests (mocked with a fake client).
-  protected client: Anthropic;
-
   constructor(
     private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
@@ -96,10 +165,95 @@ export class BuilderInterviewOrchestratorService {
     private readonly llmUsage: LlmUsageService,
     private readonly exemplarService: BuilderExemplarService,
     private readonly sessionRepository: BuilderSessionRepository,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
+    private readonly agentLlmFactory: AgentLlmProviderFactory,
+    private readonly llmCompletion: LlmCompletionService,
+  ) {}
+
+  /**
+   * Which model runs this turn, and who provides it.
+   *
+   * The interviewer prompt row wins, the same knob character-interview uses:
+   * a model change and the prompt retuning it usually needs are one edit in
+   * one place. `builder.interviewModel` is the fallback, and the provider is
+   * inferred from the model id when nothing states it — so setting a model is
+   * normally the whole change.
+   *
+   * Resolution failure is environment-level rather than turn-level: the next
+   * turn and the one after fail identically, so the caller leaves the
+   * transcript untouched rather than stacking errored rows into it.
+   */
+  private async resolveModel(): Promise<{ provider: string; model: string }> {
+    let promptProvider: string | undefined;
+    let promptModel: string | undefined;
+    try {
+      const promptConfig = await this.promptSharedService.getPromptLlmConfig(
+        BUILDER_PROMPTS.INTERVIEWER_SYSTEM,
+      );
+      promptProvider = promptConfig.provider;
+      promptModel = promptConfig.model;
+    } catch (error) {
+      this.logger.warn(
+        `Builder interviewer prompt LLM config unavailable, using config: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    if (promptModel) {
+      const resolved =
+        normaliseAgentProvider(promptProvider) ?? providerForModel(promptModel);
+      if (resolved) {
+        return { provider: resolved, model: promptModel };
+      }
+      this.logger.warn(
+        `Builder interviewer prompt names model "${promptModel}" with no ` +
+          'provider this service can run; falling back to config.',
+      );
+    } else if (promptProvider) {
+      // A provider with no model is half a setting: it cannot be combined with
+      // the configured model, which may belong to a different provider.
+      this.logger.warn(
+        `Builder interviewer prompt sets provider "${promptProvider}" but no ` +
+          'model; falling back to config.',
+      );
+    }
+
+    const model = this.configService.builder.interviewModel;
+    const resolved = providerForModel(model);
+    if (!resolved) {
+      throw new Error(
+        `No provider is known for Builder interview model "${model}". Pick ` +
+          'the provider on the interviewer prompt, or set ' +
+          'BUILDER_INTERVIEW_MODEL to a model whose id names one.',
+      );
+    }
+    return { provider: resolved, model };
+  }
+
+  /**
+   * One provider round-trip: relay text deltas as `token` frames, return the
+   * accumulated turn.
+   */
+  private async *runPass(
+    provider: IAgentLlmProvider,
+    request: AgentStreamRequest,
+  ): AsyncGenerator<BuilderSseFrame, AgentTurnResult> {
+    let result: AgentTurnResult | null = null;
+    for await (const event of provider.stream(request)) {
+      if (event.type === 'text_delta') {
+        yield { event: 'token', data: { delta: event.text } };
+      } else {
+        result = event.message;
+      }
+    }
+    if (!result) {
+      // Every adapter ends with a `final`; one that did not would otherwise
+      // read as a normal empty turn and be persisted as one.
+      throw new Error(
+        `The ${provider.name} model returned no response for this turn.`,
+      );
+    }
+    return result;
   }
 
   /**
@@ -119,11 +273,38 @@ export class BuilderInterviewOrchestratorService {
       userId,
       session.title,
     );
-    const model = this.configService.builder.interviewModel;
     const maxIterations = Math.max(
       1,
       Number(this.configService.builder.maxToolIterations) || 16,
     );
+
+    // Resolved before anything is written.
+    //
+    // A misconfigured model is not a turn-level failure: the next turn fails
+    // identically, so persisting the admin's message plus an errored assistant
+    // row would stack the same pair into the transcript until someone fixes
+    // the config. Leaving it untouched means the interview is exactly where
+    // they left it once it is.
+    let provider: IAgentLlmProvider;
+    let model: string;
+    let providerName: string;
+    try {
+      const resolved = await this.resolveModel();
+      providerName = resolved.provider;
+      model = resolved.model;
+      provider = this.agentLlmFactory.create(resolved.provider, resolved.model);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `Builder session ${sessionId} cannot start a turn: ${detail}`,
+      );
+      yield {
+        event: 'error',
+        data: { code: 'interview_misconfigured', message: detail },
+      };
+      yield { event: 'done', data: {} };
+      return;
+    }
 
     // A row left `streaming` belongs to a turn that died without finishing —
     // settle it before this turn writes beside it, so the transcript never
@@ -192,6 +373,7 @@ export class BuilderInterviewOrchestratorService {
     let turnErrored = false;
     let turnError: string | null = null;
     let truncations = 0;
+    let invalidToolCalls = 0;
 
     /**
      * Flush the accumulators onto the assistant row.
@@ -236,29 +418,53 @@ export class BuilderInterviewOrchestratorService {
       for (let iteration = 0; iteration < maxIterations; iteration++) {
         iterations = iteration + 1;
 
-        const stream = this.client.messages.stream({
+        const finalMessage = yield* this.runPass(provider, {
           model,
-          max_tokens: BUILDER_INTERVIEW_MAX_TOKENS,
+          maxTokens: BUILDER_INTERVIEW_MAX_TOKENS,
           system,
           messages,
           tools,
         });
+        stopReason = finalMessage.stopReason;
+        this.recordUsage(
+          finalMessage.usage,
+          model,
+          providerName,
+          sessionId,
+          iterations,
+        );
 
-        for await (const event of stream as AsyncIterable<any>) {
-          if (
-            event?.type === 'content_block_delta' &&
-            event?.delta?.type === 'text_delta' &&
-            event.delta.text
-          ) {
-            yield { event: 'token', data: { delta: event.delta.text } };
+        // The model tried to call a tool and produced something unreadable, so
+        // the turn arrives EMPTY — indistinguishable from it choosing to say
+        // nothing. Gemini does this intermittently on a schema the size of the
+        // interview's. Transient, so retry the same pass rather than settle a
+        // turn that did nothing; the truncation budget bounds it.
+        if (stopReason === 'invalid_tool_call') {
+          if (invalidToolCalls >= BUILDER_MAX_TRUNCATION_RETRIES) {
+            this.logger.warn(
+              `Builder session ${sessionId}: ${providerName}/${model} returned ` +
+                `an unreadable tool call ${invalidToolCalls + 1} times; giving up.`,
+            );
+            turnErrored = true;
+            turnError = 'invalid_tool_call';
+            yield {
+              event: 'error',
+              data: {
+                code: 'invalid_tool_call',
+                message: BUILDER_INVALID_TOOL_CALL_ERROR,
+              },
+            };
+            break;
           }
+          invalidToolCalls += 1;
+          this.logger.warn(
+            `Builder session ${sessionId}: unreadable tool call from ` +
+              `${providerName}/${model}; retrying (${invalidToolCalls}).`,
+          );
+          continue;
         }
 
-        const finalMessage: any = await (stream as any).finalMessage();
-        stopReason = finalMessage?.stop_reason ?? null;
-        this.recordUsage(finalMessage?.usage, model, sessionId, iterations);
-
-        const contentBlocks: any[] = finalMessage?.content ?? [];
+        const contentBlocks: any[] = finalMessage.content ?? [];
         for (const block of contentBlocks) {
           if (block?.type === 'text' && block.text) {
             textParts.push(block.text);
@@ -416,38 +622,44 @@ export class BuilderInterviewOrchestratorService {
           `Builder session ${sessionId} hit the ${maxIterations}-iteration cap; ` +
             'making a tool-less wrap-up pass.',
         );
-        const wrapUpStream = this.client.messages.stream({
+        const wrapUpMessage = yield* this.runPass(provider, {
           model,
-          max_tokens: BUILDER_INTERVIEW_MAX_TOKENS,
+          maxTokens: BUILDER_INTERVIEW_MAX_TOKENS,
           system,
           messages,
         });
-        for await (const event of wrapUpStream as AsyncIterable<any>) {
-          if (
-            event?.type === 'content_block_delta' &&
-            event?.delta?.type === 'text_delta' &&
-            event.delta.text
-          ) {
-            yield { event: 'token', data: { delta: event.delta.text } };
-          }
-        }
-        const wrapUpMessage: any = await (wrapUpStream as any).finalMessage();
-        this.recordUsage(wrapUpMessage?.usage, model, sessionId, iterations);
-        for (const block of wrapUpMessage?.content ?? []) {
+        this.recordUsage(
+          wrapUpMessage.usage,
+          model,
+          providerName,
+          sessionId,
+          iterations,
+        );
+        for (const block of wrapUpMessage.content ?? []) {
           if (block?.type === 'text' && block.text) {
             textParts.push(block.text);
           }
         }
-        stopReason = wrapUpMessage?.stop_reason ?? 'end_turn';
+        stopReason = wrapUpMessage.stopReason ?? 'end_turn';
       }
     } catch (error) {
       turnErrored = true;
-      const message = error instanceof Error ? error.message : String(error);
+      // Classified rather than relayed. What a provider throws is written for
+      // whoever holds the API key, not for the admin mid-interview — and now
+      // that three providers can run this turn, "what a raw error looks like"
+      // is three different things. The classification is stable across them.
+      const failure = classifyAgentProviderError(error);
+      const message = BUILDER_PROVIDER_ERRORS[failure];
       turnError = message;
       this.logger.error(
-        `Builder interview turn failed for session ${sessionId}: ${message}`,
+        `Builder interview turn failed for session ${sessionId} on ` +
+          `${providerName}/${model} (${failure}): ` +
+          describeAgentProviderError(error),
       );
-      yield { event: 'error', data: { code: 'interview_error', message } };
+      yield {
+        event: 'error',
+        data: { code: BUILDER_PROVIDER_ERROR_CODES[failure], message },
+      };
     }
 
     // Last backstop against a silent turn. Every known way of producing one is
@@ -588,22 +800,20 @@ export class BuilderInterviewOrchestratorService {
   private async buildSystemBlocks(
     repos?: string[],
     exemplars: string[] = [],
-  ): Promise<any[]> {
+  ): Promise<AgentSystemBlock[]> {
     const [instructions, context] = await Promise.all([
       this.buildSystemPrompt(),
       this.knowledgeService.buildContextBlock(repos, exemplars),
     ]);
+    // Typed, not `any[]`. These used to be Anthropic's own shape
+    // (`cache_control: ephemeral`) written straight into the request; the
+    // provider-neutral layer takes `cache` instead and each adapter honours it
+    // as it can. Returning the old shape through an `any` would have compiled
+    // cleanly and silently stopped caching anything, which is the failure this
+    // whole split exists to prevent.
     return [
-      {
-        type: 'text',
-        text: instructions,
-        cache_control: { type: 'ephemeral' },
-      },
-      {
-        type: 'text',
-        text: context,
-        cache_control: { type: 'ephemeral' },
-      },
+      { text: instructions, cache: true },
+      { text: context, cache: true },
     ];
   }
 
@@ -771,12 +981,20 @@ export class BuilderInterviewOrchestratorService {
     }
   }
 
-  /** A cheap-model digest of the turns being dropped from the replay. */
+  /**
+   * A cheap-model digest of the turns being dropped from the replay.
+   *
+   * Routed through `LlmCompletionService` rather than the agent factory: this
+   * is one non-streaming completion with no tools, which is exactly what that
+   * service is for — and it brings the registry's model resolution, per-task
+   * usage attribution and tier fallback with it. A digest is also the one call
+   * here that is fine to lose: `replayHistory` falls back to the full replay
+   * when it returns null, so a dead provider costs tokens, not the turn.
+   */
   private async summariseTurns(
     session: BuilderSession,
     turns: BuilderMessage[],
   ): Promise<string | null> {
-    const model = this.configService.builder.mechanicalModel;
     const rendered = turns
       .map((message) => {
         const who = message.role === BuilderMessageRole.USER ? 'Admin' : 'You';
@@ -786,9 +1004,9 @@ export class BuilderInterviewOrchestratorService {
       .join('\n\n');
     if (!rendered) return null;
 
-    const response = await this.client.messages.create({
-      model,
-      max_tokens: 1_500,
+    const result = await this.llmCompletion.complete({
+      taskId: BUILDER_AI_TASKS.INTERVIEW_SUMMARY,
+      task: LlmTask.BUILDER_INTERVIEW_SUMMARY,
       system:
         'You compress the earlier part of a requirements interview so it can ' +
         'be dropped from the replayed transcript without losing what it ' +
@@ -797,26 +1015,13 @@ export class BuilderInterviewOrchestratorService {
         'stated, and anything still open. Drop: pleasantries, restatements, ' +
         'and anything already written into the PRD — the agent reads that ' +
         'separately and in full. Write it as notes to yourself, not prose.',
-      messages: [{ role: 'user', content: rendered }],
+      prompt: rendered,
+      maxTokens: 1_500,
+      model: this.configService.builder.mechanicalModel,
+      usageMetadata: { builderSessionId: session.id, turns: turns.length },
     });
 
-    const input = response.usage?.input_tokens ?? 0;
-    const output = response.usage?.output_tokens ?? 0;
-    void this.llmUsage.record({
-      provider: 'anthropic',
-      model,
-      task: LlmTask.BUILDER_INTERVIEW_SUMMARY,
-      promptTokens: input,
-      completionTokens: output,
-      totalTokens: input + output,
-      metadata: { builderSessionId: session.id, turns: turns.length },
-    });
-
-    const text = response.content
-      .map((block) => (block.type === 'text' ? block.text : ''))
-      .join('\n')
-      .trim();
-    return text || null;
+    return result.text.trim() || null;
   }
 
   private rebuildAnthropicHistory(history: BuilderMessage[]): any[] {
@@ -873,15 +1078,19 @@ export class BuilderInterviewOrchestratorService {
   }
 
   private recordUsage(
-    usage: Anthropic.Messages.Usage | undefined,
+    usage: AgentUsage | undefined,
     model: string,
+    provider: string,
     sessionId: string,
     iteration: number,
   ): void {
-    const input = usage?.input_tokens ?? 0;
-    const output = usage?.output_tokens ?? 0;
+    const input = usage?.inputTokens ?? 0;
+    const output = usage?.outputTokens ?? 0;
     void this.llmUsage.record({
-      provider: 'anthropic',
+      // The provider that actually ran, not a literal. Attributing a Gemini
+      // turn to Anthropic makes per-provider cost unreadable, and this row is
+      // what the spend dashboards aggregate.
+      provider,
       model,
       task: LlmTask.BUILDER_INTERVIEW,
       promptTokens: input,
@@ -892,8 +1101,8 @@ export class BuilderInterviewOrchestratorService {
       // cost: reads are the saving, writes are what the saving cost to set up.
       // With only one of the two, a twenty-turn interview's real spend is
       // unknowable.
-      cachedTokens: usage?.cache_read_input_tokens ?? undefined,
-      cacheCreationTokens: usage?.cache_creation_input_tokens ?? undefined,
+      cachedTokens: usage?.cachedTokens ?? undefined,
+      cacheCreationTokens: usage?.cacheCreationTokens ?? undefined,
       metadata: { builderSessionId: sessionId, iteration },
     });
   }

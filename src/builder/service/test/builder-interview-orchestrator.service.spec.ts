@@ -3,19 +3,16 @@ import { BuilderMessageRole } from '../../enum/builder.enum';
 import { createEmptyPrdDocument } from '../../type/builder-prd.type';
 
 /**
- * A stubbed Anthropic streaming response. Yields no text deltas — the turn's
- * prose comes from `finalMessage().content`, which is what the orchestrator
- * actually persists.
+ * One stubbed provider turn, in the neutral vocabulary.
+ *
+ * No text deltas: the turn's prose comes from the final message's content,
+ * which is what the orchestrator actually persists, and token frames are not
+ * what these tests are about.
  */
 const fakeStream = (content: any[], stopReason: string) => ({
-  [Symbol.asyncIterator]: async function* () {
-    // No deltas: token frames are not what these tests are about.
-  },
-  finalMessage: async () => ({
-    content,
-    stop_reason: stopReason,
-    usage: { input_tokens: 10, output_tokens: 5 },
-  }),
+  content,
+  stopReason,
+  usage: { inputTokens: 10, outputTokens: 5 },
 });
 
 describe('BuilderInterviewOrchestratorService — turn autosave', () => {
@@ -44,6 +41,9 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     return frames;
   };
 
+  let provider: { name: string; stream: jest.Mock };
+  /** Whole requests, for assertions about what was SENT rather than replayed. */
+  let sentRequests: any[];
   let sessionRepository: { update: jest.Mock };
   let sessionService: { getSession: jest.Mock; syncReadinessStatus: jest.Mock };
   let summariseCalls: number;
@@ -51,6 +51,20 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
   beforeEach(() => {
     streams = [];
     requests = [];
+    sentRequests = [];
+    summariseCalls = 0;
+
+    // One fake provider for the whole turn; each pass takes the next queued
+    // result. Records the messages array per pass because the orchestrator
+    // mutates one array in place.
+    provider = {
+      name: 'anthropic',
+      stream: jest.fn(async function* (request: any) {
+        requests.push(JSON.parse(JSON.stringify(request.messages)));
+        sentRequests.push(request);
+        yield { type: 'final', message: streams.shift() };
+      }),
+    };
     let appended = 0;
     messageRepository = {
       listBySession: jest.fn().mockResolvedValue([]),
@@ -82,6 +96,9 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
       } as any,
       {
         getPromptByCode: jest.fn().mockResolvedValue('Interview them.'),
+        // No provider/model on the prompt row, so resolution falls through to
+        // `builder.interviewModel` — the default every environment runs.
+        getPromptLlmConfig: jest.fn().mockResolvedValue({}),
       } as any,
       sessionService as any,
       {
@@ -104,24 +121,18 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
           .mockResolvedValue({ digests: [], chosen: [] }),
       } as any,
       sessionRepository as any,
+      { create: jest.fn(() => provider) } as any,
+      {
+        complete: jest.fn(async () => {
+          summariseCalls += 1;
+          return { text: 'They want archiving.' };
+        }),
+      } as any,
     );
 
     // `create` is the non-streaming call the cheap-model summariser uses;
     // `stream` is the turn itself. Both are needed once a history is long
     // enough to be summarised.
-    summariseCalls = 0;
-    (service as any).client = {
-      messages: {
-        stream: jest.fn((params: any) => {
-          requests.push(JSON.parse(JSON.stringify(params.messages)));
-          return streams.shift();
-        }),
-        create: jest.fn(async () => {
-          summariseCalls += 1;
-          return { content: [{ type: 'text', text: 'They want archiving.' }] };
-        }),
-      },
-    };
   });
 
   it('allocates the assistant row before the model runs, not after', async () => {
@@ -186,9 +197,82 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     ).toHaveLength(1);
   });
 
+  /**
+   * The prompt cache, which is the main lever on this agent's cost.
+   *
+   * The system prompt and the Ally context block are large and identical on
+   * every turn of a session; the PRD and transcript are not. Marking the
+   * stable pair cacheable is what makes a twenty-turn interview pay full input
+   * price for them once. Nothing surfaces if this breaks — no error, no failed
+   * turn, just a bill — so it is pinned here.
+   */
+  it('marks the stable system spans cacheable, and keeps them ahead of the volatile turn', async () => {
+    streams = [fakeStream([{ type: 'text', text: 'Done.' }], 'end_turn')];
+
+    await drain();
+
+    const system = sentRequests[0].system;
+    expect(system).toEqual([
+      { text: 'Interview them.', cache: true },
+      { text: 'context', cache: true },
+    ]);
+    // The PRD and the admin's message ride in `messages`, after the cached
+    // prefix. A volatile block inside it would invalidate the cache per turn.
+    expect(JSON.stringify(system)).not.toContain('Cut the runner cost.');
+  });
+
+  /**
+   * Gemini garbles tool calls on a schema this size — the turn arrives empty
+   * and is otherwise indistinguishable from the model choosing to say nothing.
+   * Transient, so it is retried rather than settled as a silent turn.
+   */
+  it('retries an unreadable tool call rather than settling an empty turn', async () => {
+    streams = [
+      fakeStream([], 'invalid_tool_call'),
+      fakeStream([{ type: 'text', text: 'Second time lucky.' }], 'end_turn'),
+    ];
+
+    const frames = await drain();
+
+    expect(provider.stream).toHaveBeenCalledTimes(2);
+    expect(frames.some((frame) => frame.event === 'error')).toBe(false);
+    const calls = messageRepository.checkpointMessage.mock.calls;
+    expect(calls[calls.length - 1][1].content).toBe('Second time lucky.');
+  });
+
+  it('gives up on an unreadable tool call rather than retrying forever', async () => {
+    streams = [
+      fakeStream([], 'invalid_tool_call'),
+      fakeStream([], 'invalid_tool_call'),
+      fakeStream([], 'invalid_tool_call'),
+    ];
+
+    const frames = await drain();
+
+    // The original plus BUILDER_MAX_TRUNCATION_RETRIES, the same budget the
+    // truncation path uses.
+    expect(provider.stream).toHaveBeenCalledTimes(3);
+    const error = frames.find((frame) => frame.event === 'error');
+    expect(error?.data.code).toBe('invalid_tool_call');
+  });
+
+  /**
+   * A model the environment cannot run is not a turn-level failure: the next
+   * turn fails identically, so an errored row per attempt would just stack up.
+   */
+  it('writes nothing at all when the model cannot be resolved', async () => {
+    (service as any).configService.builder.interviewModel = 'llama-3-70b';
+
+    const frames = await drain();
+
+    expect(messageRepository.appendMessage).not.toHaveBeenCalled();
+    const error = frames.find((frame) => frame.event === 'error');
+    expect(error?.data.code).toBe('interview_misconfigured');
+  });
+
   it('settles the row when the turn dies mid-stream', async () => {
-    (service as any).client.messages.stream = jest.fn(() => {
-      throw new Error('anthropic exploded');
+    provider.stream = jest.fn(() => {
+      throw new Error('the provider exploded');
     });
 
     const frames = await drain();
@@ -270,7 +354,7 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     const error = frames.find((frame) => frame.event === 'error');
     expect(error?.data.code).toBe('response_truncated');
     // Three passes: the original plus BUILDER_MAX_TRUNCATION_RETRIES.
-    expect((service as any).client.messages.stream).toHaveBeenCalledTimes(3);
+    expect(provider.stream).toHaveBeenCalledTimes(3);
 
     // Persisted, not only streamed — an `error` frame reaches the open tab and
     // nothing else, so a reload would otherwise show the turn as silence.

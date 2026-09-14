@@ -211,6 +211,18 @@ export const isUnfixableCheck = (check: string): boolean => {
   return BUILDER_UNFIXABLE_CHECKS.includes(normalised);
 };
 
+/**
+ * AI-task-registry row ids for Builder's own calls.
+ *
+ * Named here rather than spelled inline at the call site: the registry is what
+ * resolves a task's tier, and `tierForAiTask` THROWS for an id it does not
+ * know, so a typo is a 500 on the first call after deploy rather than a
+ * compile error. A constant makes the two halves move together.
+ */
+export const BUILDER_AI_TASKS = {
+  INTERVIEW_SUMMARY: 'builder-interview-summary',
+} as const;
+
 // Prompt registry code (src/prompts/builder/interviewer_system.txt).
 export const BUILDER_PROMPT_DIR = 'builder';
 export const BUILDER_PROMPTS = {

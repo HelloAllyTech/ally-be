@@ -55,7 +55,17 @@ export type AgentStopReason =
 export interface AgentUsage {
   inputTokens: number;
   outputTokens: number;
+  /**
+   * Tokens served from the prompt cache — the saving.
+   *
+   * Reported separately from `cacheCreationTokens` because the two are priced
+   * differently and a caller recording only one cannot say what a long session
+   * actually cost: reads are what was saved, writes are what the saving cost
+   * to set up. Undefined on providers that report neither.
+   */
   cachedTokens?: number;
+  /** Tokens written INTO the prompt cache — what the saving cost to set up. */
+  cacheCreationTokens?: number;
 }
 
 export interface AgentTurnResult {
