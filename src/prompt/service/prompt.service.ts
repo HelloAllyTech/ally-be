@@ -551,6 +551,7 @@ export class PromptsService {
           hasStates: item.hasStates,
           availableVariables: item.availableVariables,
           usesBlocks: item.usesBlocks,
+          runtimes: item.runtimes,
           isObsolete: false,
         });
         const saved = await this.promptsRepository.save(prompt);
@@ -572,8 +573,8 @@ export class PromptsService {
         //     the file so the Revert-to-default button can restore the
         //     latest authored baseline.
         //
-        //   - `name`, `description`, `category`, `kind`, `usesBlocks` are
-        //     file-driven metadata that sync owns end-to-end.
+        //   - `name`, `description`, `category`, `kind`, `usesBlocks`,
+        //     `runtimes` are file-driven metadata that sync owns end-to-end.
         //
         //   - `availableVariables` is the placeholder list the studio
         //     reads. When `useDashboardOverride=true`, the dashboard's
@@ -597,6 +598,10 @@ export class PromptsService {
           category: item.category,
           kind: item.kind,
           usesBlocks: item.usesBlocks,
+          // File-driven like the rest of this block: the sidecar owns which
+          // runtimes read a prompt, and an omitted value stays NULL, which the
+          // picker reads as "undeclared" and handles conservatively.
+          runtimes: item.runtimes,
           isObsolete: false, // resurrected if it was obsolete
         };
         // Update `availableVariables` from the sync payload when EITHER

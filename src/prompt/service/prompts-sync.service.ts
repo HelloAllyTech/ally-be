@@ -5,9 +5,13 @@ import { PromptsService } from './prompt.service';
 import { formatLabel } from '../util/format-label.util';
 import { LoggerService } from 'src/logger/logger.service';
 import { parseVariablesFromPrompt } from '../util/parse-variables.util';
+import { LlmRuntime } from 'src/llm/constants/llm-model-registry.constants';
 
 const PROMPTS_DIR = 'src/prompts';
 const META_FILENAME_SUFFIX = '.meta.json';
+
+/** Valid `runtimes` values, from the one registry that defines them. */
+const LLM_RUNTIME_NAMES: string[] = Object.values(LlmRuntime);
 
 export interface PromptMeta {
   name?: string;
@@ -15,6 +19,12 @@ export interface PromptMeta {
   category?: string;
   kind?: string;
   usesBlocks?: string[];
+  /**
+   * Which runtimes read this prompt. Omit unless you know — an omitted value
+   * keeps the model picker's conservative default, and a wrong one offers a
+   * model the consuming runtime cannot execute.
+   */
+  runtimes?: string[];
 }
 
 @Injectable()
@@ -61,17 +71,39 @@ export class PromptsSyncService implements OnModuleInit {
             .filter(Boolean)
         : undefined;
 
+      // Validated against the real runtime names rather than taken on trust:
+      // a typo here would silently widen the picker to models the consuming
+      // runtime cannot run, which surfaces as a failed session rather than as
+      // a bad config.
+      const rawRuntimes = data.runtimes as unknown;
+      const runtimes = Array.isArray(rawRuntimes)
+        ? rawRuntimes
+            .filter((v): v is string => typeof v === 'string')
+            .map((v) => v.trim())
+            .filter((v) => LLM_RUNTIME_NAMES.includes(v))
+        : undefined;
+      if (
+        Array.isArray(rawRuntimes) &&
+        runtimes?.length !== rawRuntimes.length
+      ) {
+        this.logger.warn(
+          `Prompt meta for "${stem}" names unknown runtime(s); keeping only ` +
+            `${JSON.stringify(runtimes)}. Valid: ${LLM_RUNTIME_NAMES.join(', ')}.`,
+        );
+      }
+
       if (
         name === undefined &&
         description === undefined &&
         category === undefined &&
         kind === undefined &&
-        usesBlocks === undefined
+        usesBlocks === undefined &&
+        runtimes === undefined
       ) {
         return null;
       }
 
-      return { name, description, category, kind, usesBlocks };
+      return { name, description, category, kind, usesBlocks, runtimes };
     } catch {
       return null;
     }
@@ -140,6 +172,7 @@ export class PromptsSyncService implements OnModuleInit {
       )[];
       kind?: string;
       usesBlocks?: string[];
+      runtimes?: string[];
     }[] = [];
 
     const scanDir = (dir: string, baseDir: string = dir): void => {
@@ -165,12 +198,14 @@ export class PromptsSyncService implements OnModuleInit {
           const meta = this.readMeta(dir, stem);
           let kind: string | undefined;
           let usesBlocks: string[] | undefined;
+          let runtimes: string[] | undefined;
           if (meta) {
             if (meta.name !== undefined) name = meta.name;
             if (meta.description !== undefined) description = meta.description;
             if (meta.category !== undefined) category = meta.category;
             if (meta.kind !== undefined) kind = meta.kind;
             if (meta.usesBlocks !== undefined) usesBlocks = meta.usesBlocks;
+            if (meta.runtimes !== undefined) runtimes = meta.runtimes;
           }
           items.push({
             promptCode,
@@ -181,6 +216,7 @@ export class PromptsSyncService implements OnModuleInit {
             availableVariables: parseVariablesFromPrompt(content),
             kind,
             usesBlocks,
+            runtimes,
           });
         }
       }
