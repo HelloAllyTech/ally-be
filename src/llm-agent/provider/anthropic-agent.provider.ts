@@ -6,6 +6,7 @@ import {
   AgentStreamEvent,
   AgentStreamRequest,
 } from '../type/agent-llm.type';
+import { systemBlocks } from '../util/agent-system.util';
 import { IAgentLlmProvider } from './agent-llm-provider.interface';
 
 /**
@@ -45,7 +46,17 @@ export class AnthropicAgentProvider implements IAgentLlmProvider {
       {
         model: request.model,
         max_tokens: request.maxTokens,
-        system: request.system,
+        // Blocks rather than a string, because `cache_control` attaches per
+        // block and the boundary after the last cached one is what the API
+        // reuses next turn. A caller passing a plain string gets a single
+        // uncached block, which is byte-identical to what it sent before.
+        system: systemBlocks(request.system).map((block) => ({
+          type: 'text' as const,
+          text: block.text,
+          ...(block.cache
+            ? { cache_control: { type: 'ephemeral' as const } }
+            : {}),
+        })),
         messages: request.messages as any,
         ...(request.tools?.length ? { tools: request.tools as any } : {}),
         // No JSON mode on this API. The alternative the autofill path used was

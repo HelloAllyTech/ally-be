@@ -6,6 +6,7 @@ import {
   AgentStreamEvent,
   AgentStreamRequest,
 } from '../type/agent-llm.type';
+import { flattenSystem } from '../util/agent-system.util';
 import { toGeminiParameters } from '../util/gemini-schema.util';
 import { IAgentLlmProvider } from './agent-llm-provider.interface';
 
@@ -53,7 +54,7 @@ export class GeminiAgentProvider implements IAgentLlmProvider {
       model: request.model,
       contents: this.toGeminiContents(request.messages),
       config: {
-        systemInstruction: request.system,
+        systemInstruction: flattenSystem(request.system),
         maxOutputTokens: request.maxTokens,
         ...(request.tools?.length
           ? {

@@ -64,9 +64,34 @@ export interface AgentTurnResult {
   usage: AgentUsage;
 }
 
+/**
+ * One span of the system instruction, when a caller needs the instruction
+ * split rather than concatenated.
+ *
+ * The only reason to split is `cache`. A long stable prefix — repo knowledge,
+ * curated lessons, worked examples — is worth marking as cacheable so a
+ * twenty-turn interview pays full input price for it once instead of twenty
+ * times; the volatile part must then come *after* the last cached block, or
+ * every turn invalidates the prefix it was supposed to reuse.
+ *
+ * `cache` is an intent, not a provider flag. Anthropic honours it literally
+ * (`cache_control: ephemeral`); the others have no per-request control and
+ * simply receive the spans joined, which is exactly what they got before this
+ * existed. A caller that does not care passes a plain string.
+ */
+export interface AgentSystemBlock {
+  text: string;
+  /** Cache everything up to and including this block, where the provider can. */
+  cache?: boolean;
+}
+
 export interface AgentStreamRequest {
   model: string;
-  system: string;
+  /**
+   * Plain text, or ordered spans when the caller needs cache boundaries.
+   * Adapters that cannot express a boundary join the spans with a blank line.
+   */
+  system: string | AgentSystemBlock[];
   messages: AgentMessage[];
   maxTokens: number;
   /** Omitted for a deliberately tool-less pass (e.g. a wrap-up turn). */
