@@ -248,7 +248,16 @@ jobs:
           # keeps the environment gemini's tool always had.
           printf '%s' "$ALLY_BE_API_KEY" > /tmp/ally-be-api-key
           chmod 600 /tmp/ally-be-api-key
-          echo "$GH_TOKEN" | gh auth login --with-token
+          # `gh auth login --with-token` refuses outright ("the value of the
+          # GH_TOKEN environment variable is being used for authentication")
+          # if GH_TOKEN is already set in its own process environment — which
+          # it is here, since this step needs it too. Capture it under a
+          # different name first, unset the real one just for this command, so
+          # `gh` actually persists to ~/.config/gh/hosts.yml instead of
+          # refusing.
+          TOKEN="$GH_TOKEN"
+          unset GH_TOKEN
+          echo "$TOKEN" | gh auth login --with-token
 
       - name: Run the sweep
         if: steps.cfg.outputs.skip != 'true'
