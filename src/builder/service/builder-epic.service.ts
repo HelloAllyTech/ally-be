@@ -1,15 +1,15 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Repository, DataSource } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { BuilderMilestone } from '../entity/builder-milestone.entity';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderPrdDocument } from '../type/builder-prd.type';
 import { BuilderMilestoneStatus } from '../enum/builder.enum';
 import {
+  BUILDER_AI_TASKS,
   BUILDER_MAX_TOKENS,
   BUILDER_MILESTONES_MAX,
   BUILDER_MILESTONES_MIN,
@@ -38,18 +38,13 @@ import {
 export class BuilderEpicService {
   private readonly logger = LoggerService.getInstance(BuilderEpicService.name);
 
-  // Exposed for tests (mocked with a fake client), matching the orchestrator.
-  protected client: Anthropic;
   private readonly repository: Repository<BuilderMilestone>;
 
   constructor(
     private readonly configService: AppConfigService,
     dataSource: DataSource,
-    private readonly llmUsage: LlmUsageService,
+    private readonly llmCompletion: LlmCompletionService,
   ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
     this.repository = dataSource.getRepository(BuilderMilestone);
   }
 
@@ -157,7 +152,6 @@ export class BuilderEpicService {
   }
 
   private async ask(prd: BuilderPrdDocument): Promise<ProposedMilestone[]> {
-    const model = this.configService.builder.plannerModel;
     const requirements = (prd.requirements ?? [])
       .map(
         (requirement) =>
@@ -165,48 +159,38 @@ export class BuilderEpicService {
       )
       .join('\n');
 
-    const response = await this.client.messages.create({
-      model,
-      max_tokens: BUILDER_MAX_TOKENS,
-      system: EPIC_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            `# ${prd.title}`,
-            '',
-            `## Summary\n${prd.summary ?? ''}`,
-            `## Problem\n${prd.problem ?? ''}`,
-            '',
-            '## Requirements',
-            requirements,
-            '',
-            '## Technical plan',
-            (prd.technicalPlan?.repos ?? [])
-              .map((plan) => `### ${plan.repo}\n${plan.changesMd}`)
-              .join('\n\n'),
-            '',
-            `Split this into between ${BUILDER_MILESTONES_MIN} and ${BUILDER_MILESTONES_MAX} milestones. Return the JSON array only.`,
-          ].join('\n'),
-        },
-      ],
-    });
+    const result = await this.llmCompletion.complete({
+      taskId: BUILDER_AI_TASKS.EPIC_DECOMPOSITION,
 
-    const input = response.usage?.input_tokens ?? 0;
-    const output = response.usage?.output_tokens ?? 0;
-    void this.llmUsage.record({
-      provider: 'anthropic',
-      model,
       task: LlmTask.BUILDER_EPIC_DECOMPOSITION,
-      promptTokens: input,
-      completionTokens: output,
-      totalTokens: input + output,
-      metadata: { requirements: (prd.requirements ?? []).length },
+
+      maxTokens: BUILDER_MAX_TOKENS,
+
+      model: this.configService.builder.plannerModel,
+
+      system: EPIC_SYSTEM_PROMPT,
+
+      usageMetadata: { requirements: (prd.requirements ?? []).length },
+
+      prompt: [
+        `# ${prd.title}`,
+        '',
+        `## Summary\n${prd.summary ?? ''}`,
+        `## Problem\n${prd.problem ?? ''}`,
+        '',
+        '## Requirements',
+        requirements,
+        '',
+        '## Technical plan',
+        (prd.technicalPlan?.repos ?? [])
+          .map((plan) => `### ${plan.repo}\n${plan.changesMd}`)
+          .join('\n\n'),
+        '',
+        `Split this into between ${BUILDER_MILESTONES_MIN} and ${BUILDER_MILESTONES_MAX} milestones. Return the JSON array only.`,
+      ].join('\n'),
     });
 
-    const text = response.content
-      .map((block) => (block.type === 'text' ? block.text : ''))
-      .join('\n');
+    const text = result.text;
     return parseMilestones(text);
   }
 

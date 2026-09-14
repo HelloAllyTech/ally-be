@@ -1,8 +1,7 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { BuilderExemplar } from '../entity/builder-exemplar.entity';
 import { BuilderExemplarRepository } from '../repository/builder-knowledge.repository';
@@ -20,6 +19,7 @@ import {
   BuilderPrFeedbackKind,
 } from '../enum/builder.enum';
 import {
+  BUILDER_AI_TASKS,
   BUILDER_EXEMPLARS_IN_CONTEXT,
   BUILDER_EXEMPLAR_CANDIDATES,
 } from '../constants/builder.constants';
@@ -41,9 +41,6 @@ export class BuilderExemplarService {
     BuilderExemplarService.name,
   );
 
-  // Exposed for tests (mocked with a fake client), matching the orchestrator.
-  protected client: Anthropic;
-
   constructor(
     private readonly configService: AppConfigService,
     private readonly repository: BuilderExemplarRepository,
@@ -53,12 +50,8 @@ export class BuilderExemplarService {
     private readonly pullRequestRepository: BuilderPullRequestRepository,
     private readonly feedbackRepository: BuilderPrFeedbackRepository,
     private readonly docRepository: BuilderPrdDocRepository,
-    private readonly llmUsage: LlmUsageService,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
-  }
+    private readonly llmCompletion: LlmCompletionService,
+  ) {}
 
   /**
    * Archive a session once it reaches a terminal state.
@@ -291,54 +284,34 @@ export class BuilderExemplarService {
     candidates: BuilderExemplar[],
     limit: number,
   ): Promise<BuilderExemplar[]> {
-    const model = this.configService.builder.mechanicalModel;
     try {
-      const response = await this.client.messages.create({
-        model,
-        max_tokens: 512,
+      const result = await this.llmCompletion.complete({
+        taskId: BUILDER_AI_TASKS.CONTEXT_SELECTION,
+        task: LlmTask.BUILDER_CONTEXT_SELECTION,
+        maxTokens: 512,
+        model: this.configService.builder.mechanicalModel,
         system:
           'You pick which past builds are worth showing an engineer starting a ' +
           'new one. Relevant means the work overlaps — same subsystem, same ' +
           'kind of change, same trap — not merely the same words. Reply with ' +
           'a JSON array of ids, most relevant first, and nothing else.',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              `## The new work\n${query}`,
-              '',
-              '## Past builds',
-              ...candidates.map(
-                (exemplar) =>
-                  `- [${exemplar.id}] ${exemplar.title} (${exemplar.outcome}${
-                    exemplar.repos?.length
-                      ? `, ${exemplar.repos.join('/')}`
-                      : ''
-                  })`,
-              ),
-              '',
-              `Pick at most ${limit}.`,
-            ].join('\n'),
-          },
-        ],
+        prompt: [
+          `## The new work\n${query}`,
+          '',
+          '## Past builds',
+          ...candidates.map(
+            (exemplar) =>
+              `- [${exemplar.id}] ${exemplar.title} (${exemplar.outcome}${
+                exemplar.repos?.length ? `, ${exemplar.repos.join('/')}` : ''
+              })`,
+          ),
+          '',
+          `Pick at most ${limit}.`,
+        ].join('\n'),
+        usageMetadata: { kind: 'exemplars', candidates: candidates.length },
       });
 
-      const input = response.usage?.input_tokens ?? 0;
-      const output = response.usage?.output_tokens ?? 0;
-      void this.llmUsage.record({
-        provider: 'anthropic',
-        model,
-        task: LlmTask.BUILDER_CONTEXT_SELECTION,
-        promptTokens: input,
-        completionTokens: output,
-        totalTokens: input + output,
-        metadata: { kind: 'exemplars', candidates: candidates.length },
-      });
-
-      const text = response.content
-        .map((block) => (block.type === 'text' ? block.text : ''))
-        .join('\n');
-      const ids = parseIdList(text);
+      const ids = parseIdList(result.text);
       const byId = new Map(candidates.map((item) => [item.id, item]));
       const picked = ids
         .map((id) => byId.get(id))
@@ -399,12 +372,14 @@ export class BuilderExemplarService {
     reviewCommentCount?: number;
     failureTags?: string[] | null;
   }): Promise<string | null> {
-    const model = this.configService.builder.mechanicalModel;
     const prd = facts.prdSnapshot ?? {};
     try {
-      const response = await this.client.messages.create({
-        model,
-        max_tokens: 600,
+      const result = await this.llmCompletion.complete({
+        taskId: BUILDER_AI_TASKS.CONTEXT_SELECTION,
+        task: LlmTask.BUILDER_CONTEXT_SELECTION,
+        maxTokens: 600,
+        model: this.configService.builder.mechanicalModel,
+        usageMetadata: { kind: 'exemplar_summary' },
         system:
           'You write a 120-150 word note about a finished software build, for ' +
           'an agent about to attempt something similar. Cover: what was asked, ' +
@@ -412,50 +387,29 @@ export class BuilderExemplarService {
           'about the approach — subsystems, files, techniques. If the work was ' +
           'rejected or needed rework, say plainly what went wrong; that is the ' +
           'most useful sentence in the note. Plain prose, no headings.',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              `Title: ${facts.title}`,
-              `Repos: ${facts.repos?.join(', ') ?? 'unknown'}`,
-              `Outcome: ${facts.outcome}`,
-              facts.fixRunCount
-                ? `Fix runs needed afterwards: ${facts.fixRunCount}`
-                : '',
-              facts.reviewCommentCount
-                ? `Review comments received: ${facts.reviewCommentCount}`
-                : '',
-              facts.failureTags?.length
-                ? `Failure tags: ${facts.failureTags.join(', ')}`
-                : '',
-              '',
-              `Summary from the PRD: ${String(prd.summary ?? '(none)')}`,
-              `Problem: ${String(prd.problem ?? '(none)')}`,
-              facts.planMd ? `\nPlan:\n${facts.planMd.slice(0, 4000)}` : '',
-            ]
-              .filter(Boolean)
-              .join('\n'),
-          },
-        ],
+        prompt: [
+          `Title: ${facts.title}`,
+          `Repos: ${facts.repos?.join(', ') ?? 'unknown'}`,
+          `Outcome: ${facts.outcome}`,
+          facts.fixRunCount
+            ? `Fix runs needed afterwards: ${facts.fixRunCount}`
+            : '',
+          facts.reviewCommentCount
+            ? `Review comments received: ${facts.reviewCommentCount}`
+            : '',
+          facts.failureTags?.length
+            ? `Failure tags: ${facts.failureTags.join(', ')}`
+            : '',
+          '',
+          `Summary from the PRD: ${String(prd.summary ?? '(none)')}`,
+          `Problem: ${String(prd.problem ?? '(none)')}`,
+          facts.planMd ? `\nPlan:\n${facts.planMd.slice(0, 4000)}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
       });
 
-      const input = response.usage?.input_tokens ?? 0;
-      const output = response.usage?.output_tokens ?? 0;
-      void this.llmUsage.record({
-        provider: 'anthropic',
-        model,
-        task: LlmTask.BUILDER_CONTEXT_SELECTION,
-        promptTokens: input,
-        completionTokens: output,
-        totalTokens: input + output,
-        metadata: { kind: 'exemplar_summary' },
-      });
-
-      const text = response.content
-        .map((block) => (block.type === 'text' ? block.text : ''))
-        .join('\n')
-        .trim();
-      return text || null;
+      return result.text.trim() || null;
     } catch (error) {
       this.logger.warn(
         `Could not summarise an exemplar; storing the facts without it: ${

@@ -1,10 +1,9 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { BuilderLesson } from '../entity/builder-lesson.entity';
 import { BuilderLessonRepository } from '../repository/builder-knowledge.repository';
 import {
@@ -12,6 +11,7 @@ import {
   BuilderLessonStatus,
 } from '../enum/builder.enum';
 import {
+  BUILDER_AI_TASKS,
   BUILDER_LESSON_ACTIVE_CAP,
   BUILDER_LESSON_CANDIDATE_TRIGGER,
   BUILDER_MAX_TOKENS,
@@ -43,19 +43,12 @@ export class BuilderLessonCuratorService {
     BuilderLessonCuratorService.name,
   );
 
-  // Exposed for tests (mocked with a fake client), matching the orchestrator.
-  protected client: Anthropic;
-
   constructor(
     private readonly configService: AppConfigService,
     private readonly dataSource: DataSource,
     private readonly lessonRepository: BuilderLessonRepository,
-    private readonly llmUsage: LlmUsageService,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
-  }
+    private readonly llmCompletion: LlmCompletionService,
+  ) {}
 
   /**
    * Curate if there is anything to curate.
@@ -125,45 +118,27 @@ export class BuilderLessonCuratorService {
     candidates: BuilderLesson[],
     active: BuilderLesson[],
   ): Promise<CuratorOperation[]> {
-    const model = this.configService.builder.mechanicalModel;
-    const response = await this.client.messages.create({
-      model,
-      max_tokens: BUILDER_MAX_TOKENS,
-      system: CURATOR_SYSTEM_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            '## Active rules',
-            active.length
-              ? active.map((lesson) => renderLesson(lesson)).join('\n')
-              : '(none yet)',
-            '',
-            '## New candidates',
-            candidates.map((lesson) => renderLesson(lesson)).join('\n'),
-            '',
-            'Return the JSON operations array and nothing else.',
-          ].join('\n'),
-        },
-      ],
-    });
-
-    const input = response.usage?.input_tokens ?? 0;
-    const output = response.usage?.output_tokens ?? 0;
-    void this.llmUsage.record({
-      provider: 'anthropic',
-      model,
+    const result = await this.llmCompletion.complete({
+      taskId: BUILDER_AI_TASKS.LESSON_CURATION,
       task: LlmTask.BUILDER_LESSON_CURATION,
-      promptTokens: input,
-      completionTokens: output,
-      totalTokens: input + output,
-      metadata: { candidates: candidates.length, active: active.length },
+      maxTokens: BUILDER_MAX_TOKENS,
+      model: this.configService.builder.mechanicalModel,
+      system: CURATOR_SYSTEM_PROMPT,
+      usageMetadata: { candidates: candidates.length, active: active.length },
+      prompt: [
+        '## Active rules',
+        active.length
+          ? active.map((lesson) => renderLesson(lesson)).join('\n')
+          : '(none yet)',
+        '',
+        '## New candidates',
+        candidates.map((lesson) => renderLesson(lesson)).join('\n'),
+        '',
+        'Return the JSON operations array and nothing else.',
+      ].join('\n'),
     });
 
-    const text = response.content
-      .map((block) => (block.type === 'text' ? block.text : ''))
-      .join('\n');
-    return parseOperations(text);
+    return parseOperations(result.text);
   }
 
   /**

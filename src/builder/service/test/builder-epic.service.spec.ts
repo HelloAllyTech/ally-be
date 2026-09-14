@@ -62,17 +62,8 @@ describe('BuilderEpicService', () => {
         builder: { plannerModel: 'claude-opus-5' },
       } as any,
       { getRepository: () => repository } as any,
-      { record: jest.fn() } as any,
+      { complete: jest.fn(async () => ({ text: reply })) } as any,
     );
-
-    (service as any).client = {
-      messages: {
-        create: jest.fn(async () => ({
-          content: [{ type: 'text', text: reply }],
-          usage: { input_tokens: 10, output_tokens: 5 },
-        })),
-      },
-    };
   });
 
   describe('propose', () => {

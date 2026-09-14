@@ -221,6 +221,10 @@ export const isUnfixableCheck = (check: string): boolean => {
  */
 export const BUILDER_AI_TASKS = {
   INTERVIEW_SUMMARY: 'builder-interview-summary',
+  LESSON_CURATION: 'builder-lesson-curation',
+  EPIC_DECOMPOSITION: 'builder-epic-decomposition',
+  OUTCOME_CATEGORISE: 'builder-outcome-categorise',
+  CONTEXT_SELECTION: 'builder-context-selection',
 } as const;
 
 // Prompt registry code (src/prompts/builder/interviewer_system.txt).
