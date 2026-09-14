@@ -46,6 +46,10 @@ const PROSE_SECTIONS: {
   { key: 'summary', label: 'Summary', minLength: 40 },
   { key: 'problem', label: 'Problem', minLength: 60 },
   { key: 'usersAndContext', label: 'Users & context', minLength: 40 },
+  // Sits before Goals deliberately: what already exists is the thing that
+  // decides which goals are worth having, and an agent that writes goals
+  // first tends to defend them afterwards.
+  { key: 'existingBehaviour', label: 'What already exists', minLength: 60 },
   { key: 'goals', label: 'Goals', minLength: 30 },
   { key: 'nonGoals', label: 'Non-goals', minLength: 20 },
   { key: 'testPlanMd', label: 'Test plan', minLength: 40 },

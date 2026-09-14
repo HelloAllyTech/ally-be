@@ -197,6 +197,9 @@ ${prd.problem}
 ## Users & context
 ${prd.usersAndContext}
 
+## What already exists
+${prd.existingBehaviour || '(not established — treat every claim below as unverified and check before building)'}
+
 ## Goals
 ${prd.goals}
 

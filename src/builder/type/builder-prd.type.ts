@@ -86,6 +86,24 @@ export interface BuilderPrdDocument {
   summary: string;
   problem: string;
   usersAndContext: string;
+  /**
+   * What the platform already does in this area, written before any
+   * requirement is.
+   *
+   * The interview has code search, repo knowledge packs and the wiki, and it
+   * still specified an already-shipped feature — a column, its CHECK
+   * constraint, its enum, the picker, the label map and the accuracy panel —
+   * after searching the codebase twice. Searching is not the failure; the
+   * failure is that finding nothing reads as proof nothing is there, and
+   * nowhere in the document was it obliged to say what it found.
+   *
+   * So this is a section rather than a line in the prompt: the rubric can
+   * block on it, and a requirement that duplicates what this paragraph
+   * describes is visibly contradictory rather than merely unlucky. It also
+   * reaches the coder, which matters most — a build told what exists starts
+   * from the real codebase instead of an imagined empty one.
+   */
+  existingBehaviour: string;
   goals: string;
   nonGoals: string;
   requirements: BuilderPrdRequirement[];
@@ -141,6 +159,7 @@ export function createEmptyPrdDocument(
     summary: '',
     problem: '',
     usersAndContext: '',
+    existingBehaviour: '',
     goals: '',
     nonGoals: '',
     requirements: [],

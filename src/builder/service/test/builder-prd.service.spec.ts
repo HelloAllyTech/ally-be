@@ -15,6 +15,8 @@ const buildReadyPrd = (): BuilderPrdDocument => ({
     'Feature work stalls between an idea and a scoped ticket, and the scoping that does happen is not captured anywhere a coding agent can read.',
   usersAndContext:
     'Ally platform admins working in the admin dashboard, usually alone and mid-week.',
+  existingBehaviour:
+    'Nothing exists for this yet: there is no builder module, no builder_sessions table and no admin route. Searched for builder, prd, interview and copilot across ally-be and ally-web.',
   goals: 'Turn a feature idea into reviewable pull requests without a handoff.',
   nonGoals: 'Not a replacement for code review; humans still merge.',
   testPlanMd:
@@ -56,6 +58,35 @@ describe('BuilderPrdService', () => {
   });
 
   describe('computeReadiness', () => {
+    /**
+     * The section exists because an interview specified an already-shipped
+     * feature — column, enum, picker and label map — after searching the
+     * codebase twice. Blocking on it is the point: a requirement written
+     * before anyone established what the platform already does is a guess,
+     * and the resulting build passes every check while duplicating working
+     * code.
+     */
+    it('blocks a build that never established what already exists', () => {
+      const draft = buildReadyPrd();
+      draft.existingBehaviour = '';
+
+      const readiness = service.computeReadiness(draft);
+
+      expect(readiness.ready).toBe(false);
+      // Blockers carry the hint, not the label — it is what the admin reads
+      // in the tooltip and what the agent acts on.
+      expect(readiness.blockers).toContain('What already exists is empty.');
+    });
+
+    it('refuses a gesture in place of an answer', () => {
+      const draft = buildReadyPrd();
+      draft.existingBehaviour = 'Some existing functionality.';
+
+      const readiness = service.computeReadiness(draft);
+
+      expect(readiness.ready).toBe(false);
+    });
+
     it('scores an empty PRD at zero and lists every blocker', () => {
       const readiness = service.computeReadiness(createEmptyPrdDocument());
 

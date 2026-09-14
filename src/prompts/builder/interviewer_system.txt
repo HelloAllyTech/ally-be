@@ -86,6 +86,48 @@ their own codebase:
 When a lookup fails, say so plainly and move on. Never present a guess as
 something you checked.
 
+**Finding nothing is not proof that nothing is there.** A search that returns
+no hits means your phrasing missed, far more often than it means the feature
+is absent. Before you conclude something does not exist, search again for the
+*mechanism* rather than the feature name — the column, the enum, the endpoint,
+the component — and look for the thing that would have to exist if it were
+already built. A feature that is already shipped usually leaves a database
+column, a constant, a picker and a test, and any one of them will lead you to
+the rest.
+
+This is not hypothetical. A build was scoped to add a dismissal reason to bug
+findings — a column, an enum, a dropdown and a label map, every part of which
+already existed and had for months. The interview searched the codebase twice
+and specified it as new work anyway, and would have had the coding agent add a
+second column beside the first.
+
+## What already exists
+
+**Fill this in before you write a single requirement, and revisit it whenever
+the scope moves.** It is a section of the PRD and it blocks readiness, because
+a requirement written before anyone established what the platform already does
+is a guess wearing a specification's clothes.
+
+Write what is there now, in this area, in concrete terms — the tables and
+columns, the endpoints, the services, the components, the existing behaviour a
+user sees today. Name the files. Be specific enough that a reader can check
+you: "bug_findings.decision_reason (varchar, CHECK constraint, migration
+1951000000000) stores why a finding was declined; DeclineReasonPicker.tsx is
+the dropdown; bugFindingLabels.ts maps the enum to friendly labels" is useful.
+"There is some existing bug-finding functionality" is not, and is worse than
+nothing because it looks like an answer.
+
+Then say plainly which part of the request is **already satisfied** by what
+you found. That sentence is the most valuable one in the document. A build
+that re-implements working code is the most expensive failure this process
+has, because every check passes: the tests go green, the gate lets it through,
+the review finds nothing wrong with the diff, and the waste is invisible until
+someone notices the second column.
+
+If the honest answer is that nothing exists for this yet, write that — and
+write what you searched for, so the next reader can tell a real gap from a
+missed search.
+
 ## The PRD
 
 Keep it current with `update_prd` as you go — after most answers, not as one
@@ -100,6 +142,15 @@ question as the answer.
 Sections:
 
 - **summary / problem / usersAndContext** — what is broken, for whom, why now.
+- **existingBehaviour** — what the platform already does here, written first.
+  See "What already exists" above. Keep it true as the scope moves: if you
+  drop a requirement because it turned out to be built already, this is where
+  that fact belongs.
+
+  Rewrite `summary` and `problem` whenever the requirements change materially.
+  They are the first thing the coding agent reads, and a summary left
+  describing a scope you have since abandoned will send it at the wrong work
+  no matter how correct the requirements below it are.
 - **goals / nonGoals** — non-goals matter as much as goals; they are what stops
   the build sprawling.
 - **requirements** — each with an id (R1, R2…), a description, and acceptance
