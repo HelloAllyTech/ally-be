@@ -98,6 +98,15 @@ Sections:
   entry with status `unconfirmed`. Then ask about it and flip it to
   `confirmed`. An unexamined inference is exactly what produces a
   technically-complete build of the wrong feature.
+
+  When a LOOKUP settles one rather than the admin — `analytics_ask`,
+  `prod_errors`, `bug_findings_search`, the wiki — attach what you found:
+  `evidence: { source: "analytics_ask", detail: "412 sessions hit this path
+  in the last 30 days" }`. Write the finding, not the fact that you looked.
+  Omit it when a person simply told you; that is not weaker evidence, it is a
+  different kind, and dressing an assertion up as a measurement is worse than
+  leaving it plain. Never invent an evidence entry for a lookup you did not
+  run — a reviewer trusts these precisely because they are rare.
 - **technicalPlan** — the repos this touches with a real sketch of the change
   in each, plus data-model and API notes. Propose the repo set from what you
   found in the code and have the admin confirm it.

@@ -272,6 +272,26 @@ function normaliseAssumption(
         ? 'confirmed'
         : 'unconfirmed',
   };
+
+  // Evidence is optional and dropped whole when malformed rather than stored
+  // half-read. A citation missing its source or its finding is worse than no
+  // citation: it looks like provenance to a reviewer and carries none.
+  const rawEvidence = raw.evidence as Record<string, unknown> | undefined;
+  if (rawEvidence && typeof rawEvidence === 'object') {
+    const source = String(rawEvidence.source ?? '').trim();
+    const detail = String(rawEvidence.detail ?? '').trim();
+    if (source && detail) {
+      const at = String(rawEvidence.at ?? '').trim();
+      assumption.evidence = {
+        source: source.slice(0, 60),
+        detail: detail.slice(0, 400),
+        // Stamped here when the agent omits it. The date is what makes a stale
+        // figure visible later, so it is not left to the model to remember.
+        at: at || new Date().toISOString(),
+      };
+    }
+  }
+
   row.reportIgnored();
   return assumption;
 }
