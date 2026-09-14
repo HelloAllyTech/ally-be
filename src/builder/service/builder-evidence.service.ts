@@ -3,6 +3,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { AnalyticsAgentService } from 'src/analytics-agent/service/analytics-agent.service';
 import { BugFindingService } from 'src/bug-hunter/service/bug-finding.service';
 import { LogsService } from 'src/logs/logs.service';
+import { UxSignalReadService } from 'src/ux-signals/service/ux-signal-read.service';
 import { AwsLogServiceKey } from 'src/config/config.service';
 import {
   BUILDER_EVIDENCE_ERROR_WINDOW_HOURS,
@@ -45,6 +46,7 @@ export class BuilderEvidenceService {
     private readonly analyticsAgent: AnalyticsAgentService,
     private readonly logsService: LogsService,
     private readonly bugFindingService: BugFindingService,
+    private readonly uxSignalRead: UxSignalReadService,
   ) {}
 
   /**
@@ -142,6 +144,31 @@ export class BuilderEvidenceService {
       };
     } catch (error) {
       return this.soft('bug findings', error);
+    }
+  }
+
+  /**
+   * What telemetry says people struggle with.
+   *
+   * The fourth source, and the only one that speaks for users rather than for
+   * the system: analytics answers "how much", logs answer "what breaks",
+   * findings answer "what we already know", and this answers "where people
+   * got stuck and gave up". A PRD can now open with observed friction instead
+   * of an assumed problem.
+   *
+   * The scan window rides along untouched. A caller that loses it will state
+   * three-week-old friction in the present tense, and the interview's whole
+   * value here is that the claim is checkable.
+   */
+  async uxSignals(query?: string): Promise<any> {
+    try {
+      const evidence = await this.withDeadline(
+        this.uxSignalRead.frictionEvidence(query),
+        BUILDER_EVIDENCE_TIMEOUT_MS,
+      );
+      return { ok: true, ...evidence };
+    } catch (error) {
+      return this.soft('UX signals', error);
     }
   }
 

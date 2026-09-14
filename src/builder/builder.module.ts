@@ -8,6 +8,7 @@ import { GithubModule } from 'src/github/github.module';
 import { BugHunterModule } from 'src/bug-hunter/bug-hunter.module';
 import { AnalyticsAgentModule } from 'src/analytics-agent/analytics-agent.module';
 import { LogsModule } from 'src/logs/logs.module';
+import { UxSignalsModule } from 'src/ux-signals/ux-signals.module';
 import { BuilderSession } from './entity/builder-session.entity';
 import { BuilderMessage } from './entity/builder-message.entity';
 import { BuilderPrdDoc } from './entity/builder-prd-doc.entity';
@@ -124,6 +125,9 @@ import {
     // gated for a logged-in human.
     AnalyticsAgentModule,
     LogsModule,
+    // UxSignalReadService: the fourth evidence source, and the only one that
+    // speaks for users rather than for the system.
+    UxSignalsModule,
   ],
   controllers: [BuilderController, BuilderPipelineController],
   providers: [

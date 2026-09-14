@@ -20,6 +20,7 @@ describe('BuilderEvidenceService', () => {
       (over.analytics ?? { ask: jest.fn() }) as never,
       (over.logs ?? { getLogEvents: jest.fn() }) as never,
       (over.findings ?? { listOpenForRepo: jest.fn() }) as never,
+      (over.uxSignals ?? { frictionEvidence: jest.fn() }) as never,
     );
 
   describe('prodErrors', () => {
@@ -161,5 +162,66 @@ describe('BuilderEvidenceService', () => {
         file: 'src/auth/a.spec.ts',
       });
     });
+  });
+});
+
+/**
+ * UX signals — the fourth source, and the one whose freshness is part of the
+ * answer. A scan window that does not survive the lookup is how three-week-old
+ * friction gets written into a PRD in the present tense.
+ */
+describe('BuilderEvidenceService.uxSignals', () => {
+  const build = (uxSignals: Record<string, any>) =>
+    new BuilderEvidenceService(
+      { ask: jest.fn() } as never,
+      { getLogEvents: jest.fn() } as never,
+      { listOpenForRepo: jest.fn() } as never,
+      uxSignals as never,
+    );
+
+  it('passes the scan window through to the model', async () => {
+    const evidence = {
+      scan: {
+        windowFrom: '2026-09-07',
+        windowTo: '2026-09-13',
+        startedAt: '2026-09-14T02:00:00.000Z',
+      },
+      findings: [{ id: 'f1', title: 'Dead click on Save', route: '/scribe' }],
+      suggestions: [],
+    };
+    const uxSignals = {
+      frictionEvidence: jest.fn().mockResolvedValue(evidence),
+    };
+
+    const result = await build(uxSignals).uxSignals('scribe');
+
+    expect(uxSignals.frictionEvidence).toHaveBeenCalledWith('scribe');
+    expect(result.ok).toBe(true);
+    expect(result.scan).toEqual(evidence.scan);
+    expect(result.findings).toHaveLength(1);
+  });
+
+  /**
+   * Not the same as an empty result: a caller that cannot tell "nothing has
+   * looked" from "nothing is wrong" will assert the second.
+   */
+  it('keeps a null scan null rather than dropping the key', async () => {
+    const result = await build({
+      frictionEvidence: jest
+        .fn()
+        .mockResolvedValue({ scan: null, findings: [], suggestions: [] }),
+    }).uxSignals();
+
+    expect(result.ok).toBe(true);
+    expect(result).toHaveProperty('scan', null);
+  });
+
+  it('degrades the turn rather than ending it when the lookup fails', async () => {
+    const result = await build({
+      frictionEvidence: jest.fn().mockRejectedValue(new Error('boom')),
+    }).uxSignals();
+
+    expect(result.ok).toBe(false);
+    expect(String(result.error)).toContain('UX signals');
   });
 });

@@ -370,6 +370,28 @@ export class BuilderInterviewToolsService {
           },
         },
       },
+      {
+        name: 'ux_signals_lookup',
+        description:
+          'What product telemetry says people struggle with — rage clicks, ' +
+          'dead clicks, abandoned routes, zero-result searches, funnel ' +
+          'drop-off — as open findings and reviewed suggestions from the UX ' +
+          'Signals scan, with the window the scan covered. Use it to ground ' +
+          'a problem statement in observed friction rather than an assumed ' +
+          'one. The window matters: check it before stating anything in the ' +
+          'present tense, and say so if the last scan is old.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            query: {
+              type: 'string',
+              description:
+                'Optional substring over titles, routes and rationales — ' +
+                'a route, a feature name. Omit for everything open.',
+            },
+          },
+        },
+      },
     ];
   }
 
@@ -488,6 +510,18 @@ export class BuilderInterviewToolsService {
             input?.repo ? String(input.repo) : undefined,
           ),
           (result) => `Open findings: ${result.findings?.length ?? 0}`,
+        );
+      case 'ux_signals_lookup':
+        return this.wrapResearch(
+          await this.evidence.uxSignals(
+            input?.query ? String(input.query) : undefined,
+          ),
+          (result) =>
+            `UX signals: ${result.findings?.length ?? 0} finding(s), ` +
+            `${result.suggestions?.length ?? 0} suggestion(s)` +
+            (result.scan
+              ? ` (scanned ${result.scan.windowFrom} → ${result.scan.windowTo})`
+              : ' (no scan has completed yet)'),
         );
       default:
         return {

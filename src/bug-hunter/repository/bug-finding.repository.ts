@@ -407,6 +407,38 @@ export class BugFindingRepository extends Repository<BugFinding> {
     return query.getMany();
   }
 
+  /**
+   * Open findings one pipeline filed, newest first, optionally narrowed by a
+   * case-insensitive substring over title and symbol.
+   *
+   * By source rather than by repo, because "what has the UX scan found" is a
+   * question about provenance, not about which codebase the answer lives in —
+   * and a UX-sourced finding always carries the helpline frontend's repo, so a
+   * repo filter answers the wrong question and an unfiltered list buries the
+   * answer under static-analysis findings.
+   *
+   * Shares OPEN_STATUSES with `listOpenForRepo` rather than restating it: two
+   * definitions of "open" drift, and the one that drifts is always the copy.
+   */
+  listOpenBySource(
+    source: BugFinding['source'],
+    term?: string,
+    limit = 25,
+  ): Promise<BugFinding[]> {
+    const query = this.createQueryBuilder('f')
+      .where('f.source = :source', { source })
+      .andWhere('f.status IN (:...statuses)', { statuses: OPEN_STATUSES })
+      .orderBy('f.createdAt', 'DESC')
+      .take(limit);
+    if (term) {
+      query.andWhere(
+        '(LOWER(f.title) LIKE :term OR LOWER(f.symbol) LIKE :term)',
+        { term: `%${term.toLowerCase()}%` },
+      );
+    }
+    return query.getMany();
+  }
+
   listNewReportedBugs(limit = 50): Promise<BugFinding[]> {
     return this.find({
       where: {
