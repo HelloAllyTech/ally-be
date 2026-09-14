@@ -121,7 +121,15 @@ PR's URL, so the code PR has to exist *before* the trailer can be written:
 2. Edit the page under \`.wiki-tmp/wiki/\` — the one the rule names. Write what
    changed, in the voice of the page you are editing; do not append a
    changelog entry to a reference page.
-3. From inside the code repo you changed, run:
+3. Check you may push to the wiki before running anything:
+   \`gh api repos/helloallytech/helloallytech.github.io --jq '.permissions.push'\`
+   If that is not \`true\`, **stop here** and use the "could not" trailer below.
+   Do not proceed — \`wiki-pr.sh\` responds to missing write access by forking
+   the repo to whoever this runner's token belongs to, and an agent creating
+   repositories in somebody's account unattended is not a thing this run gets
+   to decide. A person running the same script can make that call; you cannot.
+
+   If it is \`true\`, then from inside the code repo you changed, run:
    \`../../.wiki-tmp/scripts/wiki-pr.sh "<the PR url from step 1>"\`
    It opens the wiki PR, links it to yours so the two merge together, and
    prints the trailer line to use.
