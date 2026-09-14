@@ -69,7 +69,11 @@ export interface FindingOutcomeCount {
   lowConfidence: number;
   /** Findings carrying no confidence at all — proven ones, and rows predating verifier scoring. */
   unscored: number;
-  /** Findings in this cell whose dismissal was later proven wrong — see `reversed_at`. */
+  /**
+   * Findings in this cell whose dismissal was later proven wrong — see
+   * `reversed_at`. Windowed on `reversed_at`, not `createdAt` like every
+   * other field here — see `outcomeCounts`'s doc for why.
+   */
   reversed: number;
   count: number;
 }
@@ -344,11 +348,20 @@ export class BugFindingRepository extends Repository<BugFinding> {
    * `excludeFindingId` keeps the just-shipped finding itself out of its own
    * result set — relevant when a finding was previously declined, reopened,
    * and then shipped under the same row.
+   *
+   * `shippedAt` guards against retroactively reversing a dismissal that was
+   * actually correct at the time it was made: a regression row can be filed
+   * under the same `dedupeKey` *after* the original bug already shipped (see
+   * `persistFindings`, which opens a new row when a match has already
+   * shipped), and an admin declining that regression as a `duplicate` of the
+   * already-fixed bug is a correct call, not a finder error to reverse later.
+   * Only declines that predate the ship count.
    */
   findReversibleFinderErrors(
     repo: string,
     dedupeKey: string,
     excludeFindingId: string,
+    shippedAt: Date,
   ): Promise<BugFinding[]> {
     return this.createQueryBuilder('f')
       .where('f.repo = :repo', { repo })
@@ -359,6 +372,9 @@ export class BugFindingRepository extends Repository<BugFinding> {
       })
       .andWhere('f.reversedAt IS NULL')
       .andWhere('f.id != :excludeFindingId', { excludeFindingId })
+      .andWhere('COALESCE(f.decidedAt, f."updatedAt") < :shippedAt', {
+        shippedAt,
+      })
       .getMany();
   }
 
@@ -539,30 +555,49 @@ export class BugFindingRepository extends Repository<BugFinding> {
         .addSelect('f.repo', 'repo')
         .addSelect('f.status', 'status')
         .addSelect('f.decision_reason', 'decisionReason')
-        .addSelect('COUNT(*)::int', 'count')
+        // Scoped to `createdAt >= since` on every count except `reversed` —
+        // otherwise a row admitted into the result set solely because it was
+        // *reversed* recently (see below) would also inflate `filed`,
+        // `lowConfidence`, etc. for a cohort it does not belong to.
+        .addSelect(
+          'COUNT(*) FILTER (WHERE f."createdAt" >= :since)::int',
+          'count',
+        )
         // `metadata->>'confidence'` is text; NULLIF guards a stored empty string
         // and the ::numeric cast is safe only because the writer is our own
         // PATCH handler, which validates it as a number first.
         .addSelect(
           `COUNT(*) FILTER (
-           WHERE NULLIF(f.metadata->>'confidence', '') IS NOT NULL
+           WHERE f."createdAt" >= :since
+             AND NULLIF(f.metadata->>'confidence', '') IS NOT NULL
              AND (f.metadata->>'confidence')::numeric < :threshold
          )::int`,
           'lowConfidence',
         )
         .addSelect(
-          `COUNT(*) FILTER (WHERE NULLIF(f.metadata->>'confidence', '') IS NULL)::int`,
+          `COUNT(*) FILTER (WHERE f."createdAt" >= :since AND NULLIF(f.metadata->>'confidence', '') IS NULL)::int`,
           'unscored',
         )
+        // Windowed on `reversed_at`, deliberately NOT on `createdAt` like the
+        // counts above: the decline suppression window
+        // (`BUG_FINDING_DECLINE_SUPPRESSION_MS`, 30 days) means a same-dedupe
+        // finding can only ship, and thus reverse the original decline, more
+        // than 30 days after that decline — well past the point where the
+        // declined row's own `createdAt` still falls inside a default 30-day
+        // report. Windowing this count on when the row was *reversed* instead
+        // is what keeps `reversalRate` from structurally reading 0% on the
+        // default scorecard.
         .addSelect(
-          `COUNT(*) FILTER (WHERE f.reversed_at IS NOT NULL)::int`,
+          `COUNT(*) FILTER (WHERE f.reversed_at >= :since)::int`,
           'reversed',
         )
         // Child steps excluded for the same reason the table hides them: a
         // coordinated three-repo fix is ONE bug, and counting its steps would
         // inflate both the numerator and the denominator unevenly.
         .where('f.parentFindingId IS NULL')
-        .andWhere('f."createdAt" >= :since', { since })
+        .andWhere('(f."createdAt" >= :since OR f.reversed_at >= :since)', {
+          since,
+        })
         .setParameter('threshold', BUG_HUNT_LOW_CONFIDENCE_THRESHOLD)
         .groupBy('f.source')
         .addGroupBy('f.repo')

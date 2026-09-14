@@ -813,6 +813,7 @@ describe('BugFixSessionService', () => {
         'ally-web',
         'dupe-key-1',
         'finding-1',
+        expect.any(Date),
       );
       expect(findingRepository.update).toHaveBeenCalledWith('dismissed-1', {
         reversedAt: expect.any(Date),
@@ -987,6 +988,7 @@ describe('BugFixSessionService', () => {
         'ally-be',
         'dupe-key-2',
         'finding-1',
+        expect.any(Date),
       );
       expect(findingRepository.update).toHaveBeenCalledWith('dismissed-2', {
         reversedAt: expect.any(Date),

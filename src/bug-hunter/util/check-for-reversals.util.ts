@@ -2,7 +2,9 @@ import { LoggerService } from 'src/logger/logger.service';
 
 import { BugFinding } from '../entity/bug-finding.entity';
 import { BugFindingRepository } from '../repository/bug-finding.repository';
+import { BugHunterService } from '../service/bug-hunter.service';
 import { BugFindingStatus } from '../enum/bug-finding.enum';
+import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 
 /**
  * Closes the other loop the reversal rate needs: a finding dismissed as a
@@ -23,6 +25,7 @@ import { BugFindingStatus } from '../enum/bug-finding.enum';
  */
 export async function checkForAndRecordReversals(
   findingRepository: BugFindingRepository,
+  bugHunterService: BugHunterService,
   finding: BugFinding,
   logger: LoggerService,
 ): Promise<void> {
@@ -35,15 +38,29 @@ export async function checkForAndRecordReversals(
   if (!finding.repo || !finding.dedupeKey) return;
 
   try {
+    const shippedAt = finding.releasedAt ?? finding.updatedAt ?? new Date();
     const reversible = await findingRepository.findReversibleFinderErrors(
       finding.repo,
       finding.dedupeKey,
       finding.id,
+      shippedAt,
     );
     for (const dismissed of reversible) {
       await findingRepository.update(dismissed.id, {
         reversedAt: new Date(),
         reversedByFindingId: finding.id,
+      });
+      await bugHunterService.appendFindingEvent({
+        findingId: dismissed.id,
+        repo: finding.repo,
+        stage: BugHuntEventStage.REVERSED,
+        summary:
+          `This dismissal was reversed: finding ${finding.id} shipped under the same dedupe key, ` +
+          `so the original ${dismissed.decisionReason ?? 'dismissal'} was a finder error.`,
+        payload: {
+          reversedByFindingId: finding.id,
+          decisionReason: dismissed.decisionReason ?? null,
+        },
       });
     }
   } catch (error) {

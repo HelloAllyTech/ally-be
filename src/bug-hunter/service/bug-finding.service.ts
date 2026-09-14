@@ -901,11 +901,21 @@ export class BugFindingService {
         this.logger,
       );
     }
-    await checkForAndRecordReversals(
-      this.findingRepository,
-      after,
-      this.logger,
-    );
+    // Only on the transition into MERGED/RELEASED, not every subsequent patch
+    // to an already-merged finding — otherwise a metadata/verifierVotes patch
+    // re-runs the repo+dedupeKey scan on every hit to this endpoint.
+    if (
+      (patch.status === BugFindingStatus.MERGED ||
+        patch.status === BugFindingStatus.RELEASED) &&
+      before.status !== patch.status
+    ) {
+      await checkForAndRecordReversals(
+        this.findingRepository,
+        this.bugHunterService,
+        after,
+        this.logger,
+      );
+    }
 
     return after;
   }

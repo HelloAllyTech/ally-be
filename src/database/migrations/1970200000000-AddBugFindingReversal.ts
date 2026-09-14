@@ -35,9 +35,48 @@ export class AddBugFindingReversal1970200000000 implements MigrationInterface {
       COMMENT ON COLUMN "bug_findings"."reversed_by_finding_id" IS
       'The finding that proved this dismissal wrong by shipping. No FK, per this table''s convention for self-references.'
     `);
+
+    // A `reversed` event stage rides along, same reasoning as the three added
+    // in 1951000000000: the CHECK-constrained `bug_hunt_events.stage` column
+    // must list every enum value or a write of the new stage fails at runtime.
+    await queryRunner.query(`
+      ALTER TABLE "bug_hunt_events"
+      DROP CONSTRAINT IF EXISTS "CHK_bug_hunt_events_stage"
+    `);
+    await queryRunner.query(`
+      ALTER TABLE "bug_hunt_events"
+      ADD CONSTRAINT "CHK_bug_hunt_events_stage"
+      CHECK ("stage" IN (
+        'skipped_disabled', 'finder_result', 'verify', 'fix_attempt',
+        'test_written', 'doc_updated', 'pr_opened', 'merged', 'escalated',
+        'error', 'settings_changed', 'session_dispatched', 'release_dispatched',
+        'released', 'release_failed', 'plan_created', 'step_started',
+        'cancelled', 'description_edited', 'stage_changed',
+        'decision_recorded', 'regressed', 'recurrence_suppressed', 'reversed'
+      ))
+    `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(`
+      DELETE FROM "bug_hunt_events" WHERE "stage" = 'reversed'
+    `);
+    await queryRunner.query(`
+      ALTER TABLE "bug_hunt_events"
+      DROP CONSTRAINT IF EXISTS "CHK_bug_hunt_events_stage"
+    `);
+    await queryRunner.query(`
+      ALTER TABLE "bug_hunt_events"
+      ADD CONSTRAINT "CHK_bug_hunt_events_stage"
+      CHECK ("stage" IN (
+        'skipped_disabled', 'finder_result', 'verify', 'fix_attempt',
+        'test_written', 'doc_updated', 'pr_opened', 'merged', 'escalated',
+        'error', 'settings_changed', 'session_dispatched', 'release_dispatched',
+        'released', 'release_failed', 'plan_created', 'step_started',
+        'cancelled', 'description_edited', 'stage_changed',
+        'decision_recorded', 'regressed', 'recurrence_suppressed'
+      ))
+    `);
     await queryRunner.query(`
       ALTER TABLE "bug_findings"
       DROP COLUMN IF EXISTS "reversed_by_finding_id",

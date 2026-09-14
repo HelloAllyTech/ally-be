@@ -890,11 +890,13 @@ export class BugFixSessionService {
           continue;
         }
 
+        const releasedAt = new Date();
         await this.findingRepository.update(parent.id, {
           status: BugFindingStatus.RELEASED,
-          releasedAt: new Date(),
+          releasedAt,
         });
         parent.status = BugFindingStatus.RELEASED;
+        parent.releasedAt = releasedAt;
         await this.checkForAndRecordReversals(parent);
         await this.notificationService.notify({
           level: BugHunterNotificationLevel.INFO,
@@ -1126,6 +1128,7 @@ export class BugFixSessionService {
   private checkForAndRecordReversals(finding: BugFinding): Promise<void> {
     return checkForAndRecordReversals(
       this.findingRepository,
+      this.bugHunterService,
       finding,
       this.logger,
     );
@@ -1207,15 +1210,17 @@ export class BugFixSessionService {
     runUrl: string | null | undefined,
     detail: string | null,
   ): Promise<void> {
+    const releasedAt = succeeded ? new Date() : undefined;
     await this.findingRepository.update(finding.id, {
       status: succeeded
         ? BugFindingStatus.RELEASED
         : BugFindingStatus.RELEASE_FAILED,
-      ...(succeeded ? { releasedAt: new Date() } : {}),
+      ...(releasedAt ? { releasedAt } : {}),
       ...(runUrl ? { releaseRunUrl: runUrl } : {}),
     });
     if (succeeded) {
       finding.status = BugFindingStatus.RELEASED;
+      finding.releasedAt = releasedAt ?? null;
       await this.checkForAndRecordReversals(finding);
     }
     await this.bugHunterService.appendFindingEvent({
