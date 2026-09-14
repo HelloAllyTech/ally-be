@@ -58,6 +58,24 @@ export class BuilderAttempt extends BaseWithoutTenantEntity {
   @Column({ type: 'boolean', nullable: true })
   gatePassed?: boolean | null;
 
+  /**
+   * Whether the gate verdict can be taken at face value.
+   *
+   * False when the change edited the gate's own configuration — `package.json`
+   * scripts, jest/vitest config, `conftest.py`, eslint or tsconfig — because
+   * the gate runs those commands in the tree the agent just wrote to, so a
+   * pass may mean the suite was narrowed rather than satisfied. The build is
+   * not blocked for it (a run that legitimately splits a config is doing its
+   * job), but any policy learning from this table must filter on it: cheaper
+   * models reward-hack more, so an uncritical pass signal degrades in exactly
+   * the direction a cost optimisation pushes.
+   *
+   * Only meaningful when `gatePassed` is true. A failure needs no trust — the
+   * suite refused the change regardless of who wrote the config.
+   */
+  @Column({ type: 'boolean', default: true })
+  gateTrusted!: boolean;
+
   /** How much this attempt broke, when it broke something. */
   @Column({ type: 'int', nullable: true })
   newFailureCount?: number | null;

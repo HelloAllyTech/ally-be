@@ -31,6 +31,20 @@ const repo = argOf('repo') ?? '';
 const currentPath = argOf('current');
 const baselinePath = argOf('baseline');
 const eventsOut = argOf('events-out');
+/**
+ * Runner-config files this change touched, comma-separated.
+ *
+ * The gate runs the repo's own commands in the tree the agent just wrote to,
+ * so the agent can edit its own judge — `npm test` is whatever package.json
+ * says, and a conftest.py can make pytest exit 0 with every test failing. A
+ * pass under those conditions is not evidence, and is reported as untrusted
+ * rather than reverted: a build that legitimately splits a config should not
+ * be failed for it.
+ */
+const configTouched = (argOf('config-touched') ?? '')
+  .split(',')
+  .map((entry) => entry.trim())
+  .filter(Boolean);
 
 const readJson = (path) => {
   if (!path) return null;
@@ -91,6 +105,10 @@ for (const [kind, result] of Object.entries(current.checks ?? {})) {
       kind,
       command: result.command ?? '',
       passed,
+      // Present and true only when the verdict can be taken at face value.
+      // A pass on a run that edited the gate's own configuration cannot.
+      trusted: !(passed && configTouched.length > 0),
+      configTouched,
       // Explicit so a reader can tell "this run broke it" from "it was
       // already broken" without holding the policy in their head.
       newFailures: unattributable

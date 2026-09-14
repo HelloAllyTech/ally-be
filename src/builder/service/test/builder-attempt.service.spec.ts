@@ -170,6 +170,61 @@ describe('BuilderAttemptService', () => {
       });
     });
 
+    /**
+     * The gate runs in the tree the agent just wrote to, so a pass on a run
+     * that edited `package.json` scripts or jest config may mean the suite was
+     * narrowed rather than satisfied. It must not enter the dataset as
+     * evidence, and it must not own the delayed reward.
+     */
+    it('does not trust a pass from a run that edited the gate config', async () => {
+      const repository = repo({
+        newest: { id: 'a-1', gatePassed: null, gateTrusted: true },
+      });
+
+      await new BuilderAttemptService(repository as never).recordGate(run, {
+        passed: true,
+        trusted: false,
+      });
+
+      expect(repository.update.mock.calls[0][1]).toMatchObject({
+        gatePassed: true,
+        gateTrusted: false,
+        producedFinalDiff: false,
+      });
+    });
+
+    /** A failure needs no trust — the suite refused it whoever wrote the config. */
+    it('still records a failure as a failure', async () => {
+      const repository = repo({
+        newest: { id: 'a-1', gatePassed: null, gateTrusted: true },
+      });
+
+      await new BuilderAttemptService(repository as never).recordGate(run, {
+        passed: false,
+        trusted: false,
+        newFailures: ['x'],
+      });
+
+      expect(repository.update.mock.calls[0][1]).toMatchObject({
+        gatePassed: false,
+        producedFinalDiff: false,
+      });
+    });
+
+    /** One tainted repo taints the attempt, even if the others were clean. */
+    it('keeps an attempt untrusted once any repo has tainted it', async () => {
+      const repository = repo({
+        newest: { id: 'a-1', gatePassed: true, gateTrusted: false },
+      });
+
+      await new BuilderAttemptService(repository as never).recordGate(run, {
+        passed: true,
+        trusted: true,
+      });
+
+      expect(repository.update.mock.calls[0][1].gateTrusted).toBe(false);
+    });
+
     it('does nothing when no attempt has been recorded yet', async () => {
       const repository = repo({ newest: null });
 

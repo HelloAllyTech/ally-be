@@ -47,6 +47,22 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * that clears the gate and writes code reverted a week later is not cheaper,
  * and the gate alone will never say so.
  *
+ * ## `gateTrusted`, and why a pass is weaker evidence than a failure
+ *
+ * The gate runs the repo's own commands in the tree the agent just wrote to,
+ * so the agent can edit its own judge: `npm test` is whatever `package.json`
+ * says it is, and a four-line `conftest.py` makes pytest exit 0 with every
+ * test failing. A *failure* is still a fact — the suite refused the change
+ * whoever wrote the config. A *pass* is only a fact when the config was not
+ * touched, and this column records which kind it was.
+ *
+ * The build is not blocked on it, because a run that legitimately splits a
+ * config or adds a package is doing its job and failing it would trade a false
+ * pass for a false failure. But a policy learning from this table must filter
+ * on it, and the reason is specific rather than theoretical: cheaper models
+ * reward-hack measurably more, so an uncritical pass signal degrades in
+ * exactly the direction a cost optimisation pushes it.
+ *
  * No tenant column: Builder is a platform-admin agent, like its sibling tables.
  */
 export class CreateBuilderAttempts1970100000000 implements MigrationInterface {
@@ -79,6 +95,7 @@ export class CreateBuilderAttempts1970100000000 implements MigrationInterface {
         "ladderIndex" integer,
         "escalated" boolean NOT NULL DEFAULT false,
         "gatePassed" boolean,
+        "gateTrusted" boolean NOT NULL DEFAULT true,
         "newFailureCount" integer,
         "verifyVerdict" character varying(8),
         "producedFinalDiff" boolean NOT NULL DEFAULT false,

@@ -153,6 +153,10 @@ export class BuilderEventService {
         await this.attemptService.recordGate(run, {
           passed: event.payload?.passed === true,
           newFailures: event.payload?.newFailures,
+          // Absent on an older runner, which predates the check and whose
+          // verdicts were never examined for capture — treated as trusted
+          // rather than retro-flagged, so the column means what it says.
+          trusted: event.payload?.trusted !== false,
         });
 
         const repo = String(event.payload?.repo ?? '');

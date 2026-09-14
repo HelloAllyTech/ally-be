@@ -99,7 +99,7 @@ export class BuilderAttemptService {
    */
   async recordGate(
     run: BuilderBuildRun,
-    result: { passed: boolean; newFailures?: unknown },
+    result: { passed: boolean; newFailures?: unknown; trusted?: boolean },
   ): Promise<void> {
     try {
       const current = await this.repository.findNewest(run.id);
@@ -109,13 +109,21 @@ export class BuilderAttemptService {
         ? result.newFailures.length
         : 0;
       const passed = current.gatePassed === false ? false : result.passed;
+      // Untrusted once, untrusted for the attempt: a multi-repo build that
+      // edited one repo's jest config has an unverifiable pass overall, even
+      // if the other repos were clean.
+      const trusted =
+        current.gateTrusted === false ? false : result.trusted !== false;
 
       await this.repository.update(
         { id: current.id },
         {
           gatePassed: passed,
+          gateTrusted: trusted,
           newFailureCount: (current.newFailureCount ?? 0) + failures,
-          producedFinalDiff: passed,
+          // A pass nobody can trust is not evidence this attempt's diff was
+          // good, so it does not get to own the delayed reward either.
+          producedFinalDiff: passed && trusted,
         },
       );
     } catch (error) {
