@@ -71,7 +71,16 @@ export function buildFixSessionPrompt({
     );
   }
 
-  const authHeader = '-H "x-api-key: $ALLY_BE_API_KEY"';
+  // Read from a file, not $ALLY_BE_API_KEY directly: Gemini CLI's shell tool
+  // strips almost every environment variable from any command it runs
+  // whenever GITHUB_SHA is set (always true in Actions) — a deliberate,
+  // unconditional anti-leak guard with no override (confirmed in
+  // gemini-cli-core's shellExecutionService.js). It only sanitizes the
+  // environment handed to spawned processes, not the filesystem, so a
+  // credential the workflow already wrote to disk before invoking either CLI
+  // survives where the env var would not. Harmless for Claude Code, which
+  // never hit this problem — both engines read the same file.
+  const authHeader = '-H "x-api-key: $(cat /tmp/ally-be-api-key)"';
   const findingUrl = `${apiBaseUrl}/api/v1/bug-hunter/pipeline/findings/${finding.id}`;
   const reportUrl = `${apiBaseUrl}/api/v1/bug-hunter/runs/${runId}/report`;
   const closeUrl = `${apiBaseUrl}/api/v1/bug-hunter/runs/${runId}/close`;

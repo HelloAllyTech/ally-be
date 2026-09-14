@@ -111,7 +111,12 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     );
   }
 
-  const auth = '-H "x-api-key: $ALLY_BE_API_KEY"';
+  // Read from a file, not $ALLY_BE_API_KEY directly — see buildFixSessionPrompt's
+  // identical comment: Gemini CLI's shell tool strips almost every environment
+  // variable from any command it runs whenever GITHUB_SHA is set (always true
+  // in Actions), with no override. A file the workflow wrote before invoking
+  // either CLI survives that; an env var does not.
+  const auth = '-H "x-api-key: $(cat /tmp/ally-be-api-key)"';
   const base = `${apiBaseUrl}/api/v1/bug-hunter`;
   const findingsUrl = `${base}/runs/${runId}/findings`;
   const reportUrl = `${base}/runs/${runId}/report`;
