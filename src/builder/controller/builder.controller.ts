@@ -176,6 +176,30 @@ export class BuilderController {
     return this.sessionService.cancelSession(sessionId, user.id);
   }
 
+  @Post('sessions/:sessionId/pull-requests/:pullRequestId/merge')
+  @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
+    permissions: [PERMISSIONS.EDIT_BUILDER],
+  })
+  @ApiOperation({
+    summary: "Merge one of this session's pull requests",
+    description:
+      'Reads the checks first and refuses anything that is not green; passes ' +
+      "GitHub's own refusal through rather than forcing past it. The human " +
+      'decision and the CI gate both survive — this removes the walk to ' +
+      'another tab, not the review.',
+  })
+  mergePullRequest(
+    @Param('sessionId', ParseUUIDPipe) sessionId: string,
+    @Param('pullRequestId', ParseUUIDPipe) pullRequestId: string,
+    @CurrentUser() user: TokenUser,
+  ) {
+    return this.pullRequestService.mergePullRequest(
+      sessionId,
+      pullRequestId,
+      user.id,
+    );
+  }
+
   @Post('sessions/:sessionId/archive')
   @RequireFeatureToggle(FeatureToggleKey.BUILDER, {
     permissions: [PERMISSIONS.EDIT_BUILDER],

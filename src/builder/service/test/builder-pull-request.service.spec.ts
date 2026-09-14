@@ -78,6 +78,9 @@ describe('BuilderPullRequestService', () => {
         login: 'ally-builder[bot]',
         name: 'Ally Builder',
       }),
+      mergePullRequest: jest
+        .fn()
+        .mockResolvedValue({ merged: true, message: null }),
     };
     buildService = {
       dispatchFixRun: jest.fn().mockResolvedValue({ id: 'run-2' }),
@@ -552,6 +555,117 @@ describe('BuilderPullRequestService', () => {
 
       expect(updated).toBe(0);
       expect(feedbackRepository.update).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The merge button.
+   *
+   * Builder opens pull requests and stops, and on the repos that matter it
+   * could not merge even if it should — `master` wants an approving review and
+   * the bot holds only `write`. What it can remove is the errand: Bug Hunter
+   * measured 89 of 122 bot pull requests merged by hand, nearly all within the
+   * hour. So these pin the refusals, not the happy path — every one of them is
+   * a case where merging anyway would be worse than not having the button.
+   */
+  describe('mergePullRequest', () => {
+    const green = { state: 'success', failed: [], total: 3 };
+
+    const arrange = (pr: any, remote: any, rollup: any = green) => {
+      repository.findOne.mockResolvedValue(pr);
+      github.getPullRequest.mockResolvedValue(remote);
+      github.getCheckRollup.mockResolvedValue(rollup);
+    };
+
+    it('merges a green PR and records who decided', async () => {
+      arrange(openPr(), {
+        merged: false,
+        state: 'open',
+        headSha: 'abc1234',
+      });
+      github.mergePullRequest.mockResolvedValue({
+        merged: true,
+        message: null,
+      });
+
+      await service.mergePullRequest('session-1', 'pr-1', 7);
+
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({ merged: true, decidedBy: 7 }),
+      );
+    });
+
+    it('refuses red checks rather than merging past them', async () => {
+      arrange(
+        openPr(),
+        { merged: false, state: 'open', headSha: 'abc1234' },
+        { state: 'failure', failed: ['unit tests'], total: 3 },
+      );
+
+      await expect(
+        service.mergePullRequest('session-1', 'pr-1', 7),
+      ).rejects.toThrow(/red/i);
+      expect(github.mergePullRequest).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the checks cannot be read — unreadable is not green', async () => {
+      arrange(openPr(), { merged: false, state: 'open', headSha: 'abc' }, null);
+
+      await expect(
+        service.mergePullRequest('session-1', 'pr-1', 7),
+      ).rejects.toThrow(/blind/i);
+      expect(github.mergePullRequest).not.toHaveBeenCalled();
+    });
+
+    it('refuses a PR with no checks at all', async () => {
+      arrange(
+        openPr(),
+        { merged: false, state: 'open', headSha: 'abc' },
+        { state: 'none', failed: [], total: 0 },
+      );
+
+      await expect(
+        service.mergePullRequest('session-1', 'pr-1', 7),
+      ).rejects.toThrow(/no checks/i);
+    });
+
+    it("relays GitHub's refusal instead of forcing past it", async () => {
+      // A required review is exactly the gate this button must not bypass.
+      arrange(openPr(), { merged: false, state: 'open', headSha: 'abc' });
+      github.mergePullRequest.mockResolvedValue({
+        merged: false,
+        message: 'At least 1 approving review is required.',
+      });
+
+      await expect(
+        service.mergePullRequest('session-1', 'pr-1', 7),
+      ).rejects.toThrow(/approving review/i);
+      expect(repository.update).not.toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({ merged: true }),
+      );
+    });
+
+    it('settles the row when somebody merged it on GitHub first', async () => {
+      // The outcome the admin wanted already happened; erroring would be perverse.
+      arrange(openPr(), { merged: true, state: 'closed', headSha: 'abc' });
+
+      await service.mergePullRequest('session-1', 'pr-1', 7);
+
+      expect(github.mergePullRequest).not.toHaveBeenCalled();
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({ merged: true }),
+      );
+    });
+
+    it("refuses a pull request that is not this session's", async () => {
+      repository.findOne.mockResolvedValue(openPr({ sessionId: 'other' }));
+
+      await expect(
+        service.mergePullRequest('session-1', 'pr-1', 7),
+      ).rejects.toThrow(/not part of session/i);
     });
   });
 });
