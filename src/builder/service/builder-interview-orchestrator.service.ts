@@ -293,6 +293,17 @@ export class BuilderInterviewOrchestratorService {
       providerName = resolved.provider;
       model = resolved.model;
       provider = this.agentLlmFactory.create(resolved.provider, resolved.model);
+      // The one line that says what actually ran.
+      //
+      // Everything else here logs on failure, which was fine while there was
+      // one possible answer and is not now: a turn that succeeds says nothing,
+      // so "which model served this interview?" was unanswerable from the logs
+      // even though the whole point of this path is that it varies. Info
+      // rather than debug — one line per turn is cheap, and this is the line
+      // anyone debugging a turn wants first.
+      this.logger.info(
+        `[BUILDER_INTERVIEW] session=${sessionId} ${providerName}/${model}`,
+      );
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
       this.logger.error(

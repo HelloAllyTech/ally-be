@@ -198,6 +198,28 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
   });
 
   /**
+   * Which model served a turn has to be answerable from the logs.
+   *
+   * Every other log line here fires on failure, which was fine while there
+   * was one possible answer. Now that a turn can run on any of three
+   * providers, a successful turn saying nothing means the question cannot be
+   * answered after the fact — which is exactly when it gets asked.
+   */
+  it('logs the provider and model that actually ran', async () => {
+    const info = jest
+      .spyOn((service as any).logger, 'info')
+      .mockImplementation(() => undefined);
+    streams = [fakeStream([{ type: 'text', text: 'Done.' }], 'end_turn')];
+
+    await drain();
+
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining('anthropic/claude-opus-5'),
+    );
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('session-1'));
+  });
+
+  /**
    * The prompt cache, which is the main lever on this agent's cost.
    *
    * The system prompt and the Ally context block are large and identical on
