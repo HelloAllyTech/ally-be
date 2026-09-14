@@ -1,9 +1,13 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import {
+  AgentLlmProviderFactory,
+  providerForModel,
+} from 'src/llm-agent/service/agent-llm.factory';
+import { AgentTurnResult } from 'src/llm-agent/type/agent-llm.type';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderPrdService } from './builder-prd.service';
 import { BuilderKnowledgeService } from './builder-knowledge.service';
@@ -35,19 +39,37 @@ export class BuilderResearchService {
     BuilderResearchService.name,
   );
 
-  // Exposed for tests (mocked with a fake client), matching the orchestrator.
-  protected client: Anthropic;
-
   constructor(
     private readonly configService: AppConfigService,
     private readonly prdService: BuilderPrdService,
     private readonly knowledgeService: BuilderKnowledgeService,
     private readonly toolsService: BuilderInterviewToolsService,
     private readonly llmUsage: LlmUsageService,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
+    private readonly agentLlmFactory: AgentLlmProviderFactory,
+  ) {}
+
+  /**
+   * Which model runs this pass.
+   *
+   * Research is an unattended background pass, so unlike the interview there
+   * is no prompt row to read a preference from — the configured tier is the
+   * whole configuration, and the provider follows from the model id.
+   *
+   * The INTERVIEW tier, not the mechanical one: this pass drives the same
+   * tool belt the interview does and writes to the same PRD, and quietly
+   * moving it to a cheaper model while migrating the client would have been a
+   * behaviour change wearing a refactor's clothes.
+   */
+  private resolveModel(): { provider: string; model: string } {
+    const model = this.configService.builder.interviewModel;
+    const provider = providerForModel(model);
+    if (!provider) {
+      throw new Error(
+        `No provider is known for Builder research model "${model}". Set ` +
+          'BUILDER_MECHANICAL_MODEL to a model whose id names one.',
+      );
+    }
+    return { provider, model };
   }
 
   /**
@@ -77,7 +99,8 @@ export class BuilderResearchService {
       userId,
       session.title,
     );
-    const model = this.configService.builder.interviewModel;
+    const { provider: providerName, model } = this.resolveModel();
+    const provider = this.agentLlmFactory.create(providerName, model);
     const context = await this.knowledgeService.buildContextBlock(
       session.repos ?? undefined,
     );
@@ -103,38 +126,46 @@ export class BuilderResearchService {
     while (iterations < maxIterations) {
       iterations += 1;
 
-      const response = await this.client.messages.create({
+      let turn: AgentTurnResult | null = null;
+      for await (const event of provider.stream({
         model,
-        max_tokens: BUILDER_MAX_TOKENS,
+        maxTokens: BUILDER_MAX_TOKENS,
+        // The context block is the cacheable half — large, and identical on
+        // every iteration of this loop — so it is marked and kept last. The
+        // system prompt ahead of it is small and equally stable.
         system: [
-          { type: 'text', text: RESEARCH_SYSTEM_PROMPT },
-          { type: 'text', text: context, cache_control: { type: 'ephemeral' } },
-        ] as any,
-        messages,
+          { text: RESEARCH_SYSTEM_PROMPT },
+          { text: context, cache: true },
+        ],
+        messages: messages as any,
         tools,
-      });
+      })) {
+        if (event.type === 'final') turn = event.message;
+      }
+      if (!turn) {
+        throw new Error(
+          `The ${provider.name} model returned no response for this pass.`,
+        );
+      }
 
-      const usageInput = response.usage?.input_tokens ?? 0;
-      const usageOutput = response.usage?.output_tokens ?? 0;
       void this.llmUsage.record({
-        provider: 'anthropic',
+        provider: providerName,
         model,
         task: LlmTask.BUILDER_RESEARCH,
-        promptTokens: usageInput,
-        completionTokens: usageOutput,
-        totalTokens: usageInput + usageOutput,
-        cachedTokens: response.usage?.cache_read_input_tokens ?? undefined,
-        cacheCreationTokens:
-          response.usage?.cache_creation_input_tokens ?? undefined,
+        promptTokens: turn.usage.inputTokens,
+        completionTokens: turn.usage.outputTokens,
+        totalTokens: turn.usage.inputTokens + turn.usage.outputTokens,
+        cachedTokens: turn.usage.cachedTokens,
+        cacheCreationTokens: turn.usage.cacheCreationTokens,
         metadata: { builderSessionId: session.id, mode, iteration: iterations },
       });
 
-      const toolUses = response.content.filter(
+      const toolUses = turn.content.filter(
         (block: any) => block.type === 'tool_use',
       );
       if (!toolUses.length) break;
 
-      messages.push({ role: 'assistant', content: response.content });
+      messages.push({ role: 'assistant', content: turn.content });
 
       const results: any[] = [];
       for (const toolUse of toolUses as any[]) {

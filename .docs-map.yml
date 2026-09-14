@@ -53,7 +53,6 @@ rules:
       - "src/**/service/*-ai.service.ts"
       - "src/**/service/*autofill*.service.ts"
       - "src/**/service/*-orchestrator.service.ts"
-      - "src/builder/service/builder-*.service.ts"
       # Every provider layer, not just the ones that existed when this rule was
       # written: `src/llm-agent/` was added by the character-interview
       # multi-provider change and would have slipped through a narrower list.
@@ -67,6 +66,14 @@ rules:
       costing a feature reads. A new or re-pointed LLM call that skips it makes the map
       quietly wrong, and a wrong map is worse than no map because it still looks
       authoritative. See docs/ai-task-registry.md.
+
+      `src/builder/service/builder-*.service.ts` was watched here until every Builder
+      service went through `src/llm-agent/`. While they each held their own Anthropic
+      client they used no task id, so the static guard in
+      `src/llm/constants/test/ai-task-ids-resolve.spec.ts` had nothing to resolve and
+      this rule was their only cover — at the cost of firing on all 22 of them, most of
+      which never call a model. Now that they resolve through LlmCompletionService and
+      the agent factory, the scan sees their ids and the glob is redundant noise.
 
   - id: agent-entrypoints-in-sync
     watch:
