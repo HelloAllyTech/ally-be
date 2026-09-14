@@ -118,6 +118,15 @@ export const BUILDER_STACKS_DEFAULT_RESULTS = 4;
 export const BUILDER_STACKS_MAX_RESULTS = 10;
 
 /**
+ * Deadline on one Stacks call.
+ *
+ * A retrieval is one round trip to a Vercel function that embeds the query and
+ * ranks a small corpus. Twenty seconds is generous for that and still short
+ * enough that a wedged library costs the turn a pause rather than the turn.
+ */
+export const BUILDER_STACKS_TIMEOUT_MS = 20_000;
+
+/**
  * Per-tenant session caps, mirroring the character-interview rationale: bound
  * LLM spend for org admins (a platform admin is not capped). Concurrency
  * guards a runaway client; the monthly ceiling guards steady over-use.
