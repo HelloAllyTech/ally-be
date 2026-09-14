@@ -71,8 +71,9 @@ export interface FindingOutcomeCount {
   unscored: number;
   /**
    * Findings in this cell whose dismissal was later proven wrong — see
-   * `reversed_at`. Windowed on `reversed_at`, not `createdAt` like every
-   * other field here — see `outcomeCounts`'s doc for why.
+   * `reversed_at`. Windowed on `createdAt` like every other field here, so it
+   * shares a cohort with `count` (which feeds the rate's denominator) — see
+   * `outcomeCounts`'s doc for why that matters, and for the lag it implies.
    */
   reversed: number;
   count: number;
@@ -555,10 +556,6 @@ export class BugFindingRepository extends Repository<BugFinding> {
         .addSelect('f.repo', 'repo')
         .addSelect('f.status', 'status')
         .addSelect('f.decision_reason', 'decisionReason')
-        // Scoped to `createdAt >= since` on every count except `reversed` —
-        // otherwise a row admitted into the result set solely because it was
-        // *reversed* recently (see below) would also inflate `filed`,
-        // `lowConfidence`, etc. for a cohort it does not belong to.
         .addSelect(
           'COUNT(*) FILTER (WHERE f."createdAt" >= :since)::int',
           'count',
@@ -578,26 +575,33 @@ export class BugFindingRepository extends Repository<BugFinding> {
           `COUNT(*) FILTER (WHERE f."createdAt" >= :since AND NULLIF(f.metadata->>'confidence', '') IS NULL)::int`,
           'unscored',
         )
-        // Windowed on `reversed_at`, deliberately NOT on `createdAt` like the
-        // counts above: the decline suppression window
-        // (`BUG_FINDING_DECLINE_SUPPRESSION_MS`, 30 days) means a same-dedupe
-        // finding can only ship, and thus reverse the original decline, more
-        // than 30 days after that decline — well past the point where the
-        // declined row's own `createdAt` still falls inside a default 30-day
-        // report. Windowing this count on when the row was *reversed* instead
-        // is what keeps `reversalRate` from structurally reading 0% on the
-        // default scorecard.
+        // Windowed on `createdAt` like every other count here, and that is the
+        // point: `reversed` is the numerator of `reversalRate`, whose
+        // denominator (`finderErrors`) is derived from `count`. Both have to
+        // range over the SAME population or the rate is a ratio of two
+        // different cohorts — it can exceed 100% (reversals from rows whose
+        // `createdAt` has aged out of the denominator) or read "—" while
+        // reversals plainly exist (denominator empty, numerator not). So this
+        // asks "of the findings filed in this window, how many finder-error
+        // declines have since been proven wrong", over one cohort.
+        //
+        // The cost is lag, and it is honest lag: the decline suppression
+        // window (`BUG_FINDING_DECLINE_SUPPRESSION_MS`, 30 days) means a
+        // same-dedupe finding cannot ship — and so cannot reverse the
+        // decline — until more than 30 days after it, so a reversal only ever
+        // shows up in a report window wide enough to contain both ends. Read
+        // the reversal rate over 90 days or more; a 30-day window will
+        // legitimately show none, because none of that cohort's declines could
+        // have been reversed yet.
         .addSelect(
-          `COUNT(*) FILTER (WHERE f.reversed_at >= :since)::int`,
+          `COUNT(*) FILTER (WHERE f."createdAt" >= :since AND f.reversed_at IS NOT NULL)::int`,
           'reversed',
         )
         // Child steps excluded for the same reason the table hides them: a
         // coordinated three-repo fix is ONE bug, and counting its steps would
         // inflate both the numerator and the denominator unevenly.
         .where('f.parentFindingId IS NULL')
-        .andWhere('(f."createdAt" >= :since OR f.reversed_at >= :since)', {
-          since,
-        })
+        .andWhere('f."createdAt" >= :since', { since })
         .setParameter('threshold', BUG_HUNT_LOW_CONFIDENCE_THRESHOLD)
         .groupBy('f.source')
         .addGroupBy('f.repo')
