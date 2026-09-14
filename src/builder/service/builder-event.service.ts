@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from 'src/logger/logger.service';
 import { BuilderBuildEvent } from '../entity/builder-build-event.entity';
 import { BuilderBuildRun } from '../entity/builder-build-run.entity';
+import { BuilderAttemptService } from './builder-attempt.service';
 import { BuilderSessionRepository } from '../repository/builder-session.repository';
 import {
   BuilderBuildEventRepository,
@@ -42,6 +43,7 @@ export class BuilderEventService {
     private readonly runRepository: BuilderBuildRunRepository,
     private readonly sessionRepository: BuilderSessionRepository,
     private readonly bugFindingService: BugFindingService,
+    private readonly attemptService: BuilderAttemptService,
   ) {}
 
   addListener(listener: BuilderEventListener): void {
@@ -144,6 +146,15 @@ export class BuilderEventService {
     try {
       for (const event of saved) {
         if (event.type !== BuilderEventType.GATE_RESULT) continue;
+
+        // The immediate reward for the attempt that just ran. One gate run
+        // emits a verdict per repo, so this lands once per repo and the
+        // service accumulates rather than overwrites.
+        await this.attemptService.recordGate(run, {
+          passed: event.payload?.passed === true,
+          newFailures: event.payload?.newFailures,
+        });
+
         const repo = String(event.payload?.repo ?? '');
         const failures: unknown = event.payload?.preExistingFailures;
         if (!repo || !Array.isArray(failures) || !failures.length) continue;

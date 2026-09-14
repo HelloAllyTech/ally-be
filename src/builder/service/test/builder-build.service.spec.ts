@@ -166,6 +166,10 @@ describe('BuilderBuildService', () => {
       // Steering notes get superseded when a run is cancelled; nothing else in
       // these tests touches them.
       { supersedePending: jest.fn().mockResolvedValue(0) } as any,
+      // The model-selection dataset is written as a byproduct and must never
+      // decide whether a build succeeds — these tests assert the build, not
+      // the telemetry.
+      { recordArm: jest.fn(), recordGate: jest.fn() } as any,
       pullRequestRepository as any,
       settingsService as any,
       notificationService as any,
@@ -246,6 +250,96 @@ describe('BuilderBuildService', () => {
       // An unreadable PRD is a reason to spend the default, not to refuse.
       expect(dispatchedModels().size).toBe('medium');
       expect(github.dispatchWorkflow).toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The escalation ladder.
+   *
+   * The loop used to re-run the model that had just failed the gate, four
+   * times, so a run that exhausted its attempts failed without ever trying
+   * anything stronger. Two properties keep the fix from making anything worse:
+   * the first attempt is never weakened, and the ladder always has somewhere
+   * to go.
+   */
+  describe('the coder escalation ladder', () => {
+    const dispatchedModels = () =>
+      JSON.parse(
+        github.dispatchWorkflow.mock.calls[0][0].inputs.models as string,
+      );
+
+    const smallPrd = {
+      draft: {
+        requirements: [{ id: 'R1' }, { id: 'R2' }],
+        technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'small' }] },
+      },
+    };
+
+    /**
+     * The load-bearing guarantee. This ships as escalation only: if entry 0
+     * ever drifted below the coder tier, every build would get worse on its
+     * first attempt to buy a saving nobody has measured yet.
+     */
+    it('never weakens the first attempt', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await service.startBuild(readySession() as any, 1);
+
+      const models = dispatchedModels();
+      expect(models.coderLadder[0]).toBe(models.coder);
+    });
+
+    it('escalates to a stronger tier once the gate keeps refusing', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await service.startBuild(readySession() as any, 1);
+
+      const ladder = dispatchedModels().coderLadder;
+      expect(ladder).toEqual([
+        'claude-sonnet-5',
+        'claude-sonnet-5',
+        'claude-opus-5',
+        'claude-opus-5',
+      ]);
+    });
+
+    /**
+     * A large build's second failure is rarely the kind a third cheap attempt
+     * fixes, and another failed attempt costs more.
+     */
+    it('escalates a large build sooner than a small one', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          requirements: Array.from({ length: 12 }, (_, i) => ({
+            id: `R${i}`,
+          })),
+          technicalPlan: {
+            repos: [
+              { repo: 'ally-be', changesMd: 'x'.repeat(4000) },
+              { repo: 'ally-web', changesMd: 'y'.repeat(4000) },
+            ],
+          },
+        },
+      });
+
+      await service.startBuild(readySession() as any, 1);
+
+      const models = dispatchedModels();
+      expect(models.size).toBe('large');
+      expect(models.coderLadder[1]).toBe('claude-opus-5');
+    });
+
+    it('carries the ladder on the dispatch input the runner reads', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await service.startBuild(readySession() as any, 1);
+
+      const ladder = dispatchedModels().coderLadder;
+      expect(Array.isArray(ladder)).toBe(true);
+      expect(ladder.length).toBeGreaterThan(1);
+      // Every rung has to name a real model — an empty string would make the
+      // runner fall back silently and the escalation would simply not happen.
+      for (const rung of ladder) expect(rung).toBeTruthy();
     });
   });
 

@@ -8,6 +8,7 @@ import { BuilderPrFeedback } from '../entity/builder-pr-feedback.entity';
 import { BuilderReport } from '../entity/builder-report.entity';
 import { BuilderNotification } from '../entity/builder-notification.entity';
 import { BuilderSteer } from '../entity/builder-steer.entity';
+import { BuilderAttempt } from '../entity/builder-attempt.entity';
 import { BUILDER_STEER_MAX_PENDING } from '../constants/builder.constants';
 import {
   BUILDER_RUN_ACTIVE_STATUSES,
@@ -348,6 +349,25 @@ export class BuilderSteerRepository extends Repository<BuilderSteer> {
       order: { createdAt: 'DESC' },
       take: 100,
     });
+  }
+}
+
+@Injectable()
+export class BuilderAttemptRepository extends Repository<BuilderAttempt> {
+  constructor(dataSource: DataSource) {
+    super(BuilderAttempt, dataSource.createEntityManager());
+  }
+
+  /** The attempt a gate verdict belongs to: the latest coding pass on the run. */
+  findNewest(runId: string): Promise<BuilderAttempt | null> {
+    return this.findOne({
+      where: { runId, phase: 'code' },
+      order: { attempt: 'DESC' },
+    });
+  }
+
+  listForRun(runId: string): Promise<BuilderAttempt[]> {
+    return this.find({ where: { runId }, order: { attempt: 'ASC' } });
   }
 }
 

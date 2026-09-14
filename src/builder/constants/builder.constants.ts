@@ -401,6 +401,52 @@ export enum BuilderBuildSize {
  * are enforced by the runner, so a planner that ignores the advice still cannot
  * run away with the session.
  */
+/**
+ * Which tier a coding attempt runs on, by attempt number.
+ *
+ * ## Why a ladder at all
+ *
+ * The loop retried a failed attempt on the model that had just failed, up to
+ * four times. Every published account of cost-aware routing describes the same
+ * shape — attempt cheap, verify, escalate on failure — and names the same
+ * blocker: a model's self-reported confidence is badly calibrated, so the
+ * "verify" step is the hard part. Builder does not have that problem. Its
+ * verify step is `run-test-gate.sh`: real jest and eslint on a clean tree,
+ * diffed against a baseline taken from pristine `origin/master`. A gate
+ * failure is a fact, not a probability, which makes escalation safe to trigger
+ * automatically here in a way it usually is not.
+ *
+ * ## What this version deliberately does NOT do
+ *
+ * It does not start cheaper. Every size begins exactly where it began before,
+ * so no build gets worse on its first attempt. Lowering the *starting* tier is
+ * the larger saving and the riskier one: it pays off only when the cheap tier
+ * clears the gate first time often enough to cover the failed attempts it
+ * causes, and the break-even input for that is `firstAttemptPassRate` in
+ * BuilderMetricsService, read per size and per coder model — which is data we
+ * began collecting only with `builder_build_runs.size`. Guessing that ratio
+ * before it exists is how a cost optimisation becomes a cost increase.
+ *
+ * Escalating upward has no such trade. The alternative to a fourth attempt on
+ * a tier that has failed three times is a failed run, and a failed run is 100%
+ * waste — every dollar spent and the whole working tree, since nothing is
+ * pushed before FINALISE. Converting one of those into a success is a larger
+ * saving than any per-token decision.
+ *
+ * ## Why larger builds escalate sooner
+ *
+ * A second cheap attempt is a bet that the failure was shallow and that the
+ * test output is enough to fix it. On a small build that bet is usually right
+ * and cheap to lose. On a large cross-repo build a failure is more likely to
+ * be structural, and another failed attempt costs more — so the bet is worth
+ * taking once, not twice.
+ *
+ * No entry is required to be distinct: repeating a tier is how "retry with the
+ * gate output before escalating" is expressed. Length is independent of
+ * BUILDER_MAX_CODE_ITERATIONS; the runner clamps to the last entry.
+ */
+export type BuilderCoderTier = 'mechanical' | 'coder' | 'planner';
+
 export const BUILDER_SIZE_PROFILES: Record<
   BuilderBuildSize,
   {
@@ -408,6 +454,8 @@ export const BUILDER_SIZE_PROFILES: Record<
     effort: 'low' | 'medium' | 'high';
     maxTurns: number;
     planWords: number;
+    /** Coder tier per attempt, index 0 being the first CODE pass. */
+    coderLadder: BuilderCoderTier[];
     maxBudgetUsd: {
       plan: number;
       code: number;
@@ -422,6 +470,9 @@ export const BUILDER_SIZE_PROFILES: Record<
     effort: 'low',
     maxTurns: 20,
     planWords: 800,
+    // Two attempts on the coder tier: a small build that fails the gate has
+    // usually tripped on something the test output names outright.
+    coderLadder: ['coder', 'coder', 'planner', 'planner'],
     maxBudgetUsd: { plan: 2, code: 8, verify: 3, finalise: 3 },
   },
   [BuilderBuildSize.MEDIUM]: {
@@ -429,6 +480,7 @@ export const BUILDER_SIZE_PROFILES: Record<
     effort: 'medium',
     maxTurns: 40,
     planWords: 1500,
+    coderLadder: ['coder', 'coder', 'planner', 'planner'],
     maxBudgetUsd: { plan: 5, code: 12, verify: 4, finalise: 4 },
   },
   // Unchanged from the behaviour every run used to get.
@@ -437,6 +489,9 @@ export const BUILDER_SIZE_PROFILES: Record<
     effort: 'high',
     maxTurns: 60,
     planWords: 3000,
+    // One retry, then the stronger tier. A large build's second failure is
+    // rarely the kind a third cheap attempt fixes.
+    coderLadder: ['coder', 'planner', 'planner', 'planner'],
     maxBudgetUsd: { plan: 10, code: 20, verify: 6, finalise: 5 },
   },
 };

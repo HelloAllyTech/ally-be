@@ -40,6 +40,38 @@ PLANNER_MODEL="$(model_for planner "claude-opus-5")"
 CODER_MODEL="$(model_for coder "claude-sonnet-5")"
 VERIFIER_MODEL="$(model_for verifier "claude-opus-5")"
 
+# ── The escalation ladder ───────────────────────────────────────────────────
+#
+# Which coder model attempt N runs on. Before this, every remediation round
+# re-ran the model that had just failed the gate — four attempts, one tier, and
+# a run that exhausted them failed having never tried anything stronger.
+#
+# The trigger is the test gate, and that is the whole reason this is safe to
+# automate. The published cascade pattern (attempt cheap, verify, escalate) is
+# usually held back by the verify step: a model's own confidence is badly
+# calibrated, so "did that work?" is a guess. Here it is jest and eslint on a
+# clean tree, diffed against a baseline from pristine origin/master. A gate
+# failure is a fact.
+#
+# Escalation only — entry 0 is whatever tier the build would have used anyway,
+# so no first attempt is weaker than it was before. Starting cheaper is the
+# bigger saving and the riskier one, and it waits on first-attempt pass rates
+# per tier, which ally-be only started recording alongside runs.size.
+#
+# Clamps to the last entry, so a ladder shorter than MAX_CODE_ITERATIONS simply
+# holds its top tier, and an ally-be too old to send one leaves every attempt
+# on CODER_MODEL exactly as before.
+coder_model_for_attempt() {
+  local attempt="$1" value
+  value="$(printf '%s' "$MODELS_JSON" \
+    | jq -r --argjson i "$((attempt - 1))" \
+        '(.coderLadder // []) as $l
+         | if ($l | length) == 0 then empty
+           else $l[if $i >= ($l | length) then -1 else $i end]
+           end' 2>/dev/null || true)"
+  printf '%s' "${value:-$CODER_MODEL}"
+}
+
 # The size profile rides the same input. ally-be sizes the PRD and decides what
 # planning is worth; the fallbacks below are what a hand-run workflow gets.
 BUILD_SIZE="$(model_for size "medium")"
@@ -481,16 +513,30 @@ fi
 attempt=1
 verify_round=1
 verdict=fail
+# What the previous attempt ran on, so an escalation can be announced as a
+# change rather than restated every round.
+previous_attempt_model=
 
 while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   # ---- CODE (or REMEDIATE) ----
+  attempt_model="$(coder_model_for_attempt "$attempt")"
   if [ "$attempt" -eq 1 ]; then
-    echo "::group::code (${CODER_MODEL})"
+    echo "::group::code (${attempt_model})"
     post_stage CODING
     code_prompt="$PROMPT_FILE"
   else
-    echo "::group::remediate ${attempt} (${CODER_MODEL})"
+    echo "::group::remediate ${attempt} (${attempt_model})"
     post_stage REMEDIATING
+    # Say it in the feed when the tier actually moves. An escalation that is
+    # only visible by diffing two phase-cost rows is one nobody will notice
+    # went wrong.
+    if [ "$attempt_model" != "$previous_attempt_model" ]; then
+      echo "Escalating: ${previous_attempt_model} did not clear the gate; attempt ${attempt} runs on ${attempt_model}." >&2
+      curl -sS -X POST "${API}/events" \
+        -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+        -d "{\"events\":[{\"type\":\"model_escalated\",\"stage\":\"REMEDIATING\",\"payload\":{\"attempt\":${attempt},\"from\":\"${previous_attempt_model}\",\"to\":\"${attempt_model}\"}}]}" \
+        >/dev/null 2>&1 || true
+    fi
     code_prompt=/tmp/builder-remediate-prompt.txt
     if ! fetch_prompt "remediate-prompt?round=${attempt}" "$code_prompt"; then
       echo "Could not fetch the remediation prompt; stopping." >&2
@@ -504,8 +550,11 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   apply_steers "$code_prompt"
 
   run_agent "$code_prompt" "${RESULTS_DIR}/code-${attempt}.json" \
-    "$CODER_MODEL" "$CODER_TOOLS" 200 "$CODE_BUDGET"
-  report_phase_cost "code-${attempt}" "$CODER_MODEL" "${RESULTS_DIR}/code-${attempt}.json"
+    "$attempt_model" "$CODER_TOOLS" 200 "$CODE_BUDGET"
+  # Reported against the model that actually ran, so the scoreboard's per-phase
+  # cost-by-model rows stay true once a run spans two tiers.
+  report_phase_cost "code-${attempt}" "$attempt_model" "${RESULTS_DIR}/code-${attempt}.json"
+  previous_attempt_model="$attempt_model"
   echo "::endgroup::"
 
   exit_if_paused "coding"

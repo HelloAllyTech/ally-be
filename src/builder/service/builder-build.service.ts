@@ -25,6 +25,7 @@ import {
 } from '../repository/builder-build.repository';
 import { BuilderEventService } from './builder-event.service';
 import { BuilderSteerService } from './builder-steer.service';
+import { BuilderAttemptService } from './builder-attempt.service';
 import { BuilderSettingsService } from './builder-settings.service';
 import { BuilderNotificationService } from './builder-notification.service';
 import { BuilderExemplarService } from './builder-exemplar.service';
@@ -71,11 +72,28 @@ import {
  * Rides the single `models` workflow input: `workflow_dispatch` accepts at most
  * 10 inputs and builder-session.yml is already at 9.
  */
+/** A size decision plus the features it was derived from. */
+export interface BuilderSizing {
+  size: BuilderBuildSize;
+  requirementCount: number;
+  repoCount: number;
+  technicalPlanLength: number;
+}
+
 export interface BuilderResolvedModels {
   planner: string;
   coder: string;
   verifier: string;
+  /**
+   * The coder model for each attempt, resolved from the size profile's tier
+   * ladder. Index 0 is the first CODE pass; the runner clamps past the end.
+   */
+  coderLadder: string[];
   size: BuilderBuildSize;
+  /** The features the size was derived from, recorded with the run. */
+  requirementCount: number;
+  repoCount: number;
+  technicalPlanLength: number;
   effort: 'low' | 'medium' | 'high';
   plannerMaxTurns: number;
   planWords: number;
@@ -113,6 +131,7 @@ export class BuilderBuildService {
     private readonly eventRepository: BuilderBuildEventRepository,
     private readonly questionRepository: BuilderQuestionRepository,
     private readonly steerService: BuilderSteerService,
+    private readonly attemptService: BuilderAttemptService,
     private readonly pullRequestRepository: BuilderPullRequestRepository,
     private readonly settingsService: BuilderSettingsService,
     private readonly notificationService: BuilderNotificationService,
@@ -185,8 +204,17 @@ export class BuilderBuildService {
       session.engine ??
       settings.defaultEngine ??
       'claude-code';
-    const size = await this.classifySession(session);
-    const models = this.resolveModels(session, settings, overrides, size);
+    // Epic mode dispatches the first milestone rather than the whole PRD. The
+    // split itself is proposed and confirmed before this point — a wrong
+    // decomposition is expensive in a way a wrong plan is not, because it
+    // becomes several pull requests in the wrong shape.
+    //
+    // Looked up before sizing, because what is being dispatched is what should
+    // be sized. See classifySession.
+    const milestone = await this.epicService.nextPending(session.id);
+
+    const sizing = await this.classifySession(session, milestone);
+    const models = this.resolveModels(session, settings, overrides, sizing);
 
     // Carry the chosen engine/model onto the session so a resume run and the
     // UI both read the same thing without re-deriving it.
@@ -204,12 +232,6 @@ export class BuilderBuildService {
         updatedBy: userId,
       },
     );
-
-    // Epic mode dispatches the first milestone rather than the whole PRD. The
-    // split itself is proposed and confirmed before this point — a wrong
-    // decomposition is expensive in a way a wrong plan is not, because it
-    // becomes several pull requests in the wrong shape.
-    const milestone = await this.epicService.nextPending(session.id);
 
     return this.dispatchRun({
       session: { ...session, engine, model: models.coder },
@@ -314,9 +336,15 @@ export class BuilderBuildService {
       plannerModel?: string;
       verifierModel?: string;
     } = {},
-    size: BuilderBuildSize = BuilderBuildSize.MEDIUM,
+    sizing: BuilderSizing = {
+      size: BuilderBuildSize.MEDIUM,
+      requirementCount: 0,
+      repoCount: 0,
+      technicalPlanLength: 0,
+    },
   ): BuilderResolvedModels {
     const config = this.configService.builder;
+    const { size } = sizing;
     const profile = BUILDER_SIZE_PROFILES[size];
 
     const coder =
@@ -328,14 +356,37 @@ export class BuilderBuildService {
     const plannerTier =
       settings.plannerModel ?? config.plannerModel ?? config.coderModel;
 
+    const planner =
+      overrides.plannerModel ??
+      (profile.plannerTier === 'coder' ? coder : plannerTier);
+
     return {
       // An explicit override always wins — an admin who picked a planner meant
       // it. Otherwise a small build plans on the coder tier: Opus earns its
       // price on cross-repo contracts, not on two routes and a checkbox.
-      planner:
-        overrides.plannerModel ??
-        (profile.plannerTier === 'coder' ? coder : plannerTier),
+      planner,
       coder,
+      // Tier names resolved to the models this session actually runs. The
+      // ladder is escalation only: entry 0 is always the tier the build would
+      // have used anyway, so no first attempt gets weaker than it was before
+      // this existed. `mechanical` is reachable from the profile type but no
+      // profile uses it yet — lowering a starting tier waits on the
+      // first-attempt pass rates we only began recording with runs.size.
+      //
+      // The `planner` rung deliberately reads `plannerTier` — the configured
+      // strong model — and NOT the resolved `planner` above. On a small build
+      // those differ: `planner` has been downgraded to the coder tier, because
+      // Opus does not earn its price *planning* two routes and a checkbox.
+      // That says nothing about coding. A small build that has failed the gate
+      // twice is exactly where the stronger coder is worth paying for, and
+      // reading the downgraded value here would have collapsed the whole
+      // ladder to one tier on every small build — an escalation ladder that
+      // escalates nowhere.
+      coderLadder: profile.coderLadder.map((tier) => {
+        if (tier === 'planner') return overrides.plannerModel ?? plannerTier;
+        if (tier === 'mechanical') return config.mechanicalModel;
+        return coder;
+      }),
       verifier:
         overrides.verifierModel ??
         settings.verifierModel ??
@@ -343,6 +394,9 @@ export class BuilderBuildService {
       // Read by run-engine.sh out of the same `models` input, because
       // workflow_dispatch caps at 10 and the workflow already sits at 9.
       size,
+      requirementCount: sizing.requirementCount,
+      repoCount: sizing.repoCount,
+      technicalPlanLength: sizing.technicalPlanLength,
       effort: profile.effort,
       plannerMaxTurns: profile.maxTurns,
       planWords: profile.planWords,
@@ -356,31 +410,80 @@ export class BuilderBuildService {
    * Failure is not fatal and lands on MEDIUM: an unreadable PRD is a reason to
    * spend the default, not a reason to refuse a build.
    */
+  /**
+   * What is about to be built, sized.
+   *
+   * `milestone` is what makes this honest for epics. Sizing used to read the
+   * whole session and force LARGE the moment any milestone existed, so every
+   * slice of an epic ran on the most expensive profile there is — Opus
+   * planning, high effort, sixty turns, a $41 ceiling — including a slice that
+   * touches two files.
+   *
+   * The reasoning behind that rule was "it was decomposed precisely because it
+   * was too big to hold at once". That is true of the PRD and false of each
+   * slice: decomposition is the thing that makes the pieces tractable, so
+   * treating the existence of a split as evidence of bigness spends as if the
+   * split had never happened. A milestone carries its own requirement set and
+   * its own technical notes, which is exactly what the classifier wants.
+   *
+   * `isEpic` therefore applies only when sizing a whole PRD with no milestone
+   * in hand — the pre-split case, where the signal still means what it said.
+   */
   private async classifySession(
     session: BuilderSession,
-  ): Promise<BuilderBuildSize> {
+    milestone?: {
+      requirementIds?: string[] | null;
+      technicalNotesMd?: string | null;
+    } | null,
+  ): Promise<BuilderSizing> {
     try {
       const doc = await this.prdService.getOrCreateDoc(
         session.id,
         session.createdBy,
       );
       const draft = (doc?.draft ?? {}) as Record<string, any>;
+
+      if (milestone) {
+        // A milestone with no requirements recorded is not evidence of a small
+        // milestone, only of a thin decomposition — fall through to the PRD's
+        // own requirement count rather than sizing it as trivial.
+        const ownRequirements = milestone.requirementIds?.length ?? 0;
+        const features = {
+          requirementCount:
+            ownRequirements ||
+            (Array.isArray(draft.requirements) ? draft.requirements.length : 0),
+          repoCount: (session.repos ?? []).length,
+          technicalPlanLength:
+            (milestone.technicalNotesMd ?? '').length ||
+            prdTechnicalPlanLength(draft),
+        };
+        return { size: classifyBuildSize(features), ...features };
+      }
+
       const milestones = await this.epicService.listBySession(session.id);
-      return classifyBuildSize({
+      const features = {
         requirementCount: Array.isArray(draft.requirements)
           ? draft.requirements.length
           : 0,
         repoCount: (session.repos ?? []).length,
         technicalPlanLength: prdTechnicalPlanLength(draft),
-        isEpic: milestones.length > 0,
-      });
+      };
+      return {
+        size: classifyBuildSize({ ...features, isEpic: milestones.length > 0 }),
+        ...features,
+      };
     } catch (error) {
       this.logger.warn(
         `Could not size the PRD for session ${session.id}; planning at the default tier: ${
           (error as Error).message
         }`,
       );
-      return BuilderBuildSize.MEDIUM;
+      return {
+        size: BuilderBuildSize.MEDIUM,
+        requirementCount: 0,
+        repoCount: (session.repos ?? []).length,
+        technicalPlanLength: 0,
+      };
     }
   }
 
@@ -603,6 +706,13 @@ export class BuilderBuildService {
         plannerModel: models.planner,
         verifierModel: models.verifier,
         size: models.size,
+        // Frozen with the run, not re-derived later: the PRD keeps changing,
+        // and a policy trained on today's draft would be learning from
+        // features this decision was never conditioned on.
+        requirementCount: models.requirementCount,
+        repoCount: models.repoCount,
+        technicalPlanLength: models.technicalPlanLength,
+        effort: models.effort,
         // A milestone pushes to its own branch family (`<slug>-m2`), so the
         // slices stay separately reviewable rather than piling into one branch.
         branchSlug: params.branchSlugOverride ?? session.slug,
@@ -1361,6 +1471,10 @@ export class BuilderBuildService {
         numTurns?: number | null;
       }
     > = { ...((current.cost?.phases as Record<string, any>) ?? {}) };
+
+    // The arm, for the model-selection dataset. Byproduct of a report that
+    // already happens, and never able to fail the run that produced it.
+    await this.attemptService.recordArm(run, cost.phase ?? '', cost);
 
     const usd = Number(cost.totalCostUsd ?? 0);
     // A count of zero is real; a missing one is not. `?? null` rather than a

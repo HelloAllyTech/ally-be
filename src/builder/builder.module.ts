@@ -27,6 +27,7 @@ import { BuilderReport } from './entity/builder-report.entity';
 import { BuilderSettings } from './entity/builder-settings.entity';
 import { BuilderNotification } from './entity/builder-notification.entity';
 import { BuilderSteer } from './entity/builder-steer.entity';
+import { BuilderAttempt } from './entity/builder-attempt.entity';
 import { BuilderController } from './controller/builder.controller';
 import { BuilderPipelineController } from './controller/builder-pipeline.controller';
 import { BuilderGateway } from './gateway/builder.gateway';
@@ -52,6 +53,7 @@ import { BuilderEpicService } from './service/builder-epic.service';
 import { BuilderResearchService } from './service/builder-research.service';
 import { BuilderNotificationService } from './service/builder-notification.service';
 import { BuilderSteerService } from './service/builder-steer.service';
+import { BuilderAttemptService } from './service/builder-attempt.service';
 import { BuilderSchedulerRegistrationService } from './service/builder-scheduler-registration.service';
 import { BuilderSessionRepository } from './repository/builder-session.repository';
 import { BuilderMessageRepository } from './repository/builder-message.repository';
@@ -73,6 +75,7 @@ import {
   BuilderQuestionRepository,
   BuilderReportRepository,
   BuilderSteerRepository,
+  BuilderAttemptRepository,
 } from './repository/builder-build.repository';
 
 /**
@@ -112,6 +115,7 @@ import {
       BuilderSettings,
       BuilderNotification,
       BuilderSteer,
+      BuilderAttempt,
     ]),
     PromptModule,
     LlmUsageModule,
@@ -161,6 +165,7 @@ import {
     BuilderResearchService,
     BuilderNotificationService,
     BuilderSteerService,
+    BuilderAttemptService,
     BuilderSchedulerRegistrationService,
     BuilderSessionRepository,
     BuilderMessageRepository,
@@ -177,6 +182,7 @@ import {
     BuilderReportRepository,
     BuilderNotificationRepository,
     BuilderSteerRepository,
+    BuilderAttemptRepository,
   ],
   exports: [BuilderSessionService, BuilderKnowledgeService],
 })
