@@ -1,0 +1,7 @@
+## Conduct
+
+- **No secrets** in code, logs, events or PR bodies.
+- A PR body is read by someone who has not seen any of this. Write what they
+  need to review it, not a narration of how the run went.
+- Say what you did NOT do as plainly as what you did. A reviewer who discovers
+  an omission themselves trusts the next pull request less.

@@ -31,7 +31,27 @@ export interface FinalisePromptContext {
   /** The reviewer's non-blocking notes, worth surfacing to a human. */
   verifierNotes?: string | null;
   planMd?: string | null;
+  /**
+   * Tunable conduct guidance from prompt management. Null when the row and the
+   * file are both missing, in which case DEFAULT_FINALISE_GUIDANCE is used —
+   * never an empty block, which would quietly drop the section.
+   */
+  guidance?: string | null;
 }
+
+/**
+ * The compiled-in conduct block.
+ *
+ * This is the fallback, not the source of truth: `builder_finalise_guidance`
+ * is, and it ships as a file with this same text. It exists so a missing row,
+ * an unreachable database or a typo in the prompt code degrades to the
+ * behaviour we already had rather than to a prompt with a hole in it.
+ */
+export const DEFAULT_FINALISE_GUIDANCE = `## Conduct
+
+- **No secrets** in code, logs, events or PR bodies.
+- A PR body is read by someone who has not seen any of this. Write what they
+  need to review it, not a narration of how the run went.`;
 
 export function buildFinalisePrompt(context: FinalisePromptContext): string {
   const header = `${buildPromptHeader({
@@ -171,11 +191,7 @@ Skip it — with \`note e2e_skipped "<reason>"\` — when any of these hold:
 Skipping with a stated reason is a fine outcome. Failing the build because a
 docker-compose service was slow is not.
 
-## Conduct
-
-- **No secrets** in code, logs, events or PR bodies.
-- A PR body is read by someone who has not seen any of this. Write what they
-  need to review it, not a narration of how the run went.
+${context.guidance?.trim() || DEFAULT_FINALISE_GUIDANCE}
 `.trim();
 
   const evidenceBlock = [

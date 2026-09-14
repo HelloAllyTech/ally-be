@@ -227,6 +227,21 @@ export const BUILDER_AI_TASKS = {
 export const BUILDER_PROMPT_DIR = 'builder';
 export const BUILDER_PROMPTS = {
   INTERVIEWER_SYSTEM: 'builder_interviewer_system',
+  /**
+   * Per-phase guidance blocks, editable from prompt management.
+   *
+   * Only the JUDGEMENT half of a phase prompt lives here — what a good PR body
+   * owes its reviewer, when to pause, how much scope is too much. The protocol
+   * (stage names, the note/ask/complete curl contract, "do not push") stays
+   * compiled in, because it is a contract with run-engine.sh and a bad edit
+   * there breaks the run rather than degrading it.
+   *
+   * Every one of these has a compiled-in default at its call site. A lookup
+   * that returns null must fall back to that default and never to an empty
+   * string: a silently shorter prompt is the failure nobody notices.
+   */
+  CODER_GUIDANCE: 'builder_coder_guidance',
+  FINALISE_GUIDANCE: 'builder_finalise_guidance',
 } as const;
 
 /* ── Model tiering ──────────────────────────────────────────────────────── */

@@ -33,12 +33,14 @@ import { buildBuildPrompt } from '../constants/builder-build-prompt';
 import { buildPlanPrompt } from '../constants/builder-plan-prompt';
 import { buildRemediatePrompt } from '../constants/builder-remediate-prompt';
 import { buildFinalisePrompt } from '../constants/builder-finalise-prompt';
+import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { buildVerifyPrompt } from '../constants/builder-verify-prompt';
 import { buildFixPrompt } from '../constants/builder-fix-prompt';
 import {
   BUILDER_EVENT_BATCH_MAX,
   BUILDER_LESSONS_IN_CONTEXT,
   BUILDER_MAX_CODE_ITERATIONS,
+  BUILDER_PROMPTS,
   BUILDER_SIZE_PROFILES,
   classifyBuildSize,
   prdTechnicalPlanLength,
@@ -85,6 +87,7 @@ export class BuilderPipelineController {
 
   constructor(
     private readonly configService: AppConfigService,
+    private readonly promptSharedService: PromptSharedService,
     private readonly buildService: BuilderBuildService,
     private readonly eventService: BuilderEventService,
     private readonly questionService: BuilderQuestionService,
@@ -402,7 +405,29 @@ export class BuilderPipelineController {
       gateSummary: phase.gateSummary,
       verifierNotes: phase.verifierNotes,
       planMd: phase.planMd,
+      guidance: await this.guidance(BUILDER_PROMPTS.FINALISE_GUIDANCE),
     });
+  }
+
+  /**
+   * A tunable guidance block, or null to let the caller's compiled default win.
+   *
+   * Swallows its own failure deliberately. A prompt-management outage must not
+   * fail a build that is already an hour in and has a working tree to push —
+   * the run continues on the text it shipped with, which is the same text the
+   * row holds until someone edits it.
+   */
+  private async guidance(promptCode: string): Promise<string | null> {
+    try {
+      return await this.promptSharedService.getPromptByCode(promptCode);
+    } catch (error) {
+      this.logger.warn(
+        `Could not load guidance "${promptCode}", using the compiled default: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
   }
 
   @Get('runs/:runId/verify-prompt')

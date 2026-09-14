@@ -399,4 +399,52 @@ describe('the verify prompt', () => {
     const prompt = buildVerifyPrompt({ prd, repos, round: 1 });
     expect(flat(prompt)).not.toContain('This is round');
   });
+
+  /**
+   * The guidance seam, and specifically its fallback.
+   *
+   * Six of Builder's seven prompts are compiled in, so tuning the coder means
+   * a deploy. Moving the JUDGEMENT half into prompt management fixes that —
+   * but it introduces a failure nobody would notice: a lookup that returns
+   * null is not an error, and a prompt with a silently missing Conduct section
+   * still runs, still opens pull requests, and is simply worse. So the null
+   * case is pinned harder than the happy one.
+   */
+  describe('tunable guidance', () => {
+    const finalise = (guidance?: string | null) =>
+      flat(
+        buildFinalisePrompt({
+          sessionId: 's1',
+          runId: 'r1',
+          branchSlug: 'slug',
+          prd,
+          repos: BUILDER_REPOS.slice(0, 1),
+          apiBaseUrl: 'https://api.example',
+          sessionUrl: 'https://admin.example/builder/s1',
+          guidance,
+        }),
+      );
+
+    it('uses the tunable block when prompt management supplies one', () => {
+      expect(finalise('## Conduct\n\n- Say less.')).toContain('Say less.');
+    });
+
+    it('falls back to the compiled default when the lookup returns null', () => {
+      const prompt = finalise(null);
+      expect(prompt).toContain('No secrets');
+      expect(prompt).toContain('Conduct');
+    });
+
+    it('falls back when the row exists but is empty, not just when it is missing', () => {
+      // An emptied row is the likelier accident of the two — somebody clears
+      // the textarea — and it must not strip the section either.
+      expect(finalise('   ')).toContain('No secrets');
+    });
+
+    it('never emits a prompt with an empty conduct section', () => {
+      for (const value of [null, undefined, '', '  \n  ']) {
+        expect(finalise(value as any)).toContain('No secrets');
+      }
+    });
+  });
 });
