@@ -69,4 +69,11 @@ export enum BugHuntEventStage {
    * like the finder having missed something.
    */
   RECURRENCE_SUPPRESSED = 'recurrence_suppressed',
+  /**
+   * A finder-error dismissal was overturned: a later finding under the same
+   * dedupe key shipped, proving the original dismissal wrong. Written on the
+   * dismissed row so its drawer shows when and by which finding it was
+   * reversed, not just an aggregate rate on the scorecard.
+   */
+  REVERSED = 'reversed',
 }

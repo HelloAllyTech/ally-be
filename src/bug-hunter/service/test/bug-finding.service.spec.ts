@@ -507,13 +507,19 @@ describe('BugFindingService.setStatus — releasing the reporter’s roadmap car
       id: 'finding-1',
       status: BugFindingStatus.MERGED,
       reportedBugId: 'opportunity-1',
+      dedupeKey: 'dedupe-1',
       ...over,
     });
 
   let service: BugFindingService;
-  let repo: { findOne: jest.Mock; update: jest.Mock };
+  let repo: {
+    findOne: jest.Mock;
+    update: jest.Mock;
+    findReversibleFinderErrors: jest.Mock;
+  };
   let notifications: { notify: jest.Mock; wasRaisedSince: jest.Mock };
   let roadmap: { findOne: jest.Mock; update: jest.Mock };
+  let hunterService: { appendFindingEvent: jest.Mock };
 
   const build = () => {
     service = new BugFindingService(
@@ -521,7 +527,7 @@ describe('BugFindingService.setStatus — releasing the reporter’s roadmap car
       notifications as unknown as BugHunterNotificationService,
       roadmap as unknown as Repository<RoadmapOpportunity>,
       userRepository(),
-      bugHunterService(),
+      hunterService as unknown as BugHunterService,
     );
   };
 
@@ -529,6 +535,7 @@ describe('BugFindingService.setStatus — releasing the reporter’s roadmap car
     repo = {
       findOne: jest.fn().mockResolvedValue(merged()),
       update: jest.fn().mockResolvedValue(undefined),
+      findReversibleFinderErrors: jest.fn().mockResolvedValue([]),
     };
     notifications = {
       notify: jest.fn().mockResolvedValue(undefined),
@@ -540,6 +547,9 @@ describe('BugFindingService.setStatus — releasing the reporter’s roadmap car
         stage: RoadmapOpportunityStage.NEW,
       }),
       update: jest.fn().mockResolvedValue(undefined),
+    };
+    hunterService = {
+      appendFindingEvent: jest.fn().mockResolvedValue(undefined),
     };
     build();
   });
@@ -611,6 +621,64 @@ describe('BugFindingService.setStatus — releasing the reporter’s roadmap car
     expect(repo.update).toHaveBeenCalledWith('finding-1', {
       status: BugFindingStatus.MERGED,
     });
+  });
+
+  it('checks for reversible finder errors when a finding merges', async () => {
+    repo.findOne
+      .mockResolvedValueOnce(merged({ status: BugFindingStatus.PR_OPENED }))
+      .mockResolvedValueOnce(merged());
+
+    await service.setStatus('finding-1', { status: BugFindingStatus.MERGED });
+
+    expect(repo.findReversibleFinderErrors).toHaveBeenCalledWith(
+      REPO,
+      'dedupe-1',
+      'finding-1',
+      expect.any(Date),
+    );
+  });
+
+  it('reverses a previously dismissed duplicate when the original bug ships', async () => {
+    repo.findOne
+      .mockResolvedValueOnce(merged({ status: BugFindingStatus.PR_OPENED }))
+      .mockResolvedValueOnce(merged());
+    const dismissed = row({
+      id: 'dismissed-1',
+      status: BugFindingStatus.DISMISSED,
+      decisionReason: 'duplicate' as BugFinding['decisionReason'],
+    });
+    repo.findReversibleFinderErrors.mockResolvedValue([dismissed]);
+
+    await service.setStatus('finding-1', { status: BugFindingStatus.MERGED });
+
+    expect(repo.update).toHaveBeenCalledWith(['dismissed-1'], {
+      reversedAt: expect.any(Date),
+      reversedByFindingId: 'finding-1',
+    });
+    expect(hunterService.appendFindingEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        findingId: 'dismissed-1',
+        stage: BugHuntEventStage.REVERSED,
+      }),
+    );
+  });
+
+  it('does not re-check for reversals on a patch to an already-merged finding', async () => {
+    repo.findOne.mockResolvedValue(merged());
+
+    await service.setStatus('finding-1', {
+      decisionNote: 'unrelated follow-up note',
+    } as never);
+
+    expect(repo.findReversibleFinderErrors).not.toHaveBeenCalled();
+  });
+
+  it('does not re-check for reversals when a MERGED finding is patched to MERGED again', async () => {
+    repo.findOne.mockResolvedValue(merged());
+
+    await service.setStatus('finding-1', { status: BugFindingStatus.MERGED });
+
+    expect(repo.findReversibleFinderErrors).not.toHaveBeenCalled();
   });
 });
 

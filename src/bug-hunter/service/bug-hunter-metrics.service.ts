@@ -46,6 +46,14 @@ export interface FindingFunnel {
   lowConfidence: number;
   /** Findings carrying no verifier score at all — proven ones, plus rows predating scoring. */
   unscored: number;
+  /** Finder-error dismissals later proven wrong by a same-dedupe-key finding shipping — see `reversed_at`. */
+  reversed: number;
+  /**
+   * `reversed / finderErrors` — the correction to the raw error rate. Null
+   * when nothing was ever dismissed as a finder error: 0/0 is not "0%
+   * reversed", it is "nothing to reverse yet".
+   */
+  reversalRate: number | null;
 }
 
 /** Why declines happened, counted. The improvement backlog's own input. */
@@ -223,6 +231,8 @@ const emptyFunnel = (key: string | null): FindingFunnel => ({
   accuracy: null,
   lowConfidence: 0,
   unscored: 0,
+  reversed: 0,
+  reversalRate: null,
 });
 
 /**
@@ -253,6 +263,7 @@ const applyRow = (funnel: FindingFunnel, row: FindingOutcomeCount): void => {
   funnel.filed += count;
   funnel.lowConfidence += Number(row.lowConfidence ?? 0);
   funnel.unscored += Number(row.unscored ?? 0);
+  funnel.reversed += Number(row.reversed ?? 0);
 
   switch (row.status) {
     case BugFindingStatus.DISMISSED:
@@ -321,6 +332,8 @@ const finalise = (funnel: FindingFunnel): FindingFunnel => {
     funnel.dismissed + funnel.rejected - funnel.reasonNotRecorded;
   const judged = Math.max(0, declinedWithReason) + funnel.approved;
   funnel.accuracy = judged === 0 ? null : 1 - funnel.finderErrors / judged;
+  funnel.reversalRate =
+    funnel.finderErrors === 0 ? null : funnel.reversed / funnel.finderErrors;
   return funnel;
 };
 

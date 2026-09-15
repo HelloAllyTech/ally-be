@@ -18,6 +18,7 @@ import {
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import { BugHunterService } from './bug-hunter.service';
 import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
+import { checkForAndRecordReversals } from '../util/check-for-reversals.util';
 import { effectiveStage } from '../util/bug-finding-stage.util';
 import {
   fixDidNotHold,
@@ -898,6 +899,22 @@ export class BugFindingService {
         this.roadmapOpportunityRepository,
         after,
         this.logger,
+      );
+    }
+    // Only on the transition into MERGED/RELEASED, not every subsequent patch
+    // to an already-merged finding — otherwise a metadata/verifierVotes patch
+    // re-runs the repo+dedupeKey scan on every hit to this endpoint.
+    if (
+      (patch.status === BugFindingStatus.MERGED ||
+        patch.status === BugFindingStatus.RELEASED) &&
+      before.status !== patch.status
+    ) {
+      await checkForAndRecordReversals(
+        this.findingRepository,
+        this.bugHunterService,
+        after,
+        this.logger,
+        after.releasedAt ?? after.updatedAt ?? new Date(),
       );
     }
 

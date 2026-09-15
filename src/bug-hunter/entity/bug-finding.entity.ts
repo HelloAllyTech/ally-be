@@ -313,4 +313,20 @@ export class BugFinding extends BaseWithoutTenantEntity {
    */
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any> | null;
+
+  // ── reversal tracking (migration 1970200000000) ──────────────────────────
+
+  /**
+   * Set when this finding was dismissed as a finder error (`decision_reason`
+   * in `not_a_bug` / `wrong_repo` / `duplicate`) but a later finding with the
+   * same `repo` + `dedupe_key` actually shipped — see
+   * `checkForAndRecordReversals`. Null on every finding that was never
+   * dismissed, or was dismissed and never contradicted.
+   */
+  @Column({ name: 'reversed_at', type: 'timestamp', nullable: true })
+  reversedAt?: Date | null;
+
+  /** The finding that proved this dismissal wrong by shipping. No FK, per this table's convention for self-references (see `parentFindingId`). */
+  @Column({ name: 'reversed_by_finding_id', type: 'uuid', nullable: true })
+  reversedByFindingId?: string | null;
 }

@@ -69,6 +69,13 @@ export interface FindingOutcomeCount {
   lowConfidence: number;
   /** Findings carrying no confidence at all — proven ones, and rows predating verifier scoring. */
   unscored: number;
+  /**
+   * Findings in this cell whose dismissal was later proven wrong — see
+   * `reversed_at`. Windowed on `createdAt` like every other field here, so it
+   * shares a cohort with `count` (which feeds the rate's denominator) — see
+   * `outcomeCounts`'s doc for why that matters, and for the lag it implies.
+   */
+  reversed: number;
   count: number;
 }
 
@@ -334,6 +341,45 @@ export class BugFindingRepository extends Repository<BugFinding> {
   }
 
   /**
+   * Declined findings for this exact bug (`repo` + `dedupeKey`) whose decline
+   * was a finder error and that have not already been marked reversed — the
+   * candidates `checkForAndRecordReversals` flips to reversed once a
+   * same-dedupe-key finding actually ships.
+   *
+   * `excludeFindingId` keeps the just-shipped finding itself out of its own
+   * result set — relevant when a finding was previously declined, reopened,
+   * and then shipped under the same row.
+   *
+   * `shippedAt` guards against retroactively reversing a dismissal that was
+   * actually correct at the time it was made: a regression row can be filed
+   * under the same `dedupeKey` *after* the original bug already shipped (see
+   * `persistFindings`, which opens a new row when a match has already
+   * shipped), and an admin declining that regression as a `duplicate` of the
+   * already-fixed bug is a correct call, not a finder error to reverse later.
+   * Only declines that predate the ship count.
+   */
+  findReversibleFinderErrors(
+    repo: string,
+    dedupeKey: string,
+    excludeFindingId: string,
+    shippedAt: Date,
+  ): Promise<BugFinding[]> {
+    return this.createQueryBuilder('f')
+      .where('f.repo = :repo', { repo })
+      .andWhere('f.dedupeKey = :dedupeKey', { dedupeKey })
+      .andWhere('f.status IN (:...statuses)', { statuses: DECLINED_STATUSES })
+      .andWhere('f.decision_reason IN (:...reasons)', {
+        reasons: BUG_FINDING_FINDER_ERROR_REASONS,
+      })
+      .andWhere('f.reversedAt IS NULL')
+      .andWhere('f.id != :excludeFindingId', { excludeFindingId })
+      .andWhere('COALESCE(f.decidedAt, f."updatedAt") < :shippedAt', {
+        shippedAt,
+      })
+      .getMany();
+  }
+
+  /**
    * Recent declines for one repo where the FINDER was judged wrong, newest
    * first — the sweep prompt's "known non-bugs" block.
    *
@@ -510,20 +556,46 @@ export class BugFindingRepository extends Repository<BugFinding> {
         .addSelect('f.repo', 'repo')
         .addSelect('f.status', 'status')
         .addSelect('f.decision_reason', 'decisionReason')
-        .addSelect('COUNT(*)::int', 'count')
+        .addSelect(
+          'COUNT(*) FILTER (WHERE f."createdAt" >= :since)::int',
+          'count',
+        )
         // `metadata->>'confidence'` is text; NULLIF guards a stored empty string
         // and the ::numeric cast is safe only because the writer is our own
         // PATCH handler, which validates it as a number first.
         .addSelect(
           `COUNT(*) FILTER (
-           WHERE NULLIF(f.metadata->>'confidence', '') IS NOT NULL
+           WHERE f."createdAt" >= :since
+             AND NULLIF(f.metadata->>'confidence', '') IS NOT NULL
              AND (f.metadata->>'confidence')::numeric < :threshold
          )::int`,
           'lowConfidence',
         )
         .addSelect(
-          `COUNT(*) FILTER (WHERE NULLIF(f.metadata->>'confidence', '') IS NULL)::int`,
+          `COUNT(*) FILTER (WHERE f."createdAt" >= :since AND NULLIF(f.metadata->>'confidence', '') IS NULL)::int`,
           'unscored',
+        )
+        // Windowed on `createdAt` like every other count here, and that is the
+        // point: `reversed` is the numerator of `reversalRate`, whose
+        // denominator (`finderErrors`) is derived from `count`. Both have to
+        // range over the SAME population or the rate is a ratio of two
+        // different cohorts — it can exceed 100% (reversals from rows whose
+        // `createdAt` has aged out of the denominator) or read "—" while
+        // reversals plainly exist (denominator empty, numerator not). So this
+        // asks "of the findings filed in this window, how many finder-error
+        // declines have since been proven wrong", over one cohort.
+        //
+        // The cost is lag, and it is honest lag: the decline suppression
+        // window (`BUG_FINDING_DECLINE_SUPPRESSION_MS`, 30 days) means a
+        // same-dedupe finding cannot ship — and so cannot reverse the
+        // decline — until more than 30 days after it, so a reversal only ever
+        // shows up in a report window wide enough to contain both ends. Read
+        // the reversal rate over 90 days or more; a 30-day window will
+        // legitimately show none, because none of that cohort's declines could
+        // have been reversed yet.
+        .addSelect(
+          `COUNT(*) FILTER (WHERE f."createdAt" >= :since AND f.reversed_at IS NOT NULL)::int`,
+          'reversed',
         )
         // Child steps excluded for the same reason the table hides them: a
         // coordinated three-repo fix is ONE bug, and counting its steps would

@@ -1247,6 +1247,21 @@ export class BugHunterFunnelDto {
 
   @ApiProperty()
   unscored!: number;
+
+  @ApiProperty({
+    description:
+      'Finder-error dismissals later proven wrong by a same-dedupe-key finding shipping.',
+  })
+  reversed!: number;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'reversed / finderErrors — a correction to the raw error rate: a reversal means a finding ' +
+      'was incorrectly dismissed by an admin and later shipped under a duplicate report. Null when ' +
+      'nothing has ever been dismissed as a finder error.',
+  })
+  reversalRate!: number | null;
 }
 
 export class BugHunterDeclineDto {
