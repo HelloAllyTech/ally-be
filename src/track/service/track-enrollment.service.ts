@@ -24,8 +24,11 @@ import { TrackQuizAttemptRepository } from '../repository/track-quiz-attempt.rep
 import { TrackAnnotationAttemptRepository } from '../repository/track-annotation-attempt.repository';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import {
+  AnsweredArticleQuestion,
   ArticleContent,
+  ArticleQuestion,
   JournalContent,
+  parseArticleQuestionMarkers,
   TrackItemType,
   TrackStatus,
   VideoContent,
@@ -508,11 +511,19 @@ export class TrackEnrollmentService {
           });
         }
         const article = item.content as ArticleContent;
+        const questions = articleQuestionsInReadingOrder(article);
+        const answered = progress.meta?.answeredArticleQuestions ?? {};
         return {
           type: item.type,
           trackItemProgressId: progress.id,
           html: article.html,
           minReadSeconds: item.completionCriteria?.minReadSeconds ?? 0,
+          questions: questions.map((question) =>
+            buildArticleQuestionView(question, answered[question.id]),
+          ),
+          answeredQuestionCount: questions.filter(
+            (question) => answered[question.id],
+          ).length,
         };
       }
 
@@ -576,6 +587,20 @@ export class TrackEnrollmentService {
     const { item, progress } = await this.getPermittedItemProgress(trackItemId);
     if (item.type !== TrackItemType.ARTICLE) {
       throw new BadRequestException('This component is not an article');
+    }
+    /**
+     * Inline questions are the point of the article that carries them: a
+     * mark-as-read button that completed the item regardless would let a
+     * learner scroll past every one of them and still progress, which is
+     * exactly the shortcut the questions exist to close.
+     */
+    const unanswered = unansweredArticleQuestionCount(item, progress);
+    if (unanswered > 0) {
+      throw new BadRequestException(
+        unanswered === 1
+          ? 'Answer the question in this article before continuing.'
+          : `Answer the ${unanswered} questions in this article before continuing.`,
+      );
     }
     const minReadSeconds = item.completionCriteria?.minReadSeconds ?? 0;
     if (minReadSeconds > 0 && progress.meta?.articleFirstOpenedAt) {
@@ -669,6 +694,105 @@ export class TrackEnrollmentService {
     });
 
     return { correct: grading.correct, grading };
+  }
+
+  /**
+   * Answer one inline article question. Graded on the spot against the key the
+   * learner never receives, recorded on the progress row, and — unlike a video
+   * interjection — counted towards completing the item: an article whose
+   * questions have all been answered is finished, provided any `minReadSeconds`
+   * dwell rule has also been met.
+   *
+   * The answer is final. Returning the correct option alongside the verdict is
+   * what lets the player show *which* answer was right rather than only that
+   * the learner was wrong, and it is safe precisely because the question can
+   * never be answered again.
+   */
+  async submitArticleQuestionAnswer(
+    trackItemId: string,
+    questionId: string,
+    selectedOptionId: string,
+  ) {
+    const { item, progress } = await this.getPermittedItemProgress(trackItemId);
+    if (item.type !== TrackItemType.ARTICLE) {
+      throw new BadRequestException('This component is not an article');
+    }
+
+    const article = item.content as ArticleContent;
+    const questions = articleQuestionsInReadingOrder(article);
+    const question = questions.find((candidate) => candidate.id === questionId);
+    if (!question) {
+      throw new NotFoundException('Question not found');
+    }
+
+    const answeredSoFar = progress.meta?.answeredArticleQuestions ?? {};
+    if (answeredSoFar[questionId]) {
+      throw new BadRequestException('You have already answered this question.');
+    }
+
+    if (!question.options.some((option) => option.id === selectedOptionId)) {
+      throw new BadRequestException('Choose one of the given options.');
+    }
+
+    const grading = autogradeQuestion(question, {
+      questionId,
+      selectedOptionIds: [selectedOptionId],
+    });
+    const record: AnsweredArticleQuestion = {
+      selectedOptionId,
+      correct: !!grading.correct,
+      answeredAt: new Date().toISOString(),
+    };
+    const answered = { ...answeredSoFar, [questionId]: record };
+    await this.trackItemProgressRepository.update(progress.id, {
+      meta: { ...(progress.meta ?? {}), answeredArticleQuestions: answered },
+    });
+
+    const answeredQuestionCount = questions.filter(
+      (candidate) => answered[candidate.id],
+    ).length;
+    const allAnswered = answeredQuestionCount === questions.length;
+
+    /**
+     * Both gates still apply. An author who set a dwell time on an article
+     * meant the reading to take that long, and answering the last question
+     * early does not make that untrue — the learner finishes with the
+     * mark-as-read button once the clock is satisfied, which by then is the
+     * only thing left holding them.
+     */
+    const completion =
+      allAnswered &&
+      progress.status !== SessionItemStatus.COMPLETED &&
+      this.hasMetArticleDwellTime(item, progress)
+        ? await this.trackProgressService.completeItem(progress.id, {
+            meta: {
+              answeredArticleQuestions: answered,
+              articleReadAt: new Date().toISOString(),
+            },
+          })
+        : null;
+
+    return {
+      correct: record.correct,
+      selectedOptionId,
+      correctOptionId: question.correctOptionIds[0],
+      explanation: question.explanation ?? null,
+      answeredQuestionCount,
+      totalQuestionCount: questions.length,
+      completion,
+    };
+  }
+
+  /** Whether an article's `minReadSeconds` rule (if any) is already satisfied. */
+  private hasMetArticleDwellTime(
+    item: TrackItem,
+    progress: TrackItemProgress,
+  ): boolean {
+    const minReadSeconds = item.completionCriteria?.minReadSeconds ?? 0;
+    if (minReadSeconds <= 0) return true;
+    const openedAt = progress.meta?.articleFirstOpenedAt;
+    if (!openedAt) return true;
+    return (Date.now() - new Date(openedAt).getTime()) / 1000 >= minReadSeconds;
   }
 
   /** First non-completed unlocked item — the "continue" pointer. */
@@ -830,6 +954,12 @@ export class TrackEnrollmentService {
           interjectionCount: video?.interjections?.length ?? 0,
         };
       }
+      case TrackItemType.ARTICLE: {
+        const article = item.content as ArticleContent | undefined;
+        // Count only, like the quiz's — enough for the card to say the
+        // article has questions in it, with nothing about what they ask.
+        return { questionCount: article?.questions?.length ?? 0 };
+      }
       case TrackItemType.JOURNAL: {
         const journal = item.content as JournalContent | undefined;
         return { promptCount: journal?.prompts?.length ?? 0 };
@@ -915,4 +1045,66 @@ export class TrackEnrollmentService {
     }
     return Number(userIdStr);
   }
+}
+
+/**
+ * How many of an article's inline questions the learner still owes an answer
+ * for. Zero for an article that carries none, which is what keeps the
+ * mark-as-read path unchanged for every article authored before this existed.
+ */
+function unansweredArticleQuestionCount(
+  item: TrackItem,
+  progress: TrackItemProgress,
+): number {
+  if (item.type !== TrackItemType.ARTICLE) return 0;
+  const article = item.content as ArticleContent | undefined;
+  if (!article) return 0;
+  const questions = articleQuestionsInReadingOrder(article);
+  if (!questions.length) return 0;
+  const answered = progress.meta?.answeredArticleQuestions ?? {};
+  return questions.filter((question) => !answered[question.id]).length;
+}
+
+/**
+ * The questions an article actually shows, in the order they are met while
+ * reading — derived from the placeholders in the HTML being served rather
+ * than from `content.questions` alone.
+ *
+ * Authoring validation keeps the two in step, so for the English source this
+ * is just `content.questions` in reading order. It matters for a translated
+ * article: the body HTML passes through the translator, and if a placeholder
+ * did not survive that trip, a question the learner can never see must not go
+ * on holding the article's completion open. Reading the served HTML makes
+ * that failure lose a question instead of stranding the learner behind it.
+ */
+function articleQuestionsInReadingOrder(
+  article: ArticleContent,
+): ArticleQuestion[] {
+  const questions = article.questions ?? [];
+  if (!questions.length) return [];
+  const byId = new Map(questions.map((question) => [question.id, question]));
+  const ordered: ArticleQuestion[] = [];
+  for (const id of parseArticleQuestionMarkers(article.html)) {
+    const question = byId.get(id);
+    if (question && !ordered.includes(question)) ordered.push(question);
+  }
+  return ordered;
+}
+
+/**
+ * One inline question as the learner receives it. Unanswered, it is stripped
+ * of its answer key like any other question bound for a learner; answered, it
+ * carries the verdict back so a reopened article redraws the resolved state
+ * instead of offering a second go at a question that is already spent.
+ */
+function buildArticleQuestionView(
+  question: ArticleQuestion,
+  answered: AnsweredArticleQuestion | undefined,
+) {
+  return {
+    ...sanitizeQuizQuestionForLearner(question),
+    answered: answered ?? null,
+    correctOptionId: answered ? question.correctOptionIds[0] : null,
+    explanation: answered ? (question.explanation ?? null) : null,
+  };
 }

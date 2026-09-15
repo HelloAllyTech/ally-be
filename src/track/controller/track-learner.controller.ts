@@ -28,6 +28,7 @@ import {
   SubmitQuizAttemptDto,
 } from '../dto/submit-quiz-attempt.dto';
 import { SubmitAnnotationAttemptDto } from '../dto/submit-annotation-attempt.dto';
+import { SubmitArticleQuestionAnswerDto } from '../dto/article-question-answer.dto';
 import { SaveJournalDraftsDto } from '../dto/journal-entry.dto';
 import { GameResultDto } from '../dto/game-result.dto';
 import {
@@ -149,6 +150,28 @@ export class TrackLearnerController {
   @Post('tracks/items/:itemId/article-read')
   async markArticleRead(@Param('itemId', ParseUUIDPipe) itemId: string) {
     return this.trackEnrollmentService.markArticleRead(itemId);
+  }
+
+  @ApiOperation({
+    summary: "Answer one of an article's inline questions",
+    description:
+      'Single-shot and final — the question cannot be answered twice. The ' +
+      'response carries the correct option so the reader can be shown which ' +
+      'answer was right, and completes the article once every question has ' +
+      'been answered and any minReadSeconds dwell rule has been met.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_TRACK])
+  @Post('tracks/items/:itemId/article-questions/:questionId/answer')
+  async submitArticleQuestionAnswer(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Param('questionId') questionId: string,
+    @Body() dto: SubmitArticleQuestionAnswerDto,
+  ) {
+    return this.trackEnrollmentService.submitArticleQuestionAnswer(
+      itemId,
+      questionId,
+      dto.selectedOptionId,
+    );
   }
 
   @ApiOperation({

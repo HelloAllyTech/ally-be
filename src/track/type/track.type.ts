@@ -1,5 +1,5 @@
 import { AssignmentStatus } from 'src/common/type/common.type';
-import { QuizQuestion } from './quiz.type';
+import { McqSingleQuestion, QuizQuestion } from './quiz.type';
 
 export enum TrackStatus {
   DRAFT = 'DRAFT',
@@ -60,9 +60,49 @@ export interface TrackTranslations {
   description?: string;
 }
 
+/**
+ * A multiple-choice question embedded in an article's prose. The question
+ * itself lives here, in `ArticleContent.questions`; where it *sits* in the
+ * article is marked in the HTML by an empty
+ * `<div data-ally-question="<id>"></div>` placeholder, the same
+ * separate-the-key-from-the-text idea as `FillBlankQuestion.template`'s
+ * `{{blankId}}` tokens. Keeping the question out of the HTML means the answer
+ * key never passes through the rich-text sanitizer and never reaches the
+ * learner's payload — `sanitizeQuizQuestionForLearner` strips it on the way
+ * out, exactly as it does for a video interjection.
+ *
+ * Restricted to single-select MCQ (see `validateArticleQuestions`): an article
+ * question is a reading check the learner answers in place, so anything that
+ * needs LLM grading or a multi-step widget belongs in a QUIZ component.
+ */
+export type ArticleQuestion = McqSingleQuestion;
+
 export interface ArticleContent {
   html: string;
   imageUrls?: string[];
+  questions?: ArticleQuestion[];
+}
+
+/** Matches the placeholder an article question is anchored to in the HTML. */
+export const ARTICLE_QUESTION_MARKER_ATTR = 'data-ally-question';
+
+/**
+ * Pull the question ids an article's HTML anchors, in reading order. Tolerant
+ * of attribute order and quoting so it survives a round trip through TipTap
+ * and DOMPurify.
+ */
+export function parseArticleQuestionMarkers(html: string): string[] {
+  const pattern = new RegExp(
+    `<div\\b[^>]*\\b${ARTICLE_QUESTION_MARKER_ATTR}\\s*=\\s*["']([^"']+)["'][^>]*>`,
+    'gi',
+  );
+  const ids: string[] = [];
+  let match = pattern.exec(html ?? '');
+  while (match) {
+    ids.push(match[1]);
+    match = pattern.exec(html ?? '');
+  }
+  return ids;
 }
 
 /**
@@ -114,6 +154,13 @@ export interface TrackItemCompletionCriteria {
   minReadSeconds?: number;
 }
 
+export interface AnsweredArticleQuestion {
+  selectedOptionId: string;
+  correct: boolean;
+  /** ISO timestamp. */
+  answeredAt: string;
+}
+
 export interface TrackItemProgressMeta {
   maxWatchedPct?: number;
   articleFirstOpenedAt?: string;
@@ -127,4 +174,10 @@ export interface TrackItemProgressMeta {
     string,
     { passed: boolean; pointsAwarded?: number }
   >;
+  /**
+   * ARTICLE: per-inline-question result, keyed by ArticleQuestion.id. Written
+   * once and never rewritten — an article question is answered exactly once,
+   * which is also what makes this the record the completion rule counts.
+   */
+  answeredArticleQuestions?: Record<string, AnsweredArticleQuestion>;
 }
