@@ -954,6 +954,12 @@ export class TrackEnrollmentService {
           interjectionCount: video?.interjections?.length ?? 0,
         };
       }
+      case TrackItemType.ARTICLE: {
+        const article = item.content as ArticleContent | undefined;
+        // Count only, like the quiz's — enough for the card to say the
+        // article has questions in it, with nothing about what they ask.
+        return { questionCount: article?.questions?.length ?? 0 };
+      }
       case TrackItemType.JOURNAL: {
         const journal = item.content as JournalContent | undefined;
         return { promptCount: journal?.prompts?.length ?? 0 };
