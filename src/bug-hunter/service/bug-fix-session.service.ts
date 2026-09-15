@@ -30,6 +30,7 @@ import { BugFindingRepository } from '../repository/bug-finding.repository';
 import { BugHunterService } from './bug-hunter.service';
 import { BugFindingService } from './bug-finding.service';
 import { GithubActionsService } from 'src/github/service/github-actions.service';
+import { ProductionReleaseService } from 'src/release/service/production-release.service';
 import {
   BugHunterRepoClassifierService,
   RepoClassification,
@@ -90,6 +91,7 @@ export class BugFixSessionService {
     private readonly bugFindingService: BugFindingService,
     private readonly bugHunterService: BugHunterService,
     private readonly github: GithubActionsService,
+    private readonly releaseService: ProductionReleaseService,
     private readonly notificationService: BugHunterNotificationService,
     private readonly configService: AppConfigService,
     private readonly repoClassifier: BugHunterRepoClassifierService,
@@ -612,16 +614,8 @@ export class BugFixSessionService {
       throw new BadRequestException(this.explainUnreleasable(finding));
     }
 
-    const releaseTag = await this.github.nextPatchTag(
-      target.repo,
-      target.tagPrefix,
-    );
-    const dispatchedAt = await this.github.dispatchWorkflow({
-      repo: target.repo,
-      workflow: target.workflow,
-      ref: BUG_FIX_SESSION_DEFAULT_REF,
-      inputs: { version_tag: releaseTag },
-    });
+    const { tag: releaseTag, dispatchedAt } =
+      await this.releaseService.dispatch(target, BUG_FIX_SESSION_DEFAULT_REF);
 
     await this.findingRepository.update(finding.id, {
       status: BugFindingStatus.RELEASING,
@@ -1162,11 +1156,10 @@ export class BugFixSessionService {
 
         let runId = finding.releaseRunId;
         if (!runId && finding.dispatchedAt) {
-          const found = await this.github.findRunSince({
-            repo: target.repo,
-            workflow: target.workflow,
-            since: finding.dispatchedAt,
-          });
+          const found = await this.releaseService.resolveRun(
+            target,
+            finding.dispatchedAt,
+          );
           if (found) {
             runId = found.id;
             await this.findingRepository.update(finding.id, {
@@ -1176,33 +1169,24 @@ export class BugFixSessionService {
           }
         }
 
-        const run = runId ? await this.github.getRun(target.repo, runId) : null;
+        // "Still running" is the only verdict that does nothing. A timeout or
+        // an unidentifiable run settles as failed rather than waiting forever:
+        // "merged but not deployed" is the state an admin must act on, and a
+        // release left in progress silently claims work shipped that did not.
+        const verdict = await this.releaseService.poll({
+          target,
+          runId,
+          dispatchedAt: finding.dispatchedAt,
+          timeoutMs: BUG_RELEASE_TIMEOUT_MS,
+        });
+        if (verdict.state === 'running') continue;
 
-        if (run?.status === 'completed') {
-          await this.settleRelease(
-            finding,
-            run.conclusion === 'success',
-            run.htmlUrl,
-            run.conclusion,
-          );
-          continue;
-        }
-
-        // Still running, or we never managed to identify the run. Either way,
-        // stop waiting once the window is past — an unresolved release is
-        // reported as failed rather than left mid-flight, because "merged but
-        // not deployed" is the state an admin must act on.
-        const age = finding.dispatchedAt
-          ? Date.now() - finding.dispatchedAt.getTime()
-          : Number.POSITIVE_INFINITY;
-        if (age > BUG_RELEASE_TIMEOUT_MS) {
-          await this.settleRelease(
-            finding,
-            false,
-            finding.releaseRunUrl,
-            run ? 'timed out' : 'no matching GitHub Actions run found',
-          );
-        }
+        await this.settleRelease(
+          finding,
+          verdict.state === 'succeeded',
+          verdict.runUrl ?? finding.releaseRunUrl,
+          verdict.detail,
+        );
       } catch (error) {
         this.logger.warn(
           `Could not reconcile release for finding ${finding.id}: ${

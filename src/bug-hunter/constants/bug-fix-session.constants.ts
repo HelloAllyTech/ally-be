@@ -56,95 +56,22 @@ export const BUG_FIX_SESSION_REPOS = [
 export type BugFixSessionRepo = (typeof BUG_FIX_SESSION_REPOS)[number];
 
 /**
- * One deployable unit: which workflow releases it and what its version tags
- * look like.
+ * Deployables and how to pick one live in `src/release/constants` now: Builder
+ * releases merged pull requests from the same table, and two copies of it would
+ * mean two places for a renamed workflow or a changed tag prefix to be wrong.
  *
- * `ally-web` is a monorepo with three independently-tagged apps, which is why
- * this is keyed by deployable rather than by repo — see
- * `resolveReleaseTarget`, and note that a fix touching `libs/` is deliberately
- * NOT auto-resolvable, since it ships in all three.
- *
- * `ally-mobile` is absent: it releases through App Store / Play Store build
- * workflows, not a dispatchable production-release pipeline, so a merged fix
- * there can never be released from this button — regardless, it never merges
- * on its own anyway (see `BUG_FIX_SESSION_REPOS` above), so a human handles
- * both the merge and the eventual app-store release manually.
+ * Re-exported rather than relocated-and-rewritten at every call site, so this
+ * module's public surface is unchanged.
  */
-export interface ReleaseTarget {
-  repo: string;
-  /** Workflow filename in that repo's `.github/workflows/`. */
-  workflow: string;
-  /** Tag prefix its `version_tag` input validates against, e.g. `v` or `admin-v`. */
-  tagPrefix: string;
-  /** Shown to the admin in the release confirmation. */
-  label: string;
-}
-
-export const RELEASE_TARGETS: Record<string, ReleaseTarget> = {
-  'ally-be': {
-    repo: 'ally-be',
-    workflow: 'production-release.yaml',
-    tagPrefix: 'v',
-    label: 'Ally backend (ECS)',
-  },
-  'ally-ai': {
-    repo: 'ally-ai',
-    workflow: 'production-release.yaml',
-    tagPrefix: 'v',
-    label: 'Ally AI (ECS)',
-  },
-  'ally-ai-learn': {
-    repo: 'ally-ai-learn',
-    workflow: 'production-release.yaml',
-    tagPrefix: 'v',
-    label: 'Ally AI Learn (ECS)',
-  },
-  'ally-web:admin': {
-    repo: 'ally-web',
-    workflow: 'production-release-admin-dashboard.yaml',
-    tagPrefix: 'admin-v',
-    label: 'Admin dashboard (CloudFront)',
-  },
-  'ally-web:helpline': {
-    repo: 'ally-web',
-    workflow: 'production-release-helpline-dashboard.yaml',
-    tagPrefix: 'helpline-v',
-    label: 'Helpline dashboard (CloudFront)',
-  },
-  'ally-web:web': {
-    repo: 'ally-web',
-    workflow: 'production-release-web.yaml',
-    tagPrefix: 'web-v',
-    label: 'Marketing site',
-  },
-};
-
-/**
- * Which deployable a finding belongs to.
- *
- * Single-app repos answer from `repo` alone. `ally-web` needs the file path,
- * because its three apps tag and deploy separately — and when the path doesn't
- * name exactly one app (a `libs/ui-shared` change ships in all three, a null
- * file names none), this returns null rather than picking one. The caller
- * turns that into a refusal telling the admin to release manually: guessing
- * which of three production frontends to deploy is exactly the ambiguous case
- * that should reach a human.
- */
-export function resolveReleaseTarget(
-  repo: string | null | undefined,
-  file: string | null | undefined,
-): ReleaseTarget | null {
-  if (!repo) return null;
-  if (repo !== 'ally-web') return RELEASE_TARGETS[repo] ?? null;
-
-  if (!file) return null;
-  if (file.includes('apps/ally-admin-dashboard'))
-    return RELEASE_TARGETS['ally-web:admin'];
-  if (file.includes('apps/ally-helpline-dashboard'))
-    return RELEASE_TARGETS['ally-web:helpline'];
-  if (file.includes('apps/ally-web')) return RELEASE_TARGETS['ally-web:web'];
-  return null;
-}
+export {
+  RELEASE_TARGETS,
+  resolveReleaseTarget,
+  resolveReleaseTargets,
+} from 'src/release/constants/release-targets.constants';
+export type {
+  ReleaseTarget,
+  ReleaseTargetSet,
+} from 'src/release/constants/release-targets.constants';
 
 /**
  * How long a dispatched fix session may sit in QUEUED before the reconcile

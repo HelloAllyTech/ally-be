@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ReleaseModule } from 'src/release/release.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { NotificationModule } from 'src/notification/notification.module';
@@ -69,6 +70,7 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
  */
 @Module({
   imports: [
+    ReleaseModule,
     GithubModule,
     TypeOrmModule.forFeature([
       BugHuntRun,

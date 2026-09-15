@@ -1,3 +1,4 @@
+import { ProductionReleaseService } from 'src/release/service/production-release.service';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 
 import { BugFixSessionService } from '../bug-fix-session.service';
@@ -124,6 +125,11 @@ describe('BugFixSessionService', () => {
       bugFindingService as never,
       bugHunterService as never,
       github as never,
+      // A real ProductionReleaseService over the mocked GithubActionsService.
+      // The point is that every assertion below still watches `github.*`
+      // directly: if the extraction changed what reaches GitHub, these tests
+      // fail, which is what makes them proof the refactor preserved behaviour.
+      new ProductionReleaseService(github as never),
       notificationService as never,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
       repoClassifier as never,
@@ -1179,6 +1185,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       bugFindingService,
       bugHunterService,
       github,
+      new ProductionReleaseService(github as never),
       notificationService,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
       { classifyRepo: jest.fn() } as never,
