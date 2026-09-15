@@ -94,6 +94,9 @@ export interface ReportedBugContext {
 export interface BugFindingEnrichment {
   report: ReportedBugContext | null;
   stageOverriddenByName: string | null;
+  /** Which CLI/model ran `finding.runId`'s session — null if that run never reported one, or there is no run. */
+  engine: string | null;
+  model: string | null;
 }
 
 export type EnrichedBugFinding = BugFinding & BugFindingEnrichment;
@@ -200,10 +203,21 @@ export class BugFindingService {
       : [];
     const nameById = new Map(users.map((u) => [u.id, u.name ?? null]));
 
+    // Which CLI/model ran each finding's most recent session — one query for
+    // the whole page, same batching discipline as the two lookups above.
+    const runIds = [
+      ...new Set(
+        findings.map((f) => f.runId).filter((id): id is string => id != null),
+      ),
+    ];
+    const runs = await this.bugHunterService.getRunsByIds(runIds);
+    const runById = new Map(runs.map((r) => [r.id, r]));
+
     return findings.map((finding) => {
       const opportunity = finding.reportedBugId
         ? byOpportunityId.get(finding.reportedBugId)
         : undefined;
+      const run = finding.runId ? runById.get(finding.runId) : undefined;
 
       return Object.assign(finding, {
         report: opportunity
@@ -221,6 +235,8 @@ export class BugFindingService {
           finding.stageOverriddenBy != null
             ? (nameById.get(finding.stageOverriddenBy) ?? null)
             : null,
+        engine: run?.engine ?? null,
+        model: run?.model ?? null,
       });
     });
   }

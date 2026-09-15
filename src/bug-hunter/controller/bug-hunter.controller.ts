@@ -829,6 +829,8 @@ export function toFindingDto(
     rediscoveredCount: Number(row.metadata?.rediscoveredCount ?? 0) || 0,
     sessionRunUrl: row.sessionRunUrl ?? null,
     sessionRunId: row.sessionRunId ?? null,
+    engine: row.engine ?? null,
+    model: row.model ?? null,
     releaseTag: row.releaseTag ?? null,
     releaseRunUrl: row.releaseRunUrl ?? null,
     releasedBy: row.releasedBy ?? null,

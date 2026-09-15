@@ -209,6 +209,13 @@ jobs:
             sed -i.bak "s/^model: .*/model: $ESCALATION_MODEL/" .claude/agents/bug-escalation.md
             rm -f .claude/agents/bug-escalation.md.bak
           fi
+          # Best-effort: powers the findings list's model/provider label.
+          # ally-be never learns this any other way, since the model is
+          # resolved here, not at dispatch time — but losing this call must
+          # never fail a sweep over a cosmetic label.
+          curl -sS -X POST "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/runs/${{ steps.cfg.outputs.run_id }}/model" \
+            -H "Content-Type: application/json" -H "x-api-key: $ALLY_BE_API_KEY" \
+            -d "{\"engine\":\"$ENGINE\",\"model\":\"$DEFAULT_MODEL\"}" || true
 
       - name: Install the coding engine
         if: steps.cfg.outputs.skip != 'true'
