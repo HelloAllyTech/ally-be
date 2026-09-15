@@ -56,9 +56,9 @@ export class TTSProviderFactory {
       case TTSProviderEnum.HUME:
         return new HumeTTSProvider(apiKey, config);
       case TTSProviderEnum.CARTESIA:
-        return new CartesiaTTSProvider(apiKey, config);
+        return new CartesiaTTSProvider(apiKey, config, languageCode);
       case TTSProviderEnum.SMALLESTAI:
-        return new SmallestAITTSProvider(apiKey, config);
+        return new SmallestAITTSProvider(apiKey, config, languageCode);
       default: {
         const _exhaustive: never = provider;
         throw new BadRequestException(

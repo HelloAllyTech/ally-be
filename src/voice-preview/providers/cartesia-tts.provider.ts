@@ -9,11 +9,19 @@ export class CartesiaTTSProvider implements ITTSProvider {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly voice: string;
+  private readonly language: string;
 
-  constructor(apiKey: string, config: Record<string, any>) {
+  constructor(
+    apiKey: string,
+    config: Record<string, any>,
+    languageCode: string,
+  ) {
     this.apiKey = apiKey;
     this.model = config.model ?? 'sonic-3';
     this.voice = config.voice;
+    // Cartesia expects a bare ISO 639-1 code (e.g. "en", "hi"), same as the
+    // ally-ai-learn client — the region subtag is stripped.
+    this.language = (languageCode || 'en').split('-')[0];
     if (!this.voice) {
       throw new Error('Cartesia config requires "voice" field');
     }
@@ -31,7 +39,7 @@ export class CartesiaTTSProvider implements ITTSProvider {
           encoding: 'pcm_s16le',
           sample_rate: 24000,
         },
-        language: 'en',
+        language: this.language,
       },
       {
         headers: {

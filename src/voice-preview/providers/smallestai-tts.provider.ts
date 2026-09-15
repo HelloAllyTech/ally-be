@@ -8,11 +8,19 @@ export class SmallestAITTSProvider implements ITTSProvider {
   private readonly apiKey: string;
   private readonly model: string;
   private readonly voiceId: string;
+  private readonly language: string;
 
-  constructor(apiKey: string, config: Record<string, any>) {
+  constructor(
+    apiKey: string,
+    config: Record<string, any>,
+    languageCode: string,
+  ) {
     this.apiKey = apiKey;
     this.model = config.model ?? 'lightning_v3.1_pro';
     this.voiceId = config.voice_id ?? config.voiceId;
+    // Smallest.ai expects a bare ISO 639-1 code (e.g. "en", "hi"), same as
+    // the ally-ai-learn client — the region subtag is stripped.
+    this.language = (languageCode || 'en').split('-')[0];
     if (!this.voiceId) {
       throw new Error('Smallest.ai config requires "voice_id" field');
     }
@@ -25,7 +33,7 @@ export class SmallestAITTSProvider implements ITTSProvider {
         model: this.model,
         voice_id: this.voiceId,
         sample_rate: 24000,
-        language: 'en',
+        language: this.language,
         output_format: 'wav',
         text,
       },
