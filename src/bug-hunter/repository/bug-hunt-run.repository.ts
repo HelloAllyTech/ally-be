@@ -56,7 +56,7 @@ export class BugHuntRunRepository extends Repository<BugHuntRun> {
         )) FILTER (WHERE r.trigger = 'fix_session'), 0) AS fix_cost_usd
       FROM bug_hunt_runs r
       WHERE r."createdAt" >= $1
-        AND r.status <> 'skipped_disabled'
+        AND r.status NOT IN ('skipped_disabled', 'skipped_quiet')
       `,
       [since],
     );

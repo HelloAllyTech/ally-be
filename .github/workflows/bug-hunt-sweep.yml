@@ -135,11 +135,18 @@ jobs:
               -d "{\"trigger\":\"scheduled\",\"repo\":\"$REPO\"}")
             RUN_ID=$(printf '%s' "$RESPONSE" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("runId") or "")')
             MODE=$(printf '%s' "$RESPONSE" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("mode") or "")')
+            SKIPPED_REASON=$(printf '%s' "$RESPONSE" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("skippedReason") or "")')
             if [ -z "$RUN_ID" ]; then
-              # Bug Hunter is OFF. ally-be has already recorded a
-              # skipped_disabled run; there is nothing to do and this is not a
-              # failure.
-              echo "Bug Hunter is off duty (mode=${MODE:-off}). Nothing to sweep."
+              # Either Bug Hunter is OFF, or (only on this scheduled path) the
+              # repo has had no commits since its last sweep and no
+              # production log group to catch an issue without one — either
+              # way ally-be has already recorded the skipped run itself; there
+              # is nothing to do here and this is not a failure.
+              if [ "$SKIPPED_REASON" = "quiet" ]; then
+                echo "Nothing new in $REPO since the last sweep. Skipped with zero token spend."
+              else
+                echo "Bug Hunter is off duty (mode=${MODE:-off}). Nothing to sweep."
+              fi
               echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi

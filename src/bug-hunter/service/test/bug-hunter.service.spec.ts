@@ -47,6 +47,7 @@ describe('BugHunterService', () => {
     findOne: jest.Mock;
     listRecent: jest.Mock;
     update: jest.Mock;
+    findLastCompleted: jest.Mock;
   };
   let eventRepository: {
     create: jest.Mock;
@@ -57,6 +58,8 @@ describe('BugHunterService', () => {
   let notificationService: { notify: jest.Mock };
   let dataSource: { createQueryBuilder: jest.Mock };
   let llmUsageService: { record: jest.Mock };
+  let github: { hasCommitsSince: jest.Mock };
+  let finderDataService: { hasLogGroup: jest.Mock };
 
   // Mutated by `update()` and read back by `findOne()`, so closeRun's
   // "fetch → update → re-fetch" sequence sees its own write, the way the real
@@ -81,6 +84,7 @@ describe('BugHunterService', () => {
         currentRun = { ...currentRun, ...patch };
         return Promise.resolve();
       }),
+      findLastCompleted: jest.fn().mockResolvedValue(null),
     };
     eventRepository = {
       create: jest.fn((partial) => partial),
@@ -99,6 +103,8 @@ describe('BugHunterService', () => {
     };
     dataSource = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
     llmUsageService = { record: jest.fn().mockResolvedValue(undefined) };
+    github = { hasCommitsSince: jest.fn().mockResolvedValue(true) };
+    finderDataService = { hasLogGroup: jest.fn().mockReturnValue(false) };
 
     service = new BugHunterService(
       settingsRepository as any,
@@ -107,6 +113,8 @@ describe('BugHunterService', () => {
       notificationService as any,
       dataSource as any,
       llmUsageService as any,
+      github as any,
+      finderDataService as any,
     );
   });
 
@@ -179,6 +187,116 @@ describe('BugHunterService', () => {
       );
 
       expect(mode).toBeNull();
+    });
+  });
+
+  describe('requireWorthSweepingOrRecordSkip', () => {
+    it('always runs for a manual sweep, never checking commits at all', async () => {
+      const worthIt = await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.MANUAL,
+        'ally-web',
+      );
+
+      expect(worthIt).toBe(true);
+      expect(github.hasCommitsSince).not.toHaveBeenCalled();
+      expect(runRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('always runs for a fix session', async () => {
+      const worthIt = await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.FIX_SESSION,
+        'ally-web',
+      );
+
+      expect(worthIt).toBe(true);
+      expect(github.hasCommitsSince).not.toHaveBeenCalled();
+    });
+
+    it('always runs a scheduled sweep for a repo with a production log group, without checking commits', async () => {
+      finderDataService.hasLogGroup.mockReturnValue(true);
+
+      const worthIt = await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.SCHEDULED,
+        'ally-be',
+      );
+
+      expect(worthIt).toBe(true);
+      expect(github.hasCommitsSince).not.toHaveBeenCalled();
+    });
+
+    it('always runs the first-ever scheduled sweep for a repo', async () => {
+      runRepository.findLastCompleted.mockResolvedValue(null);
+
+      const worthIt = await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.SCHEDULED,
+        'ally-web',
+      );
+
+      expect(worthIt).toBe(true);
+      expect(github.hasCommitsSince).not.toHaveBeenCalled();
+    });
+
+    it('runs when master has commits since the last completed sweep', async () => {
+      const lastSweep = runRow({
+        status: BugHuntRunStatus.COMPLETED,
+        finishedAt: new Date('2026-09-14T00:00:00.000Z'),
+      });
+      runRepository.findLastCompleted.mockResolvedValue(lastSweep);
+      github.hasCommitsSince.mockResolvedValue(true);
+
+      const worthIt = await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.SCHEDULED,
+        'ally-web',
+      );
+
+      expect(worthIt).toBe(true);
+      expect(github.hasCommitsSince).toHaveBeenCalledWith(
+        'ally-web',
+        lastSweep.finishedAt,
+      );
+      expect(runRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('skips and records a skipped_quiet run when nothing is new on a frontend repo', async () => {
+      const lastSweep = runRow({
+        status: BugHuntRunStatus.COMPLETED,
+        finishedAt: new Date('2026-09-14T00:00:00.000Z'),
+      });
+      runRepository.findLastCompleted.mockResolvedValue(lastSweep);
+      github.hasCommitsSince.mockResolvedValue(false);
+
+      const worthIt = await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.SCHEDULED,
+        'ally-web',
+      );
+
+      expect(worthIt).toBe(false);
+      expect(runRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: BugHuntRunStatus.SKIPPED_QUIET }),
+      );
+      expect(eventRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: BugHuntEventStage.SKIPPED_QUIET }),
+      );
+    });
+
+    it('falls back to createdAt when a legacy run has no finishedAt', async () => {
+      const lastSweep = runRow({
+        status: BugHuntRunStatus.COMPLETED,
+        finishedAt: null,
+        createdAt: new Date('2026-09-01T00:00:00.000Z'),
+      });
+      runRepository.findLastCompleted.mockResolvedValue(lastSweep);
+      github.hasCommitsSince.mockResolvedValue(false);
+
+      await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.SCHEDULED,
+        'ally-web',
+      );
+
+      expect(github.hasCommitsSince).toHaveBeenCalledWith(
+        'ally-web',
+        lastSweep.createdAt,
+      );
     });
   });
 

@@ -429,6 +429,34 @@ export class GithubActionsService {
   }
 
   /**
+   * Whether `master` has any commit after `since` — the signal a quiet-night
+   * sweep uses to decide there is nothing new for its code-review/test-lint
+   * finders to look at. `per_page=1` on purpose: this only ever needs a
+   * yes/no, never a count or the commits themselves. Fails OPEN (true) rather
+   * than closed on any GitHub error — a sweep that runs on a genuinely quiet
+   * night wastes some tokens; a sweep that silently never runs because this
+   * call started failing loses findings with nobody watching for it.
+   */
+  async hasCommitsSince(repo: string, since: Date): Promise<boolean> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.get(this.url(repo, 'commits'), {
+        headers: this.headers,
+        params: { sha: 'master', since: since.toISOString(), per_page: 1 },
+        timeout: 15_000,
+      });
+      return Array.isArray(data) && data.length > 0;
+    } catch (error) {
+      this.logger.warn(
+        `Could not check ${repo} for commits since ${since.toISOString()}, assuming there are some: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return true;
+    }
+  }
+
+  /**
    * Whether CI is green on a commit, as one verdict plus the names of what
    * failed.
    *

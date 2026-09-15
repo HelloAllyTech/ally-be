@@ -22,4 +22,12 @@ export enum BugHuntRunStatus {
   FAILED = 'failed',
   /** The feature was off when this trigger fired; the run did no work. */
   SKIPPED_DISABLED = 'skipped_disabled',
+  /**
+   * A scheduled sweep whose repo had nothing new since its last completed
+   * sweep — no commits, and no CloudWatch log group to catch a production
+   * issue without one. Never applies to a human-triggered sweep or a fix
+   * session: an explicit ask always runs. See
+   * `BugHunterService.requireWorthSweepingOrRecordSkip`.
+   */
+  SKIPPED_QUIET = 'skipped_quiet',
 }

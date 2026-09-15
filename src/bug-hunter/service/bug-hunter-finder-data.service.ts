@@ -46,6 +46,20 @@ export class BugHunterFinderDataService {
   ) {}
 
   /**
+   * Whether this repo has a CloudWatch log group `getRecentErrors` can query
+   * at all. Used by `BugHunterService.requireWorthSweepingOrRecordSkip` to
+   * decide a quiet-night skip is safe: a repo with no log group has no way
+   * for a production issue to appear without an accompanying commit, but one
+   * that does could have a real incident (a bad rollback, an upstream
+   * outage) with no matching commit, so it must never be skipped this way —
+   * see that method's own doc for why a real anomaly threshold, not this
+   * blanket rule, is what would let backend repos skip too.
+   */
+  hasLogGroup(repo: string): boolean {
+    return AWS_LOG_SERVICE_KEYS.includes(repo as AwsLogServiceKey);
+  }
+
+  /**
    * Last 24h of CloudWatch errors for a repo, or `null` if the repo has no
    * log group (the frontend repos: ally-web, ally-mobile) — the finder should
    * report zero findings for those rather than erroring.

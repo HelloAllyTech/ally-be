@@ -11,6 +11,8 @@ import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
+import { BugHunterFinderDataService } from './bug-hunter-finder-data.service';
+import { GithubActionsService } from 'src/github/service/github-actions.service';
 import {
   runFailed,
   runFoundBugs,
@@ -49,6 +51,8 @@ export class BugHunterService {
     private readonly notificationService: BugHunterNotificationService,
     private readonly dataSource: DataSource,
     private readonly llmUsageService: LlmUsageService,
+    private readonly github: GithubActionsService,
+    private readonly finderDataService: BugHunterFinderDataService,
   ) {}
 
   // ── kill switch ──────────────────────────────────────────────────────────
@@ -112,6 +116,62 @@ export class BugHunterService {
       }),
     );
     return null;
+  }
+
+  /**
+   * The nightly cron's second gate, after the kill switch: a repo with no new
+   * commits since its last completed sweep has nothing new for the
+   * code-review or test/lint finders to look at, so paying for a full agent
+   * session over it is pure waste. Only ever applies to
+   * `BugHuntTrigger.SCHEDULED` — a human pressing "Start a sweep", or a fix
+   * session dispatched for one already-known bug, is an explicit ask and
+   * always runs regardless of how quiet the repo has been.
+   *
+   * Deliberately narrow: a repo with a CloudWatch log group (`ally-be`,
+   * `ally-ai`, `ally-ai-learn`) is NEVER skipped this way, because a real
+   * production issue — a bad rollback, an upstream outage, a config change —
+   * can appear with no matching commit, and there is no anomaly threshold
+   * here (yet) to tell a real spike from ordinary background noise. Widening
+   * this to those repos needs that threshold built first, not just this
+   * check relaxed.
+   *
+   * Also deliberately does not gate on pending human-reported bugs: those
+   * already exist as their own `bug_findings` row the moment they're filed
+   * (see `BugHunterFinderDataService`'s doc), so a skipped sweep does not hide
+   * one — it only delays the finder step that classifies which repo it
+   * belongs to until the next sweep that actually runs.
+   */
+  async requireWorthSweepingOrRecordSkip(
+    trigger: BugHuntTrigger,
+    repo: string,
+  ): Promise<boolean> {
+    if (trigger !== BugHuntTrigger.SCHEDULED) return true;
+    if (this.finderDataService.hasLogGroup(repo)) return true;
+
+    const lastSweep = await this.runRepository.findLastCompleted(repo);
+    if (!lastSweep) return true;
+
+    const since = lastSweep.finishedAt ?? lastSweep.createdAt;
+    const hasCommits = await this.github.hasCommitsSince(repo, since);
+    if (hasCommits) return true;
+
+    const run = await this.runRepository.save(
+      this.runRepository.create({
+        trigger,
+        repo,
+        status: BugHuntRunStatus.SKIPPED_QUIET,
+        finishedAt: new Date(),
+      }),
+    );
+    await this.eventRepository.save(
+      this.eventRepository.create({
+        runId: run.id,
+        repo,
+        stage: BugHuntEventStage.SKIPPED_QUIET,
+        summary: `No commits on master since the last sweep (${since.toISOString()}) — skipped with zero token spend.`,
+      }),
+    );
+    return false;
   }
 
   // ── run lifecycle ────────────────────────────────────────────────────────

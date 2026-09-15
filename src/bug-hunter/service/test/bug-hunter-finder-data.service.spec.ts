@@ -77,4 +77,17 @@ describe('BugHunterFinderDataService', () => {
       ]);
     });
   });
+
+  describe('hasLogGroup', () => {
+    it('is true for the three backend repos', () => {
+      expect(service.hasLogGroup('ally-be')).toBe(true);
+      expect(service.hasLogGroup('ally-ai')).toBe(true);
+      expect(service.hasLogGroup('ally-ai-learn')).toBe(true);
+    });
+
+    it('is false for the frontend repos, which have no CloudWatch log group', () => {
+      expect(service.hasLogGroup('ally-web')).toBe(false);
+      expect(service.hasLogGroup('ally-mobile')).toBe(false);
+    });
+  });
 });

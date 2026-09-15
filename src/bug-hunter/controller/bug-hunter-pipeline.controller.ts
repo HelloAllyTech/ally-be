@@ -257,17 +257,29 @@ export class BugHunterPipelineController {
   @Post('runs')
   @ApiOperation({
     summary:
-      'Start a run, or record a skipped-disabled run if the switch is off (pipeline only)',
+      'Start a run, or record a skipped run if the switch is off or (for a scheduled sweep) the repo has nothing new (pipeline only)',
   })
   @ApiResponse({ status: 400, description: 'Unrecognised `trigger`.' })
-  async startRun(
-    @Body() body: StartBugHuntRunDto,
-  ): Promise<{ runId: string | null; mode: string | null }> {
+  async startRun(@Body() body: StartBugHuntRunDto): Promise<{
+    runId: string | null;
+    mode: string | null;
+    skippedReason?: 'disabled' | 'quiet';
+  }> {
     const mode = await this.bugHunterService.requireEnabledOrRecordSkip(
       body.trigger,
       body.repo,
     );
-    if (!mode) return { runId: null, mode: null };
+    if (!mode) return { runId: null, mode: null, skippedReason: 'disabled' };
+
+    const worthSweeping =
+      await this.bugHunterService.requireWorthSweepingOrRecordSkip(
+        body.trigger,
+        body.repo,
+      );
+    if (!worthSweeping) {
+      return { runId: null, mode, skippedReason: 'quiet' };
+    }
+
     const run = await this.bugHunterService.startRun(body.trigger, body.repo);
     return { runId: run.id, mode };
   }
