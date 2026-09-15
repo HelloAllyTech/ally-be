@@ -394,6 +394,7 @@ export class BuilderPullRequestService {
     }
 
     await this.ingestFeedback(pullRequest, remote.headSha, rollup);
+    await this.considerBranchUpdate(pullRequest, remote);
 
     // Review before fix, and only one of them per tick. A review run that
     // dispatches leaves an active run behind, which `dispatchFixRun` refuses
@@ -402,6 +403,69 @@ export class BuilderPullRequestService {
     if (await this.considerReviewRun(pullRequest, remote.headSha, rollup))
       return;
     await this.considerFixRun(pullRequest);
+  }
+
+  /**
+   * Keep the branch current with master.
+   *
+   * A pull request that has fallen behind cannot be merged — GitHub says
+   * `behind` and the merge button refuses — and Builder had no way to fix that
+   * itself. Both of today's builder pull requests went stale this way and each
+   * needed a hand rebase before it could land; one needed two.
+   *
+   * ## Why this does not rebase
+   *
+   * It merges master in, via `update-branch`. `builder-fix-prompt.ts` forbids
+   * the agent from rebasing or force-pushing for a reason that applies just as
+   * much here: rewriting the branch destroys a reviewer's place in the diff and
+   * orphans every comment anchored to a line, without telling them why. A merge
+   * commit is one extra node in the history and breaks nothing.
+   *
+   * ## The guards
+   *
+   *  - **`autoFixEnabled`**, reused rather than given a fourth switch. This
+   *    pushes a commit to an open pull request, which is exactly what that
+   *    switch is about, and an admin who has said no to that has said no to
+   *    this.
+   *  - **the head author**, the same rule `ingestFeedback` applies: once
+   *    somebody else has pushed to the branch they are mid-work on it, and
+   *    dropping a merge commit underneath them is how an agent becomes the
+   *    reason nobody reviews its pull requests. "Could not tell" is not "ours",
+   *    so the tick is skipped and the next one retries.
+   *  - **`behind` only.** `dirty` is a real conflict that needs a person or a
+   *    fix run, and `blocked` is a missing approval — neither is fixed by
+   *    merging master in, and trying would burn an API call per tick forever.
+   */
+  private async considerBranchUpdate(
+    pullRequest: BuilderPullRequest,
+    remote: { headSha: string | null; mergeableState: string | null },
+  ): Promise<void> {
+    if (remote.mergeableState !== 'behind' || !remote.headSha) return;
+
+    const settings = await this.settingsService.get();
+    if (!settings.enabled || !settings.autoFixEnabled) return;
+
+    const author = await this.github.getCommitAuthor(
+      pullRequest.repo,
+      remote.headSha,
+    );
+    if (!author) return;
+    if (!this.isOwnActor(author.login ?? author.name ?? '')) return;
+
+    const { updated, message } = await this.github.updatePullRequestBranch(
+      pullRequest.repo,
+      pullRequest.prNumber,
+      remote.headSha,
+    );
+    if (updated) {
+      this.logger.info(
+        `Brought ${pullRequest.repo}#${pullRequest.prNumber} up to date with master.`,
+      );
+      return;
+    }
+    this.logger.warn(
+      `Could not update ${pullRequest.repo}#${pullRequest.prNumber}: ${message ?? 'no reason given'}.`,
+    );
   }
 
   /**

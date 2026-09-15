@@ -85,6 +85,9 @@ describe('BuilderPullRequestService', () => {
       mergePullRequest: jest
         .fn()
         .mockResolvedValue({ merged: true, message: null }),
+      updatePullRequestBranch: jest
+        .fn()
+        .mockResolvedValue({ updated: true, message: null }),
       approvePullRequest: jest
         .fn()
         .mockResolvedValue({ approved: true, message: null }),
@@ -1125,6 +1128,89 @@ describe('BuilderPullRequestService', () => {
       });
 
       await expect(cleanReview()).resolves.toBe(0);
+    });
+  });
+
+  /**
+   * Keeping the branch current.
+   *
+   * A pull request that has fallen behind master cannot be merged, and Builder
+   * had no way to fix that itself — both of today's builder PRs went stale and
+   * each needed a hand rebase, one of them twice.
+   */
+  describe('keeping a stale branch up to date', () => {
+    const behind = { mergeableState: 'behind' };
+
+    beforeEach(() => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoFixEnabled: true,
+        maxFixRunsPerPr: 3,
+      });
+    });
+
+    it('merges master into a branch that has fallen behind', async () => {
+      await reconcileWith({ headSha: 'abc1234def', ...behind });
+
+      expect(github.updatePullRequestBranch).toHaveBeenCalledWith(
+        'ally-be',
+        42,
+        'abc1234def',
+      );
+    });
+
+    /**
+     * `dirty` is a real conflict needing a person or a fix run, and `blocked`
+     * is a missing approval. Merging master in fixes neither, and trying would
+     * burn an API call every tick forever.
+     */
+    it('leaves a conflicted branch alone', async () => {
+      await reconcileWith({ headSha: 'abc1234def', mergeableState: 'dirty' });
+
+      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
+    });
+
+    it('does nothing when the branch is already current', async () => {
+      await reconcileWith({ headSha: 'abc1234def', mergeableState: 'clean' });
+
+      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Once somebody else has pushed, they are mid-work on the branch, and a
+     * merge commit landing underneath them is how an agent becomes the reason
+     * nobody reviews its pull requests.
+     */
+    it('does not touch a branch somebody else pushed to', async () => {
+      github.getCommitAuthor.mockResolvedValue({
+        login: 'a-person',
+        name: 'A Person',
+      });
+
+      await reconcileWith({ headSha: 'abc1234def', ...behind });
+
+      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
+    });
+
+    /** "Could not tell who pushed" is not "we pushed". */
+    it('skips the tick when the author cannot be read', async () => {
+      github.getCommitAuthor.mockResolvedValue(null);
+
+      await reconcileWith({ headSha: 'abc1234def', ...behind });
+
+      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
+    });
+
+    it('respects the same switch that governs pushing to an open PR', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoFixEnabled: false,
+        maxFixRunsPerPr: 3,
+      });
+
+      await reconcileWith({ headSha: 'abc1234def', ...behind });
+
+      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
     });
   });
 });

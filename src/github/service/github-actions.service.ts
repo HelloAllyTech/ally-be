@@ -23,6 +23,12 @@ export interface PullRequestInfo {
   state: string;
   /** Head commit sha — what a CI rollup is actually about. */
   headSha: string | null;
+  /**
+   * GitHub's own summary of why a merge is or is not possible: `clean`,
+   * `behind`, `blocked`, `dirty`, `unstable`, or `unknown` while GitHub is
+   * still computing it. `behind` is the one Builder can do something about.
+   */
+  mergeableState: string | null;
 }
 
 /**
@@ -210,6 +216,9 @@ export class GithubActionsService {
         mergedAt: data?.merged_at ? new Date(data.merged_at) : null,
         state: String(data?.state ?? 'open'),
         headSha: data?.head?.sha ? String(data.head.sha) : null,
+        mergeableState: data?.mergeable_state
+          ? String(data.mergeable_state)
+          : null,
       };
     } catch (error) {
       this.logger.warn(
@@ -218,6 +227,51 @@ export class GithubActionsService {
         }`,
       );
       return null;
+    }
+  }
+
+  /**
+   * Brings a pull request's branch up to date with its base.
+   *
+   * `PUT .../update-branch`, which **merges** the base into the head branch
+   * rather than rebasing it. That is the whole reason this is safe to do
+   * automatically, and it is the same reasoning `builder-fix-prompt.ts` states
+   * as a rule for the agent: never force-push, never rebase, never amend. A
+   * rebase rewrites every commit on the branch, which destroys a reviewer's
+   * place in the diff and orphans any comment anchored to a line — and they
+   * will not be told why. A merge commit costs one extra node in the history
+   * and breaks nothing.
+   *
+   * `expected_head_sha` makes it a compare-and-swap: if anything landed on the
+   * branch between reading it and calling this, GitHub answers 422 and nothing
+   * happens. Without it, a person pushing at the same moment gets a merge
+   * commit dropped on top of work Builder never saw.
+   *
+   * Returns rather than throws, like everything else here: "the base moved
+   * again" is an ordinary race that the next reconcile tick resolves.
+   */
+  async updatePullRequestBranch(
+    repo: string,
+    number: number,
+    expectedHeadSha: string,
+  ): Promise<{ updated: boolean; message: string | null }> {
+    this.requireConfigured();
+    try {
+      await axios.put(
+        this.url(repo, `pulls/${number}/update-branch`),
+        { expected_head_sha: expectedHeadSha },
+        { headers: this.headers, timeout: 30_000 },
+      );
+      return { updated: true, message: null };
+    } catch (error) {
+      const message =
+        (error as { response?: { data?: { message?: string } } })?.response
+          ?.data?.message ??
+        (error instanceof Error ? error.message : String(error));
+      this.logger.warn(
+        `Could not update the branch of ${repo}#${number}: ${message}`,
+      );
+      return { updated: false, message };
     }
   }
 
