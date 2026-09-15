@@ -53,10 +53,14 @@ const row = (over: Partial<BugFinding> = {}): BugFinding =>
  * gets a stub that would fail loudly if it were ever called with the wrong shape.
  */
 const bugHunterService = (
-  over: Partial<{ appendFindingEvent: jest.Mock }> = {},
+  over: Partial<{
+    appendFindingEvent: jest.Mock;
+    getRunsByIds: jest.Mock;
+  }> = {},
 ) =>
   ({
     appendFindingEvent: jest.fn().mockResolvedValue(undefined),
+    getRunsByIds: jest.fn().mockResolvedValue([]),
     ...over,
   }) as unknown as BugHunterService;
 
@@ -1041,6 +1045,39 @@ describe('BugFindingService.enrich', () => {
       null,
     ]);
     expect(enriched[1].stageOverriddenByName).toBe('Three');
+  });
+
+  it("attaches which engine/model ran a finding's most recent run, batched in one query", async () => {
+    const getRunsByIds = jest
+      .fn()
+      .mockResolvedValue([
+        { id: 'run-gemini', engine: 'gemini', model: 'gemini-2.5-pro' },
+      ]);
+    const service = new BugFindingService(
+      { findOne: jest.fn() } as unknown as BugFindingRepository,
+      {
+        notify: jest.fn(),
+        wasRaisedSince: jest.fn(),
+      } as unknown as BugHunterNotificationService,
+      {
+        find: jest.fn().mockResolvedValue([]),
+      } as unknown as Repository<RoadmapOpportunity>,
+      { find: jest.fn().mockResolvedValue([]) } as unknown as Repository<User>,
+      bugHunterService({ getRunsByIds }),
+    );
+
+    const enriched = await service.enrich([
+      row({ id: 'f1', runId: 'run-gemini' }),
+      row({ id: 'f2', runId: null }),
+    ]);
+
+    expect(getRunsByIds).toHaveBeenCalledTimes(1);
+    expect(getRunsByIds).toHaveBeenCalledWith(['run-gemini']);
+    expect(enriched[0]).toMatchObject({
+      engine: 'gemini',
+      model: 'gemini-2.5-pro',
+    });
+    expect(enriched[1]).toMatchObject({ engine: null, model: null });
   });
 });
 

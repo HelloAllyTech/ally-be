@@ -397,6 +397,18 @@ export class RecordBugHuntRunCostDto {
   cliReportedCostUsd?: number;
 }
 
+export class RecordBugHuntRunModelDto {
+  @ApiProperty({ description: '"claude-code" or "gemini".' })
+  @IsString()
+  @IsNotEmpty()
+  engine!: string;
+
+  @ApiProperty({ example: 'claude-sonnet-5' })
+  @IsString()
+  @IsNotEmpty()
+  model!: string;
+}
+
 /** The only two states a run may be closed into. */
 export const BUG_HUNT_RUN_CLOSE_STATUSES = ['completed', 'failed'] as const;
 
@@ -778,6 +790,20 @@ export class BugFindingDto {
       'GitHub Actions run id for the fix session, once resolved. What "Stop fix session" cancels.',
   })
   sessionRunId!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Which CLI ran this finding\'s most recent session ("claude-code" or "gemini"). Null until that run\'s workflow reports it, or if `runId` has none.',
+  })
+  engine!: string | null;
+
+  @ApiProperty({
+    nullable: true,
+    description:
+      'The model within that engine, e.g. "claude-sonnet-5" or "gemini-2.5-pro".',
+  })
+  model!: string | null;
 
   @ApiProperty({
     nullable: true,

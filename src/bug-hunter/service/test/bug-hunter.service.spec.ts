@@ -440,5 +440,65 @@ describe('BugHunterService', () => {
         expect.objectContaining({ cliReportedCostUsd: 0.8 }),
       );
     });
+
+    it("tags llm_usage rows 'gemini' when that's the run's recorded engine, not the hardcoded default", async () => {
+      currentRun = runRow({
+        status: BugHuntRunStatus.COMPLETED,
+        engine: 'gemini',
+        model: 'gemini-2.5-pro',
+      });
+
+      await service.recordActualCost('run-1', {
+        modelUsage: [
+          { model: 'gemini-2.5-pro', inputTokens: 1000, outputTokens: 100 },
+        ],
+      });
+
+      expect(llmUsageService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'gemini',
+          model: 'gemini-2.5-pro',
+        }),
+      );
+    });
+
+    it("defaults to 'anthropic' when the run never recorded an engine", async () => {
+      currentRun = runRow({ status: BugHuntRunStatus.COMPLETED, engine: null });
+
+      await service.recordActualCost('run-1', {
+        modelUsage: [
+          { model: 'claude-sonnet-4-6', inputTokens: 1000, outputTokens: 100 },
+        ],
+      });
+
+      expect(llmUsageService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'anthropic' }),
+      );
+    });
+  });
+
+  describe('recordResolvedModel', () => {
+    it('persists which CLI and model the CI workflow resolved for this run', async () => {
+      await service.recordResolvedModel('run-1', {
+        engine: 'gemini',
+        model: 'gemini-2.5-flash',
+      });
+
+      expect(runRepository.update).toHaveBeenCalledWith('run-1', {
+        engine: 'gemini',
+        model: 'gemini-2.5-flash',
+      });
+    });
+
+    it('swallows a failed update instead of throwing, same contract as recordActualCost', async () => {
+      runRepository.update.mockRejectedValueOnce(new Error('db blip'));
+
+      await expect(
+        service.recordResolvedModel('run-1', {
+          engine: 'claude-code',
+          model: 'claude-sonnet-5',
+        }),
+      ).resolves.toBeUndefined();
+    });
   });
 });

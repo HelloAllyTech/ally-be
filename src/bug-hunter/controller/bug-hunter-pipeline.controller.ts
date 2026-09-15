@@ -37,6 +37,7 @@ import {
   PersistBugFindingsDto,
   RecordBugFixPlanDto,
   RecordBugHuntRunCostDto,
+  RecordBugHuntRunModelDto,
   ReportBugHuntEventDto,
   StartBugHuntRunDto,
 } from '../dto/bug-hunter.dto';
@@ -381,6 +382,24 @@ export class BugHunterPipelineController {
     await this.bugHunterService.recordActualCost(id, body);
     const run = await this.bugHunterService.getRun(id);
     return { totalTokenCostUsd: run.totalTokenCostUsd };
+  }
+
+  @Post('runs/:id/model')
+  @ApiOperation({
+    summary: 'Attach which CLI/model actually ran this run (pipeline only)',
+    description:
+      'Called by the "Resolve configured models" workflow step right after ' +
+      'it resolves `GET pipeline/models` — ally-be never learns this at ' +
+      'dispatch time, since the model is resolved independently inside the ' +
+      'CI workflow on every trigger path, including the nightly cron sweep. ' +
+      "Powers the findings list's model/provider label.",
+  })
+  async recordModel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RecordBugHuntRunModelDto,
+  ): Promise<{ engine: string; model: string }> {
+    await this.bugHunterService.recordResolvedModel(id, body);
+    return body;
   }
 
   @Post('runs/:id/close')

@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 
 import { LoggerService } from 'src/logger/logger.service';
 import { computeCostUsd } from 'src/analytics/constants/llm-pricing.constants';
@@ -126,6 +126,17 @@ export class BugHunterService {
     const run = await this.runRepository.findOne({ where: { id } });
     if (!run) throw new NotFoundException(`Bug hunt run ${id} not found`);
     return run;
+  }
+
+  /**
+   * For `BugFindingService.enrich`'s batched model/engine lookup — one query
+   * for a whole page of findings rather than one per row. Missing ids are
+   * silently absent from the result rather than throwing, since a page of
+   * findings routinely references runs that no longer matter to look up.
+   */
+  getRunsByIds(ids: string[]): Promise<BugHuntRun[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.runRepository.find({ where: { id: In(ids) } });
   }
 
   listRuns(limit = 50): Promise<BugHuntRun[]> {
@@ -321,7 +332,14 @@ export class BugHunterService {
           .filter((m) => m.inputTokens > 0 || m.outputTokens > 0)
           .map((m) =>
             this.llmUsageService.record({
-              provider: 'anthropic',
+              // Was hardcoded to 'anthropic' regardless of what actually ran
+              // — harmless while Bug Hunter only had one engine, but it would
+              // silently mislabel every Gemini-engine run's spend once that
+              // engine existed. `run.engine` is now recorded by
+              // `recordResolvedModel` before this ever fires (the CI workflow
+              // resolves models, then runs, then reports cost, in that
+              // order), so this reads the real one.
+              provider: run.engine === 'gemini' ? 'gemini' : 'anthropic',
               model: m.model,
               task: LlmTask.BUG_HUNTER,
               promptTokens: m.inputTokens,
@@ -356,6 +374,31 @@ export class BugHunterService {
     } catch (error) {
       this.logger.warn(
         `Failed to record actual bug-hunt cost for run ${runId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Attaches which CLI/model actually ran this run — reported by the CI
+   * workflow right after it resolves `GET pipeline/models`, since ally-be
+   * itself never learns this at dispatch time (see the entity's own doc
+   * comment). Best-effort, same contract as `recordActualCost`: a CI
+   * reporting step must never fail the runner's job over this.
+   */
+  async recordResolvedModel(
+    runId: string,
+    params: { engine: string; model: string },
+  ): Promise<void> {
+    try {
+      await this.runRepository.update(runId, {
+        engine: params.engine,
+        model: params.model,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to record resolved model for run ${runId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
