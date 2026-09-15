@@ -8,6 +8,39 @@ import { createEmptyPrdDocument } from '../../type/builder-prd.type';
 
 describe('builder PRD normalisation', () => {
   describe('asPrdText', () => {
+    /**
+     * Seen in production: Goals, Non-goals, the test plan and the technical
+     * plan all rendered `\n` as two visible characters, because the model
+     * wrote the escape sequence into the JSON string rather than a newline in
+     * it. The PRD is read by a person deciding whether to build and by the
+     * agent that implements it literally, so both were reading a degraded
+     * document.
+     */
+    it('repairs a field the model escaped end to end', () => {
+      expect(asPrdText('Goal one.\\n- Goal two.\\n- Goal three.')).toBe(
+        'Goal one.\n- Goal two.\n- Goal three.',
+      );
+    });
+
+    it('leaves real newlines alone', () => {
+      expect(asPrdText('Real line.\nAnother.')).toBe('Real line.\nAnother.');
+    });
+
+    /**
+     * The guard that stops a repair becoming a corruption. A field mixing both
+     * is one where the model got newlines right and MEANT the backslash — a
+     * technical plan saying "split on \n" is the obvious case, and rewriting
+     * it would change an instruction rather than fix a format.
+     */
+    it('leaves a deliberate escape sequence alone when real newlines exist', () => {
+      const plan = 'Split the payload on \\n before parsing.\nThen validate.';
+      expect(asPrdText(plan)).toBe(plan);
+    });
+
+    it('leaves plain prose untouched', () => {
+      expect(asPrdText('No newlines at all.')).toBe('No newlines at all.');
+    });
+
     it('passes strings through untouched', () => {
       expect(asPrdText('Which tenant owns this?')).toBe(
         'Which tenant owns this?',

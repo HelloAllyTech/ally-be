@@ -51,9 +51,30 @@ const TEXT_KEYS = [
 ];
 
 /** Anything at all → a string. Never returns an object. */
+/**
+ * Turn a field the model escaped back into the prose it meant.
+ *
+ * Observed in production: Goals, Non-goals, the test plan, the end-to-end
+ * checks and the technical plan all rendered `\n` as two visible characters,
+ * because the model wrote the escape sequence into the JSON string rather than
+ * a newline in it. The PRD is read by a person deciding whether to press
+ * Start, and by the coding agent that implements it literally, so a document
+ * full of `\n-` is degraded for both.
+ *
+ * Only when the field has NO real newline of its own. A string mixing both is
+ * one where the model got newlines right and meant the backslash — a technical
+ * plan saying "split on \n" is the obvious case, and silently rewriting that
+ * would corrupt an instruction rather than repair a format. All-escaped is the
+ * signature of the bug; mixed is the signature of intent.
+ */
+const unescapeIfWhollyEscaped = (value: string): string =>
+  value.includes('\\n') && !value.includes('\n')
+    ? value.replace(/\\r\\n|\\n/g, '\n')
+    : value;
+
 export function asPrdText(value: unknown): string {
   if (value === null || value === undefined) return '';
-  if (typeof value === 'string') return value;
+  if (typeof value === 'string') return unescapeIfWhollyEscaped(value);
   if (typeof value === 'number' || typeof value === 'boolean') {
     return String(value);
   }

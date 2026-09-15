@@ -26,6 +26,7 @@ import {
 import { BuilderEventService } from './builder-event.service';
 import { BuilderSteerService } from './builder-steer.service';
 import { BuilderAttemptService } from './builder-attempt.service';
+import { LlmModelsRepository } from 'src/llm/repository/llm-models.repository';
 import { BuilderSettingsService } from './builder-settings.service';
 import { BuilderNotificationService } from './builder-notification.service';
 import { BuilderExemplarService } from './builder-exemplar.service';
@@ -132,6 +133,7 @@ export class BuilderBuildService {
     private readonly questionRepository: BuilderQuestionRepository,
     private readonly steerService: BuilderSteerService,
     private readonly attemptService: BuilderAttemptService,
+    private readonly llmModelsRepository: LlmModelsRepository,
     private readonly pullRequestRepository: BuilderPullRequestRepository,
     private readonly settingsService: BuilderSettingsService,
     private readonly notificationService: BuilderNotificationService,
@@ -215,6 +217,7 @@ export class BuilderBuildService {
 
     const sizing = await this.classifySession(session, milestone);
     const models = this.resolveModels(session, settings, overrides, sizing);
+    await this.assertModelsAreReal(models);
 
     // Carry the chosen engine/model onto the session so a resume run and the
     // UI both read the same thing without re-deriving it.
@@ -429,6 +432,69 @@ export class BuilderBuildService {
    * `isEpic` therefore applies only when sizing a whole PRD with no milestone
    * in hand — the pre-split case, where the signal still means what it said.
    */
+  /**
+   * Refuse a build whose configured models do not exist, before it costs
+   * anything.
+   *
+   * A model id that a provider no longer serves fails in the worst available
+   * way today: `run-engine.sh` has no `set -e`, so `claude -p --model <gone>`
+   * errors, the script carries on, the gate runs against an unchanged tree and
+   * blocks, and the loop retries. Nothing anywhere says the model does not
+   * exist. On a small build's ladder — two rungs on the same tier — that burns
+   * two of four attempts before the run even reaches a different model, and
+   * the admin sees a failed build with a test-gate error.
+   *
+   * This is not hypothetical maintenance work: `claude-haiku-4-5` is the
+   * mechanical tier's default and four AI-task registry rows, it is the only
+   * Haiku Anthropic ships, and its retirement window opens 2026-10-15.
+   *
+   * Checked against the `llm_models` catalog rather than a hardcoded list, so
+   * retiring a model is a row edit rather than a deploy. Unknown-to-the-catalog
+   * is treated as fine: the catalog is admin-maintained and lags reality in
+   * both directions, and refusing a build because someone has not added a row
+   * yet would be a worse failure than the one this prevents. Only an
+   * explicitly INACTIVE row blocks — that is somebody stating the model is
+   * gone.
+   */
+  private async assertModelsAreReal(
+    models: BuilderResolvedModels,
+  ): Promise<void> {
+    const wanted = [
+      ...new Set(
+        [models.planner, models.coder, models.verifier, ...models.coderLadder]
+          .map((model) => String(model ?? '').trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (!wanted.length) return;
+
+    let retired: string[] = [];
+    try {
+      const rows = await this.llmModelsRepository.find({
+        where: { model: In(wanted) },
+      });
+      retired = rows
+        .filter((row) => row.active === false)
+        .map((row) => row.model);
+    } catch (error) {
+      // The catalog being unreadable is not evidence a model is gone, and a
+      // build refused over a database hiccup is a worse outcome than one that
+      // runs on a model nobody has retired.
+      this.logger.warn(
+        `Could not check Builder's models against the catalog: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return;
+    }
+
+    if (retired.length) {
+      throw new BadRequestException(
+        `${retired.join(', ')} ${retired.length === 1 ? 'is' : 'are'} marked retired in the model catalog, so this build would burn its attempts on a model that no longer answers. Pick another model tier in Builder settings, or mark the row active again if the retirement was recorded early.`,
+      );
+    }
+  }
+
   private async classifySession(
     session: BuilderSession,
     milestone?: {

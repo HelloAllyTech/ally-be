@@ -65,13 +65,14 @@ export class BuilderMetricsService {
    */
   async pipelineHealth(windowDays = 30): Promise<BuilderPipelineHealth> {
     const days = Math.min(365, Math.max(7, Math.floor(windowDays) || 30));
-    const [phases, gates, outcomes, loop] = await Promise.all([
+    const [phases, gates, outcomes, loop, attempts] = await Promise.all([
       this.phaseTimings(days),
       this.gatePassRates(days),
       this.runOutcomes(days),
       this.loopShape(days),
+      this.attemptOutcomes(days),
     ]);
-    return { windowDays: days, phases, gates, outcomes, loop };
+    return { windowDays: days, phases, gates, outcomes, loop, attempts };
   }
 
   /**
@@ -186,6 +187,74 @@ export class BuilderMetricsService {
         // ran: passing eventually only says remediation works.
         firstAttemptPassRate:
           firstAttempts > 0 ? firstAttemptsPassed / firstAttempts : null,
+      };
+    });
+  }
+
+  /**
+   * What each coder tier actually bought.
+   *
+   * `builder_attempts` was written and never read: it records the arm and the
+   * reward on every coding attempt, and nothing queried it, so the dataset
+   * that exists to answer "is the cheap tier good enough" could not answer
+   * anything. This is that query.
+   *
+   * Grouped by the decision features frozen on the run, because a tier's pass
+   * rate is only meaningful against the kind of work it was given — a model
+   * that clears every small build and no large one is not "72% good".
+   *
+   * `passRate` at attempt 1 is the number that decides whether to start
+   * cheaper: escalation pays only when the cheap tier clears the gate often
+   * enough to cover the failed attempts it causes. `trustedPassRate` is the
+   * same number with captured passes removed — a pass on a run that edited
+   * its own test configuration is not evidence, and a tier that reached its
+   * rate that way would look cheapest precisely because it was cheating.
+   */
+  private async attemptOutcomes(
+    days: number,
+  ): Promise<BuilderAttemptOutcome[]> {
+    const rows = await this.dataSource.query(
+      `
+      SELECT run.size                                     AS "size",
+             a.model                                      AS "model",
+             a.attempt                                    AS "attempt",
+             COUNT(*)::int                                AS "attempts",
+             COUNT(*) FILTER (WHERE a."gatePassed")::int  AS "passed",
+             COUNT(*) FILTER (
+               WHERE a."gatePassed" AND a."gateTrusted"
+             )::int                                       AS "trustedPasses",
+             COUNT(*) FILTER (WHERE a.escalated)::int     AS "escalations",
+             ROUND(SUM(a."costUsd"), 4)                   AS "totalCostUsd",
+             PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY a."durationMs"
+             )                                            AS "medianMs"
+        FROM builder_attempts a
+        JOIN builder_build_runs run ON run.id = a."runId"
+       WHERE a."createdAt" >= NOW() - ($1 || ' days')::interval
+         AND a.phase = 'code'
+       GROUP BY run.size, a.model, a.attempt
+       ORDER BY run.size, a.model, a.attempt
+      `,
+      [String(days)],
+    );
+
+    return rows.map((row: Record<string, any>) => {
+      const attempts = Number(row.attempts ?? 0);
+      return {
+        size: row.size ?? null,
+        model: String(row.model),
+        attempt: Number(row.attempt ?? 0),
+        attempts,
+        passed: Number(row.passed ?? 0),
+        // Null rather than 0 on an empty cell: "no attempts yet" and "never
+        // passed" are different answers, and a routing decision must not read
+        // the first as the second.
+        passRate: attempts === 0 ? null : Number(row.passed ?? 0) / attempts,
+        trustedPassRate:
+          attempts === 0 ? null : Number(row.trustedPasses ?? 0) / attempts,
+        escalations: Number(row.escalations ?? 0),
+        totalCostUsd: this.numberOrNull(row.totalCostUsd),
+        medianMs: this.numberOrNull(row.medianMs),
       };
     });
   }
@@ -588,6 +657,22 @@ export interface BuilderPipelineOutcome {
   medianRunnerMinutes: number | null;
 }
 
+/** One (size x model x attempt) cell of the model-selection dataset. */
+export interface BuilderAttemptOutcome {
+  size: string | null;
+  model: string;
+  attempt: number;
+  attempts: number;
+  passed: number;
+  /** Null when the cell is empty — not the same as never passing. */
+  passRate: number | null;
+  /** Pass rate counting only gates the change did not also edit. */
+  trustedPassRate: number | null;
+  escalations: number;
+  totalCostUsd: number | null;
+  medianMs: number | null;
+}
+
 export interface BuilderPipelineLoop {
   runs: number;
   medianCodeIterations: number | null;
@@ -602,4 +687,5 @@ export interface BuilderPipelineHealth {
   gates: BuilderPipelineGate[];
   outcomes: BuilderPipelineOutcome[];
   loop: BuilderPipelineLoop;
+  attempts: BuilderAttemptOutcome[];
 }

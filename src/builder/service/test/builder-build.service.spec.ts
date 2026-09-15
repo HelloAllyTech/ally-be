@@ -71,6 +71,7 @@ describe('BuilderBuildService', () => {
     listBySession: jest.Mock;
   };
   let llmUsage: { record: jest.Mock };
+  let llmModelsRepository: { find: jest.Mock };
   let prdService: { getOrCreateDoc: jest.Mock };
 
   beforeEach(() => {
@@ -143,6 +144,7 @@ describe('BuilderBuildService', () => {
     llmUsage = { record: jest.fn().mockResolvedValue(undefined) };
     // Sizing reads the PRD to decide what planning is worth. A small default,
     // so a test that does not care gets the cheap planner and says nothing.
+    llmModelsRepository = { find: jest.fn().mockResolvedValue([]) };
     prdService = {
       getOrCreateDoc: jest
         .fn()
@@ -170,6 +172,9 @@ describe('BuilderBuildService', () => {
       // decide whether a build succeeds — these tests assert the build, not
       // the telemetry.
       { recordArm: jest.fn(), recordGate: jest.fn() } as any,
+      // The model catalog. Empty means "nothing is marked retired", which is
+      // the state every other test in this file assumes.
+      llmModelsRepository as any,
       pullRequestRepository as any,
       settingsService as any,
       notificationService as any,
@@ -262,6 +267,73 @@ describe('BuilderBuildService', () => {
    * the first attempt is never weakened, and the ladder always has somewhere
    * to go.
    */
+  /**
+   * A build refused before it costs anything, rather than one that burns its
+   * attempts on a model that no longer answers.
+   *
+   * The failure this replaces is silent: run-engine.sh has no `set -e`, so a
+   * dead model id lets the script carry on, gate an unchanged tree, block, and
+   * retry — and on a small build's ladder that is two of four attempts gone
+   * before it reaches a different tier, with a test-gate error as the only
+   * visible symptom.
+   */
+  describe('model preflight', () => {
+    it('refuses a build whose coder tier is marked retired', async () => {
+      llmModelsRepository.find.mockResolvedValue([
+        { model: 'claude-sonnet-5', active: false },
+      ]);
+
+      await expect(
+        service.startBuild(readySession() as any, 1),
+      ).rejects.toThrow(/retired/i);
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+    });
+
+    it('names the model, so the admin knows which tier to change', async () => {
+      llmModelsRepository.find.mockResolvedValue([
+        { model: 'claude-opus-5', active: false },
+      ]);
+
+      await expect(
+        service.startBuild(readySession() as any, 1),
+      ).rejects.toThrow(/claude-opus-5/);
+    });
+
+    /**
+     * The catalog is admin-maintained and lags reality in both directions.
+     * Refusing a build because nobody has added a row yet would be a worse
+     * failure than the one this prevents, so only an explicit retirement
+     * blocks.
+     */
+    it('allows a model the catalog has never heard of', async () => {
+      llmModelsRepository.find.mockResolvedValue([]);
+
+      await service.startBuild(readySession() as any, 1);
+
+      expect(github.dispatchWorkflow).toHaveBeenCalled();
+    });
+
+    it('allows the build when the catalog itself cannot be read', async () => {
+      llmModelsRepository.find.mockRejectedValue(new Error('db down'));
+
+      await service.startBuild(readySession() as any, 1);
+
+      // A database hiccup is not evidence a model is gone.
+      expect(github.dispatchWorkflow).toHaveBeenCalled();
+    });
+
+    /** Escalation rungs are models too — a retired one is found at attempt 3. */
+    it('checks the ladder, not just the three named tiers', async () => {
+      llmModelsRepository.find.mockResolvedValue([]);
+
+      await service.startBuild(readySession() as any, 1);
+
+      const asked = llmModelsRepository.find.mock.calls[0][0].where.model;
+      const wanted = (asked as { _value: string[] })._value ?? asked;
+      expect(wanted).toEqual(expect.arrayContaining(['claude-opus-5']));
+    });
+  });
+
   describe('the coder escalation ladder', () => {
     const dispatchedModels = () =>
       JSON.parse(
