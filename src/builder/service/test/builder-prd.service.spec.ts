@@ -20,7 +20,9 @@ const buildReadyPrd = (): BuilderPrdDocument => ({
   goals: 'Turn a feature idea into reviewable pull requests without a handoff.',
   nonGoals: 'Not a replacement for code review; humans still merge.',
   testPlanMd:
-    'Unit tests for the readiness rubric; an interview run end to end against a seeded admin.',
+    'Unit tests for the readiness rubric will be written. An interview run end-to-end against a seeded admin will be performed to ensure quality.',
+  e2ePlanMd:
+    'Cypress tests covering the main user flows of the new feature will be added.',
   requirements: [
     {
       id: 'R1',
@@ -85,6 +87,26 @@ describe('BuilderPrdService', () => {
       const readiness = service.computeReadiness(draft);
 
       expect(readiness.ready).toBe(false);
+    });
+
+    it('blocks on thin test and e2e plans', () => {
+      const draft = buildReadyPrd();
+      draft.testPlanMd = 'short plan';
+      draft.e2ePlanMd = 'short e2e plan';
+
+      const readiness = service.computeReadiness(draft);
+
+      expect(readiness.ready).toBe(false);
+      const testPlanSection = readiness.sections.find(
+        (s) => s.key === 'testPlanMd',
+      );
+      const e2ePlanSection = readiness.sections.find(
+        (s) => s.key === 'e2ePlanMd',
+      );
+      expect(testPlanSection?.ok).toBe(false);
+      expect(testPlanSection?.hint).toContain('too thin');
+      expect(e2ePlanSection?.ok).toBe(false);
+      expect(e2ePlanSection?.hint).toContain('too thin');
     });
 
     it('scores an empty PRD at zero and lists every blocker', () => {
