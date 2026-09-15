@@ -401,6 +401,35 @@ revert_stray_writes() {
   done
 }
 
+# ── Review mode: read the pull request, change nothing ──────────────────────
+#
+# One phase, no gate, no baseline. A review run reads a finished diff and posts
+# findings; there is nothing to test because nothing was written.
+#
+# VERIFIER_TOOLS, not CODER_TOOLS, and the omission is the design rather than a
+# precaution. Give a reviewer Write and Edit and it stops arguing with the code
+# and simply fixes it — at which point nothing independent has looked at the
+# result, and the fix loop downstream has nothing to act on because the problem
+# is already gone. The prompt says not to; the tool list means it cannot.
+#
+# Budgeted off the verify phase for the same reason it borrows those tools: it
+# is the same shape of work, one careful read of a diff.
+if [ "${BUILDER_MODE:-build}" = "review" ]; then
+  echo "::group::review (${VERIFIER_MODEL})"
+  post_stage REVIEWING
+  run_agent "$PROMPT_FILE" "${RESULTS_DIR}/review.json" \
+    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$VERIFY_BUDGET"
+  report_phase_cost review "$VERIFIER_MODEL" "${RESULTS_DIR}/review.json"
+  echo "::endgroup::"
+
+  # No gate and no failure branch. A review that finds nothing and a review
+  # that finds eight things are both successful runs — the findings are the
+  # output, not the verdict on this run. ally-be decides what happens next from
+  # the rows that were posted, and a review that posted nothing at all shows up
+  # there as silence rather than as a green run that did its job.
+  exit 0
+fi
+
 # ── Fix mode: a narrower pipeline ───────────────────────────────────────────
 #
 # A fix run acts on complaints about an already-open pull request. There is no

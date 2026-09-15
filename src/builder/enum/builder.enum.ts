@@ -71,6 +71,11 @@ export enum BuilderStage {
   /** The machine test gate: every touched repo's test/lint/typecheck. */
   GATE = 'GATE',
   VERIFYING = 'VERIFYING',
+  /**
+   * A review run reading an already-open pull request. Distinct from VERIFYING,
+   * which is the in-build reviewer looking at work the same run just wrote.
+   */
+  REVIEWING = 'REVIEWING',
   /** A coder re-invocation fixing gate failures or verifier objections. */
   REMEDIATING = 'REMEDIATING',
   /** E2E, commit, push, PRs, report — only reached on a green verify. */

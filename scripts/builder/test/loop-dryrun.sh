@@ -15,6 +15,7 @@
 #   3. gate-block — gate never passes; run fails with NO finalise phase
 #   4. budget     — the ceiling is hit; the run stops cleanly with no PRs
 #   5. pause      — the coder pauses; nothing after it runs
+#   6. review     — one read-only pass over an open PR; no gate, no PRs
 #
 # Usage: scripts/builder/test/loop-dryrun.sh [scenario]
 set -uo pipefail
@@ -418,6 +419,26 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = pause ]; then
   check "no gate after a pause" no "$(has_in_log 'EVENT gate_result')"
   check "no verification after a pause" no "$(has_in_log 'EVENT verification')"
   check "no PRs after a pause" no "$(has_in_log 'GET finalise-prompt')"
+fi
+
+# ── 6. review mode ──────────────────────────────────────────────────────────
+#
+# A review run reads an open pull request and files findings. The assertions
+# below are all about what it must NOT do: no gate (nothing was written, so
+# there is nothing to test), no finalise (it opens no pull requests), and no
+# planning (the work is one diff, not a plan). A review that wandered into any
+# of those would be pushing commits to a branch a human is reviewing — which is
+# precisely what having a separate reviewer exists to avoid.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = review ]; then
+  run_scenario review BUILDER_MODE=review
+  check "review exits 0" 0 "$EXIT_CODE"
+  check "posts the REVIEWING stage" "REVIEWING" \
+    "$(grep -o 'EVENT stage_change:[A-Z_]*' "$LOG_FILE" | sed 's/.*://' | tr '\n' ' ' | sed 's/ $//')"
+  check "billed the review phase" yes "$(has_in_log 'COST review:')"
+  check "ran no test gate" no "$(has_in_log 'EVENT gate_result')"
+  check "made no plan" no "$(has_in_log 'GET plan-prompt')"
+  check "opened no pull requests" no "$(has_in_log 'GET finalise-prompt')"
+  check "did not remediate" no "$(has_in_log 'GET remediate-prompt')"
 fi
 
 echo
