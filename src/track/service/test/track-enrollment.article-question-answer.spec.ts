@@ -259,6 +259,47 @@ describe('TrackEnrollmentService — inline article questions', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
+    /**
+     * Knowledge of the correct response tells the learner *which* answer was
+     * right; the author's line tells them why the one they picked was wrong,
+     * which is the half that teaches. It rides back with the verdict.
+     */
+    it("returns the author's explanation with the verdict", async () => {
+      const q1 = question('q1', 'a');
+      q1.explanation = 'B is the tempting one because it sounds active.';
+      stubPermittedItemProgress(articleItem([q1]), {
+        id: PROGRESS_ID,
+        status: SessionItemStatus.UNLOCKED,
+        meta: {},
+      });
+
+      const result = await service.submitArticleQuestionAnswer(
+        ITEM_ID,
+        'q1',
+        'b',
+      );
+
+      expect(result.explanation).toBe(
+        'B is the tempting one because it sounds active.',
+      );
+    });
+
+    it('returns a null explanation when the author wrote none', async () => {
+      stubPermittedItemProgress(articleItem([question('q1', 'a')]), {
+        id: PROGRESS_ID,
+        status: SessionItemStatus.UNLOCKED,
+        meta: {},
+      });
+
+      const result = await service.submitArticleQuestionAnswer(
+        ITEM_ID,
+        'q1',
+        'a',
+      );
+
+      expect(result.explanation).toBeNull();
+    });
+
     it('400s when the component is not an article', async () => {
       stubPermittedItemProgress(
         { id: ITEM_ID, type: TrackItemType.VIDEO, content: {} },
