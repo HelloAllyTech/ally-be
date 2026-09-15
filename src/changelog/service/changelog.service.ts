@@ -1,9 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
-import { CreateChangelogEntryDto } from '../dto/create-changelog-entry.dto';
 import { GetPublicChangelogEntriesResponseDto } from '../dto/changelog-entry-response.dto';
-import { ChangelogEntry } from '../entity/changelog-entry.entity';
-import { ChangelogEntryRepository } from '../repository/changelog-entry.repository';
+import { ChangelogSourceService } from './changelog-source.service';
 
 const DEFAULT_LIMIT = 100;
 const MAX_LIMIT = 200;
@@ -11,19 +9,16 @@ const DEFAULT_OFFSET = 0;
 
 @Injectable()
 export class ChangelogService {
-  constructor(
-    private readonly changelogEntryRepository: ChangelogEntryRepository,
-  ) {}
+  constructor(private readonly sourceService: ChangelogSourceService) {}
 
-  async create(dto: CreateChangelogEntryDto): Promise<ChangelogEntry> {
-    const entry = this.changelogEntryRepository.create({
-      repo: dto.repo,
-      releaseNoteText: dto.releaseNoteText,
-      mergedAt: new Date(dto.mergedAt),
-    });
-    return this.changelogEntryRepository.save(entry);
-  }
-
+  /**
+   * One page of the feed, newest first.
+   *
+   * Paging in memory rather than in SQL: the whole file is a few hundred
+   * kilobytes and is already parsed and held by ChangelogSourceService, so a
+   * slice costs nothing a query would have saved. `count` is the total, which
+   * the page uses to know whether a "Load more" button has anything behind it.
+   */
   async findPublic({
     limit,
     offset,
@@ -37,18 +32,17 @@ export class ChangelogService {
     );
     const resolvedOffset = Math.max(offset ?? DEFAULT_OFFSET, 0);
 
-    const [entries, count] = await this.changelogEntryRepository.findPublic(
-      resolvedLimit,
-      resolvedOffset,
-    );
+    const all = await this.sourceService.getEntries();
 
     return {
-      entries: entries.map((entry) => ({
-        id: entry.id,
-        releaseNoteText: entry.releaseNoteText,
-        mergedAt: entry.mergedAt,
-      })),
-      count,
+      entries: all
+        .slice(resolvedOffset, resolvedOffset + resolvedLimit)
+        .map((entry) => ({
+          id: entry.id,
+          releaseNoteText: entry.releaseNoteText,
+          mergedAt: entry.mergedAt,
+        })),
+      count: all.length,
     };
   }
 }

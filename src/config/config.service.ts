@@ -56,6 +56,26 @@ export class AppConfigService {
     return this.configService.get<string>('GITHUB_ACTIONS_TOKEN', '');
   }
 
+  /**
+   * Read-only token for fetching `ally-changelog`'s CHANGELOG.md, which IS the
+   * public changelog feed — there is no database copy of it any more. The repo
+   * is private, so an unauthenticated read gets a 404.
+   *
+   * Falls back to `githubToken` because every environment that already runs
+   * Bug Hunter has one, and a read is strictly narrower than what that token
+   * already does. Set `GITHUB_CHANGELOG_TOKEN` to something scoped to
+   * `Contents: read` on that one repo to keep the public page off the
+   * write-scoped credential. Empty on environments with neither, where
+   * `GET /v1/changelog/public` answers 503 rather than an empty feed —
+   * "we cannot reach it" and "there is nothing to say" are different.
+   */
+  get changelogSourceToken(): string {
+    return (
+      this.configService.get<string>('GITHUB_CHANGELOG_TOKEN', '') ||
+      this.githubToken
+    );
+  }
+
   get githubMobileRepo(): string {
     return this.configService.get<string>(
       'GITHUB_MOBILE_REPO',
