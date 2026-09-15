@@ -126,6 +126,48 @@ describe('ChangelogSourceService', () => {
     );
   });
 
+  // The 503 is all CloudWatch used to hold, which made a token problem,
+  // an outage and a format change look identical from production.
+  it('logs the underlying cause on the branch that answers 503', async () => {
+    mockedAxios.get.mockRejectedValue(new Error('GitHub is down'));
+
+    await expect(service.getEntries()).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining('GitHub is down'),
+      expect.anything(),
+    );
+  });
+
+  it('names the token and the repo when GitHub answers 404', async () => {
+    mockedAxios.get.mockRejectedValue({ response: { status: 404 } });
+
+    await expect(service.getEntries()).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+
+    const [logged] = mockLogger.error.mock.calls[0];
+    // A private repo 404s for a token that cannot see it, so the message has
+    // to point at the token rather than at a missing file.
+    expect(logged).toContain('Contents: read');
+    expect(logged).toContain('HelloAllyTech/ally-changelog');
+  });
+
+  it('calls a rejected token what it is rather than a missing file', async () => {
+    mockedAxios.get.mockRejectedValue({ response: { status: 403 } });
+
+    await expect(service.getEntries()).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.stringContaining('rejected, expired or rate-limited'),
+      expect.anything(),
+    );
+  });
+
   it('refuses a parse of zero entries instead of publishing an empty feed', async () => {
     mockedAxios.get.mockResolvedValue({ data: '# Ally Changelog\n' });
 
@@ -141,6 +183,24 @@ describe('ChangelogSourceService', () => {
       ServiceUnavailableException,
     );
     expect(mockedAxios.get).not.toHaveBeenCalled();
+  });
+
+  // Otherwise the first sign is a generic error on a public page, which
+  // points nowhere near a missing environment variable.
+  it('warns at boot when no token is configured', async () => {
+    await build('');
+
+    service.onModuleInit();
+
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('GITHUB_CHANGELOG_TOKEN'),
+    );
+  });
+
+  it('stays quiet at boot when a token is configured', async () => {
+    service.onModuleInit();
+
+    expect(mockLogger.warn).not.toHaveBeenCalled();
   });
 
   it('shares one refresh across concurrent requests', async () => {
