@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
+import { LlmModule } from 'src/llm/llm.module';
 import { AuthModule } from 'src/auth/auth.module';
 import { GithubModule } from 'src/github/github.module';
 import { BugHunterModule } from 'src/bug-hunter/bug-hunter.module';
@@ -123,6 +124,9 @@ import {
     // for the streamed tool loop, LlmCompletionService for the one-shot
     // transcript digest.
     LlmAgentModule,
+    // For LlmModelsRepository: the preflight in BuilderBuildService checks a
+    // run's models against the catalog before dispatching to the engine.
+    LlmModule,
     AuthModule,
     GithubModule,
     // For BugFindingService only: the gate's excused failures are filed as
