@@ -212,6 +212,10 @@ export class ScenarioCharacterService {
 
     await this.assertInScope(scenarioCharacter);
 
+    if (!scenarioCharacter.knowledgeSources) {
+      scenarioCharacter.knowledgeSources = [];
+    }
+
     return scenarioCharacter;
   }
 
