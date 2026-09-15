@@ -11,8 +11,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * the two — a review run writes findings and touches no branch — but the
  * default still belongs to the admin, not to this migration.
  */
-export class AddBuilderReview1970300000000 implements MigrationInterface {
-  name = 'AddBuilderReview1970300000000';
+export class AddBuilderReview1970400000000 implements MigrationInterface {
+  name = 'AddBuilderReview1970400000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
