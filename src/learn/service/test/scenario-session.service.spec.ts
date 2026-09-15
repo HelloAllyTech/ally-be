@@ -72,6 +72,8 @@ import { ScenarioSessionDetailsRepository } from '../../repository/scenario-sess
 import { GlossaryAdherenceService } from 'src/language/service/glossary-adherence.service';
 import { LearnerSupervisorMemoryService } from '../learner-supervisor-memory.service';
 import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
+import { CompetencyService } from '../competency.service';
+import { mock } from 'jest-mock-extended';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -396,6 +398,10 @@ describe('ScenarioSessionService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSessionService,
+        {
+          provide: CompetencyService,
+          useValue: mock<CompetencyService>(),
+        },
         {
           provide: PreviewMonologueService,
           useValue: { startRun: jest.fn().mockResolvedValue(undefined) },
