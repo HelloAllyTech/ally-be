@@ -17,4 +17,6 @@ export enum TtsProvider {
   SARVAM = 'SARVAM',
   GOOGLE = 'GOOGLE',
   HUME = 'HUME',
+  CARTESIA = 'CARTESIA',
+  SMALLESTAI = 'SMALLESTAI',
 }

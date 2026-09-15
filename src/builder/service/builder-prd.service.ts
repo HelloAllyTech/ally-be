@@ -52,7 +52,8 @@ const PROSE_SECTIONS: {
   { key: 'existingBehaviour', label: 'What already exists', minLength: 60 },
   { key: 'goals', label: 'Goals', minLength: 30 },
   { key: 'nonGoals', label: 'Non-goals', minLength: 20 },
-  { key: 'testPlanMd', label: 'Test plan', minLength: 40 },
+  { key: 'testPlanMd', label: 'Test plan', minLength: 100 },
+  { key: 'e2ePlanMd', label: 'E2E test plan', minLength: 60 },
 ];
 
 /**

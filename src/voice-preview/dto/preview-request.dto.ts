@@ -6,6 +6,8 @@ export enum TTSProviderEnum {
   SARVAM = 'SARVAM',
   GOOGLE = 'GOOGLE',
   HUME = 'HUME',
+  CARTESIA = 'CARTESIA',
+  SMALLESTAI = 'SMALLESTAI',
 }
 
 export class PreviewRequestDto {
