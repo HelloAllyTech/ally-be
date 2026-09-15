@@ -815,7 +815,7 @@ describe('BugFixSessionService', () => {
         'finding-1',
         expect.any(Date),
       );
-      expect(findingRepository.update).toHaveBeenCalledWith('dismissed-1', {
+      expect(findingRepository.update).toHaveBeenCalledWith(['dismissed-1'], {
         reversedAt: expect.any(Date),
         reversedByFindingId: 'finding-1',
       });
@@ -990,7 +990,7 @@ describe('BugFixSessionService', () => {
         'finding-1',
         expect.any(Date),
       );
-      expect(findingRepository.update).toHaveBeenCalledWith('dismissed-2', {
+      expect(findingRepository.update).toHaveBeenCalledWith(['dismissed-2'], {
         reversedAt: expect.any(Date),
         reversedByFindingId: 'finding-1',
       });

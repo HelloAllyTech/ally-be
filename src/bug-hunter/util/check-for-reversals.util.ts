@@ -22,12 +22,22 @@ import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
  * Best-effort, like `releaseLinkedRoadmapOpportunity`: the finding's
  * MERGED/RELEASED status is already committed by the time this runs, so a
  * failure here must never undo it or stop whatever the caller was doing.
+ *
+ * `shippedAt` is the caller's own record of the moment the finding actually
+ * shipped — not derived from `finding.releasedAt`/`updatedAt` here, because
+ * several callers write the new status straight through
+ * `findingRepository.update()` and then patch the in-memory `finding` object
+ * without reloading it, leaving `updatedAt` pointing at whenever the row was
+ * originally fetched rather than the ship time. Passing the timestamp in
+ * keeps this function from silently under-counting reversals decided in that
+ * gap.
  */
 export async function checkForAndRecordReversals(
   findingRepository: BugFindingRepository,
   bugHunterService: BugHunterService,
   finding: BugFinding,
   logger: LoggerService,
+  shippedAt: Date,
 ): Promise<void> {
   if (
     finding.status !== BugFindingStatus.MERGED &&
@@ -37,37 +47,51 @@ export async function checkForAndRecordReversals(
   }
   if (!finding.repo || !finding.dedupeKey) return;
 
+  let reversible: BugFinding[];
   try {
-    const shippedAt = finding.releasedAt ?? finding.updatedAt ?? new Date();
-    const reversible = await findingRepository.findReversibleFinderErrors(
+    reversible = await findingRepository.findReversibleFinderErrors(
       finding.repo,
       finding.dedupeKey,
       finding.id,
       shippedAt,
     );
-    for (const dismissed of reversible) {
-      await findingRepository.update(dismissed.id, {
-        reversedAt: new Date(),
-        reversedByFindingId: finding.id,
-      });
-      await bugHunterService.appendFindingEvent({
-        findingId: dismissed.id,
-        repo: finding.repo,
-        stage: BugHuntEventStage.REVERSED,
-        summary:
-          `This dismissal was reversed: finding ${finding.id} shipped under the same dedupe key, ` +
-          `so the original ${dismissed.decisionReason ?? 'dismissal'} was a finder error.`,
-        payload: {
-          reversedByFindingId: finding.id,
-          decisionReason: dismissed.decisionReason ?? null,
-        },
-      });
-    }
   } catch (error) {
     logger.warn(
       `Could not check for reversals of finding ${finding.id}: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
+    return;
+  }
+
+  if (!reversible.length) return;
+
+  const reversedAt = new Date();
+  await findingRepository.update(
+    reversible.map((dismissed) => dismissed.id),
+    { reversedAt, reversedByFindingId: finding.id },
+  );
+
+  for (const dismissed of reversible) {
+    try {
+      await bugHunterService.appendFindingEvent({
+        findingId: dismissed.id,
+        repo: finding.repo,
+        stage: BugHuntEventStage.REVERSED,
+        summary:
+          `This dismissal was reversed: finding ${finding.id} shipped under the same dedupe key, ` +
+          `so the original ${dismissed.decisionReason ? `${dismissed.decisionReason} ` : ''}dismissal was mistaken — the finder was right.`,
+        payload: {
+          reversedByFindingId: finding.id,
+          decisionReason: dismissed.decisionReason ?? null,
+        },
+      });
+    } catch (error) {
+      logger.warn(
+        `Marked finding ${dismissed.id} reversed but could not append its event: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 }

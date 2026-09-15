@@ -7,6 +7,8 @@ import { BugHunterService } from '../../service/bug-hunter.service';
 import { BugFindingStatus } from '../../enum/bug-finding.enum';
 import { BugHuntEventStage } from '../../enum/bug-hunt-event.enum';
 
+const SHIPPED_AT = new Date('2026-02-01T00:00:00.000Z');
+
 const finding = (over: Partial<BugFinding> = {}): BugFinding =>
   ({
     id: 'shipping-1',
@@ -55,6 +57,7 @@ describe('checkForAndRecordReversals', () => {
       bugHunterService(),
       finding({ status: BugFindingStatus.PR_OPENED }),
       logger,
+      SHIPPED_AT,
     );
     expect(repo.findReversibleFinderErrors).not.toHaveBeenCalled();
   });
@@ -66,32 +69,12 @@ describe('checkForAndRecordReversals', () => {
       bugHunterService(),
       finding({ dedupeKey: null }),
       logger,
+      SHIPPED_AT,
     );
     expect(repo.findReversibleFinderErrors).not.toHaveBeenCalled();
   });
 
-  it('passes the shipping moment so the query can guard against retroactive reversal', async () => {
-    const repo = findingRepository();
-    const shippedFinding = finding({
-      releasedAt: new Date('2026-02-01T00:00:00.000Z'),
-    });
-
-    await checkForAndRecordReversals(
-      repo,
-      bugHunterService(),
-      shippedFinding,
-      logger,
-    );
-
-    expect(repo.findReversibleFinderErrors).toHaveBeenCalledWith(
-      'ally-be',
-      'dedupe-1',
-      'shipping-1',
-      new Date('2026-02-01T00:00:00.000Z'),
-    );
-  });
-
-  it('falls back to updatedAt for the shipping moment when releasedAt is unset (a MERGED-but-unreleased fix)', async () => {
+  it('passes the caller-supplied shipping moment through to the query', async () => {
     const repo = findingRepository();
 
     await checkForAndRecordReversals(
@@ -99,30 +82,34 @@ describe('checkForAndRecordReversals', () => {
       bugHunterService(),
       finding(),
       logger,
+      SHIPPED_AT,
     );
 
     expect(repo.findReversibleFinderErrors).toHaveBeenCalledWith(
       'ally-be',
       'dedupe-1',
       'shipping-1',
-      new Date('2026-01-15T00:00:00.000Z'),
+      SHIPPED_AT,
     );
   });
 
-  it('marks every reversible dismissal reversed and appends an event on its own timeline', async () => {
+  it('marks every reversible dismissal reversed in one bulk write and appends an event per finding', async () => {
     const hits = [dismissed({ id: 'd1' }), dismissed({ id: 'd2' })];
     const repo = findingRepository({
       findReversibleFinderErrors: jest.fn().mockResolvedValue(hits),
     });
     const hunter = bugHunterService();
 
-    await checkForAndRecordReversals(repo, hunter, finding(), logger);
+    await checkForAndRecordReversals(
+      repo,
+      hunter,
+      finding(),
+      logger,
+      SHIPPED_AT,
+    );
 
-    expect(repo.update).toHaveBeenCalledWith('d1', {
-      reversedAt: expect.any(Date),
-      reversedByFindingId: 'shipping-1',
-    });
-    expect(repo.update).toHaveBeenCalledWith('d2', {
+    expect(repo.update).toHaveBeenCalledTimes(1);
+    expect(repo.update).toHaveBeenCalledWith(['d1', 'd2'], {
       reversedAt: expect.any(Date),
       reversedByFindingId: 'shipping-1',
     });
@@ -130,6 +117,9 @@ describe('checkForAndRecordReversals', () => {
       expect.objectContaining({
         findingId: 'd1',
         stage: BugHuntEventStage.REVERSED,
+        summary: expect.stringContaining(
+          'the original duplicate dismissal was mistaken — the finder was right',
+        ),
         payload: expect.objectContaining({ reversedByFindingId: 'shipping-1' }),
       }),
     );
@@ -144,8 +134,42 @@ describe('checkForAndRecordReversals', () => {
     });
 
     await expect(
-      checkForAndRecordReversals(repo, bugHunterService(), finding(), logger),
+      checkForAndRecordReversals(
+        repo,
+        bugHunterService(),
+        finding(),
+        logger,
+        SHIPPED_AT,
+      ),
     ).resolves.toBeUndefined();
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it('still marks the other dismissals reversed when one event append fails', async () => {
+    const hits = [dismissed({ id: 'd1' }), dismissed({ id: 'd2' })];
+    const repo = findingRepository({
+      findReversibleFinderErrors: jest.fn().mockResolvedValue(hits),
+    });
+    const hunter = bugHunterService({
+      appendFindingEvent: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('events table rejected payload'))
+        .mockResolvedValueOnce(undefined),
+    });
+
+    await checkForAndRecordReversals(
+      repo,
+      hunter,
+      finding(),
+      logger,
+      SHIPPED_AT,
+    );
+
+    expect(repo.update).toHaveBeenCalledWith(['d1', 'd2'], {
+      reversedAt: expect.any(Date),
+      reversedByFindingId: 'shipping-1',
+    });
+    expect(hunter.appendFindingEvent).toHaveBeenCalledTimes(2);
     expect(logger.warn).toHaveBeenCalled();
   });
 });

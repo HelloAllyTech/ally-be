@@ -914,6 +914,7 @@ export class BugFindingService {
         this.bugHunterService,
         after,
         this.logger,
+        after.releasedAt ?? after.updatedAt ?? new Date(),
       );
     }
 

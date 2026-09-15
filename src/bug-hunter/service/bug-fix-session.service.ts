@@ -539,14 +539,15 @@ export class BugFixSessionService {
       );
     }
 
+    const decidedAt = new Date();
     await this.findingRepository.update(finding.id, {
       status: BugFindingStatus.MERGED,
       decidedBy: userId,
-      decidedAt: new Date(),
+      decidedAt,
     });
     finding.status = BugFindingStatus.MERGED;
     await this.releaseLinkedRoadmapOpportunity(finding);
-    await this.checkForAndRecordReversals(finding);
+    await this.checkForAndRecordReversals(finding, decidedAt);
     await this.bugHunterService.appendFindingEvent({
       findingId: finding.id,
       repo: finding.repo,
@@ -759,12 +760,13 @@ export class BugFixSessionService {
         }
 
         if (steps.every((step) => step.status === BugFindingStatus.MERGED)) {
+          const mergedAt = new Date();
           await this.findingRepository.update(parent.id, {
             status: BugFindingStatus.MERGED,
           });
           parent.status = BugFindingStatus.MERGED;
           await this.releaseLinkedRoadmapOpportunity(parent);
-          await this.checkForAndRecordReversals(parent);
+          await this.checkForAndRecordReversals(parent, mergedAt);
           await this.notificationService.notify({
             level: BugHunterNotificationLevel.ACTION_NEEDED,
             ...planReadyToRelease(
@@ -897,7 +899,7 @@ export class BugFixSessionService {
         });
         parent.status = BugFindingStatus.RELEASED;
         parent.releasedAt = releasedAt;
-        await this.checkForAndRecordReversals(parent);
+        await this.checkForAndRecordReversals(parent, releasedAt);
         await this.notificationService.notify({
           level: BugHunterNotificationLevel.INFO,
           ...planReleased(parent.title, steps),
@@ -1085,7 +1087,10 @@ export class BugFixSessionService {
         });
         finding.status = BugFindingStatus.MERGED;
         await this.releaseLinkedRoadmapOpportunity(finding);
-        await this.checkForAndRecordReversals(finding);
+        await this.checkForAndRecordReversals(
+          finding,
+          pr.mergedAt ?? new Date(),
+        );
         await this.bugHunterService.appendFindingEvent({
           findingId: finding.id,
           repo: finding.repo,
@@ -1125,12 +1130,16 @@ export class BugFixSessionService {
    * applies to every MERGED/RELEASED write below including the RELEASED-only
    * ones that have no roadmap-release counterpart.
    */
-  private checkForAndRecordReversals(finding: BugFinding): Promise<void> {
+  private checkForAndRecordReversals(
+    finding: BugFinding,
+    shippedAt: Date,
+  ): Promise<void> {
     return checkForAndRecordReversals(
       this.findingRepository,
       this.bugHunterService,
       finding,
       this.logger,
+      shippedAt,
     );
   }
 
@@ -1218,10 +1227,10 @@ export class BugFixSessionService {
       ...(releasedAt ? { releasedAt } : {}),
       ...(runUrl ? { releaseRunUrl: runUrl } : {}),
     });
-    if (succeeded) {
+    if (succeeded && releasedAt) {
       finding.status = BugFindingStatus.RELEASED;
-      finding.releasedAt = releasedAt ?? null;
-      await this.checkForAndRecordReversals(finding);
+      finding.releasedAt = releasedAt;
+      await this.checkForAndRecordReversals(finding, releasedAt);
     }
     await this.bugHunterService.appendFindingEvent({
       findingId: finding.id,

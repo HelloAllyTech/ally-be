@@ -651,7 +651,7 @@ describe('BugFindingService.setStatus — releasing the reporter’s roadmap car
 
     await service.setStatus('finding-1', { status: BugFindingStatus.MERGED });
 
-    expect(repo.update).toHaveBeenCalledWith('dismissed-1', {
+    expect(repo.update).toHaveBeenCalledWith(['dismissed-1'], {
       reversedAt: expect.any(Date),
       reversedByFindingId: 'finding-1',
     });
