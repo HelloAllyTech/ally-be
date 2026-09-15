@@ -712,6 +712,12 @@ export class BuilderController {
         ...(dto.autoFixEnabled !== undefined
           ? { autoFixEnabled: dto.autoFixEnabled }
           : {}),
+        ...(dto.autoReviewEnabled !== undefined
+          ? { autoReviewEnabled: dto.autoReviewEnabled }
+          : {}),
+        ...(dto.autoApproveEnabled !== undefined
+          ? { autoApproveEnabled: dto.autoApproveEnabled }
+          : {}),
         ...(dto.maxFixRunsPerPr !== undefined
           ? { maxFixRunsPerPr: dto.maxFixRunsPerPr }
           : {}),

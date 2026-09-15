@@ -270,6 +270,27 @@ export class UpdateBuilderSettingsDto {
   @IsBoolean()
   autoFixEnabled?: boolean;
 
+  @ApiPropertyOptional({
+    description:
+      'Whether Builder reviews its own open pull requests. The safer half of ' +
+      'autonomy — a review run reads the diff and writes findings, touching no ' +
+      'branch — so it is worth enabling on its own, with fixes still off.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  autoReviewEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether a clean review may submit an approving review. Only fires when ' +
+      'Builder read the full diff, reported no findings, and every required ' +
+      'check is green. Never forces: other required checks still apply and a ' +
+      'human can dismiss it.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  autoApproveEnabled?: boolean;
+
   @ApiPropertyOptional({ description: 'Fix runs allowed per pull request' })
   @IsOptional()
   @IsNumber()

@@ -47,6 +47,8 @@ export class BuilderSettingsService {
         | 'defaultBudgetUsd'
         | 'maxRunnerMinutes'
         | 'autoFixEnabled'
+        | 'autoReviewEnabled'
+        | 'autoApproveEnabled'
         | 'maxFixRunsPerPr'
         | 'defaultEngine'
         | 'defaultModel'
@@ -68,6 +70,16 @@ export class BuilderSettingsService {
       // anyone asks afterwards.
       this.logger.info(
         `Builder ${changes.enabled ? 'ENABLED' : 'DISABLED'} by user ${userId}`,
+      );
+    }
+    // Same reasoning, one rung further: this is the switch that lets a machine
+    // say a pull request is fine to merge. "Who turned it on, and when" is the
+    // first question after any PR that should not have been approved.
+    if (changes.autoApproveEnabled !== undefined) {
+      this.logger.info(
+        `Builder auto-approve ${
+          changes.autoApproveEnabled ? 'ENABLED' : 'DISABLED'
+        } by user ${userId}`,
       );
     }
     return this.repository.findOneOrFail({ where: { id: settings.id } });
