@@ -8,6 +8,13 @@ export const TRACK_MAX_SECTIONS = 20;
 export const TRACK_MAX_ITEMS_PER_SECTION = 30;
 export const TRACK_MAX_QUIZ_QUESTIONS = 50;
 
+/**
+ * Inline questions per ARTICLE. Deliberately far below the quiz ceiling: an
+ * article question is a reading check punctuating prose, and an article
+ * carrying dozens of them is a quiz that has been written in the wrong place.
+ */
+export const TRACK_MAX_ARTICLE_QUESTIONS = 10;
+
 export const TRACK_DEFAULT_VIDEO_WATCH_PCT = 90;
 export const TRACK_DEFAULT_QUIZ_PASS_SCORE = 70;
 

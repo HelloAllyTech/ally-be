@@ -1,7 +1,9 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   ArticleContent,
+  ArticleQuestion,
   JournalContent,
+  parseArticleQuestionMarkers,
   TrackItemType,
   VideoContent,
   VideoInterjection,
@@ -31,6 +33,7 @@ import { GameContent, TrackGameKey } from '../type/game.type';
 import {
   TRACK_MAX_ANNOTATION_LABELS,
   TRACK_MAX_ANNOTATION_UNITS,
+  TRACK_MAX_ARTICLE_QUESTIONS,
   TRACK_MAX_ITEMS_PER_SECTION,
   TRACK_MAX_QUIZ_QUESTIONS,
   TRACK_MAX_SECTIONS,
@@ -175,6 +178,81 @@ function validateArticleContent(
 ): void {
   if (!content?.html || !content.html.trim()) {
     fail(`Article component "${title}" must have content.`);
+  }
+  validateArticleQuestions(content, title);
+}
+
+/**
+ * Inline article questions. Each is a single-select MCQ — the learner answers
+ * it in place, once, and is told immediately whether they were right, which
+ * leaves no room for the question types that need an LLM grader or a
+ * multi-step widget; those belong in a QUIZ component.
+ *
+ * The question list and the HTML have to agree in both directions. A question
+ * with no marker would never render (the author would think they had added
+ * it), and a marker with no question would render an empty hole — and, worse,
+ * once learners have answered, a deleted question orphans their stored
+ * `answeredArticleQuestions` entry, which is why the ids are part of the
+ * structural signature too.
+ */
+function validateArticleQuestions(
+  content: ArticleContent,
+  title: string,
+): void {
+  const questions = content.questions;
+  const markers = parseArticleQuestionMarkers(content.html);
+
+  if (!questions || questions.length === 0) {
+    if (markers.length > 0) {
+      fail(
+        `Article component "${title}": the article has a question placeholder but no question to put in it.`,
+      );
+    }
+    return;
+  }
+
+  if (questions.length > TRACK_MAX_ARTICLE_QUESTIONS) {
+    fail(
+      `Article component "${title}": at most ${TRACK_MAX_ARTICLE_QUESTIONS} questions.`,
+    );
+  }
+
+  const markerCounts = new Map<string, number>();
+  for (const id of markers) {
+    markerCounts.set(id, (markerCounts.get(id) ?? 0) + 1);
+  }
+
+  const seenIds = new Set<string>();
+  questions.forEach((question: ArticleQuestion, index) => {
+    const label = `Article component "${title}" question ${index + 1}`;
+    if (!question?.id) fail(`${label}: missing id.`);
+    if (seenIds.has(question.id)) {
+      fail(`${label}: duplicate id ${question.id}.`);
+    }
+    seenIds.add(question.id);
+
+    if (question.type !== QuizQuestionType.MCQ_SINGLE) {
+      fail(
+        `${label}: only single-answer multiple choice is supported inside an article.`,
+      );
+    }
+    validateQuizQuestion(question, label);
+
+    const placements = markerCounts.get(question.id) ?? 0;
+    if (placements === 0) {
+      fail(`${label}: is not placed anywhere in the article.`);
+    }
+    if (placements > 1) {
+      fail(`${label}: is placed in the article more than once.`);
+    }
+  });
+
+  for (const id of markerCounts.keys()) {
+    if (!seenIds.has(id)) {
+      fail(
+        `Article component "${title}": the article has a placeholder for a question that no longer exists.`,
+      );
+    }
   }
 }
 
@@ -607,6 +685,7 @@ export function computeStructuralSignature(
           scenarioId: item.scenarioId ?? null,
           caseId: item.caseId ?? null,
           quiz: quizStructuralSignature(item),
+          article: articleStructuralSignature(item),
           annotation: annotationStructuralSignature(item),
           game: gameStructuralSignature(item),
           video: videoStructuralSignature(item),
@@ -614,6 +693,24 @@ export function computeStructuralSignature(
         })),
     }));
   return JSON.stringify(signature);
+}
+
+/**
+ * Structural for an article: the inline questions' ids and answer keys.
+ * Deleting a question orphans the learner's stored
+ * `answeredArticleQuestions` entry and moves the completion bar under them,
+ * and changing which option is correct re-marks an answer they already gave.
+ * The prose — the body HTML, prompts, option text — stays content-safe, so
+ * fixing a typo mid-course is still allowed.
+ */
+function articleStructuralSignature(item: UpsertTrackItemDto): unknown {
+  if (item.type !== TrackItemType.ARTICLE || !item.content) return null;
+  const article = item.content as ArticleContent;
+  return {
+    questions: (article.questions ?? []).map((question) =>
+      quizQuestionStructuralSignature(question),
+    ),
+  };
 }
 
 /**

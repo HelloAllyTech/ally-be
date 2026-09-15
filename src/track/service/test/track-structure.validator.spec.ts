@@ -449,3 +449,210 @@ describe('validateTrackStructure - video interjections', () => {
     ).toThrow(/exactly one correct option/);
   });
 });
+
+describe('validateTrackStructure - inline article questions', () => {
+  const wrap = (item: any): UpsertTrackSectionDto[] => [
+    { title: 'S', order: 1, items: [item] },
+  ];
+
+  const mcq = (overrides: Record<string, any> = {}) => ({
+    id: 'q1',
+    type: 'mcq_single',
+    prompt: 'Which one?',
+    options: [
+      { id: 'a', text: 'A' },
+      { id: 'b', text: 'B' },
+    ],
+    correctOptionIds: ['a'],
+    ...overrides,
+  });
+
+  const articleItem = (content: Record<string, any>) => ({
+    type: TrackItemType.ARTICLE,
+    order: 1,
+    title: 'Article',
+    content,
+  });
+
+  it('accepts an article with a placed question', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          articleItem({
+            html: '<p>Read this.</p><div data-ally-question="q1"></div>',
+            questions: [mcq()],
+          }),
+        ),
+      ),
+    ).not.toThrow();
+  });
+
+  it('accepts an article with no questions at all', () => {
+    expect(() =>
+      validateTrackStructure(wrap(articleItem({ html: '<p>hi</p>' }))),
+    ).not.toThrow();
+  });
+
+  it('rejects a question that is never placed in the article', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(articleItem({ html: '<p>Read this.</p>', questions: [mcq()] })),
+      ),
+    ).toThrow(/not placed anywhere/);
+  });
+
+  it('rejects the same question placed twice', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          articleItem({
+            html:
+              '<div data-ally-question="q1"></div><p>x</p>' +
+              '<div data-ally-question="q1"></div>',
+            questions: [mcq()],
+          }),
+        ),
+      ),
+    ).toThrow(/more than once/);
+  });
+
+  it('rejects a placeholder whose question no longer exists', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          articleItem({
+            html:
+              '<div data-ally-question="q1"></div>' +
+              '<div data-ally-question="ghost"></div>',
+            questions: [mcq()],
+          }),
+        ),
+      ),
+    ).toThrow(/no longer exists/);
+  });
+
+  it('rejects a placeholder in an article with no questions', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(articleItem({ html: '<div data-ally-question="q1"></div>' })),
+      ),
+    ).toThrow(/no question to put in it/);
+  });
+
+  it('rejects duplicate question ids', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          articleItem({
+            html: '<div data-ally-question="q1"></div>',
+            questions: [mcq(), mcq()],
+          }),
+        ),
+      ),
+    ).toThrow(/duplicate id/);
+  });
+
+  it('rejects a question type other than single-answer MCQ', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          articleItem({
+            html: '<div data-ally-question="q1"></div>',
+            questions: [
+              {
+                id: 'q1',
+                type: 'true_false',
+                prompt: 'T?',
+                correctAnswer: true,
+              },
+            ],
+          }),
+        ),
+      ),
+    ).toThrow(/only single-answer multiple choice/);
+  });
+
+  it('rejects a question with no correct option marked', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          articleItem({
+            html: '<div data-ally-question="q1"></div>',
+            questions: [mcq({ correctOptionIds: [] })],
+          }),
+        ),
+      ),
+    ).toThrow(/exactly one correct option/);
+  });
+
+  it('caps the number of questions in one article', () => {
+    const questions = Array.from({ length: 11 }, (_, i) =>
+      mcq({ id: `q${i}` }),
+    );
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          articleItem({
+            html: questions
+              .map((q) => `<div data-ally-question="${q.id}"></div>`)
+              .join(''),
+            questions,
+          }),
+        ),
+      ),
+    ).toThrow(/at most 10 questions/);
+  });
+
+  it('treats deleting an article question as a structural change', () => {
+    const before: UpsertTrackSectionDto[] = [
+      {
+        id: 's1',
+        title: 'S',
+        order: 1,
+        items: [
+          {
+            ...articleItem({
+              html:
+                '<div data-ally-question="q1"></div>' +
+                '<div data-ally-question="q2"></div>',
+              questions: [mcq(), mcq({ id: 'q2' })],
+            }),
+            id: 'i1',
+          } as any,
+        ],
+      },
+    ];
+    const after = JSON.parse(JSON.stringify(before));
+    after[0].items[0].content.questions.pop();
+    after[0].items[0].content.html = '<div data-ally-question="q1"></div>';
+    expect(computeStructuralSignature(after)).not.toEqual(
+      computeStructuralSignature(before),
+    );
+  });
+
+  it('treats rewriting the article prose as content-safe', () => {
+    const before: UpsertTrackSectionDto[] = [
+      {
+        id: 's1',
+        title: 'S',
+        order: 1,
+        items: [
+          {
+            ...articleItem({
+              html: '<p>Old</p><div data-ally-question="q1"></div>',
+              questions: [mcq()],
+            }),
+            id: 'i1',
+          } as any,
+        ],
+      },
+    ];
+    const after = JSON.parse(JSON.stringify(before));
+    after[0].items[0].content.html =
+      '<p>Completely rewritten</p><div data-ally-question="q1"></div>';
+    after[0].items[0].content.questions[0].prompt = 'Reworded?';
+    expect(computeStructuralSignature(after)).toEqual(
+      computeStructuralSignature(before),
+    );
+  });
+});
