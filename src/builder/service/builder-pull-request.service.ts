@@ -12,9 +12,13 @@ import {
   CheckRollup,
   GithubActionsService,
 } from 'src/github/service/github-actions.service';
+import { AppConfigService } from 'src/config/config.service';
+import { BuilderEventType } from '../enum/builder.enum';
+import { buildVerificationComment } from '../util/verification-pr-comment.util';
 import { BuilderPullRequest } from '../entity/builder-pull-request.entity';
 import { BuilderPrFeedback } from '../entity/builder-pr-feedback.entity';
 import {
+  BuilderBuildEventRepository,
   BuilderPrFeedbackRepository,
   BuilderPullRequestRepository,
 } from '../repository/builder-build.repository';
@@ -50,6 +54,8 @@ export class BuilderPullRequestService {
     private readonly notificationService: BuilderNotificationService,
     private readonly settingsService: BuilderSettingsService,
     private readonly github: GithubActionsService,
+    private readonly eventRepository: BuilderBuildEventRepository,
+    private readonly configService: AppConfigService,
     // Forward-ref'd: the build service reaches PRs through repositories only,
     // so this edge is one-way rather than a cycle.
     @Inject(forwardRef(() => BuilderBuildService))
@@ -204,6 +210,7 @@ export class BuilderPullRequestService {
     }[],
   ): Promise<BuilderPullRequest[]> {
     const results: BuilderPullRequest[] = [];
+    const opened: BuilderPullRequest[] = [];
 
     for (const entry of incoming) {
       const repo = String(entry.repo ?? '');
@@ -238,10 +245,19 @@ export class BuilderPullRequestService {
           await this.repository.findOneOrFail({ where: { id: existing.id } }),
         );
       } else {
-        results.push(
-          await this.repository.save(this.repository.create(payload)),
+        const created = await this.repository.save(
+          this.repository.create(payload),
         );
+        results.push(created);
+        opened.push(created);
       }
+    }
+
+    // Only on first sight. A run that re-reports its pull requests — a retry,
+    // a resumed run posting the same branch — must not stack a second identical
+    // comment on a thread a person is reading.
+    for (const pullRequest of opened) {
+      await this.postVerificationComment(sessionId, runId, pullRequest);
     }
 
     if (results.length) {
@@ -253,6 +269,64 @@ export class BuilderPullRequestService {
       }
     }
     return results;
+  }
+
+  /**
+   * Put the run's own review on the pull request it cleared.
+   *
+   * Builder already reviews its work before opening anything — the VERIFY
+   * phase is a separate invocation with a fresh context and a read-only tool
+   * allowlist, and no pull request opens until it passes. All of that happened
+   * inside the run, so the person who arrives at the PR sees a green tick and
+   * none of the reasoning behind it: not which requirements were checked, not
+   * what the reviewer objected to before the coder fixed it, and not whether
+   * the passing checks were judging an unmodified test configuration.
+   *
+   * This adds no judgement of its own. It renders events the run already
+   * wrote, so it costs a GitHub call and nothing else — no second model, no
+   * second opinion to reconcile with the first.
+   *
+   * Best-effort in every direction: a failed comment must not fail the pull
+   * request it was describing, and a run with nothing recorded posts nothing
+   * rather than an empty review that teaches people to skip these.
+   */
+  private async postVerificationComment(
+    sessionId: string,
+    runId: string,
+    pullRequest: BuilderPullRequest,
+  ): Promise<void> {
+    // Read once, outside the try: a catch that dereferences the same object
+    // the try failed on throws from the handler and escapes the guard entirely,
+    // turning best-effort telemetry into a failed pull-request record.
+    const where = `${pullRequest?.repo}#${pullRequest?.prNumber}`;
+    try {
+      const [verification, events] = await Promise.all([
+        this.eventRepository.latestOfType(runId, BuilderEventType.VERIFICATION),
+        this.eventRepository.listByRun(runId),
+      ]);
+      const gateResults = events.filter(
+        (event) => event.type === BuilderEventType.GATE_RESULT,
+      );
+
+      const body = buildVerificationComment({
+        verification,
+        gateResults,
+        sessionUrl: `${this.configService.adminBaseUrl}/builder/${sessionId}`,
+      });
+      if (!body) return;
+
+      await this.github.createIssueComment(
+        pullRequest.repo,
+        pullRequest.prNumber,
+        body,
+      );
+    } catch (error) {
+      this.logger.warn(
+        `Could not post the review summary to ${where}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   /**

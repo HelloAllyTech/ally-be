@@ -37,6 +37,7 @@ describe('BuilderPullRequestService', () => {
   let settingsService: any;
   let github: any;
   let buildService: any;
+  let eventRepository: any;
 
   beforeEach(() => {
     repository = {
@@ -86,6 +87,11 @@ describe('BuilderPullRequestService', () => {
       dispatchFixRun: jest.fn().mockResolvedValue({ id: 'run-2' }),
     };
 
+    eventRepository = {
+      latestOfType: jest.fn().mockResolvedValue(null),
+      listByRun: jest.fn().mockResolvedValue([]),
+    };
+
     service = new BuilderPullRequestService(
       repository,
       feedbackRepository,
@@ -93,6 +99,8 @@ describe('BuilderPullRequestService', () => {
       notificationService,
       settingsService,
       github,
+      eventRepository,
+      { adminBaseUrl: 'https://admin.example.com' } as never,
       buildService,
     );
   });
@@ -114,6 +122,83 @@ describe('BuilderPullRequestService', () => {
     github.getCheckRollup.mockResolvedValue(rollup);
     await service.reconcileOpenPullRequests();
   };
+
+  /**
+   * The run's own review, put on the pull request it cleared.
+   *
+   * The comment is posted on FIRST SIGHT only. A retry or a resumed run
+   * re-reports the same branch, and stacking a second identical review on a
+   * thread someone is reading is how a useful comment becomes noise.
+   */
+  describe('the review summary on a new pull request', () => {
+    const incoming = [
+      {
+        repo: 'ally-be',
+        branch: 'builder/x',
+        prNumber: 42,
+        prUrl: 'https://github.com/o/ally-be/pull/42',
+        title: 'x',
+      },
+    ];
+
+    beforeEach(() => {
+      // The real repository returns the saved row; the shared mock does not.
+      repository.save.mockImplementation((row: unknown) => row);
+      github.createIssueComment = jest.fn().mockResolvedValue('https://c');
+      eventRepository.latestOfType.mockResolvedValue({
+        type: 'verification',
+        payload: {
+          verdict: 'pass',
+          objections: [],
+          checkedRequirements: ['R1'],
+        },
+      });
+      eventRepository.listByRun.mockResolvedValue([
+        { type: 'gate_result', payload: { passed: true, trusted: true } },
+      ]);
+    });
+
+    it('comments once when the pull request is first recorded', async () => {
+      repository.findOne.mockResolvedValue(null);
+
+      await service.recordFromRunner('s1', 'run-1', incoming);
+
+      expect(github.createIssueComment).toHaveBeenCalledTimes(1);
+      const [repo, number, body] = github.createIssueComment.mock.calls[0];
+      expect(repo).toBe('ally-be');
+      expect(number).toBe(42);
+      expect(body).toContain('Independent review');
+      expect(body).toContain('R1');
+    });
+
+    it('does not comment again when the same branch is re-reported', async () => {
+      repository.findOne.mockResolvedValue({ id: 'pr-1' });
+
+      await service.recordFromRunner('s1', 'run-1', incoming);
+
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+    });
+
+    /** Telemetry must never fail the pull request it was describing. */
+    it('swallows a GitHub failure', async () => {
+      repository.findOne.mockResolvedValue(null);
+      github.createIssueComment.mockRejectedValue(new Error('502'));
+
+      await expect(
+        service.recordFromRunner('s1', 'run-1', incoming),
+      ).resolves.toHaveLength(1);
+    });
+
+    it('posts nothing when the run recorded no review and no gate', async () => {
+      repository.findOne.mockResolvedValue(null);
+      eventRepository.latestOfType.mockResolvedValue(null);
+      eventRepository.listByRun.mockResolvedValue([]);
+
+      await service.recordFromRunner('s1', 'run-1', incoming);
+
+      expect(github.createIssueComment).not.toHaveBeenCalled();
+    });
+  });
 
   describe('reconcile', () => {
     it('writes ciStatus, which the entity documented and nothing ever set', async () => {

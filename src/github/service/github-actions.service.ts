@@ -499,6 +499,41 @@ export class GithubActionsService {
   }
 
   /**
+   * A top-level comment on a pull request.
+   *
+   * `issues/{n}/comments`, not `pulls/{n}/comments`: the latter is the
+   * *review* comment endpoint and requires a file path, a commit sha and a
+   * diff position. A PR's conversation tab is an issue thread, and this is the
+   * endpoint that writes to it.
+   *
+   * Returns null rather than throwing on failure, like the rest of this class:
+   * a comment that could not be posted must never fail the thing it was
+   * commenting on.
+   */
+  async createIssueComment(
+    repo: string,
+    number: number,
+    body: string,
+  ): Promise<string | null> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.post(
+        this.url(repo, `issues/${number}/comments`),
+        { body },
+        { headers: this.headers, timeout: 15_000 },
+      );
+      return data?.html_url ? String(data.html_url) : null;
+    } catch (error) {
+      this.logger.warn(
+        `Could not comment on ${repo}#${number}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
    * Cancels a running workflow — `POST /actions/runs/{run_id}/cancel`. This is
    * the actual compute/token saving behind "Stop fix session": the workflow's
    * `timeout-minutes: 60` cap otherwise runs to completion regardless of the
