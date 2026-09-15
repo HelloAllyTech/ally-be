@@ -898,6 +898,8 @@ export class AppConfigService {
       elevenlabsApiKey: this.configService.get<string>('ELEVENLABS_API_KEY'),
       sarvamApiKey: this.configService.get<string>('SARVAM_API_KEY'),
       humeApiKey: this.configService.get<string>('HUME_API_KEY'),
+      cartesiaApiKey: this.configService.get<string>('CARTESIA_API_KEY'),
+      smallestApiKey: this.configService.get<string>('SMALLEST_API_KEY'),
     };
   }
 
