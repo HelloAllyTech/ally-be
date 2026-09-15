@@ -68,6 +68,28 @@ export class BuilderBuildRun extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', length: 8, nullable: true })
   size?: string | null;
 
+  /**
+   * The rest of the decision context, frozen at dispatch.
+   *
+   * These are read off the PRD draft, and the draft keeps changing — the
+   * interview edits it, an epic rewrites it. Re-deriving them later answers a
+   * question about today's PRD, not about the one this run was sized from, so
+   * a policy trained on the re-derived values would be learning from features
+   * its own decisions were never conditioned on. Nullable because runs before
+   * this recorded none, and a zero would read as a real measurement.
+   */
+  @Column({ type: 'int', nullable: true })
+  requirementCount?: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  repoCount?: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  technicalPlanLength?: number | null;
+
+  @Column({ type: 'varchar', length: 8, nullable: true })
+  effort?: string | null;
+
   /** Slug shared by every branch this run pushes (`builder/<slug>`). */
   @Column({ type: 'varchar', length: 80 })
   branchSlug!: string;

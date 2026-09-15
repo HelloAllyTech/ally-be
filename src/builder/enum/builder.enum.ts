@@ -190,6 +190,13 @@ export enum BuilderEventType {
    * intact, and the feed has to say so — an error here reads as "that hour is
    * gone", which is exactly what the hold exists to prevent.
    */
+  /**
+   * A remediation round moved to a stronger coder tier because the gate
+   * refused the previous attempt. Recorded as its own event rather than left
+   * implicit in two phase-cost rows: an escalation is a decision the system
+   * made on its own, and the feed is where a person finds out it did.
+   */
+  MODEL_ESCALATED = 'model_escalated',
   BUDGET_HOLD = 'budget_hold',
   QUESTION = 'question',
   E2E_EVIDENCE = 'e2e_evidence',

@@ -31,6 +31,63 @@ BASELINE_DIR=/tmp/builder-baseline
 GATE_DIR=/tmp/builder-gate
 mkdir -p "$GATE_DIR"
 
+# ── Is the judge still the judge? ───────────────────────────────────────────
+#
+# This gate decides whether a change is sound by running the repo's own test,
+# lint and typecheck commands and reading their exit codes — in the tree the
+# coding agent has just been writing to. The agent can therefore edit the thing
+# that judges it. `npm test` is whatever `package.json` says it is; `jest.config`
+# decides which files count as tests; a four-line `conftest.py` makes pytest
+# exit 0 while every test in the suite fails. None of that shows up as a
+# failure, because there is no failure — the suite passed, trivially.
+#
+# This is not a hypothetical: it is a published defect in at least one public
+# coding benchmark, where test *files* were restored from pristine before each
+# attempt but runner *config* was not, so the config was the way through.
+#
+# The response is deliberately NOT to revert these files. A build whose actual
+# job is to add a test directory, split a config or add a package legitimately
+# changes them, and reverting would fail correct work — replacing a false pass
+# with a false failure is not an improvement.
+#
+# Instead the gate says so. A pass on a run that edited its own judge is
+# reported as untrusted: the build still proceeds (a human and the verifier
+# read the diff), but nothing downstream may record it as evidence that the
+# code was good. That distinction matters most for the model-selection dataset,
+# where a captured pass would teach exactly the wrong lesson — cheaper models
+# reward-hack more, so the signal degrades in the same direction we would be
+# pushing it.
+#
+# Compared against origin/master rather than the baseline worktree: what
+# matters is whether THIS change touched the judge, not what master looks like.
+# An explicit array, not a space-separated string: an unquoted expansion would
+# word-split under bash and NOT under zsh, so the same code would silently
+# check nothing depending on who ran it. Quoted array elements are also passed
+# to git verbatim rather than being glob-expanded by the shell first, which is
+# what makes the `**/` patterns reach nested packages at all.
+GATE_CONFIG_PATTERNS=(
+  'package.json'          # `npm test` is whatever this says it is
+  'jest.config.*' 'jest.setup.*'
+  'vitest.config.*' 'vitest.workspace.*' 'vitest.resource-limits.*'
+  'nx.json' 'project.json'   # ally-web gates through `nx run-many`
+  '.eslintrc*' 'eslint.config.*'
+  'tsconfig*.json'           # the typecheck gate's own rules
+  'pytest.ini' 'setup.cfg' 'pyproject.toml' 'conftest.py' '.flake8' 'tox.ini'
+)
+
+gate_config_touched() {
+  local dir="$1" pattern
+  local -a specs=()
+  for pattern in "${GATE_CONFIG_PATTERNS[@]}"; do
+    # Root and nested: a monorepo package can carry its own jest config, and a
+    # file *added* to shadow a config is as effective as editing one — which is
+    # why this is `diff` against origin/master rather than a modified-file list.
+    specs+=( ":(glob)$pattern" ":(glob)**/$pattern" )
+  done
+  git -C "$dir" diff --name-only origin/master -- "${specs[@]}" 2>/dev/null \
+    | sed '/^$/d' | sort -u | paste -sd, -
+}
+
 commands_json=/tmp/builder-repo-commands.json
 if [ ! -f "$commands_json" ]; then
   curl -fsS "${API_ROOT}/repo-commands" \
@@ -134,10 +191,17 @@ for dir in repos/*/; do
 
   # Compare against the baseline and decide, per check, whether this run broke
   # it. Emits one gate_result event per check plus a repo verdict on stdout.
+  config_touched="$(gate_config_touched "$dir")"
+  if [ -n "$config_touched" ]; then
+    echo "  note: this change edits the gate's own configuration (${config_touched})." >&2
+    echo "  A pass will be recorded as untrusted; the diff needs a human read." >&2
+  fi
+
   repo_verdict="$(node "${HERE}/gate-verdict.mjs" \
     --repo "$repo" \
     --current "${GATE_DIR}/${repo}.json" \
     --baseline "${BASELINE_DIR}/${repo}.json" \
+    --config-touched "$config_touched" \
     --events-out "${GATE_DIR}/${repo}.events.json" 2>/dev/null || echo blocked)"
 
   [ -f "${GATE_DIR}/${repo}.events.json" ] && \
