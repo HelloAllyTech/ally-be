@@ -6,7 +6,7 @@ description: Get product guidance from the Stacks library — how a feature shou
 # Stacks
 
 A retrieval service holding product-management and engineering-practice guidance distilled from
-books the team has vetted. Reached over MCP as the `stacks` server, declared in this repo's
+material the team has vetted. Reached over MCP as the `stacks` server, declared in this repo's
 committed `.mcp.json`.
 
 ## Search it yourself
@@ -52,13 +52,14 @@ Note the asymmetry: `search_chunks` wants a noun phrase, `/stacks:planning_conte
 task description. Both are right — the prompt runs one search over whatever a human typed, while you
 can afford several sharp queries and get better hits from them.
 
-**Search several times, not once broadly.** Hits come back compact — title, book, section, framing
-sentence, id — at roughly 60 tokens each, so four queries cost less than one old-style result set.
+**Search several times, not once broadly.** Hits come back compact — title, section, tags, score,
+id and one framing sentence — at roughly 60 tokens each, so four queries cost less than one
+old-style result set.
 Breadth comes from more queries, not a bigger `max_results`.
 
 **Then go deep on what matters.** Call `get_chunks` on the one or two ids that actually bear on the
-decision. That is where the full body, the verbatim source excerpt and the book and section summaries
-live. Never pass an id you have not seen in a result.
+decision. That is where the full body, the verbatim source excerpt and the source and section
+summaries live. Never pass an id you have not seen in a result.
 
 **`list_tags`** shows how the library is organised and gives you the vocabulary for the `tags`
 filter. It lists tags, not contents.
@@ -79,8 +80,8 @@ particular result set did or didn't contain.
 Worth knowing as of 2026-08-10: the corpus leans heavily toward gamification, instructional design
 and systems thinking (`feedback-loops`, `instructional-design`, `simulation-design`, `leverage-points`
 are the largest tags). General UI and product-craft questions often return weak, confident-looking
-matches from those books — scores around 0.5 with nothing on point. Check `list_tags` rather than
-trusting this paragraph; books get added.
+matches from those areas — scores around 0.5 with nothing on point. Check `list_tags` rather than
+trusting this paragraph; new material gets added.
 
 ## If a search fails
 
