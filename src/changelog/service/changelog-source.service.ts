@@ -1,4 +1,8 @@
-import { Injectable, ServiceUnavailableException } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import axios from 'axios';
 
 import { AppConfigService } from 'src/config/config.service';
@@ -53,7 +57,7 @@ interface SerialisedCache {
  * returns the bytes directly and is good to 100 MB — decades of merges.
  */
 @Injectable()
-export class ChangelogSourceService {
+export class ChangelogSourceService implements OnModuleInit {
   private readonly logger = LoggerService.getInstance(
     ChangelogSourceService.name,
   );
@@ -68,6 +72,21 @@ export class ChangelogSourceService {
     private readonly configService: AppConfigService,
     private readonly redisService: RedisService,
   ) {}
+
+  /**
+   * An environment with no token cannot ever serve this feed — every request
+   * will 404 at GitHub and answer 503. That is worth knowing at boot rather
+   * than the first time someone opens the public page, because the symptom
+   * (a generic error on a marketing page) points nowhere near the cause.
+   */
+  onModuleInit(): void {
+    if (!this.configService.changelogSourceToken) {
+      this.logger.warn(
+        'No GITHUB_CHANGELOG_TOKEN or GITHUB_TOKEN is configured — ' +
+          `GET /v1/changelog/public will answer 503. Set GITHUB_CHANGELOG_TOKEN to a token with Contents: read on ${this.configService.githubOrg}/${CHANGELOG_REPO}.`,
+      );
+    }
+  }
 
   async getEntries(): Promise<ParsedChangelogEntry[]> {
     if (this.isFresh(this.cached)) {
@@ -111,6 +130,16 @@ export class ChangelogSourceService {
         );
         return this.cached.entries;
       }
+      // Nothing cached, so this is the branch that fails a request. Log the
+      // real cause here: the exception below is all CloudWatch would otherwise
+      // hold, and "temporarily unavailable" does not distinguish a missing
+      // token from a 404, a timeout or a file that stopped parsing.
+      this.logger.error(
+        `Could not load the changelog and have nothing cached to serve — answering 503: ${
+          (error as Error).message
+        }`,
+        error,
+      );
       throw new ServiceUnavailableException(
         'The changelog is temporarily unavailable.',
       );
@@ -145,12 +174,16 @@ export class ChangelogSourceService {
   private async fetchMarkdown(): Promise<string> {
     const token = this.configService.changelogSourceToken;
     if (!token) {
-      throw new Error('No GitHub token configured for the changelog source.');
+      throw new Error(
+        `No changelog GitHub token configured — set GITHUB_CHANGELOG_TOKEN (Contents: read on ${this.configService.githubOrg}/${CHANGELOG_REPO}) or GITHUB_TOKEN.`,
+      );
     }
 
-    const response = await axios.get<string>(
-      `https://api.github.com/repos/${this.configService.githubOrg}/${CHANGELOG_REPO}/contents/${CHANGELOG_PATH}`,
-      {
+    const url = `https://api.github.com/repos/${this.configService.githubOrg}/${CHANGELOG_REPO}/contents/${CHANGELOG_PATH}`;
+
+    let response;
+    try {
+      response = await axios.get<string>(url, {
         headers: {
           Accept: 'application/vnd.github.raw',
           Authorization: `Bearer ${token}`,
@@ -161,13 +194,43 @@ export class ChangelogSourceService {
         responseType: 'text',
         transformResponse: [(data: string) => data],
         timeout: 20_000,
-      },
-    );
+      });
+    } catch (error) {
+      throw new Error(this.describeFetchFailure(url, error));
+    }
 
     if (typeof response.data !== 'string' || response.data.length === 0) {
       throw new Error(`Empty response reading ${CHANGELOG_PATH}.`);
     }
     return response.data;
+  }
+
+  /**
+   * Turns an axios failure into a sentence someone reading CloudWatch at 2am
+   * can act on. Bare `Request failed with status code 404` is the single most
+   * misleading thing this call can say: the repo is private, so a token that
+   * cannot see it is indistinguishable from a file that is not there, and the
+   * fix for the former (widen the token's repo list) is nothing like the fix
+   * for the latter.
+   */
+  private describeFetchFailure(url: string, error: unknown): string {
+    // Read the status off the shape rather than through `isAxiosError`, which
+    // an automocked axios replaces with a stub that answers false to
+    // everything — the branch below would then be untestable.
+    const status = (error as { response?: { status?: number } })?.response
+      ?.status;
+    const message = (error as Error)?.message ?? String(error);
+
+    if (status === 404) {
+      return `GitHub returned 404 for ${url}. The repo is private, so this is almost always a token that cannot see it rather than a missing file — check that the configured token grants Contents: read on ${this.configService.githubOrg}/${CHANGELOG_REPO}.`;
+    }
+    if (status === 401 || status === 403) {
+      return `GitHub returned ${status} for ${url} — the configured changelog token is rejected, expired or rate-limited.`;
+    }
+    if (status) {
+      return `GitHub returned ${status} for ${url}: ${message}`;
+    }
+    return `Could not reach GitHub for ${url}: ${message}`;
   }
 
   private async readCache(): Promise<CachedChangelog | null> {
