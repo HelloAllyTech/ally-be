@@ -111,6 +111,7 @@ import { CaseSessionService } from 'src/case/service/case-session.service';
 import { TrackProgressService } from 'src/track/service/track-progress.service';
 import { TrackMemoryService } from 'src/track/service/track-memory.service';
 import { CommonUtil } from 'src/common/util/common.util';
+import { CompetencyResponseDto } from '../dto/competency.dto';
 import { ScenarioSharedService } from './scenario-shared.service';
 import { RoomMetadataStoreService } from './room-metadata-store.service';
 import { SessionEventSharedService } from 'src/session-event/service/session-event-shared.service';
@@ -131,6 +132,7 @@ import { SessionEventTranslationService } from 'src/session-event/service/sessio
 import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
 import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
 import { SimulationStateDto } from '../dto/simulation-state.dto';
+import { CompetencyService } from './competency.service';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
 const previewRoomMetadataCache = new Map<string, object>();
@@ -181,6 +183,7 @@ export class ScenarioSessionService {
     private readonly glossaryAdherenceService: GlossaryAdherenceService,
     private transcriptTranslationService: TranscriptTranslationService,
     private readonly learnerSupervisorMemoryService: LearnerSupervisorMemoryService,
+    private readonly competencyService: CompetencyService,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -1566,6 +1569,7 @@ export class ScenarioSessionService {
     feedbackTabs: FeedbackTabsConfig;
     helpfulBehaviours: string[];
     unhelpfulBehaviours: string[];
+    competencyNames: string[];
   } | null> {
     try {
       const scenarioSession = await this.scenarioSessionRepository.findOne({
@@ -1577,7 +1581,12 @@ export class ScenarioSessionService {
       const [scenario, user, behaviorInstructions] = await Promise.all([
         this.scenariosRepository.findOne({
           where: { id: scenarioSession.scenarioId },
-          select: { id: true, metadata: true },
+          select: {
+            id: true,
+            metadata: true,
+            competencyId: true,
+            competencyIds: true,
+          },
         }),
         // Resolved off the DataSource rather than an injected UserService:
         // pulling src/user/service/* into this graph is the documented way to
@@ -1601,6 +1610,21 @@ export class ScenarioSessionService {
         .filter((b) => b.category === BehaviorInstructionCategory.SHOULD_NOT_DO)
         .flatMap((b) => b.behaviors.map((behavior) => behavior.name));
 
+      const competencyIds =
+        scenario?.competencyIds?.filter((c) => c) ??
+        (scenario?.competencyId ? [scenario.competencyId] : []);
+      const competencyNames = (
+        await Promise.all(
+          competencyIds.map((id) =>
+            this.competencyService.getCompetency(id).catch(() => null),
+          ),
+        )
+      )
+        .filter((c: CompetencyResponseDto | null): c is CompetencyResponseDto =>
+          Boolean(c),
+        )
+        .map((c: CompetencyResponseDto) => c.name);
+
       return {
         counselorId: scenarioSession.counselorId,
         workerType: resolveWorkerType(user?.metadata),
@@ -1610,6 +1634,7 @@ export class ScenarioSessionService {
         feedbackTabs: resolveFeedbackTabs(scenario?.metadata),
         helpfulBehaviours,
         unhelpfulBehaviours,
+        competencyNames,
       };
     } catch (error) {
       this.logger.error(
@@ -1739,6 +1764,7 @@ export class ScenarioSessionService {
                 helpfulBehaviours: sessionContext?.helpfulBehaviours,
                 unhelpfulBehaviours: sessionContext?.unhelpfulBehaviours,
                 liveNotes,
+                competencyNames: sessionContext?.competencyNames,
               },
             )
           : await this.aiService.getScenarioSessionSummary(

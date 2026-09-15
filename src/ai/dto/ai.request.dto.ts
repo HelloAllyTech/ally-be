@@ -214,6 +214,7 @@ export type ScenarioEvaluationRequest = {
    * notes switched off, which is the default.
    */
   live_notes?: string[] | null;
+  competency_names?: string[] | null;
 };
 
 // ── Product Roadmap semantic duplicate detection (ally-ai / Weaviate) ────────

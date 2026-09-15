@@ -949,6 +949,7 @@ export class AiService {
        * the common case — the per-scenario toggle is off by default.
        */
       liveNotes?: string[] | null;
+      competencyNames?: string[] | null;
     },
   ): Promise<ScenarioEvaluationResponse> {
     try {
@@ -969,6 +970,7 @@ export class AiService {
         live_notes: supervisorContext?.liveNotes?.length
           ? supervisorContext.liveNotes
           : null,
+        competency_names: supervisorContext?.competencyNames ?? null,
       };
 
       const response = await this.makeRequest<
