@@ -142,6 +142,16 @@ export const BUILDER_SLUG_MAX_LENGTH = 80;
 
 /** The workflow file, hosted in ally-be — one copy, so it cannot drift. */
 export const BUILDER_WORKFLOW_FILE = 'builder-session.yml';
+
+/**
+ * Review runs per pull request.
+ *
+ * Two, not one: the first review reads what Builder opened, and a second is
+ * worth having after a fix run has rewritten part of it. Not unbounded,
+ * because review → fix → new head sha → review is a loop that would otherwise
+ * only stop when a human closed the pull request.
+ */
+export const BUILDER_MAX_REVIEW_RUNS_PER_PR = 2;
 export const BUILDER_WORKFLOW_REPO = 'ally-be';
 export const BUILDER_WORKFLOW_REF = 'master';
 

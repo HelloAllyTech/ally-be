@@ -203,6 +203,58 @@ export class RecordBuilderFeedbackOutcomesDto {
   outcomes!: BuilderFeedbackOutcomeDto[];
 }
 
+export class BuilderReviewFindingDto {
+  @ApiPropertyOptional({
+    description:
+      'A short stable slug for this finding. Used to key the feedback row, ' +
+      'so a retried report does not double-record. Falls back to the index.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  key?: string;
+
+  @ApiProperty({
+    description: 'The defect and the concrete scenario in which it misbehaves',
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(4_000)
+  body!: string;
+
+  @ApiPropertyOptional({ description: 'Repo-relative file the finding is in' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  path?: string;
+
+  @ApiPropertyOptional({ description: '1-indexed line the finding anchors to' })
+  @IsOptional()
+  @IsNumber()
+  line?: number;
+}
+
+export class RecordBuilderReviewFindingsDto {
+  @ApiProperty({
+    description: 'The builder_pull_requests row that was reviewed',
+  })
+  @IsString()
+  @IsNotEmpty()
+  pullRequestId!: string;
+
+  /**
+   * Empty is a real answer, not a missing one: a clean review reports `[]`, and
+   * that is the result an approval would rest on. Optional only so a runner
+   * that omits the key entirely is treated the same way rather than 400ing.
+   */
+  @ApiProperty({ type: [BuilderReviewFindingDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BuilderReviewFindingDto)
+  findings?: BuilderReviewFindingDto[];
+}
+
 export class CompleteBuilderRunDto {
   @ApiProperty({ enum: ['done', 'failed'] })
   @IsIn(['done', 'failed'])

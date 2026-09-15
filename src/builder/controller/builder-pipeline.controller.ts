@@ -37,14 +37,17 @@ import { buildFinalisePrompt } from '../constants/builder-finalise-prompt';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { buildVerifyPrompt } from '../constants/builder-verify-prompt';
 import { buildFixPrompt } from '../constants/builder-fix-prompt';
+import { buildReviewPrompt } from '../constants/builder-review-prompt';
 import {
   BUILDER_EVENT_BATCH_MAX,
   BUILDER_LESSONS_IN_CONTEXT,
   BUILDER_MAX_CODE_ITERATIONS,
+  BUILDER_MAX_REVIEW_RUNS_PER_PR,
   BUILDER_PROMPTS,
   BUILDER_SIZE_PROFILES,
   classifyBuildSize,
   prdTechnicalPlanLength,
+  BUILDER_WORKFLOW_REF,
 } from '../constants/builder.constants';
 import {
   BUILDER_REPOS,
@@ -64,6 +67,7 @@ import {
   RecordBuilderRunCostDto,
   CompleteBuilderRunDto,
   UpsertBuilderRepoMapDto,
+  RecordBuilderReviewFindingsDto,
 } from '../dto/builder-pipeline.dto';
 
 /**
@@ -139,6 +143,12 @@ export class BuilderPipelineController {
     // runner does not need to know which kind of run it is fetching for.
     if (run.mode === BuilderRunMode.FIX) {
       return this.renderFixPrompt(run, session, doc, repos);
+    }
+
+    // Same URL, third protocol. A review run reads a finished diff and files
+    // findings; it never writes to the branch.
+    if (run.mode === BuilderRunMode.REVIEW) {
+      return this.renderReviewPrompt(run, session, doc, repos);
     }
 
     const lessons = await this.knowledgeService.listLessonTexts(
@@ -297,6 +307,67 @@ export class BuilderPipelineController {
       dto.outcomes,
     );
     return { ok: true, updated };
+  }
+
+  /**
+   * The review protocol for a run pointed at an open pull request.
+   *
+   * Nothing is claimed on the way out, unlike `renderFixPrompt`. A review
+   * writes no feedback rows until it reports, so there is nothing a concurrent
+   * reconcile tick could double-dispatch against — `reviewedSha` was already
+   * stamped at dispatch for that.
+   */
+  private async renderReviewPrompt(
+    run: BuilderBuildRun,
+    session: BuilderSession,
+    doc: { draft: BuilderPrdDocument },
+    repos: typeof BUILDER_REPOS,
+  ): Promise<string> {
+    if (!run.pullRequestId) {
+      throw new BadRequestException(
+        'This review run has no pull request attached, so there is nothing to review.',
+      );
+    }
+    const pullRequest = await this.pullRequestService.getById(
+      run.pullRequestId,
+    );
+
+    return buildReviewPrompt({
+      sessionId: session.id,
+      runId: run.id,
+      branchSlug: run.branchSlug,
+      prd: doc.draft,
+      repos,
+      apiBaseUrl: this.configService.publicApiBaseUrl,
+      pullRequest: {
+        id: pullRequest.id,
+        repo: pullRequest.repo,
+        branch: pullRequest.branch,
+        prNumber: pullRequest.prNumber,
+        prUrl: pullRequest.prUrl,
+        baseRef: BUILDER_WORKFLOW_REF,
+      },
+      attempt: pullRequest.reviewRunCount,
+      maxAttempts: BUILDER_MAX_REVIEW_RUNS_PER_PR,
+    });
+  }
+
+  @Post('runs/:runId/review')
+  @ApiOperation({
+    summary: 'What a review run found on the pull request it read',
+  })
+  async recordReviewFindings(
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Body() dto: RecordBuilderReviewFindingsDto,
+  ) {
+    const run = await this.buildService.getRunOrFail(runId);
+    const recorded = await this.pullRequestService.recordReviewFindings(
+      run.id,
+      run.sessionId,
+      dto.pullRequestId,
+      dto.findings ?? [],
+    );
+    return { ok: true, recorded };
   }
 
   /**

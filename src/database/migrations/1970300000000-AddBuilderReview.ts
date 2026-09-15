@@ -1,0 +1,40 @@
+import { MigrationInterface, QueryRunner } from 'typeorm';
+
+/**
+ * Builder reviews its own pull requests.
+ *
+ * Three columns, all additive and all defaulted, so an ally-be that has not
+ * shipped the feature yet reads them as "never reviewed, review off".
+ *
+ * `autoReviewEnabled` defaults to false for the same reason `autoFixEnabled`
+ * does: autonomy on somebody's open pull request is opt-in. It is the safer of
+ * the two — a review run writes findings and touches no branch — but the
+ * default still belongs to the admin, not to this migration.
+ */
+export class AddBuilderReview1970300000000 implements MigrationInterface {
+  name = 'AddBuilderReview1970300000000';
+
+  public async up(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `ALTER TABLE "builder_pull_requests" ADD COLUMN IF NOT EXISTS "reviewRunCount" integer NOT NULL DEFAULT 0`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "builder_pull_requests" ADD COLUMN IF NOT EXISTS "reviewedSha" character varying(64)`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "builder_settings" ADD COLUMN IF NOT EXISTS "autoReviewEnabled" boolean NOT NULL DEFAULT false`,
+    );
+  }
+
+  public async down(queryRunner: QueryRunner): Promise<void> {
+    await queryRunner.query(
+      `ALTER TABLE "builder_settings" DROP COLUMN IF EXISTS "autoReviewEnabled"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "builder_pull_requests" DROP COLUMN IF EXISTS "reviewedSha"`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "builder_pull_requests" DROP COLUMN IF EXISTS "reviewRunCount"`,
+    );
+  }
+}

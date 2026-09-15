@@ -695,6 +695,83 @@ export class BuilderBuildService {
   }
 
   /**
+   * Send a review run at an open pull request.
+   *
+   * Deliberately close to `dispatchFixRun` — same concurrency, budget and
+   * in-flight guards, since a reviewer is a runner like any other and costs
+   * the same money. Two things differ.
+   *
+   * `reviewedSha` is stamped at dispatch, not on completion. Reconcile is
+   * polled: a tick landing while the review is still running would see an
+   * unreviewed head sha and dispatch a second reviewer at the same diff. The
+   * cost of stamping early is that a crashed review marks the sha as read — and
+   * that is the right trade, matching `fixRunCount`'s reasoning: an attempt
+   * that crashed still used an attempt.
+   *
+   * It carries `pullRequestId` like a fix run does, because the runner reports
+   * findings back against it.
+   */
+  async dispatchReviewRun(
+    pullRequest: {
+      id: string;
+      sessionId: string;
+      repo: string;
+      branch: string;
+      prNumber: number;
+    },
+    headSha: string,
+  ): Promise<BuilderBuildRun | null> {
+    const session = await this.sessionRepository.findOne({
+      where: { id: pullRequest.sessionId },
+    });
+    if (!session) return null;
+
+    const active = await this.runRepository.count({
+      where: {
+        sessionId: session.id,
+        status: In([
+          ...BUILDER_RUN_ACTIVE_STATUSES,
+          BuilderRunStatus.WAITING_FOR_INPUT,
+        ]),
+      },
+    });
+    if (active) return null;
+
+    const settings = await this.settingsService.get();
+    try {
+      await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
+      this.assertWithinBudget(session, settings.maxRunnerMinutes);
+    } catch (error) {
+      this.logger.info(
+        `Skipping a review run for ${pullRequest.repo}#${pullRequest.prNumber}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+
+    await this.pullRequestRepository.update(
+      { id: pullRequest.id },
+      { reviewedSha: headSha },
+    );
+    await this.pullRequestRepository.increment(
+      { id: pullRequest.id },
+      'reviewRunCount',
+      1,
+    );
+
+    return this.dispatchRun({
+      session,
+      mode: BuilderRunMode.REVIEW,
+      userId: session.createdBy ?? 0,
+      repos: [pullRequest.repo],
+      models: this.resolveModels(session, settings),
+      branches: { [pullRequest.repo]: pullRequest.branch },
+      pullRequestId: pullRequest.id,
+    });
+  }
+
+  /**
    * Create the run row, then dispatch. Order matters: the runner is handed
    * its own run id as a workflow input and calls back with it from its first
    * step, so the row has to exist before the workflow can start.

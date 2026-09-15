@@ -50,6 +50,17 @@ export class BuilderSettings extends BaseWithoutTenantEntity {
   autoFixEnabled!: boolean;
 
   /**
+   * Whether Builder reviews its own open pull requests.
+   *
+   * Separate from `autoFixEnabled` on purpose, and the safer of the two: a
+   * review run reads the diff and writes findings, touching no branch. Turning
+   * review on while fixes stay off is the useful middle setting — the findings
+   * land for a human to read, and nothing pushes.
+   */
+  @Column({ type: 'boolean', default: false })
+  autoReviewEnabled!: boolean;
+
+  /**
    * Fix runs per pull request. A fix that cannot fix it will not fix it on the
    * fourth attempt either, and the failure mode without a ceiling is a loop
    * that pushes commits until someone notices the bill.

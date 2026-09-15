@@ -78,6 +78,24 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
   @Column({ type: 'int', default: 0 })
   fixRunCount!: number;
 
+  /**
+   * How many review runs this PR has had. Bounded for the same reason fix runs
+   * are: a reviewer dispatched on every reconcile tick would re-read an
+   * unchanged diff every few minutes and bill for it.
+   */
+  @Column({ type: 'int', default: 0 })
+  reviewRunCount!: number;
+
+  /**
+   * The head commit the last review run read.
+   *
+   * Stored rather than a bare timestamp so a re-review can tell "already
+   * reviewed this exact code" from "reviewed an older version of it" — the
+   * distinction any future re-review-after-fix depends on.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  reviewedSha?: string | null;
+
   @Column({ type: 'boolean', default: false })
   merged!: boolean;
 

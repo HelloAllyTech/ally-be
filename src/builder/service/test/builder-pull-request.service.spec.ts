@@ -25,6 +25,8 @@ const openPr = (overrides: Record<string, any> = {}) => ({
   ciStatus: null,
   headSha: null,
   fixRunCount: 0,
+  reviewRunCount: 0,
+  reviewedSha: null,
   ...overrides,
 });
 
@@ -85,6 +87,7 @@ describe('BuilderPullRequestService', () => {
     };
     buildService = {
       dispatchFixRun: jest.fn().mockResolvedValue({ id: 'run-2' }),
+      dispatchReviewRun: jest.fn().mockResolvedValue({ id: 'run-3' }),
     };
 
     eventRepository = {
@@ -751,6 +754,233 @@ describe('BuilderPullRequestService', () => {
       await expect(
         service.mergePullRequest('session-1', 'pr-1', 7),
       ).rejects.toThrow(/not part of session/i);
+    });
+  });
+
+  /**
+   * The caller that did not exist: Builder reviewing its own open pull request.
+   *
+   * Before this, Builder verified its work before opening a PR and nothing read
+   * it again — so an independent review was a thing a human did by hand on
+   * every pull request, and the fix loop underneath sat idle for want of
+   * anything to act on.
+   *
+   * Every guard below is a way that loop goes wrong if it fires too eagerly.
+   * A finding becomes a PENDING row, a PENDING row earns a fix run, and a fix
+   * run pushes a commit into a review someone may be reading.
+   */
+  describe('deciding to review a pull request', () => {
+    const green = { state: 'success', failed: [] };
+
+    beforeEach(() => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoFixEnabled: true,
+        autoReviewEnabled: true,
+        maxFixRunsPerPr: 3,
+      });
+    });
+
+    it('reviews a green pull request it has not read yet', async () => {
+      const pr = openPr();
+      await reconcileWith({ headSha: 'abc1234def' }, pr, green);
+
+      expect(buildService.dispatchReviewRun).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'pr-1' }),
+        'abc1234def',
+      );
+    });
+
+    /**
+     * Review is the safer half — it writes findings and touches no branch — so
+     * it gets its own switch. Turning review on while fixes stay off is the
+     * useful middle setting, and it has to actually be reachable.
+     */
+    it('stays off when only auto-fix is enabled', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoFixEnabled: true,
+        autoReviewEnabled: false,
+        maxFixRunsPerPr: 3,
+      });
+
+      await reconcileWith({ headSha: 'abc1234def' }, openPr(), green);
+
+      expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
+    });
+
+    it('does not re-read a head sha it has already reviewed', async () => {
+      const pr = openPr({ reviewedSha: 'abc1234def', reviewRunCount: 1 });
+      await reconcileWith({ headSha: 'abc1234def' }, pr, green);
+
+      expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
+    });
+
+    it('reviews again once a fix run has moved the branch on', async () => {
+      const pr = openPr({ reviewedSha: 'oldsha11', reviewRunCount: 1 });
+      await reconcileWith({ headSha: 'newsha22' }, pr, green);
+
+      expect(buildService.dispatchReviewRun).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'pr-1' }),
+        'newsha22',
+      );
+    });
+
+    /**
+     * A reviewer reading a diff that does not compile spends its findings
+     * restating the compiler's, and the fix loop already owns red CI.
+     */
+    it('leaves a red pull request to the fix loop', async () => {
+      await reconcileWith({ headSha: 'abc1234def' }, openPr(), {
+        state: 'failure',
+        failed: ['Jest'],
+      });
+
+      expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
+    });
+
+    it('waits rather than racing checks that are still running', async () => {
+      await reconcileWith({ headSha: 'abc1234def' }, openPr(), {
+        state: 'pending',
+        failed: [],
+      });
+
+      expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
+    });
+
+    /**
+     * review -> fix -> new head sha -> review is a loop whose only natural end
+     * is a human closing the pull request.
+     */
+    it('stops at the ceiling', async () => {
+      const pr = openPr({ reviewRunCount: 2, reviewedSha: 'oldsha11' });
+      await reconcileWith({ headSha: 'newsha22' }, pr, green);
+
+      expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
+    });
+
+    it('waits while there is feedback a fix run has not dealt with', async () => {
+      feedbackRepository.countPending.mockResolvedValue(1);
+
+      await reconcileWith({ headSha: 'abc1234def' }, openPr(), green);
+
+      expect(buildService.dispatchReviewRun).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A review run leaves an active run behind, and `dispatchFixRun` refuses to
+     * race one — so asking for both in a tick gets the second silently refused
+     * and reads as a bug from the outside.
+     */
+    it('does not also ask for a fix run in the same tick', async () => {
+      feedbackRepository.countPending.mockResolvedValue(0);
+
+      await reconcileWith({ headSha: 'abc1234def' }, openPr(), green);
+
+      expect(buildService.dispatchReviewRun).toHaveBeenCalled();
+      expect(buildService.dispatchFixRun).not.toHaveBeenCalled();
+    });
+
+    /**
+     * When the reviewer declines (budget, concurrency, an in-flight run), the
+     * tick must fall through rather than skip the fix loop on the strength of
+     * a review that never happened.
+     */
+    it('still considers a fix run when the review was refused', async () => {
+      buildService.dispatchReviewRun.mockResolvedValue(null);
+      feedbackRepository.countPending
+        .mockResolvedValueOnce(0)
+        .mockResolvedValue(1);
+
+      await reconcileWith({ headSha: 'abc1234def' }, openPr(), green);
+
+      expect(buildService.dispatchFixRun).toHaveBeenCalled();
+    });
+  });
+
+  describe('recording what a review run found', () => {
+    it('writes findings as pending work the fix loop already looks for', async () => {
+      repository.findOne.mockResolvedValue(openPr());
+
+      const recorded = await service.recordReviewFindings(
+        'run-3',
+        'session-1',
+        'pr-1',
+        [
+          {
+            key: 'null-tenant',
+            body: 'Dereferences a null tenant.',
+            path: 'a.ts',
+            line: 7,
+          },
+        ],
+      );
+
+      expect(recorded).toBe(1);
+      expect(feedbackRepository.upsertIfNew).toHaveBeenCalledWith(
+        expect.objectContaining({
+          pullRequestId: 'pr-1',
+          kind: BuilderPrFeedbackKind.AGENT_REVIEW,
+          externalId: 'run-3:null-tenant',
+          path: 'a.ts',
+          line: 7,
+        }),
+      );
+    });
+
+    /**
+     * Keyed on the run so a retried report is idempotent, but a later review of
+     * a newer head sha is a different run and genuinely new work.
+     */
+    it('keys on the run, so a retried report does not double-record', async () => {
+      repository.findOne.mockResolvedValue(openPr());
+
+      await service.recordReviewFindings('run-3', 'session-1', 'pr-1', [
+        { body: 'first' },
+        { body: 'second' },
+      ]);
+
+      const keys = feedbackRepository.upsertIfNew.mock.calls.map(
+        (call: any[]) => call[0].externalId,
+      );
+      expect(keys).toEqual(['run-3:0', 'run-3:1']);
+    });
+
+    /** A clean review is a result, not a failure. */
+    it('accepts an empty report', async () => {
+      repository.findOne.mockResolvedValue(openPr());
+
+      await expect(
+        service.recordReviewFindings('run-3', 'session-1', 'pr-1', []),
+      ).resolves.toBe(0);
+      expect(feedbackRepository.upsertIfNew).not.toHaveBeenCalled();
+    });
+
+    it('ignores a finding with no text rather than filing an empty row', async () => {
+      repository.findOne.mockResolvedValue(openPr());
+
+      const recorded = await service.recordReviewFindings(
+        'run-3',
+        'session-1',
+        'pr-1',
+        [{ body: '   ' }, { body: 'real' }],
+      );
+
+      expect(recorded).toBe(1);
+    });
+
+    it('refuses a pull request belonging to another session', async () => {
+      repository.findOne.mockResolvedValue(null);
+
+      const recorded = await service.recordReviewFindings(
+        'run-3',
+        'session-1',
+        'pr-9',
+        [{ body: 'anything' }],
+      );
+
+      expect(recorded).toBe(0);
+      expect(feedbackRepository.upsertIfNew).not.toHaveBeenCalled();
     });
   });
 });

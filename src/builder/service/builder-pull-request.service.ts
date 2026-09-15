@@ -31,7 +31,10 @@ import {
   BuilderPrFeedbackStatus,
 } from '../enum/builder.enum';
 import { isBuilderRepo } from '../constants/builder-repos.constants';
-import { isUnfixableCheck } from '../constants/builder.constants';
+import {
+  BUILDER_MAX_REVIEW_RUNS_PER_PR,
+  isUnfixableCheck,
+} from '../constants/builder.constants';
 
 /**
  * The pull requests a session opened, and keeping them current.
@@ -391,7 +394,123 @@ export class BuilderPullRequestService {
     }
 
     await this.ingestFeedback(pullRequest, remote.headSha, rollup);
+
+    // Review before fix, and only one of them per tick. A review run that
+    // dispatches leaves an active run behind, which `dispatchFixRun` refuses
+    // to race — so asking for both here would reliably get the second refused
+    // and look like a bug from the outside.
+    if (await this.considerReviewRun(pullRequest, remote.headSha, rollup))
+      return;
     await this.considerFixRun(pullRequest);
+  }
+
+  /**
+   * Whether to send a review run at this PR.
+   *
+   * This is the caller that did not exist. Builder verified its own work before
+   * opening a pull request and then nothing read the result again — so an
+   * independent review was a thing a human did by hand, on every PR, and the
+   * fix loop underneath it sat idle for want of anything to act on.
+   *
+   * The guards, and the failure each one prevents:
+   *
+   *  - **the kill switch**, same as fixes: autonomy on an open pull request is
+   *    opt-in. Separate from `autoFixEnabled` because review is the safer half
+   *    and deserves to be turnable on alone — findings land, nothing pushes.
+   *  - **the ceiling**, because review → fix → new head sha → review is a loop
+   *    with no natural end.
+   *  - **the head sha**, because re-reading an unchanged diff every few minutes
+   *    is money spent to reach the same conclusion.
+   *  - **green CI only.** A reviewer reading a diff that does not compile
+   *    spends its findings restating the compiler's, and the fix loop already
+   *    owns red CI. Pending checks wait for the next tick rather than race.
+   *  - **nothing already pending**, because work a fix run is about to do is
+   *    not yet worth reviewing.
+   *
+   * Returns whether a run was dispatched, so the caller can leave fixes alone
+   * this tick.
+   */
+  private async considerReviewRun(
+    pullRequest: BuilderPullRequest,
+    headSha: string | null,
+    rollup: CheckRollup | null,
+  ): Promise<boolean> {
+    const settings = await this.settingsService.get();
+    if (!settings.enabled || !settings.autoReviewEnabled) return false;
+
+    if (pullRequest.reviewRunCount >= BUILDER_MAX_REVIEW_RUNS_PER_PR)
+      return false;
+    if (!headSha || pullRequest.reviewedSha === headSha) return false;
+    if (rollup?.state !== 'success') return false;
+
+    const pending = await this.feedbackRepository.countPending(pullRequest.id);
+    if (pending) return false;
+
+    const run = await this.buildService.dispatchReviewRun(pullRequest, headSha);
+    return Boolean(run);
+  }
+
+  /**
+   * What a review run found.
+   *
+   * Written straight into feedback rather than posted to GitHub and read back:
+   * `isOwnActor` drops comments authored by our own bot, and it has to — a
+   * Builder that treated its own replies as feedback would argue with itself
+   * forever. Routing an agent review through the same door would make it
+   * invisible the moment it was posted.
+   *
+   * So the findings land as PENDING `AGENT_REVIEW` items, which is exactly what
+   * `considerFixRun` already looks for. The fix loop needs no changes to act on
+   * them; it was only ever missing something to act on.
+   *
+   * Zero findings is a real and expected answer, and the caller records it the
+   * same way — an empty list is what a clean review looks like, not a failure.
+   */
+  async recordReviewFindings(
+    runId: string,
+    sessionId: string,
+    pullRequestId: string,
+    findings: {
+      key?: string;
+      body?: string;
+      path?: string;
+      line?: number;
+    }[],
+  ): Promise<number> {
+    const pullRequest = await this.repository.findOne({
+      where: { id: pullRequestId, sessionId },
+    });
+    if (!pullRequest) {
+      this.logger.warn(
+        `Builder run ${runId} reported a review for ${pullRequestId}, which is not this session's — ignoring.`,
+      );
+      return 0;
+    }
+
+    let recorded = 0;
+    for (const [index, finding] of findings.entries()) {
+      const body = String(finding.body ?? '').trim();
+      if (!body) continue;
+      await this.feedbackRepository.upsertIfNew({
+        pullRequestId: pullRequest.id,
+        sessionId,
+        kind: BuilderPrFeedbackKind.AGENT_REVIEW,
+        // Keyed on the run, not the finding's text: the same run reporting
+        // twice is a retry and must not double-record, while a later review of
+        // a newer head sha is a different run and genuinely new work.
+        externalId: `${runId}:${finding.key ?? index}`,
+        author: 'builder-review',
+        body,
+        path: finding.path ?? null,
+        line: finding.line ?? null,
+      });
+      recorded += 1;
+    }
+
+    this.logger.info(
+      `Review run ${runId} reported ${recorded} finding(s) on ${pullRequest.repo}#${pullRequest.prNumber}.`,
+    );
+    return recorded;
   }
 
   /**

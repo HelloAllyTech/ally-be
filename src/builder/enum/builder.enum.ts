@@ -118,6 +118,13 @@ export enum BuilderRunMode {
    * reviewer are already the second pair of eyes — but still runs the gate.
    */
   FIX = 'fix',
+  /**
+   * Read an open pull request's own diff and report what is wrong with it,
+   * without changing a line. Separate from FIX because the two want opposite
+   * things: a reviewer that can edit the code stops arguing with it and just
+   * rewrites it, and then nothing independent has looked at the result.
+   */
+  REVIEW = 'review',
 }
 
 /** What arrived on a pull request after Builder opened it. */
@@ -127,6 +134,15 @@ export enum BuilderPrFeedbackKind {
   REVIEW_COMMENT = 'review_comment',
   /** A review verdict — approved-with-comments, or changes requested. */
   REVIEW = 'review',
+  /**
+   * A finding from Builder's own review run.
+   *
+   * Recorded here rather than read back off the pull request, because
+   * `isOwnActor` drops comments written by our own bot — a necessary rule
+   * (Builder's replies are not feedback to itself) that would otherwise make
+   * an agent review invisible to the fix loop the moment it was posted.
+   */
+  AGENT_REVIEW = 'agent_review',
 }
 
 export enum BuilderPrFeedbackStatus {
