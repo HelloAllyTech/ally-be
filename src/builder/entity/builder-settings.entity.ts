@@ -61,6 +61,23 @@ export class BuilderSettings extends BaseWithoutTenantEntity {
   autoReviewEnabled!: boolean;
 
   /**
+   * Whether a clean review may approve the pull request.
+   *
+   * The strongest of the three switches and the last one to earn trust, so it
+   * is independent of the other two: review can run for weeks writing findings
+   * a human reads before anyone turns this on. What it buys is the step that
+   * actually blocked every Builder PR — `master` needs an approving review, the
+   * bot has only `write`, and so a green, reviewed, finding-free pull request
+   * still waited on a human to click Approve or an admin to override branch
+   * protection entirely.
+   *
+   * It never forces: the approval is a normal review, every other required
+   * check still has to pass, and a human can dismiss it like any other.
+   */
+  @Column({ type: 'boolean', default: false })
+  autoApproveEnabled!: boolean;
+
+  /**
    * Fix runs per pull request. A fix that cannot fix it will not fix it on the
    * fourth attempt either, and the failure mode without a ceiling is a loop
    * that pushes commits until someone notices the bill.

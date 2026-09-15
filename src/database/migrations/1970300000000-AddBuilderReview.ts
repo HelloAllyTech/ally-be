@@ -24,6 +24,9 @@ export class AddBuilderReview1970300000000 implements MigrationInterface {
     await queryRunner.query(
       `ALTER TABLE "builder_settings" ADD COLUMN IF NOT EXISTS "autoReviewEnabled" boolean NOT NULL DEFAULT false`,
     );
+    await queryRunner.query(
+      `ALTER TABLE "builder_settings" ADD COLUMN IF NOT EXISTS "autoApproveEnabled" boolean NOT NULL DEFAULT false`,
+    );
 
     // `currentStage` is a varchar with a CHECK, so a new stage is not free:
     // without this, the runner's first `post_stage REVIEWING` fails the
@@ -60,6 +63,9 @@ export class AddBuilderReview1970300000000 implements MigrationInterface {
            'REMEDIATING', 'FINALISING', 'E2E_VERIFY', 'OPENING_PRS',
            'REPORTING', 'DONE'
          ))`,
+    );
+    await queryRunner.query(
+      `ALTER TABLE "builder_settings" DROP COLUMN IF EXISTS "autoApproveEnabled"`,
     );
     await queryRunner.query(
       `ALTER TABLE "builder_settings" DROP COLUMN IF EXISTS "autoReviewEnabled"`,

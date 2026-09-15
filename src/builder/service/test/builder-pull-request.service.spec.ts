@@ -56,6 +56,7 @@ describe('BuilderPullRequestService', () => {
     feedbackRepository = {
       upsertIfNew: jest.fn().mockResolvedValue(true),
       countPending: jest.fn().mockResolvedValue(0),
+      countActionable: jest.fn().mockResolvedValue(0),
       listActionable: jest.fn().mockResolvedValue([]),
       listBySession: jest.fn().mockResolvedValue([]),
       update: jest.fn(),
@@ -84,6 +85,9 @@ describe('BuilderPullRequestService', () => {
       mergePullRequest: jest
         .fn()
         .mockResolvedValue({ merged: true, message: null }),
+      approvePullRequest: jest
+        .fn()
+        .mockResolvedValue({ approved: true, message: null }),
     };
     buildService = {
       dispatchFixRun: jest.fn().mockResolvedValue({ id: 'run-2' }),
@@ -981,6 +985,146 @@ describe('BuilderPullRequestService', () => {
 
       expect(recorded).toBe(0);
       expect(feedbackRepository.upsertIfNew).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The step that actually blocked every Builder pull request.
+   *
+   * `master` requires an approving review, the bot holds only `write`, and
+   * nothing in the system ever approved — so a green, reviewed, finding-free PR
+   * still waited on a human to click Approve or an admin to override branch
+   * protection. These tests are about when a machine may say "this is fine",
+   * which is the strongest thing Builder can assert about its own work.
+   */
+  describe('approving on a clean review', () => {
+    const green = { state: 'success', failed: [] };
+
+    const settings = (over: Record<string, any> = {}) => ({
+      enabled: true,
+      autoFixEnabled: true,
+      autoReviewEnabled: true,
+      autoApproveEnabled: true,
+      maxFixRunsPerPr: 3,
+      ...over,
+    });
+
+    beforeEach(() => {
+      settingsService.get.mockResolvedValue(settings());
+      repository.findOne.mockResolvedValue(openPr());
+      github.getPullRequest.mockResolvedValue({
+        state: 'open',
+        merged: false,
+        headSha: 'abc1234def',
+        mergedAt: null,
+        htmlUrl: 'https://github.com/o/ally-be/pull/42',
+      });
+      github.getCheckRollup.mockResolvedValue(green);
+    });
+
+    const cleanReview = () =>
+      service.recordReviewFindings('run-3', 'session-1', 'pr-1', []);
+
+    it('approves a green pull request its review found nothing in', async () => {
+      await cleanReview();
+
+      expect(github.approvePullRequest).toHaveBeenCalledWith(
+        'ally-be',
+        42,
+        expect.stringContaining("Builder's review agent"),
+      );
+    });
+
+    /** Anyone reading the PR should be able to tell a machine approved it. */
+    it('says plainly that the approval is a machine review', async () => {
+      await cleanReview();
+
+      const body = github.approvePullRequest.mock.calls[0][2] as string;
+      expect(body).toContain('machine review, not a human one');
+    });
+
+    it('never approves when a review found something', async () => {
+      repository.findOne.mockResolvedValue(openPr());
+
+      await service.recordReviewFindings('run-3', 'session-1', 'pr-1', [
+        { body: 'Dereferences a null tenant.' },
+      ]);
+
+      expect(github.approvePullRequest).not.toHaveBeenCalled();
+    });
+
+    it('stays off unless auto-approve is explicitly enabled', async () => {
+      settingsService.get.mockResolvedValue(
+        settings({ autoApproveEnabled: false }),
+      );
+
+      await cleanReview();
+
+      expect(github.approvePullRequest).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The row's ciStatus was written by the tick that dispatched the review,
+     * and a check can go red in the minutes a review takes. Approving on a
+     * stale green is the mistake that makes an approval worthless.
+     */
+    it('re-reads CI rather than trusting the status it was dispatched on', async () => {
+      github.getCheckRollup.mockResolvedValue({
+        state: 'failure',
+        failed: ['Jest'],
+      });
+
+      await cleanReview();
+
+      expect(github.approvePullRequest).not.toHaveBeenCalled();
+    });
+
+    it('does not approve while checks are still running', async () => {
+      github.getCheckRollup.mockResolvedValue({ state: 'pending', failed: [] });
+
+      await cleanReview();
+
+      expect(github.approvePullRequest).not.toHaveBeenCalled();
+    });
+
+    /**
+     * Findings from an earlier review that a fix run has not finished with mean
+     * the pull request is mid-conversation, and its diff is about to change.
+     */
+    it('does not approve while earlier findings are still being fixed', async () => {
+      feedbackRepository.countActionable.mockResolvedValue(2);
+
+      await cleanReview();
+
+      expect(github.approvePullRequest).not.toHaveBeenCalled();
+    });
+
+    it('does not approve a pull request that has already closed', async () => {
+      github.getPullRequest.mockResolvedValue({
+        state: 'closed',
+        merged: false,
+        headSha: 'abc1234def',
+        mergedAt: null,
+        htmlUrl: 'https://github.com/o/ally-be/pull/42',
+      });
+
+      await cleanReview();
+
+      expect(github.approvePullRequest).not.toHaveBeenCalled();
+    });
+
+    /**
+     * GitHub refuses to let an author approve its own pull request. If the
+     * server token ever becomes the same identity as the runner's bot, that
+     * refusal is something an admin has to read — not a silent no-op.
+     */
+    it('reports a refusal rather than failing the report', async () => {
+      github.approvePullRequest.mockResolvedValue({
+        approved: false,
+        message: 'Can not approve your own pull request',
+      });
+
+      await expect(cleanReview()).resolves.toBe(0);
     });
   });
 });

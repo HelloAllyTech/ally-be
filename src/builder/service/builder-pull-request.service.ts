@@ -510,7 +510,94 @@ export class BuilderPullRequestService {
     this.logger.info(
       `Review run ${runId} reported ${recorded} finding(s) on ${pullRequest.repo}#${pullRequest.prNumber}.`,
     );
+
+    // A clean review is the only thing that can approve, and it is checked here
+    // rather than on the next reconcile tick because this is the moment the
+    // answer is known. A review that found something leaves the pull request
+    // exactly as it was: the fix loop takes it from here.
+    if (recorded === 0) await this.considerApproval(pullRequest);
+
     return recorded;
+  }
+
+  /**
+   * Whether a clean review may approve the pull request.
+   *
+   * This is the step that actually blocked every Builder pull request. `master`
+   * requires an approving review, the bot holds only `write`, and nothing in
+   * the system ever approved — so a green, reviewed, finding-free PR still
+   * waited on a human to click Approve, or on an admin to override branch
+   * protection outright.
+   *
+   * The guards:
+   *
+   *  - **its own switch**, off by default and independent of review and fix.
+   *    This is the strongest of the three and the last to earn trust; review
+   *    can run for weeks writing findings a human reads before anyone enables
+   *    it.
+   *  - **CI green right now**, re-read rather than taken from the row. The row
+   *    was written by the reconcile tick that dispatched the review, and a
+   *    check can have gone red in the minutes a review takes. Approving on a
+   *    stale green is exactly the mistake that makes an approval worthless.
+   *  - **nothing outstanding.** Findings from an earlier review that a fix run
+   *    has not finished with mean this pull request is mid-conversation.
+   *
+   * It never forces. The approval is an ordinary review: every other required
+   * check still has to pass, and a human can dismiss it like any other.
+   */
+  private async considerApproval(
+    pullRequest: BuilderPullRequest,
+  ): Promise<void> {
+    const settings = await this.settingsService.get();
+    if (!settings.enabled || !settings.autoApproveEnabled) return;
+
+    const outstanding = await this.feedbackRepository.countActionable(
+      pullRequest.id,
+    );
+    if (outstanding) return;
+
+    const remote = await this.github.getPullRequest(
+      pullRequest.repo,
+      pullRequest.prNumber,
+    );
+    if (!remote || remote.state !== 'open' || remote.merged) return;
+    if (!remote.headSha) return;
+
+    const rollup = await this.github.getCheckRollup(
+      pullRequest.repo,
+      remote.headSha,
+    );
+    if (rollup?.state !== 'success') {
+      this.logger.info(
+        `Not approving ${pullRequest.repo}#${pullRequest.prNumber}: checks are ${rollup?.state ?? 'unknown'}.`,
+      );
+      return;
+    }
+
+    // Says what it is and what it rests on. Anyone reading the pull request
+    // should be able to tell at a glance that a machine approved it, and on
+    // what basis, rather than finding an unattributed "LGTM".
+    const { approved, message } = await this.github.approvePullRequest(
+      pullRequest.repo,
+      pullRequest.prNumber,
+      [
+        "Approved by Builder's review agent.",
+        '',
+        'It read the full diff against master and reported no findings, with',
+        'every required check green. This is a machine review, not a human one',
+        '— dismiss it like any other if you want a person to look.',
+      ].join('\n'),
+    );
+
+    if (approved) {
+      this.logger.info(
+        `[BUILDER] Approved ${pullRequest.repo}#${pullRequest.prNumber} on a clean review.`,
+      );
+      return;
+    }
+    this.logger.warn(
+      `Could not approve ${pullRequest.repo}#${pullRequest.prNumber}: ${message ?? 'no reason given'}.`,
+    );
   }
 
   /**

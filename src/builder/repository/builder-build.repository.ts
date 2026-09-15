@@ -256,6 +256,23 @@ export class BuilderPrFeedbackRepository extends Repository<BuilderPrFeedback> {
   }
 
   /**
+   * Anything still unresolved — PENDING or claimed by a fix run.
+   *
+   * Broader than `countPending` on purpose, and the difference matters at
+   * exactly one call site: deciding whether to approve. A pull request whose
+   * earlier findings are sitting IN_FIX is mid-conversation, and approving it
+   * would put a machine's blessing on a diff that is about to change.
+   */
+  countActionable(pullRequestId: string): Promise<number> {
+    return this.count({
+      where: [
+        { pullRequestId, status: BuilderPrFeedbackStatus.PENDING },
+        { pullRequestId, status: BuilderPrFeedbackStatus.IN_FIX },
+      ],
+    });
+  }
+
+  /**
    * Insert if this is new, leave it alone if it is not.
    *
    * The whole point of the unique `(pullRequestId, kind, externalId)` index:
