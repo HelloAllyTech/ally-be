@@ -299,19 +299,37 @@ jobs:
       - name: Report actual token cost
         # Best-effort: the pipeline's own /close call (inside the prompt
         # fetched above) already closed this run — this just attaches the
-        # real per-model token usage `claude -p --output-format json`
-        # reported, so "Est. cost" in the admin tab stops reading $0 for
-        # every run. Must never fail the job over a cost-reporting hiccup,
-        # and must still run when the sweep itself failed — partial spend is
-        # still real spend.
+        # real per-model token usage the CLI reported, so "Est. cost" in the
+        # admin tab stops reading $0 for every run. Must never fail the job
+        # over a cost-reporting hiccup, and must still run when the sweep
+        # itself failed — partial spend is still real spend.
+        #
+        # The two engines' `--output-format json` results share nothing:
+        # Claude Code's is `{result, total_cost_usd, modelUsage: {<model>:
+        # {inputTokens, outputTokens, ...}}}`; Gemini's is `{session_id,
+        # response, stats: {input_tokens, output_tokens, ...}}` — no per-model
+        # breakdown (it only ever ran one model) and no cost figure at all
+        # (confirmed absent from its schema — ally-be computes its own
+        # estimate from the token counts either way, via the same pricing
+        # table, so a real $0 here from Gemini is not a lost figure).
+        # Parsing this with the Claude-only jq filter silently produced
+        # modelUsage:[] for every Gemini run, tier notwithstanding — this
+        # step just never matched its shape.
         if: always() && steps.cfg.outputs.skip != 'true'
         env:
           ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
         run: |
           set -uo pipefail
           if [ -s /tmp/claude-result.json ]; then
-            MODEL_USAGE=$(jq -c '[(.modelUsage // {}) | to_entries[] | {model: (.value.canonicalModel // .key), inputTokens: (.value.inputTokens // 0), outputTokens: (.value.outputTokens // 0), cacheReadInputTokens: (.value.cacheReadInputTokens // 0), cacheCreationInputTokens: (.value.cacheCreationInputTokens // 0)}]' /tmp/claude-result.json 2>/dev/null || echo '[]')
-            CLI_COST=$(jq -r '.total_cost_usd // 0' /tmp/claude-result.json 2>/dev/null || echo 0)
+            if [ "${{ steps.models.outputs.engine }}" = "gemini" ]; then
+              MODEL_USAGE=$(jq -c --arg model "${{ steps.models.outputs.default_model }}" \
+                '[{model: $model, inputTokens: (.stats.input_tokens // 0), outputTokens: (.stats.output_tokens // 0), cacheReadInputTokens: (.stats.cached // 0), cacheCreationInputTokens: 0}]' \
+                /tmp/claude-result.json 2>/dev/null || echo '[]')
+              CLI_COST=0
+            else
+              MODEL_USAGE=$(jq -c '[(.modelUsage // {}) | to_entries[] | {model: (.value.canonicalModel // .key), inputTokens: (.value.inputTokens // 0), outputTokens: (.value.outputTokens // 0), cacheReadInputTokens: (.value.cacheReadInputTokens // 0), cacheCreationInputTokens: (.value.cacheCreationInputTokens // 0)}]' /tmp/claude-result.json 2>/dev/null || echo '[]')
+              CLI_COST=$(jq -r '.total_cost_usd // 0' /tmp/claude-result.json 2>/dev/null || echo 0)
+            fi
             curl -sS -X POST "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/cost" \
               -H "Content-Type: application/json" \
               -H "x-api-key: $ALLY_BE_API_KEY" \
