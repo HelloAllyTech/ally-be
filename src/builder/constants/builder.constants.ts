@@ -152,6 +152,17 @@ export const BUILDER_WORKFLOW_FILE = 'builder-session.yml';
  * only stop when a human closed the pull request.
  */
 export const BUILDER_MAX_REVIEW_RUNS_PER_PR = 2;
+
+/**
+ * How long a dispatched release may run before it is called failed.
+ *
+ * Matches Bug Hunter's 90 minutes, for the same reason: an ally-be release runs
+ * tests, builds an image, migrates and then waits on ECS to reach steady state,
+ * and the slowest of those is the deploy. Long enough that a healthy release
+ * never trips it, short enough that "merged but not deployed" surfaces the same
+ * working day.
+ */
+export const BUILDER_RELEASE_TIMEOUT_MS = 90 * 60 * 1000;
 export const BUILDER_WORKFLOW_REPO = 'ally-be';
 export const BUILDER_WORKFLOW_REF = 'master';
 

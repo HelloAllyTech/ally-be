@@ -154,6 +154,52 @@ export class BuilderNotificationService {
     );
   }
 
+  /**
+   * The one nobody can afford to miss.
+   *
+   * "Merged but not deployed" is worse than never having released: master has
+   * moved on, the pull request reads as done, and everyone assumes the change
+   * is live. On 2026-09-15 exactly this happened to an ally-be release — the
+   * ECS circuit breaker rolled it back and prod silently served the previous
+   * version for the better part of an hour. The whole point of watching a
+   * release is to make that state impossible to sit in unnoticed.
+   */
+  releaseFailed(
+    session: BuilderSession,
+    repo: string,
+    prNumber: number,
+    tag: string | null,
+    detail: string | null,
+    runUrl: string | null,
+  ): Promise<void> {
+    return this.notify(
+      session,
+      BuilderNotificationKind.RELEASE_FAILED,
+      `${repo}#${prNumber} is merged to master but is NOT deployed — release ${
+        tag ?? 'dispatch'
+      } failed${detail ? ` (${detail})` : ''}.${runUrl ? ` ${runUrl}` : ''}`,
+    );
+  }
+
+  /**
+   * Merged, and deliberately not released.
+   *
+   * Quieter than a failure and still worth saying: the change is on master and
+   * waiting for someone to ship it, which nobody will do if nobody is told.
+   */
+  releaseSkipped(
+    session: BuilderSession,
+    repo: string,
+    prNumber: number,
+    why: string,
+  ): Promise<void> {
+    return this.notify(
+      session,
+      BuilderNotificationKind.RELEASE_SKIPPED,
+      `${repo}#${prNumber} is merged but was not released automatically — ${why}. It needs a manual release.`,
+    );
+  }
+
   budgetReached(session: BuilderSession, spent: number): Promise<void> {
     return this.notify(
       session,

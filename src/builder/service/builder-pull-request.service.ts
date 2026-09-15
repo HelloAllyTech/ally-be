@@ -33,8 +33,12 @@ import {
 import { isBuilderRepo } from '../constants/builder-repos.constants';
 import {
   BUILDER_MAX_REVIEW_RUNS_PER_PR,
+  BUILDER_RELEASE_TIMEOUT_MS,
+  BUILDER_WORKFLOW_REF,
   isUnfixableCheck,
 } from '../constants/builder.constants';
+import { resolveReleaseTargets } from 'src/release/constants/release-targets.constants';
+import { ProductionReleaseService } from 'src/release/service/production-release.service';
 
 /**
  * The pull requests a session opened, and keeping them current.
@@ -58,6 +62,7 @@ export class BuilderPullRequestService {
     private readonly settingsService: BuilderSettingsService,
     private readonly github: GithubActionsService,
     private readonly eventRepository: BuilderBuildEventRepository,
+    private readonly releaseService: ProductionReleaseService,
     private readonly configService: AppConfigService,
     // Forward-ref'd: the build service reaches PRs through repositories only,
     // so this edge is one-way rather than a cycle.
@@ -390,6 +395,7 @@ export class BuilderPullRequestService {
     // and the flywheel reads closed-unmerged as its strongest signal.
     if (remote.merged || closedWithoutMerging) {
       await this.staleFeedback(pullRequest.id);
+      if (remote.merged) await this.considerRelease(pullRequest);
       return;
     }
 
@@ -403,6 +409,202 @@ export class BuilderPullRequestService {
     if (await this.considerReviewRun(pullRequest, remote.headSha, rollup))
       return;
     await this.considerFixRun(pullRequest);
+  }
+
+  /**
+   * Release a merged pull request to production.
+   *
+   * The last step of the loop, and the only one that changes what real users
+   * are running — which is why it is gated harder than anything above it.
+   *
+   *  - **`autoReleaseEnabled`**, its own switch, off by default.
+   *  - **once per pull request.** `releaseState` is set before the dispatch, so
+   *    a reconcile tick landing mid-flight cannot fire a second release.
+   *  - **a known deployable.** ally-mobile ships through the app stores, not a
+   *    dispatchable pipeline, so its pull requests are recorded `skipped`
+   *    rather than retried forever.
+   *  - **unambiguous attribution.** For ally-web this is the real constraint: a
+   *    change under `libs/` ships inside all three frontends, so releasing only
+   *    the apps whose paths happened to match would silently under-deploy it.
+   *    Ambiguity stops and says so; it does not release the subset it
+   *    understood.
+   *
+   * Multiple targets are dispatched together rather than in sequence. Builder's
+   * pull requests are per-repo, so a single one cannot span backend and
+   * frontend — the ordering hazard Bug Hunter's release plans exist to prevent
+   * does not arise here, and two ally-web apps have no ordering between them.
+   */
+  private async considerRelease(
+    pullRequest: BuilderPullRequest,
+  ): Promise<void> {
+    if (pullRequest.releaseState) return;
+
+    const settings = await this.settingsService.get();
+    if (!settings.enabled || !settings.autoReleaseEnabled) return;
+
+    const { files, truncated } = await this.github.listPullRequestFiles(
+      pullRequest.repo,
+      pullRequest.prNumber,
+    );
+    const resolved = resolveReleaseTargets(pullRequest.repo, files);
+
+    // A truncated listing is "we do not know what changed", not "nothing did".
+    const blocked = truncated || resolved.ambiguous;
+    if (blocked || !resolved.targets.length) {
+      const why = truncated
+        ? 'its file list was too large to read in full'
+        : resolved.targets.length
+          ? `it also changes ${resolved.unresolved.length} file(s) outside those apps`
+          : 'no release pipeline covers it';
+      await this.repository.update(
+        { id: pullRequest.id },
+        { releaseState: 'skipped' },
+      );
+      this.logger.info(
+        `Not releasing ${pullRequest.repo}#${pullRequest.prNumber}: ${why}. Left for a person.`,
+      );
+      const session = await this.sessionRepository.findOne({
+        where: { id: pullRequest.sessionId },
+      });
+      if (session) {
+        await this.notificationService.releaseSkipped(
+          session,
+          pullRequest.repo,
+          pullRequest.prNumber,
+          why,
+        );
+      }
+      return;
+    }
+
+    // Claimed before the first dispatch, not after the last: with two targets,
+    // a tick landing between them would otherwise see no state and start both
+    // again.
+    await this.repository.update(
+      { id: pullRequest.id },
+      { releaseState: 'releasing' },
+    );
+
+    const tags: string[] = [];
+    let dispatchedAt: Date | null = null;
+    const runUrl: string | null = null;
+    for (const target of resolved.targets) {
+      const result = await this.releaseService.dispatch(
+        target,
+        BUILDER_WORKFLOW_REF,
+      );
+      tags.push(result.tag);
+      // The earliest dispatch, so `findRunSince` cannot miss a run that started
+      // before a later sibling was fired.
+      if (!dispatchedAt || result.dispatchedAt < dispatchedAt)
+        dispatchedAt = result.dispatchedAt;
+    }
+
+    await this.repository.update(
+      { id: pullRequest.id },
+      {
+        releaseTag: tags.join(', ').slice(0, 40),
+        releaseDispatchedAt: dispatchedAt,
+        releaseRunUrl: runUrl,
+      },
+    );
+    this.logger.info(
+      `[BUILDER] Released ${pullRequest.repo}#${pullRequest.prNumber} as ${tags.join(', ')}.`,
+    );
+  }
+
+  /**
+   * Watch dispatched releases to a verdict.
+   *
+   * This is the half that makes releasing automatically defensible rather than
+   * reckless. On 2026-09-15 an ally-be release passed every check, failed to
+   * boot, and was rolled back by the ECS circuit breaker — and nothing noticed
+   * for the better part of an hour, because a dispatched release with nobody
+   * watching it is indistinguishable from a successful one.
+   *
+   * A failure here is not a quiet log line. **Merged but not deployed** is a
+   * worse state than never having released, because master has moved on and
+   * everyone assumes the change is live, so it notifies.
+   */
+  async reconcileReleases(): Promise<void> {
+    if (!this.github.isConfigured) return;
+
+    const releasing = await this.repository.find({
+      where: { releaseState: 'releasing' },
+    });
+
+    for (const pullRequest of releasing) {
+      try {
+        const files = await this.github.listPullRequestFiles(
+          pullRequest.repo,
+          pullRequest.prNumber,
+        );
+        const target = resolveReleaseTargets(pullRequest.repo, files.files)
+          .targets[0];
+        if (!target) continue;
+
+        let runId = pullRequest.releaseRunId;
+        if (!runId && pullRequest.releaseDispatchedAt) {
+          const found = await this.releaseService.resolveRun(
+            target,
+            pullRequest.releaseDispatchedAt,
+          );
+          if (found) {
+            runId = found.id;
+            await this.repository.update(
+              { id: pullRequest.id },
+              { releaseRunId: found.id, releaseRunUrl: found.htmlUrl },
+            );
+          }
+        }
+
+        const verdict = await this.releaseService.poll({
+          target,
+          runId,
+          dispatchedAt: pullRequest.releaseDispatchedAt,
+          timeoutMs: BUILDER_RELEASE_TIMEOUT_MS,
+        });
+        if (verdict.state === 'running') continue;
+
+        await this.repository.update(
+          { id: pullRequest.id },
+          {
+            releaseState: verdict.state === 'succeeded' ? 'released' : 'failed',
+            ...(verdict.runUrl ? { releaseRunUrl: verdict.runUrl } : {}),
+          },
+        );
+
+        if (verdict.state === 'succeeded') {
+          this.logger.info(
+            `[BUILDER] ${pullRequest.repo}#${pullRequest.prNumber} is live as ${pullRequest.releaseTag}.`,
+          );
+          continue;
+        }
+
+        this.logger.warn(
+          `[BUILDER] Release of ${pullRequest.repo}#${pullRequest.prNumber} FAILED (${verdict.detail ?? 'unknown'}). Merged to master but NOT deployed.`,
+        );
+        const session = await this.sessionRepository.findOne({
+          where: { id: pullRequest.sessionId },
+        });
+        if (session) {
+          await this.notificationService.releaseFailed(
+            session,
+            pullRequest.repo,
+            pullRequest.prNumber,
+            pullRequest.releaseTag ?? null,
+            verdict.detail ?? null,
+            verdict.runUrl ?? pullRequest.releaseRunUrl ?? null,
+          );
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Could not reconcile the release of ${pullRequest.repo}#${pullRequest.prNumber}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
   }
 
   /**

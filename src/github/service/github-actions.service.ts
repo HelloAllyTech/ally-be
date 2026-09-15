@@ -231,6 +231,54 @@ export class GithubActionsService {
   }
 
   /**
+   * Which files a pull request changed.
+   *
+   * Needed to tell which deployable a merged pull request belongs to: on
+   * `ally-web`, three independently-released apps live in one repo and only the
+   * paths distinguish them.
+   *
+   * Capped at 300 files across three pages. A pull request larger than that is
+   * not one an automatic release should reason about anyway, and the caller
+   * treats a truncated list as ambiguous rather than releasing on a partial
+   * view — which is why this reports `truncated` instead of quietly returning
+   * what it managed to read.
+   */
+  async listPullRequestFiles(
+    repo: string,
+    number: number,
+  ): Promise<{ files: string[]; truncated: boolean }> {
+    this.requireConfigured();
+    const files: string[] = [];
+    try {
+      for (let page = 1; page <= 3; page += 1) {
+        const { data } = await axios.get(
+          this.url(repo, `pulls/${number}/files`),
+          {
+            headers: this.headers,
+            timeout: 15_000,
+            params: { per_page: 100, page },
+          },
+        );
+        const batch = (data ?? []) as { filename?: string }[];
+        for (const entry of batch) {
+          if (entry?.filename) files.push(String(entry.filename));
+        }
+        if (batch.length < 100) return { files, truncated: false };
+      }
+      return { files, truncated: true };
+    } catch (error) {
+      this.logger.warn(
+        `Could not list files on ${repo}#${number}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      // An empty list with `truncated` set: "we do not know", which the caller
+      // must not read as "this pull request changed nothing".
+      return { files, truncated: true };
+    }
+  }
+
+  /**
    * Brings a pull request's branch up to date with its base.
    *
    * `PUT .../update-branch`, which **merges** the base into the head branch

@@ -718,6 +718,9 @@ export class BuilderController {
         ...(dto.autoApproveEnabled !== undefined
           ? { autoApproveEnabled: dto.autoApproveEnabled }
           : {}),
+        ...(dto.autoReleaseEnabled !== undefined
+          ? { autoReleaseEnabled: dto.autoReleaseEnabled }
+          : {}),
         ...(dto.maxFixRunsPerPr !== undefined
           ? { maxFixRunsPerPr: dto.maxFixRunsPerPr }
           : {}),

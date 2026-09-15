@@ -40,6 +40,7 @@ describe('BuilderPullRequestService', () => {
   let github: any;
   let buildService: any;
   let eventRepository: any;
+  let releaseService: any;
 
   beforeEach(() => {
     repository = {
@@ -63,7 +64,12 @@ describe('BuilderPullRequestService', () => {
       findOne: jest.fn(),
     };
     sessionRepository = { findOne: jest.fn() };
-    notificationService = { prsOpened: jest.fn(), fixRunStarted: jest.fn() };
+    notificationService = {
+      prsOpened: jest.fn(),
+      fixRunStarted: jest.fn(),
+      releaseFailed: jest.fn(),
+      releaseSkipped: jest.fn(),
+    };
     settingsService = {
       get: jest.fn().mockResolvedValue({
         enabled: true,
@@ -73,6 +79,9 @@ describe('BuilderPullRequestService', () => {
     };
     github = {
       isConfigured: true,
+      listPullRequestFiles: jest
+        .fn()
+        .mockResolvedValue({ files: ['src/a.ts'], truncated: false }),
       getPullRequest: jest.fn(),
       getCheckRollup: jest.fn().mockResolvedValue(null),
       listPullRequestFeedback: jest.fn().mockResolvedValue([]),
@@ -97,6 +106,20 @@ describe('BuilderPullRequestService', () => {
       dispatchReviewRun: jest.fn().mockResolvedValue({ id: 'run-3' }),
     };
 
+    releaseService = {
+      dispatch: jest
+        .fn()
+        .mockResolvedValue({ tag: 'v1.2.3', dispatchedAt: new Date() }),
+      resolveRun: jest
+        .fn()
+        .mockResolvedValue({ id: '99', htmlUrl: 'https://run' }),
+      poll: jest.fn().mockResolvedValue({
+        state: 'succeeded',
+        runUrl: 'https://run',
+        detail: 'success',
+      }),
+    };
+
     eventRepository = {
       latestOfType: jest.fn().mockResolvedValue(null),
       listByRun: jest.fn().mockResolvedValue([]),
@@ -110,6 +133,7 @@ describe('BuilderPullRequestService', () => {
       settingsService,
       github,
       eventRepository,
+      releaseService,
       { adminBaseUrl: 'https://admin.example.com' } as never,
       buildService,
     );
@@ -1211,6 +1235,202 @@ describe('BuilderPullRequestService', () => {
       await reconcileWith({ headSha: 'abc1234def', ...behind });
 
       expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * The last step of the loop, and the only one that changes what real users
+   * are running.
+   */
+  describe('releasing a merged pull request', () => {
+    beforeEach(() => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoReleaseEnabled: true,
+        maxFixRunsPerPr: 3,
+      });
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        title: 'x',
+      });
+    });
+
+    const merge = (pr = openPr()) =>
+      reconcileWith(
+        { merged: true, mergedAt: new Date(), state: 'closed' },
+        pr,
+      );
+
+    it('dispatches a release when a pull request merges', async () => {
+      await merge();
+
+      expect(releaseService.dispatch).toHaveBeenCalledWith(
+        expect.objectContaining({ repo: 'ally-be' }),
+        'master',
+      );
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({ releaseState: 'releasing' }),
+      );
+    });
+
+    it('stays off unless auto-release is enabled', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoReleaseEnabled: false,
+        maxFixRunsPerPr: 3,
+      });
+
+      await merge();
+
+      expect(releaseService.dispatch).not.toHaveBeenCalled();
+    });
+
+    /** Claimed before the dispatch, so a tick mid-flight cannot fire a second. */
+    it('never releases the same pull request twice', async () => {
+      await merge(openPr({ releaseState: 'releasing' }));
+
+      expect(releaseService.dispatch).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The real constraint on ally-web: a change under libs/ ships inside all
+     * three frontends, so releasing only the apps whose paths matched would
+     * silently under-deploy it.
+     */
+    it('refuses to guess when a change also touches shared code', async () => {
+      github.listPullRequestFiles.mockResolvedValue({
+        files: [
+          'apps/ally-admin-dashboard/src/a.tsx',
+          'libs/ui-shared/src/b.tsx',
+        ],
+        truncated: false,
+      });
+
+      await merge(openPr({ repo: 'ally-web' }));
+
+      expect(releaseService.dispatch).not.toHaveBeenCalled();
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        { releaseState: 'skipped' },
+      );
+      expect(notificationService.releaseSkipped).toHaveBeenCalled();
+    });
+
+    /** A truncated listing is "we do not know", not "nothing changed". */
+    it('refuses when the file list could not be read in full', async () => {
+      github.listPullRequestFiles.mockResolvedValue({
+        files: ['src/a.ts'],
+        truncated: true,
+      });
+
+      await merge();
+
+      expect(releaseService.dispatch).not.toHaveBeenCalled();
+      expect(notificationService.releaseSkipped).toHaveBeenCalled();
+    });
+
+    it('skips a repo with no release pipeline, rather than retrying forever', async () => {
+      await merge(openPr({ repo: 'ally-mobile' }));
+
+      expect(releaseService.dispatch).not.toHaveBeenCalled();
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        { releaseState: 'skipped' },
+      );
+    });
+
+    it('releases both apps when one pull request spans two of them', async () => {
+      github.listPullRequestFiles.mockResolvedValue({
+        files: [
+          'apps/ally-admin-dashboard/src/a.tsx',
+          'apps/ally-helpline-dashboard/src/b.tsx',
+        ],
+        truncated: false,
+      });
+
+      await merge(openPr({ repo: 'ally-web' }));
+
+      expect(releaseService.dispatch).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  /**
+   * The half that makes releasing automatically defensible rather than
+   * reckless. On 2026-09-15 an ally-be release passed every check, failed to
+   * boot, and was rolled back by the ECS circuit breaker — and nothing noticed
+   * for the better part of an hour.
+   */
+  describe('watching a dispatched release', () => {
+    const releasing = () =>
+      repository.find.mockResolvedValue([
+        openPr({
+          releaseState: 'releasing',
+          releaseTag: 'v1.2.3',
+          releaseRunId: '99',
+          releaseDispatchedAt: new Date(),
+        }),
+      ]);
+
+    beforeEach(() => {
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        title: 'x',
+      });
+    });
+
+    it('marks a successful release live', async () => {
+      releasing();
+
+      await service.reconcileReleases();
+
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({ releaseState: 'released' }),
+      );
+      expect(notificationService.releaseFailed).not.toHaveBeenCalled();
+    });
+
+    /** Merged but not deployed is the state that must never pass quietly. */
+    it('shouts when a release fails', async () => {
+      releasing();
+      releaseService.poll.mockResolvedValue({
+        state: 'failed',
+        runUrl: 'https://run',
+        detail: 'failure',
+      });
+
+      await service.reconcileReleases();
+
+      expect(repository.update).toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({ releaseState: 'failed' }),
+      );
+      expect(notificationService.releaseFailed).toHaveBeenCalledWith(
+        expect.anything(),
+        'ally-be',
+        42,
+        'v1.2.3',
+        'failure',
+        'https://run',
+      );
+    });
+
+    it('says nothing while a release is still running', async () => {
+      releasing();
+      releaseService.poll.mockResolvedValue({
+        state: 'running',
+        runUrl: null,
+        detail: null,
+      });
+
+      await service.reconcileReleases();
+
+      expect(notificationService.releaseFailed).not.toHaveBeenCalled();
+      expect(repository.update).not.toHaveBeenCalledWith(
+        { id: 'pr-1' },
+        expect.objectContaining({ releaseState: 'released' }),
+      );
     });
   });
 });

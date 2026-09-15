@@ -96,6 +96,34 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
   @Column({ type: 'varchar', length: 64, nullable: true })
   reviewedSha?: string | null;
 
+  /**
+   * Where this pull request's production release has got to.
+   *
+   * Null means nothing was dispatched — the ordinary state for a PR that has
+   * not merged, and the permanent state for one whose repo has no dispatchable
+   * release pipeline. `failed` is the one that matters: it means **merged but
+   * not deployed**, which is the state a person has to act on.
+   */
+  @Column({ type: 'varchar', length: 12, nullable: true })
+  releaseState?: string | null;
+
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  releaseTag?: string | null;
+
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  releaseRunId?: string | null;
+
+  @Column({ type: 'varchar', length: 300, nullable: true })
+  releaseRunUrl?: string | null;
+
+  /**
+   * When the dispatch was accepted. Not cosmetic: `workflow_dispatch` answers
+   * 204 with no body, so the run it created can only be found afterwards by
+   * workflow and time.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  releaseDispatchedAt?: Date | null;
+
   @Column({ type: 'boolean', default: false })
   merged!: boolean;
 

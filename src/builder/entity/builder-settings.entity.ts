@@ -78,6 +78,23 @@ export class BuilderSettings extends BaseWithoutTenantEntity {
   autoApproveEnabled!: boolean;
 
   /**
+   * Whether a merged pull request releases itself to production.
+   *
+   * The furthest Builder goes, and the only switch here that changes what real
+   * users are running. Gated on more than the others: the repo must have a
+   * dispatchable release pipeline, and for ally-web every changed file must
+   * attribute to exactly the apps being released — a change under `libs/` ships
+   * inside all three frontends, and releasing the subset whose paths happened to
+   * match would silently under-deploy it.
+   *
+   * A release that fails leaves the pull request merged but not deployed, which
+   * is worse than not having released at all if nobody is told. That is why the
+   * watcher exists and why a failure notifies rather than just logging.
+   */
+  @Column({ type: 'boolean', default: false })
+  autoReleaseEnabled!: boolean;
+
+  /**
    * Fix runs per pull request. A fix that cannot fix it will not fix it on the
    * fourth attempt either, and the failure mode without a ceiling is a loop
    * that pushes commits until someone notices the bill.

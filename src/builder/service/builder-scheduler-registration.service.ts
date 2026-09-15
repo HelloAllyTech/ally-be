@@ -47,6 +47,18 @@ export class BuilderSchedulerRegistrationService implements OnModuleInit {
       () => this.pullRequestService.reconcileOpenPullRequests(),
     );
 
+    // Releases are watched on their own tick, not inside the pass above: that
+    // one only looks at OPEN pull requests, and a release is dispatched at the
+    // moment one stops being open. Without a separate sweep a dispatched
+    // release would never be looked at again — which is the exact failure this
+    // whole feature exists to prevent, so it would be a poor place to save a
+    // scheduler entry.
+    scheduledTaskRegistry.register(
+      BUILDER_RECONCILE_INTERVAL,
+      'builder-release-reconcile',
+      () => this.pullRequestService.reconcileReleases(),
+    );
+
     // The flywheel's catch-up. Merge and settle hooks do most of the work;
     // this exists because a hook that failed, or a PR merged while the
     // service was down, would otherwise leave a build's outcome permanently

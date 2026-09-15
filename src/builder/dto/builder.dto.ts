@@ -291,6 +291,18 @@ export class UpdateBuilderSettingsDto {
   @IsBoolean()
   autoApproveEnabled?: boolean;
 
+  @ApiPropertyOptional({
+    description:
+      'Whether a merged pull request releases itself to production. The only ' +
+      'switch here that changes what real users are running. Refuses rather ' +
+      'than guesses when a change cannot be attributed to exactly the ' +
+      'deployables being released, and a failed release notifies loudly — ' +
+      '"merged but not deployed" is worse than not having released at all.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  autoReleaseEnabled?: boolean;
+
   @ApiPropertyOptional({ description: 'Fix runs allowed per pull request' })
   @IsOptional()
   @IsNumber()

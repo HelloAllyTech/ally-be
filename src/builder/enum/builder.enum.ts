@@ -270,6 +270,13 @@ export enum BuilderNotificationKind {
   BUDGET_REACHED = 'budget_reached',
   /** Builder is pushing to a PR a human may be reviewing right now. */
   FIX_RUN_STARTED = 'fix_run_started',
+  /**
+   * A merged pull request did not reach production. The loudest thing Builder
+   * can say: master has moved on and everyone assumes the change is live.
+   */
+  RELEASE_FAILED = 'release_failed',
+  /** Merged, but the release needs a person to run it. */
+  RELEASE_SKIPPED = 'release_skipped',
 }
 
 /**

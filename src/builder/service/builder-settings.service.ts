@@ -49,6 +49,7 @@ export class BuilderSettingsService {
         | 'autoFixEnabled'
         | 'autoReviewEnabled'
         | 'autoApproveEnabled'
+        | 'autoReleaseEnabled'
         | 'maxFixRunsPerPr'
         | 'defaultEngine'
         | 'defaultModel'
@@ -75,6 +76,14 @@ export class BuilderSettingsService {
     // Same reasoning, one rung further: this is the switch that lets a machine
     // say a pull request is fine to merge. "Who turned it on, and when" is the
     // first question after any PR that should not have been approved.
+    // Louder still: this one changes what real users are running.
+    if (changes.autoReleaseEnabled !== undefined) {
+      this.logger.info(
+        `Builder auto-release ${
+          changes.autoReleaseEnabled ? 'ENABLED' : 'DISABLED'
+        } by user ${userId}`,
+      );
+    }
     if (changes.autoApproveEnabled !== undefined) {
       this.logger.info(
         `Builder auto-approve ${
