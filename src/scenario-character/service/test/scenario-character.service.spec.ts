@@ -363,6 +363,20 @@ describe('ScenarioCharacterService', () => {
         service.getScenarioCharacterById('char-uuid-1'),
       ).rejects.toThrow(ForbiddenException);
     });
+
+    it('returns character with knowledgeSources as an empty array if it is null or undefined', async () => {
+      const characterWithUndefinedKnowledgeSources = {
+        ...mockCharacter,
+        knowledgeSources: undefined,
+      };
+      mockRepo.findOne.mockResolvedValue(
+        characterWithUndefinedKnowledgeSources as ScenarioCharacter,
+      );
+
+      const res = await service.getScenarioCharacterById('char-uuid-1');
+
+      expect(res.knowledgeSources).toEqual([]);
+    });
   });
 
   describe('updateScenarioCharacter', () => {
