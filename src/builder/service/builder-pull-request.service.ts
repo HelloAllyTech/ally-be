@@ -354,6 +354,16 @@ export class BuilderPullRequestService {
    * error anyone sees, and never a half-applied state.
    */
   async reconcileOpenPullRequests(): Promise<void> {
+    // First, and deliberately before the GitHub guard.
+    //
+    // This sweep is pure database work, and it is the only path that can reach
+    // a session whose pull requests have all MERGED — `listReconcilable`
+    // filters on `merged: false`, so the loop below iterates nothing for them.
+    // Putting the outcome reconciliation inside that loop meant it could never
+    // run for the one case it was written for: a session left saying FAILED
+    // above work that had already shipped.
+    await this.reconcileSessionOutcomes();
+
     if (!this.github.isConfigured) return;
 
     for (const pullRequest of await this.repository.listReconcilable()) {
@@ -362,6 +372,27 @@ export class BuilderPullRequestService {
       } catch (error) {
         this.logger.warn(
           `Could not refresh ${pullRequest.repo}#${pullRequest.prNumber}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Re-test the FAILED sessions against what their pull requests actually did.
+   *
+   * Runs over sessions rather than over open pull requests, because the
+   * evidence that matters most — a merge — is exactly what removes a pull
+   * request from the open set.
+   */
+  private async reconcileSessionOutcomes(): Promise<void> {
+    for (const session of await this.sessionRepository.listRecentlyFailed()) {
+      try {
+        await this.clearStaleSessionError(session.id);
+      } catch (error) {
+        this.logger.warn(
+          `Could not settle session ${session.id}: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );

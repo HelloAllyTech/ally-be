@@ -64,7 +64,13 @@ describe('BuilderPullRequestService', () => {
       update: jest.fn(),
       findOne: jest.fn(),
     };
-    sessionRepository = { findOne: jest.fn() };
+    sessionRepository = {
+      findOne: jest.fn(),
+      update: jest.fn(),
+      // The outcome sweep runs first on every reconcile tick; nothing failed
+      // by default.
+      listRecentlyFailed: jest.fn().mockResolvedValue([]),
+    };
     notificationService = {
       prsOpened: jest.fn(),
       fixRunStarted: jest.fn(),

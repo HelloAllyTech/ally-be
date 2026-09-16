@@ -256,3 +256,90 @@ describe('Builder bookkeeping — the blocking-run guard', () => {
     );
   });
 });
+
+/**
+ * The sweep has to run over SESSIONS, not over open pull requests.
+ *
+ * `listReconcilable` filters on `merged: false`, so a session whose pull
+ * requests have all merged is iterated by nothing. Putting the outcome
+ * reconciliation inside that loop — as the first two attempts at this did —
+ * meant it could never run for the one case it exists for: a session left
+ * saying FAILED above work that had already shipped and deployed.
+ */
+describe('Builder bookkeeping — the outcome sweep runs over sessions', () => {
+  it('reaches a failed session whose pull requests have all merged', async () => {
+    const sessionRepository = {
+      listRecentlyFailed: jest
+        .fn()
+        .mockResolvedValue([{ id: 's-1' }, { id: 's-2' }]),
+    };
+    const svc = Object.create(
+      BuilderPullRequestService.prototype,
+    ) as BuilderPullRequestService;
+    const settled: string[] = [];
+    Object.assign(svc, {
+      sessionRepository,
+      // No open pull requests anywhere: the loop below the sweep sees nothing.
+      repository: { listReconcilable: jest.fn().mockResolvedValue([]) },
+      github: { isConfigured: true },
+      logger: { info: jest.fn(), warn: jest.fn() },
+      clearStaleSessionError: jest.fn(async (id: string) => {
+        settled.push(id);
+      }),
+    });
+
+    await (svc as any).reconcileOpenPullRequests();
+
+    expect(settled).toEqual(['s-1', 's-2']);
+  });
+
+  /**
+   * Pure database work, so it must not be gated behind the GitHub guard — a
+   * dead credential already cost a whole afternoon of silence today.
+   */
+  it('still sweeps when GitHub is not configured', async () => {
+    const svc = Object.create(
+      BuilderPullRequestService.prototype,
+    ) as BuilderPullRequestService;
+    const clearStaleSessionError = jest.fn();
+    Object.assign(svc, {
+      sessionRepository: {
+        listRecentlyFailed: jest.fn().mockResolvedValue([{ id: 's-1' }]),
+      },
+      repository: { listReconcilable: jest.fn() },
+      github: { isConfigured: false },
+      logger: { info: jest.fn(), warn: jest.fn() },
+      clearStaleSessionError,
+    });
+
+    await (svc as any).reconcileOpenPullRequests();
+
+    expect(clearStaleSessionError).toHaveBeenCalledWith('s-1');
+  });
+
+  /** One bad session must not stop the rest of the sweep. */
+  it('carries on past a session that throws', async () => {
+    const clearStaleSessionError = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('nope'))
+      .mockResolvedValue(undefined);
+    const svc = Object.create(
+      BuilderPullRequestService.prototype,
+    ) as BuilderPullRequestService;
+    Object.assign(svc, {
+      sessionRepository: {
+        listRecentlyFailed: jest
+          .fn()
+          .mockResolvedValue([{ id: 's-1' }, { id: 's-2' }]),
+      },
+      repository: { listReconcilable: jest.fn().mockResolvedValue([]) },
+      github: { isConfigured: true },
+      logger: { info: jest.fn(), warn: jest.fn() },
+      clearStaleSessionError,
+    });
+
+    await (svc as any).reconcileOpenPullRequests();
+
+    expect(clearStaleSessionError).toHaveBeenCalledTimes(2);
+  });
+});
