@@ -359,9 +359,20 @@ export class BuilderBuildService {
     const plannerTier =
       settings.plannerModel ?? config.plannerModel ?? config.coderModel;
 
+    // Three tiers now, not two. A small build plans on the mechanical tier
+    // because planning was a quarter of Builder's whole spend on work this
+    // same classifier had already called small — see BUILDER_SIZE_PROFILES.
     const planner =
       overrides.plannerModel ??
-      (profile.plannerTier === 'coder' ? coder : plannerTier);
+      (profile.plannerTier === 'mechanical'
+        ? // Falling back to the coder tier rather than leaving it unset: an
+          // unconfigured mechanical model would otherwise hand the runner an
+          // empty `--model`, and a cost optimisation that can fail the build
+          // is not one.
+          (config.mechanicalModel ?? coder)
+        : profile.plannerTier === 'coder'
+          ? coder
+          : plannerTier);
 
     return {
       // An explicit override always wins — an admin who picked a planner meant

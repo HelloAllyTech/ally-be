@@ -409,6 +409,55 @@ export class BuilderPullRequestService {
     if (await this.considerReviewRun(pullRequest, remote.headSha, rollup))
       return;
     await this.considerFixRun(pullRequest);
+    await this.considerMergePrompt(pullRequest, remote);
+  }
+
+  /**
+   * Offer the merge button, once, at the moment it is the only thing left.
+   *
+   * `mergeable_state === 'clean'` is GitHub's own answer to "is anything still
+   * standing in the way" — every required check green, every required review
+   * in, base not stale. Recomputing that from rollups and review lists would be
+   * a second, worse implementation of a question already answered.
+   *
+   * Announced once and never again: reconcile is polled, so a pull request that
+   * sits mergeable for an afternoon would otherwise post a fresh button every
+   * tick, and a channel with one useful message becomes a channel nobody reads.
+   *
+   * Nothing outstanding, because a clean mergeable state says nothing about a
+   * finding a fix run has not finished with — the diff is about to change.
+   */
+  private async considerMergePrompt(
+    pullRequest: BuilderPullRequest,
+    remote: { state: string; merged: boolean; mergeableState: string | null },
+  ): Promise<void> {
+    if (pullRequest.mergePromptedAt) return;
+    if (remote.merged || remote.state !== 'open') return;
+    if (remote.mergeableState !== 'clean') return;
+
+    const outstanding = await this.feedbackRepository.countActionable(
+      pullRequest.id,
+    );
+    if (outstanding) return;
+
+    const session = await this.sessionRepository.findOne({
+      where: { id: pullRequest.sessionId },
+    });
+    if (!session) return;
+
+    // Stamped before the announcement, not after: a Slack outage must not make
+    // this retry on every tick for the rest of the day.
+    await this.repository.update(
+      { id: pullRequest.id },
+      { mergePromptedAt: new Date() },
+    );
+    await this.notificationService.prReadyToMerge(session, {
+      id: pullRequest.id,
+      repo: pullRequest.repo,
+      prNumber: pullRequest.prNumber,
+      prUrl: pullRequest.prUrl,
+      title: pullRequest.title ?? null,
+    });
   }
 
   /**

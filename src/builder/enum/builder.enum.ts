@@ -277,6 +277,12 @@ export enum BuilderNotificationKind {
   RELEASE_FAILED = 'release_failed',
   /** Merged, but the release needs a person to run it. */
   RELEASE_SKIPPED = 'release_skipped',
+  /**
+   * Green, reviewed, approved, and mergeable — the one moment a person's click
+   * is the only thing left. Announced with a merge button, which is the whole
+   * reason this is worth a message at all.
+   */
+  PR_READY_TO_MERGE = 'pr_ready_to_merge',
 }
 
 /**

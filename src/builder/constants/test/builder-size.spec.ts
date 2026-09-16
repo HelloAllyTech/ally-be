@@ -126,9 +126,15 @@ describe('BUILDER_SIZE_PROFILES', () => {
     expect(small.planWords).toBeLessThan(large.planWords);
   });
 
-  it('only plans on the coder tier for a small build', () => {
+  /**
+   * Planning was a quarter of Builder's whole production spend — $4.89 median
+   * against a $7.56 median coding attempt — on builds this classifier had
+   * already called small. The tier ladder for planning now has three rungs,
+   * and a small build sits on the cheapest of them.
+   */
+  it('plans a small build on the mechanical tier', () => {
     expect(BUILDER_SIZE_PROFILES[BuilderBuildSize.SMALL].plannerTier).toBe(
-      'coder',
+      'mechanical',
     );
     expect(BUILDER_SIZE_PROFILES[BuilderBuildSize.MEDIUM].plannerTier).toBe(
       'planner',

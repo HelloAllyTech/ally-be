@@ -124,6 +124,16 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
   @Column({ type: 'timestamp', nullable: true })
   releaseDispatchedAt?: Date | null;
 
+  /**
+   * When the merge button was offered in Slack.
+   *
+   * Reconcile is polled, so without this a pull request that sits mergeable for
+   * an afternoon would post a fresh button every tick — which is how a channel
+   * with one useful message becomes a channel nobody reads.
+   */
+  @Column({ type: 'timestamp', nullable: true })
+  mergePromptedAt?: Date | null;
+
   @Column({ type: 'boolean', default: false })
   merged!: boolean;
 

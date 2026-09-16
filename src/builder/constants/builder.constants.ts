@@ -303,6 +303,23 @@ export const BUILDER_ANNOUNCED_KINDS: BuilderNotificationKind[] = [
   BuilderNotificationKind.BUILD_FAILED,
   BuilderNotificationKind.BUDGET_REACHED,
   BuilderNotificationKind.FIX_RUN_STARTED,
+  // Merged but not deployed. The strongest case in this list by the rule
+  // above: master has moved on, the pull request reads as done, and everyone
+  // assumes the change is live — so nobody goes back to look. Auto-release was
+  // built on the promise that this shouts, and without it here the watcher
+  // would only have written a row nobody opens.
+  BuilderNotificationKind.RELEASE_FAILED,
+  // Merged and deliberately not released, because the change could not be
+  // attributed to exactly one deployable. Quieter, and still not good news
+  // that keeps: it sits on master until a person ships it by hand. Low volume
+  // by construction — at most one per merged pull request, and only for the
+  // ones Builder refuses to guess about.
+  BuilderNotificationKind.RELEASE_SKIPPED,
+  // The exception that proves the rule above. "A pull request opened" is good
+  // news that keeps and stays out; "this one is green, reviewed, approved and
+  // waiting on your click" is not news at all — it is the work itself, with the
+  // control attached. A message someone acts on is not what mutes a channel.
+  BuilderNotificationKind.PR_READY_TO_MERGE,
 ];
 
 /* ── Lane A evidence lookups ─────────────────────────────────────────────── */
@@ -471,7 +488,7 @@ export type BuilderCoderTier = 'mechanical' | 'coder' | 'planner';
 export const BUILDER_SIZE_PROFILES: Record<
   BuilderBuildSize,
   {
-    plannerTier: 'coder' | 'planner';
+    plannerTier: 'mechanical' | 'coder' | 'planner';
     effort: 'low' | 'medium' | 'high';
     maxTurns: number;
     planWords: number;
@@ -487,14 +504,26 @@ export const BUILDER_SIZE_PROFILES: Record<
 > = {
   // A small build does not need an Opus plan; it needs the coder to start.
   [BuilderBuildSize.SMALL]: {
-    plannerTier: 'coder',
+    /**
+     * Planning was 25% of everything Builder spent — $4.89 median against a
+     * $7.56 median coding attempt — on builds this same classifier had already
+     * judged to be a handful of requirements in one repo. The plan phase also
+     * produced ~23k output tokens for an 800-word plan, which is not planning,
+     * it is the planner re-deriving the codebase the coder is about to read
+     * again anyway.
+     *
+     * The mechanical tier still writes a plan, so remediation and verify keep
+     * the artifact they read. It just stops paying a coding-tier model to
+     * produce it for two routes and a checkbox.
+     */
+    plannerTier: 'mechanical',
     effort: 'low',
     maxTurns: 20,
     planWords: 800,
     // Two attempts on the coder tier: a small build that fails the gate has
     // usually tripped on something the test output names outright.
     coderLadder: ['coder', 'coder', 'planner', 'planner'],
-    maxBudgetUsd: { plan: 2, code: 8, verify: 3, finalise: 3 },
+    maxBudgetUsd: { plan: 1, code: 8, verify: 3, finalise: 3 },
   },
   [BuilderBuildSize.MEDIUM]: {
     plannerTier: 'planner',

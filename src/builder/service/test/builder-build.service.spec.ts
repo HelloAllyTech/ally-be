@@ -158,6 +158,7 @@ describe('BuilderBuildService', () => {
           coderModel: 'claude-sonnet-5',
           plannerModel: 'claude-opus-5',
           verifierModel: 'claude-opus-5',
+          mechanicalModel: 'claude-haiku-4-5',
         },
       } as any,
       github as any,
@@ -205,12 +206,39 @@ describe('BuilderBuildService', () => {
 
       const models = dispatchedModels();
       // The first real build was exactly this shape and paid $7.85 for an Opus
-      // plan of a two-route change.
-      expect(models.planner).toBe('claude-sonnet-5');
+      // plan of a two-route change. Dropping to the coder tier took that to a
+      // $4.89 median and it was still 25% of everything Builder spent, so a
+      // small build now plans on the cheapest tier there is.
+      expect(models.planner).toBe('claude-haiku-4-5');
       expect(models.size).toBe('small');
       expect(models.effort).toBe('low');
       expect(models.plannerMaxTurns).toBe(20);
-      expect(models.budgets.plan).toBe(2);
+      expect(models.budgets.plan).toBe(1);
+    });
+
+    /**
+     * An unconfigured mechanical model must not hand the runner an empty
+     * `--model`: a cost optimisation that can fail the build is not one.
+     */
+    it('falls back to the coder tier when no mechanical model is configured', async () => {
+      (service as any).configService = {
+        publicApiBaseUrl: 'http://be',
+        builder: {
+          coderModel: 'claude-sonnet-5',
+          plannerModel: 'claude-opus-5',
+          verifierModel: 'claude-opus-5',
+        },
+      };
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          requirements: [{ id: 'R1' }, { id: 'R2' }],
+          technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'small' }] },
+        },
+      });
+
+      await service.startBuild(readySession() as any, 1);
+
+      expect(dispatchedModels().planner).toBe('claude-sonnet-5');
     });
 
     it('keeps Opus for a cross-repo build', async () => {

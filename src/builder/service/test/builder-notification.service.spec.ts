@@ -78,6 +78,45 @@ describe('BuilderNotificationService announcements', () => {
     expect(repository.save).toHaveBeenCalled();
   });
 
+  /**
+   * The promise auto-release was built on.
+   *
+   * "Merged but not deployed" reads as done from every angle — master has moved
+   * on, the pull request is closed, CI is green — so the only thing that makes
+   * it visible is the shout. Without this the watcher would write a row nobody
+   * opens, and the feature would be worse than not releasing at all.
+   */
+  it('shouts when a merged pull request did not reach production', async () => {
+    const { service, slack } = build();
+
+    await service.releaseFailed(
+      session,
+      'ally-be',
+      42,
+      'v1.2.3',
+      'failure',
+      'https://run',
+    );
+
+    expect(slack.sendMessage).toHaveBeenCalled();
+    expect(slack.sendMessage.mock.calls[0][0]).toContain('NOT deployed');
+  });
+
+  /** Merged and waiting on a person is not good news that keeps either. */
+  it('announces a release it refused to guess at', async () => {
+    const { service, slack } = build();
+
+    await service.releaseSkipped(
+      session,
+      'ally-web',
+      7,
+      'it also changes shared code',
+    );
+
+    expect(slack.sendMessage).toHaveBeenCalled();
+    expect(slack.sendMessage.mock.calls[0][0]).toContain('manual release');
+  });
+
   it('only announces the kinds with someone waiting', async () => {
     const announced: BuilderNotificationKind[] = [];
     for (const [kind, call] of [

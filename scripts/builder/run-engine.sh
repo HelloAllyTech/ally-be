@@ -160,11 +160,28 @@ report_phase_cost() {
       durationApiMs: num(raw.duration_api_ms ?? raw.durationApiMs),
       numTurns: num(raw.num_turns ?? raw.numTurns),
     };
+    // Say so, loudly, when the result frame did not carry what we bill and
+    // route on. Every one of these landed null on the first two production
+    // builds while `usd` and `modelUsage` from the same frame landed fine, and
+    // stored nulls cannot tell you whether the engine stopped emitting a key,
+    // renamed it, or was never asked. Printing the keys the frame actually had
+    // turns the next real run into the diagnosis instead of another guess.
+    if (body.numTurns === null || body.durationMs === null || !body.model) {
+      console.error(
+        `[cost] ${phase}: missing timings (model=${model || "unset"}) — ` +
+        `result keys: ${Object.keys(raw).join(",") || "none"}`
+      );
+    }
     fs.writeFileSync("/tmp/builder-cost-body.json", JSON.stringify(body));
-  ' "$phase" "$model" "$result_file" 2>/dev/null || return 0
+  ' "$phase" "$model" "$result_file" || return 0
+  # Written fresh by the step above, and removed after posting: without this a
+  # node step that bailed would re-POST the PREVIOUS phase's body under this
+  # phase's name — silently billing the wrong numbers rather than none.
+  [ -f /tmp/builder-cost-body.json ] || return 0
   curl -sS -X POST "${API}/cost" \
     -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
     -d @/tmp/builder-cost-body.json >/dev/null 2>&1 || true
+  rm -f /tmp/builder-cost-body.json
 }
 
 # A run that has spent its ceiling HOLDS at the phase boundary rather than

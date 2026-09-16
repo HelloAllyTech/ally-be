@@ -232,6 +232,15 @@ export class AppConfigService {
     return {
       botToken: this.configService.get<string>('SLACK_BOT_TOKEN'),
       channel: this.configService.get<string>('SLACK_CHANNEL'),
+      /**
+       * Verifies that an inbound interaction really came from Slack.
+       *
+       * Unset means inbound Slack is off, and the endpoint refuses everything.
+       * That is the safe default: without this secret there is no way to tell
+       * a real button click from anyone on the internet posting the same JSON
+       * at a URL that merges to master.
+       */
+      signingSecret: this.configService.get<string>('SLACK_SIGNING_SECRET'),
     };
   }
 
@@ -762,6 +771,20 @@ export class AppConfigService {
       // muted channel is worse than no channel because it still looks like
       // coverage.
       slackChannel: this.configService.get<string>('BUILDER_SLACK_CHANNEL'),
+      /**
+       * Slack user ids allowed to merge and release from the channel.
+       *
+       * Deny by default: unset means nobody, not everybody. A button in a
+       * channel is clickable by anyone who was ever invited to it, and the
+       * thing behind this one ships to production — so channel membership is
+       * not an authorisation model.
+       */
+      slackApprovers: (
+        this.configService.get<string>('BUILDER_SLACK_APPROVERS') ?? ''
+      )
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
     };
   }
 
