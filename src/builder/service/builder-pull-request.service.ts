@@ -470,13 +470,24 @@ export class BuilderPullRequestService {
     if (!session) return;
 
     const pullRequests = await this.repository.listBySession(sessionId);
-    const live = pullRequests.filter(
+    if (!pullRequests.length) return;
+
+    // Closed without merging is a rejection, and not ours to reinterpret: the
+    // work was looked at and turned down, so whatever the session says about
+    // itself stands.
+    if (pullRequests.some((row) => !row.merged && row.state === 'closed'))
+      return;
+
+    // Merged is the strongest evidence there is — green checks plus a person
+    // explicitly choosing to take the change. Only the still-open ones have
+    // anything left to prove, so they are what the checks below examine; a
+    // session whose pull requests have all merged passes on the merges alone.
+    const open = pullRequests.filter(
       (row) => !row.merged && row.state !== 'closed',
     );
-    if (!live.length) return;
-    if (!live.every((row) => row.ciStatus === 'success')) return;
+    if (!open.every((row) => row.ciStatus === 'success')) return;
 
-    for (const row of live) {
+    for (const row of open) {
       if (await this.feedbackRepository.countActionable(row.id)) return;
     }
 

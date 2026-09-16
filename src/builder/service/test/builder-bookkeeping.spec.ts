@@ -128,6 +128,45 @@ describe('Builder bookkeeping — reconciling verdicts against evidence', () => 
       );
     });
 
+    /**
+     * The state the real session ended in, and the one the first cut of this
+     * got wrong. Scoping the evidence to OPEN pull requests meant a session
+     * whose work had all been merged — green checks plus a person choosing to
+     * take it, the strongest evidence available — was left saying FAILED for
+     * ever, because there was nothing open left to examine.
+     */
+    it('settles on merged pull requests alone', async () => {
+      const { svc, sessionRepository } = build();
+      svc.repository.listBySession = jest.fn().mockResolvedValue([
+        { id: 'pr-1', merged: true, state: 'closed', ciStatus: 'success' },
+        { id: 'pr-2', merged: true, state: 'closed', ciStatus: 'success' },
+      ]);
+
+      await svc.clearStaleSessionError('s-1');
+
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 's-1' },
+        {
+          status: BuilderSessionStatus.COMPLETED,
+          currentStage: BuilderStage.DONE,
+        },
+      );
+    });
+
+    /** Closed without merging is a rejection — not ours to reinterpret. */
+    it('leaves a session whose pull request was rejected', async () => {
+      const { svc, sessionRepository } = build();
+      svc.repository.listBySession = jest
+        .fn()
+        .mockResolvedValue([
+          { id: 'pr-1', merged: false, state: 'closed', ciStatus: 'success' },
+        ]);
+
+      await svc.clearStaleSessionError('s-1');
+
+      expect(sessionRepository.update).not.toHaveBeenCalled();
+    });
+
     it('does not resurrect a cancelled session', async () => {
       const { svc, sessionRepository } = build({
         status: BuilderSessionStatus.CANCELLED,

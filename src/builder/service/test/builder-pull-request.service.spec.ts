@@ -1979,17 +1979,23 @@ describe('BuilderPullRequestService — clearing an error the PRs disproved', ()
   });
 
   /**
-   * A session whose pull requests are all merged or closed has no open evidence
-   * either way, and its last error is the only account of what happened.
+   * This previously asserted the opposite, on the reasoning that a session with
+   * nothing open has "no evidence either way". That was wrong: a MERGED pull
+   * request is the strongest evidence available — green checks plus a person
+   * explicitly choosing to take the change. Only a pull request closed WITHOUT
+   * merging is a rejection, and that case is asserted separately.
    */
-  it('leaves it alone when nothing is open', async () => {
+  it('clears once the pull requests have merged', async () => {
     repository.listBySession.mockResolvedValue([
       green({ merged: true, state: 'closed' }),
     ]);
 
     await service.clearStaleSessionError('s-1');
 
-    expect(sessionRepository.update).not.toHaveBeenCalled();
+    expect(sessionRepository.update).toHaveBeenCalledWith(
+      { id: 's-1' },
+      { error: null },
+    );
   });
 
   /**
