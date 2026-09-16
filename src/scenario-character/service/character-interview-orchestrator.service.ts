@@ -464,7 +464,18 @@ export class CharacterInterviewOrchestratorService {
           }
           yield {
             event: 'tool_result',
-            data: { name, summary: outcome.summary },
+            data: {
+              name,
+              summary: outcome.summary,
+              ...(outcome.modelResult.ok === false
+                ? {
+                    ok: outcome.modelResult.ok,
+                    error: outcome.modelResult.error,
+                    message: outcome.modelResult.message,
+                    errors: outcome.modelResult.errors,
+                  }
+                : {}),
+            },
           };
 
           allToolResults.push({
