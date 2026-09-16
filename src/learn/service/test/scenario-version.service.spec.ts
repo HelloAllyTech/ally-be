@@ -45,6 +45,7 @@ describe('ScenarioVersionService', () => {
       findOne: jest.fn(),
       getNextVersionNumber: jest.fn().mockResolvedValue(3),
       softDelete: jest.fn().mockResolvedValue({ affected: 1 }),
+      findDraftsUpdatedSince: jest.fn().mockResolvedValue([]),
     };
     scenariosRepo = { findOne: jest.fn().mockResolvedValue(scenario) };
     scenarioService = {
@@ -234,6 +235,24 @@ describe('ScenarioVersionService', () => {
         triggerWarningIds: ['t1'],
         status: ScenarioStatus.DRAFT,
       });
+    });
+
+    it('reverting (branching from an older version) always creates a MANUAL version', async () => {
+      (versionRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'v-auto',
+        scenarioId: 10,
+        status: ScenarioVersionStatus.DRAFT,
+        type: 'AUTOMATIC',
+        config: { title: 'yesterday' },
+      });
+
+      await service.createVersion(10, { fromVersionId: 'v-auto' }, 1);
+
+      const created = txVersionRepo.create.mock.calls[0][0];
+      expect(created.type).toBe('MANUAL');
+      expect(created.parentVersionId).toBe('v-auto');
+      // The prior draft is only read from, never mutated by a revert.
+      expect(versionRepo.softDelete).not.toHaveBeenCalled();
     });
   });
 
@@ -444,6 +463,59 @@ describe('ScenarioVersionService', () => {
         { scenarioId: 10, events: [{ id: 'evt-keep' }] },
         expect.anything(),
       );
+    });
+  });
+
+  describe('createDailyAutomaticVersions', () => {
+    const now = new Date('2023-10-27T00:05:00.000Z');
+
+    it('does nothing when no drafts were modified in the last 24 hours', async () => {
+      (versionRepo.findDraftsUpdatedSince as jest.Mock).mockResolvedValue([]);
+
+      const created = await service.createDailyAutomaticVersions(now);
+
+      expect(created).toBe(0);
+      expect(txVersionRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('snapshots each modified draft into an AUTOMATIC version named with the date', async () => {
+      (versionRepo.findDraftsUpdatedSince as jest.Mock).mockResolvedValue([
+        {
+          id: 'v-draft',
+          scenarioId: 10,
+          config: { title: 'wip' },
+          updatedBy: 2,
+          createdBy: 1,
+        },
+      ]);
+      (versionRepo.findOne as jest.Mock).mockResolvedValue(undefined);
+
+      const created = await service.createDailyAutomaticVersions(now);
+
+      expect(created).toBe(1);
+      const saved = txVersionRepo.create.mock.calls[0][0];
+      expect(saved).toMatchObject({
+        scenarioId: 10,
+        parentVersionId: 'v-draft',
+        type: 'AUTOMATIC',
+        status: ScenarioVersionStatus.DRAFT,
+        name: 'Auto-save 2023-10-27',
+        config: { title: 'wip' },
+      });
+    });
+
+    it('is idempotent: skips a draft that already has an auto-save for the day', async () => {
+      (versionRepo.findDraftsUpdatedSince as jest.Mock).mockResolvedValue([
+        { id: 'v-draft', scenarioId: 10, config: {} },
+      ]);
+      (versionRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'v-existing-auto',
+      });
+
+      const created = await service.createDailyAutomaticVersions(now);
+
+      expect(created).toBe(0);
+      expect(txVersionRepo.save).not.toHaveBeenCalled();
     });
   });
 });

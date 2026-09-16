@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  MoreThanOrEqual,
+  Repository,
+} from 'typeorm';
 import { ScenarioVersion } from '../entity/scenario-version.entity';
+import { ScenarioVersionStatus } from '../enum/scenario-version-status.enum';
 
 @Injectable()
 export class ScenarioVersionRepository extends Repository<ScenarioVersion> {
@@ -34,5 +40,15 @@ export class ScenarioVersionRepository extends Repository<ScenarioVersion> {
       .andWhere('v.deletedAt IS NULL')
       .getRawOne<{ max: string | null }>();
     return (row?.max ? Number(row.max) : 0) + 1;
+  }
+
+  /** Draft versions edited within the window — candidates for the daily auto-version job. */
+  async findDraftsUpdatedSince(since: Date): Promise<ScenarioVersion[]> {
+    return this.find({
+      where: {
+        status: ScenarioVersionStatus.DRAFT,
+        updatedAt: MoreThanOrEqual(since),
+      },
+    });
   }
 }

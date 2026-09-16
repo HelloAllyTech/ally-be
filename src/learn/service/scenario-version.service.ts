@@ -9,6 +9,7 @@ import isDuplicateKeyException from 'src/exception/custom.exception';
 import { ScenarioVersion } from '../entity/scenario-version.entity';
 import { Scenarios } from '../entity/scenarios.entity';
 import { ScenarioVersionStatus } from '../enum/scenario-version-status.enum';
+import { ScenarioVersionType } from '../enum/scenario-version-type.enum';
 import { ScenarioVersionRepository } from '../repository/scenario-version.repository';
 import { ScenariosRepository } from '../repository/scenario.repository';
 import { CreateScenarioVersionDto } from '../dto/create-scenario-version.dto';
@@ -108,32 +109,47 @@ export class ScenarioVersionService {
       config = await this.buildConfigFromScenario(scenarioId);
     }
 
-    // getNextVersionNumber is a read-then-insert, so two concurrent creates can
-    // pick the same number and collide on the unique (scenarioId, versionNumber)
-    // index. Retry a few times — each attempt recomputes the next number.
+    return this.saveNewVersion({
+      scenarioId,
+      name: dto.name,
+      // Drafts are never themselves live, so force a DRAFT status into the
+      // cloned config to avoid carrying an ACTIVE flag from the parent.
+      config: { ...config, status: ScenarioStatus.DRAFT },
+      status: ScenarioVersionStatus.DRAFT,
+      type: ScenarioVersionType.MANUAL,
+      parentVersionId,
+      createdBy: userId,
+      updatedBy: userId,
+    });
+  }
+
+  /**
+   * Shared insert path for `createVersion` and the daily auto-version job.
+   * `getNextVersionNumber` is a read-then-insert, so two concurrent creates can
+   * pick the same number and collide on the unique (scenarioId, versionNumber)
+   * index. Retry a few times — each attempt recomputes the next number.
+   */
+  private async saveNewVersion(params: {
+    scenarioId: number;
+    name?: string;
+    config: Record<string, any>;
+    status: ScenarioVersionStatus;
+    type: ScenarioVersionType;
+    parentVersionId: string | null;
+    createdBy?: number;
+    updatedBy?: number;
+  }): Promise<ScenarioVersion> {
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.dataSource.transaction(async (em) => {
           const versionNumber =
             await this.scenarioVersionRepository.getNextVersionNumber(
-              scenarioId,
+              params.scenarioId,
               em,
             );
           const repo = em.getRepository(ScenarioVersion);
-          const version = repo.create({
-            scenarioId,
-            versionNumber,
-            name: dto.name,
-            // Drafts are never themselves live, so force a DRAFT status into the
-            // cloned config to avoid carrying an ACTIVE flag from the parent.
-            config: { ...config, status: ScenarioStatus.DRAFT },
-            status: ScenarioVersionStatus.DRAFT,
-            parentVersionId,
-            createdBy: userId,
-            updatedBy: userId,
-          });
-          return repo.save(version);
+          return repo.save(repo.create({ ...params, versionNumber }));
         });
       } catch (error) {
         if (attempt < MAX_ATTEMPTS && isDuplicateKeyException(error)) {
@@ -334,6 +350,47 @@ export class ScenarioVersionService {
       }
       return version;
     });
+  }
+
+  /**
+   * Daily job: snapshot every draft version modified in the preceding 24
+   * hours into an AUTOMATIC version, so authors who forget to save manually
+   * still get a recoverable point per day. Idempotent — a draft that already
+   * has today's auto-save (matched by parent + name) is skipped, so re-running
+   * the job the same day never creates a duplicate.
+   */
+  async createDailyAutomaticVersions(now: Date = new Date()): Promise<number> {
+    const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const modifiedDrafts =
+      await this.scenarioVersionRepository.findDraftsUpdatedSince(since);
+    const name = `Auto-save ${now.toISOString().slice(0, 10)}`;
+
+    let created = 0;
+    for (const draft of modifiedDrafts) {
+      const alreadySaved = await this.scenarioVersionRepository.findOne({
+        where: {
+          scenarioId: draft.scenarioId,
+          parentVersionId: draft.id,
+          type: ScenarioVersionType.AUTOMATIC,
+          name,
+        },
+      });
+      if (alreadySaved) {
+        continue;
+      }
+      await this.saveNewVersion({
+        scenarioId: draft.scenarioId,
+        name,
+        config: draft.config,
+        status: ScenarioVersionStatus.DRAFT,
+        type: ScenarioVersionType.AUTOMATIC,
+        parentVersionId: draft.id,
+        createdBy: draft.updatedBy ?? draft.createdBy,
+        updatedBy: draft.updatedBy ?? draft.createdBy,
+      });
+      created += 1;
+    }
+    return created;
   }
 
   /**

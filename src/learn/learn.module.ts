@@ -120,6 +120,7 @@ import { ScenarioSessionEvaluationService } from './service/scenario-session-eva
 import { ActorEvaluationCatchupSchedulerRegistrationService } from './service/actor-evaluation-catchup-scheduler-registration.service';
 import { StuckSessionSweeperSchedulerRegistrationService } from './service/stuck-session-sweeper-scheduler-registration.service';
 import { UnfinalisedSessionSweeperSchedulerRegistrationService } from './service/unfinalised-session-sweeper-scheduler-registration.service';
+import { ScenarioAutoVersionSchedulerRegistrationService } from './service/scenario-auto-version-scheduler-registration.service';
 import { ScenarioSessionEvaluationWebhookController } from './controller/scenario-session-evaluation-webhook.controller';
 import { RoomMetadataWebhookController } from './controller/room-metadata-webhook.controller';
 import { LearnRoomMetadata } from './entity/learn-room-metadata.entity';
@@ -302,6 +303,7 @@ import { SettingsModule } from 'src/settings/settings.module';
     ActorEvaluationCatchupSchedulerRegistrationService,
     StuckSessionSweeperSchedulerRegistrationService,
     UnfinalisedSessionSweeperSchedulerRegistrationService,
+    ScenarioAutoVersionSchedulerRegistrationService,
     BehaviorTranslationRepository,
     ScenarioBehaviorInstructionTranslationRepository,
     BehaviorInstructionTranslationService,
