@@ -5,8 +5,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * auto-version job creates from a modified draft. Existing rows predate the
  * job, so they backfill to MANUAL.
  */
-export class AddScenarioVersionType1970800000000 implements MigrationInterface {
-  name = 'AddScenarioVersionType1970800000000';
+export class AddScenarioVersionType1970850000000 implements MigrationInterface {
+  name = 'AddScenarioVersionType1970850000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
