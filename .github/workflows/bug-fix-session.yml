@@ -131,21 +131,25 @@ jobs:
           [ -n "$ENGINE" ] && [ "$ENGINE" != "null" ] || ENGINE="claude-code"
           echo "engine=$ENGINE" >> "$GITHUB_OUTPUT"
           echo "default_model=$DEFAULT_MODEL" >> "$GITHUB_OUTPUT"
+          # Also the model a gemini-engine run falls back to if it gets stuck
+          # — see "Run the fix session"'s own fallback logic.
+          echo "escalation_model=$ESCALATION_MODEL" >> "$GITHUB_OUTPUT"
+          # Rewritten unconditionally, even on a pure gemini run that never
+          # falls back: Gemini CLI has no equivalent to the Task-tool subagent
+          # dispatch this file's frontmatter drives, so gemini never reads it
+          # either way — cheap to keep current regardless, and it means a
+          # gemini-engine run that DOES fall back to Claude below always finds
+          # it already pointing at the right model, with no extra step.
           if [ "$ENGINE" = "gemini" ]; then
-            # Gemini CLI has no equivalent to the Task-tool subagent dispatch
-            # `.claude/agents/bug-escalation.md` relies on, so a gemini-engine
-            # fix session skips escalation entirely rather than rewriting
-            # frontmatter a claude-code-only mechanism will never read.
-            echo "Engine is gemini — leaving bug-escalation.md untouched (escalation is claude-code only)."
-          else
-            # The committed frontmatter becomes just a fallback the moment this
-            # runs — this endpoint is now the one source of truth for the
-            # escalation model too, so it can no longer drift across this
-            # file's five otherwise-identical copies the way it used to be able
-            # to (nothing kept them in sync before).
-            sed -i.bak "s/^model: .*/model: $ESCALATION_MODEL/" .claude/agents/bug-escalation.md
-            rm -f .claude/agents/bug-escalation.md.bak
+            echo "Engine is gemini — bug-escalation.md is only read if this run falls back to Claude below."
           fi
+          # The committed frontmatter becomes just a fallback the moment this
+          # runs — this endpoint is now the one source of truth for the
+          # escalation model too, so it can no longer drift across this
+          # file's five otherwise-identical copies the way it used to be able
+          # to (nothing kept them in sync before).
+          sed -i.bak "s/^model: .*/model: $ESCALATION_MODEL/" .claude/agents/bug-escalation.md
+          rm -f .claude/agents/bug-escalation.md.bak
           # Best-effort: powers the findings list's model/provider label.
           # ally-be never learns this any other way, since the model is
           # resolved here, not at dispatch time — but losing this call must
@@ -160,6 +164,11 @@ jobs:
           if [ "${{ steps.models.outputs.engine }}" = "gemini" ]; then
             npm install -g @google/gemini-cli@0.22.5
             gemini --version
+            # Installed alongside, not instead: if this run gets stuck (loop
+            # detection, an abandoned turn), "Run the fix session" falls back
+            # to Claude Code without a second install step mid-fallback.
+            npm install -g @anthropic-ai/claude-code@2.1.220
+            claude --version
           else
             npm install -g @anthropic-ai/claude-code@2.1.220
             claude --version
@@ -208,11 +217,13 @@ jobs:
           # Only consumed when engine=gemini. A plain Google AI Studio key —
           # see run-engine.sh's own note on why this isn't Vertex/Workspace auth.
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          # NOT ALLY_BE_API_KEY / GH_TOKEN here: the prompt's own curl/gh calls
-          # now read them back from what the previous step wrote to disk, so
-          # neither needs to sit in this step's process environment too.
+          # Needed here even though the agent's own curl/gh calls read the key
+          # back from disk instead: this step's own script (not the agent)
+          # checks the finding's status below to decide whether to fall back,
+          # and that check runs in this workflow's normal, unsandboxed shell.
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           if [ "${{ steps.models.outputs.engine }}" = "gemini" ]; then
             # No --max-turns / Task-tool equivalent — see the engine-resolution
             # step above for why escalation is simply skipped on this engine.
@@ -222,6 +233,39 @@ jobs:
               --approval-mode auto_edit \
               --allowed-tools "run_shell_command,read_file,write_file,replace,list_directory,glob,search_file_content" \
               --output-format json | tee /tmp/claude-result.json | jq -r '.response // empty'
+            echo "gemini" > /tmp/actual-engine.txt
+
+            # Gemini's own loop-detector (confirmed in gemini-cli-core's
+            # loopDetectionService.js) kills a session that's thrashing —
+            # correctly, but before the agent gets a turn to report any
+            # outcome, leaving the finding stuck at 'fixing'/'queued'. Rather
+            # than making an admin notice and retry by hand every time, check
+            # for exactly that stuck state here and retry once with Claude
+            # Code, which has no equivalent external killer. Same status
+            # check "Fail if the session ended without reporting an outcome"
+            # uses below, run early enough to still do something about it.
+            STATUS=$(curl -sS -H "x-api-key: $ALLY_BE_API_KEY" \
+              "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/findings/${{ inputs.finding_id }}" \
+              | jq -r '.status // "unknown"')
+            if [ "$STATUS" = "fixing" ] || [ "$STATUS" = "queued" ]; then
+              echo "Gemini left the finding '$STATUS' without reporting an outcome — falling back to Claude Code (${{ steps.models.outputs.escalation_model }}) for one retry."
+              # Whatever Gemini left behind (uncommitted edits, a checked-out
+              # branch) is discarded — the fix protocol's own contract is
+              # already "anything not pushed is gone with the runner", so a
+              # clean restart is the same guarantee the agent already works
+              # under, not a new one.
+              git fetch origin master
+              git checkout master --force
+              git reset --hard origin/master
+              git clean -fd
+              claude -p "$(cat /tmp/fix-prompt.txt)" \
+                --permission-mode acceptEdits \
+                --model "${{ steps.models.outputs.escalation_model }}" \
+                --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
+                --max-turns 120 \
+                --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
+              echo "claude-code" > /tmp/actual-engine.txt
+            fi
           else
             claude -p "$(cat /tmp/fix-prompt.txt)" \
               --permission-mode acceptEdits \
@@ -229,6 +273,7 @@ jobs:
               --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
               --max-turns 120 \
               --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
+            echo "claude-code" > /tmp/actual-engine.txt
           fi
 
       - name: Report actual token cost
@@ -271,8 +316,13 @@ jobs:
           ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
         run: |
           set -uo pipefail
+          # Not steps.models.outputs.engine: that's whichever engine was
+          # CONFIGURED, but a gemini run that got stuck and fell back to
+          # Claude overwrote /tmp/claude-result.json with Claude's own shape
+          # — parsing it as Gemini's would silently zero it out again.
+          ACTUAL_ENGINE=$(cat /tmp/actual-engine.txt 2>/dev/null || echo "${{ steps.models.outputs.engine }}")
           if [ -s /tmp/claude-result.json ]; then
-            if [ "${{ steps.models.outputs.engine }}" = "gemini" ]; then
+            if [ "$ACTUAL_ENGINE" = "gemini" ]; then
               MODEL_USAGE=$(jq -c \
                 '[(.stats.models // {}) | to_entries[] | {model: .key, inputTokens: (.value.tokens.input // 0), outputTokens: (.value.tokens.candidates // 0), cacheReadInputTokens: (.value.tokens.cached // 0), cacheCreationInputTokens: 0}]' \
                 /tmp/claude-result.json 2>/dev/null || echo '[]')
