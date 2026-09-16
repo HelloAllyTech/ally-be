@@ -752,11 +752,17 @@ export class BuilderBuildService {
 
     // The session goes back to BUILDING so the UI stops reading as finished
     // while Builder is pushing commits; settleRun moves it back.
+    //
+    // `error: null` matters as much as the status. Only a build dispatch used
+    // to clear it, so a failure from three runs ago stayed on screen while
+    // newer runs came and went — a fact about history rendered as the current
+    // state, right above a banner telling you the run had failed.
     await this.sessionRepository.update(
       { id: session.id },
       {
         status: BuilderSessionStatus.BUILDING,
         currentStage: BuilderStage.SETUP,
+        error: null,
       },
     );
     await this.notificationService.fixRunStarted(
@@ -825,6 +831,10 @@ export class BuilderBuildService {
       return null;
     }
 
+    // Same reasoning as the fix path: a review starting means the last
+    // failure is no longer what is happening, and leaving it on the session
+    // shows a stale error above a running build.
+    await this.sessionRepository.update({ id: session.id }, { error: null });
     await this.pullRequestRepository.update(
       { id: pullRequest.id },
       { reviewedSha: headSha },
@@ -1279,6 +1289,25 @@ export class BuilderBuildService {
    * SUCCEEDED — testing was prompt-instructed and the only evidence was a
    * string the agent chose to send.
    */
+  /**
+   * Whether a run touched any code at all.
+   *
+   * The gate rule exists because "I fixed it" is not checkable without machine
+   * evidence. A run that changed nothing makes no such claim — and on
+   * 2026-09-16 two fix runs did exactly the right thing (read the feedback,
+   * found it was Builder's own approval, said so, changed nothing) and were
+   * recorded FAILED for it. That failure then poisoned the session status, lit
+   * a red banner, and counted toward the circuit breaker.
+   *
+   * `file_edit` is emitted by the forwarder from the engine's own output rather
+   * than asserted by the agent, so this is evidence in the same sense the gate
+   * is: a run cannot claim it changed nothing while having edited files.
+   */
+  async touchedNoFiles(runId: string): Promise<boolean> {
+    const events = await this.eventRepository.listByRun(runId, 0, 2000);
+    return !events.some((event) => event.type === BuilderEventType.FILE_EDIT);
+  }
+
   async hasPassingGate(runId: string): Promise<boolean> {
     const events = await this.eventRepository.listByRun(runId, 0, 2000);
     const gateByKey = new Map<string, boolean>();
