@@ -45,6 +45,7 @@ import {
   UpsertTrackSectionDto,
   UpsertTrackStructureDto,
 } from '../dto/upsert-track-structure.dto';
+import { v4 as uuidv4 } from 'uuid';
 import {
   computeStructuralSignature,
   validateTrackStructure,
@@ -209,6 +210,7 @@ export class TrackService {
       throw new NotFoundException('Track not found');
     }
 
+    this.addMissingQuizOptionIds(dto.sections);
     this.sanitizeStructure(dto.sections);
     validateTrackStructure(dto.sections);
     this.applyContentDefaults(dto.sections);
@@ -539,6 +541,27 @@ export class TrackService {
         }
         if (item.content !== undefined) {
           item.content = sanitizeDeep(item.content);
+        }
+      }
+    }
+  }
+
+  private addMissingQuizOptionIds(sections: UpsertTrackSectionDto[]): void {
+    for (const section of sections) {
+      for (const item of section.items) {
+        if (item.type === TrackItemType.QUIZ && item.content) {
+          const quiz = item.content as QuizContent;
+          if (quiz.questions) {
+            for (const question of quiz.questions) {
+              if ('options' in question && question.options) {
+                for (const option of question.options) {
+                  if (!option.id) {
+                    option.id = uuidv4();
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }
