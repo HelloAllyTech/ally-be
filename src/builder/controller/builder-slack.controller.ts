@@ -25,7 +25,12 @@ import { verifySlackSignature } from '../util/slack-signature.util';
  * publishing its shape only helps someone trying to forge a payload.
  */
 @ApiExcludeController()
-@Controller('builder/slack')
+// Versioned like every other controller in this module. Without the explicit
+// version the route is registered outside the /v1 namespace, which is both
+// inconsistent and a URL somebody has to remember is special — and this one
+// gets pasted into Slack's app configuration, where a later correction means
+// reconfiguring it there too.
+@Controller({ path: 'builder/slack', version: '1' })
 export class BuilderSlackController {
   private readonly logger = LoggerService.getInstance(
     BuilderSlackController.name,
