@@ -27,6 +27,7 @@ const openPr = (overrides: Record<string, any> = {}) => ({
   fixRunCount: 0,
   reviewRunCount: 0,
   reviewedSha: null,
+  reviewPassedSha: null,
   ...overrides,
 });
 
@@ -1046,7 +1047,11 @@ describe('BuilderPullRequestService', () => {
       // findings come back the row says which commit was reviewed. The
       // approval guard reads exactly that, so the fixture has to carry it.
       repository.findOne.mockResolvedValue(
-        openPr({ headSha: 'abc1234def', reviewedSha: 'abc1234def' }),
+        openPr({
+          headSha: 'abc1234def',
+          reviewedSha: 'abc1234def',
+          reviewPassedSha: 'abc1234def',
+        }),
       );
       github.getPullRequest.mockResolvedValue({
         state: 'open',
@@ -1065,7 +1070,11 @@ describe('BuilderPullRequestService', () => {
      */
     it('does not approve when a commit landed during the review', async () => {
       repository.findOne.mockResolvedValue(
-        openPr({ headSha: 'abc1234def', reviewedSha: 'an-older-commit' }),
+        openPr({
+          headSha: 'abc1234def',
+          reviewedSha: 'an-older-commit',
+          reviewPassedSha: 'an-older-commit',
+        }),
       );
 
       await service.recordReviewFindings('run-3', 'session-1', 'pr-1', []);
@@ -1620,6 +1629,7 @@ describe('BuilderPullRequestService — approval on the reconcile tick', () => {
     prNumber: 658,
     headSha: HEAD,
     reviewedSha: HEAD,
+    reviewPassedSha: HEAD,
     approvedSha: null,
     ...overrides,
   });
@@ -1660,6 +1670,7 @@ describe('BuilderPullRequestService — approval on the reconcile tick', () => {
         approvedSha: 'older-sha',
         headSha: 'new-sha',
         reviewedSha: 'new-sha',
+        reviewPassedSha: 'new-sha',
       }),
       known({ headSha: 'new-sha' }),
     );
@@ -1669,7 +1680,10 @@ describe('BuilderPullRequestService — approval on the reconcile tick', () => {
 
   it('never approves a commit no review has read', async () => {
     await service.considerApproval(
-      pr({ reviewedSha: 'an-older-commit' }),
+      pr({
+        reviewedSha: 'an-older-commit',
+        reviewPassedSha: 'an-older-commit',
+      }),
       known(),
     );
 
@@ -1677,7 +1691,10 @@ describe('BuilderPullRequestService — approval on the reconcile tick', () => {
   });
 
   it('never approves a pull request that has never been reviewed', async () => {
-    await service.considerApproval(pr({ reviewedSha: null }), known());
+    await service.considerApproval(
+      pr({ reviewedSha: null, reviewPassedSha: null }),
+      known(),
+    );
 
     expect(github.approvePullRequest).not.toHaveBeenCalled();
   });
@@ -1777,6 +1794,7 @@ describe('BuilderPullRequestService — carrying a review across our own update'
     prNumber: 658,
     headSha: MERGED_HEAD,
     reviewedSha: REVIEWED,
+    reviewPassedSha: REVIEWED,
     approvedSha: null,
     ...overrides,
   });
@@ -1800,9 +1818,11 @@ describe('BuilderPullRequestService — carrying a review across our own update'
 
     expect(github.approvePullRequest).toHaveBeenCalled();
     // Stamped forward, so the next tick short-circuits instead of re-deriving.
+    // The PASS moves, not the dispatch: carrying `reviewedSha` would say a
+    // review ran against this merge commit, which is not what happened.
     expect(repository.update).toHaveBeenCalledWith(
       { id: 'pr-1' },
-      { reviewedSha: MERGED_HEAD },
+      { reviewPassedSha: MERGED_HEAD },
     );
   });
 
@@ -1865,7 +1885,11 @@ describe('BuilderPullRequestService — carrying a review across our own update'
 
   it('does not reach for the commit when the head is already the reviewed one', async () => {
     await service.considerApproval(
-      pr({ headSha: REVIEWED, reviewedSha: REVIEWED }),
+      pr({
+        headSha: REVIEWED,
+        reviewedSha: REVIEWED,
+        reviewPassedSha: REVIEWED,
+      }),
       { remote: { ...known.remote, headSha: REVIEWED }, rollup: known.rollup },
     );
 
@@ -1975,5 +1999,95 @@ describe('BuilderPullRequestService — clearing an error the PRs disproved', ()
 
     expect(repository.listBySession).not.toHaveBeenCalled();
     expect(sessionRepository.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A dispatched review is not a passed review.
+ *
+ * `reviewedSha` is stamped at DISPATCH, by design — reconcile needs to know a
+ * review is already in flight for a head so it does not start a second one.
+ * Approval used to be reachable only from a review that had just finished
+ * reporting zero findings, so it never had to care about the difference.
+ *
+ * Moving approval onto the reconcile tick quietly repurposed `reviewedSha` as
+ * evidence of a clean review, which it has never been. ally-be#494 is the case
+ * that makes it concrete: three review runs, all FAILED, and a `reviewedSha`
+ * indistinguishable from a clean one. Approving on that would put a machine's
+ * name on a diff nothing ever successfully read.
+ */
+describe('BuilderPullRequestService — a failed review must not approve', () => {
+  const HEAD = 'abc1234def';
+  let service: any;
+  let github: any;
+  let repository: any;
+
+  beforeEach(() => {
+    repository = { update: jest.fn() };
+    github = {
+      getPullRequest: jest.fn(),
+      getCheckRollup: jest.fn(),
+      getCommitAuthor: jest.fn().mockResolvedValue({
+        login: 'ally-builder[bot]',
+        name: null,
+        parents: ['one-parent'],
+      }),
+      approvePullRequest: jest
+        .fn()
+        .mockResolvedValue({ approved: true, message: null }),
+    };
+    service = Object.create(BuilderPullRequestService.prototype);
+    Object.assign(service, {
+      repository,
+      feedbackRepository: { countActionable: jest.fn().mockResolvedValue(0) },
+      github,
+      settingsService: {
+        get: jest
+          .fn()
+          .mockResolvedValue({ enabled: true, autoApproveEnabled: true }),
+      },
+      logger: { info: jest.fn(), warn: jest.fn() },
+    });
+  });
+
+  const known = {
+    remote: { state: 'open', merged: false, headSha: HEAD },
+    rollup: { state: 'success' },
+  };
+
+  it('refuses a head whose review dispatched but never came back clean', async () => {
+    await service.considerApproval(
+      {
+        id: 'pr-1',
+        repo: 'ally-be',
+        prNumber: 494,
+        headSha: HEAD,
+        // Stamped when the run was dispatched...
+        reviewedSha: HEAD,
+        // ...and never stamped, because the run failed.
+        reviewPassedSha: null,
+        approvedSha: null,
+      },
+      known,
+    );
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('approves once a review has actually passed on that head', async () => {
+    await service.considerApproval(
+      {
+        id: 'pr-1',
+        repo: 'ally-be',
+        prNumber: 494,
+        headSha: HEAD,
+        reviewedSha: HEAD,
+        reviewPassedSha: HEAD,
+        approvedSha: null,
+      },
+      known,
+    );
+
+    expect(github.approvePullRequest).toHaveBeenCalled();
   });
 });

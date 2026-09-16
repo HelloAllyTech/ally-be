@@ -97,6 +97,18 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
   reviewedSha?: string | null;
 
   /**
+   * The head commit a review actually PASSED on — zero findings recorded.
+   *
+   * Distinct from `reviewedSha`, which is stamped at dispatch so reconcile does
+   * not start a second review for a head one is already running against. That
+   * one says a review happened; this one says it came back clean. A review run
+   * that dispatches and then fails stamps the first and never the second, and
+   * approval rests on this.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  reviewPassedSha?: string | null;
+
+  /**
    * The head commit Builder approved, if it has.
    *
    * Approval is reconsidered on every reconcile tick rather than only at the

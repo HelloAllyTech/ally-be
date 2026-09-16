@@ -889,11 +889,18 @@ export class BuilderPullRequestService {
       `Review run ${runId} reported ${recorded} finding(s) on ${pullRequest.repo}#${pullRequest.prNumber}.`,
     );
 
-    // A clean review is the only thing that can approve, and it is checked here
-    // rather than on the next reconcile tick because this is the moment the
-    // answer is known. A review that found something leaves the pull request
-    // exactly as it was: the fix loop takes it from here.
-    if (recorded === 0) await this.considerApproval(pullRequest);
+    // A clean review is the only thing that can approve. Recorded as a fact on
+    // the row rather than acted on only here, because approval is reconsidered
+    // on the tick and needs to know the OUTCOME — `reviewedSha` is stamped at
+    // dispatch and a failed run leaves it looking identical to this.
+    if (recorded === 0) {
+      await this.repository.update(
+        { id: pullRequest.id },
+        { reviewPassedSha: pullRequest.reviewedSha ?? null },
+      );
+      pullRequest.reviewPassedSha = pullRequest.reviewedSha ?? null;
+      await this.considerApproval(pullRequest);
+    }
 
     return recorded;
   }
@@ -956,7 +963,7 @@ export class BuilderPullRequestService {
     // missing `parents` is treated as "cannot tell", which refuses — the same
     // judgement the branch-update guard makes about an unreadable author.
     if (!head?.parents || head.parents.length !== 2) return false;
-    if (head.parents[0] !== pullRequest.reviewedSha) return false;
+    if (head.parents[0] !== pullRequest.reviewPassedSha) return false;
     if (!this.isOwnActor(head.login ?? head.name ?? '')) return false;
 
     this.logger.info(
@@ -964,9 +971,9 @@ export class BuilderPullRequestService {
     );
     await this.repository.update(
       { id: pullRequest.id },
-      { reviewedSha: headSha },
+      { reviewPassedSha: headSha },
     );
-    pullRequest.reviewedSha = headSha;
+    pullRequest.reviewPassedSha = headSha;
     return true;
   }
 
@@ -988,10 +995,11 @@ export class BuilderPullRequestService {
     )
       return;
 
-    // Never approve a commit nobody read. `considerApproval` used to be
-    // reachable only from a review that had just finished, which made this
-    // implicit; on the reconcile path it has to be said.
-    if (!pullRequest.reviewedSha) return;
+    // Never approve a commit no review PASSED on. `considerApproval` used to be
+    // reachable only from a review that had just finished reporting zero
+    // findings, which made this implicit; on the reconcile path it has to be
+    // said, and said against the outcome rather than the dispatch.
+    if (!pullRequest.reviewPassedSha) return;
 
     const outstanding = await this.feedbackRepository.countActionable(
       pullRequest.id,
@@ -1011,7 +1019,7 @@ export class BuilderPullRequestService {
     if (!remote.headSha) return;
     if (pullRequest.approvedSha === remote.headSha) return;
     if (
-      pullRequest.reviewedSha !== remote.headSha &&
+      pullRequest.reviewPassedSha !== remote.headSha &&
       !(await this.reviewSurvivedOurOwnUpdate(pullRequest, remote.headSha))
     )
       return;
