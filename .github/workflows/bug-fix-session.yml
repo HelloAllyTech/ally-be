@@ -150,7 +150,7 @@ jobs:
           # ally-be never learns this any other way, since the model is
           # resolved here, not at dispatch time — but losing this call must
           # never fail a session over a cosmetic label.
-          curl -sS -X POST "${{ inputs.api_base_url }}/api/v1/bug-hunter/pipeline/runs/${{ inputs.run_id }}/model" \
+          curl -sS -X POST "${{ inputs.api_base_url }}/api/v1/bug-hunter/runs/${{ inputs.run_id }}/model" \
             -H "Content-Type: application/json" -H "x-api-key: $ALLY_BE_API_KEY" \
             -d "{\"engine\":\"$ENGINE\",\"model\":\"$DEFAULT_MODEL\"}" || true
 
