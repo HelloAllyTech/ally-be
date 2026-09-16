@@ -11,6 +11,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import {
   CheckRollup,
   GithubActionsService,
+  PullRequestInfo,
 } from 'src/github/service/github-actions.service';
 import { AppConfigService } from 'src/config/config.service';
 import { BuilderEventType } from '../enum/builder.enum';
@@ -410,6 +411,13 @@ export class BuilderPullRequestService {
     if (await this.considerReviewRun(pullRequest, remote.headSha, rollup))
       return;
     await this.considerFixRun(pullRequest);
+
+    // Reconsidered every tick, not only when a review has just finished.
+    // Approval is a policy applied to a durable fact ("this commit was
+    // reviewed clean"), and firing it only on the event meant any pull request
+    // reviewed while `autoApproveEnabled` was off could never be approved —
+    // the review cap stops a second review, and nothing else looked again.
+    await this.considerApproval(pullRequest, { remote, rollup });
     await this.considerMergePrompt(pullRequest, remote);
   }
 
@@ -863,26 +871,49 @@ export class BuilderPullRequestService {
    */
   private async considerApproval(
     pullRequest: BuilderPullRequest,
+    known?: { remote: PullRequestInfo | null; rollup: CheckRollup | null },
   ): Promise<void> {
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoApproveEnabled) return;
+
+    // The approve call posts a new review every time it is made, and this now
+    // runs on a tick rather than once per review, so the stamp is what keeps a
+    // pull request from collecting one approval every few minutes. Checked
+    // against the sha we last saw, before any network call, so the ordinary
+    // tick over an already-approved pull request costs nothing.
+    if (
+      pullRequest.approvedSha &&
+      pullRequest.approvedSha === pullRequest.headSha
+    )
+      return;
+
+    // Never approve a commit nobody read. `considerApproval` used to be
+    // reachable only from a review that had just finished, which made this
+    // implicit; on the reconcile path it has to be said.
+    if (!pullRequest.reviewedSha) return;
 
     const outstanding = await this.feedbackRepository.countActionable(
       pullRequest.id,
     );
     if (outstanding) return;
 
-    const remote = await this.github.getPullRequest(
-      pullRequest.repo,
-      pullRequest.prNumber,
-    );
+    // The reconcile pass has already fetched both of these for this tick.
+    // Re-fetching would double this service's GitHub traffic for every open
+    // pull request, to learn what the caller already knows.
+    const remote =
+      known?.remote ??
+      (await this.github.getPullRequest(
+        pullRequest.repo,
+        pullRequest.prNumber,
+      ));
     if (!remote || remote.state !== 'open' || remote.merged) return;
     if (!remote.headSha) return;
+    if (pullRequest.approvedSha === remote.headSha) return;
+    if (pullRequest.reviewedSha !== remote.headSha) return;
 
-    const rollup = await this.github.getCheckRollup(
-      pullRequest.repo,
-      remote.headSha,
-    );
+    const rollup =
+      known?.rollup ??
+      (await this.github.getCheckRollup(pullRequest.repo, remote.headSha));
     if (rollup?.state !== 'success') {
       this.logger.info(
         `Not approving ${pullRequest.repo}#${pullRequest.prNumber}: checks are ${rollup?.state ?? 'unknown'}.`,
@@ -906,6 +937,10 @@ export class BuilderPullRequestService {
     );
 
     if (approved) {
+      await this.repository.update(
+        { id: pullRequest.id },
+        { approvedSha: remote.headSha },
+      );
       this.logger.info(
         `[BUILDER] Approved ${pullRequest.repo}#${pullRequest.prNumber} on a clean review.`,
       );

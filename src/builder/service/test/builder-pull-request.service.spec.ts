@@ -1038,7 +1038,13 @@ describe('BuilderPullRequestService', () => {
 
     beforeEach(() => {
       settingsService.get.mockResolvedValue(settings());
-      repository.findOne.mockResolvedValue(openPr());
+      // The state a review run leaves behind: `dispatchReviewRun` stamps
+      // `reviewedSha` with the head it is about to read, so by the time
+      // findings come back the row says which commit was reviewed. The
+      // approval guard reads exactly that, so the fixture has to carry it.
+      repository.findOne.mockResolvedValue(
+        openPr({ headSha: 'abc1234def', reviewedSha: 'abc1234def' }),
+      );
       github.getPullRequest.mockResolvedValue({
         state: 'open',
         merged: false,
@@ -1047,6 +1053,21 @@ describe('BuilderPullRequestService', () => {
         htmlUrl: 'https://github.com/o/ally-be/pull/42',
       });
       github.getCheckRollup.mockResolvedValue(green);
+    });
+
+    /**
+     * Somebody pushed while the review was reading. The findings describe code
+     * that is no longer at the head, so approving would put a machine's name on
+     * a commit nothing has read — the one thing an auto-approver must never do.
+     */
+    it('does not approve when a commit landed during the review', async () => {
+      repository.findOne.mockResolvedValue(
+        openPr({ headSha: 'abc1234def', reviewedSha: 'an-older-commit' }),
+      );
+
+      await service.recordReviewFindings('run-3', 'session-1', 'pr-1', []);
+
+      expect(github.approvePullRequest).not.toHaveBeenCalled();
     });
 
     const cleanReview = () =>
@@ -1507,5 +1528,166 @@ describe('BuilderPullRequestService', () => {
         expect.objectContaining({ status: BuilderPrFeedbackStatus.PENDING }),
       );
     });
+  });
+});
+
+/**
+ * Approval is a policy, not an event.
+ *
+ * It used to be reachable from exactly one place — the moment a review run
+ * recorded zero findings — which quietly made `autoApproveEnabled` mean "approve
+ * reviews that finish from now on" rather than "approve clean reviews". A pull
+ * request reviewed while the switch was off could never be approved afterwards:
+ * the review cap refuses a second review, so the one event that could have
+ * approved it was never going to happen again. ally-web#658 sat in that state.
+ *
+ * So it is reconsidered on the reconcile tick against a durable fact — this
+ * commit was reviewed clean — and stamped per-sha, because the approve call
+ * posts a new review every time it is made.
+ */
+describe('BuilderPullRequestService — approval on the reconcile tick', () => {
+  let service: any;
+  let repository: any;
+  let github: any;
+  let settings: any;
+  let feedbackRepository: any;
+
+  const HEAD = 'abc1234def';
+
+  beforeEach(() => {
+    repository = { update: jest.fn() };
+    feedbackRepository = { countActionable: jest.fn().mockResolvedValue(0) };
+    github = {
+      getPullRequest: jest.fn(),
+      getCheckRollup: jest.fn(),
+      approvePullRequest: jest
+        .fn()
+        .mockResolvedValue({ approved: true, message: null }),
+    };
+    settings = { enabled: true, autoApproveEnabled: true };
+
+    service = Object.create(BuilderPullRequestService.prototype);
+    Object.assign(service, {
+      repository,
+      feedbackRepository,
+      github,
+      settingsService: { get: jest.fn(() => Promise.resolve(settings)) },
+      logger: { info: jest.fn(), warn: jest.fn() },
+    });
+  });
+
+  const pr = (overrides: Record<string, any> = {}) => ({
+    id: 'pr-1',
+    repo: 'ally-web',
+    prNumber: 658,
+    headSha: HEAD,
+    reviewedSha: HEAD,
+    approvedSha: null,
+    ...overrides,
+  });
+
+  const known = (overrides: Record<string, any> = {}) => ({
+    remote: { state: 'open', merged: false, headSha: HEAD, ...overrides },
+    rollup: { state: 'success' },
+  });
+
+  it('approves a PR reviewed clean while the switch was off', async () => {
+    await service.considerApproval(pr(), known());
+
+    expect(github.approvePullRequest).toHaveBeenCalledWith(
+      'ally-web',
+      658,
+      expect.stringContaining('Builder'),
+    );
+    expect(repository.update).toHaveBeenCalledWith(
+      { id: 'pr-1' },
+      { approvedSha: HEAD },
+    );
+  });
+
+  /**
+   * The stamp is the whole reason this is safe to run on a tick: without it a
+   * pull request would collect one approval every few minutes forever.
+   */
+  it('does not approve the same commit twice', async () => {
+    await service.considerApproval(pr({ approvedSha: HEAD }), known());
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  /** A new push re-opens the question — that is what approving a commit means. */
+  it('approves again once a new commit is reviewed', async () => {
+    await service.considerApproval(
+      pr({
+        approvedSha: 'older-sha',
+        headSha: 'new-sha',
+        reviewedSha: 'new-sha',
+      }),
+      known({ headSha: 'new-sha' }),
+    );
+
+    expect(github.approvePullRequest).toHaveBeenCalled();
+  });
+
+  it('never approves a commit no review has read', async () => {
+    await service.considerApproval(
+      pr({ reviewedSha: 'an-older-commit' }),
+      known(),
+    );
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('never approves a pull request that has never been reviewed', async () => {
+    await service.considerApproval(pr({ reviewedSha: null }), known());
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('waits for outstanding feedback to be dealt with', async () => {
+    feedbackRepository.countActionable.mockResolvedValue(1);
+
+    await service.considerApproval(pr(), known());
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not approve over red checks', async () => {
+    await service.considerApproval(pr(), {
+      remote: { state: 'open', merged: false, headSha: HEAD },
+      rollup: { state: 'failure' },
+    });
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('stays off when the switch is off', async () => {
+    settings.autoApproveEnabled = false;
+
+    await service.considerApproval(pr(), known());
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The reconcile pass has already fetched both of these for this tick.
+   * Re-fetching would double this service's GitHub traffic across every open
+   * pull request to learn what the caller already knows.
+   */
+  it('reuses the caller pull request and rollup rather than refetching', async () => {
+    await service.considerApproval(pr(), known());
+
+    expect(github.getPullRequest).not.toHaveBeenCalled();
+    expect(github.getCheckRollup).not.toHaveBeenCalled();
+  });
+
+  /**
+   * An already-approved pull request is the common case on a tick, so it must
+   * not cost a network round trip to discover that.
+   */
+  it('short-circuits an approved PR before any network call', async () => {
+    await service.considerApproval(pr({ approvedSha: HEAD }), undefined);
+
+    expect(github.getPullRequest).not.toHaveBeenCalled();
   });
 });
