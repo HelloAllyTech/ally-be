@@ -315,6 +315,11 @@ export const BUILDER_ANNOUNCED_KINDS: BuilderNotificationKind[] = [
   // by construction — at most one per merged pull request, and only for the
   // ones Builder refuses to guess about.
   BuilderNotificationKind.RELEASE_SKIPPED,
+  // The exception that proves the rule above. "A pull request opened" is good
+  // news that keeps and stays out; "this one is green, reviewed, approved and
+  // waiting on your click" is not news at all — it is the work itself, with the
+  // control attached. A message someone acts on is not what mutes a channel.
+  BuilderNotificationKind.PR_READY_TO_MERGE,
 ];
 
 /* ── Lane A evidence lookups ─────────────────────────────────────────────── */

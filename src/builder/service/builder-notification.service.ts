@@ -155,6 +155,88 @@ export class BuilderNotificationService {
   }
 
   /**
+   * A pull request that is green, reviewed, approved and mergeable — with the
+   * button to merge it.
+   *
+   * The only notification here that carries a control rather than describing
+   * one. It fires at the single moment when a person's click is the last thing
+   * standing between the work and production, which is what makes it worth a
+   * message when "a pull request opened" is not.
+   *
+   * `notify` still records the row; the blocks are the announcement. If Slack
+   * refuses the blocks the row survives, so the pull request is still visible
+   * in the admin view rather than lost with the message.
+   */
+  async prReadyToMerge(
+    session: BuilderSession,
+    pullRequest: {
+      id: string;
+      repo: string;
+      prNumber: number;
+      prUrl: string;
+      title?: string | null;
+    },
+  ): Promise<void> {
+    const what = pullRequest.title?.trim()
+      ? `${pullRequest.repo}#${pullRequest.prNumber} — ${pullRequest.title.trim()}`
+      : `${pullRequest.repo}#${pullRequest.prNumber}`;
+    const text = `${what} is green, reviewed and approved. Merging it will release it to production.`;
+
+    await this.notify(session, BuilderNotificationKind.PR_READY_TO_MERGE, text);
+
+    // Said plainly on the message rather than only in the button label,
+    // because with auto-release on, this click ships. Someone scanning a
+    // channel should not have to remember that.
+    const blocks = [
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*${what}*\n${text}` },
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            style: 'primary',
+            text: { type: 'plain_text', text: 'Merge and release' },
+            // Carries the row id, not the PR number: the handler must look up
+            // exactly what was announced rather than trust a repo/number pair
+            // out of a payload.
+            action_id: 'builder_merge',
+            value: pullRequest.id,
+            confirm: {
+              title: { type: 'plain_text', text: 'Merge and release?' },
+              text: {
+                type: 'mrkdwn',
+                text: `This merges ${what} to master and dispatches its production release.`,
+              },
+              confirm: { type: 'plain_text', text: 'Merge' },
+              deny: { type: 'plain_text', text: 'Cancel' },
+            },
+          },
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Open on GitHub' },
+            url: pullRequest.prUrl,
+            action_id: 'builder_open_pr',
+          },
+        ],
+      },
+    ];
+
+    const result = await this.slack.sendBlocks({
+      text,
+      blocks,
+      channel: this.configService.builder.slackChannel,
+    });
+    if (!result.ok) {
+      this.logger.warn(
+        `Could not offer a merge button for ${pullRequest.repo}#${pullRequest.prNumber}: ${result.error}`,
+      );
+    }
+  }
+
+  /**
    * The one nobody can afford to miss.
    *
    * "Merged but not deployed" is worse than never having released: master has

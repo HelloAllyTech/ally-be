@@ -5,6 +5,8 @@ import { LlmUsageModule } from 'src/analytics/llm-usage.module';
 import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { LlmModule } from 'src/llm/llm.module';
 import { ReleaseModule } from 'src/release/release.module';
+import { BuilderSlackController } from './controller/builder-slack.controller';
+import { BuilderSlackService } from './service/builder-slack.service';
 import { AuthModule } from 'src/auth/auth.module';
 import { GithubModule } from 'src/github/github.module';
 import { BugHunterModule } from 'src/bug-hunter/bug-hunter.module';
@@ -146,8 +148,13 @@ import {
     // SlackService: the inbox is a pull surface, so a paused build needs a push.
     NotificationModule,
   ],
-  controllers: [BuilderController, BuilderPipelineController],
+  controllers: [
+    BuilderSlackController,
+    BuilderController,
+    BuilderPipelineController,
+  ],
   providers: [
+    BuilderSlackService,
     BuilderGateway,
     BuilderSessionService,
     BuilderPrdService,

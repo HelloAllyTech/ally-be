@@ -66,7 +66,19 @@ async function bootstrap() {
         },
       }),
     );
-    app.use(express.urlencoded({ limit: '1mb', extended: true }));
+    // Same rawBody capture as the JSON parser above, for the same reason one
+    // rung down: Slack posts its interaction payloads as form-encoded, and its
+    // request signature is computed over the exact bytes it sent. A body
+    // re-serialised from the parsed object does not reproduce them.
+    app.use(
+      express.urlencoded({
+        limit: '1mb',
+        extended: true,
+        verify: (req: Request & { rawBody?: Buffer }, _res, buf: Buffer) => {
+          req.rawBody = buf;
+        },
+      }),
+    );
 
     // Serve dynamic-i18n published files at /i18n/* (manifest + versioned bundles).
     // Drafts are private and must never be publicly accessible.
