@@ -276,15 +276,26 @@ jobs:
               MODEL_USAGE=$(jq -c \
                 '[(.stats.models // {}) | to_entries[] | {model: .key, inputTokens: (.value.tokens.input // 0), outputTokens: (.value.tokens.candidates // 0), cacheReadInputTokens: (.value.tokens.cached // 0), cacheCreationInputTokens: 0}]' \
                 /tmp/claude-result.json 2>/dev/null || echo '[]')
-              CLI_COST=0
+              # No cliReportedCostUsd key at all here — NOT 0. `formatCost` in
+              # the admin tab prefers cliReportedCostUsd whenever it is
+              # non-null, so sending a literal 0 permanently masked the real
+              # computeCostUsd estimate behind it: two real runs computed
+              # $0.5063 and $6.6549 server-side and both still showed
+              # "$0.0000" in the tab, because Gemini reporting 0 (it never has
+              # a cost figure at all) looked identical to Claude Code
+              # genuinely reporting a real $0. Omitting the key leaves
+              # cliReportedCostUsd null, so the tab correctly falls back to
+              # the token-based estimate instead.
+              BODY="{\"modelUsage\":${MODEL_USAGE}}"
             else
               MODEL_USAGE=$(jq -c '[(.modelUsage // {}) | to_entries[] | {model: (.value.canonicalModel // .key), inputTokens: (.value.inputTokens // 0), outputTokens: (.value.outputTokens // 0), cacheReadInputTokens: (.value.cacheReadInputTokens // 0), cacheCreationInputTokens: (.value.cacheCreationInputTokens // 0)}]' /tmp/claude-result.json 2>/dev/null || echo '[]')
               CLI_COST=$(jq -r '.total_cost_usd // 0' /tmp/claude-result.json 2>/dev/null || echo 0)
+              BODY="{\"modelUsage\":${MODEL_USAGE},\"cliReportedCostUsd\":${CLI_COST}}"
             fi
             curl -sS -X POST "${{ inputs.api_base_url }}/api/v1/bug-hunter/runs/${{ inputs.run_id }}/cost" \
               -H "Content-Type: application/json" \
               -H "x-api-key: $ALLY_BE_API_KEY" \
-              -d "{\"modelUsage\":${MODEL_USAGE},\"cliReportedCostUsd\":${CLI_COST}}" || true
+              -d "$BODY" || true
           fi
 
       - name: Fail if the session ended without reporting an outcome
