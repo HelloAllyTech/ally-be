@@ -702,8 +702,15 @@ export class BuilderPullRequestService {
   ): Promise<void> {
     if (remote.mergeableState !== 'behind' || !remote.headSha) return;
 
+    // Deliberately not gated on `autoFixEnabled`. Bringing a branch up to date
+    // with master is bookkeeping, not a fix: no agent, no model, no runner, one
+    // GitHub API call. `autoFixEnabled` is the switch for spending money on
+    // runs, and tying this to it meant that turning off expensive work also
+    // turned off the free work — leaving green, approved pull requests stuck at
+    // `behind`, which is not `clean`, which is what the merge prompt waits for.
+    // So the loop went quiet with nothing to show and nothing to click.
     const settings = await this.settingsService.get();
-    if (!settings.enabled || !settings.autoFixEnabled) return;
+    if (!settings.enabled) return;
 
     const author = await this.github.getCommitAuthor(
       pullRequest.repo,

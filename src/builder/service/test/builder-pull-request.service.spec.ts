@@ -1205,6 +1205,46 @@ describe('BuilderPullRequestService', () => {
     });
 
     /**
+     * The setting this actually ran into.
+     *
+     * This used to be gated on `autoFixEnabled`, which conflated two different
+     * things: spending money on agent runs, and a single GitHub API call that
+     * merges master in. Running with review on and fix off — the deliberate
+     * "don't spend, just tell me" setting — therefore left green, approved pull
+     * requests parked at `behind`, which is not `clean`, which is what the
+     * merge prompt waits for. The loop went quiet with nothing to click.
+     */
+    it('keeps the branch current even with auto-fix switched off', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoFixEnabled: false,
+        autoReviewEnabled: true,
+        maxFixRunsPerPr: 3,
+      });
+
+      await reconcileWith({ headSha: 'abc1234def', ...behind });
+
+      expect(github.updatePullRequestBranch).toHaveBeenCalledWith(
+        'ally-be',
+        42,
+        'abc1234def',
+      );
+    });
+
+    /** The kill switch still means everything off. */
+    it('stops when the kill switch is off', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: false,
+        autoFixEnabled: true,
+        maxFixRunsPerPr: 3,
+      });
+
+      await reconcileWith({ headSha: 'abc1234def', ...behind });
+
+      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
+    });
+
+    /**
      * `dirty` is a real conflict needing a person or a fix run, and `blocked`
      * is a missing approval. Merging master in fixes neither, and trying would
      * burn an API call every tick forever.
@@ -1240,18 +1280,6 @@ describe('BuilderPullRequestService', () => {
     /** "Could not tell who pushed" is not "we pushed". */
     it('skips the tick when the author cannot be read', async () => {
       github.getCommitAuthor.mockResolvedValue(null);
-
-      await reconcileWith({ headSha: 'abc1234def', ...behind });
-
-      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
-    });
-
-    it('respects the same switch that governs pushing to an open PR', async () => {
-      settingsService.get.mockResolvedValue({
-        enabled: true,
-        autoFixEnabled: false,
-        maxFixRunsPerPr: 3,
-      });
 
       await reconcileWith({ headSha: 'abc1234def', ...behind });
 
