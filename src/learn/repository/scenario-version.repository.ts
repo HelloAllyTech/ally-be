@@ -38,24 +38,25 @@ export class ScenarioVersionRepository extends Repository<ScenarioVersion> {
   }
 
   /**
-   * Whether an AUTOMATIC version for this parent already exists for the
-   * given calendar day. Includes soft-deleted rows — deleting or renaming
-   * today's auto-save must not let a later same-day run recreate it.
+   * Most recent AUTOMATIC version for this parent, or null. Includes
+   * soft-deleted rows for two reasons: deleting or renaming today's auto-save
+   * must not let a later same-day run recreate it, and the DB unique index
+   * behind that rule is likewise not scoped to `deletedAt IS NULL`.
+   *
+   * The daily job reads `createdAt` off this row for both of its skip checks:
+   * "already snapshotted today" and "nothing has changed since the last
+   * snapshot" (see createDailyAutomaticVersions).
    */
-  async hasAutomaticVersionForDay(
+  async findLatestAutomaticVersion(
     scenarioId: number,
     parentVersionId: string,
-    dayStart: Date,
-    dayEnd: Date,
-  ): Promise<boolean> {
-    const row = await this.createQueryBuilder('v')
+  ): Promise<ScenarioVersion | null> {
+    return this.createQueryBuilder('v')
       .withDeleted()
       .where('v.scenarioId = :scenarioId', { scenarioId })
       .andWhere('v.parentVersionId = :parentVersionId', { parentVersionId })
       .andWhere('v.type = :type', { type: ScenarioVersionType.AUTOMATIC })
-      .andWhere('v.createdAt >= :dayStart', { dayStart })
-      .andWhere('v.createdAt < :dayEnd', { dayEnd })
+      .orderBy('v.createdAt', 'DESC')
       .getOne();
-    return !!row;
   }
 }

@@ -21,6 +21,25 @@ import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { LoggerService } from 'src/logger/logger.service';
 
+/** Column values for a freshly inserted version (see `saveNewVersion`). */
+type NewVersionParams = {
+  scenarioId: number;
+  name?: string;
+  config: Record<string, any>;
+  status: ScenarioVersionStatus;
+  type: ScenarioVersionType;
+  parentVersionId: string | null;
+  createdBy?: number;
+  updatedBy?: number;
+};
+
+/**
+ * Unique index behind "one AUTOMATIC version per parent per calendar day"
+ * (AddScenarioAutoVersionConstraints migration). Violating it means another
+ * run already snapshotted this draft today — a skip, not a failure.
+ */
+const DAILY_AUTO_VERSION_CONSTRAINT = 'idx_scenario_versions_daily_auto_unique';
+
 @Injectable()
 export class ScenarioVersionService {
   private readonly logger = LoggerService.getInstance(
@@ -133,30 +152,41 @@ export class ScenarioVersionService {
    * `getNextVersionNumber` is a read-then-insert, so two concurrent creates can
    * pick the same number and collide on the unique (scenarioId, versionNumber)
    * index. Retry a few times — each attempt recomputes the next number.
+   *
+   * `skipOnConstraint` names a constraint whose violation is a benign no-op
+   * rather than a race worth retrying: the daily job's idempotency index. A
+   * concurrent run that loses that race would otherwise violate the same
+   * constraint on every attempt and surface as an error. Returns null then.
    */
-  private async saveNewVersion(params: {
-    scenarioId: number;
-    name?: string;
-    config: Record<string, any>;
-    status: ScenarioVersionStatus;
-    type: ScenarioVersionType;
-    parentVersionId: string | null;
-    createdBy?: number;
-    updatedBy?: number;
-  }): Promise<ScenarioVersion> {
+  private async saveNewVersion(
+    params: NewVersionParams & { skipOnConstraint: string },
+  ): Promise<ScenarioVersion | null>;
+  private async saveNewVersion(
+    params: NewVersionParams,
+  ): Promise<ScenarioVersion>;
+  private async saveNewVersion(
+    params: NewVersionParams & { skipOnConstraint?: string },
+  ): Promise<ScenarioVersion | null> {
+    const { skipOnConstraint, ...values } = params;
     const MAX_ATTEMPTS = 3;
     for (let attempt = 1; ; attempt++) {
       try {
         return await this.dataSource.transaction(async (em) => {
           const versionNumber =
             await this.scenarioVersionRepository.getNextVersionNumber(
-              params.scenarioId,
+              values.scenarioId,
               em,
             );
           const repo = em.getRepository(ScenarioVersion);
-          return repo.save(repo.create({ ...params, versionNumber }));
+          return repo.save(repo.create({ ...values, versionNumber }));
         });
       } catch (error) {
+        if (
+          skipOnConstraint &&
+          isDuplicateKeyException(error, skipOnConstraint)
+        ) {
+          return null;
+        }
         if (attempt < MAX_ATTEMPTS && isDuplicateKeyException(error)) {
           continue;
         }
@@ -370,16 +400,19 @@ export class ScenarioVersionService {
    * scenario via `buildConfigFromScenario` — the live-mirroring version's own
    * `config` is a stale seed, not a record of current content.
    *
-   * Idempotent per (scenario, parent draft, calendar day) regardless of
-   * rename/delete of a same-day auto-save — see
-   * `hasAutomaticVersionForDay` and the matching DB unique index. A single
-   * failing scenario is caught and logged so it can't block the rest of the
-   * run.
+   * Idempotent per (scenario, parent, calendar day) regardless of
+   * rename/delete of a same-day auto-save, and it will not re-snapshot a
+   * draft that has not been touched since its last auto-save — the lookback
+   * window is rolling 24h while the day key is calendar-based, so without
+   * that second check a single edit late on D-1 would be saved again by the
+   * D run. See `findLatestAutomaticVersion` and the matching DB unique index.
+   *
+   * A single failing scenario is caught and logged so it can't block the rest
+   * of the run.
    */
   async createDailyAutomaticVersions(now: Date = new Date()): Promise<number> {
     const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const dayStart = new Date(now.toISOString().slice(0, 10));
-    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
     const name = `Auto-save ${now.toISOString().slice(0, 10)}`;
 
     const candidates =
@@ -388,45 +421,48 @@ export class ScenarioVersionService {
     let created = 0;
     for (const scenario of candidates) {
       try {
+        // The candidate query already restricts to unpublished (DRAFT)
+        // scenarios, which is what this feature snapshots. The live-mirroring
+        // VERSION's own status is deliberately not checked: a sim that was
+        // published and then moved back to draft still has a PUBLISHED live
+        // version, and its ongoing edits must keep being snapshotted.
         const liveVersionId = await this.resolveLiveVersionId(scenario);
         if (!liveVersionId) {
           continue;
         }
-        const liveVersion = await this.scenarioVersionRepository.findOne({
-          where: { id: liveVersionId },
-        });
-        // Only an unpublished (draft) live-mirroring version qualifies —
-        // this feature snapshots unpublished edits, not published content.
-        if (
-          !liveVersion ||
-          liveVersion.status !== ScenarioVersionStatus.DRAFT
-        ) {
-          continue;
-        }
 
-        const alreadySaved =
-          await this.scenarioVersionRepository.hasAutomaticVersionForDay(
+        const lastAuto =
+          await this.scenarioVersionRepository.findLatestAutomaticVersion(
             scenario.id,
-            liveVersion.id,
-            dayStart,
-            dayEnd,
+            liveVersionId,
           );
-        if (alreadySaved) {
-          continue;
+        if (lastAuto) {
+          // Already snapshotted today.
+          if (lastAuto.createdAt >= dayStart) {
+            continue;
+          }
+          // In-window but unchanged since the last snapshot: the same edit
+          // being seen by two consecutive daily runs, not new work.
+          if (scenario.updatedAt <= lastAuto.createdAt) {
+            continue;
+          }
         }
 
         const config = await this.buildConfigFromScenario(scenario.id);
-        await this.saveNewVersion({
+        const version = await this.saveNewVersion({
           scenarioId: scenario.id,
           name,
           config,
           status: ScenarioVersionStatus.DRAFT,
           type: ScenarioVersionType.AUTOMATIC,
-          parentVersionId: liveVersion.id,
+          parentVersionId: liveVersionId,
           createdBy: scenario.updatedBy ?? scenario.createdBy,
           updatedBy: scenario.updatedBy ?? scenario.createdBy,
+          skipOnConstraint: DAILY_AUTO_VERSION_CONSTRAINT,
         });
-        created += 1;
+        if (version) {
+          created += 1;
+        }
       } catch (error) {
         this.logger.error(
           `Failed to auto-version scenario ${scenario.id}: ${
