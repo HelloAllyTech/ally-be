@@ -58,6 +58,15 @@ export interface CheckRollup {
 export interface CommitAuthor {
   login: string | null;
   name: string | null;
+  /**
+   * The commit's parent shas.
+   *
+   * Carried because a branch brought up to date with master is a merge commit
+   * whose FIRST parent is the head that was already reviewed. That lineage is
+   * what lets an approval survive an update Builder performed itself, on
+   * branches where protection dismisses stale reviews.
+   */
+  parents: string[];
 }
 
 /** A review comment or review verdict left on a pull request by a person. */
@@ -465,6 +474,11 @@ export class GithubActionsService {
         name: data?.commit?.author?.name
           ? String(data.commit.author.name)
           : null,
+        parents: Array.isArray(data?.parents)
+          ? data.parents
+              .map((parent: { sha?: string }) => String(parent?.sha ?? ''))
+              .filter(Boolean)
+          : [],
       };
     } catch (error) {
       this.logger.warn(

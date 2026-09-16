@@ -876,6 +876,53 @@ export class BuilderPullRequestService {
    * It never forces. The approval is an ordinary review: every other required
    * check still has to pass, and a human can dismiss it like any other.
    */
+  /**
+   * Does the review we already have still cover this head?
+   *
+   * Both repos protect master with `dismiss_stale_reviews` AND
+   * `strict_up_to_date`, which between them form a closed loop: a pull request
+   * must be current with master to merge, bringing it current pushes a commit,
+   * and that commit dismisses the approval. Re-approving needs a review of the
+   * new head, the per-PR review cap refuses one after two, and the pull request
+   * is then stuck for good — green, reviewed, unapprovable, unmergeable.
+   *
+   * It is broken by looking at what the new commit actually is. An update-branch
+   * merge is authored by us and has the reviewed head as its FIRST parent: the
+   * pull request's own commits are unchanged and only master moved underneath
+   * them. The review verdict still describes the work, so it carries forward.
+   *
+   * First parent specifically, not "any parent". On a merge commit the first
+   * parent is the branch being merged INTO — our reviewed head — and the second
+   * is master. Accepting either would also accept the reverse merge, which is a
+   * different commit with different contents.
+   *
+   * What this does not assume is that the result still works: approval requires
+   * a green rollup on the new head regardless, so a semantic conflict dragged in
+   * from master is caught by CI before anything is approved.
+   */
+  private async reviewSurvivedOurOwnUpdate(
+    pullRequest: BuilderPullRequest,
+    headSha: string,
+  ): Promise<boolean> {
+    const head = await this.github.getCommitAuthor(pullRequest.repo, headSha);
+    // Two parents is what makes it a merge; anything else is real work. A
+    // missing `parents` is treated as "cannot tell", which refuses — the same
+    // judgement the branch-update guard makes about an unreadable author.
+    if (!head?.parents || head.parents.length !== 2) return false;
+    if (head.parents[0] !== pullRequest.reviewedSha) return false;
+    if (!this.isOwnActor(head.login ?? head.name ?? '')) return false;
+
+    this.logger.info(
+      `Carrying the review of ${pullRequest.repo}#${pullRequest.prNumber} across our own branch update.`,
+    );
+    await this.repository.update(
+      { id: pullRequest.id },
+      { reviewedSha: headSha },
+    );
+    pullRequest.reviewedSha = headSha;
+    return true;
+  }
+
   private async considerApproval(
     pullRequest: BuilderPullRequest,
     known?: { remote: PullRequestInfo | null; rollup: CheckRollup | null },
@@ -916,7 +963,11 @@ export class BuilderPullRequestService {
     if (!remote || remote.state !== 'open' || remote.merged) return;
     if (!remote.headSha) return;
     if (pullRequest.approvedSha === remote.headSha) return;
-    if (pullRequest.reviewedSha !== remote.headSha) return;
+    if (
+      pullRequest.reviewedSha !== remote.headSha &&
+      !(await this.reviewSurvivedOurOwnUpdate(pullRequest, remote.headSha))
+    )
+      return;
 
     const rollup =
       known?.rollup ??

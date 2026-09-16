@@ -90,6 +90,9 @@ describe('BuilderPullRequestService', () => {
       getCommitAuthor: jest.fn().mockResolvedValue({
         login: 'ally-builder[bot]',
         name: 'Ally Builder',
+        // One parent: an ordinary commit, not a merge. The carry-forward path
+        // is exercised by its own describe below.
+        parents: ['parent00'],
       }),
       mergePullRequest: jest
         .fn()
@@ -1588,6 +1591,13 @@ describe('BuilderPullRequestService — approval on the reconcile tick', () => {
     github = {
       getPullRequest: jest.fn(),
       getCheckRollup: jest.fn(),
+      // An ordinary commit by default: no merge lineage to carry a review
+      // across, so these cases exercise the plain reviewed-this-sha path.
+      getCommitAuthor: jest.fn().mockResolvedValue({
+        login: 'ally-builder[bot]',
+        name: null,
+        parents: ['x'],
+      }),
       approvePullRequest: jest
         .fn()
         .mockResolvedValue({ approved: true, message: null }),
@@ -1717,5 +1727,149 @@ describe('BuilderPullRequestService — approval on the reconcile tick', () => {
     await service.considerApproval(pr({ approvedSha: HEAD }), undefined);
 
     expect(github.getPullRequest).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Surviving our own branch update.
+ *
+ * Both repos protect master with `dismiss_stale_reviews` AND
+ * `strict_up_to_date`, which together form a closed loop: a pull request must be
+ * current with master to merge, bringing it current pushes a commit, and that
+ * commit dismisses the approval. Re-approving needs a review of the new head,
+ * the per-PR cap refuses one after two, and the pull request is then stuck for
+ * good — green, reviewed, unapprovable, unmergeable. ally-web#658 was one branch
+ * update away from exactly that.
+ */
+describe('BuilderPullRequestService — carrying a review across our own update', () => {
+  const REVIEWED = 'reviewed0';
+  const MERGED_HEAD = 'mergehead';
+
+  let service: any;
+  let repository: any;
+  let github: any;
+  let settings: any;
+
+  beforeEach(() => {
+    repository = { update: jest.fn() };
+    settings = { enabled: true, autoApproveEnabled: true };
+    github = {
+      getCommitAuthor: jest.fn(),
+      getPullRequest: jest.fn(),
+      getCheckRollup: jest.fn(),
+      approvePullRequest: jest
+        .fn()
+        .mockResolvedValue({ approved: true, message: null }),
+    };
+    service = Object.create(BuilderPullRequestService.prototype);
+    Object.assign(service, {
+      repository,
+      feedbackRepository: { countActionable: jest.fn().mockResolvedValue(0) },
+      github,
+      settingsService: { get: jest.fn(() => Promise.resolve(settings)) },
+      logger: { info: jest.fn(), warn: jest.fn() },
+    });
+  });
+
+  const pr = (overrides: Record<string, any> = {}) => ({
+    id: 'pr-1',
+    repo: 'ally-web',
+    prNumber: 658,
+    headSha: MERGED_HEAD,
+    reviewedSha: REVIEWED,
+    approvedSha: null,
+    ...overrides,
+  });
+
+  const known = {
+    remote: { state: 'open', merged: false, headSha: MERGED_HEAD },
+    rollup: { state: 'success' },
+  };
+
+  /** The merge master left behind: our commit, reviewed head as first parent. */
+  const ourMerge = {
+    login: 'ally-builder[bot]',
+    name: 'Ally Builder',
+    parents: [REVIEWED, 'master00'],
+  };
+
+  it('approves the merge commit its own update created', async () => {
+    github.getCommitAuthor.mockResolvedValue(ourMerge);
+
+    await service.considerApproval(pr(), known);
+
+    expect(github.approvePullRequest).toHaveBeenCalled();
+    // Stamped forward, so the next tick short-circuits instead of re-deriving.
+    expect(repository.update).toHaveBeenCalledWith(
+      { id: 'pr-1' },
+      { reviewedSha: MERGED_HEAD },
+    );
+  });
+
+  /**
+   * First parent specifically. On a merge commit the first parent is the branch
+   * being merged INTO; accepting either parent would also accept the reverse
+   * merge, which is a different commit with different contents.
+   */
+  it('refuses a merge whose reviewed head is only the second parent', async () => {
+    github.getCommitAuthor.mockResolvedValue({
+      ...ourMerge,
+      parents: ['master00', REVIEWED],
+    });
+
+    await service.considerApproval(pr(), known);
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  /** A single-parent commit is real work, and real work needs a real review. */
+  it('refuses an ordinary commit pushed on top of the reviewed head', async () => {
+    github.getCommitAuthor.mockResolvedValue({
+      ...ourMerge,
+      parents: [REVIEWED],
+    });
+
+    await service.considerApproval(pr(), known);
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  /** Somebody else merging master in is not our update to vouch for. */
+  it('refuses a merge somebody else made', async () => {
+    github.getCommitAuthor.mockResolvedValue({
+      login: 'a-person',
+      name: 'A Person',
+      parents: [REVIEWED, 'master00'],
+    });
+
+    await service.considerApproval(pr(), known);
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The carry-forward says the diff is unchanged, not that it still works.
+   * A semantic conflict dragged in from master is CI's to catch, and approval
+   * still waits for green.
+   */
+  it('still refuses to approve over red checks', async () => {
+    github.getCommitAuthor.mockResolvedValue(ourMerge);
+
+    await service.considerApproval(pr(), {
+      remote: known.remote,
+      rollup: { state: 'failure' },
+    });
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not reach for the commit when the head is already the reviewed one', async () => {
+    await service.considerApproval(
+      pr({ headSha: REVIEWED, reviewedSha: REVIEWED }),
+      { remote: { ...known.remote, headSha: REVIEWED }, rollup: known.rollup },
+    );
+
+    expect(github.getCommitAuthor).not.toHaveBeenCalled();
+    expect(github.approvePullRequest).toHaveBeenCalled();
   });
 });
