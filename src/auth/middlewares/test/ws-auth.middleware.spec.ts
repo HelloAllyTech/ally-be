@@ -211,7 +211,9 @@ describe('WebSocketAuthMiddleware', () => {
       });
       expect(next).toHaveBeenCalledTimes(1);
       expect(next).toHaveBeenCalledWith(
-        new UnauthorizedException('Authentication failed'),
+        new UnauthorizedException(
+          'Authentication failed: Token expired or invalid',
+        ),
       );
     });
 

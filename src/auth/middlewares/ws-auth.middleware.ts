@@ -90,7 +90,7 @@ export class WebSocketAuthMiddleware {
       } catch (error) {
         // Catch any unexpected errors
         const unexpectedError = new UnauthorizedException(
-          'Authentication failed',
+          `Authentication failed: ${error.message}`,
         );
         this.logger.error(
           `Unexpected error during WebSocket authentication for socket ${socket.id}:`,
