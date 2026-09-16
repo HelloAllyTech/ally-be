@@ -726,6 +726,18 @@ fi
 
 echo "::group::finalise (${CODER_MODEL})"
 post_stage FINALISING
+
+# Answer the docs-guard question before the agent can spend turns on it.
+# Matching `.docs-map.yml` globs against a diff is a pure function of the diff:
+# same input, same answer, every run. It was costing a read of the map, a diff,
+# and several reasoning turns per repo — and an agent that mis-reasons here
+# opens a pull request with a red guard nothing downstream can clear.
+for dir in repos/*/; do
+  repo="$(basename "$dir")"
+  "${HERE}/check-docs-map.sh" "$dir" origin/master \
+    > "/tmp/builder-docs-map-${repo}.txt" 2>/dev/null || true
+  echo "docs-map ${repo}: $(head -3 "/tmp/builder-docs-map-${repo}.txt" | tr '\n' ' ')"
+done
 if ! fetch_prompt "finalise-prompt" /tmp/builder-finalise-prompt.txt; then
   echo "Could not fetch the finalise prompt." >&2
   exit 1

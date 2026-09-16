@@ -119,8 +119,20 @@ Every repo here runs a "Docs guard" check on the pull request. It reads
 cover and the doc did not move with it. A red guard is a red PR, and nothing
 downstream can clear it for you — so deal with it here, before you open one.
 
-**Before you push**, for each repo you touched, read its \`.docs-map.yml\` and
-check the rules whose \`watch\` globs match your diff:
+**Do not work this out yourself.** The runner has already matched every rule's
+globs against your diff, and the answer is in
+\`/tmp/builder-docs-map-<repo>.txt\` — one line per fired rule:
+
+\`\`\`
+UNSATISFIED  data-schema  requires=DATA_SCHEMA.md  triggered-by=src/x/entity/y.entity.ts
+NEEDS_WIKI_PR  repo-page-architecture  requires=wiki:repos/ally-be.md  triggered-by=src/main.ts
+\`\`\`
+
+\`no-rules-fired\` means there is nothing to do here — skip to the PR body.
+Reading \`.docs-map.yml\` and reasoning about globs yourself is spending turns
+on a question already answered, and answered the same way every time.
+
+Act on what each line says:
 
 - The rule requires a file **in this repo** (\`DATA_SCHEMA.md\`,
   \`docs/*.md\`) — the coding phase should already have updated it. If it did
