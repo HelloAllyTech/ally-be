@@ -303,6 +303,18 @@ export const BUILDER_ANNOUNCED_KINDS: BuilderNotificationKind[] = [
   BuilderNotificationKind.BUILD_FAILED,
   BuilderNotificationKind.BUDGET_REACHED,
   BuilderNotificationKind.FIX_RUN_STARTED,
+  // Merged but not deployed. The strongest case in this list by the rule
+  // above: master has moved on, the pull request reads as done, and everyone
+  // assumes the change is live — so nobody goes back to look. Auto-release was
+  // built on the promise that this shouts, and without it here the watcher
+  // would only have written a row nobody opens.
+  BuilderNotificationKind.RELEASE_FAILED,
+  // Merged and deliberately not released, because the change could not be
+  // attributed to exactly one deployable. Quieter, and still not good news
+  // that keeps: it sits on master until a person ships it by hand. Low volume
+  // by construction — at most one per merged pull request, and only for the
+  // ones Builder refuses to guess about.
+  BuilderNotificationKind.RELEASE_SKIPPED,
 ];
 
 /* ── Lane A evidence lookups ─────────────────────────────────────────────── */
