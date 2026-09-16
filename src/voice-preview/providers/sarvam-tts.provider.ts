@@ -7,31 +7,26 @@ export class SarvamTTSProvider implements ITTSProvider {
   private readonly client: SarvamAIClient;
   private readonly model: SarvamAI.TextToSpeechModel;
   private readonly speaker: SarvamAI.TextToSpeechSpeaker;
-  private readonly targetLanguageCode: SarvamAI.TextToSpeechLanguage;
 
-  constructor(
-    apiKey: string,
-    config: Record<string, any>,
-    languageCode: string,
-  ) {
+  constructor(apiKey: string, config: Record<string, any>) {
     this.client = new SarvamAIClient({ apiSubscriptionKey: apiKey });
     this.model = (config.model ?? 'bulbul:v3') as SarvamAI.TextToSpeechModel;
     this.speaker = config.speaker as SarvamAI.TextToSpeechSpeaker;
-    const rawCode = config.target_language_code ?? languageCode ?? 'en-IN';
-    this.targetLanguageCode = convertLanguageCodeForSarvam(
-      rawCode,
-    ) as SarvamAI.TextToSpeechLanguage;
     if (!this.speaker) {
       throw new Error('Sarvam config requires "speaker" field');
     }
   }
 
-  async generatePreview(text: string): Promise<Buffer> {
+  async generatePreview(text: string, languageCode: string): Promise<Buffer> {
+    const rawCode = languageCode ?? 'en-IN';
+    const targetLanguageCode = convertLanguageCodeForSarvam(
+      rawCode,
+    ) as SarvamAI.TextToSpeechLanguage;
     const response = await this.client.textToSpeech.convert({
       text,
       model: this.model,
       speaker: this.speaker,
-      target_language_code: this.targetLanguageCode,
+      target_language_code: targetLanguageCode,
     });
 
     const { audios } = response;

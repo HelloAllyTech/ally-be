@@ -19,7 +19,8 @@ export class TTSProviderFactory {
   createProvider(
     provider: TTSProviderEnum,
     config: Record<string, any>,
-    languageCode: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _languageCode: string,
   ): ITTSProvider {
     const keys = this.configService.voicePreview;
 
@@ -50,15 +51,15 @@ export class TTSProviderFactory {
       case TTSProviderEnum.ELEVENLABS:
         return new ElevenLabsTTSProvider(apiKey, config);
       case TTSProviderEnum.SARVAM:
-        return new SarvamTTSProvider(apiKey, config, languageCode);
+        return new SarvamTTSProvider(apiKey, config);
       case TTSProviderEnum.GOOGLE:
-        return new GoogleTTSProvider(config, languageCode);
+        return new GoogleTTSProvider(config);
       case TTSProviderEnum.HUME:
         return new HumeTTSProvider(apiKey, config);
       case TTSProviderEnum.CARTESIA:
-        return new CartesiaTTSProvider(apiKey, config, languageCode);
+        return new CartesiaTTSProvider(apiKey, config);
       case TTSProviderEnum.SMALLESTAI:
-        return new SmallestAITTSProvider(apiKey, config, languageCode);
+        return new SmallestAITTSProvider(apiKey, config);
       default: {
         const _exhaustive: never = provider;
         throw new BadRequestException(

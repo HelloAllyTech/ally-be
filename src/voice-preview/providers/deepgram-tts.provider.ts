@@ -14,7 +14,11 @@ export class DeepgramTTSProvider implements ITTSProvider {
     }
   }
 
-  async generatePreview(text: string): Promise<Buffer> {
+  async generatePreview(
+    text: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _languageCode: string,
+  ): Promise<Buffer> {
     const response = await (this.client.speak as any).v1.audio.generate({
       text,
       model: this.model,
