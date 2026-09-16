@@ -1873,3 +1873,107 @@ describe('BuilderPullRequestService — carrying a review across our own update'
     expect(github.approvePullRequest).toHaveBeenCalled();
   });
 });
+
+/**
+ * The banner that would not go away.
+ *
+ * `settleRun` writes a failed run's error onto the run AND the session, and only
+ * a new dispatch clears the session copy. Fine while runs keep coming; not fine
+ * when they cannot. A session over budget, parked on a question, or blocked on a
+ * dead credential has no next dispatch, so the banner stays forever.
+ *
+ * Which would be untidy if the text were vague. It is not: the gate error says
+ * "nothing proves the change works" while sitting above pull requests whose
+ * every required check is green. The page states the opposite of the evidence.
+ */
+describe('BuilderPullRequestService — clearing an error the PRs disproved', () => {
+  let service: any;
+  let sessionRepository: any;
+  let repository: any;
+  let feedbackRepository: any;
+
+  const green = (over: Record<string, any> = {}) => ({
+    id: 'pr-1',
+    merged: false,
+    state: 'open',
+    ciStatus: 'success',
+    ...over,
+  });
+
+  beforeEach(() => {
+    sessionRepository = {
+      findOne: jest.fn().mockResolvedValue({ id: 's-1', error: 'gate failed' }),
+      update: jest.fn(),
+    };
+    repository = { listBySession: jest.fn().mockResolvedValue([green()]) };
+    feedbackRepository = { countActionable: jest.fn().mockResolvedValue(0) };
+
+    service = Object.create(BuilderPullRequestService.prototype);
+    Object.assign(service, {
+      sessionRepository,
+      repository,
+      feedbackRepository,
+      logger: { info: jest.fn(), warn: jest.fn() },
+    });
+  });
+
+  it('clears it once every open pull request is green', async () => {
+    await service.clearStaleSessionError('s-1');
+
+    expect(sessionRepository.update).toHaveBeenCalledWith(
+      { id: 's-1' },
+      { error: null },
+    );
+  });
+
+  it('leaves it alone while a pull request is red', async () => {
+    repository.listBySession.mockResolvedValue([
+      green(),
+      green({ id: 'pr-2', ciStatus: 'failure' }),
+    ]);
+
+    await service.clearStaleSessionError('s-1');
+
+    expect(sessionRepository.update).not.toHaveBeenCalled();
+  });
+
+  /** Unread checks are not passed checks. */
+  it('leaves it alone when a pull request has no CI verdict yet', async () => {
+    repository.listBySession.mockResolvedValue([green({ ciStatus: null })]);
+
+    await service.clearStaleSessionError('s-1');
+
+    expect(sessionRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('leaves it alone while there is feedback still to act on', async () => {
+    feedbackRepository.countActionable.mockResolvedValue(1);
+
+    await service.clearStaleSessionError('s-1');
+
+    expect(sessionRepository.update).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A session whose pull requests are all merged or closed has no open evidence
+   * either way, and its last error is the only account of what happened.
+   */
+  it('leaves it alone when nothing is open', async () => {
+    repository.listBySession.mockResolvedValue([
+      green({ merged: true, state: 'closed' }),
+    ]);
+
+    await service.clearStaleSessionError('s-1');
+
+    expect(sessionRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('does no work on a session that has no error', async () => {
+    sessionRepository.findOne.mockResolvedValue({ id: 's-1', error: null });
+
+    await service.clearStaleSessionError('s-1');
+
+    expect(repository.listBySession).not.toHaveBeenCalled();
+    expect(sessionRepository.update).not.toHaveBeenCalled();
+  });
+});

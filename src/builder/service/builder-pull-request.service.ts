@@ -419,6 +419,7 @@ export class BuilderPullRequestService {
     // the review cap stops a second review, and nothing else looked again.
     await this.considerApproval(pullRequest, { remote, rollup });
     await this.considerMergePrompt(pullRequest, remote);
+    await this.clearStaleSessionError(pullRequest.sessionId);
   }
 
   /**
@@ -436,6 +437,52 @@ export class BuilderPullRequestService {
    * Nothing outstanding, because a clean mergeable state says nothing about a
    * finding a fix run has not finished with — the diff is about to change.
    */
+  /**
+   * Drop a session-level error that the pull requests have since disproved.
+   *
+   * `settleRun` writes a failed run's error onto the run AND onto the session,
+   * and only a new dispatch clears the session copy. That is fine while runs
+   * keep coming. It is not fine when they cannot: a session that is over budget,
+   * or parked on a question, or blocked on a dead credential, has no next
+   * dispatch — so the banner stays forever.
+   *
+   * Which would be merely untidy if the text were vague. It is not. The gate
+   * error says "nothing proves the change works", and it sits above pull
+   * requests whose every required check is green. The page is telling the
+   * reader the opposite of what the evidence says, and pointing at the wrong
+   * thing to go and fix.
+   *
+   * So the claim is re-tested against the evidence rather than left standing:
+   * every open pull request green, nothing actionable outstanding, and the
+   * session's headline error has been overtaken by events.
+   *
+   * Only the error. The status is a separate question — a parked run or a spent
+   * budget still means this session is not finished, and saying otherwise would
+   * trade one false statement for another.
+   */
+  private async clearStaleSessionError(sessionId: string): Promise<void> {
+    const session = await this.sessionRepository.findOne({
+      where: { id: sessionId },
+    });
+    if (!session?.error) return;
+
+    const pullRequests = await this.repository.listBySession(sessionId);
+    const live = pullRequests.filter(
+      (row) => !row.merged && row.state !== 'closed',
+    );
+    if (!live.length) return;
+    if (!live.every((row) => row.ciStatus === 'success')) return;
+
+    for (const row of live) {
+      if (await this.feedbackRepository.countActionable(row.id)) return;
+    }
+
+    await this.sessionRepository.update({ id: sessionId }, { error: null });
+    this.logger.info(
+      `Cleared a stale error on session ${sessionId}: every open pull request is green.`,
+    );
+  }
+
   private async considerMergePrompt(
     pullRequest: BuilderPullRequest,
     remote: { state: string; merged: boolean; mergeableState: string | null },
