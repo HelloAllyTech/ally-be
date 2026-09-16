@@ -250,6 +250,22 @@ jobs:
         # Parsing this with the Claude-only jq filter silently produced
         # modelUsage:[] for every Gemini run, tier notwithstanding — this
         # step just never matched its shape.
+        #
+        # A second, separate shape mistake lived here too, found only by
+        # comparing a real MERGED Gemini run's reported cost ($0) against its
+        # own gemini-cli-core source: `--output-format json`'s `stats` field
+        # is `SessionMetrics` (uiTelemetry.js) — `{models: {<model>: {tokens:
+        # {input, prompt, candidates, cached, ...}}}}`, keyed BY MODEL, not
+        # the flat `{input_tokens, output_tokens, cached}` shape that only
+        # `--output-format stream-json`'s terminal event uses. `.stats.input_tokens`
+        # was reading a field that never existed here, so every Gemini run —
+        # including ones that finished cleanly — silently reported zero
+        # tokens. Iterating `.stats.models` also naturally captures a
+        # secondary model Gemini's own routing sometimes uses (its own
+        # classifier), which a single hardcoded model name would have missed.
+        # `tokens.input` (not `.prompt`) is the net-of-cache count — `.prompt`
+        # would double-count the cached portion against computeCostUsd's
+        # separate, discounted cache-read term.
         if: always()
         env:
           ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
@@ -257,8 +273,8 @@ jobs:
           set -uo pipefail
           if [ -s /tmp/claude-result.json ]; then
             if [ "${{ steps.models.outputs.engine }}" = "gemini" ]; then
-              MODEL_USAGE=$(jq -c --arg model "${{ steps.models.outputs.default_model }}" \
-                '[{model: $model, inputTokens: (.stats.input_tokens // 0), outputTokens: (.stats.output_tokens // 0), cacheReadInputTokens: (.stats.cached // 0), cacheCreationInputTokens: 0}]' \
+              MODEL_USAGE=$(jq -c \
+                '[(.stats.models // {}) | to_entries[] | {model: .key, inputTokens: (.value.tokens.input // 0), outputTokens: (.value.tokens.candidates // 0), cacheReadInputTokens: (.value.tokens.cached // 0), cacheCreationInputTokens: 0}]' \
                 /tmp/claude-result.json 2>/dev/null || echo '[]')
               CLI_COST=0
             else
