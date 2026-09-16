@@ -471,7 +471,7 @@ export type BuilderCoderTier = 'mechanical' | 'coder' | 'planner';
 export const BUILDER_SIZE_PROFILES: Record<
   BuilderBuildSize,
   {
-    plannerTier: 'coder' | 'planner';
+    plannerTier: 'mechanical' | 'coder' | 'planner';
     effort: 'low' | 'medium' | 'high';
     maxTurns: number;
     planWords: number;
@@ -487,14 +487,26 @@ export const BUILDER_SIZE_PROFILES: Record<
 > = {
   // A small build does not need an Opus plan; it needs the coder to start.
   [BuilderBuildSize.SMALL]: {
-    plannerTier: 'coder',
+    /**
+     * Planning was 25% of everything Builder spent — $4.89 median against a
+     * $7.56 median coding attempt — on builds this same classifier had already
+     * judged to be a handful of requirements in one repo. The plan phase also
+     * produced ~23k output tokens for an 800-word plan, which is not planning,
+     * it is the planner re-deriving the codebase the coder is about to read
+     * again anyway.
+     *
+     * The mechanical tier still writes a plan, so remediation and verify keep
+     * the artifact they read. It just stops paying a coding-tier model to
+     * produce it for two routes and a checkbox.
+     */
+    plannerTier: 'mechanical',
     effort: 'low',
     maxTurns: 20,
     planWords: 800,
     // Two attempts on the coder tier: a small build that fails the gate has
     // usually tripped on something the test output names outright.
     coderLadder: ['coder', 'coder', 'planner', 'planner'],
-    maxBudgetUsd: { plan: 2, code: 8, verify: 3, finalise: 3 },
+    maxBudgetUsd: { plan: 1, code: 8, verify: 3, finalise: 3 },
   },
   [BuilderBuildSize.MEDIUM]: {
     plannerTier: 'planner',
