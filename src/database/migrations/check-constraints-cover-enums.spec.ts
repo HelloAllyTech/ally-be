@@ -1,6 +1,11 @@
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { BuilderRunMode, BuilderStage } from '../../builder/enum/builder.enum';
+import {
+  BuilderPrFeedbackKind,
+  BuilderPrFeedbackStatus,
+  BuilderRunMode,
+  BuilderStage,
+} from '../../builder/enum/builder.enum';
 
 /**
  * Every value a TypeScript enum can produce must be a value its column's CHECK
@@ -65,9 +70,17 @@ describe('CHECK constraints cover their enums', () => {
     );
   };
 
+  /**
+   * Every enum-backed column in this module, not just the ones that had already
+   * bitten. The first version of this test listed two, and the third failure of
+   * the week — `builder_pr_feedback.kind` — was in the pair it did not list. A
+   * guard that covers the bugs you have already had is not a guard.
+   */
   it.each([
     ['CHK_builder_build_runs_mode', Object.values(BuilderRunMode)],
     ['CHK_builder_sessions_stage', Object.values(BuilderStage)],
+    ['CHK_builder_pr_feedback_kind', Object.values(BuilderPrFeedbackKind)],
+    ['CHK_builder_pr_feedback_status', Object.values(BuilderPrFeedbackStatus)],
   ])('%s accepts every enum value', (constraint, values) => {
     const allowed = allowedValues(constraint as string);
     const missing = (values as string[]).filter((v) => !allowed.includes(v));

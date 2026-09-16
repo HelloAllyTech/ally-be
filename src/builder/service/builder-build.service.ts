@@ -45,6 +45,7 @@ import {
 import {
   BUILDER_BUDGET_HOLD_POLL_SECONDS,
   BUILDER_BUDGET_HOLD_SECONDS,
+  BUILDER_CONSECUTIVE_FAILURE_LIMIT,
   BUILDER_DISPATCH_LOCK_PREFIX,
   BUILDER_DISPATCH_LOCK_TTL_SECONDS,
   BUILDER_DISPATCH_TIMEOUT_MS,
@@ -625,6 +626,67 @@ export class BuilderBuildService {
    * timer, and every refusal here is an ordinary state (the session is busy,
    * the budget is gone) rather than an error anyone asked to see.
    */
+  /**
+   * Whether this session has stopped converging.
+   *
+   * The per-PR ceilings bound each loop on its own — two reviews, three fixes —
+   * and nothing was watching the session as a whole. One session burned eight
+   * runs inside those ceilings while nothing succeeded after the build: a
+   * review that died on a database error, a fix sent at feedback that was
+   * Builder's own approval, then more of both.
+   *
+   * So: consecutive failures, newest first, across every mode. A success
+   * anywhere in the recent history clears it, because a loop that produced
+   * something is a loop still doing work.
+   *
+   * Only automatic dispatches consult this. A person clicking retry has looked
+   * at the failures and decided to try anyway, which is the judgement the
+   * breaker is waiting for — blocking them would make it a cage rather than a
+   * fuse.
+   */
+  private async consecutiveFailures(sessionId: string): Promise<number> {
+    const recent = await this.runRepository.listRecent(
+      sessionId,
+      BUILDER_CONSECUTIVE_FAILURE_LIMIT + 1,
+    );
+    let count = 0;
+    for (const run of recent) {
+      // QUEUED/RUNNING are not verdicts: a run still going tells us nothing
+      // about convergence, so it neither counts nor clears.
+      if (
+        run.status === BuilderRunStatus.QUEUED ||
+        run.status === BuilderRunStatus.RUNNING
+      )
+        continue;
+      if (
+        run.status === BuilderRunStatus.FAILED ||
+        run.status === BuilderRunStatus.TIMED_OUT
+      ) {
+        count += 1;
+        continue;
+      }
+      break;
+    }
+    return count;
+  }
+
+  /**
+   * Refuse an automatic dispatch once the session has stopped converging, and
+   * say so once.
+   */
+  private async breakerTripped(session: BuilderSession): Promise<boolean> {
+    const failures = await this.consecutiveFailures(session.id);
+    if (failures < BUILDER_CONSECUTIVE_FAILURE_LIMIT) return false;
+
+    this.logger.warn(
+      `[BUILDER] Automatic runs paused for session ${session.id}: ${failures} consecutive failures.`,
+    );
+    // Announced once per trip rather than per refused dispatch — the point is
+    // that the loop stopped, not that it stopped again.
+    await this.notificationService.automationPaused(session, failures);
+    return true;
+  }
+
   async dispatchFixRun(
     pullRequest: {
       id: string;
@@ -640,6 +702,7 @@ export class BuilderBuildService {
       where: { id: pullRequest.sessionId },
     });
     if (!session) return null;
+    if (await this.breakerTripped(session)) return null;
 
     // Two runners on one branch is a merge conflict Builder created for
     // itself, so an in-flight run of any kind blocks a fix.
@@ -736,6 +799,7 @@ export class BuilderBuildService {
       where: { id: pullRequest.sessionId },
     });
     if (!session) return null;
+    if (await this.breakerTripped(session)) return null;
 
     const active = await this.runRepository.count({
       where: {
