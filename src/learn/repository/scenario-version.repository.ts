@@ -1,12 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import {
-  DataSource,
-  EntityManager,
-  MoreThanOrEqual,
-  Repository,
-} from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { ScenarioVersion } from '../entity/scenario-version.entity';
-import { ScenarioVersionStatus } from '../enum/scenario-version-status.enum';
+import { ScenarioVersionType } from '../enum/scenario-version-type.enum';
 
 @Injectable()
 export class ScenarioVersionRepository extends Repository<ScenarioVersion> {
@@ -42,13 +37,25 @@ export class ScenarioVersionRepository extends Repository<ScenarioVersion> {
     return (row?.max ? Number(row.max) : 0) + 1;
   }
 
-  /** Draft versions edited within the window — candidates for the daily auto-version job. */
-  async findDraftsUpdatedSince(since: Date): Promise<ScenarioVersion[]> {
-    return this.find({
-      where: {
-        status: ScenarioVersionStatus.DRAFT,
-        updatedAt: MoreThanOrEqual(since),
-      },
-    });
+  /**
+   * Whether an AUTOMATIC version for this parent already exists for the
+   * given calendar day. Includes soft-deleted rows — deleting or renaming
+   * today's auto-save must not let a later same-day run recreate it.
+   */
+  async hasAutomaticVersionForDay(
+    scenarioId: number,
+    parentVersionId: string,
+    dayStart: Date,
+    dayEnd: Date,
+  ): Promise<boolean> {
+    const row = await this.createQueryBuilder('v')
+      .withDeleted()
+      .where('v.scenarioId = :scenarioId', { scenarioId })
+      .andWhere('v.parentVersionId = :parentVersionId', { parentVersionId })
+      .andWhere('v.type = :type', { type: ScenarioVersionType.AUTOMATIC })
+      .andWhere('v.createdAt >= :dayStart', { dayStart })
+      .andWhere('v.createdAt < :dayEnd', { dayEnd })
+      .getOne();
+    return !!row;
   }
 }

@@ -57,7 +57,9 @@ export class ScenarioVersion extends BaseWithoutTenantEntity {
   // MANUAL: authored by a user (new/branch/revert). AUTOMATIC: created by the
   // daily auto-version job from a draft modified in the preceding 24 hours.
   @Column({
+    type: 'enum',
     enum: ScenarioVersionType,
+    enumName: 'scenario_versions_type_enum',
     default: ScenarioVersionType.MANUAL,
   })
   type!: ScenarioVersionType;

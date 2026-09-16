@@ -19,9 +19,14 @@ import { ScenarioService } from './scenario.service';
 import { ScenarioStatus } from '../type/scenario.type';
 import { GetAdminScenarioDto } from '../dto/get-scenario.dto';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
+import { LoggerService } from 'src/logger/logger.service';
 
 @Injectable()
 export class ScenarioVersionService {
+  private readonly logger = LoggerService.getInstance(
+    ScenarioVersionService.name,
+  );
+
   constructor(
     private readonly scenarioVersionRepository: ScenarioVersionRepository,
     private readonly scenariosRepository: ScenariosRepository,
@@ -353,42 +358,82 @@ export class ScenarioVersionService {
   }
 
   /**
-   * Daily job: snapshot every draft version modified in the preceding 24
-   * hours into an AUTOMATIC version, so authors who forget to save manually
-   * still get a recoverable point per day. Idempotent — a draft that already
-   * has today's auto-save (matched by parent + name) is skipped, so re-running
-   * the job the same day never creates a duplicate.
+   * Daily job: snapshot every draft scenario directly edited in the preceding
+   * 24 hours into an AUTOMATIC version, so authors who forget to save
+   * manually still get a recoverable point per day.
+   *
+   * Candidates come from `scenarios.updatedAt`, not `scenario_versions`:
+   * ordinary studio authoring writes straight to the live `scenarios` row
+   * (see the ScenarioVersion docblock / resolveLiveVersionId) and never
+   * touches a version row, so keying off version timestamps would miss the
+   * whole of normal editing. The snapshot itself is rebuilt from the live
+   * scenario via `buildConfigFromScenario` — the live-mirroring version's own
+   * `config` is a stale seed, not a record of current content.
+   *
+   * Idempotent per (scenario, parent draft, calendar day) regardless of
+   * rename/delete of a same-day auto-save — see
+   * `hasAutomaticVersionForDay` and the matching DB unique index. A single
+   * failing scenario is caught and logged so it can't block the rest of the
+   * run.
    */
   async createDailyAutomaticVersions(now: Date = new Date()): Promise<number> {
     const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const modifiedDrafts =
-      await this.scenarioVersionRepository.findDraftsUpdatedSince(since);
+    const dayStart = new Date(now.toISOString().slice(0, 10));
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
     const name = `Auto-save ${now.toISOString().slice(0, 10)}`;
 
+    const candidates =
+      await this.scenariosRepository.findDraftsUpdatedSince(since);
+
     let created = 0;
-    for (const draft of modifiedDrafts) {
-      const alreadySaved = await this.scenarioVersionRepository.findOne({
-        where: {
-          scenarioId: draft.scenarioId,
-          parentVersionId: draft.id,
-          type: ScenarioVersionType.AUTOMATIC,
+    for (const scenario of candidates) {
+      try {
+        const liveVersionId = await this.resolveLiveVersionId(scenario);
+        if (!liveVersionId) {
+          continue;
+        }
+        const liveVersion = await this.scenarioVersionRepository.findOne({
+          where: { id: liveVersionId },
+        });
+        // Only an unpublished (draft) live-mirroring version qualifies —
+        // this feature snapshots unpublished edits, not published content.
+        if (
+          !liveVersion ||
+          liveVersion.status !== ScenarioVersionStatus.DRAFT
+        ) {
+          continue;
+        }
+
+        const alreadySaved =
+          await this.scenarioVersionRepository.hasAutomaticVersionForDay(
+            scenario.id,
+            liveVersion.id,
+            dayStart,
+            dayEnd,
+          );
+        if (alreadySaved) {
+          continue;
+        }
+
+        const config = await this.buildConfigFromScenario(scenario.id);
+        await this.saveNewVersion({
+          scenarioId: scenario.id,
           name,
-        },
-      });
-      if (alreadySaved) {
-        continue;
+          config,
+          status: ScenarioVersionStatus.DRAFT,
+          type: ScenarioVersionType.AUTOMATIC,
+          parentVersionId: liveVersion.id,
+          createdBy: scenario.updatedBy ?? scenario.createdBy,
+          updatedBy: scenario.updatedBy ?? scenario.createdBy,
+        });
+        created += 1;
+      } catch (error) {
+        this.logger.error(
+          `Failed to auto-version scenario ${scenario.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
       }
-      await this.saveNewVersion({
-        scenarioId: draft.scenarioId,
-        name,
-        config: draft.config,
-        status: ScenarioVersionStatus.DRAFT,
-        type: ScenarioVersionType.AUTOMATIC,
-        parentVersionId: draft.id,
-        createdBy: draft.updatedBy ?? draft.createdBy,
-        updatedBy: draft.updatedBy ?? draft.createdBy,
-      });
-      created += 1;
     }
     return created;
   }

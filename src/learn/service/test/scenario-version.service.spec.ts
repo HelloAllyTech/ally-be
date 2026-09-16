@@ -45,9 +45,12 @@ describe('ScenarioVersionService', () => {
       findOne: jest.fn(),
       getNextVersionNumber: jest.fn().mockResolvedValue(3),
       softDelete: jest.fn().mockResolvedValue({ affected: 1 }),
+      hasAutomaticVersionForDay: jest.fn().mockResolvedValue(false),
+    };
+    scenariosRepo = {
+      findOne: jest.fn().mockResolvedValue(scenario),
       findDraftsUpdatedSince: jest.fn().mockResolvedValue([]),
     };
-    scenariosRepo = { findOne: jest.fn().mockResolvedValue(scenario) };
     scenarioService = {
       updateScenario: jest.fn().mockResolvedValue(true),
       getAdminScenario: jest.fn(),
@@ -468,9 +471,16 @@ describe('ScenarioVersionService', () => {
 
   describe('createDailyAutomaticVersions', () => {
     const now = new Date('2023-10-27T00:05:00.000Z');
+    const draftScenario = {
+      id: 20,
+      status: ScenarioStatus.DRAFT,
+      publishedVersionId: 'v-draft',
+      updatedBy: 2,
+      createdBy: 1,
+    } as Scenarios;
 
-    it('does nothing when no drafts were modified in the last 24 hours', async () => {
-      (versionRepo.findDraftsUpdatedSince as jest.Mock).mockResolvedValue([]);
+    it('does nothing when no draft scenarios were modified in the last 24 hours', async () => {
+      (scenariosRepo.findDraftsUpdatedSince as jest.Mock).mockResolvedValue([]);
 
       const created = await service.createDailyAutomaticVersions(now);
 
@@ -478,44 +488,95 @@ describe('ScenarioVersionService', () => {
       expect(txVersionRepo.save).not.toHaveBeenCalled();
     });
 
-    it('snapshots each modified draft into an AUTOMATIC version named with the date', async () => {
-      (versionRepo.findDraftsUpdatedSince as jest.Mock).mockResolvedValue([
-        {
-          id: 'v-draft',
-          scenarioId: 10,
-          config: { title: 'wip' },
-          updatedBy: 2,
-          createdBy: 1,
-        },
+    it('snapshots each modified draft into an AUTOMATIC version rebuilt from the live scenario', async () => {
+      (scenariosRepo.findDraftsUpdatedSince as jest.Mock).mockResolvedValue([
+        draftScenario,
       ]);
-      (versionRepo.findOne as jest.Mock).mockResolvedValue(undefined);
+      (versionRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'v-draft',
+        status: ScenarioVersionStatus.DRAFT,
+      });
+      (scenarioService.getAdminScenario as jest.Mock).mockResolvedValue({
+        title: 'wip',
+        triggerWarnings: [],
+        terminationEvents: [],
+        behaviorInstructions: [],
+      });
 
       const created = await service.createDailyAutomaticVersions(now);
 
       expect(created).toBe(1);
+      // Rebuilt from live scenario state, not the stale live-mirroring config.
+      expect(scenarioService.getAdminScenario).toHaveBeenCalledWith(20);
       const saved = txVersionRepo.create.mock.calls[0][0];
       expect(saved).toMatchObject({
-        scenarioId: 10,
+        scenarioId: 20,
         parentVersionId: 'v-draft',
         type: 'AUTOMATIC',
         status: ScenarioVersionStatus.DRAFT,
         name: 'Auto-save 2023-10-27',
-        config: { title: 'wip' },
+        config: expect.objectContaining({ title: 'wip' }),
       });
     });
 
-    it('is idempotent: skips a draft that already has an auto-save for the day', async () => {
-      (versionRepo.findDraftsUpdatedSince as jest.Mock).mockResolvedValue([
-        { id: 'v-draft', scenarioId: 10, config: {} },
+    it('skips a candidate whose live-mirroring version is already PUBLISHED', async () => {
+      (scenariosRepo.findDraftsUpdatedSince as jest.Mock).mockResolvedValue([
+        draftScenario,
       ]);
       (versionRepo.findOne as jest.Mock).mockResolvedValue({
-        id: 'v-existing-auto',
+        id: 'v-draft',
+        status: ScenarioVersionStatus.PUBLISHED,
       });
 
       const created = await service.createDailyAutomaticVersions(now);
 
       expect(created).toBe(0);
       expect(txVersionRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent: skips a draft that already has an auto-save for the day', async () => {
+      (scenariosRepo.findDraftsUpdatedSince as jest.Mock).mockResolvedValue([
+        draftScenario,
+      ]);
+      (versionRepo.findOne as jest.Mock).mockResolvedValue({
+        id: 'v-draft',
+        status: ScenarioVersionStatus.DRAFT,
+      });
+      (versionRepo.hasAutomaticVersionForDay as jest.Mock).mockResolvedValue(
+        true,
+      );
+
+      const created = await service.createDailyAutomaticVersions(now);
+
+      expect(created).toBe(0);
+      expect(txVersionRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('does not let one failing scenario abort the rest of the run', async () => {
+      const secondScenario = {
+        ...draftScenario,
+        id: 21,
+        publishedVersionId: 'v-draft-2',
+      };
+      (scenariosRepo.findDraftsUpdatedSince as jest.Mock).mockResolvedValue([
+        draftScenario,
+        secondScenario,
+      ]);
+      (versionRepo.findOne as jest.Mock).mockImplementation(({ where }) =>
+        Promise.resolve({ id: where.id, status: ScenarioVersionStatus.DRAFT }),
+      );
+      (scenarioService.getAdminScenario as jest.Mock)
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockResolvedValueOnce({
+          title: 'ok',
+          triggerWarnings: [],
+          terminationEvents: [],
+          behaviorInstructions: [],
+        });
+
+      const created = await service.createDailyAutomaticVersions(now);
+
+      expect(created).toBe(1);
     });
   });
 });
