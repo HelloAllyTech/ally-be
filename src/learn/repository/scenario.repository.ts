@@ -333,4 +333,19 @@ export class ScenariosRepository extends Repository<Scenarios> {
       .getCount();
     return count > 0;
   }
+
+  /**
+   * Draft scenarios (unpublished) directly edited within the window —
+   * candidates for the daily auto-version job. The studio writes ordinary
+   * authoring straight to this row (see ScenarioVersion's docblock), so
+   * `scenarios.updatedAt` — not `scenario_versions.updatedAt` — is what
+   * actually moves when an author edits. Supported by
+   * idx_scenarios_status_updated_at.
+   */
+  async findDraftsUpdatedSince(since: Date): Promise<Scenarios[]> {
+    return this.createQueryBuilder('scenario')
+      .where('scenario.status = :status', { status: ScenarioStatus.DRAFT })
+      .andWhere('scenario.updatedAt >= :since', { since })
+      .getMany();
+  }
 }
