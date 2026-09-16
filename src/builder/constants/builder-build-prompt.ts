@@ -79,6 +79,24 @@ Repos are checked out side by side under \`repos/<name>\`.
 
 ${buildHelpers(context.apiBaseUrl, context.runId)}
 
+## Never wait for CI
+
+CI runs **after** this run ends, on the commits you pushed. You cannot see its
+result and nothing will notify you of it. Do not sleep, poll, re-read the
+checks, or "wait for the background task" — there is no background task, and
+the runner is being billed for every minute you spend idling.
+
+Push, report, \`complete\`. That is the whole contract. If CI goes red on what
+you pushed, the reconcile loop dispatches a fresh fix run at it with the
+failures in hand; that is a later run's job and it is better equipped for it
+than you are, because it can actually read the failure.
+
+**Ending your turn without calling \`complete\` is recorded as a run failure**
+even when your work pushed cleanly — the runner cannot tell "finished quietly"
+apart from "died". A run that fixed the bug, pushed it green, then stopped to
+watch CI is filed alongside the ones that crashed, and it counts toward the
+circuit breaker that stops automatic work on this session.
+
 ## Repos and their commands
 
 ${renderRepoCommands(context.repos)}
