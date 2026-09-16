@@ -151,6 +151,31 @@ export const BUILDER_WORKFLOW_FILE = 'builder-session.yml';
  * because review → fix → new head sha → review is a loop that would otherwise
  * only stop when a human closed the pull request.
  */
+/**
+ * The GitHub logins Builder's own runners push and comment as.
+ *
+ * `isOwnActor` decides two things at once: whose comments are not feedback to
+ * itself, and whose commits it may act on top of. Getting it wrong is silent in
+ * both directions, and it was wrong — the predicate matched `ally-builder*` and
+ * `*[bot]`, while every commit a runner pushes is authored by
+ * `adminbughunterhelloallyai`.
+ *
+ * So Builder did not recognise its own pushes. Two features were disabled by it
+ * and neither said so: a branch that fell behind was never brought up to date
+ * (it looked like somebody else's work), and a failing check on Builder's own
+ * commit was filed OBSERVED rather than PENDING — which `countPending` ignores,
+ * so the fix loop never fired on its own red CI. The comment on `isOwnActor`
+ * describes that failure exactly; the list simply did not contain the name.
+ *
+ * A list rather than a pattern: these are real accounts, and a prefix match is
+ * how a human called `ally-builder-reviews` would quietly gain the right to
+ * have their pushes overwritten.
+ */
+export const BUILDER_OWN_ACTORS = [
+  'adminbughunterhelloallyai',
+  'ally-builder',
+] as const;
+
 export const BUILDER_MAX_REVIEW_RUNS_PER_PR = 2;
 
 /**

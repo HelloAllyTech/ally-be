@@ -33,6 +33,7 @@ import {
 import { isBuilderRepo } from '../constants/builder-repos.constants';
 import {
   BUILDER_MAX_REVIEW_RUNS_PER_PR,
+  BUILDER_OWN_ACTORS,
   BUILDER_RELEASE_TIMEOUT_MS,
   BUILDER_WORKFLOW_REF,
   isUnfixableCheck,
@@ -1052,7 +1053,13 @@ export class BuilderPullRequestService {
    */
   private isOwnActor(author: string): boolean {
     const login = author.toLowerCase();
-    return login.startsWith('ally-builder') || login.endsWith('[bot]');
+    // Exact match against the known accounts, plus the GitHub App suffix. The
+    // old prefix match missed the account runners actually push as, which
+    // disabled branch updates and self-fixing red CI without a word.
+    return (
+      BUILDER_OWN_ACTORS.some((actor) => login === actor) ||
+      login.endsWith('[bot]')
+    );
   }
 
   /**
