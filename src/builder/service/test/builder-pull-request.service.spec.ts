@@ -90,6 +90,9 @@ describe('BuilderPullRequestService', () => {
       getCommitAuthor: jest.fn().mockResolvedValue({
         login: 'ally-builder[bot]',
         name: 'Ally Builder',
+        // One parent: an ordinary commit, not a merge. The carry-forward path
+        // is exercised by its own describe below.
+        parents: ['parent00'],
       }),
       mergePullRequest: jest
         .fn()
@@ -1038,7 +1041,13 @@ describe('BuilderPullRequestService', () => {
 
     beforeEach(() => {
       settingsService.get.mockResolvedValue(settings());
-      repository.findOne.mockResolvedValue(openPr());
+      // The state a review run leaves behind: `dispatchReviewRun` stamps
+      // `reviewedSha` with the head it is about to read, so by the time
+      // findings come back the row says which commit was reviewed. The
+      // approval guard reads exactly that, so the fixture has to carry it.
+      repository.findOne.mockResolvedValue(
+        openPr({ headSha: 'abc1234def', reviewedSha: 'abc1234def' }),
+      );
       github.getPullRequest.mockResolvedValue({
         state: 'open',
         merged: false,
@@ -1047,6 +1056,21 @@ describe('BuilderPullRequestService', () => {
         htmlUrl: 'https://github.com/o/ally-be/pull/42',
       });
       github.getCheckRollup.mockResolvedValue(green);
+    });
+
+    /**
+     * Somebody pushed while the review was reading. The findings describe code
+     * that is no longer at the head, so approving would put a machine's name on
+     * a commit nothing has read — the one thing an auto-approver must never do.
+     */
+    it('does not approve when a commit landed during the review', async () => {
+      repository.findOne.mockResolvedValue(
+        openPr({ headSha: 'abc1234def', reviewedSha: 'an-older-commit' }),
+      );
+
+      await service.recordReviewFindings('run-3', 'session-1', 'pr-1', []);
+
+      expect(github.approvePullRequest).not.toHaveBeenCalled();
     });
 
     const cleanReview = () =>
@@ -1184,6 +1208,46 @@ describe('BuilderPullRequestService', () => {
     });
 
     /**
+     * The setting this actually ran into.
+     *
+     * This used to be gated on `autoFixEnabled`, which conflated two different
+     * things: spending money on agent runs, and a single GitHub API call that
+     * merges master in. Running with review on and fix off — the deliberate
+     * "don't spend, just tell me" setting — therefore left green, approved pull
+     * requests parked at `behind`, which is not `clean`, which is what the
+     * merge prompt waits for. The loop went quiet with nothing to click.
+     */
+    it('keeps the branch current even with auto-fix switched off', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoFixEnabled: false,
+        autoReviewEnabled: true,
+        maxFixRunsPerPr: 3,
+      });
+
+      await reconcileWith({ headSha: 'abc1234def', ...behind });
+
+      expect(github.updatePullRequestBranch).toHaveBeenCalledWith(
+        'ally-be',
+        42,
+        'abc1234def',
+      );
+    });
+
+    /** The kill switch still means everything off. */
+    it('stops when the kill switch is off', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: false,
+        autoFixEnabled: true,
+        maxFixRunsPerPr: 3,
+      });
+
+      await reconcileWith({ headSha: 'abc1234def', ...behind });
+
+      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
+    });
+
+    /**
      * `dirty` is a real conflict needing a person or a fix run, and `blocked`
      * is a missing approval. Merging master in fixes neither, and trying would
      * burn an API call every tick forever.
@@ -1219,18 +1283,6 @@ describe('BuilderPullRequestService', () => {
     /** "Could not tell who pushed" is not "we pushed". */
     it('skips the tick when the author cannot be read', async () => {
       github.getCommitAuthor.mockResolvedValue(null);
-
-      await reconcileWith({ headSha: 'abc1234def', ...behind });
-
-      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
-    });
-
-    it('respects the same switch that governs pushing to an open PR', async () => {
-      settingsService.get.mockResolvedValue({
-        enabled: true,
-        autoFixEnabled: false,
-        maxFixRunsPerPr: 3,
-      });
 
       await reconcileWith({ headSha: 'abc1234def', ...behind });
 
@@ -1507,5 +1559,421 @@ describe('BuilderPullRequestService', () => {
         expect.objectContaining({ status: BuilderPrFeedbackStatus.PENDING }),
       );
     });
+  });
+});
+
+/**
+ * Approval is a policy, not an event.
+ *
+ * It used to be reachable from exactly one place — the moment a review run
+ * recorded zero findings — which quietly made `autoApproveEnabled` mean "approve
+ * reviews that finish from now on" rather than "approve clean reviews". A pull
+ * request reviewed while the switch was off could never be approved afterwards:
+ * the review cap refuses a second review, so the one event that could have
+ * approved it was never going to happen again. ally-web#658 sat in that state.
+ *
+ * So it is reconsidered on the reconcile tick against a durable fact — this
+ * commit was reviewed clean — and stamped per-sha, because the approve call
+ * posts a new review every time it is made.
+ */
+describe('BuilderPullRequestService — approval on the reconcile tick', () => {
+  let service: any;
+  let repository: any;
+  let github: any;
+  let settings: any;
+  let feedbackRepository: any;
+
+  const HEAD = 'abc1234def';
+
+  beforeEach(() => {
+    repository = { update: jest.fn() };
+    feedbackRepository = { countActionable: jest.fn().mockResolvedValue(0) };
+    github = {
+      getPullRequest: jest.fn(),
+      getCheckRollup: jest.fn(),
+      // An ordinary commit by default: no merge lineage to carry a review
+      // across, so these cases exercise the plain reviewed-this-sha path.
+      getCommitAuthor: jest.fn().mockResolvedValue({
+        login: 'ally-builder[bot]',
+        name: null,
+        parents: ['x'],
+      }),
+      approvePullRequest: jest
+        .fn()
+        .mockResolvedValue({ approved: true, message: null }),
+    };
+    settings = { enabled: true, autoApproveEnabled: true };
+
+    service = Object.create(BuilderPullRequestService.prototype);
+    Object.assign(service, {
+      repository,
+      feedbackRepository,
+      github,
+      settingsService: { get: jest.fn(() => Promise.resolve(settings)) },
+      logger: { info: jest.fn(), warn: jest.fn() },
+    });
+  });
+
+  const pr = (overrides: Record<string, any> = {}) => ({
+    id: 'pr-1',
+    repo: 'ally-web',
+    prNumber: 658,
+    headSha: HEAD,
+    reviewedSha: HEAD,
+    approvedSha: null,
+    ...overrides,
+  });
+
+  const known = (overrides: Record<string, any> = {}) => ({
+    remote: { state: 'open', merged: false, headSha: HEAD, ...overrides },
+    rollup: { state: 'success' },
+  });
+
+  it('approves a PR reviewed clean while the switch was off', async () => {
+    await service.considerApproval(pr(), known());
+
+    expect(github.approvePullRequest).toHaveBeenCalledWith(
+      'ally-web',
+      658,
+      expect.stringContaining('Builder'),
+    );
+    expect(repository.update).toHaveBeenCalledWith(
+      { id: 'pr-1' },
+      { approvedSha: HEAD },
+    );
+  });
+
+  /**
+   * The stamp is the whole reason this is safe to run on a tick: without it a
+   * pull request would collect one approval every few minutes forever.
+   */
+  it('does not approve the same commit twice', async () => {
+    await service.considerApproval(pr({ approvedSha: HEAD }), known());
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  /** A new push re-opens the question — that is what approving a commit means. */
+  it('approves again once a new commit is reviewed', async () => {
+    await service.considerApproval(
+      pr({
+        approvedSha: 'older-sha',
+        headSha: 'new-sha',
+        reviewedSha: 'new-sha',
+      }),
+      known({ headSha: 'new-sha' }),
+    );
+
+    expect(github.approvePullRequest).toHaveBeenCalled();
+  });
+
+  it('never approves a commit no review has read', async () => {
+    await service.considerApproval(
+      pr({ reviewedSha: 'an-older-commit' }),
+      known(),
+    );
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('never approves a pull request that has never been reviewed', async () => {
+    await service.considerApproval(pr({ reviewedSha: null }), known());
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('waits for outstanding feedback to be dealt with', async () => {
+    feedbackRepository.countActionable.mockResolvedValue(1);
+
+    await service.considerApproval(pr(), known());
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not approve over red checks', async () => {
+    await service.considerApproval(pr(), {
+      remote: { state: 'open', merged: false, headSha: HEAD },
+      rollup: { state: 'failure' },
+    });
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('stays off when the switch is off', async () => {
+    settings.autoApproveEnabled = false;
+
+    await service.considerApproval(pr(), known());
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The reconcile pass has already fetched both of these for this tick.
+   * Re-fetching would double this service's GitHub traffic across every open
+   * pull request to learn what the caller already knows.
+   */
+  it('reuses the caller pull request and rollup rather than refetching', async () => {
+    await service.considerApproval(pr(), known());
+
+    expect(github.getPullRequest).not.toHaveBeenCalled();
+    expect(github.getCheckRollup).not.toHaveBeenCalled();
+  });
+
+  /**
+   * An already-approved pull request is the common case on a tick, so it must
+   * not cost a network round trip to discover that.
+   */
+  it('short-circuits an approved PR before any network call', async () => {
+    await service.considerApproval(pr({ approvedSha: HEAD }), undefined);
+
+    expect(github.getPullRequest).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Surviving our own branch update.
+ *
+ * Both repos protect master with `dismiss_stale_reviews` AND
+ * `strict_up_to_date`, which together form a closed loop: a pull request must be
+ * current with master to merge, bringing it current pushes a commit, and that
+ * commit dismisses the approval. Re-approving needs a review of the new head,
+ * the per-PR cap refuses one after two, and the pull request is then stuck for
+ * good — green, reviewed, unapprovable, unmergeable. ally-web#658 was one branch
+ * update away from exactly that.
+ */
+describe('BuilderPullRequestService — carrying a review across our own update', () => {
+  const REVIEWED = 'reviewed0';
+  const MERGED_HEAD = 'mergehead';
+
+  let service: any;
+  let repository: any;
+  let github: any;
+  let settings: any;
+
+  beforeEach(() => {
+    repository = { update: jest.fn() };
+    settings = { enabled: true, autoApproveEnabled: true };
+    github = {
+      getCommitAuthor: jest.fn(),
+      getPullRequest: jest.fn(),
+      getCheckRollup: jest.fn(),
+      approvePullRequest: jest
+        .fn()
+        .mockResolvedValue({ approved: true, message: null }),
+    };
+    service = Object.create(BuilderPullRequestService.prototype);
+    Object.assign(service, {
+      repository,
+      feedbackRepository: { countActionable: jest.fn().mockResolvedValue(0) },
+      github,
+      settingsService: { get: jest.fn(() => Promise.resolve(settings)) },
+      logger: { info: jest.fn(), warn: jest.fn() },
+    });
+  });
+
+  const pr = (overrides: Record<string, any> = {}) => ({
+    id: 'pr-1',
+    repo: 'ally-web',
+    prNumber: 658,
+    headSha: MERGED_HEAD,
+    reviewedSha: REVIEWED,
+    approvedSha: null,
+    ...overrides,
+  });
+
+  const known = {
+    remote: { state: 'open', merged: false, headSha: MERGED_HEAD },
+    rollup: { state: 'success' },
+  };
+
+  /** The merge master left behind: our commit, reviewed head as first parent. */
+  const ourMerge = {
+    login: 'ally-builder[bot]',
+    name: 'Ally Builder',
+    parents: [REVIEWED, 'master00'],
+  };
+
+  it('approves the merge commit its own update created', async () => {
+    github.getCommitAuthor.mockResolvedValue(ourMerge);
+
+    await service.considerApproval(pr(), known);
+
+    expect(github.approvePullRequest).toHaveBeenCalled();
+    // Stamped forward, so the next tick short-circuits instead of re-deriving.
+    expect(repository.update).toHaveBeenCalledWith(
+      { id: 'pr-1' },
+      { reviewedSha: MERGED_HEAD },
+    );
+  });
+
+  /**
+   * First parent specifically. On a merge commit the first parent is the branch
+   * being merged INTO; accepting either parent would also accept the reverse
+   * merge, which is a different commit with different contents.
+   */
+  it('refuses a merge whose reviewed head is only the second parent', async () => {
+    github.getCommitAuthor.mockResolvedValue({
+      ...ourMerge,
+      parents: ['master00', REVIEWED],
+    });
+
+    await service.considerApproval(pr(), known);
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  /** A single-parent commit is real work, and real work needs a real review. */
+  it('refuses an ordinary commit pushed on top of the reviewed head', async () => {
+    github.getCommitAuthor.mockResolvedValue({
+      ...ourMerge,
+      parents: [REVIEWED],
+    });
+
+    await service.considerApproval(pr(), known);
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  /** Somebody else merging master in is not our update to vouch for. */
+  it('refuses a merge somebody else made', async () => {
+    github.getCommitAuthor.mockResolvedValue({
+      login: 'a-person',
+      name: 'A Person',
+      parents: [REVIEWED, 'master00'],
+    });
+
+    await service.considerApproval(pr(), known);
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The carry-forward says the diff is unchanged, not that it still works.
+   * A semantic conflict dragged in from master is CI's to catch, and approval
+   * still waits for green.
+   */
+  it('still refuses to approve over red checks', async () => {
+    github.getCommitAuthor.mockResolvedValue(ourMerge);
+
+    await service.considerApproval(pr(), {
+      remote: known.remote,
+      rollup: { state: 'failure' },
+    });
+
+    expect(github.approvePullRequest).not.toHaveBeenCalled();
+  });
+
+  it('does not reach for the commit when the head is already the reviewed one', async () => {
+    await service.considerApproval(
+      pr({ headSha: REVIEWED, reviewedSha: REVIEWED }),
+      { remote: { ...known.remote, headSha: REVIEWED }, rollup: known.rollup },
+    );
+
+    expect(github.getCommitAuthor).not.toHaveBeenCalled();
+    expect(github.approvePullRequest).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The banner that would not go away.
+ *
+ * `settleRun` writes a failed run's error onto the run AND the session, and only
+ * a new dispatch clears the session copy. Fine while runs keep coming; not fine
+ * when they cannot. A session over budget, parked on a question, or blocked on a
+ * dead credential has no next dispatch, so the banner stays forever.
+ *
+ * Which would be untidy if the text were vague. It is not: the gate error says
+ * "nothing proves the change works" while sitting above pull requests whose
+ * every required check is green. The page states the opposite of the evidence.
+ */
+describe('BuilderPullRequestService — clearing an error the PRs disproved', () => {
+  let service: any;
+  let sessionRepository: any;
+  let repository: any;
+  let feedbackRepository: any;
+
+  const green = (over: Record<string, any> = {}) => ({
+    id: 'pr-1',
+    merged: false,
+    state: 'open',
+    ciStatus: 'success',
+    ...over,
+  });
+
+  beforeEach(() => {
+    sessionRepository = {
+      findOne: jest.fn().mockResolvedValue({ id: 's-1', error: 'gate failed' }),
+      update: jest.fn(),
+    };
+    repository = { listBySession: jest.fn().mockResolvedValue([green()]) };
+    feedbackRepository = { countActionable: jest.fn().mockResolvedValue(0) };
+
+    service = Object.create(BuilderPullRequestService.prototype);
+    Object.assign(service, {
+      sessionRepository,
+      repository,
+      feedbackRepository,
+      logger: { info: jest.fn(), warn: jest.fn() },
+    });
+  });
+
+  it('clears it once every open pull request is green', async () => {
+    await service.clearStaleSessionError('s-1');
+
+    expect(sessionRepository.update).toHaveBeenCalledWith(
+      { id: 's-1' },
+      { error: null },
+    );
+  });
+
+  it('leaves it alone while a pull request is red', async () => {
+    repository.listBySession.mockResolvedValue([
+      green(),
+      green({ id: 'pr-2', ciStatus: 'failure' }),
+    ]);
+
+    await service.clearStaleSessionError('s-1');
+
+    expect(sessionRepository.update).not.toHaveBeenCalled();
+  });
+
+  /** Unread checks are not passed checks. */
+  it('leaves it alone when a pull request has no CI verdict yet', async () => {
+    repository.listBySession.mockResolvedValue([green({ ciStatus: null })]);
+
+    await service.clearStaleSessionError('s-1');
+
+    expect(sessionRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('leaves it alone while there is feedback still to act on', async () => {
+    feedbackRepository.countActionable.mockResolvedValue(1);
+
+    await service.clearStaleSessionError('s-1');
+
+    expect(sessionRepository.update).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A session whose pull requests are all merged or closed has no open evidence
+   * either way, and its last error is the only account of what happened.
+   */
+  it('leaves it alone when nothing is open', async () => {
+    repository.listBySession.mockResolvedValue([
+      green({ merged: true, state: 'closed' }),
+    ]);
+
+    await service.clearStaleSessionError('s-1');
+
+    expect(sessionRepository.update).not.toHaveBeenCalled();
+  });
+
+  it('does no work on a session that has no error', async () => {
+    sessionRepository.findOne.mockResolvedValue({ id: 's-1', error: null });
+
+    await service.clearStaleSessionError('s-1');
+
+    expect(repository.listBySession).not.toHaveBeenCalled();
+    expect(sessionRepository.update).not.toHaveBeenCalled();
   });
 });

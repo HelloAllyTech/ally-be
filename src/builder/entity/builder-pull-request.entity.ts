@@ -97,6 +97,22 @@ export class BuilderPullRequest extends BaseWithoutTenantEntity {
   reviewedSha?: string | null;
 
   /**
+   * The head commit Builder approved, if it has.
+   *
+   * Approval is reconsidered on every reconcile tick rather than only at the
+   * instant a review finishes, so that turning `autoApproveEnabled` on applies
+   * to pull requests already reviewed clean. That needs a record of what has
+   * been approved, because the GitHub call posts a new review each time it is
+   * made and would otherwise repeat on every tick.
+   *
+   * Per-sha, and deliberately not a boolean: a new push should re-open the
+   * question, which is what approving a commit rather than a pull request
+   * means.
+   */
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  approvedSha?: string | null;
+
+  /**
    * Where this pull request's production release has got to.
    *
    * Null means nothing was dispatched — the ordinary state for a PR that has

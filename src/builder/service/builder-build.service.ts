@@ -45,6 +45,7 @@ import {
 import {
   BUILDER_BUDGET_HOLD_POLL_SECONDS,
   BUILDER_BUDGET_HOLD_SECONDS,
+  BUILDER_CONSECUTIVE_FAILURE_LIMIT,
   BUILDER_DISPATCH_LOCK_PREFIX,
   BUILDER_DISPATCH_LOCK_TTL_SECONDS,
   BUILDER_DISPATCH_TIMEOUT_MS,
@@ -625,6 +626,67 @@ export class BuilderBuildService {
    * timer, and every refusal here is an ordinary state (the session is busy,
    * the budget is gone) rather than an error anyone asked to see.
    */
+  /**
+   * Whether this session has stopped converging.
+   *
+   * The per-PR ceilings bound each loop on its own — two reviews, three fixes —
+   * and nothing was watching the session as a whole. One session burned eight
+   * runs inside those ceilings while nothing succeeded after the build: a
+   * review that died on a database error, a fix sent at feedback that was
+   * Builder's own approval, then more of both.
+   *
+   * So: consecutive failures, newest first, across every mode. A success
+   * anywhere in the recent history clears it, because a loop that produced
+   * something is a loop still doing work.
+   *
+   * Only automatic dispatches consult this. A person clicking retry has looked
+   * at the failures and decided to try anyway, which is the judgement the
+   * breaker is waiting for — blocking them would make it a cage rather than a
+   * fuse.
+   */
+  private async consecutiveFailures(sessionId: string): Promise<number> {
+    const recent = await this.runRepository.listRecent(
+      sessionId,
+      BUILDER_CONSECUTIVE_FAILURE_LIMIT + 1,
+    );
+    let count = 0;
+    for (const run of recent) {
+      // QUEUED/RUNNING are not verdicts: a run still going tells us nothing
+      // about convergence, so it neither counts nor clears.
+      if (
+        run.status === BuilderRunStatus.QUEUED ||
+        run.status === BuilderRunStatus.RUNNING
+      )
+        continue;
+      if (
+        run.status === BuilderRunStatus.FAILED ||
+        run.status === BuilderRunStatus.TIMED_OUT
+      ) {
+        count += 1;
+        continue;
+      }
+      break;
+    }
+    return count;
+  }
+
+  /**
+   * Refuse an automatic dispatch once the session has stopped converging, and
+   * say so once.
+   */
+  private async breakerTripped(session: BuilderSession): Promise<boolean> {
+    const failures = await this.consecutiveFailures(session.id);
+    if (failures < BUILDER_CONSECUTIVE_FAILURE_LIMIT) return false;
+
+    this.logger.warn(
+      `[BUILDER] Automatic runs paused for session ${session.id}: ${failures} consecutive failures.`,
+    );
+    // Announced once per trip rather than per refused dispatch — the point is
+    // that the loop stopped, not that it stopped again.
+    await this.notificationService.automationPaused(session, failures);
+    return true;
+  }
+
   async dispatchFixRun(
     pullRequest: {
       id: string;
@@ -640,6 +702,7 @@ export class BuilderBuildService {
       where: { id: pullRequest.sessionId },
     });
     if (!session) return null;
+    if (await this.breakerTripped(session)) return null;
 
     // Two runners on one branch is a merge conflict Builder created for
     // itself, so an in-flight run of any kind blocks a fix.
@@ -689,11 +752,17 @@ export class BuilderBuildService {
 
     // The session goes back to BUILDING so the UI stops reading as finished
     // while Builder is pushing commits; settleRun moves it back.
+    //
+    // `error: null` matters as much as the status. Only a build dispatch used
+    // to clear it, so a failure from three runs ago stayed on screen while
+    // newer runs came and went — a fact about history rendered as the current
+    // state, right above a banner telling you the run had failed.
     await this.sessionRepository.update(
       { id: session.id },
       {
         status: BuilderSessionStatus.BUILDING,
         currentStage: BuilderStage.SETUP,
+        error: null,
       },
     );
     await this.notificationService.fixRunStarted(
@@ -736,6 +805,7 @@ export class BuilderBuildService {
       where: { id: pullRequest.sessionId },
     });
     if (!session) return null;
+    if (await this.breakerTripped(session)) return null;
 
     const active = await this.runRepository.count({
       where: {
@@ -761,6 +831,10 @@ export class BuilderBuildService {
       return null;
     }
 
+    // Same reasoning as the fix path: a review starting means the last
+    // failure is no longer what is happening, and leaving it on the session
+    // shows a stale error above a running build.
+    await this.sessionRepository.update({ id: session.id }, { error: null });
     await this.pullRequestRepository.update(
       { id: pullRequest.id },
       { reviewedSha: headSha },
@@ -1215,6 +1289,25 @@ export class BuilderBuildService {
    * SUCCEEDED — testing was prompt-instructed and the only evidence was a
    * string the agent chose to send.
    */
+  /**
+   * Whether a run touched any code at all.
+   *
+   * The gate rule exists because "I fixed it" is not checkable without machine
+   * evidence. A run that changed nothing makes no such claim — and on
+   * 2026-09-16 two fix runs did exactly the right thing (read the feedback,
+   * found it was Builder's own approval, said so, changed nothing) and were
+   * recorded FAILED for it. That failure then poisoned the session status, lit
+   * a red banner, and counted toward the circuit breaker.
+   *
+   * `file_edit` is emitted by the forwarder from the engine's own output rather
+   * than asserted by the agent, so this is evidence in the same sense the gate
+   * is: a run cannot claim it changed nothing while having edited files.
+   */
+  async touchedNoFiles(runId: string): Promise<boolean> {
+    const events = await this.eventRepository.listByRun(runId, 0, 2000);
+    return !events.some((event) => event.type === BuilderEventType.FILE_EDIT);
+  }
+
   async hasPassingGate(runId: string): Promise<boolean> {
     const events = await this.eventRepository.listByRun(runId, 0, 2000);
     const gateByKey = new Map<string, boolean>();

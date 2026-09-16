@@ -51,6 +51,7 @@ describe('BuilderBuildService', () => {
     listActive: jest.Mock;
     nextSequence: jest.Mock;
     count: jest.Mock;
+    listRecent: jest.Mock;
   };
   let eventRepository: { listByRun: jest.Mock; latestOfType: jest.Mock };
   let pullRequestRepository: { increment: jest.Mock; findOne: jest.Mock };
@@ -61,6 +62,8 @@ describe('BuilderBuildService', () => {
     buildFailed: jest.Mock;
     budgetReached: jest.Mock;
     budgetHold: jest.Mock;
+    automationPaused: jest.Mock;
+    fixRunStarted: jest.Mock;
   };
   let eventService: { record: jest.Mock };
   let redisService: { acquireLock: jest.Mock; releaseLock: jest.Mock };
@@ -96,6 +99,7 @@ describe('BuilderBuildService', () => {
       listActive: jest.fn().mockResolvedValue([]),
       nextSequence: jest.fn().mockResolvedValue(1),
       count: jest.fn().mockResolvedValue(0),
+      listRecent: jest.fn().mockResolvedValue([]),
     };
     eventRepository = {
       listByRun: jest.fn().mockResolvedValue([]),
@@ -119,6 +123,8 @@ describe('BuilderBuildService', () => {
       buildFailed: jest.fn(),
       budgetReached: jest.fn(),
       budgetHold: jest.fn(),
+      automationPaused: jest.fn(),
+      fixRunStarted: jest.fn(),
     };
     // Annotations the service writes onto a run's own log (a budget raise, a
     // hold). Recorded through the event service so they also push over the
@@ -1431,6 +1437,91 @@ describe('BuilderBuildService', () => {
     it('returns empty for a run with no events rather than inventing a handover', async () => {
       eventRepository.listByRun.mockResolvedValue([]);
       await expect(service.buildResumeContext('run-1')).resolves.toBe('');
+    });
+  });
+
+  /**
+   * The fuse on automatic spend.
+   *
+   * The per-PR ceilings bound each loop separately — two reviews, three fixes —
+   * and nothing watched the session as a whole. On 2026-09-16 one session burned
+   * eight runs inside those ceilings while nothing succeeded after the build: a
+   * review that died on a database error, a fix run sent at feedback that was
+   * Builder's own approval, then more of both. Every ceiling was respected and
+   * none of them noticed.
+   */
+  describe('pausing automatic runs after repeated failures', () => {
+    const pr = {
+      id: 'pr-1',
+      sessionId: 'session-1',
+      repo: 'ally-be',
+      branch: 'builder/x',
+      prNumber: 42,
+      fixRunCount: 0,
+    };
+
+    const failed = (n: number) =>
+      Array.from({ length: n }, () => ({ status: BuilderRunStatus.FAILED }));
+
+    beforeEach(() => {
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        title: 'x',
+        createdBy: 1,
+      });
+    });
+
+    it('refuses a fix run once two in a row have failed', async () => {
+      runRepository.listRecent.mockResolvedValue(failed(2));
+
+      const run = await service.dispatchFixRun(pr as never);
+
+      expect(run).toBeNull();
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+      expect(notificationService.automationPaused).toHaveBeenCalled();
+    });
+
+    it('refuses a review run on the same evidence', async () => {
+      runRepository.listRecent.mockResolvedValue(failed(2));
+
+      expect(await service.dispatchReviewRun(pr as never, 'abc123')).toBeNull();
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+    });
+
+    it('still dispatches after a single failure', async () => {
+      runRepository.listRecent.mockResolvedValue(failed(1));
+
+      await service.dispatchFixRun(pr as never);
+
+      expect(github.dispatchWorkflow).toHaveBeenCalled();
+      expect(notificationService.automationPaused).not.toHaveBeenCalled();
+    });
+
+    /** A loop that produced something is still doing work. */
+    it('clears on any success in the recent history', async () => {
+      runRepository.listRecent.mockResolvedValue([
+        { status: BuilderRunStatus.FAILED },
+        { status: BuilderRunStatus.SUCCEEDED },
+        { status: BuilderRunStatus.FAILED },
+      ]);
+
+      await service.dispatchFixRun(pr as never);
+
+      expect(github.dispatchWorkflow).toHaveBeenCalled();
+    });
+
+    /**
+     * A run still going is not a verdict — it must neither trip the breaker nor
+     * reset it, or an in-flight retry would mask the failures behind it.
+     */
+    it('ignores a run that has not finished', async () => {
+      runRepository.listRecent.mockResolvedValue([
+        { status: BuilderRunStatus.RUNNING },
+        { status: BuilderRunStatus.FAILED },
+        { status: BuilderRunStatus.FAILED },
+      ]);
+
+      expect(await service.dispatchFixRun(pr as never)).toBeNull();
     });
   });
 });

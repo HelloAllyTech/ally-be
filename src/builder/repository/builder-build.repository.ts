@@ -29,6 +29,18 @@ export class BuilderBuildRunRepository extends Repository<BuilderBuildRun> {
     return this.find({ where: { sessionId }, order: { sequence: 'ASC' } });
   }
 
+  /**
+   * The most recent runs, newest first — for the circuit breaker, which cares
+   * only about how the last few ended.
+   */
+  listRecent(sessionId: string, take: number): Promise<BuilderBuildRun[]> {
+    return this.find({
+      where: { sessionId },
+      order: { sequence: 'DESC' },
+      take,
+    });
+  }
+
   findLatest(sessionId: string): Promise<BuilderBuildRun | null> {
     return this.findOne({ where: { sessionId }, order: { sequence: 'DESC' } });
   }

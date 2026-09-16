@@ -283,6 +283,11 @@ export enum BuilderNotificationKind {
    * reason this is worth a message at all.
    */
   PR_READY_TO_MERGE = 'pr_ready_to_merge',
+  /**
+   * Automatic runs stopped themselves after repeated failures. Louder than any
+   * single failure, because the thing that has stopped is the loop.
+   */
+  AUTOMATION_PAUSED = 'automation_paused',
 }
 
 /**

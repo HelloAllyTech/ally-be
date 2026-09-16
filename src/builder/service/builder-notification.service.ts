@@ -282,6 +282,21 @@ export class BuilderNotificationService {
     );
   }
 
+  /**
+   * The loop stopped itself.
+   *
+   * Louder than any single failure, because what has stopped is the automation
+   * rather than one run — and the silence that follows would otherwise look
+   * exactly like a session quietly finishing.
+   */
+  automationPaused(session: BuilderSession, failures: number): Promise<void> {
+    return this.notify(
+      session,
+      BuilderNotificationKind.AUTOMATION_PAUSED,
+      `I've stopped sending runs at “${session.title}” — ${failures} in a row failed and nothing is converging. Have a look before retrying.`,
+    );
+  }
+
   budgetReached(session: BuilderSession, spent: number): Promise<void> {
     return this.notify(
       session,

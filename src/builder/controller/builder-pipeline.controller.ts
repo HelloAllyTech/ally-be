@@ -648,8 +648,19 @@ export class BuilderPipelineController {
     // evidence, so a run that skipped it entirely still settled SUCCEEDED.
     // Refused rather than trusted: the gate is cheap and the claim is not
     // checkable any other way.
+    // A run that edited nothing is not claiming a fix, so there is nothing for
+    // a gate to verify. Two fix runs read their feedback, correctly found it
+    // was Builder's own approval with nothing to act on, said so on the pull
+    // request and changed no code — and were recorded FAILED, which poisoned
+    // the session and counted toward the breaker. Doing the right thing must
+    // not look like failing.
+    const changedNothing =
+      dto.outcome === 'done' &&
+      (await this.buildService.touchedNoFiles(run.id));
+
     if (
       dto.outcome === 'done' &&
+      !changedNothing &&
       !(await this.buildService.hasPassingGate(run.id))
     ) {
       this.logger.warn(

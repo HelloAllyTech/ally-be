@@ -11,6 +11,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import {
   CheckRollup,
   GithubActionsService,
+  PullRequestInfo,
 } from 'src/github/service/github-actions.service';
 import { AppConfigService } from 'src/config/config.service';
 import { BuilderEventType } from '../enum/builder.enum';
@@ -410,7 +411,15 @@ export class BuilderPullRequestService {
     if (await this.considerReviewRun(pullRequest, remote.headSha, rollup))
       return;
     await this.considerFixRun(pullRequest);
+
+    // Reconsidered every tick, not only when a review has just finished.
+    // Approval is a policy applied to a durable fact ("this commit was
+    // reviewed clean"), and firing it only on the event meant any pull request
+    // reviewed while `autoApproveEnabled` was off could never be approved —
+    // the review cap stops a second review, and nothing else looked again.
+    await this.considerApproval(pullRequest, { remote, rollup });
     await this.considerMergePrompt(pullRequest, remote);
+    await this.clearStaleSessionError(pullRequest.sessionId);
   }
 
   /**
@@ -428,6 +437,52 @@ export class BuilderPullRequestService {
    * Nothing outstanding, because a clean mergeable state says nothing about a
    * finding a fix run has not finished with — the diff is about to change.
    */
+  /**
+   * Drop a session-level error that the pull requests have since disproved.
+   *
+   * `settleRun` writes a failed run's error onto the run AND onto the session,
+   * and only a new dispatch clears the session copy. That is fine while runs
+   * keep coming. It is not fine when they cannot: a session that is over budget,
+   * or parked on a question, or blocked on a dead credential, has no next
+   * dispatch — so the banner stays forever.
+   *
+   * Which would be merely untidy if the text were vague. It is not. The gate
+   * error says "nothing proves the change works", and it sits above pull
+   * requests whose every required check is green. The page is telling the
+   * reader the opposite of what the evidence says, and pointing at the wrong
+   * thing to go and fix.
+   *
+   * So the claim is re-tested against the evidence rather than left standing:
+   * every open pull request green, nothing actionable outstanding, and the
+   * session's headline error has been overtaken by events.
+   *
+   * Only the error. The status is a separate question — a parked run or a spent
+   * budget still means this session is not finished, and saying otherwise would
+   * trade one false statement for another.
+   */
+  private async clearStaleSessionError(sessionId: string): Promise<void> {
+    const session = await this.sessionRepository.findOne({
+      where: { id: sessionId },
+    });
+    if (!session?.error) return;
+
+    const pullRequests = await this.repository.listBySession(sessionId);
+    const live = pullRequests.filter(
+      (row) => !row.merged && row.state !== 'closed',
+    );
+    if (!live.length) return;
+    if (!live.every((row) => row.ciStatus === 'success')) return;
+
+    for (const row of live) {
+      if (await this.feedbackRepository.countActionable(row.id)) return;
+    }
+
+    await this.sessionRepository.update({ id: sessionId }, { error: null });
+    this.logger.info(
+      `Cleared a stale error on session ${sessionId}: every open pull request is green.`,
+    );
+  }
+
   private async considerMergePrompt(
     pullRequest: BuilderPullRequest,
     remote: { state: string; merged: boolean; mergeableState: string | null },
@@ -694,8 +749,15 @@ export class BuilderPullRequestService {
   ): Promise<void> {
     if (remote.mergeableState !== 'behind' || !remote.headSha) return;
 
+    // Deliberately not gated on `autoFixEnabled`. Bringing a branch up to date
+    // with master is bookkeeping, not a fix: no agent, no model, no runner, one
+    // GitHub API call. `autoFixEnabled` is the switch for spending money on
+    // runs, and tying this to it meant that turning off expensive work also
+    // turned off the free work — leaving green, approved pull requests stuck at
+    // `behind`, which is not `clean`, which is what the merge prompt waits for.
+    // So the loop went quiet with nothing to show and nothing to click.
     const settings = await this.settingsService.get();
-    if (!settings.enabled || !settings.autoFixEnabled) return;
+    if (!settings.enabled) return;
 
     const author = await this.github.getCommitAuthor(
       pullRequest.repo,
@@ -861,28 +923,102 @@ export class BuilderPullRequestService {
    * It never forces. The approval is an ordinary review: every other required
    * check still has to pass, and a human can dismiss it like any other.
    */
+  /**
+   * Does the review we already have still cover this head?
+   *
+   * Both repos protect master with `dismiss_stale_reviews` AND
+   * `strict_up_to_date`, which between them form a closed loop: a pull request
+   * must be current with master to merge, bringing it current pushes a commit,
+   * and that commit dismisses the approval. Re-approving needs a review of the
+   * new head, the per-PR review cap refuses one after two, and the pull request
+   * is then stuck for good — green, reviewed, unapprovable, unmergeable.
+   *
+   * It is broken by looking at what the new commit actually is. An update-branch
+   * merge is authored by us and has the reviewed head as its FIRST parent: the
+   * pull request's own commits are unchanged and only master moved underneath
+   * them. The review verdict still describes the work, so it carries forward.
+   *
+   * First parent specifically, not "any parent". On a merge commit the first
+   * parent is the branch being merged INTO — our reviewed head — and the second
+   * is master. Accepting either would also accept the reverse merge, which is a
+   * different commit with different contents.
+   *
+   * What this does not assume is that the result still works: approval requires
+   * a green rollup on the new head regardless, so a semantic conflict dragged in
+   * from master is caught by CI before anything is approved.
+   */
+  private async reviewSurvivedOurOwnUpdate(
+    pullRequest: BuilderPullRequest,
+    headSha: string,
+  ): Promise<boolean> {
+    const head = await this.github.getCommitAuthor(pullRequest.repo, headSha);
+    // Two parents is what makes it a merge; anything else is real work. A
+    // missing `parents` is treated as "cannot tell", which refuses — the same
+    // judgement the branch-update guard makes about an unreadable author.
+    if (!head?.parents || head.parents.length !== 2) return false;
+    if (head.parents[0] !== pullRequest.reviewedSha) return false;
+    if (!this.isOwnActor(head.login ?? head.name ?? '')) return false;
+
+    this.logger.info(
+      `Carrying the review of ${pullRequest.repo}#${pullRequest.prNumber} across our own branch update.`,
+    );
+    await this.repository.update(
+      { id: pullRequest.id },
+      { reviewedSha: headSha },
+    );
+    pullRequest.reviewedSha = headSha;
+    return true;
+  }
+
   private async considerApproval(
     pullRequest: BuilderPullRequest,
+    known?: { remote: PullRequestInfo | null; rollup: CheckRollup | null },
   ): Promise<void> {
     const settings = await this.settingsService.get();
     if (!settings.enabled || !settings.autoApproveEnabled) return;
+
+    // The approve call posts a new review every time it is made, and this now
+    // runs on a tick rather than once per review, so the stamp is what keeps a
+    // pull request from collecting one approval every few minutes. Checked
+    // against the sha we last saw, before any network call, so the ordinary
+    // tick over an already-approved pull request costs nothing.
+    if (
+      pullRequest.approvedSha &&
+      pullRequest.approvedSha === pullRequest.headSha
+    )
+      return;
+
+    // Never approve a commit nobody read. `considerApproval` used to be
+    // reachable only from a review that had just finished, which made this
+    // implicit; on the reconcile path it has to be said.
+    if (!pullRequest.reviewedSha) return;
 
     const outstanding = await this.feedbackRepository.countActionable(
       pullRequest.id,
     );
     if (outstanding) return;
 
-    const remote = await this.github.getPullRequest(
-      pullRequest.repo,
-      pullRequest.prNumber,
-    );
+    // The reconcile pass has already fetched both of these for this tick.
+    // Re-fetching would double this service's GitHub traffic for every open
+    // pull request, to learn what the caller already knows.
+    const remote =
+      known?.remote ??
+      (await this.github.getPullRequest(
+        pullRequest.repo,
+        pullRequest.prNumber,
+      ));
     if (!remote || remote.state !== 'open' || remote.merged) return;
     if (!remote.headSha) return;
+    if (pullRequest.approvedSha === remote.headSha) return;
+    if (
+      pullRequest.reviewedSha !== remote.headSha &&
+      !(await this.reviewSurvivedOurOwnUpdate(pullRequest, remote.headSha))
+    )
+      return;
 
-    const rollup = await this.github.getCheckRollup(
-      pullRequest.repo,
-      remote.headSha,
-    );
+    const rollup =
+      known?.rollup ??
+      (await this.github.getCheckRollup(pullRequest.repo, remote.headSha));
     if (rollup?.state !== 'success') {
       this.logger.info(
         `Not approving ${pullRequest.repo}#${pullRequest.prNumber}: checks are ${rollup?.state ?? 'unknown'}.`,
@@ -906,6 +1042,10 @@ export class BuilderPullRequestService {
     );
 
     if (approved) {
+      await this.repository.update(
+        { id: pullRequest.id },
+        { approvedSha: remote.headSha },
+      );
       this.logger.info(
         `[BUILDER] Approved ${pullRequest.repo}#${pullRequest.prNumber} on a clean review.`,
       );

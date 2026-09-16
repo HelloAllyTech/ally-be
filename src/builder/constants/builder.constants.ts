@@ -345,7 +345,25 @@ export const BUILDER_ANNOUNCED_KINDS: BuilderNotificationKind[] = [
   // waiting on your click" is not news at all — it is the work itself, with the
   // control attached. A message someone acts on is not what mutes a channel.
   BuilderNotificationKind.PR_READY_TO_MERGE,
+  BuilderNotificationKind.AUTOMATION_PAUSED,
 ];
+
+/**
+ * Consecutive failed runs before a session stops dispatching automatic ones.
+ *
+ * The per-PR ceilings — two reviews, three fixes — bound each loop separately,
+ * and on 2026-09-16 that still let one session burn eight runs: a review that
+ * 500'd on a database error, a fix run sent at feedback that was Builder's own
+ * approval, another review, another fix. Every one of those ceilings was
+ * respected. None of them noticed that nothing had succeeded since the build.
+ *
+ * Two, not three: by the second consecutive failure the loop has already
+ * demonstrated it is not converging, and the third attempt is the one that
+ * reads as not caring. A human retry is not blocked by this — a person looking
+ * at the failures and choosing to try again is exactly the judgement the
+ * breaker exists to wait for.
+ */
+export const BUILDER_CONSECUTIVE_FAILURE_LIMIT = 2;
 
 /* ── Lane A evidence lookups ─────────────────────────────────────────────── */
 
