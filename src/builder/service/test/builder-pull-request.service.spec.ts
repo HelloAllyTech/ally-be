@@ -1433,4 +1433,79 @@ describe('BuilderPullRequestService', () => {
       );
     });
   });
+
+  /**
+   * Whose pushes are Builder's own.
+   *
+   * One predicate decides two things — whose comments are not feedback to
+   * itself, and whose commits it may act on top of — and it was wrong in
+   * production for both. It matched `ally-builder*` while every runner pushes
+   * as `adminbughunterhelloallyai`, so Builder read its own branches as
+   * somebody else's: it never brought a stale branch up to date, and it filed
+   * its own failing checks as OBSERVED, which `countPending` ignores, so the
+   * fix loop never fired on its own red CI.
+   */
+  describe('recognising its own pushes', () => {
+    beforeEach(() => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        autoFixEnabled: true,
+        maxFixRunsPerPr: 3,
+      });
+    });
+
+    it('treats the account runners actually push as its own', async () => {
+      github.getCommitAuthor.mockResolvedValue({
+        login: 'adminbughunterhelloallyai',
+        name: 'adminbughunterhelloallyai',
+      });
+
+      await reconcileWith({ headSha: 'abc1234def', mergeableState: 'behind' });
+
+      expect(github.updatePullRequestBranch).toHaveBeenCalled();
+    });
+
+    it('still treats a GitHub App as its own', async () => {
+      github.getCommitAuthor.mockResolvedValue({
+        login: 'some-app[bot]',
+        name: 'Some App',
+      });
+
+      await reconcileWith({ headSha: 'abc1234def', mergeableState: 'behind' });
+
+      expect(github.updatePullRequestBranch).toHaveBeenCalled();
+    });
+
+    /**
+     * Exact match, not a prefix: a person called `ally-builder-reviews` must
+     * not quietly gain the right to have their pushes merged over.
+     */
+    it('does not claim a person whose name merely starts the same way', async () => {
+      github.getCommitAuthor.mockResolvedValue({
+        login: 'ally-builder-reviews',
+        name: 'A Person',
+      });
+
+      await reconcileWith({ headSha: 'abc1234def', mergeableState: 'behind' });
+
+      expect(github.updatePullRequestBranch).not.toHaveBeenCalled();
+    });
+
+    /** The other half of the same predicate: its own red CI is its to fix. */
+    it('files its own failing check as pending work', async () => {
+      github.getCommitAuthor.mockResolvedValue({
+        login: 'adminbughunterhelloallyai',
+        name: 'adminbughunterhelloallyai',
+      });
+
+      await reconcileWith({ headSha: 'abc1234def' }, openPr(), {
+        state: 'failure',
+        failed: ['Jest'],
+      });
+
+      expect(feedbackRepository.upsertIfNew).toHaveBeenCalledWith(
+        expect.objectContaining({ status: BuilderPrFeedbackStatus.PENDING }),
+      );
+    });
+  });
 });

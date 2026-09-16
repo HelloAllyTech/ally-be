@@ -112,6 +112,9 @@ jobs:
       - name: Engine loop dry run
         run: bash scripts/builder/test/loop-dryrun.sh
 
+      - name: Docs-map check
+        run: bash scripts/builder/test/docs-map.test.sh
+
   lint:
     name: Lint & format
     runs-on: ubuntu-22.04
