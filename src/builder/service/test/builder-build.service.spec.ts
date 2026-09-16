@@ -51,6 +51,7 @@ describe('BuilderBuildService', () => {
     listActive: jest.Mock;
     nextSequence: jest.Mock;
     count: jest.Mock;
+    listRecent: jest.Mock;
   };
   let eventRepository: { listByRun: jest.Mock; latestOfType: jest.Mock };
   let pullRequestRepository: { increment: jest.Mock; findOne: jest.Mock };
@@ -61,6 +62,8 @@ describe('BuilderBuildService', () => {
     buildFailed: jest.Mock;
     budgetReached: jest.Mock;
     budgetHold: jest.Mock;
+    automationPaused: jest.Mock;
+    fixRunStarted: jest.Mock;
   };
   let eventService: { record: jest.Mock };
   let redisService: { acquireLock: jest.Mock; releaseLock: jest.Mock };
