@@ -52,7 +52,10 @@ export class VoicePreviewService {
         params.config,
         effectiveLanguageCode,
       );
-      const audioBuffer = await provider.generatePreview(text);
+      const audioBuffer = await provider.generatePreview(
+        text,
+        effectiveLanguageCode,
+      );
       return { audioBuffer, provider: params.provider };
     } catch (error) {
       if (error instanceof HttpException) {
