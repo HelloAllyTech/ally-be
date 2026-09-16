@@ -662,12 +662,58 @@ export class BuilderBuildService {
         run.status === BuilderRunStatus.FAILED ||
         run.status === BuilderRunStatus.TIMED_OUT
       ) {
+        // A run can fail at the protocol and still succeed at the work. Run 9
+        // of session 34d68cd2 fixed a migration collision, pushed it, went
+        // green — then ended its turn without calling `complete`, and the
+        // outcome gate correctly recorded a failure. Counting that as
+        // "nothing is converging" stopped automatic work on a session whose
+        // pull request was, at that moment, finished.
+        //
+        // Judged on evidence rather than on the error text: the run changed
+        // files AND the session's open pull requests are green. Prose can be
+        // anything; a green check on pushed code cannot be faked, and a loop
+        // that is genuinely diverging will not produce one.
+        if (await this.failureLandedWorkingCode(run)) break;
         count += 1;
         continue;
       }
       break;
     }
     return count;
+  }
+
+  /**
+   * Did this failed run leave working code behind?
+   *
+   * Both halves are required. Files changed, so it did something — a run that
+   * edited nothing and failed is the non-converging shape the breaker exists
+   * for. And the session's open pull requests are green, so what it did works.
+   * Either alone would be too generous: edits with red CI is exactly a fix
+   * loop making things worse, and green CI with no edits is just the previous
+   * run's success being credited twice.
+   */
+  /**
+   * Is anything still in flight for this session?
+   *
+   * Exposed for the reconcile pass, which needs to know whether a session that
+   * ended badly has genuinely stopped before it rewrites the verdict.
+   */
+  async hasBlockingRuns(sessionId: string): Promise<boolean> {
+    return (await this.runRepository.countBlockingRuns(sessionId)) > 0;
+  }
+
+  private async failureLandedWorkingCode(
+    run: BuilderBuildRun,
+  ): Promise<boolean> {
+    if (await this.touchedNoFiles(run.id)) return false;
+
+    const pullRequests = await this.pullRequestRepository.find({
+      where: { sessionId: run.sessionId },
+    });
+    const open = pullRequests.filter(
+      (row) => !row.merged && row.state !== 'closed',
+    );
+    return open.length > 0 && open.every((row) => row.ciStatus === 'success');
   }
 
   /**
@@ -682,8 +728,16 @@ export class BuilderBuildService {
       `[BUILDER] Automatic runs paused for session ${session.id}: ${failures} consecutive failures.`,
     );
     // Announced once per trip rather than per refused dispatch — the point is
-    // that the loop stopped, not that it stopped again.
-    await this.notificationService.automationPaused(session, failures);
+    // that the loop stopped, not that it stopped again. The newest run's
+    // timestamp is the trip's identity: an announcement newer than it has
+    // already covered this one, and a further failure moves it forward and
+    // earns a fresh word.
+    const latest = await this.runRepository.findLatest(session.id);
+    await this.notificationService.automationPaused(
+      session,
+      failures,
+      latest?.createdAt ?? null,
+    );
     return true;
   }
 
@@ -705,17 +759,19 @@ export class BuilderBuildService {
     if (await this.breakerTripped(session)) return null;
 
     // Two runners on one branch is a merge conflict Builder created for
-    // itself, so an in-flight run of any kind blocks a fix.
-    const active = await this.runRepository.count({
-      where: {
-        sessionId: session.id,
-        status: In([
-          ...BUILDER_RUN_ACTIVE_STATUSES,
-          BuilderRunStatus.WAITING_FOR_INPUT,
-        ]),
-      },
-    });
-    if (active) return null;
+    // itself, so an in-flight run of any kind blocks a fix. A run parked on a
+    // question counts only until its resume exists — see countBlockingRuns.
+    //
+    // Logged rather than returned in silence. This refusal used to be the one
+    // guard here that said nothing at all, which made a wedged session
+    // indistinguishable from a healthy idle one: the tick ran, reported
+    // "Completed", and nothing dispatched, for hours.
+    if (await this.runRepository.countBlockingRuns(session.id)) {
+      this.logger.info(
+        `Skipping a fix run for ${pullRequest.repo}#${pullRequest.prNumber}: this session already has a run in flight or parked on a question.`,
+      );
+      return null;
+    }
 
     const settings = await this.settingsService.get();
     try {
@@ -807,16 +863,12 @@ export class BuilderBuildService {
     if (!session) return null;
     if (await this.breakerTripped(session)) return null;
 
-    const active = await this.runRepository.count({
-      where: {
-        sessionId: session.id,
-        status: In([
-          ...BUILDER_RUN_ACTIVE_STATUSES,
-          BuilderRunStatus.WAITING_FOR_INPUT,
-        ]),
-      },
-    });
-    if (active) return null;
+    if (await this.runRepository.countBlockingRuns(session.id)) {
+      this.logger.info(
+        `Skipping a review run for ${pullRequest.repo}#${pullRequest.prNumber}: this session already has a run in flight or parked on a question.`,
+      );
+      return null;
+    }
 
     const settings = await this.settingsService.get();
     try {

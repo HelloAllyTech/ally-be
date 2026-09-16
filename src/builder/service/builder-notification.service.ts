@@ -289,7 +289,35 @@ export class BuilderNotificationService {
    * rather than one run — and the silence that follows would otherwise look
    * exactly like a session quietly finishing.
    */
-  automationPaused(session: BuilderSession, failures: number): Promise<void> {
+  /**
+   * Said once per trip, not once per refused dispatch.
+   *
+   * The breaker is consulted on every reconcile tick, so an un-deduplicated
+   * announcement here is one Slack message every five minutes for as long as
+   * the session stays broken — which is indefinitely, since a tripped breaker
+   * is what stops the runs that would clear it. The comment at the call site
+   * always claimed this behaviour; it was never implemented, and the channel
+   * filled up.
+   *
+   * `since` is the newest run's timestamp. An announcement newer than that
+   * means this same trip has already been reported. A further failed run moves
+   * it forward and earns a fresh one — the situation genuinely changed.
+   */
+  async automationPaused(
+    session: BuilderSession,
+    failures: number,
+    since?: Date | null,
+  ): Promise<void> {
+    if (
+      since &&
+      (await this.repository.existsSince(
+        session.id,
+        BuilderNotificationKind.AUTOMATION_PAUSED,
+        since,
+      ))
+    ) {
+      return;
+    }
     return this.notify(
       session,
       BuilderNotificationKind.AUTOMATION_PAUSED,

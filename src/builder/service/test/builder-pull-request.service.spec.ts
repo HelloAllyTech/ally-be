@@ -1992,12 +1992,19 @@ describe('BuilderPullRequestService — clearing an error the PRs disproved', ()
     expect(sessionRepository.update).not.toHaveBeenCalled();
   });
 
-  it('does no work on a session that has no error', async () => {
-    sessionRepository.findOne.mockResolvedValue({ id: 's-1', error: null });
+  /**
+   * The method now reconciles the STATUS as well as the error, so a session
+   * with nothing wrong still gets looked at — it just must not be written to.
+   */
+  it('writes nothing to a session that has no error and has not failed', async () => {
+    sessionRepository.findOne.mockResolvedValue({
+      id: 's-1',
+      error: null,
+      status: 'COMPLETED',
+    });
 
     await service.clearStaleSessionError('s-1');
 
-    expect(repository.listBySession).not.toHaveBeenCalled();
     expect(sessionRepository.update).not.toHaveBeenCalled();
   });
 });

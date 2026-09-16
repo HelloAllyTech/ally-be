@@ -30,6 +30,8 @@ import { BuilderBuildService } from './builder-build.service';
 import {
   BuilderPrFeedbackKind,
   BuilderPrFeedbackStatus,
+  BuilderSessionStatus,
+  BuilderStage,
 } from '../enum/builder.enum';
 import { isBuilderRepo } from '../constants/builder-repos.constants';
 import {
@@ -402,6 +404,7 @@ export class BuilderPullRequestService {
     }
 
     await this.ingestFeedback(pullRequest, remote.headSha, rollup);
+    if (rollup?.state === 'success') await this.staleCiFeedback(pullRequest.id);
     await this.considerBranchUpdate(pullRequest, remote);
 
     // Review before fix, and only one of them per tick. A review run that
@@ -464,7 +467,7 @@ export class BuilderPullRequestService {
     const session = await this.sessionRepository.findOne({
       where: { id: sessionId },
     });
-    if (!session?.error) return;
+    if (!session) return;
 
     const pullRequests = await this.repository.listBySession(sessionId);
     const live = pullRequests.filter(
@@ -477,10 +480,77 @@ export class BuilderPullRequestService {
       if (await this.feedbackRepository.countActionable(row.id)) return;
     }
 
-    await this.sessionRepository.update({ id: sessionId }, { error: null });
-    this.logger.info(
-      `Cleared a stale error on session ${sessionId}: every open pull request is green.`,
+    if (session.error) {
+      await this.sessionRepository.update({ id: sessionId }, { error: null });
+      this.logger.info(
+        `Cleared a stale error on session ${sessionId}: every open pull request is green.`,
+      );
+    }
+
+    // And the status and stage, which are the same lie in a different place.
+    //
+    // A session's status is written from the fate of its last RUN. A run can
+    // fail at the protocol and still succeed at the work — push a fix, go
+    // green, then end its turn without reporting — and the page is then left
+    // saying FAILED above two mergeable pull requests, with a phase rail
+    // frozen wherever the agent stopped and a banner advising a retry that
+    // would redo finished work.
+    //
+    // `DONE` was reachable only through a successful run, so an outcome that
+    // arrived through a failed one could never be shown. It is reached here
+    // instead, from the evidence: every open pull request green, nothing
+    // actionable outstanding, and nothing still running.
+    if (session.status !== BuilderSessionStatus.FAILED) return;
+    if (await this.buildService.hasBlockingRuns(sessionId)) return;
+
+    await this.sessionRepository.update(
+      { id: sessionId },
+      {
+        status: BuilderSessionStatus.COMPLETED,
+        currentStage: BuilderStage.DONE,
+      },
     );
+    this.logger.info(
+      `[BUILDER] Session ${sessionId} settled COMPLETED: its run failed but every open pull request is green.`,
+    );
+  }
+
+  /**
+   * Retire CI failures that the current head has disproved.
+   *
+   * These rows are keyed `sha:check`, so a failure recorded against a commit
+   * that has since been superseded stays PENDING for ever. Three of them
+   * survived on ally-be#494 after the very fix that made it green — and
+   * pending feedback is what `considerFixRun` acts on, so the loop kept
+   * dispatching at a pull request with nothing wrong with it, and
+   * `considerReviewRun` kept standing down because it waits for feedback to
+   * settle first.
+   *
+   * Only called when the rollup is green, which is the whole argument: a check
+   * cannot be both failing and passing on the same head, so every CI complaint
+   * on this pull request is now about code that is no longer there.
+   */
+  private async staleCiFeedback(pullRequestId: string): Promise<void> {
+    const affected = await this.feedbackRepository.update(
+      {
+        pullRequestId,
+        kind: BuilderPrFeedbackKind.CI_FAILURE,
+        status: In([
+          BuilderPrFeedbackStatus.PENDING,
+          BuilderPrFeedbackStatus.IN_FIX,
+        ]),
+      },
+      { status: BuilderPrFeedbackStatus.STALE },
+    );
+    // Optional-chained: an update result is not guaranteed to carry a count,
+    // and throwing here would abort the rest of the tick — the reconcile pass
+    // catches per-pull-request, so a stray TypeError would silently cost the
+    // review and merge-prompt steps below it.
+    if (affected?.affected) {
+      this.logger.info(
+        `Retired ${affected.affected} CI failure(s) on ${pullRequestId}: checks are green on the current head.`,
+      );
+    }
   }
 
   private async considerMergePrompt(

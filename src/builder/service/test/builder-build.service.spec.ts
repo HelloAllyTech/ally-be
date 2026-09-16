@@ -52,6 +52,8 @@ describe('BuilderBuildService', () => {
     nextSequence: jest.Mock;
     count: jest.Mock;
     listRecent: jest.Mock;
+    countBlockingRuns: jest.Mock;
+    findLatest: jest.Mock;
   };
   let eventRepository: { listByRun: jest.Mock; latestOfType: jest.Mock };
   let pullRequestRepository: { increment: jest.Mock; findOne: jest.Mock };
@@ -100,6 +102,10 @@ describe('BuilderBuildService', () => {
       nextSequence: jest.fn().mockResolvedValue(1),
       count: jest.fn().mockResolvedValue(0),
       listRecent: jest.fn().mockResolvedValue([]),
+      // Nothing in flight by default. A parked run stops blocking once its
+      // resume exists, so this is a query rather than a status filter.
+      countBlockingRuns: jest.fn().mockResolvedValue(0),
+      findLatest: jest.fn().mockResolvedValue(null),
     };
     eventRepository = {
       listByRun: jest.fn().mockResolvedValue([]),
