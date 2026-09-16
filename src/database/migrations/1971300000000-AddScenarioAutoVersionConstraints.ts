@@ -10,8 +10,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * 2. An index supporting the candidate query the job runs against `scenarios`
  *    (status + updatedAt), so the daily scan isn't a full table scan.
  */
-export class AddScenarioAutoVersionConstraints1970900000000 implements MigrationInterface {
-  name = 'AddScenarioAutoVersionConstraints1970900000000';
+export class AddScenarioAutoVersionConstraints1971300000000 implements MigrationInterface {
+  name = 'AddScenarioAutoVersionConstraints1971300000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(
