@@ -45,6 +45,28 @@ API="${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}"
 # where it could be installed. See agent-helpers/README.md.
 export PATH="${HERE}/agent-helpers:${PATH}"
 
+# ...and the values those commands need, in a file rather than the environment.
+#
+# PATH reaches the agent's shell; the job's own variables do not necessarily.
+# Gemini's shell tool passes one and not the other, so the helpers were found,
+# ran, and exited on a missing ALLY_BE_API_URL — every single call, silently,
+# because telemetry may not fail a build. Writing them down is the only channel
+# that does not depend on another process choosing to forward something.
+#
+# 600 and umask-independent: it carries the API key, and the runner is shared
+# with an agent that will run any command it likes.
+BUILDER_HELPER_ENV=/tmp/builder-helper-env
+export BUILDER_HELPER_ENV
+(
+  umask 077
+  cat > "$BUILDER_HELPER_ENV" <<ENVEOF
+ALLY_BE_API_URL='${ALLY_BE_API_URL}'
+BUILDER_RUN_ID='${BUILDER_RUN_ID}'
+ALLY_BE_API_KEY='${ALLY_BE_API_KEY}'
+ENVEOF
+)
+chmod 600 "$BUILDER_HELPER_ENV"
+
 # Model per tier, from the single `models` workflow input. ally-be always
 # supplies all three; the fallbacks only cover a hand-run workflow.
 MODELS_JSON="${BUILDER_MODELS:-{\}}"
