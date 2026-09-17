@@ -97,6 +97,18 @@ describe('the coder prompt', () => {
     expect(prompt).toContain('Never let two subagents hold the same file');
   });
 
+  /**
+   * The coding phase is told to re-run the specs it just wrote. Until the
+   * table carried a one-file command there was no way to, and a build spent
+   * twenty minutes inventing one against a runner that accepts a path and then
+   * ignores it.
+   */
+  it('gives the agent a command that runs one test file', () => {
+    const prompt = flat(render());
+    expect(prompt).toMatch(/one file: .*<path>/);
+    expect(prompt).toContain('Do not improvise a way to narrow the suite');
+  });
+
   it('still carries the pause contract', () => {
     // Pause-is-exit-0 is load-bearing across the whole pipeline; the phase
     // split must not have dropped it.

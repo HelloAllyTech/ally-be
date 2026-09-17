@@ -237,6 +237,9 @@ export const renderRepoCommands = (repos: BuilderRepoDefinition[]): string =>
       (repo) =>
         `- **${repo.repo}** (\`repos/${repo.repo}\`) — ${repo.description}\n` +
         `  - test: \`${repo.test}\`\n` +
+        (repo.singleTest
+          ? `  - one file: \`${repo.singleTest} <path>\`\n`
+          : '') +
         `  - lint: \`${repo.lint}\`\n` +
         `  - typecheck: ${repo.typecheck ? `\`${repo.typecheck}\`` : '(covered by test/build)'}\n` +
         `  - guarded paths: ${repo.guardedPaths.join(', ') || '(none)'}`,
@@ -374,10 +377,14 @@ For every repo you touched, in this order:
 
 1. Its **typecheck** and **lint** commands from the table above. Both are fast
    and both are hard gates later, so there is no reason to defer them.
-2. The specs you wrote or edited, by path.
+2. The specs you wrote or edited, using the **one file** command from the table
+   above — that is the invocation that actually works in that repo. Do not
+   improvise a way to narrow the suite: a repo's runner may accept a path and
+   then ignore it, and finding that out costs turns nobody gets back.
 3. The **blast radius**: grep for other callers of every symbol whose signature
-   or behaviour you changed, and run their suites — by path, or with the
-   affected-only command from the table (\`affectedTest\`) where the repo has one.
+   or behaviour you changed, and run their suites — with the same one-file
+   command, or the affected-only one from the table (\`affectedTest\`) where the
+   repo has one.
    Most regressions this agent could cause are here, not in the code you were
    looking at.
 
