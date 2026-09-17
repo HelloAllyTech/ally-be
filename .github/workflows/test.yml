@@ -51,8 +51,6 @@ jobs:
         with:
           node-version: "24"
           cache: "npm"
-          # Dummy comment to trigger cache invalidation
-
 
       - name: Install dependencies
         run: npm ci

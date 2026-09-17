@@ -69,8 +69,6 @@ import { BugHunterModelSettingsDto } from '../dto/bug-hunter.dto';
 @UseGuards(ApiAuthGuard)
 @ApiSecurity('api-key')
 export class BugHunterPipelineController {
-  // Dummy comment to trigger CI
-
   constructor(
     private readonly bugHunterService: BugHunterService,
     private readonly bugFindingService: BugFindingService,
