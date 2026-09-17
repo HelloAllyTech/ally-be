@@ -20,19 +20,43 @@
 # when the POST never landed is recorded as a run that ended without reporting
 # — which is a failure even when the work pushed cleanly, and counts against
 # the session's circuit breaker.
+#
+# ## Plain words, not JSON
+#
+#   complete-run done
+#   complete-run failed "the gate stayed red after four attempts"
+#
+# The JSON form still works, because older prompts and Claude Code runs use it.
+# But it must not be the only form: an agent's shell tool decides what it is
+# willing to run, and Gemini's refuses a quoted JSON literal outright —
+# `Command rejected because it could not be parsed safely`. A run that had
+# planned, coded, passed the gate AND passed the reviewer then could not say so,
+# because the only way we offered it to report an outcome was a string its own
+# tooling would not pass through.
+#
+# Asking an agent to compose shell is asking it to satisfy a parser we do not
+# control. Two words satisfy every parser.
 set -uo pipefail
 . "$(dirname "$0")/_common.sh"
-[ $# -eq 1 ] && [ -n "${1:-}" ] || usage "complete-run '{\"outcome\":\"done\"}'"
+[ $# -ge 1 ] && [ -n "${1:-}" ] || usage "complete-run done | complete-run failed \"reason\""
 
-printf '%s' "$1" | jq -e '.outcome == "done" or .outcome == "failed"' >/dev/null 2>&1 || {
-  echo "complete-run: outcome must be \"done\" or \"failed\". Got: $1" >&2
-  exit 2
-}
+case "$1" in
+  done)   body='{"outcome":"done"}' ;;
+  failed) body="$(jq -nc --arg e "${2:-The run reported a failure without a reason.}" '{outcome:"failed", error:$e}')" ;;
+  *)
+    # The JSON form, kept for compatibility.
+    body="$1"
+    printf '%s' "$body" | jq -e '.outcome == "done" or .outcome == "failed"' >/dev/null 2>&1 || {
+      echo "complete-run: say 'done', or 'failed \"<reason>\"'. Got: $1" >&2
+      exit 2
+    }
+    ;;
+esac
 
 for attempt in 1 2 3; do
   code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "${API}/complete" \
     -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
-    -d "$1" 2>/dev/null || echo 000)"
+    -d "$body" 2>/dev/null || echo 000)"
   case "$code" in
     2*) echo "Outcome recorded."; exit 0 ;;
   esac

@@ -941,6 +941,21 @@ for dir in repos/*/; do
     > "/tmp/builder-docs-map-${repo}.txt" 2>/dev/null || true
   echo "docs-map ${repo}: $(head -3 "/tmp/builder-docs-map-${repo}.txt" | tr '\n' ' ')"
 done
+
+# Whether this runner may push to the wiki — a lookup, not a judgement.
+#
+# The agent used to be told to run `gh api … --jq '.permissions.push'` and
+# interpret the answer, which is a composed command with a quoted jq filter and
+# a branch in the protocol hanging off it. Same answer every run for a given
+# token, and `gh` is right here. Failing closed: an unreadable answer means
+# read-only, because the consequence of getting this wrong is wiki-pr.sh
+# forking the repository into whoever the token belongs to.
+if [ "$(gh api repos/helloallytech/helloallytech.github.io --jq '.permissions.push' 2>/dev/null)" = "true" ]; then
+  echo writable > /tmp/builder-wiki-access.txt
+else
+  echo read-only > /tmp/builder-wiki-access.txt
+fi
+echo "wiki access: $(cat /tmp/builder-wiki-access.txt)"
 if ! fetch_prompt "finalise-prompt" /tmp/builder-finalise-prompt.txt; then
   echo "Could not fetch the finalise prompt." >&2
   exit 1
@@ -974,6 +989,109 @@ exit_if_paused "finalising"
 # or finalise agent that committed and stopped leaves the work only on a runner
 # that is about to be destroyed. Mechanical, no judgement, so the runner does it.
 save_work_in_progress "finalise"
+
+# ── Opening the pull requests ───────────────────────────────────────────────
+#
+# The runner opens them. The agent writes the body to a file and nothing else.
+#
+# `gh pr create --title "…" --body "…"` is the hardest shell command in the
+# whole protocol: a title and a multi-line body, quoted, usually assembled with
+# a heredoc or a command substitution. It is also the one command whose failure
+# costs the entire run — a build that planned, coded, passed the gate and
+# passed the independent reviewer produces nothing a person can merge if this
+# one line does not run.
+#
+# And it did not run. Gemini's shell tool refused `gh pr create --title \`,
+# `PR_BODY=$(cat <<'EOF'` and every other form the agent tried, thirty commands
+# in all, with `Command rejected because it could not be parsed safely`. The
+# work was correct, tested, reviewed and pushed, and it sat on a branch with no
+# pull request because the agent could not satisfy a parser we do not control
+# and cannot change.
+#
+# So the agent writes /tmp/builder-pr-<repo>.md — first line the title, the
+# rest the body — with the same `write_file` tool it uses for code, and the
+# runner does the rest. No quoting, no parser, no composition.
+# The `Wiki-PR:` trailer, and the ordering it depends on.
+#
+# `wiki-pr.sh` needs the code PR's URL, so the trailer can only be written
+# after the PR exists — create, then wiki PR, then edit the body. That is a
+# fixed procedure, not a judgement, and it used to be four steps of composed
+# shell in the prompt: a `gh api … --jq` permission check, a script invocation
+# with an interpolated URL, and a `gh pr edit --body` carrying the whole body
+# again. Every one of those is a command an agent's shell tool can refuse.
+#
+# Every pull request gets a trailer either way. "none — <why>" is a hand-over,
+# not a dismissal.
+attach_wiki_trailer() {
+  local dir="$1" repo="$2" url="$3" trailer="" wiki_changed=""
+
+  if [ -d .wiki-tmp ]; then
+    wiki_changed="$(git -C .wiki-tmp status --porcelain 2>/dev/null | head -1)"
+  fi
+
+  if [ -z "$wiki_changed" ]; then
+    trailer="Wiki-PR: none — no wiki page needed changing for this diff."
+  elif [ "$(cat /tmp/builder-wiki-access.txt 2>/dev/null)" != "writable" ]; then
+    # Deliberately not attempted: wiki-pr.sh forks the repo when it cannot
+    # push, which would create a repository in the token owner's account.
+    trailer="Wiki-PR: none — this runner has no push access to the wiki; the edited page under .wiki-tmp/wiki still needs opening by a person."
+  else
+    trailer="$( (cd "$dir" && ../../.wiki-tmp/scripts/wiki-pr.sh "$url" 2>/dev/null) \
+      | grep -m1 '^Wiki-PR:' || true)"
+    [ -n "$trailer" ] || trailer="Wiki-PR: none — wiki-pr.sh did not complete; the edited page under .wiki-tmp/wiki still needs opening by a person."
+  fi
+
+  printf '\n\n%s\n' "$trailer" >> "/tmp/builder-pr-body-${repo}.md"
+  gh pr edit "$url" --body-file "/tmp/builder-pr-body-${repo}.md" >/dev/null 2>&1 \
+    && echo "${repo}: ${trailer}" \
+    || echo "${repo}: could not attach the wiki trailer." >&2
+}
+
+open_pull_requests() {
+  local title body_file repo branch existing
+  for dir in repos/*/; do
+    [ -d "$dir/.git" ] || continue
+    repo="$(basename "$dir")"
+    branch="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null || echo '')"
+    [ -n "$branch" ] || continue
+
+    # Nothing to propose.
+    git -C "$dir" diff --quiet master...HEAD 2>/dev/null && continue
+
+    # Already open — a resume, or an agent that got there first.
+    # Counted with jq rather than `gh --jq`, like every other GitHub read in
+    # this file. One less thing to be wrong about, and a non-numeric answer
+    # (an error, an empty body) reads as "cannot tell" rather than "there is
+    # one" — which would silently skip opening the pull request.
+    existing="$(gh pr list --repo "${GITHUB_REPOSITORY_OWNER:-}/${repo}" \
+      --head "$branch" --state open --limit 1 --json number 2>/dev/null \
+      | jq -r 'length' 2>/dev/null || echo 0)"
+    case "$existing" in '' | *[!0-9]*) existing=0 ;; esac
+    [ "$existing" -eq 0 ] || { echo "${repo}: pull request already open"; continue; }
+
+    body_file="/tmp/builder-pr-${repo}.md"
+    if [ ! -s "$body_file" ]; then
+      echo "${repo}: no /tmp/builder-pr-${repo}.md — cannot open a pull request." >&2
+      continue
+    fi
+
+    # First line is the title; the body is everything after it.
+    title="$(head -1 "$body_file" | sed 's/^#\{1,\} *//')"
+    tail -n +2 "$body_file" > "/tmp/builder-pr-body-${repo}.md"
+
+    local url
+    if url="$(gh pr create --repo "${GITHUB_REPOSITORY_OWNER:-}/${repo}" \
+      --base master --head "$branch" \
+      --title "$title" --body-file "/tmp/builder-pr-body-${repo}.md" 2>/dev/null)"; then
+      echo "${repo}: opened $url"
+      attach_wiki_trailer "$dir" "$repo" "$url"
+    else
+      echo "${repo}: could not open a pull request on ${branch}." >&2
+    fi
+  done
+}
+
+open_pull_requests
 
 echo "::group::pull requests"
 node -e 'process.stdout.write(JSON.stringify({pullRequests: []}))' > /tmp/builder-prs.json

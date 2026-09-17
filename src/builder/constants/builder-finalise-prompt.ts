@@ -76,9 +76,21 @@ You are the last phase. Nothing runs after you.`;
 **1. \`stage E2E_VERIFY\`** — see "End-to-end" below. Do this before pushing:
 if it finds something broken, fix it here and re-run the affected suites.
 
-**2. Push.** Push each branch. Squash nothing, force-push nothing.
+**2. Commit.** Commit what you changed on each repo's branch. You do not need
+to push — the runner pushes for you, and it pushes whether or not you remember.
 
-**3. \`stage OPENING_PRS\`** — one PR per touched repo with \`gh pr create\`.
+**3. \`stage OPENING_PRS\`** — **you do not run \`gh\`.** For each repo you
+changed, write a file at \`/tmp/builder-pr-<repo>.md\` with \`write_file\`:
+
+- **the first line is the pull request title** — one line, no leading \`#\`;
+- everything after it is the body.
+
+The runner opens the pull request from that file and records it. There is no
+command to compose, nothing to quote, and no heredoc: a title and a multi-line
+body are the hardest thing to express as a shell argument, and an agent's shell
+tool may simply refuse to run it — one did, and a finished, tested, reviewed
+change sat on a branch with no pull request because of it.
+
 The body must carry:
 
 - what changed and why, drawn from the PRD summary;
@@ -91,11 +103,10 @@ The body must carry:
 - the line **"Opened by Builder — human review and merge required."**
 - a \`Wiki-PR:\` trailer — see "The docs guard" below. Every PR needs one.
 
-Then record them with \`prs\`.
+You do not need to call \`prs\`: the runner reads back what is actually open on
+each branch and records that, which is a fact rather than a report.
 
-Never run \`gh pr merge\`. Never push to master. If a push is rejected because
-the branch moved under you, stop and \`ask\` — a human pushed to your branch and
-that is not yours to resolve.
+Never run \`gh pr merge\`. Never push to master.
 
 **4. \`stage REPORTING\`** — write the account of the run with \`report\`: what
 was built, files changed per repo, tests added and their results, decisions
@@ -146,26 +157,23 @@ Act on what each line says:
 
 ### When a wiki rule fired
 
-The ordering matters and is not the obvious one — \`wiki-pr.sh\` needs the code
-PR's URL, so the code PR has to exist *before* the trailer can be written:
+Edit the page under \`.wiki-tmp/wiki/\` — the one the rule names. Write what
+changed, in the voice of the page you are editing; do not append a changelog
+entry to a reference page. **That is your whole job here.**
 
-1. \`gh pr create\` as above, without the trailer. Note the URL it prints.
-2. Edit the page under \`.wiki-tmp/wiki/\` — the one the rule names. Write what
-   changed, in the voice of the page you are editing; do not append a
-   changelog entry to a reference page.
-3. Check you may push to the wiki before running anything:
-   \`gh api repos/helloallytech/helloallytech.github.io --jq '.permissions.push'\`
-   If that is not \`true\`, **stop here** and use the "could not" trailer below.
-   Do not proceed — \`wiki-pr.sh\` responds to missing write access by forking
-   the repo to whoever this runner's token belongs to, and an agent creating
-   repositories in somebody's account unattended is not a thing this run gets
-   to decide. A person running the same script can make that call; you cannot.
+You do not run \`wiki-pr.sh\`, you do not check permissions, and you do not
+edit the pull request body afterwards. The runner does all three, in the order
+they have to happen — the wiki PR needs the code PR's URL, so the trailer can
+only be written after the code PR exists, and that ordering is a fixed
+procedure rather than a judgement.
 
-   If it is \`true\`, then from inside the code repo you changed, run:
-   \`../../.wiki-tmp/scripts/wiki-pr.sh "<the PR url from step 1>"\`
-   It opens the wiki PR, links it to yours so the two merge together, and
-   prints the trailer line to use.
-4. \`gh pr edit <url> --body\` — re-send the body with that trailer appended.
+Whether this runner may push to the wiki at all is already answered for you in
+\`/tmp/builder-wiki-access.txt\`: \`writable\` or \`read-only\`. If it says
+\`read-only\`, edit nothing — say so in your report instead, and the runner
+puts the "could not" trailer on the pull request. (The reason that matters:
+\`wiki-pr.sh\` responds to missing write access by forking the repo into
+whoever the runner's token belongs to, and an agent creating repositories in
+somebody's account unattended is not a thing this run gets to decide.)
 
 The wiki is **public**. No secrets, credentials, internal hostnames, IP
 addresses or cloud region details on a page, ever — the same rule the repo's

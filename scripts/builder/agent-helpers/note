@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
-# note <type> <text> — a free-text milestone (plan, test_output, verification…).
+# note <type> <text|file> — a free-text milestone (plan, test_output, …).
+#
+# A file is the better form for anything long or containing quotes, backticks,
+# newlines or apostrophes. An agent's shell tool decides what it will run, and
+# Gemini's rejects a long single-quoted string with an apostrophe in it as
+# unparseable — so a note about what the run did could not be sent at all, and
+# fragments of the prose got executed as commands when the quoting broke:
+#
+#   builder_attempts: command not found
+#
+# Write the text to a file and pass the path. No quoting, no parser to satisfy.
 set -uo pipefail
 . "$(dirname "$0")/_common.sh"
-[ $# -eq 2 ] || usage "note <type> <text>"
-post_json events "$(jq -nc --arg t "$1" --arg b "$2" '{events:[{type:$t,payload:{text:$b}}]}')" || true
+[ $# -eq 2 ] || usage "note <type> <text|file>"
+
+if [ -f "$2" ]; then
+  body="$(cat "$2")"
+else
+  body="$2"
+fi
+post_json events "$(jq -nc --arg t "$1" --arg b "$body" '{events:[{type:$t,payload:{text:$b}}]}')" || true

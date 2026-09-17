@@ -244,10 +244,32 @@ SHIM
 # could not be asked at all (say so and judge nothing).
 cat > "${WORK}/gh" <<'SHIM'
 #!/usr/bin/env bash
-case "${DRYRUN_GH:-found}" in
-  found) echo '[{"number":7,"url":"https://example.invalid/pr/7","title":"t"}]' ;;
-  none)  echo '[]' ;;
-  *)     echo "gh: not authenticated" >&2; exit 1 ;;
+# `gh pr create` is what the runner now does instead of the agent, so the stub
+# has to tell the subcommands apart rather than answering everything the same.
+sub="${1:-} ${2:-}"
+case "$sub" in
+  "pr create")
+    echo "gh-created" >> /tmp/builder-dryrun-gh.log
+    [ "${DRYRUN_GH_CREATE:-ok}" = "fail" ] && { echo "gh: refused" >&2; exit 1; }
+    echo "https://example.invalid/pr/7"
+    ;;
+  "pr edit") echo "gh-edited" >> /tmp/builder-dryrun-gh.log ;;
+  "pr list")
+    # A pull request this run just opened is open. Without this the stub would
+    # answer "none" immediately after its own create, and the orphan check —
+    # correctly — would report work that in reality has a pull request.
+    if [ -f /tmp/builder-dryrun-gh.log ] && grep -q gh-created /tmp/builder-dryrun-gh.log; then
+      echo '[{"number":7,"url":"https://example.invalid/pr/7","title":"t"}]'
+      exit 0
+    fi
+    case "${DRYRUN_GH:-found}" in
+      found) echo '[{"number":7,"url":"https://example.invalid/pr/7","title":"t"}]' ;;
+      none)  echo '[]' ;;
+      *)     echo "gh: not authenticated" >&2; exit 1 ;;
+    esac
+    ;;
+  "api "*|api*) echo "${DRYRUN_WIKI_PUSH:-false}" ;;
+  *) echo '[]' ;;
 esac
 SHIM
 chmod +x "${WORK}/gh"
@@ -279,6 +301,14 @@ run_scenario() {
 
   local log="${WORK}/${name}.log"
   : > "$log"
+
+  # The agent's half of opening a pull request: one file, first line the title.
+  rm -f /tmp/builder-pr-demo-repo.md /tmp/builder-dryrun-gh.log
+  for arg in "$@"; do
+    [ "$arg" = "DRYRUN_PR_BODY=1" ] || continue
+    printf 'Show the model per phase\n\nBody of the pull request.\n' \
+      > /tmp/builder-pr-demo-repo.md
+  done
 
   local budget_json="${DRYRUN_BUDGET:-}"
   [ -n "$budget_json" ] || budget_json='{"exceeded":false}'
@@ -469,6 +499,17 @@ fi
 # is the whole point: a branch carrying commits with no pull request on it is
 # work that passed the gate and the reviewer and then went nowhere.
 if [ "$SCENARIO" = all ] || [ "$SCENARIO" = prs ]; then
+  # The runner opens the pull request from the file the agent wrote. It used to
+  # be the agent's own `gh pr create` — the hardest command in the protocol to
+  # quote, and the one whose failure costs the whole run.
+  run_scenario prs-opened DRYRUN_GH=none DRYRUN_PR_BODY=1
+  check "opens the pull request itself" yes \
+    "$(grep -q gh-created /tmp/builder-dryrun-gh.log 2>/dev/null && echo yes || echo no)"
+  check "attaches a wiki trailer" yes \
+    "$(grep -q gh-edited /tmp/builder-dryrun-gh.log 2>/dev/null && echo yes || echo no)"
+  check "does not report an orphan it just opened" no \
+    "$(grep -q 'No pull request was opened for' "$LOG_FILE" && echo yes || echo no)"
+
   run_scenario prs-found DRYRUN_GH=found
   check "finishes the run" 0 "$EXIT_CODE"
   check "reported the pull request to ally-be" yes "$(has_in_log 'POST prs')"

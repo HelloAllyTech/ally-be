@@ -142,16 +142,24 @@ stops reporting is indistinguishable from a build that has hung.
 stage RUNNING_TESTS        # Move to a new stage. Call it when you START one.
 todo items.json            # Replace the WHOLE todo list, not a delta:
                            #   [{"id":"1","text":"…","status":"pending|in_progress|done"}]
-note plan "what I found"   # A free-text milestone: plan, test_output, verification, …
+note plan notes.md         # A milestone: plan, test_output, verification, …
+                           #   Pass a FILE for anything long or quoted; a short
+                           #   unquoted string also works.
 ask questions.json         # Pause and ask: {"questions":[…],"branches":{…}}
 budget                     # What is left of this session's spend ceiling
 prs prs.json               # {"pullRequests":[{repo,branch,prNumber,prUrl,title}]}
 report report.json         # {"type":"run_report","contentMd":"…","metrics":{…}}
-complete-run '{"outcome":"done"}'   # Finish. Exactly once, last.
+complete-run done          # Finish. Exactly once, last.
+complete-run failed "the gate stayed red after four attempts"
 \`\`\`
 
 Run one with no arguments and it prints its usage. \`stage\` and \`complete-run\`
 confirm on success, so a silent one did not land.
+
+**Prefer a file over a quoted string** wherever one is accepted. Long text with
+apostrophes, backticks or newlines is where shell quoting goes wrong, and some
+agent shell tools refuse such a command outright rather than running it —
+which has cost a finished run its outcome before now.
 
 \`ask\` and \`complete-run\` are the two that can fail your run, and both say so
 loudly rather than returning quietly: a pause that was refused leaves you still
@@ -315,6 +323,14 @@ The test gate compares \`master...HEAD\`, so a commit made on master is
 invisible to it: the gate reports the repo unchanged, fails closed, and sends
 you to remediate work you have already done. Run \`git branch --show-current\`
 if you want to confirm where you are.
+
+**That branch may already carry work.** A previous attempt on this session
+pushes to the same branch, and the runner checks it out rather than starting
+clean — so \`git log master..HEAD\` and \`git diff master...HEAD\` are the
+first things to read. Build on what is there; do not redo it, and do not revert
+it because you did not write it. If the change the PRD asks for is already
+present and correct, say so and move on rather than rewriting it to your own
+taste.
 
 **5. \`stage CODING\`** — implement. Keep the todo list current as you go: mark
 an item \`in_progress\` when you start it and \`done\` when it is genuinely

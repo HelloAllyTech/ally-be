@@ -75,7 +75,7 @@ describe('the coder prompt', () => {
     // existed. If this instruction regresses, that behaviour comes back.
     const prompt = render();
     expect(flat(prompt)).toContain('You do not open the pull requests');
-    expect(flat(prompt)).not.toContain('gh pr create');
+    expect(flat(prompt)).not.toContain('/tmp/builder-pr-<repo>.md');
   });
 
   it('stops the coder before pushing', () => {
@@ -256,7 +256,7 @@ describe('the finalise prompt', () => {
 
   it('is the only phase that opens pull requests', () => {
     const prompt = render();
-    expect(flat(prompt)).toContain('gh pr create');
+    expect(flat(prompt)).toContain('/tmp/builder-pr-<repo>.md');
     expect(flat(prompt)).toContain(
       'Opened by Builder — human review and merge required.',
     );
