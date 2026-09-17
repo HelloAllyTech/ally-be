@@ -236,6 +236,22 @@ line({
 });
 '
 SHIM
+# A `gh` stub for the pull-request sweep.
+#
+# DRYRUN_GH controls which of the three answers it gives, because they are three
+# different states and the runner must tell them apart: a pull request exists
+# (report it), none exists (the work went nowhere — fail loudly), or GitHub
+# could not be asked at all (say so and judge nothing).
+cat > "${WORK}/gh" <<'SHIM'
+#!/usr/bin/env bash
+case "${DRYRUN_GH:-found}" in
+  found) echo '[{"number":7,"url":"https://example.invalid/pr/7","title":"t"}]' ;;
+  none)  echo '[]' ;;
+  *)     echo "gh: not authenticated" >&2; exit 1 ;;
+esac
+SHIM
+chmod +x "${WORK}/gh"
+
 chmod +x "${WORK}/claude"
 
 # A git repo the gate sees as "changed", so the gate actually runs.
@@ -439,6 +455,37 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = review ]; then
   check "made no plan" no "$(has_in_log 'GET plan-prompt')"
   check "opened no pull requests" no "$(has_in_log 'GET finalise-prompt')"
   check "did not remediate" no "$(has_in_log 'GET remediate-prompt')"
+fi
+
+# ── 7. the pull requests, read from GitHub rather than taken on trust ───────
+#
+# `prs` from the finalise agent used to be the only way ally-be learned a pull
+# request existed, and everything after the run hangs off that one call —
+# reconcile, CI ingestion, review, approval, merge, release. An agent that
+# opened three and reported two left one in the org with nothing watching it,
+# and the run still looked successful.
+#
+# The three scenarios are the three answers GitHub can give, and the middle one
+# is the whole point: a branch carrying commits with no pull request on it is
+# work that passed the gate and the reviewer and then went nowhere.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = prs ]; then
+  run_scenario prs-found DRYRUN_GH=found
+  check "finishes the run" 0 "$EXIT_CODE"
+  check "reported the pull request to ally-be" yes "$(has_in_log 'POST prs')"
+
+  run_scenario prs-orphan DRYRUN_GH=none
+  check "fails a branch that became no pull request" 1 "$EXIT_CODE"
+  check "told ally-be the work went nowhere" yes "$(has_in_log 'POST complete')"
+  check "named the branch in the reason" yes \
+    "$(grep -q 'No pull request was opened for' "$LOG_FILE" && echo yes || echo no)"
+
+  # The distinction this codebase keeps having to relearn: "we could not check"
+  # must never read the same as "it is not there". A pipeline with no GitHub to
+  # talk to has to finish, not fail every run claiming the work vanished.
+  run_scenario prs-unreachable DRYRUN_GH=broken
+  check "finishes when GitHub cannot be asked" 0 "$EXIT_CODE"
+  check "claims no orphan it could not verify" no \
+    "$(grep -q 'No pull request was opened for' "$LOG_FILE" && echo yes || echo no)"
 fi
 
 echo

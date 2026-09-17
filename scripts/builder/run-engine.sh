@@ -544,7 +544,30 @@ ensure_branches() {
     # A resume or fix run carries the branch its work already lives on;
     # branching afresh there would abandon it.
     target="$(printf '%s' "${BUILDER_BRANCHES:-{\}}" | jq -r --arg r "$repo" '.[$r] // empty' 2>/dev/null || true)"
-    [ -n "$target" ] || target="builder/${BUILDER_BRANCH_SLUG}"
+    # `:-` throughout: this file runs under `set -u`, and the slug is a
+    # workflow input that only the real dispatch supplies. The dry-run harness
+    # sets up its own branch and passes neither, so reading it unguarded took
+    # the whole runner down at its first line rather than failing a check.
+    if [ -z "$target" ] && [ -n "${BUILDER_BRANCH_SLUG:-}" ]; then
+      target="builder/${BUILDER_BRANCH_SLUG}"
+    fi
+
+    # Nothing to switch to. Fall through to the assertion below, which is the
+    # part that actually matters: whatever branch this repo is on, it must not
+    # be one the gate cannot see past.
+    if [ -z "$target" ]; then
+      existing="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null || echo '')"
+      case "$existing" in
+        master | main | '')
+          echo "No branch to put ${repo} on, and HEAD is '${existing:-detached}'." >&2
+          echo "Work committed here would be invisible to the test gate." >&2
+          complete-run "{\"outcome\":\"failed\",\"error\":\"No working branch for ${repo} and HEAD is ${existing:-detached}. Nothing was built.\"}" || true
+          exit 1
+          ;;
+      esac
+      echo "${repo}: on ${existing}"
+      continue
+    fi
 
     if git -C "$dir" show-ref --verify --quiet "refs/heads/${target}"; then
       git -C "$dir" checkout "$target" >/dev/null 2>&1
@@ -933,15 +956,29 @@ save_work_in_progress "finalise"
 echo "::group::pull requests"
 node -e 'process.stdout.write(JSON.stringify({pullRequests: []}))' > /tmp/builder-prs.json
 found="[]"
+# Repos GitHub actually answered for. Only these can be judged below.
+asked=" "
 for dir in repos/*/; do
   [ -d "$dir/.git" ] || continue
   repo="$(basename "$dir")"
   branch="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null || echo '')"
   [ -n "$branch" ] || continue
 
-  pr="$(gh pr list --repo "${GITHUB_REPOSITORY_OWNER}/${repo}" \
+  # Asked-and-none and could-not-ask are different answers and only one of
+  # them is evidence. `gh pr list` exits 0 with `[]` when a branch genuinely
+  # has no pull request, and non-zero when it could not find out — no `gh`, no
+  # token, a network failure. Conflating them would fail every run of a
+  # pipeline that simply had no GitHub to talk to, which is the mistake this
+  # codebase keeps having to unlearn: "we could not check" must never read the
+  # same as "it is not there".
+  if pr="$(gh pr list --repo "${GITHUB_REPOSITORY_OWNER:-}/${repo}" \
     --head "$branch" --state open --limit 1 \
-    --json number,url,title 2>/dev/null || echo '[]')"
+    --json number,url,title 2>/dev/null)"; then
+    asked="${asked}${repo} "
+  else
+    echo "${repo}: could not ask GitHub about ${branch}." >&2
+    continue
+  fi
   count="$(printf '%s' "$pr" | jq -r 'length' 2>/dev/null || echo 0)"
   case "$count" in '' | *[!0-9]*) count=0 ;; esac
   [ "$count" -gt 0 ] || { echo "${repo}: no open PR on ${branch}"; continue; }
@@ -974,12 +1011,14 @@ for dir in repos/*/; do
   branch="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null || echo '')"
   [ -n "$branch" ] || continue
   git -C "$dir" diff --quiet master...HEAD 2>/dev/null && continue
+  # Never judged on a question we could not put to GitHub.
+  case "$asked" in *" ${repo} "*) ;; *) continue ;; esac
   printf '%s' "$found" | jq -e --arg r "$repo" 'any(.[]; .repo == $r)' >/dev/null 2>&1 && continue
   orphans="${orphans}${orphans:+, }${repo} (${branch})"
 done
 if [ -n "$orphans" ]; then
   echo "Work was pushed but no pull request exists: ${orphans}" >&2
-  complete-run "{\"outcome\":\"failed\",\"error\":\"The change passed the gate and the review, and the branches are pushed, but no pull request was opened for: ${orphans}. The work is safe on those branches — open a pull request from one and the reconcile loop picks it up from there.\"}" || true
+  complete-run "{\"outcome\":\"failed\",\"error\":\"No pull request was opened for ${orphans}. The change passed the test gate and the independent review and the branches are pushed, so the work is safe — open a pull request from one and the reconcile loop takes it from there.\"}" || true
   exit 1
 fi
 echo "::endgroup::"
