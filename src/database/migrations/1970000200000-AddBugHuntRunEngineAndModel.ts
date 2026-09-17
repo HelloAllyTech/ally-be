@@ -6,8 +6,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Neither was ever recorded anywhere: the model is resolved independently
  * inside the CI workflow at runtime (`GET pipeline/models`), not by ally-be
  * at dispatch, so there was nothing to read it back from. The CI workflow now
- * reports it here right after resolving it — see `PATCH
- * pipeline/runs/:id/model`. Nullable and never backfilled: a run closed
+ * reports it here right after resolving it — see `POST runs/:id/model`.
+ * Nullable and never backfilled: a run closed
  * before this migration, or one whose workflow failed before reaching that
  * step, has no way to know what it used.
  */
