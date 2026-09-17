@@ -401,10 +401,39 @@ timer.unref?.();
 
 const readline = createInterface({ input: process.stdin, crlfDelay: Infinity });
 
+// ── The passthrough, with a lid on it ───────────────────────────────────────
+//
+// Every line is still relayed, but a line repeated back to back is counted
+// rather than reprinted. One Gemini run wrote `Aborted()` 1,028,203 times
+// after its shell tool rejected a command, producing a million-line workflow
+// log that took minutes to fetch and buried everything the run actually did.
+//
+// Consecutive-only, deliberately. A repeat counter that remembered every line
+// ever seen would collapse legitimate recurrence — the same test name across
+// rounds, the same file read twice — and the thing worth suppressing is a tight
+// loop, which is always consecutive.
+let lastLine = null;
+let repeats = 0;
+
+const flushRepeats = () => {
+  if (repeats > 0) {
+    process.stdout.write(
+      `  … previous line repeated ${repeats} more time${repeats === 1 ? '' : 's'}\n`,
+    );
+    repeats = 0;
+  }
+};
+
 readline.on('line', (line) => {
   // Pass through first and unconditionally, so a parse failure below can
   // never cost the downstream consumer its data.
-  process.stdout.write(`${line}\n`);
+  if (line === lastLine) {
+    repeats += 1;
+  } else {
+    flushRepeats();
+    process.stdout.write(`${line}\n`);
+    lastLine = line;
+  }
 
   const trimmed = line.trim();
   if (!trimmed.startsWith('{')) return;
@@ -430,6 +459,8 @@ readline.on('line', (line) => {
 
 readline.on('close', async () => {
   clearInterval(timer);
+  // A run that ended mid-repeat still says how many it swallowed.
+  flushRepeats();
   // A Gemini run whose last assistant message was still mid-delta when the
   // stream ended must not lose it — a no-op for Claude Code, whose buffer is
   // always empty.

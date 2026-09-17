@@ -1,7 +1,8 @@
 import { execFileSync } from 'child_process';
-import { readdirSync, statSync } from 'fs';
+import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 
+import { BuilderStage } from '../../enum/builder.enum';
 import { buildPromptHeader } from '../builder-build-prompt';
 
 const HELPER_DIR = join(
@@ -60,6 +61,23 @@ describe('builder agent helpers', () => {
       expect(kind).toBe('');
     },
   );
+
+  /**
+   * The progress rail is driven entirely by these values, and the `stage`
+   * helper refuses anything outside the set — an agent inventing `EXECUTION`
+   * or `FINALIZING` either moves the rail somewhere undefined or, where the
+   * column's CHECK constraint refuses it, leaves it frozen at the last real
+   * stage. Both read as the rail being broken.
+   *
+   * The helper carries its own copy because it is shell. This is the thing
+   * that stops the two drifting.
+   */
+  it('refuses exactly the stages the enum does not define', () => {
+    const helper = readFileSync(join(HELPER_DIR, 'stage'), 'utf8');
+    const declared = helper.match(/^STAGES="([^"]+)"/m)?.[1]?.split(' ') ?? [];
+
+    expect(declared.sort()).toEqual(Object.values(BuilderStage).sort());
+  });
 
   /**
    * A helper the prompt never mentions is one no agent will call, and a name

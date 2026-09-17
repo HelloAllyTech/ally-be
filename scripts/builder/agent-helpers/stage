@@ -1,7 +1,46 @@
 #!/usr/bin/env bash
 # stage <STAGE> — move to a new stage. Call it when you START one.
+#
+# ## Why this validates
+#
+# The progress rail is the only thing telling a person where a build has got
+# to, and it is driven entirely by these values. An agent that invents its own
+# — `EXECUTION`, `FINALIZING`, `E` have all been seen from one — either moves
+# the rail to a stage nobody defined or, where the column's CHECK constraint
+# refuses the value, leaves it frozen at the last real one. Both read as the
+# rail being broken.
+#
+# Refused here rather than at the server, so the agent is told which word to
+# use instead of watching its report vanish. A near-miss is corrected in place
+# (`FINALIZING` → `FINALISING`), because arguing with an agent about a spelling
+# is a worse use of a turn than accepting what it plainly meant.
+#
+# MUST MATCH `BuilderStage` in src/builder/enum/builder.enum.ts — change both
+# together. A jest test fails if they drift.
 set -uo pipefail
 . "$(dirname "$0")/_common.sh"
-[ $# -eq 1 ] && [ -n "${1:-}" ] || usage "stage <STAGE>"
-post_json events "$(jq -nc --arg s "$1" '{events:[{type:"stage_change",payload:{stage:$s}}]}')" || true
-echo "stage → $1"
+
+STAGES="SETUP PLANNING CODING TESTING GATE VERIFYING REVIEWING REMEDIATING FINALISING E2E_VERIFY OPENING_PRS REPORTING DONE"
+
+[ $# -eq 1 ] && [ -n "${1:-}" ] || usage "stage <$(printf '%s' "$STAGES" | tr ' ' '|')>"
+
+want="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]' | tr -c 'A-Z0-9_' '_')"
+
+# American spellings of the two we spell with an S, which is the only
+# systematic near-miss worth correcting rather than refusing.
+case "$want" in
+  FINALIZING) want=FINALISING ;;
+  VERIFYING_) want=VERIFYING ;;
+esac
+
+case " $STAGES " in
+  *" $want "*) ;;
+  *)
+    echo "stage: '$1' is not a stage. Use one of:" >&2
+    printf '  %s\n' $STAGES >&2
+    exit 2
+    ;;
+esac
+
+post_json events "$(jq -nc --arg s "$want" '{events:[{type:"stage_change",payload:{stage:$s}}]}')" || true
+echo "stage → $want"
