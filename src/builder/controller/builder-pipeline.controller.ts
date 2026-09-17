@@ -68,6 +68,7 @@ import {
   CompleteBuilderRunDto,
   UpsertBuilderRepoMapDto,
   RecordBuilderReviewFindingsDto,
+  RecordBuilderRunModelDto,
 } from '../dto/builder-pipeline.dto';
 
 /**
@@ -624,6 +625,17 @@ export class BuilderPipelineController {
   ) {
     const run = await this.buildService.getRunOrFail(runId);
     await this.buildService.recordRunCost(run, dto);
+    return { ok: true };
+  }
+
+  @Post('runs/:runId/model')
+  @ApiOperation({ summary: 'Record the engine and model used for this run' })
+  async recordModel(
+    @Param('runId', ParseUUIDPipe) runId: string,
+    @Body() dto: RecordBuilderRunModelDto,
+  ) {
+    const run = await this.buildService.getRunOrFail(runId);
+    await this.buildService.recordRunModel(run, dto);
     return { ok: true };
   }
 
