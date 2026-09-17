@@ -227,7 +227,15 @@ export class BuilderMetricsService {
              ROUND(SUM(a."costUsd"), 4)                   AS "totalCostUsd",
              PERCENTILE_CONT(0.5) WITHIN GROUP (
                ORDER BY a."durationMs"
-             )                                            AS "medianMs"
+             )                                            AS "medianMs",
+             -- Turns, because cost per attempt is mostly turns x cached
+             -- context, not the per-token rate. Without this a stronger model
+             -- that costs LESS looks like a measurement error rather than a
+             -- model that needed fewer tool calls to get there — which is the
+             -- only reading that would change how work is routed.
+             PERCENTILE_CONT(0.5) WITHIN GROUP (
+               ORDER BY a."numTurns"
+             )                                            AS "medianTurns"
         FROM builder_attempts a
         JOIN builder_build_runs run ON run.id = a."runId"
        WHERE a."createdAt" >= NOW() - ($1 || ' days')::interval
@@ -245,6 +253,10 @@ export class BuilderMetricsService {
         model: String(row.model),
         attempt: Number(row.attempt ?? 0),
         attempts,
+        medianTurns:
+          row.medianTurns === null || row.medianTurns === undefined
+            ? null
+            : Number(row.medianTurns),
         passed: Number(row.passed ?? 0),
         // Null rather than 0 on an empty cell: "no attempts yet" and "never
         // passed" are different answers, and a routing decision must not read
@@ -671,6 +683,14 @@ export interface BuilderAttemptOutcome {
   escalations: number;
   totalCostUsd: number | null;
   medianMs: number | null;
+  /**
+   * Turns, which is where an attempt's cost actually comes from: turns times a
+   * growing cached context, not the per-token rate. Without it a stronger model
+   * costing LESS reads as a measurement error rather than as a model that
+   * needed fewer tool calls — and that is the only reading that would change
+   * how work is routed.
+   */
+  medianTurns: number | null;
 }
 
 export interface BuilderPipelineLoop {
