@@ -58,6 +58,7 @@ taking a whole task description and returning full chunk bodies. Setup, citation
 
 - **Multi-tenant.** Nearly every entity carries `tenantId`. A query without tenant
   isolation is a data leak, not a bug.
+- **JwtStrategy no longer validates `tenantId` for non-SYSTEM_ACCESS users.** The `JwtStrategy` now passes tokens with `null` or `undefined` `tenantId` for non-SYSTEM_ACCESS users. Downstream authorization guards and services are now responsible for enforcing tenant isolation, typically by using `ExecutionManager.getTenantId()`. Therefore, it is critical that all tenant-aware services explicitly validate the presence of `tenantId` from `ExecutionManager` if tenant isolation is required for their operations.
 - **Gate on `roles`, not `role`.** There is no `role` column — a role is a `groups` row
   joined through `user_groups`, and permissions union across all of them.
   `GET /users/me` also returns a single `role`, collapsed by a priority list for legacy

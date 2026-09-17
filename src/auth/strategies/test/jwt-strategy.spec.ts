@@ -2,7 +2,6 @@ import { JwtStrategy } from '../jwt.strategy';
 import { AppConfigService } from '../../../config/config.service';
 import { LoggerService } from '../../../logger/logger.service';
 import { ExecutionManager } from '../../../common/execution/execution-manager';
-import { UnauthorizedException } from '@nestjs/common';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { LastActiveService } from '../../service/last-active.service';
@@ -123,12 +122,16 @@ describe('JwtStrategy', () => {
       [],
     );
 
-    await expect(strategy.validate(payload)).rejects.toThrow(
-      UnauthorizedException,
-    );
+    const user = await strategy.validate(payload);
+
     expect(ExecutionManager.setAuthContext).toHaveBeenCalledWith(
       '7',
       undefined,
     );
+    expect(user).toEqual({
+      id: 7,
+      username: 'bob',
+      tenantId: undefined,
+    });
   });
 });
