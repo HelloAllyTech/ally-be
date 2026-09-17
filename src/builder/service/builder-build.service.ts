@@ -202,7 +202,23 @@ export class BuilderBuildService {
     //
     // COMPLETED stays out. Its pull requests are open or merged, and a second
     // build of finished work opens a competing set against the same PRD.
-    if (!BUILDER_STARTABLE_STATUSES.includes(session.status)) {
+    // A COMPLETED session that opened no pull requests has shipped nothing —
+    // getDeliveryState says so in as many words — so it is not finished in any
+    // sense a person cares about and must not be a dead end. It happens: a run
+    // whose agent claimed done and whose evidence said otherwise settles the
+    // session green with an empty branch behind it. One with pull requests
+    // stays closed to rebuilding, because a second build against the same PRD
+    // opens a competing set.
+    const completedEmptyHanded =
+      session.status === BuilderSessionStatus.COMPLETED &&
+      (await this.pullRequestRepository.count({
+        where: { sessionId: session.id },
+      })) === 0;
+
+    if (
+      !BUILDER_STARTABLE_STATUSES.includes(session.status) &&
+      !completedEmptyHanded
+    ) {
       throw new BadRequestException(
         `A build can only start from a ready PRD — this session is ${session.status.toLowerCase()}.`,
       );

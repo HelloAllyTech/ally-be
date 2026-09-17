@@ -57,7 +57,11 @@ describe('BuilderBuildService', () => {
     isLatestForSession: jest.Mock;
   };
   let eventRepository: { listByRun: jest.Mock; latestOfType: jest.Mock };
-  let pullRequestRepository: { increment: jest.Mock; findOne: jest.Mock };
+  let pullRequestRepository: {
+    increment: jest.Mock;
+    findOne: jest.Mock;
+    count: jest.Mock;
+  };
   let questionRepository: { isGroupComplete: jest.Mock; update: jest.Mock };
   let settingsService: { get: jest.Mock };
   let notificationService: {
@@ -116,6 +120,7 @@ describe('BuilderBuildService', () => {
     pullRequestRepository = {
       increment: jest.fn(),
       findOne: jest.fn(),
+      count: jest.fn().mockResolvedValue(0),
     };
     questionRepository = {
       isGroupComplete: jest.fn().mockResolvedValue(true),
@@ -784,9 +789,25 @@ describe('BuilderBuildService', () => {
      * a second build against the same PRD opens a competing set.
      */
     it('refuses to rebuild finished work', async () => {
+      pullRequestRepository.count.mockResolvedValue(2);
+
       await expect(startFrom(BuilderSessionStatus.COMPLETED)).rejects.toThrow(
         /can only start from a ready PRD/,
       );
+    });
+
+    /**
+     * "A session with no pull requests has shipped nothing, whatever its
+     * status" — getDeliveryState's own words. A run that claimed done and left
+     * an empty branch settles the session green, and that must not be a dead
+     * end.
+     */
+    it('rebuilds a completed session that shipped nothing', async () => {
+      pullRequestRepository.count.mockResolvedValue(0);
+
+      await expect(
+        startFrom(BuilderSessionStatus.COMPLETED),
+      ).resolves.toBeDefined();
     });
 
     it('refuses while a build is already running', async () => {
