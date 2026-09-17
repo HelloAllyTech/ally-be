@@ -510,10 +510,24 @@ snapshot_heads() {
   done
 }
 
-# The verifier can still shell out, so "read-only" is enforced after the fact
-# rather than trusted: anything it wrote to a tracked file is reverted, and
-# anything it committed is unwound, before the next phase reads the diff.
+# Enforce "read-only" after the fact, for every phase that claims it.
+#
+# Three phases are meant not to write: the planner, the in-build verifier, and
+# a review run. Each is invoked with an allowlist that withholds Write and Edit
+# — and that allowlist reaches Claude Code only. Gemini's equivalent is
+# `--yolo`, "run any tool without asking", so run-engine.sh passes it no tool
+# list at all and every one of those phases can write, edit and commit.
+#
+# It is not hypothetical. A fresh Gemini build was observed writing a component
+# and a test file, and running the suite, while the stage rail correctly read
+# PLANNING — the planner doing the coder's job, on the planner's tier, before
+# the phase that exists to do it had started.
+#
+# So the guarantee is enforced where it can be: snapshot before, restore after.
+# A phase that claims to be read-only is made read-only by the runner rather
+# than by whichever flags one vendor's CLI happens to honour.
 revert_stray_writes() {
+  local phase="${1:-a read-only phase}"
   for dir in repos/*/; do
     [ -d "$dir/.git" ] || continue
 
@@ -524,7 +538,7 @@ revert_stray_writes() {
       before="$(awk -F'\t' -v d="$dir" '$1 == d {print $2}' "$HEADS_FILE" 2>/dev/null || echo '')"
       now="$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo '')"
       if [ -n "$before" ] && [ -n "$now" ] && [ "$before" != "$now" ]; then
-        echo "$(basename "$dir"): reviewer left $(git -C "$dir" rev-list --count "$before".."$now" 2>/dev/null || echo '?') commit(s) — unwinding." >&2
+        echo "$(basename "$dir"): ${phase} left $(git -C "$dir" rev-list --count "$before".."$now" 2>/dev/null || echo '?') commit(s) — unwinding." >&2
         git -C "$dir" reset --hard "$before" >/dev/null 2>&1 || true
       fi
     fi
@@ -669,9 +683,14 @@ fi
 if [ "${BUILDER_MODE:-build}" = "review" ]; then
   echo "::group::review (${VERIFIER_MODEL})"
   post_stage REVIEWING
+  snapshot_heads
   run_agent "$PROMPT_FILE" "${RESULTS_DIR}/review.json" \
     "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$VERIFY_BUDGET"
   report_phase_cost review "$VERIFIER_MODEL" "${RESULTS_DIR}/review.json"
+  # This one reviews a pull request a person is reading. A reviewer that
+  # silently amended the branch under them would be worse than one that
+  # crashed.
+  revert_stray_writes "the reviewer"
   echo "::endgroup::"
 
   # No gate and no failure branch. A review that finds nothing and a review
@@ -747,9 +766,14 @@ echo "Build sized ${BUILD_SIZE}: planner ${PLANNER_MODEL}, effort ${EFFORT}, ${P
 echo "::group::plan (${PLANNER_MODEL})"
 post_stage PLANNING
 if fetch_prompt "plan-prompt" /tmp/builder-plan-prompt.txt; then
+  snapshot_heads
   run_agent /tmp/builder-plan-prompt.txt "${RESULTS_DIR}/plan.json" \
     "$PLANNER_MODEL" "$PLANNER_TOOLS" "$PLANNER_TURNS" "$PLAN_BUDGET" || true
   report_phase_cost plan "$PLANNER_MODEL" "${RESULTS_DIR}/plan.json"
+  # The plan is the output; the tree is not. A planner that has already written
+  # the change hands the coder a diff it did not make and cannot explain, and
+  # spends the planner tier doing it.
+  revert_stray_writes "the planner"
 
   # The plan is the last fenced ```plan block. Posted as the run's `plan`
   # event, which is what the coder prompt, the remediation prompt and a later
@@ -903,7 +927,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
     "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$VERIFY_BUDGET" || true
   report_phase_cost "verify-${verify_round}" "$VERIFIER_MODEL" \
     "${RESULTS_DIR}/verify-${verify_round}.json"
-  revert_stray_writes
+  revert_stray_writes "the verifier"
 
   # Parse the verdict AND persist it. Storing it is what lets round two be
   # told what round one raised, and what puts the objections in front of the

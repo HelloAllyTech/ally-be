@@ -162,6 +162,22 @@ fi
 
 [ "$phase" = "build" ] && [ "${DRYRUN_PAUSE:-}" = "1" ] && touch /tmp/builder-paused
 
+# A read-only phase that writes anyway. The allowlist withholding Write and
+# Edit reaches Claude Code only — Gemini's `--yolo` means "run any tool" and
+# run-engine.sh passes it no tool list at all, so the planner, the verifier and
+# a review run can all write, edit and commit. A real Gemini build was seen
+# writing a component and a test file during PLANNING.
+if [ "${DRYRUN_READONLY_WRITES:-}" = "1" ] &&
+   { [ "$phase" = "plan-prompt" ] || [ "$phase" = "verify-prompt" ]; }; then
+  for d in repos/*/; do
+    [ -d "$d/.git" ] || continue
+    echo "written by a phase that should not write" >> "$d/stray.txt"
+    git -C "$d" add -A >/dev/null 2>&1
+    git -C "$d" -c user.email=t@t.t -c user.name=t \
+      commit -qm "stray commit from ${phase}" >/dev/null 2>&1
+  done
+fi
+
 # In the gate-block scenario the coder's change is what breaks the suite: the
 # baseline was captured green, so the gate sees a NEW failure. Remediation
 # rounds leave the marker in place, so it never recovers.
@@ -580,6 +596,27 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = resume ]; then
   run_scenario resume-not-a-resume BUILDER_BRANCH_SLUG=demo
   check "a first build still codes" "PLANNING CODING GATE VERIFYING FINALISING" \
     "$(grep -o 'EVENT stage_change:[A-Z_]*' "$LOG_FILE" | sed 's/.*://' | tr '\n' ' ' | sed 's/ $//')"
+fi
+
+# ── 9. phases that claim to be read-only ───────────────────────────────────
+#
+# The planner, the in-build verifier and a review run are each invoked with an
+# allowlist that withholds Write and Edit — and that allowlist reaches Claude
+# Code only. On an engine whose equivalent is "run any tool without asking",
+# every one of them can write, edit and commit, so the guarantee has to be
+# enforced by the runner rather than by one vendor's flags.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = readonly ]; then
+  run_scenario readonly-phases DRYRUN_READONLY_WRITES=1 DRYRUN_PR_BODY=1
+  check "finishes the run" 0 "$EXIT_CODE"
+  check "unwound what a read-only phase committed" yes \
+    "$(grep -qE 'the (planner|verifier) left .* commit' "${WORK}/readonly-phases.out" \
+       && echo yes || echo no)"
+  check "left nothing it wrote in the tree" yes \
+    "$([ -f "${WORK}/run/repos/demo-repo/stray.txt" ] && echo no || echo yes)"
+  # The coder's own work must survive the cleanup that follows it.
+  check "kept the coding pass's change" yes \
+    "$(git -C "${WORK}/run/repos/demo-repo" diff --quiet master...HEAD 2>/dev/null \
+       && echo no || echo yes)"
 fi
 
 echo
