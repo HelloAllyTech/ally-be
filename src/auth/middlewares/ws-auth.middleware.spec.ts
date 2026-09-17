@@ -4,8 +4,6 @@ import { AppConfigService } from '../../config/config.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { WebSocketAuthMiddleware } from './ws-auth.middleware';
 import { Socket } from 'socket.io';
-import { UnauthorizedException } from '../../exception/custom.exception';
-
 describe('WebSocketAuthMiddleware', () => {
   let middleware: WebSocketAuthMiddleware;
   let jwtService: jest.Mocked<JwtService>;
@@ -64,15 +62,13 @@ describe('WebSocketAuthMiddleware', () => {
       next = jest.fn();
     });
 
-    it('should call next with UnauthorizedException containing original error message for unexpected errors', async () => {
-      const errorMessage = 'Internal server error';
-      jwtService.verifyAsync.mockRejectedValue(new Error(errorMessage));
+    it('should call next with the original error when jwtService.verifyAsync throws an error', async () => {
+      const originalError = new Error('Internal server error');
+      jwtService.verifyAsync.mockRejectedValue(originalError);
 
       await middleware.webSocketMiddleware()(socket, next);
 
-      expect(next).toHaveBeenCalledWith(
-        new UnauthorizedException(`Authentication failed: ${errorMessage}`),
-      );
+      expect(next).toHaveBeenCalledWith(originalError);
     });
   });
 });
