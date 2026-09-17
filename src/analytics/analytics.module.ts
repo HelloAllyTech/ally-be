@@ -60,6 +60,8 @@ import { RoleplayCostAnalyticsService } from './service/roleplay-cost-analytics.
 import { RoleplayCostAnalyticsRepository } from './repository/roleplay-cost-analytics.repository';
 import { CodingAgentCostAnalyticsService } from './service/coding-agent-cost-analytics.service';
 import { CodingAgentCostAnalyticsRepository } from './repository/coding-agent-cost-analytics.repository';
+import { FixSessionEngineCostAnalyticsService } from './service/fix-session-engine-cost-analytics.service';
+import { FixSessionEngineCostAnalyticsRepository } from './repository/fix-session-engine-cost-analytics.repository';
 import { QualitySentimentAnalyticsService } from './service/quality-sentiment-analytics.service';
 import { QualitySentimentAnalyticsRepository } from './repository/quality-sentiment-analytics.repository';
 // Roleplay Quality Index: the composite behind the "Roleplay quality" card,
@@ -207,6 +209,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
     RoleplayCostAnalyticsRepository,
     CodingAgentCostAnalyticsService,
     CodingAgentCostAnalyticsRepository,
+    FixSessionEngineCostAnalyticsService,
+    FixSessionEngineCostAnalyticsRepository,
     QualitySentimentAnalyticsService,
     QualitySentimentAnalyticsRepository,
     QualityIndexAnalyticsService,

@@ -222,6 +222,10 @@ import {
   CodingAgentCostResponseDto,
 } from '../dto/coding-agent-cost-analytics.dto';
 import {
+  FixSessionEngineCostQueryDto,
+  FixSessionEngineCostResponseDto,
+} from '../dto/fix-session-engine-cost-analytics.dto';
+import {
   QualitySentimentQueryDto,
   QualitySentimentResponseDto,
 } from '../dto/quality-sentiment-analytics.dto';
@@ -234,6 +238,7 @@ import { PracticeDepthAnalyticsService } from '../service/practice-depth-analyti
 import { OrgEngagementAnalyticsService } from '../service/org-engagement-analytics.service';
 import { RoleplayCostAnalyticsService } from '../service/roleplay-cost-analytics.service';
 import { CodingAgentCostAnalyticsService } from '../service/coding-agent-cost-analytics.service';
+import { FixSessionEngineCostAnalyticsService } from '../service/fix-session-engine-cost-analytics.service';
 import { QualitySentimentAnalyticsService } from '../service/quality-sentiment-analytics.service';
 import { ChartPreferenceService } from '../service/chart-preference.service';
 import {
@@ -296,6 +301,7 @@ export class AnalyticsController {
     private readonly orgEngagementAnalyticsService: OrgEngagementAnalyticsService,
     private readonly roleplayCostAnalyticsService: RoleplayCostAnalyticsService,
     private readonly codingAgentCostAnalyticsService: CodingAgentCostAnalyticsService,
+    private readonly fixSessionEngineCostAnalyticsService: FixSessionEngineCostAnalyticsService,
     private readonly qualitySentimentAnalyticsService: QualitySentimentAnalyticsService,
     private readonly chartPreferenceService: ChartPreferenceService,
   ) {}
@@ -675,6 +681,38 @@ export class AnalyticsController {
     @Query() query: CodingAgentCostQueryDto,
   ): Promise<CodingAgentCostResponseDto> {
     return this.codingAgentCostAnalyticsService.getCodingAgentCost(query);
+  }
+
+  @Get('fix-session-engine-cost')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Average cost per completed Bug Hunter fix session, by engine (super-admin)',
+    description:
+      '"Same job, cheaper model, here\'s the delta" — the direct comparison ' +
+      "coding-agent-cost's per-model spend TOTAL can't give: Bug Hunter has " +
+      'run its two engines a very different number of times, so whichever ' +
+      'ran less often would always show the smaller total regardless of ' +
+      'which is actually cheaper per fix. This averages ' +
+      "`totalTokenCostUsd` across each engine's COMPLETED fix sessions only " +
+      '(a stuck, skipped, or still-open run has no finished cost to compare) ' +
+      '— the same figure the run-history table\'s own "Est. cost" column ' +
+      'shows, not a second, differently-derived estimate. `sessionCount` is ' +
+      'part of the response on purpose: a handful of sessions is not yet a ' +
+      'trend, and this number is what tells a reader whether to trust the ' +
+      'average.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Fix-session cost by engine retrieved successfully',
+    type: FixSessionEngineCostResponseDto,
+  })
+  async getFixSessionEngineCost(
+    @Query() query: FixSessionEngineCostQueryDto,
+  ): Promise<FixSessionEngineCostResponseDto> {
+    return this.fixSessionEngineCostAnalyticsService.getFixSessionEngineCost(
+      query,
+    );
   }
 
   @Get('quality-sentiment')
