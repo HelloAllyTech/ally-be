@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# budget — what is left of this session's spend ceiling.
+set -uo pipefail
+. "$(dirname "$0")/_common.sh"
+curl -sS "${API}/budget" -H "x-api-key: ${ALLY_BE_API_KEY}" || true

@@ -26,12 +26,18 @@ case "$ENGINE" in
   # Verified against a real local install of this exact version (0.22.5):
   # package is @google/gemini-cli, binary is `gemini`. Its non-interactive
   # shape and JSON event schema are read directly from that install's
-  # compiled TypeScript declarations in run-engine.sh/forward-events.mjs — not
-  # yet exercised against a real successful API response (the two accounts
-  # tried during development hit account-level blockers: a deactivated OpenAI
-  # workspace and a GCP project missing Gemini Code Assist licensing), so
-  # treat this integration as unverified end-to-end until a real run
-  # completes.
+  # compiled TypeScript declarations in run-engine.sh/forward-events.mjs.
+  #
+  # Exercised end to end on 2026-09-17: the CLI ran, streamed, called tools and
+  # wrote correct code. What that first run exposed was not the integration but
+  # everything around it that had only ever been true for Claude Code — the
+  # working branch and the whole reporting protocol were *asked for* in the
+  # prompt rather than made true by the runner, and Gemini declined both. It
+  # committed onto master, where the test gate (which compares `master...HEAD`)
+  # could not see 65 lines of correct change, and it called the reporting
+  # helpers by name, which existed only as shell functions pasted into a
+  # prompt. Both are now the runner's job. See run-engine.sh's ensure_branches
+  # and agent-helpers/README.md.
   gemini)
     echo "Installing @google/gemini-cli@${GEMINI_CLI_VERSION}"
     npm install -g "@google/gemini-cli@${GEMINI_CLI_VERSION}"

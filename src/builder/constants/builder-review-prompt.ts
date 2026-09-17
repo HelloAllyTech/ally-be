@@ -175,7 +175,7 @@ wrong, and when it breaks. No preamble, no praise, no restating the diff.
 
 **6. \`stage REPORTING\`** — \`report\` with your overall read of the change:
 whether it does what the PRD asked, anything out of scope worth knowing, and
-your confidence. Then \`complete '{"outcome":"done"}'\` exactly once.
+your confidence. Then \`complete-run '{"outcome":"done"}'\` exactly once.
 
 ## If you cannot review it
 

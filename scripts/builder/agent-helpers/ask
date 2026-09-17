@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# ask <file.json> — pause and ask. {"questions":[…],"branches":{…}}
+#
+# The marker file is what tells the runner this exit was a pause and not a
+# finish. It is touched ONLY if the questions were actually accepted.
+#
+# `curl -f` matters here and nowhere else. Without it curl exits 0 on an HTTP
+# 400, so a REFUSED pause — ally-be rejects a question with an empty prompt,
+# precisely because nobody can answer one — still touched the marker. The run
+# then exited 0 as "paused for input" with no question recorded anywhere, and
+# the session sat in WAITING_FOR_INPUT with nothing on screen to answer. A
+# parked run counts as an active one, so every later fix and review dispatch
+# for that session is refused too.
+#
+# Failing loudly leaves the run alive and the agent free to ask again.
+set -uo pipefail
+. "$(dirname "$0")/_common.sh"
+[ $# -eq 1 ] && [ -f "${1:-}" ] || usage "ask <file.json>"
+
+body="$(mktemp)"
+code="$(curl -sS -o "$body" -w '%{http_code}' -X POST "${API}/questions" \
+  -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+  -d @"$1" 2>/dev/null || echo 000)"
+
+case "$code" in
+  2*)
+    touch /tmp/builder-paused
+    echo "Paused for input. The run ends here; a resume continues from your branches."
+    ;;
+  *)
+    echo "ask: the pause was NOT recorded (HTTP ${code}) — you are still running." >&2
+    sed -n '1,20p' "$body" >&2
+    rm -f "$body"
+    exit 1
+    ;;
+esac
+rm -f "$body"

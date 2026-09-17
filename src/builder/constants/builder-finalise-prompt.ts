@@ -110,7 +110,7 @@ Include in the metrics:
   that actually changed what this run did. An unused lesson is one nobody
   should keep paying context for.
 
-**5. \`complete '{"outcome":"done"}'\`** — exactly once, last.
+**5. \`complete-run '{"outcome":"done"}'\`** — exactly once, last.
 
 ## The docs guard
 

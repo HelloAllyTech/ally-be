@@ -203,11 +203,7 @@ export class BuilderBuildService {
     // column nothing read. Falling through to it (and finally to the
     // hardcoded default, for a settings row that predates the field) is what
     // makes that picker do something.
-    const engine =
-      overrides.engine ??
-      session.engine ??
-      settings.defaultEngine ??
-      'claude-code';
+    const engine = this.resolveEngine(session, settings, overrides.engine);
     // Epic mode dispatches the first milestone rather than the whole PRD. The
     // split itself is proposed and confirmed before this point — a wrong
     // decomposition is expensive in a way a wrong plan is not, because it
@@ -218,7 +214,13 @@ export class BuilderBuildService {
     const milestone = await this.epicService.nextPending(session.id);
 
     const sizing = await this.classifySession(session, milestone);
-    const models = this.resolveModels(session, settings, overrides, sizing);
+    const models = this.resolveModels(
+      engine,
+      session,
+      settings,
+      overrides,
+      sizing,
+    );
     await this.assertModelsAreReal(models);
 
     // Carry the chosen engine/model onto the session so a resume run and the
@@ -281,7 +283,11 @@ export class BuilderBuildService {
       this.assertWithinBudget(session, settings.maxRunnerMinutes);
       await this.assertWithinConcurrency(settings.maxConcurrentBuilds);
 
-      const models = this.resolveModels(session, settings);
+      const models = this.resolveModels(
+        this.resolveEngine(session, settings),
+        session,
+        settings,
+      );
       await this.sessionRepository.update(
         { id: session.id },
         {
@@ -324,11 +330,30 @@ export class BuilderBuildService {
   }
 
   /**
+   * Which engine this session runs on.
+   *
+   * One expression, because every model tier now falls back differently
+   * depending on the answer — and a resume, fix or review run that disagreed
+   * with the build run about the engine would resolve a different set of
+   * models for the same session.
+   */
+  private resolveEngine(
+    session: BuilderSession,
+    settings: { defaultEngine?: string | null },
+    override?: string,
+  ): string {
+    return (
+      override ?? session.engine ?? settings.defaultEngine ?? 'claude-code'
+    );
+  }
+
+  /**
    * Model per tier, resolved run override → session (coder only) → settings →
    * config default. One resolution path so the run row, the workflow input
    * and the UI can never disagree about which model a phase used.
    */
   private resolveModels(
+    engine: string,
     session: BuilderSession,
     settings: {
       plannerModel?: string | null;
@@ -352,14 +377,50 @@ export class BuilderBuildService {
     const { size } = sizing;
     const profile = BUILDER_SIZE_PROFILES[size];
 
+    // A config default is only usable if it belongs to the engine that will be
+    // asked to run it.
+    //
+    // `config.plannerModel`, `config.coderModel`, `config.verifierModel` and
+    // `config.mechanicalModel` are all Anthropic model ids, and every tier
+    // below could reach one regardless of engine. So a session set to Gemini,
+    // with a `defaultModel` of `gemini-2.5-pro` but no explicit *planner*
+    // model, resolved its planner to `claude-opus-5` and handed that to
+    // `gemini --model claude-opus-5`. The SMALL profile was worse: its
+    // mechanical planner tier reads `config.mechanicalModel` directly, so it
+    // ignored the settings entirely and every small Gemini build planned on a
+    // model Gemini has never heard of.
+    //
+    // Skipping the default rather than translating it: there is no honest
+    // mapping from "Opus" to a Gemini tier, and inventing one would silently
+    // run a build on a model nobody chose. Falling through to the coder tier
+    // means the worst case is a build that plans on the model the admin
+    // actually picked.
+    const engineOf = (model: string | null | undefined): string | null => {
+      const id = String(model ?? '').trim();
+      if (!id) return null;
+      if (id.startsWith('gemini-')) return 'gemini';
+      if (id.startsWith('claude-')) return 'claude-code';
+      return null;
+    };
+    const forThisEngine = (model: string | null | undefined): string | null => {
+      const owner = engineOf(model);
+      // Unknown ids pass. The catalog is admin-maintained and a new provider
+      // should not need this function edited before it can be configured.
+      return owner === null || owner === engine ? (model ?? null) : null;
+    };
+
     const coder =
       overrides.model ??
       session.model ??
       settings.coderModel ??
       settings.defaultModel ??
+      forThisEngine(config.coderModel) ??
       config.coderModel;
     const plannerTier =
-      settings.plannerModel ?? config.plannerModel ?? config.coderModel;
+      settings.plannerModel ??
+      settings.defaultModel ??
+      forThisEngine(config.plannerModel) ??
+      coder;
 
     // Three tiers now, not two. A small build plans on the mechanical tier
     // because planning was a quarter of Builder's whole spend on work this
@@ -371,7 +432,9 @@ export class BuilderBuildService {
           // unconfigured mechanical model would otherwise hand the runner an
           // empty `--model`, and a cost optimisation that can fail the build
           // is not one.
-          (config.mechanicalModel ?? coder)
+          // The same fallback covers a mechanical model belonging to
+          // another engine — see forThisEngine above.
+          (forThisEngine(config.mechanicalModel) ?? coder)
         : profile.plannerTier === 'coder'
           ? coder
           : plannerTier);
@@ -400,13 +463,16 @@ export class BuilderBuildService {
       // escalates nowhere.
       coderLadder: profile.coderLadder.map((tier) => {
         if (tier === 'planner') return overrides.plannerModel ?? plannerTier;
-        if (tier === 'mechanical') return config.mechanicalModel;
+        if (tier === 'mechanical')
+          return forThisEngine(config.mechanicalModel) ?? coder;
         return coder;
       }),
       verifier:
         overrides.verifierModel ??
         settings.verifierModel ??
-        config.verifierModel,
+        settings.defaultModel ??
+        forThisEngine(config.verifierModel) ??
+        coder,
       // Read by run-engine.sh out of the same `models` input, because
       // workflow_dispatch caps at 10 and the workflow already sits at 9.
       size,
@@ -592,7 +658,11 @@ export class BuilderBuildService {
 
     // A resume keeps the paused run's models: switching tiers mid-session
     // would make "which model wrote this" unanswerable for the run pair.
-    const models = this.resolveModels(session, settings);
+    const models = this.resolveModels(
+      this.resolveEngine(session, settings),
+      session,
+      settings,
+    );
     return this.dispatchRun({
       session,
       mode: BuilderRunMode.RESUME,
@@ -796,7 +866,11 @@ export class BuilderBuildService {
       1,
     );
 
-    const models = this.resolveModels(session, settings);
+    const models = this.resolveModels(
+      this.resolveEngine(session, settings),
+      session,
+      settings,
+    );
     const run = await this.dispatchRun({
       session,
       mode: BuilderRunMode.FIX,
@@ -903,7 +977,11 @@ export class BuilderBuildService {
       mode: BuilderRunMode.REVIEW,
       userId: session.createdBy ?? 0,
       repos: [pullRequest.repo],
-      models: this.resolveModels(session, settings),
+      models: this.resolveModels(
+        this.resolveEngine(session, settings),
+        session,
+        settings,
+      ),
       branches: { [pullRequest.repo]: pullRequest.branch },
       pullRequestId: pullRequest.id,
     });

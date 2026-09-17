@@ -611,6 +611,152 @@ describe('BuilderBuildService', () => {
     });
   });
 
+  /**
+   * Every default in `config.builder` is an Anthropic model id, and the tiers
+   * below could all reach one regardless of which engine was going to be
+   * handed it. The first Gemini-engine build hit two of these at once.
+   */
+  describe('model routing across engines', () => {
+    const dispatchedModels = () =>
+      JSON.parse(
+        github.dispatchWorkflow.mock.calls[0][0].inputs.models as string,
+      );
+
+    const geminiSettings = (extra: Record<string, unknown> = {}) => ({
+      enabled: true,
+      maxConcurrentBuilds: 3,
+      defaultEngine: 'gemini',
+      defaultModel: 'gemini-2.5-pro',
+      ...extra,
+    });
+
+    const smallPrd = {
+      draft: {
+        requirements: [{ id: 'R1' }, { id: 'R2' }],
+        technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'small' }] },
+      },
+    };
+
+    const isClaude = (model: unknown) =>
+      String(model ?? '').startsWith('claude-');
+
+    it('never hands a Claude model to a Gemini run', async () => {
+      settingsService.get.mockResolvedValue(geminiSettings());
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await service.startBuild(
+        readySession({ engine: null, model: null }) as any,
+        1,
+      );
+
+      const models = dispatchedModels();
+      const every = [
+        models.planner,
+        models.coder,
+        models.verifier,
+        ...models.coderLadder,
+      ];
+      expect(every.filter(isClaude)).toEqual([]);
+    });
+
+    /**
+     * The SMALL profile plans on the `mechanical` tier, which read
+     * `config.mechanicalModel` directly — so it ignored the admin's settings
+     * entirely and every small Gemini build planned on `claude-haiku-4-5`.
+     */
+    it("does not let a small build's mechanical planner tier escape the engine", async () => {
+      settingsService.get.mockResolvedValue(geminiSettings());
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await service.startBuild(
+        readySession({ engine: null, model: null }) as any,
+        1,
+      );
+
+      expect(dispatchedModels().planner).toBe('gemini-2.5-pro');
+    });
+
+    /**
+     * `plannerModel` had no `defaultModel` rung at all, so an admin who set
+     * one default model and no per-tier overrides still got Opus planning a
+     * Gemini build.
+     */
+    it('falls a planner back to the configured default model, not the Claude one', async () => {
+      settingsService.get.mockResolvedValue(geminiSettings());
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          requirements: Array.from({ length: 12 }, (_, i) => ({ id: `R${i}` })),
+          technicalPlan: {
+            repos: [{ repo: 'ally-be', changesMd: 'x'.repeat(4000) }],
+          },
+        },
+      });
+
+      await service.startBuild(
+        readySession({ engine: null, model: null }) as any,
+        1,
+      );
+
+      expect(dispatchedModels().planner).toBe('gemini-2.5-pro');
+    });
+
+    it('routes the verifier by the same rule', async () => {
+      settingsService.get.mockResolvedValue(geminiSettings());
+
+      await service.startBuild(
+        readySession({ engine: null, model: null }) as any,
+        1,
+      );
+
+      expect(isClaude(dispatchedModels().verifier)).toBe(false);
+    });
+
+    /**
+     * The negative half. Nothing above should change what a Claude build gets
+     * — the config defaults are exactly right for it, and the escalation
+     * ladder's tiers are the whole point of that profile.
+     */
+    it('leaves a claude-code run on its configured tiers', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'claude-code',
+      });
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await service.startBuild(
+        readySession({ engine: null, model: null }) as any,
+        1,
+      );
+
+      const models = dispatchedModels();
+      expect(models.coder).toBe('claude-sonnet-5');
+      expect(models.planner).toBe('claude-haiku-4-5');
+      expect(models.verifier).toBe('claude-opus-5');
+    });
+
+    /**
+     * An engine this code has never heard of must not be silently stripped
+     * back to nothing. Unknown model ids pass through, so adding a provider is
+     * a settings change rather than a deploy.
+     */
+    it('passes through model ids it cannot attribute to any engine', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'codex',
+        defaultModel: 'o4-mini',
+      });
+
+      await service.startBuild(
+        readySession({ engine: null, model: null }) as any,
+        1,
+      );
+
+      expect(dispatchedModels().coder).toBe('o4-mini');
+    });
+  });
+
   describe('spend and concurrency guards', () => {
     it('refuses a dispatch while another is already starting for the session', async () => {
       // Two admins answering the last question of a group at once, or one

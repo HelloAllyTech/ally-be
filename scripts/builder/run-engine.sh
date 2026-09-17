@@ -27,6 +27,24 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 FORWARDER="${HERE}/forward-events.mjs"
 API="${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}"
 
+# The reporting protocol, installed as commands on PATH.
+#
+# The build prompt documents `stage`, `note`, `todo`, `ask`, `budget`, `prs`,
+# `report` and `complete`. It used to *define* them, as bash functions embedded
+# in the prompt text — which only works if the agent pastes each body into each
+# shell it opens, because a coding agent's shell tool spawns a fresh shell per
+# call and nothing survives between them.
+#
+# Claude Code pastes the bodies. Gemini read the same documentation and ran
+# `stage REMEDIATING`, getting `bash: line 1: stage: command not found` eight
+# times in one run — silently, because every helper ended in `|| true` and
+# telemetry must never fail a build. The run coded, tested and committed while
+# the progress rail stayed frozen and no gate result was ever posted.
+#
+# Neither the prompt nor the agent was wrong. The protocol was being described
+# where it could be installed. See agent-helpers/README.md.
+export PATH="${HERE}/agent-helpers:${PATH}"
+
 # Model per tier, from the single `models` workflow input. ally-be always
 # supplies all three; the fallbacks only cover a hand-run workflow.
 MODELS_JSON="${BUILDER_MODELS:-{\}}"
@@ -417,6 +435,65 @@ revert_stray_writes() {
     git -C "$dir" clean -fd -e node_modules -e .venv >/dev/null 2>&1 || true
   done
 }
+
+# ── The working branch, made true rather than requested ─────────────────────
+#
+# Every repo is put on `builder/<slug>` here, before any agent runs.
+#
+# This used to be step 4 of the build prompt — "create the branch" — and the
+# gate's changed-repo test is `git diff --quiet master...HEAD`, which is empty
+# when HEAD *is* master. So an agent that skipped that step produced a run
+# where the work existed, the tests passed, and the gate reported
+# "unchanged, skipping gate" on a repo with 65 lines of new code in it.
+#
+# That is what the first Gemini-engine run did. It committed
+# `[master 44eeea9b] 2 files changed, 65 insertions(+)`, the gate saw nothing
+# to gate, failed closed, and sent it to remediate — where it re-read the file,
+# found its own change already applied, had nothing to do, and arrived back at
+# the same empty gate. Four rounds, seventeen minutes, no pull request, and the
+# run recorded as "did not pass the test gate" while holding a correct fix.
+#
+# Claude Code follows the instruction. That is not a reason to keep asking: an
+# invariant the gate depends on should not rest on any model's willingness to
+# read step 4. One `git checkout -b` in the runner is true for every engine.
+#
+# Fails the run rather than continuing on master. A build that cannot be
+# gated is worth stopping at second zero, not at minute seventeen.
+ensure_branches() {
+  local target existing
+  for dir in repos/*/; do
+    [ -d "$dir/.git" ] || continue
+    local repo; repo="$(basename "$dir")"
+
+    # A resume or fix run carries the branch its work already lives on;
+    # branching afresh there would abandon it.
+    target="$(printf '%s' "${BUILDER_BRANCHES:-{\}}" | jq -r --arg r "$repo" '.[$r] // empty' 2>/dev/null || true)"
+    [ -n "$target" ] || target="builder/${BUILDER_BRANCH_SLUG}"
+
+    if git -C "$dir" show-ref --verify --quiet "refs/heads/${target}"; then
+      git -C "$dir" checkout "$target" >/dev/null 2>&1
+    elif git -C "$dir" ls-remote --exit-code --heads origin "$target" >/dev/null 2>&1; then
+      git -C "$dir" fetch --quiet origin "$target" >/dev/null 2>&1
+      git -C "$dir" checkout -b "$target" "origin/${target}" >/dev/null 2>&1
+    else
+      git -C "$dir" checkout -b "$target" >/dev/null 2>&1
+    fi
+
+    existing="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null || echo '')"
+    case "$existing" in
+      master | main | '')
+        echo "Could not put ${repo} on '${target}' — HEAD is '${existing:-detached}'." >&2
+        echo "Work committed here would be invisible to the test gate, which" >&2
+        echo "compares master...HEAD. Stopping instead of building unmeasurably." >&2
+        complete-run "{\"outcome\":\"failed\",\"error\":\"Could not create the working branch in ${repo}; HEAD stayed on ${existing:-detached}. Nothing was built.\"}" || true
+        exit 1
+        ;;
+    esac
+    echo "${repo}: on ${existing}"
+  done
+}
+
+ensure_branches
 
 # ── Review mode: read the pull request, change nothing ──────────────────────
 #

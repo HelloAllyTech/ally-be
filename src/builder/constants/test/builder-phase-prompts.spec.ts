@@ -81,15 +81,20 @@ describe('the coder prompt', () => {
   it('stops the coder before pushing', () => {
     const prompt = render();
     expect(flat(prompt)).toContain('do not push and do not open a PR');
-    expect(flat(prompt)).toContain('Do not call `complete`');
+    expect(flat(prompt)).toContain('Do not call `complete-run`');
   });
 
-  it('mandates parallel subagents for parallel-safe workstreams', () => {
-    const prompt = render();
-    expect(flat(prompt)).toMatch(/concurrent `Task` subagents/);
-    expect(flat(prompt)).toContain(
-      'Never let two subagents hold the same file',
-    );
+  /**
+   * Parallelism is asked for, but conditionally: this prompt is shared by
+   * every engine and Gemini has no subagent tool. It used to read as a
+   * requirement, which left a Gemini run either ignoring an instruction or
+   * hunting for a tool it does not have.
+   */
+  it('asks for parallel subagents where the engine has them', () => {
+    const prompt = flat(render());
+    expect(prompt).toMatch(/concurrent subagents/);
+    expect(prompt).toMatch(/if your toolset can|if you have no such tool/i);
+    expect(prompt).toContain('Never let two subagents hold the same file');
   });
 
   it('still carries the pause contract', () => {
@@ -102,8 +107,13 @@ describe('the coder prompt', () => {
 
   it('tells a resume run to continue rather than restart', () => {
     const prompt = render('resume');
-    expect(flat(prompt)).toContain('RESUME run');
-    expect(flat(prompt)).toContain('Do NOT branch from master');
+    expect(flat(prompt)).toContain('This is a resume run');
+    expect(flat(prompt)).toContain('do not start over');
+    // The runner now puts the repo on the right branch before any agent runs,
+    // so the prompt states where it already is rather than asking for a
+    // checkout that a non-Claude engine skipped — see ensure_branches in
+    // run-engine.sh.
+    expect(flat(prompt)).toMatch(/Do \*\*not\*\* create a branch/);
   });
 });
 

@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# complete-run <json> — finish. {"outcome":"done"|"failed","error":"…"}
+#
+# NOT named `complete`. That is a bash BUILTIN (programmable completion), and
+# bash resolves builtins before PATH — so a file called `complete` can never be
+# invoked from a shell, however early it sits on PATH.
+#
+# This is why the old prompt-embedded form worked and looked fine: it defined a
+# shell FUNCTION, and functions outrank builtins. Turning the same protocol into
+# executables without renaming this one would have made the single most
+# important call in the contract silently unreachable — every run on every
+# engine recorded as "ended without reporting an outcome", with the work pushed
+# and green. Found by running each helper from a fresh shell, which is how an
+# agent's shell tool actually invokes them.
+#
+# The hyphen is load-bearing: no bash builtin or keyword contains one.
+#
+# The one helper that does not swallow its failure. Everything else here is
+# telemetry; this is the run's outcome, and a run that believes it reported one
+# when the POST never landed is recorded as a run that ended without reporting
+# — which is a failure even when the work pushed cleanly, and counts against
+# the session's circuit breaker.
+set -uo pipefail
+. "$(dirname "$0")/_common.sh"
+[ $# -eq 1 ] && [ -n "${1:-}" ] || usage "complete-run '{\"outcome\":\"done\"}'"
+
+printf '%s' "$1" | jq -e '.outcome == "done" or .outcome == "failed"' >/dev/null 2>&1 || {
+  echo "complete-run: outcome must be \"done\" or \"failed\". Got: $1" >&2
+  exit 2
+}
+
+for attempt in 1 2 3; do
+  code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "${API}/complete" \
+    -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+    -d "$1" 2>/dev/null || echo 000)"
+  case "$code" in
+    2*) echo "Outcome recorded."; exit 0 ;;
+  esac
+  echo "complete-run: HTTP ${code} on attempt ${attempt}." >&2
+  sleep 3
+done
+
+echo "complete-run: the outcome was NOT recorded after 3 attempts." >&2
+exit 1

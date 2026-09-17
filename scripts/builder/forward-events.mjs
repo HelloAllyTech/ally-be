@@ -170,7 +170,85 @@ const flushGeminiBuffer = () => {
   return [{ type: 'text', payload: { text: truncate(text) } }];
 };
 
+
+// ── What a Gemini invocation cost ───────────────────────────────────────────
+//
+// Gemini's CLI reports tokens but no dollar figure, where Claude Code reports
+// `total_cost_usd` directly. This used to be hardcoded to 0, which was honest
+// about what the engine said and wrong about everything downstream: the
+// session spend ceiling, the phase budgets, the routing telemetry and the cost
+// on the session card all read a Gemini run as free. A run that cannot be
+// priced cannot be capped, and "$0.00" on a build that burned 300k tokens is a
+// worse answer than an estimate.
+//
+// So it is computed here from published list prices. Two things follow from
+// that and both matter when reading the number:
+//
+//   - It is an ESTIMATE from a rate card, not a billed amount. Rates change,
+//     and this table has to be updated by hand when they do.
+//   - It does not know about credits. Spending against a credit grant still
+//     shows a dollar figure, because the ceiling exists to stop a runaway run,
+//     and a runaway run is just as runaway when something else is paying.
+//
+// Rates are USD per million tokens. Gemini 2.5 Pro prices in two tiers by
+// prompt size, which is why the long-context tier is not a rounding detail: a
+// coding run carrying a repo's worth of context sits above the 200k boundary
+// for most of its invocations.
+const GEMINI_RATES = {
+  'gemini-2.5-pro': {
+    threshold: 200_000,
+    short: { input: 1.25, cached: 0.31, output: 10.0 },
+    long: { input: 2.5, cached: 0.625, output: 15.0 },
+  },
+  'gemini-2.5-flash': {
+    threshold: Infinity,
+    short: { input: 0.3, cached: 0.075, output: 2.5 },
+    long: { input: 0.3, cached: 0.075, output: 2.5 },
+  },
+  'gemini-2.5-flash-lite': {
+    threshold: Infinity,
+    short: { input: 0.1, cached: 0.025, output: 0.4 },
+    long: { input: 0.1, cached: 0.025, output: 0.4 },
+  },
+};
+
+const geminiCostUsd = (stats, model) => {
+  // Prefix match so a dated or -latest suffix still prices, rather than
+  // silently falling back to free.
+  const key = Object.keys(GEMINI_RATES).find((k) => String(model ?? '').startsWith(k));
+  if (!key) {
+    console.error(
+      `[cost] no rate card for gemini model "${model}" — reporting 0. ` +
+        `Add it to GEMINI_RATES in forward-events.mjs.`,
+    );
+    return 0;
+  }
+  const card = GEMINI_RATES[key];
+  const totalIn = Number(stats.input_tokens ?? 0) || 0;
+  const cached = Number(stats.cached ?? 0) || 0;
+  const out = Number(stats.output_tokens ?? 0) || 0;
+  // `input` is the uncached remainder Gemini bills at the full rate; falling
+  // back to the subtraction keeps this right if that field ever goes away.
+  const fresh = Number(stats.input ?? Math.max(totalIn - cached, 0)) || 0;
+
+  const rates = totalIn > card.threshold ? card.long : card.short;
+  const usd =
+    (fresh / 1_000_000) * rates.input +
+    (cached / 1_000_000) * rates.cached +
+    (out / 1_000_000) * rates.output;
+
+  return Math.round(usd * 1e6) / 1e6;
+};
+
+// The model, captured from the stream's `init` frame. The terminal `result`
+// frame does not repeat it, and pricing without knowing the model is guessing.
+let geminiModel = null;
+
 const normaliseGemini = (record) => {
+  if (record?.type === 'init' && record.model) {
+    geminiModel = String(record.model);
+  }
+
   if (record?.type === 'message' && record.role === 'assistant' && record.delta === true) {
     geminiTextBuffer += record.content ?? '';
     return [];
@@ -245,8 +323,9 @@ const normaliseGemini = (record) => {
         output_tokens: stats.output_tokens ?? null,
         cached_tokens: stats.cached ?? null,
       },
-      // Confirmed absent from Gemini's own stats — see the doc comment above.
-      total_cost_usd: 0,
+      // Gemini reports no cost of its own; priced from the rate card above so
+      // the ceiling, the budget holds and the routing telemetry all work.
+      total_cost_usd: geminiCostUsd(stats, record.model ?? geminiModel),
       duration_ms: stats.duration_ms ?? null,
       // Tool-call count, not a turn count — the closest field Gemini reports;
       // named num_turns only so report_phase_cost's existing reader picks it

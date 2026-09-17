@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# stage <STAGE> — move to a new stage. Call it when you START one.
+set -uo pipefail
+. "$(dirname "$0")/_common.sh"
+[ $# -eq 1 ] && [ -n "${1:-}" ] || usage "stage <STAGE>"
+post_json events "$(jq -nc --arg s "$1" '{events:[{type:"stage_change",payload:{stage:$s}}]}')" || true
+echo "stage → $1"

@@ -40,8 +40,10 @@ describe('the shared prompt header', () => {
    * a cost, and it is the true one.
    */
   it('states what happens if it stops without completing', () => {
+    // `complete-run`, not `complete`: the latter is a bash builtin and can
+    // never be invoked from a shell. See builder-agent-helpers.spec.
     expect(header).toMatch(
-      /without calling .?complete.? is recorded as a run failure/i,
+      /without calling .?complete-run.? is recorded as a run failure/i,
     );
     expect(header).toMatch(/circuit breaker/i);
   });

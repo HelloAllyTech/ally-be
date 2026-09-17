@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# note <type> <text> — a free-text milestone (plan, test_output, verification…).
+set -uo pipefail
+. "$(dirname "$0")/_common.sh"
+[ $# -eq 2 ] || usage "note <type> <text>"
+post_json events "$(jq -nc --arg t "$1" --arg b "$2" '{events:[{type:$t,payload:{text:$b}}]}')" || true
