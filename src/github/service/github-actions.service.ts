@@ -203,6 +203,55 @@ export class GithubActionsService {
   }
 
   /**
+   * Did a run of this workflow SUCCEED after the given moment?
+   *
+   * Distinct from `findRunSince`, which correlates a dispatch we just made and
+   * therefore wants the oldest qualifying run whatever its outcome. This asks a
+   * question about the world: has this thing been released since then, by
+   * anyone — Builder, a person, another automation.
+   *
+   * No `event` filter, deliberately. `findRunSince` restricts to
+   * `workflow_dispatch` because it is looking for its own dispatch; a release
+   * cut by hand is exactly as real, and excluding it would answer "no" about a
+   * deploy that plainly happened.
+   */
+  async findSuccessfulRunSince(params: {
+    repo: string;
+    workflow: string;
+    since: Date;
+  }): Promise<WorkflowRun | null> {
+    this.requireConfigured();
+    try {
+      const { data } = await axios.get(
+        this.url(params.repo, `actions/workflows/${params.workflow}/runs`),
+        {
+          headers: this.headers,
+          params: { status: 'success', per_page: 30 },
+          timeout: 15_000,
+        },
+      );
+      const candidates = (data?.workflow_runs ?? [])
+        .map((run: any) => this.toWorkflowRun(run))
+        .filter(
+          (run: WorkflowRun) =>
+            run.conclusion === 'success' && run.createdAt >= params.since,
+        )
+        .sort(
+          (a: WorkflowRun, b: WorkflowRun) =>
+            a.createdAt.getTime() - b.createdAt.getTime(),
+        );
+      return candidates[0] ?? null;
+    } catch (error) {
+      this.logger.warn(
+        `Could not list successful runs for ${params.workflow} in ${params.repo}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  /**
    * A pull request's current merge state, straight from GitHub — the check
    * nothing else in this module performs. `merged` is only ever true once
    * GitHub itself reports it, whichever way the PR was actually merged (the

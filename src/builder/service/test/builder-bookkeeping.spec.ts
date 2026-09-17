@@ -343,3 +343,131 @@ describe('Builder bookkeeping — the outcome sweep runs over sessions', () => {
     expect(clearStaleSessionError).toHaveBeenCalledTimes(2);
   });
 });
+
+/**
+ * A `failed` release that was shipped by other means.
+ *
+ * `failed` was terminal — nothing ever re-read it. So a pull request whose
+ * automatic release failed stayed marked "merged but NOT deployed" for good,
+ * even after a person cut the release by hand minutes later. ally-web#658 is
+ * the case: Builder proposed `admin-v0.0.1` for an app on 1.88, the workflow
+ * rightly refused it, and the code shipped in admin-v1.88.0 twenty minutes
+ * afterwards with the row still claiming otherwise.
+ *
+ * It matters more now the roadmap reads these rows to decide whether an
+ * opportunity was delivered: a stuck `failed` keeps shipped work looking
+ * unshipped, and refuses to be fixed by the act of releasing it properly.
+ */
+describe('Builder bookkeeping — a failed release that actually shipped', () => {
+  const mergedAt = new Date('2026-09-17T17:18:00.000Z');
+
+  const build = (over: Record<string, any> = {}) => {
+    const repository = {
+      find: jest.fn().mockResolvedValue([
+        {
+          id: 'pr-1',
+          repo: 'ally-web',
+          prNumber: 658,
+          merged: true,
+          mergedAt,
+          releaseState: 'failed',
+          releaseTag: 'admin-v0.0.1',
+        },
+      ]),
+      update: jest.fn(),
+    };
+    const github = {
+      isConfigured: true,
+      listPullRequestFiles: jest.fn().mockResolvedValue({
+        files: ['apps/ally-admin-dashboard/src/x.tsx'],
+        truncated: false,
+      }),
+      findSuccessfulRunSince: jest
+        .fn()
+        .mockResolvedValue({ id: '99', htmlUrl: 'https://run/99' }),
+      ...over,
+    };
+    const service = Object.create(
+      BuilderPullRequestService.prototype,
+    ) as BuilderPullRequestService;
+    Object.assign(service, {
+      repository,
+      github,
+      logger: { info: jest.fn(), warn: jest.fn() },
+    });
+    return { service: service as any, repository, github };
+  };
+
+  it('corrects the row when a release succeeded after the merge', async () => {
+    const { service, repository, github } = build();
+
+    await service.reconcileFailedReleases();
+
+    expect(github.findSuccessfulRunSince).toHaveBeenCalledWith(
+      expect.objectContaining({ since: mergedAt }),
+    );
+    expect(repository.update).toHaveBeenCalledWith(
+      { id: 'pr-1' },
+      expect.objectContaining({
+        releaseState: 'released',
+        releaseRunUrl: 'https://run/99',
+      }),
+    );
+  });
+
+  /**
+   * The tag recorded is the one we TRIED and failed with. Leaving it beside a
+   * `released` state would state something untrue.
+   */
+  it('clears the tag it failed with rather than keeping it', async () => {
+    const { service, repository } = build();
+
+    await service.reconcileFailedReleases();
+
+    expect(repository.update.mock.calls[0][1].releaseTag).toBeNull();
+  });
+
+  it('leaves the row alone when nothing has been released since', async () => {
+    const { service, repository } = build({
+      findSuccessfulRunSince: jest.fn().mockResolvedValue(null),
+    });
+
+    await service.reconcileFailedReleases();
+
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A truncated file list cannot attribute the work to one deployable, and
+   * which app shipped is the wrong thing to guess at.
+   */
+  it('refuses to attribute a pull request it could not read fully', async () => {
+    const { service, repository, github } = build({
+      listPullRequestFiles: jest
+        .fn()
+        .mockResolvedValue({ files: [], truncated: true }),
+    });
+
+    await service.reconcileFailedReleases();
+
+    expect(github.findSuccessfulRunSince).not.toHaveBeenCalled();
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+
+  /** Three apps live in ally-web; a change spanning them names no one target. */
+  it('refuses when the files span more than one deployable', async () => {
+    const { service, repository } = build({
+      listPullRequestFiles: jest.fn().mockResolvedValue({
+        files: [
+          'apps/ally-admin-dashboard/src/x.tsx',
+          'apps/ally-helpline-dashboard/src/y.tsx',
+        ],
+        truncated: false,
+      }),
+    });
+
+    await service.reconcileFailedReleases();
+
+    expect(repository.update).not.toHaveBeenCalled();
+  });
+});

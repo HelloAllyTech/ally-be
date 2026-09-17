@@ -743,8 +743,88 @@ export class BuilderPullRequestService {
    * worse state than never having released, because master has moved on and
    * everyone assumes the change is live, so it notifies.
    */
+  /**
+   * Correct a `failed` release that has since been shipped by other means.
+   *
+   * `failed` was terminal: nothing re-read it, ever. So a pull request whose
+   * automatic release failed stayed marked "merged but NOT deployed" for the
+   * rest of the deployment's life, even after a person cut the release by hand
+   * an hour later. ally-web#658 is the case — Builder proposed `admin-v0.0.1`
+   * for an app on 1.88 (see `nextPatchTag`), the workflow rightly refused it,
+   * and the code shipped in admin-v1.88.0 twenty minutes afterwards with the
+   * row still claiming otherwise.
+   *
+   * That is not only untidy. The roadmap now reads these rows to decide whether
+   * an opportunity has been delivered, so a stuck `failed` keeps shipped work
+   * looking unshipped on the board — and refuses to be fixed by the very act of
+   * releasing it properly.
+   *
+   * The evidence is a SUCCESSFUL run of that target's release workflow started
+   * after this pull request merged. Releases are cut from master, so a release
+   * that began after the merge landed necessarily carries it. Not the tag we
+   * attempted — that one failed, and comparing version numbers would happily
+   * "prove" delivery from the `0.0.1` that caused the problem.
+   *
+   * `releaseTag` is cleared rather than kept. The tag recorded here is the one
+   * we tried and failed with; leaving it beside a `released` state would state
+   * something untrue, and the run URL says where it actually shipped.
+   */
+  private async reconcileFailedReleases(): Promise<void> {
+    const failed = await this.repository.find({
+      where: { releaseState: 'failed', merged: true },
+    });
+
+    for (const pullRequest of failed) {
+      try {
+        if (!pullRequest.mergedAt) continue;
+
+        const files = await this.github.listPullRequestFiles(
+          pullRequest.repo,
+          pullRequest.prNumber,
+        );
+        // A truncated file list cannot attribute the work to one deployable,
+        // and guessing which app shipped is exactly the wrong place to guess.
+        if (files.truncated) continue;
+
+        const { targets, ambiguous } = resolveReleaseTargets(
+          pullRequest.repo,
+          files.files,
+        );
+        if (ambiguous || targets.length !== 1) continue;
+
+        const run = await this.github.findSuccessfulRunSince({
+          repo: targets[0].repo,
+          workflow: targets[0].workflow,
+          since: pullRequest.mergedAt,
+        });
+        if (!run) continue;
+
+        await this.repository.update(
+          { id: pullRequest.id },
+          {
+            releaseState: 'released',
+            releaseTag: null,
+            releaseRunId: run.id,
+            releaseRunUrl: run.htmlUrl,
+          },
+        );
+        this.logger.info(
+          `[BUILDER] ${pullRequest.repo}#${pullRequest.prNumber} was released after all — a successful ${targets[0].workflow} run started after it merged.`,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Could not re-check the failed release for ${pullRequest.repo}#${pullRequest.prNumber}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
   async reconcileReleases(): Promise<void> {
     if (!this.github.isConfigured) return;
+
+    await this.reconcileFailedReleases();
 
     const releasing = await this.repository.find({
       where: { releaseState: 'releasing' },
