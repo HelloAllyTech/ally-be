@@ -45,7 +45,10 @@ import { BugFixSessionService } from '../service/bug-fix-session.service';
 import { BugHuntRunStatus } from '../enum/bug-hunt-run.enum';
 import { toEventDto, toRunDto, toFindingDto } from './bug-hunter.controller';
 import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
-import { BUG_HUNT_REPOS } from '../constants/bug-hunt-repos.constants';
+import {
+  BUG_HUNT_REPOS,
+  BugHuntRepoConfig,
+} from '../constants/bug-hunt-repos.constants';
 import { buildSweepPrompt } from '../constants/bug-hunt-sweep-prompt';
 import { BugHunterModelSettingsService } from '../service/bug-hunter-model-settings.service';
 import { BugHunterModelSettingsDto } from '../dto/bug-hunter.dto';
@@ -135,9 +138,7 @@ export class BugHunterPipelineController {
       'the two had already drifted by an entry. The workflow script now fetches ' +
       'it from here instead of carrying its own copy.',
   })
-  getRepoCommands(): {
-    repos: Record<string, { test: string; lint: string; fixable: boolean }>;
-  } {
+  getRepoCommands(): { repos: Record<string, BugHuntRepoConfig> } {
     return { repos: BUG_HUNT_REPOS };
   }
 

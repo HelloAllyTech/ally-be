@@ -373,4 +373,20 @@ describe('buildSweepPrompt', () => {
     expect(build()).toMatch(/re-reads this run the moment you exit/i);
     expect(build()).toMatch(/fails the job if it is still open/i);
   });
+
+  describe('typecheck', () => {
+    it('folds the typecheck command into both the finder and the fix step, for a repo with one', () => {
+      const prompt = build({ repo: 'ally-be' });
+      expect(prompt).toContain('npx tsc --noEmit -p tsconfig.json');
+      expect(prompt).toMatch(/TEST\/LINT\/TYPECHECK/);
+      expect(prompt).toMatch(/type error.*CONFIRMED bug/i);
+      expect(prompt).toMatch(/All of them must be green/);
+    });
+
+    it('says nothing about typecheck for a repo with no separate CI gate for it', () => {
+      const prompt = build({ repo: 'ally-ai' });
+      expect(prompt).not.toMatch(/typecheck|tsc --noEmit/i);
+      expect(prompt).toMatch(/TEST\/LINT\. /);
+    });
+  });
 });

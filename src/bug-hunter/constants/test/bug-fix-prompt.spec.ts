@@ -257,4 +257,32 @@ describe('buildFixSessionPrompt', () => {
       /If you did NOT get a clean run at step 5, do not skip the hook/i,
     );
   });
+
+  describe('typecheck', () => {
+    // Real, recurring failure this closes: a fix that only ran test+lint
+    // opened a PR that then failed CI's own separate `tsc --noEmit` job the
+    // moment someone tried to merge it — ESLint's rules never catch a type
+    // error, so a fix could pass everything the agent checked and still be
+    // red on arrival.
+    it('requires the typecheck command too, for a repo whose real CI has one', () => {
+      const prompt = build({}, 'ally-be');
+      expect(prompt).toContain('npx tsc --noEmit -p tsconfig.json');
+      expect(prompt).toMatch(/All of them must be green/);
+    });
+
+    it('names all three admin-dashboard/helpline/ui-shared configs for ally-web', () => {
+      const prompt = build({}, 'ally-web');
+      expect(prompt).toContain('apps/ally-admin-dashboard/tsconfig.app.json');
+      expect(prompt).toContain(
+        'apps/ally-helpline-dashboard/tsconfig.app.json',
+      );
+      expect(prompt).toContain('libs/ui-shared/tsconfig.lib.json');
+    });
+
+    it('says nothing about typecheck for a repo with no separate CI gate for it', () => {
+      const prompt = build({}, 'ally-ai');
+      expect(prompt).not.toMatch(/typecheck|tsc --noEmit/i);
+      expect(prompt).toMatch(/All of them must be green/);
+    });
+  });
 });

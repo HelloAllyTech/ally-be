@@ -1,6 +1,6 @@
 import { BugHunterMode } from '../enum/bug-finding.enum';
 import { BUG_HUNT_SWEEP_JOB_TIMEOUT_MINUTES } from './bug-fix-session.constants';
-import { repoCommands } from './bug-hunt-repos.constants';
+import { repoCommands, verifyCommandsList } from './bug-hunt-repos.constants';
 import {
   BUG_HUNT_ESCALATION_GUIDANCE,
   BUG_HUNT_KNOWN_NON_BUG_EXCERPT,
@@ -157,7 +157,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     `## Phase 1 — Discover`,
     `Run these four finders. Do them in whatever order you like, but do ALL of them, and report a finder_result for each even when it found nothing — a clean finder is a result, not a gap.`,
     ``,
-    `1. TEST/LINT. Run "${commands.test}" and "${commands.lint}". Any failing test or lint error is a CONFIRMED bug; no judgement call is needed to prove it. severity "high" for a failing test, "low" for lint. proven=true.`,
+    `1. TEST/LINT${commands.typecheck ? '/TYPECHECK' : ''}. Run ${verifyCommandsList(commands)}. Any failing test${commands.typecheck ? ', type error,' : ''} or lint error is a CONFIRMED bug; no judgement call is needed to prove it. severity "high" for a failing test${commands.typecheck ? ' or a type error' : ''}, "low" for lint. proven=true.`,
     deep
       ? `2. CODE REVIEW (deep). Read broadly across the codebase for correctness bugs a careful reviewer would flag. proven=false.`
       : `2. CODE REVIEW (diff-scoped). Read ONLY files changed by "git log --since='1 day ago'" — or the last 20 commits if that range is empty. Do not read the whole repo; this bounds the cost. proven=false.`,
@@ -234,7 +234,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
           `  a1. ${BUG_HUNT_ESCALATION_GUIDANCE} If you escalate, continue from step (e) below once the subagent reports back.`,
           `  b. Write a regression test that FAILS because of this bug. If you cannot make it fail, the bug does not reproduce: PATCH to {"status":"dismissed"}, report an error stage saying exactly what you tried and observed, and move on.`,
           `  c. Apply the MINIMAL fix. No refactoring, renaming or drive-by cleanup.`,
-          `  d. Confirm the new test passes, then run the full "${commands.test}" and "${commands.lint}". Both must be green. If they are not after ${BUG_HUNT_MAX_FIX_ATTEMPTS} attempts, PATCH to {"status":"failed"}, report escalated, and move on. Never force past a red suite.`,
+          `  d. Confirm the new test passes, then run the full ${verifyCommandsList(commands)}. All of them must be green. If they are not after ${BUG_HUNT_MAX_FIX_ATTEMPTS} attempts, PATCH to {"status":"failed"}, report escalated, and move on. Never force past a red suite.`,
           `  e. If the fix needs a change in ANOTHER repo too, do not fix half of it — a merged half-fix is worse than no fix, because it looks finished and can be released on its own. POST an ordered plan to "${base}/pipeline/findings/<id>/plan" with one step per repo in dependency order, report escalated, and commit nothing for that finding.`,
           `  f. If the root cause turns out to be undefined PRODUCT behaviour rather than a code defect, do not invent an answer: PATCH to {"status":"needs_input"} with an "escalationQuestion", report escalated, and move on to the next finding. Unlike a fix session you do NOT wait for an answer here — a sweep has other work to do, and the next run will read whatever the admin replied.`,
           `  g. Commit, push a branch, open a PR with "gh pr create" describing the bug, the evidence, the fix and the test. PATCH to {"status":"pr_opened"} with "prUrl", and report pr_opened.`,
