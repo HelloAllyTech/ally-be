@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Body,
+  ConflictException,
   Controller,
   Get,
   Header,
@@ -675,18 +676,29 @@ export class BuilderPipelineController {
       !changedNothing &&
       !(await this.buildService.hasPassingGate(run.id))
     ) {
+      // Refused, NOT settled. The run may still be working.
+      //
+      // This used to record FAILED, on the assumption that a `done` without a
+      // gate came from an agent about to exit. It also arrives from one that
+      // simply completed too early: a coding phase that called `complete-run`
+      // in the middle of the pipeline, before the gate it is claiming had run
+      // at all. The run then carried on — gate, remediation, finalise, a real
+      // pull request — behind a session already painted red by a claim the
+      // pipeline had itself overtaken.
+      //
+      // Leaving it RUNNING loses nothing. An agent that goes on to quit is
+      // caught by outcome-gate.sh, which settles anything still QUEUED or
+      // RUNNING when the engine exits; an agent that carries on reaches a real
+      // outcome. Either way the verdict comes from what happened rather than
+      // from what was claimed halfway through.
       this.logger.warn(
-        `Builder run ${run.id} reported done with no passing test gate — failing it instead.`,
+        `Builder run ${run.id} reported done with no passing test gate — refusing the claim; the run continues.`,
       );
-      await this.buildService.settleRun(
-        run,
-        BuilderRunStatus.FAILED,
-        'The run reported success but no passing test gate was recorded, so nothing proves the change works.',
+      throw new ConflictException(
+        'No passing gate_result for this run. The test gate has not run yet, ' +
+          'so there is nothing to complete against — carry on, and let the ' +
+          'pipeline reach its own outcome.',
       );
-      return {
-        ok: false,
-        note: 'No passing gate_result for this run. Run the test gate before completing.',
-      };
     }
 
     await this.buildService.settleRun(

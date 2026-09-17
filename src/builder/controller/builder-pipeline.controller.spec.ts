@@ -37,6 +37,9 @@ describe('BuilderPipelineController', () => {
         model: null,
       }),
       recordRunModel: jest.fn().mockResolvedValue(undefined),
+      touchedNoFiles: jest.fn().mockResolvedValue(false),
+      hasPassingGate: jest.fn().mockResolvedValue(false),
+      settleRun: jest.fn().mockResolvedValue(undefined),
     };
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -59,7 +62,12 @@ describe('BuilderPipelineController', () => {
         { provide: BuilderSteerService, useValue: {} },
         { provide: BuilderQuestionService, useValue: {} },
         { provide: BuilderPullRequestService, useValue: {} },
-        { provide: BuilderReportService, useValue: {} },
+        {
+          provide: BuilderReportService,
+          useValue: {
+            composeSessionReport: jest.fn().mockResolvedValue(undefined),
+          },
+        },
         { provide: BuilderSettingsService, useValue: {} },
         { provide: BuilderExemplarService, useValue: {} },
         { provide: BuilderEpicService, useValue: {} },
@@ -77,6 +85,58 @@ describe('BuilderPipelineController', () => {
 
   afterEach(async () => {
     await app.close();
+  });
+
+  /**
+   * A `done` the gate cannot corroborate is refused — and the run is left
+   * alone. It used to be settled FAILED, on the assumption that such a claim
+   * came from an agent about to exit; it also arrives from one that completed
+   * too early, mid-pipeline, before the gate it was claiming had run. The run
+   * then carried on to a real pull request behind a session already painted
+   * red. Anything that does go on to quit is caught by outcome-gate.sh, which
+   * settles whatever is still RUNNING when the engine exits.
+   */
+  it('refuses a done with no passing gate without ending the run', async () => {
+    const runId = uuidv4();
+
+    await request(app.getHttpServer())
+      .post(`/builder/pipeline/runs/${runId}/complete`)
+      .set('x-api-key', 'test-api-key')
+      .send({ outcome: 'done' })
+      .expect(409);
+
+    expect(mockBuilderBuildService.settleRun).not.toHaveBeenCalled();
+  });
+
+  it('settles a done the gate corroborates', async () => {
+    (mockBuilderBuildService.hasPassingGate as jest.Mock).mockResolvedValue(
+      true,
+    );
+    const runId = uuidv4();
+
+    await request(app.getHttpServer())
+      .post(`/builder/pipeline/runs/${runId}/complete`)
+      .set('x-api-key', 'test-api-key')
+      .send({ outcome: 'done' })
+      .expect(201);
+
+    expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
+  });
+
+  /**
+   * A failure needs no gate behind it — the runner reports these from evidence
+   * after the agent has finished, and they must always land.
+   */
+  it('always records a failure', async () => {
+    const runId = uuidv4();
+
+    await request(app.getHttpServer())
+      .post(`/builder/pipeline/runs/${runId}/complete`)
+      .set('x-api-key', 'test-api-key')
+      .send({ outcome: 'failed', error: 'no pull request was opened' })
+      .expect(201);
+
+    expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
   });
 
   it('should record the engine and model for a run', async () => {

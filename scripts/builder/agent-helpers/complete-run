@@ -53,16 +53,48 @@ case "$1" in
     ;;
 esac
 
+# A refusal is not a transport failure, and must not be retried into one.
+#
+# The server refuses a `done` it cannot verify — no passing test gate yet —
+# and that is a considered answer about this run, identical on every attempt.
+# Only 5xx and network errors are worth trying again.
+#
+# This mattered more than it looks. The refusal used to come back as HTTP 200
+# with `{"ok": false}`, and this helper checked only the status code, so it
+# printed "Outcome recorded." at an agent whose outcome had just been rejected.
+# The agent believed it had finished, said so, and stopped — while the pipeline
+# carried on without it.
+response="$(mktemp)"
 for attempt in 1 2 3; do
-  code="$(curl -sS -o /dev/null -w '%{http_code}' -X POST "${API}/complete" \
+  code="$(curl -sS -o "$response" -w '%{http_code}' -X POST "${API}/complete" \
     -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
     -d "$body" 2>/dev/null || echo 000)"
   case "$code" in
-    2*) echo "Outcome recorded."; exit 0 ;;
+    2*)
+      # `{"ok": false}` is a refusal wearing a success code. Older servers
+      # answer that way, so read the body rather than trusting the status.
+      if jq -e '.ok == false' < "$response" >/dev/null 2>&1; then
+        echo "complete-run: REFUSED — your outcome was not recorded." >&2
+        jq -r '.note // .message // empty' < "$response" >&2 2>/dev/null || true
+        rm -f "$response"
+        exit 1
+      fi
+      rm -f "$response"
+      echo "Outcome recorded."
+      exit 0
+      ;;
+    4*)
+      echo "complete-run: REFUSED — your outcome was not recorded." >&2
+      jq -r '.message // .note // empty' < "$response" >&2 2>/dev/null \
+        || sed -n '1,5p' "$response" >&2
+      rm -f "$response"
+      exit 1
+      ;;
   esac
   echo "complete-run: HTTP ${code} on attempt ${attempt}." >&2
   sleep 3
 done
 
+rm -f "$response"
 echo "complete-run: the outcome was NOT recorded after 3 attempts." >&2
 exit 1
