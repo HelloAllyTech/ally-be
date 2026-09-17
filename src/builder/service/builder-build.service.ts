@@ -1843,6 +1843,19 @@ export class BuilderBuildService {
     }
   }
 
+  async recordRunModel(
+    run: BuilderBuildRun,
+    dto: RecordBuilderRunModelDto,
+  ): Promise<void> {
+    await this.runRepository.update(
+      { id: run.id },
+      {
+        engine: dto.engine ?? run.engine,
+        model: dto.model ?? run.model,
+      },
+    );
+  }
+
   /**
    * Live spend against the session ceiling, for the between-phase check the
    * runner makes.
