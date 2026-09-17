@@ -83,7 +83,11 @@ describe('BuilderPipelineController', () => {
     const runId = uuidv4();
     const engine = 'test-engine';
     const model = 'test-model';
-    const mockRun = await mockBuilderBuildService.getRunOrFail(runId);
+    // Non-null asserted: the mock is a Partial<BuilderBuildService>, so every
+    // member is optional to the type checker even though this one is always
+    // provided in beforeEach. Without it the Docker build fails on a strict
+    // type error that ts-jest does not raise.
+    const mockRun = await mockBuilderBuildService.getRunOrFail!(runId);
 
     const dto: RecordBuilderRunModelDto = { engine, model };
 

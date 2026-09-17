@@ -32,6 +32,7 @@ import { BuilderNotificationService } from './builder-notification.service';
 import { BuilderExemplarService } from './builder-exemplar.service';
 import { BuilderEpicService } from './builder-epic.service';
 import { BuilderPrdService } from './builder-prd.service';
+import { RecordBuilderRunModelDto } from '../dto/builder-pipeline.dto';
 import {
   BUILDER_RUN_ACTIVE_STATUSES,
   BuilderEventType,
