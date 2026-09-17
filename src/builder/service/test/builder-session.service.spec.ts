@@ -108,6 +108,35 @@ describe('BuilderSessionService', () => {
       );
     });
 
+    /**
+     * `builder_sessions.engine` carries a column default of 'claude-code', so
+     * `session.engine` is never null and the dispatch's
+     * `session.engine ?? settings.defaultEngine` could never reach the third
+     * rung. The picker applied to no new session ever — while the per-tier
+     * MODELS did read settings, so a workspace set to Gemini produced a
+     * claude-code engine running a gemini coder model, which fails on its
+     * first invocation.
+     */
+    it("stamps the admin's default engine, so the picker does something", async () => {
+      settingsService.get.mockResolvedValue({ defaultEngine: 'gemini' });
+
+      await service.createSession(1, {});
+
+      expect(sessionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ engine: 'gemini' }),
+      );
+    });
+
+    it('falls back to claude-code when no default engine is set', async () => {
+      settingsService.get.mockResolvedValue({});
+
+      await service.createSession(1, {});
+
+      expect(sessionRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({ engine: 'claude-code' }),
+      );
+    });
+
     it('prefers the settings budget over the config default', async () => {
       settingsService.get.mockResolvedValue({ defaultBudgetUsd: '10.0000' });
 
