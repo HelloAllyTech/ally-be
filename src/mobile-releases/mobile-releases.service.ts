@@ -909,6 +909,14 @@ export class MobileReleasesService {
     );
     if (appVersionState !== 'READY_FOR_DISTRIBUTION') return;
 
+    const VERSION_FORMAT_REGEX = /^\d+\.\d+\.\d+$/;
+    if (!VERSION_FORMAT_REGEX.test(build.version)) {
+      this.logger.warn(
+        `Skipping iOS minimum version bump: Build version '${build.version}' is not in X.Y.Z format.`,
+      );
+      return;
+    }
+
     const current =
       await this.appVersionSettingsService.getAppVersionSettings('ios');
     if (current.minimumSupportedVersion === build.version) return;
