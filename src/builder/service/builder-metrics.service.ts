@@ -112,7 +112,7 @@ export class BuilderMetricsService {
               -- Phases with no -N suffix are attempt 1.
               AND ba.attempt = COALESCE(NULLIF(SPLIT_PART(phase.key, '-', 2), '')::int, 1)
        WHERE run."createdAt" >= NOW() - ($1 || ' days')::interval
-       GROUP BY phase.key, ba.model
+       GROUP BY 1, 2
        ORDER BY SUM((phase.value->>'usd')::numeric) DESC NULLS LAST
       `,
       [String(days)],

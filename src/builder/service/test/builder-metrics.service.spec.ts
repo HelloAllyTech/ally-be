@@ -181,7 +181,7 @@ describe('BuilderMetricsService', () => {
       expect(dataSource.query).toHaveBeenCalledWith(expect.any(String), ['30']);
     });
 
-    it('groups phases by model', async () => {
+    it('groups phases by model, and returns null for phases without a model', async () => {
       dataSource.query.mockImplementation((sql: string) => {
         if (sql.includes('phase.key') && !sql.includes('per_run')) {
           return Promise.resolve([
@@ -231,23 +231,17 @@ describe('BuilderMetricsService', () => {
         (p) => p.phase === 'code-1' && p.model === 'claude-opus-5',
       );
       expect(codeOpus).toBeDefined();
-      if (codeOpus) {
-        expect(codeOpus.invocations).toBe(1);
-      }
+      expect(codeOpus!.invocations).toBe(1);
 
       const codeSonnet = health.phases.find(
         (p) => p.phase === 'code-1' && p.model === 'claude-sonnet-5',
       );
       expect(codeSonnet).toBeDefined();
-      if (codeSonnet) {
-        expect(codeSonnet.invocations).toBe(2);
-      }
+      expect(codeSonnet!.invocations).toBe(2);
 
       const planPhase = health.phases.find((p) => p.phase === 'plan');
       expect(planPhase).toBeDefined();
-      if (planPhase) {
-        expect(planPhase.model).toBeNull();
-      }
+      expect(planPhase!.model).toBeNull();
     });
   });
 
