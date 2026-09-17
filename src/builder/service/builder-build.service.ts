@@ -122,6 +122,19 @@ export interface BuilderBudgetState {
  * correlates the two afterwards. Cancel, run links and status settling are all
  * eventually consistent because of it.
  */
+/**
+ * Session states a build can be dispatched from.
+ *
+ * Named rather than inlined because the admin UI makes the same decision about
+ * which sessions offer a start control, and the two had already drifted: the
+ * page offered a retry the API refused.
+ */
+export const BUILDER_STARTABLE_STATUSES: BuilderSessionStatus[] = [
+  BuilderSessionStatus.PRD_READY,
+  BuilderSessionStatus.FAILED,
+  BuilderSessionStatus.CANCELLED,
+];
+
 @Injectable()
 export class BuilderBuildService {
   private readonly logger = LoggerService.getInstance(BuilderBuildService.name);
@@ -179,10 +192,17 @@ export class BuilderBuildService {
         'GITHUB_TOKEN is not configured on this environment, so builds cannot be dispatched.',
       );
     }
-    if (
-      session.status !== BuilderSessionStatus.PRD_READY &&
-      session.status !== BuilderSessionStatus.FAILED
-    ) {
+    // CANCELLED is startable, and leaving it out made stop a one-way door.
+    //
+    // A session only reaches CANCELLED by way of BUILDING, so its PRD is ready
+    // by construction — stopping a run says "not this build", not "retire this
+    // work". Refusing here meant the deliberate act of pressing stop discarded
+    // the session: the PRD stayed, the branch stayed, and the only route
+    // onward was a new session and a re-run of the interview.
+    //
+    // COMPLETED stays out. Its pull requests are open or merged, and a second
+    // build of finished work opens a competing set against the same PRD.
+    if (!BUILDER_STARTABLE_STATUSES.includes(session.status)) {
       throw new BadRequestException(
         `A build can only start from a ready PRD — this session is ${session.status.toLowerCase()}.`,
       );

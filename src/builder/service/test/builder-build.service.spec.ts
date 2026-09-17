@@ -757,6 +757,43 @@ describe('BuilderBuildService', () => {
     });
   });
 
+  /**
+   * Stopping a build used to be a one-way door: the session kept its PRD and
+   * its branch, and the API refused every attempt to build from it again.
+   */
+  describe('which states a build can start from', () => {
+    const startFrom = (status: BuilderSessionStatus) =>
+      service.startBuild(readySession({ status }) as any, 1);
+
+    it('starts again after a stop', async () => {
+      await expect(
+        startFrom(BuilderSessionStatus.CANCELLED),
+      ).resolves.toBeDefined();
+    });
+
+    it('starts again after a failure', async () => {
+      await expect(
+        startFrom(BuilderSessionStatus.FAILED),
+      ).resolves.toBeDefined();
+    });
+
+    /**
+     * Finished work stays finished. Its pull requests are open or merged, and
+     * a second build against the same PRD opens a competing set.
+     */
+    it('refuses to rebuild finished work', async () => {
+      await expect(startFrom(BuilderSessionStatus.COMPLETED)).rejects.toThrow(
+        /can only start from a ready PRD/,
+      );
+    });
+
+    it('refuses while a build is already running', async () => {
+      await expect(startFrom(BuilderSessionStatus.BUILDING)).rejects.toThrow(
+        /can only start from a ready PRD/,
+      );
+    });
+  });
+
   describe('spend and concurrency guards', () => {
     it('refuses a dispatch while another is already starting for the session', async () => {
       // Two admins answering the last question of a group at once, or one
