@@ -162,6 +162,14 @@ fi
 
 [ "$phase" = "build" ] && [ "${DRYRUN_PAUSE:-}" = "1" ] && touch /tmp/builder-paused
 
+# A phase that never returns. `--max-turns` and `--max-budget-usd` are Claude
+# Code flags, so on any other engine nothing stands between a stuck phase and
+# the job's own timeout — the wall clock in run_agent is the only bound that
+# does not depend on a vendor implementing one.
+if [ "${DRYRUN_HANG:-}" = "1" ] && [ "$phase" = "build" ]; then
+  sleep 120
+fi
+
 # A read-only phase that writes anyway. The allowlist withholding Write and
 # Edit reaches Claude Code only — Gemini's `--yolo` means "run any tool" and
 # run-engine.sh passes it no tool list at all, so the planner, the verifier and
@@ -617,6 +625,22 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = readonly ]; then
   check "kept the coding pass's change" yes \
     "$(git -C "${WORK}/run/repos/demo-repo" diff --quiet master...HEAD 2>/dev/null \
        && echo no || echo yes)"
+fi
+
+# ── 10. a phase that will not stop ─────────────────────────────────────────
+if { [ "$SCENARIO" = all ] || [ "$SCENARIO" = timeout ]; } &&
+   command -v timeout >/dev/null 2>&1; then
+  # Seconds, not the real 45 minutes: durations carry their unit precisely so
+  # this can prove the mechanism without the harness waiting for one.
+  run_scenario phase-timeout DRYRUN_HANG=1 \
+    BUILDER_MODELS='{"planner":"p","coder":"c","verifier":"v","timeouts":{"code":"3s"}}'
+  check "stops a phase that will not stop" yes \
+    "$(grep -q 'wall clock' "${WORK}/phase-timeout.out" && echo yes || echo no)"
+  # The point of swallowing 124: the pipeline must still reach its gate rather
+  # than aborting under `set -e` with the work unexplained and no outcome.
+  check "still reaches the gate" yes "$(has_in_log 'EVENT gate_result')"
+elif [ "$SCENARIO" = timeout ]; then
+  echo "── phase-timeout ── skipped: no \`timeout\` on this host (macOS)."
 fi
 
 echo

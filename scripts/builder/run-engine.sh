@@ -130,6 +130,39 @@ budget_for() {
   value="$(printf '%s' "$MODELS_JSON" | jq -r --arg p "$phase" '.budgets[$p] // empty' 2>/dev/null || true)"
   printf '%s' "${value:-$fallback}"
 }
+# ── A wall clock per phase ──────────────────────────────────────────────────
+#
+# The only bound that works on every engine.
+#
+# `--max-turns` and `--max-budget-usd` are Claude Code flags. Gemini's CLI has
+# neither, so a Gemini phase has nothing between it and the job's 120-minute
+# timeout: a loop that stops making progress burns the entire run, and the
+# session's spend ceiling is only consulted at phase boundaries it may never
+# reach. Two of the three runaway protections this pipeline relies on were
+# therefore Claude-only, the same way the tool allowlist was.
+#
+# Wall clock is not as good as a turn cap — it cannot tell a slow phase from a
+# stuck one — but it is the one limit no vendor has to implement for us. The
+# generous defaults are for the honest slow case; the point is that nothing
+# runs forever.
+# Durations carry their unit, so a bare number means minutes and the dry-run
+# harness can ask for seconds to prove the mechanism without waiting for one.
+timeout_for() {
+  local phase="$1" fallback="$2" value
+  value="$(printf '%s' "$MODELS_JSON" | jq -r --arg p "$phase" '.timeouts[$p] // empty' 2>/dev/null || true)"
+  value="${value:-$fallback}"
+  case "$value" in
+    '' ) value="$fallback" ;;
+    *[!0-9smh]* ) value="$fallback" ;;
+  esac
+  case "$value" in *[smh]) ;; *) value="${value}m" ;; esac
+  printf '%s' "$value"
+}
+PLAN_TIMEOUT="$(timeout_for plan 20m)"
+CODE_TIMEOUT="$(timeout_for code 45m)"
+VERIFY_TIMEOUT="$(timeout_for verify 20m)"
+FINALISE_TIMEOUT="$(timeout_for finalise 25m)"
+
 PLAN_BUDGET="$(budget_for plan 10)"
 CODE_BUDGET="$(budget_for code 20)"
 VERIFY_BUDGET="$(budget_for verify 6)"
@@ -424,9 +457,39 @@ save_work_in_progress() {
   done
 }
 
+# `timeout <minutes>` if coreutils has it, nothing if it does not.
+#
+# Built as a prefix array rather than a string so an absent `timeout` degrades
+# to running the command bare instead of to a command called "timeout".
+# TERM first, KILL a minute later: a coding agent asked to stop should get the
+# chance to flush what it has written.
+# Filled into TIMEOUT_CMD as an ARRAY, not a string. An unquoted string would
+# have to be word-split to become a command, which bash does and other shells
+# do not — and an empty one must expand to nothing at all rather than to a
+# command named "".
+#
+# Expanded as `${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"}` because bash 3.2 — still
+# what macOS ships, and what the dry-run harness runs under — treats
+# `"${empty[@]}"` as an unbound variable under `set -u` and aborts. bash 5 on
+# the runner does not, so the plain form worked everywhere except every
+# developer's laptop.
+#
+# macOS has no `timeout` at all, so the scenario that needs one is skipped
+# locally and the runner (Linux) exercises it for real.
+set_timeout_cmd() {
+  local duration="$1"
+  TIMEOUT_CMD=()
+  command -v timeout >/dev/null 2>&1 || return 0
+  [ -n "$duration" ] && [ "$duration" != "0" ] && [ "$duration" != "0m" ] || return 0
+  TIMEOUT_CMD=(timeout --signal=TERM --kill-after=60s "$duration")
+}
+
 run_agent() {
   local prompt_file="$1" result_file="$2" model="$3" tools="$4" max_turns="$5"
-  local max_budget="${6:-}"
+  local max_budget="${6:-}" duration="${7:-}"
+  local rc=0
+  local -a TIMEOUT_CMD
+  set_timeout_cmd "$duration"
 
   case "$ENGINE" in
     claude-code)
@@ -438,7 +501,7 @@ run_agent() {
       # express: /budget is only consulted at phase boundaries, so a phase that
       # ran away was unstoppable until it finished. --effort scales reasoning to
       # what the build is worth.
-      claude -p "$(cat "$prompt_file")" \
+      ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} claude -p "$(cat "$prompt_file")" \
         --permission-mode acceptEdits \
         --model "$model" \
         --allowedTools "$tools" \
@@ -447,7 +510,7 @@ run_agent() {
         ${max_budget:+--max-budget-usd "$max_budget"} \
         --output-format stream-json \
         --verbose \
-      | node "$FORWARDER" --result-out "$result_file"
+      | node "$FORWARDER" --result-out "$result_file" || rc=$?
       ;;
 
     # Confirmed against a real local install (0.22.5) of @google/gemini-cli:
@@ -470,11 +533,11 @@ run_agent() {
     # already means "run any tool without asking" — a wrong or partial
     # translation of that allowlist would be worse than none.
     gemini)
-      gemini "$(cat "$prompt_file")" \
+      ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} gemini "$(cat "$prompt_file")" \
         --model "$model" \
         --yolo \
         --output-format stream-json \
-      | node "$FORWARDER" --result-out "$result_file"
+      | node "$FORWARDER" --result-out "$result_file" || rc=$?
       ;;
 
     *)
@@ -482,6 +545,20 @@ run_agent() {
       exit 1
       ;;
   esac
+
+  # 124 is `timeout` saying it stopped the phase. Reported and then swallowed:
+  # the pipeline continues to the gate, which judges whatever was written by
+  # running the suites. Letting it propagate would abort the script under
+  # `set -e` — no gate, no outcome, and the work on the branch unexplained.
+  if [ "$rc" = "124" ] || [ "$rc" = "137" ]; then
+    echo "::warning::Phase stopped at its ${duration} wall clock." >&2
+    curl -sS -X POST "${API}/events" \
+      -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+      -d "$(jq -nc --arg m "$duration" '{events:[{type:"text",payload:{text:("This phase was stopped after " + $m + ". Whatever it had written is still on the branch and the test gate runs next.")}}]}')" \
+      >/dev/null 2>&1 || true
+    return 0
+  fi
+  return "$rc"
 }
 
 # The verifier can still shell out, so "read-only" is enforced after the fact
@@ -685,7 +762,7 @@ if [ "${BUILDER_MODE:-build}" = "review" ]; then
   post_stage REVIEWING
   snapshot_heads
   run_agent "$PROMPT_FILE" "${RESULTS_DIR}/review.json" \
-    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$VERIFY_BUDGET"
+    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$VERIFY_BUDGET" "$VERIFY_TIMEOUT"
   report_phase_cost review "$VERIFIER_MODEL" "${RESULTS_DIR}/review.json"
   # This one reviews a pull request a person is reading. A reviewer that
   # silently amended the branch under them would be worse than one that
@@ -715,7 +792,7 @@ if [ "${BUILDER_MODE:-build}" = "fix" ]; then
   echo "::group::fix (${CODER_MODEL})"
   post_stage CODING
   run_agent "$PROMPT_FILE" "${RESULTS_DIR}/fix.json" \
-    "$CODER_MODEL" "$CODER_TOOLS" 200 "$CODE_BUDGET"
+    "$CODER_MODEL" "$CODER_TOOLS" 200 "$CODE_BUDGET" "$CODE_TIMEOUT"
   report_phase_cost fix "$CODER_MODEL" "${RESULTS_DIR}/fix.json"
   echo "::endgroup::"
 
@@ -768,7 +845,7 @@ post_stage PLANNING
 if fetch_prompt "plan-prompt" /tmp/builder-plan-prompt.txt; then
   snapshot_heads
   run_agent /tmp/builder-plan-prompt.txt "${RESULTS_DIR}/plan.json" \
-    "$PLANNER_MODEL" "$PLANNER_TOOLS" "$PLANNER_TURNS" "$PLAN_BUDGET" || true
+    "$PLANNER_MODEL" "$PLANNER_TOOLS" "$PLANNER_TURNS" "$PLAN_BUDGET" "$PLAN_TIMEOUT" || true
   report_phase_cost plan "$PLANNER_MODEL" "${RESULTS_DIR}/plan.json"
   # The plan is the output; the tree is not. A planner that has already written
   # the change hands the coder a diff it did not make and cannot explain, and
@@ -865,7 +942,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
     apply_steers "$code_prompt"
 
     run_agent "$code_prompt" "${RESULTS_DIR}/code-${attempt}.json" \
-      "$attempt_model" "$CODER_TOOLS" 200 "$CODE_BUDGET"
+      "$attempt_model" "$CODER_TOOLS" 200 "$CODE_BUDGET" "$CODE_TIMEOUT"
     # Reported against the model that actually ran, so the scoreboard's
     # per-phase cost-by-model rows stay true once a run spans two tiers.
     report_phase_cost "code-${attempt}" "$attempt_model" "${RESULTS_DIR}/code-${attempt}.json"
@@ -924,7 +1001,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   snapshot_heads
   run_agent /tmp/builder-verify-prompt.txt \
     "${RESULTS_DIR}/verify-${verify_round}.json" \
-    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$VERIFY_BUDGET" || true
+    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$VERIFY_BUDGET" "$VERIFY_TIMEOUT" || true
   report_phase_cost "verify-${verify_round}" "$VERIFIER_MODEL" \
     "${RESULTS_DIR}/verify-${verify_round}.json"
   revert_stray_writes "the verifier"
@@ -1031,7 +1108,7 @@ if ! fetch_prompt "finalise-prompt" /tmp/builder-finalise-prompt.txt; then
   exit 1
 fi
 run_agent /tmp/builder-finalise-prompt.txt "${RESULTS_DIR}/finalise.json" \
-  "$CODER_MODEL" "$CODER_TOOLS" 80 "$FINALISE_BUDGET"
+  "$CODER_MODEL" "$CODER_TOOLS" 80 "$FINALISE_BUDGET" "$FINALISE_TIMEOUT"
 report_phase_cost finalise "$CODER_MODEL" "${RESULTS_DIR}/finalise.json"
 echo "::endgroup::"
 
