@@ -80,7 +80,9 @@ if it finds something broken, fix it here and re-run the affected suites.
 to push — the runner pushes for you, and it pushes whether or not you remember.
 
 **3. \`stage OPENING_PRS\`** — **you do not run \`gh\`.** For each repo you
-changed, write a file at \`/tmp/builder-pr-<repo>.md\` with \`write_file\`:
+changed, write \`builder-pr-<repo>.md\` **in the directory you started in** —
+the one that contains \`repos/\` — with \`write_file\`. Not \`/tmp\`: your
+file tool is sandboxed to this workspace and will refuse to write outside it.
 
 - **the first line is the pull request title** — one line, no leading \`#\`;
 - everything after it is the body.
@@ -121,7 +123,7 @@ Include in the metrics:
   that actually changed what this run did. An unused lesson is one nobody
   should keep paying context for.
 
-**5. \`complete-run '{"outcome":"done"}'\`** — exactly once, last.
+**5. \`complete-run done\`** — exactly once, last.
 
 ## The docs guard
 

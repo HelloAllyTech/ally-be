@@ -290,10 +290,36 @@ setup_repo() {
   ) >/dev/null 2>&1
 }
 
+# A repo whose branch was pushed by a PREVIOUS run: a bare origin carrying both
+# master and the work branch, cloned the way the workflow clones. That remote
+# branch is what tells the runner this is a resume rather than a first build —
+# a first build's branch exists only locally, because the runner just made it.
+setup_repo_resumed() {
+  rm -rf "${WORK}/run" "${WORK}/origin.git"
+  git init -q --bare "${WORK}/origin.git"
+  (
+    git init -q "${WORK}/seed" && cd "${WORK}/seed" || exit 1
+    git checkout -qb master
+    git config user.email t@t.t && git config user.name t
+    echo base > file.txt && git add -A && git commit -qm base
+    git remote add origin "${WORK}/origin.git" && git push -q origin master
+    git checkout -qb builder/demo
+    echo changed >> file.txt && git add -A && git commit -qm "work from the previous run"
+    git push -q origin builder/demo
+  ) >/dev/null 2>&1
+  git -C "${WORK}/origin.git" symbolic-ref HEAD refs/heads/master
+  mkdir -p "${WORK}/run/repos"
+  git clone -q "${WORK}/origin.git" "${WORK}/run/repos/demo-repo" >/dev/null 2>&1
+  rm -rf "${WORK}/seed"
+}
+
 run_scenario() {
   local name="$1"; shift
   echo "── ${name} ──"
-  setup_repo
+  case " $* " in
+    *" DRYRUN_RESUME=1 "*) setup_repo_resumed ;;
+    *) setup_repo ;;
+  esac
   rm -f /tmp/builder-paused /tmp/builder-dryrun-verify-count \
         /tmp/builder-repo-commands.json /tmp/builder-dryrun-broke-it
   rm -rf /tmp/builder-results /tmp/builder-gate /tmp/builder-baseline \
@@ -306,8 +332,11 @@ run_scenario() {
   rm -f /tmp/builder-pr-demo-repo.md /tmp/builder-dryrun-gh.log
   for arg in "$@"; do
     [ "$arg" = "DRYRUN_PR_BODY=1" ] || continue
+    # In the workspace, which is where an agent's sandboxed file tool can
+    # actually write — `run-engine.sh` runs from "${WORK}/run".
+    mkdir -p "${WORK}/run"
     printf 'Show the model per phase\n\nBody of the pull request.\n' \
-      > /tmp/builder-pr-demo-repo.md
+      > "${WORK}/run/builder-pr-demo-repo.md"
   done
 
   local budget_json="${DRYRUN_BUDGET:-}"
@@ -527,6 +556,30 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = prs ]; then
   check "finishes when GitHub cannot be asked" 0 "$EXIT_CODE"
   check "claims no orphan it could not verify" no \
     "$(grep -q 'No pull request was opened for' "$LOG_FILE" && echo yes || echo no)"
+fi
+
+# ── 8. resuming work a previous run left on the branch ─────────────────────
+#
+# Stopping a build and starting it again used to re-plan and re-code a change
+# that was already written, committed and through the gate: `ensure_branches`
+# restored the files but the pipeline was unconditional, so the coder was paid
+# to rediscover its own work — and given the chance to rewrite what a reviewer
+# had already passed.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = resume ]; then
+  run_scenario resume DRYRUN_RESUME=1 BUILDER_BRANCH_SLUG=demo DRYRUN_PR_BODY=1
+  check "finishes the run" 0 "$EXIT_CODE"
+  check "says it is resuming" yes "$(has_in_log 'EVENT')"
+  check "skips the coding pass" "PLANNING GATE VERIFYING FINALISING" \
+    "$(grep -o 'EVENT stage_change:[A-Z_]*' "$LOG_FILE" | sed 's/.*://' | tr '\n' ' ' | sed 's/ $//')"
+  check "still gates what it inherited" yes "$(has_in_log 'EVENT gate_result')"
+  check "still has it independently reviewed" yes "$(has_in_log 'GET verify-prompt')"
+  check "reaches finalise" yes "$(has_in_log 'GET finalise-prompt')"
+
+  # A first build must be unaffected: its branch exists only locally, so there
+  # is nothing to inherit and the coder runs exactly as before.
+  run_scenario resume-not-a-resume BUILDER_BRANCH_SLUG=demo
+  check "a first build still codes" "PLANNING CODING GATE VERIFYING FINALISING" \
+    "$(grep -o 'EVENT stage_change:[A-Z_]*' "$LOG_FILE" | sed 's/.*://' | tr '\n' ' ' | sed 's/ $//')"
 fi
 
 echo

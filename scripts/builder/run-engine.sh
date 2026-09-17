@@ -557,6 +557,8 @@ revert_stray_writes() {
 #
 # Fails the run rather than continuing on master. A build that cannot be
 # gated is worth stopping at second zero, not at minute seventeen.
+RESUMED_FROM_REMOTE=0
+
 ensure_branches() {
   local target existing
   for dir in repos/*/; do
@@ -596,6 +598,10 @@ ensure_branches() {
     elif git -C "$dir" ls-remote --exit-code --heads origin "$target" >/dev/null 2>&1; then
       git -C "$dir" fetch --quiet origin "$target" >/dev/null 2>&1
       git -C "$dir" checkout -b "$target" "origin/${target}" >/dev/null 2>&1
+      # The branch was already on the remote, so a previous run pushed it.
+      # That — not "the working tree has commits" — is what makes this a
+      # resume: a first build's branch is created here and exists nowhere else.
+      RESUMED_FROM_REMOTE=1
     else
       git -C "$dir" checkout -b "$target" >/dev/null 2>&1
     fi
@@ -615,6 +621,37 @@ ensure_branches() {
 }
 
 ensure_branches
+
+# ── Work a previous run left on the branch ──────────────────────────────────
+#
+# Stopping a build and starting it again used to re-plan and re-code a change
+# that was already written, already committed and already through the gate.
+# `ensure_branches` restores the FILES — it checks the branch out from origin —
+# but the pipeline itself was unconditional, so the coder was paid to rediscover
+# its own work and given the chance to rewrite what a reviewer had passed.
+#
+# That is a restart, not a resume. This makes it a resume: when the branch
+# already carries commits, the gate runs FIRST. If it passes, the coding pass is
+# skipped entirely and the run goes straight to verification and finalising —
+# which, on a session stopped after coding, is exactly the work that remains.
+#
+# If it fails, nothing is lost: the loop falls through to its ordinary
+# remediation path with the gate's failures in hand, which is what a restart
+# does today. The worst case is the current behaviour, one gate run later.
+# Both halves are required. `RESUMED_FROM_REMOTE` says a previous run pushed
+# this branch; the diff says that push actually contains something. A branch
+# pushed empty, or one whose work has since merged, is not a resume — and
+# "the working tree has commits" alone is not either, since a first build's
+# own coding pass produces exactly that.
+INHERITED_WORK=0
+if [ "${RESUMED_FROM_REMOTE:-0}" = "1" ]; then
+  for dir in repos/*/; do
+    [ -d "$dir/.git" ] || continue
+    git -C "$dir" diff --quiet master...HEAD 2>/dev/null && continue
+    INHERITED_WORK=1
+    echo "$(basename "$dir"): resuming work a previous run left here ($(git -C "$dir" rev-list --count master..HEAD 2>/dev/null || echo '?') commit(s))"
+  done
+fi
 
 # ── Review mode: read the pull request, change nothing ──────────────────────
 #
@@ -768,7 +805,12 @@ previous_attempt_model=
 while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   # ---- CODE (or REMEDIATE) ----
   attempt_model="$(coder_model_for_attempt "$attempt")"
-  if [ "$attempt" -eq 1 ]; then
+  if [ "$attempt" -eq 1 ] && [ "$INHERITED_WORK" = "1" ]; then
+    # Straight to the gate. The branch already holds a change; whether it is
+    # any good is a question the suites answer better than another coding pass.
+    echo "Resuming: skipping the coding pass and gating what is on the branch."
+    skipped_code=1
+  elif [ "$attempt" -eq 1 ]; then
     echo "::group::code (${attempt_model})"
     post_stage CODING
     code_prompt="$PROMPT_FILE"
@@ -793,21 +835,25 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
     fi
   fi
 
-  # Last append, so the most recent thing a person said sits at the bottom of
-  # the prompt rather than buried inside the plan.
-  apply_steers "$code_prompt"
+  if [ "${skipped_code:-0}" != "1" ]; then
+    # Last append, so the most recent thing a person said sits at the bottom of
+    # the prompt rather than buried inside the plan.
+    apply_steers "$code_prompt"
 
-  run_agent "$code_prompt" "${RESULTS_DIR}/code-${attempt}.json" \
-    "$attempt_model" "$CODER_TOOLS" 200 "$CODE_BUDGET"
-  # Reported against the model that actually ran, so the scoreboard's per-phase
-  # cost-by-model rows stay true once a run spans two tiers.
-  report_phase_cost "code-${attempt}" "$attempt_model" "${RESULTS_DIR}/code-${attempt}.json"
-  previous_attempt_model="$attempt_model"
-  echo "::endgroup::"
+    run_agent "$code_prompt" "${RESULTS_DIR}/code-${attempt}.json" \
+      "$attempt_model" "$CODER_TOOLS" 200 "$CODE_BUDGET"
+    # Reported against the model that actually ran, so the scoreboard's
+    # per-phase cost-by-model rows stay true once a run spans two tiers.
+    report_phase_cost "code-${attempt}" "$attempt_model" "${RESULTS_DIR}/code-${attempt}.json"
+    previous_attempt_model="$attempt_model"
+    echo "::endgroup::"
 
-  exit_if_paused "coding"
-  hold_or_abort_if_over_budget
-  collect_steers "gate"
+    exit_if_paused "coding"
+    hold_or_abort_if_over_budget
+    collect_steers "gate"
+  fi
+  # Only the first pass can be skipped; a failing gate must reach the coder.
+  skipped_code=0
 
   # ---- GATE ----
   echo "::group::test gate (attempt ${attempt})"
@@ -1069,9 +1115,27 @@ open_pull_requests() {
     case "$existing" in '' | *[!0-9]*) existing=0 ;; esac
     [ "$existing" -eq 0 ] || { echo "${repo}: pull request already open"; continue; }
 
-    body_file="/tmp/builder-pr-${repo}.md"
-    if [ ! -s "$body_file" ]; then
-      echo "${repo}: no /tmp/builder-pr-${repo}.md — cannot open a pull request." >&2
+    # Two locations, and the workspace one is the one that matters.
+    #
+    # An agent's file tool is sandboxed to its workspace: Gemini's `write_file`
+    # refuses any path outside `/home/runner/work/<repo>/<repo>`, which is
+    # where `repos/` lives. Asked for `/tmp/builder-pr-<repo>.md` it tried
+    # three paths, was refused twice, wrote the third somewhere we were not
+    # looking, and reported the pull request as created. Reading `/tmp` is
+    # fine — that goes through the shell, which is not sandboxed — so the
+    # runner's own precomputed files stay where they are. Only what the AGENT
+    # writes has to live in the workspace.
+    #
+    # `/tmp` is still accepted second, because Claude Code can write there and
+    # older prompts asked it to.
+    body_file=""
+    for candidate in "builder-pr-${repo}.md" "/tmp/builder-pr-${repo}.md"; do
+      [ -s "$candidate" ] || continue
+      body_file="$candidate"
+      break
+    done
+    if [ -z "$body_file" ]; then
+      echo "${repo}: no builder-pr-${repo}.md in the workspace — cannot open a pull request." >&2
       continue
     fi
 
