@@ -86,7 +86,7 @@ export class BuilderMetricsService {
     const rows = await this.dataSource.query(
       `
       SELECT phase.key                                        AS "phase",
-             phase.value->>'model'                            AS "model",
+             ba.model                                         AS "model",
              COUNT(*)::int                                    AS "invocations",
              ROUND(SUM((phase.value->>'usd')::numeric), 4)    AS "totalCostUsd",
              PERCENTILE_CONT(0.5) WITHIN GROUP (
@@ -106,8 +106,13 @@ export class BuilderMetricsService {
              )                                                AS "medianTurns"
         FROM builder_build_runs run
         CROSS JOIN LATERAL jsonb_each(COALESCE(run.cost->'phases', '{}'::jsonb)) AS phase
+        LEFT JOIN builder_attempts ba
+               ON ba."runId" = run.id
+              AND ba.phase = SPLIT_PART(phase.key, '-', 1)
+              -- Phases with no -N suffix are attempt 1.
+              AND ba.attempt = COALESCE(NULLIF(SPLIT_PART(phase.key, '-', 2), '')::int, 1)
        WHERE run."createdAt" >= NOW() - ($1 || ' days')::interval
-       GROUP BY phase.key, phase.value->>'model'
+       GROUP BY phase.key, ba.model
        ORDER BY SUM((phase.value->>'usd')::numeric) DESC NULLS LAST
       `,
       [String(days)],

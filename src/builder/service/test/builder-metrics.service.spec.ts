@@ -180,6 +180,75 @@ describe('BuilderMetricsService', () => {
       await service.pipelineHealth(Number('nonsense'));
       expect(dataSource.query).toHaveBeenCalledWith(expect.any(String), ['30']);
     });
+
+    it('groups phases by model', async () => {
+      dataSource.query.mockImplementation((sql: string) => {
+        if (sql.includes('phase.key') && !sql.includes('per_run')) {
+          return Promise.resolve([
+            {
+              phase: 'code-1',
+              model: 'claude-opus-5',
+              invocations: 1,
+              totalCostUsd: '2.0000',
+              medianCostUsd: '2',
+              medianWallMs: '1000',
+              p95WallMs: '1000',
+              medianApiMs: '500',
+              medianTurns: '10',
+            },
+            {
+              phase: 'code-1',
+              model: 'claude-sonnet-5',
+              invocations: 2,
+              totalCostUsd: '3.0000',
+              medianCostUsd: '1.5',
+              medianWallMs: '2000',
+              p95WallMs: '2000',
+              medianApiMs: '1000',
+              medianTurns: '20',
+            },
+            {
+              phase: 'plan',
+              model: null,
+              invocations: 1,
+              totalCostUsd: '1.0000',
+              medianCostUsd: '1',
+              medianWallMs: '500',
+              p95WallMs: '500',
+              medianApiMs: '250',
+              medianTurns: '5',
+            },
+          ]);
+        }
+        return Promise.resolve([]);
+      });
+
+      const health = await service.pipelineHealth(30);
+
+      expect(health.phases).toHaveLength(3);
+
+      const codeOpus = health.phases.find(
+        (p) => p.phase === 'code-1' && p.model === 'claude-opus-5',
+      );
+      expect(codeOpus).toBeDefined();
+      if (codeOpus) {
+        expect(codeOpus.invocations).toBe(1);
+      }
+
+      const codeSonnet = health.phases.find(
+        (p) => p.phase === 'code-1' && p.model === 'claude-sonnet-5',
+      );
+      expect(codeSonnet).toBeDefined();
+      if (codeSonnet) {
+        expect(codeSonnet.invocations).toBe(2);
+      }
+
+      const planPhase = health.phases.find((p) => p.phase === 'plan');
+      expect(planPhase).toBeDefined();
+      if (planPhase) {
+        expect(planPhase.model).toBeNull();
+      }
+    });
   });
 
   describe('scoreboard timing', () => {
