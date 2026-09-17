@@ -361,8 +361,45 @@ apply_steers() {
 exit_if_paused() {
   if [ -f /tmp/builder-paused ]; then
     echo "Run paused for input at ${1}."
+    save_work_in_progress "pause for input"
     exit 0
   fi
+}
+
+# Get whatever is in the working trees onto their branches, and push.
+#
+# A pause tears the runner down: anything uncommitted at that moment is gone,
+# and the resume run starts from the branches. The prompt asks the agent to
+# commit and push before calling `ask` — which is another invariant resting on
+# an agent reading a step, with an hour of work as the stake if it does not.
+#
+# The runner can simply do it. A WIP commit costs nothing when the agent
+# already committed (there is nothing to stage) and saves the entire run when
+# it did not.
+#
+# `[skip ci]` because this is a checkpoint, not a proposal: CI on a paused,
+# half-finished tree tells nobody anything and costs a runner.
+save_work_in_progress() {
+  local reason="$1" branch
+  for dir in repos/*/; do
+    [ -d "$dir/.git" ] || continue
+    local repo; repo="$(basename "$dir")"
+    branch="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null || echo '')"
+    [ -n "$branch" ] || continue
+    case "$branch" in master | main) continue ;; esac
+
+    if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
+      git -C "$dir" add -A >/dev/null 2>&1 || true
+      git -C "$dir" -c user.name="Builder" -c user.email="builder@users.noreply.github.com" \
+        commit -q -m "wip(builder): ${reason} [skip ci]" >/dev/null 2>&1 || true
+      echo "${repo}: committed work in progress on ${branch}"
+    fi
+    # Pushed whether or not this call committed: the agent may have committed
+    # without pushing, which loses the work just as completely.
+    if git -C "$dir" push -q --set-upstream origin "$branch" >/dev/null 2>&1; then
+      echo "${repo}: pushed ${branch}"
+    fi
+  done
 }
 
 run_agent() {
@@ -543,6 +580,10 @@ if [ "${BUILDER_MODE:-build}" = "fix" ]; then
   echo "::endgroup::"
 
   exit_if_paused "fixing"
+  # A fix exists to turn a red pull request green, and CI runs on push. A fix
+  # run that committed without pushing has changed nothing anyone can see, and
+  # reconcile will send another one at the same unchanged pull request.
+  save_work_in_progress "fix run"
   wait "$BASELINE_PID" 2>/dev/null || true
 
   echo "::group::test gate"
@@ -825,3 +866,80 @@ report_phase_cost finalise "$CODER_MODEL" "${RESULTS_DIR}/finalise.json"
 echo "::endgroup::"
 
 exit_if_paused "finalising"
+
+# ── The pull requests, read from GitHub rather than taken on trust ───────────
+#
+# The finalise agent opens the PRs and is asked to report them with `prs`. That
+# report is the ONLY way ally-be learns they exist, and everything after this
+# run hangs off it: the reconcile loop, CI ingestion, the reviewer, approval,
+# the merge button, the release. An agent that opens three pull requests and
+# forgets one call leaves them open in the org with nothing watching them —
+# and the run still looks successful, because a missing `prs` breaks nothing
+# the runner can see.
+#
+# So the runner asks GitHub what is actually there and posts that. This is not
+# a judgement the agent is better placed to make; it is a fact, and `gh` knows
+# it. The endpoint upserts on (session, repo, branch), so re-reporting what the
+# agent already reported is harmless and reporting what it missed is the point.
+#
+# Best effort throughout. This runs AFTER the work is pushed, so nothing here
+# can cost the run its output — the worst case is the state we were already in.
+# Push before looking for pull requests. `gh pr create` needs the branch on the
+# remote, so the agent had to have pushed for its own PR to exist — but a fix
+# or finalise agent that committed and stopped leaves the work only on a runner
+# that is about to be destroyed. Mechanical, no judgement, so the runner does it.
+save_work_in_progress "finalise"
+
+echo "::group::pull requests"
+node -e 'process.stdout.write(JSON.stringify({pullRequests: []}))' > /tmp/builder-prs.json
+found="[]"
+for dir in repos/*/; do
+  [ -d "$dir/.git" ] || continue
+  repo="$(basename "$dir")"
+  branch="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null || echo '')"
+  [ -n "$branch" ] || continue
+
+  pr="$(gh pr list --repo "${GITHUB_REPOSITORY_OWNER}/${repo}" \
+    --head "$branch" --state open --limit 1 \
+    --json number,url,title 2>/dev/null || echo '[]')"
+  count="$(printf '%s' "$pr" | jq -r 'length' 2>/dev/null || echo 0)"
+  case "$count" in '' | *[!0-9]*) count=0 ;; esac
+  [ "$count" -gt 0 ] || { echo "${repo}: no open PR on ${branch}"; continue; }
+
+  found="$(printf '%s' "$found" | jq -c \
+    --argjson pr "$pr" --arg repo "$repo" --arg branch "$branch" \
+    '. + [{repo: $repo, branch: $branch, prNumber: $pr[0].number, prUrl: $pr[0].url, title: $pr[0].title}]' \
+    2>/dev/null || printf '%s' "$found")"
+  echo "${repo}: #$(printf '%s' "$pr" | jq -r '.[0].number') on ${branch}"
+done
+
+if [ "$(printf '%s' "$found" | jq -r 'length' 2>/dev/null || echo 0)" != "0" ]; then
+  printf '%s' "$found" | jq -c '{pullRequests: .}' > /tmp/builder-prs.json
+  prs /tmp/builder-prs.json && echo "Reported to ally-be."
+fi
+
+# A branch carrying commits with no pull request on it is work that passed the
+# gate and the reviewer and then went nowhere. Nothing downstream will ever
+# find it: reconcile iterates pull requests, so a branch that is not one is
+# invisible to CI ingestion, review, approval, merge and release alike.
+#
+# Opening it here is tempting and wrong — the title and body are the agent's
+# judgement and a generic one makes a worse pull request than none. Reported as
+# a failure instead, naming the branch, so it is a person's five-minute job
+# rather than a run that looked successful and delivered nothing.
+orphans=""
+for dir in repos/*/; do
+  [ -d "$dir/.git" ] || continue
+  repo="$(basename "$dir")"
+  branch="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null || echo '')"
+  [ -n "$branch" ] || continue
+  git -C "$dir" diff --quiet master...HEAD 2>/dev/null && continue
+  printf '%s' "$found" | jq -e --arg r "$repo" 'any(.[]; .repo == $r)' >/dev/null 2>&1 && continue
+  orphans="${orphans}${orphans:+, }${repo} (${branch})"
+done
+if [ -n "$orphans" ]; then
+  echo "Work was pushed but no pull request exists: ${orphans}" >&2
+  complete-run "{\"outcome\":\"failed\",\"error\":\"The change passed the gate and the review, and the branches are pushed, but no pull request was opened for: ${orphans}. The work is safe on those branches — open a pull request from one and the reconcile loop picks it up from there.\"}" || true
+  exit 1
+fi
+echo "::endgroup::"

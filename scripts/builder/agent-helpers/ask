@@ -17,10 +17,39 @@ set -uo pipefail
 . "$(dirname "$0")/_common.sh"
 [ $# -eq 1 ] && [ -f "${1:-}" ] || usage "ask <file.json>"
 
+# Fill in `branches` from the repos themselves when the payload omits them.
+#
+# The resume run starts from these. Without them it has nowhere to pick the
+# work up from and begins again from the PRD — an hour of coding discarded
+# because one key was missing from a JSON file the agent wrote by hand.
+#
+# The runner knows the answer for certain (it checked those branches out), so
+# there is no reason to depend on the agent restating it. An explicit
+# `branches` is left exactly as given: an agent naming a different branch is
+# telling us something we do not know.
+payload="$(mktemp)"
+if command -v jq >/dev/null 2>&1 && [ -d repos ]; then
+  actual="$(
+    for dir in repos/*/; do
+      [ -d "$dir/.git" ] || continue
+      name="$(basename "$dir")"
+      branch="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null || echo '')"
+      [ -n "$branch" ] || continue
+      jq -nc --arg r "$name" --arg b "$branch" '{($r): $b}'
+    done | jq -sc 'add // {}'
+  )"
+  jq -c --argjson actual "${actual:-{\}}" \
+    'if (.branches // {} | length) == 0 then .branches = $actual else . end' \
+    "$1" > "$payload" 2>/dev/null || cp "$1" "$payload"
+else
+  cp "$1" "$payload"
+fi
+
 body="$(mktemp)"
 code="$(curl -sS -o "$body" -w '%{http_code}' -X POST "${API}/questions" \
   -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
-  -d @"$1" 2>/dev/null || echo 000)"
+  -d @"$payload" 2>/dev/null || echo 000)"
+rm -f "$payload"
 
 case "$code" in
   2*)
