@@ -58,6 +58,7 @@ import { RoadmapTaxonomyService } from './service/roadmap-taxonomy.service';
 import { RoadmapStrategyGoalService } from './service/roadmap-strategy-goal.service';
 import { RoadmapGoalImpactService } from './service/roadmap-goal-impact.service';
 import { RoadmapVectorService } from './service/roadmap-vector.service';
+import { RoadmapBuilderSchedulerRegistrationService } from './service/roadmap-builder-scheduler-registration.service';
 import { RoadmapVoteGrantSchedulerRegistrationService } from './service/roadmap-vote-grant-scheduler-registration.service';
 
 import { RoadmapAdminController } from './controller/roadmap-admin.controller';
@@ -180,6 +181,7 @@ import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
     RoadmapInterviewNoteService,
     RoadmapAiService,
     RoadmapVoteGrantSchedulerRegistrationService,
+    RoadmapBuilderSchedulerRegistrationService,
     // realtime
     RoadmapGateway,
   ],

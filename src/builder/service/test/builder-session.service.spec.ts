@@ -61,6 +61,9 @@ describe('BuilderSessionService', () => {
       { builder: { defaultBudgetUsd: 25 } } as any,
       sessionRepository as any,
       {} as any,
+      // Pull requests: read by getDeliveryState, which the roadmap polls to
+      // learn whether a session's work actually shipped.
+      { listBySession: jest.fn().mockResolvedValue([]) } as any,
       prdService as any,
       settingsService as any,
       buildService as any,
