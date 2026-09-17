@@ -465,9 +465,48 @@ run_agent() {
 # The verifier can still shell out, so "read-only" is enforced after the fact
 # rather than trusted: anything it wrote to a tracked file is reverted before
 # the next phase reads the diff.
+# Where each repo stood before a read-only phase ran.
+#
+# `git checkout -- .` restores modified tracked files and `clean` removes new
+# ones, which covers a reviewer that edited the tree. It does not cover one
+# that *committed*: a commit is not a working-tree change, so it survives both
+# and rides into the gate and the pull request as if the coder had written it.
+#
+# That gap was invisible while the only engine in use took a tool allowlist —
+# the verifier is given no Write, Edit or Task, so it could not have made one.
+# The allowlist does not translate to every engine (Gemini's equivalent is
+# "approve every tool call"), and "the reviewer cannot write" has to hold
+# because the runner enforces it, not because one engine's flags happen to.
+HEADS_FILE=/tmp/builder-heads.txt
+
+snapshot_heads() {
+  : > "$HEADS_FILE"
+  for dir in repos/*/; do
+    [ -d "$dir/.git" ] || continue
+    printf '%s\t%s\n' "$dir" "$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo '')" \
+      >> "$HEADS_FILE"
+  done
+}
+
+# The verifier can still shell out, so "read-only" is enforced after the fact
+# rather than trusted: anything it wrote to a tracked file is reverted, and
+# anything it committed is unwound, before the next phase reads the diff.
 revert_stray_writes() {
   for dir in repos/*/; do
     [ -d "$dir/.git" ] || continue
+
+    # Commits first: resetting to the recorded head also discards the staged
+    # and working-tree changes that came with them, so the cleanup below is
+    # left with only what a non-committing reviewer touched.
+    if [ -f "$HEADS_FILE" ]; then
+      before="$(awk -F'\t' -v d="$dir" '$1 == d {print $2}' "$HEADS_FILE" 2>/dev/null || echo '')"
+      now="$(git -C "$dir" rev-parse HEAD 2>/dev/null || echo '')"
+      if [ -n "$before" ] && [ -n "$now" ] && [ "$before" != "$now" ]; then
+        echo "$(basename "$dir"): reviewer left $(git -C "$dir" rev-list --count "$before".."$now" 2>/dev/null || echo '?') commit(s) — unwinding." >&2
+        git -C "$dir" reset --hard "$before" >/dev/null 2>&1 || true
+      fi
+    fi
+
     git -C "$dir" checkout -- . >/dev/null 2>&1 || true
     git -C "$dir" clean -fd -e node_modules -e .venv >/dev/null 2>&1 || true
   done
@@ -767,6 +806,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   # objections to work the admin explicitly asked for.
   apply_steers /tmp/builder-verify-prompt.txt
 
+  snapshot_heads
   run_agent /tmp/builder-verify-prompt.txt \
     "${RESULTS_DIR}/verify-${verify_round}.json" \
     "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$VERIFY_BUDGET" || true
