@@ -35,6 +35,7 @@ import {
 } from '../enum/builder.enum';
 import { isBuilderRepo } from '../constants/builder-repos.constants';
 import {
+  BUILDER_AUTH_FAILURE_ALERT_THRESHOLD,
   BUILDER_MAX_REVIEW_RUNS_PER_PR,
   BUILDER_OWN_ACTORS,
   BUILDER_RELEASE_TIMEOUT_MS,
@@ -821,9 +822,45 @@ export class BuilderPullRequestService {
     }
   }
 
+  /**
+   * Say out loud when the GitHub credential has stopped working.
+   *
+   * A token that expires does not announce itself: every call starts coming
+   * back unauthorised, each caller catches its own failure and logs a warning,
+   * and the scheduled tasks above them keep reporting that they completed. The
+   * platform goes quiet while looking healthy, and the only trace is a `warn`
+   * in a log nobody is reading. One expiry cost most of a day that way.
+   *
+   * A single rejection is not news — a fine-grained token can legitimately be
+   * refused one repository. A run of them across different endpoints is the
+   * credential, not a permission, so this waits for a threshold.
+   *
+   * Attached to the most recent session only because a notification needs an
+   * owner to reach; the condition is not about that session, and the wording
+   * says so. Dedup is the notification service's, keyed on when the run of
+   * failures began — the loops here would otherwise repeat it every tick for
+   * as long as the outage lasted.
+   */
+  private async reportCredentialHealth(): Promise<void> {
+    const { failures, since } = this.github.credentialHealth;
+    if (failures < BUILDER_AUTH_FAILURE_ALERT_THRESHOLD || !since) return;
+
+    const session = await this.sessionRepository.findOne({
+      where: {},
+      order: { updatedAt: 'DESC' },
+    });
+    if (!session) return;
+
+    await this.notificationService.credentialRejected(session, failures, since);
+    this.logger.error(
+      `[BUILDER] GitHub has rejected ${failures} consecutive calls since ${since.toISOString()}. Everything downstream is blind until the credential is replaced.`,
+    );
+  }
+
   async reconcileReleases(): Promise<void> {
     if (!this.github.isConfigured) return;
 
+    await this.reportCredentialHealth();
     await this.reconcileFailedReleases();
 
     const releasing = await this.repository.find({

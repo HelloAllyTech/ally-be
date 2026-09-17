@@ -365,6 +365,17 @@ export const BUILDER_ANNOUNCED_KINDS: BuilderNotificationKind[] = [
  */
 export const BUILDER_CONSECUTIVE_FAILURE_LIMIT = 2;
 
+/**
+ * Consecutive unauthorised GitHub calls before Builder says so out loud.
+ *
+ * Not one. A fine-grained token can legitimately be refused a single repository
+ * — an allowlist miss, or a grant still pending org approval — and crying
+ * credential over that would train people to ignore the message. A run of five
+ * across different endpoints is the token itself, which is a different problem
+ * and the one that makes every loop above it silently useless.
+ */
+export const BUILDER_AUTH_FAILURE_ALERT_THRESHOLD = 5;
+
 /* ── Lane A evidence lookups ─────────────────────────────────────────────── */
 
 /**

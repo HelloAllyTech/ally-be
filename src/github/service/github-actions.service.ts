@@ -115,6 +115,43 @@ export class GithubActionsService {
     return Boolean(this.configService.githubToken);
   }
 
+  /**
+   * Consecutive calls rejected as unauthorised, and when the run of them began.
+   *
+   * A token that expires does not announce itself. Every call starts returning
+   * 401, each caller catches its own failure and logs a `warn`, and the polling
+   * loops above them keep reporting that they completed — so the platform goes
+   * quiet while looking healthy. One expiry cost a whole afternoon before
+   * anyone read the right log line.
+   *
+   * Counting it here rather than in each caller is the only place that sees
+   * every call. A single 401 is not news — a repository can be missing, a
+   * fine-grained token can lack one scope — but a run of them across different
+   * endpoints is a credential, not a permission.
+   */
+  private authFailures = 0;
+  private authFailingSince: Date | null = null;
+
+  get credentialHealth(): { failures: number; since: Date | null } {
+    return { failures: this.authFailures, since: this.authFailingSince };
+  }
+
+  /** Every request funnels its outcome through here, success or failure. */
+  private noteAuthOutcome(error?: unknown): void {
+    const status = (error as AxiosError | undefined)?.response?.status;
+    if (status === 401) {
+      if (!this.authFailures) this.authFailingSince = new Date();
+      this.authFailures += 1;
+      return;
+    }
+    // Anything that is not an auth rejection proves the credential works —
+    // including a 404, which is a live token being told no.
+    if (error === undefined || status) {
+      this.authFailures = 0;
+      this.authFailingSince = null;
+    }
+  }
+
   private get headers(): Record<string, string> {
     return {
       Accept: 'application/vnd.github+json',
@@ -242,6 +279,7 @@ export class GithubActionsService {
         );
       return candidates[0] ?? null;
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not list successful runs for ${params.workflow} in ${params.repo}: ${
           error instanceof Error ? error.message : String(error)
@@ -268,6 +306,7 @@ export class GithubActionsService {
         headers: this.headers,
         timeout: 15_000,
       });
+      this.noteAuthOutcome();
       return {
         merged: Boolean(data?.merged),
         htmlUrl: data?.html_url,
@@ -279,6 +318,7 @@ export class GithubActionsService {
           : null,
       };
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read PR #${number} in ${repo}: ${
           error instanceof Error ? error.message : String(error)
@@ -325,6 +365,7 @@ export class GithubActionsService {
       }
       return { files, truncated: true };
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not list files on ${repo}#${number}: ${
           error instanceof Error ? error.message : String(error)
@@ -530,6 +571,7 @@ export class GithubActionsService {
           : [],
       };
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read the author of ${repo}@${sha}: ${
           error instanceof Error ? error.message : String(error)
@@ -558,6 +600,7 @@ export class GithubActionsService {
       });
       return Array.isArray(data) && data.length > 0;
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not check ${repo} for commits since ${since.toISOString()}, assuming there are some: ${
           error instanceof Error ? error.message : String(error)
@@ -639,6 +682,7 @@ export class GithubActionsService {
             : 'success';
       return { state, failed, total };
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read checks for ${repo}@${ref}: ${
           error instanceof Error ? error.message : String(error)
@@ -679,6 +723,7 @@ export class GithubActionsService {
         });
       }
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read review comments on ${repo}#${number}: ${
           error instanceof Error ? error.message : String(error)
@@ -708,6 +753,7 @@ export class GithubActionsService {
         });
       }
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read reviews on ${repo}#${number}: ${
           error instanceof Error ? error.message : String(error)
@@ -737,6 +783,7 @@ export class GithubActionsService {
       );
       return data?.html_url ? String(data.html_url) : null;
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not reply to comment ${commentId} on ${repo}#${number}: ${
           error instanceof Error ? error.message : String(error)
@@ -772,6 +819,7 @@ export class GithubActionsService {
       );
       return data?.html_url ? String(data.html_url) : null;
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not comment on ${repo}#${number}: ${
           error instanceof Error ? error.message : String(error)
@@ -817,6 +865,7 @@ export class GithubActionsService {
       );
       return this.toWorkflowRun(data);
     } catch (error) {
+      this.noteAuthOutcome(error);
       this.logger.warn(
         `Could not read run ${runId} in ${repo}: ${
           error instanceof Error ? error.message : String(error)
@@ -930,6 +979,7 @@ export class GithubActionsService {
       axiosError?.response?.data?.message ??
       (error instanceof Error ? error.message : String(error));
     const status = axiosError?.response?.status;
+    this.noteAuthOutcome(error);
     this.logger.error(`${prefix}: ${status ?? ''} ${detail}`);
     return new ServiceUnavailableException(`${prefix}: ${detail}`);
   }
