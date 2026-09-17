@@ -54,6 +54,7 @@ describe('BuilderBuildService', () => {
     listRecent: jest.Mock;
     countBlockingRuns: jest.Mock;
     findLatest: jest.Mock;
+    isLatestForSession: jest.Mock;
   };
   let eventRepository: { listByRun: jest.Mock; latestOfType: jest.Mock };
   let pullRequestRepository: { increment: jest.Mock; findOne: jest.Mock };
@@ -106,6 +107,7 @@ describe('BuilderBuildService', () => {
       // resume exists, so this is a query rather than a status filter.
       countBlockingRuns: jest.fn().mockResolvedValue(0),
       findLatest: jest.fn().mockResolvedValue(null),
+      isLatestForSession: jest.fn().mockResolvedValue(false),
     };
     eventRepository = {
       listByRun: jest.fn().mockResolvedValue([]),
@@ -790,6 +792,84 @@ describe('BuilderBuildService', () => {
     it('refuses while a build is already running', async () => {
       await expect(startFrom(BuilderSessionStatus.BUILDING)).rejects.toThrow(
         /can only start from a ready PRD/,
+      );
+    });
+  });
+
+  /**
+   * A run reports its outcome once — but the runner reports one too, from
+   * evidence, after the agent has finished. When the agent claims done and the
+   * runner then finds no pull request, the second report is the true one.
+   */
+  describe('evidence correcting a success the agent claimed', () => {
+    const settling = (sessionStatus: BuilderSessionStatus, latest = true) => {
+      const run = {
+        id: 'run-1',
+        sessionId: 'session-1',
+        startedAt: new Date(),
+        dispatchedAt: new Date(),
+      };
+      sessionRepository.findOne.mockResolvedValue({
+        id: 'session-1',
+        status: sessionStatus,
+      });
+      runRepository.isLatestForSession.mockResolvedValue(latest);
+      return run;
+    };
+
+    it('takes a session back off COMPLETED when its own run then fails', async () => {
+      const run = settling(BuilderSessionStatus.COMPLETED);
+
+      await service.settleRun(
+        run as any,
+        BuilderRunStatus.FAILED,
+        'Work was pushed but no pull request exists.',
+      );
+
+      expect(sessionRepository.update).toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.FAILED }),
+      );
+    });
+
+    /**
+     * The guard this narrows still has to hold: a human pressing stop is not
+     * overruled by a run finishing a moment later.
+     */
+    it('leaves a session a person cancelled alone', async () => {
+      const run = settling(BuilderSessionStatus.CANCELLED);
+
+      await service.settleRun(run as any, BuilderRunStatus.FAILED, 'boom');
+
+      expect(sessionRepository.update).not.toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.FAILED }),
+      );
+    });
+
+    it('does not let a stale run reopen a session that has moved on', async () => {
+      const run = settling(BuilderSessionStatus.COMPLETED, false);
+
+      await service.settleRun(run as any, BuilderRunStatus.FAILED, 'boom');
+
+      expect(sessionRepository.update).not.toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.FAILED }),
+      );
+    });
+
+    /**
+     * One direction only. Evidence may correct a claim; a claim may not
+     * overwrite evidence.
+     */
+    it('never turns a failed session green', async () => {
+      const run = settling(BuilderSessionStatus.FAILED);
+
+      await service.settleRun(run as any, BuilderRunStatus.SUCCEEDED, null);
+
+      expect(sessionRepository.update).not.toHaveBeenCalledWith(
+        { id: 'session-1' },
+        expect.objectContaining({ status: BuilderSessionStatus.COMPLETED }),
       );
     });
   });

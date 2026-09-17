@@ -1754,11 +1754,41 @@ export class BuilderBuildService {
 
     // Only the run's own outcome moves the session; a session already
     // cancelled by a human stays cancelled.
+    //
+    // The exception is this run correcting itself. A run reports its outcome
+    // once — but the runner also reports one, from evidence, after the agent
+    // has finished: work pushed with no pull request, a branch that went
+    // nowhere. Those arrive second, and the guard above swallowed them, so a
+    // run whose agent said "done" settled the session COMPLETED and the
+    // runner's truthful "failed" moments later updated only the run row.
+    //
+    // That is the worst shape this can take: the session reads Done in green,
+    // its own latest run reads Failed, no pull request exists, and COMPLETED
+    // is deliberately not restartable — so the page offers no way onward from
+    // a success that did not happen.
+    //
+    // Narrow on purpose. Only a FAILED settlement, only from the session's own
+    // latest run, and only over a COMPLETED that the same run just set.
+    // Evidence may correct a claim; a claim may not overwrite evidence, and
+    // nothing here lets an older run reopen a session that has moved on.
+    const correctingItsOwnClaim =
+      session.status === BuilderSessionStatus.COMPLETED &&
+      (status === BuilderRunStatus.FAILED ||
+        status === BuilderRunStatus.TIMED_OUT) &&
+      (await this.runRepository.isLatestForSession(run.id, session.id));
+
     if (
       session.status !== BuilderSessionStatus.BUILDING &&
-      session.status !== BuilderSessionStatus.WAITING_FOR_INPUT
+      session.status !== BuilderSessionStatus.WAITING_FOR_INPUT &&
+      !correctingItsOwnClaim
     ) {
       return;
+    }
+
+    if (correctingItsOwnClaim) {
+      this.logger.warn(
+        `Builder run ${run.id} reported done and then failed; correcting session ${session.id} back from COMPLETED.`,
+      );
     }
 
     if (status === BuilderRunStatus.SUCCEEDED) {
