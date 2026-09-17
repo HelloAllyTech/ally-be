@@ -1,8 +1,85 @@
 #!/usr/bin/env bash
+# Pre-push: compile before it leaves the machine, then the shared docs guard.
+#
+# ## Why a build, when pre-commit already lints and tests
+#
+# Neither of those type-checks the whole programme. `ts-jest` compiles each
+# file in isolation, so a symbol used without being imported passes every test
+# and fails only in `nest build` — which first runs in the RELEASE pipeline.
+#
+# On 2026-09-17 exactly that reached master: two pull requests merged with a
+# red "Lint & format" job, and for three hours nothing could be released,
+# because the release build failed and migration, deploy and the release draft
+# were all skipped. The gap is not that CI lacks the check; it is that the
+# check runs an hour later than the mistake, on someone else's release.
+#
+# 19 seconds here against a blocked release pipeline there.
+#
+# ## Scope
+#
+# Only pushes that move the default branch, and only when TypeScript changed.
+# A doc-only push, or a feature branch, pays nothing. This repo is trunk-based,
+# so "pushes to master" is the ordinary case rather than an exception.
+#
+# ## The escape hatch
+#
+# `SKIP_BUILD_CHECK=1 git push` skips it. A hook that cannot be bypassed when
+# the build is legitimately broken upstream is a hook people learn to
+# `--no-verify` around permanently, which loses every other check with it.
+set -u
+
+# stdin carries the ref list and can only be read once, so capture it here and
+# hand it on to the docs guard below.
+REFS="$(cat)"
+
+run_build_check() {
+  [ "${SKIP_BUILD_CHECK:-}" = "1" ] && return 0
+
+  local pushing_default=0 local_sha remote_sha ref changed
+  while read -r ref local_sha _ remote_sha; do
+    case "$ref" in
+      refs/heads/master|refs/heads/main) ;;
+      *) continue ;;
+    esac
+    # All-zero local sha is a branch deletion — nothing to compile.
+    case "$local_sha" in *[!0]*) ;; *) continue ;; esac
+    pushing_default=1
+
+    # All-zero remote sha means the branch is new to the remote; fall back to
+    # compiling rather than guessing a range.
+    case "$remote_sha" in
+      *[!0]*) changed=$(git diff --name-only "$remote_sha" "$local_sha" 2>/dev/null || echo "?") ;;
+      *) changed="?" ;;
+    esac
+    if [ "$changed" != "?" ] && ! printf '%s\n' "$changed" | grep -qE '\.ts$'; then
+      pushing_default=0
+    fi
+  done <<EOF
+$REFS
+EOF
+
+  [ "$pushing_default" = "1" ] || return 0
+
+  echo "pre-push: compiling before this reaches master (npm run build)"
+  if ! npm run build >/tmp/ally-prepush-build.log 2>&1; then
+    echo ""
+    echo "pre-push: BUILD FAILED — not pushing." >&2
+    echo "Tests and lint can both pass while this fails: ts-jest compiles files" >&2
+    echo "in isolation, so a missing import surfaces only here and in release." >&2
+    echo "" >&2
+    sed 's/\x1b\[[0-9;]*m//g' /tmp/ally-prepush-build.log | grep -E "error TS" | head -10 >&2
+    echo "" >&2
+    echo "Full output: /tmp/ally-prepush-build.log" >&2
+    echo "Override with SKIP_BUILD_CHECK=1 git push if you know it is broken upstream." >&2
+    return 1
+  fi
+}
+
+run_build_check || exit 1
+
 # ally-docs-guard — checks .docs-map.yml before a push to the default branch.
 # Canonical source: https://raw.githubusercontent.com/HelloAllyTech/.github/main/hooks/pre-push
 # Caches into .git/docs-guard/, refreshes daily, and never blocks on its own failures.
-set -u
 CACHE="$(git rev-parse --git-dir)/docs-guard/pre-push"
 if [ ! -f "$CACHE" ] || [ -n "$(find "$CACHE" -mmin +1440 2>/dev/null)" ]; then
   mkdir -p "$(dirname "$CACHE")"
@@ -11,4 +88,6 @@ if [ ! -f "$CACHE" ] || [ -n "$(find "$CACHE" -mmin +1440 2>/dev/null)" ]; then
 fi
 [ -f "$CACHE" ] || exit 0
 command -v bash >/dev/null 2>&1 || exit 0
-exec bash "$CACHE"
+exec bash "$CACHE" <<EOF
+$REFS
+EOF
