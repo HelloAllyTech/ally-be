@@ -366,6 +366,17 @@ export const SKILL_ICONS_S3_PREFIX = 'skill-icons/';
 export const ROOM_METADATA_WARN_BYTES = 48 * 1024;
 
 /**
+ * LiveKit's hard cap on room metadata (bytes).
+ *
+ * Was written inline as the literal 65536 in the log message that checked it,
+ * which made it read as documentation rather than as the threshold it is.
+ * Named here because two call sites now compare against it, and because the
+ * number being in the message is exactly what let a warning outlive the payload
+ * it was describing.
+ */
+export const LIVEKIT_ROOM_METADATA_CAP_BYTES = 64 * 1024;
+
+/**
  * How long a stored room-metadata envelope stays fetchable
  * (learn_room_metadata rows). Rooms live minutes to hours; the agent fetches
  * within seconds of dispatch. Sweep runs opportunistically on each store.

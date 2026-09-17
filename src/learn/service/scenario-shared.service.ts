@@ -18,7 +18,6 @@ import {
   SCENARIO_SESSION_TRANSLATABLE_FIELDS,
   STT_LLM_PROVIDER_CONFIG,
   SKILL_ICONS_S3_PREFIX,
-  ROOM_METADATA_WARN_BYTES,
 } from '../constants/scenario-session.constants';
 import { AppConfigService } from 'src/config/config.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -882,22 +881,35 @@ export class ScenarioSharedService {
       },
     };
 
-    // LiveKit caps room metadata at 64 KiB and nothing here trims — surface the
-    // payload size so headroom is visible before it becomes a session failure
-    // (LANGUAGE_GLOSSARY_DESIGN.md edge case 11). Session-start only.
-    const metadataBytes = Buffer.byteLength(
+    // Size of the FULL envelope, which is not necessarily what LiveKit gets.
+    //
+    // This used to warn against LiveKit's 64 KiB room-metadata cap from here,
+    // and that reading stopped being true when LEARN_METADATA_FETCH_ENABLED
+    // shipped: `prepareRoomMetadata` now stores this envelope and puts a ~223
+    // byte fetch pointer on the room and the dispatch. So on a fetch-enabled
+    // deployment this line was reporting 96-144 KB "against a 65536 cap" for a
+    // payload that never goes near LiveKit — a warning for a failure that
+    // cannot happen, on every single session.
+    //
+    // That is worse than no log. It cost an investigation on 2026-09-17: the
+    // number was read as the room metadata, made the leading suspect for an
+    // unrelated avatar timeout, and sent the search to the wrong service.
+    //
+    // So the cap belongs where the payload is chosen, and it now lives in
+    // `RoomMetadataStoreService.prepareRoomMetadata`, which knows which of the
+    // two is going on the room. What is left here is the envelope's own size,
+    // which is still worth seeing — it is the row written to learn_room_metadata
+    // and the body the agent fetches over HTTP — reported as INFO, because
+    // large is normal for it and nothing is at risk.
+    const envelopeBytes = Buffer.byteLength(
       JSON.stringify(roomMetadata),
       'utf8',
     );
-    if (metadataBytes > ROOM_METADATA_WARN_BYTES) {
-      this.logger.warn(
-        `[ROOM_METADATA_SIZE] ${metadataBytes} bytes (warn threshold ${ROOM_METADATA_WARN_BYTES}, LiveKit cap 65536) scenario=${scenario.id}`,
-      );
-    } else {
-      this.logger.info(
-        `[ROOM_METADATA_SIZE] ${metadataBytes} bytes scenario=${scenario.id}`,
-      );
-    }
+    this.logger.info(
+      `[ROOM_METADATA_SIZE] full envelope ${envelopeBytes} bytes scenario=${scenario.id} ` +
+        `(stored and fetched by the agent; the LiveKit cap is checked against the ` +
+        `room payload in prepareRoomMetadata)`,
+    );
 
     return roomMetadata;
   }
