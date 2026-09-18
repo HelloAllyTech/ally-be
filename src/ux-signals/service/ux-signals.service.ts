@@ -145,7 +145,7 @@ export class UxSignalsService {
     trigger: UxSignalScanTrigger,
     userId: number | null,
   ): Promise<UxSignalScan> {
-    if (!this.configService.posthog.enabled) {
+    if (!this.configService.posthogQuery.enabled) {
       throw new ServiceUnavailableException(
         'PostHog query access is not configured, so there is nothing to scan.',
       );
@@ -253,7 +253,7 @@ export class UxSignalsService {
    * immediate re-scan.
    */
   async isDueForScheduledScan(): Promise<boolean> {
-    if (!this.configService.posthog.enabled) return false;
+    if (!this.configService.posthogQuery.enabled) return false;
 
     const [latest] = await this.scanRepository.find({
       where: [

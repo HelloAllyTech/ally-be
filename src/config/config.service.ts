@@ -718,7 +718,7 @@ export class AppConfigService {
    * credential at whichever environment the default named, rather than at the
    * one whose credential it is.
    */
-  get posthog() {
+  get posthogQuery() {
     const host = this.configService.get<string>('POSTHOG_HOST');
     const personalApiKey = this.configService.get<string>(
       'POSTHOG_PERSONAL_API_KEY',

@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
 import { ParticipantInfo_Kind } from '@livekit/protocol';
+import { PostHog } from 'posthog-node';
 import { DataSource, Repository } from 'typeorm';
 import { AiService } from 'src/ai/service/ai.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -396,6 +397,10 @@ describe('ScenarioSessionService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSessionService,
+        {
+          provide: PostHog,
+          useValue: { capture: jest.fn() },
+        },
         {
           provide: PreviewMonologueService,
           useValue: { startRun: jest.fn().mockResolvedValue(undefined) },

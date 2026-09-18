@@ -32,7 +32,7 @@ export class PosthogQueryService {
 
   /** Whether a query credential is configured at all. Callers skip rather than fail. */
   get enabled(): boolean {
-    return this.configService.posthog.enabled;
+    return this.configService.posthogQuery.enabled;
   }
 
   /**
@@ -45,7 +45,7 @@ export class PosthogQueryService {
    */
   async query(hogql: string): Promise<HogQlResult> {
     const { host, personalApiKey, projectId, enabled } =
-      this.configService.posthog;
+      this.configService.posthogQuery;
     if (!enabled) {
       throw new ServiceUnavailableException(
         'PostHog query access is not configured (POSTHOG_HOST / POSTHOG_PERSONAL_API_KEY / POSTHOG_PROJECT_ID).',
