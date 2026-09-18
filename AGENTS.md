@@ -69,15 +69,9 @@ taking a whole task description and returning full chunk bodies. Setup, citation
 - **Be lenient about values that can only narrow a match.** Tightening an enum that a
   released mobile build sends verbatim locks those users out — that is how a role removal
   once broke login for everyone. Strict validation is for values that *widen* access.
-- **Two roleplay scores exist, and only one of them is the learner's.**
-  `scenario_sessions.score` is the learner-facing number: the −100..100 meter they
-  watched, the value `meetsMinimumScore` gates item completion on, the `score` column in
-  Roleplay Logs, and the per-item score on Track Overview.
-  `scenario_session_details.compositeScore` is the LLM judge's actor-evaluation composite
-  (0..100, scored against the global `agent_test_cases`) and belongs to the super-admin
-  and analytics surfaces. A learner surface that reads the composite shows a different
-  score for the same roleplay than every other view of it — that is exactly how the
-  course progress dashboard came to disagree with Roleplay Logs.
+- **Two roleplay scores exist; only `scenario_sessions.score` is the learner's** — the
+  meter, the `minScore` gate, Roleplay Logs, Track Overview. `compositeScore` is the
+  judge's actor-evaluation composite: super-admin and analytics surfaces only.
 - **Never edit a merged migration.** Add a new one.
 - **Every AI call has a registry row** in `src/llm/constants/ai-task-registry.constants.ts`
   — a jest guard and `.docs-map.yml` both fail without one. See the routing table above.
