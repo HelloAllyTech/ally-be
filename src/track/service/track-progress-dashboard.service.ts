@@ -83,7 +83,7 @@ export class TrackProgressDashboardService {
       );
 
     const evaluatedScores = roleplayRows
-      .map((row) => row.compositeScore)
+      .map((row) => row.sessionScore)
       .filter((score): score is number => score !== null);
 
     return {
@@ -101,6 +101,12 @@ export class TrackProgressDashboardService {
       lastActivityAt: enrollment.lastActivityAt?.toISOString() ?? null,
       sections,
       evaluatedRoleplaySessionCount: roleplayRows.length,
+      // `averageCompositeScore` / `compositeScore` keep their wire names — a
+      // released ally-web build reads both keys verbatim — but now carry the
+      // learner's own roleplay score (see RoleplayFeedbackRow.sessionScore),
+      // so this dashboard agrees with Roleplay Logs, Track Overview and the
+      // score that gated the item instead of reporting the actor-evaluation
+      // composite as the learner's score.
       averageCompositeScore: evaluatedScores.length
         ? Math.round(
             evaluatedScores.reduce((sum, score) => sum + score, 0) /
@@ -112,7 +118,7 @@ export class TrackProgressDashboardService {
         trackItemId: row.trackItemId,
         trackItemTitle: row.trackItemTitle,
         scenarioSessionId: row.scenarioSessionId,
-        compositeScore: row.compositeScore,
+        compositeScore: row.sessionScore,
         occurredAt: row.occurredAt,
         evaluationMarkdown: row.evaluationMarkdown,
       })),
