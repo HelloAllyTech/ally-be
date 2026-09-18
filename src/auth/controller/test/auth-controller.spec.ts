@@ -37,7 +37,10 @@ describe('AuthController', () => {
       providers: [
         { provide: AuthService, useValue: mockAuthService },
         { provide: PermissionsService, useValue: mockPermissionsService },
-        { provide: PostHog, useValue: { capture: jest.fn(), alias: jest.fn() } },
+        {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
       ],
     })
       // Mock all guards
