@@ -481,6 +481,49 @@ export class AuthService {
     return `otp:${email}`;
   }
 
+  private getOtpRequestCountKey(email: string) {
+    return `otp_requests:${email}`;
+  }
+
+  /**
+   * Counts OTP requests for one email inside a single OTP window and returns
+   * this request's number: 1 for the first "Next" tap, 2+ for every "Resend
+   * code" after it. Analytics only — nothing gates on it.
+   *
+   * The client sends the same request for both buttons, so the counter is the
+   * only signal we have for telling them apart. It carries the OTP TTL, so a
+   * learner who comes back after the code has expired starts a fresh attempt at
+   * 1. Caveat: a request that fails (unknown account, wrong role) still counts,
+   * so retrying the same address immediately reads as a resend even though no
+   * code was ever sent.
+   */
+  async recordOtpRequest(email: string): Promise<number> {
+    const key = this.getOtpRequestCountKey(email);
+    const attemptNumber = await this.cache.incr(key);
+    if (attemptNumber === 1) {
+      await this.cache.expire(key, this.OTP_TTL);
+    }
+    return attemptNumber;
+  }
+
+  /**
+   * True when this is the learner's first successful login, for
+   * `auth.completed`'s `is_new_user`.
+   *
+   * There is no signup endpoint — every account is provisioned before anyone
+   * can log in — and `users` has no first-login column, so the closest proxy is
+   * the Terms & Agreement flag: the app forces acceptance on the very first
+   * sign-in, and this runs before that happens. Read by primary key for a user
+   * we have just authenticated, so no tenant scope applies.
+   */
+  async isFirstTimeUser(userId: number): Promise<boolean> {
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+      select: { id: true, termsAndAgreementApproved: true },
+    });
+    return user ? !user.termsAndAgreementApproved : false;
+  }
+
   private getAuthAttemptKey(email: string) {
     return `auth_attempt:${email}`;
   }

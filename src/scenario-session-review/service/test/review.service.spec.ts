@@ -13,6 +13,7 @@ import { ScenarioReviewAccessValidator } from '../../util/scenario-review-access
 import { ScenarioSessionReviewReadStatusRepository } from '../../repository/read-status.repository';
 import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
 import { ScenarioSessionRecordingService } from '../../../learn/service/scenario-session-recording.service';
+import { PostHog } from 'posthog-node';
 
 jest.mock('src/review/util/review.util', () => ({
   getSessionDurationInSeconds: jest.fn(() => 120),
@@ -31,6 +32,10 @@ describe('formatReviewListResponse', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSessionReviewService,
+        {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
         { provide: ScenarioSessionReviewRepository, useValue: {} },
         { provide: ScenarioSessionReviewThreadRepository, useValue: {} },
         { provide: ScenarioSessionReviewReactionRepository, useValue: {} },
@@ -287,6 +292,10 @@ describe('getReviewById', () => {
       providers: [
         ScenarioSessionReviewService,
         {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
+        {
           provide: ScenarioSessionReviewRepository,
           useValue: reviewRepository,
         },
@@ -529,6 +538,10 @@ describe('getAllReviews', () => {
       providers: [
         ScenarioSessionReviewService,
         {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
+        {
           provide: ScenarioSessionReviewRepository,
           useValue: reviewRepository,
         },
@@ -628,6 +641,10 @@ describe('markReviewAsRead', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSessionReviewService,
+        {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
         {
           provide: ScenarioSessionReviewRepository,
           useValue: reviewRepository,

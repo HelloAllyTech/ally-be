@@ -12,6 +12,8 @@ import * as express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfigService } from './config/config.service';
+import { PostHog } from 'posthog-node';
+import { PostHogInterceptor } from 'posthog-node/nestjs';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -33,6 +35,13 @@ async function bootstrap() {
       credentials: true,
       exposedHeaders: ['Content-Disposition'],
     });
+
+    // The client itself is built and shut down by PostHogModule; pulling it out
+    // of the container rather than constructing another one keeps the whole
+    // process on a single event queue and flush timer, and means the
+    // no-API-key case is disabled here too instead of retrying against a
+    // nonexistent project.
+    app.useGlobalInterceptors(new PostHogInterceptor(app.get(PostHog)));
 
     // Env-configurable Nest logger levels
     const logLevel = appConfigService.logLevel.toLowerCase();

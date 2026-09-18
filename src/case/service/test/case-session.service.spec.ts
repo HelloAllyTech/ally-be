@@ -11,6 +11,7 @@ import { CaseStatus } from '../../type/cases.type';
 import { AppConfigService } from 'src/config/config.service';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { PostHog } from 'posthog-node';
 
 jest.mock('src/logger/logger.service', () => ({
   LoggerService: {
@@ -78,6 +79,10 @@ describe('CaseSessionService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CaseSessionService,
+        {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
         { provide: CaseSessionRepository, useValue: mockCaseSessionRepo },
         { provide: CaseSharedService, useValue: mockCaseSharedService },
         {

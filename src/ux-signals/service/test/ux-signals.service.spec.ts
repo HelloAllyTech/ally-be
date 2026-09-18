@@ -77,7 +77,7 @@ describe('UxSignalsService', () => {
         {
           provide: AppConfigService,
           useValue: {
-            get posthog() {
+            get posthogQuery() {
               return { enabled: posthogEnabled };
             },
           },

@@ -30,6 +30,23 @@ import { PermissionsService } from 'src/authorization/service/permissions.servic
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from '../decorators/auth-permissions.decorator';
 import { ImpersonateDto } from '../dto/impersonate.dto';
+import { PostHog } from 'posthog-node';
+import {
+  AUTH_ANALYTICS_EVENTS,
+  AuthMethod,
+  AuthStatus,
+} from '../constants/auth-analytics.constants';
+import {
+  authFailureReasonFrom,
+  classifyOtpVerification,
+  OtpCheckOutcome,
+} from '../util/auth-analytics.util';
+import {
+  anonymousDistinctId,
+  emailDistinctId,
+  userDistinctId,
+} from 'src/posthog/posthog.util';
+import { GoogleTokenPayload } from '../type/auth.types';
 
 @Controller({
   path: 'auth',
@@ -41,6 +58,7 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private permissionsService: PermissionsService,
+    private readonly posthog: PostHog,
   ) {}
 
   @Post('login')
@@ -60,7 +78,36 @@ export class AuthController {
   async generateOtpV2(
     @Body() generateOtpDto: GenerateOtpV2Dto,
   ): Promise<GenerateOtpV2ResponseDto> {
-    return this.authService.generateOtpV2(generateOtpDto);
+    const distinctId = emailDistinctId(generateOtpDto.email);
+    // "Next" and "Resend code" are the same request, so the per-window counter
+    // is what separates the start of an attempt from a resend inside it.
+    const attemptNumber = await this.authService.recordOtpRequest(
+      generateOtpDto.email,
+    );
+
+    if (attemptNumber === 1) {
+      this.capture(distinctId, AUTH_ANALYTICS_EVENTS.STARTED, {
+        method: AuthMethod.EMAIL,
+      });
+    } else {
+      this.capture(distinctId, AUTH_ANALYTICS_EVENTS.OTP_RESENT, {
+        attempt_number: attemptNumber,
+      });
+    }
+
+    try {
+      return await this.authService.generateOtpV2(generateOtpDto);
+    } catch (error) {
+      // No code was ever sent, so this attempt ends here rather than at verify:
+      // the learner does not get in, which is what auth.completed reports.
+      this.capture(distinctId, AUTH_ANALYTICS_EVENTS.COMPLETED, {
+        method: AuthMethod.EMAIL,
+        is_new_user: null,
+        status: AuthStatus.FAILED,
+        failure_reason: authFailureReasonFrom(error, AuthMethod.EMAIL),
+      });
+      throw error;
+    }
   }
 
   // @RateLimit({
@@ -73,7 +120,40 @@ export class AuthController {
   async verifyOtpV2(
     @Body() verifyOtpDto: VerifyOtpV2Dto,
   ): Promise<AuthenticationResponseDto> {
-    return this.authService.verifyOtpV2(verifyOtpDto);
+    const distinctId = emailDistinctId(verifyOtpDto.email);
+
+    try {
+      const authentication = await this.authService.verifyOtpV2(verifyOtpDto);
+      this.capture(distinctId, AUTH_ANALYTICS_EVENTS.OTP_VERIFIED, {
+        status: AuthStatus.SUCCESS,
+        failure_reason: null,
+      });
+      await this.captureAuthSucceeded(
+        distinctId,
+        AuthMethod.EMAIL,
+        authentication,
+      );
+      return authentication;
+    } catch (error) {
+      // A rejected account is not a rejected code — see classifyOtpVerification.
+      const { outcome, failureReason } = classifyOtpVerification(error);
+      if (outcome !== OtpCheckOutcome.NOT_CHECKED) {
+        this.capture(distinctId, AUTH_ANALYTICS_EVENTS.OTP_VERIFIED, {
+          status:
+            outcome === OtpCheckOutcome.ACCEPTED
+              ? AuthStatus.SUCCESS
+              : AuthStatus.FAILED,
+          failure_reason: failureReason,
+        });
+      }
+      this.capture(distinctId, AUTH_ANALYTICS_EVENTS.COMPLETED, {
+        method: AuthMethod.EMAIL,
+        is_new_user: null,
+        status: AuthStatus.FAILED,
+        failure_reason: authFailureReasonFrom(error, AuthMethod.EMAIL),
+      });
+      throw error;
+    }
   }
 
   @UseGuards(JwtRefreshAuthGuard)
@@ -116,11 +196,54 @@ export class AuthController {
   async googleAuth(
     @Body() googleSignInDto: GoogleSignInDto,
   ): Promise<AuthenticationResponseDto> {
-    const payload = await this.authService.verifyGoogleToken(googleSignInDto!);
-    return this.authService.verifyGoogleUser(
-      payload,
-      googleSignInDto.allowedRoles,
-    );
+    // Google starts and finishes an attempt in this one request, and both events
+    // have to carry the same distinct id to pair up in the funnel — but the
+    // learner's email only exists once the token verifies. So resolve the token
+    // first, then report auth.started against whatever identity that yielded.
+    let payload: GoogleTokenPayload;
+    try {
+      payload = await this.authService.verifyGoogleToken(googleSignInDto!);
+    } catch (error) {
+      const unresolvedDistinctId = anonymousDistinctId();
+      this.capture(unresolvedDistinctId, AUTH_ANALYTICS_EVENTS.STARTED, {
+        method: AuthMethod.GOOGLE_OAUTH,
+      });
+      this.capture(unresolvedDistinctId, AUTH_ANALYTICS_EVENTS.COMPLETED, {
+        method: AuthMethod.GOOGLE_OAUTH,
+        is_new_user: null,
+        status: AuthStatus.FAILED,
+        failure_reason: authFailureReasonFrom(error, AuthMethod.GOOGLE_OAUTH),
+      });
+      throw error;
+    }
+
+    const distinctId = payload.email
+      ? emailDistinctId(payload.email)
+      : anonymousDistinctId();
+    this.capture(distinctId, AUTH_ANALYTICS_EVENTS.STARTED, {
+      method: AuthMethod.GOOGLE_OAUTH,
+    });
+
+    try {
+      const authentication = await this.authService.verifyGoogleUser(
+        payload,
+        googleSignInDto.allowedRoles,
+      );
+      await this.captureAuthSucceeded(
+        distinctId,
+        AuthMethod.GOOGLE_OAUTH,
+        authentication,
+      );
+      return authentication;
+    } catch (error) {
+      this.capture(distinctId, AUTH_ANALYTICS_EVENTS.COMPLETED, {
+        method: AuthMethod.GOOGLE_OAUTH,
+        is_new_user: null,
+        status: AuthStatus.FAILED,
+        failure_reason: authFailureReasonFrom(error, AuthMethod.GOOGLE_OAUTH),
+      });
+      throw error;
+    }
   }
 
   @Post('apple')
@@ -144,5 +267,58 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async verifyMagicLink(@Body() dto: MagicLinkVerifyDto) {
     return this.authService.verifyMagicLink(dto);
+  }
+
+  /**
+   * Report a login that issued tokens, and merge the pre-login identity into the
+   * learner's user id so the funnel and everything the app captures afterwards
+   * land on one PostHog person.
+   *
+   * Wholly guarded: this runs after the tokens exist, and neither an analytics
+   * failure nor the extra `is_first_time` read may turn a successful login into
+   * a 500.
+   */
+  private async captureAuthSucceeded(
+    preLoginDistinctId: string,
+    method: AuthMethod,
+    authentication: AuthenticationResponseDto,
+  ): Promise<void> {
+    try {
+      const isNewUser = await this.authService.isFirstTimeUser(
+        authentication.user.id,
+      );
+      this.capture(preLoginDistinctId, AUTH_ANALYTICS_EVENTS.COMPLETED, {
+        method,
+        is_new_user: isNewUser,
+        status: AuthStatus.SUCCESS,
+        failure_reason: null,
+      });
+      this.posthog.alias({
+        distinctId: userDistinctId(authentication.user.id),
+        alias: preLoginDistinctId,
+      });
+    } catch (error) {
+      this.logger.error(
+        'Failed to report a successful login to PostHog',
+        error,
+      );
+    }
+  }
+
+  /**
+   * Analytics must never be able to fail an authentication request. `capture`
+   * only queues in memory, but a misconfigured client can still throw
+   * synchronously, and losing an event beats losing a login.
+   */
+  private capture(
+    distinctId: string,
+    event: string,
+    properties: Record<string, unknown>,
+  ): void {
+    try {
+      this.posthog.capture({ distinctId, event, properties });
+    } catch (error) {
+      this.logger.error(`Failed to capture ${event} in PostHog`, error);
+    }
   }
 }
