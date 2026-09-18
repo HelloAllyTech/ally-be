@@ -9,4 +9,8 @@ export interface GetScenarioResponse extends Scenarios {
    * includeCompletion); absent on the @Public() endpoint.
    */
   completion?: ScenarioCompletionSummary | null;
+  /**
+   * The number of simulation states (units/components) defined for this scenario.
+   */
+  simulationCount?: number;
 }
