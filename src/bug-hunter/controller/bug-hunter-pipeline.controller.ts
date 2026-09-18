@@ -27,6 +27,7 @@ import {
   BugHunterFinderDataService,
   ProdLogFinding,
   ReportedBugFinding,
+  WebErrorFinding,
 } from '../service/bug-hunter-finder-data.service';
 import {
   BugHuntRunDetailDto,
@@ -90,6 +91,17 @@ export class BugHunterPipelineController {
     @Query('repo') repo: string,
   ): Promise<{ events: ProdLogFinding[] | null }> {
     return { events: await this.finderDataService.getRecentErrors(repo) };
+  }
+
+  @Get('pipeline/web-logs')
+  @ApiOperation({
+    summary:
+      "Last 24h of a repo's browser-side PostHog exceptions, for the web-error finder (pipeline only). Null events for a repo with no PostHog-instrumented client (every repo but ally-web today).",
+  })
+  async getWebLogs(
+    @Query('repo') repo: string,
+  ): Promise<{ events: WebErrorFinding[] | null }> {
+    return { events: await this.finderDataService.getWebErrors(repo) };
   }
 
   @Get('pipeline/reported-bugs')

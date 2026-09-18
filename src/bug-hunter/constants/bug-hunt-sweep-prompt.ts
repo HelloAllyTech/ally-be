@@ -155,14 +155,15 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     `Valid stages: finder_result, verify, fix_attempt, test_written, doc_updated, pr_opened, merged, escalated, error.`,
     ``,
     `## Phase 1 — Discover`,
-    `Run these four finders. Do them in whatever order you like, but do ALL of them, and report a finder_result for each even when it found nothing — a clean finder is a result, not a gap.`,
+    `Run these five finders. Do them in whatever order you like, but do ALL of them, and report a finder_result for each even when it found nothing — a clean finder is a result, not a gap.`,
     ``,
     `1. TEST/LINT${commands.typecheck ? '/TYPECHECK' : ''}. Run ${verifyCommandsList(commands)}. Any failing test${commands.typecheck ? ', type error,' : ''} or lint error is a CONFIRMED bug; no judgement call is needed to prove it. severity "high" for a failing test${commands.typecheck ? ' or a type error' : ''}, "low" for lint. proven=true.`,
     deep
       ? `2. CODE REVIEW (deep). Read broadly across the codebase for correctness bugs a careful reviewer would flag. proven=false.`
       : `2. CODE REVIEW (diff-scoped). Read ONLY files changed by "git log --since='1 day ago'" — or the last 20 commits if that range is empty. Do not read the whole repo; this bounds the cost. proven=false.`,
     `3. PRODUCTION LOGS. curl -sS "${base}/pipeline/prod-logs?repo=${repo}" ${auth} — the last 24h of CloudWatch errors for this repo. A response of {"events":null} means this repo has no log group (the frontend repos): that is zero findings, not an error. Report only DISTINCT, RECURRING errors, never a one-off transient blip. proven=true.`,
-    `4. REPORTED BUGS. curl -sS "${base}/pipeline/reported-bugs" ${auth} — human bug reports awaiting triage, platform-wide rather than repo-scoped. Take only items clearly about "${repo}"; skip anything about another repo or too vague to act on. proven=false. Pass the item's "reportedBugId" field, NOT its "id".`,
+    `4. WEB ERRORS. curl -sS "${base}/pipeline/web-logs?repo=${repo}" ${auth} — the last 24h of browser-side PostHog exceptions for this repo, already grouped by error type/message/url with an occurrence count. A response of {"events":null} means this repo has no PostHog-instrumented client (every repo but ally-web today): that is zero findings, not an error. Report only errors with occurrences >= 2 — a single occurrence is more likely a one-off than a real bug. proven=true.`,
+    `5. REPORTED BUGS. curl -sS "${base}/pipeline/reported-bugs" ${auth} — human bug reports awaiting triage, platform-wide rather than repo-scoped. Take only items clearly about "${repo}"; skip anything about another repo or too vague to act on. proven=false. Pass the item's "reportedBugId" field, NOT its "id".`,
     ``,
     ...(knownNonBugs.length
       ? [

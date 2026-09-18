@@ -11,6 +11,7 @@ import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportuni
 import { User } from 'src/user/entity/user.entity';
 import { GlobalSettings } from 'src/settings/entity/global-settings.entity';
 import { GlobalSettingsRepository } from 'src/settings/repository/global-settings.repository';
+import { PosthogQueryService } from 'src/ux-signals/service/posthog-query.service';
 
 import { BugHunterController } from './controller/bug-hunter.controller';
 import { BugHunterPipelineController } from './controller/bug-hunter-pipeline.controller';
@@ -102,6 +103,13 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     BugHunterNotificationRepository,
     BugHunterService,
     BugFindingService,
+    // Provided directly rather than importing UxSignalsModule: it constructs
+    // itself from the global AppConfigModule alone, so this costs nothing and
+    // avoids pulling that module's whole detector/writer graph in for one
+    // HTTP client — the same reasoning UxSignalsModule itself gives for
+    // providing BugFindingRepository directly instead of importing this
+    // module (see that module's own doc).
+    PosthogQueryService,
     BugHunterFinderDataService,
     BugHunterMetricsService,
     BugHunterNotificationService,
