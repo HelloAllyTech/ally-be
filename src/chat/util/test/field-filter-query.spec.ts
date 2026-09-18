@@ -285,6 +285,45 @@ describe('applyFieldFilters', () => {
     expect(Object.values(captured[0].params)).toContain(3);
   });
 
+  it('resolves ISO-instant DATE bounds to the org calendar day', () => {
+    // The shared table date-picker sends `toISOString()`. For a range picked
+    // in IST that is 18:30 on the previous day, so binding it verbatim shifted
+    // every bound back one and the rows the user asked for fell outside it.
+    const { qb, captured } = makeQueryMock();
+    const map = new Map([['def-1', def({ fieldType: CustomFieldType.DATE })]]);
+    applyFieldFilters(
+      qb,
+      [
+        {
+          fieldDefinitionId: 'def-1',
+          value: ['2026-08-21T18:30:00.000Z', '2026-08-22T18:29:59.999Z'],
+        },
+      ],
+      map,
+      TENANT,
+    );
+    expect(Object.values(captured[0].params)).toContain('2026-08-22');
+    expect(Object.values(captured[0].params)).toContain('2026-08-22');
+    expect(Object.values(captured[0].params)).not.toContain('2026-08-21');
+  });
+
+  it('reads a legacy ISO-instant value as the org calendar day', () => {
+    const { qb, captured } = makeQueryMock();
+    const map = new Map([['def-1', def({ fieldType: CustomFieldType.DATE })]]);
+    applyFieldFilters(
+      qb,
+      [{ fieldDefinitionId: 'def-1', value: '2026-08-22' }],
+      map,
+      TENANT,
+    );
+    // Values still stored as instants (written before the backfill, or by a
+    // stale client) are shifted into Asia/Kolkata before the date cast.
+    expect(captured[0].sql).toContain("AT TIME ZONE 'Asia/Kolkata'");
+    // Anything that is neither shape becomes NULL rather than raising a cast
+    // error that would 500 the whole session-log query.
+    expect(captured[0].sql).toContain('ELSE NULL');
+  });
+
   it('skips a DATE filter with an invalid date (no invalid cast)', () => {
     const { qb, captured } = makeQueryMock();
     const map = new Map([['def-1', def({ fieldType: CustomFieldType.DATE })]]);

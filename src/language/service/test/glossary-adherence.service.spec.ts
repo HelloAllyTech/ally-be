@@ -91,6 +91,73 @@ describe('GlossaryAdherenceService', () => {
       ]);
       expect(terms).toEqual([]);
     });
+
+    // The regression this parser exists to prevent: Kannada core_style v6
+    // reworded the platform's most-violated term from `(avoid: …)` to a BARE
+    // `(not …)`, and the measured violation rate fell 47.7 -> 0.0 per 100
+    // agent messages while the rule stayed in force.
+    it('extracts a bare single-token term from a `not` group', () => {
+      const terms = service.parseAvoidTerms([
+        makeSection({
+          content:
+            '- contract colloquially:\n' +
+            '  e.g. ಆದ್ರೆ (not ಆದರೆ), ಯಾಕಂದ್ರೆ (avoid: `ಏಕೆಂದರೆ`), ಅಂದ್ರೆ (not ಎಂದರೆ)',
+        }),
+      ]);
+      expect(terms.map((t) => t.term)).toEqual(['ಆದರೆ', 'ಏಕೆಂದರೆ', 'ಎಂದರೆ']);
+    });
+
+    it('extracts single-quoted terms', () => {
+      const terms = service.parseAvoidTerms([
+        makeSection({ content: "- source: say `पासून` (not 'from')" }),
+      ]);
+      expect(terms.map((t) => t.term)).toEqual(['from']);
+    });
+
+    it('accepts `not:` and bare `avoid` markers', () => {
+      const terms = service.parseAvoidTerms([
+        makeSection({
+          content:
+            '- x: say `अ` (not: `ब`)\n' +
+            '- y: avoid literary/archaic forms: "சொல்லினேன்"\n' +
+            '- z: (avoid literary forms: "ஆகினாங்க")',
+        }),
+      ]);
+      expect(terms.map((t) => t.term)).toEqual(['ब', 'ஆகினாங்க']);
+    });
+
+    // Bare multi-word content under the same marker is an EXAMPLE SENTENCE,
+    // not a term — real content carries several of these.
+    it('does not mine a bare multi-word phrase as a term', () => {
+      const terms = service.parseAvoidTerms([
+        makeSection({
+          content:
+            '- a: say `x` (not: त्याला मद्यपानाची आवड आहे.)\n' +
+            '- b: say `y` (not ಅಮ್ಮನಿಗೆ ಕೆಲ್ಸಕ್ಕೆ ಹೋಗೋದು)',
+        }),
+      ]);
+      expect(terms).toEqual([]);
+    });
+
+    it('leaves non-avoidance parentheticals alone', () => {
+      const terms = service.parseAvoidTerms([
+        makeSection({
+          content:
+            '- kinship (e.g., a caregiver)\n' +
+            '- register (As a client)\n' +
+            '- sample (My father says.)\n' +
+            '- sample (She worries.)',
+        }),
+      ]);
+      expect(terms).toEqual([]);
+    });
+
+    it('strips trailing sentence punctuation from a bare term', () => {
+      const terms = service.parseAvoidTerms([
+        makeSection({ content: '- a: say `x` (not ಆದರೆ.)' }),
+      ]);
+      expect(terms.map((t) => t.term)).toEqual(['ಆದರೆ']);
+    });
   });
 
   describe('scanMessages', () => {

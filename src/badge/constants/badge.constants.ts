@@ -15,6 +15,12 @@ export enum BadgeCategory {
   ACTIVE_DAY_STREAK = 'ACTIVE_DAY_STREAK',
   COMMENTS_REACTIONS_GIVEN = 'COMMENTS_REACTIONS_GIVEN',
   COMMENTS_REACTIONS_RECEIVED = 'COMMENTS_REACTIONS_RECEIVED',
+  /**
+   * Progress-ladder milestones. `achievementParams.count` is the level reached, not a
+   * quantity of anything — the same scalar shape the other categories use, so the
+   * threshold filter works unchanged.
+   */
+  XP_LEVEL = 'XP_LEVEL',
 }
 
 export enum BadgeViewedStatus {

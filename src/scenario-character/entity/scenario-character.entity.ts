@@ -43,26 +43,38 @@ export class ScenarioCharacter extends BaseWithoutTenantEntity {
   })
   characterProfileText?: string;
 
-  // Loose FK to scenario_voices.id (no DB constraint, matching repo
-  // convention — see Scenario.roleplaySpecId). Null if this character has
-  // no assigned voice.
-  @Column({ name: 'voice_id', type: 'uuid', nullable: true })
-  voiceId?: string;
+  /**
+   * Voice per language: `{ "<languages.id>": "<scenario_voices.id>" }`.
+   *
+   * Was a single `voice_id`, which could not express what a character
+   * actually is. A simulation carries one voice PER language, so a
+   * single-voice character filled exactly one slot — and because the
+   * applying code keyed it under English by convention rather than looking
+   * the voice up, a Tamil voice on a character became the simulation's
+   * ENGLISH voice, dispatching Tamil TTS to an English session. Keyed by
+   * language, a voice can only ever be filed under its own.
+   *
+   * Values are loose FKs to scenario_voices.id (no DB constraint, matching
+   * repo convention — see Scenario.roleplaySpecId).
+   */
+  @Column({ name: 'voices', type: 'jsonb', nullable: true })
+  voices?: Record<string, string>;
 
+  /** Style guidance per language, keyed by `languages.id`. */
   @Column({
     name: 'language_characteristics',
-    type: 'varchar',
-    length: 1000,
+    type: 'jsonb',
     nullable: true,
   })
-  languageCharacteristics?: string;
+  languageCharacteristics?: Record<string, string>;
 
+  /** Sample utterances per language, keyed by `languages.id`. */
   @Column({
     name: 'linguistic_style_samples',
     type: 'jsonb',
     nullable: true,
   })
-  linguisticStyleSamples?: string[];
+  linguisticStyleSamples?: Record<string, string[]>;
 
   @Column({ name: 'knowledge_sources', type: 'jsonb', nullable: true })
   knowledgeSources?: CharacterKnowledgeSource[];

@@ -21,9 +21,14 @@ import { TrackQuizService } from '../service/track-quiz.service';
 import { TrackJournalService } from '../service/track-journal.service';
 import { TrackAnnotationService } from '../service/track-annotation.service';
 import { TrackGameService } from '../service/track-game.service';
+import { TrackProgressDashboardService } from '../service/track-progress-dashboard.service';
 import { VideoProgressDto } from '../dto/video-progress.dto';
-import { SubmitQuizAttemptDto } from '../dto/submit-quiz-attempt.dto';
+import {
+  QuizAnswerDto,
+  SubmitQuizAttemptDto,
+} from '../dto/submit-quiz-attempt.dto';
 import { SubmitAnnotationAttemptDto } from '../dto/submit-annotation-attempt.dto';
+import { SubmitArticleQuestionAnswerDto } from '../dto/article-question-answer.dto';
 import { SaveJournalDraftsDto } from '../dto/journal-entry.dto';
 import { GameResultDto } from '../dto/game-result.dto';
 import {
@@ -42,6 +47,7 @@ export class TrackLearnerController {
     private readonly trackJournalService: TrackJournalService,
     private readonly trackAnnotationService: TrackAnnotationService,
     private readonly trackGameService: TrackGameService,
+    private readonly trackProgressDashboardService: TrackProgressDashboardService,
   ) {}
 
   @ApiOperation({ summary: 'List tracks available to the learner' })
@@ -72,6 +78,18 @@ export class TrackLearnerController {
       trackId,
       languageCode,
     );
+  }
+
+  @ApiOperation({
+    summary:
+      'Progress + consolidated feedback dashboard for an enrolled course',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_TRACK])
+  @Get('tracks/:trackId/progress')
+  async getTrackProgressDashboard(
+    @Param('trackId', ParseUUIDPipe) trackId: string,
+  ) {
+    return this.trackProgressDashboardService.getDashboard(trackId);
   }
 
   @ApiOperation({ summary: 'Enroll in a track (idempotent)' })
@@ -135,6 +153,28 @@ export class TrackLearnerController {
   }
 
   @ApiOperation({
+    summary: "Answer one of an article's inline questions",
+    description:
+      'Single-shot and final — the question cannot be answered twice. The ' +
+      'response carries the correct option so the reader can be shown which ' +
+      'answer was right, and completes the article once every question has ' +
+      'been answered and any minReadSeconds dwell rule has been met.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_TRACK])
+  @Post('tracks/items/:itemId/article-questions/:questionId/answer')
+  async submitArticleQuestionAnswer(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Param('questionId') questionId: string,
+    @Body() dto: SubmitArticleQuestionAnswerDto,
+  ) {
+    return this.trackEnrollmentService.submitArticleQuestionAnswer(
+      itemId,
+      questionId,
+      dto.selectedOptionId,
+    );
+  }
+
+  @ApiOperation({
     summary: 'Report video watch progress (completes at the required pct)',
   })
   @AuthPermissions([PERMISSIONS.EDIT_TRACK])
@@ -146,6 +186,24 @@ export class TrackLearnerController {
     return this.trackEnrollmentService.reportVideoProgress(
       itemId,
       dto.watchedPct,
+    );
+  }
+
+  @ApiOperation({
+    summary:
+      "Answer a video's quiz interjection (gates playback; does not complete the item)",
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_TRACK])
+  @Post('tracks/items/:itemId/interjections/:interjectionId/answer')
+  async submitInterjectionAnswer(
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Param('interjectionId') interjectionId: string,
+    @Body() dto: QuizAnswerDto,
+  ) {
+    return this.trackEnrollmentService.submitInterjectionAnswer(
+      itemId,
+      interjectionId,
+      dto,
     );
   }
 

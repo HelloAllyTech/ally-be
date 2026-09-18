@@ -5,17 +5,20 @@ import { KnowledgeChunkItemRequest } from 'src/ai/dto/knowledge.dto';
 import { S3Service } from 'src/aws/service/s3.service';
 import { LoggerService } from 'src/logger/logger.service';
 import {
+  KB_CHUNK_PROFILES,
   KB_INDEX_BATCH_SIZE,
   KB_MAX_CHUNKS_PER_DOCUMENT,
 } from '../constants/knowledge-base.constants';
 import { KbDocument } from '../entity/kb-document.entity';
 import {
   KbChunkUploadStatus,
+  KbCorpus,
   KbDocumentSourceType,
   KbDocumentStatus,
 } from '../enum/knowledge-base.enum';
 import { ExtractedDocument, extractDocument } from '../extractor';
 import { KbDocumentChunkRepository } from '../repository/kb-document-chunk.repository';
+import { KbDocumentTenantRepository } from '../repository/kb-document-tenant.repository';
 import { KbDocumentRepository } from '../repository/kb-document.repository';
 import { Chunk, chunkDocument } from '../util/chunker';
 
@@ -35,6 +38,7 @@ export class KbIngestService {
   constructor(
     private readonly documentRepository: KbDocumentRepository,
     private readonly chunkRepository: KbDocumentChunkRepository,
+    private readonly documentTenantRepository: KbDocumentTenantRepository,
     private readonly aiService: AiService,
     private readonly s3Service: S3Service,
   ) {}
@@ -163,7 +167,9 @@ export class KbIngestService {
       { status: KbDocumentStatus.CHUNKING },
     );
 
-    const chunks = chunkDocument(extracted);
+    // Sized by the corpus, not by the document: how big a passage should be is a property of
+    // what will read it. `corpus` is immutable, so a document's chunks are stable.
+    const chunks = chunkDocument(extracted, KB_CHUNK_PROFILES[document.corpus]);
 
     if (!chunks.length) {
       throw new Error(
@@ -203,7 +209,7 @@ export class KbIngestService {
     // retrievable. The alternative — write new, then delete old — has a window where BOTH
     // generations are retrievable, and a duplicated passage produces a confidently wrong citation
     // to text the document no longer contains. A missing passage merely produces an honest decline.
-    await this.deleteVectors(document.id);
+    await this.deleteVectors(document.id, document.corpus);
 
     const indexed = await this.indexChunks(document, rows, chunkVersion);
 
@@ -260,9 +266,12 @@ export class KbIngestService {
     return saved;
   }
 
-  private async deleteVectors(documentId: string): Promise<void> {
+  private async deleteVectors(
+    documentId: string,
+    corpus: KbCorpus,
+  ): Promise<void> {
     try {
-      await this.aiService.deleteKnowledgeChunksByDocument(documentId);
+      await this.aiService.deleteKnowledgeChunksByDocument(documentId, corpus);
     } catch (error) {
       // Surfaced, not swallowed: proceeding to write the new generation while the old one may
       // still be live is exactly the double-retrieval case the ordering above exists to avoid.
@@ -281,6 +290,15 @@ export class KbIngestService {
     rows: { id: string; [key: string]: any }[],
     chunkVersion: number,
   ): Promise<number> {
+    // The audience is read ONCE and stamped onto every chunk of this generation. Read here
+    // rather than passed in because ingest runs on a queue, potentially minutes after the
+    // document was created — the audience as it stands now is the correct one, and a value
+    // captured at enqueue time would be stale for exactly the admin who fixed a mis-targeted
+    // document while it was still processing.
+    const tenantIds = document.isGlobal
+      ? []
+      : await this.documentTenantRepository.tenantIdsForDocument(document.id);
+
     for (let i = 0; i < rows.length; i += KB_INDEX_BATCH_SIZE) {
       const batch = rows.slice(i, i + KB_INDEX_BATCH_SIZE);
       const items: KnowledgeChunkItemRequest[] = batch.map((row) => ({
@@ -298,12 +316,15 @@ export class KbIngestService {
         language: document.language ?? '',
         tags: document.tags ?? [],
         token_count: row.tokenCount,
+        is_global: document.isGlobal,
+        tenant_ids: tenantIds,
       }));
 
       try {
-        const response = await this.aiService.bulkUpsertKnowledgeChunks({
-          items,
-        });
+        const response = await this.aiService.bulkUpsertKnowledgeChunks(
+          { items },
+          document.corpus,
+        );
         await this.chunkRepository.markIndexed(
           response.succeeded.map((s) => s.chunk_id),
         );

@@ -1,7 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PlatformAnalyticsService } from '../platform-analytics.service';
 import { DriftJudgeService } from '../drift-judge.service';
-import { PlatformAnalyticsRepository } from '../../repository/platform-analytics.repository';
+import {
+  PlatformAnalyticsRepository,
+  VOICE_LATENCY_BY_SCENARIO_LIMIT,
+} from '../../repository/platform-analytics.repository';
 import { LlmUsageRepository } from '../../repository/llm-usage.repository';
 import { DriftAnalyticsRepository } from '../../repository/drift-analytics.repository';
 
@@ -78,6 +81,7 @@ describe('PlatformAnalyticsService', () => {
         interruptedTurns: 0,
         llmTimedOutTurns: 0,
       }),
+      getVoiceLatencyByScenario: jest.fn().mockResolvedValue([]),
       getAgentJoinReliabilityByBucket: jest.fn().mockResolvedValue([]),
       getSuspectedFreezeByBucket: jest.fn().mockResolvedValue([]),
       getSessionOutcomeMix: jest
@@ -449,6 +453,18 @@ describe('PlatformAnalyticsService', () => {
           p50LlmTtftMs: 1100,
           p95LlmTtftMs: 2400,
           avgCacheHitRatePct: 78,
+          // A masked bucket: most turns were fronted by a filler, so avgMs is
+          // the wait-to-any-voice and avgReplyLatencyMs is the pipeline's own.
+          firstAudioFillerTurns: 7,
+          firstAudioInterimTurns: 2,
+          firstAudioReplyTurns: 3,
+          firstAudioUnknownTurns: 0,
+          avgFirstAudioFillerMs: 480,
+          avgFirstAudioInterimMs: 900,
+          avgFirstAudioReplyMs: 5200,
+          avgReplyLatencyMs: 5100,
+          p50ReplyLatencyMs: 4600,
+          p95ReplyLatencyMs: 8300,
         },
         {
           bucket: '2024-06-10',
@@ -461,6 +477,17 @@ describe('PlatformAnalyticsService', () => {
           p50LlmTtftMs: null,
           p95LlmTtftMs: null,
           avgCacheHitRatePct: null,
+          // Transcript-derived rows carry no provenance at all.
+          firstAudioFillerTurns: 0,
+          firstAudioInterimTurns: 0,
+          firstAudioReplyTurns: 0,
+          firstAudioUnknownTurns: 4,
+          avgFirstAudioFillerMs: null,
+          avgFirstAudioInterimMs: null,
+          avgFirstAudioReplyMs: null,
+          avgReplyLatencyMs: null,
+          p50ReplyLatencyMs: null,
+          p95ReplyLatencyMs: null,
         },
       ];
       repo.getVoiceLatencyByBucket.mockResolvedValue(points);
@@ -646,6 +673,104 @@ describe('PlatformAnalyticsService', () => {
         interruptedTurns: 2,
         llmTimedOutTurns: 1,
       });
+    });
+  });
+
+  describe('getVoiceLatencyByScenario', () => {
+    it('resolves the default 90d window and forwards language', async () => {
+      await service.getVoiceLatencyByScenario({ language: 'ta-IN' });
+
+      expect(repo.getVoiceLatencyByScenario).toHaveBeenCalledWith(
+        new Date('2024-03-15T00:00:00.000Z'),
+        new Date('2024-06-13T00:00:00.000Z'),
+        'ta-IN',
+      );
+    });
+
+    it('coerces raw string aggregates to numbers, per row', async () => {
+      repo.getVoiceLatencyByScenario.mockResolvedValue([
+        {
+          scenarioId: 42,
+          scenarioTitle: 'Guide Kavya through a difficult conversation',
+          occurredAt: '2026-08-20T09:15:00.000Z',
+          turnCount: '210',
+          avgResponseLatencyMs: '9680',
+          p50ResponseLatencyMs: '10037',
+          p95ResponseLatencyMs: '26305',
+          avgEouDelayMs: '1333',
+          avgSttFinalizeMs: null,
+          avgLlmTtftMs: '9680',
+          avgTtsTtfbMs: '1881',
+          avgOrchestrationMs: '31',
+          avgLlmResponseMs: '1200',
+          avgBranchingMs: '0',
+          avgKnowledgeRetrievalMs: '2413',
+          avgProcessEventsMs: '2554',
+          avgBehaviorsMs: '1534',
+          interruptedTurns: '1',
+          llmTimedOutTurns: '0',
+        },
+      ]);
+
+      const result = await service.getVoiceLatencyByScenario({});
+
+      expect(result.truncated).toBe(false);
+      expect(result.rows[0]).toEqual({
+        scenarioId: 42,
+        scenarioTitle: 'Guide Kavya through a difficult conversation',
+        occurredAt: '2026-08-20T09:15:00.000Z',
+        turnCount: 210,
+        avgResponseLatencyMs: 9680,
+        p50ResponseLatencyMs: 10037,
+        p95ResponseLatencyMs: 26305,
+        avgEouDelayMs: 1333,
+        avgSttFinalizeMs: null,
+        avgLlmTtftMs: 9680,
+        avgTtsTtfbMs: 1881,
+        avgOrchestrationMs: 31,
+        avgLlmResponseMs: 1200,
+        avgBranchingMs: 0,
+        avgKnowledgeRetrievalMs: 2413,
+        avgProcessEventsMs: 2554,
+        avgBehaviorsMs: 1534,
+        interruptedTurns: 1,
+        llmTimedOutTurns: 0,
+      });
+    });
+
+    it('flags truncated when the repo returns exactly the defensive cap, without dropping rows silently', async () => {
+      const capRow = {
+        scenarioId: 0,
+        scenarioTitle: 'x',
+        occurredAt: '2026-08-20T09:15:00.000Z',
+        turnCount: 1,
+        avgResponseLatencyMs: 1000,
+        p50ResponseLatencyMs: 1000,
+        p95ResponseLatencyMs: 1000,
+        avgEouDelayMs: null,
+        avgSttFinalizeMs: null,
+        avgLlmTtftMs: null,
+        avgTtsTtfbMs: null,
+        avgOrchestrationMs: null,
+        avgLlmResponseMs: null,
+        avgBranchingMs: null,
+        avgKnowledgeRetrievalMs: null,
+        avgProcessEventsMs: null,
+        avgBehaviorsMs: null,
+        interruptedTurns: 0,
+        llmTimedOutTurns: 0,
+      };
+      repo.getVoiceLatencyByScenario.mockResolvedValue(
+        Array.from({ length: VOICE_LATENCY_BY_SCENARIO_LIMIT }, (_, i) => ({
+          ...capRow,
+          scenarioId: i,
+        })),
+      );
+
+      const result = await service.getVoiceLatencyByScenario({});
+
+      expect(result.rows).toHaveLength(VOICE_LATENCY_BY_SCENARIO_LIMIT);
+      expect(result.truncated).toBe(true);
     });
   });
 

@@ -1,0 +1,150 @@
+import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
+import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import { BuilderRunMode, BuilderRunStatus } from '../enum/builder.enum';
+
+/**
+ * One dispatched coding run. A session has several: the first `build`, then a
+ * `resume` for every question the agent paused on, plus any retry.
+ *
+ * `githubRunId` is nullable for a reason that shapes this whole module:
+ * `workflow_dispatch` answers 204 with no run id, so the run is created here
+ * first, `dispatchedAt` is stamped from our own clock a beat *before* the
+ * POST, and the reconcile pass correlates the two afterwards. Everything
+ * about cancel, run links and status settling is eventually consistent as a
+ * consequence.
+ */
+@Entity('builder_build_runs')
+@Index('idx_builder_build_runs_session_id', ['sessionId'])
+@Index('idx_builder_build_runs_status', ['status'])
+export class BuilderBuildRun extends BaseWithoutTenantEntity {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  @Column({ type: 'uuid' })
+  sessionId!: string;
+
+  /** 1-based position within the session, for "run 3 of 4" in the UI. */
+  @Column({ type: 'int' })
+  sequence!: number;
+
+  @Column({ type: 'varchar', length: 10, enum: BuilderRunMode })
+  mode!: BuilderRunMode;
+
+  @Column({
+    type: 'varchar',
+    length: 20,
+    enum: BuilderRunStatus,
+    default: BuilderRunStatus.QUEUED,
+  })
+  status!: BuilderRunStatus;
+
+  /** The paused run this one continues, if any. */
+  @Column({ type: 'uuid', nullable: true })
+  resumeOfRunId?: string | null;
+
+  @Column({ type: 'varchar', length: 40 })
+  engine!: string;
+
+  /** The coder-tier model. Planner and verifier ride their own columns. */
+  @Column({ type: 'varchar', length: 80 })
+  model!: string;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  plannerModel?: string | null;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  verifierModel?: string | null;
+
+  /**
+   * What `classifyBuildSize` made of the PRD — the input that chose the
+   * planner tier, the effort, the turn caps and the per-phase budgets.
+   *
+   * Stored because the three model columns above are useless for tuning
+   * without it. "Does a small build succeed on the cheap tier" is the question
+   * that decides whether model selection should widen past the planner, and it
+   * cannot be asked of a table that records which model ran but not what the
+   * run was thought to be. Nullable for runs dispatched before this existed.
+   */
+  @Column({ type: 'varchar', length: 8, nullable: true })
+  size?: string | null;
+
+  /**
+   * The rest of the decision context, frozen at dispatch.
+   *
+   * These are read off the PRD draft, and the draft keeps changing — the
+   * interview edits it, an epic rewrites it. Re-deriving them later answers a
+   * question about today's PRD, not about the one this run was sized from, so
+   * a policy trained on the re-derived values would be learning from features
+   * its own decisions were never conditioned on. Nullable because runs before
+   * this recorded none, and a zero would read as a real measurement.
+   */
+  @Column({ type: 'int', nullable: true })
+  requirementCount?: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  repoCount?: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  technicalPlanLength?: number | null;
+
+  @Column({ type: 'varchar', length: 8, nullable: true })
+  effort?: string | null;
+
+  /** Slug shared by every branch this run pushes (`builder/<slug>`). */
+  @Column({ type: 'varchar', length: 80 })
+  branchSlug!: string;
+
+  /**
+   * `{ repo: branch }` recorded when a run pauses, so the resume run checks
+   * out the work-in-progress instead of branching from master again.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  branches?: Record<string, string> | null;
+
+  /** Fix runs only — the pull request this run was sent to work on. */
+  @Column({ type: 'uuid', nullable: true })
+  pullRequestId?: string | null;
+
+  /** Epic mode — the milestone this run builds. */
+  @Column({ type: 'uuid', nullable: true })
+  milestoneId?: string | null;
+
+  @Column({ type: 'bigint', nullable: true })
+  githubRunId?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  githubRunUrl?: string | null;
+
+  /** Our clock, stamped just before the dispatch POST — the correlation key. */
+  @Column({ type: 'timestamp' })
+  dispatchedAt!: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  startedAt?: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  completedAt?: Date | null;
+
+  /** Monotonic event counter; the UI polls/streams with `afterSeq`. */
+  @Column({ type: 'int', default: 0 })
+  lastEventSeq!: number;
+
+  /** Per-model token breakdown as reported by the engine. */
+  @Column({ type: 'jsonb', nullable: true })
+  cost?: Record<string, any> | null;
+
+  @Column({ type: 'numeric', precision: 10, scale: 4, nullable: true })
+  costUsd?: string | null;
+
+  @Column({ type: 'int', nullable: true })
+  runnerMinutes?: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  error?: string | null;
+
+  @Column({ type: 'int', nullable: true })
+  createdBy?: number;
+
+  @Column({ type: 'int', nullable: true })
+  cancelledBy?: number | null;
+}

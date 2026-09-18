@@ -4,10 +4,10 @@ import {
 } from '../../util/roadmap-period.util';
 
 /**
- * The coin budget's month boundary.
+ * The vote budget's month boundary.
  *
  * The standalone app derived this in the browser from local getMonth(), which meant a tab left
- * open across midnight on the 1st wrote coins into the PREVIOUS month, and a user in IST
+ * open across midnight on the 1st wrote votes into the PREVIOUS month, and a user in IST
  * disagreed with a UTC server about which month they were voting in. One authority (UTC,
  * server-side) removes both bugs, and the clock is injected so these tests are deterministic
  * rather than "run it in December".

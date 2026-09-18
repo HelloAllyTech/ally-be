@@ -16,6 +16,7 @@ import { RoadmapOpportunityType } from 'src/product-roadmap/enum/roadmap-opportu
 import { AnalyticsSuggestion } from '../entity/analytics-suggestion.entity';
 import { AnalyticsSuggestionRepository } from '../repository/analytics-suggestion.repository';
 import {
+  AnalyticsSuggestionSource,
   AnalyticsSuggestionStatus,
   AnalyticsSuggestionStatusFilter,
 } from '../enum/analytics-suggestion.enum';
@@ -444,6 +445,9 @@ function toSuggestionDto(row: AnalyticsSuggestion): SuggestionDto {
     suggestedGoal: row.suggestedGoal ?? null,
     suggestedType: row.suggestedType,
     status: row.status,
+    // Defaulted for rows written before the column existed, which are all
+    // analytics-window runs by definition.
+    source: row.source ?? AnalyticsSuggestionSource.ANALYTICS_WINDOW,
     rejectedReason: row.rejectedReason ?? null,
     opportunityId: row.opportunityId ?? null,
     window: {

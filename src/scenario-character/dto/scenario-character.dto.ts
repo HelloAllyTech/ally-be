@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
   IsArray,
@@ -6,13 +6,14 @@ import {
   IsString,
   IsOptional,
   IsNumber,
+  IsObject,
   Min,
   Max,
   MaxLength,
   IsEnum,
   MinLength,
   IsUrl,
-  IsUUID,
+  Validate,
   ValidateNested,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
@@ -23,9 +24,11 @@ import {
 import { TrimStringTransform } from 'src/common/util/string-transform.util';
 import { CharacterKnowledgeSourceDto } from './character-knowledge-source.dto';
 import {
-  MAX_CHARACTER_KNOWLEDGE_SOURCES_COUNT,
-  MAX_CHARACTER_LINGUISTIC_STYLE_SAMPLES_COUNT,
-} from '../constants/scenario-character.constants';
+  IsSamplesByLanguageConstraint,
+  IsStyleTextByLanguageConstraint,
+  IsVoiceIdByLanguageConstraint,
+} from './character-language-maps.constraint';
+import { MAX_CHARACTER_KNOWLEDGE_SOURCES_COUNT } from '../constants/scenario-character.constants';
 
 export class ScenarioCharacterRequestDto {
   @ApiProperty({ description: 'Scenario character name' })
@@ -112,15 +115,19 @@ export class ScenarioCharacterRequestDto {
   @MaxLength(2500)
   characterProfileText?: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description:
-      'ID of the voice (from the scenario voice library) assigned to this character',
-    required: false,
-    example: '123e4567-e89b-12d3-a456-426614174000',
+      'Voice per language, keyed by `languages.id`: the scenario voice this ' +
+      'character speaks with in that language. A voice may only be filed ' +
+      'under its own language — see validateCharacterVoices.',
+    example: { '1': '123e4567-e89b-12d3-a456-426614174000' },
+    type: 'object',
+    additionalProperties: { type: 'string' },
   })
   @IsOptional()
-  @IsUUID()
-  voiceId?: string;
+  @IsObject()
+  @Validate(IsVoiceIdByLanguageConstraint)
+  voices?: Record<string, string>;
 
   @ApiProperty({
     description:
@@ -130,10 +137,9 @@ export class ScenarioCharacterRequestDto {
       'Speaks simple, colloquial Chennai Tamil; code-mixes with English.',
   })
   @IsOptional()
-  @Transform(TrimStringTransform)
-  @IsString()
-  @MaxLength(1000)
-  languageCharacteristics?: string;
+  @IsObject()
+  @Validate(IsStyleTextByLanguageConstraint)
+  languageCharacteristics?: Record<string, string>;
 
   @ApiProperty({
     description:
@@ -143,11 +149,9 @@ export class ScenarioCharacterRequestDto {
     type: [String],
   })
   @IsOptional()
-  @IsArray()
-  @ArrayMaxSize(MAX_CHARACTER_LINGUISTIC_STYLE_SAMPLES_COUNT)
-  @IsString({ each: true })
-  @MaxLength(300, { each: true })
-  linguisticStyleSamples?: string[];
+  @IsObject()
+  @Validate(IsSamplesByLanguageConstraint)
+  linguisticStyleSamples?: Record<string, string[]>;
 
   @ApiProperty({
     description: 'Knowledge sources this character can draw on',
@@ -258,27 +262,30 @@ export class ScenarioCharacterResponseDto {
   })
   characterProfileText?: string;
 
-  @ApiProperty({
-    description:
-      'ID of the voice (from the scenario voice library) assigned to this character',
-    required: false,
+  @ApiPropertyOptional({
+    description: 'Voice per language, keyed by `languages.id`',
+    type: 'object',
+    additionalProperties: { type: 'string' },
   })
-  voiceId?: string;
+  voices?: Record<string, string>;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description:
-      'Free-text style guidance for this character (e.g. dialect, register, code-mixing norms)',
-    required: false,
+      'Style guidance per language (dialect, register, code-mixing norms), ' +
+      'keyed by `languages.id`',
+    type: 'object',
+    additionalProperties: { type: 'string' },
   })
-  languageCharacteristics?: string;
+  languageCharacteristics?: Record<string, string>;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     description:
-      "Sample utterances demonstrating the character's speech pattern",
-    required: false,
-    type: [String],
+      "Sample utterances demonstrating the character's speech pattern per " +
+      'language, keyed by `languages.id`',
+    type: 'object',
+    additionalProperties: { type: 'array', items: { type: 'string' } },
   })
-  linguisticStyleSamples?: string[];
+  linguisticStyleSamples?: Record<string, string[]>;
 
   @ApiProperty({
     description: 'Knowledge sources this character can draw on',

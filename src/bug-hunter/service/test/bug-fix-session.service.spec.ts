@@ -1,3 +1,4 @@
+import { ProductionReleaseService } from 'src/release/service/production-release.service';
 import { BadRequestException, ForbiddenException } from '@nestjs/common';
 
 import { BugFixSessionService } from '../bug-fix-session.service';
@@ -55,6 +56,7 @@ describe('BugFixSessionService', () => {
     listChildren: jest.Mock;
     listCoordinatingParents: jest.Mock;
     listReleasingParents: jest.Mock;
+    findReversibleFinderErrors: jest.Mock;
   };
   let bugFindingService: { getOne: jest.Mock };
   let bugHunterService: {
@@ -87,6 +89,7 @@ describe('BugFixSessionService', () => {
       listChildren: jest.fn().mockResolvedValue([]),
       listCoordinatingParents: jest.fn().mockResolvedValue([]),
       listReleasingParents: jest.fn().mockResolvedValue([]),
+      findReversibleFinderErrors: jest.fn().mockResolvedValue([]),
     };
     bugFindingService = { getOne: jest.fn() };
     bugHunterService = {
@@ -122,6 +125,11 @@ describe('BugFixSessionService', () => {
       bugFindingService as never,
       bugHunterService as never,
       github as never,
+      // A real ProductionReleaseService over the mocked GithubActionsService.
+      // The point is that every assertion below still watches `github.*`
+      // directly: if the extraction changed what reaches GitHub, these tests
+      // fail, which is what makes them proof the refactor preserved behaviour.
+      new ProductionReleaseService(github as never),
       notificationService as never,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
       repoClassifier as never,
@@ -533,6 +541,125 @@ describe('BugFixSessionService', () => {
       });
     });
 
+    it('fails a FIXING finding whose GitHub Actions run already ended without it self-reporting', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.FIXING
+          ? [
+              findingRow({
+                status: BugFindingStatus.FIXING,
+                sessionRunId: '99',
+                dispatchedAt: new Date(Date.now() - 70 * 60 * 1000),
+              }),
+            ]
+          : [],
+      );
+      github.getRun.mockResolvedValue({
+        id: '99',
+        htmlUrl: 'https://github.com/run/99',
+        status: 'completed',
+        conclusion: 'cancelled',
+      });
+
+      await service.reconcile();
+
+      expect(github.getRun).toHaveBeenCalledWith('ally-be', '99');
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.FAILED,
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          findingId: 'finding-1',
+          stage: BugHuntEventStage.ERROR,
+          summary: expect.stringMatching(/cancelled/i),
+        }),
+      );
+    });
+
+    it("resolves a FIXING finding's run id first if the reconcile loop never caught it, then fails it once that run is done", async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.FIXING
+          ? [
+              findingRow({
+                status: BugFindingStatus.FIXING,
+                sessionRunId: null,
+                dispatchedAt: new Date(Date.now() - 70 * 60 * 1000),
+              }),
+            ]
+          : [],
+      );
+      github.findRunSince.mockResolvedValue({
+        id: '99',
+        htmlUrl: 'https://github.com/run/99',
+      });
+      github.getRun.mockResolvedValue({
+        id: '99',
+        htmlUrl: 'https://github.com/run/99',
+        status: 'completed',
+        conclusion: 'failure',
+      });
+
+      await service.reconcile();
+
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        sessionRunUrl: 'https://github.com/run/99',
+        sessionRunId: '99',
+      });
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.FAILED,
+      });
+    });
+
+    it('leaves a still-running FIXING finding alone', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.FIXING
+          ? [
+              findingRow({
+                status: BugFindingStatus.FIXING,
+                sessionRunId: '99',
+                dispatchedAt: new Date(Date.now() - 10 * 60 * 1000),
+              }),
+            ]
+          : [],
+      );
+      github.getRun.mockResolvedValue({
+        id: '99',
+        htmlUrl: 'https://github.com/run/99',
+        status: 'in_progress',
+        conclusion: null,
+      });
+
+      await service.reconcile();
+
+      expect(findingRepository.update).not.toHaveBeenCalled();
+    });
+
+    it('fails a FIXING finding past the timeout whose run could never be resolved at all', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.FIXING
+          ? [
+              findingRow({
+                status: BugFindingStatus.FIXING,
+                sessionRunId: null,
+                dispatchedAt: new Date(Date.now() - 80 * 60 * 1000),
+              }),
+            ]
+          : [],
+      );
+      github.findRunSince.mockResolvedValue(null);
+
+      await service.reconcile();
+
+      expect(github.getRun).not.toHaveBeenCalled();
+      expect(findingRepository.update).toHaveBeenCalledWith('finding-1', {
+        status: BugFindingStatus.FAILED,
+      });
+      expect(bugHunterService.appendFindingEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          summary: expect.stringMatching(/could never be found/i),
+        }),
+      );
+    });
+
     it('flips a PR_OPENED finding to MERGED once GitHub reports it merged — the human-review-merge case', async () => {
       findingRepository.find.mockImplementation(({ where }: any) =>
         where.status === BugFindingStatus.PR_OPENED
@@ -664,6 +791,68 @@ describe('BugFixSessionService', () => {
       expect(roadmapOpportunityRepository.update).not.toHaveBeenCalled();
     });
 
+    it('reverses a matching finder-error dismissal once a same-dedupe-key finding merges', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                dedupeKey: 'dupe-key-1',
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        htmlUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+        mergedAt: new Date('2026-08-19T12:00:00.000Z'),
+      });
+      findingRepository.findReversibleFinderErrors.mockResolvedValue([
+        findingRow({ id: 'dismissed-1', dedupeKey: 'dupe-key-1' }),
+      ]);
+
+      await service.reconcile();
+
+      expect(findingRepository.findReversibleFinderErrors).toHaveBeenCalledWith(
+        'ally-web',
+        'dupe-key-1',
+        'finding-1',
+        expect.any(Date),
+      );
+      expect(findingRepository.update).toHaveBeenCalledWith(['dismissed-1'], {
+        reversedAt: expect.any(Date),
+        reversedByFindingId: 'finding-1',
+      });
+    });
+
+    it('does not look for reversals on a finding with no dedupeKey', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.PR_OPENED
+          ? [
+              findingRow({
+                status: BugFindingStatus.PR_OPENED,
+                repo: 'ally-web',
+                dedupeKey: null,
+                prUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+              }),
+            ]
+          : [],
+      );
+      github.getPullRequest.mockResolvedValue({
+        merged: true,
+        htmlUrl: 'https://github.com/helloallytech/ally-web/pull/842',
+        mergedAt: new Date('2026-08-19T12:00:00.000Z'),
+      });
+
+      await service.reconcile();
+
+      expect(
+        findingRepository.findReversibleFinderErrors,
+      ).not.toHaveBeenCalled();
+    });
+
     it('still persists the finding as MERGED when the roadmap-opportunity update fails', async () => {
       findingRepository.find.mockImplementation(({ where }: any) =>
         where.status === BugFindingStatus.PR_OPENED
@@ -772,6 +961,45 @@ describe('BugFixSessionService', () => {
           title: expect.stringMatching(/live in production/i),
         }),
       );
+    });
+
+    it('reverses a matching finder-error dismissal once a same-dedupe-key finding releases', async () => {
+      findingRepository.find.mockImplementation(({ where }: any) =>
+        where.status === BugFindingStatus.RELEASING
+          ? [
+              findingRow({
+                status: BugFindingStatus.RELEASING,
+                repo: 'ally-be',
+                dedupeKey: 'dupe-key-2',
+                releaseTag: 'v1.4.2',
+                releaseRunId: '99',
+                dispatchedAt: new Date(Date.now() - 60_000),
+              }),
+            ]
+          : [],
+      );
+      github.getRun.mockResolvedValue({
+        id: '99',
+        htmlUrl: 'https://github.com/run/99',
+        status: 'completed',
+        conclusion: 'success',
+      });
+      findingRepository.findReversibleFinderErrors.mockResolvedValue([
+        findingRow({ id: 'dismissed-2', dedupeKey: 'dupe-key-2' }),
+      ]);
+
+      await service.reconcile();
+
+      expect(findingRepository.findReversibleFinderErrors).toHaveBeenCalledWith(
+        'ally-be',
+        'dupe-key-2',
+        'finding-1',
+        expect.any(Date),
+      );
+      expect(findingRepository.update).toHaveBeenCalledWith(['dismissed-2'], {
+        reversedAt: expect.any(Date),
+        reversedByFindingId: 'finding-1',
+      });
     });
 
     it('settles a red release as RELEASE_FAILED, not FAILED — the fix is still merged', async () => {
@@ -929,6 +1157,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       listChildren: jest.fn().mockResolvedValue([]),
       listCoordinatingParents: jest.fn().mockResolvedValue([]),
       listReleasingParents: jest.fn().mockResolvedValue([]),
+      findReversibleFinderErrors: jest.fn().mockResolvedValue([]),
     };
     bugFindingService = { getOne: jest.fn() };
     bugHunterService = {
@@ -956,6 +1185,7 @@ describe('BugFixSessionService — coordinated multi-repo fixes', () => {
       bugFindingService,
       bugHunterService,
       github,
+      new ProductionReleaseService(github as never),
       notificationService,
       { publicApiBaseUrl: 'https://api.example.com' } as never,
       { classifyRepo: jest.fn() } as never,

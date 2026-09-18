@@ -18,7 +18,6 @@ import {
 import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import {
   WaHandledBy,
   WaUnansweredReason,
@@ -49,7 +48,6 @@ export class WhatsAppConversationController {
 
   @Get('conversations')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS],
   })
   @ApiOperation({
@@ -86,7 +84,6 @@ export class WhatsAppConversationController {
 
   @Get('conversations/languages')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS],
   })
   @ApiOperation({
@@ -102,7 +99,6 @@ export class WhatsAppConversationController {
 
   @Get('conversations/:id')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS],
   })
   @ApiOperation({
@@ -117,7 +113,6 @@ export class WhatsAppConversationController {
 
   @Get('citations/:chunkId')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_CONVERSATIONS],
   })
   @ApiOperation({
@@ -132,7 +127,6 @@ export class WhatsAppConversationController {
 
   @Post('contacts/:id/reveal')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS],
   })
   @ApiOperation({
@@ -147,7 +141,6 @@ export class WhatsAppConversationController {
 
   @Post('contacts/:id/block')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS],
   })
   @ApiOperation({
@@ -165,7 +158,6 @@ export class WhatsAppConversationController {
 
   @Post('contacts/:id/unblock')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS],
   })
   @ApiOperation({ summary: 'Unblock a number' })
@@ -175,7 +167,6 @@ export class WhatsAppConversationController {
 
   @Post('contacts/:id/erase')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_CONVERSATIONS],
   })
   @ApiOperation({
@@ -192,7 +183,6 @@ export class WhatsAppConversationController {
 
   @Get('unanswered')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_UNANSWERED],
   })
   @ApiOperation({
@@ -225,7 +215,6 @@ export class WhatsAppConversationController {
 
   @Patch('unanswered/:id')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_UNANSWERED],
   })
   @ApiOperation({ summary: 'Triage, assign, annotate or resolve a gap' })
@@ -245,7 +234,6 @@ export class WhatsAppConversationController {
 
   @Post('unanswered/:id/create-document')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_UNANSWERED],
   })
   @ApiOperation({
@@ -266,7 +254,6 @@ export class WhatsAppConversationController {
 
   @Get('analytics/overview')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS],
   })
   @ApiOperation({
@@ -281,7 +268,6 @@ export class WhatsAppConversationController {
 
   @Get('analytics/timeseries')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS],
   })
   @ApiOperation({ summary: 'Daily outcome counts for the trend chart' })
@@ -291,7 +277,6 @@ export class WhatsAppConversationController {
 
   @Get('analytics/languages')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS],
   })
   @ApiOperation({
@@ -307,7 +292,6 @@ export class WhatsAppConversationController {
 
   @Get('analytics/corpus-coverage')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_ANALYTICS],
   })
   @ApiOperation({

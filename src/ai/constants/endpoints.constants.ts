@@ -22,10 +22,7 @@ export const ENDPOINTS = {
   // Roleplay Studio v2 Improve test runs. ai-learn keeps its internal
   // "rehearsal" naming for these routes; ally-be calls them test runs.
   // Answers 202; progress/results come back via the test-run webhook
-  // (PATCH /v1/roleplay-studio/test-runs/webhook/:runId).
-  ROLEPLAY_TEST_RUN_RUN: 'api/v1/roleplay-rehearsal/run',
   // Per-run path — append the run id at call site.
-  ROLEPLAY_TEST_RUN_CANCEL: 'api/v1/roleplay-rehearsal/cancel',
   // Product Roadmap semantic duplicate detection. ally-ai owns the
   // `RoadmapOpportunity` Weaviate collection; ally-be's Postgres stays the
   // system of record and treats the vector store as a DERIVED index. The
@@ -38,15 +35,25 @@ export const ENDPOINTS = {
   ROADMAP_OPPORTUNITY_BULK_UPSERT: 'api/v1/roadmap-opportunities/bulk-upsert',
   ROADMAP_OPPORTUNITY_IDS: 'api/v1/roadmap-opportunities/ids',
 
-  // ── WhatsApp Q&A knowledge corpus ─────────────────────────────────────────
+  // ── Knowledge corpora (WhatsApp Q&A, character library) ───────────────────
   // Same ownership rule as the roadmap collection above: ally-ai owns the `KnowledgeChunk`
   // Weaviate collection, ally-be's Postgres (kb_documents + kb_document_chunks) stays the
   // system of record, and the vector store is a DERIVED index. The Weaviate object uuid IS
   // the kb_document_chunks.id, which is what lets a citation resolve back to an exact passage.
+  //
+  // ONE COLLECTION PER CORPUS, not one collection with a scope argument: every call below takes
+  // a `corpus` that ally-ai resolves to its own Weaviate collection. So the boundary is
+  // structural — there is no filter to leave unset, and the WhatsApp bot cannot retrieve a
+  // character-library passage even if a caller forgets everything. `document_ids` still exists
+  // on the search call, but it scopes WITHIN a corpus (the curator's topic boost), which is a
+  // ranking concern rather than a correctness one.
   KNOWLEDGE_CHUNK_BULK_UPSERT: 'api/v1/knowledge-chunks/bulk-upsert',
   KNOWLEDGE_CHUNK_SEARCH: 'api/v1/knowledge-chunks/search',
   KNOWLEDGE_CHUNK_DELETE_BY_DOCUMENT: 'api/v1/knowledge-chunks/document',
   KNOWLEDGE_CHUNK_IDS: 'api/v1/knowledge-chunks/ids',
+  // Also `.../document`, like the delete above: the document id and `/audience` are
+  // appended by the caller.
+  KNOWLEDGE_CHUNK_SET_AUDIENCE: 'api/v1/knowledge-chunks/document',
   KNOWLEDGE_AGENT_ANSWER: 'api/v1/knowledge-agent/answer',
   KNOWLEDGE_AGENT_CRISIS_CHECK: 'api/v1/knowledge-agent/crisis-check',
 } as const;

@@ -22,6 +22,7 @@ export interface RecordLlmUsageParams {
   /** Defaults to promptTokens + completionTokens when omitted. */
   totalTokens?: number;
   cachedTokens?: number;
+  cacheCreationTokens?: number;
   // STT (service='stt') billable audio duration in milliseconds.
   audioMs?: number;
   // TTS (service='tts') billable synthesized characters.
@@ -82,6 +83,7 @@ export class LlmUsageService {
         completionTokens,
         totalTokens: params.totalTokens ?? promptTokens + completionTokens,
         cachedTokens: params.cachedTokens,
+        cacheCreationTokens: params.cacheCreationTokens,
         audioMs: params.audioMs,
         characters: params.characters,
         occurredAt: params.occurredAt ?? new Date(),

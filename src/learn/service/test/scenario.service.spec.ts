@@ -52,10 +52,13 @@ import { ScenarioBehaviorInstructionService } from '../scenario-behavior-instruc
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { BehaviorInstructionCategory } from 'src/learn/enum/behavior-instruction.enum';
 import { CompetencyService } from '../competency.service';
-import { OpenAIAutofillService } from '../openai-autofil-service';
-import { AnthropicAutofillService } from '../anthropic-autofill.service';
+import { AutofillService } from '../autofill.service';
 import { BehaviorService } from '../behavior.service';
 import { EnhanceableField } from 'src/learn/enum/enhanceable-field.enum';
+import {
+  AgentBuilderField,
+  MAX_SPOKEN_LANGUAGES,
+} from 'src/learn/enum/agent-builder-field.enum';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { TokenUser } from 'src/auth/type/auth.types';
 
@@ -88,8 +91,7 @@ describe('ScenarioService', () => {
   let sharedLanguageService: jest.Mocked<SharedLanguageService>;
   let scenarioSharedService: jest.Mocked<ScenarioSharedService>;
   let triggerWarningsService: jest.Mocked<TriggerWarningsService>;
-  let openAIAutofillService: jest.Mocked<OpenAIAutofillService>;
-  let anthropicAutofillService: jest.Mocked<AnthropicAutofillService>;
+  let autofillService: jest.Mocked<AutofillService>;
   let openaiTranslationsService: jest.Mocked<OpenAITranslationsService>;
   let scenarioBehaviorInstructionService: jest.Mocked<ScenarioBehaviorInstructionService>;
 
@@ -166,6 +168,7 @@ describe('ScenarioService', () => {
       save: jest.fn(),
       update: jest.fn(),
       getScenarioVoices: jest.fn(),
+      getLanguagesWithVoices: jest.fn(),
     };
 
     const s3CoverImageUrlPattern =
@@ -221,6 +224,12 @@ describe('ScenarioService', () => {
     const mockDataSource = {
       createEntityManager: jest.fn(),
       transaction: jest.fn(),
+      // duplicateScenario reads the source's scenario_tenants rows through
+      // this. Defaults to "no assignments" so tests that don't care are
+      // unaffected.
+      getRepository: jest.fn().mockReturnValue({
+        find: jest.fn().mockResolvedValue([]),
+      }),
     };
 
     const mockScenarioPathSharedService = {
@@ -310,12 +319,7 @@ describe('ScenarioService', () => {
       createCompetency: jest.fn(),
     };
 
-    const mockOpenAIAutofillService = {
-      enhanceFieldContent: jest.fn(),
-      generateContentFromPrompt: jest.fn(),
-    };
-
-    const mockAnthropicAutofillService = {
+    const mockAutofillService = {
       enhanceFieldContent: jest.fn(),
       generateContentFromPrompt: jest.fn(),
     };
@@ -432,12 +436,8 @@ describe('ScenarioService', () => {
           useValue: mockCompetencyService,
         },
         {
-          provide: OpenAIAutofillService,
-          useValue: mockOpenAIAutofillService,
-        },
-        {
-          provide: AnthropicAutofillService,
-          useValue: mockAnthropicAutofillService,
+          provide: AutofillService,
+          useValue: mockAutofillService,
         },
         {
           provide: BehaviorService,
@@ -504,8 +504,7 @@ describe('ScenarioService', () => {
     sharedLanguageService = module.get(SharedLanguageService);
     scenarioSharedService = module.get(ScenarioSharedService);
     triggerWarningsService = module.get(TriggerWarningsService);
-    openAIAutofillService = module.get(OpenAIAutofillService);
-    anthropicAutofillService = module.get(AnthropicAutofillService);
+    autofillService = module.get(AutofillService);
     openaiTranslationsService = module.get(OpenAITranslationsService);
     scenarioBehaviorInstructionService = module.get(
       ScenarioBehaviorInstructionService,
@@ -1712,47 +1711,6 @@ describe('ScenarioService', () => {
       await expect(service.getScenariosV2()).rejects.toThrow(
         'Tenant ID is required',
       );
-    });
-
-    it('excludes v2 scenarios for an ordinary (non-allowlisted) user', async () => {
-      // Default mocks: no v2 config / no getRepository → resolver returns false.
-      scenariosRepository.getScenarios.mockResolvedValue({
-        data: [],
-        count: 0,
-      } as any);
-
-      await service.getScenariosV2();
-
-      // includeRoleplayV2 must NOT be set → repository default-excludes v2.
-      expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
-        tenantId: mockTenantId,
-        cohortScope: { cohortId: null },
-      });
-    });
-
-    it('includes v2 scenarios for an allowlisted user (flag on)', async () => {
-      mockConfigService.roleplayV2 = {
-        enabled: true,
-        allowlist: ['sandeep.malhotra@helloally.ai'],
-      };
-      (ExecutionManager.getUserId as jest.Mock).mockReturnValue('1');
-      (dataSource as any).getRepository = jest.fn().mockReturnValue({
-        findOne: jest
-          .fn()
-          .mockResolvedValue({ id: 1, email: 'sandeep.malhotra@helloally.ai' }),
-      });
-      scenariosRepository.getScenarios.mockResolvedValue({
-        data: [],
-        count: 0,
-      } as any);
-
-      await service.getScenariosV2();
-
-      expect(scenariosRepository.getScenarios).toHaveBeenCalledWith({
-        tenantId: mockTenantId,
-        cohortScope: { cohortId: null },
-        includeRoleplayV2: true,
-      });
     });
   });
 
@@ -4234,6 +4192,16 @@ describe('ScenarioService', () => {
             feedbackStatus: true,
             message: 'Great job!',
             score: 85,
+            detectionConfig: {
+              maxOccurrences: 3,
+              minGapTime: 10,
+              occurrenceInterval: 60,
+              startTime: 0,
+              endTime: 300,
+              minScore: 0,
+              maxScore: 100,
+            },
+            checklistVisibilityStatus: true,
           },
           {
             id: 2,
@@ -4246,6 +4214,8 @@ describe('ScenarioService', () => {
             feedbackStatus: false,
             message: 'Session terminated',
             score: 0,
+            detectionConfig: null,
+            checklistVisibilityStatus: false,
           },
         ];
 
@@ -4398,6 +4368,16 @@ describe('ScenarioService', () => {
               feedbackStatus: true,
               message: 'Great job!',
               score: 85,
+              detectionConfig: {
+                maxOccurrences: 3,
+                minGapTime: 10,
+                occurrenceInterval: 60,
+                startTime: 0,
+                endTime: 300,
+                minScore: 0,
+                maxScore: 100,
+              },
+              checklistVisibilityStatus: true,
             }),
             expect.objectContaining({
               scenarioId: 2,
@@ -4408,6 +4388,8 @@ describe('ScenarioService', () => {
               feedbackStatus: false,
               message: 'Session terminated',
               score: 0,
+              detectionConfig: null,
+              checklistVisibilityStatus: false,
             }),
           ]),
         );
@@ -4588,7 +4570,7 @@ describe('ScenarioService', () => {
         expect(mockTriggerWarningsRepo.save).not.toHaveBeenCalled();
       });
 
-      it('should not create tenant mappings when isGlobal is false', async () => {
+      it('should not assign every tenant when isGlobal is false and the source has no assignments', async () => {
         const mockNewScenario = {
           id: 2,
           title: 'Copy of Test Scenario',
@@ -4634,6 +4616,76 @@ describe('ScenarioService', () => {
         expect(result).toEqual(mockNewScenario);
         expect(tenantService.findAll).not.toHaveBeenCalled();
         expect(mockScenarioTenantRepo.save).not.toHaveBeenCalled();
+      });
+
+      // Regression: a duplicate of a tenant-scoped simulation used to be
+      // created with zero scenario_tenants rows, and nothing ever backfilled
+      // them. `validateStartScenarioSession` requires an explicit row for the
+      // caller's tenant on the standalone start branch, so every Practice
+      // click on the copy failed for good with "Scenario is not available for
+      // your organization" while the original kept working.
+      it('should carry the source scenario tenant assignments to a non-global duplicate', async () => {
+        const mockNewScenario = {
+          id: 2,
+          title: 'Copy of Test Scenario',
+          status: ScenarioStatus.DRAFT,
+          isGlobal: false,
+        };
+
+        scenarioSharedService.getAdminScenario.mockResolvedValue({
+          ...mockScenario,
+          isGlobal: false,
+        } as any);
+        scenarioEventsRepository.find.mockResolvedValue([]);
+        triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
+          [],
+        );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          undefined,
+        );
+
+        const sourceTenantFind = jest.fn().mockResolvedValue([
+          { id: 'st-1', scenarioId, tenantId: 'tenant-1' },
+          { id: 'st-2', scenarioId, tenantId: 'tenant-2' },
+        ]);
+        (dataSource.getRepository as jest.Mock).mockReturnValue({
+          find: sourceTenantFind,
+        });
+
+        const mockScenarioRepo = {
+          save: jest.fn().mockResolvedValue(mockNewScenario),
+        };
+
+        const mockScenarioTenantRepo = {
+          create: jest.fn((data) => data),
+          save: jest.fn().mockResolvedValue([]),
+        };
+
+        const mockEntityManager = {
+          getRepository: jest.fn((entity) => {
+            if (entity === Scenarios) return mockScenarioRepo;
+            if (entity === ScenarioTenants) return mockScenarioTenantRepo;
+            return {};
+          }),
+        };
+
+        (dataSource.transaction as jest.Mock).mockImplementation(async (cb) =>
+          cb(mockEntityManager),
+        );
+
+        const result = await service.duplicateScenario(scenarioId);
+
+        expect(result).toEqual(mockNewScenario);
+        expect(sourceTenantFind).toHaveBeenCalledWith({
+          where: { scenarioId },
+        });
+        // The copy is reachable by exactly the tenants the source was, and no
+        // others — findAll (the isGlobal path) must stay out of it.
+        expect(tenantService.findAll).not.toHaveBeenCalled();
+        expect(mockScenarioTenantRepo.save).toHaveBeenCalledWith([
+          { scenarioId: 2, tenantId: 'tenant-1' },
+          { scenarioId: 2, tenantId: 'tenant-2' },
+        ]);
       });
 
       it('should use ExecutionManager.getUserId for createdBy and updatedBy', async () => {
@@ -5729,7 +5781,7 @@ describe('ScenarioService', () => {
     };
 
     it('returns the improved content and routes to OpenAI by default', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         'A richer, improved backstory.',
       );
 
@@ -5739,13 +5791,11 @@ describe('ScenarioService', () => {
         fieldName: EnhanceableField.CHARACTER_PROFILE_TEXT,
         content: 'A richer, improved backstory.',
       });
-      expect(openAIAutofillService.enhanceFieldContent).toHaveBeenCalledTimes(
-        1,
-      );
+      expect(autofillService.enhanceFieldContent).toHaveBeenCalledTimes(1);
     });
 
     it('uses the generic enhance prompt with field label + current value, and model', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue('improved');
+      autofillService.enhanceFieldContent.mockResolvedValue('improved');
 
       await service.enhanceField({
         ...baseDto,
@@ -5753,7 +5803,7 @@ describe('ScenarioService', () => {
         model: 'gpt-4o',
       } as any);
 
-      const call = openAIAutofillService.enhanceFieldContent.mock.calls[0];
+      const call = autofillService.enhanceFieldContent.mock.calls[0];
       expect(call[0]).toBe(EnhanceableField.CHARACTER_PROFILE_TEXT);
       expect(call[1]).toBe('enhance_field'); // prompt-management code
       expect(call[2]).toMatchObject({
@@ -5766,17 +5816,16 @@ describe('ScenarioService', () => {
     });
 
     it('falls back to the auto-improve directive when guidance is blank', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue('improved');
+      autofillService.enhanceFieldContent.mockResolvedValue('improved');
 
       await service.enhanceField(baseDto as any);
 
-      const variables =
-        openAIAutofillService.enhanceFieldContent.mock.calls[0][2];
+      const variables = autofillService.enhanceFieldContent.mock.calls[0][2];
       expect(variables.guidance).toMatch(/improve the overall quality/i);
     });
 
     it('uses the structured state prompt (JSON) for the STATE field', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         '{"name":"Withdrawn","guidelines":"..."}',
       );
 
@@ -5789,7 +5838,7 @@ describe('ScenarioService', () => {
         guidance: 'make it vivid',
       } as any);
 
-      const call = openAIAutofillService.enhanceFieldContent.mock.calls[0];
+      const call = autofillService.enhanceFieldContent.mock.calls[0];
       expect(call[1]).toBe('enhance_state');
       expect(call[2]).toMatchObject({
         currentName: 'Withdrawn',
@@ -5800,7 +5849,7 @@ describe('ScenarioService', () => {
     });
 
     it('normalises prose-wrapped JSON from the model into clean state JSON', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         'Sure!\n{"name":"Reserved","guidelines":"Quiet and brief."}\nHope that helps.',
       );
 
@@ -5816,7 +5865,7 @@ describe('ScenarioService', () => {
     });
 
     it('falls back to the original value when the model omits a state key', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         '{"guidelines":"Improved guidelines."}',
       );
 
@@ -5835,7 +5884,7 @@ describe('ScenarioService', () => {
     });
 
     it('throws when the model returns no parseable JSON for a state', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         'I cannot do that.',
       );
 
@@ -5866,11 +5915,11 @@ describe('ScenarioService', () => {
           currentValue: JSON.stringify({ name: '  ', guidelines: '' }),
         } as any),
       ).rejects.toThrow(BadRequestException);
-      expect(openAIAutofillService.enhanceFieldContent).not.toHaveBeenCalled();
+      expect(autofillService.enhanceFieldContent).not.toHaveBeenCalled();
     });
 
     it('re-translates the improved content into each target language', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         'Improved primary.',
       );
       openaiTranslationsService.translateText
@@ -5902,7 +5951,7 @@ describe('ScenarioService', () => {
     });
 
     it('does not translate when translateTo is omitted', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         'Improved primary.',
       );
 
@@ -5916,7 +5965,7 @@ describe('ScenarioService', () => {
     });
 
     it('enhances reminders through the same generic field path, using its own field label', async () => {
-      openAIAutofillService.enhanceFieldContent.mockResolvedValue(
+      autofillService.enhanceFieldContent.mockResolvedValue(
         'Maintain eye contact.\nAsk open-ended questions.',
       );
 
@@ -5925,7 +5974,7 @@ describe('ScenarioService', () => {
         currentValue: 'Maintain eye contact.\nAsk questions.',
       } as any);
 
-      const call = openAIAutofillService.enhanceFieldContent.mock.calls[0];
+      const call = autofillService.enhanceFieldContent.mock.calls[0];
       expect(call[0]).toBe(EnhanceableField.REMINDERS);
       const variables = call[2];
       expect(variables.fieldLabel).toContain('Reminders');
@@ -5935,20 +5984,22 @@ describe('ScenarioService', () => {
       });
     });
 
-    it('routes to Anthropic when provider is anthropic', async () => {
-      anthropicAutofillService.enhanceFieldContent.mockResolvedValue(
-        'improved',
-      );
+    it('passes an explicit model through instead of picking a provider', async () => {
+      // Provider selection used to live here, choosing between two services.
+      // It moved into LlmTargetResolverService, which derives the provider from
+      // the resolved model — so what this layer still owns is handing the
+      // override down untouched.
+      autofillService.enhanceFieldContent.mockResolvedValue('improved');
 
       await service.enhanceField({
         ...baseDto,
-        provider: 'anthropic',
+        model: 'claude-sonnet-4-6',
       } as any);
 
-      expect(
-        anthropicAutofillService.enhanceFieldContent,
-      ).toHaveBeenCalledTimes(1);
-      expect(openAIAutofillService.enhanceFieldContent).not.toHaveBeenCalled();
+      expect(autofillService.enhanceFieldContent).toHaveBeenCalledTimes(1);
+      expect(autofillService.enhanceFieldContent.mock.calls[0][4]).toBe(
+        'claude-sonnet-4-6',
+      );
     });
 
     it('throws BadRequestException when currentValue is blank', async () => {
@@ -5958,7 +6009,7 @@ describe('ScenarioService', () => {
           currentValue: '   ',
         } as any),
       ).rejects.toThrow(BadRequestException);
-      expect(openAIAutofillService.enhanceFieldContent).not.toHaveBeenCalled();
+      expect(autofillService.enhanceFieldContent).not.toHaveBeenCalled();
     });
   });
 
@@ -6016,6 +6067,428 @@ describe('ScenarioService', () => {
         expect(['openai', 'anthropic']).toContain(m.provider);
         expect(typeof m.supportsTemperature).toBe('boolean');
       }
+    });
+  });
+
+  describe('generateAgentBuilderField — language handling', () => {
+    const catalog = [
+      {
+        language_id: 1,
+        value: 'en-IN',
+        label: 'English',
+        translationCode: 'en',
+        voices: [],
+      },
+      {
+        language_id: 4,
+        value: 'hi-IN',
+        label: 'Hindi',
+        translationCode: 'hi',
+        voices: [],
+      },
+      {
+        language_id: 7,
+        value: 'mr-IN',
+        label: 'Marathi',
+        translationCode: 'mr',
+        voices: [],
+      },
+    ];
+
+    const brief = 'Suchi speaks English, Hindi and Marathi.';
+
+    beforeEach(() => {
+      (
+        scenarioVoiceRepository.getLanguagesWithVoices as jest.Mock
+      ).mockResolvedValue(catalog);
+    });
+
+    /** Variables the prompt template was rendered with. */
+    const renderedVariables = (): Record<string, string> =>
+      autofillService.generateContentFromPrompt.mock.calls[0][1];
+
+    it('tells the prompt which language to write in', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        '{"samples":["मुझे नहीं पता."]}',
+      );
+
+      const result = await service.generateAgentBuilderField({
+        field: AgentBuilderField.LINGUISTIC_STYLE_SAMPLES,
+        actorDescription: brief,
+        languageId: '4',
+      });
+
+      expect(renderedVariables()).toMatchObject({
+        languageName: 'Hindi',
+        languageCode: 'hi',
+      });
+      expect(result.value).toEqual(['मुझे नहीं पता.']);
+    });
+
+    it('falls back to English when the languageId is unknown or absent', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        '{"fillers":["um"]}',
+      );
+
+      await service.generateAgentBuilderField({
+        field: AgentBuilderField.ALLOWED_FILLER_WORDS,
+        actorDescription: brief,
+        languageId: '999',
+      });
+
+      expect(renderedVariables()).toMatchObject({
+        languageName: 'English',
+        languageCode: 'en',
+      });
+    });
+
+    it('does not query the catalog for language-agnostic fields', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue('A title');
+
+      await service.generateAgentBuilderField({
+        field: AgentBuilderField.BACKSTORY,
+        actorDescription: brief,
+      });
+
+      expect(
+        scenarioVoiceRepository.getLanguagesWithVoices,
+      ).not.toHaveBeenCalled();
+      expect(renderedVariables().languageName).toBeUndefined();
+    });
+
+    it('offers the whole catalog to spoken_languages and resolves the ids it picks', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        '{"languageIds":["7","4","1"]}',
+      );
+
+      const result = await service.generateAgentBuilderField({
+        field: AgentBuilderField.SPOKEN_LANGUAGES,
+        actorDescription: brief,
+      });
+
+      expect(renderedVariables().availableLanguages).toBe(
+        '- 1 | English | en\n- 4 | Hindi | hi\n- 7 | Marathi | mr',
+      );
+      // Resolved against the catalog, so the studio's own tab order is kept
+      // whatever order the model answered in.
+      expect(result.value).toEqual([
+        { languageId: '1', label: 'English', code: 'en' },
+        { languageId: '4', label: 'Hindi', code: 'hi' },
+        { languageId: '7', label: 'Marathi', code: 'mr' },
+      ]);
+    });
+
+    it('drops unknown ids and duplicates from the spoken_languages answer', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        '{"languageIds":["4","4","999","ta"]}',
+      );
+
+      const result = await service.generateAgentBuilderField({
+        field: AgentBuilderField.SPOKEN_LANGUAGES,
+        actorDescription: brief,
+      });
+
+      expect(result.value).toEqual([
+        { languageId: '4', label: 'Hindi', code: 'hi' },
+      ]);
+    });
+
+    it('keeps one variant per language when the catalog voices several', async () => {
+      (
+        scenarioVoiceRepository.getLanguagesWithVoices as jest.Mock
+      ).mockResolvedValue([
+        ...catalog,
+        {
+          language_id: 12,
+          value: 'en-GB',
+          label: 'English (UK)',
+          translationCode: 'en',
+          voices: [],
+        },
+        {
+          language_id: 13,
+          value: 'en-US',
+          label: 'English (US)',
+          translationCode: 'en',
+          voices: [],
+        },
+      ]);
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        '{"languageIds":["1","12","13","4"]}',
+      );
+
+      const result = await service.generateAgentBuilderField({
+        field: AgentBuilderField.SPOKEN_LANGUAGES,
+        actorDescription: brief,
+      });
+
+      expect(result.value).toEqual([
+        { languageId: '1', label: 'English', code: 'en' },
+        { languageId: '4', label: 'Hindi', code: 'hi' },
+      ]);
+    });
+
+    it('falls back to English when spoken_languages answers with nothing usable', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        'I could not tell.',
+      );
+
+      const result = await service.generateAgentBuilderField({
+        field: AgentBuilderField.SPOKEN_LANGUAGES,
+        actorDescription: brief,
+      });
+
+      expect(result.value).toEqual([
+        { languageId: '1', label: 'English', code: 'en' },
+      ]);
+    });
+
+    describe('language_voices casting', () => {
+      const voicedCatalog = [
+        {
+          language_id: 1,
+          value: 'en-IN',
+          label: 'English',
+          translationCode: 'en',
+          voices: [
+            {
+              id: 'v-en-f',
+              name: 'Anushka',
+              provider: 'SARVAM',
+              gender: 'female',
+              age: 'adult',
+            },
+            {
+              id: 'v-en-m',
+              name: 'Abhilash',
+              provider: 'SARVAM',
+              gender: 'male',
+              age: 'adult',
+            },
+          ],
+        },
+        {
+          language_id: 4,
+          value: 'hi-IN',
+          label: 'Hindi',
+          translationCode: 'hi',
+          voices: [
+            {
+              id: 'v-hi-m',
+              name: 'Raju',
+              provider: 'ELEVENLABS',
+              gender: 'male',
+            },
+          ],
+        },
+        {
+          language_id: 7,
+          value: 'mr-IN',
+          label: 'Marathi',
+          translationCode: 'mr',
+          voices: [],
+        },
+      ];
+
+      beforeEach(() => {
+        (
+          scenarioVoiceRepository.getLanguagesWithVoices as jest.Mock
+        ).mockResolvedValue(voicedCatalog);
+      });
+
+      it('offers only the requested languages that actually have voices', async () => {
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{"1":"v-en-f"}}',
+        );
+
+        await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1', '7'],
+          personaGender: 'female',
+          personaAge: 34,
+        });
+
+        const vars = renderedVariables();
+        expect(vars.voiceCandidates).toContain('language_id 1 (English):');
+        expect(vars.voiceCandidates).toContain(
+          '- v-en-f | Anushka | SARVAM | female | adult',
+        );
+        // Not requested.
+        expect(vars.voiceCandidates).not.toContain('Hindi');
+        // Requested but has no voices — nothing to choose from.
+        expect(vars.voiceCandidates).not.toContain('Marathi');
+        expect(vars.personaGender).toBe('female');
+        expect(vars.personaAge).toBe('34');
+      });
+
+      it('resolves the cast ids to voice names for the mapping', async () => {
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{"1":"v-en-f","4":"v-hi-m"}}',
+        );
+
+        const result = await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1', '4'],
+          personaGender: 'female',
+        });
+
+        expect(result.value).toEqual([
+          {
+            languageId: '1',
+            languageLabel: 'English',
+            voiceId: 'v-en-f',
+            voiceName: 'Anushka',
+            voiceGender: 'female',
+          },
+          {
+            languageId: '4',
+            languageLabel: 'Hindi',
+            voiceId: 'v-hi-m',
+            voiceName: 'Raju',
+            voiceGender: 'male',
+          },
+        ]);
+      });
+
+      it("drops a voice id that isn't one of that language's own voices", async () => {
+        // v-hi-m is real, but under English it would dispatch Hindi TTS for an
+        // English session.
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{"1":"v-hi-m","4":"made-up"}}',
+        );
+
+        const result = await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1', '4'],
+        });
+
+        expect(result.value).toEqual([]);
+      });
+
+      it('leaves a language the model skipped out of the answer', async () => {
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{"1":"v-en-f"}}',
+        );
+
+        const result = await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1', '4'],
+        });
+
+        expect(result.value).toEqual([
+          {
+            languageId: '1',
+            languageLabel: 'English',
+            voiceId: 'v-en-f',
+            voiceName: 'Anushka',
+            voiceGender: 'female',
+          },
+        ]);
+      });
+
+      it('matches a decorated key the model wrote instead of the bare id', async () => {
+        // Observed from gpt-5-mini against the real catalog: it echoed the
+        // candidate-block heading as the key.
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{"Language 1":"v-en-f","language_id 4":"v-hi-m"}}',
+        );
+
+        const result = await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1', '4'],
+        });
+
+        expect(
+          (result.value as { languageId: string; voiceId: string }[]).map(
+            (pick) => [pick.languageId, pick.voiceId],
+          ),
+        ).toEqual([
+          ['1', 'v-en-f'],
+          ['4', 'v-hi-m'],
+        ]);
+      });
+
+      it('matches a key written as the language label', async () => {
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{"Hindi":"v-hi-m"}}',
+        );
+
+        const result = await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1', '4'],
+        });
+
+        expect(result.value).toEqual([
+          {
+            languageId: '4',
+            languageLabel: 'Hindi',
+            voiceId: 'v-hi-m',
+            voiceName: 'Raju',
+            voiceGender: 'male',
+          },
+        ]);
+      });
+
+      it('tolerates a bare map without the documented wrapper', async () => {
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"1":"v-en-f"}',
+        );
+
+        const result = await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+          languageIds: ['1'],
+        });
+
+        expect(result.value).toHaveLength(1);
+      });
+
+      it('offers the whole voiced catalog when no languages are named', async () => {
+        autofillService.generateContentFromPrompt.mockResolvedValue(
+          '{"voices":{}}',
+        );
+
+        await service.generateAgentBuilderField({
+          field: AgentBuilderField.LANGUAGE_VOICES,
+          actorDescription: brief,
+        });
+
+        const candidates = renderedVariables().voiceCandidates;
+        expect(candidates).toContain('English');
+        expect(candidates).toContain('Hindi');
+        expect(candidates).not.toContain('Marathi');
+      });
+    });
+
+    it('caps the fan-out at MAX_SPOKEN_LANGUAGES', async () => {
+      const bigCatalog = Array.from({ length: 9 }, (_, i) => ({
+        language_id: i + 1,
+        value: `l${i + 1}`,
+        label: `Language ${i + 1}`,
+        translationCode: `l${i + 1}`,
+        voices: [],
+      }));
+      (
+        scenarioVoiceRepository.getLanguagesWithVoices as jest.Mock
+      ).mockResolvedValue(bigCatalog);
+      autofillService.generateContentFromPrompt.mockResolvedValue(
+        JSON.stringify({
+          languageIds: bigCatalog.map((l) => String(l.language_id)),
+        }),
+      );
+
+      const result = await service.generateAgentBuilderField({
+        field: AgentBuilderField.SPOKEN_LANGUAGES,
+        actorDescription: brief,
+      });
+
+      expect(result.value).toHaveLength(MAX_SPOKEN_LANGUAGES);
     });
   });
 });

@@ -27,6 +27,7 @@ import {
   BugHunterFinderDataService,
   ProdLogFinding,
   ReportedBugFinding,
+  WebErrorFinding,
 } from '../service/bug-hunter-finder-data.service';
 import {
   BugHuntRunDetailDto,
@@ -37,6 +38,7 @@ import {
   PersistBugFindingsDto,
   RecordBugFixPlanDto,
   RecordBugHuntRunCostDto,
+  RecordBugHuntRunModelDto,
   ReportBugHuntEventDto,
   StartBugHuntRunDto,
 } from '../dto/bug-hunter.dto';
@@ -44,8 +46,13 @@ import { BugFixSessionService } from '../service/bug-fix-session.service';
 import { BugHuntRunStatus } from '../enum/bug-hunt-run.enum';
 import { toEventDto, toRunDto, toFindingDto } from './bug-hunter.controller';
 import { buildFixSessionPrompt } from '../constants/bug-fix-prompt';
-import { BUG_HUNT_REPOS } from '../constants/bug-hunt-repos.constants';
+import {
+  BUG_HUNT_REPOS,
+  BugHuntRepoConfig,
+} from '../constants/bug-hunt-repos.constants';
 import { buildSweepPrompt } from '../constants/bug-hunt-sweep-prompt';
+import { BugHunterModelSettingsService } from '../service/bug-hunter-model-settings.service';
+import { BugHunterModelSettingsDto } from '../dto/bug-hunter.dto';
 
 /**
  * The Bug Hunter MACHINE surface — start/report/close plus the findings
@@ -55,7 +62,7 @@ import { buildSweepPrompt } from '../constants/bug-hunt-sweep-prompt';
  *
  * `x-api-key` guarded (`ApiAuthGuard`, same platform `API_KEY` already used
  * for ally-ai/ally-ai-learn inbound calls — see the webhook controllers under
- * `roleplay-studio/` for the identical pattern) rather than
+ * the identical pattern elsewhere) rather than
  * `@RequireFeatureToggle`: that decorator's `AuthGuard('jwt')` requires a
  * logged-in human, which an autonomous pipeline is not. Split into its own
  * controller (not just a different decorator on the same class) so the two
@@ -72,6 +79,7 @@ export class BugHunterPipelineController {
     private readonly finderDataService: BugHunterFinderDataService,
     private readonly bugFixSessionService: BugFixSessionService,
     private readonly configService: AppConfigService,
+    private readonly modelSettingsService: BugHunterModelSettingsService,
   ) {}
 
   @Get('pipeline/prod-logs')
@@ -83,6 +91,17 @@ export class BugHunterPipelineController {
     @Query('repo') repo: string,
   ): Promise<{ events: ProdLogFinding[] | null }> {
     return { events: await this.finderDataService.getRecentErrors(repo) };
+  }
+
+  @Get('pipeline/web-logs')
+  @ApiOperation({
+    summary:
+      "Last 24h of a repo's browser-side PostHog exceptions, for the web-error finder (pipeline only). Null events for a repo with no PostHog-instrumented client (every repo but ally-web today).",
+  })
+  async getWebLogs(
+    @Query('repo') repo: string,
+  ): Promise<{ events: WebErrorFinding[] | null }> {
+    return { events: await this.finderDataService.getWebErrors(repo) };
   }
 
   @Get('pipeline/reported-bugs')
@@ -131,10 +150,24 @@ export class BugHunterPipelineController {
       'the two had already drifted by an entry. The workflow script now fetches ' +
       'it from here instead of carrying its own copy.',
   })
-  getRepoCommands(): {
-    repos: Record<string, { test: string; lint: string; fixable: boolean }>;
-  } {
+  getRepoCommands(): { repos: Record<string, BugHuntRepoConfig> } {
     return { repos: BUG_HUNT_REPOS };
+  }
+
+  @Get('pipeline/models')
+  @ApiOperation({
+    summary:
+      'Which models the sweep/fix session and its escalation subagent should run on (pipeline only)',
+    description:
+      'Fetched at runtime by `bug-hunt-sweep.yml`/`bug-fix-session.yml`, on every trigger path — ' +
+      'including the nightly cron sweep, which never goes through `workflow_dispatch` and so ' +
+      'cannot receive this as a dispatch input. Takes an optional `?repo=` for parity with this ' +
+      "controller's other endpoints, but does not read it yet: Bug Hunter's model settings are " +
+      "platform-wide, same as Builder's.",
+  })
+  @ApiResponse({ status: 200, type: BugHunterModelSettingsDto })
+  async getModels(): Promise<BugHunterModelSettingsDto> {
+    return this.modelSettingsService.get();
   }
 
   @Get('pipeline/sweep-prompt')
@@ -170,12 +203,18 @@ export class BugHunterPipelineController {
     // have moved between the dispatch and the runner actually starting, and the
     // mode decides whether this sweep is allowed to fix anything.
     const settings = await this.bugHunterService.getSettings();
+    // What this repo's reviewers already ruled were not bugs. Fetched here
+    // rather than baked into the workflow file for the same reason the whole
+    // protocol is served rather than copied: it changes every time someone
+    // triages, and a sweep should read the current state of the argument.
+    const knownNonBugs = await this.bugFindingService.listKnownNonBugs(repo);
     return buildSweepPrompt({
       repo,
       runId,
       apiBaseUrl: this.configService.publicApiBaseUrl,
       mode: settings.mode,
       deep: deep === 'true',
+      knownNonBugs,
     });
   }
 
@@ -231,19 +270,50 @@ export class BugHunterPipelineController {
   @Post('runs')
   @ApiOperation({
     summary:
-      'Start a run, or record a skipped-disabled run if the switch is off (pipeline only)',
+      'Start a run, or record a skipped run if the switch is off or (for a scheduled sweep) the repo has nothing new (pipeline only)',
   })
   @ApiResponse({ status: 400, description: 'Unrecognised `trigger`.' })
-  async startRun(
-    @Body() body: StartBugHuntRunDto,
-  ): Promise<{ runId: string | null; mode: string | null }> {
+  async startRun(@Body() body: StartBugHuntRunDto): Promise<{
+    runId: string | null;
+    mode: string | null;
+    skippedReason?: 'disabled' | 'quiet';
+  }> {
     const mode = await this.bugHunterService.requireEnabledOrRecordSkip(
       body.trigger,
       body.repo,
     );
-    if (!mode) return { runId: null, mode: null };
+    if (!mode) return { runId: null, mode: null, skippedReason: 'disabled' };
+
+    const worthSweeping =
+      await this.bugHunterService.requireWorthSweepingOrRecordSkip(
+        body.trigger,
+        body.repo,
+      );
+    if (!worthSweeping) {
+      return { runId: null, mode, skippedReason: 'quiet' };
+    }
+
     const run = await this.bugHunterService.startRun(body.trigger, body.repo);
     return { runId: run.id, mode };
+  }
+
+  @Get('runs/:id/status')
+  @ApiOperation({
+    summary: 'Whether a run is still open (pipeline only)',
+    description:
+      'Read by each sweep workflow immediately after `claude -p` exits. The ' +
+      'CLI exits 0 whenever the agent produces a final response — including ' +
+      'when it ends its turn mid-protocol without closing its run — so a ' +
+      'green job is not evidence the sweep finished. A run still RUNNING at ' +
+      'that point was abandoned, and the workflow fails itself rather than ' +
+      'leaving it open forever. Deliberately narrower than the admin ' +
+      "controller's run detail: a CI gate needs the status and nothing else.",
+  })
+  async getRunStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ status: BugHuntRunStatus }> {
+    const run = await this.bugHunterService.getRun(id);
+    return { status: run.status };
   }
 
   @Post('runs/:id/findings')
@@ -337,6 +407,24 @@ export class BugHunterPipelineController {
     await this.bugHunterService.recordActualCost(id, body);
     const run = await this.bugHunterService.getRun(id);
     return { totalTokenCostUsd: run.totalTokenCostUsd };
+  }
+
+  @Post('pipeline/runs/:id/model')
+  @ApiOperation({
+    summary: 'Attach which CLI/model actually ran this run (pipeline only)',
+    description:
+      'Called by the "Resolve configured models" workflow step right after ' +
+      'it resolves `GET pipeline/models` — ally-be never learns this at ' +
+      'dispatch time, since the model is resolved independently inside the ' +
+      'CI workflow on every trigger path, including the nightly cron sweep. ' +
+      "Powers the findings list's model/provider label.",
+  })
+  async recordModel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RecordBugHuntRunModelDto,
+  ): Promise<{ engine: string; model: string }> {
+    await this.bugHunterService.recordResolvedModel(id, body);
+    return body;
   }
 
   @Post('runs/:id/close')

@@ -79,8 +79,27 @@ export class LeaderboardEntryDto {
 
   @ApiProperty({
     description:
-      'Current consecutive-active-days streak. Deliberately all-time, unlike minutesPlayed, which respects the leaderboard time window — a streak scoped to the window would be a different number from the one the user sees on their own dashboard.',
+      'Days in the current ISO week on which this learner earned XP. Any kind of effort counts — practice, a course component, a debrief conversation — not roleplay minutes alone. Deliberately scoped to the week rather than the leaderboard window, so it matches the number the learner sees on their own dashboard.',
+    example: 3,
+  })
+  daysActiveThisWeek!: number;
+
+  @ApiProperty({
+    description: 'Active days needed this week to earn the consistency bonus.',
     example: 4,
+  })
+  weeklyGoalDays!: number;
+
+  @ApiProperty({
+    description: 'Whether this learner has already met the weekly goal.',
+  })
+  weeklyGoalMet!: boolean;
+
+  @ApiProperty({
+    deprecated: true,
+    description:
+      'Deprecated: was a chain of consecutive practice days. Now carries daysActiveThisWeek so released clients keep rendering a sane number. Read daysActiveThisWeek instead; this field will be removed once no client depends on it.',
+    example: 3,
   })
   currentStreak!: number;
 }

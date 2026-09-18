@@ -15,6 +15,7 @@ import { TenantModule } from '../tenant/tenant.module';
 import { BadgeUserService } from './service/badge-user.service';
 import { AuthorizationModule } from 'src/authorization/authorization.module';
 import { CommunityModule } from 'src/community/community.module';
+import { ProgressModule } from 'src/progress/progress.module';
 import { ScenarioSessionReviewModule } from 'src/scenario-session-review/scenario-session-review.module';
 import { BadgeEventConsumer } from './consumer/badge.event.consumer';
 import { BadgeAwardService } from './service/badge-award.service';
@@ -31,6 +32,7 @@ import { LearnModule } from 'src/learn/learn.module';
     AuthorizationModule,
     forwardRef(() => ScenarioSessionReviewModule),
     CommunityModule,
+    ProgressModule,
     AwsModule,
     AuditModule,
     forwardRef(() => UserModule),

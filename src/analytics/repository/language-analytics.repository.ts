@@ -309,6 +309,75 @@ export class LanguageAnalyticsRepository {
     );
   }
 
+  /**
+   * The main-agent prompt CODE for a session, from `metadata.promptVersions`.
+   *
+   * That map is `{promptCode: version}` and is written at session time, so it
+   * says which prompt actually ran — unlike `scenarios.metadata`, which is
+   * current and mutates when someone re-selects a prompt. Scenario 440 ran on
+   * #2 in the morning and #3 in the afternoon on 2026-08-28; joining to the
+   * scenario would attribute both to #3 and quietly invent the comparison.
+   *
+   * `selectedMainPromptCode` FIRST, because it is unambiguous. The
+   * promptVersions fallback exists for sessions predating it, and it is a
+   * heuristic: that map can carry several main-agent entries, and picking
+   * alphabetically returned `..._main_agent_prompt` in preference to
+   * `..._main_agent_prompt_full` and `..._working_memory_split` — every session
+   * attributed to the base prompt, which is what the first version of this
+   * shipped and what the numbers exposed. Longest key first is a better guess,
+   * because variants are suffixes of the base code, but it is still a guess:
+   * treat fallback rows as approximate and prefer the recorded field.
+   */
+  private static readonly MAIN_PROMPT_CODE_SQL = `COALESCE(
+    ss."metadata"->>'selectedMainPromptCode',
+    (SELECT k FROM jsonb_object_keys(ss."metadata"->'promptVersions') AS k
+      WHERE k LIKE '%main_agent%' OR k LIKE '%base_role%'
+      ORDER BY length(k) DESC, k LIMIT 1))`;
+
+  /** Session denominators grouped by which main-agent prompt ran. */
+  async sessionTotalsByMainPrompt(f: LanguageAnalyticsFilters): Promise<
+    Array<{
+      value: string | null;
+      sessions: string;
+      turns: string;
+      turns_garbled: string;
+      script_fidelity: string | null;
+    }>
+  > {
+    const params: unknown[] = [];
+    const where = this.sessionWhere(f, params);
+    return this.dataSource.query(
+      `SELECT ${LanguageAnalyticsRepository.MAIN_PROMPT_CODE_SQL} AS value,
+              COUNT(*) AS sessions,
+              COALESCE(SUM(s."turnsJudged"), 0) AS turns,
+              COALESCE(SUM(s."turnsGarbled"), 0) AS turns_garbled,
+              AVG(s."scriptFidelityPct") AS script_fidelity
+         FROM language_judgment_sessions s
+         LEFT JOIN scenario_sessions ss ON ss."id" = s."scenarioSessionId"
+        WHERE ${where}
+        GROUP BY 1`,
+      params,
+    );
+  }
+
+  /** Weighted error counts grouped by which main-agent prompt ran. */
+  async weightedByMainPrompt(
+    f: LanguageAnalyticsFilters,
+  ): Promise<Array<{ value: string | null; severity: string; count: string }>> {
+    const params: unknown[] = [];
+    const where = this.annotationWhere(f, params);
+    return this.dataSource.query(
+      `SELECT ${LanguageAnalyticsRepository.MAIN_PROMPT_CODE_SQL} AS value,
+              a."severity" AS severity,
+              COUNT(*) AS count
+         FROM language_error_annotations a
+         LEFT JOIN scenario_sessions ss ON ss."id" = a."scenarioSessionId"
+        WHERE ${where} AND a."conditionedOut" = false
+        GROUP BY 1, a."severity"`,
+      params,
+    );
+  }
+
   /** Weighted error counts grouped by an experiment dimension column. */
   async weightedBy(
     f: LanguageAnalyticsFilters,

@@ -18,7 +18,11 @@ export class HumeTTSProvider implements ITTSProvider {
     }
   }
 
-  async generatePreview(text: string): Promise<Buffer> {
+  async generatePreview(
+    text: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _languageCode: string,
+  ): Promise<Buffer> {
     const result = await this.client.tts.synthesizeJson(
       {
         utterances: [

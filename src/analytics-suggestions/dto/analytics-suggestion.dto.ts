@@ -18,6 +18,7 @@ import { RoadmapOpportunityType } from 'src/product-roadmap/enum/roadmap-opportu
 
 import {
   ANALYTICS_SUGGESTION_STATUS_FILTERS,
+  AnalyticsSuggestionSource,
   AnalyticsSuggestionStatus,
   AnalyticsSuggestionStatusFilter,
 } from '../enum/analytics-suggestion.enum';
@@ -203,6 +204,16 @@ export class SuggestionDto {
 
   @ApiProperty({ enum: AnalyticsSuggestionStatus })
   status!: AnalyticsSuggestionStatus;
+
+  @ApiProperty({
+    enum: AnalyticsSuggestionSource,
+    description:
+      'Which pipeline drafted this: an analytics-window Generate run, or the UX ' +
+      'Signals scan over PostHog telemetry. Both share this queue and one ' +
+      'accept/reject flow — this only tells a reviewer what kind of evidence ' +
+      'backs the card.',
+  })
+  source!: AnalyticsSuggestionSource;
 
   @ApiProperty({ nullable: true, type: String })
   rejectedReason!: string | null;

@@ -1,10 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException } from '@nestjs/common';
+import { ErrorCode } from 'src/exception/error-code.enum';
+import { VoiceNoteExtractionFailedException } from 'src/exception/custom.exception';
 
 import { VoiceNoteService } from '../voice-note.service';
 import { AppConfigService } from 'src/config/config.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { SettingsService } from 'src/settings/service/settings.service';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 
 const mockTranscriptionsCreate = jest.fn();
 const mockMessagesCreate = jest.fn();
@@ -17,12 +20,30 @@ jest.mock('openai', () => ({
   toFile: jest.fn().mockResolvedValue('file-handle'),
 }));
 
-jest.mock('@anthropic-ai/sdk', () => ({
-  __esModule: true,
-  default: jest.fn().mockImplementation(() => ({
-    messages: { create: mockMessagesCreate },
-  })),
-}));
+/**
+ * Extraction seam. `mockMessagesCreate` keeps the provider-shaped
+ * request/response these tests were written against; the injected
+ * LlmCompletionService translates at the edge. Which model runs, and the usage
+ * row it produces, belong to that service and are covered by its own spec —
+ * what matters here is the tenant gate, the failure path, and the field
+ * coercion.
+ */
+const llmCompletion = {
+  complete: jest.fn(async (request: any) => {
+    const response = await mockMessagesCreate({
+      system: request.system,
+      messages: [{ role: 'user', content: request.prompt }],
+    });
+    const block = response?.content?.[0];
+    return {
+      text: (block?.type === 'text' ? block.text : '').trim(),
+      provider: 'openai',
+      model: 'gpt-test',
+      source: 'tier',
+      usage: { inputTokens: 0, outputTokens: 0 },
+    };
+  }),
+};
 
 describe('VoiceNoteService', () => {
   let service: VoiceNoteService;
@@ -49,9 +70,18 @@ describe('VoiceNoteService', () => {
         },
         {
           provide: PromptSharedService,
-          useValue: { getPromptContent: jest.fn().mockResolvedValue('prompt') },
+          useValue: {
+            getPromptContent: jest.fn().mockResolvedValue('prompt'),
+            // The service reads its templates through getPromptByCode; without
+            // it on the mock, every extraction test dies on a TypeError inside
+            // buildSystemPrompt rather than on the behaviour under test.
+            getPromptByCode: jest
+              .fn()
+              .mockResolvedValue('prompt {{transcript}}'),
+          },
         },
         { provide: SettingsService, useValue: settingsService },
+        { provide: LlmCompletionService, useValue: llmCompletion },
       ],
     }).compile();
 
@@ -75,7 +105,7 @@ describe('VoiceNoteService', () => {
       settingsService.getScribeVoiceNoteEnabled.mockResolvedValue(false);
 
       await expect(service.generateFromAudio(audio, undefined)).rejects.toThrow(
-        'Scribe voice note is not enabled for this organization',
+        /not switched on for your organisation/i,
       );
 
       // The whole point of the guard: no Whisper call, no Anthropic call.
@@ -103,6 +133,71 @@ describe('VoiceNoteService', () => {
       await expect(
         service.generateFromAudio(undefined, undefined),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('extraction failure', () => {
+    const fields = JSON.stringify([
+      { id: 'sessionSummary', label: 'Summary', type: 'multiline' },
+    ]);
+
+    beforeEach(() => {
+      settingsService.getScribeVoiceNoteEnabled.mockResolvedValue(true);
+      mockTranscriptionsCreate.mockResolvedValue({
+        text: 'caller described trouble sleeping',
+      });
+    });
+
+    it('returns the transcript alongside the failure instead of losing it', async () => {
+      mockMessagesCreate.mockRejectedValue(new Error('anthropic exploded'));
+
+      // The counsellor spoke this note once. A bare 500 would make them speak
+      // it again, which is the bug this covers.
+      await expect(
+        service.generateFromAudio(audio, fields),
+      ).rejects.toMatchObject({
+        response: {
+          errorCode: ErrorCode.VOICE_NOTE_EXTRACTION_FAILED,
+          transcript: 'caller described trouble sleeping',
+        },
+      });
+    });
+
+    it('throws the typed exception the filter carries the transcript through', async () => {
+      mockMessagesCreate.mockRejectedValue(new Error('anthropic exploded'));
+
+      // CustomExceptionFilter builds the body from an allowlist and branches on
+      // this class, so the type is load-bearing, not decoration.
+      await expect(
+        service.generateFromAudio(audio, fields),
+      ).rejects.toBeInstanceOf(VoiceNoteExtractionFailedException);
+    });
+
+    it('still succeeds normally when extraction works', async () => {
+      mockMessagesCreate.mockResolvedValue({
+        content: [
+          { type: 'text', text: '{"sessionSummary":"Trouble sleeping."}' },
+        ],
+      });
+
+      const result = await service.generateFromAudio(audio, fields);
+
+      expect(result.transcript).toBe('caller described trouble sleeping');
+      expect(result.values).toEqual([
+        { id: 'sessionSummary', value: 'Trouble sleeping.' },
+      ]);
+    });
+
+    it('carries FEATURE_NOT_ENABLED on the disabled-tenant 403', async () => {
+      settingsService.getScribeVoiceNoteEnabled.mockResolvedValue(false);
+
+      // The client branches on this to say "ask an admin" rather than showing
+      // the retry copy for a request that can never succeed.
+      await expect(
+        service.generateFromAudio(audio, fields),
+      ).rejects.toMatchObject({
+        response: { errorCode: ErrorCode.FEATURE_NOT_ENABLED },
+      });
     });
   });
 });

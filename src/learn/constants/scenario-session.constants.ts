@@ -2,6 +2,29 @@ import { LanguageCode } from '../enum/scenario-language';
 
 export const DEFAULT_SCENARIO_SESSION_TTL_SECONDS = 1200; // 20 minutes
 
+/**
+ * How long a session must have been ACTIVE before the sweeper treats it as
+ * abandoned.
+ *
+ * SIX HOURS, which is 18× the 20-minute session TTL above. Generous on purpose:
+ * the cost of sweeping too early is reaping a session a learner is genuinely
+ * still in, which would end their roleplay under them — far worse than the cost
+ * of sweeping too late, which is a stale row surviving a few more hours. Sessions
+ * can also be PAUSED (`pausedAt`/`totalPausedMs`), and a learner who pauses over
+ * a lunch break must not be reaped, so the margin has to absorb that too.
+ *
+ * If this ever needs to be tighter, the honest way is to key off `pausedAt` and
+ * last transcript activity rather than to shrink this number.
+ */
+export const STUCK_SESSION_AGE_MS = 6 * 60 * 60 * 1000;
+
+/**
+ * Rows per sweep tick. Bounded so the first run after this ships — which may
+ * find a long tail of historical stuck sessions — cannot turn into one enormous
+ * transaction; the remainder is picked up on the next tick.
+ */
+export const STUCK_SESSION_SWEEP_LIMIT = 200;
+
 export const SCENARIO_SESSION_EXAMPLE = {
   id: '123',
   roomId: '123',
@@ -343,8 +366,54 @@ export const SKILL_ICONS_S3_PREFIX = 'skill-icons/';
 export const ROOM_METADATA_WARN_BYTES = 48 * 1024;
 
 /**
+ * LiveKit's hard cap on room metadata (bytes).
+ *
+ * Was written inline as the literal 65536 in the log message that checked it,
+ * which made it read as documentation rather than as the threshold it is.
+ * Named here because two call sites now compare against it, and because the
+ * number being in the message is exactly what let a warning outlive the payload
+ * it was describing.
+ */
+export const LIVEKIT_ROOM_METADATA_CAP_BYTES = 64 * 1024;
+
+/**
  * How long a stored room-metadata envelope stays fetchable
  * (learn_room_metadata rows). Rooms live minutes to hours; the agent fetches
  * within seconds of dispatch. Sweep runs opportunistically on each store.
  */
 export const ROOM_METADATA_STALE_HOURS = 24;
+
+/**
+ * How long after `endedAt` a session must have sat at
+ * `eventStatus = IN_PROGRESS` before the unfinalised-session sweep closes out
+ * its lifecycle.
+ *
+ * FIFTEEN MINUTES. In the normal case the agent's `end-of-session` message
+ * trails the other end paths by well under a second (0.5s measured in prod), so
+ * anything still unfinalised a quarter of an hour after the session ended is
+ * not going to be finalised by that message at all — it was dropped, dead-
+ * lettered, or the agent died before sending it. Long enough that the sweep can
+ * never race a live end, short enough that a learner's track item unlocks the
+ * same sitting.
+ */
+export const UNFINALISED_SESSION_GRACE_MS = 15 * 60 * 1000;
+
+/**
+ * How far back the unfinalised-session sweep will reach.
+ *
+ * TWO WEEKS, and deliberately bounded rather than open-ended. Completing a
+ * lifecycle moves the row into every analytics filter that keys on
+ * `eventStatus = 'COMPLETED'`, so an unbounded sweep would silently restate
+ * historical dashboards on its first tick. Two weeks covers any realistic
+ * incident window while keeping that restatement to recent, explainable data;
+ * anything older is a deliberate, hand-run repair, not a background task's
+ * decision.
+ */
+export const UNFINALISED_SESSION_LOOKBACK_MS = 14 * 24 * 60 * 60 * 1000;
+
+/**
+ * Rows per unfinalised-sweep tick. Bounded for the same reason as
+ * STUCK_SESSION_SWEEP_LIMIT: the first run after this ships clears a backlog,
+ * and the remainder is picked up on the next tick.
+ */
+export const UNFINALISED_SESSION_SWEEP_LIMIT = 200;

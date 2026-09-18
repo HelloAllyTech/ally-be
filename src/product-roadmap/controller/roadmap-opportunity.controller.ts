@@ -27,42 +27,47 @@ import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { RateLimit } from 'src/rate-limit/decorator/rate-limit.decorator';
 
-import { CONSUMER_BUG_REPORT_RATE_LIMIT } from '../constants/product-roadmap.constants';
+import { BUG_REPORT_RATE_LIMIT } from '../constants/product-roadmap.constants';
 import {
-  CreateConsumerBugReportDto,
+  CreateBugReportDto,
   CreateOpportunityDto,
   ListOpportunitiesQueryDto,
   MergeOpportunitiesDto,
   MonthBoardQueryDto,
   MoveOpportunityDto,
+  RoadmapReferenceImageUploadUrlDto,
   SetAllocationDto,
   SplitOpportunityDto,
   UpdateOpportunityDto,
 } from '../dto/roadmap-opportunity.dto';
 import {
-  CoinBudgetDto,
-  ConsumerBugReportResponseDto,
+  VoteBudgetDto,
+  BugReportResponseDto,
   GetOpportunitiesResponseDto,
   MonthBoardMoveResponseDto,
   MonthBoardResponseDto,
   OpportunityResponseDto,
   RoadmapFacetsDto,
+  RoadmapReferenceImageUploadUrlResponseDto,
+  RoadmapVoterDto,
   SetAllocationResponseDto,
+  OpenBuilderSessionResponseDto,
 } from '../dto/roadmap-response.dto';
 import { RoadmapOpportunityService } from '../service/roadmap-opportunity.service';
 import { RoadmapAllocationService } from '../service/roadmap-allocation.service';
 import { RoadmapSplitMergeService } from '../service/roadmap-split-merge.service';
+import { RoadmapBuilderService } from '../service/roadmap-builder.service';
 import { RoadmapBoardService } from '../service/roadmap-board.service';
+import { RoadmapAccessService } from '../service/roadmap-access.service';
 
 /**
  * The board itself.
  *
  * Permission tiers, applied per handler:
  *   VIEW_PRODUCT_ROADMAP — read the board
- *   VOTE_PRODUCT_ROADMAP — file an opportunity, allocate coins
+ *   VOTE_PRODUCT_ROADMAP — file an opportunity, cast votes
  *   EDIT_PRODUCT_ROADMAP — change stages, edit or delete anyone's opportunity, split, merge
  */
 @ApiTags('Product Roadmap')
@@ -74,7 +79,9 @@ export class RoadmapOpportunityController {
     private readonly opportunityService: RoadmapOpportunityService,
     private readonly allocationService: RoadmapAllocationService,
     private readonly splitMergeService: RoadmapSplitMergeService,
+    private readonly builderService: RoadmapBuilderService,
     private readonly boardService: RoadmapBoardService,
+    private readonly access: RoadmapAccessService,
   ) {}
 
   @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
@@ -116,7 +123,6 @@ export class RoadmapOpportunityController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Put('board/lane')
@@ -151,12 +157,12 @@ export class RoadmapOpportunityController {
   }
 
   @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
-  @Get('me/coin-budget')
+  @Get('me/vote-budget')
   @ApiOperation({
-    summary: "The caller's remaining coins for the current period",
+    summary: "The caller's remaining votes for the current period",
   })
-  @ApiResponse({ status: 200, type: CoinBudgetDto })
-  budget(@CurrentUser() user: TokenUser): Promise<CoinBudgetDto> {
+  @ApiResponse({ status: 200, type: VoteBudgetDto })
+  budget(@CurrentUser() user: TokenUser): Promise<VoteBudgetDto> {
     return this.allocationService.getBudget(user.id);
   }
 
@@ -175,48 +181,125 @@ export class RoadmapOpportunityController {
     return this.opportunityService.findOne(user.id, id);
   }
 
-  @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
-  @Post('opportunities')
-  @ApiOperation({ summary: 'File a new opportunity' })
-  @ApiResponse({ status: 201, type: OpportunityResponseDto })
-  create(
-    @CurrentUser() user: TokenUser,
-    @Body() dto: CreateOpportunityDto,
-  ): Promise<OpportunityResponseDto> {
-    return this.opportunityService.create(user.id, dto);
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @Get('opportunities/:id/voters')
+  @ApiOperation({
+    summary: "The votes behind an opportunity's priorityScore, by admin",
+    description:
+      'Highest votes first. A separate call from the opportunity itself, fetched on demand ' +
+      '(e.g. a hover) rather than on every list row.',
+  })
+  @ApiResponse({ status: 200, type: [RoadmapVoterDto] })
+  findVoters(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<RoadmapVoterDto[]> {
+    return this.opportunityService.getVoters(id);
   }
 
   /**
-   * The consumer counterpart of `create` above: any logged-in app user (web/mobile/
-   * helpline), not just SUPER_ADMIN/SUPER_DUPER_ADMIN staff — deliberately a separate route
-   * on a plain JwtAuthGuard rather than widening vote:admin:product-roadmap to consumer
-   * accounts. Goes through the exact same RoadmapOpportunityService.create() pipeline as
-   * the staff path (Bug Hunter inbox row, vector indexing), so it needs no bespoke
-   * follow-up work to show up anywhere staff bugs already do.
+   * Stays on the VOTE tier: anyone who can vote can file. Two fields on the body need more than
+   * that, so both manage answers are resolved here and handed to the service — the same shape
+   * comment and saved-view deletion use. Cheap: both halves are cached (see RoadmapAccessService).
+   *
+   * TWO different manage answers, not one. `ownerUserId` has always been gated on the
+   * permission alone (`canManage`); `readinessOverride` needs the permission AND the
+   * product_roadmap_manage toggle (`canManageBoard`), because the permission alone sits on
+   * every platform admin and separates nobody. They are resolved in parallel and kept
+   * distinct rather than collapsed — collapsing them would silently retighten owner assignment,
+   * which is a permission change and does not belong in this one.
+   *
+   * `enforceReadiness` is true here and nowhere else: this is the IDEA-filing form, the only
+   * caller whose client shows a checklist. See create()'s note for why /bug-reports opts out.
+   */
+  @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
+  @Post('opportunities')
+  @ApiOperation({
+    summary: 'File a new opportunity',
+    description:
+      'Assigning `ownerUserId` additionally requires edit:admin:product-roadmap (403 otherwise) ' +
+      'and the named user must be a super-admin (422 otherwise).',
+  })
+  @ApiResponse({ status: 201, type: OpportunityResponseDto })
+  async create(
+    @CurrentUser() user: TokenUser,
+    @Body() dto: CreateOpportunityDto,
+  ): Promise<OpportunityResponseDto> {
+    const [canManage, canManageBoard] = await Promise.all([
+      this.access.canManage(user.id),
+      this.access.canManageBoard(user.id),
+    ]);
+    return this.opportunityService.create(user.id, dto, {
+      canManage,
+      canManageBoard,
+      enforceReadiness: true,
+    });
+  }
+
+  /**
+   * Presign one reference-image upload.
+   *
+   * On the VOTE tier, matching `create` above rather than the MANAGE tier `PATCH` sits on: the
+   * person with the screenshot is the person filing, and putting the picture behind a permission
+   * most filers do not hold would make the field decorative on the one form they actually use.
+   *
+   * Not under `/opportunities/:id` because there is no id yet when the drawer uploads — the image
+   * is attached by the create or update call that follows, and until then the object is simply an
+   * object nothing points at.
+   */
+  @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
+  @Post('reference-images/upload-url')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Presigned URL for a reference-image upload',
+    description:
+      'The browser PUTs the file straight to S3, then sends the returned `imageUrl` back in ' +
+      '`referenceImages` on create or update. Uploading does NOT attach anything on its own.',
+  })
+  @ApiResponse({ status: 200, type: RoadmapReferenceImageUploadUrlResponseDto })
+  createReferenceImageUploadUrl(
+    @Body() dto: RoadmapReferenceImageUploadUrlDto,
+  ): Promise<RoadmapReferenceImageUploadUrlResponseDto> {
+    return this.opportunityService.createReferenceImageUploadUrl(dto);
+  }
+
+  /**
+   * The bug counterpart of `create` above, and the ONE route every bug report takes: a
+   * consumer in web/mobile/helpline, and a staff member using the admin roadmap's "Report a
+   * bug" button, both land here. Deliberately a separate route on a plain JwtAuthGuard
+   * rather than widening vote:admin:product-roadmap to consumer accounts — and the staff
+   * button reuses it rather than posting a `bug`-type opportunity to /opportunities, so
+   * every report carries the same silently-captured triage context regardless of who filed
+   * it. `source` is derived from the reporter's own roles; see isInternalReporter.
+   *
+   * Goes through the exact same RoadmapOpportunityService.create() pipeline as the staff
+   * path (Bug Hunter inbox row, vector indexing), so it needs no bespoke follow-up work to
+   * show up where bugs are triaged.
    */
   @UseGuards(JwtAuthGuard)
   @RateLimit({
     key: 'userId',
-    name: 'consumerBugReport',
-    limit: CONSUMER_BUG_REPORT_RATE_LIMIT.LIMIT,
-    ttl: CONSUMER_BUG_REPORT_RATE_LIMIT.TTL_MS,
+    name: 'bugReport',
+    limit: BUG_REPORT_RATE_LIMIT.LIMIT,
+    ttl: BUG_REPORT_RATE_LIMIT.TTL_MS,
     errorMessage: 'Too many bug reports. Please try again later.',
   })
   @Post('bug-reports')
   @ApiOperation({
-    summary: 'File a bug report as a logged-in consumer app user',
+    summary: 'File a bug report as any logged-in user',
     description:
-      'Lands directly on the internal roadmap as a `bug`-type opportunity, tagged ' +
-      "source='consumer', through the same pipeline a staff-filed bug uses. No severity " +
-      'or category picker — the description is the answer to a single guided prompt. Not ' +
-      'run through any crisis-content safety pipeline: this is a plain admin-visible field.',
+      'Lands as a `bug`-type opportunity and, through the same pipeline, as a row in Bug ' +
+      "Hunter's findings table — where bugs are triaged, since they no longer render on " +
+      "the roadmap board. `source` is stamped 'staff' or 'consumer' from the reporter's " +
+      'own roles. No severity or category picker — the description is the answer to a ' +
+      'single guided prompt. Not run through any crisis-content safety pipeline: this is ' +
+      'a plain admin-visible field.',
   })
-  @ApiResponse({ status: 201, type: ConsumerBugReportResponseDto })
+  @ApiResponse({ status: 201, type: BugReportResponseDto })
   createBugReport(
     @CurrentUser() user: TokenUser,
-    @Body() dto: CreateConsumerBugReportDto,
-  ): Promise<ConsumerBugReportResponseDto> {
-    return this.opportunityService.createConsumerBugReport(
+    @Body() dto: CreateBugReportDto,
+  ): Promise<BugReportResponseDto> {
+    return this.opportunityService.createBugReport(
       user.id,
       user.tenantId ?? null,
       dto,
@@ -224,7 +307,6 @@ export class RoadmapOpportunityController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Patch('opportunities/:id')
@@ -245,7 +327,6 @@ export class RoadmapOpportunityController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Delete('opportunities/:id')
@@ -253,7 +334,7 @@ export class RoadmapOpportunityController {
   @ApiOperation({
     summary: 'Soft-delete an opportunity',
     description:
-      'Also returns its coins to their owners, soft-deletes its comments, and removes it from ' +
+      'Also returns its votes to their owners, soft-deletes its comments, and removes it from ' +
       'the vector index so duplicate detection stops proposing it.',
   })
   remove(
@@ -266,9 +347,9 @@ export class RoadmapOpportunityController {
   @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
   @Put('allocations')
   @ApiOperation({
-    summary: 'Set the caller’s coins on one opportunity',
+    summary: 'Set the caller’s votes on one opportunity',
     description:
-      'Idempotent; coins:0 deletes the allocation. periodKey is NOT accepted — the server ' +
+      'Idempotent; votes:0 deletes the allocation. periodKey is NOT accepted — the server ' +
       'computes it in UTC, which closes the source hole where any period could be written. ' +
       'Returns both the opportunity aggregate and the budget so an optimistic client can ' +
       'reconcile without refetching the list.',
@@ -278,20 +359,19 @@ export class RoadmapOpportunityController {
     @CurrentUser() user: TokenUser,
     @Body() dto: SetAllocationDto,
   ): Promise<SetAllocationResponseDto> {
-    return this.allocationService.setCoins(
+    return this.allocationService.setVotes(
       user.id,
       dto.opportunityId,
-      dto.coins,
+      dto.votes,
     );
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('opportunities/:id/split')
   @ApiOperation({
-    summary: 'Split an opportunity, redistributing coins by weight',
+    summary: 'Split an opportunity, redistributing votes by weight',
     description:
       'Exactly one part must carry the original id; that part is kept and reworded so its ' +
       'comments and share links survive.',
@@ -305,12 +385,32 @@ export class RoadmapOpportunityController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Post('opportunities/:id/builder-session')
+  @ApiOperation({
+    summary: 'Open (or resume) the Builder session for this opportunity',
+    description:
+      'Idempotent: returns the existing session when one is already linked, so pressing the ' +
+      'button twice resumes rather than starting a second interview. `created: true` means the ' +
+      'client must send the returned `seedMessage` as the first interview turn. Gated on the ' +
+      "ROADMAP's manage rule; Builder's own toggle and edit permission are checked in the " +
+      'service, because a roadmap manager is not automatically a Builder user.',
+  })
+  @ApiResponse({ status: 201, type: OpenBuilderSessionResponseDto })
+  openBuilderSession(
+    @CurrentUser() user: TokenUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<OpenBuilderSessionResponseDto> {
+    return this.builderService.openSession(user.id, id);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('opportunities/merge')
   @ApiOperation({
-    summary: 'Merge opportunities, rolling coins up per (user, period)',
+    summary: 'Merge opportunities, rolling votes up per (user, period)',
   })
   merge(
     @CurrentUser() user: TokenUser,

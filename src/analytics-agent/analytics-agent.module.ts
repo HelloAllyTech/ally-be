@@ -22,5 +22,10 @@ import { SqlExecutorService } from './service/sql-executor.service';
   imports: [AppConfigModule],
   controllers: [AnalyticsAgentController],
   providers: [AnalyticsAgentService, SchemaCatalogService, SqlExecutorService],
+  // Exported for in-process callers that ask a question on a user's behalf —
+  // Builder's interview does, to ground a PRD in production numbers. The HTTP
+  // surface stays feature-toggle-gated for a logged-in human; this is the same
+  // service, reached without inventing a second credential type.
+  exports: [AnalyticsAgentService],
 })
 export class AnalyticsAgentModule {}

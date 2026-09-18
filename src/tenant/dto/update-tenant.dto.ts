@@ -84,6 +84,15 @@ export class UpdateTenantDto {
 
   @ApiProperty({
     description:
+      'Send automated engagement-reminder nudges (in-app + push) to ' +
+      'learners inactive for a threshold number of days. Default off.',
+  })
+  @IsBoolean()
+  @IsOptional()
+  engagementReminderEnabled?: boolean;
+
+  @ApiProperty({
+    description:
       'Mark as an internal/demo/QA organization. Super-admin analytics ' +
       'excludes these organizations and their users entirely. Super-admins ' +
       'only — ignored when a multi-tenant admin sends it.',

@@ -32,8 +32,10 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'comfortAudioEnabled',
   'comfortAudioUrl',
   'comfortAudioVolume',
+  'videoActorEnabled',
+  'videoActorAvatarId',
+  'videoActorProvider',
   'historyTrimEnabled',
-  'turnMaxEndpointingDelay',
   'continuousBackchanneling',
   'interimReplyEnabled',
   'customFields',
@@ -53,7 +55,9 @@ export const SCENARIO_METADATA_FIELDS: (keyof UpdateScenarioDto)[] = [
   'agentBuilderDescription',
   'agentBuilderPrompt',
   'showScoreMeter',
-  'enableFeedback',
+  'feedbackTabs',
+  'supervisorNotesEnabled',
+  'liveTabEnabled',
   'pauseEnabled',
   'currentState',
   'remindersEnabled',
@@ -78,6 +82,7 @@ export const SCENARIO_ROOT_FIELDS: (keyof UpdateScenarioDto)[] = [
   'isGlobal',
   'difficultyLevel',
   'competencyId',
+  'competencyIds',
   'category',
   'partnerOrgName',
 ];
@@ -118,6 +123,42 @@ export const hydrateAdminScenarioFromVersionConfig = (
   return hydrated;
 };
 
+/**
+ * Keeps the two competency columns consistent.
+ *
+ * A simulation can assess several competencies (`competencyIds`) — that is what
+ * selecting a cluster in the builder produces, already expanded. The older
+ * scalar `competencyId` is still read by the room-metadata builder and by
+ * clients that predate the array, so it always mirrors `competencyIds[0]`.
+ *
+ * Callers may send either key:
+ *  - `competencyIds` present → it wins, and the scalar is derived from it. An
+ *    empty array is a deliberate "no competency" and clears both.
+ *  - only `competencyId` → the array is derived from it, so a single-select
+ *    caller still lands in the shape analytics expands.
+ *  - neither → returns nothing, leaving whatever is stored untouched (an
+ *    absent key must never clear a selection on a partial update).
+ */
+export const resolveCompetencySelection = (dto: {
+  competencyId?: string;
+  competencyIds?: string[];
+}): { competencyId?: string | null; competencyIds?: string[] | null } => {
+  if (dto.competencyIds !== undefined) {
+    const ids = [...new Set(dto.competencyIds.filter(Boolean))];
+    return {
+      competencyIds: ids.length > 0 ? ids : null,
+      competencyId: ids[0] ?? null,
+    };
+  }
+  if (dto.competencyId !== undefined) {
+    return {
+      competencyId: dto.competencyId ?? null,
+      competencyIds: dto.competencyId ? [dto.competencyId] : null,
+    };
+  }
+  return {};
+};
+
 export const mapCreateScenarioRequestToEntity = (
   scenario: CreateScenarioDto,
   userId: number,
@@ -135,7 +176,7 @@ export const mapCreateScenarioRequestToEntity = (
     prompt: scenario.prompt,
     isGlobal: scenario.isGlobal,
     difficultyLevel: scenario.difficultyLevel,
-    competencyId: scenario.competencyId,
+    ...resolveCompetencySelection(scenario),
     category: scenario.category,
     partnerOrgName: scenario.partnerOrgName,
     metadata: {
@@ -149,13 +190,23 @@ export const mapCreateScenarioRequestToEntity = (
       openingStatements: scenario.openingStatements,
       reminders: scenario.reminders,
       temperature: scenario.temperature,
-      fillerEnabled: scenario.fillerEnabled,
+      fillerEnabled: scenario.fillerEnabled ?? true,
       languageGlossaryEnabled: scenario.languageGlossaryEnabled,
       comfortAudioEnabled: scenario.comfortAudioEnabled,
       comfortAudioUrl: scenario.comfortAudioUrl,
       comfortAudioVolume: scenario.comfortAudioVolume,
+      // Opt-in per roleplay, and stricter than the comfort-audio lines above
+      // on purpose: `=== true` rather than a passthrough, so an undefined from
+      // a client that has never heard of this experiment can never be read
+      // downstream as consent to publish video. ally-ai-learn gates on this
+      // AND its own global kill-switch.
+      videoActorEnabled: scenario.videoActorEnabled === true,
+      videoActorAvatarId: scenario.videoActorAvatarId,
+      // Passthrough, unlike videoActorEnabled above: an absent vendor means
+      // "use the deployment default", which is a real and common choice, so it
+      // must survive as undefined rather than being coerced.
+      videoActorProvider: scenario.videoActorProvider,
       historyTrimEnabled: scenario.historyTrimEnabled,
-      turnMaxEndpointingDelay: scenario.turnMaxEndpointingDelay,
       continuousBackchanneling: scenario.continuousBackchanneling,
       interimReplyEnabled: scenario.interimReplyEnabled,
       customFields: scenario.customFields?.map((customField) => ({
@@ -185,7 +236,16 @@ export const mapCreateScenarioRequestToEntity = (
       agentBuilderDescription: scenario.agentBuilderDescription,
       agentBuilderPrompt: scenario.agentBuilderPrompt,
       showScoreMeter: scenario.showScoreMeter,
-      enableFeedback: scenario.enableFeedback,
+      // `enableFeedback` is deliberately not persisted any more (retired
+      // 2026-08-31, folded into feedbackTabs). Writing it back would undo
+      // migration 1944200000000's cleanup on the next save of any roleplay.
+      feedbackTabs: scenario.feedbackTabs,
+      // Opt-in per roleplay: the supervisor stays silent during a session
+      // until an author turns the live notes on.
+      supervisorNotesEnabled: scenario.supervisorNotesEnabled === true,
+      // Opt-out per roleplay: the learner's Live tab stays on unless an
+      // author explicitly disables it.
+      liveTabEnabled: scenario.liveTabEnabled,
       pauseEnabled: scenario.pauseEnabled,
       currentState: scenario.currentState,
       remindersEnabled: scenario.remindersEnabled,
@@ -484,6 +544,10 @@ export const mapUpdateScenarioRequestToEntity = (
     updatedBy: userId,
   };
 
+  // competencyId/competencyIds are deliberately NOT in this list: copying them
+  // independently would let a caller sending only one of the two leave the
+  // pair disagreeing. resolveCompetencySelection below derives both from
+  // whichever key arrived.
   const updateScenarioObjectFields = [
     'title',
     'description',
@@ -494,7 +558,6 @@ export const mapUpdateScenarioRequestToEntity = (
     'prompt',
     'isGlobal',
     'difficultyLevel',
-    'competencyId',
     'category',
     'partnerOrgName',
   ];
@@ -506,6 +569,8 @@ export const mapUpdateScenarioRequestToEntity = (
       ] as any;
     }
   }
+
+  Object.assign(updateData, resolveCompetencySelection(updateScenarioDto));
 
   // Handle metadata fields - merge with existing metadata
   const metadataUpdates: Record<string, any> = {};

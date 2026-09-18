@@ -4,15 +4,22 @@ import { AnalyticsService } from '../../service/analytics.service';
 import { CohortAnalyticsService } from '../../service/cohort-analytics.service';
 import { UsageLevelAnalyticsService } from '../../service/usage-level-analytics.service';
 import { CertificationAnalyticsService } from '../../service/certification-analytics.service';
+import { XpGrowthAnalyticsService } from '../../service/xp-growth-analytics.service';
+import { GoalsXpAnalyticsService } from '../../service/goals-xp-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../../service/roleplay-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsService } from '../../service/roadmap-delivery-analytics.service';
+import { ShipVolumeAnalyticsService } from '../../service/ship-volume-analytics.service';
 import { HighlightsAnalyticsService } from '../../service/highlights-analytics.service';
 import { PlatformAnalyticsService } from '../../service/platform-analytics.service';
 import { ScribeAnalyticsService } from '../../service/scribe-analytics.service';
 import { LanguageJudgeService } from '../../service/language-judge.service';
+import { FillerJudgeService } from '../../service/filler-judge.service';
+import { FillerAnalyticsService } from '../../service/filler-analytics.service';
 import { LanguageAnalyticsService } from '../../service/language-analytics.service';
+import { GlossaryEffectAnalyticsService } from '../../service/glossary-effect-analytics.service';
 import { WeakMetricsAnalyticsService } from '../../service/weak-metrics-analytics.service';
 import { FeedbackGroundednessJudgeService } from '../../service/feedback-groundedness-judge.service';
+import { RagQualityAnalyticsService } from '../../service/rag-quality-analytics.service';
 import { ActivationAnalyticsService } from '../../service/activation-analytics.service';
 import { CompletionRateAnalyticsService } from '../../service/completion-rate-analytics.service';
 import { LanguageMixAnalyticsService } from '../../service/language-mix-analytics.service';
@@ -30,6 +37,8 @@ import { UsageLadderAnalyticsService } from '../../service/usage-ladder-analytic
 import { PracticeDepthAnalyticsService } from '../../service/practice-depth-analytics.service';
 import { OrgEngagementAnalyticsService } from '../../service/org-engagement-analytics.service';
 import { RoleplayCostAnalyticsService } from '../../service/roleplay-cost-analytics.service';
+import { CodingAgentCostAnalyticsService } from '../../service/coding-agent-cost-analytics.service';
+import { FixSessionEngineCostAnalyticsService } from '../../service/fix-session-engine-cost-analytics.service';
 import { QualitySentimentAnalyticsService } from '../../service/quality-sentiment-analytics.service';
 import { ChartPreferenceService } from '../../service/chart-preference.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
@@ -113,12 +122,24 @@ describe('AnalyticsController', () => {
           useValue: { getCertification: jest.fn() },
         },
         {
+          provide: XpGrowthAnalyticsService,
+          useValue: { getXpGrowth: jest.fn() },
+        },
+        {
+          provide: GoalsXpAnalyticsService,
+          useValue: { getGoalsXp: jest.fn() },
+        },
+        {
           provide: RoleplayVolumeAnalyticsService,
           useValue: { getRoleplayVolume: jest.fn() },
         },
         {
           provide: RoadmapDeliveryAnalyticsService,
           useValue: { getRoadmapDelivery: jest.fn() },
+        },
+        {
+          provide: ShipVolumeAnalyticsService,
+          useValue: { getShipVolume: jest.fn() },
         },
         {
           provide: PlatformAnalyticsService,
@@ -133,8 +154,20 @@ describe('AnalyticsController', () => {
           useValue: { startBackfill: jest.fn(), getJob: jest.fn() },
         },
         {
+          provide: FillerJudgeService,
+          useValue: { startBackfill: jest.fn(), getJob: jest.fn() },
+        },
+        {
+          provide: FillerAnalyticsService,
+          useValue: { getFillerQuality: jest.fn() },
+        },
+        {
           provide: LanguageAnalyticsService,
           useValue: { getLanguageQuality: jest.fn() },
+        },
+        {
+          provide: GlossaryEffectAnalyticsService,
+          useValue: { getGlossaryEffect: jest.fn() },
         },
         {
           provide: WeakMetricsAnalyticsService,
@@ -143,6 +176,10 @@ describe('AnalyticsController', () => {
         {
           provide: FeedbackGroundednessJudgeService,
           useValue: { startBackfill: jest.fn(), getJob: jest.fn() },
+        },
+        {
+          provide: RagQualityAnalyticsService,
+          useValue: { getRagQuality: jest.fn() },
         },
         // Testing-tab services. Stubbed rather than exercised here: this suite
         // covers the dashboard/permission surface, and each of these has its own
@@ -218,6 +255,14 @@ describe('AnalyticsController', () => {
         {
           provide: RoleplayCostAnalyticsService,
           useValue: { getRoleplayCost: jest.fn() },
+        },
+        {
+          provide: CodingAgentCostAnalyticsService,
+          useValue: { getCodingAgentCost: jest.fn() },
+        },
+        {
+          provide: FixSessionEngineCostAnalyticsService,
+          useValue: { getFixSessionEngineCost: jest.fn() },
         },
         {
           provide: QualitySentimentAnalyticsService,

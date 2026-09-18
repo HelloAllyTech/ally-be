@@ -12,7 +12,7 @@ import { BUG_HUNT_REPOS } from '../constants/bug-hunt-repos.constants';
 import { BugHuntRun } from '../entity/bug-hunt-run.entity';
 import { BugHuntRunStatus, BugHuntTrigger } from '../enum/bug-hunt-run.enum';
 import { BugHunterService } from './bug-hunter.service';
-import { GithubActionsService } from './github-actions.service';
+import { GithubActionsService } from 'src/github/service/github-actions.service';
 
 /**
  * Starts a repo-wide sweep on demand.

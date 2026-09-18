@@ -26,16 +26,48 @@ export enum AgentBuilderField {
   // the contiguous score bands (see buildGeneratedStates).
   STATES = 'states',
   // First lines the client might say to open the session. Plain text, one
-  // line per opening statement.
+  // line per opening statement. LANGUAGE-SCOPED (see below).
   OPENING_STATEMENTS = 'opening_statements',
   // Short in-session coaching nudges shown to the learner (not the actor).
   // Plain text, one line per reminder.
   REMINDERS = 'reminders',
-  // Example sentences showing how the client speaks. Generated for English
-  // only (id "1") — the wizard has no language-selection step to key off of;
-  // the trainer can add other languages manually afterwards.
+  // Example sentences showing how the client speaks. LANGUAGE-SCOPED: generated
+  // once per language the brief says the client speaks, written natively in
+  // that language rather than translated from the English set.
   LINGUISTIC_STYLE_SAMPLES = 'linguistic_style_samples',
-  // Hesitation/filler words for the voice agent. Generated for English only
-  // (id "1"), same reasoning as LINGUISTIC_STYLE_SAMPLES.
+  // Hesitation/filler words for the voice agent. LANGUAGE-SCOPED, same as
+  // LINGUISTIC_STYLE_SAMPLES.
   ALLOWED_FILLER_WORDS = 'allowed_filler_words',
+  // One voice per spoken language, cast from the studio's voice catalog against
+  // the brief + the generated persona. Not a Basic Settings text field: the
+  // wizard fires it after `spoken_languages` and `persona`, and its answer
+  // fills the mandatory Language-Voice mapping.
+  LANGUAGE_VOICES = 'language_voices',
+  // Which of the platform's languages the actor brief says the client speaks
+  // ("Suchi speaks English, Hindi and Marathi" -> those three). Not a Basic
+  // Settings field: the wizard fires this FIRST and uses the answer to fan the
+  // language-scoped fields out one call per language.
+  SPOKEN_LANGUAGES = 'spoken_languages',
 }
+
+/**
+ * The fields generated once PER LANGUAGE the client speaks, each written
+ * natively in that language. Every other field is language-agnostic (or
+ * English-only prose the studio translates elsewhere) and is generated once.
+ */
+export const LANGUAGE_SCOPED_AGENT_BUILDER_FIELDS: ReadonlySet<AgentBuilderField> =
+  new Set([
+    AgentBuilderField.OPENING_STATEMENTS,
+    AgentBuilderField.LINGUISTIC_STYLE_SAMPLES,
+    AgentBuilderField.ALLOWED_FILLER_WORDS,
+  ]);
+
+export const isLanguageScopedAgentBuilderField = (
+  field: AgentBuilderField,
+): boolean => LANGUAGE_SCOPED_AGENT_BUILDER_FIELDS.has(field);
+
+/**
+ * Safety valve on the wizard's fan-out: however many languages the model
+ * names, only this many are generated (3 fields x N languages of LLM calls).
+ */
+export const MAX_SPOKEN_LANGUAGES = 6;

@@ -13,6 +13,7 @@ import {
 import { LanguageBackfillJobDto } from '../dto/platform-analytics.dto';
 import { VarietyProfileService } from 'src/language/service/variety-profile.service';
 import { DriftJudgeRepository } from '../repository/drift-judge.repository';
+import { resolveTargetVariety } from '../../language/util/register-policy.util';
 import {
   computeScriptFidelityPct,
   scriptForLanguage,
@@ -242,10 +243,19 @@ export class LanguageJudgeService {
           language: s.language,
           // FR19: per-language declarative config from languages.evalConfig;
           // the judge renders absent values as "unknown".
+          //
+          // target_variety goes through the SAME resolver the agent's register
+          // instruction uses (register-policy.util.ts), so the thing being
+          // graded and the thing being instructed cannot diverge. Before, this
+          // call site fell back to undefined -> "unknown" while the agent side
+          // fell back to `colloquial spoken <label>`: the judge could be
+          // grading against nothing in particular while the agent was told
+          // something specific.
           language_eval_config: {
             language_label: s.language_label ?? undefined,
             target_variety:
-              varietyOverride ?? s.eval_config?.targetVariety ?? undefined,
+              varietyOverride ??
+              resolveTargetVariety(s.eval_config, s.language_label),
             diglossia: s.eval_config?.diglossia ?? undefined,
             code_switch_partners: s.eval_config?.codeSwitchPartners ?? [],
           },

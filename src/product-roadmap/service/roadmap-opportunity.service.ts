@@ -1,5 +1,8 @@
 import {
+  BadRequestException,
+  ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
@@ -7,14 +10,20 @@ import { In, Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { User } from 'src/user/entity/user.entity';
-import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
+import { PLATFORM_TIER_ROLES } from 'src/common/constants/user.constants';
 import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
 import {
   BugFindingSource,
   BugFindingStatus,
 } from 'src/bug-hunter/enum/bug-finding.enum';
 
-import { RoadmapOpportunity } from '../entity/roadmap-opportunity.entity';
+import { S3Service } from 'src/aws/service/s3.service';
+import { AppConfigService } from 'src/config/config.service';
+
+import {
+  RoadmapOpportunity,
+  RoadmapReferenceImage,
+} from '../entity/roadmap-opportunity.entity';
 import {
   RoadmapOpportunitySource,
   RoadmapOpportunityStage,
@@ -24,11 +33,21 @@ import {
   RoadmapOpportunityRepository,
   RoadmapOpportunityRow,
 } from '../repository/roadmap-opportunity.repository';
-import { CONSUMER_BUG_REPORT_PRODUCT_GOAL } from '../constants/product-roadmap.constants';
+import { RoadmapAllocationRepository } from '../repository/roadmap-allocation.repository';
 import {
-  CreateConsumerBugReportDto,
+  BUG_REPORT_DEFAULT_PRODUCT_GOAL,
+  ROADMAP_FILEABLE_EFFORTS,
+  ROADMAP_OWNER_EMAILS,
+  ROADMAP_READINESS_REQUIRE_TOKEN,
+  ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES,
+  ROADMAP_REFERENCE_IMAGE_S3_PREFIX,
+} from '../constants/product-roadmap.constants';
+import {
+  CreateBugReportDto,
   CreateOpportunityDto,
   ListOpportunitiesQueryDto,
+  RoadmapReferenceImageDto,
+  RoadmapReferenceImageUploadUrlDto,
   UpdateOpportunityDto,
 } from '../dto/roadmap-opportunity.dto';
 import {
@@ -36,12 +55,17 @@ import {
   OpportunityResponseDto,
   RoadmapEligibleOwnerDto,
   RoadmapFacetsDto,
+  RoadmapReferenceImageUploadUrlResponseDto,
   RoadmapUserRefDto,
+  RoadmapVoterDto,
 } from '../dto/roadmap-response.dto';
 import { currentPeriodKey } from '../util/roadmap-period.util';
 import { effectiveMonthOf, isMonthPinned } from '../util/roadmap-month.util';
+import { RoadmapGoalImpactService } from './roadmap-goal-impact.service';
+import { RoadmapStrategyGoalService } from './roadmap-strategy-goal.service';
 import { RoadmapVectorService } from './roadmap-vector.service';
 import { RoadmapNotificationService } from './roadmap-notification.service';
+import { RoadmapReadinessTokenService } from './roadmap-readiness-token.service';
 
 /** Fields whose change requires re-embedding. `prd` and `owner` deliberately do not. */
 const REINDEX_TRIGGERING_FIELDS: (keyof UpdateOpportunityDto)[] = [
@@ -57,11 +81,17 @@ export class RoadmapOpportunityService {
 
   constructor(
     private readonly opportunityRepository: RoadmapOpportunityRepository,
+    private readonly allocationRepository: RoadmapAllocationRepository,
+    private readonly strategyGoalService: RoadmapStrategyGoalService,
+    private readonly goalImpactService: RoadmapGoalImpactService,
     private readonly vectorService: RoadmapVectorService,
     private readonly notifications: RoadmapNotificationService,
     @InjectRepository(User) private readonly userRepository: Repository<User>,
     @InjectRepository(BugFinding)
     private readonly bugFindingRepository: Repository<BugFinding>,
+    private readonly s3Service: S3Service,
+    private readonly config: AppConfigService,
+    private readonly readinessToken: RoadmapReadinessTokenService,
   ) {}
 
   async list(
@@ -73,6 +103,9 @@ export class RoadmapOpportunityService {
       ...query,
       userId,
       periodKey,
+      // Read once for the whole page. The bases are board-wide maxima, so scoring rows in one
+      // page against different bases would break the ordering the page depends on.
+      rank: await this.strategyGoalService.getRankContext(),
     });
     return {
       items: await this.toResponseList(result.items),
@@ -88,14 +121,36 @@ export class RoadmapOpportunityService {
       id,
       userId,
       currentPeriodKey(),
+      await this.strategyGoalService.getRankContext(),
     );
     if (!row) throw new NotFoundException(`Opportunity ${id} not found`);
     return (await this.toResponseList([row]))[0];
   }
 
   /**
+   * Per-admin breakdown behind `priorityScore` — who cast the votes that sum to it, across
+   * every period. Highest votes first. A separate call rather than a field on
+   * OpportunityResponseDto: that DTO serves the list and board too, where fetching this per
+   * row would be a query per card for a breakdown nobody asked to see yet.
+   */
+  async getVoters(opportunityId: string): Promise<RoadmapVoterDto[]> {
+    const rows =
+      await this.allocationRepository.votersForOpportunity(opportunityId);
+    const users = await this.resolveUsers(rows.map((r) => r.userId));
+    return rows.map((r) => {
+      const user = users.get(r.userId) ?? this.unknownUser(r.userId);
+      return {
+        userId: r.userId,
+        name: user.name,
+        email: user.email,
+        votes: r.votes,
+      };
+    });
+  }
+
+  /**
    * `extra` carries the fields the staff-facing CreateOpportunityDto has no reason to
-   * expose — see createConsumerBugReport, its only other caller. Left undefined, every
+   * expose — see createBugReport, its only other caller. Left undefined, every
    * field defaults exactly to what the pre-existing staff path always wrote (source
    * 'staff', tenantId/reporterContext null), so this is a no-op change for that caller.
    */
@@ -106,13 +161,70 @@ export class RoadmapOpportunityService {
       source?: RoadmapOpportunitySource;
       tenantId?: string | null;
       reporterContext?: Record<string, any> | null;
+      /**
+       * Whether the caller holds edit:admin:product-roadmap, resolved in the controller the same
+       * way comment and saved-view deletion resolve it — see RoadmapAccessService for why a
+       * row-level rule like this cannot be a decorator. Consulted by `ownerUserId` and by
+       * nothing else, so every other caller can keep leaving it out.
+       */
+      canManage?: boolean;
+      /**
+       * The FULL manage tier — the permission AND the product_roadmap_manage toggle. Consulted
+       * only by `readinessOverride`, and deliberately a different value from `canManage`: see
+       * RoadmapAccessService.canManageBoard for why the permission alone separates nobody.
+       */
+      canManageBoard?: boolean;
+      /**
+       * Whether the readiness gate applies to this call at all.
+       *
+       * False for the internal `/bug-reports` path, which shares this method: a bug report is a
+       * single guided prompt from a consumer who has never seen a checklist, and grading one
+       * against "names the user group it affects" would refuse every real report. The gate is a
+       * property of the IDEA-filing form, not of this table.
+       */
+      enforceReadiness?: boolean;
     },
   ): Promise<OpportunityResponseDto> {
+    // Assigning at filing time is a MANAGE action on a route gated at the VOTE tier, so it is
+    // checked here rather than left to the decorator: a filer who cannot manage the board must
+    // not be able to point a new row at someone by posting a field the drawer never showed them.
+    // 403 rather than dropping it — a silently ignored assignment is worse than a refusal.
+    if (dto.ownerUserId !== undefined && dto.ownerUserId !== null) {
+      if (!extra?.canManage) {
+        throw new ForbiddenException(
+          'Only a roadmap manager can assign an owner.',
+        );
+      }
+      await this.assertEligibleOwner(dto.ownerUserId);
+    }
+
+    const readiness = extra?.enforceReadiness
+      ? await this.resolveReadiness(userId, dto, extra?.canManageBoard === true)
+      : null;
+
+    const referenceImages = this.normaliseReferenceImages(dto.referenceImages);
+
     const saved = await this.opportunityRepository.save(
       this.opportunityRepository.create({
         description: dto.description.trim(),
         type: dto.type,
         productGoal: dto.productGoal,
+        // `?? null` so an omitted effort files as unsized rather than undefined — the column
+        // is nullable and "not sized" is a real state, not a missing value.
+        effort: dto.effort ?? null,
+        // Null for the ordinary case — passed, or not graded at all. Set together, enforced by
+        // a CHECK constraint (migration 1952000000000).
+        readinessOverriddenBy: readiness?.overriddenBy ?? null,
+        readinessOverriddenAt: readiness?.overriddenBy ? new Date() : null,
+        readinessFailedCriteria: readiness?.failedCriteria ?? null,
+        // Only ever the id. The legacy free-text `owner` column stays untouched on a new row —
+        // it is a text FK into roadmap_opportunity_owners(name) and writing both is what the
+        // update path documents as the thing that 500s. See update().
+        ownerUserId: dto.ownerUserId ?? null,
+        // `?? []` rather than leaving it undefined: the column is NOT NULL with a '[]' default,
+        // so both land the same row, but being explicit means the created entity in memory has
+        // the same shape as one read back — which is what the response mapper reads.
+        referenceImages,
         createdBy: userId,
         updatedBy: userId,
         source: extra?.source ?? RoadmapOpportunitySource.STAFF,
@@ -124,6 +236,11 @@ export class RoadmapOpportunityService {
     // Best-effort and awaited: the row is already committed, so a vector failure cannot roll
     // it back, but awaiting means the very next duplicate check sees this opportunity.
     await this.vectorService.indexQuietly(saved.id);
+
+    // Score the new row against the strategy before it is first read, so it enters the board
+    // ranked rather than sitting at zero coverage until someone notices. Same best-effort
+    // contract as the vector index above: a model outage must not fail a committed write.
+    await this.goalImpactService.assessQuietly(saved.id, userId);
 
     // Bug Hunter's comprehensive findings table is a complete bug inbox — a human report
     // needs a row there the moment it's filed, not only once a hunt run gets around to
@@ -151,43 +268,169 @@ export class RoadmapOpportunityService {
     }
 
     const response = await this.findOne(userId, saved.id);
-    this.notifications.emit({
-      kind: 'OPPORTUNITY_UPSERTED',
-      actorId: userId,
-      opportunity: response,
-    });
+    // Bugs are not broadcast. The realtime channel exists to slot a new card
+    // onto an open board, and bugs are no longer listed on that board — pushing
+    // one would make a filed bug flash up on the one screen it is meant to have
+    // left. Everything else about the create path is unchanged for a bug: the
+    // row, the vector, and above all the Bug Hunter inbox row above.
+    if (saved.type !== RoadmapOpportunityType.BUG) {
+      this.notifications.emit({
+        kind: 'OPPORTUNITY_UPSERTED',
+        actorId: userId,
+        opportunity: response,
+      });
+    }
     return response;
   }
 
   /**
-   * POST /product-roadmap/bug-reports — a logged-in consumer app user (web/mobile/helpline)
-   * filing a bug, through the exact same create() pipeline a staff-filed bug uses (vector
-   * indexing, the Bug Hunter inbox row, the realtime notify). Only what differs from the
-   * staff path is made explicit here: `type` is forced to BUG, `productGoal` is the fixed
-   * consumer bucket (see CONSUMER_BUG_REPORT_PRODUCT_GOAL), and `source`/`tenantId`/
-   * `reporterContext` are stamped so admins can tell a consumer report apart from a staff
-   * one. Returns the minimal one-time confirmation, not the full opportunity — a consumer
-   * has no further use for roadmap-internal fields like productGoal or boardPosition.
+   * The readiness gate, applied to one filing.
+   *
+   * Returns what to stamp on the row: `overriddenBy` set only when a manager actually spent an
+   * override, and `failedCriteria` recording what was red when they did.
+   *
+   * ## The rule, in the order it is checked
+   *
+   * 1. NO TOKEN. Refused once ROADMAP_READINESS_REQUIRE_TOKEN is true; until then, warned about
+   *    and allowed, because ally-be deploys ahead of the client that sends one and the bundle
+   *    in production today sends nothing. This is the only leniency here and it is temporary —
+   *    see the constant for the flip.
+   * 2. A TOKEN THAT DOES NOT VERIFY. Always a 400, flag or no flag: tampered, expired, graded
+   *    against different text, or issued against a criteria set that has since changed. The
+   *    token service raises these with wording a filer can act on.
+   * 3. THE VERDICT. Red criteria come from the token. The SIZE rule is applied to the effort
+   *    being filed rather than the one in the token, because correcting a size the model got
+   *    wrong is an explicit, documented exemption — a re-run would recompute the size and
+   *    overwrite the correction, so a human could never override the model at all. What that
+   *    permits is filing an S the model called XL; what it still blocks is filing an XL.
+   * 4. THE OVERRIDE. A failing verdict needs `readinessOverride` AND the full manage tier. A
+   *    non-manager asking for one is a 403 rather than a 400: they sent a well-formed request
+   *    they are not allowed to make. A caller who does not ask at all gets a 400 naming what
+   *    failed, which is the ordinary "not ready yet" answer.
+   *
+   * An override on a PASSING verdict is ignored rather than refused, and nothing is stamped:
+   * there was nothing to override, and a row marked as waved-through when it was not would be
+   * worse than no mark at all.
    */
-  async createConsumerBugReport(
+  private async resolveReadiness(
+    userId: number,
+    dto: CreateOpportunityDto,
+    canManageBoard: boolean,
+  ): Promise<{ overriddenBy: number | null; failedCriteria: string[] | null }> {
+    if (!dto.readinessToken) {
+      if (ROADMAP_READINESS_REQUIRE_TOKEN) {
+        throw new BadRequestException(
+          'Run the readiness check before filing this opportunity.',
+        );
+      }
+      // The signal the rollout waits on: when this stops appearing in production, every client
+      // in the wild sends a token and the flag above can be flipped.
+      this.logger.warn(
+        `[ROADMAP] Opportunity filed with no readiness token by user ${userId}. ` +
+          `Readiness was NOT enforced for this filing.`,
+      );
+      return { overriddenBy: null, failedCriteria: null };
+    }
+
+    const verdict = this.readinessToken.verify(dto.readinessToken, {
+      description: dto.description,
+      productGoal: dto.productGoal,
+    });
+
+    const failed = [...verdict.failedCriteria];
+    // `size` rather than a criterion id: the size row is derived by the client and the server
+    // from ROADMAP_FILEABLE_EFFORTS, and has no entry in ROADMAP_READINESS_CRITERIA. Kept in
+    // the same list so one field answers "what was red?".
+    const effortFileable =
+      dto.effort != null &&
+      (ROADMAP_FILEABLE_EFFORTS as readonly string[]).includes(dto.effort);
+    if (!effortFileable) failed.push('size');
+
+    if (failed.length === 0) {
+      return { overriddenBy: null, failedCriteria: null };
+    }
+
+    if (!dto.readinessOverride) {
+      throw new BadRequestException(
+        `This opportunity is not ready to file yet (${failed.join(', ')}). ` +
+          `Address the checklist, or ask a roadmap manager to override it.`,
+      );
+    }
+
+    if (!canManageBoard) {
+      throw new ForbiddenException(
+        'Only a roadmap manager can override the readiness check.',
+      );
+    }
+
+    this.logger.info(
+      `[ROADMAP] User ${userId} overrode the readiness check, filing against: ` +
+        `${failed.join(', ')}.`,
+    );
+    return { overriddenBy: userId, failedCriteria: failed };
+  }
+
+  /**
+   * POST /product-roadmap/bug-reports — ANY logged-in user filing a bug from a one-prompt
+   * form, whether that is a consumer in web/mobile/helpline or a staff member using the
+   * admin roadmap's "Report a bug" button. It runs the exact same create() pipeline a
+   * staff-filed opportunity uses (vector indexing, the Bug Hunter inbox row), so a report
+   * needs no bespoke follow-up work to appear wherever bugs already do.
+   *
+   * What differs from the staff /opportunities path: `type` is forced to BUG, `productGoal`
+   * is fixed (see BUG_REPORT_DEFAULT_PRODUCT_GOAL — no form here has a goal picker), and
+   * `source`/`tenantId`/`reporterContext` are stamped for triage. Returns the minimal
+   * one-time confirmation, not the full opportunity — a reporter has no further use for
+   * roadmap-internal fields like productGoal or boardPosition.
+   */
+  async createBugReport(
     userId: number,
     tenantId: string | null,
-    dto: CreateConsumerBugReportDto,
+    dto: CreateBugReportDto,
   ): Promise<{ id: string; stage: RoadmapOpportunityStage }> {
     const created = await this.create(
       userId,
       {
         description: dto.description,
         type: RoadmapOpportunityType.BUG,
-        productGoal: CONSUMER_BUG_REPORT_PRODUCT_GOAL,
+        productGoal: BUG_REPORT_DEFAULT_PRODUCT_GOAL,
       },
       {
-        source: RoadmapOpportunitySource.CONSUMER,
+        source: (await this.isInternalReporter(userId))
+          ? RoadmapOpportunitySource.STAFF
+          : RoadmapOpportunitySource.CONSUMER,
         tenantId,
         reporterContext: dto.context ?? null,
       },
     );
     return { id: created.id, stage: created.stage };
+  }
+
+  /**
+   * Whether a reporter is one of us.
+   *
+   * `source` surfaces in Bug Hunter as a Staff/Consumer badge answering "who filed this?",
+   * so it is derived from WHO the reporter is and not from which client they happened to
+   * open. An admin filing from the roadmap board and an admin filing from the helpline app
+   * are both internal reports; badging the second one "Consumer" would send a triager
+   * hunting for an affected customer who does not exist.
+   *
+   * One extra query per report, on a route capped at BUG_REPORT_RATE_LIMIT per user.
+   */
+  private async isInternalReporter(userId: number): Promise<boolean> {
+    const count = await this.userRepository
+      .createQueryBuilder('user')
+      .where('user.id = :userId', { userId })
+      .andWhere(
+        `EXISTS (
+           SELECT 1 FROM user_groups ug
+           INNER JOIN groups g ON g.id = ug."groupId"
+           WHERE ug."userId" = "user"."id" AND g.name IN (:...roles)
+         )`,
+        { roles: PLATFORM_TIER_ROLES },
+      )
+      .getCount();
+    return count > 0;
   }
 
   /**
@@ -221,7 +464,14 @@ export class RoadmapOpportunityService {
       // migrated saved view keeps working after its owner is linked to a real account.
       patch.ownerUserId = dto.ownerUserId ?? null;
       if (dto.ownerUserId !== null) {
-        await this.assertEligibleOwner(dto.ownerUserId);
+        // Only a CHANGE of owner is validated. Now that the picker is the short
+        // ROADMAP_OWNER_EMAILS list, rows owned by someone who predates it are normal — and the
+        // drawer re-sends that unchanged id on every unrelated edit. Validating it again would
+        // make those rows uneditable until somebody reassigned them, which is a worse outcome
+        // than letting a grandfathered owner stand. Reassigning still has to land on the list.
+        if (dto.ownerUserId !== existing.ownerUserId) {
+          await this.assertEligibleOwner(dto.ownerUserId);
+        }
       } else {
         // Un-assigning must also clear a legacy string, or the row would keep displaying a name
         // for an opportunity nobody owns.
@@ -229,8 +479,19 @@ export class RoadmapOpportunityService {
       }
     }
     if (dto.prd !== undefined) patch.prd = dto.prd ?? null;
+    // `?? null` rather than assigning dto.effort straight through: `null` is a real edit here
+    // (un-sizing something that was sized), and the `!== undefined` guard is what separates that
+    // from "the caller did not mention effort at all".
+    if (dto.effort !== undefined) patch.effort = dto.effort ?? null;
     if (dto.claudePrompt !== undefined)
       patch.claudePrompt = dto.claudePrompt ?? null;
+    // The full resulting list, never a delta — see the DTO. `[]` is a real edit (clear them all),
+    // which is why this is guarded on `!== undefined` rather than on truthiness.
+    if (dto.referenceImages !== undefined) {
+      patch.referenceImages = this.normaliseReferenceImages(
+        dto.referenceImages,
+      );
+    }
 
     if (dto.stage !== undefined) {
       patch.stage = dto.stage;
@@ -266,12 +527,30 @@ export class RoadmapOpportunityService {
     );
     if (needsReindex) await this.vectorService.indexQuietly(id);
 
+    // Re-assess only when the DESCRIPTION changed, and only when it really did — the drawer
+    // resends the existing description alongside an unrelated edit, so an `!== undefined` check
+    // alone would re-bill an assessment every time somebody set a planned month.
+    //
+    // Description is the ONLY trigger: it is the entire input the model judges. Effort, stage
+    // and owner do not change whether the work advances a strategy goal, and re-running on them
+    // would pay for an identical answer.
+    const descriptionChanged =
+      dto.description !== undefined &&
+      dto.description.trim() !== existing.description;
+    if (descriptionChanged) {
+      await this.goalImpactService.assessQuietly(id, userId);
+    }
+
     const response = await this.findOne(userId, id);
-    this.notifications.emit({
-      kind: 'OPPORTUNITY_UPSERTED',
-      actorId: userId,
-      opportunity: response,
-    });
+    // Same reasoning as create(): a bug is not on the board, so there is nothing
+    // for an upsert broadcast to update there.
+    if (response.type !== RoadmapOpportunityType.BUG) {
+      this.notifications.emit({
+        kind: 'OPPORTUNITY_UPSERTED',
+        actorId: userId,
+        opportunity: response,
+      });
+    }
     return response;
   }
 
@@ -299,7 +578,7 @@ export class RoadmapOpportunityService {
 
   /**
    * Soft delete. Hard-deletes the opportunity's allocations (via the FK's ON DELETE CASCADE
-   * this would only fire on a hard delete, so it is done explicitly) so the coins are returned
+   * this would only fire on a hard delete, so it is done explicitly) so the votes are returned
    * to their owners' budgets and the priority score disappears, and removes the opportunity
    * from the vector index so duplicate-detection stops proposing it.
    */
@@ -311,7 +590,7 @@ export class RoadmapOpportunityService {
 
     await this.opportunityRepository.manager.transaction(async (manager) => {
       // Explicit: a soft delete does not trigger ON DELETE CASCADE, and leaving the rows would
-      // keep other people's coins locked up in an invisible opportunity.
+      // keep other people's votes locked up in an invisible opportunity.
       await manager.query(
         `DELETE FROM roadmap_allocations WHERE "opportunityId" = $1`,
         [id],
@@ -353,7 +632,12 @@ export class RoadmapOpportunityService {
   async toResponseList(
     rows: RoadmapOpportunityRow[],
   ): Promise<OpportunityResponseDto[]> {
-    const users = await this.resolveUsers(rows.map((r) => r.createdBy));
+    // Both resolved ONCE for the whole page, not per row: the goal count is the same for every
+    // opportunity in a response, and fetching it per row would issue a query per card.
+    const [users, goalsTotal] = await Promise.all([
+      this.resolveUsers(rows.map((r) => r.createdBy)),
+      this.strategyGoalService.countGoals(),
+    ]);
     return rows.map((row) => ({
       id: row.id,
       description: row.description,
@@ -365,9 +649,17 @@ export class RoadmapOpportunityService {
       owner: row.ownerDisplay ?? row.owner ?? null,
       ownerUserId: row.ownerUserId ?? null,
       prd: row.prd ?? null,
+      code: row.code,
+      queueRank: row.queueRank ?? null,
       claudePrompt: row.claudePrompt ?? null,
+      // `?? []` because the column is only NOT NULL from migration 1944400000000 onward and a
+      // row read through a raw `opp.*` projection in a mid-deploy window can still arrive
+      // without it. An absent array and an empty one mean the same thing to every client.
+      referenceImages: row.referenceImages ?? [],
+      builderSessionId: row.builderSessionId ?? null,
       releasedAt: row.releasedAt ?? null,
       plannedMonth: row.plannedMonth ?? null,
+      effort: row.effort ?? null,
       boardPosition: Number(row.boardPosition ?? 0),
       // Derived here rather than trusted from the row, so the single-opportunity read (which has
       // no lane context) reports the same month as the board.
@@ -378,7 +670,15 @@ export class RoadmapOpportunityService {
       ),
       monthPinned: isMonthPinned(row.stage, row.releasedAt),
       priorityScore: Number(row.priorityScore ?? 0),
-      myCoins: Number(row.myCoins ?? 0),
+      // Rounded to one decimal at the edge, not in SQL: the ORDER BY runs on the full-precision
+      // value, so rounding here cannot reorder anything — it only stops the card rendering
+      // 63.33333333333333.
+      compositeScore: Math.round(Number(row.compositeScore ?? 0) * 10) / 10,
+      voterCount: Number(row.voterCount ?? 0),
+      goalsHelped: Number(row.goalsHelped ?? 0),
+      goalsAssessed: Number(row.goalsAssessed ?? 0),
+      goalsTotal,
+      myVotes: Number(row.myVotes ?? 0),
       commentCount: Number(row.commentCount ?? 0),
       source: row.source,
       createdAt: row.createdAt,
@@ -387,25 +687,112 @@ export class RoadmapOpportunityService {
     }));
   }
 
+  // ── reference images ────────────────────────────────────────────────────────
+
   /**
-   * The users who may own an opportunity: Ally SUPER_ADMIN / SUPER_DUPER_ADMIN accounts.
+   * Hand the browser a presigned PUT so a 5 MB screenshot never travels through this service.
    *
-   * Group membership is the source of truth rather than a hand-maintained list, so somebody losing
-   * super-admin stops appearing here without anyone remembering to prune a taxonomy table. Their
-   * existing assignments are left alone — history should not silently rewrite itself.
+   * Deliberately does NOT record anything: an upload is not an attachment. The object exists as
+   * soon as the PUT lands, but it is only attached when the returned `imageUrl` comes back in a
+   * create or update — so abandoning the drawer leaves an unreferenced object rather than a row
+   * pointing at a picture nobody meant to keep.
+   */
+  async createReferenceImageUploadUrl(
+    dto: RoadmapReferenceImageUploadUrlDto,
+  ): Promise<RoadmapReferenceImageUploadUrlResponseDto> {
+    return this.s3Service.getPresignedUrlForImageUpload(
+      this.assetsBucket(),
+      ROADMAP_REFERENCE_IMAGE_S3_PREFIX,
+      dto.fileName,
+      dto.fileSize,
+      dto.contentType,
+      ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES,
+    );
+  }
+
+  /**
+   * Trim captions, drop empty ones, and refuse any URL that is not one of our own uploads.
+   *
+   * THE GUARD IS THE POINT. `referenceImages` is rendered as `<img src>` in the admin dashboard
+   * for every roadmap viewer, so without this the array is a way for one filer to point every
+   * reader's browser at a host of their choosing — a beacon at best, and at worst a request
+   * carrying whatever that host's cookies imply. The presign endpoint is the only way to get an
+   * object into the prefix, so requiring the URL to resolve to that bucket AND that prefix means
+   * the only images that can be attached are ones this service handed out an address for.
+   *
+   * It also scopes the check to THIS feature's prefix rather than to the bucket as a whole: the
+   * assets bucket holds badges, blog headers and scenario covers too, and letting an opportunity
+   * reach into those would make deleting one feature's object break another feature's row.
+   *
+   * 422, not 400: the payload is well-formed and the URL is a URL — it just names an object this
+   * service did not issue, which is the same "well-formed but ineligible" shape as an owner who
+   * is not on the roadmap owner list.
+   *
+   * Caption normalisation matters more than it looks: a caption of "   " renders as a blank line
+   * under a thumbnail, and `undefined` vs `null` vs `''` in a jsonb array is three ways to store
+   * the same absence. One representation — the key is absent — so two identical lists compare
+   * equal, which is what the drawer's dirty check depends on.
+   */
+  private normaliseReferenceImages(
+    images: RoadmapReferenceImageDto[] | undefined,
+  ): RoadmapReferenceImage[] {
+    if (!images?.length) return [];
+
+    const bucket = this.assetsBucket();
+    return images.map((image) => {
+      const url = image.url.trim();
+      const parsed = this.s3Service.parseS3Url(url);
+      if (
+        !parsed ||
+        parsed.bucket !== bucket ||
+        !parsed.key.startsWith(`${ROADMAP_REFERENCE_IMAGE_S3_PREFIX}/`)
+      ) {
+        throw new UnprocessableEntityException(
+          'A reference image must be an image uploaded through this roadmap. Upload it again rather than pasting a link.',
+        );
+      }
+
+      const caption = image.caption?.trim();
+      return caption ? { url, caption } : { url };
+    });
+  }
+
+  /**
+   * The shared assets bucket, the same one blog headers and badge icons live in.
+   *
+   * Resolved per call rather than in the constructor: reading configuration at construction time
+   * is module-load-time work, and this module is imported by AnalyticsSuggestions — a missing
+   * env var would take down suites that never touch an image. Failing here fails only the
+   * request that actually needed a bucket.
+   */
+  private assetsBucket(): string {
+    const bucket = this.config.s3.assetsBucket;
+    if (!bucket) {
+      throw new InternalServerErrorException(
+        'S3 bucket name for assetsBucket is not defined',
+      );
+    }
+    return bucket;
+  }
+
+  /**
+   * The users who may own an opportunity: the named accounts in ROADMAP_OWNER_EMAILS.
+   *
+   * Previously this was every PLATFORM_TIER_ROLES account, which turned the picker into a staff
+   * directory — see the constant for why a short, explicit list replaced it. Matching is on
+   * lowercased email so a `+admin` alias resolves to exactly that account and nothing else.
+   *
+   * A listed address with no Ally user simply contributes no option; the picker degrades to the
+   * owners that do exist rather than failing. Existing assignments to someone no longer listed are
+   * left alone — history should not silently rewrite itself — but cannot be re-made.
    */
   async listEligibleOwners(): Promise<RoadmapEligibleOwnerDto[]> {
     const rows = await this.userRepository
       .createQueryBuilder('user')
       .select(['user.id', 'user.name', 'user.email'])
-      .where(
-        `EXISTS (
-           SELECT 1 FROM user_groups ug
-           INNER JOIN groups g ON g.id = ug."groupId"
-           WHERE ug."userId" = "user"."id" AND g.name IN (:...roles)
-         )`,
-        { roles: SUPER_ADMIN_ROLES },
-      )
+      .where('LOWER(user.email) IN (:...emails)', {
+        emails: ROADMAP_OWNER_EMAILS,
+      })
       .orderBy('user.name', 'ASC')
       .getMany();
 
@@ -413,16 +800,16 @@ export class RoadmapOpportunityService {
   }
 
   /**
-   * Reject an owner who is not a super-admin.
+   * Reject an owner who is not on the roadmap owner list.
    *
    * 422 rather than 400: the id is well-formed, it just names someone ineligible — the same shape
-   * the coin-cap breach uses, so the client can show the message rather than a generic failure.
+   * the vote-cap breach uses, so the client can show the message rather than a generic failure.
    */
   private async assertEligibleOwner(userId: number): Promise<void> {
     const eligible = await this.listEligibleOwners();
     if (!eligible.some((u) => u.id === userId)) {
       throw new UnprocessableEntityException(
-        'An opportunity owner must be an Ally super-admin user.',
+        'That user is not on the roadmap owner list.',
       );
     }
   }

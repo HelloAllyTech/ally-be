@@ -441,6 +441,52 @@ export class BadgeAwardService {
     }
   }
 
+  /**
+   * Level badges, awarded on the progress module's level-up event.
+   *
+   * Takes the level from the event rather than re-reading it: the learner has just been
+   * told they reached it, and a re-read could race a later award and hand out a badge
+   * for a level the celebration never mentioned.
+   *
+   * Badges cover non-linear achievement while the level bar covers linear progress, so a
+   * learner who jumps two levels at once collects both badges here.
+   */
+  async awardXpLevelBadgeByUserId(
+    userId: number,
+    level: number,
+  ): Promise<void> {
+    try {
+      if (!level) return;
+
+      const unawardedAvailableXpLevelBadges =
+        await this.badgeService.getAvailableUnawardedBadges(
+          userId,
+          BadgeCategory.XP_LEVEL,
+        );
+
+      const badgesToAward = unawardedAvailableXpLevelBadges.filter((badge) => {
+        return (
+          badge.achievementParams?.count &&
+          badge.achievementParams?.count <= level
+        );
+      });
+      if (badgesToAward.length === 0) return;
+
+      await this.badgeUserService.saveBadgeUsers(
+        badgesToAward.map((badge) => ({ badgeId: badge.id, userId })),
+      );
+
+      this.logger.log(
+        `Awarded ${badgesToAward.length} level badge(s) to user id=${userId} at level ${level}`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to award level badge to user id=${userId}`,
+        error.stack,
+      );
+    }
+  }
+
   async awardActiveDayStreakBadgeByUserId(
     userId: number,
     tenantId: string,

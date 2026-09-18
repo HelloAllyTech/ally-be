@@ -26,51 +26,50 @@ export enum ExperienceMode {
 }
 
 /**
- * Which post-session tabs a roleplay shows its learner.
+ * Which post-session tabs a roleplay shows its learner: the debrief note and
+ * the annotated transcript, and nothing else.
  *
- * Sub-toggles of the roleplay-level `enableFeedback` master switch, stored at
- * `scenarios.metadata.feedbackTabs`. Absent means all three are on, so every
- * roleplay authored before this existed keeps its full post-session screen and
- * nothing needed backfilling.
+ * Stored at `scenarios.metadata.feedbackTabs`; each defaults to on when unset,
+ * so a roleplay authored before these existed keeps its full post-session
+ * screen.
+ *
+ * There is no longer a master switch above these two. `enableFeedback` was
+ * folded into them on 2026-08-31 — the migration that did it wrote
+ * `{debrief: false, transcript: false}` for every roleplay that had it off, so
+ * a wholesale opt-out is now expressed as both toggles off and, unlike before,
+ * stays visible and editable in the authoring form. Skills Demonstrated was
+ * retired in the same pass, having been off platform-wide since 2026-08-24;
+ * the evaluator still produces `skillCoverage`, which admin analytics reads.
  */
 export interface FeedbackTabsConfig {
   /** The supervisor debrief note from Ally, and its reply conversation. */
   debrief: boolean;
-  /** Score meter, skill bars, distress chart. */
-  skills: boolean;
   /** The annotated transcript. */
   transcript: boolean;
 }
 
-export const ALL_FEEDBACK_TABS_ENABLED: FeedbackTabsConfig = {
+export const DEFAULT_FEEDBACK_TABS: FeedbackTabsConfig = {
   debrief: true,
-  skills: true,
   transcript: true,
 };
 
 /**
  * Resolve a roleplay's post-session tab configuration from its metadata.
  *
- * `enableFeedback === false` turns everything off — the master switch keeps its
- * existing meaning. Otherwise each tab defaults to ON unless explicitly set to
- * false, which is what makes an absent (or partially-written) `feedbackTabs`
- * safe: an author who has never opened the new toggles, and one whose metadata
- * predates a tab being added, both get the full screen rather than an
- * accidentally blank one.
+ * Each tab is ON unless explicitly set to false — see `DEFAULT_FEEDBACK_TABS`.
+ * `enableFeedback` is deliberately NOT consulted any more: keeping it as a
+ * hidden third gate would let a roleplay read as "both tabs on" in the
+ * authoring form while showing the learner nothing.
  */
 export function resolveFeedbackTabs(
   scenarioMetadata?: Record<string, any> | null,
 ): FeedbackTabsConfig {
-  if (scenarioMetadata?.enableFeedback === false) {
-    return { debrief: false, skills: false, transcript: false };
-  }
   const configured = scenarioMetadata?.feedbackTabs;
   if (!configured || typeof configured !== 'object') {
-    return { ...ALL_FEEDBACK_TABS_ENABLED };
+    return { ...DEFAULT_FEEDBACK_TABS };
   }
   return {
     debrief: configured.debrief !== false,
-    skills: configured.skills !== false,
     transcript: configured.transcript !== false,
   };
 }
@@ -78,13 +77,12 @@ export function resolveFeedbackTabs(
 /**
  * Whether a session needs the evaluation LLM call at all.
  *
- * Every post-session surface is fed by that one call — the note, the skill
- * percentages, and the transcript's per-message tags — so when a roleplay shows
- * none of them, running it would burn a full transcript analysis nobody can
- * ever see.
+ * Every post-session surface is fed by that one call — the note and the
+ * transcript's per-message tags — so when a roleplay shows none of them,
+ * running it would burn a full transcript analysis nobody can ever see.
  */
 export function feedbackTabsNeedEvaluation(tabs: FeedbackTabsConfig): boolean {
-  return tabs.debrief || tabs.skills || tabs.transcript;
+  return tabs.debrief || tabs.transcript;
 }
 
 export enum ChecklistType {

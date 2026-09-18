@@ -10,6 +10,7 @@ import { ConfigModule } from '@nestjs/config';
 import { RefreshToken } from './entity/refresh-token.entity';
 import { User } from '../user/entity/user.entity';
 import { WebSocketAuthMiddleware } from './middlewares/ws-auth.middleware';
+import { LastActiveService } from './service/last-active.service';
 
 @Global()
 @Module({
@@ -24,6 +25,7 @@ import { WebSocketAuthMiddleware } from './middlewares/ws-auth.middleware';
     JwtRefreshStrategy,
     PermissionsGuard,
     WebSocketAuthMiddleware,
+    LastActiveService,
   ],
   controllers: [AuthController],
   exports: [AuthService, PermissionsGuard, WebSocketAuthMiddleware],

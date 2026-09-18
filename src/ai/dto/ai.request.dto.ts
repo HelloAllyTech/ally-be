@@ -41,6 +41,21 @@ export type MessageRequest = {
    * the turn completed.
    */
   interrupted?: boolean;
+  /**
+   * Which KIND of client utterance this line is: 'reply' (the real generated
+   * reply), 'filler' (a thinking filler — a short back-channel spoken while the
+   * reply was still forming) or 'interim' (a non-committal holding reply).
+   *
+   * All three arrive as CLIENT lines and one turn can emit all three in a row,
+   * so without this they are indistinguishable except by position — and
+   * position stops being reliable the moment a continuation filler plays. The
+   * values match `metadata.firstAudioSource` on the turn-metrics row.
+   *
+   * Undefined means unknown (an older worker, or a COUNSELOR turn) and is
+   * deliberately distinct from 'reply': treating that silence as a real reply
+   * would mislabel every filler already in the backlog.
+   */
+  utterance_kind?: string;
 };
 
 export type EnhanceTextRequest = {
@@ -183,7 +198,7 @@ export type ScenarioEvaluationRequest = {
   /**
    * Behaviours this specific scenario is configured to reward (its
    * SHOULD_DO behavior instructions). Additional scenario-specific context
-   * for message_tags and the supervisor note — never the skill_coverage
+   * for the supervisor note — never the skill_coverage
    * scores, which stay on one fixed standard.
    */
   helpful_behaviours?: string[];
@@ -192,6 +207,13 @@ export type ScenarioEvaluationRequest = {
    * SHOULD_NOT_DO behavior instructions). Same scope as `helpful_behaviours`.
    */
   unhelpful_behaviours?: string[];
+  /**
+   * The coaching hints the supervisor sent this learner DURING the session (live
+   * supervisor notes, in order). Lets the debrief pick up a thread the learner
+   * already saw instead of repeating it cold. Null when the scenario had live
+   * notes switched off, which is the default.
+   */
+  live_notes?: string[] | null;
 };
 
 // ── Product Roadmap semantic duplicate detection (ally-ai / Weaviate) ────────

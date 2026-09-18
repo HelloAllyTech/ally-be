@@ -26,6 +26,7 @@ import {
   varietyTargetDescriptor,
   VarietyFeatures,
 } from '../util/variety-feature.util';
+import { resolveTargetVariety } from '../util/register-policy.util';
 
 /** Minimum judged sessions / learner turns before a profile is inferable. */
 const MIN_SESSIONS = 10;
@@ -242,9 +243,11 @@ export class VarietyProfileService {
     if (!profile || profile.status === VarietyProfileStatus.ARCHIVED) {
       return null;
     }
-    const base =
-      (language.evalConfig as Record<string, any> | null)?.targetVariety ??
-      `colloquial spoken ${language.label}`;
+    // Shared with the agent's register instruction (register-policy.util.ts).
+    // Previously this fallback lived here AND at the judge's call site with a
+    // different ending — undefined there, rendered as "unknown" — so the same
+    // question had two answers depending on who asked.
+    const base = resolveTargetVariety(language.evalConfig, language.label);
     return varietyTargetDescriptor(base, profile.features);
   }
 

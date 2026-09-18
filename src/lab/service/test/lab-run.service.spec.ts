@@ -7,6 +7,7 @@ import { LabRunAssignmentRepository } from '../../repository/lab-eval.repositori
 import { AppConfigService } from 'src/config/config.service';
 import { LabRunStatus } from '../../entity/lab-run.entity';
 import { LabRunProducer } from '../../producer/lab-run.producer';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 
 describe('LabRunService', () => {
   let service: LabRunService;
@@ -34,8 +35,11 @@ describe('LabRunService', () => {
       enqueue: jest.fn().mockResolvedValue(true),
     };
 
+    // An unpinned skill now inherits the REASONING tier rather than the
+    // Anthropic autofill model, so the default it falls back to is a tier
+    // value, not a vendor's id.
     const configService = {
-      anthropic: { apiKey: 'test-key', autofillModel: 'claude-default' },
+      llmTiers: { fast: 'gpt-4o-mini', reasoning: 'gpt-5-mini' },
       openai: { apiKey: 'test-key' },
     } as unknown as AppConfigService;
 
@@ -50,6 +54,18 @@ describe('LabRunService', () => {
         },
         { provide: AppConfigService, useValue: configService },
         { provide: LabRunProducer, useValue: runProducer },
+        {
+          provide: LlmCompletionService,
+          useValue: {
+            complete: jest.fn().mockResolvedValue({
+              text: 'ok',
+              provider: 'openai',
+              model: 'gpt-5-mini',
+              source: 'tier',
+              usage: { inputTokens: 0, outputTokens: 0 },
+            }),
+          },
+        },
       ],
     }).compile();
 
@@ -161,12 +177,8 @@ describe('LabRunService', () => {
 
       const run = await service.create({ skillId: 'sk1' });
 
-      expect(run.model).toBe('claude-default');
-      expect(spy).toHaveBeenCalledWith(
-        'claude-default',
-        'x',
-        expect.any(Object),
-      );
+      expect(run.model).toBe('gpt-5-mini');
+      expect(spy).toHaveBeenCalledWith('gpt-5-mini', 'x', expect.any(Object));
     });
 
     it('throws NotFoundException for an unknown skill', async () => {

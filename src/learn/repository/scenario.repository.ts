@@ -14,7 +14,6 @@ import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.ent
 import { TriggerWarnings } from '../entity/trigger-warnings.entity';
 import { GetScenarioDto } from '../dto/get-scenario.dto';
 import { ScenarioStatus, ScenarioSortBy } from '../type/scenario.type';
-import { ScenarioEngine } from '../enum/scenario-engine.enum';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 import { applyCohortVisibilityFilter } from 'src/cohort/query/cohort-restriction.query';
 import { CohortContentType } from 'src/cohort/constants/cohort.constants';
@@ -59,17 +58,6 @@ export class ScenariosRepository extends Repository<Scenarios> {
     query.where('scenario.status IN (:...statuses)', {
       statuses: [ScenarioStatus.ACTIVE],
     });
-
-    // ROLEPLAY_V2 shells must not surface in the learner catalog by default —
-    // ordinary users would otherwise see them and hit the v2 rollout gate.
-    // Only a v2-allowlisted requester opts in via includeRoleplayV2 (see
-    // ScenarioService.getScenariosV2); every other caller (incl. the @Public
-    // catalog endpoints) excludes them.
-    if (!filters?.includeRoleplayV2) {
-      query.andWhere('scenario.engine != :roleplayV2Engine', {
-        roleplayV2Engine: ScenarioEngine.ROLEPLAY_V2,
-      });
-    }
 
     if (filters?.isPublic) {
       query.andWhere('scenario.isPublic = :isPublic', {
@@ -208,14 +196,6 @@ export class ScenariosRepository extends Repository<Scenarios> {
 
     this.applySearchFilter(query, search);
 
-    // The v1 studio list owns SIMULATION scenarios only. Roleplay Studio v2
-    // materialises thin ROLEPLAY_V2 shells in `scenarios` (real config lives in
-    // roleplay_specs); they must never surface here. `engine` is NOT NULL with a
-    // 'SIMULATION' default, so a plain inequality keeps every v1 row.
-    query.andWhere('scenario.engine != :roleplayV2Engine', {
-      roleplayV2Engine: ScenarioEngine.ROLEPLAY_V2,
-    });
-
     if (isMultiTenantAdmin && userId) {
       query.andWhere(
         '(scenario.isPublic = true OR scenario.createdBy = :userId)',
@@ -340,5 +320,32 @@ export class ScenariosRepository extends Repository<Scenarios> {
     }
     const validColumns = Object.values(ScenarioSortBy);
     return validColumns.includes(sortBy as ScenarioSortBy) ? sortBy : null;
+  }
+
+  // Soft-deleted scenarios are excluded automatically (query builder filters
+  // on deletedAt IS NULL for entities with a @DeleteDateColumn).
+  async existsWithCompetencyId(competencyId: string): Promise<boolean> {
+    const count = await this.createQueryBuilder('scenario')
+      .where('scenario.competencyId = :competencyId', { competencyId })
+      .orWhere('scenario.competencyIds @> :competencyIdJson', {
+        competencyIdJson: JSON.stringify([competencyId]),
+      })
+      .getCount();
+    return count > 0;
+  }
+
+  /**
+   * Draft scenarios (unpublished) directly edited within the window —
+   * candidates for the daily auto-version job. The studio writes ordinary
+   * authoring straight to this row (see ScenarioVersion's docblock), so
+   * `scenarios.updatedAt` — not `scenario_versions.updatedAt` — is what
+   * actually moves when an author edits. Supported by
+   * idx_scenarios_status_updated_at.
+   */
+  async findDraftsUpdatedSince(since: Date): Promise<Scenarios[]> {
+    return this.createQueryBuilder('scenario')
+      .where('scenario.status = :status', { status: ScenarioStatus.DRAFT })
+      .andWhere('scenario.updatedAt >= :since', { since })
+      .getMany();
   }
 }

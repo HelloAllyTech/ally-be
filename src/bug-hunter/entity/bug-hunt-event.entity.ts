@@ -4,8 +4,8 @@ import { BugHuntEventStage } from '../enum/bug-hunt-event.enum';
 
 /**
  * Append-only transcript of everything a bug-hunt run did — the audit trail
- * the admin tab's timeline renders. Modeled on CopilotMessage
- * (roleplay-studio): no soft delete, no update path, one row per step.
+ * the admin tab's timeline renders: no soft delete, no update path, one row
+ * per step.
  *
  * Deliberately NOT the platform `AuditLog` (`src/audit`): that table is a
  * HIPAA compliance log with its own event taxonomy and retention rules, and

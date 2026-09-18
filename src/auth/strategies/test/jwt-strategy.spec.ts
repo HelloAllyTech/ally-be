@@ -5,6 +5,7 @@ import { ExecutionManager } from '../../../common/execution/execution-manager';
 import { UnauthorizedException } from '@nestjs/common';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
+import { LastActiveService } from '../../service/last-active.service';
 
 describe('JwtStrategy', () => {
   let strategy: JwtStrategy;
@@ -20,6 +21,10 @@ describe('JwtStrategy', () => {
 
   const mockPermissionsService: Partial<PermissionsService> = {
     getUserPermissions: jest.fn().mockResolvedValue([]),
+  };
+
+  const mockLastActiveService: Partial<LastActiveService> = {
+    touch: jest.fn().mockResolvedValue(undefined),
   };
 
   const mockLogger = {
@@ -44,6 +49,7 @@ describe('JwtStrategy', () => {
     strategy = new JwtStrategy(
       mockConfigService as AppConfigService,
       mockPermissionsService as PermissionsService,
+      mockLastActiveService as LastActiveService,
     );
     jest.clearAllMocks();
   });

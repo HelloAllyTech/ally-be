@@ -10,7 +10,7 @@ import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { UserGroup } from 'src/authorization/entity/user-group.entity';
 import {
   UserRole,
-  SUPER_ADMIN_ROLES,
+  PLATFORM_TIER_ROLES,
 } from 'src/common/constants/user.constants';
 import { Chat, ChatStatus } from 'src/chat/entity/chat.entity';
 
@@ -102,10 +102,18 @@ export class UserRepository extends Repository<User> {
         SELECT 1
         FROM user_groups ug_excl
         INNER JOIN groups g_excl ON g_excl.id = ug_excl."groupId"
-        WHERE ug_excl."userId" = "user"."id" AND g_excl.name IN (:...superAdminRoles)
+        WHERE ug_excl."userId" = "user"."id" AND g_excl.name IN (:...platformRoles)
       )`,
         );
-        params.superAdminRoles = SUPER_ADMIN_ROLES;
+        // All four platform group names, not just the two retired super-admin
+        // tiers. PLATFORM_ADMIN is the only one the Ally admins screen has
+        // granted since the role collapse, so naming only the retired pair let
+        // every staff account promoted since then through the exclusion and
+        // into the tenant user list this hides them from — visible to that
+        // tenant's own ADMINs, who cannot manage them and should not see them.
+        // TenantCohortMemberRepository's PLATFORM_ROLE_EXCLUSION_SQL says it
+        // matches this filter; until now it named four while this named two.
+        params.platformRoles = PLATFORM_TIER_ROLES;
       }
 
       if (filters?.roles) {

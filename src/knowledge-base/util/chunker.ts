@@ -1,9 +1,9 @@
 import { encode } from 'gpt-tokenizer';
 import {
-  KB_CHUNK_MAX_TOKENS,
-  KB_CHUNK_OVERLAP_TOKENS,
-  KB_CHUNK_TARGET_TOKENS,
+  KB_CHUNK_PROFILES,
+  KbChunkProfile,
 } from '../constants/knowledge-base.constants';
+import { KbCorpus } from '../enum/knowledge-base.enum';
 import {
   ExtractedDocument,
   ExtractedPage,
@@ -49,8 +49,18 @@ interface Piece {
  * Token counting uses gpt-tokenizer's default cl100k_base encoding, matching
  * text-embedding-3-small. A mismatched encoding would not break anything visibly — it would just
  * make every "400 token" chunk quietly the wrong size.
+ *
+ * `profile` carries only the SIZES (see KB_CHUNK_PROFILES) — how big a chunk should be is set by
+ * what the consuming answer needs, and that differs between a 1600-character WhatsApp reply and
+ * a drafted character. The hierarchy above does not differ and is not parameterised: a passage
+ * that respects headings and sentences is right for every consumer, and two splitters would be
+ * two things to keep correct. Defaults to the WhatsApp profile so a caller that has no corpus in
+ * hand still gets the shipped behaviour rather than an accidental zero.
  */
-export function chunkDocument(extracted: ExtractedDocument): Chunk[] {
+export function chunkDocument(
+  extracted: ExtractedDocument,
+  profile: KbChunkProfile = KB_CHUNK_PROFILES[KbCorpus.WHATSAPP_QA],
+): Chunk[] {
   const { text } = extracted;
   if (!text.trim()) return [];
 
@@ -61,7 +71,10 @@ export function chunkDocument(extracted: ExtractedDocument): Chunk[] {
     const body = text.slice(span.start, span.end);
     if (!body.trim()) continue;
 
-    for (const piece of packPieces(splitIntoPieces(body, span.start))) {
+    for (const piece of packPieces(
+      splitIntoPieces(body, span.start, profile),
+      profile,
+    )) {
       const trimmed = trimSpan(text, piece.start, piece.end);
       if (!trimmed) continue;
 
@@ -126,12 +139,16 @@ function sectionSpans(
  * Break a section into the smallest pieces worth packing: paragraphs, then sentences for any
  * paragraph over the max, then a hard token cut for any single sentence over the max.
  */
-function splitIntoPieces(body: string, offset: number): Piece[] {
+function splitIntoPieces(
+  body: string,
+  offset: number,
+  profile: KbChunkProfile,
+): Piece[] {
   const pieces: Piece[] = [];
 
   for (const para of splitWithOffsets(body, /\n{2,}/g)) {
     const paraTokens = countTokens(para.text);
-    if (paraTokens <= KB_CHUNK_MAX_TOKENS) {
+    if (paraTokens <= profile.maxTokens) {
       pieces.push({ ...shift(para, offset), tokens: paraTokens });
       continue;
     }
@@ -139,13 +156,13 @@ function splitIntoPieces(body: string, offset: number): Piece[] {
     for (const sentence of splitWithOffsets(para.text, /(?<=[.!?])\s+/g)) {
       const abs = shift(sentence, offset + para.start);
       const sentenceTokens = countTokens(sentence.text);
-      if (sentenceTokens <= KB_CHUNK_MAX_TOKENS) {
+      if (sentenceTokens <= profile.maxTokens) {
         pieces.push({ ...abs, tokens: sentenceTokens });
         continue;
       }
       // A single sentence over the max is pathological (a table flattened to one line, a
       // reference list with no punctuation). Cut it on whitespace so no word is split.
-      pieces.push(...hardCut(abs));
+      pieces.push(...hardCut(abs, profile));
     }
   }
 
@@ -193,7 +210,10 @@ function shift(
   };
 }
 
-function hardCut(piece: { text: string; start: number; end: number }): Piece[] {
+function hardCut(
+  piece: { text: string; start: number; end: number },
+  profile: KbChunkProfile,
+): Piece[] {
   const out: Piece[] = [];
   const words = splitWithOffsets(piece.text, /\s+/g);
   let bucket: { start: number; end: number } | null = null;
@@ -213,7 +233,7 @@ function hardCut(piece: { text: string; start: number; end: number }): Piece[] {
 
   for (const word of words) {
     const wordTokens = countTokens(word.text);
-    if (bucket && tokens + wordTokens > KB_CHUNK_TARGET_TOKENS) flush();
+    if (bucket && tokens + wordTokens > profile.targetTokens) flush();
     if (!bucket) bucket = { start: word.start, end: word.end };
     else bucket.end = word.end;
     tokens += wordTokens;
@@ -230,7 +250,10 @@ function hardCut(piece: { text: string; start: number; end: number }): Piece[] {
  * or paragraph boundary. Starting mid-sentence would put a fragment at the top of a retrieved
  * passage, which reads to the model as context it cannot resolve.
  */
-function packPieces(pieces: Piece[]): { start: number; end: number }[] {
+function packPieces(
+  pieces: Piece[],
+  profile: KbChunkProfile,
+): { start: number; end: number }[] {
   if (!pieces.length) return [];
 
   // Spans only, deliberately no text: the chunk's text is re-sliced from the document by the
@@ -249,9 +272,9 @@ function packPieces(pieces: Piece[]): { start: number; end: number }[] {
   };
 
   for (const piece of pieces) {
-    if (current.length && tokens + piece.tokens > KB_CHUNK_TARGET_TOKENS) {
+    if (current.length && tokens + piece.tokens > profile.targetTokens) {
       flush();
-      current = overlapTail(current);
+      current = overlapTail(current, profile);
       tokens = current.reduce((sum, p) => sum + p.tokens, 0);
     }
     current.push(piece);
@@ -263,19 +286,19 @@ function packPieces(pieces: Piece[]): { start: number; end: number }[] {
 }
 
 /** The trailing pieces of a chunk that should also open the next one. */
-function overlapTail(current: Piece[]): Piece[] {
-  if (KB_CHUNK_OVERLAP_TOKENS <= 0) return [];
+function overlapTail(current: Piece[], profile: KbChunkProfile): Piece[] {
+  if (profile.overlapTokens <= 0) return [];
 
   const tail: Piece[] = [];
   let tokens = 0;
   for (let i = current.length - 1; i >= 0; i -= 1) {
     // Never carry the whole chunk forward: with a single oversized piece that would repeat it
     // indefinitely and never advance, producing an infinite stream of identical chunks.
-    if (tail.length && tokens + current[i].tokens > KB_CHUNK_OVERLAP_TOKENS)
+    if (tail.length && tokens + current[i].tokens > profile.overlapTokens)
       break;
     tail.unshift(current[i]);
     tokens += current[i].tokens;
-    if (tokens >= KB_CHUNK_OVERLAP_TOKENS) break;
+    if (tokens >= profile.overlapTokens) break;
   }
   return tail.length === current.length ? tail.slice(1) : tail;
 }

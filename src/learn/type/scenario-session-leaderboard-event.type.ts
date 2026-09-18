@@ -7,6 +7,13 @@ export interface ScenarioSessionLeaderboardEndedEventParams {
   tenantId: string;
   date: Date;
   durationMinutes: number;
+  /**
+   * The session these minutes came from. Consumers that must not double-count a
+   * redelivered event key their idempotency on it — the emit itself is already gated on
+   * winning the IN_PROGRESS -> COMPLETED compare-and-set, but a consumer that writes its
+   * own ledger needs a stable identity for the row, not just the promise of one caller.
+   */
+  scenarioSessionId: string;
 }
 
 export enum LeaderboardActionEvent {

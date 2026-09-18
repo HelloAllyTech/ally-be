@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, In } from 'typeorm';
 
 import { LoggerService } from 'src/logger/logger.service';
 import { computeCostUsd } from 'src/analytics/constants/llm-pricing.constants';
@@ -11,6 +11,8 @@ import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
+import { BugHunterFinderDataService } from './bug-hunter-finder-data.service';
+import { GithubActionsService } from 'src/github/service/github-actions.service';
 import {
   runFailed,
   runFoundBugs,
@@ -49,6 +51,8 @@ export class BugHunterService {
     private readonly notificationService: BugHunterNotificationService,
     private readonly dataSource: DataSource,
     private readonly llmUsageService: LlmUsageService,
+    private readonly github: GithubActionsService,
+    private readonly finderDataService: BugHunterFinderDataService,
   ) {}
 
   // ── kill switch ──────────────────────────────────────────────────────────
@@ -114,6 +118,63 @@ export class BugHunterService {
     return null;
   }
 
+  /**
+   * The nightly cron's second gate, after the kill switch: a repo with no new
+   * commits since its last completed sweep has nothing new for the
+   * code-review or test/lint finders to look at, so paying for a full agent
+   * session over it is pure waste. Only ever applies to
+   * `BugHuntTrigger.SCHEDULED` — a human pressing "Start a sweep", or a fix
+   * session dispatched for one already-known bug, is an explicit ask and
+   * always runs regardless of how quiet the repo has been.
+   *
+   * Deliberately narrow: a repo with an external production signal
+   * (`BugHunterFinderDataService.hasExternalSignal` — a CloudWatch log group
+   * today, or ally-web's PostHog exceptions) is NEVER skipped this way,
+   * because a real production issue — a bad rollback, an upstream outage, a
+   * client-side regression — can appear with no matching commit, and there is
+   * no anomaly threshold here (yet) to tell a real spike from ordinary
+   * background noise. Widening this to those repos needs that threshold built
+   * first, not just this check relaxed.
+   *
+   * Also deliberately does not gate on pending human-reported bugs: those
+   * already exist as their own `bug_findings` row the moment they're filed
+   * (see `BugHunterFinderDataService`'s doc), so a skipped sweep does not hide
+   * one — it only delays the finder step that classifies which repo it
+   * belongs to until the next sweep that actually runs.
+   */
+  async requireWorthSweepingOrRecordSkip(
+    trigger: BugHuntTrigger,
+    repo: string,
+  ): Promise<boolean> {
+    if (trigger !== BugHuntTrigger.SCHEDULED) return true;
+    if (this.finderDataService.hasExternalSignal(repo)) return true;
+
+    const lastSweep = await this.runRepository.findLastCompleted(repo);
+    if (!lastSweep) return true;
+
+    const since = lastSweep.finishedAt ?? lastSweep.createdAt;
+    const hasCommits = await this.github.hasCommitsSince(repo, since);
+    if (hasCommits) return true;
+
+    const run = await this.runRepository.save(
+      this.runRepository.create({
+        trigger,
+        repo,
+        status: BugHuntRunStatus.SKIPPED_QUIET,
+        finishedAt: new Date(),
+      }),
+    );
+    await this.eventRepository.save(
+      this.eventRepository.create({
+        runId: run.id,
+        repo,
+        stage: BugHuntEventStage.SKIPPED_QUIET,
+        summary: `No commits on master since the last sweep (${since.toISOString()}) — skipped with zero token spend.`,
+      }),
+    );
+    return false;
+  }
+
   // ── run lifecycle ────────────────────────────────────────────────────────
 
   async startRun(trigger: BugHuntTrigger, repo: string): Promise<BugHuntRun> {
@@ -126,6 +187,17 @@ export class BugHunterService {
     const run = await this.runRepository.findOne({ where: { id } });
     if (!run) throw new NotFoundException(`Bug hunt run ${id} not found`);
     return run;
+  }
+
+  /**
+   * For `BugFindingService.enrich`'s batched model/engine lookup — one query
+   * for a whole page of findings rather than one per row. Missing ids are
+   * silently absent from the result rather than throwing, since a page of
+   * findings routinely references runs that no longer matter to look up.
+   */
+  getRunsByIds(ids: string[]): Promise<BugHuntRun[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.runRepository.find({ where: { id: In(ids) } });
   }
 
   listRuns(limit = 50): Promise<BugHuntRun[]> {
@@ -307,6 +379,8 @@ export class BugHunterService {
         model: string;
         inputTokens: number;
         outputTokens: number;
+        cacheReadInputTokens?: number;
+        cacheCreationInputTokens?: number;
       }[];
       cliReportedCostUsd?: number;
     },
@@ -319,31 +393,73 @@ export class BugHunterService {
           .filter((m) => m.inputTokens > 0 || m.outputTokens > 0)
           .map((m) =>
             this.llmUsageService.record({
-              provider: 'anthropic',
+              // Was hardcoded to 'anthropic' regardless of what actually ran
+              // — harmless while Bug Hunter only had one engine, but it would
+              // silently mislabel every Gemini-engine run's spend once that
+              // engine existed. `run.engine` is now recorded by
+              // `recordResolvedModel` before this ever fires (the CI workflow
+              // resolves models, then runs, then reports cost, in that
+              // order), so this reads the real one.
+              provider: run.engine === 'gemini' ? 'gemini' : 'anthropic',
               model: m.model,
               task: LlmTask.BUG_HUNTER,
               promptTokens: m.inputTokens,
               completionTokens: m.outputTokens,
+              cachedTokens: m.cacheReadInputTokens,
+              cacheCreationTokens: m.cacheCreationInputTokens,
               metadata: { runId },
             }),
           ),
       );
 
       const usage = await this.snapshotUsage(runId);
+      // Accumulate rather than overwrite: `recordActualCost` normally fires
+      // once per run, but a manually re-run CI job replays this step against
+      // the same runId — overwriting would silently drop the first attempt's
+      // real spend from the figure the admin UI prefers (see runCostUsd).
+      const priorCliReportedCostUsd =
+        Number(run.metadata?.cliReportedCostUsd) || 0;
+      const cliReportedCostUsd =
+        params.cliReportedCostUsd != null
+          ? priorCliReportedCostUsd + params.cliReportedCostUsd
+          : undefined;
       await this.runRepository.update(runId, {
         totalTokenCostUsd: usage.costUsd.toFixed(4),
         totalInputTokens: usage.totalInputTokens,
         totalOutputTokens: usage.totalOutputTokens,
         metadata: {
           ...run.metadata,
-          ...(params.cliReportedCostUsd != null
-            ? { cliReportedCostUsd: params.cliReportedCostUsd }
-            : {}),
+          ...(cliReportedCostUsd != null ? { cliReportedCostUsd } : {}),
         } as Record<string, any>,
       });
     } catch (error) {
       this.logger.warn(
         `Failed to record actual bug-hunt cost for run ${runId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  /**
+   * Attaches which CLI/model actually ran this run — reported by the CI
+   * workflow right after it resolves `GET pipeline/models`, since ally-be
+   * itself never learns this at dispatch time (see the entity's own doc
+   * comment). Best-effort, same contract as `recordActualCost`: a CI
+   * reporting step must never fail the runner's job over this.
+   */
+  async recordResolvedModel(
+    runId: string,
+    params: { engine: string; model: string },
+  ): Promise<void> {
+    try {
+      await this.runRepository.update(runId, {
+        engine: params.engine,
+        model: params.model,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Failed to record resolved model for run ${runId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -367,6 +483,8 @@ export class BugHunterService {
         model: string;
         promptTokens: string;
         completionTokens: string;
+        cacheReadTokens: string;
+        cacheCreationTokens: string;
       }[] = await this.dataSource
         .createQueryBuilder()
         .select('lu.model', 'model')
@@ -374,6 +492,11 @@ export class BugHunterService {
         .addSelect(
           'COALESCE(SUM(lu."completionTokens"), 0)',
           'completionTokens',
+        )
+        .addSelect('COALESCE(SUM(lu."cachedTokens"), 0)', 'cacheReadTokens')
+        .addSelect(
+          'COALESCE(SUM(lu."cacheCreationTokens"), 0)',
+          'cacheCreationTokens',
         )
         .from('llm_usage', 'lu')
         .where(`lu.metadata ->> 'runId' = :runId`, { runId })
@@ -388,6 +511,10 @@ export class BugHunterService {
             row.model,
             promptTokens,
             completionTokens,
+            {
+              cacheReadTokens: Number(row.cacheReadTokens ?? 0),
+              cacheCreationTokens: Number(row.cacheCreationTokens ?? 0),
+            },
           );
           return {
             costUsd: totals.costUsd + costUsd,

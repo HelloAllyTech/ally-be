@@ -19,6 +19,7 @@ describe('PracticeStreakService', () => {
       getPracticeMinutesByBucket: jest.fn(),
       getUserStreaks: jest.fn(),
       getMinutesOnDate: jest.fn(),
+      countActiveDaysThisWeek: jest.fn(),
     };
     const mockTenantService = { findById: jest.fn() };
     const mockMilestoneService = { getNextMilestone: jest.fn() };
@@ -53,6 +54,7 @@ describe('PracticeStreakService', () => {
       previousRunEndedOn: null,
     });
     userDailyScoreRepository.getMinutesOnDate.mockResolvedValue(5);
+    userDailyScoreRepository.countActiveDaysThisWeek.mockResolvedValue(2);
     tenantService.findById.mockResolvedValue({ settings: {} } as any);
     milestoneService.getNextMilestone.mockResolvedValue(null);
   });

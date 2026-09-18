@@ -1,0 +1,5 @@
+{
+  "name": "UX Signals: Triage",
+  "description": "System prompt for the UX Signals scan, which reads PostHog telemetry and files what it finds into the Bug Hunter queue and the Analytics Suggestions queue. Governs how the model turns threshold-crossing detector output into at most ten bugs and ten improvements: signals sharing a route or endpoint must be clustered into one item, the detector's bug-vs-improvement prior may be overridden by the evidence, a signal the model cannot explain must be surfaced as an investigation rather than dropped, bug descriptions must stand alone as the brief an engineer receives, severity must not be inflated, product goals must be copied exactly from the live list, and already-open or previously-rejected items must not be re-filed. Detectors see behaviour and never code, so guessing at files or functions is forbidden. The signal payload is sent as a separate user message, so this prompt has no runtime variables.",
+  "category": "Analytics"
+}

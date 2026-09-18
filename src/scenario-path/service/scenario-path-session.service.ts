@@ -20,6 +20,7 @@ import { ScenarioPathSessionItem } from '../entity/scenario-path-session-item.en
 import { GetUpcomingScenarioPathItemResponseDto } from '../dto/get-scenario-path.dto';
 import { LoggerService } from 'src/logger/logger.service';
 import { SessionItemStatus } from 'src/common/type/common.type';
+import { meetsMinimumScore } from 'src/common/util/progression.util';
 import { SharedLanguageService } from 'src/language/service/shared-language.service';
 import {
   buildAvailableLanguagesMap,
@@ -422,12 +423,10 @@ export class ScenarioPathSessionService {
       throw new BadRequestException('Scenario path item not found');
     }
 
-    // Score less than minimum score -> cant make the session complete
-    if (
-      currentScenarioPathItem?.minimumScore !== undefined &&
-      currentScenarioPathItem?.minimumScore !== null &&
-      (score ?? 0) < currentScenarioPathItem?.minimumScore
-    ) {
+    // Score below a configured minimum -> cant make the session complete.
+    // A minimum of 0 is the unconfigured default and never gates; see
+    // meetsMinimumScore.
+    if (!meetsMinimumScore(score, currentScenarioPathItem?.minimumScore)) {
       this.logger.info(
         `Score ${score} is less than minimum score ${currentScenarioPathItem?.minimumScore} for scenarioPathSessionItemId: ${scenarioPathSessionItemId}`,
       );

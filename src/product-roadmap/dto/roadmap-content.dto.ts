@@ -1,8 +1,10 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
   IsArray,
   IsBoolean,
+  IsIn,
   IsInt,
   IsObject,
   IsOptional,
@@ -11,6 +13,7 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { ROADMAP_LIMITS } from '../constants/product-roadmap.constants';
 import { RoadmapSavedViewState } from '../type/roadmap-saved-view.type';
@@ -95,59 +98,6 @@ export class UpdateInterviewNoteDto {
   summary?: string;
 }
 
-// ── release notes ────────────────────────────────────────────────────────────
-export class CreateReleaseNoteDto {
-  @ApiPropertyOptional({
-    maxLength: ROADMAP_LIMITS.RELEASE_NOTE_TITLE_MAX,
-    nullable: true,
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(ROADMAP_LIMITS.RELEASE_NOTE_TITLE_MAX)
-  title?: string | null;
-
-  @ApiProperty({ maxLength: ROADMAP_LIMITS.RELEASE_NOTE_CONTENT_MAX })
-  @IsString()
-  @MinLength(1)
-  @MaxLength(ROADMAP_LIMITS.RELEASE_NOTE_CONTENT_MAX)
-  content!: string;
-
-  @ApiProperty({
-    type: [String],
-    description:
-      'Denormalised snapshot of the opportunities these notes were generated from. Stored ' +
-      'verbatim; not a join table.',
-  })
-  @IsArray()
-  @IsUUID(undefined, { each: true })
-  opportunityIds!: string[];
-}
-
-export class UpdateReleaseNoteDto {
-  @ApiPropertyOptional({
-    maxLength: ROADMAP_LIMITS.RELEASE_NOTE_TITLE_MAX,
-    nullable: true,
-  })
-  @IsOptional()
-  @IsString()
-  @MaxLength(ROADMAP_LIMITS.RELEASE_NOTE_TITLE_MAX)
-  title?: string | null;
-
-  @ApiPropertyOptional({ maxLength: ROADMAP_LIMITS.RELEASE_NOTE_CONTENT_MAX })
-  @IsOptional()
-  @IsString()
-  @MinLength(1)
-  @MaxLength(ROADMAP_LIMITS.RELEASE_NOTE_CONTENT_MAX)
-  content?: string;
-
-  @ApiPropertyOptional({ type: [String] })
-  @IsOptional()
-  @IsArray()
-  @IsUUID(undefined, { each: true })
-  opportunityIds?: string[];
-}
-
-// ── saved views ──────────────────────────────────────────────────────────────
 export class CreateSavedViewDto {
   @ApiProperty({ maxLength: ROADMAP_LIMITS.SAVED_VIEW_NAME_MAX })
   @IsString()
@@ -263,16 +213,43 @@ export class AiSummariseDto {
   transcript!: string;
 }
 
-export class AiReleaseNotesDto {
+/** One turn of the opportunity interview, in the order it was said. */
+export class OpportunityInterviewMessageDto {
+  @ApiProperty({ enum: ['admin', 'agent'] })
+  @IsIn(['admin', 'agent'])
+  role!: 'admin' | 'agent';
+
+  @ApiProperty({ maxLength: ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_CONTENT_MAX })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_CONTENT_MAX)
+  content!: string;
+}
+
+/**
+ * The whole interview so far, sent on every turn.
+ *
+ * STATELESS BY DESIGN: this surface is experimental, and a session table plus a message table
+ * plus a migration is a lot of durable schema to commit to an idea that may not survive contact
+ * with its first ten users. The cost is that closing the drawer loses the conversation, which
+ * the drawer warns about — see OpportunityInterviewDrawer in ally-web.
+ *
+ * `messages` may be empty: that is how the client asks for the OPENING question, so the agent
+ * writes the first turn rather than the frontend hardcoding a greeting that would then drift
+ * from the prompt.
+ */
+export class OpportunityInterviewTurnDto {
   @ApiProperty({
-    type: [String],
+    type: [OpportunityInterviewMessageDto],
+    maxItems: ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_MESSAGE_MAX,
     description:
-      'Opportunities to summarise. The service filters these to rows that are actually ' +
-      'stage=released, matching the source behaviour.',
+      'Empty on the first call, which asks for the opening question.',
   })
   @IsArray()
-  @IsUUID(undefined, { each: true })
-  opportunityIds!: string[];
+  @ArrayMaxSize(ROADMAP_LIMITS.OPPORTUNITY_INTERVIEW_MESSAGE_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => OpportunityInterviewMessageDto)
+  messages!: OpportunityInterviewMessageDto[];
 }
 
 /**

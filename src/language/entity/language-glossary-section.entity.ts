@@ -37,6 +37,38 @@ export interface GlossaryEntry {
   markdown: string;
   status: GlossaryEntryStatus;
   importance?: number;
+  /**
+   * Unattended-adjudication state, so an irreversible verdict is not decided
+   * by one sample of a stochastic judge.
+   *
+   * Rejecting consumes a proposal's annotations by design, so nothing
+   * re-derives the rule — a reject is permanent. The adjudicator is not
+   * consistent enough to be trusted with that on one reading: on 2026-09-02
+   * the same Tamil proposal was ACCEPTED at 15:00 and REJECTED at 16:00 on
+   * identical input, and both verdicts were individually defensible (its own
+   * example line appears verbatim in an existing rule, but it also adds a
+   * novel "avoid non-standard forms" clause). A borderline call decided a
+   * permanent outcome by chance.
+   *
+   * So rejects need the same verdict on CONSECUTIVE passes: a clear-cut
+   * reject repeats, a coin-flip does not. Accepts apply on the first pass —
+   * they are reversible through the batch record.
+   */
+  adjudication?: {
+    /** Consecutive passes that voted to reject. Reset by any other verdict. */
+    rejectVotes: number;
+    lastRejectReason?: string;
+    lastRejectAt?: string;
+    /**
+     * Consecutive deferrals for the SAME reason — drives the re-adjudication
+     * backoff. A deferral leaves the entry `PROPOSED`, so without this the
+     * hourly pass re-bills an unchangeable verdict forever
+     * (see GLOSSARY_DEFER_BACKOFF_MAX_HOURS). Reset when the reason changes.
+     */
+    deferrals?: number;
+    lastDeferredAt?: string;
+    lastDeferReason?: string;
+  };
   provenance?: {
     source: 'consolidation' | 'seed' | 'manual';
     annotationIds?: string[];
@@ -128,7 +160,11 @@ export class LanguageGlossarySection extends BaseWithoutTenantEntity {
   @Column({ type: 'boolean', default: false })
   tierPinned!: boolean;
 
-  /** Consolidation-assigned score; drives Tier 0 slot allocation + eviction. */
+  /** ⚠️ WRITE-ONLY since the tiering knapsack landed. Consolidation still sets
+   * it, nothing reads it: Tier 0 admission and eviction come from
+   * `computeTierAssignment` (score/token density under the cap), not from this
+   * column. Kept because it is cheap and a per-rule score may yet want a home;
+   * do not reintroduce it as a placement input without reading that util. */
   @Column({ type: 'int', nullable: true })
   importance?: number;
 

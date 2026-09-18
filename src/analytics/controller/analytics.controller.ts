@@ -19,6 +19,8 @@ import { ActivationAnalyticsService } from '../service/activation-analytics.serv
 import { CoachingLoopAnalyticsService } from '../service/coaching-loop-analytics.service';
 import { CohortAnalyticsService } from '../service/cohort-analytics.service';
 import { CompetencyMapAnalyticsService } from '../service/competency-map-analytics.service';
+import { XpGrowthAnalyticsService } from '../service/xp-growth-analytics.service';
+import { GoalsXpAnalyticsService } from '../service/goals-xp-analytics.service';
 import { CompletionRateAnalyticsService } from '../service/completion-rate-analytics.service';
 import { LanguageMixAnalyticsService } from '../service/language-mix-analytics.service';
 import { OrgHealthAnalyticsService } from '../service/org-health-analytics.service';
@@ -33,14 +35,23 @@ import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.ser
 import { CertificationAnalyticsService } from '../service/certification-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsService } from '../service/roadmap-delivery-analytics.service';
+import { ShipVolumeAnalyticsService } from '../service/ship-volume-analytics.service';
 import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
 import { LanguageAnalyticsService } from '../service/language-analytics.service';
+import { GlossaryEffectAnalyticsService } from '../service/glossary-effect-analytics.service';
+import {
+  GlossaryEffectQueryDto,
+  GlossaryEffectResponseDto,
+} from '../dto/glossary-effect-analytics.dto';
 import {
   WeakMetricsQueryDto,
   WeakMetricsResponseDto,
 } from '../dto/weak-metrics.dto';
 import { WeakMetricsAnalyticsService } from '../service/weak-metrics-analytics.service';
 import { FeedbackGroundednessJudgeService } from '../service/feedback-groundedness-judge.service';
+import { RagQualityAnalyticsService } from '../service/rag-quality-analytics.service';
+import { FillerAnalyticsService } from '../service/filler-analytics.service';
+import { FillerJudgeService } from '../service/filler-judge.service';
 import { LanguageJudgeService } from '../service/language-judge.service';
 import { PlatformAnalyticsService } from '../service/platform-analytics.service';
 import { ScribeAnalyticsService } from '../service/scribe-analytics.service';
@@ -62,6 +73,9 @@ import {
   ConversationDriftQueryDto,
   ConversationDriftResponseDto,
   DriftBackfillJobDto,
+  FillerBackfillJobDto,
+  FillerQualityPointDto,
+  FillerQualityQueryDto,
   LanguageBackfillJobDto,
   LanguageEvalReferenceDto,
   LanguageQualityQueryDto,
@@ -70,6 +84,7 @@ import {
   StartDriftBackfillDto,
   StartGroundednessBackfillDto,
   GroundednessBackfillJobDto,
+  StartFillerBackfillDto,
   StartLanguageBackfillDto,
   StartLatencyQueryDto,
   StartLatencyResponseDto,
@@ -81,7 +96,13 @@ import {
   VoiceLatencySessionsSummaryQueryDto,
   ListVoiceLatencySessionsResponseDto,
   VoiceLatencySessionsSummaryResponseDto,
+  VoiceLatencyByScenarioQueryDto,
+  VoiceLatencyByScenarioResponseDto,
 } from '../dto/platform-analytics.dto';
+import {
+  RagQualityQueryDto,
+  RagQualityResponseDto,
+} from '../dto/rag-quality-analytics.dto';
 import {
   AnalyticsHighlightsQueryDto,
   AnalyticsHighlightsResponseDto,
@@ -99,10 +120,22 @@ import {
   CertificationResponseDto,
 } from '../dto/certification-analytics.dto';
 import {
+  XpGrowthQueryDto,
+  XpGrowthResponseDto,
+} from '../dto/xp-growth-analytics.dto';
+import {
+  GoalsXpQueryDto,
+  GoalsXpResponseDto,
+} from '../dto/goals-xp-analytics.dto';
+import {
   RoleplayVolumeQueryDto,
   RoleplayVolumeResponseDto,
 } from '../dto/roleplay-volume-analytics.dto';
 import { RoadmapDeliveryResponseDto } from '../dto/roadmap-delivery-analytics.dto';
+import {
+  ShipVolumeQueryDto,
+  ShipVolumeResponseDto,
+} from '../dto/ship-volume-analytics.dto';
 import {
   ScribeAnalyticsQueryDto,
   ScribeOverviewResponseDto,
@@ -185,6 +218,14 @@ import {
   RoleplayCostResponseDto,
 } from '../dto/roleplay-cost-analytics.dto';
 import {
+  CodingAgentCostQueryDto,
+  CodingAgentCostResponseDto,
+} from '../dto/coding-agent-cost-analytics.dto';
+import {
+  FixSessionEngineCostQueryDto,
+  FixSessionEngineCostResponseDto,
+} from '../dto/fix-session-engine-cost-analytics.dto';
+import {
   QualitySentimentQueryDto,
   QualitySentimentResponseDto,
 } from '../dto/quality-sentiment-analytics.dto';
@@ -196,6 +237,8 @@ import { UsageLadderAnalyticsService } from '../service/usage-ladder-analytics.s
 import { PracticeDepthAnalyticsService } from '../service/practice-depth-analytics.service';
 import { OrgEngagementAnalyticsService } from '../service/org-engagement-analytics.service';
 import { RoleplayCostAnalyticsService } from '../service/roleplay-cost-analytics.service';
+import { CodingAgentCostAnalyticsService } from '../service/coding-agent-cost-analytics.service';
+import { FixSessionEngineCostAnalyticsService } from '../service/fix-session-engine-cost-analytics.service';
 import { QualitySentimentAnalyticsService } from '../service/quality-sentiment-analytics.service';
 import { ChartPreferenceService } from '../service/chart-preference.service';
 import {
@@ -212,10 +255,7 @@ import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator'
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import {
-  UserRole,
-  SUPER_ADMIN_ROLES,
-} from 'src/common/constants/user.constants';
+import { UserRole } from 'src/common/constants/user.constants';
 
 @ApiTags('Analytics')
 @Controller('v1/analytics')
@@ -228,14 +268,21 @@ export class AnalyticsController {
     private readonly cohortAnalyticsService: CohortAnalyticsService,
     private readonly usageLevelAnalyticsService: UsageLevelAnalyticsService,
     private readonly certificationAnalyticsService: CertificationAnalyticsService,
+    private readonly xpGrowthAnalyticsService: XpGrowthAnalyticsService,
+    private readonly goalsXpAnalyticsService: GoalsXpAnalyticsService,
     private readonly roleplayVolumeAnalyticsService: RoleplayVolumeAnalyticsService,
     private readonly roadmapDeliveryAnalyticsService: RoadmapDeliveryAnalyticsService,
+    private readonly shipVolumeAnalyticsService: ShipVolumeAnalyticsService,
     private readonly platformAnalyticsService: PlatformAnalyticsService,
     private readonly scribeAnalyticsService: ScribeAnalyticsService,
     private readonly languageJudgeService: LanguageJudgeService,
+    private readonly fillerJudgeService: FillerJudgeService,
+    private readonly fillerAnalyticsService: FillerAnalyticsService,
     private readonly languageAnalyticsService: LanguageAnalyticsService,
+    private readonly glossaryEffectAnalyticsService: GlossaryEffectAnalyticsService,
     private readonly weakMetricsAnalyticsService: WeakMetricsAnalyticsService,
     private readonly feedbackGroundednessJudgeService: FeedbackGroundednessJudgeService,
+    private readonly ragQualityAnalyticsService: RagQualityAnalyticsService,
     private readonly activationAnalyticsService: ActivationAnalyticsService,
     private readonly completionRateAnalyticsService: CompletionRateAnalyticsService,
     private readonly languageMixAnalyticsService: LanguageMixAnalyticsService,
@@ -253,14 +300,14 @@ export class AnalyticsController {
     private readonly practiceDepthAnalyticsService: PracticeDepthAnalyticsService,
     private readonly orgEngagementAnalyticsService: OrgEngagementAnalyticsService,
     private readonly roleplayCostAnalyticsService: RoleplayCostAnalyticsService,
+    private readonly codingAgentCostAnalyticsService: CodingAgentCostAnalyticsService,
+    private readonly fixSessionEngineCostAnalyticsService: FixSessionEngineCostAnalyticsService,
     private readonly qualitySentimentAnalyticsService: QualitySentimentAnalyticsService,
     private readonly chartPreferenceService: ChartPreferenceService,
   ) {}
 
   @Get('overview')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Platform analytics overview (super-admin)',
     description:
@@ -285,9 +332,7 @@ export class AnalyticsController {
   }
 
   @Get('highlights')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Leadership highlights (super-admin)',
     description:
@@ -315,9 +360,7 @@ export class AnalyticsController {
   }
 
   @Get('cohort-retention')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Monthly learner cohort retention (super-admin)',
     description:
@@ -344,9 +387,7 @@ export class AnalyticsController {
   }
 
   @Get('certification')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Ally Certification attainment — the hero metric (super-admin)',
     description:
@@ -381,10 +422,76 @@ export class AnalyticsController {
     return this.certificationAnalyticsService.getCertification(query);
   }
 
-  @Get('usage-ladder')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
+  @Get('xp-growth')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Cumulative platform XP over time (super-admin)',
+    description:
+      'How much XP the platform has awarded to its learners, as a running ' +
+      'lifetime total per period, with the XP earned in each period and the ' +
+      'distinct learners who earned it alongside. Summed from `xp_events`, the ' +
+      "append-only ledger, which is the record — a session's XP contribution " +
+      'cannot be rebuilt from detection rows after the fact, so nothing here ' +
+      'is re-derived from source data. Bucketed on `awardedOn` (the calendar ' +
+      'day an award counts against) rather than on `createdAt`, so backfilled ' +
+      'history lands on the day it was earned instead of piling onto the day ' +
+      'the Progress dashboard shipped. Test organisations are excluded, as ' +
+      'everywhere on these surfaces; `tenantId` narrows to one org. The window ' +
+      'defaults to all time in monthly buckets and honours ' +
+      '`range`/`bucket`/`from`/`to` — `bucket` is the day/week/month/year ' +
+      'grain the chart control drives. The cumulative line always opens at ' +
+      '`summary.baselineXp` (XP earned before the window), so narrowing the ' +
+      'window narrows what is shown without redefining the quantity — and an ' +
+      'all-time window is no exception, because its left edge is the platform ' +
+      'data floor (first user or session) rather than the first award, so any ' +
+      'XP predating that floor becomes the opening balance instead of ' +
+      'vanishing. One caveat the numbers cannot state themselves: the launch ' +
+      'backfill deliberately awarded neither the streak multiplier nor skill ' +
+      "personal bests, so pre-launch XP is a floor and the curve's LEVEL is " +
+      'not comparable across the launch boundary — its shape is.',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'XP growth series retrieved successfully',
+    type: XpGrowthResponseDto,
+  })
+  async getXpGrowth(
+    @Query() query: XpGrowthQueryDto,
+  ): Promise<XpGrowthResponseDto> {
+    return this.xpGrowthAnalyticsService.getXpGrowth(query);
+  }
+
+  @Get('xp-goals')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Actual XP earned vs. goal, by month/quarter/year (super-admin)',
+    description:
+      'Actual platform XP earned per period (from `xp_events`, the same ' +
+      'ledger as `xp-growth`) alongside a goal figure for that period, where ' +
+      'one has been set. Goals are NOT editable through this API — they are ' +
+      'seeded directly into `analytics_xp_goals` by migration, one row per ' +
+      '(grain, periodStart). A period with no goal row comes back with ' +
+      '`goalXp: null` and `hasGoal: false` so the chart can render an ' +
+      'explicit "no goal set" placeholder rather than a fabricated zero. ' +
+      'Platform-wide only — no tenant filter. The window runs from the ' +
+      "platform data floor through at least today's period (flagged " +
+      '`inProgress: true`, since it can still rise), and further still ' +
+      'through any future period that already has a goal set, flagged ' +
+      '`upcoming: true` with `actualXp: 0` since nothing has happened yet.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'XP vs goal series retrieved successfully',
+    type: GoalsXpResponseDto,
+  })
+  async getGoalsXp(
+    @Query() query: GoalsXpQueryDto,
+  ): Promise<GoalsXpResponseDto> {
+    return this.goalsXpAnalyticsService.getGoalsXp(query);
+  }
+
+  @Get('usage-ladder')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Learner usage ladder L1-L5 (super-admin)',
     description:
@@ -419,9 +526,7 @@ export class AnalyticsController {
   }
 
   @Get('practice-stickiness')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Practice stickiness funnel (super-admin)',
     description:
@@ -450,9 +555,7 @@ export class AnalyticsController {
   }
 
   @Get('qualified-sessions')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Roleplay sessions of 5+ minutes (super-admin)',
     description:
@@ -482,9 +585,7 @@ export class AnalyticsController {
   }
 
   @Get('org-engagement')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Org engagement ladder and recent activity (super-admin)',
     description:
@@ -517,9 +618,7 @@ export class AnalyticsController {
   }
 
   @Get('roleplay-cost')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'AI cost per 10 minutes of roleplay (super-admin)',
     description:
@@ -555,10 +654,69 @@ export class AnalyticsController {
     return this.roleplayCostAnalyticsService.getRoleplayCost(query);
   }
 
-  @Get('quality-sentiment')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
+  @Get('coding-agent-cost')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Bug Hunter + Builder AI cost, over time and by model (super-admin)',
+    description:
+      'The platform-wide "AI cost" chart (GET token-consumption) has no filter ' +
+      'to isolate one feature and no time axis at all — this is the dedicated ' +
+      'view for the two autonomous coding agents specifically: a day/week/' +
+      'month trend comparing the two, plus a whole-window per-model ' +
+      'breakdown within each. `service` is not the discriminator — both ' +
+      'features write `service: llm` — the real one is `task` (`bug_hunter` ' +
+      'vs the `builder_*` family). Every figure is an ESTIMATE priced at read ' +
+      'time from a hand-maintained table that ignores prompt-cache discounts ' +
+      'and negotiated rates; `unpricedCalls` counts calls with no pricing ' +
+      'entry, which contribute $0 and understate the total whenever nonzero. ' +
+      'Platform-wide always, same reasoning as roleplay-cost.',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'Coding-agent cost retrieved successfully',
+    type: CodingAgentCostResponseDto,
+  })
+  async getCodingAgentCost(
+    @Query() query: CodingAgentCostQueryDto,
+  ): Promise<CodingAgentCostResponseDto> {
+    return this.codingAgentCostAnalyticsService.getCodingAgentCost(query);
+  }
+
+  @Get('fix-session-engine-cost')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      'Average cost per completed Bug Hunter fix session, by engine (super-admin)',
+    description:
+      '"Same job, cheaper model, here\'s the delta" — the direct comparison ' +
+      "coding-agent-cost's per-model spend TOTAL can't give: Bug Hunter has " +
+      'run its two engines a very different number of times, so whichever ' +
+      'ran less often would always show the smaller total regardless of ' +
+      'which is actually cheaper per fix. This averages ' +
+      "`totalTokenCostUsd` across each engine's COMPLETED fix sessions only " +
+      '(a stuck, skipped, or still-open run has no finished cost to compare) ' +
+      '— the same figure the run-history table\'s own "Est. cost" column ' +
+      'shows, not a second, differently-derived estimate. `sessionCount` is ' +
+      'part of the response on purpose: a handful of sessions is not yet a ' +
+      'trend, and this number is what tells a reader whether to trust the ' +
+      'average.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Fix-session cost by engine retrieved successfully',
+    type: FixSessionEngineCostResponseDto,
+  })
+  async getFixSessionEngineCost(
+    @Query() query: FixSessionEngineCostQueryDto,
+  ): Promise<FixSessionEngineCostResponseDto> {
+    return this.fixSessionEngineCostAnalyticsService.getFixSessionEngineCost(
+      query,
+    );
+  }
+
+  @Get('quality-sentiment')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Roleplay quality vs learner sentiment (super-admin)',
     description:
@@ -594,9 +752,7 @@ export class AnalyticsController {
   }
 
   @Get('chart-preferences')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: "The caller's saved per-chart controls (super-admin)",
     description:
@@ -620,9 +776,7 @@ export class AnalyticsController {
   }
 
   @Put('chart-preferences')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: "Save the caller's per-chart controls (super-admin)",
     description:
@@ -648,9 +802,7 @@ export class AnalyticsController {
   }
 
   @Get('usage-levels')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Monthly learner usage-level mix (super-admin)',
     description:
@@ -682,9 +834,7 @@ export class AnalyticsController {
   }
 
   @Get('roleplay-volume')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Learners by lifetime completed roleplays (super-admin)',
     description:
@@ -716,20 +866,18 @@ export class AnalyticsController {
   }
 
   @Get('roadmap-delivery')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
-    summary: 'Coins shipped per month by owner (super-admin)',
+    summary: 'Votes shipped per month by owner (super-admin)',
     description:
       'Of the demand our own team voted for on the internal product roadmap, how ' +
       'much did we ship, when, and by whom. Each released opportunity — both ' +
-      "`idea` and `bug` — is weighted by its COINS, i.e. the board's " +
+      "`idea` and `bug` — is weighted by its VOTES, i.e. the board's " +
       '`priorityScore`: the sum over every voter and every monthly period, not ' +
       'just the release month, because an opportunity accrues backing while it ' +
       'waits and shipping it satisfies all of it. That makes a bar a measure of ' +
       'demand satisfied rather than of throughput, where a count would weigh a ' +
-      '3-coin nicety like a 90-coin blocker. Bucketed on `releasedAt` by ' +
+      '3-vote nicety like a 90-vote blocker. Bucketed on `releasedAt` by ' +
       "calendar month and split by owner (the linked account's current name, " +
       'else the legacy migrated string, else an Unassigned band), with the tail ' +
       'past `maxOwners` rolled into one band on an ALL-TIME ranking so no band ' +
@@ -753,20 +901,57 @@ export class AnalyticsController {
     return this.roadmapDeliveryAnalyticsService.getRoadmapDelivery();
   }
 
+  @Get('ship-volume')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Changed lines shipped per week, by repo (super-admin)',
+    description:
+      "How much code landed on each Ally repo's default branch per week — " +
+      "GitHub's own `/stats/code_frequency` for `ally-be`, `ally-web`, " +
+      '`ally-ai`, `ally-ai-learn`, `ally-mobile`, `infra` and the developer ' +
+      'wiki, summed into one axis and split by repo. Plotted as CHURN ' +
+      '(additions + deletions, deletions made positive) rather than net, ' +
+      'because a week that removes 40k lines did real work a net figure would ' +
+      'show as nearly nothing; both parts are returned. Weeks are ' +
+      'SUNDAY-anchored because that is how GitHub buckets the underlying ' +
+      "statistics, so these numbers agree with GitHub's own Insights pages. " +
+      'This is an OUTPUT measure and callers should present it as one: churn ' +
+      'says how much code moved, never whether the right thing moved, and the ' +
+      'outcome counterpart on the same tab is `roadmap-delivery`. There is ' +
+      'deliberately NO author split — the same API would give one, and a ' +
+      'per-person line count is the standard way this metric does damage. ' +
+      'Takes no `tenantId`: it measures our own engineering, not customer ' +
+      'data. Two failure modes the caller MUST render: the current week is ' +
+      'flagged `partial` (it can only grow), and any repo whose statistics ' +
+      'could not be read appears in `unavailableRepos` — churn is a sum across ' +
+      'repos, so a missing one silently shortens every bar. GitHub answers 202 ' +
+      'while it recomputes a repo after a push, in which case the last good ' +
+      'series is served from cache and flagged `servedFromCache`.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Weekly ship volume retrieved successfully',
+    type: ShipVolumeResponseDto,
+  })
+  async getShipVolume(
+    @Query() query: ShipVolumeQueryDto,
+  ): Promise<ShipVolumeResponseDto> {
+    return this.shipVolumeAnalyticsService.getShipVolume(query);
+  }
+
   /* ------------------------------------------------------------------------ */
   /* Testing-tab endpoints                                                     */
   /*                                                                           */
-  /* Candidates for the leadership Highlights tab, surfaced on a separate admin */
-  /* tab first so they can be judged against real data before anything on      */
-  /* Highlights is changed. Same guard as every sibling here — the tab itself   */
-  /* is reserved for the elevated admin tier in the frontend, matching the      */
-  /* existing convention that the SUPER_DUPER distinction is a UI one.          */
+  /* Originally candidates for the leadership Highlights tab, surfaced on a    */
+  /* separate admin tab first so they could be judged against real data before */
+  /* anything on Highlights changed; that Testing tab has since been folded    */
+  /* into Highlights (see ally-web's HighlightsTab.tsx). Same guard as every   */
+  /* sibling here — SUPER_ADMIN_ROLES, never a tighter tier than the rest of   */
+  /* /v1/analytics.                                                            */
   /* ------------------------------------------------------------------------ */
 
   @Get('activation')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Activation: practising learners, funnel, time to first practice',
     description:
@@ -797,9 +982,7 @@ export class AnalyticsController {
   }
 
   @Get('completion-rate')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Started vs completed roleplays per period (super-admin)',
     description:
@@ -823,9 +1006,7 @@ export class AnalyticsController {
   }
 
   @Get('language-mix')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Completed sessions by language per period (super-admin)',
     description:
@@ -851,9 +1032,7 @@ export class AnalyticsController {
   }
 
   @Get('skill-growth')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Composite score by Nth completed session (super-admin)',
     description:
@@ -885,9 +1064,7 @@ export class AnalyticsController {
   }
 
   @Get('skill-growth/learners')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Learners with their own-baseline skill trend (super-admin)',
     description:
@@ -912,9 +1089,7 @@ export class AnalyticsController {
   }
 
   @Get('skill-growth/learners/:userId')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: "One learner's skill timeline (super-admin)",
     description:
@@ -939,9 +1114,7 @@ export class AnalyticsController {
   }
 
   @Get('quality-distribution')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
       'Quality percentiles and satisfaction mix per period (super-admin)',
@@ -974,9 +1147,7 @@ export class AnalyticsController {
   }
 
   @Get('competency-map')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
       'Practice volume against median score per competency (super-admin)',
@@ -1006,9 +1177,7 @@ export class AnalyticsController {
   }
 
   @Get('track-dropoff')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Track item completion by format (super-admin)',
     description:
@@ -1035,9 +1204,7 @@ export class AnalyticsController {
   }
 
   @Get('coaching-loop')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Review sharing and turnaround per period (super-admin)',
     description:
@@ -1063,9 +1230,7 @@ export class AnalyticsController {
   }
 
   @Get('org-health')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Per-organisation activity, recency and credit use (super-admin)',
     description:
@@ -1094,9 +1259,7 @@ export class AnalyticsController {
   }
 
   @Get('org-session-distribution')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
       'Orgs bucketed by avg session time and avg session frequency per learner (super-admin)',
@@ -1122,9 +1285,7 @@ export class AnalyticsController {
   }
 
   @Get('learner-kpis')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'LEARNER-role-scoped headline KPIs (super-admin)',
     description:
@@ -1146,9 +1307,7 @@ export class AnalyticsController {
   }
 
   @Get('scenario-usage')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Most/least-used scenarios, platform-wide (super-admin)',
     description:
@@ -1170,9 +1329,7 @@ export class AnalyticsController {
   }
 
   @Get('scribe-adoption')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Orgs and counsellors using Scribe per period (super-admin)',
     description:
@@ -1196,9 +1353,7 @@ export class AnalyticsController {
   }
 
   @Get('voice-latency')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Voice-to-voice latency trend (super-admin)',
     description:
@@ -1219,9 +1374,7 @@ export class AnalyticsController {
   }
 
   @Get('voice-latency/sessions')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Session-wise voice latency for one simulation (super-admin)',
     description:
@@ -1244,9 +1397,7 @@ export class AnalyticsController {
   }
 
   @Get('voice-latency/sessions/summary')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary:
       'Session-wise voice latency summary for one simulation (super-admin)',
@@ -1266,10 +1417,31 @@ export class AnalyticsController {
     return this.platformAnalyticsService.getVoiceLatencySessionsSummary(query);
   }
 
-  @Get('agent-join-reliability')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
+  @Get('voice-latency/by-scenario')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Voice latency ranked by simulation, worst-first (super-admin)',
+    description:
+      'One row per simulation with a matching turn in the window, sorted by ' +
+      'avg response latency descending, with the same per-stage breakdown ' +
+      '(EOU, STT finalize, LLM TTFT, process events, knowledge retrieval, ' +
+      'TTS TTFB, behaviors) as `/voice-latency/sessions` — "which ' +
+      'simulations are slow" as its own question, distinct from that ' +
+      'endpoint\'s "this simulation\'s worst sessions, once known".',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'Voice latency by simulation retrieved successfully',
+    type: VoiceLatencyByScenarioResponseDto,
+  })
+  async getVoiceLatencyByScenario(
+    @Query() query: VoiceLatencyByScenarioQueryDto,
+  ): Promise<VoiceLatencyByScenarioResponseDto> {
+    return this.platformAnalyticsService.getVoiceLatencyByScenario(query);
+  }
+
+  @Get('agent-join-reliability')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Agent-join reliability trend (super-admin)',
     description:
@@ -1290,9 +1462,7 @@ export class AnalyticsController {
   }
 
   @Get('start-latency')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Simulation start-latency trend (super-admin)',
     description:
@@ -1315,9 +1485,7 @@ export class AnalyticsController {
   }
 
   @Get('conversation-drift')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Conversation drift analytics (super-admin)',
     description:
@@ -1344,9 +1512,7 @@ export class AnalyticsController {
   }
 
   @Get('token-consumption')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'AI token consumption by model & task (super-admin)',
     description:
@@ -1362,9 +1528,7 @@ export class AnalyticsController {
   }
 
   @Get('scribe/overview')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Scribe-session analytics overview (super-admin)',
     description:
@@ -1381,9 +1545,7 @@ export class AnalyticsController {
   }
 
   @Get('scribe/summary-failures')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Scribe summary-generation failure analytics (super-admin)',
     description:
@@ -1400,9 +1562,7 @@ export class AnalyticsController {
   }
 
   @Get('weak-performing-metrics')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Weak performing metrics dashboard (super-admin)',
     description:
@@ -1427,10 +1587,46 @@ export class AnalyticsController {
     return this.weakMetricsAnalyticsService.getWeakMetrics(query);
   }
 
-  @Post('feedback-groundedness/backfill')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
+  @Get('rag-quality')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Corpus retrieval quality, as the judge labelled it (super-admin)',
+    description:
+      'What the retrieval log plus its LLM-judge labels say about whether retrieval is ' +
+      'working: sufficiency per retrieval, relevance per passage, and the precision curve ' +
+      'that settles what the similarity floor should be. ' +
+      'SUFFICIENCY AND RELEVANCE LEAD, NOT VOLUME — retrieval count is the gameable number ' +
+      'here, since an operator probing thresholds in the admin preview can double it in an ' +
+      'afternoon without anything improving. ' +
+      'EVERYTHING IS A COUNT. `coverage.belowReportingFloor` is true when the judged sample ' +
+      'is too small for a percentage to mean anything; show the counts and suppress the ' +
+      'rates rather than reporting 83% of six. ' +
+      'SEGMENT BY CONSUMER before believing any of it: `byConsumer` is in every response for ' +
+      'that reason, and `consumer` narrows the whole payload. ' +
+      'The floor curve carries an asymmetry worth stating: every judged passage already ' +
+      'cleared the floor in force when it was retrieved, so `relevant`/`irrelevant` measure ' +
+      'PRECISION and `relevantLost` estimates what a HIGHER floor would have discarded. What ' +
+      'a LOWER floor would have found is not in the log at all — that needs the same queries ' +
+      're-run, which the retrieval preview does by hand. ' +
+      '`gaps` is the qualitative half and usually the most actionable: the judge naming what ' +
+      'it would have needed is the only thing that separates a corpus gap from a floor set ' +
+      'too tight, because both arrive as an empty retrieval. ' +
+      'Judgments are scoped to one pinned (model, rubric) pair; `judgeVersions` reports every ' +
+      'pair present, and more than one means the window mixes two judges.',
   })
+  @ApiResponse({
+    status: 200,
+    description: 'RAG quality retrieved successfully',
+    type: RagQualityResponseDto,
+  })
+  async getRagQuality(
+    @Query() query: RagQualityQueryDto,
+  ): Promise<RagQualityResponseDto> {
+    return this.ragQualityAnalyticsService.getRagQuality(query);
+  }
+
+  @Post('feedback-groundedness/backfill')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Judge whether post-session feedback is true (super-admin)',
     description:
@@ -1464,9 +1660,7 @@ export class AnalyticsController {
   }
 
   @Get('feedback-groundedness/backfill/:jobId')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({ summary: 'Groundedness backfill job status (super-admin)' })
   @ApiResponse({ status: 200, type: GroundednessBackfillJobDto })
   async groundednessBackfillStatus(
@@ -1480,9 +1674,7 @@ export class AnalyticsController {
   }
 
   @Post('conversation-drift/backfill')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Re-run the drift backfill over the last N days (super-admin)',
     description:
@@ -1531,9 +1723,7 @@ export class AnalyticsController {
   }
 
   @Get('conversation-drift/backfill/:jobId')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({ summary: 'Drift backfill job status (super-admin)' })
   @ApiResponse({ status: 200, type: DriftBackfillJobDto })
   async driftBackfillStatus(
@@ -1543,9 +1733,7 @@ export class AnalyticsController {
   }
 
   @Get('language-quality')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Language-quality evaluation dashboard (super-admin)',
     description:
@@ -1562,10 +1750,27 @@ export class AnalyticsController {
     return this.languageAnalyticsService.getLanguageQuality(query);
   }
 
-  @Get('language-quality/reference')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
+  @Get('glossary-effect')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Did the language glossary change anything? (super-admin)',
+    description:
+      'Adherence (deterministic avoid-term hits per 100 agent messages) and ' +
+      'naturalness (severity-weighted style errors per 100 judged turns) on ' +
+      "the same sessions, before vs after EACH language's own glossary " +
+      'go-live, segmented by agent model and pinned to one judge version. ' +
+      'Compare only cells sharing a language and an agentModel: pooling ' +
+      'across models reads a traffic-mix shift as a result.',
   })
+  @ApiResponse({ status: 200, type: GlossaryEffectResponseDto })
+  async getGlossaryEffect(
+    @Query() query: GlossaryEffectQueryDto,
+  ): Promise<GlossaryEffectResponseDto> {
+    return this.glossaryEffectAnalyticsService.getGlossaryEffect(query);
+  }
+
+  @Get('language-quality/reference')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'The pinned reference experiment (super-admin)',
     description:
@@ -1577,9 +1782,7 @@ export class AnalyticsController {
   }
 
   @Post('language-quality/reference')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Pin a reference experiment (super-admin)',
     description:
@@ -1594,10 +1797,77 @@ export class AnalyticsController {
     return this.languageAnalyticsService.setReference(body);
   }
 
-  @Post('language-quality/backfill')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
+  @Get('filler-quality')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Thinking-filler quality over time (super-admin)',
+    description:
+      'Finding rates per 100 played fillers, bucketed by day. The denominator ' +
+      'is played fillers, not sessions or turns: a session that played forty ' +
+      'and one that played two are not comparable units. No scalar quality ' +
+      'scores — rates are computed at read time from labelled findings.',
   })
+  @ApiResponse({ status: 200, type: [FillerQualityPointDto] })
+  async getFillerQuality(
+    @Query() query: FillerQualityQueryDto,
+  ): Promise<FillerQualityPointDto[]> {
+    return this.fillerAnalyticsService.getFillerQuality(query);
+  }
+
+  @Post('filler-quality/backfill')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Run the thinking-filler judge backfill (super-admin)',
+    description:
+      'Kicks off an async thinking-filler judge backfill on ally-ai over ' +
+      'sessions that actually played a filler. Writes per-session denominator ' +
+      'rows and per-finding annotations. Returns a job id to poll. ' +
+      'The filler is the character first words, so response latency is ' +
+      'measured to it — this is what tells a fast filler from a good one.',
+  })
+  @ApiResponse({ status: 202, type: FillerBackfillJobDto })
+  async startFillerBackfill(
+    @Body() body: StartFillerBackfillDto,
+  ): Promise<FillerBackfillJobDto> {
+    return this.fillerJudgeService.startBackfill({
+      since: body.since,
+      until: body.until,
+      language: body.language,
+      scenarioId: body.scenarioId,
+      limit: body.limit,
+      rejudge: body.rejudge,
+      concurrency: body.concurrency,
+    });
+  }
+
+  @Get('filler-quality/backfill/:jobId')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Thinking-filler backfill job status (super-admin)',
+  })
+  @ApiResponse({ status: 200, type: FillerBackfillJobDto })
+  async fillerBackfillStatus(
+    @Param('jobId') jobId: string,
+  ): Promise<FillerBackfillJobDto> {
+    const job = await this.fillerJudgeService.getJob(jobId);
+    if (!job) {
+      return {
+        jobId,
+        status: 'error',
+        total: 0,
+        processed: 0,
+        judged: 0,
+        findings: 0,
+        skipped: 0,
+        failed: 0,
+        error: 'job not found (expired or unknown)',
+      };
+    }
+    return job;
+  }
+
+  @Post('language-quality/backfill')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Run the language-quality judge backfill (super-admin)',
     description:
@@ -1631,9 +1901,7 @@ export class AnalyticsController {
   }
 
   @Get('language-quality/backfill/:jobId')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
     summary: 'Language-quality backfill job status (super-admin)',
   })

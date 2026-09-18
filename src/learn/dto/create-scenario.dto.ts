@@ -12,6 +12,7 @@ import {
   ValidateNested,
   IsObject,
   ArrayMaxSize,
+  ArrayUnique,
   ValidateIf,
   MaxLength,
   Min,
@@ -24,6 +25,7 @@ import {
   ScenarioStatus,
   ExperienceMode,
   ChecklistType,
+  FeedbackTabsConfig,
 } from '../type/scenario.type';
 import { Gender, GenderIdentity, SexualOrientation } from '../enum/gender.enum';
 import { ScenarioCategory } from '../enum/scenario-category.enum';
@@ -41,6 +43,7 @@ import { KnowledgeSourceDto } from './knowledge-source.dto';
 import { SimulationStateDto } from './simulation-state.dto';
 import { StateNamesDto } from './state-names.dto';
 import { sanitizeDescriptionHtml } from 'src/common/util/sanitize-html.util';
+import { VideoActorProvider } from '../enum/video-actor-provider.enum';
 export class CreateScenarioDto {
   @ApiProperty({
     description: 'Title of the scenario',
@@ -270,8 +273,8 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description:
-      'Enable the thinking-filler back-channel (a short acknowledgement played while the agent generates its reply) to mask turn latency. Defaults to false (opt-in) when unspecified.',
-    example: false,
+      'Enable the thinking-filler back-channel (a short acknowledgement played while the agent generates its reply) to mask turn latency. Defaults to true when unspecified.',
+    example: true,
     required: false,
   })
   @IsOptional()
@@ -323,6 +326,37 @@ export class CreateScenarioDto {
 
   @ApiProperty({
     description:
+      "EXPERIMENTAL. Publish an AI video actor for this roleplay: a synchronized video track alongside the character's voice, so the learner sees a face instead of a static call card. Gated by the global VIDEO_ACTOR_ENABLED kill-switch in ally-ai-learn (itself off by default) — both must be on. Defaults to false (opt-in) when unspecified, so every existing roleplay stays audio-only.",
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  videoActorEnabled?: boolean;
+
+  @ApiProperty({
+    description:
+      'Which face a hosted video-actor provider should render for this roleplay. When unset, falls back to the deployment-wide VIDEO_ACTOR_AVATAR_ID. Ignored by the in-process test renderer. Only meaningful when videoActorEnabled is true.',
+    example: 'avatar_9f3c2b',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  videoActorAvatarId?: string;
+
+  @ApiProperty({
+    description:
+      "Which hosted vendor renders this roleplay's face. One of the `value`s from GET /learn/scenarios/video-actor-providers (`bey`, `tavus`). When unset, falls back to the deployment-wide VIDEO_ACTOR_PROVIDER. Pair it with a videoActorAvatarId from that same vendor — face ids are not portable between vendors, and a mismatched pair degrades the session to audio-only. Only meaningful when videoActorEnabled is true.",
+    example: 'bey',
+    required: false,
+    enum: VideoActorProvider,
+  })
+  @IsOptional()
+  @IsEnum(VideoActorProvider)
+  videoActorProvider?: VideoActorProvider;
+
+  @ApiProperty({
+    description:
       'Trim conversation history sent to the agent to the last few dialogues (older turns dropped) to reduce turn latency. Defaults to false (opt-in) when unspecified.',
     example: false,
     required: false,
@@ -330,18 +364,6 @@ export class CreateScenarioDto {
   @IsOptional()
   @IsBoolean()
   historyTrimEnabled?: boolean;
-
-  @ApiProperty({
-    description:
-      'Per-simulation override (seconds) for how long semantic turn-detection waits for a learner who seems mid-thought before giving up and replying anyway. When unset, falls back to the global platform default. Lower values reply faster but risk interrupting; higher values avoid interrupting but add perceived delay.',
-    example: 1.5,
-    required: false,
-  })
-  @IsOptional()
-  @IsNumber()
-  @Min(0.1)
-  @Max(10)
-  turnMaxEndpointingDelay?: number;
 
   @ApiProperty({
     description:
@@ -650,13 +672,52 @@ export class CreateScenarioDto {
   showScoreMeter?: boolean;
 
   @ApiProperty({
-    description: 'Enable the AI feedback/evaluation summary after a session',
+    description:
+      'DEPRECATED (2026-08-31) and ignored. The master switch was folded into ' +
+      '`feedbackTabs` — send `{debrief: false, transcript: false}` for the ' +
+      'wholesale opt-out this used to express. Still accepted so an older ' +
+      'admin build does not start getting 400s mid-deploy.',
+    example: true,
+    required: false,
+    deprecated: true,
+  })
+  @IsOptional()
+  @IsBoolean()
+  enableFeedback?: boolean;
+
+  @ApiProperty({
+    description:
+      'Stream live coaching hints from the AI supervisor into a Supervisor tab ' +
+      "in the learner's session sidebar. Opt-in: off unless explicitly true.",
+    example: false,
+    required: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  supervisorNotesEnabled?: boolean;
+
+  @ApiProperty({
+    description:
+      "Show the learner's Live transcript tab during the roleplay. " +
+      'Opt-out: on unless explicitly set to false.',
     example: true,
     required: false,
   })
   @IsOptional()
   @IsBoolean()
-  enableFeedback?: boolean;
+  liveTabEnabled?: boolean;
+
+  @ApiProperty({
+    description:
+      'Which post-session tabs the learner sees (debrief, transcript). ' +
+      'Omitting a key, or the whole object, keeps that tab on. Both off is the ' +
+      'wholesale opt-out that the retired `enableFeedback` switch used to mean.',
+    example: { debrief: true, transcript: true },
+    required: false,
+  })
+  @IsOptional()
+  @IsObject()
+  feedbackTabs?: Partial<FeedbackTabsConfig>;
 
   @ApiProperty({
     description:
@@ -696,6 +757,23 @@ export class CreateScenarioDto {
   @IsOptional()
   @IsUUID()
   competencyId?: string;
+
+  @ApiProperty({
+    description:
+      'Competency IDs this simulation assesses. A cluster picked in the ' +
+      'builder arrives here already expanded to its member competencies — the ' +
+      'cluster itself is never stored, so re-clustering later cannot change ' +
+      'what a published simulation assesses. `competencyId` is kept in sync as ' +
+      'competencyIds[0] for clients that only read the scalar.',
+    example: ['123e4567-e89b-12d3-a456-426614174000'],
+    required: false,
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsUUID('4', { each: true })
+  competencyIds?: string[];
 
   @ApiProperty({
     description: 'Knowledge sources',

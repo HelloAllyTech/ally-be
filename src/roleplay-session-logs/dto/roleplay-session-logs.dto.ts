@@ -740,6 +740,17 @@ export class RoleplaySessionLogDetailDto extends RoleplaySessionLogRowDto {
   })
   weakMetrics!: RoleplaySessionWeakMetricsDto | null;
 
+  @ApiProperty({
+    description:
+      "The client's per-turn internal monologue, oldest first: what it felt, " +
+      'its private appraisal of the counsellor, the ledger changes, and the ' +
+      'literal prompt sections the actor received. Recorded by ally-ai-learn ' +
+      'working memory; [] for sessions that predate it or ran without it.',
+    type: 'array',
+    items: { type: 'object', additionalProperties: true },
+  })
+  internalMonologue!: Record<string, any>[];
+
   @ApiProperty({ nullable: true, description: 'Post-session summary (jsonb)' })
   summary!: Record<string, any> | null;
 

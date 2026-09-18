@@ -6,6 +6,10 @@ import {
   CustomFieldType,
 } from '../../custom-fields/entity/custom-field-definition.entity';
 import { FieldFilter } from '../dto/call-log.request.dto';
+import {
+  orgCalendarDateSql,
+  toOrgCalendarDate,
+} from '../../custom-fields/util/custom-field-date';
 
 /**
  * SQL expression (in terms of the `chat` / `details` query aliases) that
@@ -36,11 +40,6 @@ const firstString = (value: string | string[]): string =>
 /** A parseable, finite number — guards NUMBER casts from NaN/garbage input. */
 const isFiniteNumber = (v: string | undefined): boolean =>
   v != null && v.trim() !== '' && Number.isFinite(Number(v));
-
-/** A parseable date string — guards DATE casts from invalid input (which
- * would otherwise raise a Postgres error and 500 the whole list). */
-const isValidDate = (v: string | undefined): boolean =>
-  v != null && v.trim() !== '' && !Number.isNaN(Date.parse(v));
 
 /**
  * Applies custom/default-field filters to a call-logs query. Each filter is
@@ -178,26 +177,31 @@ function applyPersistedFieldFilter(
       }
 
       case CustomFieldType.DATE: {
-        const [start, end] = [values[0], values[1]];
+        // Both sides are reduced to a calendar date in the org timezone before
+        // comparing. The stored value may still be a legacy instant, and the
+        // shared table date-picker sends its bounds as `toISOString()` — at
+        // IST that is 18:30 the previous day, so comparing the raw strings
+        // shifted every bound back a day.
+        const valueDate = orgCalendarDateSql(`NULLIF(${cfv}.value, '')`);
+        const [start, end] = [
+          toOrgCalendarDate(values[0]),
+          toOrgCalendarDate(values[1]),
+        ];
         const clauses: string[] = [];
         const params: Record<string, unknown> = {};
-        if (isValidDate(start)) {
-          clauses.push(
-            `CAST(NULLIF(${cfv}.value, '') AS DATE) >= CAST(:${p('start')} AS DATE)`,
-          );
+        if (start) {
+          clauses.push(`${valueDate} >= CAST(:${p('start')} AS DATE)`);
           params[p('start')] = start;
         }
-        if (isValidDate(end)) {
-          clauses.push(
-            `CAST(NULLIF(${cfv}.value, '') AS DATE) <= CAST(:${p('end')} AS DATE)`,
-          );
+        if (end) {
+          clauses.push(`${valueDate} <= CAST(:${p('end')} AS DATE)`);
           params[p('end')] = end;
         }
         if (clauses.length === 0) {
-          const single = firstString(values);
-          if (!isValidDate(single)) return null;
+          const single = toOrgCalendarDate(firstString(values));
+          if (!single) return null;
           return {
-            sql: `CAST(NULLIF(${cfv}.value, '') AS DATE) = CAST(:${p('v')} AS DATE)`,
+            sql: `${valueDate} = CAST(:${p('v')} AS DATE)`,
             params: { [p('v')]: single },
           };
         }

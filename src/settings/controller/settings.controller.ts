@@ -13,10 +13,10 @@ import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { Public } from 'src/auth/decorators/auth.metadata';
 import { UpdateLegalContentDto } from '../dto/legal-content.dto';
 import { LEGAL_CONTENT_NAMES } from '../constants/settings.constants';
+import { UpdateTurnEndpointingSettingsDto } from '../dto/turn-endpointing-settings.dto';
 import {
   GetSummaryFieldsDto,
   UpdateSummaryFieldsDto,
@@ -223,6 +223,46 @@ export class SettingsController {
     );
   }
 
+  @Get('progress-dashboard-enabled')
+  @ApiOperation({
+    summary:
+      'Whether the Learner Progress screen (XP/levels) is enabled for the org (own org unless the caller has SYSTEM_ACCESS)',
+  })
+  @ApiQuery({ name: 'tenantId', required: false, type: String })
+  @ApiResponse({ status: 200 })
+  // Authenticated-only, same reasoning as character-library-enabled: the
+  // answer is a single boolean about the caller's own org, and both web and
+  // mobile need it before they know whether to show the Progress widget.
+  @AuthPermissions([])
+  getProgressDashboardEnabled(@Query('tenantId') tenantId?: string) {
+    return this.service.getProgressDashboardEnabled(tenantId);
+  }
+
+  @Put('progress-dashboard-enabled')
+  @ApiOperation({
+    summary:
+      'Enable or disable the Learner Progress screen for an org (platform admin only)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        tenantId: { type: 'string' },
+        enabled: { type: 'boolean' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200 })
+  @AuthPermissions([PERMISSIONS.EDIT_GLOBAL_SETTINGS])
+  updateProgressDashboardEnabled(
+    @Body() body: { tenantId: string; enabled: boolean },
+  ) {
+    return this.service.updateProgressDashboardEnabled(
+      body.tenantId,
+      body.enabled,
+    );
+  }
+
   @Put('custom-fields-enabled')
   @ApiOperation({
     summary: 'Enable or disable the custom fields feature (superadmin only)',
@@ -391,7 +431,6 @@ export class SettingsController {
     description: 'Forbidden - only super admin can update',
   })
   @RequireFeatureToggle(FeatureToggleKey.SETTINGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.SYSTEM_ACCESS],
   })
   updateTerms(@Body() body: UpdateLegalContentDto) {
@@ -410,7 +449,6 @@ export class SettingsController {
     description: 'Forbidden - only super admin can update',
   })
   @RequireFeatureToggle(FeatureToggleKey.SETTINGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.SYSTEM_ACCESS],
   })
   updatePrivacy(@Body() body: UpdateLegalContentDto) {
@@ -418,5 +456,40 @@ export class SettingsController {
       LEGAL_CONTENT_NAMES.PRIVACY,
       body.html,
     );
+  }
+
+  @Get('turn-endpointing')
+  @ApiOperation({
+    summary:
+      'Get the global turn-endpointing bounds (seconds) for Studio v1 roleplay sessions',
+  })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Returns the current turn-endpointing bounds, falling back to LiveKit defaults if none have been saved yet',
+  })
+  @RequireFeatureToggle(FeatureToggleKey.SETTINGS, {
+    permissions: [PERMISSIONS.SYSTEM_ACCESS],
+  })
+  getTurnEndpointing() {
+    return this.service.getTurnEndpointingSettings();
+  }
+
+  @Put('turn-endpointing')
+  @ApiOperation({
+    summary:
+      'Update the global turn-endpointing bounds (seconds) for Studio v1 roleplay sessions (super admin only)',
+  })
+  @ApiBody({ type: UpdateTurnEndpointingSettingsDto })
+  @ApiResponse({ status: 200, description: 'Turn-endpointing bounds updated' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - only super admin can update',
+  })
+  @RequireFeatureToggle(FeatureToggleKey.SETTINGS, {
+    permissions: [PERMISSIONS.SYSTEM_ACCESS],
+  })
+  updateTurnEndpointing(@Body() body: UpdateTurnEndpointingSettingsDto) {
+    return this.service.updateTurnEndpointingSettings(body);
   }
 }

@@ -8,6 +8,11 @@
  * whether any hunt run has looked at it yet. `ANALYTICS_SUGGESTION` exists only
  * on rows backfilled from the old Analytics → Suggestions bug queue (migration
  * 1898000000000); no code path writes it going forward.
+ *
+ * `UX_SIGNAL` is written by the UX Signals scan (src/ux-signals), which reads
+ * PostHog telemetry rather than the codebase. Those findings carry no `file`:
+ * their stable coordinate is a route/element, passed as `symbol` so they dedupe
+ * precisely instead of falling back to the description fingerprint.
  */
 export enum BugFindingSource {
   TEST_FAILURE = 'test_failure',
@@ -16,6 +21,7 @@ export enum BugFindingSource {
   PRODUCTION_LOG = 'production_log',
   REPORTED_BUG = 'reported_bug',
   ANALYTICS_SUGGESTION = 'analytics_suggestion',
+  UX_SIGNAL = 'ux_signal',
 }
 
 export enum BugFindingSeverity {
@@ -23,6 +29,61 @@ export enum BugFindingSeverity {
   MEDIUM = 'medium',
   HIGH = 'high',
 }
+
+/**
+ * Why a bug was declined — by a human rejecting it, or by the Verify phase
+ * refuting it.
+ *
+ * ## Why this is a closed list and not free text
+ *
+ * The reason has two readers, and only one of them is a person. The other is
+ * the next sweep: `buildSweepPrompt` embeds recent declines as "known
+ * non-bugs, do not re-file", and a prompt is only improved by a reason that
+ * generalises. "not_a_bug" tells the finder its judgement was wrong;
+ * "wont_fix" tells it the judgement was right and the priority was not, which
+ * is not a finder problem at all. A free-text box collapses that distinction
+ * into prose nobody can count, which is how the tab ended up unable to answer
+ * "how often is this thing right?" — see BugHunterMetricsService.
+ *
+ * The optional free-text note still exists alongside it (`decision_note`), for
+ * the half of the explanation a taxonomy cannot carry.
+ *
+ * `character varying` with a CHECK constraint, per repo convention — see
+ * migration 1951000000000.
+ */
+export enum BugFindingDecisionReason {
+  /** The finder was wrong: reading the code, this is not a defect. The only reason that counts against precision. */
+  NOT_A_BUG = 'not_a_bug',
+  /** Real, but already tracked elsewhere — another finding, an existing ticket, a known issue. */
+  DUPLICATE = 'duplicate',
+  /** Real, but the finder attributed it to the wrong codebase. */
+  WRONG_REPO = 'wrong_repo',
+  /** Real and correctly described, but not worth fixing. A priority call, not a finder error. */
+  WONT_FIX = 'wont_fix',
+  /** Real, but the fix is riskier than the bug — a human will handle it deliberately. */
+  TOO_RISKY = 'too_risky',
+  /** Anything the list above does not cover. Pair it with a note. */
+  OTHER = 'other',
+}
+
+/**
+ * Decline reasons that mean the FINDER got it wrong, as opposed to the finding
+ * being real but unwanted.
+ *
+ * This is the distinction the precision metric turns on, and getting it
+ * backwards would make a well-run triage session look like a broken agent: a
+ * team that declines nine real-but-minor lint findings has not been served
+ * badly by its bug hunter, whereas one that declines two hallucinated bugs
+ * has. So `BugHunterMetricsService` counts only these against accuracy, and
+ * `buildSweepPrompt` shows only these to the next sweep as things it should
+ * not have filed — a WONT_FIX re-filed next month is arguably correct
+ * behaviour, since the priority may have changed.
+ */
+export const BUG_FINDING_FINDER_ERROR_REASONS: BugFindingDecisionReason[] = [
+  BugFindingDecisionReason.NOT_A_BUG,
+  BugFindingDecisionReason.WRONG_REPO,
+  BugFindingDecisionReason.DUPLICATE,
+];
 
 /**
  * Where a finding sits in the find → (approve) → fix → land pipeline.

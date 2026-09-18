@@ -20,9 +20,9 @@ const validBundle = () => ({
       saved_views: 0,
       user_tab_order: 0,
     },
-    totalCoins: 0,
+    totalVotes: 0,
     allocationRows: 0,
-    coinsByUserPeriod: {},
+    votesByUserPeriod: {},
     priorityScores: {},
   },
   app_users: [],
@@ -60,8 +60,8 @@ const asUpload = (body: unknown): Express.Multer.File => {
  * Those branches were instead verified for real against the 505-opportunity production snapshot on
  * a local database:
  *   - dry run (no flags)      → committed=false, 16 checks, database still empty
- *   - dryRun=false            → committed=true, 505 opportunities / 1080 coins written
- *   - tampered manifest       → V2 TOTAL COINS failed, rolled back, database back to 0 rows
+ *   - dryRun=false            → committed=true, 505 opportunities / 1080 votes written
+ *   - tampered manifest       → V2 TOTAL VOTES failed, rolled back, database back to 0 rows
  *   - identical second commit → no-op, still 505 / 1080
  */
 describe('RoadmapImportService', () => {
@@ -133,12 +133,12 @@ describe('RoadmapImportService', () => {
     await expect(importIt(bundle)).rejects.toThrow(/manifest/i);
   });
 
-  it('REFUSES a manifest with no numeric totalCoins', async () => {
-    // V2 TOTAL COINS is the headline assertion; a non-numeric expectation would silently
+  it('REFUSES a manifest with no numeric totalVotes', async () => {
+    // V2 TOTAL VOTES is the headline assertion; a non-numeric expectation would silently
     // never fail.
     const bundle = validBundle();
-    (bundle.manifest as Record<string, unknown>).totalCoins = 'lots';
-    await expect(importIt(bundle)).rejects.toThrow(/totalCoins/);
+    (bundle.manifest as Record<string, unknown>).totalVotes = 'lots';
+    await expect(importIt(bundle)).rejects.toThrow(/totalVotes/);
   });
 
   it('names every missing required table in one message', async () => {

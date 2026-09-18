@@ -1,13 +1,13 @@
 import {
   BadRequestException,
   Injectable,
-  InternalServerErrorException,
   NotFoundException,
 } from '@nestjs/common';
 import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
+import { ConfigurationException } from 'src/exception/configuration.exception';
 import { ComfortAudioTrackRepository } from '../repository/comfort-audio-track.repository';
 import { ComfortAudioTrack } from '../entity/comfort-audio-track.entity';
 import {
@@ -41,8 +41,10 @@ export class ComfortAudioService {
   private getBucket(): string {
     const bucket = this.configService.s3.assetsBucket;
     if (!bucket) {
-      throw new InternalServerErrorException(
-        'S3 bucket name for assetsBucket is not defined',
+      // Detail is logged, not returned — see ConfigurationException.
+      throw new ConfigurationException(
+        'S3 bucket name for assetsBucket (S3_ASSETS_BUCKET) is not defined; ' +
+          'comfort-audio tracks cannot be stored.',
       );
     }
     return bucket;

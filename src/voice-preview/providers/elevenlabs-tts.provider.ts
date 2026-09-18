@@ -17,7 +17,11 @@ export class ElevenLabsTTSProvider implements ITTSProvider {
     }
   }
 
-  async generatePreview(text: string): Promise<Buffer> {
+  async generatePreview(
+    text: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _languageCode: string,
+  ): Promise<Buffer> {
     const audioStream = await this.client.textToSpeech.convert(this.voiceId, {
       text,
       modelId: this.modelId,

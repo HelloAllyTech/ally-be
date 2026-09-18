@@ -5,6 +5,7 @@ import { Badge } from '../entity/badge.entity';
 import { BadgeCategory } from '../constants/badge.constants';
 import { ScenarioSessionReviewSharedService } from 'src/scenario-session-review/service/review-shared.service';
 import { CommunitySharedService } from 'src/community/service/community-shared.service';
+import { ProgressSharedService } from 'src/progress/service/progress-shared.service';
 import { UserValueCount } from '../type/badge.type';
 import { SaveBadgeUsersRequest } from '../type/badge-response.type';
 import { BadgeUser } from '../entity/badge-user.entity';
@@ -17,6 +18,7 @@ export class BadgeUserService {
     private readonly badgeUserRepository: BadgeUserRepository,
     private readonly communitySharedService: CommunitySharedService,
     private readonly scenarioSessionReviewSharedService: ScenarioSessionReviewSharedService,
+    private readonly progressSharedService: ProgressSharedService,
   ) {}
 
   async awardBadgeToUsersByTenant(
@@ -94,6 +96,20 @@ export class BadgeUserService {
           userCounts = maxActiveDaysPerUser.map((row) => ({
             userId: row.userId,
             value: row.maxStreak,
+          }));
+          break;
+        case BadgeCategory.XP_LEVEL:
+          this.logger.log(
+            `Getting progress level per user for badge ${badge.id}`,
+          );
+          const levelPerUser = await this.progressSharedService.getLevelPerUser(
+            tenantIds,
+            userIds,
+          );
+
+          userCounts = levelPerUser.map((row) => ({
+            userId: row.userId,
+            value: row.level,
           }));
           break;
         default:

@@ -19,7 +19,6 @@ import {
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { AgentTestCaseService } from '../service/agent-test-case.service';
 import {
   CreateAgentTestCaseDto,
@@ -79,7 +78,6 @@ export class AgentTestCaseController {
     description: 'Sort order',
   })
   @RequireFeatureToggle(FeatureToggleKey.AGENT_TEST_CASES, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_SCENARIO],
   })
   @Get()
@@ -106,7 +104,6 @@ export class AgentTestCaseController {
     type: AgentTestCaseResponseDto,
   })
   @RequireFeatureToggle(FeatureToggleKey.AGENT_TEST_CASES, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_SCENARIO],
   })
   @Post()
@@ -124,7 +121,6 @@ export class AgentTestCaseController {
     type: AgentTestCaseResponseDto,
   })
   @RequireFeatureToggle(FeatureToggleKey.AGENT_TEST_CASES, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_SCENARIO],
   })
   @Put(':id')
@@ -141,7 +137,6 @@ export class AgentTestCaseController {
     description: 'Agent test case deleted successfully',
   })
   @RequireFeatureToggle(FeatureToggleKey.AGENT_TEST_CASES, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_SCENARIO],
   })
   @Delete(':id')

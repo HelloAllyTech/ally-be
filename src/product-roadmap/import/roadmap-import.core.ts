@@ -16,7 +16,7 @@ import { DataSource, EntityManager } from 'typeorm';
  * The critical properties are unchanged from the original script and must stay that way:
  *   - ONE transaction. Any failure rolls the whole load back and leaves the database untouched.
  *   - Source uuid primary keys are PRESERVED, so shared `?opportunity=<id>` links keep working.
- *   - 16 verification checks run INSIDE the transaction; `V2 TOTAL COINS` is exact, no tolerance.
+ *   - 16 verification checks run INSIDE the transaction; `V2 TOTAL VOTES` is exact, no tolerance.
  *   - Idempotent: `ON CONFLICT (pk) DO UPDATE`, so a second identical run is a no-op.
  *
  * KNOWN LIMIT OF THE CHECKS, worth stating because it drives operational advice: they compare the
@@ -119,7 +119,7 @@ export interface SourceAllocation {
   user_id: string;
   opportunity_id: string;
   period_key: string;
-  coins: number;
+  votes: number;
 }
 export interface SourceComment {
   id: string;
@@ -164,9 +164,9 @@ export interface Manifest {
   projectRef: string;
   extractedAt: string;
   tables: Record<string, number>;
-  totalCoins: number;
+  totalVotes: number;
   allocationRows: number;
-  coinsByUserPeriod: Record<string, number>;
+  votesByUserPeriod: Record<string, number>;
   priorityScores: Record<string, number>;
 }
 // ── user mapping ─────────────────────────────────────────────────────────────
@@ -178,7 +178,7 @@ export interface Manifest {
  * Mapping unmatched voters onto a shared placeholder was rejected outright, not merely as lossy:
  * roadmap_allocations is unique on (userId, opportunityId, periodKey), so two source voters
  * funnelled into one placeholder who both voted on the same opportunity in the same month would
- * MERGE into a single row — coins would silently vanish and the ≤100 cap could be breached.
+ * MERGE into a single row — votes would silently vanish and the ≤100 cap could be breached.
  * Aborting instead was also rejected: it makes the migration hostage to whether a departed
  * colleague still has an account, and their historical votes are legitimate roadmap history.
  *
@@ -370,14 +370,14 @@ async function load(
   log('\n── loading allocations (the priority signal) ──');
   for (const allocation of allocations) {
     await manager.query(
-      `INSERT INTO roadmap_allocations ("userId","opportunityId","periodKey",coins)
+      `INSERT INTO roadmap_allocations ("userId","opportunityId","periodKey",votes)
             VALUES ($1,$2,$3,$4)
-       ON CONFLICT ("userId","opportunityId","periodKey") DO UPDATE SET coins = EXCLUDED.coins`,
+       ON CONFLICT ("userId","opportunityId","periodKey") DO UPDATE SET votes = EXCLUDED.votes`,
       [
         allyUser(allocation.user_id),
         allocation.opportunity_id,
         allocation.period_key,
-        allocation.coins,
+        allocation.votes,
       ],
     );
   }
@@ -421,23 +421,21 @@ async function load(
       ],
     );
   }
-  for (const note of releaseNotes) {
-    await manager.query(
-      `INSERT INTO roadmap_release_notes
-         (id, title, content, "opportunityIds", "createdBy", "updatedBy", "createdAt", "updatedAt")
-       VALUES ($1,$2,$3,$4::uuid[],$5,$5,$6,$7)
-       ON CONFLICT (id) DO UPDATE SET
-         title = EXCLUDED.title, content = EXCLUDED.content,
-         "opportunityIds" = EXCLUDED."opportunityIds", "updatedAt" = EXCLUDED."updatedAt"`,
-      [
-        note.id,
-        note.title,
-        note.content,
-        note.opportunity_ids ?? [],
-        allyUser(note.created_by),
-        note.created_at,
-        note.updated_at,
-      ],
+  /**
+   * Release notes are NOT imported: the feature was deprecated in favour of the automated
+   * changelog (ally-changelog → ally-be's public feed) and `roadmap_release_notes` is dropped by
+   * migration 1940500000000, so there is no table to write to.
+   *
+   * The bundle key is still READ rather than rejected, because existing export snapshots carry
+   * it. Every real snapshot has it empty — the source shipped the feature on 2026-07-01 and
+   * nobody ever used it — so this throws rather than silently discarding rows if that stops
+   * being true, which is the one case where dropping data on the floor would matter.
+   */
+  if (releaseNotes.length > 0) {
+    throw new Error(
+      `Snapshot carries ${releaseNotes.length} release notes, but release notes were ` +
+        `deprecated and roadmap_release_notes no longer exists. Export them separately ` +
+        `before importing, or clear the key if they are not worth keeping.`,
     );
   }
   for (const view of savedViews) {
@@ -513,7 +511,6 @@ async function verify(
     allocations: 'roadmap_allocations',
     opportunity_comments: 'roadmap_opportunity_comments',
     interview_notes: 'roadmap_interview_notes',
-    release_notes: 'roadmap_release_notes',
     saved_views: 'roadmap_saved_views',
     user_tab_order: 'roadmap_user_tab_order',
   };
@@ -529,18 +526,18 @@ async function verify(
     }
   }
 
-  // V2 — TOTAL COINS CONSERVED. The single most important assertion. Exact equality, no tolerance.
-  const totalCoins = await scalar(
-    `SELECT COALESCE(SUM(coins),0) FROM roadmap_allocations`,
+  // V2 — TOTAL VOTES CONSERVED. The single most important assertion. Exact equality, no tolerance.
+  const totalVotes = await scalar(
+    `SELECT COALESCE(SUM(votes),0) FROM roadmap_allocations`,
   );
-  record('V2 TOTAL COINS', manifest.totalCoins, totalCoins);
+  record('V2 TOTAL VOTES', manifest.totalVotes, totalVotes);
 
   // V2b — conserved per (user, period) too. An aggregate-only check would pass even if two
-  // people's coins had swapped.
+  // people's votes had swapped.
   const perUserPeriod = await manager.query<
     { email: string; periodKey: string; total: string }[]
   >(
-    `SELECT m."sourceUserId" AS email, a."periodKey" AS "periodKey", SUM(a.coins)::text AS total
+    `SELECT m."sourceUserId" AS email, a."periodKey" AS "periodKey", SUM(a.votes)::text AS total
        FROM roadmap_allocations a
        JOIN roadmap_user_map m ON m."allyUserId" = a."userId"
       GROUP BY 1,2`,
@@ -548,7 +545,7 @@ async function verify(
   let perUserPeriodMismatches = 0;
   for (const row of perUserPeriod) {
     const expected =
-      manifest.coinsByUserPeriod?.[`${row.email}|${row.periodKey}`];
+      manifest.votesByUserPeriod?.[`${row.email}|${row.periodKey}`];
     if (expected === undefined || String(expected) !== row.total)
       perUserPeriodMismatches++;
   }
@@ -558,13 +555,13 @@ async function verify(
   const breaches = await scalar(
     `SELECT COUNT(*) FROM (
        SELECT "userId","periodKey" FROM roadmap_allocations
-        GROUP BY 1,2 HAVING SUM(coins) > 100) b`,
+        GROUP BY 1,2 HAVING SUM(votes) > 100) b`,
   );
   record('V3 cap breaches', 0, breaches);
 
   // V4 — PRIORITY-SCORE PARITY. Same all-users-all-periods sum on both sides.
   const scores = await manager.query<{ id: string; score: string }[]>(
-    `SELECT o.id, COALESCE(SUM(a.coins),0)::text AS score
+    `SELECT o.id, COALESCE(SUM(a.votes),0)::text AS score
        FROM roadmap_opportunities o
        LEFT JOIN roadmap_allocations a ON a."opportunityId" = o.id
       GROUP BY o.id`,
@@ -664,7 +661,7 @@ export async function runRoadmapImport(
     `Snapshot: project ${manifest.projectRef}, extracted ${manifest.extractedAt}`,
   );
   log(
-    `  expecting ${manifest.allocationRows} allocations / ${manifest.totalCoins} coins`,
+    `  expecting ${manifest.allocationRows} allocations / ${manifest.totalVotes} votes`,
   );
   if (resolved.dryRun)
     log('\n  *** DRY RUN — the transaction will be rolled back ***');

@@ -1,3 +1,4 @@
+import { RoadmapOpportunityStage } from '../enum/roadmap-opportunity.enum';
 import { TIME } from 'src/common/constants/time.constants';
 
 /**
@@ -7,22 +8,33 @@ import { TIME } from 'src/common/constants/time.constants';
  */
 
 /**
- * Coins each user may allocate per calendar month. Unspent coins LAPSE — there is no
- * rollover; the period key simply changes. Mirrored on the frontend, and enforced by both
- * roadmap_enforce_monthly_cap() and RoadmapAllocationService.
+ * Vote grant tuning — replaces the old flat VOTES_PER_MONTH cap with three independently
+ * expiring credit streams instead of one number that resets on the 1st:
+ *
+ *  - ROADMAP_VOTE_GRANT_MONTHLY new votes on the 1st of every UTC calendar month
+ *  - ROADMAP_VOTE_GRANT_DAILY   new votes every UTC calendar day
+ *  - each grant spendable for ROADMAP_VOTE_GRANT_EXPIRY_DAYS days from issuance, then it lapses
+ *    unused — there is no rollover, and no way to "save up" past 30 days
+ *
+ * Issued by RoadmapVoteGrantSchedulerRegistrationService ('daily'/'monthly' scheduler
+ * intervals), spent FIFO-by-expiry by RoadmapAllocationService, and validated as a backstop by
+ * roadmap_enforce_vote_grant_balance() (migration 1962100000000). See RoadmapVoteGrant's
+ * docblock for the full ledger shape.
  */
-export const COINS_PER_MONTH = 100;
+export const ROADMAP_VOTE_GRANT_MONTHLY = 50;
+export const ROADMAP_VOTE_GRANT_DAILY = 5;
+export const ROADMAP_VOTE_GRANT_EXPIRY_DAYS = 30;
 
 /**
- * The `productGoal` a consumer bug report is filed under. `productGoal` is a required
- * text FK-by-name into `roadmap_product_goals` (see the entity) and the consumer flow
- * deliberately has no goal/category picker (product decision — see
- * CreateConsumerBugReportDto), so something has to be chosen server-side. 'Reliability &
- * Trust' already exists in the seeded taxonomy (migration 1871000000002) and is the closest
- * semantic fit for an unclassified bug; staff can always re-triage the goal from the drawer
- * like any other opportunity.
+ * The `productGoal` every bug report is filed under. `productGoal` is a required text
+ * FK-by-name into `roadmap_product_goals` (see the entity) and no bug-report form has a
+ * goal/category picker (product decision — see CreateBugReportDto), so something has to be
+ * chosen server-side. 'Reliability & Trust' already exists in the seeded taxonomy
+ * (migration 1871000000002) and is the closest semantic fit for an unclassified bug. It is
+ * near-invisible in practice: bugs no longer render on the roadmap board at all, so this is
+ * really just satisfying the column's FK.
  */
-export const CONSUMER_BUG_REPORT_PRODUCT_GOAL = 'Reliability & Trust';
+export const BUG_REPORT_DEFAULT_PRODUCT_GOAL = 'Reliability & Trust';
 
 /**
  * Per-user throttle on POST /product-roadmap/bug-reports, keyed by `userId` (not IP, since
@@ -31,11 +43,24 @@ export const CONSUMER_BUG_REPORT_PRODUCT_GOAL = 'Reliability & Trust';
  * scripted-spam or retry-loop client — there is no product-defined cadence for this today
  * (Stacks search turned up nothing Ally-specific), so this is a judgement call, easy to
  * retune later since it is not read anywhere else.
+ *
+ * Applies to internal reporters too, now that the admin roadmap's "Report a bug" button
+ * uses this same route. A staff member hitting 8 reports in an hour is the same runaway
+ * client this bounds, and nothing about being internal makes that safe.
  */
-export const CONSUMER_BUG_REPORT_RATE_LIMIT = {
+export const BUG_REPORT_RATE_LIMIT = {
   LIMIT: 8,
   TTL_MS: TIME.HOUR_IN_MS,
 } as const;
+
+/**
+ * How much of an opportunity's description becomes the Builder session title.
+ *
+ * Builder derives its branch slug from the title, so this is a readability bound, not a storage
+ * one — BuilderSessionService truncates to its own BUILDER_TITLE_MAX_LENGTH regardless. 80 is
+ * about a headline's worth, which is what a branch name and a session list can both carry.
+ */
+export const BUILDER_SEED_TITLE_MAX = 80;
 
 export const ROADMAP_LIMITS = {
   DESCRIPTION_MAX: 1000,
@@ -46,16 +71,103 @@ export const ROADMAP_LIMITS = {
   INTERVIEW_SUMMARY_MAX: 5000,
   /** Cap on transcript text handed to the LLM for summarisation. */
   INTERVIEW_TRANSCRIPT_MAX: 50000,
-  RELEASE_NOTE_CONTENT_MAX: 20000,
-  RELEASE_NOTE_TITLE_MAX: 200,
+  /**
+   * One turn of the opportunity interview. The transcript rides on every request because the
+   * interview is deliberately stateless (no session table for an experimental surface), so
+   * these two caps are what stop a long conversation turning into an unbounded prompt.
+   *
+   * 60 messages is ~30 exchanges — far past the ~8 questions the five criteria need, so hitting
+   * it means something is wrong rather than that someone was thorough.
+   */
+  OPPORTUNITY_INTERVIEW_MESSAGE_MAX: 60,
+  OPPORTUNITY_INTERVIEW_CONTENT_MAX: 4000,
   SAVED_VIEW_NAME_MAX: 100,
   GOAL_NAME_MAX: 200,
   OWNER_NAME_MAX: 200,
+  STRATEGY_GOAL_NAME_MAX: 200,
+  /** Cap on the model's justification for one goal-impact verdict. Matches the CHECK. */
+  GOAL_IMPACT_REASON_MAX: 500,
+  /**
+   * How many reference images one opportunity may carry.
+   *
+   * Six, because these are evidence rather than a gallery: the screenshot of the broken screen,
+   * the mock of the fixed one, and a handful of variants is the whole use. A cap exists at all
+   * because the array rides the shared opportunity response — every board read pays for it —
+   * and because an unbounded list is an unbounded list of S3 objects nothing ever prunes.
+   * Enforced by the DTO (friendly 400) and by CHK_roadmap_opportunities_reference_images.
+   */
+  REFERENCE_IMAGES_MAX: 6,
+  /** Caption length. A label under a thumbnail — "current state", not a paragraph. */
+  REFERENCE_IMAGE_CAPTION_MAX: 200,
 } as const;
+
+/**
+ * Where reference images land in the assets bucket, and the ceiling on one upload.
+ *
+ * The prefix is load-bearing, not cosmetic: `assertOwnReferenceImages` requires every stored URL
+ * to resolve to this bucket and this prefix, so a caller cannot use the images array to park an
+ * arbitrary third-party URL (or one pointing at another feature's objects) on a row that every
+ * roadmap viewer then loads in their browser. Changing it orphans nothing already stored — the
+ * guard admits any key under the prefix, and existing rows keep the keys they have — but it does
+ * mean older uploads would stop validating on a later edit, so treat it as append-only.
+ *
+ * 5 MB matches the blog's image cap. A screenshot is well under it; a photo off a phone is not
+ * always, which is why it is not tighter.
+ */
+export const ROADMAP_REFERENCE_IMAGE_S3_PREFIX = 'roadmap/reference-images';
+export const ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Composite-rank tuning that is NOT admin-settable, kept here so the two places that need it
+ * (the assessment service and its tests) cannot disagree.
+ */
+export const ROADMAP_RANK = {
+  /**
+   * Hard ceiling on strategy goals. The impact prompt asks for a verdict per goal in ONE call,
+   * so the goal list is the thing that grows the response — and coverage gets less meaningful
+   * the more goals there are (a strategy of twenty goals is not a strategy). Enforced when
+   * creating a goal, with a message that says so.
+   */
+  MAX_STRATEGY_GOALS: 12,
+  /**
+   * Opportunities re-assessed per bulk run. A bound, not a target: adding a strategy goal makes
+   * every rankable opportunity stale at once, and an unbounded run would bill the whole board in
+   * one request and time out the HTTP call. The endpoint reports how many remain so the caller
+   * can run it again rather than silently truncating.
+   */
+  BULK_ASSESS_LIMIT: 25,
+} as const;
+
+/**
+ * The stages that make up THE QUEUE — the working pipeline.
+ *
+ * A single list: everything still in play, ordered by total votes. Released and archived are out
+ * because they are records rather than work. This drives both the queue's stage filter and the
+ * queue-rank window (see QUEUE_RANK_SQL), so the ranked population and the filtered population
+ * cannot drift apart.
+ */
+export const ROADMAP_QUEUE_STAGES = [
+  RoadmapOpportunityStage.NEW,
+  RoadmapOpportunityStage.PRIORITISED,
+  RoadmapOpportunityStage.UNDER_DEVELOPMENT,
+] as const;
 
 export const ROADMAP_LIST_DEFAULTS = {
   LIMIT: 50,
-  MAX_LIMIT: 200,
+  /**
+   * Hard ceiling on one list response. Raised from 200 when the list view replaced pagination
+   * with "Load more": that button grows `limit` rather than walking `offset`, so the ceiling is
+   * now the point at which loading more stops working.
+   *
+   * The repository CLAMPS silently (`Math.min(limit, MAX_LIMIT)`) rather than rejecting, so
+   * exceeding this does not error — it just returns fewer rows than asked for, which on the
+   * client looks like a button that does nothing. The client mirrors this number so it can say
+   * so instead; if you change it here, change it there (utils/paging.ts).
+   *
+   * 500 is chosen against the real population: the whole board is ~430 rows today, so this
+   * covers loading everything in one view with room to grow, while still bounding a response.
+   */
+  MAX_LIMIT: 500,
 } as const;
 
 /**
@@ -105,22 +217,193 @@ export const ROADMAP_DUPLICATES = {
  * admins get runtime editability without a bespoke settings table.
  */
 export const ROADMAP_PROMPT_CODES = {
+  READINESS_CHECK: 'roadmap_readiness_check',
   REVIEW_DRAFT: 'roadmap_review_draft',
   ENHANCE_DRAFT: 'roadmap_enhance_draft',
   CLASSIFY_GOAL: 'roadmap_classify_goal',
   DUPLICATE_CHECK: 'roadmap_duplicate_check',
+  GOAL_IMPACT: 'roadmap_goal_impact',
   SUMMARISE_INTERVIEW: 'roadmap_summarise_interview',
-  RELEASE_NOTES: 'roadmap_release_notes',
   GENERATE_CLAUDE_PROMPT: 'roadmap_generate_claude_prompt',
+  /**
+   * The interviewer that walks an admin to a fileable draft one question at a time. Grades the
+   * SAME ROADMAP_READINESS_CRITERIA the filing gate grades — see the prompt file for why that
+   * matters: an interview with its own private rubric can hand over a draft the gate then
+   * rejects, which is the one failure this surface exists to prevent.
+   */
+  OPPORTUNITY_INTERVIEW: 'roadmap_opportunity_interview',
 } as const;
 
 /**
- * Marker raised by roadmap_enforce_monthly_cap(). The trigger's SQLSTATE is P0001, which
- * every RAISE EXCEPTION in the database shares, so the service keys off this prefix to
- * distinguish a cap breach from an unrelated failure. Changing it requires changing
- * migration 1871000000001 too.
+ * The readiness checklist the "Check readiness" button grades a draft against, and the gate on
+ * filing: every item must come back green before the opportunity can be filed.
+ *
+ * EXPECTED TO CHANGE. It lives here, server-side, as the single source of truth: the admin
+ * drawer renders whatever this returns rather than holding its own copy, so editing this array
+ * is the whole change. The ids are the join key between the criteria the UI shows and the
+ * verdicts the model returns, so treat an id as permanent once shipped — renaming one silently
+ * drops its verdict and fails that item closed. (Renaming is nonetheless safe to DO: verdicts
+ * live in the drawer's local state for the length of one draft and are never persisted against
+ * a filed row.)
+ *
+ * These five apply the team's discovery guidance at the point of filing (Stacks: "Filter
+ * opportunities by specificity and validation criteria"), with two deliberate departures from
+ * the strict reading of it:
+ *
+ * 1. A GAIN COUNTS, not only a pain. Stacks: "Frame customer needs as opportunities, not just
+ *    problems" — the frame has to hold desires and delights, or the checklist quietly rejects
+ *    every idea that adds something rather than repairing something.
+ * 2. A PROPOSED SOLUTION IS ALLOWED, as long as the goal stands without it. The strict rule
+ *    ("Distinguish Opportunities from Disguised Solutions") rejects any draft that names a
+ *    feature, which in practice made people delete the most concrete thing they knew. What
+ *    actually matters is the ORDER: strike the proposed build and there must still be a stated
+ *    goal underneath. `goal_before_solution` grades that, and nothing grades solution-mention
+ *    on its own.
+ *
+ * What is deliberately NOT here:
+ * - SIZE. Graded from the effort the same call already proposes — see ROADMAP_FILEABLE_EFFORTS
+ *   — so that the model cannot pass "small enough" while sizing the same draft XL.
+ * - EVIDENCE ("more than one person said this"). It is a validation test, not a clarity test,
+ *   and it failed real gaps spotted internally or derived from a bug report.
+ * - USER-STORY FORMAT. Carried by the field placeholder and by the redraft, never gated: a
+ *   clear plain-English opportunity must not be blocked over its shape, and criteria 3-5
+ *   already grade the content the format would carry.
  */
-export const ROADMAP_CAP_ERROR_MARKER = 'ROADMAP_MONTHLY_CAP_EXCEEDED';
+export const ROADMAP_READINESS_CRITERIA = [
+  {
+    id: 'pain_or_gain',
+    label: 'Names a real pain or a real gain',
+    hint: 'A hurt to remove or a win to add for someone — not an activity ("add a dashboard", "use AI here") with no stated benefit.',
+  },
+  {
+    id: 'goal_before_solution',
+    label: 'Leads with the goal, not the build',
+    hint: 'Naming a possible solution is fine. Strike it, and the entry must still say what we are trying to achieve.',
+  },
+  {
+    id: 'specific',
+    label: 'Narrow enough to act on',
+    hint: 'One situation at one moment — not a theme like "onboarding is confusing" or "the interface is hard to use".',
+  },
+  {
+    id: 'who_it_affects',
+    label: 'Names the user group it affects',
+    hint: 'Which users — counsellors, learners mid-track, admins of one tenant — not "users" in general.',
+  },
+  {
+    id: 'outcome',
+    label: 'Says what changes for them',
+    hint: 'What that group can then do, stop losing, or gain — stated so we could later tell whether it happened.',
+  },
+] as const;
+
+/**
+ * The sizes an opportunity may be filed at. Anything larger is not one opportunity — it is a
+ * set of them, and Stacks ("Select leaf-node opportunities for iterative value delivery") is
+ * explicit that value lands by solving a series of smaller ones in succession rather than
+ * taking a whole set at once. So L and up BLOCK filing, with the redraft asked to narrow the
+ * draft to a single shippable slice.
+ *
+ * Served to the drawer alongside the criteria so the threshold lives in one place; the drawer
+ * renders it as a sixth checklist row rather than as a hidden rule that greys out the button
+ * for no visible reason.
+ *
+ * Sized against the effort currently in the field, which the filer may correct: the model
+ * sizes from prose and gets it wrong both ways, and a gate a human cannot answer to is a gate
+ * people route around by writing vaguer drafts. Correcting the size to something fileable is
+ * an explicit act, visible in the row that turns green.
+ */
+export const ROADMAP_FILEABLE_EFFORTS = ['s', 'm'] as const;
+
+/**
+ * Sentinel the effort FILTER accepts alongside the real RoadmapOpportunityEffort values, to mean
+ * "opportunities nobody has sized" — i.e. `effort IS NULL`. Not a member of the enum itself:
+ * `effort` on the entity is nullable and NULL is not a size, so widening the enum to include it
+ * would let a row's own `effort` column be set to the string "unsized", which is not what "not
+ * sized yet" means.
+ */
+export const ROADMAP_EFFORT_UNSIZED = 'unsized';
+
+/**
+ * How long a signed readiness verdict stays spendable.
+ *
+ * Generous rather than tight: the drawer stays open while someone reads five reasons, considers
+ * the rewrite, corrects a size and picks an owner, and every expiry costs a legitimate filer a
+ * re-run of a model call that will say the same thing. Short enough that a token cannot be
+ * hoarded and replayed against a draft written next week.
+ *
+ * Expiry fails CLOSED — an expired token is refused, not waved through — so the cost of being
+ * wrong here is an annoyance, never a hole. See RoadmapReadinessTokenService.
+ */
+export const ROADMAP_READINESS_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+/**
+ * Domain-separation label mixed into the readiness signing key.
+ *
+ * The key is DERIVED from JWT_ACCESS_SECRET rather than being a new env var of its own: a new
+ * secret means an infra change in three environments before this can ship at all, and a secret
+ * that is missing in one of them fails filings closed there. Deriving keeps the deploy to code.
+ *
+ * The label is what stops that from being secret reuse. A readiness token and an access token
+ * are signed with different keys — HMAC(jwt_secret, label) is not the jwt secret — so a readiness
+ * token can never be presented as an access token, or the reverse, whatever a future bug does
+ * with either verifier.
+ *
+ * Bump the version suffix to invalidate every token in flight (a criteria change that must not
+ * be spendable against old verdicts, say). Every open drawer then needs one more click of
+ * "Check readiness", which is the intended cost.
+ */
+export const ROADMAP_READINESS_TOKEN_KEY_LABEL = 'roadmap-readiness-token-v1';
+
+/**
+ * Whether `POST /opportunities` REFUSES a filing that carries no readiness token at all.
+ *
+ * False for one release, deliberately. ally-be deploys before any client (see the deploy
+ * ordering note in the wiki), so the moment this ships, the admin bundle in production is the
+ * previous one — which sends no token. Refusing it would take filing down for everyone until
+ * the web release lands, to enforce a rule whose whole purpose is tidiness.
+ *
+ * So the rollout is: ship this false, ship the client that sends tokens, watch for the
+ * `filed with no readiness token` warning to stop appearing in production logs, then flip it
+ * true in a follow-up release. Until it is true, a caller who simply omits the token is not
+ * gated — a TAMPERED or STALE or EXPIRED token is always refused, and the override permission
+ * below is enforced from day one either way.
+ */
+export const ROADMAP_READINESS_REQUIRE_TOKEN = false;
+
+/**
+ * Marker raised by roadmap_enforce_vote_grant_balance(). The trigger's SQLSTATE is P0001,
+ * which every RAISE EXCEPTION in the database shares, so the service keys off this prefix to
+ * distinguish a balance breach from an unrelated failure. Changing it requires changing
+ * migration 1962100000000 too.
+ */
+export const ROADMAP_VOTE_BALANCE_EXCEEDED_MARKER =
+  'ROADMAP_VOTE_BALANCE_EXCEEDED';
 
 /** Advisory-lock namespace for serialising a user's allocation writes within a period. */
 export const ROADMAP_ALLOCATION_LOCK_NAMESPACE = 'roadmap:allocation';
+
+/**
+ * The opportunity owner picker's options, by email.
+ *
+ * Owning an opportunity is a named product-leadership responsibility, not a permission — the four
+ * people below are the ones who actually drive delivery, and they are a strict subset of the
+ * platform admins. Deriving the list from PLATFORM_TIER_ROLES group membership (what this
+ * replaced) put every staff account in the dropdown, which made the picker a directory to scroll
+ * rather than a short list of accountable owners.
+ *
+ * Email rather than user id because ids differ per environment; matched case-insensitively, so
+ * keep these lowercase. `+admin` addressing is significant — it is a distinct account.
+ *
+ * Adding or removing an owner is a one-line edit here plus a deploy. That is deliberate: the set
+ * changes about as often as the leadership team does, and a hardcoded list cannot silently drift
+ * the way a group-derived one did. Existing assignments are NOT rewritten when someone leaves the
+ * list — history should not change under a rename — but they can no longer be re-assigned to that
+ * person, and RoadmapOpportunityService.assertEligibleOwner answers 422 if anyone tries.
+ */
+export const ROADMAP_OWNER_EMAILS: readonly string[] = [
+  'sandeep.malhotra@helloally.ai',
+  'ajey@helloally.ai',
+  'shubham.bhoite+admin@helloally.ai',
+  'gopikrishnan.sasikumar@helloally.ai',
+] as const;

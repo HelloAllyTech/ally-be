@@ -5,15 +5,24 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 
 import { LoggerService } from 'src/logger/logger.service';
+import { User } from 'src/user/entity/user.entity';
 import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
+import {
+  RoadmapOpportunitySource,
+  RoadmapOpportunityStage,
+} from 'src/product-roadmap/enum/roadmap-opportunity.enum';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import { BugHunterService } from './bug-hunter.service';
 import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
+import { checkForAndRecordReversals } from '../util/check-for-reversals.util';
+import { effectiveStage } from '../util/bug-finding-stage.util';
+import { truncateTitle } from '../util/truncate-title.util';
 import {
+  fixDidNotHold,
   needsYourAnswer,
   STALE_ESCALATION_DIGEST_TITLE,
   stillWaitingOnAnswers,
@@ -27,10 +36,16 @@ import {
 } from '../repository/bug-finding.repository';
 import {
   BUG_FINDING_DESCRIPTION_EDITABLE_STATUSES,
+  BugFindingDecisionReason,
   BugFindingSeverity,
   BugFindingSource,
   BugFindingStatus,
 } from '../enum/bug-finding.enum';
+import {
+  BUG_FINDING_DECLINE_SUPPRESSION_MS,
+  BUG_FINDING_REGRESSION_WINDOW_MS,
+  BUG_HUNT_KNOWN_NON_BUGS_LIMIT,
+} from '../constants/bug-hunter.constants';
 
 /** One finder's raw output for one bug — the shape `.claude/workflows/bug-hunt.mjs` reports. */
 export interface RawFinding {
@@ -60,6 +75,47 @@ export interface RawFinding {
 }
 
 /**
+ * Who reported a bug and what their client silently captured at the time —
+ * read from the linked `roadmap_opportunities` row.
+ *
+ * Bugs no longer render on the roadmap board, so this is no longer reachable
+ * anywhere else: without it a real user's report and an agent-found lint error
+ * are indistinguishable rows.
+ */
+export interface ReportedBugContext {
+  opportunityId: string;
+  reporterSource: RoadmapOpportunitySource;
+  reportedBy: number | null;
+  reportedByName: string | null;
+  tenantId: string | null;
+  reporterContext: Record<string, any> | null;
+  reportedAt: Date;
+}
+
+/** What `enrich` adds to a row: things that live in other tables and are resolved at read time. */
+export interface BugFindingEnrichment {
+  report: ReportedBugContext | null;
+  stageOverriddenByName: string | null;
+  /** Which CLI/model ran `finding.runId`'s session — null if that run never reported one, or there is no run. */
+  engine: string | null;
+  model: string | null;
+}
+
+export type EnrichedBugFinding = BugFinding & BugFindingEnrichment;
+
+/**
+ * Statuses a pipeline PATCH may still set on an already-declined finding.
+ *
+ * Both are terminal declines, so re-stating one is a retry rather than a
+ * revival — a runner whose PATCH timed out and retried must not get a 403 for
+ * asking twice. Everything else is refused; see `setStatus`.
+ */
+const DECLINED_TARGET_STATUSES: BugFindingStatus[] = [
+  BugFindingStatus.DISMISSED,
+  BugFindingStatus.REJECTED,
+];
+
+/**
  * Owns the `bug_findings` lifecycle: persisting what the finders discover,
  * every status transition from NEW through to a terminal state, and the
  * escalation ask/answer exchange.
@@ -78,6 +134,7 @@ export class BugFindingService {
     private readonly notificationService: BugHunterNotificationService,
     @InjectRepository(RoadmapOpportunity)
     private readonly roadmapOpportunityRepository: Repository<RoadmapOpportunity>,
+    @InjectRepository(User) private readonly userRepository: Repository<User>,
     // Appended last, and safe to inject: BugHunterService depends on
     // repositories and the notification service only, never back on this —
     // the module's one-way edge that keeps `editDescription` able to write to
@@ -97,17 +154,296 @@ export class BugFindingService {
     return this.findingRepository.listPaginated(filter);
   }
 
+  /**
+   * Resolves the cross-table bits of a page of findings in TWO queries total,
+   * regardless of page size — the reporter behind each human-filed bug, and the
+   * name of whoever pinned a stage.
+   *
+   * Batched deliberately. The obvious shape is a per-row lookup inside the DTO
+   * mapper, which on a 50-row page is 100 round trips to render one table.
+   *
+   * Enrichment is additive and never throws: a finding whose roadmap row was
+   * hard-deleted, or whose reporter's account is gone, comes back with `report`
+   * null or `reportedByName` null rather than failing the whole list. The bug
+   * table has to render for bugs whose provenance we have partly lost — that is
+   * exactly the row someone is trying to look at.
+   */
+  async enrich(findings: BugFinding[]): Promise<EnrichedBugFinding[]> {
+    if (findings.length === 0) return [];
+
+    const reportedBugIds = [
+      ...new Set(
+        findings
+          .map((f) => f.reportedBugId)
+          .filter((id): id is string => id != null),
+      ),
+    ];
+    const opportunities = reportedBugIds.length
+      ? await this.roadmapOpportunityRepository.find({
+          where: { id: In(reportedBugIds) },
+          // withDeleted: a soft-deleted roadmap row is still the record of who
+          // reported this bug, and the bug itself is very much still open.
+          withDeleted: true,
+        })
+      : [];
+    const byOpportunityId = new Map(opportunities.map((o) => [o.id, o]));
+
+    // One name lookup covering both the reporters and the stage-pinners.
+    const userIds = [
+      ...new Set(
+        [
+          ...opportunities.map((o) => o.createdBy),
+          ...findings.map((f) => f.stageOverriddenBy),
+        ].filter((id): id is number => id != null),
+      ),
+    ];
+    const users = userIds.length
+      ? await this.userRepository.find({
+          where: { id: In(userIds) },
+          select: { id: true, name: true },
+        })
+      : [];
+    const nameById = new Map(users.map((u) => [u.id, u.name ?? null]));
+
+    // Which CLI/model ran each finding's most recent session — one query for
+    // the whole page, same batching discipline as the two lookups above.
+    const runIds = [
+      ...new Set(
+        findings.map((f) => f.runId).filter((id): id is string => id != null),
+      ),
+    ];
+    const runs = await this.bugHunterService.getRunsByIds(runIds);
+    const runById = new Map(runs.map((r) => [r.id, r]));
+
+    return findings.map((finding) => {
+      const opportunity = finding.reportedBugId
+        ? byOpportunityId.get(finding.reportedBugId)
+        : undefined;
+      const run = finding.runId ? runById.get(finding.runId) : undefined;
+
+      return Object.assign(finding, {
+        report: opportunity
+          ? {
+              opportunityId: opportunity.id,
+              reporterSource: opportunity.source,
+              reportedBy: opportunity.createdBy ?? null,
+              reportedByName: nameById.get(opportunity.createdBy) ?? null,
+              tenantId: opportunity.tenantId ?? null,
+              reporterContext: opportunity.reporterContext ?? null,
+              reportedAt: opportunity.createdAt,
+            }
+          : null,
+        stageOverriddenByName:
+          finding.stageOverriddenBy != null
+            ? (nameById.get(finding.stageOverriddenBy) ?? null)
+            : null,
+        engine: run?.engine ?? null,
+        model: run?.model ?? null,
+      });
+    });
+  }
+
+  /** `enrich` for a single row — the shape every one-finding endpoint returns. */
+  async enrichOne(finding: BugFinding): Promise<EnrichedBugFinding> {
+    const [enriched] = await this.enrich([finding]);
+    return enriched;
+  }
+
+  /**
+   * Pins the coarse roadmap stage by hand, or (with `stage: null`) hands the row
+   * back to derivation.
+   *
+   * Why a manual stage exists at all: the derived one reads `status`, which only
+   * moves when BUG HUNTER moves it. A bug someone fixed with an ordinary
+   * hand-written PR leaves the pipeline untouched, so its status sits at NEW
+   * forever while the bug is in fact shipped — and since bugs no longer appear on
+   * the roadmap board, there is no other screen on which anyone would correct it.
+   *
+   * Why the pin then STICKS rather than yielding to the next transition: the
+   * admin who set it is the only party who knows about the out-of-band fix. A
+   * later sweep re-finding the same bug and dragging the stage back to New would
+   * overwrite the one accurate value on the row with a guess.
+   *
+   * Setting the stage to exactly what it already derives to is still recorded as
+   * an override, on purpose — "I checked this and it is right" is a claim worth
+   * keeping, and it stops a later transition from silently moving it.
+   */
+  async setStage(
+    id: string,
+    stage: RoadmapOpportunityStage | null,
+    userId: number,
+  ): Promise<BugFinding> {
+    const finding = await this.getOne(id);
+    const before = effectiveStage(finding);
+
+    await this.findingRepository.update(id, {
+      stageOverride: stage,
+      // Cleared together with the override: "pinned by nobody at no time" is the
+      // only honest reading of a derived stage, and leaving the old stamps behind
+      // would make the drawer claim a pin that is no longer in force.
+      stageOverriddenBy: stage ? userId : null,
+      stageOverriddenAt: stage ? new Date() : null,
+    });
+    const after = await this.getOne(id);
+    const now = effectiveStage(after);
+
+    // Written to the shared event timeline, not just the row: the drawer's
+    // timeline is where an admin reconstructs why a bug says what it says, and a
+    // stage that changed with no entry beside it reads as the pipeline having
+    // done it.
+    // Runless, for the same reason editDescription's event is: an admin corrects
+    // a stage long after the run that found the bug has closed, and `appendEvent`
+    // rightly refuses to write into a closed run.
+    await this.bugHunterService.appendFindingEvent({
+      findingId: id,
+      repo: after.repo,
+      stage: BugHuntEventStage.STAGE_CHANGED,
+      summary: stage
+        ? `User ${userId} set the stage to ${now} by hand` +
+          (before === now ? ' (unchanged, now pinned).' : ` (was ${before}).`)
+        : `User ${userId} returned the stage to automatic (now ${now}).`,
+      payload: {
+        changedBy: userId,
+        from: before,
+        to: now,
+        pinned: stage != null,
+      },
+    });
+
+    return after;
+  }
+
+  /** The finding opened for a given roadmap bug report, if one ever was. */
+  findByReportedBugId(reportedBugId: string): Promise<BugFinding | null> {
+    return this.findingRepository.findByReportedBugId(reportedBugId);
+  }
+
   listNewReportedBugs(): Promise<BugFinding[]> {
     return this.findingRepository.listNewReportedBugs();
+  }
+
+  /** What is already known broken — for another agent about to propose work. */
+  listOpenForRepo(repo?: string): Promise<BugFinding[]> {
+    return this.findingRepository.listOpenForRepo(repo);
   }
 
   listApprovedForRepo(repo: string): Promise<BugFinding[]> {
     return this.findingRepository.listApprovedForRepo(repo);
   }
 
+  /**
+   * What this repo's reviewers already ruled were not bugs — the sweep
+   * prompt's "already settled" block.
+   *
+   * Restricted to finder-error declines by the repository query, and the
+   * reason for that restriction is worth restating at the call site: showing a
+   * sweep a list of real bugs the team chose not to fix would teach it to stop
+   * reporting real bugs, which is a far more expensive failure than the
+   * duplicate filing this is meant to prevent.
+   */
+  async listKnownNonBugs(repo: string): Promise<
+    Array<{
+      title: string;
+      file: string | null;
+      symbol: string | null;
+      reason: string;
+      note: string | null;
+    }>
+  > {
+    const rows = await this.findingRepository.listRecentFinderErrors(
+      repo,
+      new Date(Date.now() - BUG_FINDING_DECLINE_SUPPRESSION_MS),
+      BUG_HUNT_KNOWN_NON_BUGS_LIMIT,
+    );
+    return rows.map((row) => ({
+      title: row.title,
+      file: row.file ?? null,
+      symbol: row.symbol ?? null,
+      // Non-null in practice — the query filters on it — but the column is
+      // nullable, and a `null` reaching the prompt as "judged null" would read
+      // as a defect to whoever saw it.
+      reason: row.decisionReason ?? 'declined',
+      note: row.decisionNote ?? null,
+    }));
+  }
+
   /** A coordinated fix's ordered steps — empty for an ordinary single-repo bug. */
   listSteps(parentFindingId: string): Promise<BugFinding[]> {
     return this.findingRepository.listChildren(parentFindingId);
+  }
+
+  /**
+   * Record a test that was ALREADY failing when another agent found it.
+   *
+   * Builder's gate computes this set and throws it away. Before starting a
+   * build it runs each touched repo's full suite on a pristine `origin/master`
+   * worktree, then compares failure *identities* so it can tell "you broke
+   * this" from "this was red before you started" — the second kind is excused,
+   * because a pre-existing failure must not block every build in the repo. But
+   * excused is not the same as unknown: nobody is told, and the next build
+   * pays to rediscover it.
+   *
+   * So it lands here instead, as an ordinary finding Bug Hunter triages like
+   * any other. Separate from `persistFindings` deliberately: that path belongs
+   * to a Discover round and needs a bug-hunt `runId`, which Builder has no
+   * business inventing. Bug Hunter owns its own intake, and a caller from
+   * another agent supplies facts rather than rows.
+   *
+   * Dedupe is the load-bearing part. One flaky spec excused across twenty
+   * builds must be ONE finding, not twenty in a queue a person reads daily —
+   * so this reuses the same key and open-row lookup the Discover path uses,
+   * and returns the existing row untouched when it matches. An agent that
+   * makes another agent's queue worse is not worth the wiring.
+   */
+  async recordPreExistingFailure(input: {
+    repo: string;
+    /** The failing test's identity, as the gate parsed it. */
+    failure: string;
+    /** What produced it — a Builder session/run, for the trail back. */
+    discoveredBy: string;
+  }): Promise<BugFinding | null> {
+    const failure = input.failure.trim();
+    if (!failure) return null;
+
+    // Keyed on the failure identity via `symbol`, which is what makes the same
+    // spec across many builds one row. No file: the gate reports test names,
+    // and guessing a path from one would make the key less stable, not more.
+    const dedupeKey = BugFindingRepository.dedupeKey(
+      null,
+      BugFindingSource.TEST_FAILURE,
+      failure,
+      failure,
+    );
+    const existing = await this.findingRepository.findOpenByDedupeKey(
+      input.repo,
+      dedupeKey,
+    );
+    if (existing) {
+      return existing;
+    }
+
+    const saved = await this.findingRepository.save(
+      this.findingRepository.create({
+        repo: input.repo,
+        source: BugFindingSource.TEST_FAILURE,
+        status: BugFindingStatus.NEW,
+        title: truncateTitle(`Pre-existing test failure: ${failure}`),
+        description:
+          `\`${failure}\` was already failing on \`master\` in ${input.repo} ` +
+          `before ${input.discoveredBy} made any change, so that build's gate ` +
+          `excused it. It has not been fixed and nothing else was watching it.`,
+        symbol: failure,
+        dedupeKey,
+        // Proven: this is not a judgement about whether something looks wrong,
+        // it is a suite that ran on an untouched checkout and failed.
+        proven: true,
+        touchesGuardedPath: false,
+      }),
+    );
+    this.logger.info(
+      `[BUG_HUNTER] Recorded pre-existing failure in ${input.repo} from ${input.discoveredBy}: ${failure}`,
+    );
+    return saved;
   }
 
   /**
@@ -199,12 +535,78 @@ export class BugFindingService {
         continue;
       }
 
+      // Already answered. A sweep re-reads the same code every night, so
+      // without this a refuted or rejected finding came back as a fresh row
+      // the next time a finder noticed it — the reviewer's decision lasted one
+      // night, and the queue's oldest entries were the ones already dealt
+      // with. The declined row is touched and returned rather than a new one
+      // inserted, so the sweep sees a `rejected`/`dismissed` status come back
+      // and knows not to work on it (the protocol says so explicitly, and
+      // `setStatus` refuses the transition anyway).
+      const declined =
+        await this.findingRepository.findRecentlyDeclinedByDedupeKey(
+          repo,
+          dedupeKey,
+          new Date(Date.now() - BUG_FINDING_DECLINE_SUPPRESSION_MS),
+        );
+      if (declined) {
+        const rediscoveredCount =
+          Number(declined.metadata?.rediscoveredCount ?? 0) + 1;
+        await this.findingRepository.update(declined.id, {
+          metadata: {
+            ...declined.metadata,
+            rediscoveredCount,
+            lastRediscoveredAt: new Date().toISOString(),
+          } as Record<string, any>,
+        });
+        // Said out loud on the timeline: silently dropping a finder's output
+        // is indistinguishable, later, from the finder having missed it.
+        await this.bugHunterService.appendFindingEvent({
+          findingId: declined.id,
+          repo,
+          stage: BugHuntEventStage.RECURRENCE_SUPPRESSED,
+          summary:
+            `A sweep found this again (${rediscoveredCount} time${rediscoveredCount === 1 ? '' : 's'} since it was ` +
+            `${declined.status}${declined.decisionReason ? ` as ${declined.decisionReason}` : ''}). ` +
+            `Not re-filed — the existing decision stands.`,
+          payload: {
+            runId,
+            rediscoveredCount,
+            decisionReason: declined.decisionReason ?? null,
+          },
+        });
+        results.push(await this.getOne(declined.id));
+        continue;
+      }
+
+      // A fix that did not hold. Both rows are marked, because the two
+      // drawers are read by different people at different times: whoever
+      // triages the new bug needs to know a fix was already attempted, and
+      // whoever reviews the shipped fix needs to know it failed. Only linked
+      // on an exact dedupe-key match, never on the fuzzy description
+      // fingerprint alone — see the guard below.
+      const shipped =
+        await this.findingRepository.findRecentlyShippedByDedupeKey(
+          repo,
+          dedupeKey,
+          new Date(Date.now() - BUG_FINDING_REGRESSION_WINDOW_MS),
+        );
+      // The fingerprint fallback collapses rewordings, which is right for
+      // dedupe and too loose for this: telling someone their fix regressed
+      // when it did not is worse than not telling them, so a regression is
+      // only claimed when the finder named a `symbol` (or a `file`, for a log
+      // cluster) and the key is therefore a real code coordinate.
+      const regressionOf =
+        shipped && (finding.symbol?.trim() || finding.file?.trim())
+          ? shipped
+          : null;
+
       const saved = await this.findingRepository.save(
         this.findingRepository.create({
           runId,
           repo,
           source: finding.source,
-          title: finding.description.slice(0, 200),
+          title: truncateTitle(finding.description),
           description: finding.description,
           file: finding.file ?? null,
           symbol: finding.symbol ?? null,
@@ -218,12 +620,87 @@ export class BugFindingService {
           reportedBugId: finding.reportedBugId ?? null,
           dedupeKey,
           status: BugFindingStatus.NEW,
+          ...(regressionOf
+            ? { metadata: { regressionOf: regressionOf.id } }
+            : {}),
         }),
       );
+
+      if (regressionOf) {
+        await this.markRegression(saved, regressionOf, runId);
+      }
+
       results.push(saved);
     }
 
     return results;
+  }
+
+  /**
+   * Records that a shipped fix has come undone: marks the old row, annotates
+   * both timelines, and tells an admin.
+   *
+   * Best-effort by construction — every write here is an annotation on a
+   * finding that has already been inserted, and a failed annotation must not
+   * lose the finding. That is the same contract `BugHunterNotificationService`
+   * itself keeps.
+   */
+  private async markRegression(
+    regression: BugFinding,
+    original: BugFinding,
+    runId: string,
+  ): Promise<void> {
+    try {
+      await this.findingRepository.update(original.id, {
+        metadata: {
+          ...original.metadata,
+          regressed: true,
+          regressedByFindingId: regression.id,
+          regressedAt: new Date().toISOString(),
+        } as Record<string, any>,
+      });
+
+      const shippedAt = original.releasedAt ?? original.updatedAt;
+      const daysSinceFix = shippedAt
+        ? Math.max(
+            0,
+            Math.floor(
+              (Date.now() - new Date(shippedAt).getTime()) / 86_400_000,
+            ),
+          )
+        : 0;
+
+      await this.bugHunterService.appendFindingEvent({
+        findingId: regression.id,
+        repo: regression.repo,
+        stage: BugHuntEventStage.REGRESSED,
+        summary:
+          `This is a bug I already fixed ${daysSinceFix} day${daysSinceFix === 1 ? '' : 's'} ago — it is back. ` +
+          `The earlier finding is ${original.id}${original.prUrl ? ` (${original.prUrl})` : ''}.`,
+        payload: { regressionOf: original.id, runId, daysSinceFix },
+      });
+      await this.bugHunterService.appendFindingEvent({
+        findingId: original.id,
+        repo: original.repo,
+        stage: BugHuntEventStage.REGRESSED,
+        summary: `The fix for this did not hold — the same bug was found again as ${regression.id}.`,
+        payload: { regressedByFindingId: regression.id, runId },
+      });
+
+      await this.notificationService.notify({
+        level: BugHunterNotificationLevel.ACTION_NEEDED,
+        ...fixDidNotHold(regression.title, regression.repo, daysSinceFix),
+        findingId: regression.id,
+        runId,
+        repo: regression.repo,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `Could not link finding ${regression.id} as a regression of ${original.id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
   }
 
   /**
@@ -304,17 +781,105 @@ export class BugFindingService {
       status?: BugFindingStatus;
       prUrl?: string;
       escalationQuestion?: string;
+      decisionReason?: BugFindingDecisionReason;
+      decisionNote?: string;
+      /** The Verify phase's lowest verifier certainty, 0-1. Stored on `metadata`. */
+      confidence?: number;
+      /** The individual refute verdicts behind that number, for the drawer. */
+      verifierVotes?: Record<string, any>[];
     },
   ): Promise<BugFinding> {
     const before = await this.getOne(id);
+
+    // A bug somebody already declined must not be walked back into the
+    // pipeline. This is the enforcement half of the dedupe suppression above:
+    // a sweep that re-finds a rejected bug gets that row back and is told in
+    // its protocol to leave it alone, and if it ignores that, this refuses
+    // rather than quietly re-opening a decision a human made. Only ACTIVE
+    // targets are blocked — re-stating `dismissed` on a dismissed row is a
+    // harmless retry, and blocking it would turn an idempotent call into an
+    // error.
+    const isDeclined =
+      before.status === BugFindingStatus.REJECTED ||
+      before.status === BugFindingStatus.DISMISSED;
+    const revives =
+      patch.status != null &&
+      patch.status !== before.status &&
+      !DECLINED_TARGET_STATUSES.includes(patch.status);
+    if (isDeclined && revives) {
+      throw new ForbiddenException(
+        `Finding ${id} was already ${before.status}` +
+          (before.decisionReason ? ` (${before.decisionReason})` : '') +
+          `. A declined bug can't be moved back into the pipeline — start a fresh fix session if the decision has changed.`,
+      );
+    }
+
+    // A verifier's certainty is only meaningful in [0,1]; a model that
+    // reports 95 rather than 0.95 would otherwise make every finding look
+    // maximally confident, which is the failure direction that matters.
+    const confidence =
+      patch.confidence != null &&
+      Number.isFinite(patch.confidence) &&
+      patch.confidence >= 0 &&
+      patch.confidence <= 1
+        ? patch.confidence
+        : undefined;
+    const hasMetadataPatch =
+      confidence !== undefined || patch.verifierVotes !== undefined;
+
     await this.findingRepository.update(id, {
       ...(patch.status ? { status: patch.status } : {}),
       ...(patch.prUrl !== undefined ? { prUrl: patch.prUrl } : {}),
       ...(patch.escalationQuestion !== undefined
         ? { escalationQuestion: patch.escalationQuestion }
         : {}),
+      // Recorded for a pipeline dismissal exactly as for a human rejection:
+      // the Verify phase refuting a finding is the same kind of claim as an
+      // admin rejecting one, and the metrics endpoint counts them together.
+      ...(patch.decisionReason !== undefined
+        ? { decisionReason: patch.decisionReason }
+        : {}),
+      ...(patch.decisionNote !== undefined
+        ? { decisionNote: patch.decisionNote?.trim() || null }
+        : {}),
+      // Stamped on a dismissal so the decline lookup and the metrics window
+      // have a decision date to work from. `decidedBy` stays null: no human
+      // decided this one, and that absence is what distinguishes the two.
+      ...(patch.status === BugFindingStatus.DISMISSED && !before.decidedAt
+        ? { decidedAt: new Date() }
+        : {}),
+      ...(hasMetadataPatch
+        ? {
+            metadata: {
+              ...before.metadata,
+              ...(confidence !== undefined ? { confidence } : {}),
+              ...(patch.verifierVotes !== undefined
+                ? { verifierVotes: patch.verifierVotes }
+                : {}),
+            } as Record<string, any>,
+          }
+        : {}),
     });
     const after = await this.getOne(id);
+
+    if (
+      patch.status === BugFindingStatus.DISMISSED &&
+      before.status !== BugFindingStatus.DISMISSED
+    ) {
+      await this.bugHunterService.appendFindingEvent({
+        findingId: id,
+        repo: after.repo,
+        stage: BugHuntEventStage.DECISION_RECORDED,
+        summary:
+          `Dismissed by verification${patch.decisionReason ? ` (${patch.decisionReason})` : ''}` +
+          (patch.decisionNote?.trim() ? `: ${patch.decisionNote.trim()}` : '.'),
+        payload: {
+          reason: patch.decisionReason ?? null,
+          note: patch.decisionNote?.trim() ?? null,
+          confidence: confidence ?? null,
+        },
+      });
+    }
 
     const isNewEscalation =
       patch.status === BugFindingStatus.NEEDS_INPUT &&
@@ -335,6 +900,22 @@ export class BugFindingService {
         this.roadmapOpportunityRepository,
         after,
         this.logger,
+      );
+    }
+    // Only on the transition into MERGED/RELEASED, not every subsequent patch
+    // to an already-merged finding — otherwise a metadata/verifierVotes patch
+    // re-runs the repo+dedupeKey scan on every hit to this endpoint.
+    if (
+      (patch.status === BugFindingStatus.MERGED ||
+        patch.status === BugFindingStatus.RELEASED) &&
+      before.status !== patch.status
+    ) {
+      await checkForAndRecordReversals(
+        this.findingRepository,
+        this.bugHunterService,
+        after,
+        this.logger,
+        after.releasedAt ?? after.updatedAt ?? new Date(),
       );
     }
 
@@ -466,8 +1047,31 @@ export class BugFindingService {
     return this.getOne(id);
   }
 
-  /** Admin declines to fix it — valid from NEW (a reported bug never even triaged) or PENDING_APPROVAL. */
-  async reject(id: string, userId: number): Promise<BugFinding> {
+  /**
+   * Admin declines to fix it — valid from NEW (a reported bug never even
+   * triaged) or PENDING_APPROVAL.
+   *
+   * `reason` is required, and that is a deliberate cost imposed on the
+   * commonest action on this page. It buys two things nothing else can:
+   *
+   *  - the next sweep is told what it got wrong, so it stops re-filing this
+   *    same non-bug every night (see `buildSweepPrompt`'s known-non-bugs
+   *    block and `persistFindings`' suppression);
+   *  - `BugHunterMetricsService` can finally answer how often Bug Hunter is
+   *    right, which is the number that decides whether it may fix things
+   *    unattended.
+   *
+   * The friction is kept small in the UI rather than here — a pick-list, one
+   * reason for a whole bulk batch — because the alternative (an optional
+   * field) is a field that is empty exactly when the reviewer was in a hurry,
+   * which is most of the time.
+   */
+  async reject(
+    id: string,
+    userId: number,
+    reason: BugFindingDecisionReason,
+    note?: string | null,
+  ): Promise<BugFinding> {
     const finding = await this.getOne(id);
     if (
       finding.status !== BugFindingStatus.NEW &&
@@ -477,11 +1081,29 @@ export class BugFindingService {
         `Finding ${id} is ${finding.status} — can't reject from there.`,
       );
     }
+    const trimmedNote = note?.trim() || null;
     await this.findingRepository.update(id, {
       status: BugFindingStatus.REJECTED,
       decidedBy: userId,
       decidedAt: new Date(),
+      decisionReason: reason,
+      decisionNote: trimmedNote,
     });
+
+    // On the finding's own timeline, not only on the row. The drawer's work
+    // log is where anyone reconstructs why a bug reads the way it does, and a
+    // rejection that appeared there as a bare status change was the one event
+    // on that timeline with no explanation beside it.
+    await this.bugHunterService.appendFindingEvent({
+      findingId: id,
+      repo: finding.repo,
+      stage: BugHuntEventStage.DECISION_RECORDED,
+      summary:
+        `User ${userId} rejected this bug (${reason})` +
+        (trimmedNote ? `: ${trimmedNote}` : '.'),
+      payload: { decidedBy: userId, reason, note: trimmedNote },
+    });
+
     return this.getOne(id);
   }
 }

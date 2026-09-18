@@ -1,9 +1,15 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { CompetencyService } from '../competency.service';
 import { CompetencyRepository } from '../../repository/competency.repository';
 import { CompetencyBehaviorRepository } from '../../repository/competency-behavior.repository';
 import { BehaviorRepository } from '../../repository/behavior.repository';
+import { ScenariosRepository } from '../../repository/scenario.repository';
+import { CompetencyClusterService } from '../competency-cluster.service';
 import { Competency } from '../../entity/competency.entity';
 
 describe('CompetencyService (custom competencies)', () => {
@@ -11,6 +17,8 @@ describe('CompetencyService (custom competencies)', () => {
   let competencyRepository: jest.Mocked<CompetencyRepository>;
   let competencyBehaviorRepository: jest.Mocked<CompetencyBehaviorRepository>;
   let behaviorRepository: jest.Mocked<BehaviorRepository>;
+  let scenariosRepository: jest.Mocked<ScenariosRepository>;
+  let clusterService: jest.Mocked<CompetencyClusterService>;
 
   const makeCompetency = (overrides: Partial<Competency> = {}): Competency =>
     ({
@@ -63,6 +71,19 @@ describe('CompetencyService (custom competencies)', () => {
             ),
           },
         },
+        {
+          provide: ScenariosRepository,
+          useValue: {
+            existsWithCompetencyId: jest.fn().mockResolvedValue(false),
+          },
+        },
+        {
+          provide: CompetencyClusterService,
+          useValue: {
+            setClustersForCompetency: jest.fn(),
+            getClustersByCompetency: jest.fn().mockResolvedValue(new Map()),
+          },
+        },
       ],
     }).compile();
 
@@ -70,6 +91,8 @@ describe('CompetencyService (custom competencies)', () => {
     competencyRepository = module.get(CompetencyRepository);
     competencyBehaviorRepository = module.get(CompetencyBehaviorRepository);
     behaviorRepository = module.get(BehaviorRepository);
+    scenariosRepository = module.get(ScenariosRepository);
+    clusterService = module.get(CompetencyClusterService);
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -232,7 +255,101 @@ describe('CompetencyService (custom competencies)', () => {
         id: 'comp-1',
         name: 'Active Listening',
         isCustom: true,
+        clusters: [],
       });
+    });
+
+    it('decorates each competency with the clusters it belongs to', async () => {
+      competencyRepository.getCompetencies.mockResolvedValue({
+        data: [makeCompetency(), makeCompetency({ id: 'comp-2' })],
+        count: 2,
+      });
+      clusterService.getClustersByCompetency.mockResolvedValue(
+        new Map([
+          ['comp-1', [{ id: 'cluster-1', name: 'Core Communication' }]],
+        ]),
+      );
+
+      const result = await service.getCompetencies();
+
+      // One membership query for the whole page, not one per row.
+      expect(clusterService.getClustersByCompetency).toHaveBeenCalledTimes(1);
+      expect(clusterService.getClustersByCompetency).toHaveBeenCalledWith([
+        'comp-1',
+        'comp-2',
+      ]);
+      expect(result.data[0].clusters).toEqual([
+        { id: 'cluster-1', name: 'Core Communication' },
+      ]);
+      // A competency in no cluster reads as an empty list, never undefined.
+      expect(result.data[1].clusters).toEqual([]);
+    });
+  });
+
+  describe('clustering', () => {
+    it('replaces a competency’s clusters when clusterNames is sent', async () => {
+      competencyRepository.getCompetencyById.mockResolvedValue(
+        makeCompetency(),
+      );
+
+      await service.updateCompetency(
+        'comp-1',
+        {
+          name: 'Active Listening',
+          clusterNames: ['Core Communication', 'In-house'],
+        },
+        7,
+      );
+
+      expect(clusterService.setClustersForCompetency).toHaveBeenCalledWith(
+        'comp-1',
+        ['Core Communication', 'In-house'],
+        7,
+      );
+    });
+
+    it('leaves clustering alone when clusterNames is omitted', async () => {
+      competencyRepository.getCompetencyById.mockResolvedValue(
+        makeCompetency(),
+      );
+
+      await service.updateCompetency('comp-1', { name: 'Renamed' }, 7);
+
+      expect(clusterService.setClustersForCompetency).not.toHaveBeenCalled();
+    });
+
+    it('removes a competency from every cluster on an empty clusterNames', async () => {
+      competencyRepository.getCompetencyById.mockResolvedValue(
+        makeCompetency(),
+      );
+
+      await service.updateCompetency(
+        'comp-1',
+        { name: 'Active Listening', clusterNames: [] },
+        7,
+      );
+
+      expect(clusterService.setClustersForCompetency).toHaveBeenCalledWith(
+        'comp-1',
+        [],
+        7,
+      );
+    });
+
+    // A custom competency is private to its owner, so putting one in a shared
+    // framework would publish a name nobody else can resolve.
+    it('never clusters a custom competency', async () => {
+      competencyRepository.getCompetencyById.mockResolvedValue(
+        makeCompetency({ isCustom: true, createdBy: 7 }),
+      );
+
+      await service.updateCompetency(
+        'comp-1',
+        { name: 'my rubric', clusterNames: ['Core Communication'] },
+        7,
+      );
+
+      expect(clusterService.setClustersForCompetency).not.toHaveBeenCalled();
     });
   });
 
@@ -283,6 +400,31 @@ describe('CompetencyService (custom competencies)', () => {
       await expect(service.deleteCompetency('missing', 42)).rejects.toThrow(
         NotFoundException,
       );
+    });
+  });
+
+  describe('deleteCompetency (reference checks)', () => {
+    beforeEach(() => {
+      competencyRepository.getCompetencyById.mockResolvedValue(
+        makeCompetency(),
+      );
+    });
+
+    it('blocks deletion when a scenario still references the competency', async () => {
+      scenariosRepository.existsWithCompetencyId.mockResolvedValue(true);
+
+      await expect(service.deleteCompetency('comp-1', 42)).rejects.toThrow(
+        ConflictException,
+      );
+      expect(competencyRepository.delete).not.toHaveBeenCalled();
+    });
+
+    it('allows deletion when nothing references the competency', async () => {
+      scenariosRepository.existsWithCompetencyId.mockResolvedValue(false);
+
+      await service.deleteCompetency('comp-1', 42);
+
+      expect(competencyRepository.delete).toHaveBeenCalledWith('comp-1');
     });
   });
 });

@@ -10,6 +10,8 @@
  */
 export enum BugHuntEventStage {
   SKIPPED_DISABLED = 'skipped_disabled',
+  /** A scheduled sweep whose repo had nothing new to look at — see BugHuntRunStatus.SKIPPED_QUIET. */
+  SKIPPED_QUIET = 'skipped_quiet',
   FINDER_RESULT = 'finder_result',
   VERIFY = 'verify',
   FIX_ATTEMPT = 'fix_attempt',
@@ -41,4 +43,39 @@ export enum BugHuntEventStage {
    * did needs to see that the brief changed, and when relative to the dispatch.
    */
   DESCRIPTION_EDITED = 'description_edited',
+  /**
+   * An admin pinned or un-pinned the coarse roadmap stage by hand — see
+   * BugFindingService.setStage. Recorded because a hand-set stage deliberately
+   * stops tracking `status`, so the timeline is the only place a later reader
+   * can see why the two disagree, and who decided they should.
+   */
+  STAGE_CHANGED = 'stage_changed',
+  /**
+   * Somebody said no, and why — a human rejecting a bug, or the Verify phase
+   * refuting one. Recorded because a decline used to appear on this timeline
+   * as a bare status change with no explanation beside it, which is the one
+   * event a later reader most needs the reasoning for: it is the only outcome
+   * where nothing further will ever happen to the bug.
+   */
+  DECISION_RECORDED = 'decision_recorded',
+  /**
+   * A bug Bug Hunter had already fixed and shipped has come back — written on
+   * BOTH rows, the returning finding and the fix that failed to hold, so
+   * either drawer tells the whole story without a join.
+   */
+  REGRESSED = 'regressed',
+  /**
+   * A sweep re-found a bug that had already been declined, and the dedupe
+   * suppressed it rather than opening a second row. Worth a line: silently
+   * dropping a finder's output is the kind of thing that, undocumented, looks
+   * like the finder having missed something.
+   */
+  RECURRENCE_SUPPRESSED = 'recurrence_suppressed',
+  /**
+   * A finder-error dismissal was overturned: a later finding under the same
+   * dedupe key shipped, proving the original dismissal wrong. Written on the
+   * dismissed row so its drawer shows when and by which finding it was
+   * reversed, not just an aggregate rate on the scorecard.
+   */
+  REVERSED = 'reversed',
 }

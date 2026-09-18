@@ -18,7 +18,10 @@ import { Scenarios } from '../../../learn/entity/scenarios.entity';
 import { SessionEvents } from '../../../session-event/entity/session-events.entity';
 import { User } from '../../../user/entity/user.entity';
 import { ScenarioSessionMessageType } from '../../../learn/enum/scenario-session-message.type.enum';
-import { ScenarioSessionStatus } from '../../../learn/enum/scenario-session-status.enum';
+import {
+  ScenarioSessionStatus,
+  ScenarioSessionEventStatus,
+} from '../../../learn/enum/scenario-session-status.enum';
 import { ANONYMOUS_CLIENT_ID } from '../../../common/constants/user.constants';
 import { getRepo, log, upsert } from '../helpers';
 import { sessions, scenarios, SessionFixture } from '../fixtures';
@@ -146,8 +149,18 @@ export async function seedSessions(ds: DataSource): Promise<void> {
     const startedAt = new Date(
       Date.now() - fixture.durationMinutes * 60 * 1000,
     );
-    const isEnded = fixture.status === ScenarioSessionStatus.ENDED;
-    const endedAt = isEnded ? new Date() : undefined;
+    // A terminal session (ENDED or ABANDONED) gets an endedAt — only a still-
+    // ACTIVE session doesn't. Matches the real sweeper/webhook: both write
+    // endedAt on the way to a terminal state.
+    const isTerminal = fixture.status !== ScenarioSessionStatus.ACTIVE;
+    const endedAt = isTerminal ? new Date() : undefined;
+    // Post-session artefacts (details/recording/feedback/chat/tags/behavior
+    // occurrence) are only ever written by handleEndScenarioSessionEvent, off
+    // the agent's end-of-session message — which by definition never arrives
+    // for an abandoned session. Gating on eventStatus rather than status
+    // realistically reproduces "looks ended but was never scored".
+    const hasPostSessionArtefacts =
+      fixture.eventStatus === ScenarioSessionEventStatus.COMPLETED;
 
     const session = await sessionRepo.save(
       sessionRepo.create({
@@ -159,6 +172,8 @@ export async function seedSessions(ds: DataSource): Promise<void> {
         startedAt,
         endedAt,
         score: fixture.score,
+        abandonedReason: fixture.abandonedReason,
+        endReason: fixture.endReason,
         tenantId: counselor.tenantId,
       }),
     );
@@ -225,7 +240,7 @@ export async function seedSessions(ds: DataSource): Promise<void> {
       counselor.tenantId,
     );
 
-    if (isEnded) {
+    if (hasPostSessionArtefacts) {
       await seedSessionDetails(
         detailsRepo,
         session,

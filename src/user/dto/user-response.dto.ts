@@ -51,6 +51,14 @@ export class UserDto {
   @ApiProperty({ description: 'User last update timestamp' })
   updatedAt!: Date;
 
+  @ApiProperty({
+    description:
+      'Last time this user made an authenticated request (throttled, ' +
+      '15-min resolution — see LastActiveService). Null if never.',
+    nullable: true,
+  })
+  lastActiveAt?: Date | null;
+
   @ApiProperty({ description: 'Max credits for the user', nullable: true })
   creditLimit?: number;
 

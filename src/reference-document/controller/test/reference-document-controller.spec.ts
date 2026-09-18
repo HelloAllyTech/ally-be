@@ -22,12 +22,10 @@ describe('ReferenceDocumentController', () => {
 
   const mockService: jest.Mocked<ReferenceDocumentService> = {
     addReferenceDocument: jest.fn(),
-    searchPublicDocuments: jest.fn(),
     searchTenantDocuments: jest.fn(),
     updateReferenceDocument: jest.fn(),
     bulkCreateFromCsv: jest.fn(),
     getDistinctCategories: jest.fn(),
-    getPublicReferenceDocument: jest.fn(),
     getPrivateReferenceDocument: jest.fn(),
     deleteReferenceDocument: jest.fn(),
     archiveReferenceDocument: jest.fn(),
@@ -100,15 +98,6 @@ describe('ReferenceDocumentController', () => {
     );
   });
 
-  it('searchPublicDocuments happy', async () => {
-    const dto: SearchDocumentsDto = { query: 'q' } as any;
-    const expected = { documents: [], total: 0 };
-    service.searchPublicDocuments.mockResolvedValueOnce(expected as any);
-    const result = await controller.searchPublicDocuments(dto);
-    expect(service.searchPublicDocuments).toHaveBeenCalledWith(dto);
-    expect(result).toBe(expected);
-  });
-
   it('searchTenantDocuments happy', async () => {
     const dto: SearchDocumentsDto = { query: 'q' } as any;
     const expected = { documents: [], total: 0 };
@@ -142,15 +131,6 @@ describe('ReferenceDocumentController', () => {
     service.getDistinctCategories.mockResolvedValueOnce(expected as any);
     const result = await controller.getCategories();
     expect(service.getDistinctCategories).toHaveBeenCalled();
-    expect(result).toBe(expected);
-  });
-
-  it('getDocument public happy', async () => {
-    const id = 'pub1';
-    const expected = { id, heading: 'H' };
-    service.getPublicReferenceDocument.mockResolvedValueOnce(expected as any);
-    const result = await controller.getDocument(id);
-    expect(service.getPublicReferenceDocument).toHaveBeenCalledWith(id);
     expect(result).toBe(expected);
   });
 

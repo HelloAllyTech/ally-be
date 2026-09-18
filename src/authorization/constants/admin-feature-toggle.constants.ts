@@ -17,14 +17,41 @@ export enum FeatureToggleKey {
   // Content & simulation config (formerly SUPER_ADMIN-tier)
   MANAGE_SCENARIO_LANGUAGES = 'manage_scenario_languages',
   AI_LAB = 'ai_lab',
+  AI_TASKS = 'ai_tasks',
   COMPETENCIES = 'competencies',
   ROLEPLAY_SESSION_LOGS = 'roleplay_session_logs',
   ORG_DETAIL_CONTENT_TABS = 'org_detail_content_tabs',
+
+  // Simulation Studio's authoring surface — all four content types at once
+  // (Simulations, Tracks, Cases, Courses). One key, not four, because an admin
+  // who authors library content authors all of it; the tabs never diverged in
+  // practice.
+  //
+  // Enforced in ally-web today (route `requiredFeature` + the studio's own
+  // gate). No @RequireFeatureToggle yet — see the note below before adding it.
+  //
+  // When it is added, it belongs on the WRITE endpoints ONLY. The read side
+  // (VIEW_ADMIN_SCENARIO(S), VIEW_ADMIN_SCENARIO_PATH(S), VIEW_ADMIN_CASES,
+  // VIEW_ADMIN_TRACK(S)) is shared with the tenant-scoped ADMIN role, which
+  // ally-helpline-dashboard's Org Settings → access management screen depends
+  // on; gating those would break org admins this key has no business touching.
+  // Same goes for the `.../tenant/:tenantId` assignment routes — their
+  // EDIT_*_TENANT permissions are tenant-ADMIN-held too. The create/update/
+  // delete permissions are platform-tier exclusive, so those are safe.
+  //
+  // One trap: EDIT_SCENARIO in learn.controller.ts also guards
+  // `trigger-warnings`, `trigger-warnings/make-translations`,
+  // `scenarios/enhance-field` and `agent-builder/generate-field`, which belong
+  // to trigger-warning management and Roleplay Studio, not content authoring.
+  // Gating by permission name alone would break Roleplay Studio for an admin
+  // without this key.
+  CONTENT_MANAGEMENT = 'content_management',
 
   // Analytics (route itself is SUPER_ADMIN-tier; two sub-tabs are SDA-only)
   ANALYTICS = 'analytics',
   ANALYTICS_AGENT = 'analytics_agent',
   ANALYTICS_SUGGESTIONS = 'analytics_suggestions',
+  UX_SIGNALS = 'ux_signals',
 
   // Platform config (formerly SUPER_DUPER_ADMIN-only)
   USER_BADGES = 'user_badges',
@@ -37,6 +64,8 @@ export enum FeatureToggleKey {
   // Also gates the backend's VIEW_AWS_LOGS permission — one feature, one key.
   LOGS = 'logs',
   AGENT_TEST_CASES = 'agent_test_cases',
+  // Also gates the backend's VIEW_MOBILE_RELEASES permission — one feature, one key.
+  MOBILE_RELEASES = 'mobile_releases',
 
   // WhatsApp Q&A bot (formerly SUPER_DUPER_ADMIN-only)
   WHATSAPP_BOT = 'whatsapp_bot',
@@ -55,11 +84,31 @@ export enum FeatureToggleKey {
   // Bug Hunter: the autonomous find-and-fix agent (formerly SUPER_DUPER_ADMIN-only)
   BUG_HUNTER = 'bug_hunter',
 
+  // Builder: the PRD-interview + coding agent that opens PRs
+  BUILDER = 'builder',
+
   // Operational, all-scenarios/all-sessions bulk actions (translate-passive,
   // checklist-item translation, V2V test sessions) — historically gated to
   // SUPER_ADMIN-tier specifically so MULTI_TENANT_ADMIN, who holds the
   // underlying CRUD permission for library content, cannot trigger them.
   OPERATIONAL_ADMIN_ACTIONS = 'operational_admin_actions',
+
+  // AI video actor: who may see the per-roleplay "AI video actor" toggle in
+  // Simulation Studio. Gates AUTHORING VISIBILITY only — it does not turn video
+  // on for anyone. A session publishes video only when ally-ai-learn's global
+  // VIDEO_ACTOR_ENABLED is on AND that roleplay's own videoActorEnabled is
+  // true, and the roleplay flag is off for every roleplay.
+  //
+  // Deliberately has NO backfill migration, unlike a key that gates existing
+  // behaviour: nobody has ever had this surface, so "missing row means false"
+  // is the intended state and every platform admin starts without it. Grant it
+  // per-admin from Admin User Management.
+  VIDEO_ACTOR = 'video_actor',
+
+  // Component Library: the global, cross-tenant library of reusable
+  // Track/Course item templates (Journal, Quiz, Article, Video, Annotated
+  // Artifact) a course author can save, browse and insert from.
+  COMPONENT_LIBRARY = 'component_library',
 }
 
 export interface FeatureToggleLegacyGrants {
@@ -87,6 +136,18 @@ const SUPER_ADMIN_TIER: FeatureToggleLegacyGrants = {
   multiTenantAdmin: false,
 };
 
+/**
+ * Every retired tier, MULTI_TENANT_ADMIN included — for a capability all three
+ * had some form of before the collapse. Only CONTENT_MANAGEMENT uses it:
+ * MULTI_TENANT_ADMIN authored simulations, so excluding them would take the
+ * Simulations tab away from an admin who has it today.
+ */
+const ALL_ADMIN_TIERS: FeatureToggleLegacyGrants = {
+  superAdmin: true,
+  superDuperAdmin: true,
+  multiTenantAdmin: true,
+};
+
 export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
   {
     key: FeatureToggleKey.MANAGE_SCENARIO_LANGUAGES,
@@ -96,9 +157,23 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     legacyGrants: SUPER_ADMIN_TIER,
   },
   {
+    key: FeatureToggleKey.CONTENT_MANAGEMENT,
+    label: 'Content Management',
+    description:
+      'Create and edit library content in Simulation Studio — simulations, tracks, cases and courses.',
+    legacyGrants: ALL_ADMIN_TIERS,
+  },
+  {
     key: FeatureToggleKey.AI_LAB,
     label: 'AI Lab',
     description: 'Access the AI Lab experimentation tables.',
+    legacyGrants: SUPER_ADMIN_TIER,
+  },
+  {
+    key: FeatureToggleKey.AI_TASKS,
+    label: 'AI Tasks',
+    description:
+      'View the AI task registry: every platform action that calls a model and which model serves it.',
     legacyGrants: SUPER_ADMIN_TIER,
   },
   {
@@ -138,6 +213,14 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     label: 'Analytics — Suggestions',
     description:
       'The Analytics Suggestions sub-tab, on top of general Analytics access.',
+    legacyGrants: SDA_ONLY,
+  },
+  {
+    key: FeatureToggleKey.UX_SIGNALS,
+    label: 'UX Signals',
+    description:
+      'The PostHog UX scan that files findings to Bug Hunter and suggestions ' +
+      'to the Analytics Suggestions queue, plus its "Scan now" control.',
     legacyGrants: SDA_ONLY,
   },
   {
@@ -195,6 +278,13 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     legacyGrants: SDA_ONLY,
   },
   {
+    key: FeatureToggleKey.MOBILE_RELEASES,
+    label: 'Mobile Releases',
+    description:
+      'View the ally-mobile automated release pipeline: current app version and recent GitHub Actions build/release run history.',
+    legacyGrants: SDA_ONLY,
+  },
+  {
     key: FeatureToggleKey.WHATSAPP_BOT,
     label: 'WhatsApp Bot',
     description:
@@ -212,7 +302,7 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     key: FeatureToggleKey.PRODUCT_ROADMAP_MANAGE,
     label: 'Product Roadmap — Manage',
     description:
-      'Stage transitions, editing/deleting any opportunity, taxonomy, split/merge and release notes. Viewing and voting stay open to every admin.',
+      'Stage transitions, editing/deleting any opportunity, taxonomy, split/merge, month-board lane moves, pinning a saved view for everyone, and opening a Builder session from a card. Viewing and voting stay open to every admin.',
     legacyGrants: SDA_ONLY,
   },
   {
@@ -237,10 +327,34 @@ export const FEATURE_TOGGLES: FeatureToggleDefinition[] = [
     legacyGrants: SDA_ONLY,
   },
   {
+    key: FeatureToggleKey.BUILDER,
+    label: 'Builder',
+    description:
+      'Interview an agent into a PRD, then have it build the feature and open pull requests for review.',
+    legacyGrants: SUPER_ADMIN_TIER,
+  },
+  {
     key: FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS,
     label: 'Operational Admin Actions',
     description:
       'Bulk/operational actions that act across every tenant (translation backfills, V2V test sessions) — deliberately excluded from tenant-restricted admins.',
+    legacyGrants: SUPER_ADMIN_TIER,
+  },
+  {
+    key: FeatureToggleKey.VIDEO_ACTOR,
+    label: 'AI Video Actor (experimental)',
+    description:
+      "Show the experimental per-roleplay 'AI video actor' toggle in Simulation Studio, which gives a character a lip-synced video track alongside its voice. Granting this only reveals the toggle — each roleplay is still off until an author turns it on, and the platform-level switch must be on too. Experimental: it adds start-up latency and bandwidth, and lip-sync is materially worse outside English.",
+    // Inert, like every key added after the role-collapse cutover. Recorded as
+    // SDA-only because that is the tier this authoring surface would have sat
+    // in; no migration reads it, and nobody is granted the key by default.
+    legacyGrants: SDA_ONLY,
+  },
+  {
+    key: FeatureToggleKey.COMPONENT_LIBRARY,
+    label: 'Component Library',
+    description:
+      'Manage the shared, cross-tenant library of reusable course component templates (Journal, Quiz, Article, Video, Annotated Artifact).',
     legacyGrants: SUPER_ADMIN_TIER,
   },
 ];

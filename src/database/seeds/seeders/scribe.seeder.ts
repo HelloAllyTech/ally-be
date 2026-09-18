@@ -27,8 +27,14 @@ import {
   ScribeSessionMode,
 } from '../../../common/constants/chat.constants';
 import { User } from '../../../user/entity/user.entity';
+import { Tenant } from '../../../tenant/entity/tenant.entity';
+import { ScribeSessionReview } from '../../../scribe-session-review/entity/review.entity';
+import { ScribeSessionReviewThread } from '../../../scribe-session-review/entity/thread.entity';
+import { ScribeSessionReviewComment } from '../../../scribe-session-review/entity/comment.entity';
+import { ScribeSessionReviewReaction } from '../../../scribe-session-review/entity/reaction.entity';
+import { ScribeSessionReviewReadStatus } from '../../../scribe-session-review/entity/read-status.entity';
+import { ReviewStatus } from '../../../review/type/review.type';
 import { getRepo, log } from '../helpers';
-import { TENANT_CODE } from '../config';
 
 // Mirrors CryptoService's AES-256-GCM scheme (src/common/service/crypto.service.ts)
 // so seeded `sessionSummary` values decrypt correctly through the normal read
@@ -50,21 +56,37 @@ function encryptSessionSummary(plainText: string): string {
 interface ScribeCallFixture {
   externalId: string;
   startedMinutesAgo: number;
-  durationSeconds: number;
+  // Undefined means "still active" — no endedAt is stamped.
+  durationSeconds?: number;
   transcript: Array<{ from: 'counselor' | 'client'; content: string }>;
-  summary: {
+  // Only ENDED + SUCCESS chats are shareable for review
+  // (ChatSharedService.getCompletedChatById), so these three are deliberately
+  // not the ones a scribe review fixture ever points at.
+  chatStatus?: ChatStatus;
+  summaryStatus?: ChatSummaryStatus;
+  firstAttemptStatus?: ChatSummaryStatus;
+  firstFailureStage?: string;
+  // Undefined when summaryStatus isn't SUCCESS — no CallDetails.summary is
+  // written, matching a call that was never (successfully) summarized.
+  summary?: {
     sessionSummary: string;
     keyConcerns: string;
     callQuality: number;
     tags: string[];
   };
-  customValues: { sessionNo: string; followUp: 'yes' | 'no'; aiTheme?: string };
+  customValues?: {
+    sessionNo: string;
+    followUp: 'yes' | 'no';
+    aiTheme?: string;
+  };
 }
 
 // Three calls for the same seeded client, spread over ~9 days, so the
 // counsellor's Scribe Logs page has a believable session history to test
-// against (custom fields, transcript tab, summary editing, etc.).
-const SCRIBE_CALLS: ScribeCallFixture[] = [
+// against (custom fields, transcript tab, summary editing, etc.), plus a
+// FAILED-summary call and a still-ACTIVE call so those chat/summary states
+// aren't perpetually empty.
+export const ALLY_SCRIBE_CALLS: ScribeCallFixture[] = [
   {
     externalId: 'seed-scribe-call-1',
     startedMinutesAgo: 60 * 24 * 9,
@@ -196,6 +218,119 @@ const SCRIBE_CALLS: ScribeCallFixture[] = [
     },
     customValues: { sessionNo: '3', followUp: 'no' },
   },
+  {
+    externalId: 'seed-scribe-call-failed',
+    startedMinutesAgo: 60 * 20,
+    durationSeconds: 340,
+    transcript: [
+      {
+        from: 'counselor',
+        content: 'Hi, thanks for calling in — how have things been?',
+      },
+      { from: 'client', content: "It's been a rough week, honestly." },
+    ],
+    chatStatus: ChatStatus.ENDED,
+    summaryStatus: ChatSummaryStatus.FAILED,
+    firstAttemptStatus: ChatSummaryStatus.FAILED,
+    firstFailureStage: 'transcribe',
+    // No summary — the transcription step failed, so no CallDetails.summary
+    // was ever produced. Exercises the "retry summary" UI state.
+  },
+  {
+    externalId: 'seed-scribe-call-live',
+    startedMinutesAgo: 6,
+    transcript: [
+      {
+        from: 'counselor',
+        content: "Hi, thanks for calling — what's on your mind today?",
+      },
+    ],
+    chatStatus: ChatStatus.ACTIVE,
+    summaryStatus: ChatSummaryStatus.PENDING,
+    // No durationSeconds/summary/customValues — the call is still in
+    // progress, so no endedAt and no CallDetails yet.
+  },
+];
+
+// Two calls for Riverside Wellness Center's counselor, so
+// yuki.tanaka@riversidewellness.io (SCRIBE_REVIEWER) has scribe content to
+// review in her own tenant — the `ally`-only scribe seed left her tenant
+// with zero scribe data.
+export const RIVERSIDE_SCRIBE_CALLS: ScribeCallFixture[] = [
+  {
+    externalId: 'seed-scribe-call-rw-1',
+    startedMinutesAgo: 60 * 24 * 5,
+    durationSeconds: 730,
+    transcript: [
+      {
+        from: 'counselor',
+        content:
+          "Hi, thanks for calling in today. What's been going on for you?",
+      },
+      {
+        from: 'client',
+        content:
+          "I'm caring for my father full-time now and I'm completely burnt out.",
+      },
+      {
+        from: 'counselor',
+        content:
+          "That's an enormous amount to carry. How long have you been his primary caregiver?",
+      },
+      {
+        from: 'client',
+        content:
+          'About eight months. I love him, but I have not had a real break since this started.',
+      },
+      {
+        from: 'counselor',
+        content:
+          "Caregiver burnout is real and it doesn't mean you love him any less. Let's talk about what support might look like.",
+      },
+    ],
+    summary: {
+      sessionSummary:
+        'Client is the full-time caregiver for their father (8 months) and reports significant burnout with no respite. Normalized caregiver burnout and began exploring support options.',
+      keyConcerns: 'Caregiver burnout, lack of respite',
+      callQuality: 5,
+      tags: ['Caregiver Stress'],
+    },
+    customValues: { sessionNo: '1', followUp: 'yes' },
+  },
+  {
+    externalId: 'seed-scribe-call-rw-2',
+    startedMinutesAgo: 60 * 24 * 1,
+    durationSeconds: 540,
+    transcript: [
+      {
+        from: 'counselor',
+        content:
+          'Welcome back. Last time we talked about finding respite support — how has that gone?',
+      },
+      {
+        from: 'client',
+        content:
+          'My sister agreed to take a few afternoons a week, so I have gotten a bit more sleep.',
+      },
+      {
+        from: 'counselor',
+        content:
+          "That's a meaningful change. How has the extra rest affected things?",
+      },
+      {
+        from: 'client',
+        content: 'I feel less on edge. Still tired, but more like myself.',
+      },
+    ],
+    summary: {
+      sessionSummary:
+        'Follow-up: client arranged respite care with a sibling and reports improved sleep and reduced irritability. Continuing to monitor caregiver load.',
+      keyConcerns: 'Caregiver burnout, sleep',
+      callQuality: 5,
+      tags: ['Caregiver Stress', 'Progress Check-in'],
+    },
+    customValues: { sessionNo: '2', followUp: 'no' },
+  },
 ];
 
 interface CustomFieldFixture {
@@ -248,7 +383,9 @@ const CUSTOM_FIELD_DEFINITIONS: CustomFieldFixture[] = [
 export async function seedScribeData(
   ds: DataSource,
   adminId: number,
-  tenantUuid: string,
+  tenant: Tenant,
+  counselorEmail: string,
+  calls: ScribeCallFixture[],
 ): Promise<void> {
   const userRepo = getRepo(ds, User);
   const chatRepo = getRepo(ds, Chat);
@@ -258,11 +395,13 @@ export async function seedScribeData(
   const valueRepo = getRepo(ds, ChatCustomFieldValue);
   const preferenceRepo = getRepo(ds, Preference);
 
+  const tenantUuid = tenant.id;
+
   const counselor = await userRepo.findOne({
-    where: { email: 'learner@example.com' },
+    where: { email: counselorEmail },
   });
   if (!counselor) {
-    log('learner@example.com missing — skipping scribe seed');
+    log(`${counselorEmail} missing — skipping scribe seed for ${tenant.code}`);
     return;
   }
 
@@ -288,7 +427,7 @@ export async function seedScribeData(
     const existing = await preferenceRepo.findOne({
       where: {
         name,
-        relatedId: TENANT_CODE,
+        relatedId: tenant.code,
         relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
       },
     });
@@ -296,7 +435,7 @@ export async function seedScribeData(
     await preferenceRepo.save(
       preferenceRepo.create({
         name,
-        relatedId: TENANT_CODE,
+        relatedId: tenant.code,
         relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
         value: { enabled: true },
         tenantId: tenantUuid,
@@ -338,7 +477,7 @@ export async function seedScribeData(
   let messageCount = 0;
   let valueCount = 0;
 
-  for (const fixture of SCRIBE_CALLS) {
+  for (const fixture of calls) {
     const existing = await chatRepo.findOne({
       where: { externalId: fixture.externalId },
     });
@@ -350,16 +489,20 @@ export async function seedScribeData(
     const startedAt = new Date(
       Date.now() - fixture.startedMinutesAgo * 60 * 1000,
     );
-    const endedAt = new Date(
-      startedAt.getTime() + fixture.durationSeconds * 1000,
-    );
+    // Undefined durationSeconds means the call is still active — no endedAt.
+    const endedAt =
+      fixture.durationSeconds !== undefined
+        ? new Date(startedAt.getTime() + fixture.durationSeconds * 1000)
+        : undefined;
 
     const chat = await chatRepo.save(
       chatRepo.create({
         clientId: ANONYMOUS_CLIENT_ID,
         counselorId: counselor.id,
-        status: ChatStatus.ENDED,
-        summaryStatus: ChatSummaryStatus.SUCCESS,
+        status: fixture.chatStatus ?? ChatStatus.ENDED,
+        summaryStatus: fixture.summaryStatus ?? ChatSummaryStatus.SUCCESS,
+        firstAttemptStatus: fixture.firstAttemptStatus,
+        firstFailureStage: fixture.firstFailureStage,
         startedAt,
         endedAt,
         externalId: fixture.externalId,
@@ -381,62 +524,86 @@ export async function seedScribeData(
       messageCount++;
     }
 
-    await callDetailsRepo.save(
-      callDetailsRepo.create({
-        chatId: chat.id,
-        callDuration: fixture.durationSeconds,
-        startTime: startedAt,
-        endTime: endedAt,
-        summary: {
-          sessionSummary: encryptSessionSummary(fixture.summary.sessionSummary),
-          keyConcerns: fixture.summary.keyConcerns,
-          callQuality: fixture.summary.callQuality,
-          tags: fixture.summary.tags.map((tag) => ({ tag })),
-          mode: ScribeSessionMode.SCRIBE,
-        } as CallDetails['summary'],
-        callInfo: {
-          provider: AudioChatProvider.WEBRTC,
-          mode: ScribeSessionMode.SCRIBE,
-          notes: '',
-        } as CallDetails['callInfo'],
-        tenantId: tenantUuid,
-      }),
-    );
+    // Only write CallDetails when there's an actual summary — an in-progress
+    // or failed-transcription call never produced one.
+    if (fixture.summary && endedAt) {
+      await callDetailsRepo.save(
+        callDetailsRepo.create({
+          chatId: chat.id,
+          callDuration: fixture.durationSeconds,
+          startTime: startedAt,
+          endTime: endedAt,
+          summary: {
+            sessionSummary: encryptSessionSummary(
+              fixture.summary.sessionSummary,
+            ),
+            keyConcerns: fixture.summary.keyConcerns,
+            callQuality: fixture.summary.callQuality,
+            tags: fixture.summary.tags.map((tag) => ({ tag })),
+            mode: ScribeSessionMode.SCRIBE,
+          } as CallDetails['summary'],
+          callInfo: {
+            provider: AudioChatProvider.WEBRTC,
+            mode: ScribeSessionMode.SCRIBE,
+            notes: '',
+          } as CallDetails['callInfo'],
+          tenantId: tenantUuid,
+        }),
+      );
+    } else if (fixture.firstFailureStage && endedAt) {
+      // Failed-transcription call: callInfo exists (the call happened), but
+      // no summary — matches a real first-attempt failure.
+      await callDetailsRepo.save(
+        callDetailsRepo.create({
+          chatId: chat.id,
+          callDuration: fixture.durationSeconds,
+          startTime: startedAt,
+          endTime: endedAt,
+          callInfo: {
+            provider: AudioChatProvider.WEBRTC,
+            mode: ScribeSessionMode.SCRIBE,
+            notes: '',
+          } as CallDetails['callInfo'],
+          tenantId: tenantUuid,
+        }),
+      );
+    }
 
+    const customValues = fixture.customValues;
     const sessionNoDef = definitionByName.get('Session No');
     const followUpDef = definitionByName.get('Follow-up Required');
     const aiThemeDef = definitionByName.get('AI Session Theme');
 
-    if (sessionNoDef) {
+    if (sessionNoDef && customValues) {
       await valueRepo.save(
         valueRepo.create({
           chatId: chat.id,
           fieldDefinitionId: sessionNoDef.id,
-          value: fixture.customValues.sessionNo,
+          value: customValues.sessionNo,
           updatedBy: counselor.id,
           tenantId: tenantUuid,
         }),
       );
       valueCount++;
     }
-    if (followUpDef) {
+    if (followUpDef && customValues) {
       await valueRepo.save(
         valueRepo.create({
           chatId: chat.id,
           fieldDefinitionId: followUpDef.id,
-          value: fixture.customValues.followUp,
+          value: customValues.followUp,
           updatedBy: counselor.id,
           tenantId: tenantUuid,
         }),
       );
       valueCount++;
     }
-    if (aiThemeDef && fixture.customValues.aiTheme) {
+    if (aiThemeDef && customValues?.aiTheme) {
       await valueRepo.save(
         valueRepo.create({
           chatId: chat.id,
           fieldDefinitionId: aiThemeDef.id,
-          value: fixture.customValues.aiTheme,
+          value: customValues.aiTheme,
           updatedBy: 0, // 0 = system/AI, matching upsertValuesInternal's convention
           tenantId: tenantUuid,
         }),
@@ -448,9 +615,129 @@ export async function seedScribeData(
   }
 
   log(
-    `scribe: ${definitionsCreated} custom field definition(s) created, ` +
+    `scribe (${tenant.code}): ${definitionsCreated} custom field definition(s) created, ` +
       `${preferencesCreated} preference(s) created, ` +
       `${chatsCreated} chat(s) created (${chatsExisting} already existed), ` +
       `${messageCount} messages, ${valueCount} custom field values`,
+  );
+
+  return;
+}
+
+/**
+ * One scribe review on a Riverside call, giving
+ * yuki.tanaka@riversidewellness.io (SCRIBE_REVIEWER) something to review in
+ * her own tenant — the ally-only scribe seed left her tenant with zero
+ * scribe reviews too.
+ */
+export async function seedScribeReviews(
+  ds: DataSource,
+  tenant: Tenant,
+): Promise<void> {
+  const chatRepo = getRepo(ds, Chat);
+  const messageRepo = getRepo(ds, Message);
+  const userRepo = getRepo(ds, User);
+  const reviewRepo = getRepo(ds, ScribeSessionReview);
+  const threadRepo = getRepo(ds, ScribeSessionReviewThread);
+  const commentRepo = getRepo(ds, ScribeSessionReviewComment);
+  const reactionRepo = getRepo(ds, ScribeSessionReviewReaction);
+  const readStatusRepo = getRepo(ds, ScribeSessionReviewReadStatus);
+
+  const chat = await chatRepo.findOne({
+    where: { externalId: 'seed-scribe-call-rw-1' },
+  });
+  if (!chat) {
+    log('scribe review: seed-scribe-call-rw-1 missing — skipping');
+    return;
+  }
+
+  const existing = await reviewRepo.findOne({
+    where: { scribeSessionId: chat.id },
+  });
+  if (existing) {
+    log('scribe review: already exists');
+    return;
+  }
+
+  const allUsers = await userRepo.find();
+  const userIdByEmail = new Map(allUsers.map((u) => [u.email, u.id]));
+  const luciaId = userIdByEmail.get('lucia.fernandez@riversidewellness.io');
+  const yukiId = userIdByEmail.get('yuki.tanaka@riversidewellness.io');
+  const omarId = userIdByEmail.get('omar.hassan@riversidewellness.io');
+  if (!luciaId || !yukiId || !omarId) {
+    log('scribe review: one or more users missing — skipping');
+    return;
+  }
+
+  const review = await reviewRepo.save(
+    reviewRepo.create({
+      scribeSessionId: chat.id,
+      createdBy: luciaId,
+      status: ReviewStatus.IN_REVIEW,
+      note: 'Sharing my first caregiver-burnout call — did I move to problem-solving too early?',
+      noteEditedAt: new Date(),
+      tenantId: tenant.id,
+    }),
+  );
+
+  const generalThread = await threadRepo.save(
+    threadRepo.create({
+      reviewId: review.id,
+      createdBy: yukiId,
+      tenantId: tenant.id,
+    }),
+  );
+  await commentRepo.save(
+    commentRepo.create({
+      reviewThreadId: generalThread.id,
+      content:
+        'Good normalizing of burnout right away — that usually lowers defensiveness before you ask anything else.',
+      createdBy: yukiId,
+      tenantId: tenant.id,
+    }),
+  );
+
+  const messages = await messageRepo.find({
+    where: { chatId: chat.id },
+    order: { id: 'ASC' },
+  });
+  const pinnedMessage = messages[4];
+  const pinnedThread = await threadRepo.save(
+    threadRepo.create({
+      reviewId: review.id,
+      messageId: pinnedMessage?.id,
+      createdBy: omarId,
+      tenantId: tenant.id,
+    }),
+  );
+  await commentRepo.save(
+    commentRepo.create({
+      reviewThreadId: pinnedThread.id,
+      content:
+        'Nice — naming that support conversation explicitly gives her something concrete to expect next time, rather than leaving it open-ended.',
+      createdBy: omarId,
+      tenantId: tenant.id,
+    }),
+  );
+
+  await reactionRepo.save(
+    reactionRepo.create({
+      reviewId: review.id,
+      reaction: '🙏',
+      createdBy: yukiId,
+      tenantId: tenant.id,
+    }),
+  );
+
+  await readStatusRepo.save(
+    readStatusRepo.create({
+      userId: yukiId,
+      reviewId: review.id,
+      readAt: new Date(),
+    }),
+  );
+
+  log(
+    'scribe review: 1 created (2 threads, 2 comments, 1 reaction, 1 read receipt)',
   );
 }

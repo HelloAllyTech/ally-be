@@ -143,6 +143,12 @@ export class WhatsAppRetentionService {
           phoneE164: `${ERASED_PHONE_PREFIX}${contactId}`,
           phoneLast4: '0000',
           locale: null,
+          // Cleared with the number, for the same reason: the pair names a specific worker at a
+          // specific customer alongside their message history. See the manual erasure path.
+          userId: null,
+          tenantId: null,
+          identifiedAt: null,
+          identitySource: null,
         },
       );
       total += 1;

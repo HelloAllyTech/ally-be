@@ -23,9 +23,15 @@ import {
 } from '../../common/type/common.type';
 import {
   DEFAULT_CHAT_TYPES,
+  DEFAULT_TURN_ENDPOINTING_SETTINGS,
   LEGAL_CONTENT_NAMES,
   SELECTABLE_CHAT_TYPES,
+  TURN_ENDPOINTING_SETTINGS_NAME,
 } from '../constants/settings.constants';
+import {
+  TurnEndpointingSettings,
+  UpdateTurnEndpointingSettingsDto,
+} from '../dto/turn-endpointing-settings.dto';
 import {
   DEFAULT_HIDDEN_SECTION_IDS,
   SECTION_ID_TO_FIELD_IDS,
@@ -110,6 +116,61 @@ export class SettingsService {
     return { success: true };
   }
 
+  /**
+   * Read the global turn-endpointing bounds (seconds) used by Studio v1
+   * roleplay sessions, stored as a global_settings row. Falls back to
+   * LiveKit's own defaults if no admin has saved a value yet — the setting
+   * must always resolve to a well-defined pair.
+   */
+  async getTurnEndpointingSettings(): Promise<TurnEndpointingSettings> {
+    const row = await this.globalSettingsRepository.findOne({
+      where: { name: TURN_ENDPOINTING_SETTINGS_NAME },
+    });
+    const value = row?.value as Partial<TurnEndpointingSettings> | undefined;
+    return {
+      turnMinEndpointingDelay:
+        value?.turnMinEndpointingDelay ??
+        DEFAULT_TURN_ENDPOINTING_SETTINGS.turnMinEndpointingDelay,
+      turnMaxEndpointingDelay:
+        value?.turnMaxEndpointingDelay ??
+        DEFAULT_TURN_ENDPOINTING_SETTINGS.turnMaxEndpointingDelay,
+    };
+  }
+
+  /**
+   * Upsert the global turn-endpointing bounds. Access is gated to super
+   * admins at the controller layer.
+   */
+  async updateTurnEndpointingSettings(
+    dto: UpdateTurnEndpointingSettingsDto,
+  ): Promise<{ success: boolean }> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) {
+      throw new BadRequestException('User ID is required');
+    }
+    const value: TurnEndpointingSettings = {
+      turnMinEndpointingDelay: dto.turnMinEndpointingDelay,
+      turnMaxEndpointingDelay: dto.turnMaxEndpointingDelay,
+    };
+    const existing = await this.globalSettingsRepository.findOne({
+      where: { name: TURN_ENDPOINTING_SETTINGS_NAME },
+    });
+    if (existing) {
+      existing.value = value;
+      existing.updatedBy = parseInt(userId);
+      await this.globalSettingsRepository.save(existing);
+    } else {
+      const entity = this.globalSettingsRepository.create({
+        name: TURN_ENDPOINTING_SETTINGS_NAME,
+        value,
+        createdBy: parseInt(userId),
+        updatedBy: parseInt(userId),
+      });
+      await this.globalSettingsRepository.save(entity);
+    }
+    return { success: true };
+  }
+
   private async resolveTenantCode(tenantId: string): Promise<string> {
     const isUuid =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -121,6 +182,37 @@ export class SettingsService {
       [tenantId],
     );
     return row?.[0]?.code ?? tenantId;
+  }
+
+  /**
+   * Which tenant a settings WRITE lands on.
+   *
+   * A tenant admin is pinned to their own tenant; an Ally staff account
+   * (SYSTEM_ACCESS) may name any tenant, which is what the admin dashboard's
+   * per-tenant screens do. The `??` on the staff branch is the part that
+   * matters: the helpline app's own Org. Settings screen sends no `tenantId`
+   * at all — it is the *own*-tenant screen, so there is nothing to send — and
+   * without the fallback a staff account opening that screen got
+   * "Tenant ID is required" on every toggle while an ordinary tenant admin on
+   * the same screen succeeded. The matching read helpers have always had this
+   * fallback, so the getter reported one thing and the setter refused to
+   * change it.
+   *
+   * Returns the resolved tenant CODE (see resolveTenantCode) — preference rows
+   * are keyed by code, not by uuid.
+   */
+  private async resolveWritableTenantId(tenantId?: string): Promise<string> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    const scopedTenantId = hasSystemAccess
+      ? (tenantId ?? ExecutionManager.getTenantId())
+      : ExecutionManager.getTenantId();
+    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
+    return this.resolveTenantCode(scopedTenantId);
   }
 
   async getSummaryFieldsConfig(getSummaryFieldsDto?: GetSummaryFieldsDto) {
@@ -370,8 +462,11 @@ export class SettingsService {
       [PERMISSIONS.SYSTEM_ACCESS],
     );
     // Super admins may target any tenant; a tenant admin is locked to their own.
+    // The `??` matters — see resolveWritableTenantId: the helpline app's own
+    // Org. Settings screen sends no tenantId, so without it a staff account on
+    // that screen fails where a tenant admin succeeds.
     const scopedTenantId = hasSystemAccess
-      ? dto.tenantId
+      ? (dto.tenantId ?? ExecutionManager.getTenantId())
       : ExecutionManager.getTenantId();
     if (!scopedTenantId) {
       throw new BadRequestException('Tenant ID is required');
@@ -614,18 +709,7 @@ export class SettingsService {
     tenantId: string,
     enabled: boolean,
   ): Promise<{ success: boolean }> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    // Super admins may target any tenant; a tenant admin is locked to their own.
-    const scopedTenantId = hasSystemAccess
-      ? tenantId
-      : ExecutionManager.getTenantId();
-    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
-    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+    const resolvedId = await this.resolveWritableTenantId(tenantId);
     const existing = await this.preferenceService.getPreference(
       PreferenceName.CUSTOM_FIELDS_ENABLED,
       resolvedId,
@@ -688,9 +772,10 @@ export class SettingsService {
       [PERMISSIONS.SYSTEM_ACCESS],
     );
     // Only a platform admin may grant this — a tenant admin must not be able to
-    // switch on their own access.
+    // switch on their own access. The `??` on the staff branch matters: the
+    // helpline app's own Org Settings screen sends no tenantId at all.
     const scopedTenantId = hasSystemAccess
-      ? tenantId
+      ? (tenantId ?? ExecutionManager.getTenantId())
       : ExecutionManager.getTenantId();
     if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
     const resolvedId = await this.resolveTenantCode(scopedTenantId);
@@ -705,6 +790,77 @@ export class SettingsService {
     } else {
       await this.preferenceService.createPreference({
         name: PreferenceName.CHARACTER_LIBRARY_ENABLED,
+        relatedId: resolvedId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { enabled },
+        tenantId: ExecutionManager.getTenantId(),
+      });
+    }
+    return { success: true };
+  }
+
+  /**
+   * Org-level switch for the Learner Progress screen (XP/levels). OFF until a
+   * platform admin turns it on for that org — see
+   * PreferenceName.PROGRESS_DASHBOARD_ENABLED. Read the same way
+   * TenantFeatureService.isEnabledForTenant does (same `preference` row), so a
+   * flip here takes effect immediately for the guard as well.
+   */
+  async getProgressDashboardEnabled(tenantId?: string): Promise<boolean> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    const rawTenantId = hasSystemAccess
+      ? (tenantId ?? ExecutionManager.getTenantId())
+      : ExecutionManager.getTenantId();
+    if (!rawTenantId) return false;
+    const resolvedTenantId = await this.resolveTenantCode(rawTenantId);
+
+    const preference = await this.preferenceService.getPreference(
+      PreferenceName.PROGRESS_DASHBOARD_ENABLED,
+      resolvedTenantId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+
+    if (!preference?.value) return false;
+    return (
+      (preference.value as CustomFieldsEnabledPreferenceValue).enabled ?? false
+    );
+  }
+
+  async updateProgressDashboardEnabled(
+    tenantId: string,
+    enabled: boolean,
+  ): Promise<{ success: boolean }> {
+    const userId = ExecutionManager.getUserId();
+    if (!userId) throw new BadRequestException('User ID is required');
+    const hasSystemAccess = await this.permissionValidator.validatePermissions(
+      parseInt(userId),
+      [PERMISSIONS.SYSTEM_ACCESS],
+    );
+    // Only a platform admin may grant this — a tenant admin must not be able to
+    // switch it on for themselves. The `??` on the staff branch matters: the
+    // helpline app's own Org Settings screen sends no tenantId at all.
+    const scopedTenantId = hasSystemAccess
+      ? (tenantId ?? ExecutionManager.getTenantId())
+      : ExecutionManager.getTenantId();
+    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
+    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+
+    const existing = await this.preferenceService.getPreference(
+      PreferenceName.PROGRESS_DASHBOARD_ENABLED,
+      resolvedId,
+      PreferenceRelatedEntity.ORGANIZATION,
+    );
+    if (existing) {
+      await this.preferenceService.updatePreference(existing.id, { enabled });
+    } else {
+      await this.preferenceService.createPreference({
+        name: PreferenceName.PROGRESS_DASHBOARD_ENABLED,
         relatedId: resolvedId,
         relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
         value: { enabled },
@@ -744,18 +900,7 @@ export class SettingsService {
     tenantId: string,
     enabled: boolean,
   ): Promise<{ success: boolean }> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    // Super admins may target any tenant; a tenant admin is locked to their own.
-    const scopedTenantId = hasSystemAccess
-      ? tenantId
-      : ExecutionManager.getTenantId();
-    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
-    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+    const resolvedId = await this.resolveWritableTenantId(tenantId);
     const existing = await this.preferenceService.getPreference(
       PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
       resolvedId,
@@ -805,18 +950,7 @@ export class SettingsService {
     tenantId: string,
     enabled: boolean,
   ): Promise<{ success: boolean }> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    // Super admins may target any tenant; a tenant admin is locked to their own.
-    const scopedTenantId = hasSystemAccess
-      ? tenantId
-      : ExecutionManager.getTenantId();
-    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
-    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+    const resolvedId = await this.resolveWritableTenantId(tenantId);
     const existing = await this.preferenceService.getPreference(
       PreferenceName.SCRIBE_VOICE_NOTE_ENABLED,
       resolvedId,
@@ -840,17 +974,6 @@ export class SettingsService {
     tenantId: string,
     enabledTypes: string[],
   ): Promise<{ success: boolean }> {
-    const userId = ExecutionManager.getUserId();
-    if (!userId) throw new BadRequestException('User ID is required');
-    const hasSystemAccess = await this.permissionValidator.validatePermissions(
-      parseInt(userId),
-      [PERMISSIONS.SYSTEM_ACCESS],
-    );
-    // Super admins may target any tenant; a tenant admin is locked to their own.
-    const scopedTenantId = hasSystemAccess
-      ? tenantId
-      : ExecutionManager.getTenantId();
-    if (!scopedTenantId) throw new BadRequestException('Tenant ID is required');
     const allTypes = Object.values(CustomFieldType);
     const invalid = enabledTypes.filter(
       (t) => !allTypes.includes(t as CustomFieldType),
@@ -861,7 +984,7 @@ export class SettingsService {
       );
     }
 
-    const resolvedId = await this.resolveTenantCode(scopedTenantId);
+    const resolvedId = await this.resolveWritableTenantId(tenantId);
 
     const existing = await this.preferenceService.getPreference(
       PreferenceName.ENABLED_CUSTOM_FIELD_TYPES,

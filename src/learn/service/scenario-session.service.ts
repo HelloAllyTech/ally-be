@@ -12,6 +12,8 @@ import { ScenarioSessionMessagesRepository } from '../repository/scenario-sessio
 import { StartScenarioSessionRequestDto } from '../dto/start-scenario-session-request.dto';
 import { ScenarioService } from './scenario.service';
 import {
+  ScenarioSessionAbandonReason,
+  ScenarioSessionEndReason,
   ScenarioSessionEventStatus,
   ScenarioSessionStatus,
 } from '../enum/scenario-session-status.enum';
@@ -20,14 +22,7 @@ import { ParticipantInfo_Kind } from '@livekit/protocol';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
 import { AddFeedbackToScenarioSessionRequestDto } from '../dto/add-feedback-to-scenario-session.dto';
-import {
-  DataSource,
-  EntityManager,
-  In,
-  IsNull,
-  Not,
-  Repository,
-} from 'typeorm';
+import { DataSource, IsNull, Not, Repository } from 'typeorm';
 import { ScenarioSessionFeedbacks } from '../entity/scenario-session-feedbacks.entity';
 import {
   ScenarioSessionLifecycleEvent,
@@ -35,7 +30,6 @@ import {
 } from '../entity/scenario-session-lifecycle-event.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ScenarioSessionMessageType } from '../enum/scenario-session-message.type.enum';
-import { ScenarioSessionTagCategory } from '../enum/scenario-session-tag-category.enum';
 import { AiService } from 'src/ai/service/ai.service';
 import { ScenarioSessionEvaluationService } from './scenario-session-evaluation.service';
 import { GlossaryAdherenceService } from 'src/language/service/glossary-adherence.service';
@@ -44,18 +38,17 @@ import { ScenarioSessionDetailsRepository } from '../repository/scenario-session
 import { ScenarioSessionEvents } from '../entity/scenario-session-events.entity';
 import { ScenarioSessionTurnMetrics } from '../entity/scenario-session-turn-metrics.entity';
 import { ScenarioSessionStartMetrics } from '../entity/scenario-session-start-metrics.entity';
+import { ScenarioSessionSupervisorNotes } from '../entity/scenario-session-supervisor-notes.entity';
 import {
   LearnSessionMemoryData,
   LearnStartMetricsData,
+  LearnSupervisorNoteData,
   LearnTurnMetricsData,
 } from '../interface/learn-message.interface';
-import { ScenarioSessionMessageTags } from '../entity/scenario-session-message-tags.entity';
-import { ScenarioSessionTags } from '../entity/scenario-session-tags.entity';
 import {
   MessageRequest,
   ScenarioEvaluationChatMessage,
 } from 'src/ai/dto/ai.request.dto';
-import { ScenarioEvaluationMessageTag } from 'src/ai/dto/ai.response.dto';
 import {
   LearnBehaviorInstructionData,
   LearnEventData,
@@ -69,10 +62,16 @@ import { SessionEvents } from 'src/session-event/entity/session-events.entity';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
+import { PreviewMonologueService } from './preview-monologue.service';
 import { v4 } from 'uuid';
 import {
   DEFAULT_LANGUAGE_CODE,
   DEFAULT_SCENARIO_SESSION_TTL_SECONDS,
+  STUCK_SESSION_AGE_MS,
+  STUCK_SESSION_SWEEP_LIMIT,
+  UNFINALISED_SESSION_GRACE_MS,
+  UNFINALISED_SESSION_LOOKBACK_MS,
+  UNFINALISED_SESSION_SWEEP_LIMIT,
 } from '../constants/scenario-session.constants';
 import { SimulationCreditsService } from './simulation-credits.service';
 import { AppConfigService } from 'src/config/config.service';
@@ -132,9 +131,6 @@ import { SessionEventTranslationService } from 'src/session-event/service/sessio
 import { TranscriptTranslationService } from 'src/transcript-translation/service/transcript-translation.service';
 import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
 import { SimulationStateDto } from '../dto/simulation-state.dto';
-import { ModuleRef } from '@nestjs/core';
-import { ScenarioEngine } from '../enum/scenario-engine.enum';
-import { RoleplaySessionService } from 'src/roleplay-studio/service/roleplay-session.service';
 import { PostHog } from 'posthog-node';
 import { userDistinctId } from 'src/posthog/posthog.util';
 import {
@@ -155,6 +151,7 @@ export class ScenarioSessionService {
     private scenarioService: ScenarioService,
     private scenarioSharedService: ScenarioSharedService,
     private roomMetadataStoreService: RoomMetadataStoreService,
+    private previewMonologueService: PreviewMonologueService,
     private livekitService: LiveKitService,
     private sessionEventSharedService: SessionEventSharedService,
     @InjectRepository(ScenarioSessionFeedbacks)
@@ -190,10 +187,6 @@ export class ScenarioSessionService {
     private scenarioSessionDetailsRepository: ScenarioSessionDetailsRepository,
     private readonly glossaryAdherenceService: GlossaryAdherenceService,
     private transcriptTranslationService: TranscriptTranslationService,
-    // App-container handle used ONLY to resolve the Roleplay Studio v2
-    // session service for engine=ROLEPLAY_V2 scenarios without importing
-    // RoleplayStudioModule into LearnModule (keeps the v1 wiring untouched).
-    private moduleRef: ModuleRef,
     private readonly learnerSupervisorMemoryService: LearnerSupervisorMemoryService,
     private readonly posthog: PostHog,
   ) {
@@ -203,14 +196,12 @@ export class ScenarioSessionService {
   async getMessagesByScenarioSessionId(
     scenarioSessionId: string,
     pagination: Pagination,
-    options?: { includeTags?: boolean },
     languageCode?: string,
   ) {
     const result =
       await this.scenarioSharedService.getMessagesByScenarioSessionId(
         scenarioSessionId,
         pagination,
-        options,
       );
 
     if (!languageCode) {
@@ -282,16 +273,10 @@ export class ScenarioSessionService {
   async getScenarioSessionSkills(
     scenarioSessionId: string,
   ): Promise<ScenarioSessionSkillsResponseDto> {
-    // The Skills tab is one of the per-roleplay post-session sub-toggles, so
-    // the opt-out is enforced here as well as in the UI — an author who turned
-    // scores off for a roleplay meant the learner not to see them, not merely
-    // not to be shown a tab.
-    const context =
-      await this.getSupervisorContextForSession(scenarioSessionId);
-    if (context && !context.feedbackTabs.skills) {
-      return { skillCoverage: [], emotionalMovement: [] };
-    }
-
+    // No per-roleplay gate any more: the Skills Demonstrated tab was retired
+    // on 2026-08-31, so there is no learner surface left to withhold this
+    // from. The data itself lives on because admin analytics reads
+    // `skillCoverage` (skill-growth charts, LearnerSkillPanel).
     return this.scenarioSharedService.getScenarioSessionSkills(
       scenarioSessionId,
     );
@@ -475,9 +460,10 @@ export class ScenarioSessionService {
         experienceMode:
           scenario.metadata?.experienceMode ?? ExperienceMode.FEEDBACK,
         name: scenario.metadata?.name,
-        enableFeedback: scenario.metadata?.enableFeedback ?? true,
         // Resolved, never raw: clients render tabs straight off this, so they
-        // must not have to re-implement the "absent means all on" default.
+        // must not have to re-implement the "absent means on" default.
+        // `enableFeedback` is deliberately not sent — it stopped being a gate
+        // when it was folded into feedbackTabs (see resolveFeedbackTabs).
         feedbackTabs,
       };
       if (languageCode && scenario.translations?.[languageCode]) {
@@ -512,32 +498,6 @@ export class ScenarioSessionService {
     );
     if (!scenario) {
       throw new BadRequestException('Scenario not found');
-    }
-
-    // Roleplay Studio v2 scenarios are thin shells over a versioned spec —
-    // the v2 runtime owns their session lifecycle (roleplay- room, AgentV2
-    // dispatch, director telemetry). Delegate and skip the entire v1 path.
-    // Resolved via ModuleRef (strict: false) so the learn module wiring
-    // stays untouched.
-    if (scenario.engine === ScenarioEngine.ROLEPLAY_V2) {
-      if (!scenario.roleplaySpecId) {
-        throw new BadRequestException(
-          'Roleplay scenario is missing its spec reference',
-        );
-      }
-      const roleplaySessionService = this.moduleRef.get(
-        RoleplaySessionService,
-        { strict: false },
-      );
-      return roleplaySessionService.startSpecSession(
-        counselorId,
-        scenario.roleplaySpecId,
-        null, // published version resolves inside the v2 service
-        {
-          languageId: startScenarioSessionDto.languageId,
-          ttl: startScenarioSessionDto.ttl,
-        },
-      );
     }
 
     await this.validateStartScenarioSession(
@@ -834,6 +794,29 @@ export class ScenarioSessionService {
         checklistEvents,
         showScoreMeter: scenario?.metadata?.showScoreMeter,
         pauseEnabled: scenario?.metadata?.pauseEnabled,
+        // Opt-in: only an explicit true shows the learner's Supervisor tab.
+        supervisorNotesEnabled:
+          scenario?.metadata?.supervisorNotesEnabled === true,
+        // Opt-in: only an explicit true lets the learner's call card make room
+        // for a video track. The agent decides independently whether to
+        // publish one (it has its own global kill-switch), so a true here is
+        // permission to render, never a promise that video will arrive — the
+        // client keeps the static card until a track actually shows up.
+        videoActorEnabled: scenario?.metadata?.videoActorEnabled === true,
+        // Which vendor renders the face. Undefined leaves the worker on its
+        // deployment-wide VIDEO_ACTOR_PROVIDER, so an existing roleplay that
+        // never picked one behaves exactly as it does today.
+        videoActorProvider: scenario?.metadata?.videoActorProvider,
+        // WHICH face. Without this the worker resolves no avatar id, falls back
+        // to its deployment-wide VIDEO_ACTOR_AVATAR_ID (unset in prod), and
+        // `_start_hosted` bails with "needs an avatar id" — an audio-only
+        // session that looks configured from every other angle. It was missing
+        // from this payload while the picker, the metadata write and the
+        // worker's read of `videoActorAvatarId` were all in place, so the face
+        // an author chose never reached the thing that renders it.
+        videoActorAvatarId: scenario?.metadata?.videoActorAvatarId,
+        // Opt-out: only an explicit false hides the learner's Live tab.
+        liveTabEnabled: scenario?.metadata?.liveTabEnabled !== false,
         stateNames,
         metadata: {
           name: scenario?.metadata?.name,
@@ -1069,9 +1052,38 @@ export class ScenarioSessionService {
       return null;
     }
 
+    // Transcript start/end times from ally-ai-learn are relative to whatever
+    // it was told `conversationStartedAt` was. For a normal dispatch that's
+    // `scenarioSession.startedAt` (participant-joined.handler.ts sends it to
+    // the agent at dispatch time). But when the agent was *proactively*
+    // dispatched — already sitting in the room before the participant
+    // joined — that handler takes its early `agentAlreadyPresent` return
+    // before ever sending `conversationStartedAt`, so the agent falls back to
+    // its own actual room-join time instead, which precedes
+    // `scenarioSession.startedAt` by however long it pre-warmed. Anchoring the
+    // offset on `scenarioSession.startedAt` in that case leaves every
+    // transcript timestamp shifted later than the audio by that lead time, so
+    // detect it via the AGENT_JOINED lifecycle row (recorded independently,
+    // right when the agent's own participant_joined webhook fires) and anchor
+    // on that instead whenever it precedes the session start.
+    const agentJoinedEvent =
+      await this.scenarioSessionLifecycleEventRepository.findOne({
+        where: {
+          scenarioSessionId: scenarioSession.id,
+          type: ScenarioSessionLifecycleEventType.AGENT_JOINED,
+        },
+        order: { occurredAt: 'ASC' },
+      });
+
+    const transcriptAnchor =
+      agentJoinedEvent &&
+      agentJoinedEvent.occurredAt < scenarioSession.startedAt
+        ? agentJoinedEvent.occurredAt
+        : scenarioSession.startedAt;
+
     const transcriptVariationOffset =
       (new Date(recordingStartedAt).getTime() -
-        new Date(scenarioSession.startedAt).getTime()) /
+        new Date(transcriptAnchor).getTime()) /
       1000;
     await this.scenarioSessionMessagesRepository.updateTranscriptTimestamps(
       scenarioSession.id,
@@ -1094,64 +1106,199 @@ export class ScenarioSessionService {
 
     const scenarioSessionId = scenarioSession?.id;
 
+    // Re-read before deciding anything. The row handed to us was loaded when
+    // this SQS message was picked up, and the message races the other two end
+    // paths by well under a second (measured 0.5s apart in prod), so `status`,
+    // `startedAt`, `endedAt` and `eventStatus` can all have moved underneath
+    // it. Everything below — the duration arithmetic especially — must read
+    // the row as it is NOW, not as it was when the queue handed it over.
+    const session =
+      (await this.scenarioSessionRepository.findOne({
+        where: { id: scenarioSessionId, tenantId: scenarioSession.tenantId },
+      })) ?? scenarioSession;
+
+    // The agent's end-of-session event routinely arrives at a session that is
+    // ALREADY ENDED — the learner clicked "End", or RoomFinishedHandler saw a
+    // crash/disconnect/empty-room timeout and called endScenarioSession. Both
+    // of those set status=ENDED as their first action, and this message follows
+    // a beat later, so "already ENDED" is the normal case rather than the
+    // exception.
+    //
+    // What must not run twice is the money and the duration:
+    // consumeSimulationCredits would double-charge the learner, and
+    // persistCallDuration would overwrite the authoritative egress-derived
+    // duration with a recomputed one. Those two, and only those two, are
+    // gated on this flag.
+    //
+    // Everything else here is the ONLY writer of what it writes — the score,
+    // eventStatus=COMPLETED, endReason, all three progression engines and the
+    // leaderboard practice minutes. A blanket `if (status === ENDED) return`
+    // therefore dropped the learner's score on every cleanly-ended session,
+    // left the row IN_PROGRESS for analytics, never completed the
+    // track/path/case item and never credited practice minutes. Redelivery and
+    // rows abandoned without ever running an end flow are held off by the
+    // compare-and-set below, which is the right tool for that job: it is
+    // atomic, where a status read is not.
+    //
+    // Set here from the row as read, and again below if the reclaim wins —
+    // that predicate proves the same thing.
+    let endedByAnotherPath = session.status === ScenarioSessionStatus.ENDED;
+
     const score = event.event_data.totalScore;
-
-    let callDuration = 0;
-    const startedAt = scenarioSession.startedAt ?? new Date();
-    const endedAt = scenarioSession.endedAt ?? new Date();
-    if (startedAt && endedAt) {
-      callDuration = endedAt.getTime() - startedAt.getTime() || 0;
-    }
-    // Exclude paused time so path/case progress and the leaderboard count only
-    // active conversation (closes any still-open pause interval at end).
-    callDuration = Math.max(
-      0,
-      callDuration - this.effectiveTotalPausedMs(scenarioSession, endedAt),
-    );
-    if (scenarioSession.scenarioPathSessionItemId)
-      await this.scenarioPathSessionService.handleEndScenarioPathSession({
-        scenarioPathSessionItemId: scenarioSession.scenarioPathSessionItemId,
-        score,
-        callDuration,
-      });
-    else if (scenarioSession.caseSessionItemId) {
-      await this.caseSessionService.handleEndCaseSession({
-        caseSessionItemId: scenarioSession.caseSessionItemId,
-        score,
-        callDuration,
-      });
-    } else if (scenarioSession.trackItemProgressId) {
-      // Track 2.0: roleplay played inside a track.
-      await this.trackProgressService.handleRoleplayEnd({
-        trackItemProgressId: scenarioSession.trackItemProgressId,
-        score,
-        callDuration,
-      });
+    // Any non-empty `reason` means ally-ai-learn's emergency/force-exit path
+    // produced this end-of-session, not a clean shutdown — bucket every such
+    // cause into one enum value (see ScenarioSessionEndReason) rather than
+    // validating against the agent's specific internal string, so a new cause
+    // there is recognised without a backend change.
+    const endReason = event.event_data.reason
+      ? ScenarioSessionEndReason.TECHNICAL_INTERRUPTION
+      : null;
+    if (endReason) {
+      this.logger.warn(
+        `Session ${scenarioSessionId} ended via emergency path (agent reason: ${event.event_data.reason})`,
+      );
     }
 
-    await this.captureRoleplaySessionEnded(scenarioSession, {
-      durationMs: callDuration,
-      sessionPoints: score,
-      creditsCharged: scenarioSession.metadata?.creditsUsed ?? 0,
-      status: RoleplaySessionEndStatus.COMPLETED,
-    });
+    const startedAt = session.startedAt ?? new Date();
+    const endedAt = session.endedAt ?? new Date();
+    const callDuration = this.activeCallDuration(session, startedAt, endedAt);
 
-    await this.scenarioSessionRepository.update(scenarioSessionId, {
+    // Compare-and-set on eventStatus, written BEFORE the side effects because
+    // winning the flip is what licenses them. Same idiom as
+    // markSessionAbandoned: IN_PROGRESS is the token, so a redelivered SQS
+    // message loses the race and does nothing.
+    //
+    // `startedAt`/`endedAt` are written back from the freshly-read row, so on
+    // the already-ended path this is a no-op for them rather than a clobber of
+    // the egress-derived timestamps.
+    const finalisation = {
       status: ScenarioSessionStatus.ENDED,
       startedAt,
       endedAt,
       score,
       eventStatus: ScenarioSessionEventStatus.COMPLETED,
-    });
+      endReason,
+    };
+    let finalised = await this.scenarioSessionRepository.update(
+      {
+        id: scenarioSessionId,
+        eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
+      },
+      finalisation,
+    );
+
+    if (!finalised.affected) {
+      // Second chance, for one situation only: the `room_finished` webhook beat
+      // this message, ran the FULL end flow (status=ENDED, duration, credits)
+      // and then labelled the row ABANDONED because at that instant no
+      // end-of-session had arrived. This message is that end-of-session — proof
+      // the session did complete its lifecycle — so the guess must yield to it,
+      // exactly as markSessionAbandoned yields when the message wins the other
+      // way round. Without this the row keeps the ABANDONED label, the score is
+      // thrown away, no progression engine ever sees the finished roleplay, and
+      // the unfinalised sweep can never repair any of it because it scans for
+      // IN_PROGRESS: the learner replays a track item they already passed.
+      //
+      // Deliberately narrow. `STUCK_ACTIVE_SWEEP` rows are excluded by both the
+      // reason and the `status = ENDED` predicate: nothing ran for those, so
+      // completing one here would charge hours of credits for a session that
+      // never happened. Still a single-winner compare-and-set — COMPLETED
+      // matches neither predicate, so redelivery finds nothing to win.
+      finalised = await this.scenarioSessionRepository.update(
+        {
+          id: scenarioSessionId,
+          status: ScenarioSessionStatus.ENDED,
+          eventStatus: ScenarioSessionEventStatus.ABANDONED,
+          abandonedReason:
+            ScenarioSessionAbandonReason.ROOM_FINISHED_WITHOUT_END,
+        },
+        { ...finalisation, abandonedReason: null },
+      );
+      if (finalised.affected) {
+        // The predicate required status=ENDED, so the webhook's end flow has
+        // already persisted the duration and charged the credits — whatever the
+        // row said when it was read at the top of this handler.
+        endedByAnotherPath = true;
+        this.logger.info(
+          `Scenario session ${scenarioSessionId} was labelled abandoned by the ` +
+            `room_finished webhook, but its end-of-session event has now ` +
+            `arrived — reclaimed as COMPLETED`,
+        );
+      }
+    }
+
+    if (!finalised.affected) {
+      this.logger.info(
+        `Scenario session ${scenarioSessionId} was already finalised ` +
+          `(eventStatus=${session.eventStatus}) — skipping end-of-session ` +
+          `side effects for a redelivered or superseded event`,
+      );
+      return;
+    }
     this.logger.info(
       `Updated scenario ${scenarioSessionId} eventStatus to COMPLETED`,
     );
 
+    let creditsCharged = 0;
+    if (endedByAnotherPath) {
+      // endScenarioSession got here first, and it persists the duration and
+      // consumes the credits itself. Re-running either would double-charge or
+      // clobber a better number; the score and the progression below are still
+      // ours to write.
+      this.logger.info(
+        `Scenario session ${scenarioSessionId} was already ended by another ` +
+          `path — duration and credits left as recorded there`,
+      );
+      creditsCharged = session.metadata?.creditsUsed ?? 0;
+    } else {
+      // Persist it here, not only in the summary writer. This handler is the
+      // agent's natural end-of-session; it sets status=ENDED, which makes the
+      // later room_finished webhook skip endScenarioSession (see
+      // RoomFinishedHandler) — so a learner who never clicks "End" leaves
+      // `callDuration` NULL forever, and every analytics surface that sums the
+      // column read the session as zero practice minutes while Roleplay Logs
+      // (which derives wall clock client-side) showed the real duration.
+      await this.persistCallDuration(
+        scenarioSessionId,
+        session.tenantId,
+        callDuration,
+      );
+
+      // Consume credits here too, for the same reason persistCallDuration is
+      // called above rather than left to endScenarioSession: this handler sets
+      // status=ENDED, which makes the later room_finished webhook skip
+      // endScenarioSession (see RoomFinishedHandler) — the only other place
+      // consumeSimulationCredits is called. Without this, a roleplay that ends
+      // naturally (learner never clicks "End") uses minutes without ever
+      // deducting credits.
+      try {
+        creditsCharged = await this.consumeSimulationCredits(
+          session.counselorId,
+          callDuration,
+        );
+      } catch (err) {
+        this.logger.error(
+          `consumeSimulationCredits failed for session ${scenarioSessionId}; continuing without deducting credits: ${err?.message}`,
+        );
+      }
+    }
+
+    // `scenarioSession` is the row as it was handed to this event, so its
+    // `status` still says whether some other end path already beat this one
+    // to it — captureRoleplaySessionEnded uses exactly that to dedupe the
+    // PostHog event between the two paths (see its own guard).
+    await this.captureRoleplaySessionEnded(scenarioSession, {
+      durationMs: callDuration,
+      sessionPoints: score,
+      creditsCharged,
+      status: RoleplaySessionEndStatus.COMPLETED,
+    });
+
+    await this.applyRoleplayProgression(session, score, callDuration);
+
     // Score the roleplay actor against the configured agent test cases
     // (async, best-effort — never blocks or fails session end).
-    await this.scenarioSessionEvaluationService.triggerForSession(
-      scenarioSession,
-    );
+    await this.scenarioSessionEvaluationService.triggerForSession(session);
 
     // Glossary adherence: deterministic avoid-list scan of the agent
     // transcript, auto-run per session so every run (human or v2v) leaves a
@@ -1159,11 +1306,11 @@ export class ScenarioSessionService {
     // sessions, languages without a published glossary, or glossaries with
     // no avoid-terms. Fire-and-forget — never blocks or fails session end.
     void this.glossaryAdherenceService
-      .analyzeSession(scenarioSession.id)
+      .analyzeSession(session.id)
       .then((report) => {
         if (report) {
           this.logger.info(
-            `[GLOSSARY_ADHERENCE] session ${scenarioSession.id}: ` +
+            `[GLOSSARY_ADHERENCE] session ${session.id}: ` +
               `${report.totalViolations} violation(s) across ` +
               `${report.agentMessageCount} agent message(s)`,
           );
@@ -1171,23 +1318,94 @@ export class ScenarioSessionService {
       })
       .catch((error) => {
         this.logger.warn(
-          `[GLOSSARY_ADHERENCE] scan failed for ${scenarioSession.id}: ${error}`,
+          `[GLOSSARY_ADHERENCE] scan failed for ${session.id}: ${error}`,
         );
       });
 
-    // Emit event for community leaderboard score update
-    const durationMinutes = callDuration / (1000 * 60);
-    if (durationMinutes > 0) {
-      this.eventEmitter.emit(
-        ScenarioSessionLeaderboardEvent.SCENARIO_SESSION_ENDED,
-        {
-          userId: scenarioSession.counselorId,
-          tenantId: scenarioSession.tenantId,
-          date: endedAt,
-          durationMinutes,
-        } as ScenarioSessionLeaderboardEndedEventParams,
-      );
+    this.emitLeaderboardPracticeMinutes(session, callDuration, endedAt);
+  }
+
+  /**
+   * Active conversation time: wall clock minus paused time, floored at zero.
+   *
+   * One formula, used by the end-of-session handler and by the unfinalised
+   * sweep, so a session's practice minutes cannot depend on which path
+   * recorded them.
+   */
+  private activeCallDuration(
+    session: ScenarioSessions,
+    startedAt: Date,
+    endedAt: Date,
+  ): number {
+    const wallClock = endedAt.getTime() - startedAt.getTime() || 0;
+    // Exclude paused time so path/case progress and the leaderboard count only
+    // active conversation (closes any still-open pause interval at end).
+    return Math.max(
+      0,
+      wallClock - this.effectiveTotalPausedMs(session, endedAt),
+    );
+  }
+
+  /**
+   * Hand the finished roleplay to whichever progression engine owns it, if any.
+   *
+   * `score` is deliberately allowed to be absent: the sweep has no score to
+   * pass (the agent's message that carried it never arrived) and
+   * `meetsMinimumScore` already defines that case — an item with no positive
+   * minimum completes on having been played, and a real gate treats a missing
+   * score as 0 so the learner retries rather than clearing the bar by accident.
+   * Nothing here ever invents a number.
+   */
+  private async applyRoleplayProgression(
+    session: ScenarioSessions,
+    score: number | undefined,
+    callDuration: number,
+  ): Promise<void> {
+    if (session.scenarioPathSessionItemId) {
+      await this.scenarioPathSessionService.handleEndScenarioPathSession({
+        scenarioPathSessionItemId: session.scenarioPathSessionItemId,
+        score,
+        callDuration,
+      });
+    } else if (session.caseSessionItemId) {
+      await this.caseSessionService.handleEndCaseSession({
+        caseSessionItemId: session.caseSessionItemId,
+        score,
+        callDuration,
+      });
+    } else if (session.trackItemProgressId) {
+      // Track 2.0: roleplay played inside a track.
+      await this.trackProgressService.handleRoleplayEnd({
+        trackItemProgressId: session.trackItemProgressId,
+        score,
+        callDuration,
+      });
     }
+  }
+
+  /**
+   * Credit the session's active minutes to the community leaderboard.
+   *
+   * Only ever called after a caller has won the IN_PROGRESS -> COMPLETED
+   * compare-and-set, which is what stops the same minutes being counted twice.
+   */
+  private emitLeaderboardPracticeMinutes(
+    session: ScenarioSessions,
+    callDuration: number,
+    endedAt: Date,
+  ): void {
+    const durationMinutes = callDuration / (1000 * 60);
+    if (durationMinutes <= 0) return;
+    this.eventEmitter.emit(
+      ScenarioSessionLeaderboardEvent.SCENARIO_SESSION_ENDED,
+      {
+        userId: session.counselorId,
+        tenantId: session.tenantId,
+        date: endedAt,
+        durationMinutes,
+        scenarioSessionId: session.id,
+      } as ScenarioSessionLeaderboardEndedEventParams,
+    );
   }
 
   @WithExecutionContext(ExecutionContextPropagation.SUPPORTS)
@@ -1260,6 +1478,18 @@ export class ScenarioSessionService {
     callDuration = Math.max(
       0,
       callDuration - this.effectiveTotalPausedMs(scenarioSession, endedAt),
+    );
+
+    // Record the duration on the end path itself rather than leaving it to the
+    // summary writer below: that writer returns early for a roleplay with no
+    // post-session feedback tabs and for a retry over an already-summarised
+    // session, and neither case should cost the learner their practice
+    // minutes. Awaited before the fire-and-forget summary call, so the two
+    // writers can't race.
+    await this.persistCallDuration(
+      scenarioSessionId,
+      scenarioSession.tenantId,
+      callDuration,
     );
 
     // Consume credits first so metadata.creditsUsed reflects the actual charge.
@@ -1658,6 +1888,11 @@ export class ScenarioSessionService {
             )
           : null;
 
+        // What the supervisor already said to the learner DURING this session,
+        // so the note can pick that thread up rather than repeat it cold. Empty
+        // whenever the scenario's live-notes toggle is off, which is the default.
+        const liveNotes = await this.getSupervisorNotes(scenarioSessionId);
+
         const aiResult = useEvaluation
           ? await this.aiService.getScenarioSessionEvaluation(
               messages as ScenarioEvaluationChatMessage[],
@@ -1672,6 +1907,7 @@ export class ScenarioSessionService {
                 supervisorMemory,
                 helpfulBehaviours: sessionContext?.helpfulBehaviours,
                 unhelpfulBehaviours: sessionContext?.unhelpfulBehaviours,
+                liveNotes,
               },
             )
           : await this.aiService.getScenarioSessionSummary(
@@ -1705,18 +1941,6 @@ export class ScenarioSessionService {
             const messageId = parseInt(item.message_id, 10);
             item.start_time = messageStartSecondsByMessageId.get(messageId);
           }
-        }
-
-        if (useEvaluation && aiResult && 'message_tags' in aiResult) {
-          await this.dataSource.transaction(async (entityManager) => {
-            await this.persistMessageTags(
-              entityManager,
-              scenarioSessionId,
-              tenantId,
-              scenarioSessionMessages.map((m) => m.id),
-              aiResult.message_tags,
-            );
-          });
         }
 
         // memory_update is the supervisor's private note-to-self about the
@@ -2005,109 +2229,6 @@ export class ScenarioSessionService {
     }
   }
 
-  private async persistMessageTags(
-    entityManager: EntityManager,
-    scenarioSessionId: string,
-    tenantId: string,
-    validMessageIds: number[],
-    messageTags: ScenarioEvaluationMessageTag[],
-  ) {
-    const messageIdsSet = new Set(validMessageIds);
-    const tagsRepo = entityManager.getRepository(ScenarioSessionTags);
-    const messageTagsRepo = entityManager.getRepository(
-      ScenarioSessionMessageTags,
-    );
-
-    const uniqueLabels = new Set<string>();
-    const desiredMappings: Array<{
-      messageId: number;
-      label: string;
-      category: ScenarioSessionTagCategory;
-    }> = [];
-
-    for (const msgTag of messageTags) {
-      const messageId = parseInt(msgTag.id, 10);
-      if (Number.isNaN(messageId) || !messageIdsSet.has(messageId)) {
-        continue;
-      }
-      const tags = msgTag.tags ?? [];
-      for (const tag of tags) {
-        const category = tag.category as ScenarioSessionTagCategory;
-        if (
-          !tag?.label ||
-          !category ||
-          !Object.values(ScenarioSessionTagCategory).includes(category)
-        ) {
-          continue;
-        }
-        uniqueLabels.add(tag.label);
-        desiredMappings.push({ messageId, label: tag.label, category });
-      }
-    }
-
-    if (uniqueLabels.size === 0) {
-      return;
-    }
-
-    const existingTags = await tagsRepo.find({
-      where: { label: In(Array.from(uniqueLabels)) },
-    });
-    const labelToTag = new Map<string, ScenarioSessionTags>();
-    for (const t of existingTags) {
-      labelToTag.set(t.label, t);
-    }
-
-    const missingLabels = Array.from(uniqueLabels).filter(
-      (label) => !labelToTag.has(label),
-    );
-    if (missingLabels.length > 0) {
-      const newTags = missingLabels.map((label) => tagsRepo.create({ label }));
-      const saved = await tagsRepo.save(newTags);
-      for (const t of saved) {
-        labelToTag.set(t.label, t);
-      }
-    }
-
-    const existingMappings = await messageTagsRepo.find({
-      where: {
-        scenarioSessionId,
-        messageId: In(validMessageIds),
-      },
-      select: ['messageId', 'tagId'],
-    });
-    const existingKeySet = new Set(
-      existingMappings.map((m) => `${m.messageId}-${m.tagId}`),
-    );
-
-    const tagsToInsert: Array<{
-      scenarioSessionId: string;
-      messageId: number;
-      tagId: string;
-      category: ScenarioSessionTagCategory;
-      tenantId: string;
-    }> = [];
-    for (const m of desiredMappings) {
-      const tagId = labelToTag.get(m.label)?.id;
-      if (!tagId) continue;
-      const key = `${m.messageId}-${tagId}`;
-      if (!existingKeySet.has(key)) {
-        existingKeySet.add(key);
-        tagsToInsert.push({
-          scenarioSessionId,
-          messageId: m.messageId,
-          tagId,
-          category: m.category,
-          tenantId,
-        });
-      }
-    }
-
-    if (tagsToInsert.length > 0) {
-      const entities = messageTagsRepo.create(tagsToInsert);
-      await messageTagsRepo.save(entities);
-    }
-  }
-
   async generateScenarioSessionToken(roomId: string, counselorId: number) {
     return await this.livekitService.generateAccessToken({
       roomName: roomId,
@@ -2210,8 +2331,20 @@ export class ScenarioSessionService {
         // rather than becoming `false`: the language judge conditions on
         // presence, and an older worker's silence must not read as "this turn
         // was not interrupted". See MessageRequest.interrupted.
-        ...(chatMessage.interrupted !== undefined && {
-          metadata: { interrupted: chatMessage.interrupted },
+        // Both are stored only when the worker actually reported them.
+        // Undefined stays absent rather than becoming a default: the judges
+        // condition on presence, and an older worker's silence must not read as
+        // "not interrupted" or "this was a real reply". See MessageRequest.
+        ...((chatMessage.interrupted !== undefined ||
+          chatMessage.utterance_kind !== undefined) && {
+          metadata: {
+            ...(chatMessage.interrupted !== undefined && {
+              interrupted: chatMessage.interrupted,
+            }),
+            ...(chatMessage.utterance_kind !== undefined && {
+              utteranceKind: chatMessage.utterance_kind,
+            }),
+          },
         }),
       });
     return this.scenarioSessionMessagesRepository.save(scenarioSessionMessage);
@@ -2301,6 +2434,39 @@ export class ScenarioSessionService {
       );
     }
     return total;
+  }
+
+  /**
+   * Write the session's active duration (MILLISECONDS, net of paused time) to
+   * the details row. This is the number every analytics surface sums as
+   * practice minutes, so it has to land on every end path — not just the one
+   * that generates a summary.
+   *
+   * Atomic upsert on the unique `scenarioSessionId` index (migration 1869) and
+   * scoped to the single column, so it never clobbers a summary or an
+   * evaluation result written by the other two writers, in either order.
+   * Best-effort: end-of-session bookkeeping must not fail on it.
+   */
+  private async persistCallDuration(
+    scenarioSessionId: string,
+    tenantId: string,
+    callDuration: number,
+  ): Promise<void> {
+    // A zero-length session has no practice time to record; don't materialise
+    // an otherwise-empty details row for it.
+    if (!callDuration || callDuration <= 0) return;
+    try {
+      await this.scenarioSessionDetailsRepository.upsert(
+        { scenarioSessionId, tenantId, callDuration },
+        { conflictPaths: ['scenarioSessionId'] },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to persist callDuration for ${scenarioSessionId}: ${
+          (error as Error)?.message
+        }`,
+      );
+    }
   }
 
   async addScenarioSessionEvent(
@@ -2509,6 +2675,62 @@ export class ScenarioSessionService {
     await repo.save(row);
   }
 
+  /**
+   * Persist one live supervisor note. Idempotent on (scenarioSessionId, seq):
+   * an SQS redelivery of a note the learner already read is ignored rather than
+   * duplicated, so the debrief never sees the same hint twice.
+   */
+  async addSupervisorNote(
+    scenarioSession: ScenarioSessions,
+    note: LearnSupervisorNoteData,
+  ): Promise<void> {
+    const repo = this.dataSource.getRepository(ScenarioSessionSupervisorNotes);
+    await repo
+      .createQueryBuilder()
+      .insert()
+      .values({
+        scenarioSessionId: scenarioSession.id,
+        tenantId: scenarioSession.tenantId,
+        seq: note.seq,
+        note: note.note.trim(),
+        turnIndex: note.turn_index,
+        language: note.language,
+        env: note.env,
+      })
+      .orIgnore()
+      .execute();
+  }
+
+  /**
+   * The session's live supervisor notes in the order the learner saw them.
+   * Read at session end to give the debrief its "as I mentioned during the
+   * session…" continuity; an empty array is the normal case (the toggle is off
+   * for most scenarios, and an enabled session may still earn no notes).
+   */
+  async getSupervisorNotes(scenarioSessionId: string): Promise<string[]> {
+    // Best-effort: these notes only add continuity to the debrief note, so a
+    // failure here must cost the learner that continuity and nothing else.
+    // Letting it throw would abort the whole evaluation and leave the session
+    // with no debrief at all — a far worse outcome than a note that opens cold.
+    try {
+      const repo = this.dataSource.getRepository(
+        ScenarioSessionSupervisorNotes,
+      );
+      const rows = await repo.find({
+        select: ['note'],
+        where: { scenarioSessionId },
+        order: { seq: 'ASC' },
+      });
+      return rows.map((row) => row.note);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to read supervisor notes for session ${scenarioSessionId}: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
+  }
+
   async addScenarioSessionBehaviorInstruction(
     scenarioSession: ScenarioSessions,
     behaviorInstruction: LearnBehaviorInstructionData,
@@ -2615,6 +2837,22 @@ export class ScenarioSessionService {
       languageDetails,
     });
     const roomName = `preview-${scenarioId}-${v4()}`;
+
+    // Open the run now so the monologue the agent ships at end of session has
+    // a row to land on — and so a preview that produced nothing still records
+    // who ran it, against which version, in which language. Best-effort by
+    // construction; PreviewMonologueService never throws into this path.
+    await this.previewMonologueService.startRun({
+      roomName,
+      scenarioId,
+      scenarioVersionId: scenarioVersionId ?? null,
+      languageId: languageId ?? enLanguageDetails?.id ?? null,
+      // Stored for provenance. Reads are not tenant-filtered, matching the
+      // rest of the admin scenario surface (getScenario is permission-guarded,
+      // not tenant-partitioned) — filtering only here would be inconsistent.
+      tenantId: ExecutionManager.getTenantId() ?? null,
+      startedByUserId: userId,
+    });
 
     // Preparing checklist events for simulation room, only if CHECKLIST mode is enabled for scenario
     let checklistEvents: ChecklistItem[] = [];
@@ -2775,6 +3013,271 @@ export class ScenarioSessionService {
         `The following required fields are missing for preview scenario: ${missingFields.join(', ')}`,
       );
     }
+  }
+
+  /**
+   * Label an already-terminal session as abandoned.
+   *
+   * Only ever writes `eventStatus`, never `status`, and only when the row is
+   * still at IN_PROGRESS. That guard is what makes it safe to call from the
+   * `room_finished` webhook, which races the agent's `end-of-session` message:
+   * if that message won and wrote COMPLETED, the session genuinely completed its
+   * lifecycle and must not be relabelled. Idempotent, so a redelivered webhook
+   * costs one no-op UPDATE.
+   *
+   * The race also runs the other way — this label lands and the message arrives
+   * a beat later — and the label loses that one too: see the
+   * ROOM_FINISHED_WITHOUT_END reclaim in `handleEndScenarioSessionEvent`. This
+   * is a guess that no end-of-session is coming, so the end-of-session itself
+   * always outranks it.
+   */
+  async markSessionAbandoned(
+    scenarioSessionId: string,
+    reason: ScenarioSessionAbandonReason,
+  ): Promise<void> {
+    const result = await this.scenarioSessionRepository.update(
+      {
+        id: scenarioSessionId,
+        eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
+      },
+      {
+        eventStatus: ScenarioSessionEventStatus.ABANDONED,
+        abandonedReason: reason,
+      },
+    );
+    if (result.affected) {
+      this.logger.warn(
+        `Scenario session ${scenarioSessionId} marked ABANDONED (${reason})`,
+      );
+    } else {
+      this.logger.info(
+        `Scenario session ${scenarioSessionId} not labelled abandoned — its ` +
+          `lifecycle had already completed`,
+      );
+    }
+  }
+
+  /**
+   * Reap sessions left ACTIVE with no possibility of ever ending.
+   *
+   * Moves them ACTIVE → ABANDONED and stamps `endedAt` so they stop reading as
+   * live. Deliberately does NOT run the full end flow: there is no transcript
+   * worth summarising, no score to compute, and no learner waiting — and
+   * charging credits or awarding practice minutes for a session that never
+   * happened would be worse than leaving it unrecorded.
+   *
+   * Includes sessions that never started at all — see `findSessionsStuckActive`
+   * for why those are the ones that matter most: while such a row survives, its
+   * learner cannot start ANY new session.
+   *
+   * Returns what it found and what it changed so the scheduler can log it.
+   */
+  async sweepStuckActiveSessions(): Promise<{
+    found: number;
+    abandoned: number;
+  }> {
+    const activeBefore = new Date(Date.now() - STUCK_SESSION_AGE_MS);
+    const stuck = await this.scenarioSessionRepository.findSessionsStuckActive({
+      activeBefore,
+      limit: STUCK_SESSION_SWEEP_LIMIT,
+    });
+    if (!stuck.length) return { found: 0, abandoned: 0 };
+
+    let abandoned = 0;
+    for (const session of stuck) {
+      // One row at a time, each guarded on status still being ACTIVE, so a
+      // session that ends between the read and the write is left alone rather
+      // than being clobbered by a bulk UPDATE.
+      const result = await this.scenarioSessionRepository.update(
+        { id: session.id, status: ScenarioSessionStatus.ACTIVE },
+        {
+          status: ScenarioSessionStatus.ABANDONED,
+          eventStatus: ScenarioSessionEventStatus.ABANDONED,
+          abandonedReason: ScenarioSessionAbandonReason.STUCK_ACTIVE_SWEEP,
+          // Wall-clock truth: it stopped being live when it stopped, which we
+          // cannot know, so the sweep time is the honest upper bound. Analytics
+          // never reads it — ABANDONED is excluded from every `status = 'ENDED'`
+          // filter — so this is for humans reading the row.
+          endedAt: new Date(),
+        },
+      );
+      if (result.affected) abandoned += 1;
+    }
+
+    this.logger.warn(
+      `Stuck-session sweep: ${stuck.length} session(s) had been ACTIVE since ` +
+        `before ${activeBefore.toISOString()}; ${abandoned} marked ABANDONED`,
+    );
+    return { found: stuck.length, abandoned };
+  }
+
+  /**
+   * Finish the post-session lifecycle for sessions that ended but were never
+   * finalised.
+   *
+   * WHY THIS EXISTS. Everything a finished roleplay owes its learner —
+   * `eventStatus = COMPLETED`, the track/path/case item it should complete, and
+   * the practice minutes it should add to the community leaderboard — is
+   * written from one place only: `handleEndScenarioSessionEvent`, off the
+   * agent's `end-of-session` SQS message. That message is the most losable part
+   * of the whole flow. The agent can die before finalize runs, the send can be
+   * rejected, the message can be dead-lettered, or a bug in the handler can
+   * make it bail out — and in every one of those cases the learner is left with
+   * a session that visibly happened (it has a duration, a transcript and a
+   * summary, and it cost them credits) but that the platform never counted.
+   * A learner cannot see, or fix, any of that.
+   *
+   * So this sweep repairs what it can prove and never guesses at the rest:
+   *
+   *  - **The score is left NULL, and not invented.** It is tempting to rebuild
+   *    it — `totalScore` was only the sum of the detections the agent reported
+   *    one at a time, and we persisted every one of those. But the sum of our
+   *    rows is not the same number: a termination event outside the scenario's
+   *    `trigger_events` reaches us with its score while the agent's own total
+   *    excludes it, and nothing we store says which events those were. A
+   *    learner's score is not the place for a number that is nearly right, so
+   *    the sum is logged as a diagnostic (see `sumDetectionScores`) for a human
+   *    to act on, and the column keeps the NULL that every surface already
+   *    renders as "--".
+   *  - **Progression is re-run with no score**, which `meetsMinimumScore`
+   *    already defines: an item with no positive minimum completes on having
+   *    been played, and one with a real gate treats a missing score as 0 so the
+   *    learner retries rather than clearing a bar by accident. Nobody is passed
+   *    on data we do not have.
+   *  - **Practice minutes come from the persisted timestamps**, which are real
+   *    — the same arithmetic the live path uses, via `activeCallDuration`.
+   *  - **Credits are never touched.** Whichever path ended the session already
+   *    charged them; this is a repair, not a re-run.
+   *
+   * Idempotent by construction: the IN_PROGRESS -> COMPLETED compare-and-set is
+   * what licenses each row's side effects, so a second tick over the same row
+   * finds nothing to win and does nothing. A row the stuck-session sweeper
+   * labelled ABANDONED is excluded by the same token.
+   *
+   * Returns what it found and what it changed so the scheduler can log it.
+   */
+  async sweepUnfinalisedEndedSessions(): Promise<{
+    found: number;
+    finalised: number;
+  }> {
+    const now = Date.now();
+    const endedBefore = new Date(now - UNFINALISED_SESSION_GRACE_MS);
+    const endedAfter = new Date(now - UNFINALISED_SESSION_LOOKBACK_MS);
+
+    let sessions: ScenarioSessions[];
+    try {
+      sessions =
+        await this.scenarioSessionRepository.findEndedSessionsMissingFinalisation(
+          { endedAfter, endedBefore, limit: UNFINALISED_SESSION_SWEEP_LIMIT },
+        );
+    } catch (error) {
+      this.logger.error(
+        `[UNFINALISED_SWEEP] scan failed: ${(error as Error)?.message}`,
+      );
+      return { found: 0, finalised: 0 };
+    }
+    if (!sessions.length) return { found: 0, finalised: 0 };
+
+    // Diagnostic only, and best-effort: this is the sum of the detections we
+    // persisted, logged so a human has something to work from on a session
+    // whose score is gone. It is deliberately NOT written to the score column —
+    // see this method's doc comment for why it is close but not equal.
+    let detectionSums = new Map<string, number>();
+    try {
+      detectionSums = await this.scenarioSessionRepository.sumDetectionScores(
+        sessions.map((session) => session.id),
+      );
+    } catch (error) {
+      this.logger.error(
+        `[UNFINALISED_SWEEP] detection-score diagnostic failed for this batch; ` +
+          `finalising without it: ${(error as Error)?.message}`,
+      );
+    }
+
+    let finalised = 0;
+    for (const session of sessions) {
+      // Per-row try/catch: one session whose progression engine throws must not
+      // abort the sweep and leave the rest of the backlog unrepaired.
+      try {
+        if (
+          await this.finaliseUnfinalisedSession(
+            session,
+            detectionSums.get(session.id),
+          )
+        ) {
+          finalised += 1;
+        }
+      } catch (error) {
+        this.logger.error(
+          `[UNFINALISED_SWEEP] failed to finalise ${session.id}: ${
+            (error as Error)?.message
+          }`,
+        );
+      }
+    }
+
+    this.logger.warn(
+      `[UNFINALISED_SWEEP] ${sessions.length} session(s) ended between ` +
+        `${endedAfter.toISOString()} and ${endedBefore.toISOString()} without ` +
+        `their lifecycle completing; ${finalised} finalised. Scores stay NULL: ` +
+        `they were only ever in the message that never arrived`,
+    );
+    return { found: sessions.length, finalised };
+  }
+
+  /**
+   * Complete one unfinalised session. Returns whether this call is the one that
+   * won the compare-and-set and therefore ran the side effects.
+   *
+   * Sets the execution context from the row itself: the sweep runs from the
+   * scheduler with no request context, and the progression engines below issue
+   * tenant-scoped queries.
+   */
+  private async finaliseUnfinalisedSession(
+    session: ScenarioSessions,
+    detectionScoreSum?: number,
+  ): Promise<boolean> {
+    ExecutionManager.setAuthContext(
+      session.counselorId.toString(),
+      session.tenantId,
+    );
+
+    const startedAt = session.startedAt ?? session.endedAt ?? new Date();
+    const endedAt = session.endedAt ?? new Date();
+    const callDuration = this.activeCallDuration(session, startedAt, endedAt);
+
+    // Only the lifecycle flag moves. `score` is deliberately not written here:
+    // see this method's caller for why the detection sum is a diagnostic rather
+    // than a score. Guarded on IN_PROGRESS — winning that flip is what licenses
+    // the side effects below.
+    const result = await this.scenarioSessionRepository.update(
+      {
+        id: session.id,
+        eventStatus: ScenarioSessionEventStatus.IN_PROGRESS,
+      },
+      { eventStatus: ScenarioSessionEventStatus.COMPLETED },
+    );
+    if (!result.affected) {
+      this.logger.info(
+        `[UNFINALISED_SWEEP] ${session.id} was finalised by another path ` +
+          `between the scan and the write — left alone`,
+      );
+      return false;
+    }
+
+    await this.applyRoleplayProgression(session, undefined, callDuration);
+    this.emitLeaderboardPracticeMinutes(session, callDuration, endedAt);
+
+    // The detection sum goes in the log, not the column: it is what a human
+    // needs to judge this session by hand, and stating it as "approximately"
+    // is exactly the claim we can defend.
+    this.logger.info(
+      `[UNFINALISED_SWEEP] finalised ${session.id} (learner ` +
+        `${session.counselorId}, ${Math.round(callDuration / 1000)}s of ` +
+        `practice credited, score left NULL; persisted detections sum to ` +
+        `${detectionScoreSum === undefined ? 'nothing — none were recorded' : `approximately ${detectionScoreSum}`})`,
+    );
+    return true;
   }
 
   async endPreviewScenario(roomName: string) {
@@ -3177,10 +3680,25 @@ export class ScenarioSessionService {
       });
 
     // Tag the session as a V2V test so it can be filtered downstream.
+    //
+    // `selectedMainPromptCode` is captured here for the same reason
+    // `startScenarioSession` captures it: analytics cannot otherwise tell which
+    // main-agent prompt produced a session. It was missing on this path, so
+    // every V2V run — the sessions we deliberately generate to COMPARE prompts
+    // — was the one population that could not be attributed to one.
+    //
+    // Read from the scenario at start time, not at analysis time: a scenario's
+    // selected prompt mutates, and on 2026-08-28 scenario 440 ran on two
+    // different prompts within an hour.
+    const v2vSelectedMainPromptCode = scenario?.metadata
+      ?.selectedMainPromptCode as string | undefined;
     scenarioSession.metadata = {
       ...(scenarioSession.metadata ?? {}),
       v2vTest: true,
       v2vMaxExchanges: maxExchanges,
+      ...(v2vSelectedMainPromptCode
+        ? { selectedMainPromptCode: v2vSelectedMainPromptCode }
+        : {}),
     };
     await this.scenarioSessionRepository.save(scenarioSession);
 

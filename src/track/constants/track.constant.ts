@@ -8,6 +8,13 @@ export const TRACK_MAX_SECTIONS = 20;
 export const TRACK_MAX_ITEMS_PER_SECTION = 30;
 export const TRACK_MAX_QUIZ_QUESTIONS = 50;
 
+/**
+ * Inline questions per ARTICLE. Deliberately far below the quiz ceiling: an
+ * article question is a reading check punctuating prose, and an article
+ * carrying dozens of them is a quiz that has been written in the wrong place.
+ */
+export const TRACK_MAX_ARTICLE_QUESTIONS = 10;
+
 export const TRACK_DEFAULT_VIDEO_WATCH_PCT = 90;
 export const TRACK_DEFAULT_QUIZ_PASS_SCORE = 70;
 
@@ -42,3 +49,23 @@ export const TRACK_MEDIA_ALLOWED_CONTENT_TYPES: Record<
 
 /** Per-question timeout for LLM grading of open-ended quiz answers. */
 export const TRACK_QUIZ_LLM_GRADING_TIMEOUT_MS = 20_000;
+
+/**
+ * Evaluated ROLEPLAY sessions a skillCoverage category needs, within one
+ * course, before its average is trusted enough to classify. One session is
+ * one LLM judge's read of one conversation; the spread between a learner's
+ * adjacent sessions is routinely tens of points (same reasoning as
+ * SKILL_TREND_WINDOW in skill-growth-analytics.repository.ts). Below this,
+ * the category reads as `insufficient_data` regardless of its average.
+ */
+export const TRACK_PROGRESS_MIN_SKILL_SAMPLE = 2;
+
+/**
+ * Average skillCoverage percentage at/above which a category reads
+ * `demonstrated` rather than `needs_practice`. Reuses the pass bar every
+ * other scored Track component already treats as passing
+ * (TRACK_DEFAULT_QUIZ_PASS_SCORE / TRACK_DEFAULT_ANNOTATION_PASS_SCORE are
+ * both 70) rather than inventing a second, disconnected cutoff for roleplay
+ * skill coverage specifically.
+ */
+export const TRACK_PROGRESS_SKILL_DEMONSTRATED_PCT = 70;

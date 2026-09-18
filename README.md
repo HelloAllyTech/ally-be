@@ -241,10 +241,51 @@ Seeds live in `src/database/seeds/` and insert the minimum dataset needed for lo
 
 What gets seeded:
 
-- 1 tenant (`ally`)
-- 4 test users: `admin@example.com` (SUPER_ADMIN), `org-admin@example.com` (ADMIN), `learner@example.com` (LEARNER+COUNSELOR), `multi-tenant-admin1@example.com` (MULTI_TENANT_ADMIN)
-- One scenario voice per active language (13 by default), 3 session events, 2 scenarios, 1 pathway, 1 case, 4 badges
-- 3 scenario sessions (2 completed with sample transcripts, 1 active) so scribe-reviewer and admin dashboards have data to read
+- 4 tenants — `ally` (internal/demo), two active paying customers
+  (`northwind-behavioral-health`, `riverside-wellness-center`), one
+  SUSPENDED (`brightpath-counseling`)
+- 22 users spanning every role, across all 4 tenants, including account edge
+  cases (never-logged-in, onboarding incomplete, individually suspended)
+- Platform admins: `admin@example.com` (SUPER_ADMIN tier),
+  `arjun.rao@helloally.ai` (SUPER_DUPER_ADMIN tier),
+  `multi-tenant-admin1@example.com` and `sarah.thompson@northwindbh.org`
+  (MULTI_TENANT_ADMIN tier). Each also gets `PLATFORM_ADMIN` group
+  membership plus the `admin_feature_toggles` rows their tier is entitled to
+  (`admin-access.seeder.ts`, derived from `FEATURE_TOGGLES[].legacyGrants` in
+  [`admin-feature-toggle.constants.ts`](src/authorization/constants/admin-feature-toggle.constants.ts)
+  — the same registry the `CreatePlatformAdminRole` migration reads). Without
+  this an admin logs in and finds Content Management, Analytics, Settings,
+  AI Lab and ~20 other surfaces blocked, because `FeatureToggleGuard` fails
+  closed on a missing toggle row.
+- Other logins worth knowing: `org-admin@example.com` (ADMIN, tenant-scoped),
+  `learner@example.com` (LEARNER+COUNSELOR — the one to log into
+  Helpline/counselor-training as), `reviewer@example.com`
+  (SIMULATION_REVIEWER)
+- One scenario voice per active language (13 by default), 3 session events,
+  10 scenarios (7 ACTIVE, 1 DRAFT, 1 COMING_SOON, 1 ARCHIVED), 4 scenario
+  translations (hi-IN/mr-IN/ta-IN across 4 scenarios), 4 scenario_versions
+  (draft/published/archived history on one scenario), 4 pathways, 3 cases
+  (1 DRAFT), 3 tracks (1 ACTIVE with learner progress, 1 DRAFT, 1 ARCHIVED),
+  10 badges (1 DRAFT) with 10 earned-badge rows across 5 learners
+- 15 scenario sessions across every lifecycle state (ENDED, ACTIVE,
+  ABANDONED, and an ENDED-but-force-exited-by-the-watchdog case), with
+  transcripts, events, per-session metrics, and reviews spanning 3 of the 4
+  tenants (including one HIDDEN review) — so scribe-reviewer, reviewer and
+  admin dashboards all have real, varied data to read, not just the `ally`
+  tenant's
+- Scribe (helpline) data for `ally` and `riverside-wellness-center`: 7 calls
+  across ENDED/SUCCESS, ENDED/FAILED and ACTIVE/PENDING states, plus a scribe
+  review so both seeded SCRIBE_REVIEWER accounts have something to review in
+  their own tenant
+- Varied simulation-credit states (comfortably under, exact-boundary,
+  blocked-though-under-limit, at-limit, and over-consumed) instead of one
+  flat default for almost everyone
+- Product roadmap: 6 opportunities covering every stage/type, with
+  allocations, a comment, an interview note, and a saved view
+- AI Lab: 2 variables/6 values/2 skills, plus a full Lab Run workflow — 2
+  runs (1 COMPLETED+published, 1 FAILED), 2 evaluator accounts (one with a
+  pending assignment), a published question set, submitted human answers,
+  and an auto-evaluation — not just the config building blocks
 
 #### Commands
 
@@ -256,7 +297,7 @@ npm run seed
 npm run seed:reset -- --confirm && npm run seed
 ```
 
-`seed:reset` refuses to run without `--confirm` (or `SEED_RESET_CONFIRM=1`) and refuses entirely when `NODE_ENV=production`. It uses `TRUNCATE ... CASCADE` across the 14 seeded tables, so rows in other tables with foreign keys to these will also be deleted — run against a dev DB only.
+`seed:reset` refuses to run without `--confirm` (or `SEED_RESET_CONFIRM=1`) and refuses entirely when `NODE_ENV=production`. It `TRUNCATE`s every table the seeders own — see the full, commented list (and what's deliberately excluded because a migration owns those rows instead) in [`reset.ts`](src/database/seeds/reset.ts). Note that almost nothing in this schema declares a real foreign key (verified: ~6 total, across every migration), so `CASCADE` does very little work here — a table missing from that list simply keeps its stale rows, and since `users` truncates with `RESTART IDENTITY`, those rows can silently re-attach to whoever inherits the recycled id on the next seed. Add any new table you seed to that list. Run against a dev DB only.
 
 #### Login credentials
 
@@ -264,6 +305,13 @@ All seeded users share the same password and OTP:
 
 - **Password**: `Password123!` (override with `SEED_DEFAULT_PASSWORD`)
 - **OTP**: `1234` (override with `SEED_DEFAULT_OTP`; also needs matching entry in `TEST_ACCOUNTS` in `.env` for OTP login to work)
+
+Role and feature-toggle lookups sit behind 30-minute Redis caches
+(`user:roles:*`, `user:groups:*`, `admin:feature-toggles:*`). The seed writes
+rows directly to Postgres and cannot bust them, so if you were already logged
+in as a seeded admin before running `npm run seed`, flush those key patterns
+(or wait up to 30 minutes, or just log out and back in) before the new
+admin access appears.
 
 #### Docker
 

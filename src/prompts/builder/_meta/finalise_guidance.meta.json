@@ -1,0 +1,6 @@
+{
+  "name": "Builder Finalise — Guidance",
+  "description": "Tunable conduct guidance for the Builder finalise phase: what a pull request body owes its reviewer, and secrets. Interpolated into the finalise prompt, whose protocol and docs-guard flow stay in code.",
+  "category": "Builder",
+  "runtimes": ["ally-be"]
+}

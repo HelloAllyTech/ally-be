@@ -4,7 +4,6 @@ import {
   Injectable,
   InternalServerErrorException,
   NotFoundException,
-  UnprocessableEntityException,
 } from '@nestjs/common';
 import { DataSource, DeepPartial, EntityManager, In } from 'typeorm';
 
@@ -26,7 +25,6 @@ async function executeInChunks<T, R>(
   return results;
 }
 import { Scenarios } from '../entity/scenarios.entity';
-import { ScenarioEngine } from '../enum/scenario-engine.enum';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
 import { validateSimulationStates } from '../util/validate-simulation-states.util';
@@ -143,9 +141,8 @@ import { SessionEventTranslationService } from 'src/session-event/service/sessio
 import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
-import { OpenAIAutofillService } from './openai-autofil-service';
-import { AnthropicAutofillService } from './anthropic-autofill.service';
 import { ENHANCE_AUTO_IMPROVE_INSTRUCTION } from '../util/autofill-shared.util';
+import { AutofillService } from './autofill.service';
 import {
   EnhanceScenarioFieldDto,
   EnhanceScenarioFieldResponseDto,
@@ -158,18 +155,22 @@ import {
 } from '../enum/enhanceable-field.enum';
 import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
-import { AgentBuilderField } from '../enum/agent-builder-field.enum';
+import {
+  AgentBuilderField,
+  isLanguageScopedAgentBuilderField,
+  MAX_SPOKEN_LANGUAGES,
+} from '../enum/agent-builder-field.enum';
 import {
   GenerateAgentBuilderFieldDto,
   GenerateAgentBuilderFieldResponseDto,
 } from '../dto/generate-agent-builder-field.dto';
 import { toPromptCode } from 'src/prompt/util/prompt-code.util';
+import { ScenarioVoiceLanguage } from '../type/scenario-language-voice.type';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import {
   LlmRuntime,
   LlmProviderName,
 } from 'src/llm/constants/llm-model-registry.constants';
-import { modelSupportsTemperature } from 'src/common/util/llm-model.util';
 import {
   buildAvailableLanguagesMap,
   getDistinctScenarioLanguageIds,
@@ -181,8 +182,6 @@ import {
 } from 'src/common/util/time.util';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { TokenUser } from 'src/auth/type/auth.types';
-import { User } from 'src/user/entity/user.entity';
-import { isRoleplayV2EmailAllowed } from 'src/common/util/roleplay-v2-access.util';
 import { AuditLogService } from 'src/audit/service/audit-log.service';
 import {
   AUDIT_ACTIONS,
@@ -218,8 +217,7 @@ export class ScenarioService {
     private scenarioReportService: ScenarioReportService,
     private scenarioBehaviorInstructionService: ScenarioBehaviorInstructionService,
     private competencyService: CompetencyService,
-    private openAIAutofillService: OpenAIAutofillService,
-    private anthropicAutofillService: AnthropicAutofillService,
+    private autofillService: AutofillService,
     private behaviorService: BehaviorService,
     private permissionsService: PermissionsService,
     private readonly auditLogService: AuditLogService,
@@ -249,11 +247,6 @@ export class ScenarioService {
     if (!tenantId) {
       throw new BadRequestException('Tenant ID is required');
     }
-    // v2 scenarios are only listed for a v2-allowlisted requester (e.g. the
-    // tester); every other learner sees the v1 catalog exactly as before and
-    // never encounters a v2 scenario (nor its rollout-gate 403).
-    const includeRoleplayV2 = await this.isCurrentUserRoleplayV2Allowed();
-
     // Cohort narrowing. Resolved here rather than in the repository because only
     // the request context knows who is asking; `null` back means the learner is
     // in no cohort, which is a real audience ("Unassigned") and must still be
@@ -270,7 +263,6 @@ export class ScenarioService {
         tenantId,
         cohortScope: { cohortId },
         ...(languageCode && { languageCode }),
-        ...(includeRoleplayV2 && { includeRoleplayV2: true }),
       });
     let data = fetchedData;
 
@@ -350,27 +342,6 @@ export class ScenarioService {
         `Failed to load scenario completions: ${(error as Error)?.message}`,
       );
       return new Map();
-    }
-  }
-
-  /**
-   * Whether the CURRENT request's user may see/use v2 (flag on + allowlisted).
-   * Fully defensive: any missing context resolves to false so the safe default
-   * is "hide v2". Shares the exact allowlist logic used by the session-start
-   * gate (isRoleplayV2EmailAllowed).
-   */
-  private async isCurrentUserRoleplayV2Allowed(): Promise<boolean> {
-    try {
-      const config = this.configService.roleplayV2;
-      if (!config?.enabled) return false;
-      const userId = Number(ExecutionManager.getUserId());
-      if (!userId || Number.isNaN(userId)) return false;
-      const user = await this.dataSource
-        .getRepository(User)
-        .findOne({ where: { id: userId }, select: ['id', 'email'] });
-      return isRoleplayV2EmailAllowed(user?.email, config);
-    } catch {
-      return false;
     }
   }
 
@@ -961,11 +932,7 @@ export class ScenarioService {
         createScenarioDto.behaviorInstructions,
       );
     }
-    if (createScenarioDto.competencyId) {
-      await this.competencyService.validateCompetencyId(
-        createScenarioDto.competencyId,
-      );
-    }
+    await this.validateCompetencySelection(createScenarioDto);
     if (
       createScenarioDto.timerMode === true &&
       createScenarioDto.maxTimeValue
@@ -1217,6 +1184,26 @@ export class ScenarioService {
     }
   }
 
+  /**
+   * Validates every competency the caller named. `competencyIds` carries the
+   * whole selection — a cluster arrives here already expanded — so each id has
+   * to exist, not just the scalar mirror. Checked in parallel: a large cluster
+   * is a lookup per competency, and sequentially that is a round-trip each on
+   * every save.
+   */
+  private async validateCompetencySelection(
+    dto: CreateScenarioDto | UpdateScenarioDto,
+  ): Promise<void> {
+    const ids = new Set(
+      [...(dto.competencyIds ?? []), dto.competencyId].filter(
+        (id): id is string => Boolean(id),
+      ),
+    );
+    await Promise.all(
+      [...ids].map((id) => this.competencyService.validateCompetencyId(id)),
+    );
+  }
+
   private validateMaxTimeValue(maxTimeValue: string): void {
     if (!maxTimeValue) {
       return;
@@ -1432,16 +1419,6 @@ export class ScenarioService {
     await this.pruneStatesIfPromptNotStateful(updateScenarioDto);
 
     const scenario = await this.validateUpdateScenario(id, updateScenarioDto);
-
-    // Roleplay Studio v2 shells are materialised from a versioned spec — the
-    // v1 studio's fan-out must never touch them, or the next spec publish
-    // would silently clobber the edit. Author through the roleplay-studio
-    // endpoints instead.
-    if (scenario.engine === ScenarioEngine.ROLEPLAY_V2) {
-      throw new UnprocessableEntityException(
-        'This scenario is managed by Roleplay Studio v2; edit its roleplay spec instead.',
-      );
-    }
 
     const isMultiTenantAdmin =
       await this.permissionsService.isMultiTenantAdmin(userId);
@@ -1670,6 +1647,27 @@ export class ScenarioService {
     const originalBehaviorInstructions =
       await this.scenarioSharedService.getBehaviorInstructionsByScenarioId(id);
 
+    // Tenant assignments of the source, for a source that is NOT global.
+    //
+    // A copy nobody can reach is not a copy. `scenario_tenants` is the only
+    // thing that makes a simulation startable outside a course/case/path:
+    // `validateStartScenarioSession` requires an explicit row for the caller's
+    // tenant on the standalone start branch, and the learner catalog
+    // inner-joins the same table. Duplicating a tenant-scoped simulation
+    // without them produced a copy that looks complete in the studio, can be
+    // published, can be reached by id — and then refuses every Practice click
+    // with "Scenario is not available for your organization", permanently,
+    // with nothing in the duplicate flow ever backfilling the rows.
+    //
+    // Copying the source's own set can only ever reproduce the audience the
+    // source already had, never widen it; the isGlobal branch below is the
+    // same intent for the global case and was the only half implemented.
+    const sourceScenarioTenants = scenario.isGlobal
+      ? []
+      : await this.dataSource
+          .getRepository(ScenarioTenants)
+          .find({ where: { scenarioId: id } });
+
     const newScenario = {
       title: `Copy of ${scenario.title}`,
       description: scenario.description,
@@ -1709,6 +1707,8 @@ export class ScenarioService {
             feedbackStatus: item.feedbackStatus,
             message: item.message,
             score: item.score,
+            detectionConfig: item.detectionConfig,
+            checklistVisibilityStatus: item.checklistVisibilityStatus,
           }),
         );
         await scenarioEventRepo.save(newScenarioEvents);
@@ -1735,6 +1735,16 @@ export class ScenarioService {
           }),
         );
         await scenarioTenantRepo.save(scenarioTenants);
+      } else if (sourceScenarioTenants.length > 0) {
+        const scenarioTenantRepo = manager.getRepository(ScenarioTenants);
+        await scenarioTenantRepo.save(
+          sourceScenarioTenants.map(({ tenantId }) =>
+            scenarioTenantRepo.create({
+              scenarioId: newScenarioData.id,
+              tenantId,
+            }),
+          ),
+        );
       }
 
       // Copy behavior instructions from the original scenario
@@ -1881,11 +1891,7 @@ export class ScenarioService {
         updateScenarioDto.behaviorInstructions,
       );
     }
-    if (updateScenarioDto.competencyId) {
-      await this.competencyService.validateCompetencyId(
-        updateScenarioDto.competencyId,
-      );
-    }
+    await this.validateCompetencySelection(updateScenarioDto);
     if (
       updateScenarioDto.timerMode === true &&
       updateScenarioDto.maxTimeValue
@@ -3275,79 +3281,6 @@ export class ScenarioService {
   }
 
   /**
-   * Resolve which autofill service + model + temperature to use for a
-   * prompt-driven studio-AI call (generate / enhance / agent-builder copilot).
-   *
-   * Precedence (later wins): code default → prompt-level config (from Prompt
-   * Management) → the request's explicit override. This lets an author set a
-   * per-prompt model/temperature that applies whenever the UI doesn't send an
-   * explicit one (e.g. the Agent Builder Copilot, which sends none).
-   *
-   * Only OpenAI + Anthropic run autofill; a prompt-level Gemini provider is
-   * ignored here (no Gemini autofill executor) so the call never breaks.
-   * Temperature is dropped for models that reject a custom one (OpenAI
-   * reasoning models).
-   */
-  private async resolveAutofillLlm(
-    promptCode: string,
-    req: { provider?: string; model?: string; temperature?: number },
-  ): Promise<{
-    service: OpenAIAutofillService | AnthropicAutofillService;
-    provider: 'openai' | 'anthropic';
-    model?: string;
-    temperature?: number;
-  }> {
-    const registry = new Map<
-      'openai' | 'anthropic',
-      OpenAIAutofillService | AnthropicAutofillService
-    >([
-      ['openai', this.openAIAutofillService],
-      ['anthropic', this.anthropicAutofillService],
-    ]);
-    const isRunnable = (p?: string): p is 'openai' | 'anthropic' =>
-      p === 'openai' || p === 'anthropic';
-
-    const promptCfg =
-      await this.promptSharedService.getPromptLlmConfig(promptCode);
-
-    if (req.provider && !isRunnable(req.provider)) {
-      this.logger.warn(
-        `Unrecognized autofill provider "${req.provider}", falling back to openai`,
-      );
-    }
-
-    // Provider: request → prompt-level (if autofill-runnable) → openai.
-    let provider: 'openai' | 'anthropic' = 'openai';
-    if (isRunnable(req.provider)) provider = req.provider;
-    else if (isRunnable(promptCfg.provider)) provider = promptCfg.provider;
-
-    // Model: request → prompt-level (only when its provider matches the resolved
-    // provider — a Claude model can't run on OpenAI) → service default.
-    let model = req.model;
-    if (!model && promptCfg.model && promptCfg.provider === provider) {
-      model = promptCfg.model;
-    }
-
-    // Temperature: request → prompt-level; dropped for no-temperature models.
-    let temperature =
-      typeof req.temperature === 'number'
-        ? req.temperature
-        : promptCfg.temperature;
-    const providerDefault =
-      provider === 'anthropic'
-        ? this.configService.anthropic?.autofillModel
-        : this.configService.openai?.autofillModel;
-    if (
-      typeof temperature === 'number' &&
-      !modelSupportsTemperature(model ?? providerDefault)
-    ) {
-      temperature = undefined;
-    }
-
-    return { service: registry.get(provider)!, provider, model, temperature };
-  }
-
-  /**
    * Field-level Enhance: improve the existing content of a single scenario
    * field. Unlike {@link generateField} this never invents content — it takes
    * the field's current value plus the other field values as grounding context
@@ -3415,23 +3348,17 @@ export class ScenarioService {
       };
     }
 
-    const {
-      service: autofillService,
-      model: effectiveModel,
-      temperature,
-    } = await this.resolveAutofillLlm(promptCode, {
-      provider,
-      model,
-      temperature: enhanceScenarioFieldDto.temperature,
-    });
-
-    const content = await autofillService.enhanceFieldContent(
+    // Provider and model resolve inside the completion layer, from the prompt
+    // row then the platform tier — so there is no provider to pick here, and a
+    // prompt row selecting Gemini is no longer silently ignored.
+    const content = await this.autofillService.enhanceFieldContent(
       fieldName,
       promptCode,
       variables,
       expectJson,
-      effectiveModel,
-      temperature,
+      model,
+      enhanceScenarioFieldDto.temperature,
+      provider,
     );
 
     this.logger.info(`Enhancement completed for ${fieldName}`);
@@ -3518,6 +3445,17 @@ export class ScenarioService {
    * field has its own editable prompt template (src/prompts/agent_builder/)
    * and is fired independently in parallel by the frontend, so the results
    * paint into the form as each returns. Provider routing mirrors generateField.
+   *
+   * Three of the fields are about language rather than a form field of their
+   * own. `spoken_languages` reads the brief against the studio's language
+   * catalog and answers which languages the client speaks; the language-scoped
+   * fields (opening dialogues / linguistic style samples / filler words) then
+   * take a `languageId` and are generated natively in that language — one call
+   * per language, so a brief saying "speaks English, Hindi and Marathi" fills
+   * three language tabs instead of one. `language_voices` casts one voice per
+   * spoken language from the catalog, against the brief and the persona the
+   * wizard just generated, filling the mandatory Language-Voice mapping that
+   * those languages are otherwise unreachable through at runtime.
    */
   async generateAgentBuilderField(
     dto: GenerateAgentBuilderFieldDto,
@@ -3532,6 +3470,40 @@ export class ScenarioService {
       numKnowledgeSources: String(numKnowledgeSources),
     };
 
+    // Language plumbing. `spoken_languages` reads the whole catalog and picks
+    // the subset the brief says the client speaks; the language-scoped fields
+    // are each told the ONE language to write in. Every other field is
+    // language-agnostic and skips the catalog query entirely.
+    let catalog: ScenarioVoiceLanguage[] = [];
+    if (
+      field === AgentBuilderField.SPOKEN_LANGUAGES ||
+      field === AgentBuilderField.LANGUAGE_VOICES ||
+      isLanguageScopedAgentBuilderField(field)
+    ) {
+      catalog = await this.getAgentBuilderLanguageCatalog();
+    }
+    if (field === AgentBuilderField.SPOKEN_LANGUAGES) {
+      variables.availableLanguages = catalog
+        .map(
+          (lang) =>
+            `- ${lang.language_id} | ${lang.label} | ${this.languageLocale(lang)}`,
+        )
+        .join('\n');
+    } else if (field === AgentBuilderField.LANGUAGE_VOICES) {
+      catalog = this.voiceCastingCatalog(catalog, dto.languageIds);
+      variables.voiceCandidates = this.formatVoiceCandidates(catalog);
+      variables.personaGender = dto.personaGender?.trim() ?? '';
+      variables.personaAge =
+        typeof dto.personaAge === 'number' ? String(dto.personaAge) : '';
+    } else if (isLanguageScopedAgentBuilderField(field)) {
+      const language = this.resolveAgentBuilderLanguage(
+        catalog,
+        dto.languageId,
+      );
+      variables.languageName = language.label;
+      variables.languageCode = language.code;
+    }
+
     // The prompt-file basename equals the enum value; toPromptCode maps it to
     // src/prompts/agent_builder/<field>.txt (editable in Prompt Management).
     const promptCode = toPromptCode('agent_builder', field);
@@ -3542,29 +3514,241 @@ export class ScenarioService {
       field === AgentBuilderField.KNOWLEDGE_SOURCES ||
       field === AgentBuilderField.STATES ||
       field === AgentBuilderField.LINGUISTIC_STYLE_SAMPLES ||
-      field === AgentBuilderField.ALLOWED_FILLER_WORDS;
+      field === AgentBuilderField.ALLOWED_FILLER_WORDS ||
+      field === AgentBuilderField.SPOKEN_LANGUAGES ||
+      field === AgentBuilderField.LANGUAGE_VOICES;
 
-    // Honor the prompt's per-prompt model/temperature (the wizard sends none),
-    // with any explicit request override winning.
-    const {
-      service: autofillService,
-      model: effectiveModel,
-      temperature,
-    } = await this.resolveAutofillLlm(promptCode, {
-      provider: dto.provider,
-      model,
-      temperature: dto.temperature,
-    });
-
-    const raw = await autofillService.generateContentFromPrompt(
+    // The prompt row's own model/temperature is honoured inside the completion
+    // layer (the wizard sends none); an explicit request override still wins.
+    const raw = await this.autofillService.generateContentFromPrompt(
       promptCode,
       variables,
       expectJson,
-      effectiveModel,
-      temperature,
+      model,
+      dto.temperature,
+      dto.provider,
     );
 
+    if (field === AgentBuilderField.SPOKEN_LANGUAGES) {
+      return { field, value: this.parseSpokenLanguages(raw, catalog) };
+    }
+    if (field === AgentBuilderField.LANGUAGE_VOICES) {
+      return { field, value: this.parseLanguageVoices(raw, catalog) };
+    }
     return { field, value: this.parseAgentBuilderField(field, raw) };
+  }
+
+  /**
+   * The language catalog the copilot generates against: exactly the active,
+   * voiced languages the studio renders tabs for (see
+   * getScenarioVoiceLanguagesForAdmin), so a generated language is always one
+   * the trainer can then see and edit.
+   */
+  private getAgentBuilderLanguageCatalog(): Promise<ScenarioVoiceLanguage[]> {
+    return this.getScenarioVoiceLanguagesForAdmin(true, true) as Promise<
+      ScenarioVoiceLanguage[]
+    >;
+  }
+
+  /** BCP-47 locale for a catalog row, preferring translationCode over value. */
+  private languageLocale(lang: ScenarioVoiceLanguage): string {
+    return (lang.translationCode || lang.value || '').trim();
+  }
+
+  /**
+   * The catalog's English row, else its first row — the studio's own primary
+   * resolution (useResolvedPrimaryLanguageId) mirrored server-side, so an
+   * unknown/absent languageId degrades to the language the wizard used to
+   * generate before it was language-aware rather than to nothing.
+   */
+  private primaryCatalogLanguage(
+    catalog: ScenarioVoiceLanguage[],
+  ): ScenarioVoiceLanguage | undefined {
+    return (
+      catalog.find(
+        (lang) =>
+          this.languageLocale(lang).toLowerCase().startsWith('en') ||
+          lang.label?.trim().toLowerCase() === 'english',
+      ) ?? catalog[0]
+    );
+  }
+
+  /** Resolve the requested languageId to a name + locale for the prompt. */
+  private resolveAgentBuilderLanguage(
+    catalog: ScenarioVoiceLanguage[],
+    languageId?: string,
+  ): { label: string; code: string } {
+    const requested = (languageId ?? '').trim();
+    const match =
+      (requested
+        ? catalog.find((lang) => String(lang.language_id) === requested)
+        : undefined) ?? this.primaryCatalogLanguage(catalog);
+    // No catalog at all (no voiced languages configured): keep the pre-
+    // language-aware behaviour of writing English rather than an empty slot.
+    return {
+      label: match?.label?.trim() || 'English',
+      code: match ? this.languageLocale(match) || 'en' : 'en',
+    };
+  }
+
+  /**
+   * Coerce the `spoken_languages` response into the catalog rows the wizard
+   * fans out over. Filtering the catalog BY the returned ids validates them,
+   * drops duplicates and hallucinated ids, and keeps the studio's own tab
+   * order; an unusable answer falls back to the primary (English) language so
+   * the wizard still generates one full set.
+   */
+  private parseSpokenLanguages(
+    raw: string,
+    catalog: ScenarioVoiceLanguage[],
+  ): { languageId: string; label: string; code: string }[] {
+    const parsed = this.parseFirstJsonObject(raw);
+    let ids: unknown[] = [];
+    if (Array.isArray(parsed)) {
+      ids = parsed;
+    } else if (Array.isArray(parsed?.languageIds)) {
+      ids = parsed.languageIds;
+    } else if (parsed && typeof parsed === 'object') {
+      const arrayValue = Object.values(parsed).find((v) => Array.isArray(v));
+      if (Array.isArray(arrayValue)) ids = arrayValue;
+    }
+    const wanted = new Set(
+      ids
+        .filter((id) => typeof id === 'string' || typeof id === 'number')
+        .map((id) => String(id).trim())
+        .filter(Boolean),
+    );
+    let matched = catalog.filter((lang) =>
+      wanted.has(String(lang.language_id)),
+    );
+    // One variant per language. A catalog can voice several regional variants
+    // of the same language (English (India) / (UK) / (US) all carry locale
+    // `en`), and a brief saying "speaks English" invites the model to pick all
+    // of them — three identical tabs and three times the calls. The prompt asks
+    // for one; this makes it so, keeping the first in the studio's tab order.
+    const seenBaseLocales = new Set<string>();
+    matched = matched.filter((lang) => {
+      const base = this.languageLocale(lang).split('-')[0].toLowerCase();
+      if (!base) return true;
+      if (seenBaseLocales.has(base)) return false;
+      seenBaseLocales.add(base);
+      return true;
+    });
+    if (matched.length === 0) {
+      const primary = this.primaryCatalogLanguage(catalog);
+      matched = primary ? [primary] : [];
+    }
+    return matched.slice(0, MAX_SPOKEN_LANGUAGES).map((lang) => ({
+      languageId: String(lang.language_id),
+      label: lang.label,
+      code: this.languageLocale(lang),
+    }));
+  }
+
+  /**
+   * The languages `language_voices` casts for: the requested ids (normally the
+   * ones `spoken_languages` answered), narrowed to those that actually have
+   * voices. Requesting nothing offers the whole catalog rather than nothing, so
+   * a caller that skipped language detection still gets a usable mapping.
+   */
+  private voiceCastingCatalog(
+    catalog: ScenarioVoiceLanguage[],
+    languageIds?: string[],
+  ): ScenarioVoiceLanguage[] {
+    const wanted = new Set(
+      (languageIds ?? []).map((id) => String(id ?? '').trim()).filter(Boolean),
+    );
+    const scoped =
+      wanted.size > 0
+        ? catalog.filter((lang) => wanted.has(String(lang.language_id)))
+        : catalog;
+    return scoped.filter((lang) => (lang.voices ?? []).length > 0);
+  }
+
+  /**
+   * The candidate block the casting prompt reads. Gender and age are printed
+   * even when blank — a voice nobody recorded a gender for is a real option the
+   * prompt is told to rank above a mismatch, so hiding the gap would make it
+   * indistinguishable from a match.
+   */
+  private formatVoiceCandidates(catalog: ScenarioVoiceLanguage[]): string {
+    return catalog
+      .map((lang) => {
+        const rows = (lang.voices ?? [])
+          .map((voice) => {
+            const gender = (voice as { gender?: string }).gender ?? '';
+            const age = (voice as { age?: string }).age ?? '';
+            const provider = (voice as { provider?: string }).provider ?? '';
+            return `  - ${voice.id} | ${voice.name} | ${provider} | ${gender} | ${age}`;
+          })
+          .join('\n');
+        return `language_id ${lang.language_id} (${lang.label}):\n${rows}`;
+      })
+      .join('\n');
+  }
+
+  /**
+   * Coerce the `language_voices` response into resolved picks. Every voice id
+   * is checked against the voices of the language it was returned under, so a
+   * hallucinated id — or one borrowed from another language, which would
+   * dispatch the wrong TTS entirely — is dropped rather than saved. A language
+   * the model skipped is simply absent; the wizard fills those gaps itself.
+   */
+  private parseLanguageVoices(
+    raw: string,
+    catalog: ScenarioVoiceLanguage[],
+  ): {
+    languageId: string;
+    languageLabel: string;
+    voiceId: string;
+    voiceName: string;
+    voiceGender: string;
+  }[] {
+    const parsed = this.parseFirstJsonObject(raw);
+    const map: Record<string, unknown> =
+      parsed && typeof parsed.voices === 'object' && parsed.voices !== null
+        ? (parsed.voices as Record<string, unknown>)
+        : parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : {};
+
+    // Key leniency, not politeness: gpt-5-mini answered `"Language 1"` against
+    // an earlier candidate heading rather than `"1"`, which a strict lookup
+    // silently turned into "the model picked nothing". Match the bare id, the
+    // digits inside a decorated key, or the language's own label.
+    const findRequested = (
+      languageId: string,
+      label: string,
+    ): unknown | undefined => {
+      if (languageId in map) return map[languageId];
+      const wantedLabel = label.trim().toLowerCase();
+      for (const [key, value] of Object.entries(map)) {
+        const trimmed = key.trim();
+        if (trimmed.toLowerCase() === wantedLabel) return value;
+        const digits = trimmed.match(/\d+/g);
+        if (digits?.length === 1 && digits[0] === languageId) return value;
+      }
+      return undefined;
+    };
+
+    return catalog.flatMap((lang) => {
+      const languageId = String(lang.language_id);
+      const requested = findRequested(languageId, lang.label ?? '');
+      if (typeof requested !== 'string' || !requested.trim()) return [];
+      const voice = (lang.voices ?? []).find(
+        (candidate) => candidate.id === requested.trim(),
+      );
+      if (!voice) return [];
+      return [
+        {
+          languageId,
+          languageLabel: lang.label,
+          voiceId: voice.id,
+          voiceName: voice.name,
+          voiceGender: (voice as { gender?: string }).gender ?? '',
+        },
+      ];
+    });
   }
 
   /**

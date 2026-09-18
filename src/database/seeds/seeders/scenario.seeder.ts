@@ -17,6 +17,9 @@ import { Competency } from '../../../learn/entity/competency.entity';
 import { ScenarioVoices } from '../../../learn/entity/scenario-voices.entity';
 import { Behavior } from '../../../learn/entity/behavior.entity';
 import { ScenarioBehaviorInstruction } from '../../../learn/entity/scenario-behavior-instruction.entity';
+import { ScenarioVersion } from '../../../learn/entity/scenario-version.entity';
+import { ScenarioVersionStatus } from '../../../learn/enum/scenario-version-status.enum';
+import { ScenarioStatus } from '../../../learn/type/scenario.type';
 import { getRepo, log, upsert } from '../helpers';
 import {
   scenarios,
@@ -168,13 +171,15 @@ export async function seedScenarios(
   const translationCount = await seedScenarioTranslations(ds);
   log(`scenario translations: ${translationCount}`);
 
+  await seedScenarioVersions(ds, adminUserId, idBySeedKey);
+
   for (const fixture of pathways) {
     const path = await upsert(
       pathRepo,
       { title: fixture.title },
       {
         description: fixture.description,
-        status: defaults.pathStatus,
+        status: fixture.status ?? defaults.pathStatus,
         isGlobal: true,
         totalScenarios: fixture.scenarioKeys.length,
         createdBy: adminUserId,
@@ -208,6 +213,165 @@ export async function seedScenarios(
   log(`pathways: ${pathways.length}`);
 
   await seedPathProgress(ds);
+}
+
+/**
+ * Build a scenario_versions `config` snapshot from the scenario row as it
+ * exists RIGHT NOW (freshly upserted by seedScenarios, above). Mirrors the
+ * field set ScenarioVersionService.buildConfigFromScenario produces, but reads
+ * columns directly instead of going through NestJS DI (the seed script has no
+ * app context to inject ScenarioService into). triggerWarningIds/
+ * terminationEvents/behaviorInstructions/mappedEvents/translation* are left
+ * empty — a seed-only limitation, fine for populating the version-history
+ * panel, but publishing one of these seeded versions would clear those
+ * fields on the live scenario rather than round-tripping them faithfully.
+ */
+async function buildSeedVersionConfig(
+  scenario: Scenarios,
+  overrides: Partial<Record<string, any>> = {},
+): Promise<Record<string, any>> {
+  return {
+    mappedEvents: [],
+    ...(scenario.metadata ?? {}),
+    translationOpeningStatements: {},
+    translationDescription: {},
+    translationTitle: {},
+    translationReminders: {},
+    title: scenario.title,
+    description: scenario.description,
+    prompt: scenario.prompt,
+    coverImageUrl: scenario.coverImageUrl,
+    coverVideoUrl: scenario.coverVideoUrl ?? null,
+    isPublic: scenario.isPublic,
+    isGlobal: scenario.isGlobal,
+    difficultyLevel: scenario.difficultyLevel,
+    competencyId: scenario.competencyId,
+    category: scenario.category,
+    partnerOrgName: scenario.partnerOrgName,
+    status: ScenarioStatus.DRAFT,
+    triggerWarningIds: [],
+    terminationEvents: [],
+    behaviorInstructions: [],
+    ...overrides,
+  };
+}
+
+/**
+ * Populate scenario_versions so the version-history panel isn't empty for
+ * every scenario. Mirrors ScenarioVersionService semantics: v1 is the
+ * parentless baseline (PUBLISHED iff the scenario is ACTIVE, and sets
+ * scenarios.publishedVersionId); a draft has parentVersionId set and forces
+ * config.status = DRAFT.
+ */
+async function seedScenarioVersions(
+  ds: DataSource,
+  adminUserId: number,
+  idBySeedKey: Map<string, number>,
+): Promise<void> {
+  const scenarioRepo = getRepo(ds, Scenarios);
+  const versionRepo = getRepo(ds, ScenarioVersion);
+
+  let created = 0;
+
+  const copingId = idBySeedKey.get('coping-with-depression');
+  if (copingId) {
+    const scenario = await scenarioRepo.findOneOrFail({
+      where: { id: copingId },
+    });
+    const existing = await versionRepo.find({
+      where: { scenarioId: copingId },
+    });
+    if (existing.length === 0) {
+      const baselineConfig = await buildSeedVersionConfig(scenario, {
+        status: scenario.status,
+      });
+      const v1 = await versionRepo.save(
+        versionRepo.create({
+          scenarioId: copingId,
+          versionNumber: 1,
+          config: baselineConfig,
+          status:
+            scenario.status === ScenarioStatus.ACTIVE
+              ? ScenarioVersionStatus.PUBLISHED
+              : ScenarioVersionStatus.DRAFT,
+          createdBy: adminUserId,
+          updatedBy: adminUserId,
+        }),
+      );
+      if (scenario.status === ScenarioStatus.ACTIVE) {
+        await scenarioRepo.update(copingId, { publishedVersionId: v1.id });
+      }
+      created++;
+
+      await versionRepo.save(
+        versionRepo.create({
+          scenarioId: copingId,
+          versionNumber: 2,
+          name: 'warmer opener',
+          parentVersionId: v1.id,
+          config: await buildSeedVersionConfig(scenario, {
+            status: ScenarioStatus.DRAFT,
+            openingStatements: [
+              'I know this is a lot to put on you, but thank you for making space for me today.',
+              'I have been carrying this for a while and I am glad to have somewhere to bring it.',
+            ],
+          }),
+          status: ScenarioVersionStatus.DRAFT,
+          createdBy: adminUserId,
+          updatedBy: adminUserId,
+        }),
+      );
+      created++;
+
+      await versionRepo.save(
+        versionRepo.create({
+          scenarioId: copingId,
+          versionNumber: 3,
+          name: 'pre-launch cut',
+          parentVersionId: v1.id,
+          config: await buildSeedVersionConfig(scenario, {
+            status: ScenarioStatus.ARCHIVED,
+            description:
+              'Practice a supportive conversation with a client experiencing low mood.',
+          }),
+          status: ScenarioVersionStatus.ARCHIVED,
+          createdBy: adminUserId,
+          updatedBy: adminUserId,
+          createdAt: daysAgo(40),
+        }),
+      );
+      created++;
+    }
+  }
+
+  // The DRAFT scenario gets just its baseline — a DRAFT scenario's baseline
+  // stays DRAFT and never sets publishedVersionId.
+  const draftScenarioId = idBySeedKey.get('workplace-burnout-checkin');
+  if (draftScenarioId) {
+    const existing = await versionRepo.find({
+      where: { scenarioId: draftScenarioId },
+    });
+    if (existing.length === 0) {
+      const scenario = await scenarioRepo.findOneOrFail({
+        where: { id: draftScenarioId },
+      });
+      await versionRepo.save(
+        versionRepo.create({
+          scenarioId: draftScenarioId,
+          versionNumber: 1,
+          config: await buildSeedVersionConfig(scenario, {
+            status: ScenarioStatus.DRAFT,
+          }),
+          status: ScenarioVersionStatus.DRAFT,
+          createdBy: adminUserId,
+          updatedBy: adminUserId,
+        }),
+      );
+      created++;
+    }
+  }
+
+  log(`scenario versions: ${created} created`);
 }
 
 /**
@@ -367,6 +531,15 @@ async function seedScenarioTranslations(ds: DataSource): Promise<number> {
     });
     if (!scenarioRow) continue;
 
+    // applyScenarioTranslations (what actually translates the catalog LIST,
+    // as opposed to the detail view) reads scenarios.translations, keyed by
+    // the short translationCode ('hi'/'mr'/'ta'), not scenario_translations —
+    // both must be written or the language switcher only half-works.
+    const translationsJsonb: Record<
+      string,
+      { title?: string; description?: string }
+    > = { ...(scenarioRow.translations ?? {}) };
+
     for (const [languageValue, translation] of Object.entries(
       fixture.translationsByLanguage,
     )) {
@@ -380,6 +553,19 @@ async function seedScenarioTranslations(ds: DataSource): Promise<number> {
         { metadata: translation },
       );
       count++;
+
+      if (translation.title || translation.description) {
+        translationsJsonb[language.translationCode] = {
+          title: translation.title,
+          description: translation.description,
+        };
+      }
+    }
+
+    if (Object.keys(translationsJsonb).length > 0) {
+      await scenarioRepo.update(scenarioRow.id, {
+        translations: translationsJsonb as Scenarios['translations'],
+      });
     }
   }
   return count;

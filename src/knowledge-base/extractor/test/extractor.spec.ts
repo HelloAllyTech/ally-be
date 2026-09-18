@@ -11,6 +11,19 @@ import { buildDocx, buildEpub, buildPdf, fakePdfjs } from './fixture';
  * is to get text and citable metadata out of five awkward formats, and a mocked parser would
  * verify only that the code calls a function.
  */
+
+/**
+ * Raised from jest's 5s default because these cases do real work — building a
+ * DOCX/EPUB/PDF in-memory and running the real parser over it. Alone the suite
+ * finishes well inside the default, but under the full repo run (412 suites
+ * across parallel workers) the CPU contention pushed individual cases past 5s
+ * and failed the commit hook intermittently — a flake with nothing to say
+ * about the code under test. The bound is per-test and generous on purpose:
+ * it exists to absorb scheduling noise, not to let a genuine hang pass, and a
+ * real regression here fails on assertions long before 30s.
+ */
+jest.setTimeout(30_000);
+
 describe('extractDocument', () => {
   /**
    * The pdfjs module is injected here rather than loaded for real.

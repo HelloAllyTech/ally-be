@@ -23,7 +23,6 @@ import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-togg
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 import {
   CreateCommentDto,
@@ -161,7 +160,6 @@ export class RoadmapCollaborationController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Put('views/:id/pin')

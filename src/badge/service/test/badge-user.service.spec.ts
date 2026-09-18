@@ -3,6 +3,7 @@ import { BadgeUserService } from '../badge-user.service';
 import { BadgeUserRepository } from '../../repository/badge-user.repository';
 import { CommunitySharedService } from 'src/community/service/community-shared.service';
 import { ScenarioSessionReviewSharedService } from 'src/scenario-session-review/service/review-shared.service';
+import { ProgressSharedService } from 'src/progress/service/progress-shared.service';
 import { Badge } from '../../entity/badge.entity';
 import { BadgeCategory } from '../../constants/badge.constants';
 
@@ -11,6 +12,7 @@ describe('BadgeUserService', () => {
   let mockBadgeUserRepository: jest.Mocked<BadgeUserRepository>;
   let mockCommunitySharedService: jest.Mocked<CommunitySharedService>;
   let mockScenarioSessionReviewSharedService: jest.Mocked<ScenarioSessionReviewSharedService>;
+  let mockProgressSharedService: jest.Mocked<ProgressSharedService>;
 
   beforeEach(async () => {
     mockBadgeUserRepository = {
@@ -34,9 +36,17 @@ describe('BadgeUserService', () => {
       getReceivedCommentsReactionsCountPerUser: jest.fn(),
     } as any;
 
+    mockProgressSharedService = {
+      getLevelPerUser: jest.fn(),
+    } as any;
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BadgeUserService,
+        {
+          provide: ProgressSharedService,
+          useValue: mockProgressSharedService,
+        },
         {
           provide: BadgeUserRepository,
           useValue: mockBadgeUserRepository,

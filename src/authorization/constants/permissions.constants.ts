@@ -238,6 +238,12 @@ const PERMISSIONS = {
   EDIT_SCRIBE_REVIEW_THREAD: 'edit:scribe-review-thread',
   SCRIBE_REVIEWER_ACCESS: 'scribe-reviewer:access',
 
+  // === EVALUATION ===
+  // Marks the account as an evaluator: the consumer apps show it the extra
+  // evaluation questions attached to particular screens and events. Additive —
+  // it grants nothing else, and every evaluator also holds a normal app role.
+  EVALUATOR_ACCESS: 'evaluator:access',
+
   // === BADGES ===
   VIEW_USER_BADGES: 'view:user:badges',
   EDIT_USER_BADGES: 'edit:user:badges',
@@ -282,6 +288,34 @@ const PERMISSIONS = {
   // request data, so this stays as restricted as the SDA management surface.
   VIEW_AWS_LOGS: 'view:aws-logs',
 
+  // === MOBILE RELEASES ===
+  // Granted ONLY to SUPER_DUPER_ADMIN — same divergence pattern as
+  // VIEW_AWS_LOGS. Backs the Mobile Releases admin page (ally-mobile CI
+  // build/release status + current app version).
+  VIEW_MOBILE_RELEASES: 'view:mobile-releases',
+  // Narrower than VIEW_MOBILE_RELEASES: dispatches a real production release
+  // pipeline run (scheduled-mobile-release.yml with force: true), so it is
+  // gated separately even though both are SUPER_DUPER_ADMIN-only today.
+  TRIGGER_MOBILE_RELEASES: 'trigger:mobile-releases',
+  // Narrower still: promotes an already-shipped build further into
+  // production (Play Store staged rollout increase, or TestFlight external
+  // promotion) via promote-android-production.yml /
+  // promote-ios-testflight-external.yml. Kept separate from
+  // TRIGGER_MOBILE_RELEASES even though both are SUPER_DUPER_ADMIN-only
+  // today, since these are distinct manual, real-production actions.
+  PROMOTE_MOBILE_RELEASES: 'promote:mobile-releases',
+  // Its own tier, narrower still: submits the current iOS build for Apple's
+  // FULL App Store review (real public distribution, not TestFlight) via
+  // submit-ios-app-store-review.yml. The workflow forces releaseType MANUAL
+  // so approval alone does not release to real users, but the review
+  // submission itself is real and consequential (starts Apple's review
+  // clock). Kept separate from PROMOTE_MOBILE_RELEASES — Android production
+  // promotion and iOS App Store review submission are different actions
+  // with different risk profiles, and separately grantable permissions let
+  // someone be trusted with one but not the other later if that's ever
+  // needed.
+  SUBMIT_APP_STORE_REVIEW: 'submit-app-store-review:mobile-releases',
+
   // === WHATSAPP Q&A KNOWLEDGE BASE ===
   // Granted ONLY to SUPER_DUPER_ADMIN. The corpus is what the bot tells mental
   // healthcare workers, so write access is the ability to change clinical
@@ -322,22 +356,24 @@ const PERMISSIONS = {
   EDIT_AI_LAB: 'edit:admin:ai-lab',
   DELETE_AI_LAB: 'delete:admin:ai-lab',
 
+  // === BUILDER ===
+  // Two tiers, not three: VIEW is read-only (someone catching up on a build),
+  // EDIT covers running the interview, editing the PRD and starting or
+  // stopping a build. There is no separate delete — a session is cancelled,
+  // never removed, because its PRs outlive it.
+  VIEW_BUILDER: 'view:admin:builder',
+  EDIT_BUILDER: 'edit:admin:builder',
+
   // === PRODUCT ROADMAP ===
   // Three tiers, because the roadmap is a voting board rather than a CRUD screen:
-  // VIEW is read-only, VOTE adds "participate" (file an opportunity, allocate your
-  // monthly coins, comment, keep your own saved views), and EDIT is the management
+  // VIEW is read-only, VOTE adds "participate" (file an opportunity, cast your
+  // monthly votes, comment, keep your own saved views), and EDIT is the management
   // surface (stages, editing/deleting anyone's opportunity, goals/owners,
-  // split/merge, release notes, pinning a view for everyone).
+  // split/merge, month-board lane moves, opening a Builder session, pinning a
+  // view for everyone).
   VIEW_PRODUCT_ROADMAP: 'view:admin:product-roadmap',
   VOTE_PRODUCT_ROADMAP: 'vote:admin:product-roadmap',
   EDIT_PRODUCT_ROADMAP: 'edit:admin:product-roadmap',
-
-  // === ROLEPLAY STUDIO V2 ===
-  VIEW_ROLEPLAY_SPECS: 'view:roleplay-specs',
-  EDIT_ROLEPLAY_SPEC: 'edit:roleplay-spec',
-  DELETE_ROLEPLAY_SPEC: 'delete:roleplay-spec',
-  EDIT_ROLEPLAY_COPILOT: 'edit:roleplay-copilot',
-  EDIT_ROLEPLAY_SPEC_TENANT: 'edit:roleplay-spec-tenant',
 };
 
 const SUPER_ADMIN_PERMISSIONS = [
@@ -435,17 +471,14 @@ const SUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.EDIT_I18N_TRANSLATIONS,
   PERMISSIONS.VIEW_TOOLTIPS,
   PERMISSIONS.EDIT_TOOLTIPS,
-  PERMISSIONS.VIEW_ROLEPLAY_SPECS,
-  PERMISSIONS.EDIT_ROLEPLAY_SPEC,
-  PERMISSIONS.DELETE_ROLEPLAY_SPEC,
-  PERMISSIONS.EDIT_ROLEPLAY_COPILOT,
-  PERMISSIONS.EDIT_ROLEPLAY_SPEC_TENANT,
   PERMISSIONS.VIEW_BLOGS,
   PERMISSIONS.EDIT_BLOG,
   PERMISSIONS.DELETE_BLOG,
   PERMISSIONS.VIEW_AI_LAB,
   PERMISSIONS.EDIT_AI_LAB,
   PERMISSIONS.DELETE_AI_LAB,
+  PERMISSIONS.VIEW_BUILDER,
+  PERMISSIONS.EDIT_BUILDER,
   // Product Roadmap: SUPER_ADMIN can see the board and vote on it. The management
   // surface (EDIT_PRODUCT_ROADMAP) is deliberately withheld here and granted only to
   // SUPER_DUPER_ADMIN below.
@@ -468,10 +501,15 @@ const SUPER_DUPER_ADMIN_PERMISSIONS = [
   PERMISSIONS.VIEW_SUPER_DUPER_ADMINS,
   PERMISSIONS.EDIT_SUPER_DUPER_ADMINS,
   // Product Roadmap management: stage transitions, editing/deleting anyone's
-  // opportunity, the goal/owner taxonomy, split/merge, release notes, and pinning a
-  // saved view for everyone. SUPER_ADMIN gets VIEW + VOTE only (see above).
+  // opportunity, the goal/owner taxonomy, split/merge, month-board lane moves, opening
+  // a Builder session, and pinning a saved view for everyone. SUPER_ADMIN gets
+  // VIEW + VOTE only (see above).
   PERMISSIONS.EDIT_PRODUCT_ROADMAP,
   PERMISSIONS.VIEW_AWS_LOGS,
+  PERMISSIONS.VIEW_MOBILE_RELEASES,
+  PERMISSIONS.TRIGGER_MOBILE_RELEASES,
+  PERMISSIONS.PROMOTE_MOBILE_RELEASES,
+  PERMISSIONS.SUBMIT_APP_STORE_REVIEW,
   // WhatsApp Q&A knowledge corpus. SDA-only rather than shared with SUPER_ADMIN for the same
   // reason as VIEW_AWS_LOGS: this is clinical guidance served to workers, and an unreviewed edit
   // reaches every worker who asks a related question.
@@ -515,6 +553,11 @@ const COUNSELOR_PERMISSIONS = [
   PERMISSIONS.VIEW_SETTINGS_CHAT_TYPES,
   PERMISSIONS.EDIT_ENHANCEMENT,
   PERMISSIONS.VIEW_CHAT_NUDGE,
+  // Keep these two together. Rating a tag without being able to read the tag
+  // list is not a coherent permission set, and the split cost counsellors their
+  // call-log page: GET /chats/tags 403'd for every one of them until
+  // GrantViewTagsToTagRaters1954000000000.
+  PERMISSIONS.VIEW_TAGS,
   PERMISSIONS.EDIT_TAG_POSITIVITY_RATINGS,
 
   PERMISSIONS.VIEW_ANALYTICS,
@@ -736,6 +779,16 @@ const SCRIBE_REVIEWER_PERMISSIONS = [
   PERMISSIONS.SCRIBE_REVIEWER_ACCESS,
 ];
 
+/**
+ * Deliberately a single permission.
+ *
+ * EVALUATOR is layered on top of an account's real app role (LEARNER,
+ * COUNSELOR, ...), so anything it duplicated from those would be dead weight at
+ * best and a quiet privilege grant at worst. All it has to answer is "does this
+ * person get asked the evaluation questions?".
+ */
+const EVALUATOR_PERMISSIONS = [PERMISSIONS.EVALUATOR_ACCESS];
+
 export {
   PERMISSIONS,
   SUPER_ADMIN_PERMISSIONS,
@@ -747,4 +800,5 @@ export {
   CLIENT_PERMISSIONS,
   SIMULATION_REVIEWER_PERMISSIONS,
   SCRIBE_REVIEWER_PERMISSIONS,
+  EVALUATOR_PERMISSIONS,
 };

@@ -6,7 +6,7 @@ import { RoadmapOpportunityStage } from '../enum/roadmap-opportunity.enum';
  * into lanes, and three copies of "which month does this card live in" is exactly how a board
  * starts disagreeing with itself.
  *
- * Month keys are 'YYYY-MM', the same shape and the same UTC basis as the coin period key
+ * Month keys are 'YYYY-MM', the same shape and the same UTC basis as the vote period key
  * (see roadmap-period.util.ts). Reusing that shape is deliberate: it sorts lexicographically,
  * so a month window is a plain BETWEEN in SQL with no date casting.
  */

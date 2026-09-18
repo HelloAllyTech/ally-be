@@ -2,14 +2,17 @@
 
 - **Status:** Accepted — Phases 1 and 2 implemented; Phase 4 (model-liveness) proposed
 - **Date:** 2026-06-30
-- **Last updated:** 2026-08-01 (see [Update — 2026-08-01](#update--2026-08-01))
+- **Last updated:** 2026-09-05 (see [Update — 2026-08-01](#update--2026-08-01) and
+  [Update — 2026-09-05](#update--2026-09-05-ally-bes-agentic-call-sites-gain-a-provider-layer))
 - **Scope:** ally-be, ally-ai-learn, ally-ai, ally-web
 - **Decision owners:** Platform / AI
 
 > **Reading note.** The Context and Decision sections below are the original
 > 2026-06-30 record and are deliberately left intact. Several of their factual
 > claims no longer hold — each is marked inline. The current state of the world
-> is the [Update — 2026-08-01](#update--2026-08-01) section.
+> is the [Update — 2026-08-01](#update--2026-08-01) section, plus
+> [Update — 2026-09-05](#update--2026-09-05-ally-bes-agentic-call-sites-gain-a-provider-layer)
+> for ally-be's own agentic call sites.
 
 ## Context
 
@@ -298,6 +301,81 @@ stored value the client's dropdown cannot match, where saving silently rewrites 
 - Provider field / capability gating *speculatively now* — no payoff until a new provider;
   do it as part of that work.
 
+## Update — 2026-09-05: ally-be's agentic call sites gain a provider layer
+
+The 2026-06-30 inventory recorded ally-be's own LLM consumption as *"autofill:
+`openai-autofill-service` / `anthropic-autofill.service`, explicit per-service"*. That
+undercounted it. Everything **agentic** in ally-be — the Character Library interview,
+Builder, the copilot, Bug Hunter, UX Signals, track grading, and a dozen more — bypassed
+all three factories and constructed `new Anthropic(...)` directly, because none of the
+existing abstractions could carry the thing an agent loop needs: **a streamed response
+that also contains tool calls**.
+
+- `llm-preview`'s `ILlmProvider` is single-shot with no tools.
+- `ai-chat`'s `LlmProvider` streams text with no tools.
+
+So a prompt whose row selected `gpt-4.1` still ran on Claude at any of those call sites,
+silently — the same class of failure as the `roles[]` gating trap, where the setting exists
+and simply isn't the thing being read.
+
+### What shipped
+
+`src/llm-agent/` — a fourth, deliberately narrow abstraction covering exactly the gap:
+one streamed, tool-capable turn.
+
+| Piece | What it is |
+|---|---|
+| `type/agent-llm.type.ts` | Neutral blocks (`text` / `tool_use` / `tool_result`), stop reasons, usage |
+| `provider/{anthropic,openai,gemini}-agent.provider.ts` | Per-provider adapters |
+| `service/agent-llm.factory.ts` | `AgentLlmProviderFactory`, plus `providerForModel` |
+| `util/gemini-schema.util.ts` | JSON Schema → Gemini's OpenAPI subset |
+
+**The block vocabulary is Anthropic's**, not a third invented spelling — not out of
+deference, but because `character_interview_messages.tool_calls` / `.tool_results` (and
+Builder's equivalents) have been persisting that shape since those features shipped.
+A neutral third format would have meant migrating live transcripts to gain nothing. The
+OpenAI and Gemini adapters translate at their own edge, which also means **a session
+started on one provider replays intact on another** — ids in the transcript are treated as
+opaque, and Gemini (which has no tool-call ids at all) resolves them to tool names against
+the calls in the same request.
+
+**Provider resolution follows the house pattern** already in `scenario.service.ts`:
+prompt row `{provider, model}` → environment config → inferred from the model id. The
+inference is what stops a model added to the picker ahead of this code from failing with
+"unsupported provider".
+
+### Wired so far: the Character Library interview only
+
+`CharacterInterviewOrchestratorService` runs on Anthropic, OpenAI or Gemini with no branch
+of its own; `CHARACTER_INTERVIEW_MODEL` / `CHARACTER_INTERVIEW_PROVIDER` are the fallback
+behind the interviewer prompt's own row. LLM usage is now recorded against the provider
+that actually ran, rather than a hardcoded `'anthropic'`.
+
+The other agentic services still construct their own client. Porting them is mechanical
+(inject the factory, delete the `new Anthropic(...)`) but each has its own loop and its own
+transcript table, so they are left for whoever next touches them.
+
+### Two behaviours worth knowing before wiring another one
+
+- **Gemini returns `MALFORMED_FUNCTION_CALL` intermittently** against a tool schema the
+  size of the interview's — measured at roughly one call in three on `gemini-2.5-flash`.
+  The candidate comes back *empty*, so a loop that doesn't recognise it reports the turn as
+  the model having nothing to say. It is surfaced as its own stop reason
+  (`invalid_tool_call`), is transient, and is worth a bounded retry of the identical
+  request.
+- **Prompts are not transferable across models.** The interviewer system prompt was
+  written and tuned against Claude; the same text on another model is a different
+  interview, not the same one more cheaply. Setting the model on the prompt row is
+  deliberate — it is the one place a model change and the retuning it needs can be made
+  together.
+
+### Verification
+
+`scripts/verify-agent-llm-providers.ts` drives the real interview tool definitions through
+two live round-trips per provider (first pass returns a tool call; the tool result is fed
+back and the model continues) — the pass that breaks, because it is where the three
+providers' tool-result shapes differ. Unit fakes cannot produce a rejected tool schema.
+
 ## Appendix — touch points for future phases
 - ally-be: `prompt.entity.ts`, `create/update-prompt.dto.ts`, `prompt-response.type.ts`,
   `prompt-shared.service.ts` (`getPromptsByOptions`), `ai.service.ts` (`getPromptOverrides`),
@@ -328,3 +406,20 @@ stored value the client's dropdown cannot match, where saving silently rewrites 
 - ally-web pickers to keep in sync: `components/autofill-model-select/`,
   `components/enhance-button/`, `pages/AILab/AutoEvalDrawer.tsx` (all fall back to
   `FALLBACK_AUTOFILL_MODEL_OPTIONS` when the registry call returns nothing).
+
+### Appendix — touch points added 2026-09-05
+
+- ally-be agentic provider layer: `src/llm-agent/` (types, three adapters, factory, Gemini
+  schema util), `src/llm-agent/llm-agent.module.ts` (imported by the feature modules that
+  run an agent loop, deliberately not global).
+- Still constructing `new Anthropic(...)` directly, in rough order of how much they would
+  benefit: `builder/service/builder-interview-orchestrator.service.ts`,
+  `copilot/`, `bug-hunter/service/bug-hunter-repo-classifier.service.ts`,
+  `ux-signals/service/ux-signals-ai.service.ts`,
+  `product-roadmap/service/roadmap-ai.service.ts`,
+  `analytics-suggestions/service/analytics-suggestions-ai.service.ts`,
+  `track/service/track-quiz-llm-grader.service.ts`, `track/service/track-memory.service.ts`,
+  `lab/service/lab-run.service.ts`, `chat/service/voice-note.service.ts`,
+  `learn/service/anthropic-autofill.service.ts`,
+  `mobile-releases/mobile-release-whats-new-ai.service.ts`, and the five
+  `builder/service/builder-*.service.ts` helpers.

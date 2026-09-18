@@ -52,6 +52,13 @@ import {
   TtsCatalogEntry,
   TtsCatalogService,
 } from '../service/tts-catalog.service';
+import {
+  VideoActorCatalogService,
+  VideoActorCoverMedia,
+  VideoActorFaceEntry,
+  VideoActorProviderEntry,
+} from '../service/video-actor-catalog.service';
+import { ImportVideoActorFaceCoverDto } from '../dto/import-video-actor-face-cover.dto';
 import { TenantScopedPermissions } from 'src/auth/decorators/own-tenant-scope.decorator';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { CreateScenarioVoicesDto } from '../dto/create-scenario-voices.dto';
@@ -66,6 +73,7 @@ import { ScenarioVoiceSortBy } from '../enum/scenario-voice-sort-by.enum';
 import { ScenarioImageUploadRequestDto } from '../dto/scenario-image-upload-request.dto';
 import { ScenarioImageUploadResponseDto } from '../dto/scenario-image-upload-response.dto';
 import { PreviewScenarioDto } from '../dto/preview-scenario.dto';
+import { PreviewMonologueService } from '../service/preview-monologue.service';
 import { DeleteCoverImageDto } from '../dto/delete-cover-image.dto';
 import { ScenarioVideoUploadResponseDto } from '../dto/scenario-video-upload-response.dto';
 import { ScenarioVideoUploadRequestDto } from '../dto/scenario-video-upload-request.dto';
@@ -102,10 +110,6 @@ import { EndScenarioSessionRequestBodyDto } from '../dto/end-scenario-session-re
 import { StartV2VTestSessionDto } from '../dto/start-v2v-test-session.dto';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
-import {
-  SUPER_ADMIN_ROLES,
-  SUPER_DUPER_ADMIN_ROLES,
-} from 'src/common/constants/user.constants';
 
 @ApiTags('Learn')
 @ApiBearerAuth()
@@ -118,11 +122,13 @@ export class LearnController {
   constructor(
     private readonly elevenLabsVoiceSyncService: ElevenLabsVoiceSyncService,
     private readonly ttsCatalogService: TtsCatalogService,
+    private readonly videoActorCatalogService: VideoActorCatalogService,
     private readonly scenarioService: ScenarioService,
     private readonly scenarioSessionService: ScenarioSessionService,
     private readonly scenarioTenantService: ScenarioTenantService,
     private readonly triggerWarningService: TriggerWarningsService,
     private readonly scenarioVersionService: ScenarioVersionService,
+    private readonly previewMonologueService: PreviewMonologueService,
     private readonly sttConfigService: SttConfigService,
     private readonly llmConfigService: LlmConfigService,
   ) {}
@@ -242,6 +248,59 @@ export class LearnController {
         order,
       },
       tokenUser,
+    );
+  }
+
+  // Declared BEFORE `scenarios/:id`: NestJS matches routes in declaration
+  // order, so a literal segment registered after the parameterised route is
+  // swallowed by it — the request resolves as id="video-actor-providers" and
+  // never reaches this handler. Both routes are auth-gated, so that failure
+  // looks like a 401 rather than a 404.
+  @ApiOperation({
+    summary: 'Video-actor providers a roleplay can be pointed at',
+    description:
+      'Served from the backend rather than hardcoded in the client so adding a vendor is a backend change only. `value` is what gets stored in the roleplay; `label` is what the picker shows.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Get('scenarios/video-actor-providers')
+  getVideoActorProviders(): VideoActorProviderEntry[] {
+    return this.videoActorCatalogService.getProviders();
+  }
+
+  @ApiOperation({
+    summary: 'Selectable faces for one video-actor provider',
+    description:
+      'Normalised across vendors: `value` is the face id to store, `label` its name, and `thumbnailImageUrl`/`thumbnailVideoUrl` are present only where the vendor publishes preview media — Tavus does, Beyond Presence does not. Render the name alone when they are absent; never branch on the provider. Listing is a plain unmetered GET on the vendor, so this costs nothing beyond the request. An unreachable or unconfigured vendor yields an empty list rather than an error, so the Studio panel still loads and an id can be typed by hand.',
+  })
+  @ApiQuery({
+    name: 'provider',
+    required: false,
+    description:
+      'Restrict to one vendor. OMIT IT for the picker: the roster is meant to be browsed as faces, with the vendor derived from whichever face is chosen, because "Tavus or Beyond Presence?" is a question an author has no basis to answer. One vendor being down or unconfigured yields its share as empty rather than emptying the whole list.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Get('scenarios/video-actor-faces')
+  async getVideoActorFaces(
+    @Query('provider') provider?: string,
+  ): Promise<VideoActorFaceEntry[]> {
+    return provider
+      ? this.videoActorCatalogService.getFaces(provider)
+      : this.videoActorCatalogService.getAllFaces();
+  }
+
+  @ApiOperation({
+    summary: "Copy a face's preview media into our storage, for use as a cover",
+    description:
+      "Returns `{ coverImageUrl, coverVideoUrl }` pointing at OUR bucket, not the vendor's. A cover image is long-lived learner-facing content and vendor CDN paths are account-scoped, so a roleplay card must not depend on one. Either key is absent when the vendor publishes no such asset — Beyond Presence publishes none at all, so bey yields an empty object and the caller should leave the cover untouched.",
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_SCENARIO])
+  @Post('scenarios/video-actor-face-cover')
+  async importVideoActorFaceCover(
+    @Body() body: ImportVideoActorFaceCoverDto,
+  ): Promise<VideoActorCoverMedia> {
+    return this.videoActorCatalogService.importFaceCover(
+      body.provider,
+      body.faceId,
     );
   }
 
@@ -518,6 +577,28 @@ export class LearnController {
   }
 
   @ApiOperation({
+    summary: 'List internal-monologue runs recorded for a scenario preview',
+    description:
+      'Newest first, without their turns. Admin previews are ephemeral ' +
+      'everywhere else in the system; these rows exist so a curator can ' +
+      'reopen a past run and see what the client was thinking.',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @Get('scenarios/:id/preview-monologues')
+  async listPreviewMonologues(@Param('id') id: number) {
+    return this.previewMonologueService.listRunsForScenario(Number(id));
+  }
+
+  @ApiOperation({
+    summary: 'Read one recorded preview internal-monologue run, with its turns',
+  })
+  @AuthPermissions([PERMISSIONS.VIEW_ADMIN_SCENARIO])
+  @Get('preview-monologues/:runId')
+  async getPreviewMonologue(@Param('runId') runId: string) {
+    return this.previewMonologueService.getRun(runId);
+  }
+
+  @ApiOperation({
     summary: 'Dispatch agent to preview room (local dev only)',
     description:
       'When webhook is unreachable (e.g. localhost), frontend triggers agent dispatch after connecting.',
@@ -763,9 +844,7 @@ export class LearnController {
   })
   // Role-gated (not EDIT_SCENARIO_MAP_EVENTS) so multi-tenant admins cannot
   // trigger this operational, all-scenarios bulk operation.
-  @RequireFeatureToggle(FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS)
   @Post('scenarios/checklist-items/translate')
   async translateChecklistItems(
     @Query('batchSize') batchSize?: number,
@@ -872,12 +951,6 @@ export class LearnController {
     description: 'Sort order (default: DESC)',
   })
   @ApiQuery({
-    name: 'includeTags',
-    required: false,
-    type: Boolean,
-    description: 'When true, include message tags in the response',
-  })
-  @ApiQuery({
     name: 'languageCode',
     required: false,
     type: String,
@@ -892,7 +965,6 @@ export class LearnController {
     @Query('offset') offset?: number,
     @Query('sortBy') sortBy?: string,
     @Query('order') order: SortOrder = SortOrder.ASC,
-    @Query('includeTags') includeTags?: boolean,
     @Query('languageCode') languageCode?: string,
   ) {
     return this.scenarioSessionService.getMessagesByScenarioSessionId(
@@ -903,7 +975,6 @@ export class LearnController {
         sortBy,
         order,
       },
-      { includeTags: !!includeTags },
       languageCode,
     );
   }
@@ -1174,7 +1245,6 @@ export class LearnController {
   })
   @ApiQuery({ name: 'activeOnly', required: false, type: Boolean })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_STT_CONFIGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_ADMIN_LANGUAGES],
   })
   @Get('stt-configs')
@@ -1184,7 +1254,6 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Create an STT config' })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_STT_CONFIGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_LANGUAGE],
   })
   @Post('stt-configs')
@@ -1194,7 +1263,6 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Update an STT config' })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_STT_CONFIGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_LANGUAGE],
   })
   @Put('stt-configs/:id')
@@ -1211,7 +1279,6 @@ export class LearnController {
       'Refused while a language still defaults to it — deactivate instead.',
   })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_STT_CONFIGS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_LANGUAGE],
   })
   @Delete('stt-configs/:id')
@@ -1227,7 +1294,6 @@ export class LearnController {
   })
   @ApiQuery({ name: 'activeOnly', required: false, type: Boolean })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_LLM_MODEL_CATALOG, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_ADMIN_LANGUAGES],
   })
   @Get('llm-configs')
@@ -1237,7 +1303,6 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Create an LLM config' })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_LLM_MODEL_CATALOG, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_LANGUAGE],
   })
   @Post('llm-configs')
@@ -1247,7 +1312,6 @@ export class LearnController {
 
   @ApiOperation({ summary: 'Update an LLM config' })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_LLM_MODEL_CATALOG, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_LANGUAGE],
   })
   @Put('llm-configs/:id')
@@ -1264,7 +1328,6 @@ export class LearnController {
       'Refused while a language still defaults to it — deactivate instead.',
   })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_LLM_MODEL_CATALOG, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_LANGUAGE],
   })
   @Delete('llm-configs/:id')
@@ -1496,9 +1559,7 @@ export class LearnController {
       'The session appears in Roleplay Session Logs.',
   })
   @ApiBody({ type: StartV2VTestSessionDto })
-  @RequireFeatureToggle(FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS, {
-    legacyRoles: SUPER_ADMIN_ROLES,
-  })
+  @RequireFeatureToggle(FeatureToggleKey.OPERATIONAL_ADMIN_ACTIONS)
   @Post('v2v-test-session-start')
   async startV2VTestSession(
     @CurrentUser() user: TokenUser,

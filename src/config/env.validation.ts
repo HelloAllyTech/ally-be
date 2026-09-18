@@ -147,6 +147,12 @@ export const validationSchema = Joi.object({
   // CI at all (local, dev).
   GITHUB_TOKEN: Joi.string().optional(),
   GITHUB_ORG: Joi.string().default('HelloAllyTech'),
+  GITHUB_ACTIONS_TOKEN: Joi.string().optional(),
+  GITHUB_MOBILE_REPO: Joi.string().default('HelloAllyTech/ally-mobile'),
+  // Read-only Contents access to ally-changelog, the source of the public
+  // changelog feed. Optional: falls back to GITHUB_TOKEN, and with neither the
+  // feed answers 503 instead of an empty list.
+  GITHUB_CHANGELOG_TOKEN: Joi.string().optional(),
   /** Publicly reachable base URL a GitHub-hosted runner can call this API back on. */
   PUBLIC_API_BASE_URL: Joi.string().uri().optional(),
 
@@ -154,6 +160,26 @@ export const validationSchema = Joi.object({
   // and every capture is a no-op, which is what local/CI/test runs want.
   POSTHOG_API_KEY: Joi.string().optional(),
   POSTHOG_HOST: Joi.string().uri().default('https://us.i.posthog.com'),
+
+  // App Store Connect API — iOS TestFlight status (Mobile Releases admin
+  // page). All optional at the Joi level, same reasoning as
+  // GITHUB_ACTIONS_TOKEN: an environment that hasn't provisioned these yet
+  // should still boot, and MobileReleasesService.getIosTestflightStatus()
+  // refuses cleanly (503) rather than calling Apple with missing credentials.
+  APPSTORE_ISSUER_ID: Joi.string().optional(),
+  APPSTORE_API_KEY_ID: Joi.string().optional(),
+  APPSTORE_API_PRIVATE_KEY: Joi.string().optional(),
+  TESTFLIGHT_EXTERNAL_GROUP_NAME: Joi.string().optional(),
+
+  // Play Developer API service account (Mobile Releases page's Android
+  // auto-minimum-version-bump task). Same "optional, refuse cleanly at
+  // call time" reasoning as the App Store Connect block above.
+  ANDROID_SERVICE_ACCOUNT_JSON: Joi.string().optional(),
+  // Kill switch, default off — see AppConfigService.androidMinVersionAutoBumpEnabled
+  // for why this one (unlike the iOS task) needs an explicit opt-in.
+  ANDROID_MIN_VERSION_AUTO_BUMP_ENABLED: Joi.string()
+    .valid('true', 'false')
+    .optional(),
 
   // Voice Preview (TTS provider API keys)
   DEEPGRAM_API_KEY: Joi.string().optional(),

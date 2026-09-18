@@ -1,5 +1,6 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { AppConfigService } from 'src/config/config.service';
+import { ConfigurationException } from 'src/exception/configuration.exception';
 import { LoggerService } from 'src/logger/logger.service';
 import { SqsService } from '../../aws/service/sqs.service';
 import { InboundWhatsAppMessage } from '../type/whatsapp-provider.interface';
@@ -31,7 +32,9 @@ export class WhatsAppInboundProducer {
   async enqueue(message: InboundWhatsAppMessage): Promise<void> {
     const queueUrl = this.configService.sqs.whatsapp.inboundQueueUrl;
     if (!queueUrl) {
-      throw new InternalServerErrorException(
+      // The env var name is logged by ConfigurationException, not returned:
+      // this endpoint is reached from Meta's webhook, i.e. the public internet.
+      throw new ConfigurationException(
         'The WhatsApp inbound queue is not configured (SQS_WHATSAPP_INBOUND_QUEUE_URL).',
       );
     }

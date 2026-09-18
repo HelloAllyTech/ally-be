@@ -15,7 +15,6 @@ import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorat
 import { Public } from 'src/auth/decorators/auth.metadata';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 import { CreateTooltipDto } from '../dto/create-tooltip.dto';
 import { UpdateTooltipDto } from '../dto/update-tooltip.dto';
@@ -41,7 +40,6 @@ export class TooltipController {
   @ApiQuery({ name: 'sortBy', required: false })
   @ApiQuery({ name: 'order', required: false })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_TOOLTIPS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_TOOLTIPS],
   })
   async getTooltips(
@@ -62,7 +60,6 @@ export class TooltipController {
   @Post()
   @ApiOperation({ summary: 'Create a tooltip' })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_TOOLTIPS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_TOOLTIPS],
   })
   async createTooltip(@Body() createDto: CreateTooltipDto) {
@@ -72,7 +69,6 @@ export class TooltipController {
   @Patch(':id')
   @ApiOperation({ summary: 'Update a tooltip' })
   @RequireFeatureToggle(FeatureToggleKey.MANAGE_TOOLTIPS, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_TOOLTIPS],
   })
   async updateTooltip(

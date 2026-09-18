@@ -78,6 +78,12 @@ export class ScenarioSessionEvaluationWebhookController {
       await this.scenarioSessionService.recordV2VMetrics(id, body.metrics);
     }
     await this.scenarioSessionService.endScenarioSession(id, body.counselorId);
+    // Score the run now rather than leaving it to the 30-minute catch-up. A
+    // V2V run always loses the normal end-of-session trigger (see
+    // scheduleV2VEvaluation), and for a test harness the score is the result
+    // being waited on — a 15-45 minute lag makes an A/B unrunnable in one
+    // sitting. Fire-and-forget: ending the session must not depend on it.
+    this.evaluationService.scheduleV2VEvaluation(id);
     return { success: true };
   }
 }

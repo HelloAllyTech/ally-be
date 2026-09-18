@@ -67,4 +67,19 @@ export class BugHuntRun extends BaseWithoutTenantEntity {
   /** Free-form run context: budget cap, repos-in-scope for a multi-repo trigger, error message on FAILED. */
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any> | null;
+
+  /**
+   * Which CLI and model actually ran this session — reported by the CI
+   * workflow itself right after it resolves `BugHunterModelSettings` (`GET
+   * pipeline/models`), not snapshotted by ally-be at dispatch: the settings
+   * row is a single mutable global, so what the runner actually resolved is
+   * more trustworthy than what was configured when the workflow was
+   * dispatched moments earlier. Null for any run older than this column, and
+   * for a run whose workflow failed before reaching that step.
+   */
+  @Column({ type: 'varchar', nullable: true })
+  engine?: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  model?: string | null;
 }

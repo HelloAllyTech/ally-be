@@ -14,6 +14,8 @@ import {
   DEFAULT_SUMMARY_FIELDS_SET,
   SELECTABLE_CHAT_TYPES,
   LEGAL_CONTENT_NAMES,
+  TURN_ENDPOINTING_SETTINGS_NAME,
+  DEFAULT_TURN_ENDPOINTING_SETTINGS,
 } from '../../constants/settings.constants';
 import { GlobalSettingsRepository } from '../../repository/global-settings.repository';
 import {
@@ -1270,6 +1272,225 @@ describe('SettingsService', () => {
     });
   });
 
+  describe('own-tenant fallback on settings writes', () => {
+    // The helpline app's Org. Settings screen is the *own*-tenant screen, so it
+    // sends no tenantId. A tenant admin was fine (their branch always used the
+    // JWT tenant); an Ally staff account with SYSTEM_ACCESS took the other
+    // branch and got "Tenant ID is required" on every toggle — while the
+    // matching GET happily reported the current value from their own tenant.
+    beforeEach(() => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+      preferenceService.getPreference.mockResolvedValue(null);
+      preferenceService.createPreference.mockResolvedValue({} as any);
+    });
+
+    it('falls back to the caller tenant for a system-access voice-note write', async () => {
+      const result = await service.updateScribeVoiceNoteEnabled(
+        undefined as unknown as string,
+        true,
+      );
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: PreferenceName.SCRIBE_VOICE_NOTE_ENABLED,
+          relatedId: mockTenantId,
+          value: { enabled: true },
+        }),
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('falls back to the caller tenant for a system-access note-creation write', async () => {
+      await service.updateScribeNoteCreationEnabled(
+        undefined as unknown as string,
+        true,
+      );
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: PreferenceName.SCRIBE_NOTE_CREATION_ENABLED,
+          relatedId: mockTenantId,
+        }),
+      );
+    });
+
+    it('still honours an explicit tenantId from a system-access caller', async () => {
+      // The admin dashboard's per-tenant screen does send one, and it must keep
+      // winning — the fallback is for the screen that has nothing to send.
+      await service.updateScribeVoiceNoteEnabled('other-tenant', true);
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({ relatedId: 'other-tenant' }),
+      );
+    });
+
+    it('still pins a non-system-access caller to their own tenant', async () => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+
+      await service.updateScribeVoiceNoteEnabled('other-tenant', true);
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({ relatedId: mockTenantId }),
+      );
+    });
+
+    it('falls back to the caller tenant for a system-access character-library write', async () => {
+      const result = await service.updateCharacterLibraryEnabled(
+        undefined as unknown as string,
+        true,
+      );
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: PreferenceName.CHARACTER_LIBRARY_ENABLED,
+          relatedId: mockTenantId,
+          value: { enabled: true },
+        }),
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('falls back to the caller tenant for a system-access progress-dashboard write', async () => {
+      const result = await service.updateProgressDashboardEnabled(
+        undefined as unknown as string,
+        true,
+      );
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: PreferenceName.PROGRESS_DASHBOARD_ENABLED,
+          relatedId: mockTenantId,
+          value: { enabled: true },
+        }),
+      );
+      expect(result).toEqual({ success: true });
+    });
+  });
+
+  describe('getProgressDashboardEnabled', () => {
+    const mockEnabledPreference = {
+      id: mockPreferenceId,
+      name: PreferenceName.PROGRESS_DASHBOARD_ENABLED,
+      relatedId: mockTenantId,
+      relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+      value: { enabled: true },
+      tenantId: mockTenantId,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    beforeEach(() => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+    });
+
+    it('should return false by default when no preference exists', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+
+      const result = await service.getProgressDashboardEnabled();
+
+      expect(result).toBe(false);
+    });
+
+    it('should return true when preference has enabled=true', async () => {
+      preferenceService.getPreference.mockResolvedValue(mockEnabledPreference);
+
+      const result = await service.getProgressDashboardEnabled();
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false when preference has enabled=false', async () => {
+      preferenceService.getPreference.mockResolvedValue({
+        ...mockEnabledPreference,
+        value: { enabled: false },
+      });
+
+      const result = await service.getProgressDashboardEnabled();
+
+      expect(result).toBe(false);
+    });
+  });
+
+  describe('updateProgressDashboardEnabled', () => {
+    beforeEach(() => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(true);
+    });
+
+    it('scopes to the caller own tenant without system access (tenant admin)', async () => {
+      jest
+        .spyOn(permissionValidator, 'validatePermissions')
+        .mockResolvedValue(false);
+      preferenceService.getPreference.mockResolvedValue(null);
+      preferenceService.createPreference.mockResolvedValue({} as any);
+
+      // Passing a different tenantId must not escape the caller's own tenant.
+      const result = await service.updateProgressDashboardEnabled(
+        'some-other-tenant-id',
+        true,
+      );
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: PreferenceName.PROGRESS_DASHBOARD_ENABLED,
+          relatedId: mockTenantId,
+          relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+          value: { enabled: true },
+        }),
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should update an existing preference', async () => {
+      preferenceService.getPreference.mockResolvedValue({
+        id: mockPreferenceId,
+        name: PreferenceName.PROGRESS_DASHBOARD_ENABLED,
+        relatedId: mockTenantId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { enabled: false },
+        tenantId: mockTenantId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+
+      const result = await service.updateProgressDashboardEnabled(
+        mockTenantId,
+        true,
+      );
+
+      expect(preferenceService.updatePreference).toHaveBeenCalledWith(
+        mockPreferenceId,
+        { enabled: true },
+      );
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should create a preference when none exists', async () => {
+      preferenceService.getPreference.mockResolvedValue(null);
+
+      const result = await service.updateProgressDashboardEnabled(
+        mockTenantId,
+        true,
+      );
+
+      expect(preferenceService.createPreference).toHaveBeenCalledWith({
+        name: PreferenceName.PROGRESS_DASHBOARD_ENABLED,
+        relatedId: mockTenantId,
+        relatedEntity: PreferenceRelatedEntity.ORGANIZATION,
+        value: { enabled: true },
+        tenantId: mockTenantId,
+      });
+      expect(result).toEqual({ success: true });
+    });
+  });
+
   describe('getEnabledCustomFieldTypes', () => {
     const mockCustomFieldTypesPreference = {
       id: mockPreferenceId,
@@ -1512,6 +1733,101 @@ describe('SettingsService', () => {
 
       await expect(
         service.updateLegalContent(LEGAL_CONTENT_NAMES.TERMS, '<p>x</p>'),
+      ).rejects.toThrow(new BadRequestException('User ID is required'));
+    });
+  });
+
+  describe('getTurnEndpointingSettings', () => {
+    it('should return the LiveKit defaults when no row exists yet', async () => {
+      globalSettingsRepository.findOne.mockResolvedValue(null);
+
+      const result = await service.getTurnEndpointingSettings();
+
+      expect(globalSettingsRepository.findOne).toHaveBeenCalledWith({
+        where: { name: TURN_ENDPOINTING_SETTINGS_NAME },
+      });
+      expect(result).toEqual(DEFAULT_TURN_ENDPOINTING_SETTINGS);
+    });
+
+    it('should return the stored bounds when a row exists', async () => {
+      globalSettingsRepository.findOne.mockResolvedValue({
+        id: 'gs-1',
+        name: TURN_ENDPOINTING_SETTINGS_NAME,
+        value: {
+          turnMinEndpointingDelay: 0.75,
+          turnMaxEndpointingDelay: 2.25,
+        },
+        createdBy: 1,
+        updatedBy: 1,
+      } as any);
+
+      const result = await service.getTurnEndpointingSettings();
+
+      expect(result).toEqual({
+        turnMinEndpointingDelay: 0.75,
+        turnMaxEndpointingDelay: 2.25,
+      });
+    });
+  });
+
+  describe('updateTurnEndpointingSettings', () => {
+    it('should create a new row when none exists', async () => {
+      globalSettingsRepository.findOne.mockResolvedValue(null);
+      globalSettingsRepository.create.mockImplementation(
+        (entity: any) => entity,
+      );
+      globalSettingsRepository.save.mockResolvedValue({} as any);
+
+      const result = await service.updateTurnEndpointingSettings({
+        turnMinEndpointingDelay: 0.5,
+        turnMaxEndpointingDelay: 3,
+      });
+
+      expect(globalSettingsRepository.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: TURN_ENDPOINTING_SETTINGS_NAME,
+          value: {
+            turnMinEndpointingDelay: 0.5,
+            turnMaxEndpointingDelay: 3,
+          },
+        }),
+      );
+      expect(globalSettingsRepository.save).toHaveBeenCalled();
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should update an existing row', async () => {
+      const existing = {
+        id: 'gs-1',
+        name: TURN_ENDPOINTING_SETTINGS_NAME,
+        value: { turnMinEndpointingDelay: 0.5, turnMaxEndpointingDelay: 3 },
+        createdBy: 1,
+        updatedBy: 1,
+      };
+      globalSettingsRepository.findOne.mockResolvedValue(existing as any);
+      globalSettingsRepository.save.mockResolvedValue(existing as any);
+
+      const result = await service.updateTurnEndpointingSettings({
+        turnMinEndpointingDelay: 1,
+        turnMaxEndpointingDelay: 4,
+      });
+
+      const saved = globalSettingsRepository.save.mock.calls[0][0] as any;
+      expect(saved.value).toEqual({
+        turnMinEndpointingDelay: 1,
+        turnMaxEndpointingDelay: 4,
+      });
+      expect(result).toEqual({ success: true });
+    });
+
+    it('should throw BadRequestException when userId is missing', async () => {
+      jest.spyOn(ExecutionManager, 'getUserId').mockReturnValue(undefined);
+
+      await expect(
+        service.updateTurnEndpointingSettings({
+          turnMinEndpointingDelay: 0.5,
+          turnMaxEndpointingDelay: 3,
+        }),
       ).rejects.toThrow(new BadRequestException('User ID is required'));
     });
   });

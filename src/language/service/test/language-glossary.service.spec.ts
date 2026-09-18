@@ -34,8 +34,10 @@ describe('LanguageGlossaryService', () => {
   let promptVersionRepository: any;
   let annotationRepository: any;
   let annotationQb: any;
+  let setAnnotationPool: (rows: any[]) => void;
   let batchRepository: any;
   let attachmentRepository: any;
+  let profileRepository: any;
   let llmProviderFactory: any;
   let getCompletion: jest.Mock;
 
@@ -65,13 +67,32 @@ describe('LanguageGlossaryService', () => {
         .mockResolvedValue({ prompt: 'Generate for {{languageName}}' }),
     };
     // Consolidation reads annotations via a query builder (it carries the raw
-    // test-tenant exclusion fragment). Tests stub the terminal getMany().
+    // test-tenant exclusion fragment). Tests stub the terminal getMany() with
+    // the full annotation pool; the mock applies the ONE predicate the
+    // consumed-set behaviour depends on — `consumedIds` — because that
+    // exclusion lives in SQL (it must be applied before the row limit, or
+    // consumed rows spend the whole budget and the loop starves). Without this
+    // the stub would hand back rows the real query cannot return, and the
+    // "already consumed" tests would pass against a filter that never ran.
+    const consumedIds = new Set<string>();
     annotationQb = {
       where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
+      andWhere: jest.fn((_sql: string, params?: Record<string, unknown>) => {
+        for (const id of (params?.consumedIds as string[]) ?? []) {
+          consumedIds.add(id);
+        }
+        return annotationQb;
+      }),
+      select: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
-      getMany: jest.fn().mockResolvedValue([]),
+      getMany: jest.fn(async () => []),
+    };
+    /** Stub the annotation pool; consumed ids are filtered as SQL would. */
+    setAnnotationPool = (rows: any[]) => {
+      annotationQb.getMany = jest.fn(async () =>
+        rows.filter((r) => !consumedIds.has(r.id)),
+      );
     };
     annotationRepository = {
       createQueryBuilder: jest.fn().mockReturnValue(annotationQb),
@@ -87,6 +108,9 @@ describe('LanguageGlossaryService', () => {
       find: jest.fn().mockResolvedValue([]),
       manager: { query: jest.fn().mockResolvedValue([]) },
     };
+    // Unattached by default: the register policy then falls back to the
+    // language's seeded targetVariety, which is what most tenants get.
+    profileRepository = { findOne: jest.fn().mockResolvedValue(null) };
     getCompletion = jest.fn();
     llmProviderFactory = {
       getProvider: jest.fn().mockReturnValue({ getCompletion }),
@@ -107,6 +131,7 @@ describe('LanguageGlossaryService', () => {
       annotationRepository,
       batchRepository,
       attachmentRepository,
+      profileRepository,
       llmProviderFactory,
       configService as any,
     );
@@ -444,14 +469,14 @@ describe('LanguageGlossaryService', () => {
           ],
         }),
       ]);
-      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
+      setAnnotationPool([annotation('a1')]);
       const result = await service.consolidateGlossary(6);
       expect(result.annotationsConsidered).toBe(0);
       expect(getCompletion).not.toHaveBeenCalled();
     });
 
     it('lands markdown proposals with annotation + tenant provenance', async () => {
-      annotationQb.getMany.mockResolvedValue([
+      setAnnotationPool([
         annotation('a1'),
         annotation('a2', { tenantId: 'tenant-2' }),
       ]);
@@ -474,7 +499,7 @@ describe('LanguageGlossaryService', () => {
     });
 
     it('excludes test-organization tenants from the annotation read', async () => {
-      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
+      setAnnotationPool([annotation('a1')]);
       getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
 
       await service.consolidateGlossary(6);
@@ -490,8 +515,26 @@ describe('LanguageGlossaryService', () => {
       ).toBe(true);
     });
 
+    it('bounds the annotation read to the recency window', async () => {
+      // A rule lands in the every-turn prompt, so it must generalize the agent
+      // we ship now. Without this the read reached back to April across two
+      // retired agent models.
+      setAnnotationPool([annotation('a1')]);
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      await service.consolidateGlossary(6);
+
+      const recency = annotationQb.andWhere.mock.calls.find(
+        (c: any[]) =>
+          typeof c[0] === 'string' && c[0].includes('make_interval'),
+      );
+      expect(recency).toBeDefined();
+      expect(recency[0]).toContain('a.occurredAt > now()');
+      expect(recency[1].recencyDays).toBe(90);
+    });
+
     it('skips proposals duplicating existing content lines or proposals', async () => {
-      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
+      setAnnotationPool([annotation('a1')]);
       glossaryRepository.findSection.mockResolvedValue(
         makeSection({
           sectionCode: 'clinical_terms',
@@ -503,10 +546,109 @@ describe('LanguageGlossaryService', () => {
       const result = await service.consolidateGlossary(6);
       expect(result.proposed).toBe(0);
       expect(result.skippedDuplicates).toBe(1);
+
+      // A PUBLISHED match consumes its evidence via a batch finding. Dropping
+      // it silently would leave the annotations unconsumed, so the same rule
+      // is re-derived and re-dropped on every cycle, forever, while those rows
+      // occupy the bounded read window.
+      const batch = batchRepository.save.mock.calls.at(-1)[0];
+      const findings = batch.stats.engineeringFindings;
+      expect(findings).toHaveLength(1);
+      expect(findings[0].annotationIds).toEqual(['a1']);
+      expect(findings[0].summary).toContain('already-published');
+      expect(findings[0].summary.length).toBeLessThanOrEqual(500);
+    });
+
+    it('does NOT record a finding when the match is a queued proposal', async () => {
+      setAnnotationPool([annotation('a1')]);
+      glossaryRepository.findSection.mockResolvedValue(
+        makeSection({
+          sectionCode: 'clinical_terms',
+          content: '',
+          entries: [
+            {
+              id: 'queued-1',
+              markdown: '- anxiety: say "டென்ஷன்" (avoid: "பதட்டம்")',
+              status: GlossaryEntryStatus.PROPOSED,
+            },
+          ],
+        }),
+      );
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      const result = await service.consolidateGlossary(6);
+      expect(result.skippedDuplicates).toBe(1);
+      // The sibling is still undecided; whichever lands consumes the evidence,
+      // so there is nothing to flag and nothing to consume here.
+      const batch = batchRepository.save.mock.calls.at(-1)[0];
+      expect(batch.stats.engineeringFindings).toBeUndefined();
+    });
+
+    it('skips a proposal already covered by ANOTHER section of the language', async () => {
+      // The proposal is routed to clinical_terms, which is empty; the same
+      // rule already sits in core_style. Deduping per-section missed this and
+      // let one rule accumulate under several sectionCodes.
+      setAnnotationPool([annotation('a1')]);
+      glossaryRepository.findAllForLanguage.mockResolvedValue([
+        makeSection({
+          sectionCode: 'core_style',
+          content: '- anxiety: say "டென்ஷன்" (avoid: "பதட்டம்")',
+        }),
+      ]);
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      const result = await service.consolidateGlossary(6);
+      expect(result.proposed).toBe(0);
+      expect(result.skippedDuplicates).toBe(1);
+    });
+
+    it('shows the consolidation prompt the FULL existing glossary, proposals included', async () => {
+      // The prompt is told not to restate what the glossary covers, so the
+      // summary it checks against must be complete. A 1500-char slice hid the
+      // tail of the largest production sections.
+      const longTail = '- rule about spoken register number';
+      const longContent =
+        Array.from({ length: 60 }, (_, i) => `${longTail} ${i}.`).join('\n') +
+        `\n${longTail} LAST.`;
+      expect(longContent.length).toBeGreaterThan(1500);
+      glossaryRepository.findAllForLanguage.mockResolvedValue([
+        makeSection({
+          content: longContent,
+          entries: [
+            {
+              id: 'e1',
+              markdown: '- a queued proposal awaiting review',
+              status: GlossaryEntryStatus.PROPOSED,
+              provenance: { source: 'consolidation', annotationIds: ['old'] },
+            },
+          ],
+        }),
+      ]);
+      setAnnotationPool([annotation('a1')]);
+      // The default fixture template has no {{existingGlossary}} placeholder;
+      // the real seeded consolidation prompt does, and it is the substitution
+      // under test here.
+      promptVersionRepository.findOne.mockResolvedValue({
+        prompt: 'Existing glossary:\n{{existingGlossary}}',
+      });
+      getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
+
+      await service.consolidateGlossary(6);
+
+      const calls = getCompletion.mock.calls;
+      const messages = calls[calls.length - 1][0] as {
+        role: string;
+        content: string;
+      }[];
+      const systemPrompt = messages.find((m) => m.role === 'system')!.content;
+      expect(systemPrompt).toContain(`${longTail} LAST.`);
+      // Consolidation MUST see queued proposals (adjudication must not) —
+      // otherwise it re-proposes what is already waiting.
+      expect(systemPrompt).toContain('- a queued proposal awaiting review');
     });
 
     it('rejects unparseable consolidation output', async () => {
-      annotationQb.getMany.mockResolvedValue([annotation('a1')]);
+      setAnnotationPool([annotation('a1')]);
       getCompletion.mockResolvedValue('here are your entries: ...');
       await expect(service.consolidateGlossary(6)).rejects.toThrow(
         BadRequestException,
@@ -547,7 +689,7 @@ describe('LanguageGlossaryService', () => {
         existingSection,
       ]);
       glossaryRepository.findSection.mockResolvedValue(existingSection);
-      annotationQb.getMany.mockResolvedValue([annotation('a-new')]);
+      setAnnotationPool([annotation('a-new')]);
       getCompletion.mockResolvedValue(JSON.stringify(consolidationOutput));
 
       const result = await service.consolidateGlossary(6, 'admin');
@@ -667,13 +809,19 @@ describe('LanguageGlossaryService', () => {
     ];
 
     beforeEach(() => {
-      annotationQb.getMany.mockResolvedValue([
+      setAnnotationPool([
         annotation('a1', 'tenant-1'),
         annotation('a2', 'tenant-2'),
       ]);
       getCompletion.mockResolvedValue(JSON.stringify(twoProposalOutput));
       attachmentRepository.find.mockResolvedValue([
         { tenantId: 'tenant-2', profileId: 'p1', languageId: 6 },
+        // A SECOND attached profile, contributing no annotations here. Overlay
+        // routing is gated on the language having >= 2 profiles, because with
+        // one profile "all support came from it" is a tautology rather than
+        // evidence. tenant-3 supplies the contrast without changing which
+        // tenants support which proposal.
+        { tenantId: 'tenant-3', profileId: 'p2', languageId: 6 },
       ]);
     });
 
@@ -701,6 +849,30 @@ describe('LanguageGlossaryService', () => {
       expect(finalBatch.entries).toHaveLength(2);
       expect(finalBatch.entries.map((e: any) => e.profileId).sort()).toEqual(
         ['p1', null].sort(),
+      );
+    });
+
+    // The gap this closes: Tamil was the only language with a profile, had
+    // exactly one, and so every rule it ever learned — including universal
+    // grammar — was routed into that single org's overlay. A second tenant on
+    // the language would have inherited nothing, and the global glossary could
+    // never grow.
+    it('routes everything GLOBAL when the language has only one attached profile', async () => {
+      attachmentRepository.find.mockResolvedValue([
+        { tenantId: 'tenant-2', profileId: 'p1', languageId: 6 },
+      ]);
+
+      const result = await service.consolidateGlossary(6);
+
+      expect(result.proposed).toBe(2);
+      expect(result.overlayEntries).toBe(0);
+      const savedSections = glossaryRepository.save.mock.calls.map(
+        (c: any[]) => c[0],
+      );
+      expect(savedSections.some((s: any) => s.profileId)).toBe(false);
+      const global = savedSections.find((s: any) => !s.profileId);
+      expect(global.entries.map((e: any) => e.markdown).sort()).toEqual(
+        ['- global rule', '- overlay rule'].sort(),
       );
     });
 
@@ -787,6 +959,43 @@ describe('LanguageGlossaryService', () => {
       expect(saved.content ?? '').not.toContain('register vocabulary rule');
     });
 
+    // The scheduler measures BOTH its weekly interval and its minimum gap from
+    // the last batch. A path that returns without writing one freezes that
+    // clock and re-runs every tick — Marathi and Kannada did exactly that,
+    // consolidating twice in 30 minutes on a weekly cadence, because their
+    // fluency-only annotations can never clear the systematicity bar.
+    it('records a batch even when nothing clusters, so the cadence clock advances', async () => {
+      // All fluency, each a different category: systematicFluency (min 5
+      // same-category recurrences) drops every one, so nothing reaches the
+      // clusterer.
+      setAnnotationPool([
+        annotation('f1', 'tenant-1', {
+          dimension: 'fluency',
+          category: 'case_marking',
+        }),
+        annotation('f2', 'tenant-1', {
+          dimension: 'fluency',
+          category: 'tense_error',
+        }),
+        annotation('f3', 'tenant-1', {
+          dimension: 'fluency',
+          category: 'agreement',
+        }),
+      ]);
+
+      const result = await service.consolidateGlossary(6, 'scheduler', {
+        trigger: 'scheduled',
+      });
+
+      expect(result.proposed).toBe(0);
+      expect(result.batchId).not.toBeNull();
+      expect(getCompletion).not.toHaveBeenCalled(); // still no LLM spend
+      const batch = batchRepository.save.mock.calls.at(-1)[0];
+      expect(batch.trigger).toBe('scheduled');
+      expect(batch.entries).toEqual([]);
+      expect(batch.stats.proposed).toBe(0);
+    });
+
     it('skips the run (and the LLM) below minAnnotations', async () => {
       const result = await service.consolidateGlossary(6, undefined, {
         minAnnotations: 10,
@@ -846,7 +1055,7 @@ describe('LanguageGlossaryService', () => {
     });
 
     it('routes production-artifact clusters to engineering findings, and consumes them', async () => {
-      annotationQb.getMany.mockResolvedValue([
+      setAnnotationPool([
         annotation('a1', 'tenant-1'),
         annotation('a2', 'tenant-1', {
           dimension: 'persona_social',
@@ -1020,7 +1229,7 @@ describe('LanguageGlossaryService', () => {
     });
 
     it('runs after auto-accept consolidation (best-effort)', async () => {
-      annotationQb.getMany.mockResolvedValue([
+      setAnnotationPool([
         {
           id: 'a9',
           tenantId: 'tenant-1',

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 
 import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
+import { withReportingQuerySlot } from '../../common/util/reporting-query-slots.util';
 import {
   TrendPoint,
   TurnConditionRow,
@@ -475,9 +476,9 @@ export class WeakMetricsAnalyticsService {
     // the language series through drift's version and returned 6 annotations
     // out of 1,782, and would have made a groundedness backfill unreadable.
     const [judge, languageJudge, groundednessJudge] = await Promise.all([
-      this.repo.latestDriftJudgeVersion(),
-      this.repo.latestLanguageJudgeVersion(),
-      this.repo.latestGroundednessJudgeVersion(),
+      withReportingQuerySlot(() => this.repo.latestDriftJudgeVersion()),
+      withReportingQuerySlot(() => this.repo.latestLanguageJudgeVersion()),
+      withReportingQuerySlot(() => this.repo.latestGroundednessJudgeVersion()),
     ]);
 
     const base: Omit<WeakMetricsFilters, 'judgeModel' | 'judgePromptVersion'> =
@@ -538,40 +539,52 @@ export class WeakMetricsAnalyticsService {
       turnConditions,
       filterOptions,
     ] = await Promise.all([
-      this.repo.understandingWeightedTrend(fLang),
-      this.repo.unresponsiveTurnTrend(f),
-      this.repo.rePromptTrend(f),
-      this.repo.bargeInTrend(f),
-      this.repo.repetitionTurnTrend(f),
-      this.repo.sessionLoopRateTrend(f),
-      this.repo.semanticStasisTrend(f),
-      this.repo.resolutionTrend(f),
-      this.repo.realismWeightedTrend(fLang, 'register'),
-      this.repo.realismWeightedTrend(fLang, 'colloquialness'),
-      this.repo.realismWeightedTrend(fLang, 'dialect_lexicon'),
-      this.repo.offLanguageTurnTrend(f),
-      this.repo.fabricatedQuoteTrend(fGround),
-      this.repo.groundednessTrend(fGround),
-      this.repo.falseNegativeFeedbackTrend(fGround),
-      this.repo.feedbackToneTrend(f),
-      this.repo.unhealthyScoredTrend(f),
-      this.repo.scoreVsLengthPairs(f),
-      this.repo.roleSlipTrend(f),
-      this.repo.roleInversionTrend(f),
-      this.repo.overComplianceTrend(f),
-      this.repo.inappropriateStasisTrend(f),
-      this.repo.counsellorDirectedQuestionTrend(f),
-      this.repo.roleSlipByScenario(f),
-      this.repo.turnConditionBreakdown(
-        f,
-        languageJudge
-          ? {
-              judgeModel: languageJudge.judgeModel,
-              judgePromptVersion: languageJudge.judgePromptVersion,
-            }
-          : null,
+      withReportingQuerySlot(() => this.repo.understandingWeightedTrend(fLang)),
+      withReportingQuerySlot(() => this.repo.unresponsiveTurnTrend(f)),
+      withReportingQuerySlot(() => this.repo.rePromptTrend(f)),
+      withReportingQuerySlot(() => this.repo.bargeInTrend(f)),
+      withReportingQuerySlot(() => this.repo.repetitionTurnTrend(f)),
+      withReportingQuerySlot(() => this.repo.sessionLoopRateTrend(f)),
+      withReportingQuerySlot(() => this.repo.semanticStasisTrend(f)),
+      withReportingQuerySlot(() => this.repo.resolutionTrend(f)),
+      withReportingQuerySlot(() =>
+        this.repo.realismWeightedTrend(fLang, 'register'),
       ),
-      this.repo.filterOptions(start),
+      withReportingQuerySlot(() =>
+        this.repo.realismWeightedTrend(fLang, 'colloquialness'),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.realismWeightedTrend(fLang, 'dialect_lexicon'),
+      ),
+      withReportingQuerySlot(() => this.repo.offLanguageTurnTrend(f)),
+      withReportingQuerySlot(() => this.repo.fabricatedQuoteTrend(fGround)),
+      withReportingQuerySlot(() => this.repo.groundednessTrend(fGround)),
+      withReportingQuerySlot(() =>
+        this.repo.falseNegativeFeedbackTrend(fGround),
+      ),
+      withReportingQuerySlot(() => this.repo.feedbackToneTrend(f)),
+      withReportingQuerySlot(() => this.repo.unhealthyScoredTrend(f)),
+      withReportingQuerySlot(() => this.repo.scoreVsLengthPairs(f)),
+      withReportingQuerySlot(() => this.repo.roleSlipTrend(f)),
+      withReportingQuerySlot(() => this.repo.roleInversionTrend(f)),
+      withReportingQuerySlot(() => this.repo.overComplianceTrend(f)),
+      withReportingQuerySlot(() => this.repo.inappropriateStasisTrend(f)),
+      withReportingQuerySlot(() =>
+        this.repo.counsellorDirectedQuestionTrend(f),
+      ),
+      withReportingQuerySlot(() => this.repo.roleSlipByScenario(f)),
+      withReportingQuerySlot(() =>
+        this.repo.turnConditionBreakdown(
+          f,
+          languageJudge
+            ? {
+                judgeModel: languageJudge.judgeModel,
+                judgePromptVersion: languageJudge.judgePromptVersion,
+              }
+            : null,
+        ),
+      ),
+      withReportingQuerySlot(() => this.repo.filterOptions(start)),
     ]);
 
     // Each group's `state` here is a placeholder the DTO requires: it is

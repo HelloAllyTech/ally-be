@@ -96,6 +96,51 @@ export interface VoiceLatencyBucketRow {
    * instrumented.
    */
   avgCacheHitRatePct: number | null;
+
+  // ---- What the learner heard first (metadata.firstAudioSource) ----
+  // `responseLatencyMs` measures time to the agent's FIRST audio, which is a
+  // thinking-filler or predictive interim reply when one played. These counts
+  // say which it was, so a bucket's headline latency can be read against how
+  // many of its turns were masked — otherwise a rise in filler coverage looks
+  // like a latency improvement.
+  /** Turns whose first audio was a thinking-filler. */
+  firstAudioFillerTurns: number;
+  /** Turns whose first audio was a predictive interim reply. */
+  firstAudioInterimTurns: number;
+  /** Turns whose first audio was the real reply (nothing masked it). */
+  firstAudioReplyTurns: number;
+  /**
+   * Turns with no `firstAudioSource` recorded: every 'transcript' row, and
+   * live rows predating the provenance instrumentation. Kept as its own
+   * count rather than folded into 'reply' — those turns MAY have been masked,
+   * and silently calling them unmasked would invent the very fact this split
+   * exists to establish.
+   */
+  firstAudioUnknownTurns: number;
+
+  /** Mean time-to-first-voice (ms) for filler-first turns. Null if none. */
+  avgFirstAudioFillerMs: number | null;
+  /** Mean time-to-first-voice (ms) for interim-first turns. Null if none. */
+  avgFirstAudioInterimMs: number | null;
+  /** Mean time-to-first-voice (ms) for reply-first turns. Null if none. */
+  avgFirstAudioReplyMs: number | null;
+
+  /**
+   * Mean time to the REAL reply (ms) — `metadata.replyLatencyMs` on masked
+   * turns, `responseLatencyMs` on unmasked ones. This is the unmasked
+   * pipeline number: it does not move when filler coverage changes.
+   *
+   * Computed over instrumented turns only (those carrying a
+   * `firstAudioSource`), so it is null for 'transcript' buckets and for
+   * windows predating the instrumentation. Turns without provenance are
+   * EXCLUDED rather than assumed unmasked, which would drag this toward the
+   * masked number and hide exactly the regression it exists to show.
+   */
+  avgReplyLatencyMs: number | null;
+  /** Median (p50) time to the real reply (ms). Null as above. */
+  p50ReplyLatencyMs: number | null;
+  /** p95 time to the real reply (ms). Null as above. */
+  p95ReplyLatencyMs: number | null;
 }
 
 export interface VoiceLatencyByLanguageRow {
@@ -147,6 +192,25 @@ export interface VoiceLatencySessionRow extends VoiceLatencySessionStagesRow {
   occurredAt: string | null;
   turnCount: number | string;
 }
+
+export interface VoiceLatencyByScenarioRow extends VoiceLatencySessionStagesRow {
+  scenarioId: number;
+  scenarioTitle: string;
+  /** When the simulation's most recent session (the one this row's stage
+   *  averages are computed from) started. */
+  occurredAt: string | null;
+  turnCount: number | string;
+}
+
+/**
+ * Defensive cap on {@link PlatformAnalyticsRepository.getVoiceLatencyByScenario} —
+ * comfortably above the platform's current scenario count (412 as of
+ * 2026-08-19) so nothing real gets cut today, while still bounding payload
+ * size if that count grows a lot. The service layer logs + flags
+ * `truncated: true` if this is ever actually hit — see
+ * platform-analytics.service.ts.
+ */
+export const VOICE_LATENCY_BY_SCENARIO_LIMIT = 500;
 
 export interface VoiceLatencySessionsSummaryRow extends VoiceLatencySessionStagesRow {
   sessionCount: number | string;
@@ -613,6 +677,11 @@ export class PlatformAnalyticsRepository {
    * `scenario_session_turn_metrics`. Returns avg / p50 / p95 of
    * `responseLatencyMs` plus the turn count for each (bucket, source) pair.
    *
+   * Also returns the per-bucket first-audio split (how many turns were
+   * fronted by a filler / interim / the reply itself, their means, and the
+   * unmasked time to the real reply) — see the field docs on
+   * {@link VoiceLatencyBucketRow}.
+   *
    * Split by `source` so the live-pipeline trend and the historical
    * transcript-derived trend are never silently mixed (they measure latency
    * differently). The table is not registered as a TypeORM entity here, so it
@@ -672,8 +741,56 @@ export class PlatformAnalyticsRepository {
         `round(100.0 * sum(m."cachedTokens")::numeric / ` +
           `NULLIF(sum(m."promptTokens"), 0))::float`,
         'avgCacheHitRatePct',
-      )
-      .from('scenario_session_turn_metrics', 'm');
+      );
+
+    // What spoke first. `responseLatencyMs` is time-to-first-audio, so a
+    // filler or interim reply can own it; these counts + per-source means keep
+    // "we got faster" and "we masked more" distinguishable. Turns with no
+    // recorded provenance are counted separately, never assumed unmasked.
+    const firstAudioIs = (kind: string) =>
+      `m."metadata"->>'firstAudioSource' = '${kind}'`;
+    for (const [kind, alias] of [
+      ['filler', 'firstAudioFillerTurns'],
+      ['interim', 'firstAudioInterimTurns'],
+      ['reply', 'firstAudioReplyTurns'],
+    ] as const) {
+      qb.addSelect(`COUNT(*) FILTER (WHERE ${firstAudioIs(kind)})::int`, alias);
+      qb.addSelect(
+        `round(avg(m."responseLatencyMs") FILTER ` +
+          `(WHERE ${firstAudioIs(kind)}))::int`,
+        `avgFirstAudio${kind[0].toUpperCase()}${kind.slice(1)}Ms`,
+      );
+    }
+    qb.addSelect(
+      `COUNT(*) FILTER (WHERE m."metadata"->>'firstAudioSource' IS NULL)::int`,
+      'firstAudioUnknownTurns',
+    );
+
+    // Unmasked time to the real reply: replyLatencyMs when a filler/interim
+    // front-ran it, else the response latency itself (which already IS the
+    // reply on unmasked turns). jsonb_typeof guards the cast so one
+    // malformed metadata value cannot fail the whole query.
+    const replyLatencyExpr =
+      `COALESCE(CASE WHEN jsonb_typeof(m."metadata"->'replyLatencyMs') = 'number' ` +
+      `THEN (m."metadata"->>'replyLatencyMs')::numeric END, ` +
+      `m."responseLatencyMs")`;
+    const instrumented = `m."metadata"->>'firstAudioSource' IS NOT NULL`;
+    qb.addSelect(
+      `round(avg(${replyLatencyExpr}) FILTER (WHERE ${instrumented}))::int`,
+      'avgReplyLatencyMs',
+    );
+    for (const [q, alias] of [
+      ['0.5', 'p50ReplyLatencyMs'],
+      ['0.95', 'p95ReplyLatencyMs'],
+    ] as const) {
+      qb.addSelect(
+        `round(percentile_cont(${q}) WITHIN GROUP (ORDER BY ${replyLatencyExpr}) ` +
+          `FILTER (WHERE ${instrumented}))::int`,
+        alias,
+      );
+    }
+
+    qb.from('scenario_session_turn_metrics', 'm');
     if (language) {
       // turn_metrics.language is largely unpopulated, so filter by the SESSION's
       // configured language (join to scenario_sessions -> languages), matching
@@ -711,6 +828,16 @@ export class PlatformAnalyticsRepository {
         p50LlmTtftMs: number | null;
         p95LlmTtftMs: number | null;
         avgCacheHitRatePct: number | null;
+        firstAudioFillerTurns: number;
+        firstAudioInterimTurns: number;
+        firstAudioReplyTurns: number;
+        firstAudioUnknownTurns: number;
+        avgFirstAudioFillerMs: number | null;
+        avgFirstAudioInterimMs: number | null;
+        avgFirstAudioReplyMs: number | null;
+        avgReplyLatencyMs: number | null;
+        p50ReplyLatencyMs: number | null;
+        p95ReplyLatencyMs: number | null;
       }>();
 
     // llmTtft* are left as null (not coerced to 0) when unpopulated for the
@@ -729,6 +856,18 @@ export class PlatformAnalyticsRepository {
       p50LlmTtftMs: toNullableNumber(r.p50LlmTtftMs),
       p95LlmTtftMs: toNullableNumber(r.p95LlmTtftMs),
       avgCacheHitRatePct: toNullableNumber(r.avgCacheHitRatePct),
+      // Counts are real zeros (no turns of that kind), so they coerce to 0 —
+      // unlike the latencies beside them, which stay null when unpopulated.
+      firstAudioFillerTurns: Number(r.firstAudioFillerTurns) || 0,
+      firstAudioInterimTurns: Number(r.firstAudioInterimTurns) || 0,
+      firstAudioReplyTurns: Number(r.firstAudioReplyTurns) || 0,
+      firstAudioUnknownTurns: Number(r.firstAudioUnknownTurns) || 0,
+      avgFirstAudioFillerMs: toNullableNumber(r.avgFirstAudioFillerMs),
+      avgFirstAudioInterimMs: toNullableNumber(r.avgFirstAudioInterimMs),
+      avgFirstAudioReplyMs: toNullableNumber(r.avgFirstAudioReplyMs),
+      avgReplyLatencyMs: toNullableNumber(r.avgReplyLatencyMs),
+      p50ReplyLatencyMs: toNullableNumber(r.p50ReplyLatencyMs),
+      p95ReplyLatencyMs: toNullableNumber(r.p95ReplyLatencyMs),
     }));
   }
 
@@ -797,6 +936,155 @@ export class PlatformAnalyticsRepository {
   }
 
   /**
+   * Every simulation with at least one live-pipeline turn in the window,
+   * worst-first (`avgResponseLatencyMs DESC`) — "which simulations are slow
+   * RIGHT NOW" as its own question, distinct from {@link getVoiceLatencyBySessions}
+   * ("show me THIS simulation's worst sessions, once I already suspect it").
+   * Each row is that simulation's SINGLE MOST RECENT session (by
+   * `scenario_sessions."startedAt"`), not a whole-window average — a
+   * multi-session average is fine for "has this been slow over 30 days" but
+   * hides whether a scenario is slow *today*, and (per a real production
+   * investigation) a single anomalous session — a disconnect, a paused
+   * client, a one-off provider stall — can dominate a small scenario's
+   * average and make it look like a systemic problem when it isn't. Picking
+   * the latest session avoids blending old and current behaviour, at the
+   * cost of being a one-session sample rather than an average — the same
+   * trade-off, in the other direction.
+   *
+   * `latestSession` picks that session per scenario via `DISTINCT ON`
+   * (Postgres-specific, already used elsewhere in this codebase's raw
+   * queries); the outer query then re-aggregates just that session's turns
+   * with the same stage SELECT-list as {@link getVoiceLatencyBySessions} (kept
+   * in sync — see its own doc-comment), so a slow scenario's per-stage
+   * columns point at *why* without a second query. `m."scenarioId"` is
+   * reliably populated/indexed (unlike the sparse `m."language"`), so this
+   * joins straight to `scenarios` for a title rather than hopping through
+   * `scenario_sessions` the way the language join does. Capped at
+   * {@link VOICE_LATENCY_BY_SCENARIO_LIMIT} — see that constant's doc-comment.
+   */
+  async getVoiceLatencyByScenario(
+    start: Date,
+    end: Date,
+    language?: string,
+  ): Promise<VoiceLatencyByScenarioRow[]> {
+    // Applies the same window/source/tenant (+ optional language) filter to
+    // any query builder already `FROM scenario_session_turn_metrics m JOIN
+    // scenario_sessions ss` — shared by the latest-session subquery below and
+    // the outer aggregate, so the two can't drift out of sync.
+    const applyFilters = (target: SelectQueryBuilder<ObjectLiteral>) => {
+      if (language) {
+        target.leftJoin(
+          'languages',
+          'l',
+          `l.id = NULLIF(ss.metadata->>'languageId', '')::int`,
+        );
+      }
+      target
+        .where('m."occurredAt" >= :start', { start })
+        .andWhere('m."occurredAt" < :end', { end })
+        .andWhere(`m."source" = 'pipeline'`)
+        .andWhere('m."responseLatencyMs" IS NOT NULL')
+        .andWhere(excludeTestTenants('m."tenant_id"'));
+      if (language) {
+        target.andWhere(`COALESCE(l."value", 'en') = :language`, {
+          language,
+        });
+      }
+      return target;
+    };
+
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .from(
+        (sub) =>
+          // One row per scenario: the scenarioSessionId whose session
+          // started most recently, among sessions with a matching turn in
+          // the window. A genuine subquery (not a `.getQuery()` string
+          // embed) so TypeORM renumbers its bound parameters correctly
+          // against the outer query's own `:start`/`:end`/`:language`.
+          applyFilters(
+            sub
+              .select(
+                'DISTINCT ON (m."scenarioId") m."scenarioId"',
+                'scenarioId',
+              )
+              .addSelect('m."scenarioSessionId"', 'scenarioSessionId')
+              .from('scenario_session_turn_metrics', 'm')
+              .innerJoin(
+                'scenario_sessions',
+                'ss',
+                'ss.id = m."scenarioSessionId"',
+              ),
+          )
+            .orderBy('m."scenarioId"', 'ASC')
+            .addOrderBy('ss."startedAt"', 'DESC'),
+        'latest',
+      )
+      .innerJoin(
+        'scenario_session_turn_metrics',
+        'm',
+        'm."scenarioSessionId" = latest."scenarioSessionId"',
+      )
+      .innerJoin(
+        'scenario_sessions',
+        'ss',
+        'ss.id = latest."scenarioSessionId"',
+      )
+      .innerJoin('scenarios', 'sc', 'sc.id = latest."scenarioId"')
+      .where('m."occurredAt" >= :start', { start })
+      .andWhere('m."occurredAt" < :end', { end })
+      .andWhere(`m."source" = 'pipeline'`)
+      .andWhere('m."responseLatencyMs" IS NOT NULL')
+      .andWhere(excludeTestTenants('m."tenant_id"'))
+      .select('latest."scenarioId"', 'scenarioId')
+      .addSelect('sc.title', 'scenarioTitle')
+      .addSelect('MIN(ss."startedAt")', 'occurredAt')
+      .addSelect('COUNT(*)::int', 'turnCount')
+      .addSelect(
+        'round(avg(m."responseLatencyMs"))::int',
+        'avgResponseLatencyMs',
+      )
+      .addSelect(
+        `round(percentile_cont(0.5) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p50ResponseLatencyMs',
+      )
+      .addSelect(
+        `round(percentile_cont(0.95) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p95ResponseLatencyMs',
+      )
+      .addSelect('round(avg(m."eouDelayMs"))::int', 'avgEouDelayMs')
+      .addSelect('round(avg(m."sttFinalizeMs"))::int', 'avgSttFinalizeMs')
+      .addSelect('round(avg(m."llmTtftMs"))::int', 'avgLlmTtftMs')
+      .addSelect('round(avg(m."ttsTtfbMs"))::int', 'avgTtsTtfbMs')
+      .addSelect('round(avg(m."orchestrationMs"))::int', 'avgOrchestrationMs')
+      .addSelect('round(avg(m."llmResponseMs"))::int', 'avgLlmResponseMs')
+      .addSelect('round(avg(m."branchingMs"))::int', 'avgBranchingMs')
+      .addSelect(
+        'round(avg(m."knowledgeRetrievalMs"))::int',
+        'avgKnowledgeRetrievalMs',
+      )
+      .addSelect('round(avg(m."processEventsMs"))::int', 'avgProcessEventsMs')
+      .addSelect('round(avg(m."behaviorsMs"))::int', 'avgBehaviorsMs')
+      .addSelect(
+        'COALESCE(SUM(CASE WHEN m."interrupted" THEN 1 ELSE 0 END), 0)::int',
+        'interruptedTurns',
+      )
+      .addSelect(
+        'COALESCE(SUM(CASE WHEN m."llmTimedOut" THEN 1 ELSE 0 END), 0)::int',
+        'llmTimedOutTurns',
+      )
+      .groupBy('latest."scenarioId"')
+      .addGroupBy('sc.title')
+      .orderBy('avg(m."responseLatencyMs")', 'DESC', 'NULLS LAST')
+      .addOrderBy('latest."scenarioId"', 'ASC')
+      .limit(VOICE_LATENCY_BY_SCENARIO_LIMIT);
+
+    return qb.getRawMany<VoiceLatencyByScenarioRow>();
+  }
+
+  /**
    * Shared filters for the session-wise voice-latency queries below (list,
    * count, summary) so all three stay in lockstep — mirrors the
    * `applyFilters` convention in roleplay-session-logs.repository.ts, extended
@@ -828,8 +1116,7 @@ export class PlatformAnalyticsRepository {
   /**
    * Session-wise voice latency for one simulation: one row per session,
    * averaging that session's turns across every pipeline stage. Sorted
-   * worst-first (`avgResponseLatencyMs DESC`) since this exists to help spot
-   * outlier sessions, not browse chronologically. The stage SELECT-list is
+   * latest-first (`occurredAt DESC`). The stage SELECT-list is
    * copied from `RoleplaySessionLogsRepository.getLatencyBySession`
    * (roleplay-session-logs.repository.ts:596-636) — that method computes the
    * same breakdown for a single known session id; this one groups it across
@@ -905,7 +1192,7 @@ export class PlatformAnalyticsRepository {
         'llmTimedOutTurns',
       )
       .groupBy('m."scenarioSessionId"')
-      .orderBy('avg(m."responseLatencyMs")', 'DESC', 'NULLS LAST')
+      .orderBy('MIN(ss."startedAt")', 'DESC', 'NULLS LAST')
       .addOrderBy('m."scenarioSessionId"', 'ASC')
       .limit(limit)
       .offset(offset);

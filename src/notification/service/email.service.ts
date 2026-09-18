@@ -58,6 +58,7 @@ ${magicLink ? `Or click the link below to login instantly:\n${magicLink}\n` : ''
       subject,
       body,
       isHtml: false,
+      purpose: 'login OTP',
     });
   }
 
@@ -84,6 +85,7 @@ The Ally Team`;
       subject,
       body,
       isHtml: false,
+      purpose: 'summary ready',
     });
   }
 
@@ -92,7 +94,12 @@ The Ally Team`;
    * credentials. These are low-sensitivity, single-purpose accounts (an
    * evaluator only sees runs assigned to them); the password is generated
    * server-side and shared here in place of the admin copying it manually.
-   * Best-effort — returns false on failure without throwing.
+   *
+   * THROWS on failure (it used to resolve `false` and swallow everything, which
+   * meant an evaluator could be created with a password nobody received while
+   * the admin saw a clean success). `LabEvaluatorService.sendInvite` catches it
+   * — the invite failing must not undo the evaluator row — but the failure is
+   * now logged there and alerted from SESService.
    */
   async sendEvaluatorInvite(params: {
     to: string;
@@ -120,6 +127,7 @@ The Ally Team`;
       subject,
       body,
       isHtml: false,
+      purpose: 'AI Lab evaluator invite',
     });
   }
 }

@@ -10,11 +10,17 @@ import { UsageLevelAnalyticsService } from './service/usage-level-analytics.serv
 import { UsageLevelAnalyticsRepository } from './repository/usage-level-analytics.repository';
 import { CertificationAnalyticsService } from './service/certification-analytics.service';
 import { CertificationAnalyticsRepository } from './repository/certification-analytics.repository';
+import { XpGrowthAnalyticsService } from './service/xp-growth-analytics.service';
+import { XpGrowthAnalyticsRepository } from './repository/xp-growth-analytics.repository';
+import { GoalsXpAnalyticsService } from './service/goals-xp-analytics.service';
+import { GoalsXpAnalyticsRepository } from './repository/goals-xp-analytics.repository';
+import { AnalyticsXpGoal } from './entity/analytics-xp-goal.entity';
 import { RoleplayVolumeAnalyticsService } from './service/roleplay-volume-analytics.service';
 import { RoleplayVolumeAnalyticsRepository } from './repository/roleplay-volume-analytics.repository';
 // Analytics → Product management tab: reads the internal product roadmap rather
 // than learner activity, so it is neither tenant-scoped nor windowed.
 import { RoadmapDeliveryAnalyticsService } from './service/roadmap-delivery-analytics.service';
+import { ShipVolumeAnalyticsService } from './service/ship-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsRepository } from './repository/roadmap-delivery-analytics.repository';
 // Testing-tab endpoints: candidates for the leadership Highlights tab, kept on a
 // separate admin tab until they have proved they change a decision.
@@ -52,6 +58,10 @@ import { OrgEngagementAnalyticsService } from './service/org-engagement-analytic
 import { OrgEngagementAnalyticsRepository } from './repository/org-engagement-analytics.repository';
 import { RoleplayCostAnalyticsService } from './service/roleplay-cost-analytics.service';
 import { RoleplayCostAnalyticsRepository } from './repository/roleplay-cost-analytics.repository';
+import { CodingAgentCostAnalyticsService } from './service/coding-agent-cost-analytics.service';
+import { CodingAgentCostAnalyticsRepository } from './repository/coding-agent-cost-analytics.repository';
+import { FixSessionEngineCostAnalyticsService } from './service/fix-session-engine-cost-analytics.service';
+import { FixSessionEngineCostAnalyticsRepository } from './repository/fix-session-engine-cost-analytics.repository';
 import { QualitySentimentAnalyticsService } from './service/quality-sentiment-analytics.service';
 import { QualitySentimentAnalyticsRepository } from './repository/quality-sentiment-analytics.repository';
 // Roleplay Quality Index: the composite behind the "Roleplay quality" card,
@@ -68,6 +78,7 @@ import { ScribeAnalyticsService } from './service/scribe-analytics.service';
 import { DriftJudgeService } from './service/drift-judge.service';
 import { DriftBackfillSchedulerRegistrationService } from './service/drift-backfill-scheduler-registration.service';
 import { JudgeBacklogDrainService } from './service/judge-backlog-drain.service';
+import { FillerJudgeService } from './service/filler-judge.service';
 import { LanguageJudgeService } from './service/language-judge.service';
 import { LanguageBackfillSchedulerRegistrationService } from './service/language-backfill-scheduler-registration.service';
 import { PlatformAnalyticsRepository } from './repository/platform-analytics.repository';
@@ -77,8 +88,13 @@ import { ScribeAnalyticsRepository } from './repository/scribe-analytics.reposit
 import { LlmUsageRepository } from './repository/llm-usage.repository';
 import { DriftAnalyticsRepository } from './repository/drift-analytics.repository';
 import { DriftJudgeRepository } from './repository/drift-judge.repository';
+import { FillerAnalyticsService } from './service/filler-analytics.service';
+import { FillerAnalyticsRepository } from './repository/filler-analytics.repository';
+import { FillerJudgeRepository } from './repository/filler-judge.repository';
 import { LanguageJudgeRepository } from './repository/language-judge.repository';
 import { LanguageAnalyticsRepository } from './repository/language-analytics.repository';
+import { GlossaryEffectAnalyticsRepository } from './repository/glossary-effect-analytics.repository';
+import { GlossaryEffectAnalyticsService } from './service/glossary-effect-analytics.service';
 import { LanguageAnalyticsService } from './service/language-analytics.service';
 // Analytics -> Weak performing metrics tab: the five simulator-quality metrics
 // under active repair, read from the judge tables plus deterministic measures
@@ -89,6 +105,12 @@ import { WeakMetricsAnalyticsRepository } from './repository/weak-metrics-analyt
 // a learner is graded by is actually true of their session.
 import { FeedbackGroundednessJudgeService } from './service/feedback-groundedness-judge.service';
 import { FeedbackGroundednessRepository } from './repository/feedback-groundedness.repository';
+import { RagQualityJudgeService } from './service/rag-quality-judge.service';
+import { RagQualityAnalyticsService } from './service/rag-quality-analytics.service';
+import { RagQualityAnalyticsRepository } from './repository/rag-quality-analytics.repository';
+import { RecallQualityJudgeService } from './service/recall-quality-judge.service';
+import { RecallQualityRepository } from './repository/recall-quality.repository';
+import { RagQualityRepository } from './repository/rag-quality.repository';
 import { MetabaseService } from './service/metabase.service';
 import { AppConfigModule } from '../config/config.module';
 import { ProviderFactory } from '../factory/provider.factory';
@@ -112,6 +134,7 @@ import { TenantModule } from 'src/tenant/tenant.module';
       DashboardGroup,
       AnalyticsChartPreference,
       AnalyticsQualityThreshold,
+      AnalyticsXpGoal,
     ]),
     ChatModule,
     TenantModule,
@@ -126,6 +149,12 @@ import { TenantModule } from 'src/tenant/tenant.module';
     WeakMetricsAnalyticsRepository,
     FeedbackGroundednessJudgeService,
     FeedbackGroundednessRepository,
+    RagQualityJudgeService,
+    RagQualityRepository,
+    RagQualityAnalyticsService,
+    RagQualityAnalyticsRepository,
+    RecallQualityJudgeService,
+    RecallQualityRepository,
     HighlightsAnalyticsService,
     HighlightsAnalyticsRepository,
     CohortAnalyticsService,
@@ -134,10 +163,16 @@ import { TenantModule } from 'src/tenant/tenant.module';
     UsageLevelAnalyticsRepository,
     CertificationAnalyticsService,
     CertificationAnalyticsRepository,
+    XpGrowthAnalyticsService,
+    XpGrowthAnalyticsRepository,
+    GoalsXpAnalyticsService,
+    GoalsXpAnalyticsRepository,
     RoleplayVolumeAnalyticsService,
     RoleplayVolumeAnalyticsRepository,
     RoadmapDeliveryAnalyticsService,
     RoadmapDeliveryAnalyticsRepository,
+    // No repository: this one reads GitHub's statistics API, not our database.
+    ShipVolumeAnalyticsService,
     ActivationAnalyticsService,
     ActivationAnalyticsRepository,
     CompletionRateAnalyticsService,
@@ -172,6 +207,10 @@ import { TenantModule } from 'src/tenant/tenant.module';
     OrgEngagementAnalyticsRepository,
     RoleplayCostAnalyticsService,
     RoleplayCostAnalyticsRepository,
+    CodingAgentCostAnalyticsService,
+    CodingAgentCostAnalyticsRepository,
+    FixSessionEngineCostAnalyticsService,
+    FixSessionEngineCostAnalyticsRepository,
     QualitySentimentAnalyticsService,
     QualitySentimentAnalyticsRepository,
     QualityIndexAnalyticsService,
@@ -187,9 +226,15 @@ import { TenantModule } from 'src/tenant/tenant.module';
     JudgeBacklogDrainService,
     LanguageJudgeService,
     LanguageJudgeRepository,
+    FillerJudgeService,
+    FillerJudgeRepository,
+    FillerAnalyticsRepository,
+    FillerAnalyticsService,
     LanguageBackfillSchedulerRegistrationService,
     LanguageAnalyticsService,
     LanguageAnalyticsRepository,
+    GlossaryEffectAnalyticsService,
+    GlossaryEffectAnalyticsRepository,
     PlatformAnalyticsRepository,
     TenantAnalyticsService,
     TenantAnalyticsRepository,
@@ -217,6 +262,8 @@ import { TenantModule } from 'src/tenant/tenant.module';
   exports: [
     PlatformAnalyticsService,
     HighlightsAnalyticsService,
+    XpGrowthAnalyticsService,
+    GoalsXpAnalyticsService,
     ActivationAnalyticsService,
     CompletionRateAnalyticsService,
     LanguageMixAnalyticsService,

@@ -25,8 +25,33 @@ export enum WaHandledBy {
   RATE_LIMITED = 'rate_limited',
   /** An image, audio note or document — nothing we can read. */
   UNSUPPORTED_MEDIA = 'unsupported_media',
+  /**
+   * The number is not linked to an Ally account, so the corpus could not be scoped to an
+   * organisation and no answer was attempted.
+   *
+   * Counted on its own rather than folded into DECLINED, because the two have opposite fixes and
+   * look identical from a usage chart otherwise: DECLINED means the corpus is thin, this means a
+   * real worker cannot get in and someone needs to add their number to their Ally profile.
+   */
+  UNIDENTIFIED = 'unidentified',
   /** Something failed and the fallback message went out. */
   ERROR = 'error',
+}
+
+/**
+ * How a contact came to be linked to an organisation.
+ *
+ * Recorded because the two have different trust and different failure modes. A MAPPING is a
+ * deliberate human statement, made in the admin console and stored in `wa_phone_mappings`; a
+ * PHONE match is derived from whatever happens to be on somebody's Ally profile, and can stop
+ * matching the moment they edit it. When both exist and disagree, the mapping wins — and the
+ * disagreement is surfaced in the mapping table rather than resolved silently.
+ */
+export enum WaIdentitySource {
+  /** An admin mapped this number to an organisation. */
+  MAPPING = 'mapping',
+  /** Matched against a user's stored phone number. */
+  PHONE = 'phone',
 }
 
 export enum WaMessageStatus {

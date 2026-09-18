@@ -1,5 +1,6 @@
 import { ElevenLabsVoiceSyncService } from '../../service/elevenlabs-voice-sync.service';
 import { TtsCatalogService } from '../../service/tts-catalog.service';
+import { VideoActorCatalogService } from '../../service/video-actor-catalog.service';
 import { ElevenLabsVoiceType } from '../../constants/elevenlabs-voice-type.constants';
 import { Test, TestingModule } from '@nestjs/testing';
 import { LearnController } from '../learn.controller';
@@ -10,6 +11,7 @@ import { TriggerWarningsService } from '../../service/trigger-warnings.service';
 import { SttConfigService } from '../../service/stt-config.service';
 import { LlmConfigService } from '../../service/llm-config.service';
 import { ScenarioVersionService } from '../../service/scenario-version.service';
+import { PreviewMonologueService } from '../../service/preview-monologue.service';
 import { ScenarioSharedService } from '../../service/scenario-shared.service';
 import { SortOrder } from 'src/chat/dto/call-log.request.dto';
 import { TokenUser } from 'src/auth/type/auth.types';
@@ -319,6 +321,18 @@ describe('LearnController', () => {
           useValue: { getCatalog: jest.fn() },
         },
         {
+          // The video-actor face catalogue, same story: the controller only
+          // delegates to it, so a stub keeps this module compiling without
+          // reaching a vendor.
+          provide: VideoActorCatalogService,
+          useValue: {
+            getProviders: jest.fn(),
+            getFaces: jest.fn(),
+            getAllFaces: jest.fn(),
+            importFaceCover: jest.fn(),
+          },
+        },
+        {
           provide: LlmConfigService,
           useValue: {
             getConfigs: jest.fn(),
@@ -336,6 +350,13 @@ describe('LearnController', () => {
             updateVersion: jest.fn(),
             publishVersion: jest.fn(),
             deleteVersion: jest.fn(),
+          },
+        },
+        {
+          provide: PreviewMonologueService,
+          useValue: {
+            listRunsForScenario: jest.fn(),
+            getRun: jest.fn(),
           },
         },
         {
@@ -795,7 +816,10 @@ describe('LearnController', () => {
   });
 
   describe('getMessagesByScenarioSessionId', () => {
-    it('should call scenario session service with pagination and includeTags when includeTags is true', async () => {
+    // Message tags were deprecated with the annotated transcript, so the
+    // endpoint no longer takes an includeTags flag — only pagination and the
+    // optional translation language.
+    it('should call scenario session service with pagination', async () => {
       const scenarioSessionId = 'session-123';
       const mockResponse = { messages: [], count: 0 };
       scenarioSessionService.getMessagesByScenarioSessionId.mockResolvedValue(
@@ -808,7 +832,6 @@ describe('LearnController', () => {
         0,
         'createdAt',
         SortOrder.ASC,
-        true,
       );
 
       expect(
@@ -816,38 +839,6 @@ describe('LearnController', () => {
       ).toHaveBeenCalledWith(
         scenarioSessionId,
         { limit: 10, offset: 0, sortBy: 'createdAt', order: SortOrder.ASC },
-        { includeTags: true },
-        undefined,
-      );
-    });
-
-    it('should call scenario session service with includeTags false when includeTags is not "true"', async () => {
-      const scenarioSessionId = 'session-456';
-      scenarioSessionService.getMessagesByScenarioSessionId.mockResolvedValue({
-        messages: [],
-        count: 0,
-      } as any);
-
-      await controller.getMessagesByScenarioSessionId(
-        scenarioSessionId,
-        undefined,
-        undefined,
-        undefined,
-        SortOrder.ASC,
-        false,
-      );
-
-      expect(
-        scenarioSessionService.getMessagesByScenarioSessionId,
-      ).toHaveBeenCalledWith(
-        scenarioSessionId,
-        {
-          limit: undefined,
-          offset: undefined,
-          sortBy: undefined,
-          order: SortOrder.ASC,
-        },
-        { includeTags: false },
         undefined,
       );
     });
@@ -865,7 +856,6 @@ describe('LearnController', () => {
         undefined,
         undefined,
         SortOrder.ASC,
-        false,
         'hi',
       );
 
@@ -879,7 +869,6 @@ describe('LearnController', () => {
           sortBy: undefined,
           order: SortOrder.ASC,
         },
-        { includeTags: false },
         'hi',
       );
     });

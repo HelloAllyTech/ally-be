@@ -36,6 +36,12 @@ export class ScheduledTaskRunnerService {
     await this.runTasksForInterval('hourly');
   }
 
+  // 00:05 UTC — same day-boundary convention as roadmap-period.util.ts's currentDayKey().
+  @Cron(`0 5 0 * * *`)
+  async runDailyTasks(): Promise<void> {
+    await this.runTasksForInterval('daily');
+  }
+
   // 03:00 on the 1st of each month — for tasks with nothing to fire on that
   // isn't already stale a day later (e.g. re-checking a third-party catalog).
   @Cron(`0 0 3 1 * *`)

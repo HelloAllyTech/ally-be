@@ -16,6 +16,20 @@ export enum AnalyticsSuggestionStatus {
   REJECTED = 'rejected',
 }
 
+/**
+ * Which pipeline drafted the suggestion.
+ *
+ * `ANALYTICS_WINDOW` is the original Generate run over a platform-analytics
+ * window (admin Analytics → Suggestions). `UX_SIGNAL` is the UX Signals scan
+ * over PostHog telemetry (src/ux-signals). Both land in the same queue and share
+ * one accept/reject flow — the distinction exists so a reviewer can tell what
+ * kind of evidence backs a card, not because the two are handled differently.
+ */
+export enum AnalyticsSuggestionSource {
+  ANALYTICS_WINDOW = 'analytics_window',
+  UX_SIGNAL = 'ux_signal',
+}
+
 /** Statuses a client may filter the queue by, plus the "show everything" option. */
 export const ANALYTICS_SUGGESTION_STATUS_FILTERS = [
   ...Object.values(AnalyticsSuggestionStatus),

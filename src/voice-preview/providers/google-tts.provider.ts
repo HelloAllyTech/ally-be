@@ -11,7 +11,6 @@ export class GoogleTTSProvider implements ITTSProvider {
   private readonly client: textToSpeech.TextToSpeechClient;
   private readonly voiceName?: string;
   private readonly ssmlGender?: 'MALE' | 'FEMALE' | 'NEUTRAL';
-  private readonly languageCode: string;
   /**
    * Google's own `model_name`, passed straight through.
    *
@@ -36,7 +35,7 @@ export class GoogleTTSProvider implements ITTSProvider {
    */
   private readonly ready: Promise<void>;
 
-  constructor(config: Record<string, any>, languageCode: string) {
+  constructor(config: Record<string, any>) {
     this.client = new textToSpeech.TextToSpeechClient();
     this.ready = this.client.initialize().then(
       () => undefined,
@@ -48,19 +47,18 @@ export class GoogleTTSProvider implements ITTSProvider {
     this.ready.catch(() => undefined);
     this.voiceName = config.voice_name ?? config.voiceName;
     this.modelName = config.model_name ?? config.modelName;
-    this.languageCode = languageCode ?? 'en-US';
 
     const genderInput = config.gender?.toLowerCase();
     this.ssmlGender = genderInput ? GENDER_MAP[genderInput] : undefined;
   }
 
-  async generatePreview(text: string): Promise<Buffer> {
+  async generatePreview(text: string, languageCode: string): Promise<Buffer> {
     await this.ready;
 
     const [response] = await this.client.synthesizeSpeech({
       input: { text },
       voice: {
-        languageCode: this.languageCode,
+        languageCode: languageCode ?? 'en-US',
         ...(this.voiceName && { name: this.voiceName }),
         ...(this.ssmlGender && { ssmlGender: this.ssmlGender }),
         ...(this.modelName && { modelName: this.modelName }),

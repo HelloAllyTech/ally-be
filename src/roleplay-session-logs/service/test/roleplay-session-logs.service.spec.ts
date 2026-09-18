@@ -59,6 +59,9 @@ describe('RoleplaySessionLogsService', () => {
       // the service renders as an absent panel rather than a clean one.
       findWeakMetrics: jest.fn().mockResolvedValue(null),
       findRunConfig: jest.fn().mockResolvedValue(null),
+      // [] rather than null: a session that predates the monologue and one that
+      // stayed silent should read the same to the panel.
+      findInternalMonologue: jest.fn().mockResolvedValue([]),
       getGlossaryActivity: jest.fn().mockResolvedValue({
         glossaryMeta: null,
         totalTurns: 0,

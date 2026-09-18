@@ -9,7 +9,7 @@ import {
  * Label for released work with no owner on it.
  *
  * Deliberately a first-class band rather than a dropped row: those items shipped
- * and their coins were real, so leaving them out would understate every month
+ * and their votes were real, so leaving them out would understate every month
  * they appear in and quietly change the total the reader is adding up. It is
  * coloured as context rather than as a person — the absence of an owner, not an
  * owner — the same treatment the usage-levels zero band gets.
@@ -25,7 +25,7 @@ export const ROADMAP_DELIVERY_OTHER_LABEL = 'Other owners';
  * Eight is the house ceiling on distinguishable hues; past it a stack is a
  * gradient the reader matches against the legend one band at a time. There are
  * four owners today, so this is a guard rather than something that fires — but
- * the roll-up is ranked on ALL-TIME coins, not on the coins in whatever month or
+ * the roll-up is ranked on ALL-TIME votes, not on the votes in whatever month or
  * type filter is on screen, so a band never changes membership as the reader
  * moves a control. A band that reshuffles under a filter encodes nothing.
  */
@@ -40,31 +40,31 @@ export interface RoadmapDeliveryRow {
   type: RoadmapOpportunityType;
   /** Opportunities released by that owner, in that month, of that type. */
   opportunities: number;
-  /** Their total coins — every voter, every period. */
-  coins: number;
+  /** Their total votes — every voter, every period. */
+  votes: number;
 }
 
 /** Released work that carries no release date, so it cannot sit on a month axis. */
 export interface RoadmapUndatedRow {
   type: RoadmapOpportunityType;
   opportunities: number;
-  coins: number;
+  votes: number;
 }
 
 /**
- * Coin-weighted delivery out of the internal product roadmap, for the Analytics
+ * Vote-weighted delivery out of the internal product roadmap, for the Analytics
  * → Product management tab.
  *
  * The question: **of the demand our own team voted for, how much did we actually
  * ship, when, and by whom?** A count of released opportunities answers "how many
- * things shipped" but weighs a 3-coin nicety the same as a 90-coin blocker;
- * weighting each released item by its coins makes the bar a measure of demand
+ * things shipped" but weighs a 3-vote nicety the same as a 90-vote blocker;
+ * weighting each released item by its votes makes the bar a measure of demand
  * satisfied rather than of throughput.
  *
- * Coins per opportunity are the board's `priorityScore` — `SUM(coins)` over every
+ * Votes per opportunity are the board's `priorityScore` — `SUM(votes)` over every
  * voter and every monthly period, exactly as `RoadmapOpportunityRepository`
  * computes it. Same aggregate, same source, so a total here reconciles with the
- * priority bar a reader can go and look at on the roadmap board. Note the coins
+ * priority bar a reader can go and look at on the roadmap board. Note the votes
  * are NOT restricted to the release month: an opportunity accumulates backing
  * over the months it waits, and it is that whole accumulated demand that got
  * satisfied when it shipped.
@@ -93,20 +93,20 @@ export class RoadmapDeliveryAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
   /**
-   * Coins per opportunity, as a CTE both queries below share.
+   * Votes per opportunity, as a CTE both queries below share.
    *
    * Kept as a plain aggregate over `roadmap_allocations` rather than anything
    * cached: the roadmap module made the same call deliberately, and the reason
-   * holds here too — a stored counter is a second truth that drifts, and coin
+   * holds here too — a stored counter is a second truth that drifts, and vote
    * volumes are small.
    *
-   * There is no `deletedAt` on allocations by design (setting coins to 0 deletes
+   * There is no `deletedAt` on allocations by design (setting votes to 0 deletes
    * the row), so every row in here is live.
    */
   private readonly scoresCte = `
       scores AS (
         SELECT a."opportunityId" AS opportunity_id,
-               SUM(a.coins)::int AS coins
+               SUM(a.votes)::int AS votes
         FROM roadmap_allocations a
         GROUP BY a."opportunityId"
       )`;
@@ -125,7 +125,7 @@ export class RoadmapDeliveryAnalyticsRepository {
    * migrated rows that never were. Reading the live name means an owner who
    * changes their name does not split into two bands; the fallback means the
    * pre-link history is not thrown away. `LEFT JOIN` throughout, so an
-   * opportunity nobody voted for still counts as a release with zero coins.
+   * opportunity nobody voted for still counts as a release with zero votes.
    */
   async getDatedReleased(): Promise<RoadmapDeliveryRow[]> {
     const rows = await this.dataSource.query(
@@ -136,7 +136,7 @@ export class RoadmapDeliveryAnalyticsRepository {
         COALESCE(owner_user.name, o."owner")                       AS "owner",
         o."type"                                                   AS "type",
         COUNT(*)::int                                              AS "opportunities",
-        COALESCE(SUM(s.coins), 0)::int                             AS "coins"
+        COALESCE(SUM(s.votes), 0)::int                             AS "votes"
       FROM roadmap_opportunities o
       LEFT JOIN scores s         ON s.opportunity_id = o.id
       LEFT JOIN users owner_user ON owner_user.id = o."ownerUserId"
@@ -158,7 +158,7 @@ export class RoadmapDeliveryAnalyticsRepository {
       owner: (r.owner as string | null)?.trim() || null,
       type: r.type as RoadmapOpportunityType,
       opportunities: Number(r.opportunities) || 0,
-      coins: Number(r.coins) || 0,
+      votes: Number(r.votes) || 0,
     }));
   }
 
@@ -179,7 +179,7 @@ export class RoadmapDeliveryAnalyticsRepository {
       SELECT
         o."type"                       AS "type",
         COUNT(*)::int                  AS "opportunities",
-        COALESCE(SUM(s.coins), 0)::int AS "coins"
+        COALESCE(SUM(s.votes), 0)::int AS "votes"
       FROM roadmap_opportunities o
       LEFT JOIN scores s ON s.opportunity_id = o.id
       WHERE o."deletedAt" IS NULL
@@ -193,7 +193,7 @@ export class RoadmapDeliveryAnalyticsRepository {
     return rows.map((r: Record<string, unknown>) => ({
       type: r.type as RoadmapOpportunityType,
       opportunities: Number(r.opportunities) || 0,
-      coins: Number(r.coins) || 0,
+      votes: Number(r.votes) || 0,
     }));
   }
 }

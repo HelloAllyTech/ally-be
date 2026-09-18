@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# prs <file.json> — record opened pull requests.
+#   {"pullRequests":[{repo,branch,prNumber,prUrl,title}]}
+set -uo pipefail
+. "$(dirname "$0")/_common.sh"
+[ $# -eq 1 ] && [ -f "${1:-}" ] || usage "prs <file.json>"
+post_file prs "$1" || true

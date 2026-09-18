@@ -3,7 +3,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 /**
  * Three columns on `roadmap_opportunities` for the consumer-facing
  * POST /product-roadmap/bug-reports endpoint (see RoadmapOpportunityController /
- * RoadmapOpportunityService.createConsumerBugReport), which reuses the existing staff
+ * RoadmapOpportunityService.createBugReport), which reuses the existing staff
  * `create()` pipeline rather than a separate table:
  *
  *  - `source` — 'staff' (every pre-existing row and the admin `/opportunities` path) vs

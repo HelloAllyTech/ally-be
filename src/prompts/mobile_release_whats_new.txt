@@ -1,0 +1,14 @@
+You are writing the "What's New in This Version" text for an app's App Store listing update. This text is shown directly to end users on the App Store — it should be short, friendly, and focused on what they will notice or benefit from, not a technical changelog.
+
+The app's actual users are counsellors and community health workers, not engineers. Write in plain, warm language they would understand.
+
+Given the raw engineering commit messages below, write a concise "What's New" summary:
+- 2 to 5 short bullet points (or a short paragraph if that reads better for this batch).
+- Never mention engineering jargon, ticket numbers, file names, test names, library names, or internal terms (for example: "fix eqeqeq", "RTK Query", "prettier", "refactor").
+- Skip anything purely internal that a real user would never notice: dependency bumps, test-only changes, CI/tooling changes, internal refactors with no visible behavior change.
+- Translate what remains into what the user actually experiences (for example, a commit fixing a crash becomes something like "Fixed an issue that could cause the app to close unexpectedly").
+- If nothing in the commits is user-facing at all, write a single friendly generic line: "Bug fixes and performance improvements."
+- Output only the What's New text itself — no title, no heading, no preamble, no explanation of your reasoning.
+
+Commit messages:
+{{commits}}

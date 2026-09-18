@@ -1,11 +1,13 @@
 import * as dayjs from 'dayjs';
 import * as utc from 'dayjs/plugin/utc';
 import * as timezone from 'dayjs/plugin/timezone';
+import * as isoWeek from 'dayjs/plugin/isoWeek';
 import { TIMEZONES } from '../constants/timezone.constants';
 
-// Extend dayjs with UTC and timezone plugins
+// Extend dayjs with UTC, timezone and ISO-week plugins
 dayjs.extend(utc);
 dayjs.extend(timezone);
+dayjs.extend(isoWeek);
 
 export const convertIstStringToUtc = (dateTimeString: string): Date => {
   return dayjs.tz(dateTimeString, TIMEZONES.IST).utc().toDate();
@@ -31,6 +33,30 @@ export const BUSINESS_TIMEZONE = TIMEZONES.IST;
  */
 export const toBusinessDateString = (instant: Date = new Date()): string =>
   dayjs(instant).tz(BUSINESS_TIMEZONE).format('YYYY-MM-DD');
+
+/**
+ * ISO week (`2026-W37`) that `instant` falls in, in the business timezone.
+ *
+ * Used as the idempotency key for once-a-week awards. ISO weeks run Monday to Sunday
+ * and the ISO week-year is not always the calendar year — 1 Jan 2027 is in 2026-W53 —
+ * so the year has to come from `isoWeekYear()`, not `year()`, or the last days of
+ * December collide with the first week of the wrong year.
+ */
+export const toBusinessWeekKey = (instant: Date = new Date()): string => {
+  const local = dayjs(instant).tz(BUSINESS_TIMEZONE);
+  return `${local.isoWeekYear()}-W${String(local.isoWeek()).padStart(2, '0')}`;
+};
+
+/** First and last business dates (YYYY-MM-DD) of the ISO week `instant` falls in. */
+export const businessWeekBounds = (
+  instant: Date = new Date(),
+): { start: string; end: string } => {
+  const local = dayjs(instant).tz(BUSINESS_TIMEZONE);
+  return {
+    start: local.startOf('isoWeek').format('YYYY-MM-DD'),
+    end: local.endOf('isoWeek').format('YYYY-MM-DD'),
+  };
+};
 
 export const addDurationToDate = ({
   date,

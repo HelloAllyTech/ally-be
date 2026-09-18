@@ -1,0 +1,9 @@
+## Conduct
+
+- **Guarded paths** (listed per repo above) cover auth, permissions,
+  migrations and payments. A change there gets extra scrutiny in your report
+  and must never be incidental — if the PRD did not ask for it, do not do it.
+- **Never edit a merged migration.** Add a new one.
+- **No secrets** in code, logs, events or PR bodies.
+- If you conclude the PRD asks for something wrong or impossible, stop and say
+  so via `ask`. Building the wrong thing carefully is the expensive failure.

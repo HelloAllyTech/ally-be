@@ -39,6 +39,20 @@ export interface WhatsAppBotSettings {
   /** Sent when a media message arrives, since there is nothing to read. */
   unsupportedMediaText: string;
 
+  /**
+   * Sent when the sender's number is not linked to an Ally account.
+   *
+   * The corpus is targeted per organisation, so an unrecognised number cannot be answered from
+   * anything: replying out of the global corpus instead would mean the same question gets a
+   * different answer depending on whether we happened to recognise the sender, with nothing on
+   * the worker's side to indicate which had happened.
+   *
+   * The wording has to carry a way OUT of the refusal — the number goes on the person's Ally
+   * profile, which their supervisor or admin can do — because "I don't recognise you" with no
+   * next step reads as a broken bot, and the people this bot serves are at work.
+   */
+  unrecognisedNumberText: string;
+
   /** Sent once per window when a number exceeds its limit. */
   rateLimitText: string;
 
@@ -116,6 +130,10 @@ export const DEFAULT_WHATSAPP_SETTINGS: WhatsAppBotSettings = {
     'contact a supervisor or a crisis line now: {helpline_numbers}',
   fallbackText:
     'Something went wrong on my side and I could not answer that. Please try again in a moment.',
+  unrecognisedNumberText:
+    'I am sorry — I cannot recognise this number, so I am not able to answer from your ' +
+    "organisation's reference material. Ask your supervisor or your Ally administrator to add " +
+    'this number to your Ally profile, and then message me again.',
   declineText:
     'My reference material does not cover that. A colleague or supervisor is the better route ' +
     'for this one.',

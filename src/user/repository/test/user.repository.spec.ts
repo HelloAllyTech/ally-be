@@ -4,7 +4,7 @@ import { UserRepository } from '../user.repository';
 import { User } from 'src/user/entity/user.entity';
 import { UserSortBy, SortOrder } from 'src/user/enum/user.enum';
 import { UserFilterOptions } from 'src/user/interface/user-filter-options.interface';
-import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
+import { PLATFORM_TIER_ROLES } from 'src/common/constants/user.constants';
 
 describe('UserRepository', () => {
   let repository: UserRepository;
@@ -106,7 +106,7 @@ describe('UserRepository', () => {
       expect(mockQueryBuilder.getRawMany).not.toHaveBeenCalled();
     });
 
-    it('should exclude super admin by default', async () => {
+    it('should exclude every platform tier by default, PLATFORM_ADMIN included', async () => {
       const mockUsers = [{ user_id: 1, user_name: 'User 1' }];
 
       (mockQueryBuilder.getCount as jest.Mock).mockResolvedValue(1);
@@ -116,11 +116,31 @@ describe('UserRepository', () => {
 
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('NOT EXISTS'),
-        expect.objectContaining({ superAdminRoles: SUPER_ADMIN_ROLES }),
+        expect.objectContaining({ platformRoles: PLATFORM_TIER_ROLES }),
       );
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
-        expect.stringContaining('g_excl.name IN (:...superAdminRoles)'),
-        expect.objectContaining({ superAdminRoles: SUPER_ADMIN_ROLES }),
+        expect.stringContaining('g_excl.name IN (:...platformRoles)'),
+        expect.objectContaining({ platformRoles: PLATFORM_TIER_ROLES }),
+      );
+
+      // Named literally rather than left to the constant. This list is what
+      // keeps Ally staff out of a customer's own user list, and the value it
+      // used to hold — the two retired super-admin tiers — matched nobody
+      // promoted since the role collapse, so every admin granted PLATFORM_ADMIN
+      // by the Ally admins screen appeared in the tenant list they sit in.
+      // Asserting the constant alone would follow that mistake if it came back.
+      const [, params] = (
+        mockQueryBuilder.andWhere as jest.Mock
+      ).mock.calls.find(([sql]: [string]) =>
+        String(sql).includes('g_excl.name'),
+      );
+      expect(params.platformRoles).toEqual(
+        expect.arrayContaining([
+          'PLATFORM_ADMIN',
+          'SUPER_ADMIN',
+          'SUPER_DUPER_ADMIN',
+          'MULTI_TENANT_ADMIN',
+        ]),
       );
     });
 
@@ -167,7 +187,7 @@ describe('UserRepository', () => {
         expect.stringContaining('g.name IN (:...roles)'),
         expect.objectContaining({
           roles: ['ADMIN', 'USER'],
-          superAdminRoles: SUPER_ADMIN_ROLES,
+          platformRoles: PLATFORM_TIER_ROLES,
         }),
       );
     });
@@ -237,7 +257,7 @@ describe('UserRepository', () => {
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledTimes(1);
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('NOT EXISTS'),
-        expect.objectContaining({ superAdminRoles: SUPER_ADMIN_ROLES }),
+        expect.objectContaining({ platformRoles: PLATFORM_TIER_ROLES }),
       );
     });
 
@@ -338,7 +358,7 @@ describe('UserRepository', () => {
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         expect.stringContaining('NOT EXISTS'),
         expect.objectContaining({
-          superAdminRoles: SUPER_ADMIN_ROLES,
+          platformRoles: PLATFORM_TIER_ROLES,
           roles: ['ADMIN'],
         }),
       );

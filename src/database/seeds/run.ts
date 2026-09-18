@@ -2,6 +2,7 @@
 import { withDataSource, log } from './helpers';
 import { seedTenants } from './seeders/tenant.seeder';
 import { seedUsers } from './seeders/user.seeder';
+import { seedAdminAccess } from './seeders/admin-access.seeder';
 import { seedVoices } from './seeders/voice.seeder';
 import { seedSessionEvents } from './seeders/session-event.seeder';
 import { seedLearnCatalog } from './seeders/learn-catalog.seeder';
@@ -13,7 +14,12 @@ import { seedBadges } from './seeders/badge.seeder';
 import { seedScenarioCoverImageLibrary } from './seeders/scenario-cover-image-library.seeder';
 import { seedSimulationCredits } from './seeders/simulation-credits.seeder';
 import { seedReviews } from './seeders/review.seeder';
-import { seedScribeData } from './seeders/scribe.seeder';
+import {
+  seedScribeData,
+  seedScribeReviews,
+  ALLY_SCRIBE_CALLS,
+  RIVERSIDE_SCRIBE_CALLS,
+} from './seeders/scribe.seeder';
 import { seedRoadmap } from './seeders/roadmap.seeder';
 import { seedLab } from './seeders/lab.seeder';
 import { User } from '../../user/entity/user.entity';
@@ -25,6 +31,7 @@ async function main(): Promise<void> {
   await withDataSource(async (ds) => {
     const tenants = await seedTenants(ds);
     await seedUsers(ds, tenants);
+    await seedAdminAccess(ds);
 
     const admin = await ds
       .getRepository(User)
@@ -41,7 +48,26 @@ async function main(): Promise<void> {
     await seedBadges(ds, admin.id);
     await seedScenarioCoverImageLibrary(ds, admin.id);
     await seedSimulationCredits(ds);
-    await seedScribeData(ds, admin.id, tenants[0].id);
+    await seedScribeData(
+      ds,
+      admin.id,
+      tenants[0],
+      'learner@example.com',
+      ALLY_SCRIBE_CALLS,
+    );
+    const riverside = tenants.find(
+      (t) => t.code === 'riverside-wellness-center',
+    );
+    if (riverside) {
+      await seedScribeData(
+        ds,
+        admin.id,
+        riverside,
+        'lucia.fernandez@riversidewellness.io',
+        RIVERSIDE_SCRIBE_CALLS,
+      );
+      await seedScribeReviews(ds, riverside);
+    }
     await seedRoadmap(ds, admin.id);
     await seedLab(ds, admin.id);
   });

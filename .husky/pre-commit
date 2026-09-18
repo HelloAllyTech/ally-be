@@ -1,1 +1,35 @@
-npm run lint && npm run test
+#!/bin/sh
+# Pre-commit: lint and test WHAT CHANGED, not the whole repo.
+#
+# This used to be `npm run lint && npm run test`, which relinted every TS file
+# in the repo and ran all 412 suites / 6,400+ tests on every commit — about
+# five minutes for a one-line change, and longer on a machine that is also
+# running the dev containers. That cost is what makes any interruption
+# expensive, and a five-minute hook is what pushes people toward --no-verify,
+# which is strictly worse than a faster hook.
+#
+# The full suite still runs where it actually gates a release: the Production
+# Release workflow's own `Run Tests` job, before it builds or deploys. This
+# changes WHERE the full suite runs, not whether it runs.
+#
+# Run everything locally any time with: npm run lint && npm test
+set -e
+
+# Staged TS files, excluding deletions (ACMR = added/copied/modified/renamed).
+FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.ts$' || true)
+
+if [ -z "$FILES" ]; then
+  echo "pre-commit: no staged TypeScript files, nothing to check"
+  exit 0
+fi
+
+echo "pre-commit: linting $(echo "$FILES" | wc -l | tr -d ' ') staged file(s)"
+# shellcheck disable=SC2086
+npx eslint $FILES
+
+# --findRelatedTests runs each staged file's own suite AND every suite that
+# imports it, so changing a service still exercises its consumers' tests.
+# --passWithNoTests keeps a commit that touches only untested files from failing.
+echo "pre-commit: running tests related to the staged files"
+# shellcheck disable=SC2086
+npx jest --findRelatedTests --passWithNoTests --silent $FILES

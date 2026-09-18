@@ -76,6 +76,39 @@ export class EntityOperationException extends HttpException {
   }
 }
 
+/**
+ * Scribe dictation was transcribed, but the field-extraction model failed.
+ *
+ * Exists as its own class for the same reason `EntityOperationException` does:
+ * `CustomExceptionFilter` builds the response body from a fixed set of fields,
+ * so an extra key on the thrown payload is silently dropped unless the filter
+ * knows to carry it. Here that key is the transcript, and dropping it is the
+ * whole bug — the counsellor spoke the note once and would otherwise have to
+ * speak it again because a downstream model had a bad minute.
+ *
+ * The transcript is clinical content, but it is the same content this endpoint
+ * returns in its 200 body to the same authenticated counsellor, so carrying it
+ * on the failure exposes nothing new.
+ */
+export class VoiceNoteExtractionFailedException extends HttpException {
+  constructor(
+    message: string,
+    errorCode: string,
+    public readonly transcript: string,
+  ) {
+    super(
+      {
+        message,
+        error: 'Internal Server Error',
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        errorCode,
+        transcript,
+      },
+      HttpStatus.INTERNAL_SERVER_ERROR,
+    );
+  }
+}
+
 export default function isDuplicateKeyException(
   error: any,
   constraintName?: string,

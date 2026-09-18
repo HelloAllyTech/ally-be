@@ -18,6 +18,7 @@ import {
   generateBucketLabels,
   resolveAnalyticsWindow,
 } from '../util/analytics-window.util';
+import { withReportingQuerySlot } from '../../common/util/reporting-query-slots.util';
 
 /** Score axis. Fixed so a nine-point wobble cannot fill the chart. */
 const SCORE_DOMAIN: [number, number] = [0, 100];
@@ -107,18 +108,37 @@ export class QualityDistributionAnalyticsService {
       completedOverall,
       tagResult,
     ] = await Promise.all([
-      this.repo.getQualityByBucket(start, endExclusive, bucket, tenantId),
-      this.repo.getQualityOverall(start, endExclusive, tenantId),
-      this.repo.getSatisfactionByBucket(start, endExclusive, bucket, tenantId),
-      this.repo.getSatisfactionOverall(start, endExclusive, tenantId),
-      this.repo.getCompletedSessionsByBucket(
-        start,
-        endExclusive,
-        bucket,
-        tenantId,
+      withReportingQuerySlot(() =>
+        this.repo.getQualityByBucket(start, endExclusive, bucket, tenantId),
       ),
-      this.repo.getCompletedSessionsOverall(start, endExclusive, tenantId),
-      this.repo.getLowRatingTags(start, endExclusive, tenantId),
+      withReportingQuerySlot(() =>
+        this.repo.getQualityOverall(start, endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getSatisfactionByBucket(
+          start,
+          endExclusive,
+          bucket,
+          tenantId,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getSatisfactionOverall(start, endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getCompletedSessionsByBucket(
+          start,
+          endExclusive,
+          bucket,
+          tenantId,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getCompletedSessionsOverall(start, endExclusive, tenantId),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getLowRatingTags(start, endExclusive, tenantId),
+      ),
     ]);
 
     // Quality: straight through, floor applied, buckets with no evaluations

@@ -1,4 +1,5 @@
 import {
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -9,7 +10,7 @@ import {
   Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import { MAX_CUSTOM_RANGE_DAYS } from '../util/analytics-window.util';
 
@@ -459,6 +460,82 @@ export class GroundednessBackfillJobDto {
   failed!: number;
 }
 
+export class RagQualityBackfillJobDto {
+  @ApiProperty() jobId!: string;
+  @ApiProperty({ description: 'queued | running | done | error' })
+  status!: string;
+  @ApiProperty({ description: 'Retrievals selected for this run' })
+  total!: number;
+  @ApiProperty() processed!: number;
+  @ApiProperty({ description: 'Retrievals that came back labelled' })
+  judged!: number;
+  @ApiProperty({
+    description:
+      'Retrievals skipped because their passages outlived their chunk text — a ' +
+      're-chunk deletes the old generation. Skipped rather than judged on what ' +
+      'was left: a partial passage list reads as a retrieval that found less ' +
+      'than it actually did.',
+  })
+  skipped!: number;
+  @ApiProperty({ description: 'Passages that carried a relevance label' })
+  passagesJudged!: number;
+  @ApiProperty({
+    description: 'Of those, the ones the judge found irrelevant or tangential',
+  })
+  passagesUnhelpful!: number;
+  @ApiProperty({
+    description:
+      'Retrievals the judge called nothing_useful. Read WITH the `missing` text ' +
+      'on the rows: a corpus gap and a floor set too tight arrive as the same count.',
+  })
+  retrievalsUnhelpful!: number;
+  @ApiProperty({ nullable: true }) error!: string | null;
+  @ApiProperty({
+    description:
+      'Retrievals whose judge call errored or timed out. Separate from ' +
+      '`processed`, which counts attempts.',
+  })
+  failed!: number;
+}
+
+export class RecallQualityBackfillJobDto {
+  @ApiProperty() jobId!: string;
+  @ApiProperty({ description: 'queued | running | done | error' })
+  status!: string;
+  @ApiProperty({ description: 'Turns selected for this run' })
+  total!: number;
+  @ApiProperty() processed!: number;
+  @ApiProperty({ description: 'Turns that came back with a verdict' })
+  judged!: number;
+  @ApiProperty({
+    description:
+      'Turns skipped because the transcript could not support the turn index. A verdict on ' +
+      'the wrong turn is worse than none, because nothing downstream could tell it was wrong.',
+  })
+  skipped!: number;
+  @ApiProperty({
+    description:
+      'A passed-over fact answered the turn better than anything recalled — a RANKING ' +
+      'failure, where the material was there and the scoring buried it.',
+  })
+  missedBetter!: number;
+  @ApiProperty({
+    description:
+      'Neither list held anything apt — a CORPUS gap, fixed by writing more backstory ' +
+      'rather than by retuning a weight.',
+  })
+  nothingApt!: number;
+  @ApiProperty({
+    description:
+      'Turns that called for no particular backstory. Read the failure counts against THIS: ' +
+      'a session of acknowledgements is not evidence that recall works.',
+  })
+  noDemand!: number;
+  @ApiProperty({ nullable: true }) error!: string | null;
+  @ApiProperty({ description: 'Turns whose judge call errored or timed out' })
+  failed!: number;
+}
+
 export class DriftBackfillJobDto {
   @ApiProperty() jobId!: string;
   @ApiProperty({ description: 'queued | running | done | error' })
@@ -723,6 +800,19 @@ export class LanguageQualityResponseDto {
   @ApiProperty({ type: [LanguageRateByExperimentDto] })
   rateByPromptVersion!: LanguageRateByExperimentDto[];
 
+  @ApiProperty({
+    type: [LanguageRateByExperimentDto],
+    description:
+      'Weighted error rate grouped by WHICH MAIN-AGENT PROMPT ran (e.g. ' +
+      'ally_ai_learn_system_main_agent_prompt_full vs ' +
+      '..._working_memory_split). Distinct from rateByPromptVersion, which is ' +
+      "the prompt's version NUMBER and cannot tell two prompts apart. " +
+      'Resolved from scenario_sessions.metadata.promptVersions, written at ' +
+      'session time, so it stays accurate when a scenario later switches ' +
+      'prompt.',
+  })
+  rateByMainPrompt!: LanguageRateByExperimentDto[];
+
   @ApiProperty({ type: [LanguageRateByExperimentDto] })
   rateByModel!: LanguageRateByExperimentDto[];
 
@@ -811,6 +901,133 @@ export class LanguageBackfillJobDto {
       'how a backfill that judged nothing went unnoticed for ten minutes.',
   })
   failed!: number;
+}
+
+export class FillerQualityQueryDto extends AnalyticsWindowQueryDto {}
+
+export class FillerQualityPointDto {
+  @ApiProperty({ description: 'Bucket start date (ISO yyyy-mm-dd)' })
+  bucket!: string;
+  @ApiProperty({ description: 'Played fillers judged in this bucket.' })
+  fillersJudged!: number;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'character_fit findings per 100 played fillers — "did it sound like ' +
+      'this character". Excludes findings conditioned out because the ' +
+      'scenario configured no style; those are counted separately.',
+  })
+  characterFitPer100!: number | null;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'context_fit findings per 100 — "did it fit what the learner just said".',
+  })
+  contextFitPer100!: number | null;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'safety findings per 100 — the filler committed to something the real ' +
+      'reply, generated separately and afterwards, could contradict.',
+  })
+  safetyPer100!: number | null;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'Findings per 100 that were conditioned out because the character had ' +
+      'no configured style. A CONFIGURATION gap, not a model failure — worth ' +
+      'seeing, worth keeping out of the model-facing rates.',
+  })
+  unconfiguredStylePer100!: number | null;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: 'Share of played fillers that repeated a recent phrase.',
+  })
+  repeatedPct!: number | null;
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'Distinct phrases / total played. A session can mask every gap ' +
+      'perfectly and still sound like a soundboard; only this shows it.',
+  })
+  distinctPhraseRatio!: number | null;
+}
+
+export class FillerBackfillJobDto {
+  @ApiProperty() jobId!: string;
+  @ApiProperty({ description: 'queued | running | done | error' })
+  status!: string;
+  @ApiProperty() total!: number;
+  @ApiProperty() processed!: number;
+  @ApiProperty() judged!: number;
+  @ApiProperty({ description: 'Total findings persisted so far.' })
+  findings!: number;
+  @ApiProperty({
+    description:
+      'Sessions the selector matched but whose filler lines carry no ' +
+      '`utteranceKind` marker — an older worker. Skipped rather than judged: ' +
+      'a zero-denominator row reads like a clean session when it is really an ' +
+      'unmeasurable one.',
+  })
+  skipped!: number;
+  @ApiProperty({
+    description:
+      'Sessions whose judge call errored or timed out. Separate from ' +
+      '`processed`, which counts attempts.',
+  })
+  failed!: number;
+  @ApiProperty({ required: false, nullable: true }) error?: string | null;
+}
+
+export class StartFillerBackfillDto {
+  @ApiPropertyOptional({
+    description: 'ISO date lower bound on session start.',
+  })
+  @IsOptional()
+  @IsString()
+  since?: string;
+
+  @ApiPropertyOptional({
+    description: 'ISO date upper bound on session start.',
+  })
+  @IsOptional()
+  @IsString()
+  until?: string;
+
+  @ApiPropertyOptional({ description: 'languages.value filter, e.g. ta-IN.' })
+  @IsOptional()
+  @IsString()
+  language?: string;
+
+  @ApiPropertyOptional({ description: 'Restrict to one scenario.' })
+  @IsOptional()
+  @IsInt()
+  scenarioId?: number;
+
+  @ApiPropertyOptional({ description: 'Cap on sessions this run takes on.' })
+  @IsOptional()
+  @IsInt()
+  limit?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Re-judge sessions this judge version already covered. Off by default ' +
+      'so a restarted run costs only what it has not already done.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  rejudge?: boolean;
+
+  @ApiPropertyOptional({ description: 'Override the concurrency pool size.' })
+  @IsOptional()
+  @IsInt()
+  concurrency?: number;
 }
 
 export class AgentJoinReliabilityQueryDto extends AnalyticsWindowQueryDto {}
@@ -954,6 +1171,73 @@ export class VoiceLatencyPointDto {
     nullable: true,
   })
   avgCacheHitRatePct!: number | null;
+
+  @ApiProperty({
+    description:
+      'Turns whose first audio was a thinking-filler. avgMs/p50Ms/p95Ms ' +
+      'measure time to the first audio the learner heard, so these turns ' +
+      'are timed to the filler, not to the reply.',
+  })
+  firstAudioFillerTurns!: number;
+
+  @ApiProperty({
+    description: 'Turns whose first audio was a predictive interim reply.',
+  })
+  firstAudioInterimTurns!: number;
+
+  @ApiProperty({
+    description: 'Turns whose first audio was the real reply (unmasked).',
+  })
+  firstAudioReplyTurns!: number;
+
+  @ApiProperty({
+    description:
+      'Turns with no firstAudioSource recorded — every transcript-derived ' +
+      'row, and live rows predating the provenance instrumentation. Reported ' +
+      'separately rather than counted as unmasked: they may have been masked ' +
+      'and there is no way to tell.',
+  })
+  firstAudioUnknownTurns!: number;
+
+  @ApiProperty({
+    description: 'Mean time-to-first-voice (ms) for filler-first turns.',
+    nullable: true,
+  })
+  avgFirstAudioFillerMs!: number | null;
+
+  @ApiProperty({
+    description: 'Mean time-to-first-voice (ms) for interim-first turns.',
+    nullable: true,
+  })
+  avgFirstAudioInterimMs!: number | null;
+
+  @ApiProperty({
+    description: 'Mean time-to-first-voice (ms) for reply-first turns.',
+    nullable: true,
+  })
+  avgFirstAudioReplyMs!: number | null;
+
+  @ApiProperty({
+    description:
+      'Mean time to the REAL reply (ms) — the unmasked pipeline number, ' +
+      'which does not move when filler coverage changes. Computed over ' +
+      'instrumented turns only, so null for transcript buckets and windows ' +
+      'predating the instrumentation.',
+    nullable: true,
+  })
+  avgReplyLatencyMs!: number | null;
+
+  @ApiProperty({
+    description: 'Median (p50) time to the real reply (ms). Null as above.',
+    nullable: true,
+  })
+  p50ReplyLatencyMs!: number | null;
+
+  @ApiProperty({
+    description: 'p95 time to the real reply (ms). Null as above.',
+    nullable: true,
+  })
+  p95ReplyLatencyMs!: number | null;
 }
 
 export class VoiceLatencyByLanguageRowDto {
@@ -1167,6 +1451,62 @@ export class VoiceLatencySessionsSummaryResponseDto extends VoiceLatencySessionS
     description: 'The resolved window, for on-surface labelling and exports',
   })
   window!: AnalyticsWindowDto;
+}
+
+export class VoiceLatencyByScenarioQueryDto extends AnalyticsWindowQueryDto {
+  @ApiProperty({
+    description: "Filter by the session's language value (e.g. en-IN, hi-IN)",
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  language?: string;
+}
+
+/**
+ * One row per simulation, worst-first — "which simulations are slow RIGHT
+ * NOW" (distinct from {@link VoiceLatencySessionRowDto}, which is "this
+ * simulation's worst sessions"). Each row is that simulation's single most
+ * recent session, not a whole-window average — see
+ * `PlatformAnalyticsRepository.getVoiceLatencyByScenario`'s doc-comment for
+ * why. Same stage fields as {@link VoiceLatencySessionStagesDto} so a slow
+ * scenario's bottleneck stage is visible without a second lookup.
+ */
+export class VoiceLatencyByScenarioRowDto extends VoiceLatencySessionStagesDto {
+  @ApiProperty({ description: 'scenarios.id' })
+  scenarioId!: number;
+
+  @ApiProperty({ description: 'scenarios.title' })
+  scenarioTitle!: string;
+
+  @ApiProperty({
+    description: "This simulation's most recent session's start time",
+    nullable: true,
+  })
+  occurredAt!: string | null;
+
+  @ApiProperty({ description: 'Turns aggregated into this row' })
+  turnCount!: number;
+}
+
+export class VoiceLatencyByScenarioResponseDto {
+  @ApiProperty({ type: [VoiceLatencyByScenarioRowDto] })
+  rows!: VoiceLatencyByScenarioRowDto[];
+
+  @ApiProperty({
+    type: AnalyticsWindowDto,
+    description: 'The resolved window, for on-surface labelling and exports',
+  })
+  window!: AnalyticsWindowDto;
+
+  @ApiProperty({
+    description:
+      'True if the platform has more simulations with matching turns than ' +
+      'the defensive cap (VOICE_LATENCY_BY_SCENARIO_LIMIT) — the worst ones ' +
+      'are still shown first, but the tail was cut rather than silently ' +
+      'omitted without a flag.',
+  })
+  truncated!: boolean;
 }
 
 export class StartLatencyQueryDto extends AnalyticsWindowQueryDto {

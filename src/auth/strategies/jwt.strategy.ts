@@ -6,6 +6,7 @@ import { LoggerService } from '../../logger/logger.service';
 import { ExecutionManager } from '../../common/execution/execution-manager';
 import { PermissionsService } from '../../authorization/service/permissions.service';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { LastActiveService } from '../service/last-active.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -13,6 +14,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     configService: AppConfigService,
     private permissionsService: PermissionsService,
+    private lastActiveService: LastActiveService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -32,6 +34,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     // Set the execution context with user information
     ExecutionManager.setAuthContext(user.id.toString(), user.tenantId);
+
+    // Fire-and-forget: must never add latency to the auth path or fail auth.
+    void this.lastActiveService.touch(user.id);
 
     // Check if user has system admin access (can operate without tenant)
     const userPermissions = await this.permissionsService.getUserPermissions(

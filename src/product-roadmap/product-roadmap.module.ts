@@ -8,21 +8,24 @@ import { User } from 'src/user/entity/user.entity';
 import { BugFinding } from 'src/bug-hunter/entity/bug-finding.entity';
 
 import { RoadmapAllocation } from './entity/roadmap-allocation.entity';
+import { RoadmapVoteGrant } from './entity/roadmap-vote-grant.entity';
 import { RoadmapInterviewNote } from './entity/roadmap-interview-note.entity';
 import { RoadmapOpportunity } from './entity/roadmap-opportunity.entity';
 import { RoadmapOpportunityComment } from './entity/roadmap-opportunity-comment.entity';
 import { RoadmapOpportunityOwner } from './entity/roadmap-opportunity-owner.entity';
 import { RoadmapProductGoal } from './entity/roadmap-product-goal.entity';
-import { RoadmapReleaseNote } from './entity/roadmap-release-note.entity';
+import { RoadmapStrategyGoal } from './entity/roadmap-strategy-goal.entity';
+import { RoadmapOpportunityGoalImpact } from './entity/roadmap-opportunity-goal-impact.entity';
+import { RoadmapRankWeights } from './entity/roadmap-rank-weights.entity';
 import { RoadmapSavedView } from './entity/roadmap-saved-view.entity';
 import { RoadmapUserMap } from './entity/roadmap-user-map.entity';
 import { RoadmapUserTabOrder } from './entity/roadmap-user-tab-order.entity';
 
 import { RoadmapAllocationRepository } from './repository/roadmap-allocation.repository';
+import { RoadmapVoteGrantRepository } from './repository/roadmap-vote-grant.repository';
 import {
   RoadmapInterviewNoteRepository,
   RoadmapOpportunityCommentRepository,
-  RoadmapReleaseNoteRepository,
   RoadmapUserTabOrderRepository,
 } from './repository/roadmap-content.repository';
 import { RoadmapOpportunityRepository } from './repository/roadmap-opportunity.repository';
@@ -31,31 +34,42 @@ import {
   RoadmapOpportunityOwnerRepository,
   RoadmapProductGoalRepository,
 } from './repository/roadmap-taxonomy.repository';
+import {
+  RoadmapGoalImpactRepository,
+  RoadmapRankWeightsRepository,
+  RoadmapStrategyGoalRepository,
+} from './repository/roadmap-strategy.repository';
 
 import { RoadmapAccessService } from './service/roadmap-access.service';
+import { RoadmapReadinessTokenService } from './service/roadmap-readiness-token.service';
 import { RoadmapAiService } from './service/roadmap-ai.service';
 import { RoadmapAllocationService } from './service/roadmap-allocation.service';
 import { RoadmapCommentService } from './service/roadmap-comment.service';
-import {
-  RoadmapInterviewNoteService,
-  RoadmapReleaseNoteService,
-} from './service/roadmap-content.service';
+import { RoadmapInterviewNoteService } from './service/roadmap-content.service';
 import { RoadmapNotificationService } from './service/roadmap-notification.service';
 import { RoadmapImportService } from './service/roadmap-import.service';
 import { RoadmapOpportunityService } from './service/roadmap-opportunity.service';
 import { RoadmapSavedViewService } from './service/roadmap-saved-view.service';
 import { RoadmapSplitMergeService } from './service/roadmap-split-merge.service';
+import { RoadmapBuilderService } from './service/roadmap-builder.service';
+import { BuilderModule } from 'src/builder/builder.module';
 import { RoadmapBoardService } from './service/roadmap-board.service';
 import { RoadmapTaxonomyService } from './service/roadmap-taxonomy.service';
+import { RoadmapStrategyGoalService } from './service/roadmap-strategy-goal.service';
+import { RoadmapGoalImpactService } from './service/roadmap-goal-impact.service';
 import { RoadmapVectorService } from './service/roadmap-vector.service';
+import { RoadmapBuilderSchedulerRegistrationService } from './service/roadmap-builder-scheduler-registration.service';
+import { RoadmapVoteGrantSchedulerRegistrationService } from './service/roadmap-vote-grant-scheduler-registration.service';
 
 import { RoadmapAdminController } from './controller/roadmap-admin.controller';
 import { RoadmapCollaborationController } from './controller/roadmap-collaboration.controller';
 import { RoadmapOpportunityController } from './controller/roadmap-opportunity.controller';
 import { RoadmapGateway } from './gateway/roadmap.gateway';
+import { AwsModule } from 'src/aws/aws.module';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 
 /**
- * Product Roadmap — the internal coin-voting prioritisation board, rebuilt from the standalone
+ * Product Roadmap — the internal vote-based prioritisation board, rebuilt from the standalone
  * `sandeep-roadmap-app` (Next.js + Supabase). Global, not tenant-scoped.
  *
  * Access is three permissions rather than a role gate, because viewing and voting are meant to
@@ -64,8 +78,9 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
  *   vote:admin:product-roadmap  → SUPER_ADMIN, SUPER_DUPER_ADMIN
  *   edit:admin:product-roadmap  → SUPER_DUPER_ADMIN only
  *
- * Schema: migrations 1871000000000 (tables) / …001 (monthly-cap trigger) / …002 (taxonomy
- * seed) / …003 (permission grants).
+ * Schema: migrations 1871000000000 (tables) / …001 (superseded monthly-cap trigger) / …002
+ * (taxonomy seed) / …003 (permission grants) / 1962000000000 (vote-grant ledger) / 1962100000000
+ * (vote-grant balance trigger, replacing …001).
  *
  * Semantic duplicate detection lives in ally-ai's Weaviate (`RoadmapOpportunity` collection);
  * Postgres here is the system of record and the vector index is derived.
@@ -83,12 +98,15 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
   imports: [
     TypeOrmModule.forFeature([
       RoadmapProductGoal,
+      RoadmapStrategyGoal,
+      RoadmapOpportunityGoalImpact,
+      RoadmapRankWeights,
       RoadmapOpportunityOwner,
       RoadmapOpportunity,
       RoadmapAllocation,
+      RoadmapVoteGrant,
       RoadmapOpportunityComment,
       RoadmapInterviewNote,
-      RoadmapReleaseNote,
       RoadmapSavedView,
       RoadmapUserTabOrder,
       RoadmapUserMap,
@@ -106,6 +124,22 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
     PromptModule,
     // LlmUsageService — token/cost accounting, which is mandatory for every LLM call here.
     LlmUsageModule,
+    LlmAgentModule,
+    /**
+     * BuilderSessionService — "Open in Builder Agent" on an opportunity.
+     *
+     * The whole module rather than the entity (the treatment BugFinding gets above) because
+     * creating a session is real logic: slug allocation, the default budget ceiling and the
+     * tenant caps all live in that service, and a roadmap-side INSERT would silently skip them.
+     * Safe to import: nothing in Builder's graph reaches back here — only AnalyticsSuggestions
+     * imports ProductRoadmapModule.
+     */
+    BuilderModule,
+    /**
+     * S3Service — presigned PUTs for opportunity reference images, and the URL parsing that
+     * checks a stored image really is one of our own uploads.
+     */
+    AwsModule,
   ],
   controllers: [
     RoadmapOpportunityController,
@@ -115,29 +149,39 @@ import { RoadmapGateway } from './gateway/roadmap.gateway';
   providers: [
     // repositories
     RoadmapProductGoalRepository,
+    RoadmapStrategyGoalRepository,
+    RoadmapGoalImpactRepository,
+    RoadmapRankWeightsRepository,
     RoadmapOpportunityOwnerRepository,
     RoadmapOpportunityRepository,
     RoadmapAllocationRepository,
+    RoadmapVoteGrantRepository,
     RoadmapOpportunityCommentRepository,
     RoadmapInterviewNoteRepository,
-    RoadmapReleaseNoteRepository,
     RoadmapSavedViewRepository,
     RoadmapUserTabOrderRepository,
     // services
     RoadmapNotificationService,
     RoadmapAccessService,
+    // Signs the readiness verdict on the way out of ai/readiness and verifies it on the way
+    // into POST /opportunities — the readiness gate's server-side half.
+    RoadmapReadinessTokenService,
     RoadmapVectorService,
     RoadmapImportService,
     RoadmapOpportunityService,
     RoadmapAllocationService,
     RoadmapSplitMergeService,
+    RoadmapBuilderService,
     RoadmapBoardService,
     RoadmapCommentService,
     RoadmapSavedViewService,
     RoadmapTaxonomyService,
+    RoadmapStrategyGoalService,
+    RoadmapGoalImpactService,
     RoadmapInterviewNoteService,
-    RoadmapReleaseNoteService,
     RoadmapAiService,
+    RoadmapVoteGrantSchedulerRegistrationService,
+    RoadmapBuilderSchedulerRegistrationService,
     // realtime
     RoadmapGateway,
   ],

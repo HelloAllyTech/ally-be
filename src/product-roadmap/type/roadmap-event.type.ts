@@ -8,7 +8,7 @@ import { OpportunityResponseDto } from '../dto/roadmap-response.dto';
  * TWO TIERS, deliberately.
  *
  * Tier 1 — targeted deltas for the high-frequency hot path. ALLOCATION_CHANGED is by far the
- * highest-volume event (a debounced number input, several people voting at once), so it carries
+ * highest-volume event (a debounced vote control, several people voting at once), so it carries
  * ~100 bytes and the client patches one number in place.
  *
  * Tier 2 — ROADMAP_INVALIDATED, one signal for rare but structurally sweeping changes. A split
@@ -19,7 +19,7 @@ import { OpportunityResponseDto } from '../dto/roadmap-response.dto';
  * is a bad trade.
  *
  * `actorId` is on EVERY event and is a hard contract: the client suppresses its own echo with
- * it. Without it, your own coin click round-trips a broadcast that invalidates the list and
+ * it. Without it, your own vote click round-trips a broadcast that invalidates the list and
  * refetches over your optimistic patch while your finger is still on the button.
  */
 export type RoadmapEvent =
@@ -28,7 +28,7 @@ export type RoadmapEvent =
       actorId: number;
       opportunityId: string;
       periodKey: string;
-      coins: number;
+      votes: number;
       /** Recomputed total across all users and periods, so the client patches rather than refetches. */
       priorityScore: number;
     }

@@ -1,0 +1,171 @@
+/**
+ * The repos Builder may read during an interview and write during a build,
+ * with the commands that prove a change is sound in each.
+ *
+ * Hand-maintained on purpose (same call as BUG_HUNT_REPOS): an unknown repo
+ * should 400 at the API boundary rather than reach a runner that will clone
+ * something nobody vetted. Single definition, several readers — the interview
+ * tools validate against it, the build prompt embeds it, and the pipeline
+ * serves it over GET /v1/builder/pipeline/repo-commands.
+ */
+export interface BuilderRepoDefinition {
+  /** Repository name under the GitHub org. */
+  repo: string;
+  /** One line the agent reads to decide whether a change belongs here. */
+  description: string;
+  test: string;
+  lint: string;
+  /**
+   * The same suite narrowed to what this branch changed.
+   *
+   * The gate runs this instead of `test` on the happy path: a full pass of
+   * ally-be (421 spec files) plus ally-web (`nx run-many`, cache disabled) is
+   * ten to thirty minutes on a 2-core runner, repeated per remediation round.
+   * `test` is still the command a baseline is computed with, because comparing
+   * failure identities only means something across the same set.
+   */
+  affectedTest?: string;
+  /**
+   * The suite narrowed to ONE file, as a prefix a path is appended to.
+   *
+   * The coding phase is told to run the specs it just wrote, by path, and the
+   * command table offered no way to. A fresh build spent twenty minutes on it:
+   * `nx test --testFile=…` ("unknown option"), then `nx test -- <path>`, then
+   * fighting nx's cache, then discovering vitest's `include` was ignoring the
+   * path, then searching the web for the syntax — all to re-run one spec it
+   * had just written and needed to iterate on.
+   *
+   * Every one of these repos can do it. Nothing had written down how.
+   */
+  singleTest?: string;
+  /** Null where the repo's test/build step already covers types. */
+  typecheck: string | null;
+  /** Whether the repo can be stood up in a runner for live E2E. */
+  e2eCapable: boolean;
+  serveCommand?: string;
+  port?: number;
+  /**
+   * Paths where a change is high-blast-radius (auth, migrations, payments).
+   * The verifier pass is told to scrutinise diffs touching these, and a build
+   * that touches one never merges itself.
+   */
+  guardedPaths: string[];
+}
+
+export const BUILDER_REPOS: BuilderRepoDefinition[] = [
+  {
+    repo: 'ally-be',
+    description:
+      'NestJS + TypeORM backend owning the primary Postgres database, admin APIs, auth and permissions.',
+    // --forceExit --detectOpenHandles for the same reason test.yml passes them:
+    // this suite leaks handles, and without the flags a leaked one hangs the
+    // gate until the 120-minute job timeout instead of reporting a result.
+    // --maxWorkers=2: jest defaults to (cpus - 1), which on a 2-core runner is
+    // ONE worker, i.e. the whole suite serially. Two is the honest maximum
+    // there and roughly halves it; it is a no-op on a bigger machine.
+    test: 'npm test -- --forceExit --detectOpenHandles --maxWorkers=2',
+    singleTest: 'npx jest',
+    affectedTest:
+      'npm test -- --forceExit --detectOpenHandles --maxWorkers=2 --changedSince=origin/master --passWithNoTests',
+    lint: 'npm run lint',
+    typecheck: 'npm run build',
+    e2eCapable: true,
+    serveCommand: 'npm run start:dev',
+    port: 8001,
+    guardedPaths: [
+      'src/auth',
+      'src/authorization',
+      'src/database/migrations',
+      'src/payment',
+      'src/user',
+    ],
+  },
+  {
+    repo: 'ally-web',
+    description:
+      'Nx monorepo of the three frontends: admin dashboard, helpline and web. Shared libs under libs/.',
+    test: 'npx nx run-many -t test --skip-nx-cache',
+    // vitest directly, from the repo root. nx puts a cache and a project
+    // resolver between the agent and the one file it wants to run, and its
+    // `include` pattern then ignores the path it was given.
+    singleTest: 'npx vitest run',
+    // No --skip-nx-cache here on purpose: between the baseline and the gate the
+    // local Nx cache is exactly what we want to hit.
+    affectedTest: 'npx nx affected -t test --base=origin/master',
+    lint: 'npx nx run-many -t lint --skip-nx-cache',
+    typecheck: 'npx tsc -b --pretty false',
+    e2eCapable: true,
+    serveCommand: 'npx nx serve ally-admin-dashboard',
+    port: 8081,
+    guardedPaths: [
+      'libs',
+      'apps/*/src/routes',
+      'apps/*/src/constants/permissions.ts',
+    ],
+  },
+  {
+    repo: 'ally-ai',
+    description:
+      'FastAPI + Weaviate service for retrieval, embeddings and the RAG agents.',
+    test: 'poetry run pytest tests/ -v',
+    singleTest: 'poetry run pytest -v',
+    lint: 'poetry run flake8',
+    typecheck: null,
+    e2eCapable: false,
+    guardedPaths: ['app/auth', 'app/core/config.py'],
+  },
+  {
+    repo: 'ally-ai-learn',
+    description:
+      'LiveKit voice agent running roleplay sessions (Studio v1 worker and the spec-driven v2 worker).',
+    test: 'poetry run pytest tests/ -v',
+    singleTest: 'poetry run pytest -v',
+    lint: 'poetry run flake8',
+    typecheck: null,
+    e2eCapable: false,
+    guardedPaths: ['app/auth', 'app/core/config.py'],
+  },
+  {
+    repo: 'ally-mobile',
+    description: 'React Native mobile client.',
+    test: 'npm test',
+    singleTest: 'npx jest',
+    lint: 'npm run lint',
+    typecheck: 'npx tsc --noEmit',
+    e2eCapable: false,
+    guardedPaths: ['src/navigation', 'src/api'],
+  },
+];
+
+export const BUILDER_REPO_NAMES: string[] = BUILDER_REPOS.map((r) => r.repo);
+
+export function findBuilderRepo(
+  repo: string,
+): BuilderRepoDefinition | undefined {
+  return BUILDER_REPOS.find((entry) => entry.repo === repo);
+}
+
+export function isBuilderRepo(repo: string): boolean {
+  return BUILDER_REPO_NAMES.includes(repo);
+}
+
+/**
+ * The wiki, which Builder may READ but never build in.
+ *
+ * Deliberately not a `BuilderRepoDefinition`: it has no test, lint or
+ * typecheck command, a PRD must not be able to name it as somewhere to
+ * implement a feature, and its pull requests are opened by `wiki-pr.sh` rather
+ * than `gh pr create` — the same reasoning that kept it out of the build's
+ * clone list and into `.wiki-tmp` instead.
+ *
+ * It is here because the interview needs it. Stacks answers product judgement
+ * and the code answers what exists; platform architecture — how the services
+ * fit together, which is exactly what a cross-repo PRD gets wrong — lives only
+ * on the wiki.
+ */
+export const BUILDER_WIKI_REPO = 'helloallytech.github.io';
+
+/** Repos the interview may read from, which is a wider set than it may build in. */
+export function isBuilderReadableRepo(repo: string): boolean {
+  return isBuilderRepo(repo) || repo === BUILDER_WIKI_REPO;
+}

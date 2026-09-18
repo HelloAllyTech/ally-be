@@ -14,7 +14,7 @@ import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.e
  * `sourceEmailLower` is UNIQUE and that is load-bearing. Ally lowercases emails, so two
  * source accounts differing only in case would map to one Ally user; because
  * roadmap_allocations is unique on (userId, opportunityId, periodKey), their votes on the
- * same opportunity in the same month would MERGE into one row — coins would silently vanish
+ * same opportunity in the same month would MERGE into one row — votes would silently vanish
  * and the ≤100 cap could be breached. The constraint turns that into a loud failure inside
  * the import transaction instead.
  *

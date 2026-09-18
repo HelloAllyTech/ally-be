@@ -15,6 +15,29 @@ export interface LearnData {
   turn_metrics?: LearnTurnMetricsData;
   start_metrics?: LearnStartMetricsData;
   session_memory?: LearnSessionMemoryData;
+  supervisor_note?: LearnSupervisorNoteData;
+}
+
+/**
+ * One live supervisor note (message_type "supervisor_note") — a short coaching
+ * hint the AI supervisor streamed into the learner's sidebar mid-session, when
+ * the scenario has `metadata.supervisorNotesEnabled`. Emitted per note, not per
+ * session, and already delivered to the browser over the LiveKit data channel
+ * by the time this arrives: SQS is the durable copy, which the post-session
+ * debrief reads back as context.
+ *
+ * `seq` is agent-assigned and 1-based per session. It is the read order and the
+ * idempotency key — a redelivered note collides on
+ * (scenarioSessionId, seq) rather than duplicating.
+ */
+export interface LearnSupervisorNoteData {
+  note: string;
+  seq: number;
+  /** Conversation turn that prompted the note; correlation only. */
+  turn_index?: number;
+  /** Language the note was written in (the session language). */
+  language?: string;
+  env?: string;
 }
 
 /**
@@ -143,6 +166,56 @@ export interface LlmUsageMessage {
   data: { llm_usage?: LlmUsageEventData };
 }
 
+/**
+ * One candidate passage, as ally-ai reports it. Mirrors kb_retrieval_passages.
+ *
+ * `outcome` says what shaping did with it, so a discard is reported rather than dropped —
+ * that is where the diagnostic value lives: a retrieval that answered on three passages looks
+ * identical whether it discarded nothing or discarded something better.
+ */
+export interface RetrievalLogPassage {
+  chunk_id: string;
+  document_id: string;
+  rank: number;
+  similarity: number;
+  pass?: string;
+  outcome?: string;
+}
+
+/**
+ * A retrieval performed OUTSIDE this service, reported for the log.
+ *
+ * The WhatsApp bot retrieves inside ally-ai in a single call, so its retrievals never reach
+ * the writer in KnowledgeBaseService. Without this message the platform's highest-volume RAG
+ * path was the one nothing measured.
+ */
+export interface RetrievalLogEventData {
+  corpus: string;
+  consumer: string;
+  query: string;
+  /** True when `query` is someone's own words — a health worker's question, not an operator's. */
+  query_sensitive?: boolean;
+  query_language?: string | null;
+  min_similarity: number;
+  decline_similarity?: number | null;
+  /** answered | declined_no_hits | declined_below_threshold | declined_translation_failed */
+  disposition?: string | null;
+  requested_limit: number;
+  fetch_limit?: number;
+  returned_count: number;
+  latency_ms: number;
+  tags?: string[];
+  session_id?: string | null;
+  passages?: RetrievalLogPassage[];
+}
+
+export interface RetrievalLogMessage {
+  message_type: string;
+  timestamp?: number;
+  room_id?: string;
+  data: { retrieval_log?: RetrievalLogEventData };
+}
+
 export interface LearnBehaviorInstructionData {
   timestamp: Date;
   behavior_instruction_data: LearnBehaviorInstruction;
@@ -161,6 +234,14 @@ export interface LearnEvent extends SessionEvents {
   autoTerminationStatus?: boolean;
   terminationMessage?: string;
   totalScore?: number;
+  /**
+   * Present on `end-of-session` only when ally-ai-learn's emergency/force-exit
+   * path produced it (e.g. "watchdog_force_exit") rather than a clean
+   * shutdown. Free-form and agent-internal — mapped to the fixed
+   * `ScenarioSessionEndReason` enum before being persisted, so a new
+   * agent-side cause string is tolerated rather than rejected.
+   */
+  reason?: string;
   /** Epoch-ms timestamp for session-paused / session-resumed control events. */
   atMs?: number;
   /**

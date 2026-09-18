@@ -40,9 +40,15 @@ function sectionOrderKey(sectionCode: string): [number, string] {
 /**
  * Compile the Tier 0 style card: every `published` + `always` section, in the
  * fixed deterministic order (stable prompt prefix → prompt-cache friendly).
+ *
+ * `registerPolicy`, when given, is prepended as the first block — the derived
+ * `## Register` line sourced from the same target variety the judge grades
+ * against (see register-policy.util.ts). It is counted against the Tier 0 token
+ * cap like anything else.
  */
 export function compileTier0Glossary(
   sections: LanguageGlossarySection[],
+  registerPolicy?: string | null,
 ): string {
   const compiled = sections
     .filter(
@@ -57,5 +63,9 @@ export function compileTier0Glossary(
     })
     .map(compileSection)
     .filter((text) => text.length > 0);
-  return compiled.join('\n\n');
+  // The derived register policy leads, so the variety instruction is read
+  // before any authored section can restate it differently. See
+  // compileRegisterPolicy for why it declares its own precedence.
+  const policy = (registerPolicy ?? '').trim();
+  return (policy ? [policy, ...compiled] : compiled).join('\n\n');
 }

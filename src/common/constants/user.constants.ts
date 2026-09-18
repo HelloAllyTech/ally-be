@@ -9,6 +9,22 @@ export enum UserRole {
   SCRIBE_REVIEWER = 'SCRIBE_REVIEWER',
   MULTI_TENANT_ADMIN = 'MULTI_TENANT_ADMIN',
   /**
+   * Consumer-app role marking an account as an evaluator: someone who, on top
+   * of whatever they normally use the app for, is asked evaluation questions on
+   * particular screens and at particular moments.
+   *
+   * Purely additive — it carries `evaluator:access` and nothing else, so it is
+   * meant to sit alongside LEARNER/COUNSELOR rather than replace one. An
+   * account holding only EVALUATOR can sign into the consumer apps (it is in
+   * their `allowedRoles`) but has none of their permissions, so it would land
+   * on an empty app.
+   *
+   * Gate the evaluation surfaces on the `evaluator:access` permission, not on
+   * this name: the single collapsed `role` a client sees cannot represent a
+   * multi-role account (see determineUserRole).
+   */
+  EVALUATOR = 'EVALUATOR',
+  /**
    * The single platform-tier role, replacing SUPER_ADMIN / SUPER_DUPER_ADMIN /
    * MULTI_TENANT_ADMIN (kept, unreferenced by new code, for rollback safety —
    * see CreatePlatformAdminRole1895000000001). Fine-grained access is
@@ -41,7 +57,35 @@ export const SUPER_ADMIN_ROLES: UserRole[] = [
 export const SUPER_DUPER_ADMIN_ROLES: UserRole[] = [UserRole.SUPER_DUPER_ADMIN];
 
 /**
+ * Every group name that means "this is an Ally staff account", live and retired.
+ *
+ * The live one is PLATFORM_ADMIN. The other three are the tiers
+ * `CreatePlatformAdminRole1895000000001` collapsed into it, whose `groups` rows
+ * were deliberately left in place for rollback safety — so an account still
+ * carrying one is still staff, and any check that asks "is this person one of
+ * us?" has to name all four.
+ *
+ * Use this, NOT `SUPER_ADMIN_ROLES`, for that question. `SUPER_ADMIN_ROLES`
+ * lists only the two retired super-admin tiers, so an account promoted through
+ * the Ally admins screen since the collapse — which grants PLATFORM_ADMIN and
+ * nothing else — does not match it. A check written against that list reads
+ * every present-day admin as an ordinary app user, silently and plausibly.
+ * `TenantCohortMemberRepository` spells the same four names out in raw SQL for
+ * the same reason.
+ */
+export const PLATFORM_TIER_ROLES: UserRole[] = [
+  UserRole.PLATFORM_ADMIN,
+  UserRole.SUPER_ADMIN,
+  UserRole.SUPER_DUPER_ADMIN,
+  UserRole.MULTI_TENANT_ADMIN,
+];
+
+/**
  * Platform-tier groups that the generic role picker must never grant or revoke.
+ *
+ * The same four names as `PLATFORM_TIER_ROLES`, aliased rather than repeated so
+ * a fifth tier is added in one place — but kept as its own export because the
+ * rule it encodes is a different one, spelled out below.
  *
  * PLATFORM_ADMIN is owned by the dedicated Ally admins screen
  * (POST/DELETE /v1/platform-admins), which also writes the per-user feature
@@ -67,12 +111,7 @@ export const SUPER_DUPER_ADMIN_ROLES: UserRole[] = [UserRole.SUPER_DUPER_ADMIN];
  * that platform-admin.service itself calls to grant PLATFORM_ADMIN, so guarding
  * it would break the very screen this constant protects.
  */
-export const PLATFORM_MANAGED_ROLES: UserRole[] = [
-  UserRole.PLATFORM_ADMIN,
-  UserRole.SUPER_ADMIN,
-  UserRole.SUPER_DUPER_ADMIN,
-  UserRole.MULTI_TENANT_ADMIN,
-];
+export const PLATFORM_MANAGED_ROLES: UserRole[] = PLATFORM_TIER_ROLES;
 
 export enum AppType {
   APP = 'APP',
@@ -95,6 +134,12 @@ export enum PreferenceName {
    * are gated by the per-user `character_library` feature toggle instead.
    */
   CHARACTER_LIBRARY_ENABLED = 'CHARACTER_LIBRARY_ENABLED',
+  /**
+   * Org-level switch for the learner Progress dashboard and its nav indicator.
+   * OFF when the row is absent, which is the launch state for every tenant — the
+   * feature is rolled out org by org rather than all at once.
+   */
+  PROGRESS_DASHBOARD_ENABLED = 'PROGRESS_DASHBOARD_ENABLED',
 }
 
 export enum PreferenceRelatedEntity {

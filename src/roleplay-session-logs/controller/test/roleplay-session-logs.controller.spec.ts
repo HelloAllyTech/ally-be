@@ -3,7 +3,6 @@ import { RoleplaySessionLogsController } from '../roleplay-session-logs.controll
 import { RoleplaySessionLogsService } from '../../service/roleplay-session-logs.service';
 import { FEATURE_TOGGLE_KEY } from '../../../auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from '../../../authorization/constants/admin-feature-toggle.constants';
-import { SUPER_ADMIN_ROLES } from '../../../common/constants/user.constants';
 
 describe('RoleplaySessionLogsController', () => {
   let controller: RoleplaySessionLogsController;
@@ -18,18 +17,18 @@ describe('RoleplaySessionLogsController', () => {
     controller = new RoleplaySessionLogsController(service);
   });
 
-  it('guards both endpoints with the roleplay session logs feature toggle, with a super-admin legacy fallback', () => {
+  it('guards both endpoints with the roleplay session logs feature toggle', () => {
     const reflector = new Reflector();
     const listOptions = reflector.get(FEATURE_TOGGLE_KEY, controller.list);
     const detailOptions = reflector.get(FEATURE_TOGGLE_KEY, controller.getById);
 
     expect(listOptions).toEqual({
       featureKey: FeatureToggleKey.ROLEPLAY_SESSION_LOGS,
-      legacyRoles: SUPER_ADMIN_ROLES,
+      tenantPreference: undefined,
     });
     expect(detailOptions).toEqual({
       featureKey: FeatureToggleKey.ROLEPLAY_SESSION_LOGS,
-      legacyRoles: SUPER_ADMIN_ROLES,
+      tenantPreference: undefined,
     });
   });
 

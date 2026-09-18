@@ -1,7 +1,9 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
+import { RoadmapOpportunityStage } from 'src/product-roadmap/enum/roadmap-opportunity.enum';
 
 import {
+  BugFindingDecisionReason,
   BugFindingSeverity,
   BugFindingSource,
   BugFindingStatus,
@@ -147,6 +149,63 @@ export class BugFinding extends BaseWithoutTenantEntity {
   @Column({ name: 'decided_at', type: 'timestamp', nullable: true })
   decidedAt?: Date | null;
 
+  /**
+   * Why this bug was declined — required on every reject, and on every
+   * verifier dismissal.
+   *
+   * Two readers, only one of them human: the next sweep is shown recent
+   * finder-error declines as "do not re-file these" (see `buildSweepPrompt`),
+   * and `BugHunterMetricsService` divides by them to answer how often Bug
+   * Hunter is right. Before this column both were impossible — `reject()`
+   * recorded who and when and nothing about what they concluded — so the same
+   * non-bug came back nightly and nobody could say whether the agent's
+   * judgement was improving.
+   *
+   * Null on every row that was not declined, and on rows declined before this
+   * column existed. `character varying` + CHECK, per repo convention.
+   */
+  @Column({ name: 'decision_reason', type: 'varchar', nullable: true })
+  decisionReason?: BugFindingDecisionReason | null;
+
+  /**
+   * The half of the explanation a six-value taxonomy cannot carry, in the
+   * decider's own words. Optional on purpose: making it mandatory would push
+   * people towards the reason that needs least typing, which corrupts the
+   * counted field for the sake of the uncounted one.
+   */
+  @Column({ name: 'decision_note', type: 'text', nullable: true })
+  decisionNote?: string | null;
+
+  // ── roadmap stage, shown here because bugs are no longer on the board ───────
+
+  /**
+   * A hand-set stage that OVERRIDES the one derived from `status` — see
+   * bug-finding-stage.util.ts. Null (the norm) means the stage is derived, so it
+   * tracks the pipeline with nothing to maintain.
+   *
+   * Exists for the bug fixed outside Bug Hunter entirely: a hand-written PR, a
+   * config change, a fix that rode along with unrelated work. The pipeline never
+   * saw any of that, so its status stays at NEW while the bug is in fact shipped,
+   * and only a human can say so.
+   *
+   * Stored on the FINDING rather than on the linked roadmap row on purpose. Most
+   * findings (every sweep-discovered one) have no `reportedBugId` at all, and a
+   * stage that existed for human-reported bugs only would be a column the table
+   * could not sort or filter by.
+   *
+   * `character varying` with a CHECK constraint listing the RoadmapOpportunityStage
+   * values, per repo convention — see migration 1936000000000.
+   */
+  @Column({ name: 'stage_override', type: 'varchar', nullable: true })
+  stageOverride?: RoadmapOpportunityStage | null;
+
+  /** The admin who pinned the stage. Integer users.id with NO foreign key, per ally-be convention. */
+  @Column({ name: 'stage_overridden_by', type: 'int', nullable: true })
+  stageOverriddenBy?: number | null;
+
+  @Column({ name: 'stage_overridden_at', type: 'timestamp', nullable: true })
+  stageOverriddenAt?: Date | null;
+
   // ── coordinated multi-repo fixes (migration 1900000000000) ──────────────────
 
   /**
@@ -230,7 +289,44 @@ export class BugFinding extends BaseWithoutTenantEntity {
   @Column({ name: 'cancelled_at', type: 'timestamp', nullable: true })
   cancelledAt?: Date | null;
 
-  /** Free-form: verify-vote tally, fix-attempt count, etc. */
+  /**
+   * Free-form: verify-vote tally, fix-attempt count, etc.
+   *
+   * Keys other code reads, kept here because a JSONB column with undocumented
+   * consumers is the same as no column:
+   *
+   *  - `confidence` (0-1) — the Verify phase's lowest verifier certainty for
+   *    this finding. Absent on proven findings (nothing to verify) and on rows
+   *    from before verifiers reported one. Below
+   *    `BUG_HUNT_LOW_CONFIDENCE_THRESHOLD` the sweep holds the finding for a
+   *    human even in AI mode, and the metrics endpoint cuts accept rate by it.
+   *  - `verifierVotes` — the individual refute verdicts behind that number, so
+   *    a reader can tell "all three were unsure" from "two were certain and
+   *    one dissented".
+   *  - `regressionOf` — the id of the earlier finding this one is a return of,
+   *    set when a shipped fix did not hold (see `persistFindings`).
+   *  - `regressed` — set true on THAT earlier finding, so the row whose fix
+   *    failed says so without a join.
+   *  - `rediscoveredCount` — how many sweeps have re-found a bug that was
+   *    already declined. A high count is the sweep arguing with a human, and
+   *    worth seeing.
+   */
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any> | null;
+
+  // ── reversal tracking (migration 1970200000000) ──────────────────────────
+
+  /**
+   * Set when this finding was dismissed as a finder error (`decision_reason`
+   * in `not_a_bug` / `wrong_repo` / `duplicate`) but a later finding with the
+   * same `repo` + `dedupe_key` actually shipped — see
+   * `checkForAndRecordReversals`. Null on every finding that was never
+   * dismissed, or was dismissed and never contradicted.
+   */
+  @Column({ name: 'reversed_at', type: 'timestamp', nullable: true })
+  reversedAt?: Date | null;
+
+  /** The finding that proved this dismissal wrong by shipping. No FK, per this table's convention for self-references (see `parentFindingId`). */
+  @Column({ name: 'reversed_by_finding_id', type: 'uuid', nullable: true })
+  reversedByFindingId?: string | null;
 }

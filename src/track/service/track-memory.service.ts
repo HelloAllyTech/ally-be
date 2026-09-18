@@ -1,11 +1,9 @@
 import { randomUUID } from 'crypto';
 import { Injectable } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
-import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
-import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
 import { LlmTask } from 'src/learn/enum/llm-task.enum';
+import { LlmCompletionService } from 'src/llm-agent/service/llm-completion.service';
 import { renderTemplate } from 'src/learn/util/autofill-shared.util';
 import { TrackEnrollmentRepository } from '../repository/track-enrollment.repository';
 import { TrackItemProgressRepository } from '../repository/track-item-progress.repository';
@@ -13,6 +11,8 @@ import { TrackItemRepository } from '../repository/track-item.repository';
 import { TrackSectionRepository } from '../repository/track-section.repository';
 
 const PROMPT_CODE = 'track_memory_fold';
+/** AI-task-registry row id; the key for per-task model config. */
+const AI_TASK_ID = 'track-memory-fold';
 const FACTS_PROMPT_CODE = 'track_memory_facts';
 const FOLD_TIMEOUT_MS = 30_000;
 const FOLD_MAX_TOKENS = 1024;
@@ -29,6 +29,15 @@ const FACT_MAX_CHARS = 160;
 /** Bound of the facts block appended to the injected previousMemory. */
 const FACTS_BLOCK_MAX_CHARS = 1600;
 
+/**
+ * Comparison form of a fact. Shared by the two places that ask "is this the
+ * same fact?" — the LLM path's identity resolution and the fallback path's
+ * duplicate check — so the two can never disagree about what counts as
+ * unchanged wording.
+ */
+const normalizeFact = (fact: string): string =>
+  fact.toLowerCase().replace(/\s+/g, ' ').trim();
+
 interface TrackMemoryItemEntry {
   sessionId: string;
   summary: string;
@@ -38,7 +47,24 @@ interface TrackMemoryItemEntry {
 export interface TrackLearnedFact {
   id: string;
   fact: string;
-  status: 'active' | 'superseded';
+  /**
+   * Why this fact is or is not injected — and the two non-active reasons are
+   * NOT interchangeable.
+   *
+   * `superseded` is SEMANTIC: a later session contradicted it, so it stopped
+   * being true. Decided by the merge model, and the entry is the audit trail
+   * of when the truth changed.
+   *
+   * `retired` is MECHANICAL: it is still true, we simply ran out of room under
+   * MAX_ACTIVE_FACTS. Decided by array length, not by anything the client said.
+   *
+   * Collapsing both into `superseded` (as this did until the third state was
+   * added) makes the trail unreadable — you cannot tell why a fact left — and
+   * loses the ability to ever bring an evicted-but-true fact back, because
+   * there is no way left to find it. The merge model is never shown or told
+   * about `retired`; only the two states it decides.
+   */
+  status: 'active' | 'superseded' | 'retired';
   sourceSessionId?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -72,29 +98,32 @@ export interface TrackEnrollmentMemory {
 @Injectable()
 export class TrackMemoryService {
   private readonly logger = LoggerService.getInstance(TrackMemoryService.name);
-  private readonly client: Anthropic;
-  private readonly model: string;
-
   constructor(
-    private readonly configService: AppConfigService,
     private readonly promptSharedService: PromptSharedService,
-    private readonly llmUsage: LlmUsageService,
+    private readonly llmCompletion: LlmCompletionService,
     private readonly trackEnrollmentRepository: TrackEnrollmentRepository,
     private readonly trackItemProgressRepository: TrackItemProgressRepository,
     private readonly trackItemRepository: TrackItemRepository,
     private readonly trackSectionRepository: TrackSectionRepository,
-  ) {
-    this.client = new Anthropic({
-      apiKey: this.configService.anthropic.apiKey,
-    });
-    this.model = this.configService.anthropic.autofillModel;
-  }
+  ) {}
 
   /**
    * Fold one session's memory into the enrollment's consolidated memory.
-   * Idempotent per (item, session): re-delivery (the two-phase
-   * session_memory upgrade) or a replay simply replaces that item's entry
-   * and re-consolidates. Never throws — memory folding is best-effort.
+   * Never throws — memory folding is best-effort.
+   *
+   * `items` and `summary` are idempotent per (item, session) BY CONSTRUCTION:
+   * re-delivery (the two-phase session_memory upgrade, which happens on every
+   * session) or a replay replaces that item's entry and re-consolidates from
+   * the replaced set.
+   *
+   * `facts` is NOT — it is an accumulator, and the same session's disclosures
+   * are re-submitted on every re-delivery. Nothing structural stops that
+   * double-counting; it rests entirely on the merge step recognising a
+   * restatement. That was checked against the live model rather than assumed
+   * (five facts re-sent as seven reworded disclosures came back as the same
+   * five plus the two genuinely new ones), so this is a known and measured
+   * dependency, not an oversight. If the merge model is ever changed, re-check
+   * it — the failure would be silent duplicate facts.
    */
   async foldSessionMemory({
     trackItemProgressId,
@@ -148,13 +177,18 @@ export class TrackMemoryService {
       await this.trackEnrollmentRepository.update(enrollment.id, {
         memory: memory as Record<string, any>,
       });
-      const activeFacts = (memory.facts ?? []).filter(
-        (f) => f.status === 'active',
-      ).length;
+      const allFacts = memory.facts ?? [];
+      const countOf = (status: TrackLearnedFact['status']) =>
+        allFacts.filter((f) => f.status === status).length;
+      // The breakdown is the whole telemetry for this store: "N active/N total"
+      // alone cannot distinguish a fact that stopped being true from one
+      // evicted for space, which is exactly the question the status split
+      // exists to answer.
       this.logger.info(
         `[TRACK_MEMORY] folded session=${scenarioSessionId} into enrollment=${enrollment.id} ` +
           `items=${Object.keys(memory.items).length} summary_chars=${memory.summary?.length ?? 0} ` +
-          `facts=${activeFacts} active/${(memory.facts ?? []).length} total`,
+          `facts=${countOf('active')} active/${allFacts.length} total ` +
+          `superseded=${countOf('superseded')} retired=${countOf('retired')}`,
       );
     } catch (error) {
       this.logger.error(
@@ -272,74 +306,121 @@ export class TrackMemoryService {
       const template =
         await this.promptSharedService.getPromptByCode(FACTS_PROMPT_CODE);
       if (!template) throw new Error(`prompt '${FACTS_PROMPT_CODE}' not found`);
+      // Retired facts are withheld from the model: it only reasons in
+      // active/superseded, and showing it a third state it was never taught
+      // invites it to echo one back. Withholding them is safe BY
+      // CONSTRUCTION — an entry the model never sees is never claimed, so the
+      // reconciliation loop below preserves it verbatim, `retired` intact.
+      //
+      // It also buys the resurrection path. `byText` is built from ALL of
+      // `existing`, retired included, so if a retired fact is disclosed again
+      // it binds to that entry by text and comes back with its ORIGINAL id and
+      // provenance rather than as a duplicate — which is the whole point of
+      // distinguishing "evicted for space" from "no longer true".
       const prompt = renderTemplate(template, {
         existingFacts: JSON.stringify(
-          existing.map(({ id, fact, status }) => ({ id, fact, status })),
+          existing
+            .filter((f) => f.status !== 'retired')
+            .map(({ id, fact, status }) => ({ id, fact, status })),
         ),
         newDisclosures: newDisclosures.map((d) => `- ${d}`).join('\n'),
       });
 
-      const response = await this.client.messages.create(
-        {
-          model: this.model,
-          max_tokens: FACTS_MAX_TOKENS,
-          messages: [{ role: 'user', content: prompt }],
-        },
-        { timeout: FOLD_TIMEOUT_MS },
-      );
-      const input = response.usage?.input_tokens ?? 0;
-      const output = response.usage?.output_tokens ?? 0;
-      void this.llmUsage.record({
-        provider: 'anthropic',
-        model: this.model,
+      const response = await this.llmCompletion.complete({
+        taskId: AI_TASK_ID,
         task: LlmTask.TRACK_MEMORY_FOLD,
-        promptTokens: input,
-        completionTokens: output,
-        totalTokens: input + output,
-        metadata: { ...usageMetadata, stage: 'facts' },
+        promptCode: FACTS_PROMPT_CODE,
+        prompt,
+        maxTokens: FACTS_MAX_TOKENS,
+        timeoutMs: FOLD_TIMEOUT_MS,
+        usageMetadata: { ...usageMetadata, stage: 'facts' },
       });
 
-      const block = response.content[0];
-      const raw = (block?.type === 'text' ? block.text : '').trim();
+      const raw = response.text;
       const jsonStart = raw.indexOf('[');
       const parsed = JSON.parse(
         raw.slice(jsonStart, raw.lastIndexOf(']') + 1),
       ) as Array<{ id?: string; fact?: string; status?: string }>;
 
-      updated = [];
-      const seenIds = new Set<string>();
-      for (const entry of parsed) {
-        const fact = (entry.fact ?? '').trim().slice(0, FACT_MAX_CHARS);
-        if (!fact) continue;
-        const status: TrackLearnedFact['status'] =
-          entry.status === 'superseded' ? 'superseded' : 'active';
+      const entries = parsed
+        .map((entry) => ({
+          id: entry.id,
+          fact: (entry.fact ?? '').trim().slice(0, FACT_MAX_CHARS),
+          status: (entry.status === 'superseded'
+            ? 'superseded'
+            : 'active') as TrackLearnedFact['status'],
+        }))
+        .filter((entry) => entry.fact);
+
+      // A FACT'S IDENTITY FOLLOWS ITS TEXT, NOT THE SLOT THE MODEL PUT IT IN.
+      //
+      // Asked to supersede, the model reads an id as belonging to the TOPIC
+      // rather than to the fact: it reassigns the existing id to the new fact
+      // and invents `old-<id>` for the original. Observed against the live
+      // model on a three-way contradiction — every one of the three came back
+      // that way round. Resolving by id alone then inverts the bookkeeping:
+      // the original's text is overwritten in place while a fresh uuid is
+      // minted for it, stamped with TODAY's session and createdAt. That
+      // falsifies the audit trail the superseded rows exist to be, moves a
+      // fact's durable id every time it is revised, and leaves the
+      // MAX_ACTIVE_FACTS retirement sorting on a createdAt that no longer
+      // describes the fact carrying it.
+      //
+      // So: bind by verbatim text first, and only then by id. An entry whose
+      // text is unchanged IS that fact whatever id it arrived under; an id is
+      // just the fallback for a fact whose wording genuinely changed.
+      const claimedIds = new Set<string>();
+      const resolved: Array<TrackLearnedFact | undefined> = new Array(
+        entries.length,
+      );
+      const byText = new Map<string, TrackLearnedFact>();
+      for (const f of existing) {
+        const key = normalizeFact(f.fact);
+        if (!byText.has(key)) byText.set(key, f);
+      }
+
+      entries.forEach((entry, i) => {
+        const prior = byText.get(normalizeFact(entry.fact));
+        if (prior && !claimedIds.has(prior.id)) {
+          claimedIds.add(prior.id);
+          resolved[i] = prior;
+        }
+      });
+      entries.forEach((entry, i) => {
+        if (resolved[i]) return;
         const prior = entry.id ? byId.get(entry.id) : undefined;
-        if (prior) {
-          seenIds.add(prior.id);
-          updated.push({
-            ...prior,
-            fact,
-            status,
-            updatedAt:
-              fact !== prior.fact || status !== prior.status
-                ? now
-                : prior.updatedAt,
-          });
-        } else {
-          updated.push({
+        if (prior && !claimedIds.has(prior.id)) {
+          claimedIds.add(prior.id);
+          resolved[i] = prior;
+        }
+      });
+
+      updated = entries.map((entry, i) => {
+        const prior = resolved[i];
+        if (!prior) {
+          return {
             id: randomUUID(),
-            fact,
-            status,
+            fact: entry.fact,
+            status: entry.status,
             sourceSessionId: scenarioSessionId,
             createdAt: now,
             updatedAt: now,
-          });
+          };
         }
-      }
+        return {
+          ...prior,
+          fact: entry.fact,
+          status: entry.status,
+          updatedAt:
+            entry.fact !== prior.fact || entry.status !== prior.status
+              ? now
+              : prior.updatedAt,
+        };
+      });
       // Reconcile: any existing fact the LLM omitted is kept unchanged —
       // omission must never delete memory.
       for (const f of existing) {
-        if (!seenIds.has(f.id)) updated.push(f);
+        if (!claimedIds.has(f.id)) updated.push(f);
       }
     } catch (error) {
       this.logger.warn(
@@ -349,12 +430,10 @@ export class TrackMemoryService {
       );
       // Deterministic fallback: append disclosures not already present
       // (normalized exact match), all active.
-      const normalized = new Set(
-        existing.map((f) => f.fact.toLowerCase().replace(/\s+/g, ' ').trim()),
-      );
+      const normalized = new Set(existing.map((f) => normalizeFact(f.fact)));
       updated = [...existing];
       for (const d of newDisclosures) {
-        const key = d.toLowerCase().replace(/\s+/g, ' ').trim();
+        const key = normalizeFact(d);
         if (normalized.has(key)) continue;
         normalized.add(key);
         updated.push({
@@ -368,18 +447,31 @@ export class TrackMemoryService {
       }
     }
 
-    // Cap: keep every superseded entry (audit trail is cheap) but bound the
-    // ACTIVE list — beyond the cap the oldest actives get superseded.
+    // Cap: keep every inactive entry (the trail is cheap) but bound the ACTIVE
+    // list — beyond the cap the oldest actives are RETIRED, not superseded.
+    // They are still true; there is simply no room. See TrackLearnedFact.status.
+    //
+    // Retiring by age is a placeholder policy, not a considered one: in a
+    // counselling arc the OLDEST facts tend to be the load-bearing ones ("mother
+    // has been unwell since January") and the newest the incidental ones, so
+    // this evicts roughly the wrong end. It has never once fired in production
+    // — the cap is 40 and the largest enrollment holds 16 — which is why it is
+    // left alone rather than replaced by a relevance policy that could not be
+    // evaluated against zero evictions. The log below is what turns the first
+    // real eviction into something we find out about instead of infer later.
     const actives = updated.filter((f) => f.status === 'active');
     if (actives.length > MAX_ACTIVE_FACTS) {
-      const toRetire = actives
+      const toRetire = [...actives]
         .sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
         .slice(0, actives.length - MAX_ACTIVE_FACTS);
       const retireIds = new Set(toRetire.map((f) => f.id));
       updated = updated.map((f) =>
-        retireIds.has(f.id)
-          ? { ...f, status: 'superseded', updatedAt: now }
-          : f,
+        retireIds.has(f.id) ? { ...f, status: 'retired', updatedAt: now } : f,
+      );
+      this.logger.warn(
+        `[TRACK_MEMORY] fact cap reached: retiring ${retireIds.size} still-true ` +
+          `fact(s) to hold ${MAX_ACTIVE_FACTS} active — oldest first, which is ` +
+          `probably the wrong end. Retired ids: ${[...retireIds].join(', ')}`,
       );
     }
     return updated;
@@ -405,29 +497,17 @@ export class TrackMemoryService {
           .join('\n\n'),
       });
 
-      const response = await this.client.messages.create(
-        {
-          model: this.model,
-          max_tokens: FOLD_MAX_TOKENS,
-          messages: [{ role: 'user', content: prompt }],
-        },
-        { timeout: FOLD_TIMEOUT_MS },
-      );
-
-      const input = response.usage?.input_tokens ?? 0;
-      const output = response.usage?.output_tokens ?? 0;
-      void this.llmUsage.record({
-        provider: 'anthropic',
-        model: this.model,
+      const response = await this.llmCompletion.complete({
+        taskId: AI_TASK_ID,
         task: LlmTask.TRACK_MEMORY_FOLD,
-        promptTokens: input,
-        completionTokens: output,
-        totalTokens: input + output,
-        metadata: usageMetadata,
+        promptCode: PROMPT_CODE,
+        prompt,
+        maxTokens: FOLD_MAX_TOKENS,
+        timeoutMs: FOLD_TIMEOUT_MS,
+        usageMetadata,
       });
 
-      const block = response.content[0];
-      const text = (block?.type === 'text' ? block.text : '').trim();
+      const text = response.text;
       if (!text) throw new Error('empty fold response');
       return text.slice(0, CONSOLIDATED_MAX_CHARS);
     } catch (error) {

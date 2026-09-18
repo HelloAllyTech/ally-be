@@ -386,7 +386,7 @@ jobs:
           echo "${DELIMITER}" >> $GITHUB_OUTPUT
 
       - name: Create Release Draft
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           draft: true
           name: Release v${{ needs.validate-and-tag.outputs.VERSION }}

@@ -26,6 +26,8 @@
 #
 # Required repository secrets:
 #   ANTHROPIC_API_KEY   — for Claude Code
+#   GEMINI_API_KEY      — only consumed when the configured engine is "gemini"
+#                         (GET pipeline/models). A plain Google AI Studio key.
 #   ALLY_BE_API_KEY     — ally-be's platform API_KEY, for the pipeline endpoints
 #   BUG_HUNTER_GH_TOKEN — may push branches, open PRs and merge here. NOT the
 #                         default GITHUB_TOKEN: a PR opened with that token does
@@ -109,9 +111,6 @@ jobs:
           git config user.name "ally-bug-hunter[bot]"
           git config user.email "bug-hunter@helloally.ai"
 
-      - name: Install Claude Code
-        run: npm install -g @anthropic-ai/claude-code@2.1.220
-
       - name: Resolve inputs
         id: cfg
         env:
@@ -136,11 +135,18 @@ jobs:
               -d "{\"trigger\":\"scheduled\",\"repo\":\"$REPO\"}")
             RUN_ID=$(printf '%s' "$RESPONSE" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("runId") or "")')
             MODE=$(printf '%s' "$RESPONSE" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("mode") or "")')
+            SKIPPED_REASON=$(printf '%s' "$RESPONSE" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("skippedReason") or "")')
             if [ -z "$RUN_ID" ]; then
-              # Bug Hunter is OFF. ally-be has already recorded a
-              # skipped_disabled run; there is nothing to do and this is not a
-              # failure.
-              echo "Bug Hunter is off duty (mode=${MODE:-off}). Nothing to sweep."
+              # Either Bug Hunter is OFF, or (only on this scheduled path) the
+              # repo has had no commits since its last sweep and no
+              # production log group to catch an issue without one — either
+              # way ally-be has already recorded the skipped run itself; there
+              # is nothing to do here and this is not a failure.
+              if [ "$SKIPPED_REASON" = "quiet" ]; then
+                echo "Nothing new in $REPO since the last sweep. Skipped with zero token spend."
+              else
+                echo "Bug Hunter is off duty (mode=${MODE:-off}). Nothing to sweep."
+              fi
               echo "skip=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
@@ -168,42 +174,329 @@ jobs:
           test -s /tmp/sweep-prompt.txt
           echo "Fetched $(wc -c < /tmp/sweep-prompt.txt) bytes of protocol."
 
-      - name: Run the sweep
+      - name: Resolve configured models
+        if: steps.cfg.outputs.skip != 'true'
+        id: models
+        env:
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -euo pipefail
+          # Bug Hunter's model tiers are admin-editable (GlobalSettings, via
+          # GET pipeline/models) rather than hardcoded here, for the same
+          # reason the sweep protocol itself is fetched at runtime instead of
+          # copied into this file: a change takes effect on the next run, not
+          # after five PRs. Fetched here rather than passed as a
+          # workflow_dispatch input (Builder's approach for its own model
+          # settings) because that would miss the cron-triggered path above,
+          # which never goes through workflow_dispatch at all.
+          RESP=$(curl -sSf -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/pipeline/models?repo=${{ steps.cfg.outputs.repo }}")
+          ENGINE=$(printf '%s' "$RESP" | jq -r '.engine')
+          DEFAULT_MODEL=$(printf '%s' "$RESP" | jq -r '.defaultModel')
+          ESCALATION_MODEL=$(printf '%s' "$RESP" | jq -r '.escalationModel')
+          if [ -z "$DEFAULT_MODEL" ] || [ "$DEFAULT_MODEL" = "null" ] || [ -z "$ESCALATION_MODEL" ] || [ "$ESCALATION_MODEL" = "null" ]; then
+            echo "::error::Could not resolve Bug Hunter's configured models from ally-be."
+            exit 1
+          fi
+          [ -n "$ENGINE" ] && [ "$ENGINE" != "null" ] || ENGINE="claude-code"
+          echo "engine=$ENGINE" >> "$GITHUB_OUTPUT"
+          echo "default_model=$DEFAULT_MODEL" >> "$GITHUB_OUTPUT"
+          # Also the model a gemini-engine sweep falls back to if it gets
+          # stuck — see "Run the sweep"'s own fallback logic.
+          echo "escalation_model=$ESCALATION_MODEL" >> "$GITHUB_OUTPUT"
+          if [ "$ENGINE" = "gemini" ]; then
+            echo "Engine is gemini — bug-escalation.md is only read if this run falls back to Claude below."
+          fi
+          # Rewritten unconditionally, even on a pure gemini run that never
+          # falls back: Gemini CLI has no equivalent to the Task-tool subagent
+          # dispatch this file's frontmatter drives, so gemini never reads it
+          # either way — cheap to keep current regardless, and it means a
+          # gemini-engine sweep that DOES fall back to Claude below always
+          # finds it already pointing at the right model, with no extra step.
+          #
+          # The committed frontmatter becomes just a fallback the moment this
+          # runs — this endpoint is now the one source of truth for the
+          # escalation model too, so it can no longer drift across this
+          # file's five otherwise-identical copies the way it used to be able
+          # to (nothing kept them in sync before).
+          sed -i.bak "s/^model: .*/model: $ESCALATION_MODEL/" .claude/agents/bug-escalation.md
+          rm -f .claude/agents/bug-escalation.md.bak
+          # Best-effort: powers the findings list's model/provider label.
+          # ally-be never learns this any other way, since the model is
+          # resolved here, not at dispatch time — but losing this call must
+          # never fail a sweep over a cosmetic label.
+          curl -sS -X POST "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/model" \
+            -H "Content-Type: application/json" -H "x-api-key: $ALLY_BE_API_KEY" \
+            -d "{\"engine\":\"$ENGINE\",\"model\":\"$DEFAULT_MODEL\"}" || true
+
+      - name: Install the coding engine
+        if: steps.cfg.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.models.outputs.engine }}" = "gemini" ]; then
+            npm install -g @google/gemini-cli@0.22.5
+            gemini --version
+            # Installed alongside, not instead: if this sweep gets stuck (loop
+            # detection, an abandoned turn), "Run the sweep" falls back to
+            # Claude Code without a second install step mid-fallback.
+            npm install -g @anthropic-ai/claude-code@2.1.220
+            claude --version
+          else
+            npm install -g @anthropic-ai/claude-code@2.1.220
+            claude --version
+          fi
+
+      - name: Persist credentials to disk for the agent's own shell
         if: steps.cfg.outputs.skip != 'true'
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
           GH_TOKEN: ${{ secrets.BUG_HUNTER_GH_TOKEN }}
         run: |
           set -euo pipefail
-          claude -p "$(cat /tmp/sweep-prompt.txt)" \
-            --permission-mode acceptEdits \
-            --model claude-sonnet-5 \
-            --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
-            --max-turns 300 \
-            --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
+          # Gemini CLI's run_shell_command tool strips almost every
+          # environment variable from any command it runs whenever it detects
+          # GITHUB_SHA is set — always true here — a deliberate, unconditional
+          # anti-leak guard with no override (confirmed in gemini-cli-core's
+          # shellExecutionService.js). Every step of the sweep protocol has the
+          # agent itself curl ally-be (report findings, close the run) and run
+          # `gh pr create`/`gh pr merge` — both need a credential this
+          # sanitization would otherwise wipe right before the command runs.
+          # Gemini only sanitizes the environment it hands to spawned
+          # processes, not the filesystem, so writing the two credentials to
+          # disk here — before either CLI starts — survives it: the sweep
+          # prompt reads the api key back with `$(cat ...)` instead of
+          # $ALLY_BE_API_KEY, and `gh auth login` persists to
+          # ~/.config/gh/hosts.yml, which `gh` falls back to whenever GH_TOKEN
+          # isn't present in its own process's environment. Both are no-ops
+          # for Claude Code, which never hit this problem — its Bash tool
+          # keeps the environment gemini's tool always had.
+          printf '%s' "$ALLY_BE_API_KEY" > /tmp/ally-be-api-key
+          chmod 600 /tmp/ally-be-api-key
+          # `gh auth login --with-token` refuses outright ("the value of the
+          # GH_TOKEN environment variable is being used for authentication")
+          # if GH_TOKEN is already set in its own process environment — which
+          # it is here, since this step needs it too. Capture it under a
+          # different name first, unset the real one just for this command, so
+          # `gh` actually persists to ~/.config/gh/hosts.yml instead of
+          # refusing.
+          TOKEN="$GH_TOKEN"
+          unset GH_TOKEN
+          echo "$TOKEN" | gh auth login --with-token
+
+      - name: Run the sweep
+        if: steps.cfg.outputs.skip != 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Only consumed when engine=gemini. A plain Google AI Studio key —
+          # see run-engine.sh's own note on why this isn't Vertex/Workspace auth.
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Needed here even though the agent's own curl/gh calls read the key
+          # back from disk instead: this step's own script (not the agent)
+          # checks the run's status below to decide whether to fall back, and
+          # that check runs in this workflow's normal, unsandboxed shell.
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -uo pipefail
+          if [ "${{ steps.models.outputs.engine }}" = "gemini" ]; then
+            # `.response` (not `.result`) is Gemini's non-streaming json field.
+            gemini "$(cat /tmp/sweep-prompt.txt)" \
+              --model "${{ steps.models.outputs.default_model }}" \
+              --approval-mode auto_edit \
+              --allowed-tools "run_shell_command,read_file,write_file,replace,list_directory,glob,search_file_content" \
+              --output-format json | tee /tmp/claude-result.json | jq -r '.response // empty'
+            echo "gemini" > /tmp/actual-engine.txt
+
+            # Same fallback bug-fix-session.yml already carries: Gemini's own
+            # loop-detector (gemini-cli-core's loopDetectionService.js) can
+            # force-kill a thrashing sweep before the agent gets a turn to
+            # close its run, leaving it stuck RUNNING forever — there is no
+            # reconcile pass for an open run, so it would otherwise look like
+            # a sweep still working forever (see "Fail if the sweep ended
+            # without closing its run" below). A sweep has no single finding
+            # to poll the way a fix session does, so the stuck-check here is
+            # the run's own status — the same check that later step uses.
+            STATUS=$(curl -sS -H "x-api-key: $ALLY_BE_API_KEY" \
+              "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/status" \
+              | jq -r '.status // "unknown"')
+            if [ "$STATUS" = "running" ]; then
+              echo "Gemini left the run '$STATUS' without closing it — falling back to Claude Code (${{ steps.models.outputs.escalation_model }}) for one retry."
+
+              # Visible on the timeline even if the Claude retry goes on to
+              # close the run cleanly — otherwise a clean Claude finish would
+              # leave zero record that Gemini ran first and got stuck. See
+              # bug-fix-session.yml's identical note on why there is no
+              # structured reason to extract from Gemini's own output here
+              # (confirmed in gemini-cli-core: --output-format json silently
+              # drops the loop-detected event instead of surfacing it).
+              EXCERPT=$(jq -r '.response // empty' /tmp/claude-result.json 2>/dev/null | tail -c 400)
+              REPORT_BODY=$(jq -n \
+                --arg repo "${{ steps.cfg.outputs.repo }}" \
+                --arg summary "Gemini's sweep left its run '$STATUS' without closing it — most likely its own loop-detector silently stopping a thrashing turn (gemini-cli-core gives no structured signal for this in --output-format json, so it can't be confirmed beyond the run being left '$STATUS'). Retrying automatically with Claude Code (${{ steps.models.outputs.escalation_model }})." \
+                --arg runUrl "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+                --arg excerpt "$EXCERPT" \
+                '{repo: $repo, stage: "fix_attempt", summary: $summary, payload: {runUrl: $runUrl, fallback: "gemini-to-claude", geminiLastResponseExcerpt: $excerpt}}')
+              curl -sS -X POST \
+                -H "Content-Type: application/json" \
+                -H "x-api-key: $ALLY_BE_API_KEY" \
+                "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/report" \
+                -d "$REPORT_BODY" || true
+
+              # Whatever Gemini left behind is discarded — the sweep
+              # protocol's own contract is already "anything not pushed is
+              # gone with the runner", so a clean restart is the same
+              # guarantee the agent already works under, not a new one.
+              git fetch origin master
+              git checkout master --force
+              git reset --hard origin/master
+              git clean -fd
+              claude -p "$(cat /tmp/sweep-prompt.txt)" \
+                --permission-mode acceptEdits \
+                --model "${{ steps.models.outputs.escalation_model }}" \
+                --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
+                --max-turns 300 \
+                --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
+              echo "claude-code" > /tmp/actual-engine.txt
+            fi
+          else
+            claude -p "$(cat /tmp/sweep-prompt.txt)" \
+              --permission-mode acceptEdits \
+              --model "${{ steps.models.outputs.default_model }}" \
+              --allowedTools "Bash,Read,Write,Edit,Glob,Grep,Task" \
+              --max-turns 300 \
+              --output-format json | tee /tmp/claude-result.json | jq -r '.result // empty'
+            echo "claude-code" > /tmp/actual-engine.txt
+          fi
 
       - name: Report actual token cost
         # Best-effort: the pipeline's own /close call (inside the prompt
         # fetched above) already closed this run — this just attaches the
-        # real per-model token usage `claude -p --output-format json`
-        # reported, so "Est. cost" in the admin tab stops reading $0 for
-        # every run. Must never fail the job over a cost-reporting hiccup,
-        # and must still run when the sweep itself failed — partial spend is
-        # still real spend.
+        # real per-model token usage the CLI reported, so "Est. cost" in the
+        # admin tab stops reading $0 for every run. Must never fail the job
+        # over a cost-reporting hiccup, and must still run when the sweep
+        # itself failed — partial spend is still real spend.
+        #
+        # The two engines' `--output-format json` results share nothing:
+        # Claude Code's is `{result, total_cost_usd, modelUsage: {<model>:
+        # {inputTokens, outputTokens, ...}}}`; Gemini's is `{session_id,
+        # response, stats: {input_tokens, output_tokens, ...}}` — no per-model
+        # breakdown (it only ever ran one model) and no cost figure at all
+        # (confirmed absent from its schema — ally-be computes its own
+        # estimate from the token counts either way, via the same pricing
+        # table, so a real $0 here from Gemini is not a lost figure).
+        # Parsing this with the Claude-only jq filter silently produced
+        # modelUsage:[] for every Gemini run, tier notwithstanding — this
+        # step just never matched its shape.
+        #
+        # A second, separate shape mistake lived here too, found only by
+        # comparing a real MERGED Gemini run's reported cost ($0) against its
+        # own gemini-cli-core source: `--output-format json`'s `stats` field
+        # is `SessionMetrics` (uiTelemetry.js) — `{models: {<model>: {tokens:
+        # {input, prompt, candidates, cached, ...}}}}`, keyed BY MODEL, not
+        # the flat `{input_tokens, output_tokens, cached}` shape that only
+        # `--output-format stream-json`'s terminal event uses. `.stats.input_tokens`
+        # was reading a field that never existed here, so every Gemini run —
+        # including ones that finished cleanly — silently reported zero
+        # tokens. Iterating `.stats.models` also naturally captures a
+        # secondary model Gemini's own routing sometimes uses (its own
+        # classifier), which a single hardcoded model name would have missed.
+        # `tokens.input` (not `.prompt`) is the net-of-cache count — `.prompt`
+        # would double-count the cached portion against computeCostUsd's
+        # separate, discounted cache-read term.
         if: always() && steps.cfg.outputs.skip != 'true'
         env:
           ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
         run: |
           set -uo pipefail
+          # Not steps.models.outputs.engine: that's whichever engine was
+          # CONFIGURED, but a gemini sweep that got stuck and fell back to
+          # Claude overwrote /tmp/claude-result.json with Claude's own shape
+          # — parsing it as Gemini's would silently zero it out again.
+          ACTUAL_ENGINE=$(cat /tmp/actual-engine.txt 2>/dev/null || echo "${{ steps.models.outputs.engine }}")
           if [ -s /tmp/claude-result.json ]; then
-            MODEL_USAGE=$(jq -c '[(.modelUsage // {}) | to_entries[] | {model: (.value.canonicalModel // .key), inputTokens: (.value.inputTokens // 0), outputTokens: (.value.outputTokens // 0)}]' /tmp/claude-result.json 2>/dev/null || echo '[]')
-            CLI_COST=$(jq -r '.total_cost_usd // 0' /tmp/claude-result.json 2>/dev/null || echo 0)
+            if [ "$ACTUAL_ENGINE" = "gemini" ]; then
+              MODEL_USAGE=$(jq -c \
+                '[(.stats.models // {}) | to_entries[] | {model: .key, inputTokens: (.value.tokens.input // 0), outputTokens: (.value.tokens.candidates // 0), cacheReadInputTokens: (.value.tokens.cached // 0), cacheCreationInputTokens: 0}]' \
+                /tmp/claude-result.json 2>/dev/null || echo '[]')
+              # No cliReportedCostUsd key at all here — NOT 0. `formatCost` in
+              # the admin tab prefers cliReportedCostUsd whenever it is
+              # non-null, so sending a literal 0 permanently masked the real
+              # computeCostUsd estimate behind it: two real runs computed
+              # $0.5063 and $6.6549 server-side and both still showed
+              # "$0.0000" in the tab, because Gemini reporting 0 (it never has
+              # a cost figure at all) looked identical to Claude Code
+              # genuinely reporting a real $0. Omitting the key leaves
+              # cliReportedCostUsd null, so the tab correctly falls back to
+              # the token-based estimate instead.
+              BODY="{\"modelUsage\":${MODEL_USAGE}}"
+            else
+              MODEL_USAGE=$(jq -c '[(.modelUsage // {}) | to_entries[] | {model: (.value.canonicalModel // .key), inputTokens: (.value.inputTokens // 0), outputTokens: (.value.outputTokens // 0), cacheReadInputTokens: (.value.cacheReadInputTokens // 0), cacheCreationInputTokens: (.value.cacheCreationInputTokens // 0)}]' /tmp/claude-result.json 2>/dev/null || echo '[]')
+              CLI_COST=$(jq -r '.total_cost_usd // 0' /tmp/claude-result.json 2>/dev/null || echo 0)
+              BODY="{\"modelUsage\":${MODEL_USAGE},\"cliReportedCostUsd\":${CLI_COST}}"
+            fi
             curl -sS -X POST "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/cost" \
               -H "Content-Type: application/json" \
               -H "x-api-key: $ALLY_BE_API_KEY" \
-              -d "{\"modelUsage\":${MODEL_USAGE},\"cliReportedCostUsd\":${CLI_COST}}" || true
+              -d "$BODY" || true
           fi
+
+      - name: Fail if the sweep ended without closing its run
+        # Same hole `bug-fix-session.yml` had. `claude -p` exits 0 whenever the
+        # agent produces a final response, including when it ends its turn
+        # mid-protocol — a fix session once backgrounded its `git commit`, said
+        # it would push "once it finishes", and ended; the runner died with the
+        # work in its tree and the job stayed green.
+        #
+        # A sweep has no single finding to read, so the terminal marker is the
+        # run itself: the protocol's last instruction is to close it. Still
+        # RUNNING once the CLI has exited means the agent stopped early, and
+        # nothing else would ever notice — there is no reconcile pass for an
+        # open run, so it would look like a sweep still working forever.
+        if: steps.cfg.outputs.skip != 'true'
+        env:
+          ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
+        run: |
+          set -uo pipefail
+          STATUS=$(curl -sS -H "x-api-key: $ALLY_BE_API_KEY" \
+            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/status" \
+            | jq -r '.status // "unknown"')
+          echo "Run ${{ steps.cfg.outputs.run_id }} is '$STATUS' after the sweep."
+
+          # Anything but `running` is a sweep that closed itself, one way or
+          # another. `unknown` means ally-be was unreachable, not that the
+          # agent failed — never fail a sweep over a reporting hiccup.
+          if [ "$STATUS" != "running" ]; then
+            exit 0
+          fi
+
+          echo "::error::The sweep ended with its run still open — it stopped mid-protocol without closing it."
+          # A gemini-engine sweep that fell back to Claude above (see "Run the
+          # sweep") overwrote /tmp/actual-engine.txt with "claude-code" —
+          # reaching this step in THAT case means the fallback itself also
+          # failed to close the run, worth saying plainly rather than folding
+          # into the fully generic message below.
+          ACTUAL_ENGINE=$(cat /tmp/actual-engine.txt 2>/dev/null || echo "${{ steps.models.outputs.engine }}")
+          if [ "${{ steps.models.outputs.engine }}" = "gemini" ] && [ "$ACTUAL_ENGINE" = "claude-code" ]; then
+            SUMMARY="Gemini's sweep ended without closing its run, and the automatic Claude Code fallback (${{ steps.models.outputs.escalation_model }}) then also ended with the run still open — the agent stopped mid-protocol without closing it, so whatever it had not already reported is lost with the runner. Findings it did persist are kept. Start a new sweep to retry."
+          else
+            SUMMARY="The sweep ended with its run still open — the agent stopped mid-protocol without closing it, so whatever it had not already reported is lost with the runner. Findings it did persist are kept. Start a new sweep to retry."
+          fi
+          # Before the close, or appendEvent rejects it: a closed run refuses
+          # further events.
+          curl -sS -X POST \
+            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/report" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            -d "{\"repo\":\"${{ steps.cfg.outputs.repo }}\",\"stage\":\"error\",\"summary\":\"${SUMMARY}\",\"payload\":{\"runUrl\":\"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"}}" || true
+          curl -sS -X POST \
+            "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/close" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $ALLY_BE_API_KEY" \
+            -d "{\"status\":\"failed\",\"foundCount\":0,\"autoMergedCount\":0,\"prOpenedCount\":0,\"dismissedCount\":0,\"errorMessage\":\"${SUMMARY}\"}" || true
+
+          # The generic failure reporter below would otherwise post a second,
+          # vaguer error event on top of this one.
+          touch /tmp/bug-sweep-already-reported
+          exit 1
 
       - name: Report a runner-level failure
         # The protocol has the agent close its own run for every outcome it can
@@ -215,6 +508,13 @@ jobs:
           ALLY_BE_API_KEY: ${{ secrets.ALLY_BE_API_KEY }}
         run: |
           set -eu
+          # The gate step above already posted a precise account of what went
+          # wrong and closed the run. Adding this generic one on top would just
+          # bury it in the admin tab.
+          if [ -f /tmp/bug-sweep-already-reported ]; then
+            echo "Already reported by the outcome gate; nothing to add."
+            exit 0
+          fi
           curl -sS -X POST \
             "${{ steps.cfg.outputs.api }}/api/v1/bug-hunter/runs/${{ steps.cfg.outputs.run_id }}/report" \
             -H "Content-Type: application/json" \

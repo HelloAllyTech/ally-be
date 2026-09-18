@@ -10,6 +10,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { AppConfigService } from 'src/config/config.service';
 import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportunity.entity';
 import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
+import { checkForAndRecordReversals } from '../util/check-for-reversals.util';
 
 import { BugHunterNotificationService } from './bug-hunter-notification.service';
 import {
@@ -28,7 +29,8 @@ import { BugFinding } from '../entity/bug-finding.entity';
 import { BugFindingRepository } from '../repository/bug-finding.repository';
 import { BugHunterService } from './bug-hunter.service';
 import { BugFindingService } from './bug-finding.service';
-import { GithubActionsService } from './github-actions.service';
+import { GithubActionsService } from 'src/github/service/github-actions.service';
+import { ProductionReleaseService } from 'src/release/service/production-release.service';
 import {
   BugHunterRepoClassifierService,
   RepoClassification,
@@ -44,6 +46,7 @@ import {
   BUG_FIX_SESSION_DEFAULT_REF,
   BUG_FIX_SESSION_DISPATCH_TIMEOUT_MS,
   BUG_FIX_SESSION_REPOS,
+  BUG_FIX_SESSION_RUN_TIMEOUT_MS,
   BUG_FIX_SESSION_WORKFLOW_FILE,
   BUG_RELEASE_TIMEOUT_MS,
   resolveReleaseTarget,
@@ -88,6 +91,7 @@ export class BugFixSessionService {
     private readonly bugFindingService: BugFindingService,
     private readonly bugHunterService: BugHunterService,
     private readonly github: GithubActionsService,
+    private readonly releaseService: ProductionReleaseService,
     private readonly notificationService: BugHunterNotificationService,
     private readonly configService: AppConfigService,
     private readonly repoClassifier: BugHunterRepoClassifierService,
@@ -191,8 +195,9 @@ export class BugFixSessionService {
    * escalation-answer poll and every reconcile pass are keyed off status
    * (QUEUED/FIXING/NEEDS_INPUT), so a status that has moved to CANCELLED
    * simply stops matching those queries on the very next read — see
-   * `reconcileQueuedSessions`/`reconcilePrOpenedFindings`'s `WHERE status =`
-   * filters and `advancePlans`'s stuck-step check for a cancelled child.
+   * `reconcileQueuedSessions`/`reconcileFixingSessions`/`reconcilePrOpenedFindings`'s
+   * `WHERE status =` filters and `advancePlans`'s stuck-step check for a
+   * cancelled child.
    */
   async cancelFixSession(
     findingId: string,
@@ -425,6 +430,137 @@ export class BugFixSessionService {
    * one, so anything derived from local state would break the first time
    * somebody cut a release by hand.
    */
+  /**
+   * Merges a fix's open PR, at an admin's explicit request.
+   *
+   * ## Why this button exists
+   *
+   * On ally-be, ally-web and ally-ai the fix agent cannot merge its own work:
+   * `master` wants an approving review and the bot account holds `write`, so
+   * `gh pr merge --admin` has nothing to bypass with. Every fix on those
+   * repos therefore ends at a green PR — and 89 of the 122 bot PRs merged so
+   * far were clicked through by hand on GitHub, nearly all within the hour of
+   * the PR opening. The judgement was never the bottleneck; leaving the tool
+   * to go and press a button somewhere else was.
+   *
+   * ## What it deliberately does NOT do
+   *
+   * It does not force. The checks are read first and a PR that is not green
+   * is refused here rather than merged past, and if GitHub itself still says
+   * no (a required review, a stale base branch) that refusal is passed
+   * straight through. The human decision and the CI gate both survive; only
+   * the errand is removed.
+   *
+   * A guarded-path fix is mergeable through this button, unlike through the
+   * agent — that is the point of the guard. `touchesGuardedPath` means "a
+   * person must look at this", and a person pressing this having read the
+   * diff is exactly the condition it was asking for. `decidedBy` records who.
+   */
+  async mergeFinding(findingId: string, userId: number): Promise<BugFinding> {
+    const finding = await this.bugFindingService.getOne(findingId);
+    if (finding.status !== BugFindingStatus.PR_OPENED) {
+      throw new ForbiddenException(
+        finding.status === BugFindingStatus.MERGED ||
+          finding.status === BugFindingStatus.RELEASED
+          ? 'This fix is already merged.'
+          : `Only a fix with an open PR can be merged from here — this one is ${finding.status}.`,
+      );
+    }
+    if (!finding.repo || !finding.prUrl) {
+      throw new BadRequestException(
+        'This finding has no pull request recorded, so there is nothing to merge.',
+      );
+    }
+    const prNumber = BugFixSessionService.prNumberFrom(finding.prUrl);
+    if (!prNumber) {
+      throw new BadRequestException(
+        `Could not read a PR number out of ${finding.prUrl}.`,
+      );
+    }
+
+    const pr = await this.github.getPullRequest(finding.repo, prNumber);
+    if (!pr) {
+      throw new BadRequestException(
+        `Could not read ${finding.prUrl} from GitHub. Try again, or merge it there.`,
+      );
+    }
+    if (pr.merged) {
+      // Somebody already merged it on GitHub between the page loading and the
+      // click. Settle the row rather than erroring: the outcome the admin
+      // wanted is the one that already happened.
+      await this.bugFindingService.setStatus(finding.id, {
+        status: BugFindingStatus.MERGED,
+      });
+      await this.releaseLinkedRoadmapOpportunity(finding);
+      return this.bugFindingService.getOne(finding.id);
+    }
+    if (pr.state === 'closed') {
+      throw new ForbiddenException(
+        `${finding.prUrl} is closed without being merged. Start a fresh fix session if this bug still needs fixing.`,
+      );
+    }
+
+    // A null rollup means GitHub could not be read, which is NOT the same as
+    // green — refuse rather than merge blind. `none` (no CI configured at all)
+    // and `pending` are also refused: a merge is the one action here that
+    // cannot be undone from this tab.
+    const rollup = pr.headSha
+      ? await this.github.getCheckRollup(finding.repo, pr.headSha)
+      : null;
+    if (!rollup) {
+      throw new BadRequestException(
+        "Couldn't read this PR's checks from GitHub, so I won't merge it blind. Try again in a moment.",
+      );
+    }
+    if (rollup.state === 'failure') {
+      throw new ForbiddenException(
+        `This PR's checks are red (${rollup.failed.slice(0, 3).join(', ')}). Fix or retry the session before merging.`,
+      );
+    }
+    if (rollup.state === 'pending') {
+      throw new ForbiddenException(
+        "This PR's checks are still running. Give them a minute and try again.",
+      );
+    }
+    if (rollup.state === 'none') {
+      throw new ForbiddenException(
+        'This PR has no CI checks at all, so nothing has verified the fix. Merge it on GitHub if that is really what you want.',
+      );
+    }
+
+    const result = await this.github.mergePullRequest(
+      finding.repo,
+      prNumber,
+      `fix: ${finding.title.slice(0, 120)} (#${prNumber})`,
+    );
+    if (!result.merged) {
+      // GitHub's own words. "At least 1 approving review is required" is
+      // actionable and a generic failure line is not.
+      throw new BadRequestException(
+        `GitHub would not merge this PR: ${result.message ?? 'no reason given'}`,
+      );
+    }
+
+    const decidedAt = new Date();
+    await this.findingRepository.update(finding.id, {
+      status: BugFindingStatus.MERGED,
+      decidedBy: userId,
+      decidedAt,
+    });
+    finding.status = BugFindingStatus.MERGED;
+    await this.releaseLinkedRoadmapOpportunity(finding);
+    await this.checkForAndRecordReversals(finding, decidedAt);
+    await this.bugHunterService.appendFindingEvent({
+      findingId: finding.id,
+      repo: finding.repo,
+      stage: BugHuntEventStage.MERGED,
+      summary: `User ${userId} merged ${finding.prUrl} from the Bug Hunter tab.`,
+      payload: { prUrl: finding.prUrl, mergedBy: userId, prNumber },
+    });
+
+    return this.bugFindingService.getOne(finding.id);
+  }
+
   async release(findingId: string, userId: number): Promise<BugFinding> {
     const finding = await this.bugFindingService.getOne(findingId);
     if (
@@ -478,16 +614,8 @@ export class BugFixSessionService {
       throw new BadRequestException(this.explainUnreleasable(finding));
     }
 
-    const releaseTag = await this.github.nextPatchTag(
-      target.repo,
-      target.tagPrefix,
-    );
-    const dispatchedAt = await this.github.dispatchWorkflow({
-      repo: target.repo,
-      workflow: target.workflow,
-      ref: BUG_FIX_SESSION_DEFAULT_REF,
-      inputs: { version_tag: releaseTag },
-    });
+    const { tag: releaseTag, dispatchedAt } =
+      await this.releaseService.dispatch(target, BUG_FIX_SESSION_DEFAULT_REF);
 
     await this.findingRepository.update(finding.id, {
       status: BugFindingStatus.RELEASING,
@@ -573,8 +701,8 @@ export class BugFixSessionService {
   // ── reconcile (scheduled) ────────────────────────────────────────────────
 
   /**
-   * Closes the loop on both dispatches, since neither tells us anything at the
-   * moment it is made: `workflow_dispatch` returns 204 with no run id.
+   * Closes the loop on every dispatch, since none of them tell us anything at
+   * the moment they're made: `workflow_dispatch` returns 204 with no run id.
    *
    * Runs on the 5-minute tick. Everything it does is idempotent and derived
    * from GitHub's own state, so a missed tick or a double-run costs nothing.
@@ -582,9 +710,10 @@ export class BugFixSessionService {
   async reconcile(): Promise<void> {
     if (!this.github.isConfigured) return;
     await this.reconcileQueuedSessions();
+    await this.reconcileFixingSessions();
     await this.reconcilePrOpenedFindings();
     await this.reconcileReleases();
-    // Order matters: the three passes above settle each step's own status from
+    // Order matters: the four passes above settle each step's own status from
     // GitHub, and these two then read those settled statuses to decide what to
     // start next. Running them first would advance a plan on stale state.
     await this.advancePlans();
@@ -625,10 +754,13 @@ export class BugFixSessionService {
         }
 
         if (steps.every((step) => step.status === BugFindingStatus.MERGED)) {
+          const mergedAt = new Date();
           await this.findingRepository.update(parent.id, {
             status: BugFindingStatus.MERGED,
           });
+          parent.status = BugFindingStatus.MERGED;
           await this.releaseLinkedRoadmapOpportunity(parent);
+          await this.checkForAndRecordReversals(parent, mergedAt);
           await this.notificationService.notify({
             level: BugHunterNotificationLevel.ACTION_NEEDED,
             ...planReadyToRelease(
@@ -754,10 +886,14 @@ export class BugFixSessionService {
           continue;
         }
 
+        const releasedAt = new Date();
         await this.findingRepository.update(parent.id, {
           status: BugFindingStatus.RELEASED,
-          releasedAt: new Date(),
+          releasedAt,
         });
+        parent.status = BugFindingStatus.RELEASED;
+        parent.releasedAt = releasedAt;
+        await this.checkForAndRecordReversals(parent, releasedAt);
         await this.notificationService.notify({
           level: BugHunterNotificationLevel.INFO,
           ...planReleased(parent.title, steps),
@@ -830,6 +966,92 @@ export class BugFixSessionService {
   }
 
   /**
+   * FIXING → FAILED when the GitHub Actions run itself has ended — success,
+   * failure, cancellation, or the workflow's own `timeout-minutes: 60` cap —
+   * without the fix agent ever self-reporting a PR, a plan, or an escalation.
+   *
+   * Every normal way out of FIXING is the agent's own doing (PR_OPENED,
+   * NEEDS_INPUT, a plan's next step), so this pass usually finds nothing. It
+   * exists for the case those rely on not happening: the runner dies, loops
+   * past its own timeout, or is killed by GitHub before it calls back.
+   * Without it, nothing in `reconcile` ever looks at a FIXING finding's run
+   * again — the exact way `cancelFixSession`'s manual kill switch was found
+   * to be the only thing unsticking a finding stranded here, hours after its
+   * run had already ended.
+   */
+  private async reconcileFixingSessions(): Promise<void> {
+    const fixing = await this.findingRepository.find({
+      where: { status: BugFindingStatus.FIXING },
+    });
+
+    for (const finding of fixing) {
+      try {
+        let runId = finding.sessionRunId ?? null;
+        if (!runId && finding.repo && finding.dispatchedAt) {
+          const found = await this.github.findRunSince({
+            repo: finding.repo,
+            workflow: BUG_FIX_SESSION_WORKFLOW_FILE,
+            since: finding.dispatchedAt,
+          });
+          if (found) {
+            runId = found.id;
+            await this.findingRepository.update(finding.id, {
+              sessionRunUrl: found.htmlUrl,
+              sessionRunId: found.id,
+            });
+          }
+        }
+
+        const run =
+          runId && finding.repo
+            ? await this.github.getRun(finding.repo, runId)
+            : null;
+
+        if (run?.status === 'completed') {
+          await this.findingRepository.update(finding.id, {
+            status: BugFindingStatus.FAILED,
+          });
+          await this.bugHunterService.appendFindingEvent({
+            findingId: finding.id,
+            repo: finding.repo,
+            stage: BugHuntEventStage.ERROR,
+            summary: `The fix session's GitHub Actions run ended (${run.conclusion ?? 'unknown'}) without reporting a result. Marked failed — start a new session to retry.`,
+            payload: { runId, conclusion: run.conclusion, runUrl: run.htmlUrl },
+          });
+          continue;
+        }
+
+        // Still running, or we could never resolve a run at all. Either way,
+        // stop waiting once the window is past — same reasoning as
+        // `reconcileReleases`'s unresolved-run fallback.
+        const age = finding.dispatchedAt
+          ? Date.now() - finding.dispatchedAt.getTime()
+          : Number.POSITIVE_INFINITY;
+        if (age > BUG_FIX_SESSION_RUN_TIMEOUT_MS) {
+          await this.findingRepository.update(finding.id, {
+            status: BugFindingStatus.FAILED,
+          });
+          await this.bugHunterService.appendFindingEvent({
+            findingId: finding.id,
+            repo: finding.repo,
+            stage: BugHuntEventStage.ERROR,
+            summary: run
+              ? 'The fix session is still running past its expected window. Marked failed — start a new session to retry.'
+              : 'The fix session was dispatched but its GitHub Actions run could never be found. Marked failed — start a new session to retry.',
+            payload: { runId, dispatchedAt: finding.dispatchedAt },
+          });
+        }
+      } catch (error) {
+        this.logger.warn(
+          `Could not reconcile fixing session ${finding.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  /**
    * PR_OPENED → MERGED, read from the PR's own merge state.
    *
    * `pr_opened` is written once, self-reported by the fix agent the moment it
@@ -857,7 +1079,12 @@ export class BugFixSessionService {
         await this.findingRepository.update(finding.id, {
           status: BugFindingStatus.MERGED,
         });
+        finding.status = BugFindingStatus.MERGED;
         await this.releaseLinkedRoadmapOpportunity(finding);
+        await this.checkForAndRecordReversals(
+          finding,
+          pr.mergedAt ?? new Date(),
+        );
         await this.bugHunterService.appendFindingEvent({
           findingId: finding.id,
           repo: finding.repo,
@@ -891,6 +1118,25 @@ export class BugFixSessionService {
     );
   }
 
+  /**
+   * Sibling of `releaseLinkedRoadmapOpportunity` above with a different guard
+   * — this one keys off `repo` + `dedupeKey` rather than `reportedBugId`, and
+   * applies to every MERGED/RELEASED write below including the RELEASED-only
+   * ones that have no roadmap-release counterpart.
+   */
+  private checkForAndRecordReversals(
+    finding: BugFinding,
+    shippedAt: Date,
+  ): Promise<void> {
+    return checkForAndRecordReversals(
+      this.findingRepository,
+      this.bugHunterService,
+      finding,
+      this.logger,
+      shippedAt,
+    );
+  }
+
   /** Pulls the PR number out of a GitHub PR URL — `.../pull/123` → `123`. */
   private static prNumberFrom(prUrl: string): number | null {
     const match = /\/pull\/(\d+)/.exec(prUrl);
@@ -910,11 +1156,10 @@ export class BugFixSessionService {
 
         let runId = finding.releaseRunId;
         if (!runId && finding.dispatchedAt) {
-          const found = await this.github.findRunSince({
-            repo: target.repo,
-            workflow: target.workflow,
-            since: finding.dispatchedAt,
-          });
+          const found = await this.releaseService.resolveRun(
+            target,
+            finding.dispatchedAt,
+          );
           if (found) {
             runId = found.id;
             await this.findingRepository.update(finding.id, {
@@ -924,33 +1169,24 @@ export class BugFixSessionService {
           }
         }
 
-        const run = runId ? await this.github.getRun(target.repo, runId) : null;
+        // "Still running" is the only verdict that does nothing. A timeout or
+        // an unidentifiable run settles as failed rather than waiting forever:
+        // "merged but not deployed" is the state an admin must act on, and a
+        // release left in progress silently claims work shipped that did not.
+        const verdict = await this.releaseService.poll({
+          target,
+          runId,
+          dispatchedAt: finding.dispatchedAt,
+          timeoutMs: BUG_RELEASE_TIMEOUT_MS,
+        });
+        if (verdict.state === 'running') continue;
 
-        if (run?.status === 'completed') {
-          await this.settleRelease(
-            finding,
-            run.conclusion === 'success',
-            run.htmlUrl,
-            run.conclusion,
-          );
-          continue;
-        }
-
-        // Still running, or we never managed to identify the run. Either way,
-        // stop waiting once the window is past — an unresolved release is
-        // reported as failed rather than left mid-flight, because "merged but
-        // not deployed" is the state an admin must act on.
-        const age = finding.dispatchedAt
-          ? Date.now() - finding.dispatchedAt.getTime()
-          : Number.POSITIVE_INFINITY;
-        if (age > BUG_RELEASE_TIMEOUT_MS) {
-          await this.settleRelease(
-            finding,
-            false,
-            finding.releaseRunUrl,
-            run ? 'timed out' : 'no matching GitHub Actions run found',
-          );
-        }
+        await this.settleRelease(
+          finding,
+          verdict.state === 'succeeded',
+          verdict.runUrl ?? finding.releaseRunUrl,
+          verdict.detail,
+        );
       } catch (error) {
         this.logger.warn(
           `Could not reconcile release for finding ${finding.id}: ${
@@ -967,13 +1203,19 @@ export class BugFixSessionService {
     runUrl: string | null | undefined,
     detail: string | null,
   ): Promise<void> {
+    const releasedAt = succeeded ? new Date() : undefined;
     await this.findingRepository.update(finding.id, {
       status: succeeded
         ? BugFindingStatus.RELEASED
         : BugFindingStatus.RELEASE_FAILED,
-      ...(succeeded ? { releasedAt: new Date() } : {}),
+      ...(releasedAt ? { releasedAt } : {}),
       ...(runUrl ? { releaseRunUrl: runUrl } : {}),
     });
+    if (succeeded && releasedAt) {
+      finding.status = BugFindingStatus.RELEASED;
+      finding.releasedAt = releasedAt;
+      await this.checkForAndRecordReversals(finding, releasedAt);
+    }
     await this.bugHunterService.appendFindingEvent({
       findingId: finding.id,
       repo: finding.repo,

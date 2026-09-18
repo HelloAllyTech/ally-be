@@ -19,7 +19,6 @@ import {
 import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import {
   CreateWaTemplateDto,
   PreviewAskDto,
@@ -46,7 +45,6 @@ export class WhatsAppAdminController {
 
   @Get('templates')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_TEMPLATES],
   })
   @ApiOperation({
@@ -64,7 +62,6 @@ export class WhatsAppAdminController {
 
   @Post('templates')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES],
   })
   @ApiOperation({ summary: 'Create a keyword template' })
@@ -75,7 +72,6 @@ export class WhatsAppAdminController {
 
   @Patch('templates/:id')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES],
   })
   @ApiOperation({
@@ -96,7 +92,6 @@ export class WhatsAppAdminController {
 
   @Post('templates/:id/archive')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES],
   })
   @ApiOperation({ summary: 'Archive a template' })
@@ -110,7 +105,6 @@ export class WhatsAppAdminController {
 
   @Post('templates/reorder')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT_TEMPLATES],
   })
   @ApiOperation({
@@ -125,7 +119,6 @@ export class WhatsAppAdminController {
 
   @Post('templates/test')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT_TEMPLATES],
   })
   @ApiOperation({
@@ -142,7 +135,6 @@ export class WhatsAppAdminController {
 
   @Get('settings')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT],
   })
   @ApiOperation({ summary: 'The bot settings blob' })
@@ -152,7 +144,6 @@ export class WhatsAppAdminController {
 
   @Put('settings')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT],
   })
   @ApiOperation({
@@ -169,7 +160,6 @@ export class WhatsAppAdminController {
 
   @Get('settings/provider-health')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT],
   })
   @ApiOperation({
@@ -186,7 +176,6 @@ export class WhatsAppAdminController {
 
   @Post('preview/ask')
   @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT],
   })
   @ApiOperation({

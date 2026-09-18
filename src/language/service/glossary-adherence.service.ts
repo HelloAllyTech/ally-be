@@ -69,24 +69,61 @@ export class GlossaryAdherenceService {
   /**
    * Extract avoid-listed terms from published section markdown.
    *
-   * Matches the `(avoid: …)` groups the generation prompt emits, accepting
-   * both quoting styles seen in real content: double quotes ("பதட்டம்") and
-   * backticks (`वार्तालाप करना`). Terms are NFC-normalized (Indic scripts
-   * have multiple byte encodings of identical glyphs) and deduped — the
-   * first section to list a term owns it.
+   * The glossary is authored (and LLM-generated) prose, so the machine-checkable
+   * part has to tolerate the shapes real content actually uses. Surveyed across
+   * every published section in production 2026-09-02:
+   *
+   *   `(avoid: …)`  42 groups, all quoted
+   *   `(not …)`     51 groups — 20 quoted, 31 bare, of which 8 single-token
+   *   `(not: …)`     3 groups
+   *   `(avoid …)`    2 groups (e.g. `avoid literary/archaic forms: "…"`)
+   *
+   * Matching only `(avoid: …)` cost us the single most-violated term on the
+   * platform: Kannada's literary `ಆದರೆ` was rewritten from `(avoid: …)` to
+   * `(not ಆದರೆ)` in core_style v6, and the measured violation rate fell from
+   * 47.7 to 0.0 per 100 agent messages while the rule itself stayed in force —
+   * an instrument artifact that read as a fix.
+   *
+   * Only groups led by an avoidance marker are mined, which is what keeps the
+   * many `(e.g., …)`, `(My father says.)`, `(As a client)` groups out.
+   *
+   * Within a group, quoted terms win — double, single, backtick and
+   * typographic quotes all appear in real content. A BARE term is accepted only
+   * when the group is a single whitespace-free token: that admits `(not ಆದರೆ)`
+   * while rejecting the example sentences that share the marker, e.g.
+   * `(not: त्याला मद्यपानाची आवड आहे.)`. Multi-word terms must be quoted to be
+   * checkable — the generation prompt emits quotes, so this only affects
+   * hand-edited content.
+   *
+   * Terms are NFC-normalized (Indic scripts have multiple byte encodings of
+   * identical glyphs) and deduped — the first section to list a term owns it.
    */
   parseAvoidTerms(sections: LanguageGlossarySection[]): AvoidTerm[] {
     const seen = new Set<string>();
     const terms: AvoidTerm[] = [];
     for (const section of sections) {
       const content = section.content ?? '';
-      for (const group of content.matchAll(/\(avoid:([^)]*)\)/g)) {
-        for (const quoted of group[1].matchAll(/"([^"]+)"|`([^`]+)`/g)) {
-          const term = (quoted[1] ?? quoted[2] ?? '').normalize('NFC').trim();
-          if (!term || seen.has(term)) continue;
+      for (const group of content.matchAll(
+        /\((?:avoid|not)\s*:?\s*([^)]*)\)/gi,
+      )) {
+        const body = group[1] ?? '';
+        const add = (raw: string) => {
+          const term = raw.normalize('NFC').trim();
+          if (!term || seen.has(term)) return;
           seen.add(term);
           terms.push({ term, sectionCode: section.sectionCode });
+        };
+        let quotedAny = false;
+        for (const quoted of body.matchAll(
+          /"([^"]+)"|`([^`]+)`|'([^']+)'|[“‘]([^”’]+)[”’]/g,
+        )) {
+          quotedAny = true;
+          add(quoted[1] ?? quoted[2] ?? quoted[3] ?? quoted[4] ?? '');
         }
+        if (quotedAny) continue;
+        // Bare term: single token only, trailing sentence punctuation stripped.
+        const bare = body.trim().replace(/[.,;:!?]+$/, '');
+        if (bare && !/\s/.test(bare)) add(bare);
       }
     }
     return terms;
@@ -295,7 +332,12 @@ export class GlossaryAdherenceService {
    * mistake that once stalled the language judge, where 25 sessions with no AI
    * turns were reselected each tick and nothing else got judged. Here the
    * language must have a published section that actually contains an
-   * `(avoid: …)` group, and the session must have at least one agent message.
+   * avoidance group, and the session must have at least one agent message.
+   *
+   * The group test must stay in step with {@link parseAvoidTerms}: it accepts
+   * `(not …)` and `(avoid …)` as well as `(avoid: …)`. While this looked for
+   * the literal `(avoid:` only, a language whose rules had been reworded to
+   * `(not …)` was excluded here and produced no report at all.
    */
   async catchUpUnscanned(options?: {
     sinceDays?: number;
@@ -314,7 +356,7 @@ export class GlossaryAdherenceService {
             SELECT 1 FROM language_glossary_sections g
              WHERE g."languageId" = NULLIF(s.metadata->>'languageId', '')::int
                AND g.status = 'published'
-               AND g.content LIKE '%(avoid:%')
+               AND g.content ~* '\\((avoid|not)\\s*:?\\s*[^)]')
           AND EXISTS (
             SELECT 1 FROM scenario_session_messages m
              WHERE m."scenarioSessionId" = s.id AND m."senderId" = -1)
@@ -352,12 +394,27 @@ export class GlossaryAdherenceService {
     return { scanned: rows.length, reported, skipped };
   }
 
-  /** Per-language rollup: session counts, violation rate, top violated terms. */
+  /**
+   * Per-language rollup: session counts, violation rate, top violated terms.
+   *
+   * `violationsPer100AgentMessages` is the comparable figure and the one to
+   * read. `avgViolationsPerSession` is kept for the existing dashboard but is
+   * not comparable across languages or periods: sessions run from 0 to 40+
+   * agent messages, so the same behaviour yields wildly different per-session
+   * averages. Measured 2026-09-02, Kannada averaged ~3.9 violations/session,
+   * which sounds mild and was actually ~53 per 100 agent messages — about one
+   * violation every two things the agent said.
+   */
   async languageSummary(languageId: number) {
     const [totals] = await this.dataSource.query(
       `SELECT count(*)::int AS "sessionCount",
               COALESCE(sum("totalViolations"), 0)::int AS "totalViolations",
               COALESCE(round(avg("totalViolations"), 2), 0)::float AS "avgViolationsPerSession",
+              COALESCE(sum("agentMessageCount"), 0)::int AS "agentMessageCount",
+              CASE WHEN COALESCE(sum("agentMessageCount"), 0) > 0
+                   THEN round(100.0 * sum("totalViolations")
+                              / sum("agentMessageCount"), 2)::float
+                   ELSE 0 END AS "violationsPer100AgentMessages",
               count(*) FILTER (WHERE "totalViolations" = 0)::int AS "cleanSessions"
        FROM glossary_adherence_reports WHERE "languageId" = $1`,
       [languageId],
@@ -391,6 +448,8 @@ export class GlossaryAdherenceService {
       sessionCount: number;
       totalViolations: number;
       avgViolationsPerSession: number;
+      agentMessageCount: number;
+      violationsPer100AgentMessages: number;
       cleanSessions: number;
     }[]
   > {
@@ -401,11 +460,16 @@ export class GlossaryAdherenceService {
               count(*)::int AS "sessionCount",
               COALESCE(sum(r."totalViolations"), 0)::int AS "totalViolations",
               COALESCE(round(avg(r."totalViolations"), 2), 0)::float AS "avgViolationsPerSession",
+              COALESCE(sum(r."agentMessageCount"), 0)::int AS "agentMessageCount",
+              CASE WHEN COALESCE(sum(r."agentMessageCount"), 0) > 0
+                   THEN round(100.0 * sum(r."totalViolations")
+                              / sum(r."agentMessageCount"), 2)::float
+                   ELSE 0 END AS "violationsPer100AgentMessages",
               count(*) FILTER (WHERE r."totalViolations" = 0)::int AS "cleanSessions"
        FROM glossary_adherence_reports r
        JOIN languages l ON l.id = r."languageId"
        GROUP BY r."languageId", l.label, l.value
-       ORDER BY "totalViolations" DESC`,
+       ORDER BY "violationsPer100AgentMessages" DESC`,
     );
   }
 }

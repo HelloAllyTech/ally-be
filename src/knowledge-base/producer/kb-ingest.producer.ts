@@ -1,5 +1,6 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { AppConfigService } from 'src/config/config.service';
+import { ConfigurationException } from 'src/exception/configuration.exception';
 import { LoggerService } from 'src/logger/logger.service';
 import { SqsService } from '../../aws/service/sqs.service';
 import { KbIngestMessage } from '../type/kb-ingest.type';
@@ -27,7 +28,11 @@ export class KbIngestProducer {
   async enqueue(message: KbIngestMessage): Promise<void> {
     const queueUrl = this.configService.sqs.knowledgeBase.ingestQueueUrl;
     if (!queueUrl) {
-      throw new InternalServerErrorException(
+      // Still throws rather than silently dropping the message — the comment
+      // above is right that a document stuck at `pending` with no explanation is
+      // the worst outcome. What changed is WHERE the queue's env var name goes:
+      // to the log, not to the client.
+      throw new ConfigurationException(
         'The knowledge-base ingest queue is not configured (SQS_KB_INGEST_QUEUE_URL).',
       );
     }

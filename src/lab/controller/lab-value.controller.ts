@@ -17,7 +17,6 @@ import {
 import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
-import { SUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import { LabValueService } from '../service/lab-value.service';
 import { CreateLabValueDto, UpdateLabValueDto } from '../dto/lab-value.dto';
 import { LabValueListQueryDto } from '../dto/lab-query.dto';
@@ -32,7 +31,6 @@ export class LabValueController {
 
   @Get()
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AI_LAB],
   })
   @ApiOperation({
@@ -46,7 +44,6 @@ export class LabValueController {
 
   @Get(':id')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AI_LAB],
   })
   @ApiOperation({ summary: 'Get one AI Lab value by ID' })
@@ -56,7 +53,6 @@ export class LabValueController {
 
   @Post()
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_AI_LAB],
   })
   @ApiOperation({ summary: 'Create an AI Lab value bound to a variable' })
@@ -66,7 +62,6 @@ export class LabValueController {
 
   @Patch(':id')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_AI_LAB],
   })
   @ApiOperation({ summary: 'Update an AI Lab value' })
@@ -79,7 +74,6 @@ export class LabValueController {
 
   @Delete(':id')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.DELETE_AI_LAB],
   })
   @ApiOperation({ summary: 'Delete an AI Lab value' })

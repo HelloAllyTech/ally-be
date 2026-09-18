@@ -262,22 +262,26 @@ export class MicrophoneChatGateway
       );
     });
 
-    client.on('disconnect', () => {
-      this.logger.info(
-        `Client disconnected from microphone chat: ${client.id}`,
-      );
-      this.handleDisconnect(client);
-    });
+    // NOTE: do not add a `client.on('disconnect')` here. Nest already calls
+    // `handleDisconnect` for us via OnGatewayDisconnect; a manual listener made
+    // it run twice, concurrently, and both invocations read the session before
+    // either deleted it — which is why every disconnect logged its end attempt
+    // and its audit event twice.
   }
 
   async handleDisconnect(client: Socket) {
-    this.logger.info(`Client disconnected: ${client.id}`);
+    this.logger.info(`Client disconnected from microphone chat: ${client.id}`);
     const clientId = client.id;
     const session = this.sessions[clientId];
     if (!session) {
       this.logger.error(`Session not found for client ${clientId}`);
       return;
     }
+    // Claim the session before any await. Two disconnect notifications for the
+    // same socket must not both reach endChat: the second one loses the race and
+    // fails with "Chat is not active", which reads in the audit trail as a
+    // failure to end a call that was in fact ended cleanly.
+    delete this.sessions[clientId];
     // only chat will be ended if valid chatId is provided
     // this will be triggered only from the platform where the chat is started
     if (
@@ -327,7 +331,6 @@ export class MicrophoneChatGateway
         userId: session.userId,
       },
     );
-    delete this.sessions[clientId];
   }
 
   sendMessagesToRoom(room: string, payload: MessagePayload) {
@@ -374,6 +377,36 @@ export class MicrophoneChatGateway
         chatId: chatId?.toString(),
       },
     });
+  }
+
+  /**
+   * Diagnostic sink. A recording screen reports which of its start conditions
+   * are unmet when a session is not capturing; we log one line beside that
+   * socket's own connect line and do nothing else — no persistence, no side
+   * effects, no reply. It exists because production could show us counsellors
+   * connecting and SESSION_CREATED going out, but never why nothing was
+   * recorded.
+   *
+   * Mobile reports why START_AUDIO_CHAT never followed. Web reports the same
+   * shape for the failure that survives on its side: a session that starts,
+   * joins and ends without a single audio frame, which the counsellor only
+   * discovers when the summary comes back "No audio detected". The three
+   * candidates there are indistinguishable from the server — the microphone
+   * never opened, no recorder was built, or the session was never unpaused —
+   * so the client has to say which.
+   *
+   * Payload is booleans, short status strings and counters. If a client ever
+   * sends more than that, it still only reaches a log line — so keep it that
+   * way, and delete this once the cause is known.
+   */
+  @SubscribeMessage(ChatEvents.SCRIBE_START_DIAGNOSTIC)
+  scribeStartDiagnostic(client: Socket, payload: Record<string, unknown>) {
+    const session = this.sessions[client.id];
+    this.logger.warn(
+      `Scribe start diagnostic | client ${client.id} | user ${
+        session?.userId ?? 'unknown'
+      } | chatId ${session?.chatId ?? 'none'} | ${JSON.stringify(payload)}`,
+    );
   }
 
   @SubscribeMessage(ChatEvents.START_AUDIO_CHAT)

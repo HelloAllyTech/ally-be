@@ -86,6 +86,17 @@ export class SyncPromptItemDto {
   @IsArray()
   @IsString({ each: true })
   usesBlocks?: string[];
+
+  @ApiPropertyOptional({
+    description:
+      'Runtimes that read this prompt (ai-learn, ally-ai, ally-be). Omit ' +
+      'when unknown — the model picker treats an absent value conservatively.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  runtimes?: string[];
 }
 
 export class SyncPromptsDto {

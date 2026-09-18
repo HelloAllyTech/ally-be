@@ -22,6 +22,8 @@ import { LearnEventProcessor } from './processor/learn-event.processor';
 import { ScenarioSessionEvents } from './entity/scenario-session-events.entity';
 import { ScenariosRepository } from './repository/scenario.repository';
 import { ScenarioVersion } from './entity/scenario-version.entity';
+import { PreviewMonologueRun } from './entity/preview-monologue-run.entity';
+import { PreviewMonologueService } from './service/preview-monologue.service';
 import { LlmModule } from 'src/llm/llm.module';
 import { ScenarioVersionRepository } from './repository/scenario-version.repository';
 import { ScenarioVersionService } from './service/scenario-version.service';
@@ -33,6 +35,7 @@ import { LlmConfigsRepository } from './repository/llm-configs.repository';
 import { LlmConfigService } from './service/llm-config.service';
 import { ElevenLabsVoiceSyncService } from './service/elevenlabs-voice-sync.service';
 import { TtsCatalogService } from './service/tts-catalog.service';
+import { VideoActorCatalogService } from './service/video-actor-catalog.service';
 import { ElevenLabsVoiceSchedulerRegistrationService } from './service/elevenlabs-voice-scheduler-registration.service';
 import { LanguagesRepository } from '../language/repository/languages.repository';
 import { SimulationCreditsController } from './controller/simulation-credits.controller';
@@ -65,7 +68,6 @@ import { ScenarioReportModule } from 'src/scenario-report/scenario-report.module
 import { ScenarioSessionTags } from './entity/scenario-session-tags.entity';
 import { ScenarioSessionMessageTags } from './entity/scenario-session-message-tags.entity';
 import { ScenarioSessionTagsRepository } from './repository/scenario-session-tags.repository';
-import { ScenarioSessionMessageTagsRepository } from './repository/scenario-session-message-tags.repository';
 import { Behavior } from './entity/behavior.entity';
 import { FillerTag } from './entity/filler-tag.entity';
 import { ScenarioBehaviorInstruction } from './entity/scenario-behavior-instruction.entity';
@@ -93,17 +95,32 @@ import { TurnMetricsProcessor } from './processor/turn-metrics.processor';
 import { StartMetricsProcessor } from './processor/start-metrics.processor';
 import { LlmUsageProcessor } from './processor/llm-usage.processor';
 import { SessionMemoryProcessor } from './processor/session-memory.processor';
+import { SupervisorNoteProcessor } from './processor/supervisor-note.processor';
+import { RetrievalLogProcessor } from 'src/knowledge-base/processor/retrieval-log.processor';
+import { WmRecallProcessor } from './processor/wm-recall.processor';
+import { WmRecallSelection } from './entity/wm-recall-selection.entity';
+import { KbRetrievalRepository } from 'src/knowledge-base/repository/kb-retrieval.repository';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { ScenarioSessionBehaviorInstructions } from './entity/scenario-session-behavior-instructions.entity';
 import { Competency } from './entity/competency.entity';
 import { CompetencyRepository } from './repository/competency.repository';
 import { CompetencyService } from './service/competency.service';
 import { CompetencyController } from './controller/competency.controller';
+import { CompetencyCluster } from './entity/competency-cluster.entity';
+import { CompetencyClusterMember } from './entity/competency-cluster-member.entity';
+import { CompetencyClusterRepository } from './repository/competency-cluster.repository';
+import { CompetencyClusterMemberRepository } from './repository/competency-cluster-member.repository';
+import { CompetencyClusterService } from './service/competency-cluster.service';
+import { CompetencyClusterController } from './controller/competency-cluster.controller';
 import { AgentTestCase } from './entity/agent-test-case.entity';
 import { AgentTestCaseRepository } from './repository/agent-test-case.repository';
 import { AgentTestCaseService } from './service/agent-test-case.service';
 import { ScenarioSessionEvaluationService } from './service/scenario-session-evaluation.service';
 import { ActorEvaluationCatchupSchedulerRegistrationService } from './service/actor-evaluation-catchup-scheduler-registration.service';
+import { StuckSessionSweeperSchedulerRegistrationService } from './service/stuck-session-sweeper-scheduler-registration.service';
+import { UnfinalisedSessionSweeperSchedulerRegistrationService } from './service/unfinalised-session-sweeper-scheduler-registration.service';
+import { ScenarioAutoVersionSchedulerRegistrationService } from './service/scenario-auto-version-scheduler-registration.service';
 import { ScenarioSessionEvaluationWebhookController } from './controller/scenario-session-evaluation-webhook.controller';
 import { RoomMetadataWebhookController } from './controller/room-metadata-webhook.controller';
 import { LearnRoomMetadata } from './entity/learn-room-metadata.entity';
@@ -121,8 +138,7 @@ import { ScenarioBehaviorInstructionTranslationRepository } from './repository/s
 import { BehaviorTranslationService } from './service/behavior-translation.service';
 import { ScenarioBehaviorInstructionTranslationService } from './service/scenario-behavior-instruction-translation.service';
 import { BehaviorInstructionTranslationService } from './service/behavior-instruction-translation.service';
-import { OpenAIAutofillService } from './service/openai-autofil-service';
-import { AnthropicAutofillService } from './service/anthropic-autofill.service';
+import { AutofillService } from './service/autofill.service';
 import { ScenarioTranslationGateway } from './gateway/scenario-translation.gateway';
 import { ScenarioTranslationNotificationService } from './service/scenario-translation-notification.service';
 
@@ -132,6 +148,7 @@ import { ScenarioSessionRecordingRepository } from './repository/scenario-sessio
 import { ScenarioSessionRecordingController } from './controller/scenario-session-recording.controller';
 import { ScenarioSessionRecordingService } from './service/scenario-session-recording.service';
 import { TranscriptTranslationModule } from 'src/transcript-translation/transcript-translation.module';
+import { SettingsModule } from 'src/settings/settings.module';
 
 @Module({
   imports: [
@@ -140,7 +157,9 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     LlmModule,
     CohortModule,
     TypeOrmModule.forFeature([
+      WmRecallSelection,
       Scenarios,
+      PreviewMonologueRun,
       ScenarioSessions,
       ScenarioEvents,
       ScenarioSessionFeedbacks,
@@ -162,6 +181,8 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
       ScenarioSessionBehaviorInstructions,
       Competency,
       CompetencyBehavior,
+      CompetencyCluster,
+      CompetencyClusterMember,
       AgentTestCase,
       BehaviorTranslation,
       ScenarioBehaviorInstructionTranslation,
@@ -190,7 +211,12 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     AiChatModule,
     AuditModule,
     LlmUsageModule,
+    LlmAgentModule,
     TranscriptTranslationModule,
+    // forwardRef: SettingsModule -> (forwardRef) UserModule -> (forwardRef)
+    // LearnModule already forms a cycle; this edge closes it, so it needs
+    // forwardRef too or Nest resolves an undefined module at load time.
+    forwardRef(() => SettingsModule),
   ],
   controllers: [
     LearnController,
@@ -199,6 +225,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     FillerTagController,
     ScenarioSessionChatController,
     CompetencyController,
+    CompetencyClusterController,
     AgentTestCaseController,
     ScenarioSessionRecordingController,
     ScenarioSessionEvaluationWebhookController,
@@ -206,6 +233,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
   ],
   providers: [
     ScenarioService,
+    PreviewMonologueService,
     ScenarioVersionService,
     ScenarioVersionRepository,
     ScenarioSessionService,
@@ -221,6 +249,10 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     StartMetricsProcessor,
     LlmUsageProcessor,
     SessionMemoryProcessor,
+    SupervisorNoteProcessor,
+    RetrievalLogProcessor,
+    WmRecallProcessor,
+    KbRetrievalRepository,
     ScenarioVoicesRepository,
     SttConfigsRepository,
     SttConfigService,
@@ -228,6 +260,7 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     LlmConfigService,
     ElevenLabsVoiceSyncService,
     TtsCatalogService,
+    VideoActorCatalogService,
     ElevenLabsVoiceSchedulerRegistrationService,
     LanguagesRepository,
     SimulationCreditsService,
@@ -247,7 +280,6 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     ScenarioEventsTranslationsRepository,
     ScenarioSessionDetailsRepository,
     ScenarioSessionTagsRepository,
-    ScenarioSessionMessageTagsRepository,
     BehaviorService,
     FillerTagService,
     BehaviorRepository,
@@ -262,17 +294,22 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     CompetencyService,
     CompetencyRepository,
     CompetencyBehaviorRepository,
+    CompetencyClusterService,
+    CompetencyClusterRepository,
+    CompetencyClusterMemberRepository,
     AgentTestCaseService,
     AgentTestCaseRepository,
     ScenarioSessionEvaluationService,
     ActorEvaluationCatchupSchedulerRegistrationService,
+    StuckSessionSweeperSchedulerRegistrationService,
+    UnfinalisedSessionSweeperSchedulerRegistrationService,
+    ScenarioAutoVersionSchedulerRegistrationService,
     BehaviorTranslationRepository,
     ScenarioBehaviorInstructionTranslationRepository,
     BehaviorInstructionTranslationService,
     BehaviorTranslationService,
     ScenarioBehaviorInstructionTranslationService,
-    OpenAIAutofillService,
-    AnthropicAutofillService,
+    AutofillService,
     ScenarioSessionRecordingRepository,
     ScenarioSessionRecordingService,
     ScenarioTranslationNotificationService,
@@ -286,6 +323,9 @@ import { TranscriptTranslationModule } from 'src/transcript-translation/transcri
     StartMetricsProcessor,
     LlmUsageProcessor,
     SessionMemoryProcessor,
+    SupervisorNoteProcessor,
+    RetrievalLogProcessor,
+    WmRecallProcessor,
     ScenarioSessionService,
     SimulationCreditsService,
     ScenarioSharedService,

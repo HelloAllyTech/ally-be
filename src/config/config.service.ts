@@ -1,7 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TIME } from '../common/constants/time.constants';
-import { buildRoleplayV2Allowlist } from '../common/util/roleplay-v2-access.util';
+import { BUILDER_MODEL_DEFAULTS } from '../builder/constants/builder.constants';
+import {
+  LLM_TIER_ENV_VAR,
+  LLM_TIER_FLOOR,
+  LlmModelTier,
+} from '../llm/constants/llm-tier.constants';
 
 export type AwsLogServiceKey = 'ally-be' | 'ally-ai' | 'ally-ai-learn';
 
@@ -37,6 +42,120 @@ export class AppConfigService {
 
   get githubOrg(): string {
     return this.configService.get<string>('GITHUB_ORG', 'HelloAllyTech');
+  }
+
+  /**
+   * Auth token for the ally-mobile GitHub Actions / Contents API calls behind
+   * the super-duper-admin Mobile Releases page. Deliberately separate from
+   * `githubToken` (Bug Hunter/Builder's write-scoped dispatch token) — this
+   * page only ever reads, so it gets its own, narrower credential. Empty on
+   * environments that haven't set it — MobileReleasesService refuses cleanly
+   * rather than calling GitHub with no auth.
+   */
+  get githubActionsToken(): string {
+    return this.configService.get<string>('GITHUB_ACTIONS_TOKEN', '');
+  }
+
+  /**
+   * Read-only token for fetching `ally-changelog`'s CHANGELOG.md, which IS the
+   * public changelog feed — there is no database copy of it any more. The repo
+   * is private, so an unauthenticated read gets a 404.
+   *
+   * Falls back to `githubToken` because every environment that already runs
+   * Bug Hunter has one, and a read is strictly narrower than what that token
+   * already does. Set `GITHUB_CHANGELOG_TOKEN` to something scoped to
+   * `Contents: read` on that one repo to keep the public page off the
+   * write-scoped credential. Empty on environments with neither, where
+   * `GET /v1/changelog/public` answers 503 rather than an empty feed —
+   * "we cannot reach it" and "there is nothing to say" are different.
+   */
+  get changelogSourceToken(): string {
+    return (
+      this.configService.get<string>('GITHUB_CHANGELOG_TOKEN', '') ||
+      this.githubToken
+    );
+  }
+
+  get githubMobileRepo(): string {
+    return this.configService.get<string>(
+      'GITHUB_MOBILE_REPO',
+      'HelloAllyTech/ally-mobile',
+    );
+  }
+
+  /**
+   * App Store Connect API credentials, for the super-duper-admin Mobile
+   * Releases page's read-only iOS TestFlight status endpoint. Brand new to
+   * ally-be — these secrets previously only existed as GitHub Actions
+   * secrets on HelloAllyTech/ally-mobile (a separate secrets store) for
+   * scripts/promote-ios-testflight.mjs, and must be provisioned here
+   * separately with the same values before that endpoint will work. All
+   * empty-string-default like githubActionsToken — MobileReleasesService
+   * refuses cleanly rather than minting a JWT with missing credentials.
+   */
+  get appStoreConnect() {
+    return {
+      issuerId: this.configService.get<string>('APPSTORE_ISSUER_ID', ''),
+      apiKeyId: this.configService.get<string>('APPSTORE_API_KEY_ID', ''),
+      privateKey: this.configService.get<string>(
+        'APPSTORE_API_PRIVATE_KEY',
+        '',
+      ),
+      testflightExternalGroupName: this.configService.get<string>(
+        'TESTFLIGHT_EXTERNAL_GROUP_NAME',
+        '',
+      ),
+    };
+  }
+
+  /**
+   * Play Developer API service account, for the super-duper-admin Mobile
+   * Releases page's Android auto-minimum-version-bump task. Same
+   * dual-provisioning caveat as appStoreConnect above: this previously only
+   * existed as an ally-mobile GitHub Actions secret (a separate secrets
+   * store) for scripts/promote-android-release.mjs, and must be provisioned
+   * here separately with the same JSON value before this feature will work.
+   * Empty-string default — MobileReleasesService refuses cleanly rather than
+   * authenticating with no credentials.
+   */
+  get androidPublisher() {
+    return {
+      serviceAccountJson: this.configService.get<string>(
+        'ANDROID_SERVICE_ACCOUNT_JSON',
+        '',
+      ),
+    };
+  }
+
+  /**
+   * Explicit kill switch for the Android auto-minimum-version-bump task,
+   * default OFF. Unlike the iOS equivalent (safe by construction —
+   * READY_FOR_DISTRIBUTION only ever means genuinely live), the Android
+   * signal this task relies on (production track status: 'completed') is
+   * only trustworthy once Managed Publishing is turned OFF for this app in
+   * Play Console — with it on, a track's status reflects what was
+   * committed, not what Google's review-then-manual-publish gate has
+   * actually released. Flip ANDROID_MIN_VERSION_AUTO_BUMP_ENABLED=true only
+   * after confirming that in Play Console; the task no-ops (not errors)
+   * while this is unset.
+   *
+   * SECOND, SEPARATE PRECONDITION, confirmed live: this task authenticates
+   * as the same ANDROID_SERVICE_ACCOUNT_JSON identity the release pipeline's
+   * uploads/promotions use, and the Play Developer API invalidates a service
+   * account's other open edits the instant a new one is created (Google's
+   * own concurrency-considerations docs). A tick landing mid-upload can kill
+   * that upload's edit out from under it — this already broke a real build
+   * once, from this same module's read-only status endpoint, before this
+   * task was even enabled. Do not flip this on until ally-be reads via a
+   * SEPARATE, read-only-scoped service account from the one CI writes with.
+   */
+  get androidMinVersionAutoBumpEnabled(): boolean {
+    return (
+      this.configService.get<string>(
+        'ANDROID_MIN_VERSION_AUTO_BUMP_ENABLED',
+        'false',
+      ) === 'true'
+    );
   }
 
   /**
@@ -113,6 +232,15 @@ export class AppConfigService {
     return {
       botToken: this.configService.get<string>('SLACK_BOT_TOKEN'),
       channel: this.configService.get<string>('SLACK_CHANNEL'),
+      /**
+       * Verifies that an inbound interaction really came from Slack.
+       *
+       * Unset means inbound Slack is off, and the endpoint refuses everything.
+       * That is the safe default: without this secret there is no way to tell
+       * a real button click from anyone on the internet posting the same JSON
+       * at a URL that merges to master.
+       */
+      signingSecret: this.configService.get<string>('SLACK_SIGNING_SECRET'),
     };
   }
 
@@ -134,6 +262,19 @@ export class AppConfigService {
       port: this.configService.get<number>('REDIS_PORT', 6379),
       prefix: this.configService.get<string>('REDIS_PREFIX', 'ally'),
     };
+  }
+
+  /**
+   * Base64-encoded Firebase service-account JSON, used by `PushService` to
+   * send FCM data messages (engagement reminders today). Empty on
+   * environments that haven't set it up — `PushService` no-ops rather than
+   * throwing, same pattern as `githubToken`/`githubActionsToken` above.
+   */
+  get firebaseServiceAccountJsonBase64(): string {
+    return this.configService.get<string>(
+      'FIREBASE_SERVICE_ACCOUNT_JSON_BASE64',
+      '',
+    );
   }
 
   get aws() {
@@ -371,17 +512,6 @@ export class AppConfigService {
         'SIMULATED_USER_AGENT_NAME',
         'SimulatedUser',
       ),
-      // Roleplay Studio v2 runtime agent (actor + director). Dispatched for
-      // scenarios with engine=ROLEPLAY_V2; rooms are prefixed `roleplay-`.
-      // Defaults to the SAME name as the v1 agent because v2 is now served by
-      // the merged single worker (app/worker.py routes v1 + v2 by the `engine`
-      // metadata marker) — one fleet, one prewarmed model set, no duplication.
-      // Override with LIVEKIT_ROLEPLAY_AGENT_NAME (e.g. set it to `${agentName}V2`)
-      // to fall back to a separate dedicated v2 fleet.
-      roleplayAgentName: this.configService.get<string>(
-        'LIVEKIT_ROLEPLAY_AGENT_NAME',
-        agentName,
-      ),
     };
   }
 
@@ -477,36 +607,6 @@ export class AppConfigService {
     };
   }
 
-  /**
-   * Roleplay Studio v2 rollout gate. A v2 session is allowed only when BOTH
-   * hold: the feature flag is on AND the user's email is on the allowlist.
-   *
-   * - `enabled` (ROLEPLAY_V2_ENABLED): master kill-switch. Defaults ON. When
-   *   `false`, v2 is off for EVERYONE — including allowlisted users.
-   * - `allowlist` (ROLEPLAY_V2_ALLOWLIST): comma-separated emails, lower-cased.
-   *   `sandeep.malhotra@helloally.ai`, `gopi.s@helloally.ai` and
-   *   `gopikrishnan.sasikumar@helloally.ai` are always included so the current
-   *   testers work without extra env config; ROLEPLAY_V2_ALLOWLIST adds more.
-   *   `+tag` sub-addresses of any allowlisted email match too (see
-   *   normalizeEmailForAllowlist), so testers can use as many `+tag` accounts
-   *   as they like without listing each one.
-   *
-   * This is the primary who/whether gate. The learn-core worker also self-guards
-   * on its own ROLEPLAY_V2_ENABLED (defense in depth), so enabling v2 end-to-end
-   * in an environment requires that flag to be on there too.
-   */
-  get roleplayV2() {
-    const enabled =
-      this.configService.get<string>('ROLEPLAY_V2_ENABLED', 'true') !== 'false';
-    // Allowlist = launch-phase default testers + ROLEPLAY_V2_ALLOWLIST env
-    // entries, centralized in roleplay-v2-access.util so there is exactly one
-    // place to change when v2 moves to a permission/flag-based rollout.
-    const allowlist = buildRoleplayV2Allowlist(
-      this.configService.get<string>('ROLEPLAY_V2_ALLOWLIST', ''),
-    );
-    return { enabled, allowlist };
-  }
-
   get googleCloudTranslationConfig() {
     return {
       credentials: this.configService.get<string>(
@@ -559,6 +659,28 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * Platform model tiers — the layer every LLM caller falls back to when no
+   * per-task row and no per-prompt row names a model.
+   *
+   * Two vars rather than one per task on purpose: a task's tier is on its
+   * AI-task-registry row and a per-prompt override lives on the prompt row, so
+   * this is the only place a model id is compiled in. See
+   * llm-tier.constants.ts.
+   */
+  get llmTiers(): Record<LlmModelTier, string> {
+    return Object.values(LlmModelTier).reduce(
+      (acc, tier) => ({
+        ...acc,
+        [tier]: this.configService.get<string>(
+          LLM_TIER_ENV_VAR[tier],
+          LLM_TIER_FLOOR[tier],
+        ),
+      }),
+      {} as Record<LlmModelTier, string>,
+    );
+  }
+
   get anthropic() {
     const autofillModel = this.configService.get<string>(
       'ANTHROPIC_AUTOFILL_MODEL',
@@ -578,45 +700,163 @@ export class AppConfigService {
     };
   }
 
-  get roleplayStudio() {
+  /**
+   * Read access to the self-hosted PostHog, for the UX Signals scan.
+   *
+   * Write-side PostHog config lives in the frontends (VITE_POSTHOG_*) and is
+   * unrelated: this is a *query* credential (a personal API key with read
+   * scope), used only to pull aggregates back out.
+   *
+   * `enabled` is derived rather than configured. A missing value means the scan
+   * skips itself and says so, which is what we want on a local or CI boot — the
+   * alternative is every environment without a PostHog credential failing a
+   * scheduled task once a day.
+   *
+   * All three are read with NO fallback, `host` included. An internal hostname
+   * must not be committed (the repo's gitleaks config rejects them outright),
+   * and a default host would be the wrong safety anyway: it would aim a
+   * credential at whichever environment the default named, rather than at the
+   * one whose credential it is.
+   */
+  get posthog() {
+    const host = this.configService.get<string>('POSTHOG_HOST');
+    const personalApiKey = this.configService.get<string>(
+      'POSTHOG_PERSONAL_API_KEY',
+    );
+    const projectId = this.configService.get<string>('POSTHOG_PROJECT_ID');
     return {
-      // Copilot (spec-authoring interviewer) model. Same family as the
-      // anthropic autofill default.
-      copilotModel: this.configService.get<string>(
-        'ROLEPLAY_COPILOT_MODEL',
-        'claude-sonnet-4-6',
+      host,
+      personalApiKey,
+      projectId,
+      enabled: Boolean(host && personalApiKey && projectId),
+    };
+  }
+
+  get builder() {
+    return {
+      // Model per role in the tiered loop. Defaults live in ONE place
+      // (BUILDER_MODEL_DEFAULTS) — the previous per-getter literals drifted
+      // (interview on claude-sonnet-4-6 while the build ran claude-sonnet-5).
+      interviewModel: this.configService.get<string>(
+        'BUILDER_INTERVIEW_MODEL',
+        BUILDER_MODEL_DEFAULTS.interview,
       ),
-      // Hard cap on tool-use round-trips per copilot turn. A substantial
-      // build/edit turn legitimately needs several sequential update_spec
-      // patches plus read/compile calls, so keep this generous; on cap-hit the
-      // orchestrator does a tool-less wrap-up rather than erroring out.
+      plannerModel: this.configService.get<string>(
+        'BUILDER_PLANNER_MODEL',
+        BUILDER_MODEL_DEFAULTS.planner,
+      ),
+      // `BUILDER_BUILD_MODEL` kept as the env name for the coder tier so an
+      // environment that already sets it keeps working.
+      coderModel: this.configService.get<string>(
+        'BUILDER_BUILD_MODEL',
+        BUILDER_MODEL_DEFAULTS.coder,
+      ),
+      verifierModel: this.configService.get<string>(
+        'BUILDER_VERIFIER_MODEL',
+        BUILDER_MODEL_DEFAULTS.verifier,
+      ),
+      // Cheap tier for mechanical passes: repo maps, summaries, consolidation.
+      mechanicalModel: this.configService.get<string>(
+        'BUILDER_MECHANICAL_MODEL',
+        BUILDER_MODEL_DEFAULTS.mechanical,
+      ),
+      buildEngine: this.configService.get<string>(
+        'BUILDER_ENGINE',
+        'claude-code',
+      ),
+      // Hard cap on tool-use round-trips per interview turn. Generous because
+      // a substantial turn legitimately chains research calls with several
+      // update_prd patches; on cap-hit the orchestrator wraps up in prose.
       maxToolIterations: this.configService.get<number>(
-        'ROLEPLAY_COPILOT_MAX_TOOL_ITERATIONS',
+        'BUILDER_MAX_TOOL_ITERATIONS',
         16,
       ),
-      // Test runs that outlive this are failed by the redis TTL timer
-      // (scaled by the unit count at run creation).
-      testRunTimeoutMinutes: this.configService.get<number>(
-        'ROLEPLAY_TEST_RUN_TIMEOUT_MINUTES',
-        30,
+      // Default spend ceiling per session, in USD. Null disables the cap.
+      defaultBudgetUsd: this.configService.get<number>(
+        'BUILDER_DEFAULT_BUDGET_USD',
+        25,
       ),
-      // Auto-improve copilot turns stuck IMPROVING past this are failed by
-      // the same timer (roleplay-improve:{reportId} watchdog key).
-      improveTurnTimeoutMinutes: this.configService.get<number>(
-        'ROLEPLAY_IMPROVE_TURN_TIMEOUT_MINUTES',
-        10,
-      ),
+      // Where a paused or failed build announces itself. Unset falls through
+      // to SLACK_CHANNEL, the platform default, so the announcements work the
+      // day they ship and moving them to a dedicated channel later is a
+      // setting rather than a deploy. Separable because the two audiences are
+      // different: the platform channel carries operational alerts for
+      // everyone, and a build waiting on an answer concerns whoever started
+      // it. Announcements get muted when they land in the wrong room, and a
+      // muted channel is worse than no channel because it still looks like
+      // coverage.
+      slackChannel: this.configService.get<string>('BUILDER_SLACK_CHANNEL'),
+      /**
+       * Slack user ids allowed to merge and release from the channel.
+       *
+       * Deny by default: unset means nobody, not everybody. A button in a
+       * channel is clickable by anyone who was ever invited to it, and the
+       * thing behind this one ships to production — so channel membership is
+       * not an authorisation model.
+       */
+      slackApprovers: (
+        this.configService.get<string>('BUILDER_SLACK_APPROVERS') ?? ''
+      )
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean),
+    };
+  }
+
+  /**
+   * Where the admin console is served from, used to build deep links a person
+   * follows from outside the app — a Builder pull-request body, or a Slack
+   * announcement, pointing back at the session that produced it.
+   *
+   * Reads `ADMIN_APP_BASE_URL`, the variable `app.adminBaseUrl` and the
+   * evaluator emails have always used and which `env.validation.ts` marks
+   * required, so the value is guaranteed present wherever the app boots. This
+   * getter originally invented `ADMIN_BASE_URL` instead, which was set
+   * nowhere: every Builder link it produced pointed at localhost, and did so
+   * silently because the fallback is a valid URL. A second name for a value we
+   * already have is not configuration, it is a second thing to forget.
+   */
+  get adminBaseUrl(): string {
+    return this.configService.get<string>(
+      'ADMIN_APP_BASE_URL',
+      'http://localhost:8081',
+    );
+  }
+
+  /**
+   * Stacks — the team's curated product-guidance library, reached over HTTP
+   * (ally-be is not an MCP client). Optional: unset simply means the
+   * interview runs without product guidance.
+   */
+  get stacks() {
+    return {
+      apiUrl: this.configService.get<string>('STACKS_API_URL'),
+      apiKey: this.configService.get<string>('STACKS_API_KEY'),
     };
   }
 
   get characterInterview() {
     return {
-      // Character-library interview agent model. Same family as the copilot
-      // default so there is one model to upgrade.
+      // Character-library interview agent model.
+      //
+      // Anthropic, OpenAI and Gemini models all run — the turn loop goes
+      // through `AgentLlmProviderFactory`. The prompt row for
+      // `character_interview.interviewer_system` overrides this when it carries
+      // its own provider/model, which is the supported way to change it per
+      // environment; this is the fallback.
+      //
+      // Defaults to the REASONING tier rather than a vendor's model id. It used
+      // to name claude-sonnet-4-6, which meant an expired Anthropic credential
+      // took the interview down even though the loop can run three providers —
+      // the fallback pointed at the thing that had failed.
       model: this.configService.get<string>(
         'CHARACTER_INTERVIEW_MODEL',
-        'claude-sonnet-4-6',
+        this.llmTiers[LlmModelTier.REASONING],
       ),
+      // Usually left unset: the provider is inferred from the model id, which
+      // is unambiguous for every model any of the three actually ships. Set it
+      // only for a model id whose name doesn't say who runs it.
+      provider: this.configService.get<string>('CHARACTER_INTERVIEW_PROVIDER'),
       // Hard cap on tool-use round-trips per interview turn. A normal turn is
       // 1-2 (commentary + ask_question); the final turn legitimately chains
       // get_voices + a validation-retried save_character_draft.
@@ -716,6 +956,31 @@ export class AppConfigService {
       elevenlabsApiKey: this.configService.get<string>('ELEVENLABS_API_KEY'),
       sarvamApiKey: this.configService.get<string>('SARVAM_API_KEY'),
       humeApiKey: this.configService.get<string>('HUME_API_KEY'),
+      cartesiaApiKey: this.configService.get<string>('CARTESIA_API_KEY'),
+      smallestApiKey: this.configService.get<string>('SMALLEST_API_KEY'),
+    };
+  }
+
+  /**
+   * Read-only vendor credentials for the video-actor face catalogue.
+   *
+   * Listing faces is a plain GET on each vendor and is not metered — it is the
+   * rendering that costs. These keys are the same ones ally-ai-learn dispatches
+   * with, deliberately: a face this catalogue offers must be one the worker can
+   * actually render, and two different keys would mean two different accounts
+   * and a picker full of ids that fail at session start.
+   *
+   * `videoActorApiKey` is the pre-existing single-vendor value, kept as the
+   * fallback so a deployment that configured only one key keeps working.
+   */
+  get videoActorCatalog() {
+    return {
+      beyApiKey:
+        this.configService.get<string>('VIDEO_ACTOR_BEY_API_KEY') ??
+        this.configService.get<string>('VIDEO_ACTOR_API_KEY'),
+      tavusApiKey:
+        this.configService.get<string>('VIDEO_ACTOR_TAVUS_API_KEY') ??
+        this.configService.get<string>('VIDEO_ACTOR_API_KEY'),
     };
   }
 

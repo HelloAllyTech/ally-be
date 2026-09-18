@@ -1,4 +1,106 @@
 /**
+ * Which corpus a document belongs to.
+ *
+ * The pipeline (extract, chunk, index, retrieve, cite) is one general-purpose mechanism;
+ * this is the only thing that differs between its consumers, so it is the one thing they
+ * declare. The WhatsApp Q&A bot was simply the first, which is why the module used to be
+ * named after it.
+ *
+ * Retrieval is never "the shared corpus minus a filter": callers resolve the documents of
+ * ONE corpus in Postgres and pass those ids to ally-ai's search, so the scope is the query
+ * itself. A filter can be forgotten; a required argument cannot. Each corpus also gets its
+ * OWN Weaviate collection rather than a discriminator on a shared one — a similarity
+ * threshold only means something against one distribution, and chunk size differs per corpus
+ * (400 tokens for a 1600-character WhatsApp reply, 800 for a character vignette).
+ */
+export enum KbCorpus {
+  /** Grounds the WhatsApp Q&A bot's answers. */
+  WHATSAPP_QA = 'whatsapp_qa',
+  /**
+   * Grounds the Character Library interview agent — clinical and lived-experience
+   * material it draws on to make its questions specific and its drafts real, rather
+   * than inventing a plausible-sounding person from nothing.
+   */
+  CHARACTER_LIBRARY = 'character_library',
+}
+
+/**
+ * Retrieval surfaces that are NOT corpora of `kb_documents`.
+ *
+ * Kept out of {@link KbCorpus} deliberately. That enum means "material this module ingests,
+ * chunks and indexes", and it keys the chunk profiles and similarity floors — adding a value
+ * there for a collection we neither ingest nor chunk would force an invented chunk profile for
+ * it, which is a lie the type system would then enforce everywhere.
+ *
+ * These two are real vector searches all the same, and leaving them unlogged left the same
+ * hole the WhatsApp bot's path did: a similarity threshold governing a live feature with no
+ * distribution behind it.
+ *
+ * `reference_documents` — the staff-facing document search (ally-ai's ReferenceDocument
+ * collection). Its unit of retrieval is a WHOLE DOCUMENT, not a chunk, and it is governed by a
+ * DISTANCE threshold rather than a similarity floor; the emitter converts (1 - distance) so the
+ * stored number means the same thing as everywhere else here.
+ *
+ * `roadmap_opportunities` — duplicate detection over the product roadmap: is this draft already
+ * in the index? Staff-authored text on both sides, so nothing sensitive.
+ *
+ * NEITHER IS JUDGED, and cannot be from this database: the passage text lives in ally-ai's
+ * collections, not in `kb_document_chunks`, so the judge's selector excludes them explicitly
+ * rather than picking them up and skipping them as "text gone" — which would look like a bug
+ * in the judge instead of a boundary of it.
+ */
+export enum KbExternalCorpus {
+  REFERENCE_DOCUMENTS = 'reference_documents',
+  ROADMAP_OPPORTUNITIES = 'roadmap_opportunities',
+}
+
+/**
+ * Anything the retrieval log will accept in its `corpus` column: the corpora this module owns,
+ * plus the external surfaces that report into it.
+ */
+export type KbLoggedCorpus = KbCorpus | KbExternalCorpus;
+
+/** Every value the log accepts, for validating a payload that crossed a service. */
+export const KB_LOGGED_CORPORA: string[] = [
+  ...Object.values(KbCorpus),
+  ...Object.values(KbExternalCorpus),
+];
+
+/**
+ * Corpora whose passages live in `kb_document_chunks`, and therefore the only ones the
+ * relevance judge can read. Everything else is logged for its distribution and its volume.
+ */
+export const KB_JUDGEABLE_CORPORA: string[] = Object.values(KbCorpus);
+
+/**
+ * What part of a character a document helps ground.
+ *
+ * A curator who uploads a dementia caregiving handbook and a book on adolescent anxiety
+ * knows which belongs where; similarity search only sees that both are "mental health".
+ * Declaring it lets that knowledge improve ranking.
+ *
+ * A BOOST, never a filter. Retrieval searches the documents mapped to the asked-about
+ * topic first and tops up from the rest of the corpus — so mapped material wins ties, and
+ * the passage that turns out relevant in a way nobody anticipated is still reachable. That
+ * matters most here: the unanticipated detail is often the one that makes a character feel
+ * like a person.
+ *
+ * Named for the SUBJECT, not for the interviewer prompt's phase numbering. The prompt's
+ * wording and ordering change without a migration — they changed twice today — so a
+ * mapping keyed to "phase 4" or to question text would be stale on arrival. These five
+ * subjects have survived every edit, because they are what a person is made of rather than
+ * how the interview happens to be sequenced. A stale mapping here costs a little ranking
+ * quality; a stale filter would silently hide sources.
+ */
+export enum KbCharacterTopic {
+  IDENTITY = 'identity',
+  LIFE_CONTEXT = 'life_context',
+  INNER_LIFE = 'inner_life',
+  HISTORY_AND_PRESENTING_CONCERN = 'history_and_presenting_concern',
+  SPEECH_AND_LANGUAGE = 'speech_and_language',
+}
+
+/**
  * Where a corpus document came from. Immutable after creation: a PDF is not a URL, so
  * changing the source means replacing the document, not editing this field.
  */
@@ -42,4 +144,94 @@ export enum KbChunkUploadStatus {
   PENDING = 'pending',
   SUCCESS = 'success',
   FAILED = 'failed',
+}
+
+/**
+ * Who asked for a retrieval.
+ *
+ * Recorded because the alternative is reading one population's behaviour as another's. The
+ * admin retrieval preview exists for an operator to probe thresholds — deliberately odd
+ * queries, repeated, often against material they just uploaded — and the interview agent's
+ * queries are the ones a floor should actually be calibrated against. Pooled, an afternoon of
+ * threshold-tuning would move every distribution the tuning was meant to inform.
+ *
+ * This is the same trap the language judge fell into: a metric that looked like a quality
+ * change was a traffic-mix change, and only segmenting by the model that ran showed it.
+ * Segment every retrieval trend by `consumer` before believing it.
+ */
+export enum KbRetrievalConsumer {
+  /** The character interview agent's search_corpus tool. */
+  INTERVIEW_AGENT = 'interview_agent',
+  /** The admin retrieval preview — POST /knowledge-base/search. */
+  ADMIN_PREVIEW = 'admin_preview',
+  /**
+   * The WhatsApp Q&A bot, reported by ally-ai rather than written here.
+   *
+   * That path retrieves INSIDE ally-ai in one call and never passes through this service, so
+   * until it emitted its own log the platform's highest-volume retrieval surface was the one
+   * nothing measured — and `whatsapp_qa`'s floor was the one with least evidence behind it.
+   * The rows arrive over the same SQS queue as llm_usage, best-effort, and carry
+   * `querySensitive = true`: the query is a health worker's own question.
+   */
+  WHATSAPP_BOT = 'whatsapp_bot',
+  /**
+   * The staff-facing reference-document search. Marked sensitive: a counsellor typing into a
+   * search box mid-call can put case details in the query, and nothing downstream needs the
+   * text to read the distribution.
+   */
+  REFERENCE_SEARCH = 'reference_search',
+  /** Roadmap duplicate detection. Staff-authored product text, nothing sensitive. */
+  ROADMAP_MATCHER = 'roadmap_matcher',
+}
+
+/**
+ * What the CONSUMER did with what it got back.
+ *
+ * Recorded because a retrieval's usefulness is not visible in its hit count. The WhatsApp bot
+ * declines deterministically when the top similarity sits under its decline threshold, and that
+ * decision — not the raw hits — is what a health worker experiences. A corpus that returns six
+ * passages and declines on all of them looks healthy in every count except this one.
+ *
+ * Null for consumers that have no decline step of their own: the admin preview shows whatever
+ * comes back, and the interview agent judges passages in its own reasoning rather than at a
+ * threshold.
+ */
+export enum KbRetrievalDisposition {
+  /** Passages were used to ground an answer. */
+  ANSWERED = 'answered',
+  /** Nothing cleared the search floor at all. */
+  DECLINED_NO_HITS = 'declined_no_hits',
+  /** Hits existed but the best one sat below the decline threshold. */
+  DECLINED_BELOW_THRESHOLD = 'declined_below_threshold',
+  /**
+   * Query translation failed, so retrieval ran on untranslated text. A weak result here says
+   * nothing about corpus coverage and must never be counted as a gap.
+   */
+  DECLINED_TRANSLATION_FAILED = 'declined_translation_failed',
+}
+
+/**
+ * What became of one candidate passage.
+ *
+ * Every candidate the vector search returned is recorded, not only the ones that survived,
+ * because the dropped ones carry most of the diagnostic value: a corpus where shaping is
+ * constantly discarding near-duplicates is a corpus whose chunk profile is wrong, and that is
+ * invisible if only the survivors are stored.
+ */
+export enum KbRetrievalOutcome {
+  RETURNED = 'returned',
+  /** Overlapped the character span of a higher-ranked passage from the same document. */
+  DROPPED_SPAN_OVERLAP = 'dropped_span_overlap',
+  /** Its document had already contributed KB_MAX_PASSAGES_PER_DOCUMENT passages. */
+  DROPPED_DOCUMENT_CAP = 'dropped_document_cap',
+  /** Ranked below the limit once the survivors above it were counted. */
+  DROPPED_OVER_LIMIT = 'dropped_over_limit',
+}
+
+/** Which of the two passes a candidate came from — the curator's boost, or the top-up. */
+export enum KbRetrievalPass {
+  /** A document mapped to one of the asked-about character topics. */
+  PREFERRED = 'preferred',
+  /** The rest of the corpus, searched only when the first pass came back short. */
+  REST = 'rest',
 }

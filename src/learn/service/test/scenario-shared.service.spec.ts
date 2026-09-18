@@ -11,8 +11,6 @@ import { ScenarioFilters } from 'src/learn/type/scenario-filter.type';
 import { ScenarioTranslationsRepository } from 'src/learn/repository/scenario-translations.repository';
 import { ScenarioSessionMessagesRepository } from '../../repository/scenario-session-messages.repository';
 import { ScenarioSessionDetailsRepository } from '../../repository/scenario-session-details.repository';
-import { ScenarioSessionMessageTagsRepository } from '../../repository/scenario-session-message-tags.repository';
-import { ScenarioSessionTagCategory } from '../../enum/scenario-session-tag-category.enum';
 import { ScenarioVoicesRepository } from '../../repository/scenario-voices.repository';
 import { SttConfigsRepository } from '../../repository/stt-configs.repository';
 import { LlmConfigsRepository } from '../../repository/llm-configs.repository';
@@ -35,6 +33,7 @@ import { AppConfigService } from 'src/config/config.service';
 import { S3Service } from 'src/aws/service/s3.service';
 import { ScenarioSessionRecordingRepository } from '../../repository/scenario-session-recording.repository';
 import { ScenarioSessionRecording } from '../../entity/scenario-session-recording.entity';
+import { SettingsService } from 'src/settings/service/settings.service';
 
 describe('ScenarioSharedService', () => {
   let service: ScenarioSharedService;
@@ -42,7 +41,6 @@ describe('ScenarioSharedService', () => {
   let scenarioSessionRepository: jest.Mocked<ScenarioSessionRepository>;
   let scenarioTranslationsRepository: jest.Mocked<ScenarioTranslationsRepository>;
   let scenarioSessionMessagesRepository: jest.Mocked<ScenarioSessionMessagesRepository>;
-  let scenarioSessionMessageTagsRepository: jest.Mocked<ScenarioSessionMessageTagsRepository>;
   let scenarioSessionDetailsRepository: jest.Mocked<ScenarioSessionDetailsRepository>;
   let scenarioVoiceRepository: jest.Mocked<ScenarioVoicesRepository>;
   let sessionEventSharedService: jest.Mocked<SessionEventSharedService>;
@@ -52,6 +50,7 @@ describe('ScenarioSharedService', () => {
   let behaviorRepository: jest.Mocked<BehaviorRepository>;
   let promptSharedService: jest.Mocked<PromptSharedService>;
   let scenarioSessionRecordingRepository: jest.Mocked<ScenarioSessionRecordingRepository>;
+  let settingsService: jest.Mocked<SettingsService>;
 
   const mockScenarios: Scenarios[] = [
     { id: 1, title: 'Scenario 1', status: ScenarioStatus.ACTIVE } as Scenarios,
@@ -144,6 +143,13 @@ describe('ScenarioSharedService', () => {
       save: jest.fn(),
     };
 
+    const mockSettingsService = {
+      getTurnEndpointingSettings: jest.fn().mockResolvedValue({
+        turnMinEndpointingDelay: 0.5,
+        turnMaxEndpointingDelay: 3.0,
+      }),
+    };
+
     const mockScenarioTranslationsRepository = {
       getUniqueLanguagesFromScenarioTranslations: jest.fn(),
       getScenarioTranslationsByScenarioId: jest.fn().mockResolvedValue([]),
@@ -160,10 +166,6 @@ describe('ScenarioSharedService', () => {
 
     const mockScenarioSessionDetailsRepository = {
       findOne: jest.fn(),
-    };
-
-    const mockScenarioSessionMessageTagsRepository = {
-      getTagsByMessageIds: jest.fn().mockResolvedValue(new Map()),
     };
 
     const mockScenarioVoicesRepository = {
@@ -229,10 +231,6 @@ describe('ScenarioSharedService', () => {
         {
           provide: ScenarioSessionDetailsRepository,
           useValue: mockScenarioSessionDetailsRepository,
-        },
-        {
-          provide: ScenarioSessionMessageTagsRepository,
-          useValue: mockScenarioSessionMessageTagsRepository,
         },
         {
           provide: ScenarioVoicesRepository,
@@ -302,6 +300,10 @@ describe('ScenarioSharedService', () => {
           provide: ScenarioSessionRecordingRepository,
           useValue: mockScenarioSessionRecordingRepository,
         },
+        {
+          provide: SettingsService,
+          useValue: mockSettingsService,
+        },
       ],
     }).compile();
 
@@ -311,9 +313,6 @@ describe('ScenarioSharedService', () => {
     scenarioTranslationsRepository = module.get(ScenarioTranslationsRepository);
     scenarioSessionMessagesRepository = module.get(
       ScenarioSessionMessagesRepository,
-    );
-    scenarioSessionMessageTagsRepository = module.get(
-      ScenarioSessionMessageTagsRepository,
     );
     scenarioSessionDetailsRepository = module.get(
       ScenarioSessionDetailsRepository,
@@ -332,6 +331,7 @@ describe('ScenarioSharedService', () => {
     scenarioSessionRecordingRepository = module.get(
       ScenarioSessionRecordingRepository,
     );
+    settingsService = module.get(SettingsService);
 
     jest.clearAllMocks();
   });
@@ -453,67 +453,21 @@ describe('ScenarioSharedService', () => {
       { id: 1, content: 'msg1', scenarioSessionId: sessionId } as any,
       { id: 2, content: 'msg2', scenarioSessionId: sessionId } as any,
     ];
-    const mockTagsMap = new Map<
-      number,
-      { tagId: string; label: string; category: ScenarioSessionTagCategory }[]
-    >([
-      [
-        1,
-        [
-          {
-            tagId: 'tag-1',
-            label: 'reflection',
-            category: ScenarioSessionTagCategory.POSITIVE,
-          },
-        ],
-      ],
-      [2, []],
-    ]);
 
-    it('should fetch and attach tags when includeTags is true', async () => {
+    // Message tags were deprecated with the annotated transcript: the
+    // transcript is returned as-is, with no second query to decorate it.
+    it('should return the messages and count as fetched', async () => {
       scenarioSessionMessagesRepository.getMessagesByScenarioSessionId.mockResolvedValue(
         [mockMessages, 2],
-      );
-      scenarioSessionMessageTagsRepository.getTagsByMessageIds.mockResolvedValue(
-        mockTagsMap,
       );
 
       const result = await service.getMessagesByScenarioSessionId(
         sessionId,
         pagination,
-        { includeTags: true },
       );
 
-      expect(
-        scenarioSessionMessageTagsRepository.getTagsByMessageIds,
-      ).toHaveBeenCalledWith(sessionId, [1, 2]);
       expect(result.count).toBe(2);
-      expect(result.messages).toHaveLength(2);
-      expect(result.messages[0].tags).toEqual([
-        {
-          tagId: 'tag-1',
-          label: 'reflection',
-          category: ScenarioSessionTagCategory.POSITIVE,
-        },
-      ]);
-      expect(result.messages[1].tags).toEqual([]);
-    });
-
-    it('should not call getTagsByMessageIds when includeTags is false', async () => {
-      scenarioSessionMessagesRepository.getMessagesByScenarioSessionId.mockResolvedValue(
-        [mockMessages, 2],
-      );
-
-      const result = await service.getMessagesByScenarioSessionId(
-        sessionId,
-        pagination,
-        { includeTags: false },
-      );
-
-      expect(
-        scenarioSessionMessageTagsRepository.getTagsByMessageIds,
-      ).not.toHaveBeenCalled();
-      expect(result.messages).toHaveLength(2);
+      expect(result.messages).toEqual(mockMessages);
       expect(result.messages[0]).not.toHaveProperty('tags');
       expect(result.messages[1]).not.toHaveProperty('tags');
     });
@@ -1271,13 +1225,17 @@ describe('ScenarioSharedService', () => {
       ]);
     });
 
-    it('should forward metadata.turnMaxEndpointingDelay onto promptData unchanged (plain pass-through, not explicitly deleted)', async () => {
+    it('should source promptData.turnMin/MaxEndpointingDelay from the global settings service, overriding any leftover scenario.metadata value', async () => {
       scenarioVoiceRepository.findOne.mockResolvedValue({
         id: 'voice-1',
         name: 'Test Voice',
         provider: 'deepgram',
         config: {},
       } as any);
+      settingsService.getTurnEndpointingSettings.mockResolvedValue({
+        turnMinEndpointingDelay: 0.75,
+        turnMaxEndpointingDelay: 2.25,
+      });
 
       const result = await service.createRoomMetadata({
         scenario: {
@@ -1292,6 +1250,9 @@ describe('ScenarioSharedService', () => {
             gender: 'Male',
             currentLocation: 'NYC',
             openingStatements: ['Hi'],
+            // Orphan data from before the per-sim override was deleted —
+            // the global setting must win regardless.
+            turnMinEndpointingDelay: 0.1,
             turnMaxEndpointingDelay: 1.5,
           },
           terminationEvents: [],
@@ -1303,8 +1264,12 @@ describe('ScenarioSharedService', () => {
         previousMemory: null,
       });
 
+      expect(settingsService.getTurnEndpointingSettings).toHaveBeenCalled();
+      expect((result.scenario.promptData as any).turnMinEndpointingDelay).toBe(
+        0.75,
+      );
       expect((result.scenario.promptData as any).turnMaxEndpointingDelay).toBe(
-        1.5,
+        2.25,
       );
     });
 

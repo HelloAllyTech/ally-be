@@ -3,6 +3,7 @@ import { OnEvent } from '@nestjs/event-emitter';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DataSource, EntityManager, Not } from 'typeorm';
 import { SessionItemStatus } from 'src/common/type/common.type';
+import { meetsMinimumScore } from 'src/common/util/progression.util';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
 import { TrackEnrollment } from '../entity/track-enrollment.entity';
@@ -233,11 +234,7 @@ export class TrackProgressService {
     }
 
     const minScore = item.completionCriteria?.minScore;
-    if (
-      minScore !== undefined &&
-      minScore !== null &&
-      (score ?? 0) < minScore
-    ) {
+    if (!meetsMinimumScore(score, minScore)) {
       this.logger.info(
         `Track roleplay score ${score} below minScore ${minScore} for progress ${trackItemProgressId}`,
       );

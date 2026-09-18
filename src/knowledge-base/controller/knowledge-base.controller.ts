@@ -20,20 +20,23 @@ import {
 import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import {
   CreateKbDocumentDto,
   CreateKbUploadUrlDto,
   GetKbChunksResponseDto,
   GetKbDocumentsQueryDto,
   GetKbDocumentsResponseDto,
+  GetKbStatsQueryDto,
   KbDocumentResponseDto,
   KbSearchDto,
   KbStatsResponseDto,
   KbUploadUrlResponseDto,
   ReplaceKbDocumentContentDto,
+  UpdateKbDocumentAudienceDto,
   UpdateKbDocumentDto,
 } from '../dto/knowledge-base.dto';
+import { ExecutionManager } from '../../common/execution/execution-manager';
+import { KbRetrievalConsumer } from '../enum/knowledge-base.enum';
 import { KnowledgeBaseService } from '../service/knowledge-base.service';
 
 /**
@@ -52,7 +55,6 @@ export class KnowledgeBaseController {
 
   @Post('documents/upload-url')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.UPLOAD_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -74,7 +76,6 @@ export class KnowledgeBaseController {
 
   @Post('documents')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -90,7 +91,6 @@ export class KnowledgeBaseController {
 
   @Get('documents')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
   })
   @ApiOperation({ summary: 'List corpus documents' })
@@ -103,18 +103,16 @@ export class KnowledgeBaseController {
 
   @Get('stats')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
   })
   @ApiOperation({ summary: 'Corpus totals by status, for the stats strip' })
   @ApiResponse({ status: 200, type: KbStatsResponseDto })
-  stats(): Promise<KbStatsResponseDto> {
-    return this.knowledgeBaseService.stats();
+  stats(@Query() dto: GetKbStatsQueryDto): Promise<KbStatsResponseDto> {
+    return this.knowledgeBaseService.stats(dto);
   }
 
   @Post('search')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -124,14 +122,20 @@ export class KnowledgeBaseController {
       'without spending generation tokens or being confounded by the prompt.',
   })
   search(@Body() dto: KbSearchDto) {
-    return this.knowledgeBaseService.search(dto);
+    // Tagged ADMIN_PREVIEW explicitly rather than by default. An operator probing thresholds
+    // here generates deliberately strange, repeated queries against material they just
+    // uploaded; filed as agent traffic it would move the very distribution the probing is
+    // meant to read. See KbRetrievalConsumer.
+    return this.knowledgeBaseService.search(dto, {
+      consumer: KbRetrievalConsumer.ADMIN_PREVIEW,
+      userId: Number(ExecutionManager.getUserId() ?? 0) || null,
+    });
   }
 
   // ORDER MATTERS: 'chunks/:chunkId' must stay above 'documents/:id' patterns that could also
   // match a two-segment path. Kept adjacent so the ordering is visible rather than incidental.
   @Get('chunks/:chunkId')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -145,7 +149,6 @@ export class KnowledgeBaseController {
 
   @Get('documents/:id')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
   })
   @ApiOperation({ summary: 'One document, with its ingest status' })
@@ -156,7 +159,6 @@ export class KnowledgeBaseController {
 
   @Get('documents/:id/chunks')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -176,7 +178,6 @@ export class KnowledgeBaseController {
 
   @Patch('documents/:id')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -191,9 +192,39 @@ export class KnowledgeBaseController {
     return this.knowledgeBaseService.update(id, dto);
   }
 
+  @Put('documents/:id/tenants')
+  @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
+    permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
+  })
+  @ApiOperation({
+    summary: 'Target the document at one, some or all organisations',
+    description:
+      'Replaces the whole assignment — send the organisations the document should end up ' +
+      'with, not a delta. Rewrites the audience on every indexed chunk in place rather than ' +
+      're-chunking, so citations already recorded in the conversation log keep resolving. ' +
+      'A no-op save touches nothing. Separate from PATCH /documents/:id, which is ' +
+      'metadata-only and never reaches the search index.',
+  })
+  @ApiResponse({ status: 200, type: KbDocumentResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: 'An organisation id does not exist',
+  })
+  @ApiResponse({
+    status: 500,
+    description:
+      'Saved in Postgres but the search index could not be updated — retrieval may still ' +
+      'use the previous audience, so this is reported rather than swallowed',
+  })
+  setAudience(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateKbDocumentAudienceDto,
+  ): Promise<KbDocumentResponseDto> {
+    return this.knowledgeBaseService.setAudience(id, dto);
+  }
+
   @Put('documents/:id/content')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -213,7 +244,6 @@ export class KnowledgeBaseController {
 
   @Post('documents/:id/reindex')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE],
   })
   @ApiOperation({
@@ -229,7 +259,6 @@ export class KnowledgeBaseController {
 
   @Post('documents/:id/archive')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE],
   })
   @ApiOperation({
@@ -247,7 +276,6 @@ export class KnowledgeBaseController {
 
   @Post('documents/:id/unarchive')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE],
   })
   @ApiOperation({
@@ -262,7 +290,6 @@ export class KnowledgeBaseController {
 
   @Delete('documents/:id')
   @RequireFeatureToggle(FeatureToggleKey.KNOWLEDGE_BASE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_KNOWLEDGE_BASE_ARCHIVE],
   })
   @ApiOperation({

@@ -1,9 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
 import {
   ArticleContent,
+  ArticleQuestion,
   JournalContent,
+  parseArticleQuestionMarkers,
   TrackItemType,
   VideoContent,
+  VideoInterjection,
   VideoSource,
 } from '../type/track.type';
 import {
@@ -30,6 +33,7 @@ import { GameContent, TrackGameKey } from '../type/game.type';
 import {
   TRACK_MAX_ANNOTATION_LABELS,
   TRACK_MAX_ANNOTATION_UNITS,
+  TRACK_MAX_ARTICLE_QUESTIONS,
   TRACK_MAX_ITEMS_PER_SECTION,
   TRACK_MAX_QUIZ_QUESTIONS,
   TRACK_MAX_SECTIONS,
@@ -112,38 +116,59 @@ export function validateTrackItem(item: UpsertTrackItemDto): void {
         fail(`Case component "${item.title}" must reference a case.`);
       }
       return;
+    default:
+      validateTrackItemContent({
+        type: item.type,
+        content: item.content,
+        title: item.title,
+      });
+  }
+}
+
+/**
+ * Per-type content validation, factored out of `validateTrackItem` so a caller
+ * that only has `{ type, content }` — no full track item, no order, no
+ * section — can still run the exact same checks. The Component Library
+ * templates service is the first such caller: a template has content but no
+ * position in a tree.
+ *
+ * Deliberately does not accept ROLEPLAY/CASE here — those validate a
+ * reference id, not `content`, and are handled by `validateTrackItem` above
+ * before falling through to this helper.
+ */
+export function validateTrackItemContent({
+  type,
+  content,
+  title = 'Component',
+}: {
+  type: TrackItemType;
+  content: unknown;
+  title?: string;
+}): void {
+  switch (type) {
     case TrackItemType.QUIZ:
-      validateQuizContent(item.content as QuizContent | undefined, item.title);
+      validateQuizContent(content as QuizContent | undefined, title);
       return;
     case TrackItemType.ARTICLE:
-      validateArticleContent(
-        item.content as ArticleContent | undefined,
-        item.title,
-      );
+      validateArticleContent(content as ArticleContent | undefined, title);
       return;
     case TrackItemType.VIDEO:
-      validateVideoContent(
-        item.content as VideoContent | undefined,
-        item.title,
-      );
+      validateVideoContent(content as VideoContent | undefined, title);
       return;
     case TrackItemType.JOURNAL:
-      validateJournalContent(
-        item.content as JournalContent | undefined,
-        item.title,
-      );
+      validateJournalContent(content as JournalContent | undefined, title);
       return;
     case TrackItemType.ANNOTATED_ARTIFACT:
       validateAnnotationContent(
-        item.content as AnnotationContent | undefined,
-        item.title,
+        content as AnnotationContent | undefined,
+        title,
       );
       return;
     case TrackItemType.GAME:
-      validateGameContent(item.content as GameContent | undefined, item.title);
+      validateGameContent(content as GameContent | undefined, title);
       return;
     default:
-      fail(`Unknown component type: ${item.type}`);
+      fail(`Unknown component type: ${type}`);
   }
 }
 
@@ -153,6 +178,81 @@ function validateArticleContent(
 ): void {
   if (!content?.html || !content.html.trim()) {
     fail(`Article component "${title}" must have content.`);
+  }
+  validateArticleQuestions(content, title);
+}
+
+/**
+ * Inline article questions. Each is a single-select MCQ — the learner answers
+ * it in place, once, and is told immediately whether they were right, which
+ * leaves no room for the question types that need an LLM grader or a
+ * multi-step widget; those belong in a QUIZ component.
+ *
+ * The question list and the HTML have to agree in both directions. A question
+ * with no marker would never render (the author would think they had added
+ * it), and a marker with no question would render an empty hole — and, worse,
+ * once learners have answered, a deleted question orphans their stored
+ * `answeredArticleQuestions` entry, which is why the ids are part of the
+ * structural signature too.
+ */
+function validateArticleQuestions(
+  content: ArticleContent,
+  title: string,
+): void {
+  const questions = content.questions;
+  const markers = parseArticleQuestionMarkers(content.html);
+
+  if (!questions || questions.length === 0) {
+    if (markers.length > 0) {
+      fail(
+        `Article component "${title}": the article has a question placeholder but no question to put in it.`,
+      );
+    }
+    return;
+  }
+
+  if (questions.length > TRACK_MAX_ARTICLE_QUESTIONS) {
+    fail(
+      `Article component "${title}": at most ${TRACK_MAX_ARTICLE_QUESTIONS} questions.`,
+    );
+  }
+
+  const markerCounts = new Map<string, number>();
+  for (const id of markers) {
+    markerCounts.set(id, (markerCounts.get(id) ?? 0) + 1);
+  }
+
+  const seenIds = new Set<string>();
+  questions.forEach((question: ArticleQuestion, index) => {
+    const label = `Article component "${title}" question ${index + 1}`;
+    if (!question?.id) fail(`${label}: missing id.`);
+    if (seenIds.has(question.id)) {
+      fail(`${label}: duplicate id ${question.id}.`);
+    }
+    seenIds.add(question.id);
+
+    if (question.type !== QuizQuestionType.MCQ_SINGLE) {
+      fail(
+        `${label}: only single-answer multiple choice is supported inside an article.`,
+      );
+    }
+    validateQuizQuestion(question, label);
+
+    const placements = markerCounts.get(question.id) ?? 0;
+    if (placements === 0) {
+      fail(`${label}: is not placed anywhere in the article.`);
+    }
+    if (placements > 1) {
+      fail(`${label}: is placed in the article more than once.`);
+    }
+  });
+
+  for (const id of markerCounts.keys()) {
+    if (!seenIds.has(id)) {
+      fail(
+        `Article component "${title}": the article has a placeholder for a question that no longer exists.`,
+      );
+    }
   }
 }
 
@@ -166,6 +266,54 @@ function validateVideoContent(
   if (!Object.values(VideoSource).includes(content.source)) {
     fail(`Video component "${title}" has an invalid source.`);
   }
+  validateInterjections(content, title);
+}
+
+/**
+ * Interjections hard-pause playback, which we can only guarantee on our own
+ * S3-hosted player — third-party embeds (YouTube/Vimeo/Loom) give us no
+ * reliable control over the playhead. Each interjection's question is a full
+ * quiz question, validated the same way a quiz component's questions are;
+ * open-ended is excluded because grading it needs the LLM grader, which has
+ * no place gating video playback.
+ */
+function validateInterjections(video: VideoContent, title: string): void {
+  const interjections = video.interjections;
+  if (!interjections || interjections.length === 0) return;
+
+  if (video.source !== VideoSource.S3) {
+    fail(
+      `Video component "${title}": quiz interjections are only supported for uploaded (S3) video.`,
+    );
+  }
+
+  const seenIds = new Set<string>();
+  interjections.forEach((interjection, index) => {
+    const label = `Video component "${title}" interjection ${index + 1}`;
+    if (!interjection.id) fail(`${label}: missing id.`);
+    if (seenIds.has(interjection.id)) {
+      fail(`${label}: duplicate id ${interjection.id}.`);
+    }
+    seenIds.add(interjection.id);
+
+    if (
+      typeof interjection.timestampSeconds !== 'number' ||
+      interjection.timestampSeconds < 0
+    ) {
+      fail(`${label}: timestampSeconds must be zero or greater.`);
+    }
+    if (
+      video.durationSeconds !== undefined &&
+      interjection.timestampSeconds > video.durationSeconds
+    ) {
+      fail(`${label}: timestampSeconds is beyond the video's duration.`);
+    }
+
+    if (interjection.question?.type === QuizQuestionType.OPEN_ENDED) {
+      fail(`${label}: open-ended questions are not supported here.`);
+    }
+    validateQuizQuestion(interjection.question, label);
+  });
 }
 
 function validateJournalContent(
@@ -537,12 +685,32 @@ export function computeStructuralSignature(
           scenarioId: item.scenarioId ?? null,
           caseId: item.caseId ?? null,
           quiz: quizStructuralSignature(item),
+          article: articleStructuralSignature(item),
           annotation: annotationStructuralSignature(item),
           game: gameStructuralSignature(item),
+          video: videoStructuralSignature(item),
           completionCriteria: item.completionCriteria ?? null,
         })),
     }));
   return JSON.stringify(signature);
+}
+
+/**
+ * Structural for an article: the inline questions' ids and answer keys.
+ * Deleting a question orphans the learner's stored
+ * `answeredArticleQuestions` entry and moves the completion bar under them,
+ * and changing which option is correct re-marks an answer they already gave.
+ * The prose — the body HTML, prompts, option text — stays content-safe, so
+ * fixing a typo mid-course is still allowed.
+ */
+function articleStructuralSignature(item: UpsertTrackItemDto): unknown {
+  if (item.type !== TrackItemType.ARTICLE || !item.content) return null;
+  const article = item.content as ArticleContent;
+  return {
+    questions: (article.questions ?? []).map((question) =>
+      quizQuestionStructuralSignature(question),
+    ),
+  };
 }
 
 /**
@@ -587,27 +755,60 @@ function gameStructuralSignature(item: UpsertTrackItemDto): unknown {
   return { gameKey: (item.content as GameContent).gameKey };
 }
 
+/**
+ * Answer-key-only signature for a single quiz question, shared by the quiz
+ * item's own signature and by video interjections (which each carry one full
+ * question). Prompt/explanation text is deliberately excluded — it stays
+ * content-safe.
+ */
+function quizQuestionStructuralSignature(question: QuizQuestion): unknown {
+  return {
+    id: question.id,
+    type: question.type,
+    correct:
+      (question as McqSingleQuestion | McqMultiQuestion).correctOptionIds ??
+      (question as TrueFalseQuestion).correctAnswer ??
+      (question as OrderingQuestion).correctOrder ??
+      (question as MatchingQuestion).correctPairs ??
+      (question as FillBlankQuestion).blanks?.map((b) => ({
+        id: b.id,
+        acceptedAnswers: b.acceptedAnswers,
+        caseSensitive: b.caseSensitive ?? false,
+      })) ??
+      null,
+  };
+}
+
 function quizStructuralSignature(item: UpsertTrackItemDto): unknown {
   if (item.type !== TrackItemType.QUIZ || !item.content) return null;
   const quiz = item.content as QuizContent;
   return {
     passScore: quiz.settings?.passScore,
     maxAttempts: quiz.settings?.maxAttempts ?? null,
-    questions: (quiz.questions ?? []).map((question) => ({
-      id: question.id,
-      type: question.type,
-      // answer-key fields only; prompt/explanation text stays content-safe
-      correct:
-        (question as McqSingleQuestion | McqMultiQuestion).correctOptionIds ??
-        (question as TrueFalseQuestion).correctAnswer ??
-        (question as OrderingQuestion).correctOrder ??
-        (question as MatchingQuestion).correctPairs ??
-        (question as FillBlankQuestion).blanks?.map((b) => ({
-          id: b.id,
-          acceptedAnswers: b.acceptedAnswers,
-          caseSensitive: b.caseSensitive ?? false,
-        })) ??
-        null,
-    })),
+    questions: (quiz.questions ?? []).map((question) =>
+      quizQuestionStructuralSignature(question),
+    ),
+  };
+}
+
+/**
+ * Structural for a video: the source (switching away from S3 would strand
+ * interjections the player can no longer pause for) plus each interjection's
+ * timestamp and answer key. Interjection ids are included so deleting one
+ * (which would orphan any stored `answeredInterjections` entry) is structural
+ * too; the question's prompt/explanation text stays content-safe.
+ */
+function videoStructuralSignature(item: UpsertTrackItemDto): unknown {
+  if (item.type !== TrackItemType.VIDEO || !item.content) return null;
+  const video = item.content as VideoContent;
+  return {
+    source: video.source,
+    interjections: (video.interjections ?? []).map(
+      (interjection: VideoInterjection) => ({
+        id: interjection.id,
+        timestampSeconds: interjection.timestampSeconds,
+        question: quizQuestionStructuralSignature(interjection.question),
+      }),
+    ),
   };
 }

@@ -25,6 +25,8 @@ import {
   VoiceLatencySessionsSummaryQueryDto,
   ListVoiceLatencySessionsResponseDto,
   VoiceLatencySessionsSummaryResponseDto,
+  VoiceLatencyByScenarioQueryDto,
+  VoiceLatencyByScenarioResponseDto,
 } from '../dto/platform-analytics.dto';
 import {
   AnalyticsBucket,
@@ -33,6 +35,7 @@ import {
   DailyActivityRow,
   NewUsersBucketRow,
   PlatformAnalyticsRepository,
+  VOICE_LATENCY_BY_SCENARIO_LIMIT,
 } from '../repository/platform-analytics.repository';
 import { LlmUsageRepository } from '../repository/llm-usage.repository';
 import {
@@ -50,6 +53,7 @@ import {
   resolveAnalyticsWindow,
   truncToBucket,
 } from '../util/analytics-window.util';
+import { withReportingQuerySlot } from '../../common/util/reporting-query-slots.util';
 
 /** Voice-to-voice latency target (ms) — the reference line on the trend. */
 const VOICE_LATENCY_TARGET_MS = 4000;
@@ -289,27 +293,41 @@ export class PlatformAnalyticsService {
       returningInWindow,
       simsInWindow,
     ] = await Promise.all([
-      this.repo.getNewUsersByBucket(windowStart, endExclusive, bucket),
-      this.repo.getUserCountBefore(windowStart),
-      this.repo.getDailyActivityPairs(activityStart, endExclusive),
-      this.repo.getSimulationsCompletedByBucket(
-        windowStart,
-        endExclusive,
-        bucket,
+      withReportingQuerySlot(() =>
+        this.repo.getNewUsersByBucket(windowStart, endExclusive, bucket),
       ),
-      this.repo.getActivePairsWithCreatedAtByBucket(
-        windowStart,
-        endExclusive,
-        bucket,
+      withReportingQuerySlot(() => this.repo.getUserCountBefore(windowStart)),
+      withReportingQuerySlot(() =>
+        this.repo.getDailyActivityPairs(activityStart, endExclusive),
       ),
-      this.repo.getUsersByRole(),
-      this.repo.getTotalUsers(),
+      withReportingQuerySlot(() =>
+        this.repo.getSimulationsCompletedByBucket(
+          windowStart,
+          endExclusive,
+          bucket,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getActivePairsWithCreatedAtByBucket(
+          windowStart,
+          endExclusive,
+          bucket,
+        ),
+      ),
+      withReportingQuerySlot(() => this.repo.getUsersByRole()),
+      withReportingQuerySlot(() => this.repo.getTotalUsers()),
       // Summary KPIs now cover the SELECTED window rather than a fixed rolling
       // 30 days / current week. A KPI strip that silently reports a different
       // period than the charts beside it invites exactly the wrong comparison.
-      this.repo.getActiveUserCountSince(windowStart, endExclusive),
-      this.repo.getReturningActiveUserCountSince(windowStart, endExclusive),
-      this.repo.getCompletedSimsSince(windowStart, endExclusive),
+      withReportingQuerySlot(() =>
+        this.repo.getActiveUserCountSince(windowStart, endExclusive),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getReturningActiveUserCountSince(windowStart, endExclusive),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getCompletedSimsSince(windowStart, endExclusive),
+      ),
     ]);
 
     const summary = {
@@ -383,10 +401,21 @@ export class PlatformAnalyticsService {
 
     const prev = previousWindow(window);
     const [totalUsersThen, active, returning, sims] = await Promise.all([
-      this.repo.getUserCountBefore(prev.endExclusive),
-      this.repo.getActiveUserCountSince(prev.start, prev.endExclusive),
-      this.repo.getReturningActiveUserCountSince(prev.start, prev.endExclusive),
-      this.repo.getCompletedSimsSince(prev.start, prev.endExclusive),
+      withReportingQuerySlot(() =>
+        this.repo.getUserCountBefore(prev.endExclusive),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getActiveUserCountSince(prev.start, prev.endExclusive),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getReturningActiveUserCountSince(
+          prev.start,
+          prev.endExclusive,
+        ),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getCompletedSimsSince(prev.start, prev.endExclusive),
+      ),
     ]);
 
     return {
@@ -585,13 +614,17 @@ export class PlatformAnalyticsService {
     );
 
     const [points, byLanguage] = await Promise.all([
-      this.repo.getVoiceLatencyByBucket(
-        windowStart,
-        endExclusive,
-        bucket,
-        language,
+      withReportingQuerySlot(() =>
+        this.repo.getVoiceLatencyByBucket(
+          windowStart,
+          endExclusive,
+          bucket,
+          language,
+        ),
       ),
-      this.repo.getVoiceLatencyByLanguage(windowStart, endExclusive),
+      withReportingQuerySlot(() =>
+        this.repo.getVoiceLatencyByLanguage(windowStart, endExclusive),
+      ),
     ]);
 
     return {
@@ -713,6 +746,54 @@ export class PlatformAnalyticsService {
   }
 
   /**
+   * Every simulation's MOST RECENT session, worst-first — "which simulations
+   * are slow right now" as its own question, distinct from
+   * {@link getVoiceLatencySessions} ("this simulation's worst sessions").
+   * Latest-session rather than a whole-window average so one old, since-fixed
+   * session can't keep a scenario looking slow, and so a single anomalous
+   * session can't be mistaken for a systemic one — see the repository
+   * method's doc-comment. Logs + flags `truncated: true` rather than
+   * silently dropping the tail if the platform ever exceeds
+   * {@link VOICE_LATENCY_BY_SCENARIO_LIMIT} simulations with a matching turn.
+   */
+  async getVoiceLatencyByScenario(
+    query: VoiceLatencyByScenarioQueryDto,
+  ): Promise<VoiceLatencyByScenarioResponseDto> {
+    const { language } = query;
+    const window = resolveAnalyticsWindow(query, {
+      defaultRange: '90d',
+      defaultBucketFor: PlatformAnalyticsService.defaultBucketFor,
+    });
+    const { start: windowStart, endExclusive } = window;
+
+    const rows = await this.repo.getVoiceLatencyByScenario(
+      windowStart,
+      endExclusive,
+      language,
+    );
+    const truncated = rows.length >= VOICE_LATENCY_BY_SCENARIO_LIMIT;
+    if (truncated) {
+      this.logger.warn(
+        `getVoiceLatencyByScenario hit VOICE_LATENCY_BY_SCENARIO_LIMIT ` +
+          `(${VOICE_LATENCY_BY_SCENARIO_LIMIT}) — the tail of the ranking ` +
+          `was cut, not just the display; consider raising the cap`,
+      );
+    }
+
+    return {
+      rows: rows.map((r) => ({
+        scenarioId: r.scenarioId,
+        scenarioTitle: r.scenarioTitle,
+        occurredAt: r.occurredAt,
+        turnCount: Number(r.turnCount) || 0,
+        ...PlatformAnalyticsService.mapVoiceLatencyStages(r),
+      })),
+      window: describeWindow(window),
+      truncated,
+    };
+  }
+
+  /**
    * Agent-join reliability trend: per-bucket failure rate + join latency
    * percentiles from the session lifecycle log, plus the overall outcome mix.
    * The failure rate is computed here (JS) from the per-bucket counts to avoid
@@ -728,13 +809,19 @@ export class PlatformAnalyticsService {
     const { start: windowStart, endExclusive, bucket } = window;
 
     const [rows, outcomeMix, freezeRows] = await Promise.all([
-      this.repo.getAgentJoinReliabilityByBucket(
-        windowStart,
-        endExclusive,
-        bucket,
+      withReportingQuerySlot(() =>
+        this.repo.getAgentJoinReliabilityByBucket(
+          windowStart,
+          endExclusive,
+          bucket,
+        ),
       ),
-      this.repo.getSessionOutcomeMix(windowStart, endExclusive),
-      this.repo.getSuspectedFreezeByBucket(windowStart, endExclusive, bucket),
+      withReportingQuerySlot(() =>
+        this.repo.getSessionOutcomeMix(windowStart, endExclusive),
+      ),
+      withReportingQuerySlot(() =>
+        this.repo.getSuspectedFreezeByBucket(windowStart, endExclusive, bucket),
+      ),
     ]);
 
     // Merge over the UNION of buckets: join-reliability is keyed off the

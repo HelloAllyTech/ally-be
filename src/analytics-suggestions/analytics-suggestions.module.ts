@@ -13,6 +13,7 @@ import { AnalyticsSuggestionRepository } from './repository/analytics-suggestion
 import { AnalyticsSuggestionsAiService } from './service/analytics-suggestions-ai.service';
 import { AnalyticsSuggestionsPayloadService } from './service/analytics-suggestions-payload.service';
 import { AnalyticsSuggestionsService } from './service/analytics-suggestions.service';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 
 /**
  * Analytics Suggestions — "read the platform's own numbers and tell me what to
@@ -41,6 +42,7 @@ import { AnalyticsSuggestionsService } from './service/analytics-suggestions.ser
     ProductRoadmapModule,
     PromptModule,
     LlmUsageModule,
+    LlmAgentModule,
   ],
   controllers: [AnalyticsSuggestionsController],
   providers: [

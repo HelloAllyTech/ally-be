@@ -47,6 +47,7 @@ describe('BugHunterService', () => {
     findOne: jest.Mock;
     listRecent: jest.Mock;
     update: jest.Mock;
+    findLastCompleted: jest.Mock;
   };
   let eventRepository: {
     create: jest.Mock;
@@ -57,6 +58,8 @@ describe('BugHunterService', () => {
   let notificationService: { notify: jest.Mock };
   let dataSource: { createQueryBuilder: jest.Mock };
   let llmUsageService: { record: jest.Mock };
+  let github: { hasCommitsSince: jest.Mock };
+  let finderDataService: { hasExternalSignal: jest.Mock };
 
   // Mutated by `update()` and read back by `findOne()`, so closeRun's
   // "fetch → update → re-fetch" sequence sees its own write, the way the real
@@ -81,6 +84,7 @@ describe('BugHunterService', () => {
         currentRun = { ...currentRun, ...patch };
         return Promise.resolve();
       }),
+      findLastCompleted: jest.fn().mockResolvedValue(null),
     };
     eventRepository = {
       create: jest.fn((partial) => partial),
@@ -99,6 +103,8 @@ describe('BugHunterService', () => {
     };
     dataSource = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
     llmUsageService = { record: jest.fn().mockResolvedValue(undefined) };
+    github = { hasCommitsSince: jest.fn().mockResolvedValue(true) };
+    finderDataService = { hasExternalSignal: jest.fn().mockReturnValue(false) };
 
     service = new BugHunterService(
       settingsRepository as any,
@@ -107,6 +113,8 @@ describe('BugHunterService', () => {
       notificationService as any,
       dataSource as any,
       llmUsageService as any,
+      github as any,
+      finderDataService as any,
     );
   });
 
@@ -179,6 +187,116 @@ describe('BugHunterService', () => {
       );
 
       expect(mode).toBeNull();
+    });
+  });
+
+  describe('requireWorthSweepingOrRecordSkip', () => {
+    it('always runs for a manual sweep, never checking commits at all', async () => {
+      const worthIt = await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.MANUAL,
+        'ally-web',
+      );
+
+      expect(worthIt).toBe(true);
+      expect(github.hasCommitsSince).not.toHaveBeenCalled();
+      expect(runRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('always runs for a fix session', async () => {
+      const worthIt = await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.FIX_SESSION,
+        'ally-web',
+      );
+
+      expect(worthIt).toBe(true);
+      expect(github.hasCommitsSince).not.toHaveBeenCalled();
+    });
+
+    it('always runs a scheduled sweep for a repo with an external production signal, without checking commits', async () => {
+      finderDataService.hasExternalSignal.mockReturnValue(true);
+
+      const worthIt = await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.SCHEDULED,
+        'ally-be',
+      );
+
+      expect(worthIt).toBe(true);
+      expect(github.hasCommitsSince).not.toHaveBeenCalled();
+    });
+
+    it('always runs the first-ever scheduled sweep for a repo', async () => {
+      runRepository.findLastCompleted.mockResolvedValue(null);
+
+      const worthIt = await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.SCHEDULED,
+        'ally-web',
+      );
+
+      expect(worthIt).toBe(true);
+      expect(github.hasCommitsSince).not.toHaveBeenCalled();
+    });
+
+    it('runs when master has commits since the last completed sweep', async () => {
+      const lastSweep = runRow({
+        status: BugHuntRunStatus.COMPLETED,
+        finishedAt: new Date('2026-09-14T00:00:00.000Z'),
+      });
+      runRepository.findLastCompleted.mockResolvedValue(lastSweep);
+      github.hasCommitsSince.mockResolvedValue(true);
+
+      const worthIt = await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.SCHEDULED,
+        'ally-web',
+      );
+
+      expect(worthIt).toBe(true);
+      expect(github.hasCommitsSince).toHaveBeenCalledWith(
+        'ally-web',
+        lastSweep.finishedAt,
+      );
+      expect(runRepository.save).not.toHaveBeenCalled();
+    });
+
+    it('skips and records a skipped_quiet run when nothing is new on a frontend repo', async () => {
+      const lastSweep = runRow({
+        status: BugHuntRunStatus.COMPLETED,
+        finishedAt: new Date('2026-09-14T00:00:00.000Z'),
+      });
+      runRepository.findLastCompleted.mockResolvedValue(lastSweep);
+      github.hasCommitsSince.mockResolvedValue(false);
+
+      const worthIt = await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.SCHEDULED,
+        'ally-web',
+      );
+
+      expect(worthIt).toBe(false);
+      expect(runRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ status: BugHuntRunStatus.SKIPPED_QUIET }),
+      );
+      expect(eventRepository.save).toHaveBeenCalledWith(
+        expect.objectContaining({ stage: BugHuntEventStage.SKIPPED_QUIET }),
+      );
+    });
+
+    it('falls back to createdAt when a legacy run has no finishedAt', async () => {
+      const lastSweep = runRow({
+        status: BugHuntRunStatus.COMPLETED,
+        finishedAt: null,
+        createdAt: new Date('2026-09-01T00:00:00.000Z'),
+      });
+      runRepository.findLastCompleted.mockResolvedValue(lastSweep);
+      github.hasCommitsSince.mockResolvedValue(false);
+
+      await service.requireWorthSweepingOrRecordSkip(
+        BugHuntTrigger.SCHEDULED,
+        'ally-web',
+      );
+
+      expect(github.hasCommitsSince).toHaveBeenCalledWith(
+        'ally-web',
+        lastSweep.createdAt,
+      );
     });
   });
 
@@ -391,6 +509,114 @@ describe('BugHunterService', () => {
         'run-1',
         expect.objectContaining({ totalTokenCostUsd: '0.0000' }),
       );
+    });
+
+    it('passes cache read/write tokens through to LlmUsageService.record', async () => {
+      await service.recordActualCost('run-1', {
+        modelUsage: [
+          {
+            model: 'claude-sonnet-4-6',
+            inputTokens: 50000,
+            outputTokens: 2000,
+            cacheReadInputTokens: 10000,
+            cacheCreationInputTokens: 5000,
+          },
+        ],
+      });
+
+      expect(llmUsageService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          cachedTokens: 10000,
+          cacheCreationTokens: 5000,
+        }),
+      );
+    });
+
+    it('accumulates cliReportedCostUsd across repeated calls instead of overwriting it', async () => {
+      // Mirrors a manually re-run CI job replaying the cost-reporting step
+      // against the same runId — losing the first attempt's real spend would
+      // silently undercount the figure the admin UI prefers.
+      currentRun = runRow({ status: BugHuntRunStatus.COMPLETED });
+
+      await service.recordActualCost('run-1', {
+        modelUsage: [
+          { model: 'claude-sonnet-4-6', inputTokens: 1000, outputTokens: 100 },
+        ],
+        cliReportedCostUsd: 0.5,
+      });
+      expect(currentRun.metadata).toEqual(
+        expect.objectContaining({ cliReportedCostUsd: 0.5 }),
+      );
+
+      await service.recordActualCost('run-1', {
+        modelUsage: [
+          { model: 'claude-sonnet-4-6', inputTokens: 1000, outputTokens: 100 },
+        ],
+        cliReportedCostUsd: 0.3,
+      });
+      expect(currentRun.metadata).toEqual(
+        expect.objectContaining({ cliReportedCostUsd: 0.8 }),
+      );
+    });
+
+    it("tags llm_usage rows 'gemini' when that's the run's recorded engine, not the hardcoded default", async () => {
+      currentRun = runRow({
+        status: BugHuntRunStatus.COMPLETED,
+        engine: 'gemini',
+        model: 'gemini-2.5-pro',
+      });
+
+      await service.recordActualCost('run-1', {
+        modelUsage: [
+          { model: 'gemini-2.5-pro', inputTokens: 1000, outputTokens: 100 },
+        ],
+      });
+
+      expect(llmUsageService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provider: 'gemini',
+          model: 'gemini-2.5-pro',
+        }),
+      );
+    });
+
+    it("defaults to 'anthropic' when the run never recorded an engine", async () => {
+      currentRun = runRow({ status: BugHuntRunStatus.COMPLETED, engine: null });
+
+      await service.recordActualCost('run-1', {
+        modelUsage: [
+          { model: 'claude-sonnet-4-6', inputTokens: 1000, outputTokens: 100 },
+        ],
+      });
+
+      expect(llmUsageService.record).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: 'anthropic' }),
+      );
+    });
+  });
+
+  describe('recordResolvedModel', () => {
+    it('persists which CLI and model the CI workflow resolved for this run', async () => {
+      await service.recordResolvedModel('run-1', {
+        engine: 'gemini',
+        model: 'gemini-2.5-flash',
+      });
+
+      expect(runRepository.update).toHaveBeenCalledWith('run-1', {
+        engine: 'gemini',
+        model: 'gemini-2.5-flash',
+      });
+    });
+
+    it('swallows a failed update instead of throwing, same contract as recordActualCost', async () => {
+      runRepository.update.mockRejectedValueOnce(new Error('db blip'));
+
+      await expect(
+        service.recordResolvedModel('run-1', {
+          engine: 'claude-code',
+          model: 'claude-sonnet-5',
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 });

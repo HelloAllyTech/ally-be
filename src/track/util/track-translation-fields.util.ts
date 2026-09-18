@@ -395,6 +395,15 @@ function walkItem(item: TrackItem, visit: FieldVisitor): void {
         },
         visit,
       );
+      /**
+       * Inline questions are read in the flow of the article, so they have to
+       * arrive in the same language as the prose around them. They walk
+       * exactly like a quiz question — the answer key stays behind, only the
+       * prompt and the option labels travel.
+       */
+      for (const question of (item.content as ArticleContent).questions ?? []) {
+        walkQuizQuestion(question, visit, `content.questions[${question.id}]`);
+      }
       break;
 
     case TrackItemType.QUIZ:

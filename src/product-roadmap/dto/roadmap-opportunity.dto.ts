@@ -3,7 +3,13 @@ import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
+  IsNotEmpty,
+  IsNumber,
+  IsUrl,
+  Max,
   IsEnum,
+  IsIn,
   IsInt,
   IsISO8601,
   IsObject,
@@ -18,13 +24,18 @@ import {
   ValidateNested,
 } from 'class-validator';
 import {
+  RoadmapBoardGroupBy,
+  RoadmapOpportunityEffort,
   RoadmapOpportunitySource,
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
+  RoadmapReferenceImageContentType,
 } from '../enum/roadmap-opportunity.enum';
 import {
   ROADMAP_BOARD_DEFAULTS,
+  ROADMAP_EFFORT_UNSIZED,
   ROADMAP_LIMITS,
+  ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES,
 } from '../constants/product-roadmap.constants';
 
 /**
@@ -104,6 +115,21 @@ export class RoadmapOpportunityFiltersDto {
   source?: RoadmapOpportunitySource[];
 
   @ApiPropertyOptional({
+    enum: [...Object.values(RoadmapOpportunityEffort), ROADMAP_EFFORT_UNSIZED],
+    isArray: true,
+    description:
+      'Rough size — S/M/L/XL/XXL — plus the sentinel "unsized" for opportunities nobody has ' +
+      'sized yet (effort IS NULL).',
+  })
+  @IsOptional()
+  @Transform(toArray)
+  @IsArray()
+  @IsIn([...Object.values(RoadmapOpportunityEffort), ROADMAP_EFFORT_UNSIZED], {
+    each: true,
+  })
+  effort?: (RoadmapOpportunityEffort | typeof ROADMAP_EFFORT_UNSIZED)[];
+
+  @ApiPropertyOptional({
     description: 'Product goal NAMES (not ids)',
     isArray: true,
   })
@@ -152,12 +178,39 @@ export class RoadmapOpportunityFiltersDto {
 
 export class ListOpportunitiesQueryDto extends RoadmapOpportunityFiltersDto {
   @ApiPropertyOptional({
-    enum: ['priority', 'createdAt', 'releasedAt', 'myCoins', 'description'],
+    enum: [
+      'priority',
+      'createdAt',
+      'releasedAt',
+      'myVotes',
+      'description',
+      'plannedMonth',
+    ],
     default: 'priority',
   })
   @IsOptional()
-  @IsEnum(['priority', 'createdAt', 'releasedAt', 'myCoins', 'description'])
-  sortBy?: 'priority' | 'createdAt' | 'releasedAt' | 'myCoins' | 'description';
+  // MUST stay in step with SORT_COLUMNS in RoadmapOpportunityRepository. A value the repository
+  // accepts but this rejects is a 400 on the board's own default ordering; a value this accepts
+  // but the repository does not silently falls back to another sort.
+  @IsEnum([
+    'composite',
+    'priority',
+    'voters',
+    'createdAt',
+    'releasedAt',
+    'myVotes',
+    'description',
+    'plannedMonth',
+  ])
+  sortBy?:
+    | 'composite'
+    | 'priority'
+    | 'voters'
+    | 'createdAt'
+    | 'releasedAt'
+    | 'myVotes'
+    | 'description'
+    | 'plannedMonth';
 
   @ApiPropertyOptional({ enum: ['ASC', 'DESC'], default: 'DESC' })
   @IsOptional()
@@ -179,6 +232,78 @@ export class ListOpportunitiesQueryDto extends RoadmapOpportunityFiltersDto {
   offset?: number;
 }
 
+/**
+ * One attached reference image.
+ *
+ * `url` must be an object this service handed out a presigned PUT for — the create/update
+ * service re-derives the bucket and key prefix from it and refuses anything else. That check
+ * cannot live here: the bucket is configuration, not a property of the payload, and a DTO that
+ * hardcoded it would be wrong in every environment but one.
+ *
+ * `caption` is optional because most images need none — a screenshot of the broken screen speaks
+ * for itself. It earns its place on the few that do: three near-identical mocks are unreadable
+ * without "current", "option A", "option B".
+ */
+export class RoadmapReferenceImageDto {
+  @ApiProperty({
+    description:
+      'S3 object URL returned by POST /product-roadmap/reference-images/upload-url',
+  })
+  @IsString()
+  @IsNotEmpty()
+  // `require_tld: false` so a LocalStack/path-style host (http://localstack:4566/...) validates
+  // in dev. The service's own bucket check is what actually constrains this; @IsUrl only rejects
+  // input that is not a URL at all, which is the difference between a 400 here and a 422 there.
+  @IsUrl({ require_tld: false })
+  @MaxLength(2000)
+  url!: string;
+
+  @ApiPropertyOptional({
+    maxLength: ROADMAP_LIMITS.REFERENCE_IMAGE_CAPTION_MAX,
+    nullable: true,
+    description: 'What a reader is looking at. Optional.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(ROADMAP_LIMITS.REFERENCE_IMAGE_CAPTION_MAX)
+  caption?: string | null;
+}
+
+/**
+ * Ask for a presigned PUT so the browser can upload one image straight to S3.
+ *
+ * Same shape as the blog's image presign, and the same reason for existing: the bytes never pass
+ * through this service, so a 5 MB screenshot is not a 5 MB request body through the API gateway.
+ * The returned `imageUrl` is what the client then sends back in `referenceImages`.
+ *
+ * Gated at the VOTE tier, matching POST /opportunities — the person FILING an opportunity is the
+ * one with the screenshot, and making them file first and attach later (edit is the MANAGE tier)
+ * would put the picture behind a permission most filers do not hold.
+ */
+export class RoadmapReferenceImageUploadUrlDto {
+  @ApiProperty({ example: 'filter-row-wrapping.png' })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  fileName!: string;
+
+  @ApiProperty({
+    description: 'File size in bytes',
+    minimum: 1,
+    maximum: ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES,
+  })
+  @IsNumber()
+  @Min(1)
+  // Checked here as well as in S3Service so an oversized file is refused before anything is
+  // signed, rather than after the client has already been handed a URL.
+  @Max(ROADMAP_REFERENCE_IMAGE_MAX_SIZE_BYTES)
+  fileSize!: number;
+
+  @ApiProperty({ enum: RoadmapReferenceImageContentType })
+  @IsEnum(RoadmapReferenceImageContentType)
+  contentType!: RoadmapReferenceImageContentType;
+}
+
 export class CreateOpportunityDto {
   @ApiProperty({ maxLength: ROADMAP_LIMITS.DESCRIPTION_MAX })
   @IsString()
@@ -198,6 +323,102 @@ export class CreateOpportunityDto {
   @IsString()
   @MinLength(1)
   productGoal!: string;
+
+  /**
+   * Rough size, set at filing time. Optional and nullable: every row predating the field is
+   * unsized, and "not sized" stays a legal state — see the effort note in OpportunityDrawer.
+   * The admin drawer sends whatever the readiness check proposed, after any human correction.
+   */
+  @ApiPropertyOptional({ enum: RoadmapOpportunityEffort, nullable: true })
+  @IsOptional()
+  @IsEnum(RoadmapOpportunityEffort)
+  effort?: RoadmapOpportunityEffort | null;
+
+  /**
+   * Assign the owner at filing time. Optional and omitted by everyone who cannot assign one:
+   * this route is gated on vote:admin:product-roadmap, so most callers who reach it may file but
+   * not manage, and a caller without edit:admin:product-roadmap sending this gets a 403 rather
+   * than a silently-dropped field.
+   *
+   * Same eligibility rule as UpdateOpportunityDto.ownerUserId — a super-admin user id — and the
+   * same reason the legacy free-text `owner` is not accepted: one representation, never both.
+   * Null and omitted mean the same thing here (unassigned); there is nothing to un-assign on a
+   * row that does not exist yet.
+   */
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Ally user id of a super-admin. Requires edit:admin:product-roadmap; null/omitted files ' +
+      'the opportunity unassigned.',
+  })
+  @IsOptional()
+  @IsInt()
+  ownerUserId?: number | null;
+
+  /**
+   * The `token` from this draft's `POST ai/readiness` response, verbatim.
+   *
+   * This is what makes the readiness checklist a real gate rather than a discipline the admin
+   * drawer chose to keep: it proves the draft being filed is the draft that was graded, and
+   * carries what the grader said about it. See RoadmapReadinessTokenService.
+   *
+   * Optional in the DTO, and not yet optional in spirit — ROADMAP_READINESS_REQUIRE_TOKEN says
+   * whether an omitted token is refused, and it is false for exactly one release so that the
+   * admin bundle already in production keeps working while ally-be deploys ahead of it. A token
+   * that IS sent is always verified.
+   */
+  @ApiPropertyOptional({
+    description:
+      'The `token` from POST ai/readiness for this exact draft. Required once the readiness ' +
+      'gate is fully enforced; a tampered, expired or stale token is always a 400.',
+  })
+  @IsOptional()
+  @IsString()
+  readinessToken?: string;
+
+  /**
+   * File despite a failing readiness verdict. Requires roadmap MANAGE access — the permission
+   * AND the product_roadmap_manage toggle — and is a 403 without it.
+   *
+   * BOTH halves, because the permission alone separates nobody: since the role collapse,
+   * EDIT_PRODUCT_ROADMAP sits on every platform admin, and the per-user toggle is the entire
+   * distinction between a curator and a read-only admin. Checking only the permission here
+   * would hand the override to every platform admin, which is not what it is for.
+   *
+   * Ignored (not an error) when the verdict passed anyway: an override of nothing is not a
+   * failure, and refusing it would make the client responsible for knowing whether it needed
+   * to ask — which is the reasoning it should not have to do twice.
+   */
+  @ApiPropertyOptional({
+    description:
+      'File despite failing readiness items. Requires edit:admin:product-roadmap plus the ' +
+      'product_roadmap_manage toggle (403 otherwise). Recorded on the row.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  readinessOverride?: boolean;
+
+  /**
+   * Reference images, attached at filing time.
+   *
+   * On the CREATE path deliberately, not edit-only: the moment somebody has the screenshot is the
+   * moment they are describing the problem, and editing an opportunity needs
+   * edit:admin:product-roadmap while filing one does not — so an attach-afterwards-only design
+   * would mean most filers could never attach anything.
+   *
+   * Omitted and `[]` mean the same thing (no images); there is nothing to clear on a row that
+   * does not exist yet.
+   */
+  @ApiPropertyOptional({
+    type: [RoadmapReferenceImageDto],
+    maxItems: ROADMAP_LIMITS.REFERENCE_IMAGES_MAX,
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(ROADMAP_LIMITS.REFERENCE_IMAGES_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => RoadmapReferenceImageDto)
+  referenceImages?: RoadmapReferenceImageDto[];
 }
 
 /**
@@ -242,16 +463,18 @@ export class ReporterContextDto {
 }
 
 /**
- * A bug report filed by a logged-in consumer app user (web/mobile/helpline) — POST
- * /product-roadmap/bug-reports. Deliberately NOT CreateOpportunityDto: `type` is always
- * forced to BUG server-side and every staff-oriented field (productGoal, owner, prd,
- * claudePrompt, …) is irrelevant here, so accepting them would just be dead input a
- * consumer client could never legitimately send.
+ * A bug report filed by any logged-in user — a consumer in web/mobile/helpline, or a staff
+ * member using the admin roadmap's "Report a bug" button. POST /product-roadmap/bug-reports.
+ *
+ * Deliberately NOT CreateOpportunityDto: `type` is always forced to BUG server-side and
+ * every board-oriented field (productGoal, owner, prd, claudePrompt, …) is irrelevant to a
+ * bug now that bugs are triaged in Bug Hunter rather than voted on, so accepting them would
+ * just be dead input no client could legitimately send.
  *
  * No severity/category picker by design — this is the answer to one guided prompt
  * ("What were you trying to do?"), not a support ticket form.
  */
-export class CreateConsumerBugReportDto {
+export class CreateBugReportDto {
   @ApiProperty({
     maxLength: ROADMAP_LIMITS.DESCRIPTION_MAX,
     description: 'Free text answer to "What were you trying to do?"',
@@ -348,6 +571,51 @@ export class UpdateOpportunityDto {
   @IsOptional()
   @Matches(MONTH_KEY_REGEX, { message: `plannedMonth ${MONTH_KEY_MESSAGE}` })
   plannedMonth?: string | null;
+
+  /**
+   * Rough size — S/M/L/XL/XXL. Null un-sizes it, which is a legitimate edit and not a no-op:
+   * "we sized this and it was wrong" has to be undoable back to unsized.
+   *
+   * Not on CreateOpportunityDto. The create modal asks for a description and a goal, because the
+   * moment of filing is the moment you know least about the size — and unsized is already the
+   * correct state for a brand-new row.
+   */
+  @ApiPropertyOptional({
+    enum: RoadmapOpportunityEffort,
+    nullable: true,
+    description: 'Rough size; null means unsized',
+  })
+  @IsOptional()
+  @IsEnum(RoadmapOpportunityEffort)
+  effort?: RoadmapOpportunityEffort | null;
+
+  /**
+   * The FULL resulting list of reference images, not a delta — the same contract the board's lane
+   * reorder uses, and for the same reason: the client already holds the whole array, so sending
+   * it whole means adding, removing, re-captioning and reordering are one operation with no
+   * per-image endpoints and no way for two of them to interleave into a state nobody saw.
+   *
+   * `[]` clears them, and is a real edit rather than a no-op. Omitted leaves them alone, which is
+   * what makes every unrelated PATCH from the drawer safe.
+   *
+   * Removing an image from this array does NOT delete the S3 object. Deliberately: the object may
+   * be referenced by another opportunity a split created, an "undo" is one paste of the URL away
+   * while the object lives, and an orphaned 200 KB PNG in a bucket is a far cheaper mistake than
+   * a delete that breaks a row still pointing at it.
+   */
+  @ApiPropertyOptional({
+    type: [RoadmapReferenceImageDto],
+    maxItems: ROADMAP_LIMITS.REFERENCE_IMAGES_MAX,
+    description:
+      'The complete resulting list, not a delta. [] clears every image; omitting the field ' +
+      'leaves them untouched.',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(ROADMAP_LIMITS.REFERENCE_IMAGES_MAX)
+  @ValidateNested({ each: true })
+  @Type(() => RoadmapReferenceImageDto)
+  referenceImages?: RoadmapReferenceImageDto[];
 }
 
 /**
@@ -383,6 +651,18 @@ export class MonthBoardQueryDto extends RoadmapOpportunityFiltersDto {
   @IsInt()
   @Min(1)
   laneLimit?: number;
+
+  @ApiPropertyOptional({
+    enum: RoadmapBoardGroupBy,
+    default: RoadmapBoardGroupBy.MONTH,
+    description:
+      'How to group the lanes. `from`/`to` are MONTH-only and are ignored by the other ' +
+      'groupings, which have no window — a stage board that dropped every card without a ' +
+      'planned month would be empty for no reason a reader could see.',
+  })
+  @IsOptional()
+  @IsEnum(RoadmapBoardGroupBy)
+  groupBy?: RoadmapBoardGroupBy;
 }
 
 /**
@@ -403,27 +683,43 @@ export class MoveOpportunityDto {
   @IsUUID()
   opportunityId!: string;
 
+  @ApiPropertyOptional({
+    enum: RoadmapBoardGroupBy,
+    default: RoadmapBoardGroupBy.MONTH,
+    description:
+      'Which grouping the drag happened on — decides WHICH FIELD the drop writes. Defaults to ' +
+      'month so an older client keeps working unchanged.',
+  })
+  @IsOptional()
+  @IsEnum(RoadmapBoardGroupBy)
+  groupBy?: RoadmapBoardGroupBy;
+
   @ApiProperty({
     nullable: true,
     description:
-      "Destination lane as 'YYYY-MM'; null is the Unscheduled lane. Must be sent explicitly.",
+      "Destination lane. 'YYYY-MM' when grouping by month (null = Unscheduled); the stage, " +
+      'product goal or owner value otherwise (null = the catch-all lane, which for stage is ' +
+      'not a legal destination). Must be sent explicitly.',
   })
-  @ValidateIf((o: MoveOpportunityDto) => o.month !== null)
+  @ValidateIf((o: MoveOpportunityDto) => o.lane !== null)
   @IsString()
-  @Matches(MONTH_KEY_REGEX, { message: `month ${MONTH_KEY_MESSAGE}` })
-  month!: string | null;
+  @MaxLength(ROADMAP_LIMITS.GOAL_NAME_MAX)
+  lane!: string | null;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: [String],
     description:
-      'Every card id in the destination lane, in its new top-to-bottom order',
+      'Every card id in the destination lane, in its new top-to-bottom order. MONTH ONLY — the ' +
+      'other groupings order by priority and have no hand-ordering to rewrite, so sending it ' +
+      'there is ignored rather than rejected.',
   })
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(ROADMAP_BOARD_DEFAULTS.MAX_LANE_IDS)
   // Plain @IsUUID, matching MergeOpportunitiesDto: migrated ids come from the source database
   // and a version assertion would reject legitimate historical rows.
   @IsUUID(undefined, { each: true })
-  orderedIds!: string[];
+  orderedIds?: string[];
 }
 
 export class SplitPartDto {
@@ -443,7 +739,7 @@ export class SplitPartDto {
   description!: string;
 
   @ApiProperty({
-    description: 'Relative weight; the coin split is proportional to this',
+    description: 'Relative weight; the vote split is proportional to this',
   })
   @Type(() => Number)
   @IsInt()
@@ -485,13 +781,13 @@ export class MergeOpportunitiesDto {
 }
 
 /**
- * Setting a coin allocation. Note there is deliberately NO periodKey field: the server
- * computes it in UTC. The source's RLS allowed writes to any period_key, and because the
- * priority score sums every period forever, that was unbounded score inflation; it also used
+ * Setting a vote count. Note there is deliberately NO periodKey field: the server computes
+ * it in UTC. The source's RLS allowed writes to any period_key, and because the priority
+ * score sums every period forever, that was unbounded score inflation; it also used
  * browser-local time, so a tab open across midnight on the 1st voted into the wrong month.
  * Historical periods are read-only by construction.
  *
- * coins = 0 deletes the allocation row rather than storing a zero.
+ * votes = 0 deletes the allocation row rather than storing a zero.
  */
 export class SetAllocationDto {
   @ApiProperty()
@@ -502,5 +798,5 @@ export class SetAllocationDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
-  coins!: number;
+  votes!: number;
 }

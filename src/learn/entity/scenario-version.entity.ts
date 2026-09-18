@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { ScenarioVersionStatus } from '../enum/scenario-version-status.enum';
+import { ScenarioVersionType } from '../enum/scenario-version-type.enum';
 
 /**
  * A saved snapshot of a scenario's editable configuration.
@@ -53,6 +54,16 @@ export class ScenarioVersion extends BaseWithoutTenantEntity {
   @Column({ type: 'uuid', nullable: true })
   parentVersionId?: string | null;
 
+  // MANUAL: authored by a user (new/branch/revert). AUTOMATIC: created by the
+  // daily auto-version job from a draft modified in the preceding 24 hours.
+  @Column({
+    type: 'enum',
+    enum: ScenarioVersionType,
+    enumName: 'scenario_versions_type_enum',
+    default: ScenarioVersionType.MANUAL,
+  })
+  type!: ScenarioVersionType;
+
   @Column({ nullable: true })
   createdBy?: number;
 
@@ -61,4 +72,16 @@ export class ScenarioVersion extends BaseWithoutTenantEntity {
 
   @DeleteDateColumn()
   deletedAt?: Date;
+
+  /**
+   * Transient (not a column): set on read to flag the version that MIRRORS the
+   * live scenario rather than holding an isolated snapshot.
+   *
+   * The studio edits the live `scenarios` row directly whenever no version is
+   * explicitly selected, so the mirroring version's stored `config` goes stale
+   * the moment anyone saves — it is a seed, not a record. Reading it must
+   * therefore read live, and branching it must rebuild from live. See
+   * `ScenarioVersionService.resolveLiveVersionId`.
+   */
+  isLive?: boolean;
 }

@@ -3,7 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AppConfigService } from 'src/config/config.service';
 import { LoggerService } from 'src/logger/logger.service';
-import { ROOM_METADATA_STALE_HOURS } from '../constants/scenario-session.constants';
+import {
+  LIVEKIT_ROOM_METADATA_CAP_BYTES,
+  ROOM_METADATA_STALE_HOURS,
+  ROOM_METADATA_WARN_BYTES,
+} from '../constants/scenario-session.constants';
 import { LearnRoomMetadata } from '../entity/learn-room-metadata.entity';
 
 /**
@@ -59,7 +63,10 @@ export class RoomMetadataStoreService {
     fullEnvelope: Record<string, any>,
   ): Promise<PreparedRoomMetadata> {
     if (!this.configService.learnMetadataFetchEnabled) {
-      return { roomPayload: fullEnvelope, dispatchPayload: fullEnvelope };
+      return this.checked(roomName, {
+        roomPayload: fullEnvelope,
+        dispatchPayload: fullEnvelope,
+      });
     }
 
     try {
@@ -70,13 +77,63 @@ export class RoomMetadataStoreService {
       this.logger.error(
         `[ROOM_METADATA_STORE] persist failed for ${roomName}, falling back to inline metadata: ${error?.message}`,
       );
-      return { roomPayload: fullEnvelope, dispatchPayload: fullEnvelope };
+      return this.checked(roomName, {
+        roomPayload: fullEnvelope,
+        dispatchPayload: fullEnvelope,
+      });
     }
 
     void this.sweepStaleRows();
 
     const slim = this.buildSlimEnvelope(roomName, fullEnvelope);
-    return { roomPayload: slim, dispatchPayload: slim };
+    return this.checked(roomName, {
+      roomPayload: slim,
+      dispatchPayload: slim,
+    });
+  }
+
+  /**
+   * Measure what is actually going on the LiveKit room, and warn only if THAT
+   * breaches the cap.
+   *
+   * This check used to live in `scenario-shared.service.ts`, against the full
+   * envelope — which stopped being the room payload the moment this class
+   * started slimming it. It therefore warned about a 65536-byte cap on every
+   * session while the real payload was ~223 bytes, and an investigation on
+   * 2026-09-17 duly chased it. Here the number is whatever is really being set,
+   * on both the fetch-enabled and the inline path, so the warning is only ever
+   * about a breach that can actually happen.
+   *
+   * Deliberately covers the fallback paths too: an inline payload is exactly
+   * the case where the cap is a live risk, and it is reached when the flag is
+   * off OR when the store write failed — the second being precisely the moment
+   * nobody is watching.
+   */
+  private checked(
+    roomName: string,
+    prepared: PreparedRoomMetadata,
+  ): PreparedRoomMetadata {
+    const bytes = Buffer.byteLength(
+      JSON.stringify(prepared.roomPayload),
+      'utf8',
+    );
+    if (bytes > LIVEKIT_ROOM_METADATA_CAP_BYTES) {
+      this.logger.error(
+        `[ROOM_METADATA_SIZE] room payload ${bytes} bytes EXCEEDS the LiveKit cap ` +
+          `(${LIVEKIT_ROOM_METADATA_CAP_BYTES}) for ${roomName} — the room is being ` +
+          `created with metadata LiveKit may reject or truncate`,
+      );
+    } else if (bytes > ROOM_METADATA_WARN_BYTES) {
+      this.logger.warn(
+        `[ROOM_METADATA_SIZE] room payload ${bytes} bytes for ${roomName}, past the ` +
+          `${ROOM_METADATA_WARN_BYTES} warn threshold (LiveKit cap ${LIVEKIT_ROOM_METADATA_CAP_BYTES})`,
+      );
+    } else {
+      this.logger.debug(
+        `[ROOM_METADATA_SIZE] room payload ${bytes} bytes for ${roomName}`,
+      );
+    }
+    return prepared;
   }
 
   /** Full envelope for a room, for the agent webhook. 404 when unknown/expired. */

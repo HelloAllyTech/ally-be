@@ -1,9 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  RoadmapBoardGroupBy,
+  RoadmapOpportunityEffort,
   RoadmapOpportunitySource,
   RoadmapOpportunityStage,
   RoadmapOpportunityType,
 } from '../enum/roadmap-opportunity.enum';
+import { RoadmapReferenceImageDto } from './roadmap-opportunity.dto';
 
 export class RoadmapUserRefDto {
   @ApiProperty() id!: number;
@@ -25,11 +28,72 @@ export class OpportunityResponseDto {
   /** Null for legacy migrated rows whose owner was never linked to an Ally account. */
   @ApiPropertyOptional({ nullable: true }) ownerUserId?: number | null;
   @ApiPropertyOptional({ nullable: true }) prd?: string | null;
+  @ApiProperty({
+    description:
+      "Short human-quotable id, e.g. 'OPP-0042'. Unique, never reused.",
+  })
+  code!: string;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Position in the queue (New / Prioritised / In development) by total votes — 1-based, ' +
+      'unique, and null outside those stages. Computed per read, so it always reflects the ' +
+      'current stages and vote totals.',
+  })
+  queueRank!: number | null;
   @ApiPropertyOptional({ nullable: true }) claudePrompt?: string | null;
+
+  /**
+   * Reference images in the order they were arranged. Always an array — empty, never null, so no
+   * client has to handle both shapes.
+   */
+  @ApiProperty({ type: [RoadmapReferenceImageDto] })
+  referenceImages!: RoadmapReferenceImageDto[];
+  /** The Builder session started from this opportunity, or null. Drives the drawer's
+   *  button between "Open in Builder Agent" and "Resume in Builder Agent". */
+  @ApiPropertyOptional({ nullable: true }) builderSessionId?: string | null;
   @ApiPropertyOptional({ nullable: true }) releasedAt?: Date | null;
 
   /** The month somebody planned this into, 'YYYY-MM'. Null means Unscheduled. */
   @ApiPropertyOptional({ nullable: true }) plannedMonth?: string | null;
+
+  /** Rough size — S/M/L/XL/XXL. Null means nobody has sized it. */
+  @ApiPropertyOptional({ nullable: true, enum: RoadmapOpportunityEffort })
+  effort?: RoadmapOpportunityEffort | null;
+
+  /**
+   * The weighted four-factor rank, 0-100. The board's DEFAULT ordering.
+   *
+   * Always accompanied by the four factors that produced it (below) — a composite you cannot
+   * check against its own inputs is a number nobody can argue with, and the whole point of
+   * ranking on four lenses rather than one is that the lenses stay visible.
+   */
+  @ApiProperty({
+    description:
+      'Weighted composite of votes, distinct backers, effort and strategy-goal coverage, ' +
+      '0-100. Recomputed per read from live weights — never stored.',
+  })
+  compositeScore!: number;
+
+  /**
+   * Distinct admins backing this, across all periods. Breadth, where priorityScore is
+   * intensity: one admin spending 40 votes and forty spending one each are the same total.
+   */
+  @ApiProperty() voterCount!: number;
+
+  /** Strategy goals this was judged to positively move. */
+  @ApiProperty() goalsHelped!: number;
+
+  /**
+   * Strategy goals this has any verdict for. Below `goalsTotal` means the assessment predates
+   * a goal being added — coverage divides by the live total either way, so such a row reads as
+   * lower-impact than it may actually be. Surfaced rather than hidden.
+   */
+  @ApiProperty() goalsAssessed!: number;
+
+  /** Live strategy-goal count — the coverage denominator. Zero means no strategy is defined. */
+  @ApiProperty() goalsTotal!: number;
 
   /** Manual rank within its lane, ascending. Only meaningful against its own lane. */
   @ApiProperty() boardPosition!: number;
@@ -46,10 +110,10 @@ export class OpportunityResponseDto {
    */
   @ApiProperty() monthPinned!: boolean;
 
-  /** SUM(coins) over ALL users and ALL periods. Computed in SQL, never stored. */
+  /** SUM(votes) over ALL users and ALL periods. Computed in SQL, never stored. */
   @ApiProperty() priorityScore!: number;
-  /** The CALLER's coins on this opportunity in the CURRENT period only. */
-  @ApiProperty() myCoins!: number;
+  /** The CALLER's votes on this opportunity in the CURRENT period only. */
+  @ApiProperty() myVotes!: number;
   @ApiProperty() commentCount!: number;
 
   /** Who filed it — 'staff' (admin /opportunities) or 'consumer' (/bug-reports). Admin display only. */
@@ -63,11 +127,12 @@ export class OpportunityResponseDto {
 }
 
 /**
- * The confirmation returned to a consumer who filed a bug report — one-time only, by
- * design (see CreateConsumerBugReportDto's docblock): no "my reports" listing, no full
- * OpportunityResponseDto, since the consumer has no further use for the roadmap fields.
+ * The confirmation returned to whoever filed a bug report — one-time only, by design (see
+ * CreateBugReportDto's docblock): no "my reports" listing, no full OpportunityResponseDto,
+ * since a reporter has no further use for the roadmap fields. Staff track their report in
+ * Bug Hunter's findings table, where it lands, rather than back on this form.
  */
-export class ConsumerBugReportResponseDto {
+export class BugReportResponseDto {
   @ApiProperty() id!: string;
   @ApiProperty({ enum: RoadmapOpportunityStage })
   stage!: RoadmapOpportunityStage;
@@ -106,6 +171,30 @@ export class MonthLaneDto {
   @ApiProperty() total!: number;
 }
 
+/**
+ * One lane on the generic board.
+ *
+ * Supersedes MonthLaneDto's shape for every grouping including month — `key` is the month for a
+ * month board, the stage/goal/owner value otherwise, and null is always the catch-all lane
+ * (Unscheduled, or No goal / No owner). `label` is resolved server-side so the client is not
+ * left mapping raw enum values, and so an empty lane can still be named.
+ */
+export class BoardLaneDto {
+  @ApiProperty({
+    nullable: true,
+    description:
+      "Lane value: 'YYYY-MM' for month, the stage/goal/owner value otherwise. Null is the " +
+      'catch-all lane.',
+  })
+  key!: string | null;
+
+  @ApiProperty({ type: [OpportunityResponseDto] })
+  items!: OpportunityResponseDto[];
+
+  @ApiProperty({ description: "The lane's true size, ignoring laneLimit" })
+  total!: number;
+}
+
 export class MonthBoardBoundsDto {
   @ApiProperty({
     nullable: true,
@@ -119,20 +208,22 @@ export class MonthBoardBoundsDto {
 
 export class MonthBoardResponseDto {
   @ApiProperty({
-    type: [MonthLaneDto],
-    description:
-      'One entry per month in the requested window, INCLUDING empty months — a gap in a plan is ' +
-      'information, and collapsing empty lanes would make March look adjacent to June.',
+    enum: RoadmapBoardGroupBy,
+    description: 'The grouping these lanes were built with',
   })
-  months!: MonthLaneDto[];
+  groupBy!: RoadmapBoardGroupBy;
 
   @ApiProperty({
-    type: MonthLaneDto,
+    type: [BoardLaneDto],
     description:
-      'Everything with no month. Always present and always returned whole, because this is the ' +
-      'lane people drag OUT of and hiding it would make the board unusable on first load.',
+      'Every lane, in display order, INCLUDING empty ones — a gap is information, and ' +
+      'collapsing empty lanes would make March look adjacent to June (and would hide a product ' +
+      'goal nobody is working on, which is the same fact about a different axis).\n\n' +
+      'The catch-all (key: null) comes FIRST when grouping by month, because Unscheduled is the ' +
+      'lane people drag out of and it has always been the leftmost. It comes LAST for the other ' +
+      'groupings, where "no goal" / "no owner" is a residue rather than a starting point.',
   })
-  unscheduled!: MonthLaneDto;
+  lanes!: BoardLaneDto[];
 
   @ApiProperty({ type: MonthBoardBoundsDto })
   bounds!: MonthBoardBoundsDto;
@@ -146,7 +237,7 @@ export class MonthBoardResponseDto {
   /** Unfiltered MAX(priorityScore) — same stable-scale contract as the table's maxScore. */
   @ApiProperty() maxScore!: number;
 
-  /** Server-computed 'YYYY-MM' coin period. The client must never derive this itself. */
+  /** Server-computed 'YYYY-MM' vote period. The client must never derive this itself. */
   @ApiProperty() periodKey!: string;
 
   @ApiProperty({
@@ -172,24 +263,35 @@ export class MonthBoardMoveResponseDto {
   reordered!: string[];
 }
 
-export class CoinBudgetDto {
-  @ApiProperty() periodKey!: string;
-  @ApiProperty() coinsPerMonth!: number;
-  @ApiProperty() used!: number;
-  @ApiProperty() remaining!: number;
+/**
+ * The caller's live, spendable vote balance — every unexpired grant (50/month + 5/day, each
+ * good for 30 days) minus what's already been drawn from it. Not scoped to a calendar month:
+ * there's no fixed monthly total to compare against anymore, so there is deliberately no
+ * "of N" figure alongside it. See RoadmapVoteGrant's docblock for the full ledger shape.
+ */
+export class VoteBudgetDto {
+  @ApiProperty() available!: number;
 }
 
 /**
  * Returned by PUT /allocations. Carries BOTH the updated opportunity aggregate and the
  * caller's budget, so the frontend can reconcile its optimistic patch in one round-trip
- * instead of refetching the list (which would stomp an in-flight coin edit).
+ * instead of refetching the list (which would stomp an in-flight vote).
  */
 export class SetAllocationResponseDto {
   @ApiProperty() opportunityId!: string;
   @ApiProperty() periodKey!: string;
-  @ApiProperty() coins!: number;
+  @ApiProperty() votes!: number;
   @ApiProperty() priorityScore!: number;
-  @ApiProperty({ type: CoinBudgetDto }) budget!: CoinBudgetDto;
+  @ApiProperty({ type: VoteBudgetDto }) budget!: VoteBudgetDto;
+}
+
+/** One admin's vote total on one opportunity, across every period. */
+export class RoadmapVoterDto {
+  @ApiProperty() userId!: number;
+  @ApiProperty() name!: string;
+  @ApiProperty() email!: string;
+  @ApiProperty() votes!: number;
 }
 
 export class RoadmapFacetsDto {
@@ -223,8 +325,144 @@ export class AiReviewResponseDto {
   suggestions!: AiReviewSuggestionDto[];
 }
 
+export class AiReadinessCriterionDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() label!: string;
+  @ApiProperty() hint!: string;
+}
+
+export class AiReadinessCriteriaResponseDto {
+  @ApiProperty({ type: [AiReadinessCriterionDto] })
+  criteria!: AiReadinessCriterionDto[];
+
+  /**
+   * The sizes an opportunity may be filed at (ROADMAP_FILEABLE_EFFORTS). Served with the
+   * checklist so the threshold has one home: the drawer renders a size row from this rather
+   * than hardcoding "S or M" in the bundle, where it would drift the first time the team
+   * decides an L is fileable after all.
+   */
+  @ApiProperty({ enum: RoadmapOpportunityEffort, isArray: true })
+  fileableEfforts!: RoadmapOpportunityEffort[];
+}
+
+export class AiReadinessResultDto {
+  @ApiProperty() id!: string;
+  @ApiProperty() passed!: boolean;
+  @ApiProperty() reason!: string;
+}
+
+export class AiReadinessResponseDto {
+  /** One entry per criterion, in the order the criteria are defined. */
+  @ApiProperty({ type: [AiReadinessResultDto] })
+  results!: AiReadinessResultDto[];
+
+  /**
+   * A proposed size for the same draft, from the same call — null when the model gives
+   * anything that is not a live effort value. A proposal, not a decision: the filer can
+   * override it in the drawer before filing, and anyone can change it afterwards.
+   */
+  @ApiProperty({ enum: RoadmapOpportunityEffort, nullable: true })
+  effort!: RoadmapOpportunityEffort | null;
+
+  /** One sentence on why that size. Empty when there is no size to explain. */
+  @ApiProperty() effortReason!: string;
+
+  /**
+   * A rewritten draft that would pass, offered only when something did NOT pass — null when
+   * every criterion is green and the size is fileable, because there is then nothing to
+   * propose. The drawer shows it under the failing rows behind an explicit "Use this"; it
+   * never replaces what the filer wrote on its own.
+   *
+   * It may contain [square-bracketed questions] where the original genuinely lacked something
+   * a criterion needs. That is the designed answer, not a defect: the alternative is a model
+   * inventing a user group or a benefit, and an invented fact filed as an opportunity is worse
+   * than a gap the filer can see and fill. Accepting one re-opens the gate (the description
+   * changed), so a bracket left in place cannot be filed.
+   */
+  @ApiProperty({ nullable: true })
+  redraft!: string | null;
+
+  /**
+   * This verdict, signed, to be handed back on `POST /opportunities` as `readinessToken`.
+   *
+   * The gate is enforced on the WRITE, not here — see RoadmapReadinessTokenService for why the
+   * server signs the reading the filer was shown instead of re-grading on create. Clients send
+   * it back verbatim and never read it: it is opaque, and the same verdicts are already in
+   * `results` in a form built for rendering.
+   *
+   * Issued whether or not the draft passed. A failing token is what lets a manager's override
+   * be recorded against the specific items it waved through.
+   */
+  @ApiProperty({
+    description:
+      'Opaque. Send back verbatim as `readinessToken` when filing. Expires; re-run the check ' +
+      'if the draft changes.',
+  })
+  token!: string;
+}
+
 export class AiEnhanceResponseDto {
   @ApiProperty() enhanced!: string;
+}
+
+/** One criterion's live verdict, as the interview's checklist renders it. */
+export class OpportunityInterviewGateDto {
+  @ApiProperty({ description: 'A ROADMAP_READINESS_CRITERIA id' })
+  id!: string;
+
+  @ApiProperty({
+    description:
+      'True only when the conversation so far actually establishes it',
+  })
+  met!: boolean;
+
+  @ApiProperty({ description: 'What satisfied it, or what is still missing' })
+  note!: string;
+}
+
+/** The draft an interview hands over once every gate is met. */
+export class OpportunityInterviewDraftDto {
+  @ApiProperty() description!: string;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'One of the live product goal names, or null when none fit',
+  })
+  productGoal!: string | null;
+
+  @ApiProperty({ enum: RoadmapOpportunityEffort, nullable: true })
+  effort!: RoadmapOpportunityEffort | null;
+}
+
+export class OpportunityInterviewTurnResponseDto {
+  @ApiProperty({
+    description: "The agent's next question, or its hand-over line",
+  })
+  reply!: string;
+
+  @ApiProperty({
+    type: [OpportunityInterviewGateDto],
+    description:
+      'One entry per readiness criterion, in the criteria order — the same five the filing ' +
+      'gate grades, so a completed interview cannot produce a draft that gate would reject.',
+  })
+  gates!: OpportunityInterviewGateDto[];
+
+  @ApiPropertyOptional({
+    type: OpportunityInterviewDraftDto,
+    nullable: true,
+    description: 'Null until every gate is met.',
+  })
+  draft!: OpportunityInterviewDraftDto | null;
+
+  /**
+   * The signed readiness verdict for `draft.description`, to be handed back on
+   * `POST /opportunities` as `readinessToken` — exactly as the "Check readiness" button's token
+   * is. Issued only alongside a draft, and only because the interview grades the SAME criteria:
+   * a token minted from a private rubric would be a signature over a check nobody ran.
+   */
+  @ApiPropertyOptional({ nullable: true })
+  readinessToken!: string | null;
 }
 
 export class AiTextResponseDto {
@@ -298,4 +536,44 @@ export class RoadmapImportResultDto {
     description: 'The same progress output the CLI prints.',
   })
   log!: string[];
+}
+
+/**
+ * The result of pressing "Open in Builder Agent".
+ *
+ * `created` is the whole contract for whether the client seeds the interview: on a resume the
+ * transcript already has the brief in it, and sending it again would open the session with the
+ * same paragraph twice and the agent responding to the repeat. `seedMessage` is null in that case
+ * for the same reason — there is nothing to send.
+ */
+export class OpenBuilderSessionResponseDto {
+  @ApiProperty() sessionId!: string;
+  @ApiProperty({
+    description:
+      'True only when this call created the session, so the client must seed it',
+  })
+  created!: boolean;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'The opening brief to send, when created',
+  })
+  seedMessage!: string | null;
+}
+
+/**
+ * The presigned PUT, plus the URL to send back in `referenceImages` once the upload succeeds.
+ *
+ * Two URLs because they are two different things: `presignedUrl` is a short-lived, signed,
+ * write-once address the browser PUTs to and must never be stored; `imageUrl` is the durable
+ * object address that goes on the row. Returning only the first and having the client derive the
+ * second is how a signature ends up persisted in a database.
+ */
+export class RoadmapReferenceImageUploadUrlResponseDto {
+  @ApiProperty({ description: 'Presigned S3 PUT URL. Expires in 10 minutes.' })
+  presignedUrl!: string;
+
+  @ApiProperty({
+    description: 'The stored object URL — send this back in `referenceImages`.',
+  })
+  imageUrl!: string;
 }

@@ -7,8 +7,12 @@ import { AwsModule } from 'src/aws/aws.module';
 import { CaseModule } from 'src/case/case.module';
 import { PromptModule } from 'src/prompt/prompt.module';
 import { LlmUsageModule } from 'src/analytics/llm-usage.module';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 import { TrackAdminController } from './controller/track-admin.controller';
 import { TrackLearnerController } from './controller/track-learner.controller';
+import { TrackComponentTemplateController } from './controller/track-component-template.controller';
+import { TrackComponentTemplateService } from './service/track-component-template.service';
+import { TrackComponentTemplateRepository } from './repository/track-component-template.repository';
 import { TrackService } from './service/track.service';
 import { TrackSharedService } from './service/track-shared.service';
 import { TrackTenantService } from './service/track-tenant.service';
@@ -21,6 +25,8 @@ import { TrackAnnotationService } from './service/track-annotation.service';
 import { TrackGameService } from './service/track-game.service';
 import { TrackMemoryService } from './service/track-memory.service';
 import { TrackJournalService } from './service/track-journal.service';
+import { TrackProgressDashboardService } from './service/track-progress-dashboard.service';
+import { TrackProgressDashboardRepository } from './repository/track-progress-dashboard.repository';
 import { TrackRepository } from './repository/track.repository';
 import { TrackSectionRepository } from './repository/track-section.repository';
 import { TrackItemRepository } from './repository/track-item.repository';
@@ -46,11 +52,18 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     AwsModule,
     forwardRef(() => PromptModule),
     LlmUsageModule,
+    LlmAgentModule,
     CohortModule,
   ],
-  controllers: [TrackAdminController, TrackLearnerController],
+  controllers: [
+    TrackAdminController,
+    TrackLearnerController,
+    TrackComponentTemplateController,
+  ],
   providers: [
     TrackService,
+    TrackComponentTemplateService,
+    TrackComponentTemplateRepository,
     TrackSharedService,
     TrackTenantService,
     TrackMediaService,
@@ -62,6 +75,8 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     TrackGameService,
     TrackMemoryService,
     TrackJournalService,
+    TrackProgressDashboardService,
+    TrackProgressDashboardRepository,
     TrackRepository,
     TrackSectionRepository,
     TrackItemRepository,

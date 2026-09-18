@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomUUID } from 'crypto';
-import { In, Repository } from 'typeorm';
+import { In, Repository, SelectQueryBuilder } from 'typeorm';
 import { LlmProviderFactory } from 'src/ai-chat/provider/llm-provider.factory';
 import { excludeTestTenants } from 'src/analytics/util/test-tenant.util';
 import { AppConfigService } from 'src/config/config.service';
@@ -17,6 +17,7 @@ import {
   GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT,
   GLOSSARY_CONSOLIDATION_DIMENSIONS,
   GLOSSARY_CONSOLIDATION_PROMPT_CODE,
+  GLOSSARY_CONSOLIDATION_RECENCY_DAYS,
   GLOSSARY_GENERATION_PROMPT_CODE,
   GLOSSARY_LEXICAL_CONTRADICTION_MIN,
   GLOSSARY_MIN_CLUSTER_SUPPORT,
@@ -34,7 +35,14 @@ import {
   summarizeClusters,
   systematicFluency,
 } from '../util/construct-class.util';
-import { tokenize } from '../util/variety-feature.util';
+import {
+  tokenize,
+  varietyTargetDescriptor,
+} from '../util/variety-feature.util';
+import {
+  compileRegisterPolicy,
+  resolveTargetVariety,
+} from '../util/register-policy.util';
 import {
   computeTierAssignment,
   TierAssignment,
@@ -53,6 +61,10 @@ import {
   GlossaryConsolidationBatch,
 } from '../entity/glossary-consolidation-batch.entity';
 import { VarietyProfileAttachment } from '../entity/variety-profile-attachment.entity';
+import {
+  LanguageVarietyProfile,
+  VarietyProfileStatus,
+} from '../entity/language-variety-profile.entity';
 import { LanguagesRepository } from '../repository/languages.repository';
 import { LanguageGlossaryRepository } from '../repository/language-glossary.repository';
 import {
@@ -60,6 +72,11 @@ import {
   compileTier0Glossary,
   countGlossaryTokens,
 } from '../util/glossary-compiler.util';
+import {
+  GlossaryDedupeIndex,
+  normalizeMarkdown,
+} from '../util/glossary-dedupe.util';
+import { excludeForeignScripts } from '../util/script-consistency.util';
 
 export interface GlossarySectionView {
   section: LanguageGlossarySection;
@@ -169,6 +186,8 @@ export class LanguageGlossaryService {
     private readonly batchRepository: Repository<GlossaryConsolidationBatch>,
     @InjectRepository(VarietyProfileAttachment)
     private readonly attachmentRepository: Repository<VarietyProfileAttachment>,
+    @InjectRepository(LanguageVarietyProfile)
+    private readonly profileRepository: Repository<LanguageVarietyProfile>,
     private readonly llmProviderFactory: LlmProviderFactory,
     private readonly configService: AppConfigService,
   ) {}
@@ -180,20 +199,39 @@ export class LanguageGlossaryService {
       section,
       compiledTokens: countGlossaryTokens(compileSection(section)),
     }));
-    const tier0Tokens = countGlossaryTokens(compileTier0Glossary(sections));
+    // The register policy is part of the served card, so it is part of the
+    // budget. Counting the sections alone would let a publish pass a cap the
+    // runtime card then exceeds — and this cap is documented as enforced at
+    // authoring time and never truncated at runtime.
+    const registerPolicy = await this.resolveRegisterPolicy(languageId);
+    const tier0Tokens = countGlossaryTokens(
+      compileTier0Glossary(sections, registerPolicy),
+    );
     return { sections: views, tier0Tokens, tier0TokenCap: TIER0_TOKEN_CAP };
   }
 
+  /**
+   * Create or edit a section — global, or one variety profile's overlay.
+   *
+   * `profileId` exists because consolidation CREATES overlay sections
+   * (`sectionCode` + `profileId`) while this method used to resolve the global
+   * section only. The loop could therefore produce sections no authoring
+   * endpoint could reach: found 2026-09-02 with 14 accepted-worthy Tamil rules
+   * stuck behind a full Tier 0 budget in overlay sections whose tier nobody
+   * could change by hand. Omit it for the global section, as before.
+   */
   async upsertSection(
     languageId: number,
     sectionCode: string,
     dto: UpsertGlossarySectionDto,
     updatedBy?: string,
+    profileId?: string | null,
   ): Promise<LanguageGlossarySection> {
     await this.assertLanguageExists(languageId);
     const existing = await this.glossaryRepository.findSection(
       languageId,
       sectionCode,
+      profileId ?? null,
     );
 
     // A manual injectionMode change pins the tier: the admin's explicit
@@ -208,6 +246,7 @@ export class LanguageGlossaryService {
       ...(existing ?? {
         languageId,
         sectionCode,
+        profileId: profileId ?? null,
         status: GlossarySectionStatus.DRAFT,
         createdBy: updatedBy,
       }),
@@ -271,17 +310,73 @@ export class LanguageGlossaryService {
     return this.glossaryRepository.save(section);
   }
 
-  /** Compiled Tier 0 style card — global + the profile's overlays when given. */
+  /**
+   * The derived `## Register` block for a language, and the tenant's variety
+   * profile when attached.
+   *
+   * This is the phase 1 fix (design §14): the agent's register instruction and
+   * the judge's grading target now come from ONE expression. When a tenant is
+   * attached to a variety profile the descriptor carries that profile's
+   * measured features — address-form share and code-mix level — so the
+   * instruction is grounded in what that tenant's learners actually say rather
+   * than in a seeded string.
+   *
+   * Never throws: a language row that cannot be read costs the register line,
+   * not the glossary.
+   */
+  async resolveRegisterPolicy(
+    languageId: number,
+    profileId?: string | null,
+  ): Promise<string> {
+    try {
+      const language = await this.languagesRepository.findOne({
+        where: { id: languageId },
+      });
+      if (!language) return '';
+      const base = resolveTargetVariety(
+        language.evalConfig as Record<string, unknown> | null,
+        language.label,
+      );
+      let descriptor = base;
+      if (profileId) {
+        const profile = await this.profileRepository.findOne({
+          where: { id: profileId },
+        });
+        if (profile && profile.status !== VarietyProfileStatus.ARCHIVED) {
+          descriptor = varietyTargetDescriptor(base, profile.features);
+        }
+      }
+      return compileRegisterPolicy(descriptor);
+    } catch (error) {
+      this.logger.warn(
+        `[GLOSSARY] register policy resolution failed for language ${languageId}: ${error}`,
+      );
+      return '';
+    }
+  }
+
+  /**
+   * Compiled Tier 0 style card — global + the profile's overlays when given,
+   * led by the derived register policy.
+   *
+   * The policy is resolved here rather than passed in by callers on purpose:
+   * every reader of the Tier 0 card wants the same register instruction, and a
+   * parameter would let one call site quietly serve a card without it. That is
+   * how the instruction drifted from the grading target in the first place.
+   */
   async resolveTier0Glossary(
     languageId: number,
     profileId?: string | null,
   ): Promise<string> {
-    const sections = await this.glossaryRepository.findPublishedByLanguage(
-      languageId,
-      GlossaryInjectionMode.ALWAYS,
-      profileId,
-    );
-    return compileTier0Glossary(sections);
+    const [sections, registerPolicy] = await Promise.all([
+      this.glossaryRepository.findPublishedByLanguage(
+        languageId,
+        GlossaryInjectionMode.ALWAYS,
+        profileId,
+      ),
+      this.resolveRegisterPolicy(languageId, profileId),
+    ]);
+    return compileTier0Glossary(sections, registerPolicy);
   }
 
   /**
@@ -348,9 +443,15 @@ export class LanguageGlossaryService {
         : section.sectionCode;
       versions[key] = section.version;
     }
+    const registerPolicy = await this.resolveRegisterPolicy(
+      languageId,
+      profileId,
+    );
     return {
       versions,
-      tier0Tokens: countGlossaryTokens(compileTier0Glossary(sections)),
+      tier0Tokens: countGlossaryTokens(
+        compileTier0Glossary(sections, registerPolicy),
+      ),
       ...(profileId ? { profileId } : {}),
     };
   }
@@ -556,44 +657,14 @@ export class LanguageGlossaryService {
     const sections =
       await this.glossaryRepository.findAllForLanguage(languageId);
 
-    const consumed = new Set<string>();
-    for (const section of sections) {
-      for (const entry of section.entries ?? []) {
-        for (const annotationId of entry.provenance?.annotationIds ?? []) {
-          consumed.add(annotationId as string);
-        }
-      }
-    }
-    // Engineering findings consume their annotations too — a reported
-    // production artifact should not be re-reported every cycle.
-    const recentBatches = await this.batchRepository.find({
-      where: { languageId },
-      order: { createdAt: 'DESC' },
-      take: 100,
-    });
-    for (const b of recentBatches) {
-      for (const finding of b.stats?.engineeringFindings ?? []) {
-        for (const id of finding.annotationIds ?? []) consumed.add(id);
-      }
-    }
-
-    // Cross-tenant read by design: the glossary is global per language, so it
-    // learns from every REAL tenant's judged sessions. Internal/demo/QA orgs
-    // (tenants.isTestOrganization) are excluded — measured 2026-08-20, test
-    // traffic was >50% of the Kannada style-annotation pool, so an unfiltered
-    // read learns style rules from our own testers, not the population.
-    const recent = await this.annotationRepository
-      .createQueryBuilder('a')
-      .where('a.language = :language', { language: language.value })
-      .andWhere('a.dimension IN (:...dimensions)', {
-        dimensions: [...GLOSSARY_CONSOLIDATION_DIMENSIONS],
-      })
-      .andWhere('a.conditionedOut = false')
-      .andWhere(excludeTestTenants('a."tenant_id"'))
-      .orderBy('a.occurredAt', 'DESC')
-      .take(GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT)
-      .getMany();
-    const unconsumed = recent.filter((a) => !consumed.has(a.id));
+    const consumedIds = await this.collectConsumedAnnotationIds(
+      languageId,
+      sections,
+    );
+    const unconsumed = await this.unconsumedAnnotationsQuery(
+      language.value,
+      consumedIds,
+    ).getMany();
     if (unconsumed.length === 0) return emptyResult;
     if (unconsumed.length < (options.minAnnotations ?? 0)) {
       this.logger.log(
@@ -617,11 +688,43 @@ export class LanguageGlossaryService {
       GLOSSARY_MIN_CLUSTER_SUPPORT,
     );
     if (clusters.length === 0) {
+      // Record the attempt even though it produced nothing. The scheduler's
+      // cadence — both the weekly interval and the minimum gap — is measured
+      // from the last batch, so a path that returns without writing one leaves
+      // the clock frozen and re-runs on EVERY tick. Marathi and Kannada did
+      // exactly that: 2026-09-02, both consolidating twice within 30 minutes
+      // on a supposedly weekly cadence, because their unconsumed annotations
+      // (1 and 3, all `fluency` below the systematicity bar) can never cluster.
+      //
+      // An empty batch is also the honest audit record: "ran, found nothing"
+      // is what a reader needs to distinguish a quiet loop from a stalled one,
+      // which is the exact ambiguity that hid the original stall for 8 days.
+      const emptyBatch = await this.batchRepository.save(
+        this.batchRepository.create({
+          languageId,
+          autoAccepted: Boolean(options.autoAccept),
+          trigger: options.trigger ?? 'manual',
+          createdBy,
+          stats: {
+            annotationsConsidered: annotations.length,
+            tenants: 0,
+            proposed: 0,
+            autoAccepted: 0,
+            skippedDuplicates: 0,
+            overlayEntries: 0,
+          },
+          entries: [],
+        }),
+      );
       this.logger.log(
-        `[GLOSSARY_CONSOLIDATE] language=${language.value} skipped: ` +
+        `[GLOSSARY_CONSOLIDATE] language=${language.value} batch=${emptyBatch.id} skipped: ` +
           `${annotations.length} annotations formed no cluster above the support gate`,
       );
-      return { ...emptyResult, annotationsConsidered: annotations.length };
+      return {
+        ...emptyResult,
+        annotationsConsidered: annotations.length,
+        batchId: emptyBatch.id,
+      };
     }
 
     const { systemPrompt, engine } = await this.resolvePromptByCode(
@@ -656,6 +759,11 @@ export class LanguageGlossaryService {
     const { sections: consolidated, engineeringFindings: rawFindings } =
       this.parseConsolidationOutput(raw);
     const profileByTenant = await this.buildTenantProfileMap(languageId);
+    // Distinct variety profiles this language actually has tenants attached to
+    // — the gate on whether overlay routing can mean anything (see `target`).
+    const attachedProfileCount = new Set(
+      [...profileByTenant.values()].filter(Boolean),
+    ).size;
     // Distributional evidence corpora for the lexical gate, scoped to the
     // routing target: an overlay entry is judged against ITS population's
     // corpus (the profile's attached tenants), a global entry against every
@@ -693,8 +801,26 @@ export class LanguageGlossaryService {
     let autoAccepted = 0;
     let overlayEntries = 0;
     let skippedDuplicates = 0;
+    // Proposals that restate an ALREADY-PUBLISHED line. Recorded rather than
+    // silently dropped: a dropped proposal never consumes its annotations, so
+    // the same rule is re-derived from the same evidence and re-dropped on
+    // every cycle, forever, while those rows occupy the bounded read window.
+    // Recording them here consumes the evidence (batch findings are part of
+    // the consumed-set) and leaves the collision visible — a published rule
+    // that keeps re-deriving is a rule that is not working.
+    const redundantFindings: { summary: string; annotationIds: string[] }[] =
+      [];
     const touched: string[] = [];
     const batchEntries: ConsolidationBatchEntry[] = [];
+
+    // One index for the whole language: proposals are routed per sectionCode
+    // and per variety profile, so a per-section set let the same rule land
+    // twice under different sections, or once globally and once as an overlay.
+    const dedupe = new GlossaryDedupeIndex();
+    for (const section of sections) {
+      dedupe.addContent(section.content);
+      for (const entry of section.entries ?? []) dedupe.add(entry.markdown);
+    }
 
     for (const gen of consolidated) {
       // Route each proposal: overlay when every supporting tenant maps to the
@@ -717,7 +843,23 @@ export class LanguageGlossaryService {
             .map((t) => profileByTenant.get(t) ?? null),
         );
         const soleProfile = profiles.size === 1 ? [...profiles][0] : null;
-        const target = soleProfile ?? null;
+        // Overlay routing needs CONTRAST to carry information. When the
+        // language has fewer than two attached profiles, `profiles.size === 1`
+        // is unavoidable — it reflects which tenants happen to send traffic,
+        // not evidence that the rule is variety-specific — so an overlay would
+        // make a universal rule private to one org.
+        //
+        // Measured 2026-09-03: Tamil was the only language with a profile, it
+        // had exactly one, and 65% of its published glossary had accordingly
+        // been routed into that org's overlay — including plainly universal
+        // Tamil grammar (accusative case marking, the locative suffix). A
+        // second Tamil tenant would have inherited none of it, and the global
+        // glossary could never grow, because every rule the language learned
+        // was routed away from it.
+        //
+        // With two or more profiles the single-profile signal IS meaningful:
+        // the other populations existed and did not produce the error.
+        const target = attachedProfileCount >= 2 ? (soleProfile ?? null) : null;
         const bucket = byTarget.get(target) ?? [];
         bucket.push({ proposal, annos });
         byTarget.set(target, bucket);
@@ -763,27 +905,37 @@ export class LanguageGlossaryService {
             createdBy,
           });
 
-        // Dedupe against both existing proposals and lines already in the
-        // section's markdown content.
-        const existingKeys = new Set([
-          ...(section.entries ?? []).map((e) => normalizeMarkdown(e.markdown)),
-          ...(section.content ?? '')
-            .split('\n')
-            .map((line) => normalizeMarkdown(line))
-            .filter(Boolean),
-        ]);
+        // A section created in THIS run isn't in `sections`, and an overlay
+        // seeds its content from the global counterpart — fold both in so the
+        // index covers what this bucket is actually writing into.
+        dedupe.addContent(section.content);
+        for (const entry of section.entries ?? []) dedupe.add(entry.markdown);
 
         const corpora = await corporaFor(profileId ?? null);
         const newEntryIds: string[] = [];
         for (const { proposal, annos } of bucket) {
           const markdown = proposal.markdown.trim();
-          const key = normalizeMarkdown(markdown);
-          if (existingKeys.has(key)) {
+          const annotationIds = annos.map((a) => a.id);
+          const duplicate = dedupe.duplicateOf(markdown);
+          if (duplicate) {
             skippedDuplicates++;
+            // A queued sibling is still undecided, and whichever lands
+            // consumes the evidence — dropping is correct there. A published
+            // match is the deadlock case.
+            if (duplicate.source === 'published' && annotationIds.length > 0) {
+              redundantFindings.push({
+                summary: (
+                  `Re-derived an already-published rule, so the published one ` +
+                  `is not preventing these errors. Proposed: ` +
+                  `"${markdown.slice(0, 160)}" — already published: ` +
+                  `"${duplicate.line.slice(0, 160)}"`
+                ).slice(0, 500),
+                annotationIds,
+              });
+            }
             continue;
           }
-          existingKeys.add(key);
-          const annotationIds = annos.map((a) => a.id);
+          dedupe.add(markdown);
           const tenantIds = [
             ...new Set(annos.map((a) => a.tenantId).filter(Boolean)),
           ];
@@ -855,12 +1007,15 @@ export class LanguageGlossaryService {
 
     // Production-artifact clusters land on the batch as engineering findings
     // (v3 prompt contract) — visible to engineers, never glossary content.
-    const engineeringFindings = rawFindings.map((f) => ({
-      summary: f.summary.slice(0, 500),
-      annotationIds: (f.sourceAnnotationIndexes ?? [])
-        .map((i) => annotations[i - 1]?.id)
-        .filter((id): id is string => Boolean(id)),
-    }));
+    const engineeringFindings = [
+      ...rawFindings.map((f) => ({
+        summary: f.summary.slice(0, 500),
+        annotationIds: (f.sourceAnnotationIndexes ?? [])
+          .map((i) => annotations[i - 1]?.id)
+          .filter((id): id is string => Boolean(id)),
+      })),
+      ...redundantFindings,
+    ];
 
     const distinctTenants = new Set(
       annotations.map((a) => a.tenantId).filter(Boolean),
@@ -1045,32 +1200,106 @@ export class LanguageGlossaryService {
     });
   }
 
-  /** Unconsumed non-test style annotations — the scheduler's data-threshold gate. */
-  async countUnconsumedAnnotations(languageId: number): Promise<number> {
-    const language = await this.assertLanguageExists(languageId);
-    const sections =
-      await this.glossaryRepository.findAllForLanguage(languageId);
+  /**
+   * The consumed-set: annotations an existing entry already generalizes, plus
+   * those reported as an engineering finding. Both consume — a rule's
+   * provenance and a reported production artifact must not be re-mined next
+   * cycle. Shared by the run and the scheduler's gate so the gate counts what
+   * the run will actually see (they disagreed before: the gate ignored
+   * engineering findings and reported 106 unconsumed English annotations for a
+   * run that then saw 6).
+   */
+  private async collectConsumedAnnotationIds(
+    languageId: number,
+    sections?: LanguageGlossarySection[],
+  ): Promise<string[]> {
+    const resolved =
+      sections ??
+      (await this.glossaryRepository.findAllForLanguage(languageId));
     const consumed = new Set<string>();
-    for (const section of sections) {
+    for (const section of resolved) {
       for (const entry of section.entries ?? []) {
         for (const annotationId of entry.provenance?.annotationIds ?? []) {
           consumed.add(annotationId as string);
         }
       }
     }
-    const recent = await this.annotationRepository
+    const recentBatches = await this.batchRepository.find({
+      where: { languageId },
+      order: { createdAt: 'DESC' },
+      take: 100,
+    });
+    for (const b of recentBatches) {
+      for (const finding of b.stats?.engineeringFindings ?? []) {
+        for (const id of finding.annotationIds ?? []) consumed.add(id);
+      }
+    }
+    return [...consumed];
+  }
+
+  /**
+   * The consolidation read: the most recent UNCONSUMED style annotations from
+   * real tenants.
+   *
+   * Cross-tenant by design — the glossary is global per language, so it learns
+   * from every REAL tenant's judged sessions. Internal/demo/QA orgs
+   * (tenants.isTestOrganization) are excluded: measured 2026-08-20, test
+   * traffic was >50% of the Kannada style-annotation pool, so an unfiltered
+   * read learns style rules from our own testers, not the population.
+   *
+   * The consumed-set is excluded in SQL, BEFORE the limit. Applying the cap to
+   * the most recent rows and dropping consumed ones afterwards let consumed
+   * rows spend the whole budget: measured 2026-09-02, Tamil's window exposed
+   * 13 of its 2,409 unconsumed annotations (1,675 of the hidden ones
+   * non-fluency, i.e. immediately usable) and scheduled consolidation had
+   * produced nothing for 8 days across every language.
+   *
+   * Bounded to GLOSSARY_CONSOLIDATION_RECENCY_DAYS: a rule reaches the agent's
+   * every-turn prompt, so it must generalize the agent we ship now, not one
+   * retired two models ago. See that constant for the measurement.
+   */
+  private unconsumedAnnotationsQuery(
+    languageValue: string,
+    consumedIds: string[],
+  ): SelectQueryBuilder<LanguageErrorAnnotation> {
+    const query = this.annotationRepository
       .createQueryBuilder('a')
-      .select('a.id')
-      .where('a.language = :language', { language: language.value })
+      .where('a.language = :language', { language: languageValue })
       .andWhere('a.dimension IN (:...dimensions)', {
         dimensions: [...GLOSSARY_CONSOLIDATION_DIMENSIONS],
       })
       .andWhere('a.conditionedOut = false')
-      .andWhere(excludeTestTenants('a."tenant_id"'))
+      .andWhere('a.occurredAt > now() - make_interval(days => :recencyDays)', {
+        recencyDays: GLOSSARY_CONSOLIDATION_RECENCY_DAYS,
+      })
+      .andWhere(excludeTestTenants('a."tenant_id"'));
+    // Evidence in a foreign script is not evidence about THIS language's
+    // lexicon — it records the agent drifting into another language. Filtered
+    // in SQL, before the row limit, for the same reason the consumed-set is:
+    // otherwise unusable rows spend the budget.
+    const foreignScript = excludeForeignScripts('a."aiText"', languageValue);
+    if (foreignScript) query.andWhere(foreignScript);
+    // Skipped when empty: `<> ALL('{}')` is true for every row, but an empty
+    // array parameter gives Postgres no element type to infer.
+    if (consumedIds.length > 0) {
+      query.andWhere('a.id::text <> ALL(:consumedIds)', { consumedIds });
+    }
+    return query
       .orderBy('a.occurredAt', 'DESC')
-      .take(GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT)
+      .take(GLOSSARY_CONSOLIDATION_ANNOTATION_LIMIT);
+  }
+
+  /** Unconsumed non-test style annotations — the scheduler's data-threshold gate. */
+  async countUnconsumedAnnotations(languageId: number): Promise<number> {
+    const language = await this.assertLanguageExists(languageId);
+    const consumedIds = await this.collectConsumedAnnotationIds(languageId);
+    const rows = await this.unconsumedAnnotationsQuery(
+      language.value,
+      consumedIds,
+    )
+      .select('a.id')
       .getMany();
-    return recent.filter((a) => !consumed.has(a.id)).length;
+    return rows.length;
   }
 
   /**
@@ -1393,13 +1622,54 @@ export class LanguageGlossaryService {
     return Math.min(5, Math.max(1, Math.round(value)));
   }
 
-  /** Compact existing-glossary listing for the consolidation prompt. */
-  private summarizeGlossary(sections: LanguageGlossarySection[]): string {
+  /**
+   * Compact existing-glossary listing for a prompt's "already covered" block.
+   *
+   * `includePending` decides whether proposals awaiting review are listed, and
+   * the two callers need opposite answers:
+   *
+   *   CONSOLIDATION wants them (true). A queued proposal is as much a
+   *   duplicate source as a published line — one Tamil overlay had 11 queued
+   *   and invisible, so the consolidator re-proposed them.
+   *
+   *   ADJUDICATION must NOT have them (false). The proposals being judged ARE
+   *   the pending entries, so including them puts every proposal into its own
+   *   "existing glossary" block. Measured 2026-09-02: the adjudicator rejected
+   *   all 9 queued proposals for "restating a rule already present", quoting
+   *   each proposal's own text back as the rule it restated. Requiring that
+   *   quote is what exposed it; without it the reasons looked plausible.
+   */
+  summarizeGlossary(
+    sections: LanguageGlossarySection[],
+    options: { includePending?: boolean } = {},
+  ): string {
+    const includePending = options.includePending !== false;
     if (sections.length === 0) return '(no glossary sections exist yet)';
     return sections
       .map((s) => {
-        const body = (s.content ?? '').trim().slice(0, 1500);
-        return `### ${s.sectionCode} (${s.injectionMode}, ${s.status}) "${s.title}"\n${body || '(empty)'}`;
+        // The prompt is told not to restate what the glossary covers, and this
+        // string is the only thing it can check that against — so it must be
+        // complete. A 1500-char slice silently hid the tail of the three
+        // largest sections in production (up to 1970 chars, and Indic scripts
+        // reach the limit fastest), leaving paraphrase duplicates unpreventable.
+        // The generous per-section cap is a prompt-size backstop only; a
+        // section that big is a curation problem the Tier 0 cap will surface.
+        const body = (s.content ?? '').trim().slice(0, 8000);
+        // Proposals awaiting review are duplicate sources too — one Tamil
+        // overlay had 11 queued and invisible here.
+        const pending = includePending
+          ? (s.entries ?? [])
+              .filter((e) => e.status === GlossaryEntryStatus.PROPOSED)
+              .map((e) => e.markdown.trim())
+              .filter(Boolean)
+          : [];
+        const pendingBlock = pending.length
+          ? `\n(awaiting review, also do not restate)\n${pending.join('\n')}`
+          : '';
+        return (
+          `### ${s.sectionCode} (${s.injectionMode}, ${s.status}) "${s.title}"\n` +
+          `${body || '(empty)'}${pendingBlock}`
+        );
       })
       .join('\n\n');
   }
@@ -1541,7 +1811,8 @@ export class LanguageGlossaryService {
     return section;
   }
 
-  private async assertLanguageExists(languageId: number) {
+  /** Public so sibling glossary services resolve a language the same way. */
+  async assertLanguageExists(languageId: number) {
     const language = await this.languagesRepository.findOne({
       where: { id: languageId },
     });
@@ -1567,7 +1838,13 @@ export class LanguageGlossaryService {
       ...published.filter((s) => s.sectionCode !== candidate.sectionCode),
       candidate,
     ];
-    const tokens = countGlossaryTokens(compileTier0Glossary(prospective));
+    const registerPolicy = await this.resolveRegisterPolicy(
+      languageId,
+      candidate.profileId ?? null,
+    );
+    const tokens = countGlossaryTokens(
+      compileTier0Glossary(prospective, registerPolicy),
+    );
     if (tokens > TIER0_TOKEN_CAP) {
       throw new BadRequestException(
         `Tier 0 glossary would be ${tokens} tokens, over the ${TIER0_TOKEN_CAP}-token cap. ` +
@@ -1576,7 +1853,14 @@ export class LanguageGlossaryService {
     }
   }
 
-  private async resolvePromptByCode(promptCode: string) {
+  /**
+   * Resolve a registry prompt's current body + engine settings.
+   *
+   * Public so the adjudication pass reuses it rather than keeping a second
+   * copy of "which version and which model" — the same reasoning that keeps
+   * the judge tuple in one place on the analytics side.
+   */
+  async resolvePromptByCode(promptCode: string) {
     const row = await this.promptRepository.findOne({
       where: { promptCode },
     });
@@ -1639,9 +1923,4 @@ export class LanguageGlossaryService {
         typeof (s as GeneratedSection).content === 'string',
     );
   }
-}
-
-/** Case/whitespace-insensitive identity for markdown-line dedupe. */
-function normalizeMarkdown(line: string | undefined): string {
-  return (line ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
 }

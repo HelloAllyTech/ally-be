@@ -361,6 +361,33 @@ export class RoleplaySessionLogsRepository {
   }
 
   /**
+   * The client's per-turn internal monologue, if the session recorded one.
+   *
+   * Written by ally-ai-learn's working memory into the end-of-session
+   * `session_memory` message, which lands whole in
+   * `scenario_session_details.sessionMemory` — `structured` is a passthrough
+   * dict on our side, so this reads a key nothing else here knows about rather
+   * than requiring a column or a migration.
+   *
+   * Returns [] rather than null when absent: a session that predates the
+   * feature and one whose client never spoke are the same thing to a reader,
+   * and the panel renders its own empty state either way.
+   */
+  async findInternalMonologue(id: string): Promise<Record<string, any>[]> {
+    const row = await this.dataSource
+      .createQueryBuilder()
+      .select(
+        `d."sessionMemory"->'structured'->'client_working_memory'->'monologue'`,
+        'monologue',
+      )
+      .from('scenario_session_details', 'd')
+      .where('d."scenarioSessionId"::uuid = :id', { id })
+      .getRawOne<{ monologue: Record<string, any>[] | null }>();
+
+    return Array.isArray(row?.monologue) ? row!.monologue! : [];
+  }
+
+  /**
    * The configuration a session actually ran under (PRD FR15) — the prompt
    * versions, scenario/metadata version, and the effective LLM settings
    * (provider/model/generation params). All of this was captured at generation

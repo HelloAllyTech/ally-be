@@ -3,21 +3,21 @@
  * (Hamilton) method. A faithful port of the standalone app's
  * `public.largest_remainder_split(int, numeric[])`.
  *
- * Used when an admin splits an opportunity: every contributor's coins on the original are
+ * Used when an admin splits an opportunity: every contributor's votes on the original are
  * divided across the parts by weight. Exactness matters because the sum of all allocations is
- * the priority signal — a naive round() would leak or invent coins on most inputs, and the
+ * the priority signal — a naive round() would leak or invent votes on most inputs, and the
  * error would compound across every (user, period) pair on a busy opportunity.
  *
  * Behaviours deliberately matching the plpgsql:
  *  - negative weights are clamped to 0 (`greatest(p_weights[i], 0)`);
  *  - if all weights are ≤ 0 the whole total goes to the FIRST part, rather than throwing;
- *  - leftover coins go to the largest fractional remainders, ties broken by lowest index
+ *  - leftover votes go to the largest fractional remainders, ties broken by lowest index
  *    (`ORDER BY rem DESC, ord`).
  *
  * KNOWN, HARMLESS DIVERGENCE: plpgsql used exact `numeric`, this uses IEEE doubles. The sum is
  * exact regardless, because the leftover is derived from the actual floors rather than
  * recomputed. The only reachable difference is which part wins a mathematically exact tie
- * (e.g. 100 split three ways) — one coin may land on a different part than Postgres would have
+ * (e.g. 100 split three ways) — one vote may land on a different part than Postgres would have
  * chosen. Both answers are valid Hamilton results, the totals match, and for the integer
  * percentages the split UI produces it is not reachable in practice.
  */

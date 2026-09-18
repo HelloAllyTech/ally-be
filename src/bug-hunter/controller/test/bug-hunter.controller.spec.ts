@@ -20,6 +20,11 @@ describe('BugHunterController', () => {
     releasability: jest.Mock;
     cancelFixSession: jest.Mock;
   };
+  let bugFindingService: {
+    list: jest.Mock;
+    enrich: jest.Mock;
+    enrichOne: jest.Mock;
+  };
   const user: TokenUser = { id: 42, username: 'admin', tenantId: 'ally' };
 
   const findingRow = (overrides: Partial<BugFinding> = {}): BugFinding =>
@@ -68,13 +73,66 @@ describe('BugHunterController', () => {
       cancelFixSession: jest.fn(),
     };
 
+    // `enrich`/`enrichOne` resolve the reporter block and stage-pinner name from
+    // other tables; every case here is about routing and gating, so they pass the
+    // rows straight through.
+    bugFindingService = {
+      list: jest.fn(),
+      enrich: jest.fn().mockImplementation((rows) => Promise.resolve(rows)),
+      enrichOne: jest.fn().mockImplementation((row) => Promise.resolve(row)),
+    };
+
     controller = new BugHunterController(
       {} as never,
       {} as never,
-      {} as never,
+      bugFindingService as never,
       bugFixSessionService as never,
       {} as never,
+      // Metrics service: every case here is about routing and gating, and no
+      // case calls the metrics route.
+      {} as never,
+      // Model settings service: no case here reads/writes settings/models.
+      {} as never,
     );
+  });
+
+  /**
+   * The comprehensive table's own query, and the one filter that had to be
+   * server-side.
+   *
+   * The admin tab loads the newest 100 findings and sifts them in the browser,
+   * which is right for every other facet. It is wrong for `runId`: a sweep
+   * stamps its id onto every row it touches, and most of what a nightly sweep
+   * touches is human-reported bugs it re-reads — rows created the day somebody
+   * filed them, weeks before this run saw them. So a run's ten findings are
+   * scattered arbitrarily far down a table ordered by discovery date, and
+   * filtering the newest-100 window would have found the two that happened to
+   * be recent and reported that as the total.
+   */
+  describe('listFindings', () => {
+    beforeEach(() =>
+      bugFindingService.list.mockResolvedValue({ items: [], count: 0 }),
+    );
+
+    it('passes runId through, so "the 10 that sweep found" means all ten', async () => {
+      await controller.listFindings({
+        status: 'all',
+        runId: 'run-a',
+        limit: 100,
+      } as never);
+
+      expect(bugFindingService.list).toHaveBeenCalledWith(
+        expect.objectContaining({ runId: 'run-a', status: undefined }),
+      );
+    });
+
+    it('leaves runId undefined when the client did not scope to a run', async () => {
+      await controller.listFindings({ status: 'all' } as never);
+
+      expect(bugFindingService.list).toHaveBeenCalledWith(
+        expect.objectContaining({ runId: undefined, limit: 50, offset: 0 }),
+      );
+    });
   });
 
   describe('cancelFixSession', () => {

@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# report <file.json> — your written account of the run.
+#   {"type":"run_report","contentMd":"…","metrics":{…}}
+set -uo pipefail
+. "$(dirname "$0")/_common.sh"
+[ $# -eq 1 ] && [ -f "${1:-}" ] || usage "report <file.json>"
+post_file report "$1" || true

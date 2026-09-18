@@ -7,6 +7,8 @@ import { ElevenLabsTTSProvider } from './elevenlabs-tts.provider';
 import { SarvamTTSProvider } from './sarvam-tts.provider';
 import { GoogleTTSProvider } from './google-tts.provider';
 import { HumeTTSProvider } from './hume-tts.provider';
+import { CartesiaTTSProvider } from './cartesia-tts.provider';
+import { SmallestAITTSProvider } from './smallestai-tts.provider';
 
 @Injectable()
 export class TTSProviderFactory {
@@ -17,7 +19,8 @@ export class TTSProviderFactory {
   createProvider(
     provider: TTSProviderEnum,
     config: Record<string, any>,
-    languageCode: string,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    _languageCode: string,
   ): ITTSProvider {
     const keys = this.configService.voicePreview;
 
@@ -28,6 +31,8 @@ export class TTSProviderFactory {
       [TTSProviderEnum.GOOGLE]:
         this.configService.googleCloudTranslationConfig.credentials,
       [TTSProviderEnum.HUME]: keys.humeApiKey,
+      [TTSProviderEnum.CARTESIA]: keys.cartesiaApiKey,
+      [TTSProviderEnum.SMALLESTAI]: keys.smallestApiKey,
     };
 
     const apiKey = keyMap[provider];
@@ -46,11 +51,15 @@ export class TTSProviderFactory {
       case TTSProviderEnum.ELEVENLABS:
         return new ElevenLabsTTSProvider(apiKey, config);
       case TTSProviderEnum.SARVAM:
-        return new SarvamTTSProvider(apiKey, config, languageCode);
+        return new SarvamTTSProvider(apiKey, config);
       case TTSProviderEnum.GOOGLE:
-        return new GoogleTTSProvider(config, languageCode);
+        return new GoogleTTSProvider(config);
       case TTSProviderEnum.HUME:
         return new HumeTTSProvider(apiKey, config);
+      case TTSProviderEnum.CARTESIA:
+        return new CartesiaTTSProvider(apiKey, config);
+      case TTSProviderEnum.SMALLESTAI:
+        return new SmallestAITTSProvider(apiKey, config);
       default: {
         const _exhaustive: never = provider;
         throw new BadRequestException(

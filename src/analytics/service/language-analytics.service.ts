@@ -15,6 +15,7 @@ import {
   LanguageAnalyticsFilters,
   LanguageAnalyticsRepository,
 } from '../repository/language-analytics.repository';
+import { withReportingQuerySlot } from '../../common/util/reporting-query-slots.util';
 
 /** Severity weights — the normative constants from language-eval-judge-schema.md. */
 const SEVERITY_WEIGHT: Record<string, number> = {
@@ -70,8 +71,50 @@ export class LanguageAnalyticsService {
     column: 'scenarioVersionId' | 'promptVersion' | 'llmModel',
   ): Promise<LanguageRateByExperimentDto[]> {
     const [totals, weighted] = await Promise.all([
-      this.repo.sessionTotalsBy(filters, column),
-      this.repo.weightedBy(filters, column),
+      withReportingQuerySlot(() => this.repo.sessionTotalsBy(filters, column)),
+      withReportingQuerySlot(() => this.repo.weightedBy(filters, column)),
+    ]);
+    const weightedByValue = new Map<string, number>();
+    for (const row of weighted) {
+      const key = row.value ?? 'unknown';
+      weightedByValue.set(
+        key,
+        (weightedByValue.get(key) ?? 0) +
+          Number(row.count) * (SEVERITY_WEIGHT[row.severity] ?? 1),
+      );
+    }
+    return totals
+      .map((t) => {
+        const value = t.value ?? 'unknown';
+        const nTurns = Number(t.turns);
+        return {
+          value,
+          sessionsJudged: Number(t.sessions),
+          nTurns,
+          weightedRatePer100:
+            nTurns > 0
+              ? round2(((weightedByValue.get(value) ?? 0) / nTurns) * 100)
+              : 0,
+        };
+      })
+      .sort((a, b) => b.weightedRatePer100 - a.weightedRatePer100);
+  }
+
+  /**
+   * Weighted rate grouped by WHICH MAIN-AGENT PROMPT ran.
+   *
+   * Separate from `byExperiment` because the value is not a column: it is the
+   * key of `scenario_sessions.metadata.promptVersions`, resolved in SQL. Same
+   * denominator-aware shape, so the UI can render it beside the others.
+   */
+  private async byMainPrompt(
+    filters: LanguageAnalyticsFilters,
+  ): Promise<LanguageRateByExperimentDto[]> {
+    const [totals, weighted] = await Promise.all([
+      withReportingQuerySlot(() =>
+        this.repo.sessionTotalsByMainPrompt(filters),
+      ),
+      withReportingQuerySlot(() => this.repo.weightedByMainPrompt(filters)),
     ]);
     const weightedByValue = new Map<string, number>();
     for (const row of weighted) {
@@ -127,8 +170,8 @@ export class LanguageAnalyticsService {
     filters: LanguageAnalyticsFilters,
   ): Promise<Map<string, number>> {
     const [totals, counts] = await Promise.all([
-      this.repo.sessionTotalsByLanguage(filters),
-      this.repo.annotationCounts(filters),
+      withReportingQuerySlot(() => this.repo.sessionTotalsByLanguage(filters)),
+      withReportingQuerySlot(() => this.repo.annotationCounts(filters)),
     ]);
     const turnsJudged = totals.reduce((n, t) => n + Number(t.turns), 0);
     const turnsGarbled = totals.reduce(
@@ -188,6 +231,7 @@ export class LanguageAnalyticsService {
       layerTrend: [],
       rateByScenarioVersion: [],
       rateByPromptVersion: [],
+      rateByMainPrompt: [],
       rateByModel: [],
       werByVoice: [],
       reference: null,
@@ -215,22 +259,26 @@ export class LanguageAnalyticsService {
       countsByBucketDim,
       byScenarioVersion,
       byPromptVersion,
+      byMainPrompt,
       byModel,
       reference,
       werByVoiceRows,
     ] = await Promise.all([
-      this.repo.sessionTotalsByLanguage(filters),
-      this.repo.annotationCounts(filters),
-      this.repo.weightedByLanguage(filters),
-      this.repo.isolationBasisCounts(filters),
-      this.repo.errorLog(filters),
-      this.repo.turnsByBucket(filters),
-      this.repo.countsByBucketAndDimension(filters),
+      withReportingQuerySlot(() => this.repo.sessionTotalsByLanguage(filters)),
+      withReportingQuerySlot(() => this.repo.annotationCounts(filters)),
+      withReportingQuerySlot(() => this.repo.weightedByLanguage(filters)),
+      withReportingQuerySlot(() => this.repo.isolationBasisCounts(filters)),
+      withReportingQuerySlot(() => this.repo.errorLog(filters)),
+      withReportingQuerySlot(() => this.repo.turnsByBucket(filters)),
+      withReportingQuerySlot(() =>
+        this.repo.countsByBucketAndDimension(filters),
+      ),
       this.byExperiment(filters, 'scenarioVersionId'),
       this.byExperiment(filters, 'promptVersion'),
+      this.byMainPrompt(filters),
       this.byExperiment(filters, 'llmModel'),
-      this.repo.getPinnedReference(),
-      this.repo.roundTripWerByVoice(filters),
+      withReportingQuerySlot(() => this.repo.getPinnedReference()),
+      withReportingQuerySlot(() => this.repo.roundTripWerByVoice(filters)),
     ]);
 
     // changed_from_prev (FR18): name the config element(s) each scenario
@@ -514,6 +562,7 @@ export class LanguageAnalyticsService {
       layerTrend,
       rateByScenarioVersion,
       rateByPromptVersion: byPromptVersion,
+      rateByMainPrompt: byMainPrompt,
       rateByModel: byModel,
       werByVoice: werByVoiceRows.map((r) => ({
         voiceId: r.voice_id,

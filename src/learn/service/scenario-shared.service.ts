@@ -13,14 +13,11 @@ import { ScenarioSessionMessagesRepository } from '../repository/scenario-sessio
 import { ScenarioSessionMessages } from '../entity/scenario-session-messages.entity';
 import { ScenarioSessionDetailsRepository } from '../repository/scenario-session-details.repository';
 import { ScenarioSessionDetails } from '../entity/scenario-session-details.entity';
-import { ScenarioSessionMessageTagsRepository } from '../repository/scenario-session-message-tags.repository';
-import { MessageTagMapping } from '../type/scenario-message-tag.type';
 import {
   ALLY_AI_LEARN_PROMPT_PREFIX,
   SCENARIO_SESSION_TRANSLATABLE_FIELDS,
   STT_LLM_PROVIDER_CONFIG,
   SKILL_ICONS_S3_PREFIX,
-  ROOM_METADATA_WARN_BYTES,
 } from '../constants/scenario-session.constants';
 import { AppConfigService } from 'src/config/config.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
@@ -79,6 +76,7 @@ import { S3Service } from 'src/aws/service/s3.service';
 import { htmlToPlainText } from 'src/common/util/sanitize-html.util';
 import { ScenarioSessionRecordingRepository } from '../repository/scenario-session-recording.repository';
 import { ScenarioSessionRecording } from '../entity/scenario-session-recording.entity';
+import { SettingsService } from 'src/settings/service/settings.service';
 
 /**
  * scenario_translations.metadata.openingStatements may be string[] (current) or a legacy /
@@ -136,7 +134,6 @@ export class ScenarioSharedService {
     private scenarioTranslationsRepository: ScenarioTranslationsRepository,
     private scenarioSessionMessagesRepository: ScenarioSessionMessagesRepository,
     private scenarioSessionDetailsRepository: ScenarioSessionDetailsRepository,
-    private scenarioSessionMessageTagsRepository: ScenarioSessionMessageTagsRepository,
     private scenarioVoiceRepository: ScenarioVoicesRepository,
     private sttConfigsRepository: SttConfigsRepository,
     private llmConfigsRepository: LlmConfigsRepository,
@@ -154,6 +151,7 @@ export class ScenarioSharedService {
     private competencyService: CompetencyService,
     private configService: AppConfigService,
     private s3Service: S3Service,
+    private settingsService: SettingsService,
   ) {}
 
   async getScenarioByIds(
@@ -235,9 +233,8 @@ export class ScenarioSharedService {
   async getMessagesByScenarioSessionId(
     scenarioSessionId: string,
     pagination: Pagination,
-    options?: { includeTags?: boolean },
   ): Promise<{
-    messages: (ScenarioSessionMessages & { tags?: MessageTagMapping[] })[];
+    messages: ScenarioSessionMessages[];
     count: number;
   }> {
     const [messages, count] =
@@ -246,23 +243,7 @@ export class ScenarioSharedService {
         pagination,
       );
 
-    if (!options?.includeTags) {
-      return { messages, count };
-    }
-
-    const messageIds = messages.map((m) => m.id);
-    const tagsByMessageId =
-      await this.scenarioSessionMessageTagsRepository.getTagsByMessageIds(
-        scenarioSessionId,
-        messageIds,
-      );
-
-    const messagesWithTags = messages.map((m) => ({
-      ...m,
-      tags: tagsByMessageId.get(m.id) ?? [],
-    }));
-
-    return { messages: messagesWithTags, count };
+    return { messages, count };
   }
 
   async getMessagesByIds(
@@ -457,6 +438,18 @@ export class ScenarioSharedService {
 
     const languageCode = metadata?.language as LanguageCode;
 
+    // Turn-endpointing bounds are a single global, always-on admin setting
+    // (promoted from the deleted per-simulation EXPERIMENT(turn-endpointing)
+    // override) — read fresh each call, same as Terms/Privacy, and always
+    // wins over whatever may still be sitting in scenario.metadata for older
+    // rows that predate the removal.
+    const turnEndpointingSettings =
+      await this.settingsService.getTurnEndpointingSettings();
+    promptData.turnMinEndpointingDelay =
+      turnEndpointingSettings.turnMinEndpointingDelay;
+    promptData.turnMaxEndpointingDelay =
+      turnEndpointingSettings.turnMaxEndpointingDelay;
+
     // Pre-format previousMemory into the final sentence here so the
     // ai-learn prompt template can substitute `{previous_memory}`
     // verbatim with no conditional wrapper. Either we send a complete
@@ -473,8 +466,22 @@ export class ScenarioSharedService {
       promptData.roleInstructions = scenario.prompt;
     }
 
-    if (scenario?.competency?.name) {
-      promptData.competency = scenario.competency?.name;
+    // {competency} in the actor/evaluator prompts is a display string. With a
+    // cluster selected the simulation covers several competencies, so name all
+    // of them rather than silently dropping to the first — a prompt claiming
+    // one competency's name for a roleplay that assesses a dozen is worse than
+    // no value at all.
+    const competencyNames = (
+      scenario?.competencies?.length
+        ? scenario.competencies
+        : scenario?.competency
+          ? [scenario.competency]
+          : []
+    )
+      .map((competency) => competency?.name)
+      .filter((name): name is string => Boolean(name?.trim()));
+    if (competencyNames.length > 0) {
+      promptData.competency = competencyNames.join(', ');
     }
 
     // Drop per-language maps; learn payload uses same key as scenario API but
@@ -874,22 +881,35 @@ export class ScenarioSharedService {
       },
     };
 
-    // LiveKit caps room metadata at 64 KiB and nothing here trims — surface the
-    // payload size so headroom is visible before it becomes a session failure
-    // (LANGUAGE_GLOSSARY_DESIGN.md edge case 11). Session-start only.
-    const metadataBytes = Buffer.byteLength(
+    // Size of the FULL envelope, which is not necessarily what LiveKit gets.
+    //
+    // This used to warn against LiveKit's 64 KiB room-metadata cap from here,
+    // and that reading stopped being true when LEARN_METADATA_FETCH_ENABLED
+    // shipped: `prepareRoomMetadata` now stores this envelope and puts a ~223
+    // byte fetch pointer on the room and the dispatch. So on a fetch-enabled
+    // deployment this line was reporting 96-144 KB "against a 65536 cap" for a
+    // payload that never goes near LiveKit — a warning for a failure that
+    // cannot happen, on every single session.
+    //
+    // That is worse than no log. It cost an investigation on 2026-09-17: the
+    // number was read as the room metadata, made the leading suspect for an
+    // unrelated avatar timeout, and sent the search to the wrong service.
+    //
+    // So the cap belongs where the payload is chosen, and it now lives in
+    // `RoomMetadataStoreService.prepareRoomMetadata`, which knows which of the
+    // two is going on the room. What is left here is the envelope's own size,
+    // which is still worth seeing — it is the row written to learn_room_metadata
+    // and the body the agent fetches over HTTP — reported as INFO, because
+    // large is normal for it and nothing is at risk.
+    const envelopeBytes = Buffer.byteLength(
       JSON.stringify(roomMetadata),
       'utf8',
     );
-    if (metadataBytes > ROOM_METADATA_WARN_BYTES) {
-      this.logger.warn(
-        `[ROOM_METADATA_SIZE] ${metadataBytes} bytes (warn threshold ${ROOM_METADATA_WARN_BYTES}, LiveKit cap 65536) scenario=${scenario.id}`,
-      );
-    } else {
-      this.logger.info(
-        `[ROOM_METADATA_SIZE] ${metadataBytes} bytes scenario=${scenario.id}`,
-      );
-    }
+    this.logger.info(
+      `[ROOM_METADATA_SIZE] full envelope ${envelopeBytes} bytes scenario=${scenario.id} ` +
+        `(stored and fetched by the agent; the LiveKit cap is checked against the ` +
+        `room payload in prepareRoomMetadata)`,
+    );
 
     return roomMetadata;
   }
@@ -1032,11 +1052,27 @@ export class ScenarioSharedService {
       throw new NotFoundException('Scenario not found');
     }
 
-    if (result?.competencyId) {
-      const competency = await this.competencyService.getCompetency(
-        result.competencyId,
-      );
-      result.competency = competency;
+    // Hydrate the full selection. `competencyIds` is the source of truth (a
+    // cluster pick lands here already expanded); a scenario saved before it
+    // existed has only the scalar, so fall back to that. `competency` stays
+    // populated as the first entry for readers that predate the array.
+    const competencyIds = result?.competencyIds?.length
+      ? result.competencyIds
+      : result?.competencyId
+        ? [result.competencyId]
+        : [];
+    if (competencyIds.length > 0) {
+      // A deleted competency should not 404 the whole simulation, so a missing
+      // one is dropped rather than thrown.
+      const competencies = (
+        await Promise.all(
+          competencyIds.map((id) =>
+            this.competencyService.getCompetency(id).catch(() => null),
+          ),
+        )
+      ).filter((competency) => competency !== null);
+      result.competencies = competencies;
+      result.competency = competencies[0];
     }
 
     const behaviorInstructions =

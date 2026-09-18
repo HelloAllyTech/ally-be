@@ -119,6 +119,18 @@ export const VOICE_CONFIG_SCHEMA: Record<TtsProvider, VoiceConfigField[]> = {
       options: ['HUME_AI', 'CUSTOM_VOICE'],
     },
   ],
+  [TtsProvider.CARTESIA]: [
+    GENDER_FIELD,
+    AGE_FIELD,
+    { key: 'voice', required: true, type: 'string' },
+    { key: 'model', required: false, type: 'string' },
+  ],
+  [TtsProvider.SMALLESTAI]: [
+    GENDER_FIELD,
+    AGE_FIELD,
+    { key: 'voice_id', required: true, aliases: ['voiceId'], type: 'string' },
+    { key: 'model', required: false, type: 'string' },
+  ],
 };
 
 /**

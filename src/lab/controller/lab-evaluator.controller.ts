@@ -16,7 +16,6 @@ import {
 import { RequireFeatureToggle } from '../../auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from '../../authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
-import { SUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
 import { LabEvaluatorService } from '../service/lab-evaluator.service';
 import { CreateLabEvaluatorDto } from '../dto/lab-eval.dto';
 import { LabListQueryDto } from '../dto/lab-query.dto';
@@ -30,7 +29,6 @@ export class LabEvaluatorController {
 
   @Get()
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.VIEW_AI_LAB],
   })
   @ApiOperation({ summary: 'List AI Lab human evaluators' })
@@ -40,7 +38,6 @@ export class LabEvaluatorController {
 
   @Post()
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_AI_LAB],
   })
   @ApiOperation({
@@ -53,7 +50,6 @@ export class LabEvaluatorController {
 
   @Post(':id/regenerate-password')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_AI_LAB],
   })
   @ApiOperation({
@@ -66,7 +62,6 @@ export class LabEvaluatorController {
 
   @Delete(':id')
   @RequireFeatureToggle(FeatureToggleKey.AI_LAB, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.DELETE_AI_LAB],
   })
   @ApiOperation({

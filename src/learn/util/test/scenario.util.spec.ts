@@ -7,6 +7,7 @@ import {
   collectProviderConfigIds,
   resolveSessionSttConfig,
   resolveSessionLlmConfig,
+  resolveCompetencySelection,
 } from '../scenario.util';
 import { GetAdminScenarioDto } from '../../dto/get-scenario.dto';
 import { CreateScenarioDto } from '../../dto/create-scenario.dto';
@@ -88,40 +89,43 @@ describe('Scenario Util', () => {
           checklistType: ChecklistType.GUIDED,
           // Not set on the DTO, so the summary checklist stays opted out.
           summaryChecklistEnabled: false,
+          // Same: unset on the DTO means the supervisor stays silent in-session.
+          // Written as an explicit false rather than left undefined, so the
+          // stored metadata says which way the toggle was resolved.
+          supervisorNotesEnabled: false,
+          // Same shape again: unset on the DTO means this roleplay stays
+          // audio-only, written as an explicit false so the stored metadata
+          // records how the toggle resolved rather than leaving it ambiguous.
+          videoActorEnabled: false,
           timerMode: true,
           maxTimeValue: '1:30:00',
           optGuardrails: scenario.optGuardrails,
           knowledgeSources: scenario.knowledgeSources,
           currentState: scenario.currentState,
+          // Not set on the DTO, so it resolves to the on-by-default toggle.
+          fillerEnabled: true,
         },
       });
     });
 
-    it('should map turnMaxEndpointingDelay into metadata when set', () => {
+    // The per-simulation EXPERIMENT(turn-endpointing) override has been
+    // deleted in favour of a single global admin setting (see
+    // SettingsService.getTurnEndpointingSettings); scenario metadata no
+    // longer carries turnMin/MaxEndpointingDelay at all.
+    it('should not carry turnMin/MaxEndpointingDelay even if present on the DTO', () => {
       const userId = 111;
       const scenario: CreateScenarioDto = {
-        title: 'Endpointing Override Scenario',
+        title: 'Endpointing Pair Scenario',
         description: 'Test Description',
         status: ScenarioStatus.DRAFT,
-        turnMaxEndpointingDelay: 1.5,
+        turnMinEndpointingDelay: 0.3,
+        turnMaxEndpointingDelay: 1.8,
       } as any;
 
       const result = mapCreateScenarioRequestToEntity(scenario, userId);
 
-      expect(result.metadata.turnMaxEndpointingDelay).toBe(1.5);
-    });
-
-    it('should leave turnMaxEndpointingDelay undefined when unset', () => {
-      const userId = 112;
-      const scenario: CreateScenarioDto = {
-        title: 'No Override Scenario',
-        description: 'Test Description',
-        status: ScenarioStatus.DRAFT,
-      } as any;
-
-      const result = mapCreateScenarioRequestToEntity(scenario, userId);
-
-      expect(result.metadata.turnMaxEndpointingDelay).toBeUndefined();
+      expect(result.metadata).not.toHaveProperty('turnMinEndpointingDelay');
+      expect(result.metadata).not.toHaveProperty('turnMaxEndpointingDelay');
     });
 
     it('should map create scenario DTO with minimal fields', () => {
@@ -280,6 +284,55 @@ describe('Scenario Util', () => {
       const result = mapCreateScenarioRequestToEntity(scenario, 212);
 
       expect(result.metadata.summaryChecklistEnabled).toBe(true);
+    });
+
+    it('should leave videoActorEnabled off when the DTO omits it', () => {
+      // The case that covers every roleplay in the database: no key, no video.
+      const scenario: CreateScenarioDto = {
+        title: 'An ordinary roleplay',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, 214);
+
+      expect(result.metadata.videoActorEnabled).toBe(false);
+    });
+
+    it('should treat a truthy non-boolean videoActorEnabled as off', () => {
+      // `=== true`, not a passthrough: a client sending a stray truthy value
+      // has not consented to publish video, and the worker gates on this key.
+      const scenario: CreateScenarioDto = {
+        title: 'A roleplay with a malformed flag',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        videoActorEnabled: 'yes',
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, 215);
+
+      expect(result.metadata.videoActorEnabled).toBe(false);
+    });
+
+    it('should carry videoActorEnabled through when the DTO opts in', () => {
+      const scenario: CreateScenarioDto = {
+        title: 'A roleplay with a face',
+        description: 'Description',
+        status: ScenarioStatus.DRAFT,
+        prompt: 'Prompt',
+        isGlobal: false,
+        videoActorEnabled: true,
+        videoActorAvatarId: 'avatar_9f3c2b',
+      } as any;
+
+      const result = mapCreateScenarioRequestToEntity(scenario, 216);
+
+      expect(result.metadata.videoActorEnabled).toBe(true);
+      expect(result.metadata.videoActorAvatarId).toBe('avatar_9f3c2b');
     });
 
     it('should not include summaryChecklistEnabled when experienceMode is FEEDBACK', () => {
@@ -486,6 +539,53 @@ describe('Scenario Util', () => {
       expect(result.metadata).toEqual({
         name: 'Updated',
         temperature: 0.4,
+      });
+    });
+
+    it('should persist feedbackTabs (e.g. Transcript toggled off) into metadata', () => {
+      const userId = 505;
+      const existingScenario = {
+        id: 1,
+        metadata: { name: 'Existing' },
+      } as unknown as Scenarios;
+      const dto: UpdateScenarioDto = {
+        feedbackTabs: { debrief: true, transcript: false },
+      } as any;
+
+      const result = mapUpdateScenarioRequestToEntity(
+        dto,
+        existingScenario,
+        userId,
+      );
+
+      expect(result.metadata).toEqual({
+        name: 'Existing',
+        feedbackTabs: { debrief: true, transcript: false },
+      });
+    });
+
+    it('should NOT persist the retired enableFeedback master switch', () => {
+      // Migration 1944200000000 strips this key; writing it back on the next
+      // save of any roleplay would quietly undo that cleanup.
+      const existingScenario = {
+        id: 1,
+        metadata: { name: 'Existing' },
+      } as unknown as Scenarios;
+      const dto: UpdateScenarioDto = {
+        enableFeedback: false,
+        feedbackTabs: { debrief: false, transcript: false },
+      } as any;
+
+      const result = mapUpdateScenarioRequestToEntity(
+        dto,
+        existingScenario,
+        505,
+      );
+
+      expect(result.metadata).not.toHaveProperty('enableFeedback');
+      expect(result.metadata).toEqual({
+        name: 'Existing',
+        feedbackTabs: { debrief: false, transcript: false },
       });
     });
   });
@@ -1044,5 +1144,51 @@ describe('resolveSessionLlmConfig — catalog rung', () => {
         broken,
       ),
     ).toEqual({ provider: 'openai', config: { model: 'gpt-4o' } });
+  });
+});
+
+describe('resolveCompetencySelection', () => {
+  it('derives the scalar from the array so the two never disagree', () => {
+    expect(
+      resolveCompetencySelection({ competencyIds: ['c-1', 'c-2', 'c-3'] }),
+    ).toEqual({ competencyIds: ['c-1', 'c-2', 'c-3'], competencyId: 'c-1' });
+  });
+
+  it('lets the array win over a scalar the caller also sent', () => {
+    // The web builder sends both; the array is the real selection, so a stale
+    // scalar must not survive as competencyId.
+    expect(
+      resolveCompetencySelection({
+        competencyId: 'stale',
+        competencyIds: ['c-1'],
+      }),
+    ).toEqual({ competencyIds: ['c-1'], competencyId: 'c-1' });
+  });
+
+  it('expands a scalar-only caller into the array shape', () => {
+    expect(resolveCompetencySelection({ competencyId: 'c-1' })).toEqual({
+      competencyId: 'c-1',
+      competencyIds: ['c-1'],
+    });
+  });
+
+  it('clears both columns on an empty array', () => {
+    // Nulls, not undefined: an update has to actually write the clear.
+    expect(resolveCompetencySelection({ competencyIds: [] })).toEqual({
+      competencyIds: null,
+      competencyId: null,
+    });
+  });
+
+  it('de-duplicates repeated ids', () => {
+    // Overlapping clusters can offer the same competency twice.
+    expect(
+      resolveCompetencySelection({ competencyIds: ['c-1', 'c-2', 'c-1'] }),
+    ).toEqual({ competencyIds: ['c-1', 'c-2'], competencyId: 'c-1' });
+  });
+
+  it('touches neither column when the caller sends no competency key', () => {
+    // A partial update that never mentions competencies must not clear them.
+    expect(resolveCompetencySelection({})).toEqual({});
   });
 });

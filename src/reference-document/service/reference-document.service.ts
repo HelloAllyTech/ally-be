@@ -99,23 +99,6 @@ export class ReferenceDocumentService {
     };
   }
 
-  async searchPublicDocuments(searchDto: SearchDocumentsDto) {
-    const documents = await this.referenceDocumentRepository.find({
-      select: ['id'],
-      where: {
-        isPublic: true,
-        isArchived: false,
-        uploadStatus: DocumentUploadStatus.SUCCESS,
-      },
-    });
-
-    return this.searchDocumentsByIds(
-      searchDto,
-      documents.map((d) => d.id),
-      'public',
-    );
-  }
-
   async searchTenantDocuments(searchDto: SearchDocumentsDto) {
     const organizationId = ExecutionManager.getTenantId();
     if (!organizationId) {
@@ -349,35 +332,6 @@ export class ReferenceDocumentService {
         )}`,
       );
       throw new NotFoundException(`Reference document with ID ${id} not found`);
-    }
-  }
-
-  async getPublicReferenceDocument(id: string) {
-    const document = await this.referenceDocumentRepository.findOneBy({
-      id,
-      isPublic: true,
-      uploadStatus: DocumentUploadStatus.SUCCESS,
-    });
-
-    if (!document) {
-      this.logger.error(`Public reference document with ID ${id} not found`);
-      throw new NotFoundException(
-        `Public reference document with ID ${id} not found`,
-      );
-    }
-
-    try {
-      const aiDocument = await this.aiService.getReferenceDocument(id);
-      return aiDocument;
-    } catch (error) {
-      this.logger.error(
-        `Failed to get public document from AI service: ${id} with error ${JSON.stringify(
-          error,
-        )}`,
-      );
-      throw new NotFoundException(
-        `Public reference document with ID ${id} not found`,
-      );
     }
   }
 

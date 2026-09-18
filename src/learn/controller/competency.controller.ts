@@ -19,7 +19,6 @@ import {
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { SUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 import { CompetencyService } from '../service/competency.service';
 import {
   CreateCompetencyDto,
@@ -92,7 +91,6 @@ export class CompetencyController {
       'ones (defaults to false — custom competencies are otherwise hidden).',
   })
   @RequireFeatureToggle(FeatureToggleKey.COMPETENCIES, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_SCENARIO],
   })
   @Get()
@@ -127,7 +125,6 @@ export class CompetencyController {
     type: CreateCompetencyResponseDto,
   })
   @RequireFeatureToggle(FeatureToggleKey.COMPETENCIES, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_SCENARIO],
   })
   @Post()
@@ -148,7 +145,6 @@ export class CompetencyController {
     type: CompetencyResponseDto,
   })
   @RequireFeatureToggle(FeatureToggleKey.COMPETENCIES, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_SCENARIO],
   })
   @Put(':id')
@@ -170,7 +166,6 @@ export class CompetencyController {
     description: 'Competency deleted successfully',
   })
   @RequireFeatureToggle(FeatureToggleKey.COMPETENCIES, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_SCENARIO],
   })
   @Delete(':id')
@@ -190,7 +185,6 @@ export class CompetencyController {
     type: CompetencyBehavioursResponseDto,
   })
   @RequireFeatureToggle(FeatureToggleKey.COMPETENCIES, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_SCENARIO],
   })
   @Get(':id/behaviours')
@@ -209,7 +203,6 @@ export class CompetencyController {
     type: CompetencyBehavioursResponseDto,
   })
   @RequireFeatureToggle(FeatureToggleKey.COMPETENCIES, {
-    legacyRoles: SUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_SCENARIO],
   })
   @Put(':id/behaviours')

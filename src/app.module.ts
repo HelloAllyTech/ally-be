@@ -22,6 +22,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { AnalyticsAgentModule } from './analytics-agent/analytics-agent.module';
 import { AnalyticsSuggestionsModule } from './analytics-suggestions/analytics-suggestions.module';
 import { BugHunterModule } from './bug-hunter/bug-hunter.module';
+import { BuilderModule } from './builder/builder.module';
 import { ExecutionContextMiddleware } from './common/execution/execution-context.middleware';
 import { TenantModule } from './tenant/tenant.module';
 import { CommonModule } from './common/common.module';
@@ -39,12 +40,14 @@ import { ScenarioSessionReviewModule } from './scenario-session-review/scenario-
 import { ScribeSessionReviewModule } from './scribe-session-review/scribe-session-review.module';
 import { BadgeModule } from './badge/badge.module';
 import { CommunityModule } from './community/community.module';
+import { EngagementReminderModule } from './engagement-reminder/engagement-reminder.module';
 import { ScenarioCharacterModule } from './scenario-character/scenario-character.module';
 import { PromptModule } from './prompt/prompt.module';
 import { LlmModule } from './llm/llm.module';
 import { ConversationalGuardrailsModule } from './conversational-guardrails/conversational-guardrails.module';
 import { CaseModule } from './case/case.module';
 import { TrackModule } from './track/track.module';
+import { ProgressModule } from './progress/progress.module';
 import { CohortModule } from './cohort/cohort.module';
 import { ScenarioCoverImageLibraryModule } from './scenario-cover-image-library/scenario-cover-image-library.module';
 import { ComfortAudioModule } from './comfort-audio/comfort-audio.module';
@@ -60,12 +63,14 @@ import { CustomFieldsModule } from './custom-fields/custom-fields.module';
 import { DynamicI18nModule } from './dynamic-i18n/dynamic-i18n.module';
 import { TooltipModule } from './tooltip/tooltip.module';
 import { RoleplaySessionLogsModule } from './roleplay-session-logs/roleplay-session-logs.module';
-import { RoleplayStudioModule } from './roleplay-studio/roleplay-studio.module';
 import { BlogModule } from './blog/blog.module';
 import { LabModule } from './lab/lab.module';
 import { ProductRoadmapModule } from './product-roadmap/product-roadmap.module';
 import { LogsModule } from './logs/logs.module';
 import { PostHogModule } from './posthog/posthog.module';
+import { ChangelogModule } from './changelog/changelog.module';
+import { UxSignalsModule } from './ux-signals/ux-signals.module';
+import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
 
 @Module({
   imports: [
@@ -93,6 +98,7 @@ import { PostHogModule } from './posthog/posthog.module';
     AnalyticsAgentModule,
     AnalyticsSuggestionsModule,
     BugHunterModule,
+    BuilderModule,
     TenantModule,
     CommonModule,
     SettingsModule,
@@ -112,6 +118,8 @@ import { PostHogModule } from './posthog/posthog.module';
     ScribeSessionReviewModule,
     BadgeModule,
     CommunityModule,
+    EngagementReminderModule,
+    ProgressModule,
     ScenarioCharacterModule,
     PromptModule,
     LlmModule,
@@ -130,11 +138,13 @@ import { PostHogModule } from './posthog/posthog.module';
     DynamicI18nModule,
     TooltipModule,
     RoleplaySessionLogsModule,
-    RoleplayStudioModule,
     BlogModule,
     LabModule,
     ProductRoadmapModule,
     LogsModule,
+    ChangelogModule,
+    UxSignalsModule,
+    MobileReleasesModule,
   ],
   controllers: [],
   providers: [

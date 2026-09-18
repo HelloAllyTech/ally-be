@@ -5,6 +5,16 @@ import { countableSessionPredicate } from '../util/session-eligibility.util';
 /** Prompt-management code for the language judge rubric (seeded by migration). */
 export const LANGUAGE_JUDGE_PROMPT_CODE = 'language_quality_judge_rubric';
 
+/**
+ * Language recorded for a session that carries no `metadata.languageId`.
+ * `languages.value`, not a bare code — every consumer of
+ * `language_judgment_sessions.language` / `language_error_annotations.language`
+ * joins back to `languages`, so a value with no row there silently drops those
+ * rows out of glossary consolidation and per-language analytics.
+ */
+export const DEFAULT_JUDGE_LANGUAGE = 'en-IN';
+const DEFAULT_JUDGE_LANGUAGE_SQL = `'${DEFAULT_JUDGE_LANGUAGE}'`;
+
 export interface LanguageSessionRow {
   id: string;
   tenant_id: string;
@@ -78,7 +88,12 @@ const sessionProjection = (extraSelect = '') => `
              s.tenant_id        AS tenant_id,
              s."scenarioId"     AS scenario_id,
              s."scenarioVersionId" AS scenario_version_id,
-             COALESCE(l.value, 'en') AS language,
+             -- Sessions that recorded no metadata.languageId are judged as the
+             -- platform's default English. The fallback MUST be a real
+             -- languages.value: consumers join on it, and the previous bare
+             -- 'en' (no such row) made those annotations invisible to glossary
+             -- consolidation, which joins languages -> annotation.language.
+             COALESCE(l.value, ${DEFAULT_JUDGE_LANGUAGE_SQL}) AS language,
              l.label            AS language_label,
              l."evalConfig"     AS eval_config,
              v.provider         AS tts_provider,
@@ -173,7 +188,7 @@ export class LanguageJudgeRepository {
                      WHERE m."scenarioSessionId" = s.id
                        AND m."senderId" = -1)`;
     if (opts.language)
-      sql += ` AND COALESCE(l.value, 'en') = ${p(opts.language)}`;
+      sql += ` AND COALESCE(l.value, ${DEFAULT_JUDGE_LANGUAGE_SQL}) = ${p(opts.language)}`;
     if (opts.sinceDays != null)
       sql += ` AND s."createdAt" >= now() - make_interval(days => ${p(opts.sinceDays)})`;
     if (opts.onlyUnjudged) {

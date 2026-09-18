@@ -4,11 +4,11 @@ import { LearnModule } from 'src/learn/learn.module';
 import { LlmModule } from 'src/llm/llm.module';
 import { LlmPreviewController } from './llm-preview.controller';
 import { LlmPreviewService } from './llm-preview.service';
-import { LlmProviderFactory } from './providers/llm-provider.factory';
+import { LlmAgentModule } from 'src/llm-agent/llm-agent.module';
 
 @Module({
-  imports: [AppConfigModule, LearnModule, LlmModule],
+  imports: [AppConfigModule, LearnModule, LlmModule, LlmAgentModule],
   controllers: [LlmPreviewController],
-  providers: [LlmPreviewService, LlmProviderFactory],
+  providers: [LlmPreviewService],
 })
 export class LlmPreviewModule {}

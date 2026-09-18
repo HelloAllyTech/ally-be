@@ -29,43 +29,57 @@ import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-togg
 import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { TokenUser } from 'src/auth/type/auth.types';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
-import { SUPER_DUPER_ADMIN_ROLES } from 'src/common/constants/user.constants';
 
 import {
   AiDraftDto,
   AiGenerateClaudePromptDto,
-  AiReleaseNotesDto,
   AiSummariseDto,
+  OpportunityInterviewTurnDto,
   RoadmapImportRequestDto,
   CreateInterviewNoteDto,
-  CreateReleaseNoteDto,
   CreateTaxonomyItemDto,
   RenameTaxonomyItemDto,
   ReorderTaxonomyDto,
   RoadmapListQueryDto,
   UpdateInterviewNoteDto,
-  UpdateReleaseNoteDto,
 } from '../dto/roadmap-content.dto';
 import {
   AiEnhanceResponseDto,
+  AiReadinessCriteriaResponseDto,
+  AiReadinessResponseDto,
   AiReviewResponseDto,
   AiTextResponseDto,
   DuplicatesResponseDto,
+  OpportunityInterviewTurnResponseDto,
   PruneVectorsResponseDto,
   RoadmapImportResultDto,
   ReindexResponseDto,
   RoadmapEligibleOwnerDto,
 } from '../dto/roadmap-response.dto';
+import {
+  BulkAssessResponseDto,
+  CreateStrategyGoalDto,
+  GoalImpactVerdictDto,
+  RankWeightsResponseDto,
+  RenameStrategyGoalDto,
+  ReorderStrategyGoalsDto,
+  StrategyGoalsResponseDto,
+  UpdateRankWeightsDto,
+} from '../dto/roadmap-strategy.dto';
 import { RoadmapImportService } from '../service/roadmap-import.service';
 import { RoadmapOpportunityService } from '../service/roadmap-opportunity.service';
 import { RoadmapTaxonomyService } from '../service/roadmap-taxonomy.service';
-import {
-  RoadmapInterviewNoteService,
-  RoadmapReleaseNoteService,
-} from '../service/roadmap-content.service';
+import { RoadmapStrategyGoalService } from '../service/roadmap-strategy-goal.service';
+import { RoadmapGoalImpactService } from '../service/roadmap-goal-impact.service';
+import { RoadmapInterviewNoteService } from '../service/roadmap-content.service';
 import { RoadmapAiService } from '../service/roadmap-ai.service';
 import { RoadmapVectorService } from '../service/roadmap-vector.service';
 import { RoadmapAccessService } from '../service/roadmap-access.service';
+import {
+  ROADMAP_FILEABLE_EFFORTS,
+  ROADMAP_READINESS_CRITERIA,
+} from '../constants/product-roadmap.constants';
+import { RoadmapOpportunityEffort } from '../enum/roadmap-opportunity.enum';
 
 /** Taxonomy, research notes, release notes, AI helpers, and the vector-index repair tools. */
 @ApiTags('Product Roadmap')
@@ -76,12 +90,13 @@ export class RoadmapAdminController {
   constructor(
     private readonly taxonomyService: RoadmapTaxonomyService,
     private readonly interviewService: RoadmapInterviewNoteService,
-    private readonly releaseNoteService: RoadmapReleaseNoteService,
     private readonly aiService: RoadmapAiService,
     private readonly vectorService: RoadmapVectorService,
     private readonly opportunityService: RoadmapOpportunityService,
     private readonly importService: RoadmapImportService,
     private readonly access: RoadmapAccessService,
+    private readonly strategyGoalService: RoadmapStrategyGoalService,
+    private readonly goalImpactService: RoadmapGoalImpactService,
   ) {}
 
   // ── taxonomy ──────────────────────────────────────────────────────────────
@@ -96,7 +111,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Get('product-goals/usage')
@@ -108,7 +122,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('product-goals')
@@ -120,7 +133,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Patch('product-goals/:id')
@@ -139,7 +151,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Put('product-goals/order')
@@ -151,7 +162,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Delete('product-goals/:id')
@@ -171,11 +181,11 @@ export class RoadmapAdminController {
   @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
   @Get('opportunity-owners/eligible')
   @ApiOperation({
-    summary: 'Ally super-admin users who may own an opportunity',
+    summary: 'The users who may own an opportunity',
     description:
-      "The owner picker's options. Derived from SUPER_ADMIN / SUPER_DUPER_ADMIN group " +
-      'membership rather than a hand-maintained list, so losing super-admin removes someone ' +
-      'from the picker with no separate cleanup. Existing assignments are left untouched.',
+      "The owner picker's options: the named product leads in ROADMAP_OWNER_EMAILS, matched " +
+      'by email. Deliberately a short, explicit list rather than every platform admin — see ' +
+      'the constant. Changing it is a code change; existing assignments are left untouched.',
   })
   @ApiResponse({ status: 200, type: [RoadmapEligibleOwnerDto] })
   listEligibleOwners(): Promise<RoadmapEligibleOwnerDto[]> {
@@ -189,7 +199,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Get('opportunity-owners/usage')
@@ -198,7 +207,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('opportunity-owners')
@@ -210,7 +218,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Patch('opportunity-owners/:id')
@@ -223,7 +230,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Put('opportunity-owners/order')
@@ -235,7 +241,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Delete('opportunity-owners/:id')
@@ -250,6 +255,174 @@ export class RoadmapAdminController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.taxonomyService.deleteOwner(user.id, id);
+  }
+
+  // ── product strategy goals & composite rank ───────────────────────────────
+  // A DIFFERENT CONCEPT from the product goals above, and worth not conflating: those are
+  // CATEGORIES (exactly one per opportunity, used to file and filter). These are OUTCOMES the
+  // board is ranked against, and one opportunity may advance several or none. Same id-not-name
+  // path-parameter rule, for the same reason.
+
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @Get('strategy-goals')
+  @ApiOperation({
+    summary: 'Strategy goals, each with its unassessed count',
+    description:
+      'VIEW-gated rather than EDIT-gated because every card shows a coverage figure these ' +
+      'goals define — a reader who cannot name them cannot read the rank.',
+  })
+  @ApiResponse({ status: HttpStatus.OK, type: StrategyGoalsResponseDto })
+  async listStrategyGoals(): Promise<StrategyGoalsResponseDto> {
+    const [goals, unassessed, needingAssessment] = await Promise.all([
+      this.strategyGoalService.listGoals(),
+      this.strategyGoalService.getUnassessedCounts(),
+      this.goalImpactService.countNeedingAssessment(),
+    ]);
+    return {
+      goals: goals.map((g) => ({
+        id: g.id,
+        name: g.name,
+        position: g.position,
+        unassessed: unassessed[g.name] ?? 0,
+      })),
+      needingAssessment,
+    };
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Post('strategy-goals')
+  @ApiOperation({
+    summary: 'Add a strategy goal',
+    description:
+      'Returns how many opportunities are now unassessed against it. Adding a goal grows the ' +
+      'coverage denominator, so every score drops until a bulk assessment catches up — the ' +
+      'count is returned so the UI can say so instead of letting the board look re-ranked.',
+  })
+  createStrategyGoal(
+    @CurrentUser() user: TokenUser,
+    @Body() dto: CreateStrategyGoalDto,
+  ) {
+    return this.strategyGoalService.createGoal(user.id, dto.name);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Patch('strategy-goals/:id')
+  @ApiOperation({
+    summary: 'Rename a strategy goal',
+    description:
+      'Free: ON UPDATE CASCADE carries every stored verdict across, so nothing needs ' +
+      'reassessing. A rename that changes the goal MEANING does leave verdicts judged against ' +
+      'the old intent — reassess explicitly if so.',
+  })
+  renameStrategyGoal(
+    @CurrentUser() user: TokenUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RenameStrategyGoalDto,
+  ) {
+    return this.strategyGoalService.renameGoal(user.id, id, dto.name);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Put('strategy-goals/order')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  reorderStrategyGoals(
+    @CurrentUser() user: TokenUser,
+    @Body() dto: ReorderStrategyGoalsDto,
+  ): Promise<void> {
+    return this.strategyGoalService.reorderGoals(user.id, dto.ids);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Delete('strategy-goals/:id')
+  @ApiOperation({
+    summary: 'Delete a strategy goal',
+    description:
+      'Never blocks: the verdicts cascade away and coverage recomputes against the smaller ' +
+      'denominator with no LLM calls. Returns how many assessments were discarded, because ' +
+      'they cost money to produce and this is not reversible.',
+  })
+  deleteStrategyGoal(
+    @CurrentUser() user: TokenUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.strategyGoalService.deleteGoal(user.id, id);
+  }
+
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @Get('rank-weights')
+  @ApiOperation({ summary: 'The four composite-rank factor weights' })
+  @ApiResponse({ status: HttpStatus.OK, type: RankWeightsResponseDto })
+  getRankWeights() {
+    return this.strategyGoalService.getWeights();
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Patch('rank-weights')
+  @ApiOperation({
+    summary: 'Retune the composite rank',
+    description:
+      'PATCH semantics on purpose — one slider at a time, so two admins tuning different ' +
+      'factors do not overwrite each other. Costs nothing but a re-sort: weights apply in SQL ' +
+      'over factors that already exist, so this never re-runs the model.',
+  })
+  updateRankWeights(
+    @CurrentUser() user: TokenUser,
+    @Body() dto: UpdateRankWeightsDto,
+  ) {
+    return this.strategyGoalService.updateWeights(user.id, dto);
+  }
+
+  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
+  @Get('opportunities/:id/goal-impact')
+  @ApiOperation({ summary: "One opportunity's strategy-goal verdicts" })
+  @ApiResponse({ status: HttpStatus.OK, type: [GoalImpactVerdictDto] })
+  listGoalImpact(@Param('id', ParseUUIDPipe) id: string) {
+    return this.goalImpactService.listForOpportunity(id);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Post('opportunities/:id/goal-impact')
+  @ApiOperation({
+    summary: 'Reassess one opportunity against the current strategy',
+    description:
+      'The correction path for a verdict you disagree with. Verdicts are machine-derived and ' +
+      'deliberately not hand-editable — a ranking input anyone could edit is one people would ' +
+      'edit to move their own idea up.',
+  })
+  @ApiResponse({ status: HttpStatus.OK, type: [GoalImpactVerdictDto] })
+  reassessGoalImpact(
+    @CurrentUser() user: TokenUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.goalImpactService.assess(id, user.id);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Post('strategy-goals/assess-missing')
+  @ApiOperation({
+    summary: 'Assess opportunities missing a verdict for at least one goal',
+    description:
+      'BOUNDED, and reports what remains. Adding a goal makes the whole board stale at once, ' +
+      'and one request that billed all of it would time out — so a big backlog is several ' +
+      'clicks rather than one call that silently truncates.',
+  })
+  @ApiResponse({ status: HttpStatus.OK, type: BulkAssessResponseDto })
+  assessMissing(@CurrentUser() user: TokenUser) {
+    return this.goalImpactService.assessMissing(user.id);
   }
 
   // ── interview notes ───────────────────────────────────────────────────────
@@ -303,63 +476,86 @@ export class RoadmapAdminController {
   // READ is VIEW-gated, WRITE is EDIT-gated. Deliberate: the source used RLS, so a non-admin
   // SELECT returned 200 [] rather than 403, and its client relied on that.
 
-  @AuthPermissions([PERMISSIONS.VIEW_PRODUCT_ROADMAP])
-  @Get('release-notes')
-  listReleaseNotes(@Query() query: RoadmapListQueryDto) {
-    return this.releaseNoteService.list(query);
-  }
-
-  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
-  })
-  @Post('release-notes')
-  createReleaseNote(
-    @CurrentUser() user: TokenUser,
-    @Body() dto: CreateReleaseNoteDto,
-  ) {
-    return this.releaseNoteService.create(user.id, dto);
-  }
-
-  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
-  })
-  @Patch('release-notes/:id')
-  updateReleaseNote(
-    @CurrentUser() user: TokenUser,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateReleaseNoteDto,
-  ) {
-    return this.releaseNoteService.update(user.id, id, dto);
-  }
-
-  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
-  })
-  @Delete('release-notes/:id')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  removeReleaseNote(
-    @CurrentUser() user: TokenUser,
-    @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<void> {
-    return this.releaseNoteService.remove(user.id, id);
-  }
-
   // ── AI helpers ────────────────────────────────────────────────────────────
 
+  /**
+   * The checklist itself. Served rather than duplicated in the client so that editing
+   * ROADMAP_READINESS_CRITERIA is the entire change — a second copy in the admin bundle would
+   * drift, and the drift would show up as a checklist item the grader never grades.
+   */
+  @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
+  @Get('ai/readiness/criteria')
+  @ApiOperation({
+    summary: 'The readiness checklist a draft is graded against',
+  })
+  @ApiResponse({ status: 200, type: AiReadinessCriteriaResponseDto })
+  readinessCriteria(): AiReadinessCriteriaResponseDto {
+    return {
+      criteria: ROADMAP_READINESS_CRITERIA.map((c) => ({
+        id: c.id,
+        label: c.label,
+        hint: c.hint,
+      })),
+      // Same reason as the criteria: the size threshold gates filing, so the client must not
+      // hold its own copy of it.
+      fileableEfforts: [
+        ...ROADMAP_FILEABLE_EFFORTS,
+      ] as RoadmapOpportunityEffort[],
+    };
+  }
+
+  /**
+   * Grade a draft. One verdict per criterion, and every one of them must be green before it can
+   * be filed — so this fails closed by construction; see RoadmapAiService.checkReadiness.
+   *
+   * The response carries the verdict SIGNED (`token`), and `POST /opportunities` is what
+   * enforces it: the checklist used to be gated only by the admin drawer's `canSave`, which
+   * made it a discipline the client kept rather than a rule. See RoadmapReadinessTokenService.
+   *
+   * VOTE tier, matching who may file: a gate you cannot ask about is a gate nobody can pass.
+   */
+  @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
+  @Post('ai/readiness')
+  @ApiOperation({ summary: 'Grade a draft against the readiness checklist' })
+  @ApiResponse({ status: 201, type: AiReadinessResponseDto })
+  readiness(@Body() dto: AiDraftDto): Promise<AiReadinessResponseDto> {
+    // The goal is passed through so the signed verdict is BOUND to it — the drawer treats a
+    // goal change as invalidating the verdicts, and that rule is now enforced server-side. The
+    // grader itself still reads the description alone; see RoadmapReadinessTokenService.
+    return this.aiService.checkReadiness(dto.description, dto.productGoal);
+  }
+
+  /**
+   * @deprecated The admin "New opportunity" modal's Review button was removed, and nothing
+   * else calls this. Kept serving so any client still holding the old bundle degrades to a
+   * working request rather than a 404; delete once no traffic is seen on it.
+   */
   @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
   @Post('ai/review')
-  @ApiOperation({ summary: 'Critique a draft; at most 3 issue/tip pairs' })
+  @ApiOperation({
+    summary: 'Critique a draft; at most 3 issue/tip pairs',
+    deprecated: true,
+    description:
+      'Deprecated: no caller. The Add Opportunity modal no longer offers Review.',
+  })
   @ApiResponse({ status: 201, type: AiReviewResponseDto })
   review(@Body() dto: AiDraftDto): Promise<AiReviewResponseDto> {
     return this.aiService.reviewDraft(dto.description);
   }
 
+  /**
+   * @deprecated The admin drawer's "Improve wording" button was removed, and nothing else
+   * calls this. Kept serving for the same reason as ai/review above — an old bundle should
+   * degrade to a working request rather than a 404 — and deletable once traffic is zero.
+   */
   @AuthPermissions([PERMISSIONS.VOTE_PRODUCT_ROADMAP])
   @Post('ai/enhance')
-  @ApiOperation({ summary: 'Rewrite a draft' })
+  @ApiOperation({
+    summary: 'Rewrite a draft',
+    deprecated: true,
+    description:
+      'Deprecated: no caller. The Add Opportunity drawer no longer offers a rewrite.',
+  })
   @ApiResponse({ status: 201, type: AiEnhanceResponseDto })
   enhance(@Body() dto: AiDraftDto): Promise<AiEnhanceResponseDto> {
     return this.aiService.enhanceDraft(dto.description);
@@ -398,8 +594,36 @@ export class RoadmapAdminController {
     return { text: await this.aiService.summariseTranscript(dto.transcript) };
   }
 
+  /**
+   * MANAGE-GATED, unlike every other ai/* route here, which sit on the VOTE tier.
+   *
+   * Not a security judgement — an interview writes nothing until its draft is filed through
+   * `POST /opportunities`, which has its own VOTE gate. It is a rollout one: this is an
+   * experimental second way to file, and putting it on the manage tier keeps it in front of the
+   * handful of admins who can also fix what it produces while the interview itself is still
+   * being tuned. Widening it later is a one-line change; narrowing it after everyone has found
+   * it is not.
+   */
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
+    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
+  })
+  @Post('ai/opportunity-interview')
+  @ApiOperation({
+    summary: 'One turn of the guided opportunity interview',
+    description:
+      'Stateless: the client sends the whole conversation each turn and gets back the next ' +
+      'question plus a verdict on each readiness criterion. Send an empty `messages` array to ' +
+      'get the opening question. Once every criterion is met the response also carries a ' +
+      'draft and a readiness token to file it with.',
+  })
+  @ApiResponse({ status: 201, type: OpportunityInterviewTurnResponseDto })
+  async opportunityInterview(
+    @Body() dto: OpportunityInterviewTurnDto,
+  ): Promise<OpportunityInterviewTurnResponseDto> {
+    return this.aiService.interviewTurn(dto.messages);
+  }
+
+  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('ai/generate-claude-prompt')
@@ -423,26 +647,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
-    permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
-  })
-  @Post('ai/release-notes')
-  @ApiOperation({
-    summary: 'Draft release notes from released opportunities',
-    description:
-      'Non-released selections are filtered out before the model sees them.',
-  })
-  @ApiResponse({ status: 201, type: AiTextResponseDto })
-  async draftReleaseNotes(
-    @Body() dto: AiReleaseNotesDto,
-  ): Promise<AiTextResponseDto> {
-    return { text: await this.aiService.draftReleaseNotes(dto.opportunityIds) };
-  }
-
-  // ── vector-index repair ───────────────────────────────────────────────────
-
-  @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('admin/reindex')
@@ -458,7 +662,6 @@ export class RoadmapAdminController {
   }
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('admin/vectors/prune')
@@ -478,7 +681,6 @@ export class RoadmapAdminController {
   // ── one-off Supabase migration ────────────────────────────────────────────
 
   @RequireFeatureToggle(FeatureToggleKey.PRODUCT_ROADMAP_MANAGE, {
-    legacyRoles: SUPER_DUPER_ADMIN_ROLES,
     permissions: [PERMISSIONS.EDIT_PRODUCT_ROADMAP],
   })
   @Post('admin/import')

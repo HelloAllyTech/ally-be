@@ -16,13 +16,6 @@ export type ScenarioFilters = {
   userId?: number;
   languageCode?: string;
   /**
-   * Include ROLEPLAY_V2 scenarios in the result. Defaults to false so the
-   * learner catalog never surfaces v2 shells to ordinary users (mirrors the
-   * admin list). Only set true for a v2-allowlisted requester (see
-   * ScenarioService.getScenariosV2).
-   */
-  includeRoleplayV2?: boolean;
-  /**
    * Apply the requester's cohort restrictions. Present only on the learner
    * catalog: the admin list must keep showing every scenario the tenant has,
    * restricted or not, or an admin could not see what they had restricted.

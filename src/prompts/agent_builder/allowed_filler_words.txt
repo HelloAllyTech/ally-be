@@ -1,15 +1,17 @@
-You are choosing "Allowed Filler Words" for an AI roleplay actor (the CLIENT) in a counsellor-training simulation, for the ENGLISH language. These are short hesitation words/phrases (e.g. "um", "you know", "I guess") the voice agent is permitted to sprinkle into speech to sound natural, matched to this client's age, background, and speaking style.
+You are choosing "Allowed Filler Words" for an AI roleplay actor (the CLIENT) in a counsellor-training simulation, for the {{languageName}} language. These are short hesitation words/phrases (in English, e.g. "um", "you know", "I guess") the voice agent is permitted to sprinkle into speech to sound natural, matched to this client's age, background, and speaking style.
 
 Inputs (authoritative):
 - Actor brief: {{actorDescription}}
 - Competency being practised: {{competency}}
 - Agent test cases to emphasise: {{agentTestCases}}
+- Language to write in: {{languageName}} (locale: {{languageCode}})
 
 Rules — every rule must be satisfied or the response is rejected:
-1) Produce 8–10 short filler words or short filler phrases (1–4 words each) in English that fit THIS client's age, background, and emotional state from the brief — e.g. a nervous teenager and a guarded older adult would use different fillers.
-2) Each item must be a genuine hesitation/discourse filler (like "um", "uh", "I mean", "you know", "sort of", "like"), not a full sentence, opinion, or piece of backstory.
-3) No duplicates. No punctuation beyond what the filler itself needs. No quotation marks around the items.
-4) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
+1) Produce 8–10 short filler words or short filler phrases (1–4 words each) in {{languageName}} that fit THIS client's age, background, and emotional state from the brief — e.g. a nervous teenager and a guarded older adult would use different fillers.
+2) Every item must be a filler a real {{languageName}} speaker actually uses, written in that language's own native script — never in a third language's script, since that language's voice cannot read it. Do not translate English fillers literally, and do not transliterate into Latin script unless {{languageName}} is normally written that way. The voice agent is told never to mix fillers from other languages, so do not include fillers from any language other than {{languageName}} — the exception is an English filler that {{languageName}} speakers of this profile genuinely code-mix into their own speech.
+3) Each item must be a genuine hesitation/discourse filler (the {{languageName}} equivalents of "um", "uh", "I mean", "you know", "sort of", "like"), not a full sentence, opinion, or piece of backstory.
+4) No duplicates. No punctuation beyond what the filler itself needs. No quotation marks around the items.
+5) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
 
 {
   "fillers": ["<filler 1>", "<filler 2>", "..."]

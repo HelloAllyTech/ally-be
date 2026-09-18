@@ -20,6 +20,8 @@ import { LanguageService } from './service/language.service';
 import { LanguageGlossaryService } from './service/language-glossary.service';
 import { GlossaryAdherenceSchedulerRegistrationService } from './service/glossary-adherence-scheduler-registration.service';
 import { GlossaryAdherenceService } from './service/glossary-adherence.service';
+import { GlossaryAdjudicationService } from './service/glossary-adjudication.service';
+import { GlossaryAdjudicationSchedulerRegistrationService } from './service/glossary-adjudication-scheduler-registration.service';
 import { VarietyProfileController } from './controller/variety-profile.controller';
 import { VarietyProfileService } from './service/variety-profile.service';
 import { UserModule } from 'src/user/user.module';
@@ -54,6 +56,8 @@ import { UserModule } from 'src/user/user.module';
     LanguageService,
     LanguageGlossaryService,
     GlossaryAdherenceService,
+    GlossaryAdjudicationService,
+    GlossaryAdjudicationSchedulerRegistrationService,
     GlossaryAdherenceSchedulerRegistrationService,
     GlossaryConsolidationSchedulerRegistrationService,
     VarietyProfileService,

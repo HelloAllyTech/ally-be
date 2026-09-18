@@ -7,6 +7,7 @@ import { PROCESSOR_EVENT_TYPES } from 'src/ai/constants/processor.constants';
 import { TrackMemoryService } from 'src/track/service/track-memory.service';
 import { TrackProgressService } from 'src/track/service/track-progress.service';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
+import { PreviewMonologueService } from '../service/preview-monologue.service';
 
 /**
  * Persists the agent's end-of-session episodic memory (message_type
@@ -14,7 +15,8 @@ import { CaseSharedService } from 'src/case/service/case-shared.service';
  * scenario_session_details row (sessionMemory jsonb, atomic upsert). This is
  * the durable source getPreviousCaseMemory prefers when building the next
  * case session's previousMemory. Mirrors TurnMetricsProcessor: resolve the
- * session by room_id, skip previews, no-op when the session isn't found.
+ * session by room_id, no-op when the session isn't found. Previews have no
+ * session row: they keep only their internal monologue (PreviewMonologueService).
  */
 @Injectable()
 export class SessionMemoryProcessor extends BaseEventProcessor {
@@ -27,6 +29,7 @@ export class SessionMemoryProcessor extends BaseEventProcessor {
     private readonly trackMemoryService: TrackMemoryService,
     private readonly trackProgressService: TrackProgressService,
     private readonly caseSharedService: CaseSharedService,
+    private readonly previewMonologueService: PreviewMonologueService,
   ) {
     super();
   }
@@ -39,8 +42,15 @@ export class SessionMemoryProcessor extends BaseEventProcessor {
     const { room_id, data: learnData } = data;
     const sessionMemory = learnData?.session_memory;
 
-    // Previews are ephemeral and have no persisted session — skip quietly.
+    // Previews are ephemeral and have no persisted session, so there is
+    // nothing to attach episodic memory to. The internal monologue is the one
+    // exception — an admin preview is exactly where someone wants to reopen
+    // the run later and work out why the client behaved as it did.
     if (room_id.startsWith('preview-')) {
+      const turns = sessionMemory?.structured?.client_working_memory?.monologue;
+      if (Array.isArray(turns) && turns.length > 0) {
+        await this.previewMonologueService.recordMonologue(room_id, turns);
+      }
       return;
     }
 

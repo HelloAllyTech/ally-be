@@ -9,6 +9,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  IsUUID,
   Max,
   MaxLength,
   Min,
@@ -197,6 +198,15 @@ export class UpdateWaSettingsDto {
   @IsOptional()
   @IsString()
   unsupportedMediaText?: string;
+  @ApiPropertyOptional({
+    description:
+      "Sent when the sender's number is not linked to an Ally account, so the corpus " +
+      'cannot be scoped to an organisation. Should name the way out — adding the number to ' +
+      'the Ally profile — since a refusal with no next step reads as a broken bot.',
+  })
+  @IsOptional()
+  @IsString()
+  unrecognisedNumberText?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() rateLimitText?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() helplineNumbers?: string;
 
@@ -274,4 +284,15 @@ export class PreviewAskDto {
   @ValidateNested()
   @Type(() => WaRetrievalDto)
   retrieval?: WaRetrievalDto;
+
+  @ApiPropertyOptional({
+    description:
+      'Answer as a worker from this organisation would be answered — its documents plus the ' +
+      'global ones. Omitted, the preview searches the WHOLE corpus regardless of targeting, ' +
+      'which is what a tuning console should do by default but is NOT what any real worker ' +
+      'gets, so a question about coverage for one customer has to name them here.',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  tenantId?: string;
 }

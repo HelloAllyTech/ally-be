@@ -31,6 +31,9 @@ export enum ChatEvents {
   AUDIO_CHAT_PAUSED = 'AUDIO_CHAT_PAUSED',
   AUDIO_CHAT_RESUMED = 'AUDIO_CHAT_RESUMED',
   SESSION_CREATED = 'SESSION_CREATED',
+  // Diagnostic only, client -> server. The recording screen reports why it has
+  // not started a session yet; the gateway logs it and does nothing else.
+  SCRIBE_START_DIAGNOSTIC = 'SCRIBE_START_DIAGNOSTIC',
 }
 
 // Why a live recording's stream was finalized. A clean user-initiated stop is
