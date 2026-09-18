@@ -119,6 +119,7 @@ export class TrackEnrollmentService {
           languageCode: translation ? preferred : null,
           coverImageUrl: track.coverImageUrl,
           totalItems: track.totalItems,
+          simulationsCount: track.simulationsCount,
           estimatedDurationMinutes: track.estimatedDurationMinutes,
           enrolled: !!track.enrollment,
           completedItems: track.enrollment?.completedItems ?? 0,
@@ -182,6 +183,13 @@ export class TrackEnrollmentService {
       coverImageUrl: structure.coverImageUrl,
       status: structure.status,
       totalItems: structure.totalItems,
+      simulationsCount: structure.sections.reduce(
+        (sum, section) =>
+          sum +
+          section.items.filter((item) => item.type === TrackItemType.ROLEPLAY)
+            .length,
+        0,
+      ),
       estimatedDurationMinutes: structure.estimatedDurationMinutes,
       enrolled: !!enrollment,
       trackEnrollmentId: enrollment?.id ?? null,

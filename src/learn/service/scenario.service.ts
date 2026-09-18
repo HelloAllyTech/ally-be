@@ -503,10 +503,6 @@ export class ScenarioService {
       scenario.completion = completions.get(scenario.id) ?? null;
     }
 
-    scenario.simulationCount = Array.isArray(scenario.metadata?.states)
-      ? scenario.metadata.states.length
-      : 0;
-
     return scenario;
   }
 
