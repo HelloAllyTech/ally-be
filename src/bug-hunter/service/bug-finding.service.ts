@@ -20,6 +20,7 @@ import { BugHunterService } from './bug-hunter.service';
 import { releaseLinkedRoadmapOpportunity } from '../util/release-linked-roadmap-opportunity.util';
 import { checkForAndRecordReversals } from '../util/check-for-reversals.util';
 import { effectiveStage } from '../util/bug-finding-stage.util';
+import { truncateTitle } from '../util/truncate-title.util';
 import {
   fixDidNotHold,
   needsYourAnswer,
@@ -426,7 +427,7 @@ export class BugFindingService {
         repo: input.repo,
         source: BugFindingSource.TEST_FAILURE,
         status: BugFindingStatus.NEW,
-        title: `Pre-existing test failure: ${failure}`.slice(0, 200),
+        title: truncateTitle(`Pre-existing test failure: ${failure}`),
         description:
           `\`${failure}\` was already failing on \`master\` in ${input.repo} ` +
           `before ${input.discoveredBy} made any change, so that build's gate ` +
@@ -605,7 +606,7 @@ export class BugFindingService {
           runId,
           repo,
           source: finding.source,
-          title: finding.description.slice(0, 200),
+          title: truncateTitle(finding.description),
           description: finding.description,
           file: finding.file ?? null,
           symbol: finding.symbol ?? null,

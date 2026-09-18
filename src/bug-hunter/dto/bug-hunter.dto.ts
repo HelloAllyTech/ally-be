@@ -173,7 +173,7 @@ export class RawBugFindingDto {
 
   @ApiProperty({
     description:
-      'Plain-language paragraph, blank line, then the technical detail. Sliced to 200 chars for the table title.',
+      'Plain-language paragraph, blank line, then the technical detail. Shortened to ~200 chars at a sentence or word boundary for the table title — see truncateTitle.',
   })
   @IsString()
   @IsNotEmpty()
