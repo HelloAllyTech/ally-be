@@ -31,6 +31,7 @@ import {
   AUDIT_ACTIONS,
   AUDIT_EVENTS,
 } from 'src/audit/constants/audit-event.constants';
+import { PostHog } from 'posthog-node';
 
 // Mock LoggerService
 jest.mock('../../../logger/logger.service', () => ({
@@ -194,6 +195,7 @@ describe('TenantService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         TenantService,
+        { provide: PostHog, useValue: { capture: jest.fn() } },
         {
           provide: getRepositoryToken(Tenant),
           useValue: mockRepository,

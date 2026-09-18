@@ -10,6 +10,13 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    "paths": {
+      // posthog-node publishes its NestJS interceptor only as an "exports" map
+      // subpath, which `moduleResolution: node` (implied by `module: commonjs`)
+      // cannot see — Node resolves it fine at runtime, tsc just needs pointing
+      // at the types. Cheaper than moving the whole repo to node16 resolution.
+      "posthog-node/nestjs": ["node_modules/posthog-node/dist/entrypoints/nestjs"]
+    },
     "incremental": true,
     "alwaysStrict": true,
     "noImplicitAny": true,

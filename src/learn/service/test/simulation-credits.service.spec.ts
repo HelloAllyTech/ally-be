@@ -9,6 +9,7 @@ import {
   ForbiddenException,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { PostHog } from 'posthog-node';
 
 describe('SimulationCreditsService', () => {
   let service: SimulationCreditsService;
@@ -51,6 +52,10 @@ describe('SimulationCreditsService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SimulationCreditsService,
+        {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
         {
           provide: SimulationCreditsRepository,
           useValue: mockSimulationCreditsRepository,

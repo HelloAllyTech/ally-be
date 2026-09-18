@@ -26,6 +26,12 @@ import {
   getDistinctScenarioLanguageIds,
   getLanguageVoiceIds,
 } from 'src/common/util/language-availability.util';
+import { PostHog } from 'posthog-node';
+import { userDistinctId } from 'src/posthog/posthog.util';
+import {
+  CASE_ANALYTICS_EVENTS,
+  PATHWAY_ANALYTICS_EVENTS,
+} from '../constants/case-analytics.constants';
 
 @Injectable()
 export class CaseSessionService {
@@ -39,6 +45,7 @@ export class CaseSessionService {
     private readonly sharedLanguageService: SharedLanguageService,
     private readonly eventEmitter: EventEmitter2,
     private readonly cohortVisibilityService: CohortVisibilityService,
+    private readonly posthog: PostHog,
   ) {}
 
   async getUserCases(
@@ -209,7 +216,7 @@ export class CaseSessionService {
       throw new BadRequestException('Case session already exists');
     }
 
-    return await this.dataSource.transaction(
+    const { caseSessionItemId, totalSteps } = await this.dataSource.transaction(
       async (entityManager: EntityManager) => {
         const caseSessionRepo = entityManager.getRepository(CaseSession);
         const caseSessionItemRepo =
@@ -244,9 +251,14 @@ export class CaseSessionService {
         );
         return {
           caseSessionItemId: caseSessionItem.id,
+          totalSteps: caseItems.length,
         };
       },
     );
+
+    await this.capturePathwayStarted(Number(userId), caseId, totalSteps);
+
+    return { caseSessionItemId };
   }
 
   async getUserCaseSessionByCaseId(caseId: string) {
@@ -500,6 +512,16 @@ export class CaseSessionService {
       return;
     });
 
+    await this.capturePathwayEvent(
+      Number(userId),
+      PATHWAY_ANALYTICS_EVENTS.STEP_COMPLETED,
+      currentCaseSession.caseId,
+      {
+        step_number: currentCaseItem.order,
+        step_simulation_id: String(currentCaseItem.scenarioId),
+      },
+    );
+
     // Emitted after commit so listeners (e.g. Track 2.0 case-in-track
     // progression) read the completed state. Best-effort — must never break
     // the case flow.
@@ -514,6 +536,113 @@ export class CaseSessionService {
           `Failed to emit case.session.completed for ${completedCaseSessionId}: ${error}`,
         );
       }
+
+      await this.captureCaseCompleted(
+        Number(userId),
+        currentCaseSession.caseId,
+        (currentCaseSession.completedScenarios ?? 0) + 1,
+      );
+
+      await this.capturePathwayEvent(
+        Number(userId),
+        PATHWAY_ANALYTICS_EVENTS.COMPLETED,
+        currentCaseSession.caseId,
+        {
+          total_steps: (currentCaseSession.completedScenarios ?? 0) + 1,
+          // `startedAt` is nullable on the entity but always stamped by
+          // `createUserCaseSession`; a session without one predates that and
+          // reports no duration rather than a nonsense one.
+          completion_time_seconds: currentCaseSession.startedAt
+            ? Math.round(
+                (Date.now() - currentCaseSession.startedAt.getTime()) / 1000,
+              )
+            : undefined,
+        },
+      );
+    }
+  }
+
+  /**
+   * `case.completed` — the learner has finished every simulation in this case at
+   * least once. Fired only from the branch that has no next case item, which is
+   * the same condition that stamps `completedAt`, so it cannot fire twice for a
+   * session: a second attempt at an already-COMPLETED session item returns long
+   * before the transaction.
+   *
+   * `completedScenarios` is read from the row loaded before the transaction and
+   * incremented by one here rather than re-read, because the update above wrote
+   * exactly that value. Wholly guarded — analytics must never fail a learner's
+   * case completion.
+   */
+  private async captureCaseCompleted(
+    userId: number,
+    caseId: string,
+    completedSimulationCount: number,
+  ): Promise<void> {
+    try {
+      const caseItems = await this.caseSharedService.getCaseItems(caseId);
+      this.posthog.capture({
+        distinctId: userDistinctId(userId),
+        event: CASE_ANALYTICS_EVENTS.COMPLETED,
+        properties: {
+          case_id: caseId,
+          completed_simulation_count: completedSimulationCount,
+          total_simulation_count: caseItems.length,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to capture ${CASE_ANALYTICS_EVENTS.COMPLETED} in PostHog for caseId ${caseId}: ${error}`,
+      );
+    }
+  }
+
+  /**
+   * A pathway is a case, so `pathway_id` is the case id on every event. Wholly
+   * guarded — analytics must never fail a learner's progress through it.
+   */
+  private async capturePathwayEvent(
+    userId: number,
+    event: string,
+    caseId: string,
+    properties: Record<string, unknown>,
+  ): Promise<void> {
+    try {
+      this.posthog.capture({
+        distinctId: userDistinctId(userId),
+        event,
+        properties: { pathway_id: caseId, ...properties },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to capture ${event} in PostHog for caseId ${caseId}: ${error}`,
+      );
+    }
+  }
+
+  /**
+   * `pathway.started` — the learner committed to working through the pathway,
+   * which is the moment the case session is created rather than the moment its
+   * detail page is opened. The title lookup lives inside the guard so a missing
+   * or unreadable case costs the event, not the session.
+   */
+  private async capturePathwayStarted(
+    userId: number,
+    caseId: string,
+    totalSteps: number,
+  ): Promise<void> {
+    try {
+      const caseData = await this.caseSharedService.getActiveCaseById(caseId);
+      await this.capturePathwayEvent(
+        userId,
+        PATHWAY_ANALYTICS_EVENTS.STARTED,
+        caseId,
+        { pathway_name: caseData?.title, total_steps: totalSteps },
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to capture ${PATHWAY_ANALYTICS_EVENTS.STARTED} in PostHog for caseId ${caseId}: ${error}`,
+      );
     }
   }
 }

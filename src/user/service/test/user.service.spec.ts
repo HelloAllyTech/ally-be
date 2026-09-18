@@ -28,6 +28,7 @@ import { AdminTenantService } from '../admin-tenant.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { DataSource, In } from 'typeorm';
+import { PostHog } from 'posthog-node';
 
 jest.mock('src/common/execution/execution-manager', () => ({
   ExecutionManager: {
@@ -217,6 +218,10 @@ describe('UserService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UserService,
+        {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
         { provide: getRepositoryToken(User), useValue: mockUsersRepository },
         { provide: GroupRepository, useValue: mockGroupRepository },
         { provide: UserGroupRepository, useValue: mockUserGroupRepository },

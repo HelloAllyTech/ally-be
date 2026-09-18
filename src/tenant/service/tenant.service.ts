@@ -45,6 +45,9 @@ import {
   AUDIT_ACTIONS,
   AUDIT_EVENTS,
 } from 'src/audit/constants/audit-event.constants';
+import { PostHog } from 'posthog-node';
+import { ADMIN_ANALYTICS_EVENTS } from 'src/posthog/admin-analytics.constants';
+import { userDistinctId } from 'src/posthog/posthog.util';
 
 @Injectable()
 export class TenantService {
@@ -54,6 +57,7 @@ export class TenantService {
     @InjectRepository(Tenant)
     private readonly tenantRepository: Repository<Tenant>,
     private readonly tenantsRepository: TenantsRepository,
+    private readonly posthog: PostHog,
     private readonly tenantScenarioSharedService: TenantScenarioSharedService,
     private readonly tenantScenarioPathSharedService: TenantScenarioPathSharedService,
     private readonly badgeTenantSharedService: BadgeTenantSharedService,
@@ -306,8 +310,45 @@ export class TenantService {
     id: string,
     metadata: Record<string, any>,
   ): Promise<Tenant | null> {
+    const previousPlan = (await this.findTenantEntityById(id))?.metadata?.plan;
     await this.tenantRepository.update(id, { metadata });
+    this.capturePlanChange(id, previousPlan, metadata?.plan);
     return this.findTenantEntityById(id);
+  }
+
+  /**
+   * Fires `plan.upgraded` only when the plan really moved. A metadata PUT
+   * rewrites the whole blob, so most calls here touch something other than the
+   * plan and must stay silent — an unchanged value is not a plan change, and a
+   * blob that never carried a plan at all is not one either.
+   *
+   * `upgraded_by` comes from the request context rather than a new parameter;
+   * the only caller is the admin-gated controller. Wholly guarded — analytics
+   * must never fail an admin's edit.
+   */
+  private capturePlanChange(
+    tenantId: string,
+    previousPlan: unknown,
+    newPlan: unknown,
+  ): void {
+    if (previousPlan === newPlan || (!previousPlan && !newPlan)) return;
+    try {
+      const changedBy = ExecutionManager.getUserId();
+      this.posthog.capture({
+        distinctId: changedBy ? userDistinctId(Number(changedBy)) : tenantId,
+        event: ADMIN_ANALYTICS_EVENTS.PLAN_UPGRADED,
+        properties: {
+          org_id: tenantId,
+          previous_plan: previousPlan ?? null,
+          new_plan: newPlan ?? null,
+          upgraded_by: changedBy,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to capture ${ADMIN_ANALYTICS_EVENTS.PLAN_UPGRADED} in PostHog for tenant ${tenantId}: ${error}`,
+      );
+    }
   }
 
   async validateTenant(tenantId: string): Promise<boolean> {

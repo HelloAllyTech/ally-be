@@ -135,6 +135,13 @@ import { SimulationStateDto } from '../dto/simulation-state.dto';
 import { ModuleRef } from '@nestjs/core';
 import { ScenarioEngine } from '../enum/scenario-engine.enum';
 import { RoleplaySessionService } from 'src/roleplay-studio/service/roleplay-session.service';
+import { PostHog } from 'posthog-node';
+import { userDistinctId } from 'src/posthog/posthog.util';
+import {
+  ROLEPLAY_ANALYTICS_EVENTS,
+  RoleplayEntryPoint,
+  RoleplaySessionEndStatus,
+} from '../constants/roleplay-analytics.constants';
 
 /** Cache for preview room metadata (used when dispatching agent directly in local dev) */
 const previewRoomMetadataCache = new Map<string, object>();
@@ -188,6 +195,7 @@ export class ScenarioSessionService {
     // RoleplayStudioModule into LearnModule (keeps the v1 wiring untouched).
     private moduleRef: ModuleRef,
     private readonly learnerSupervisorMemoryService: LearnerSupervisorMemoryService,
+    private readonly posthog: PostHog,
   ) {
     this.logger = LoggerService.getInstance(ScenarioSessionService.name);
   }
@@ -833,6 +841,11 @@ export class ScenarioSessionService {
           age: scenario?.metadata?.age,
         },
       };
+      this.captureRoleplaySessionStarted(
+        scenarioSession,
+        languageDetails?.value,
+      );
+
       return {
         scenarioSession,
         accessToken,
@@ -1116,6 +1129,13 @@ export class ScenarioSessionService {
       });
     }
 
+    await this.captureRoleplaySessionEnded(scenarioSession, {
+      durationMs: callDuration,
+      sessionPoints: score,
+      creditsCharged: scenarioSession.metadata?.creditsUsed ?? 0,
+      status: RoleplaySessionEndStatus.COMPLETED,
+    });
+
     await this.scenarioSessionRepository.update(scenarioSessionId, {
       status: ScenarioSessionStatus.ENDED,
       startedAt,
@@ -1275,6 +1295,20 @@ export class ScenarioSessionService {
       metadata: updatedMetadata,
     });
 
+    // `scenarioSession` is the row as it was read at the top of this method, so
+    // its status/eventStatus still say whether the actor's end-of-session event
+    // beat us here — which is exactly what decides completed vs abandoned, and
+    // whether that path already captured the event.
+    await this.captureRoleplaySessionEnded(scenarioSession, {
+      durationMs: callDuration,
+      sessionPoints: scenarioSession.score,
+      creditsCharged: creditsUsed,
+      status:
+        scenarioSession.eventStatus === ScenarioSessionEventStatus.COMPLETED
+          ? RoleplaySessionEndStatus.COMPLETED
+          : RoleplaySessionEndStatus.ABANDONED,
+    });
+
     const caseSessionItemId = scenarioSession.caseSessionItemId;
     let previousMemory: string | null = null;
     let needMemory: boolean = false;
@@ -1325,6 +1359,132 @@ export class ScenarioSessionService {
       totalCreditsToConsume,
     );
     return totalCreditsToConsume;
+  }
+
+  /**
+   * Properties both roleplay session events carry, all of them already on the
+   * session row — no lookup. `call_id` is the human-readable session name that
+   * identifies the run in Roleplay Logs, and `entry_point` is simply which
+   * parent pointer the session was started with.
+   */
+  private roleplayEventProperties(session: ScenarioSessions) {
+    return {
+      scenario_session_id: session.id,
+      call_id: session.metadata?.sessionName,
+      simulation_id: String(session.scenarioId),
+      entry_point: session.caseSessionItemId
+        ? RoleplayEntryPoint.CASE
+        : session.scenarioPathSessionItemId
+          ? RoleplayEntryPoint.PATHWAY
+          : session.trackItemProgressId
+            ? RoleplayEntryPoint.TRACK
+            : RoleplayEntryPoint.SIMULATION,
+    };
+  }
+
+  /**
+   * The containing case/pathway/track's id and title, for `session_ended` —
+   * the only event that carries them. One primary-key join on a row the
+   * session start already validated, so no tenant predicate is needed, and it
+   * stays off the start path where it would sit in front of the call screen.
+   */
+  private async resolveRoleplayItem(session: ScenarioSessions) {
+    const lookup = session.caseSessionItemId
+      ? {
+          id: session.caseSessionItemId,
+          sql: `SELECT c.id, c.title FROM case_session_items i
+                  JOIN case_sessions s ON s.id = i."caseSessionId"
+                  JOIN cases c ON c.id = s."caseId" WHERE i.id = $1`,
+        }
+      : session.scenarioPathSessionItemId
+        ? {
+            id: session.scenarioPathSessionItemId,
+            sql: `SELECT p.id, p.title FROM scenario_path_session_items i
+                    JOIN scenario_path_sessions s ON s.id = i."scenarioPathSessionId"
+                    JOIN scenario_paths p ON p.id = s."scenarioPathId" WHERE i.id = $1`,
+          }
+        : session.trackItemProgressId
+          ? {
+              id: session.trackItemProgressId,
+              sql: `SELECT t.id, t.title FROM track_item_progress tp
+                      JOIN track_items ti ON ti.id = tp."trackItemId"
+                      JOIN tracks t ON t.id = ti."trackId" WHERE tp.id = $1`,
+            }
+          : null;
+
+    if (!lookup) return {};
+
+    const [row] = await this.dataSource.query(lookup.sql, [lookup.id]);
+    return { item_id: row?.id, item_name: row?.title };
+  }
+
+  /**
+   * `roleplay.session_started` — the live call screen has a session to run
+   * against; the learner may still be at the microphone permission prompt, so
+   * this is not proof a conversation happened. Wholly guarded: analytics must
+   * never fail a session start.
+   */
+  private captureRoleplaySessionStarted(
+    session: ScenarioSessions,
+    language?: string,
+  ): void {
+    try {
+      this.posthog.capture({
+        distinctId: userDistinctId(session.counselorId),
+        event: ROLEPLAY_ANALYTICS_EVENTS.SESSION_STARTED,
+        properties: {
+          ...this.roleplayEventProperties(session),
+          language: language ?? DEFAULT_LANGUAGE_CODE,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to capture ${ROLEPLAY_ANALYTICS_EVENTS.SESSION_STARTED} in PostHog for session ${session.id}: ${error}`,
+      );
+    }
+  }
+
+  /**
+   * `roleplay.session_ended` — one event per session, from whichever of the two
+   * end paths gets there first: the actor's own end-of-session event (scored,
+   * `completed`) or the room closing (`abandoned`). Both set status to ENDED
+   * before the other can run, so callers pass the row as it was read *before*
+   * their own update and skip the capture if it was already ENDED. Wholly
+   * guarded: analytics must never fail a session end.
+   */
+  private async captureRoleplaySessionEnded(
+    session: ScenarioSessions,
+    {
+      durationMs,
+      sessionPoints,
+      creditsCharged,
+      status,
+    }: {
+      durationMs: number;
+      sessionPoints?: number | null;
+      creditsCharged: number;
+      status: RoleplaySessionEndStatus;
+    },
+  ): Promise<void> {
+    if (session.status === ScenarioSessionStatus.ENDED) return;
+    try {
+      this.posthog.capture({
+        distinctId: userDistinctId(session.counselorId),
+        event: ROLEPLAY_ANALYTICS_EVENTS.SESSION_ENDED,
+        properties: {
+          ...this.roleplayEventProperties(session),
+          ...(await this.resolveRoleplayItem(session)),
+          duration_seconds: Math.round(durationMs / 1000),
+          session_points: sessionPoints ?? 0,
+          credits_charged: creditsCharged,
+          status,
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to capture ${ROLEPLAY_ANALYTICS_EVENTS.SESSION_ENDED} in PostHog for session ${session.id}: ${error}`,
+      );
+    }
   }
 
   /**

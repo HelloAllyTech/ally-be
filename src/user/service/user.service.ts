@@ -67,6 +67,9 @@ import { ProfileImageUploadDto } from '../dto/profile-image-upload.dto';
 import { AdminTenantService } from './admin-tenant.service';
 import { PermissionsService } from '../../authorization/service/permissions.service';
 import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
+import { PostHog } from 'posthog-node';
+import { ADMIN_ANALYTICS_EVENTS } from 'src/posthog/admin-analytics.constants';
+import { emailDistinctId, userDistinctId } from 'src/posthog/posthog.util';
 
 @Injectable()
 export class UserService {
@@ -91,7 +94,41 @@ export class UserService {
     private permissionsService: PermissionsService,
     private readonly adminTenantService: AdminTenantService,
     private readonly dataSource: DataSource,
+    private readonly posthog: PostHog,
   ) {}
+
+  /**
+   * `learner.invited` — an admin added a learner to their organization.
+   *
+   * Keyed on the new learner rather than the admin, so the invite is the first
+   * event on the person that `auth.started` and `auth.completed` later land on
+   * once they log in; `invited_by` carries the admin.
+   *
+   * `invited_email` is the SHA-256 digest from `emailDistinctId`, not the
+   * address: HIPAA keeps PII out of everything but the audit loggers (the
+   * `USER_CREATED` audit entry alongside each call site is where the real
+   * address is recorded). The digest is the same one the pre-token auth funnel
+   * uses, so an invite still joins to the signup attempt it produced.
+   *
+   * Wholly guarded — analytics must never fail an admin's invite.
+   */
+  private captureLearnerInvited(user: User, invitedBy?: number): void {
+    try {
+      this.posthog.capture({
+        distinctId: userDistinctId(user.id),
+        event: ADMIN_ANALYTICS_EVENTS.LEARNER_INVITED,
+        properties: {
+          org_id: user.tenantId,
+          invited_by: invitedBy !== undefined ? String(invitedBy) : undefined,
+          invited_email: emailDistinctId(user.email),
+        },
+      });
+    } catch (error) {
+      this.logger.error(
+        `Failed to capture ${ADMIN_ANALYTICS_EVENTS.LEARNER_INVITED} in PostHog for userId ${user.id}: ${error}`,
+      );
+    }
+  }
 
   async get(id: number): Promise<User | null> {
     const user = await this.userRepository.findOne({
@@ -773,6 +810,8 @@ export class UserService {
       },
     });
 
+    this.captureLearnerInvited(savedUser, userId);
+
     return {
       id: savedUser.id,
       name: savedUser.name,
@@ -920,6 +959,7 @@ export class UserService {
           bulk: true,
         },
       });
+      this.captureLearnerInvited(savedUser, userId);
     }
 
     return {
