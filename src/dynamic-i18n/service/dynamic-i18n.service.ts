@@ -41,6 +41,10 @@ type I18nAuditLogEntry = {
 const SAFE_SEGMENT = /^[a-zA-Z0-9_-]+$/;
 const VERSION_DIR_REGEX = /^v(\d+)$/;
 const PLACEHOLDER_REGEX = /\{\{\s*[\w.-]+\s*\}\}/g;
+// The language the code itself is written in: whichever variables it
+// interpolates show up here first, so English is what every translation's
+// placeholders are contracted against.
+const SOURCE_LANGUAGE = 'en';
 
 @Injectable()
 export class DynamicI18nService {
@@ -140,6 +144,20 @@ export class DynamicI18nService {
 
     const draftLanguage = await this.readDraftLanguage(dto.language);
     const namespace = this.getNamespace(draftLanguage, dto.namespace);
+
+    // Placeholders belong to the source language, not to a cell's own history.
+    // Comparing each value against its previous self made a placeholder
+    // impossible to remove by any route once published: the dashboard rejected
+    // the edit and ciSync only ever adds keys, so copy that dropped a variable
+    // the code had stopped interpolating could never reach production.
+    const sourceNamespace =
+      dto.language === SOURCE_LANGUAGE
+        ? namespace
+        : this.getNamespace(
+            await this.readDraftLanguageOrEmpty(SOURCE_LANGUAGE),
+            dto.namespace,
+          );
+
     const auditChanges: ChangeRecord[] = [];
 
     for (const [key, newValue] of Object.entries(changes)) {
@@ -157,7 +175,12 @@ export class DynamicI18nService {
         );
       }
 
-      this.validatePlaceholders(key, oldRawValue, newValue);
+      this.validatePlaceholders(
+        key,
+        this.getDeepStringValue(sourceNamespace, key),
+        newValue,
+        dto.language,
+      );
       this.setDeepValue(namespace, key, newValue);
       auditChanges.push({
         key,
@@ -228,8 +251,15 @@ export class DynamicI18nService {
             dto.sourceValue,
             lang,
           );
-          values[lang] = translated?.trim() ? translated : dto.sourceValue;
-          if (!translated?.trim() || translated === dto.sourceValue) {
+          // A model that drops {{name}} from its output produces exactly the
+          // bug the placeholder guard exists to catch, so hold it to the same
+          // contract a human editor is held to and keep the source on a miss.
+          const keepsPlaceholders =
+            !!translated?.trim() &&
+            this.extractPlaceholders(translated).join('|') ===
+              this.extractPlaceholders(dto.sourceValue).join('|');
+          values[lang] = keepsPlaceholders ? translated : dto.sourceValue;
+          if (!keepsPlaceholders || translated === dto.sourceValue) {
             failed.push(lang);
           }
         } catch (error) {
@@ -954,22 +984,35 @@ export class DynamicI18nService {
 
   private validatePlaceholders(
     key: string,
-    oldValue: string | undefined,
+    sourceValue: string | undefined,
     newValue: string,
+    language: string,
   ): void {
-    if (oldValue === undefined) return;
+    // Editing the source language is how a placeholder gets introduced or
+    // retired in the first place, so it is never blocked. Translations of it
+    // are, because a missing variable there is always a translation bug.
+    if (language === SOURCE_LANGUAGE) return;
+    if (sourceValue === undefined) return;
 
-    const oldPlaceholders = this.extractPlaceholders(oldValue);
+    const sourcePlaceholders = this.extractPlaceholders(sourceValue);
     const newPlaceholders = this.extractPlaceholders(newValue);
 
-    if (oldPlaceholders.join('|') !== newPlaceholders.join('|')) {
+    if (sourcePlaceholders.join('|') !== newPlaceholders.join('|')) {
       throw new BadRequestException({
         message: `Placeholder mismatch for translation key "${key}"`,
         key,
-        expected: oldPlaceholders,
+        expected: sourcePlaceholders,
         received: newPlaceholders,
       });
     }
+  }
+
+  private getDeepStringValue(
+    tree: TranslationTree,
+    keyPath: string,
+  ): string | undefined {
+    const value = this.getDeepValue(tree, keyPath);
+    return typeof value === 'string' ? value : undefined;
   }
 
   private extractPlaceholders(value: string): string[] {
