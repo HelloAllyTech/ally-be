@@ -53,6 +53,8 @@ import {
 import { sanitizeDeep } from '../util/sanitize-structure.util';
 import { TrackSharedService, TrackWithStructure } from './track-shared.service';
 import { TrackTranslationService } from './track-translation.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
+import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 
 @Injectable()
 export class TrackService {
@@ -67,6 +69,7 @@ export class TrackService {
     private readonly caseSharedService: CaseSharedService,
     private readonly tenantService: TenantService,
     private readonly trackTranslationService: TrackTranslationService,
+    private readonly permissionValidator: PermissionValidator,
   ) {}
 
   async getTracks(filters?: TrackFilterOptions) {
@@ -669,5 +672,20 @@ export class TrackService {
     } else {
       await tenantRepo.delete({ trackId, tenantId: In(tenantIds) });
     }
+  }
+
+  async isUserTrackCreator(trackId: string, userId: number): Promise<boolean> {
+    const track = await this.trackRepository.findOne({
+      where: { id: trackId },
+    });
+    if (!track) {
+      return false;
+    }
+    if (track.createdBy === userId) {
+      return true;
+    }
+    return this.permissionValidator.validatePermissions(userId, [
+      PERMISSIONS.EDIT_ADMIN_TRACK,
+    ]);
   }
 }

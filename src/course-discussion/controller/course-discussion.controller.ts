@@ -8,8 +8,8 @@ import {
   Put,
   UseGuards,
 } from '@nestjs/common';
-import { JwtAuthGuard } from 'src/auth/guard/jwt-auth.guard';
-import { User } from 'src/common/decorator/user.decorator';
+import { JwtAuthGuard } from 'src/auth/guards/jwt-auth.guard';
+import { CurrentUser } from 'src/auth/decorators/user.decorator';
 import { User as UserEntity } from 'src/user/entity/user.entity';
 import { CourseDiscussionService } from '../service/course-discussion.service';
 import { CreateCourseDiscussionPostDto } from '../dto/create-course-discussion-post.dto';
@@ -25,7 +25,7 @@ export class CourseDiscussionController {
   @Get('track-items/:trackItemId')
   getDiscussion(
     @Param('trackItemId') trackItemId: string,
-    @User() user: UserEntity,
+    @CurrentUser() user: UserEntity,
   ) {
     return this.courseDiscussionService.getDiscussion(trackItemId, user);
   }
@@ -34,7 +34,7 @@ export class CourseDiscussionController {
   createPost(
     @Param('trackItemId') trackItemId: string,
     @Body() createPostDto: CreateCourseDiscussionPostDto,
-    @User() user: UserEntity,
+    @CurrentUser() user: UserEntity,
   ) {
     return this.courseDiscussionService.createPost(
       trackItemId,
@@ -47,7 +47,7 @@ export class CourseDiscussionController {
   createReply(
     @Param('postId') postId: string,
     @Body() createPostDto: CreateCourseDiscussionPostDto,
-    @User() user: UserEntity,
+    @CurrentUser() user: UserEntity,
   ) {
     return this.courseDiscussionService.createReply(
       postId,
@@ -60,24 +60,20 @@ export class CourseDiscussionController {
   updatePost(
     @Param('postId') postId: string,
     @Body() updatePostDto: UpdateCourseDiscussionPostDto,
-    @User() user: UserEntity,
+    @CurrentUser() user: UserEntity,
   ) {
-    return this.courseDiscussionService.updatePost(
-      postId,
-      updatePostDto,
-      user,
-    );
+    return this.courseDiscussionService.updatePost(postId, updatePostDto, user);
   }
 
   @Delete('posts/:postId')
-  deletePost(@Param('postId') postId: string, @User() user: UserEntity) {
+  deletePost(@Param('postId') postId: string, @CurrentUser() user: UserEntity) {
     return this.courseDiscussionService.deletePost(postId, user);
   }
 
   @Put(':discussionId/lock')
   lockDiscussion(
     @Param('discussionId') discussionId: string,
-    @User() user: UserEntity,
+    @CurrentUser() user: UserEntity,
   ) {
     return this.courseDiscussionService.lockDiscussion(discussionId, user);
   }

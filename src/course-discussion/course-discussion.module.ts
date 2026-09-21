@@ -1,3 +1,4 @@
+import { TrackItem } from 'src/track/entity/track-item.entity';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { CourseDiscussion } from './entity/course-discussion.entity';
@@ -10,7 +11,11 @@ import { UserModule } from 'src/user/user.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([CourseDiscussion, CourseDiscussionPost]),
+    TypeOrmModule.forFeature([
+      CourseDiscussion,
+      CourseDiscussionPost,
+      TrackItem,
+    ]),
     NotificationModule,
     TrackModule,
     UserModule,

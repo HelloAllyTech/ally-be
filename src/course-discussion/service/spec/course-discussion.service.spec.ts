@@ -6,7 +6,7 @@ import { CourseDiscussion } from 'src/course-discussion/entity/course-discussion
 import { CourseDiscussionPost } from 'src/course-discussion/entity/course-discussion-post.entity';
 import { TrackItem } from 'src/track/entity/track-item.entity';
 import { User } from 'src/user/entity/user.entity';
-import { NotificationService } from 'src/notification/service/notification.service';
+import { InAppNotificationService } from 'src/notification/service/in-app-notification.service';
 import { TrackService } from 'src/track/service/track.service';
 import { NotFoundException, ForbiddenException } from '@nestjs/common';
 
@@ -15,7 +15,7 @@ describe('CourseDiscussionService', () => {
   let discussionRepository: Repository<CourseDiscussion>;
   let postRepository: Repository<CourseDiscussionPost>;
   let trackItemRepository: Repository<TrackItem>;
-  let notificationService: NotificationService;
+  let inAppNotificationService: InAppNotificationService;
   let trackService: TrackService;
 
   const mockDiscussionRepository = {
@@ -35,8 +35,8 @@ describe('CourseDiscussionService', () => {
     findOne: jest.fn(),
   };
 
-  const mockNotificationService = {
-    createInAppNotification: jest.fn(),
+  const mockInAppNotificationService = {
+    create: jest.fn(),
   };
 
   const mockTrackService = {
@@ -60,8 +60,8 @@ describe('CourseDiscussionService', () => {
           useValue: mockTrackItemRepository,
         },
         {
-          provide: NotificationService,
-          useValue: mockNotificationService,
+          provide: InAppNotificationService,
+          useValue: mockInAppNotificationService,
         },
         {
           provide: TrackService,
@@ -80,7 +80,9 @@ describe('CourseDiscussionService', () => {
     trackItemRepository = module.get<Repository<TrackItem>>(
       getRepositoryToken(TrackItem),
     );
-    notificationService = module.get<NotificationService>(NotificationService);
+    inAppNotificationService = module.get<InAppNotificationService>(
+      InAppNotificationService,
+    );
     trackService = module.get<TrackService>(TrackService);
   });
 
@@ -107,121 +109,171 @@ describe('CourseDiscussionService', () => {
     });
 
     it('should throw NotFoundException if discussion not enabled', async () => {
-        const trackItem = { id: 'trackItemId', hasDiscussion: false };
-        mockTrackItemRepository.findOne.mockResolvedValue(trackItem);
-        await expect(
-            service.getDiscussion('trackItemId', new User()),
-        ).rejects.toThrow(NotFoundException);
+      const trackItem = { id: 'trackItemId', hasDiscussion: false };
+      mockTrackItemRepository.findOne.mockResolvedValue(trackItem);
+      await expect(
+        service.getDiscussion('trackItemId', new User()),
+      ).rejects.toThrow(NotFoundException);
     });
 
     it('should create a new discussion if not found', async () => {
-        const trackItem = { id: 'trackItemId', hasDiscussion: true };
-        const user = new User();
-        user.id = 'userId';
-        const newDiscussion = { id: 'newDiscussionId', trackItemId: 'trackItemId' };
+      const trackItem = { id: 'trackItemId', hasDiscussion: true };
+      const user = new User();
+      user.id = 1;
+      const newDiscussion = {
+        id: 'newDiscussionId',
+        trackItemId: 'trackItemId',
+      };
 
-        mockTrackItemRepository.findOne.mockResolvedValue(trackItem);
-        mockDiscussionRepository.findOne.mockResolvedValue(null);
-        mockDiscussionRepository.create.mockReturnValue(newDiscussion);
-        mockDiscussionRepository.save.mockResolvedValue(newDiscussion);
+      mockTrackItemRepository.findOne.mockResolvedValue(trackItem);
+      mockDiscussionRepository.findOne.mockResolvedValue(null);
+      mockDiscussionRepository.create.mockReturnValue(newDiscussion);
+      mockDiscussionRepository.save.mockResolvedValue(newDiscussion);
 
-        const result = await service.getDiscussion('trackItemId', user);
-        expect(result).toEqual(newDiscussion);
-        expect(mockDiscussionRepository.create).toHaveBeenCalledWith({
-            trackItemId: 'trackItemId',
-            createdById: user.id,
-        });
+      const result = await service.getDiscussion('trackItemId', user);
+      expect(result).toEqual(newDiscussion);
+      expect(mockDiscussionRepository.create).toHaveBeenCalledWith({
+        trackItemId: 'trackItemId',
+        createdById: user.id,
+      });
     });
   });
 
   describe('createPost', () => {
     it('should create a post', async () => {
-        const user = new User();
-        user.id = 'userId';
-        const discussion = { id: 'discussionId', isLocked: false };
-        const createPostDto = { content: 'test' };
-        const newPost = { ...createPostDto, discussionId: discussion.id, authorId: user.id };
+      const user = new User();
+      user.id = 1;
+      const discussion = { id: 'discussionId', isLocked: false };
+      const createPostDto = { content: 'test' };
+      const newPost = {
+        ...createPostDto,
+        discussionId: discussion.id,
+        authorId: user.id,
+      };
 
-        jest.spyOn(service, 'getDiscussion').mockResolvedValue(discussion as any);
-        mockPostRepository.create.mockReturnValue(newPost);
-        mockPostRepository.save.mockResolvedValue(newPost);
-        
-        const result = await service.createPost('trackItemId', createPostDto, user);
-        expect(result).toEqual(newPost);
+      jest.spyOn(service, 'getDiscussion').mockResolvedValue(discussion as any);
+      mockPostRepository.create.mockReturnValue(newPost);
+      mockPostRepository.save.mockResolvedValue(newPost);
+
+      const result = await service.createPost(
+        'trackItemId',
+        createPostDto,
+        user,
+      );
+      expect(result).toEqual(newPost);
     });
 
     it('should throw ForbiddenException if discussion is locked', async () => {
-        const user = new User();
-        const discussion = { id: 'discussionId', isLocked: true };
-        const createPostDto = { content: 'test' };
+      const user = new User();
+      const discussion = { id: 'discussionId', isLocked: true };
+      const createPostDto = { content: 'test' };
 
-        jest.spyOn(service, 'getDiscussion').mockResolvedValue(discussion as any);
+      jest.spyOn(service, 'getDiscussion').mockResolvedValue(discussion as any);
 
-        await expect(service.createPost('trackItemId', createPostDto, user)).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.createPost('trackItemId', createPostDto, user),
+      ).rejects.toThrow(ForbiddenException);
     });
   });
 
   describe('createReply', () => {
     it('should create a reply and send notification', async () => {
-        const user = new User();
-        user.id = 'userId';
-        user.firstName = 'John';
-        user.lastName = 'Doe';
-        const parentPost = { id: 'parentId', authorId: 'authorId', discussionId: 'discussionId', discussion: { isLocked: false, trackItemId: 'trackItemId' } };
-        const createPostDto = { content: 'test reply' };
-        const newReply = { ...createPostDto, discussionId: parentPost.discussionId, authorId: user.id, parentPostId: parentPost.id };
+      const user = new User();
+      user.id = 1;
+      user.name = 'John Doe';
+      const parentPost = {
+        id: 'parentId',
+        authorId: 2,
+        discussionId: 'discussionId',
+        discussion: { isLocked: false, trackItemId: 'trackItemId' },
+        tenantId: 'tenant-id',
+      };
+      const createPostDto = { content: 'test reply' };
+      const newReply = {
+        ...createPostDto,
+        discussionId: parentPost.discussionId,
+        authorId: user.id,
+        parentPostId: parentPost.id,
+      };
 
-        mockPostRepository.findOne.mockResolvedValue(parentPost);
-        mockPostRepository.create.mockReturnValue(newReply);
-        mockPostRepository.save.mockResolvedValue(newReply);
+      mockPostRepository.findOne.mockResolvedValue(parentPost);
+      mockPostRepository.create.mockReturnValue(newReply);
+      mockPostRepository.save.mockResolvedValue(newReply);
 
-        const result = await service.createReply('parentId', createPostDto, user);
-        expect(result).toEqual(newReply);
-        expect(mockNotificationService.createInAppNotification).toHaveBeenCalled();
+      const result = await service.createReply('parentId', createPostDto, user);
+      expect(result).toEqual(newReply);
+      expect(mockInAppNotificationService.create).toHaveBeenCalled();
     });
   });
 
   describe('updatePost', () => {
     it('should allow author to update post within 15 mins', async () => {
-        const user = new User();
-        user.id = 'authorId';
-        const post = { id: 'postId', authorId: 'authorId', content: 'original', createdAt: new Date(), discussion: { trackItem: { trackId: 'trackId' } } };
-        const updateDto = { content: 'updated' };
+      const user = new User();
+      user.id = 2;
+      const post = {
+        id: 'postId',
+        authorId: 2,
+        content: 'original',
+        createdAt: new Date(),
+        discussion: { trackItem: { trackId: 'trackId' } },
+      };
+      const updateDto = { content: 'updated' };
 
-        jest.spyOn(service as any, 'findPost').mockResolvedValue(post);
-        mockTrackService.isUserTrackCreator.mockResolvedValue(false);
-        mockPostRepository.save.mockResolvedValue({ ...post, ...updateDto, isEdited: true });
+      jest.spyOn(service as any, 'findPost').mockResolvedValue(post as any);
+      mockTrackService.isUserTrackCreator.mockResolvedValue(false);
+      mockPostRepository.save.mockResolvedValue({
+        ...post,
+        ...updateDto,
+        isEdited: true,
+      });
 
-        const result = await service.updatePost('postId', updateDto, user);
-        expect(result.content).toEqual('updated');
-        expect(result.isEdited).toBe(true);
+      const result = await service.updatePost('postId', updateDto, user);
+      expect(result.content).toEqual('updated');
+      expect(result.isEdited).toBe(true);
     });
 
     it('should not allow author to update post after 15 mins', async () => {
-        const user = new User();
-        user.id = 'authorId';
-        const post = { id: 'postId', authorId: 'authorId', content: 'original', createdAt: new Date(Date.now() - 20 * 60 * 1000), discussion: { trackItem: { trackId: 'trackId' } } };
-        const updateDto = { content: 'updated' };
+      const user = new User();
+      user.id = 2;
+      const post = {
+        id: 'postId',
+        authorId: 2,
+        content: 'original',
+        createdAt: new Date(Date.now() - 20 * 60 * 1000),
+        discussion: { trackItem: { trackId: 'trackId' } },
+      };
+      const updateDto = { content: 'updated' };
 
-        jest.spyOn(service as any, 'findPost').mockResolvedValue(post);
-        mockTrackService.isUserTrackCreator.mockResolvedValue(false);
+      jest.spyOn(service as any, 'findPost').mockResolvedValue(post as any);
+      mockTrackService.isUserTrackCreator.mockResolvedValue(false);
 
-        await expect(service.updatePost('postId', updateDto, user)).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.updatePost('postId', updateDto, user),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('should allow creator to update post anytime', async () => {
-        const user = new User();
-        user.id = 'creatorId';
-        const post = { id: 'postId', authorId: 'authorId', content: 'original', createdAt: new Date(Date.now() - 20 * 60 * 1000), discussion: { trackItem: { trackId: 'trackId' } } };
-        const updateDto = { content: 'updated' };
+      const user = new User();
+      user.id = 3;
+      const post = {
+        id: 'postId',
+        authorId: 2,
+        content: 'original',
+        createdAt: new Date(Date.now() - 20 * 60 * 1000),
+        discussion: { trackItem: { trackId: 'trackId' } },
+      };
+      const updateDto = { content: 'updated' };
 
-        jest.spyOn(service as any, 'findPost').mockResolvedValue(post);
-        mockTrackService.isUserTrackCreator.mockResolvedValue(true);
-        mockPostRepository.save.mockResolvedValue({ ...post, ...updateDto, isEdited: true });
+      jest.spyOn(service as any, 'findPost').mockResolvedValue(post as any);
+      mockTrackService.isUserTrackCreator.mockResolvedValue(true);
+      mockPostRepository.save.mockResolvedValue({
+        ...post,
+        ...updateDto,
+        isEdited: true,
+      });
 
-        const result = await service.updatePost('postId', updateDto, user);
-        expect(result.content).toEqual('updated');
+      const result = await service.updatePost('postId', updateDto, user);
+      expect(result.content).toEqual('updated');
     });
   });
-    
 });

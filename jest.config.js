@@ -29,8 +29,8 @@ const maxWorkers = explicit ?? (isCI ? null : 3);
 
 module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
-  rootDir: 'src',
-  testRegex: '.*\\.spec\\.ts$',
+  rootDir: '.',
+  testRegex: 'src/.*\\.spec\\.ts$',
   transform: {
     '^.+\\.(t|j)s$': 'ts-jest',
   },
@@ -39,7 +39,7 @@ module.exports = {
   coverageDirectory: '../coverage',
   testEnvironment: 'node',
   moduleNameMapper: {
-    '^src/(.*)$': '<rootDir>/$1',
+    '^src/(.*)$': '<rootDir>/src/$1',
   },
   // Worker pool size is LOCAL ONLY: a runner is a clean box doing one thing, and
   // throttling it would slow every pipeline to fix a problem it does not have.

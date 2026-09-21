@@ -71,10 +71,7 @@ export class TrackItem extends BaseWithoutTenantEntity {
   @Column({ default: false })
   hasDiscussion!: boolean;
 
-  @OneToOne(
-    () => CourseDiscussion,
-    (discussion) => discussion.trackItem,
-  )
+  @OneToOne(() => CourseDiscussion, (discussion) => discussion.trackItem)
   discussion?: CourseDiscussion;
 
   @Column({ type: 'jsonb', nullable: true })

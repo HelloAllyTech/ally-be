@@ -11,7 +11,7 @@ import { TrackItem } from 'src/track/entity/track-item.entity';
 import { User } from 'src/user/entity/user.entity';
 import { CreateCourseDiscussionPostDto } from '../dto/create-course-discussion-post.dto';
 import { UpdateCourseDiscussionPostDto } from '../dto/update-course-discussion-post.dto';
-import { NotificationService } from 'src/notification/service/notification.service';
+import { InAppNotificationService } from 'src/notification/service/in-app-notification.service';
 import { TrackService } from 'src/track/service/track.service';
 
 @Injectable()
@@ -23,7 +23,7 @@ export class CourseDiscussionService {
     private readonly courseDiscussionPostRepository: Repository<CourseDiscussionPost>,
     @InjectRepository(TrackItem)
     private readonly trackItemRepository: Repository<TrackItem>,
-    private readonly notificationService: NotificationService,
+    private readonly inAppNotificationService: InAppNotificationService,
     private readonly trackService: TrackService,
   ) {}
 
@@ -100,20 +100,22 @@ export class CourseDiscussionService {
       authorId: user.id,
       parentPostId: parentPost.id,
     });
-    
+
     const savedReply = await this.courseDiscussionPostRepository.save(reply);
 
     if (parentPost.authorId !== user.id) {
-        await this.notificationService.createInAppNotification({
-            userId: parentPost.authorId,
-            title: 'You have a new reply',
-            body: `${user.firstName} ${user.lastName} replied to your post.`,
-            data: {
-                trackItemId: parentPost.discussion.trackItemId,
-                discussionId: parentPost.discussionId,
-                postId: savedReply.id,
-            }
-        });
+      await this.inAppNotificationService.create({
+        userId: parentPost.authorId,
+        tenantId: parentPost.tenantId,
+        type: 'new_reply',
+        title: 'You have a new reply',
+        body: `${user.name} replied to your post.`,
+        data: {
+          trackItemId: parentPost.discussion.trackItemId,
+          discussionId: parentPost.discussionId,
+          postId: savedReply.id,
+        },
+      });
     }
 
     return savedReply;
@@ -127,21 +129,24 @@ export class CourseDiscussionService {
     const post = await this.findPost(postId);
 
     const isAuthor = post.authorId === user.id;
-    const isCreator = await this.trackService.isUserTrackCreator(post.discussion.trackItem.trackId, user.id);
+    const isCreator = await this.trackService.isUserTrackCreator(
+      post.discussion.trackItem.trackId,
+      user.id,
+    );
 
     if (!isAuthor && !isCreator) {
       throw new ForbiddenException('You are not allowed to edit this post');
     }
-    
+
     // R7: Learners can edit their own post within 15 minutes
     if (isAuthor && !isCreator) {
-        const now = new Date();
-        const postDate = new Date(post.createdAt);
-        const diff = now.getTime() - postDate.getTime();
-        const minutes = Math.floor(diff / 1000 / 60);
-        if (minutes > 15) {
-            throw new ForbiddenException('You can no longer edit this post');
-        }
+      const now = new Date();
+      const postDate = new Date(post.createdAt);
+      const diff = now.getTime() - postDate.getTime();
+      const minutes = Math.floor(diff / 1000 / 60);
+      if (minutes > 15) {
+        throw new ForbiddenException('You can no longer edit this post');
+      }
     }
 
     post.content = updatePostDto.content;
@@ -153,19 +158,22 @@ export class CourseDiscussionService {
     const post = await this.findPost(postId);
 
     const isAuthor = post.authorId === user.id;
-    const isCreator = await this.trackService.isUserTrackCreator(post.discussion.trackItem.trackId, user.id);
-    
+    const isCreator = await this.trackService.isUserTrackCreator(
+      post.discussion.trackItem.trackId,
+      user.id,
+    );
+
     if (!isAuthor && !isCreator) {
-        throw new ForbiddenException('You are not allowed to delete this post');
+      throw new ForbiddenException('You are not allowed to delete this post');
     }
 
     // R8: If a top-level post with replies is deleted, the post content is replaced
     if (!post.parentPostId && post.replies && post.replies.length > 0) {
-        post.content = '[deleted by author]';
-        post.isDeletedByAuthor = true;
-        await this.courseDiscussionPostRepository.save(post);
+      post.content = '[deleted by author]';
+      post.isDeletedByAuthor = true;
+      await this.courseDiscussionPostRepository.save(post);
     } else {
-        await this.courseDiscussionPostRepository.softDelete(postId);
+      await this.courseDiscussionPostRepository.softDelete(postId);
     }
   }
 
@@ -174,17 +182,22 @@ export class CourseDiscussionService {
     user: User,
   ): Promise<CourseDiscussion> {
     const discussion = await this.courseDiscussionRepository.findOne({
-        where: { id: discussionId },
-        relations: ['trackItem'],
+      where: { id: discussionId },
+      relations: ['trackItem'],
     });
 
     if (!discussion) {
       throw new NotFoundException('Discussion not found');
     }
 
-    const isCreator = await this.trackService.isUserTrackCreator(discussion.trackItem.trackId, user.id);
+    const isCreator = await this.trackService.isUserTrackCreator(
+      discussion.trackItem.trackId,
+      user.id,
+    );
     if (!isCreator) {
-        throw new ForbiddenException('You are not allowed to lock this discussion');
+      throw new ForbiddenException(
+        'You are not allowed to lock this discussion',
+      );
     }
 
     discussion.isLocked = true;
