@@ -54,10 +54,10 @@ describe('BugHunterPipelineController', () => {
     const dto: RecordBugHuntRunModelDto = { engine, model };
 
     await request(app.getHttpServer())
-      .post(`/v1/bug-hunter/pipeline/runs/${runId}/model`)
+      .post(`/v1/bug-hunter/runs/${runId}/model`)
       .set('x-api-key', 'test-api-key') // Assuming API key is required for authentication
       .send(dto)
-      .expect(201) // Expect HTTP 201 Created for successful POST
+      .expect(201) // Expect HTTP 201 Created for successful POST, but should fail with 404
       .expect({ engine, model });
 
     expect(mockBugHunterService.recordResolvedModel).toHaveBeenCalledWith(

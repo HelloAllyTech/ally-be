@@ -409,7 +409,7 @@ export class BugHunterPipelineController {
     return { totalTokenCostUsd: run.totalTokenCostUsd };
   }
 
-  @Post('pipeline/runs/:id/model')
+  @Post('runs/:id/model')
   @ApiOperation({
     summary: 'Attach which CLI/model actually ran this run (pipeline only)',
     description:
