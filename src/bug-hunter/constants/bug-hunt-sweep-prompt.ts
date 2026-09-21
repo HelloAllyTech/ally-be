@@ -157,7 +157,7 @@ export function buildSweepPrompt(ctx: SweepPromptContext): string {
     `## Phase 1 — Discover`,
     `Run these five finders. Do them in whatever order you like, but do ALL of them, and report a finder_result for each even when it found nothing — a clean finder is a result, not a gap.`,
     ``,
-    `1. TEST/LINT${commands.typecheck ? '/TYPECHECK' : ''}. Run ${verifyCommandsList(commands)}. Any failing test${commands.typecheck ? ', type error,' : ''} or lint error is a CONFIRMED bug; no judgement call is needed to prove it. severity "high" for a failing test${commands.typecheck ? ' or a type error' : ''}, "low" for lint. proven=true.`,
+    `1. TEST/LINT${commands.typecheck ? '/TYPECHECK' : ''}. Run ${verifyCommandsList(commands)}. Any failing test${commands.typecheck ? ', type error,' : ''} or lint error is a CONFIRMED bug; no judgement call is needed to prove it. severity "high" for a failing test${commands.typecheck ? ' or a type error' : ''}, "low" for lint. proven=true. IMPORTANT: when the same lint rule fires in more than one file (e.g. "react-hooks/exhaustive-deps" missing a dependency in ten different components), file ONE finding for that rule, not one per file — symbol is the rule name itself, and evidence lists every affected file:line. One finding per FAILING TEST is still correct (each is a distinct behavioural bug); this grouping is for lint only.`,
     deep
       ? `2. CODE REVIEW (deep). Read broadly across the codebase for correctness bugs a careful reviewer would flag. proven=false.`
       : `2. CODE REVIEW (diff-scoped). Read ONLY files changed by "git log --since='1 day ago'" — or the last 20 commits if that range is empty. Do not read the whole repo; this bounds the cost. proven=false.`,
