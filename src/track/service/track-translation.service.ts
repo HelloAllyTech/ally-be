@@ -26,7 +26,9 @@ import {
   TranslatableField,
   TranslatedField,
   TranslatedFieldMap,
+  mediaOverrideKey,
 } from '../type/track-translation.type';
+import { questionsOf, questionsWithMedia } from '../util/track-question.util';
 import {
   extractItemFields,
   extractSectionFields,
@@ -320,6 +322,22 @@ export class TrackTranslationService {
             item.type === TrackItemType.VIDEO
               ? { url: content.media?.[item.id]?.url ?? null }
               : null,
+          /**
+           * One row per question that actually has media. A question with no
+           * picture has nothing to localise, and listing it would put a row
+           * of empty URL boxes in front of every trainer translating a
+           * text-only quiz.
+           */
+          questionMedia: questionsWithMedia(item).map((question) => ({
+            questionId: question.id,
+            /** So the trainer can see which picture they are overriding. */
+            prompt: question.prompt,
+            kind: question.media!.kind,
+            sourceUrl: question.media!.url,
+            url:
+              content.media?.[mediaOverrideKey(item.id, question.id)]?.url ??
+              null,
+          })),
           /** ROLEPLAY/CASE defer to the linked scenario's own translation. */
           deferredTo:
             item.type === TrackItemType.ROLEPLAY
@@ -437,11 +455,25 @@ export class TrackTranslationService {
   }
 
   /** Per-language media override, e.g. a dubbed cut of a VIDEO item. */
+  /**
+   * Point one piece of media at a localised file for this language, or clear
+   * it back to the English original.
+   *
+   * Two things can carry an override: a VIDEO component (a dubbed cut) and a
+   * single question's picture or clip. Both go through here because both are
+   * the same act — a URL the model cannot produce and a human supplies by
+   * hand.
+   *
+   * `questionId` narrows it to a question. A quiz item with no `questionId`
+   * is rejected rather than silently writing an entry nothing reads: a quiz
+   * has no media of its own, only its questions do.
+   */
   async setMediaUrl(
     trackId: string,
     languageId: number,
     trackItemId: string,
     url: string | null,
+    questionId?: string | null,
   ): Promise<void> {
     const row = await this.requireRow(trackId, languageId);
     const content = this.normalize(row.content);
@@ -450,15 +482,27 @@ export class TrackTranslationService {
       .getRepository(TrackItem)
       .findOne({ where: { id: trackItemId, trackId } });
     if (!item) throw new NotFoundException('Track component not found');
-    if (item.type !== TrackItemType.VIDEO) {
+
+    if (questionId) {
+      const question = questionsOf(item).find((q) => q.id === questionId);
+      if (!question) {
+        throw new NotFoundException('Question not found on this component');
+      }
+      if (!question.media?.url) {
+        throw new BadRequestException(
+          'That question has no media to localise.',
+        );
+      }
+    } else if (item.type !== TrackItemType.VIDEO) {
       throw new BadRequestException(
-        'Only video components take a per-language media URL.',
+        "Only video components take a per-language media URL. Pass a question id to localise a question's media.",
       );
     }
 
+    const key = mediaOverrideKey(trackItemId, questionId);
     content.media = content.media ?? {};
-    if (url) content.media[trackItemId] = { url };
-    else delete content.media[trackItemId];
+    if (url) content.media[key] = { url };
+    else delete content.media[key];
 
     await this.saveContent(row, content);
   }

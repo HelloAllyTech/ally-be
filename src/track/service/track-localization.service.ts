@@ -11,10 +11,12 @@ import { TrackItem } from '../entity/track-item.entity';
 import { TrackSection } from '../entity/track-section.entity';
 import { VideoContent } from '../type/track.type';
 import {
+  mediaOverrideKey,
   TrackLanguageOption,
   TrackTranslationContent,
   TrackTranslationStatus,
 } from '../type/track-translation.type';
+import { questionsOf } from '../util/track-question.util';
 import {
   applyItemFields,
   applySectionFields,
@@ -239,6 +241,24 @@ export class TrackLocalizationService {
     const mediaUrl = content.media?.[item.id]?.url;
     if (mediaUrl && localized.content) {
       (localized.content as VideoContent).url = mediaUrl;
+    }
+
+    /**
+     * Per-question media overrides. `localized` is already a clone, so these
+     * writes land on the copy the learner gets and never on the stored
+     * entity. A question with no override keeps the English original — which
+     * for a photograph or a clip of a real interaction is the right answer,
+     * not a gap.
+     */
+    for (const question of questionsOf(localized)) {
+      const override =
+        content.media?.[mediaOverrideKey(item.id, question.id)]?.url;
+      if (override && question.media) {
+        question.media = { ...question.media, url: override };
+        // The English poster is a frame of the English clip. Keeping it
+        // would caption the localised video with the wrong still.
+        delete question.media.posterUrl;
+      }
     }
     return localized;
   }

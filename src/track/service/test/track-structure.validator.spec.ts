@@ -656,3 +656,146 @@ describe('validateTrackStructure - inline article questions', () => {
     );
   });
 });
+
+describe('validateTrackStructure - question media', () => {
+  const wrap = (item: any): UpsertTrackSectionDto[] => [
+    { title: 'S', order: 1, items: [item] },
+  ];
+
+  const withMedia = (media: any) =>
+    quizItem({
+      questions: [
+        {
+          id: 'q1',
+          type: 'mcq_single',
+          prompt: 'What do you see?',
+          options: [
+            { id: 'a', text: 'A' },
+            { id: 'b', text: 'B' },
+          ],
+          correctOptionIds: ['a'],
+          media,
+        },
+      ],
+    });
+
+  const image = {
+    kind: 'image',
+    source: 's3',
+    url: 'https://bucket.s3.ap-south-1.amazonaws.com/track-media/question_image/1-x.png',
+    alt: 'A swollen left ankle',
+  };
+
+  it('accepts a question with no media (the overwhelmingly common case)', () => {
+    expect(() => validateTrackStructure(wrap(quizItem()))).not.toThrow();
+  });
+
+  it('accepts an uploaded image with a description', () => {
+    expect(() => validateTrackStructure(wrap(withMedia(image)))).not.toThrow();
+  });
+
+  it('accepts an uploaded video', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          withMedia({
+            kind: 'video',
+            source: 's3',
+            url: 'https://bucket.s3.ap-south-1.amazonaws.com/track-media/question_video/1-x.mp4',
+          }),
+        ),
+      ),
+    ).not.toThrow();
+  });
+
+  it('accepts an embedded video URL', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          withMedia({
+            kind: 'video',
+            source: 'youtube',
+            url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          }),
+        ),
+      ),
+    ).not.toThrow();
+  });
+
+  it('rejects an unknown media kind', () => {
+    expect(() =>
+      validateTrackStructure(wrap(withMedia({ ...image, kind: 'audio' }))),
+    ).toThrow(/image or a video/);
+  });
+
+  it('rejects an unknown media source', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(withMedia({ ...image, kind: 'video', source: 'tiktok' })),
+      ),
+    ).toThrow(/unknown source/);
+  });
+
+  it('rejects media with no URL', () => {
+    expect(() =>
+      validateTrackStructure(wrap(withMedia({ ...image, url: '  ' }))),
+    ).toThrow(/missing its URL/);
+  });
+
+  it('rejects a non-https URL, including a javascript: payload', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(withMedia({ ...image, url: 'javascript:alert(1)' })),
+      ),
+    ).toThrow(/https link/);
+    expect(() =>
+      validateTrackStructure(
+        wrap(withMedia({ ...image, url: 'http://example.com/x.png' })),
+      ),
+    ).toThrow(/https link/);
+  });
+
+  it('rejects an image claiming a third-party video host', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          withMedia({
+            kind: 'image',
+            source: 'youtube',
+            url: 'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+          }),
+        ),
+      ),
+    ).toThrow(/must be an uploaded file/);
+  });
+
+  it('rejects an over-long media description', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(withMedia({ ...image, alt: 'x'.repeat(301) })),
+      ),
+    ).toThrow(/300 characters or fewer/);
+  });
+
+  // Media lives on QuizQuestionBase, so the two non-quiz surfaces that carry a
+  // QuizQuestion have to be gated by the same rule — otherwise a bad payload
+  // simply picks a different door.
+  it('applies the same rule to a video interjection question', () => {
+    expect(() =>
+      validateTrackStructure(
+        wrap(
+          videoItem({
+            interjections: [
+              mcqInterjection({
+                question: {
+                  ...mcqInterjection().question,
+                  media: { ...image, url: 'javascript:alert(1)' },
+                },
+              }),
+            ],
+          }),
+        ),
+      ),
+    ).toThrow(/https link/);
+  });
+});

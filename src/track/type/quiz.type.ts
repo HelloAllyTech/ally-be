@@ -35,12 +35,78 @@ export interface QuizOption {
   text: string;
 }
 
+/**
+ * What a question's media attachment *is*, which is also what the learner's
+ * client has to render: a still image or a moving one. Kept separate from
+ * {@link QuestionMediaSource} (where the bytes live) because the two vary
+ * independently — a video may be uploaded or embedded, and both render in a
+ * player.
+ */
+export enum QuestionMediaKind {
+  IMAGE = 'image',
+  VIDEO = 'video',
+}
+
+/**
+ * Where the media lives. `s3` is a file the trainer uploaded through the
+ * track-media presign endpoint; the rest are third-party embeds and mirror
+ * `VideoSource` on the VIDEO component, deliberately — a trainer who has
+ * already learned "paste a YouTube/Vimeo/Loom link" for a video lesson
+ * should not meet a different list here.
+ */
+export enum QuestionMediaSource {
+  S3 = 's3',
+  YOUTUBE = 'youtube',
+  VIMEO = 'vimeo',
+  LOOM = 'loom',
+}
+
+/**
+ * A picture or clip shown with a question, so the question can ask what the
+ * learner *observes* rather than only what they can read. Part of the
+ * question stem, not decoration: it renders above the answer controls, and
+ * it survives into the results screen so a learner reviewing a wrong answer
+ * still sees what they were looking at.
+ *
+ * Lives on {@link QuizQuestionBase}, so a video interjection and an inline
+ * article question carry it on the same terms as a quiz question — one
+ * validator, one sanitizer, one renderer per client.
+ */
+export interface QuestionMedia {
+  kind: QuestionMediaKind;
+  source: QuestionMediaSource;
+  /** Public S3 URL, or the third-party watch URL the trainer pasted. */
+  url: string;
+  /**
+   * What the media shows, for screen readers and for the learner whose
+   * connection drops the file. Images only: a video that fails to load
+   * renders its own player-level error, and alt text on a `<video>` has no
+   * defined behaviour.
+   */
+  alt?: string;
+  /**
+   * Still frame for an uploaded video, captured in the browser at author
+   * time and stored beside it.
+   *
+   * Uploaded video only — a third-party embed brings its own thumbnail.
+   * Without this, what the learner sees before pressing play is whatever
+   * the player happens to paint: a browser with `preload="metadata"` shows
+   * the first frame, but Android's ExoPlayer is not guaranteed to render
+   * anything before playback starts. A black rectangle is the wrong thing
+   * to show someone who is being asked what they observe, so the frame is
+   * captured once rather than left to each player.
+   */
+  posterUrl?: string;
+}
+
 export interface QuizQuestionBase {
   id: string;
   type: QuizQuestionType;
   prompt: string;
   explanation?: string;
   points?: number;
+  /** Optional picture or clip shown with the prompt. */
+  media?: QuestionMedia;
 }
 
 export interface McqSingleQuestion extends QuizQuestionBase {

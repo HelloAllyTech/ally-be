@@ -94,6 +94,15 @@ export class SetTrackTranslationMediaDto {
 
   @ApiPropertyOptional({
     description:
+      "Localise one question's media instead of the component's own. Omit for a VIDEO component's dubbed cut.",
+    nullable: true,
+  })
+  @IsOptional()
+  @IsString()
+  questionId?: string | null;
+
+  @ApiPropertyOptional({
+    description:
       'Localised media URL for this video component, or null to clear it and fall back to the English cut.',
     nullable: true,
   })
