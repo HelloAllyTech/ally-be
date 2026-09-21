@@ -13,11 +13,29 @@
 # that workflow is a deploy pipeline (prepare-env → test → build → deploy), and
 # pointing it at pull requests would ship every PR.
 #
-# NOTE ON ENFORCEMENT: adding this file makes the checks run and report, but does
-# not make them mandatory — that is a branch-protection setting. Landed that way
-# on purpose, so a suite that turns out to be red on master blocks nobody while
-# it is being fixed. Mark "test" and "lint" as required checks once they are
-# green.
+# NOTE ON ENFORCEMENT: "Jest" and "Lint & format" are required checks as of
+# 2026-09-21, via the repo ruleset "master: tests, types and lint must pass".
+#
+# Required by the names GitHub reports them under — each job's `name:`, NOT the
+# job ids `test` and `lint`. A required context that nothing ever reports does
+# not fail a merge, it blocks it forever waiting for a check that will never
+# arrive, so these strings and the ruleset's have to move together. Renaming a
+# job here without editing the ruleset wedges master.
+#
+# Typechecking is covered, but it rides inside "Lint & format" as a step rather
+# than having a check of its own — see the lint job below. The cost is that a
+# lint failure short-circuits the job before tsc runs, so type errors stay
+# hidden until lint is green. ally-mobile and ally-web both give it a separate
+# job; splitting it here would be the consistent thing, and would change what
+# "Lint & format" covers, so it has not been done silently.
+#
+# "Builder runner harnesses" and "Workflow lint" are deliberately NOT required:
+# they pass today, but the ask was tests/types/lint. Add them when someone
+# decides to, rather than by accident.
+#
+# Admins and maintainers bypass the ruleset, so pushing straight to master still
+# works — this repo is trunk-based and protection was removed on 2026-09-17 for
+# that reason. The gate is aimed at pull requests, Bug Hunter's included.
 
 name: Tests
 
