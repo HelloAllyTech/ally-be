@@ -518,7 +518,59 @@ export class BuilderBuildService {
       effort: profile.effort,
       plannerMaxTurns: profile.maxTurns,
       planWords: profile.planWords,
-      budgets: profile.maxBudgetUsd,
+      budgets: this.phaseBudgetsWithin(session, profile.maxBudgetUsd),
+    };
+  }
+
+  /**
+   * Per-phase ceilings, capped at what the session can actually afford.
+   *
+   * The profile's figures are absolute and they add up: LARGE is
+   * 10 + 20 + 6 + 5 — and that is one pass each, with up to four coding
+   * attempts allowed. A session with a $10 ceiling was dispatched with
+   * permission to spend $41 before anything asked it to stop, and one run did
+   * exactly that ($41.92 of $10.00). Nothing was wrong with the boundary check
+   * that is supposed to catch this; it simply runs BETWEEN phases, and the
+   * overshoot happens inside one.
+   *
+   * A phase may therefore never be handed more than the session has left. That
+   * is not the same as dividing the headroom four ways: the phases are
+   * sequential and most runs never reach the last one, so splitting it would
+   * starve CODE — the phase that does the work — on a budget that could have
+   * covered it. The engine's own ceiling stops a phase at the session's limit;
+   * the boundary check then holds the run rather than starting the next one.
+   *
+   * No ceiling on the session means no clamp: zero has meant "uncapped"
+   * everywhere else in this file since the column was added.
+   */
+  private phaseBudgetsWithin(
+    session: BuilderSession,
+    profileBudgets: {
+      plan: number;
+      code: number;
+      verify: number;
+      finalise: number;
+    },
+  ): { plan: number; code: number; verify: number; finalise: number } {
+    const ceiling = Number(session.budgetUsd ?? 0);
+    if (!ceiling || !Number.isFinite(ceiling)) return profileBudgets;
+
+    const spent = Number(session.totalCostUsd ?? 0);
+    const headroom = Math.max(
+      0,
+      ceiling - (Number.isFinite(spent) ? spent : 0),
+    );
+    // Never zero. A phase handed `--max-budget-usd 0` is a phase that cannot
+    // run at all, and a session with no headroom is refused at dispatch by
+    // assertWithinBudget long before this — so the floor here only covers the
+    // rounding case, where the last cent would otherwise read as "uncapped".
+    const cap = (value: number) => Math.max(0.5, Math.min(value, headroom));
+
+    return {
+      plan: cap(profileBudgets.plan),
+      code: cap(profileBudgets.code),
+      verify: cap(profileBudgets.verify),
+      finalise: cap(profileBudgets.finalise),
     };
   }
 

@@ -236,6 +236,73 @@ describe('BuilderBuildService', () => {
     });
 
     /**
+     * The profile's per-phase ceilings are absolute and they add up — LARGE is
+     * $10 + $20 + $6 + $5, one pass each, with up to four coding attempts
+     * allowed. A session with a $10 ceiling was dispatched with permission to
+     * spend all of it before anything asked it to stop, and a run did exactly
+     * that: $41.92 against a $10.00 ceiling, and the banner said so only once
+     * the money was gone. The boundary check cannot catch it, because the
+     * overshoot happens inside a phase and the check runs between them.
+     */
+    it('never hands a phase more than the session has left', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          requirements: Array.from({ length: 14 }, (_, i) => ({ id: `R${i}` })),
+          technicalPlan: {
+            repos: [
+              { repo: 'ally-be', changesMd: 'x'.repeat(2000) },
+              { repo: 'ally-web', changesMd: 'x'.repeat(2000) },
+            ],
+          },
+        },
+      });
+
+      await service.startBuild(
+        readySession({
+          repos: ['ally-be', 'ally-web'],
+          budgetUsd: '10',
+          totalCostUsd: '2.5',
+        }) as any,
+        1,
+      );
+
+      const models = dispatchedModels();
+      expect(models.size).toBe('large');
+      // $7.50 left, so every phase is capped there — not divided four ways.
+      // The phases are sequential and most runs never reach the last one, so
+      // splitting the headroom would starve CODE on money that could have
+      // covered it.
+      expect(models.budgets).toEqual({
+        plan: 7.5,
+        code: 7.5,
+        verify: 6,
+        finalise: 5,
+      });
+    });
+
+    /** Zero has meant "uncapped" everywhere since the column was added. */
+    it('leaves the profile alone when the session has no ceiling', async () => {
+      prdService.getOrCreateDoc.mockResolvedValue({
+        draft: {
+          requirements: [{ id: 'R1' }, { id: 'R2' }],
+          technicalPlan: { repos: [{ repo: 'ally-be', changesMd: 'small' }] },
+        },
+      });
+
+      await service.startBuild(
+        readySession({ budgetUsd: null, totalCostUsd: '99' }) as any,
+        1,
+      );
+
+      expect(dispatchedModels().budgets).toEqual({
+        plan: 1,
+        code: 8,
+        verify: 3,
+        finalise: 3,
+      });
+    });
+
+    /**
      * An unconfigured mechanical model must not hand the runner an empty
      * `--model`: a cost optimisation that can fail the build is not one.
      */
