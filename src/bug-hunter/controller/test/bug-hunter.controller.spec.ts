@@ -130,7 +130,15 @@ describe('BugHunterController', () => {
       await controller.listFindings({ status: 'all' } as never);
 
       expect(bugFindingService.list).toHaveBeenCalledWith(
-        expect.objectContaining({ runId: undefined, limit: 50, offset: 0 }),
+        expect.objectContaining({ runId: undefined, limit: 1000, offset: 0 }),
+      );
+    });
+
+    it('uses a default limit of 1000 when no limit is specified', async () => {
+      await controller.listFindings({ status: 'all' } as never);
+
+      expect(bugFindingService.list).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 1000, offset: 0 }),
       );
     });
   });

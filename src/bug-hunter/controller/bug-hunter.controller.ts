@@ -187,7 +187,7 @@ export class BugHunterController {
       source: query.source,
       repo: query.repo,
       runId: query.runId,
-      limit: query.limit ?? 50,
+      limit: query.limit ?? 1000,
       offset: query.offset ?? 0,
     });
     const enriched = await this.bugFindingService.enrich(items);
