@@ -47,7 +47,7 @@ describe('BugHunterPipelineController', () => {
     await app.close();
   });
 
-  it('should successfully record the engine and model for a bug hunt run via the pipeline endpoint', async () => {
+  it('should 404 the old /pipeline/runs/:id/model route and never call the service', async () => {
     const runId = uuidv4();
     const engine = 'test-bug-hunter-engine';
     const model = 'test-bug-hunter-model';
@@ -55,18 +55,15 @@ describe('BugHunterPipelineController', () => {
     const dto: RecordBugHuntRunModelDto = { engine, model };
 
     await request(app.getHttpServer())
-      .post(`/v1/bug-hunter/pipeline/runs/${runId}/model`)
-      .set('x-api-key', 'test-api-key') // Assuming API key is required for authentication
+      .post(`/api/v1/bug-hunter/pipeline/runs/${runId}/model`)
+      .set('x-api-key', 'test-api-key')
       .send(dto)
       .expect(404);
 
-    expect(mockBugHunterService.recordResolvedModel).toHaveBeenCalledWith(
-      runId,
-      dto,
-    );
+    expect(mockBugHunterService.recordResolvedModel).not.toHaveBeenCalled();
   });
 
-  it('should return 404 for POST to /v1/bug-hunter/runs/:runId/model without /pipeline segment', async () => {
+  it('should successfully record the engine and model via the corrected /runs/:id/model route', async () => {
     const runId = uuidv4();
     const engine = 'test-bug-hunter-engine';
     const model = 'test-bug-hunter-model';
@@ -77,6 +74,12 @@ describe('BugHunterPipelineController', () => {
       .post(`/api/v1/bug-hunter/runs/${runId}/model`)
       .set('x-api-key', 'test-api-key')
       .send(dto)
-      .expect(201); // Expecting 404 Not Found initially
+      .expect(201)
+      .expect(dto);
+
+    expect(mockBugHunterService.recordResolvedModel).toHaveBeenCalledWith(
+      runId,
+      dto,
+    );
   });
 });
