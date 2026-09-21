@@ -39,6 +39,7 @@ import { OrgEngagementAnalyticsService } from '../../service/org-engagement-anal
 import { RoleplayCostAnalyticsService } from '../../service/roleplay-cost-analytics.service';
 import { CodingAgentCostAnalyticsService } from '../../service/coding-agent-cost-analytics.service';
 import { FixSessionEngineCostAnalyticsService } from '../../service/fix-session-engine-cost-analytics.service';
+import { BugAgentPerformanceAnalyticsService } from '../../service/bug-agent-performance-analytics.service';
 import { QualitySentimentAnalyticsService } from '../../service/quality-sentiment-analytics.service';
 import { ChartPreferenceService } from '../../service/chart-preference.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
@@ -263,6 +264,10 @@ describe('AnalyticsController', () => {
         {
           provide: FixSessionEngineCostAnalyticsService,
           useValue: { getFixSessionEngineCost: jest.fn() },
+        },
+        {
+          provide: BugAgentPerformanceAnalyticsService,
+          useValue: { getPerformance: jest.fn() },
         },
         {
           provide: QualitySentimentAnalyticsService,

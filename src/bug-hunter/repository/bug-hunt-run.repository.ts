@@ -70,6 +70,77 @@ export class BugHuntRunRepository extends Repository<BugHuntRun> {
   }
 
   /**
+   * `costInWindow`'s same figures, plus a per-status count, bucketed by
+   * calendar week — the raw material for cost, fix-throughput, and
+   * reliability trend charts. One query rather than three: cost, the
+   * fix-session-run denominator (for escalation/fallback rates), and
+   * completion-status counts (for run-completion-rate) all group on the same
+   * (week, trigger, status) cells.
+   */
+  async weeklyRunStats(
+    start: Date,
+    end: Date,
+  ): Promise<
+    Array<{
+      week: Date;
+      trigger: string;
+      status: string;
+      runs: number;
+      costUsd: number;
+    }>
+  > {
+    const rows = await this.manager.query<
+      Array<{
+        week: Date;
+        trigger: string;
+        status: string;
+        runs: string;
+        cost_usd: string | null;
+      }>
+    >(
+      `
+      SELECT
+        date_trunc('week', r."createdAt") AS week,
+        r.trigger AS trigger,
+        r.status AS status,
+        COUNT(*) AS runs,
+        COALESCE(SUM(COALESCE(
+          NULLIF((r.metadata->>'cliReportedCostUsd'), '')::numeric,
+          r."totalTokenCostUsd"
+        )), 0) AS cost_usd
+      FROM bug_hunt_runs r
+      WHERE r."createdAt" >= $1
+        AND r."createdAt" < $2
+        AND r.status NOT IN ('skipped_disabled', 'skipped_quiet')
+      GROUP BY week, r.trigger, r.status
+      ORDER BY week
+      `,
+      [start, end],
+    );
+    return rows.map((row) => ({
+      week: row.week,
+      trigger: row.trigger,
+      status: row.status,
+      runs: Number(row.runs),
+      costUsd: Number(row.cost_usd ?? 0),
+    }));
+  }
+
+  /**
+   * Bug Hunter's own first run — the "all time" floor for its trend charts.
+   * Deliberately not the platform-wide `getPlatformDataFloor` (which measures
+   * from the first `users`/`scenario_sessions` row): that predates Bug Hunter
+   * entirely, which would stretch an all-time window back through years of
+   * guaranteed-empty weeks.
+   */
+  async getDataFloor(): Promise<Date> {
+    const [row] = await this.manager.query<Array<{ floor: Date | null }>>(
+      `SELECT MIN("createdAt") AS floor FROM bug_hunt_runs`,
+    );
+    return row?.floor ?? new Date();
+  }
+
+  /**
    * The last COMPLETED run for a repo, regardless of trigger — the nightly
    * sweep's diff-scoping reads its `createdAt` as "changed since here" so a
    * skipped/failed run never resets the diff window back to the beginning.

@@ -352,7 +352,15 @@ const finalise = (funnel: FindingFunnel): FindingFunnel => {
   return funnel;
 };
 
-const foldFunnel = (
+/**
+ * Exported for `BugAgentPerformanceAnalyticsService`: folding one week's
+ * `WeeklyFindingOutcomeCount` rows into a funnel is the exact same arithmetic
+ * as folding one window's `FindingOutcomeCount` rows — the row shapes only
+ * differ by an extra `week` field this function never reads. Kept as one
+ * definition rather than a second copy of `applyRow`/`finalise` for a
+ * trend chart to drift out of sync with.
+ */
+export const foldFunnel = (
   key: string | null,
   rows: FindingOutcomeCount[],
 ): FindingFunnel => {
@@ -361,7 +369,7 @@ const foldFunnel = (
   return finalise(funnel);
 };
 
-const groupFunnels = (
+export const groupFunnels = (
   rows: FindingOutcomeCount[],
   keyOf: (row: FindingOutcomeCount) => string | null,
 ): FindingFunnel[] => {
