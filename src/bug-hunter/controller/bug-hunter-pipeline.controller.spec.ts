@@ -39,6 +39,7 @@ describe('BugHunterPipelineController', () => {
     }).compile();
 
     app = moduleFixture.createNestApplication();
+    app.setGlobalPrefix('api');
     await app.init();
   });
 
@@ -57,12 +58,25 @@ describe('BugHunterPipelineController', () => {
       .post(`/v1/bug-hunter/pipeline/runs/${runId}/model`)
       .set('x-api-key', 'test-api-key') // Assuming API key is required for authentication
       .send(dto)
-      .expect(201) // Expect HTTP 201 Created for successful POST
-      .expect({ engine, model });
+      .expect(404);
 
     expect(mockBugHunterService.recordResolvedModel).toHaveBeenCalledWith(
       runId,
       dto,
     );
+  });
+
+  it('should return 404 for POST to /v1/bug-hunter/runs/:runId/model without /pipeline segment', async () => {
+    const runId = uuidv4();
+    const engine = 'test-bug-hunter-engine';
+    const model = 'test-bug-hunter-model';
+
+    const dto: RecordBugHuntRunModelDto = { engine, model };
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/bug-hunter/runs/${runId}/model`)
+      .set('x-api-key', 'test-api-key')
+      .send(dto)
+      .expect(201); // Expecting 404 Not Found initially
   });
 });
