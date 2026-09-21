@@ -1,3 +1,5 @@
+import { IsJsonString } from 'src/common/decorator/is-json-string.decorator';
+
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMinSize,
@@ -190,6 +192,7 @@ export class RawBugFindingDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @IsJsonString()
   evidence?: string;
 
   @ApiPropertyOptional({ enum: BugFindingSeverity })
