@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 
 import { BugFinding } from '../entity/bug-finding.entity';
 import {
@@ -485,12 +485,24 @@ export class BugFindingRepository extends Repository<BugFinding> {
     return query.getMany();
   }
 
-  listNewReportedBugs(limit = 50): Promise<BugFinding[]> {
+  /**
+   * `repo` narrows to items `RoadmapOpportunityService.create`'s intake
+   * classifier already believed belong to it, PLUS anything still unfiled —
+   * never to ONLY the confidently-classified ones. Dropping the null-repo
+   * fallback would silently hide a bug the classifier couldn't place from
+   * every sweep, when today it's meant to reach all of them until one claims
+   * it. Omit `repo` for the platform-wide, unfiltered list this always was.
+   */
+  listNewReportedBugs(repo?: string, limit = 50): Promise<BugFinding[]> {
+    const source = 'reported_bug' as BugFinding['source'];
+    const status = BugFindingStatus.NEW;
     return this.find({
-      where: {
-        source: 'reported_bug' as BugFinding['source'],
-        status: BugFindingStatus.NEW,
-      },
+      where: repo
+        ? [
+            { source, status, repo },
+            { source, status, repo: IsNull() },
+          ]
+        : { source, status },
       order: { createdAt: 'DESC' },
       take: limit,
     });

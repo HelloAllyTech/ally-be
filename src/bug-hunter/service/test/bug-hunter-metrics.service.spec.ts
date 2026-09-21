@@ -42,6 +42,7 @@ describe('BugHunterMetricsService', () => {
         fixSessionRuns: number;
         fixSessionCostUsd: number;
       };
+      escalations?: { summary: string; count: number }[];
     } = {},
   ) => {
     const findingRepository = {
@@ -63,9 +64,13 @@ describe('BugHunterMetricsService', () => {
         },
       ),
     };
+    const eventRepository = {
+      escalationBreakdown: jest.fn().mockResolvedValue(over.escalations ?? []),
+    };
     return new BugHunterMetricsService(
       findingRepository as never,
       runRepository as never,
+      eventRepository as never,
     );
   };
 
@@ -250,6 +255,18 @@ describe('BugHunterMetricsService', () => {
     );
     expect(codeReview?.reversalRate).toBe(1);
     expect(testFailure?.reversalRate).toBe(0);
+  });
+
+  it('passes the escalation breakdown through untouched', async () => {
+    const escalations = [
+      { summary: 'suite still red after the attempt cap', count: 4 },
+      { summary: 'asked the admin an open product question', count: 1 },
+    ];
+    const service = build([], { escalations });
+
+    const metrics = await service.report(30);
+
+    expect(metrics.escalations).toEqual(escalations);
   });
 
   it('asks the repositories for the window it was given', async () => {

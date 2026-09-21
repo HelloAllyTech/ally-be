@@ -258,6 +258,18 @@ describe('buildFixSessionPrompt', () => {
     );
   });
 
+  it('gates the full suite behind the narrow regression-test check, so a failed attempt does not pay for it', () => {
+    // The several-minutes-long full suite should only run once the cheap,
+    // narrow check (does the new regression test even pass?) already has —
+    // an attempt whose fix doesn't work yet should never reach step 5 at all.
+    const prompt = build();
+    const step4 = prompt.indexOf('4. Re-run');
+    const step5 = prompt.indexOf('5. Run the full suite');
+    expect(step4).toBeGreaterThan(-1);
+    expect(step5).toBeGreaterThan(step4);
+    expect(prompt.slice(step4, step5)).toMatch(/do not run the full suite/i);
+  });
+
   describe('typecheck', () => {
     // Real, recurring failure this closes: a fix that only ran test+lint
     // opened a PR that then failed CI's own separate `tsc --noEmit` job the

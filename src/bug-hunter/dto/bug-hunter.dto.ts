@@ -1280,6 +1280,20 @@ export class BugHunterDeclineDto {
   finderError!: boolean;
 }
 
+export class BugHunterEscalationDto {
+  @ApiProperty({
+    description:
+      "The escalation event's exact summary text. Several escalation paths report a fixed, " +
+      'literal string (e.g. a model-tier bump, a multi-repo plan, suite-still-red-after-cap), ' +
+      'so grouping on this already separates them cleanly; an open product question is genuine ' +
+      'free text and will show up as many small one-off groups.',
+  })
+  summary!: string;
+
+  @ApiProperty()
+  count!: number;
+}
+
 export class BugHunterStageLatencyDto {
   @ApiProperty({
     nullable: true,
@@ -1316,6 +1330,9 @@ export class BugHunterMetricsDto {
 
   @ApiProperty({ type: [BugHunterDeclineDto] })
   declines!: BugHunterDeclineDto[];
+
+  @ApiProperty({ type: [BugHunterEscalationDto] })
+  escalations!: BugHunterEscalationDto[];
 
   @ApiProperty({
     type: Object,

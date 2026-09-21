@@ -16,6 +16,8 @@ import {
   BugFindingSource,
   BugFindingStatus,
 } from 'src/bug-hunter/enum/bug-finding.enum';
+import { BugHunterRepoClassifierService } from 'src/bug-hunter/service/bug-hunter-repo-classifier.service';
+import { truncateTitle } from 'src/bug-hunter/util/truncate-title.util';
 
 import { S3Service } from 'src/aws/service/s3.service';
 import { AppConfigService } from 'src/config/config.service';
@@ -92,6 +94,7 @@ export class RoadmapOpportunityService {
     private readonly s3Service: S3Service,
     private readonly config: AppConfigService,
     private readonly readinessToken: RoadmapReadinessTokenService,
+    private readonly repoClassifier: BugHunterRepoClassifierService,
   ) {}
 
   async list(
@@ -249,12 +252,27 @@ export class RoadmapOpportunityService {
     // injection rather than a call into BugHunterModule (avoids a circular import).
     if (dto.type === RoadmapOpportunityType.BUG) {
       try {
+        // Classified once, here, instead of leaving `repo` null: every one of
+        // Bug Hunter's 5 nightly sweeps used to independently spend a full
+        // agentic judgement on "is this clearly about my repo?" for the exact
+        // same free text (bug-hunt-sweep-prompt.ts's REPORTED BUGS finder),
+        // with only a first-write-wins race deciding whose guess stuck — up
+        // to 5x the reasoning cost for one item, and a structural source of
+        // wrong_repo decline noise. classifyRepo already swallows its own
+        // failures and returns an UNCLASSIFIED result rather than throwing,
+        // so this stays inside the same best-effort try/catch as the rest of
+        // this block, and a null result just means the row starts unfiled
+        // exactly as it always has.
+        const classification = await this.repoClassifier.classifyRepo(
+          saved.description,
+        );
         await this.bugFindingRepository.save(
           this.bugFindingRepository.create({
             source: BugFindingSource.REPORTED_BUG,
-            title: saved.description.slice(0, 200),
+            title: truncateTitle(saved.description),
             description: saved.description,
             reportedBugId: saved.id,
+            repo: classification.repo,
             status: BugFindingStatus.NEW,
           }),
         );

@@ -30,7 +30,13 @@ describe('RoadmapOpportunityService — bugs stay off the board', () => {
     description: 'Search returns nothing after login',
   });
 
-  const build = (type: RoadmapOpportunityType) => {
+  const build = (
+    type: RoadmapOpportunityType,
+    classification: { repo: string | null; rationale: string } = {
+      repo: null,
+      rationale: '',
+    },
+  ) => {
     const emit = jest.fn();
     const opportunityRepository = {
       create: jest.fn().mockImplementation((v) => v),
@@ -46,6 +52,9 @@ describe('RoadmapOpportunityService — bugs stay off the board', () => {
     const bugFindingRepository = {
       create: jest.fn().mockImplementation((v) => v),
       save: jest.fn().mockResolvedValue({ id: 'finding-1' }),
+    };
+    const repoClassifier = {
+      classifyRepo: jest.fn().mockResolvedValue(classification),
     };
 
     const service = new RoadmapOpportunityService(
@@ -85,9 +94,10 @@ describe('RoadmapOpportunityService — bugs stay off the board', () => {
           );
         }),
       } as never,
+      repoClassifier as never,
     );
 
-    return { service, emit, bugFindingRepository };
+    return { service, emit, bugFindingRepository, repoClassifier };
   };
 
   it('does not broadcast a filed bug to the roadmap board', async () => {
@@ -140,6 +150,48 @@ describe('RoadmapOpportunityService — bugs stay off the board', () => {
         reportedBugId: 'opp-1',
         status: 'new',
       }),
+    );
+  });
+
+  /**
+   * Classified once, here, instead of every one of Bug Hunter's 5 nightly
+   * sweeps independently guessing from the same free text — see
+   * BugHunterRepoClassifierService and BugFindingRepository.listNewReportedBugs.
+   */
+  it('stamps the finding with the repo the classifier confidently names', async () => {
+    const { service, bugFindingRepository, repoClassifier } = build(
+      RoadmapOpportunityType.BUG,
+      { repo: 'ally-web', rationale: 'mentions the admin dashboard' },
+    );
+
+    await service.create(1, {
+      description: 'The filter bar on the admin dashboard is unresponsive',
+      type: RoadmapOpportunityType.BUG,
+      productGoal: 'Reported bugs',
+    });
+
+    expect(repoClassifier.classifyRepo).toHaveBeenCalledWith(
+      'Search returns nothing after login',
+    );
+    expect(bugFindingRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ repo: 'ally-web' }),
+    );
+  });
+
+  it('leaves the finding unfiled when the classifier cannot tell', async () => {
+    const { service, bugFindingRepository } = build(
+      RoadmapOpportunityType.BUG,
+      { repo: null, rationale: '' },
+    );
+
+    await service.create(1, {
+      description: 'Something is broken somewhere',
+      type: RoadmapOpportunityType.BUG,
+      productGoal: 'Reported bugs',
+    });
+
+    expect(bugFindingRepository.save).toHaveBeenCalledWith(
+      expect.objectContaining({ repo: null }),
     );
   });
 });

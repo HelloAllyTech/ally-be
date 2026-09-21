@@ -11,6 +11,10 @@ import {
   StageLatency,
 } from '../repository/bug-finding.repository';
 import { BugHuntRunRepository } from '../repository/bug-hunt-run.repository';
+import {
+  BugHuntEventRepository,
+  EscalationBreakdown,
+} from '../repository/bug-hunt-event.repository';
 
 /** One source's or one repo's funnel, from filed to live. */
 export interface FindingFunnel {
@@ -75,6 +79,13 @@ export interface BugHunterMetrics {
   /** The same figures across everything, so a reader has one honest headline. */
   overall: FindingFunnel;
   declines: DeclineBreakdown[];
+  /**
+   * Escalations in the window, grouped by their exact summary text — see
+   * BugHuntEventRepository.escalationBreakdown's own doc for why the raw
+   * string is already a clean-enough grouping for 3 of the 4 escalation
+   * paths today.
+   */
+  escalations: EscalationBreakdown[];
   latency: {
     filedToDecided: StageLatency;
     filedToMerged: StageLatency;
@@ -166,17 +177,20 @@ export class BugHunterMetricsService {
   constructor(
     private readonly findingRepository: BugFindingRepository,
     private readonly runRepository: BugHuntRunRepository,
+    private readonly eventRepository: BugHuntEventRepository,
   ) {}
 
   async report(windowDays: number): Promise<BugHunterMetrics> {
     const since = new Date(Date.now() - windowDays * MS_PER_DAY);
 
-    const [rows, latency, regressionCounts, cost] = await Promise.all([
-      this.findingRepository.outcomeCounts(since),
-      this.findingRepository.stageLatencies(since),
-      this.findingRepository.regressionCounts(since),
-      this.runRepository.costInWindow(since),
-    ]);
+    const [rows, latency, regressionCounts, cost, escalations] =
+      await Promise.all([
+        this.findingRepository.outcomeCounts(since),
+        this.findingRepository.stageLatencies(since),
+        this.findingRepository.regressionCounts(since),
+        this.runRepository.costInWindow(since),
+        this.eventRepository.escalationBreakdown(since),
+      ]);
 
     const bySource = groupFunnels(rows, (row) => row.source);
     const byRepo = groupFunnels(rows, (row) => row.repo);
@@ -190,6 +204,7 @@ export class BugHunterMetricsService {
       byRepo,
       overall,
       declines: declineBreakdown(rows),
+      escalations,
       latency,
       regressions: {
         filed: regressionCounts.regressions,
