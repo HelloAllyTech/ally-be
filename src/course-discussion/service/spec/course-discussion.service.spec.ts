@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
 import { CourseDiscussionService } from 'src/course-discussion/service/course-discussion.service';
 import { CourseDiscussion } from 'src/course-discussion/entity/course-discussion.entity';
 import { CourseDiscussionPost } from 'src/course-discussion/entity/course-discussion-post.entity';
@@ -12,11 +11,6 @@ import { NotFoundException, ForbiddenException } from '@nestjs/common';
 
 describe('CourseDiscussionService', () => {
   let service: CourseDiscussionService;
-  let discussionRepository: Repository<CourseDiscussion>;
-  let postRepository: Repository<CourseDiscussionPost>;
-  let trackItemRepository: Repository<TrackItem>;
-  let inAppNotificationService: InAppNotificationService;
-  let trackService: TrackService;
 
   const mockDiscussionRepository = {
     findOne: jest.fn(),
@@ -71,19 +65,6 @@ describe('CourseDiscussionService', () => {
     }).compile();
 
     service = module.get<CourseDiscussionService>(CourseDiscussionService);
-    discussionRepository = module.get<Repository<CourseDiscussion>>(
-      getRepositoryToken(CourseDiscussion),
-    );
-    postRepository = module.get<Repository<CourseDiscussionPost>>(
-      getRepositoryToken(CourseDiscussionPost),
-    );
-    trackItemRepository = module.get<Repository<TrackItem>>(
-      getRepositoryToken(TrackItem),
-    );
-    inAppNotificationService = module.get<InAppNotificationService>(
-      InAppNotificationService,
-    );
-    trackService = module.get<TrackService>(TrackService);
   });
 
   it('should be defined', () => {
