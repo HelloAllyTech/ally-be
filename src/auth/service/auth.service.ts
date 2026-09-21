@@ -513,12 +513,23 @@ export class AuthService {
    * There is no signup endpoint — every account is provisioned before anyone
    * can log in — and `users` has no first-login column, so the closest proxy is
    * the Terms & Agreement flag: the app forces acceptance on the very first
-   * sign-in, and this runs before that happens. Read by primary key for a user
-   * we have just authenticated, so no tenant scope applies.
+   * sign-in, and this runs before that happens.
+   *
+   * Takes the just-issued access token rather than a bare id: `id` is a global
+   * PK today so the lookup can't cross tenants regardless, but decoding
+   * `tenantId` from the same token that carries the id (see `generateTokens`)
+   * and filtering on it keeps this call from becoming an "idiomatic" untenanted
+   * lookup that a future, less-trustworthy caller could copy.
    */
-  async isFirstTimeUser(userId: number): Promise<boolean> {
+  async isFirstTimeUser(accessToken: string): Promise<boolean> {
+    const payload = this.jwtService.decode(accessToken) as {
+      sub?: number;
+      tenantId?: string;
+    } | null;
+    if (!payload?.sub) return false;
+
     const user = await this.userRepository.findOne({
-      where: { id: userId },
+      where: { id: payload.sub, tenantId: payload.tenantId },
       select: { id: true, termsAndAgreementApproved: true },
     });
     return user ? !user.termsAndAgreementApproved : false;

@@ -1283,16 +1283,19 @@ export class ScenarioSessionService {
       }
     }
 
-    // `scenarioSession` is the row as it was handed to this event, so its
-    // `status` still says whether some other end path already beat this one
-    // to it — captureRoleplaySessionEnded uses exactly that to dedupe the
-    // PostHog event between the two paths (see its own guard).
-    await this.captureRoleplaySessionEnded(scenarioSession, {
-      durationMs: callDuration,
-      sessionPoints: score,
-      creditsCharged,
-      status: RoleplaySessionEndStatus.COMPLETED,
-    });
+    // Gated on the same `endedByAnotherPath` flag as the credits/duration
+    // skip above: when another end path already won, it already fired this
+    // event, and `captureRoleplaySessionEnded`'s own status check can't
+    // detect that here because both `session` and `scenarioSession` were
+    // read/received before either end path ran.
+    if (!endedByAnotherPath) {
+      await this.captureRoleplaySessionEnded(session, {
+        durationMs: callDuration,
+        sessionPoints: score,
+        creditsCharged,
+        status: RoleplaySessionEndStatus.COMPLETED,
+      });
+    }
 
     await this.applyRoleplayProgression(session, score, callDuration);
 
@@ -1614,9 +1617,11 @@ export class ScenarioSessionService {
 
   /**
    * The containing case/pathway/track's id and title, for `session_ended` —
-   * the only event that carries them. One primary-key join on a row the
-   * session start already validated, so no tenant predicate is needed, and it
-   * stays off the start path where it would sit in front of the call screen.
+   * the only event that carries them. `cases`/`scenario_paths`/`tracks` are
+   * shared content with no `tenantId` column of their own — tenant access is
+   * the join tables (`case_tenants` etc.) — so isolation here means requiring
+   * a row in that join table for the session's tenant, per the repo's
+   * tenant-isolation rule, rather than trusting the primary-key join alone.
    */
   private async resolveRoleplayItem(session: ScenarioSessions) {
     const lookup = session.caseSessionItemId
@@ -1624,27 +1629,45 @@ export class ScenarioSessionService {
           id: session.caseSessionItemId,
           sql: `SELECT c.id, c.title FROM case_session_items i
                   JOIN case_sessions s ON s.id = i."caseSessionId"
-                  JOIN cases c ON c.id = s."caseId" WHERE i.id = $1`,
+                  JOIN cases c ON c.id = s."caseId"
+                  WHERE i.id = $1 AND EXISTS (
+                    SELECT 1 FROM case_tenants ct
+                    WHERE ct."caseId" = c.id AND ct."tenantId" = $2
+                      AND ct."deletedAt" IS NULL
+                  )`,
         }
       : session.scenarioPathSessionItemId
         ? {
             id: session.scenarioPathSessionItemId,
             sql: `SELECT p.id, p.title FROM scenario_path_session_items i
                     JOIN scenario_path_sessions s ON s.id = i."scenarioPathSessionId"
-                    JOIN scenario_paths p ON p.id = s."scenarioPathId" WHERE i.id = $1`,
+                    JOIN scenario_paths p ON p.id = s."scenarioPathId"
+                    WHERE i.id = $1 AND EXISTS (
+                      SELECT 1 FROM scenario_path_tenants spt
+                      WHERE spt."scenarioPathId" = p.id AND spt."tenantId" = $2
+                        AND spt."deletedAt" IS NULL
+                    )`,
           }
         : session.trackItemProgressId
           ? {
               id: session.trackItemProgressId,
               sql: `SELECT t.id, t.title FROM track_item_progress tp
                       JOIN track_items ti ON ti.id = tp."trackItemId"
-                      JOIN tracks t ON t.id = ti."trackId" WHERE tp.id = $1`,
+                      JOIN tracks t ON t.id = ti."trackId"
+                      WHERE tp.id = $1 AND EXISTS (
+                        SELECT 1 FROM track_tenants tt
+                        WHERE tt."trackId" = t.id AND tt."tenantId" = $2
+                          AND tt."deletedAt" IS NULL
+                      )`,
             }
           : null;
 
     if (!lookup) return {};
 
-    const [row] = await this.dataSource.query(lookup.sql, [lookup.id]);
+    const [row] = await this.dataSource.query(lookup.sql, [
+      lookup.id,
+      session.tenantId,
+    ]);
     return { item_id: row?.id, item_name: row?.title };
   }
 

@@ -81,9 +81,17 @@ export class AuthController {
     const distinctId = emailDistinctId(generateOtpDto.email);
     // "Next" and "Resend code" are the same request, so the per-window counter
     // is what separates the start of an attempt from a resend inside it.
-    const attemptNumber = await this.authService.recordOtpRequest(
-      generateOtpDto.email,
-    );
+    // Analytics only — nothing gates on it — so a Redis blip here must not
+    // block OTP generation; default to 1 (reads as a fresh "Next" tap) same
+    // as every other analytics-adjacent call in this handler.
+    let attemptNumber = 1;
+    try {
+      attemptNumber = await this.authService.recordOtpRequest(
+        generateOtpDto.email,
+      );
+    } catch (error) {
+      this.logger.error('Failed to record OTP request count', error);
+    }
 
     if (attemptNumber === 1) {
       this.capture(distinctId, AUTH_ANALYTICS_EVENTS.STARTED, {
@@ -285,7 +293,7 @@ export class AuthController {
   ): Promise<void> {
     try {
       const isNewUser = await this.authService.isFirstTimeUser(
-        authentication.user.id,
+        authentication.accessToken,
       );
       this.capture(preLoginDistinctId, AUTH_ANALYTICS_EVENTS.COMPLETED, {
         method,

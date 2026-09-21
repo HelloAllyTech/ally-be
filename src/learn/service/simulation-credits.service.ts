@@ -7,7 +7,6 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { SimulationCreditsRepository } from '../repository/simulation-credits.repository';
-import { SimulationCredits } from '../entity/simulation-credits.entity';
 import { SimulationCreditsResponseDto } from '../dto/simulation-credits-response.dto';
 import { UpdateSimulationCreditsDto } from '../dto/update-simulation-credits.dto';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -128,20 +127,20 @@ export class SimulationCreditsService {
       );
     }
 
-    // Read before consuming: `credit.threshold_reached` is about the *crossing*,
-    // so it needs the balance on both sides of this deduction.
-    const before = await this.simulationCreditsRepository.findByUserId(userId);
-
-    const success = await this.simulationCreditsRepository.consumeCredits(
+    // `consumeCredits` reads the pre-update balance and applies the deduction
+    // in one locked round trip, so `credit.threshold_reached` (which needs
+    // the balance on both sides of this deduction) can't race a concurrent
+    // deduction for the same user, and there's no second query for it here.
+    const result = await this.simulationCreditsRepository.consumeCredits(
       userId,
       creditsToConsume,
     );
 
-    if (!success) {
+    if (!result) {
       throw new BadRequestException('Error consuming credits');
     }
 
-    this.captureCreditThresholdReached(userId, before, creditsToConsume);
+    this.captureCreditThresholdReached(userId, result, creditsToConsume);
 
     return true;
   }
@@ -157,8 +156,8 @@ export class SimulationCreditsService {
    *
    * The post-deduction balance is computed rather than re-read, mirroring the
    * repository's `CASE` (which clamps at the limit instead of going negative) —
-   * one query instead of two, and the two halves of the comparison then come
-   * from the same snapshot.
+   * and `before` itself comes from that same locked round trip, so both halves
+   * of the comparison are guaranteed to be one snapshot.
    *
    * `org_id` comes from the request context, since credits are stored per user
    * with no tenant column of their own; a session ended outside a request
@@ -167,13 +166,13 @@ export class SimulationCreditsService {
    */
   private captureCreditThresholdReached(
     userId: number,
-    before: SimulationCredits | null,
+    before: { creditLimit: number; consumedCreditsBefore: number } | null,
     creditsConsumed: number,
   ): void {
     try {
       if (!before?.creditLimit) return;
 
-      const { creditLimit, consumedCredits } = before;
+      const { creditLimit, consumedCreditsBefore: consumedCredits } = before;
       const remainingBefore = creditLimit - consumedCredits;
       const remainingAfter = Math.max(0, remainingBefore - creditsConsumed);
 

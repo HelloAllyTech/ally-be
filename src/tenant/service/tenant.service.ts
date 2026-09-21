@@ -317,15 +317,20 @@ export class TenantService {
   ): Promise<Tenant | null> {
     const previousPlan = (await this.findTenantEntityById(id))?.metadata?.plan;
     await this.tenantRepository.update(id, { metadata });
-    this.capturePlanChange(id, previousPlan, metadata?.plan);
+    // This is a full-blob PUT, so a caller that edits some other metadata
+    // field and simply doesn't round-trip `plan` must not read as "changed
+    // it to null" — only fire the capture when the key was actually part of
+    // this write.
+    if ('plan' in metadata) {
+      this.capturePlanChange(id, previousPlan, metadata.plan);
+    }
     return this.findTenantEntityById(id);
   }
 
   /**
-   * Fires `plan.upgraded` only when the plan really moved. A metadata PUT
-   * rewrites the whole blob, so most calls here touch something other than the
-   * plan and must stay silent — an unchanged value is not a plan change, and a
-   * blob that never carried a plan at all is not one either.
+   * Fires `plan.upgraded` only when the plan really moved. The caller only
+   * invokes this when the incoming metadata actually carried a `plan` key —
+   * an unchanged value is still not a plan change.
    *
    * `upgraded_by` comes from the request context rather than a new parameter;
    * the only caller is the admin-gated controller. Wholly guarded — analytics

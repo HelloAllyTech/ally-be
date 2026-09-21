@@ -382,6 +382,12 @@ export class ScenarioSessionReviewService extends BaseReviewService<
    * permission-gated to reviewers, clears the review from their unread count
    * and flips `isReviewed` in the list — so `review.completed` fires here.
    *
+   * `super.markReviewAsRead` upserts unconditionally on every call, including
+   * a re-view of an already-read session, so the already-read check runs
+   * first and gates the capture — otherwise every re-view would inflate
+   * `review.completed` counts on the funnel for a review that was already
+   * the reviewer's terminal action once.
+   *
    * `score_given` is in the spec but has no source: reviews in this model carry
    * a note, threaded comments and reactions, and no numeric grade anywhere on
    * the row. It is left off the event rather than filled with a stand-in that
@@ -389,22 +395,28 @@ export class ScenarioSessionReviewService extends BaseReviewService<
    * score column exists, or drop it from the spec.
    */
   async markReviewAsRead(reviewId: string) {
-    const result = await super.markReviewAsRead(reviewId);
     const userId = Number(ExecutionManager.getUserId());
+    const alreadyRead = (
+      await this.reviewReadStatusRepository.getReadReviewIds(userId, [reviewId])
+    ).has(reviewId);
+
+    const result = await super.markReviewAsRead(reviewId);
     this.logger.info({
       event: 'simulation_review_viewed',
       reviewId,
       userId,
     });
-    this.captureReviewEvent(
-      userId,
-      ADMIN_ANALYTICS_EVENTS.REVIEW_COMPLETED,
-      reviewId,
-      {
-        reviewer_id: String(userId),
-        org_id: ExecutionManager.getTenantId(),
-      },
-    );
+    if (!alreadyRead) {
+      this.captureReviewEvent(
+        userId,
+        ADMIN_ANALYTICS_EVENTS.REVIEW_COMPLETED,
+        reviewId,
+        {
+          reviewer_id: String(userId),
+          org_id: ExecutionManager.getTenantId(),
+        },
+      );
+    }
     return result;
   }
 

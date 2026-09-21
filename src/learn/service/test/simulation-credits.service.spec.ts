@@ -255,7 +255,10 @@ describe('SimulationCreditsService', () => {
 
   describe('consumeCredits', () => {
     it('should consume credits successfully when enough credits available', async () => {
-      mockSimulationCreditsRepository.consumeCredits.mockResolvedValue(true);
+      mockSimulationCreditsRepository.consumeCredits.mockResolvedValue({
+        creditLimit: 100,
+        consumedCreditsBefore: 25,
+      });
 
       const result = await service.consumeCredits(1, 10);
 
@@ -266,7 +269,10 @@ describe('SimulationCreditsService', () => {
     });
 
     it('should consume credits successfully even when insufficient credits (maxes out)', async () => {
-      mockSimulationCreditsRepository.consumeCredits.mockResolvedValue(true);
+      mockSimulationCreditsRepository.consumeCredits.mockResolvedValue({
+        creditLimit: 100,
+        consumedCreditsBefore: 25,
+      });
 
       const result = await service.consumeCredits(1, 1000);
 
@@ -289,7 +295,7 @@ describe('SimulationCreditsService', () => {
     });
 
     it('should throw error when user not found', async () => {
-      mockSimulationCreditsRepository.consumeCredits.mockResolvedValue(false);
+      mockSimulationCreditsRepository.consumeCredits.mockResolvedValue(null);
 
       await expect(service.consumeCredits(999, 10)).rejects.toThrow(
         BadRequestException,
@@ -309,7 +315,10 @@ describe('SimulationCreditsService', () => {
     });
 
     it('should handle fractional credits consumption', async () => {
-      mockSimulationCreditsRepository.consumeCredits.mockResolvedValue(true);
+      mockSimulationCreditsRepository.consumeCredits.mockResolvedValue({
+        creditLimit: 100,
+        consumedCreditsBefore: 25,
+      });
 
       const result = await service.consumeCredits(1, 1.5);
 
