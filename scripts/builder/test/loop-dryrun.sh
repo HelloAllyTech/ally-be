@@ -170,6 +170,14 @@ fi
 
 [ "$phase" = "build" ] && [ "${DRYRUN_PAUSE:-}" = "1" ] && touch /tmp/builder-paused
 
+# An engine that cannot start at all: no result frame, nothing written. A model
+# this engine does not have, a missing credential. Distinct from the case below,
+# which stops PART-WAY and leaves work behind.
+if [ "${DRYRUN_ENGINE_DEAD:-}" = "1" ] && [ "$phase" = "build" ]; then
+  echo "There's an issue with the selected model. It may not exist or you may not have access to it." >&2
+  exit 1
+fi
+
 # An engine that stops on its own, part-way through, having written something.
 # Its own budget ceiling, a provider error, a loop detector
 # (`[gemini] Loop detected, stopping execution`) — all of them arrive as a
@@ -358,11 +366,27 @@ setup_repo_resumed() {
   rm -rf "${WORK}/seed"
 }
 
+# The state a first build is in when its coding pass starts: the branch exists
+# and carries nothing. `setup_repo` commits a change, which would read as "the
+# engine wrote something" to anything asking the tree.
+setup_repo_clean() {
+  rm -rf "${WORK}/run"
+  mkdir -p "${WORK}/run/repos/demo-repo"
+  (
+    cd "${WORK}/run/repos/demo-repo" || exit 1
+    git init -q -b master
+    git config user.email t@t.t && git config user.name t
+    echo base > file.txt && git add -A && git commit -qm base
+    git checkout -qb builder/demo
+  ) >/dev/null 2>&1
+}
+
 run_scenario() {
   local name="$1"; shift
   echo "── ${name} ──"
   case " $* " in
     *" DRYRUN_RESUME=1 "*) setup_repo_resumed ;;
+    *" DRYRUN_ENGINE_DEAD=1 "*) setup_repo_clean ;;
     *) setup_repo ;;
   esac
   # `builder-already-reported` matters as much as the rest: it is how a run
@@ -440,7 +464,15 @@ run_scenario() {
   LOG_FILE="$log"
 }
 
-count_in_log() { grep -c "$1" "$LOG_FILE" 2>/dev/null || echo 0; }
+# `grep -c` prints 0 AND exits 1 when there are no matches, so the old
+# `|| echo 0` appended a SECOND zero and the function returned "0\n0". Every
+# existing check compared against a positive count, so it never showed — the
+# first assertion to expect none read it as a mismatch against itself.
+count_in_log() {
+  local n
+  n="$(grep -c "$1" "$LOG_FILE" 2>/dev/null || true)"
+  printf '%s' "${n:-0}"
+}
 has_in_log()   { grep -q "$1" "$LOG_FILE" 2>/dev/null && echo yes || echo no; }
 
 # ── 1. happy path ───────────────────────────────────────────────────────────
@@ -706,6 +738,26 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = engine-exit ]; then
   check "still ran the gate on what was written" yes "$(has_in_log 'EVENT gate_result')"
   check "still had it independently reviewed" yes "$(has_in_log 'GET verify-prompt')"
   check "finished the run" 0 "$EXIT_CODE"
+fi
+
+# ── 11b. an engine that never started ──────────────────────────────────────
+#
+# Swallowing every non-zero exit (scenario 11) fixed lost work and created a
+# lie. An engine that cannot run at all writes nothing, so the gate has nothing
+# to judge — and the pipeline used to hand it the unchanged tree anyway,
+# remediate, and repeat the identical failure for the whole ladder before
+# recording "did not pass the test gate and independent review". Four attempts
+# spent, and a verdict blaming a diff that was never written.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = engine-dead ]; then
+  run_scenario engine-dead DRYRUN_ENGINE_DEAD=1
+  check "fails the run" 1 "$EXIT_CODE"
+  check "says the engine could not run" yes \
+    "$(grep -q 'could not run during' "$LOG_FILE" && echo yes || echo no)"
+  check "blames the runner, not the change" no \
+    "$(grep -q 'did not pass the test gate' "$LOG_FILE" && echo yes || echo no)"
+  # The whole point: no attempts are spent repeating something that cannot run.
+  check "spends no remediation attempts" 0 "$(count_in_log 'GET remediate-prompt')"
+  check "opened no pull requests" no "$(has_in_log 'GET finalise-prompt')"
 fi
 
 # ── 12. the runner itself failing ──────────────────────────────────────────

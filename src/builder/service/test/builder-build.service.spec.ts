@@ -665,6 +665,13 @@ describe('BuilderBuildService', () => {
         enabled: true,
         maxConcurrentBuilds: 3,
         defaultEngine: 'gemini',
+        // A model this engine can actually run. Without one, every tier falls
+        // through to the unfiltered Anthropic default at the end of the chain
+        // and the dispatch is refused — correctly, since that build could only
+        // have exited on its first phase. This test is about which ENGINE is
+        // resolved, so it should not also be asserting that a Gemini build with
+        // no Gemini model configured is allowed to start.
+        defaultModel: 'gemini-2.5-pro',
       });
 
       await service.startBuild(readySession({ engine: null }) as any, 1);
@@ -713,6 +720,89 @@ describe('BuilderBuildService', () => {
 
     const isClaude = (model: unknown) =>
       String(model ?? '').startsWith('claude-');
+
+    /**
+     * The inverse, and the one that actually bit: a session pins its engine
+     * when it is created, while the models come from settings an admin can
+     * change afterwards. Switching Builder's default engine to Gemini left
+     * every earlier session pinned to `claude-code` resolving its coder to
+     * `settings.coderModel` — `gemini-2.5-pro` — because the engine filter was
+     * applied to the config defaults and to nothing else. Claude Code exits
+     * immediately on a model it does not have, on every phase, having written
+     * nothing.
+     */
+    it('never hands a Gemini model to a Claude run', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'gemini',
+        coderModel: 'gemini-2.5-pro',
+        plannerModel: 'gemini-2.5-pro',
+        verifierModel: 'gemini-2.5-pro',
+      });
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      // The session was created before the switch, so it carries claude-code.
+      await service.startBuild(
+        readySession({ engine: 'claude-code', model: null }) as any,
+        1,
+      );
+
+      const models = dispatchedModels();
+      const every = [
+        models.planner,
+        models.coder,
+        models.verifier,
+        ...models.coderLadder,
+      ];
+      expect(
+        every.filter((m: unknown) => String(m).startsWith('gemini-')),
+      ).toEqual([]);
+    });
+
+    /**
+     * A model the session itself carries is as capable of naming the wrong
+     * engine as a setting is — `session.model` is written by an earlier
+     * dispatch and outlives any settings change.
+     */
+    it("does not let the session's own pinned model escape the engine", async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'gemini',
+      });
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await service.startBuild(
+        readySession({ engine: 'claude-code', model: 'gemini-2.5-pro' }) as any,
+        1,
+      );
+
+      expect(dispatchedModels().coder).not.toBe('gemini-2.5-pro');
+    });
+
+    /**
+     * An explicit per-run override is NOT filtered — silently discarding what
+     * an admin typed is worse than refusing — so the dispatch refuses instead,
+     * naming the model and the engine. Before this it cost $0.17 and four
+     * remediation attempts to find out.
+     */
+    it('refuses a dispatch whose override cannot run on this engine', async () => {
+      settingsService.get.mockResolvedValue({
+        enabled: true,
+        maxConcurrentBuilds: 3,
+        defaultEngine: 'claude-code',
+      });
+      prdService.getOrCreateDoc.mockResolvedValue(smallPrd);
+
+      await expect(
+        service.startBuild(readySession({ engine: 'claude-code' }) as any, 1, {
+          model: 'gemini-2.5-pro',
+        } as any),
+      ).rejects.toThrow(/cannot use gemini-2\.5-pro/i);
+
+      expect(github.dispatchWorkflow).not.toHaveBeenCalled();
+    });
 
     it('never hands a Claude model to a Gemini run', async () => {
       settingsService.get.mockResolvedValue(geminiSettings());

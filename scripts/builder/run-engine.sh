@@ -577,6 +577,27 @@ set_timeout_cmd() {
   TIMEOUT_CMD=(timeout --signal=TERM --kill-after=60s "$duration")
 }
 
+# Evidence that a phase actually ran: a result frame from the engine, or code
+# in the tree. `set -e` safe — every test is an explicit `if`, because a bare
+# `[ ... ] && return 1` that happens to be the last command would make this
+# function's own falsity fatal.
+engine_produced_nothing() {
+  local result_file="$1" dir
+  if [ -s "$result_file" ]; then
+    return 1
+  fi
+  for dir in repos/*/; do
+    [ -d "$dir/.git" ] || continue
+    if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
+      return 1
+    fi
+    if ! git -C "$dir" diff --quiet master...HEAD 2>/dev/null; then
+      return 1
+    fi
+  done
+  return 0
+}
+
 run_agent() {
   local prompt_file="$1" result_file="$2" model="$3" tools="$4" max_turns="$5"
   local max_budget="${6:-}" duration="${7:-}"
@@ -673,6 +694,34 @@ run_agent() {
   # pushed and a verdict a person can read.
   if [ "$rc" != "0" ]; then
     echo "::warning::The ${ENGINE} engine exited ${rc} during this phase." >&2
+
+    # ── Did it stop, or did it never start? ─────────────────────────────────
+    #
+    # Swallowing every non-zero exit fixed one failure and created another. An
+    # engine that cannot run AT ALL — a model this engine does not have, a
+    # missing key — exits non-zero having written nothing, and the pipeline
+    # then handed an unchanged tree to the gate, remediated, and repeated the
+    # identical failure for the whole ladder before recording "The change did
+    # not pass the test gate and independent review within the attempt limit."
+    #
+    # That verdict is false. Nothing was ever written, so nothing failed a
+    # test. The real reason was in the feed the whole time — "There's an issue
+    # with the selected model (gemini-2.5-pro)" — while the recorded outcome
+    # blamed the code. Four attempts, and a person reading the failure is sent
+    # to look at a diff that does not exist.
+    #
+    # The distinction is evidence, not guesswork: a phase that ran produces a
+    # result frame, and one that wrote code leaves it in the tree. Neither, and
+    # it never started — which is a harness failure, and the run stops and says
+    # so. Either one, and the old behaviour holds: the gate judges what is on
+    # disk, because the gate is a better judge of that than an exit status is.
+    if engine_produced_nothing "$result_file"; then
+      echo "::error::The ${ENGINE} engine never ran: no result and nothing written." >&2
+      report_outcome "$(jq -nc --arg e "$ENGINE" --arg m "$model" --arg c "$rc" --arg p "$CURRENT_PHASE" \
+        '{outcome:"failed", error:("The " + $e + " engine could not run during " + $p + ": it exited with status " + $c + " having produced no output and written nothing. This is the runner, not the change — the usual cause is a model this engine cannot use (" + $m + "), or a missing credential. Its own message is the last entry in the run feed. No attempts were spent on it.")}')"
+      exit 1
+    fi
+
     curl -sS -X POST "${API}/events" \
       -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
       -d "$(jq -nc --arg e "$ENGINE" --arg c "$rc" '{events:[{type:"text",payload:{text:("The " + $e + " engine stopped with exit status " + $c + " during this phase — its own budget ceiling, a provider error or a loop it detected in itself. Whatever it had written is still on the branch and the test gate runs next.")}}]}')" \
