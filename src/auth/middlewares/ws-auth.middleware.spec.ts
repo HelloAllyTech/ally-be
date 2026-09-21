@@ -64,6 +64,39 @@ describe('WebSocketAuthMiddleware', () => {
       next = jest.fn();
     });
 
+    it('should call next with UnauthorizedException if no JWT token is provided', async () => {
+      socket.handshake.auth.token = undefined;
+
+      await middleware.webSocketMiddleware()(socket, next);
+
+      expect(next).toHaveBeenCalledWith(
+        new UnauthorizedException('No JWT token provided'),
+      );
+    });
+
+    it('should successfully authenticate if JWT token is provided in query parameter', async () => {
+      socket.handshake.auth.token = undefined;
+      socket.handshake.query = { token: 'valid-token-from-query' };
+      jwtService.verifyAsync.mockResolvedValueOnce({
+        sub: '1',
+        username: 'testuser',
+        tenantId: 'testtenant',
+      });
+
+      await middleware.webSocketMiddleware()(socket, next);
+
+      expect(jwtService.verifyAsync).toHaveBeenCalledWith(
+        'valid-token-from-query',
+        expect.any(Object),
+      );
+      expect(socket.data.user).toEqual({
+        id: 1,
+        username: 'testuser',
+        tenantId: 'testtenant',
+      });
+      expect(next).toHaveBeenCalledWith(); // No arguments means success
+    });
+
     it('should call next with UnauthorizedException containing original error message for unexpected errors', async () => {
       const errorMessage = 'Internal server error';
       jwtService.verifyAsync.mockRejectedValue(new Error(errorMessage));
