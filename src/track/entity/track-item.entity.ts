@@ -1,8 +1,10 @@
+import { CourseDiscussion } from 'src/course-discussion/entity/course-discussion.entity';
 import { BaseWithoutTenantEntity } from 'src/common/entity/base-without-tenant.entity';
 import {
   Column,
   DeleteDateColumn,
   Entity,
+  OneToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import {
@@ -65,6 +67,15 @@ export class TrackItem extends BaseWithoutTenantEntity {
 
   @Column({ type: 'jsonb', nullable: true })
   completionCriteria?: TrackItemCompletionCriteria;
+
+  @Column({ default: false })
+  hasDiscussion!: boolean;
+
+  @OneToOne(
+    () => CourseDiscussion,
+    (discussion) => discussion.trackItem,
+  )
+  discussion?: CourseDiscussion;
 
   @Column({ type: 'jsonb', nullable: true })
   translations?: Record<string, any>;
