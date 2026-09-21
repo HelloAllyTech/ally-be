@@ -20,7 +20,7 @@ export const dataSourceOptions: DataSourceOptions = {
   password: process.env.DB_PASSWORD,
   database: process.env.DB_DATABASE,
   entities: ['dist/common/entities/*.entity.js', 'dist/*/entity/*.entity.js'],
-  migrations: ['dist/database/migrations/[0-9]*.js'], // Point to compiled JS files; excludes migration-timestamps.spec.js
+  migrations: ['dist/database/migrations/1[0-7]*.js'],
   synchronize: false, // Set to false in production
   ssl:
     process.env.NODE_ENV === 'production'
