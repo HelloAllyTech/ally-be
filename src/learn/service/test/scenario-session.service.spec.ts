@@ -995,7 +995,7 @@ describe('ScenarioSessionService', () => {
     it('should return the counselors and scenarios present in the logs', async () => {
       scenarioSessionRepository.getAdminScenarioSessionFilterOptions.mockResolvedValue(
         {
-          counselors: [{ id: '4', name: 'Asha' }],
+          counselors: [{ id: '4', name: 'Asha', email: 'asha@example.com' }],
           scenarios: [{ id: '9', title: 'English Title', translations: null }],
         } as any,
       );
@@ -1003,7 +1003,7 @@ describe('ScenarioSessionService', () => {
       const result = await service.getAdminScenarioSessionFilterOptions();
 
       expect(result).toEqual({
-        counselors: [{ id: 4, name: 'Asha' }],
+        counselors: [{ id: 4, name: 'Asha', email: 'asha@example.com' }],
         scenarios: [{ id: 9, title: 'English Title' }],
       });
       expect(
@@ -1047,6 +1047,25 @@ describe('ScenarioSessionService', () => {
       const result = await service.getAdminScenarioSessionFilterOptions('ta');
 
       expect(result.scenarios).toEqual([{ id: 9, title: 'English Title' }]);
+    });
+
+    it('should keep same-named people as separate options carrying their own email', async () => {
+      scenarioSessionRepository.getAdminScenarioSessionFilterOptions.mockResolvedValue(
+        {
+          counselors: [
+            { id: '99', name: 'Shubham Bhoite', email: 'a@example.com' },
+            { id: '123', name: 'Shubham Bhoite', email: 'b@example.com' },
+          ],
+          scenarios: [],
+        } as any,
+      );
+
+      const result = await service.getAdminScenarioSessionFilterOptions();
+
+      expect(result.counselors).toEqual([
+        { id: 99, name: 'Shubham Bhoite', email: 'a@example.com' },
+        { id: 123, name: 'Shubham Bhoite', email: 'b@example.com' },
+      ]);
     });
   });
 

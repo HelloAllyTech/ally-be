@@ -382,6 +382,12 @@ export class ScenarioSessionService {
    * list itself uses, so a filter chip reads identically to the rows it
    * selects; `translations` is dropped from the payload afterwards, as it is
    * an authoring detail no client needs.
+   *
+   * Each person carries their email because display names collide in practice:
+   * one production tenant has three distinct accounts named "Sandeep Malhotra"
+   * and two more duplicated names. The client shows the email only for the
+   * names that actually repeat, so the common case stays clean — but it cannot
+   * make that call without something to disambiguate by.
    */
   async getAdminScenarioSessionFilterOptions(languageCode?: string) {
     const { counselors, scenarios } =
@@ -393,6 +399,7 @@ export class ScenarioSessionService {
       counselors: counselors.map((counselor: any) => ({
         id: Number(counselor.id),
         name: counselor.name,
+        email: counselor.email,
       })),
       scenarios: scenarios.map((scenario: any) => ({
         id: Number(scenario.id),

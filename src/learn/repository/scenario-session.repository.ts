@@ -194,6 +194,10 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       )
       .select('counselor.id', 'id')
       .addSelect('counselor.name', 'name')
+      // Display names are not unique within a tenant — prod has three separate
+      // accounts called "Sandeep Malhotra" — so the email rides along as the
+      // tiebreaker the picker shows when two options would read identically.
+      .addSelect('counselor.email', 'email')
       .distinct(true)
       .orderBy('counselor.name', 'ASC')
       .getRawMany();

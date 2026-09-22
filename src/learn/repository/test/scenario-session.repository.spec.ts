@@ -432,7 +432,7 @@ describe('ScenarioSessionRepository', () => {
 
   describe('getAdminScenarioSessionFilterOptions', () => {
     it('should return the distinct counselors and scenarios of the tenant logs', async () => {
-      const counselors = [{ id: '1', name: 'Asha' }];
+      const counselors = [{ id: '1', name: 'Asha', email: 'asha@example.com' }];
       const scenarios = [{ id: '2', title: 'Crisis call', translations: null }];
       mockQueryBuilder.getRawMany
         .mockResolvedValueOnce(counselors)
@@ -456,6 +456,11 @@ describe('ScenarioSessionRepository', () => {
         User,
         'counselor',
         'counselor.id = scenarioSession.counselorId',
+      );
+      // The email is what lets the picker tell two same-named people apart.
+      expect(mockQueryBuilder.addSelect).toHaveBeenCalledWith(
+        'counselor.email',
+        'email',
       );
       expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
         Scenarios,
