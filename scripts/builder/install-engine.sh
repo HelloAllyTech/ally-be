@@ -11,7 +11,7 @@
 # build and the next is not something you can debug.
 set -euo pipefail
 
-ENGINE="${BUILDER_ENGINE:-claude-code}"
+ENGINE="${BUILDER_ENGINE:-gemini}"
 
 CLAUDE_CODE_VERSION="2.1.220"
 GEMINI_CLI_VERSION="0.22.5"

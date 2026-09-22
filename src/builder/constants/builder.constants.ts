@@ -410,13 +410,27 @@ export const BUILDER_EVIDENCE_MAX_SHAPES = 12;
  * Tiering rationale: planning and adversarial verification are where model
  * strength changes the outcome; bulk coding follows a plan; mechanical passes
  * (repo maps, summaries, consolidation) need speed and price, not depth.
+ *
+ * Gemini on every tier, and for the same reason LLM_TIER_FLOOR is OpenAI: a
+ * default's job is to be the thing that still works. These used to be Anthropic
+ * ids while `builder_settings.defaultEngine` was already `gemini` in production,
+ * which quietly split Builder in half — the build phase read the settings row
+ * and ran on Gemini, while the interview, the epic decomposition and every
+ * mechanical pass read *these* and ran on Claude. Nobody chose that split; it
+ * was what "the settings row overrides the default" means when only one of the
+ * two code paths consults the settings row.
+ *
+ * `gemini-2.5-pro` rather than a per-tier spread because Gemini publishes two
+ * general models, not five: pro where the answer's quality is the point, flash
+ * where throughput is. Mapping "Opus vs Sonnet" onto that would be inventing a
+ * distinction the vendor does not offer.
  */
 export const BUILDER_MODEL_DEFAULTS = {
-  interview: 'claude-sonnet-5',
-  planner: 'claude-opus-5',
-  coder: 'claude-sonnet-5',
-  verifier: 'claude-opus-5',
-  mechanical: 'claude-haiku-4-5',
+  interview: 'gemini-2.5-pro',
+  planner: 'gemini-2.5-pro',
+  coder: 'gemini-2.5-pro',
+  verifier: 'gemini-2.5-pro',
+  mechanical: 'gemini-2.5-flash',
 } as const;
 
 /* ── The in-run loop (run-engine.sh mirrors these) ─────────────────────── */

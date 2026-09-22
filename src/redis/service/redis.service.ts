@@ -102,6 +102,18 @@ export class RedisService {
     return keys;
   }
 
+  /**
+   * Increment a plain counter key, returning the value after the increment.
+   *
+   * Atomic, unlike a get/set pair, so callers can reliably tell the first hit
+   * from the rest. The key is created at 1 with no expiry — pair the `=== 1`
+   * case with `expire()` or the counter lives forever.
+   */
+  async incr(key: string): Promise<number> {
+    const fullKey = this.getFullKey(key);
+    return this.redis.incr(fullKey);
+  }
+
   // Increment a field in a Redis hash
   async hincrBy(
     key: string,
