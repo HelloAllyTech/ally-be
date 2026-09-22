@@ -4,6 +4,7 @@ import { ScenarioSessionEventStatus } from '../../learn/enum/scenario-session-st
 import { ActorEvaluationStatus } from '../../learn/service/scenario-session-evaluation.service';
 import { QuizAttemptStatus } from '../../track/type/quiz.type';
 import { AnalyticsBucket } from './platform-analytics.repository';
+import { resolveSqlBucket } from '../util/analytics-window.util';
 import {
   excludeTestTenants,
   excludeTestTenantsByUser,
@@ -110,10 +111,11 @@ export class HighlightsAnalyticsRepository {
   private resolveBucket(bucket: AnalyticsBucket): AnalyticsBucket {
     // Defense-in-depth: bucket is internal, but never interpolate anything we
     // have not explicitly whitelisted.
-    if (bucket === 'day') return 'day';
-    if (bucket === 'month') return 'month';
-    if (bucket === 'year') return 'year';
-    return 'week';
+    return resolveSqlBucket(
+      bucket,
+      ['day', 'week', 'month', 'quarter', 'year'],
+      'week',
+    );
   }
 
   /**
@@ -288,6 +290,46 @@ export class HighlightsAnalyticsRepository {
       minutes: Number(r.minutes) || 0,
       activeLearners: Number(r.activeLearners) || 0,
     }));
+  }
+
+  /**
+   * Whole-window minutes practiced + distinct active learners (exact KPI, not
+   * summed/re-derived from the bucketed series).
+   *
+   * `minutes` is a SUM, which genuinely IS associative across buckets — folding
+   * {@link getPracticeMinutesByBucket}'s per-bucket totals would give the same
+   * number. `activeLearners` is not: it is `COUNT(DISTINCT userId)` PER BUCKET,
+   * and a learner active in three buckets would be counted three times by
+   * summing those. This method re-runs `COUNT(DISTINCT userId)` over the whole
+   * window in one pass, which is the only way to get the right number, and
+   * returns both together so the All-time KPI tile is one query rather than a
+   * SUM plus a mismatched DISTINCT fold.
+   */
+  async getPracticeMinutesOverall(
+    start: Date,
+    end: Date,
+    tenantId?: string,
+  ): Promise<{ minutes: number; activeLearners: number }> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('COALESCE(SUM(d."minutesPlayed"), 0)::float', 'minutes')
+      .addSelect('COUNT(DISTINCT d."userId")::int', 'activeLearners')
+      .from('user_daily_scores', 'd')
+      .where('d."date" >= :start', { start })
+      .andWhere('d."date" < :end', { end })
+      .andWhere(excludeTestTenants('d."tenant_id"'));
+    if (tenantId) {
+      qb.andWhere(scopeToTenant('d."tenant_id"', ':tenantId'), { tenantId });
+    }
+    const row = await qb.getRawOne<{
+      minutes: number;
+      activeLearners: number;
+    }>();
+
+    return {
+      minutes: Number(row?.minutes) || 0,
+      activeLearners: Number(row?.activeLearners) || 0,
+    };
   }
 
   /**

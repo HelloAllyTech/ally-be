@@ -132,6 +132,26 @@ export class PracticeMinutesPointDto {
 }
 
 /**
+ * The exact whole-window KPI figure paired with `practiceMinutes`, for a
+ * chart's "All-time" grouping mode. `minutes` happens to equal the sum of
+ * `practiceMinutes[].minutes` (a SUM is associative across buckets), but
+ * `activeLearners` does NOT equal the sum of `practiceMinutes[].activeLearners`
+ * — that would double-count a learner active in more than one bucket. Both are
+ * computed here in a single un-bucketed query rather than folded from the
+ * trend.
+ */
+export class PracticeMinutesOverallDto {
+  @ApiProperty({ description: 'Total minutes practiced over the whole window' })
+  minutes!: number;
+  @ApiProperty({
+    description:
+      'Distinct learners active over the whole window (not a sum across ' +
+      'buckets, which would double-count a learner active in more than one)',
+  })
+  activeLearners!: number;
+}
+
+/**
  * How long one simulation lasts, per bucket. Median and p95 travel with the
  * mean because session length is skewed — an average with no distribution
  * behind it is a half-truth.
@@ -272,6 +292,15 @@ export class AnalyticsHighlightsResponseDto {
     description: 'Gap-filled to a contiguous bucket axis',
   })
   practiceMinutes!: PracticeMinutesPointDto[];
+
+  @ApiProperty({
+    type: PracticeMinutesOverallDto,
+    description:
+      'The All-time KPI figure for `practiceMinutes` — a single query over ' +
+      'the whole window, not a fold of the trend above (see the DTO doc for ' +
+      'why that matters for `activeLearners`).',
+  })
+  practiceMinutesOverall!: PracticeMinutesOverallDto;
 
   @ApiProperty({
     type: [PlayTimePointDto],

@@ -7,6 +7,7 @@ import { AnalyticsBucket } from './platform-analytics.repository';
 import { countableSessionPredicate } from '../util/session-eligibility.util';
 import { getPlatformDataFloor } from '../util/data-floor.util';
 import { excludeTestTenants, scopeToTenant } from '../util/test-tenant.util';
+import { resolveSqlBucket } from '../util/analytics-window.util';
 
 /**
  * Smallest number of observations a DERIVED SCORE may be stated from.
@@ -163,10 +164,11 @@ export class QualityDistributionAnalyticsRepository {
   private resolveBucket(bucket: AnalyticsBucket): AnalyticsBucket {
     // Defense-in-depth: bucket is internal and whitelisted by the DTO, but
     // nothing that reaches an interpolated position goes unchecked.
-    if (bucket === 'day') return 'day';
-    if (bucket === 'month') return 'month';
-    if (bucket === 'year') return 'year';
-    return 'week';
+    return resolveSqlBucket(
+      bucket,
+      ['day', 'week', 'month', 'quarter', 'year'],
+      'week',
+    );
   }
 
   /**

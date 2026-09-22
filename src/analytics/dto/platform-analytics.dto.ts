@@ -34,8 +34,24 @@ export type AnalyticsRange = (typeof ANALYTICS_RANGES)[number];
  * per-chart grouping control on the surface: the window says WHAT period is
  * covered, the bucket says at what grain it is read.
  */
-export const ANALYTICS_BUCKETS = ['day', 'week', 'month', 'year'] as const;
+export const ANALYTICS_BUCKETS = [
+  'day',
+  'week',
+  'month',
+  'quarter',
+  'year',
+] as const;
 export type AnalyticsBucketParam = (typeof ANALYTICS_BUCKETS)[number];
+
+/**
+ * The full grain vocabulary a client may request for a chart's grouping
+ * control: every SQL-bucketable granularity in {@link ANALYTICS_BUCKETS} plus
+ * `allTime`, which is API/UI-boundary only — it is never passed to
+ * `date_trunc`. A repository method receiving `allTime` routes to a whole-window
+ * aggregate method instead of a bucketed series.
+ */
+export const ANALYTICS_GRAINS = [...ANALYTICS_BUCKETS, 'allTime'] as const;
+export type AnalyticsGrain = (typeof ANALYTICS_GRAINS)[number];
 
 /** Comparison basis a client may request alongside the current window. */
 export const ANALYTICS_COMPARE = ['prev'] as const;
@@ -1263,6 +1279,39 @@ export class VoiceLatencyByLanguageRowDto {
   avgSttFinalizeMs!: number | null;
 }
 
+/**
+ * The exact All-time KPI figure for the "Time to first voice — live pipeline"
+ * chart. A genuinely separate query from `points`, not a fold of its
+ * per-bucket percentiles — see {@link PlatformAnalyticsRepository.getVoiceLatencyOverall}.
+ */
+export class VoiceLatencyOverallDto {
+  @ApiProperty({
+    description: 'Live-pipeline turns aggregated over the whole window',
+  })
+  turns!: number;
+
+  @ApiProperty({
+    description: 'Mean voice-to-voice latency (ms); null with no turns',
+    nullable: true,
+    type: Number,
+  })
+  avgMs!: number | null;
+
+  @ApiProperty({
+    description: 'Median (p50) voice-to-voice latency (ms); null with no turns',
+    nullable: true,
+    type: Number,
+  })
+  p50Ms!: number | null;
+
+  @ApiProperty({
+    description: 'p95 voice-to-voice latency (ms); null with no turns',
+    nullable: true,
+    type: Number,
+  })
+  p95Ms!: number | null;
+}
+
 export class VoiceLatencyResponseDto {
   @ApiProperty({
     description: 'Time window the trend was computed over',
@@ -1307,6 +1356,15 @@ export class VoiceLatencyResponseDto {
     type: [VoiceLatencyByLanguageRowDto],
   })
   byLanguage!: VoiceLatencyByLanguageRowDto[];
+
+  @ApiProperty({
+    type: VoiceLatencyOverallDto,
+    description:
+      'The live-pipeline All-time KPI figure for `points` — a single ' +
+      'un-bucketed query over the whole window, not a fold of the per-bucket ' +
+      'percentiles above.',
+  })
+  overall!: VoiceLatencyOverallDto;
 }
 
 /**
