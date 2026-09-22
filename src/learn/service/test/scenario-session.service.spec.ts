@@ -191,6 +191,7 @@ describe('ScenarioSessionService', () => {
     const mockScenarioSessionRepo = {
       getScenarioSessions: jest.fn(),
       getAdminScenarioSessions: jest.fn(),
+      getAdminScenarioSessionFilterOptions: jest.fn(),
       getScenarioSession: jest.fn(),
       createScenarioSession: jest.fn(),
       findOne: jest.fn(),
@@ -905,7 +906,10 @@ describe('ScenarioSessionService', () => {
       expect(result.data[0]).not.toHaveProperty('scenario.translations');
       expect(
         scenarioSessionRepository.getAdminScenarioSessions,
-      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED);
+      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED, {
+        counselorIds: undefined,
+        scenarioIds: undefined,
+      });
     });
 
     it('should apply translations to admin scenario sessions when languageCode is provided', async () => {
@@ -944,7 +948,105 @@ describe('ScenarioSessionService', () => {
       expect(scenario).not.toHaveProperty('translations');
       expect(
         scenarioSessionRepository.getAdminScenarioSessions,
-      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED);
+      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED, {
+        counselorIds: undefined,
+        scenarioIds: undefined,
+      });
+    });
+
+    it('should parse comma-separated counselor and scenario id filters', async () => {
+      scenarioSessionRepository.getAdminScenarioSessions.mockResolvedValue(
+        [] as any,
+      );
+
+      await service.getAdminScenarioSessions(mockPagination, undefined, {
+        counselorIds: '12, 7',
+        scenarioIds: '3',
+      });
+
+      expect(
+        scenarioSessionRepository.getAdminScenarioSessions,
+      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED, {
+        counselorIds: [12, 7],
+        scenarioIds: [3],
+      });
+    });
+
+    it('should drop non-numeric ids rather than passing them to the query', async () => {
+      scenarioSessionRepository.getAdminScenarioSessions.mockResolvedValue(
+        [] as any,
+      );
+
+      await service.getAdminScenarioSessions(mockPagination, undefined, {
+        counselorIds: '12,abc,,9',
+        scenarioIds: 'not-a-number',
+      });
+
+      expect(
+        scenarioSessionRepository.getAdminScenarioSessions,
+      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED, {
+        counselorIds: [12, 9],
+        scenarioIds: undefined,
+      });
+    });
+  });
+
+  describe('getAdminScenarioSessionFilterOptions', () => {
+    it('should return the counselors and scenarios present in the logs', async () => {
+      scenarioSessionRepository.getAdminScenarioSessionFilterOptions.mockResolvedValue(
+        {
+          counselors: [{ id: '4', name: 'Asha' }],
+          scenarios: [{ id: '9', title: 'English Title', translations: null }],
+        } as any,
+      );
+
+      const result = await service.getAdminScenarioSessionFilterOptions();
+
+      expect(result).toEqual({
+        counselors: [{ id: 4, name: 'Asha' }],
+        scenarios: [{ id: 9, title: 'English Title' }],
+      });
+      expect(
+        scenarioSessionRepository.getAdminScenarioSessionFilterOptions,
+      ).toHaveBeenCalledWith(ScenarioSessionStatus.ENDED);
+    });
+
+    it('should resolve scenario titles in the requested language and drop translations', async () => {
+      scenarioSessionRepository.getAdminScenarioSessionFilterOptions.mockResolvedValue(
+        {
+          counselors: [],
+          scenarios: [
+            {
+              id: '9',
+              title: 'English Title',
+              translations: { mr: { title: 'Marathi Title' } },
+            },
+          ],
+        } as any,
+      );
+
+      const result = await service.getAdminScenarioSessionFilterOptions('mr');
+
+      expect(result.scenarios).toEqual([{ id: 9, title: 'Marathi Title' }]);
+    });
+
+    it('should fall back to the English title when the language has no translation', async () => {
+      scenarioSessionRepository.getAdminScenarioSessionFilterOptions.mockResolvedValue(
+        {
+          counselors: [],
+          scenarios: [
+            {
+              id: '9',
+              title: 'English Title',
+              translations: { mr: { title: 'Marathi Title' } },
+            },
+          ],
+        } as any,
+      );
+
+      const result = await service.getAdminScenarioSessionFilterOptions('ta');
+
+      expect(result.scenarios).toEqual([{ id: 9, title: 'English Title' }]);
     });
   });
 

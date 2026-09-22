@@ -316,11 +316,42 @@ export class ScenarioSessionService {
     return { data: scenarioSessions };
   }
 
-  async getAdminScenarioSessions(options: Pagination, languageCode?: string) {
+  /**
+   * Parses a comma-separated id list from a query string into numeric ids.
+   * Anything non-numeric is dropped rather than passed through: an unparsed
+   * token reaching an `IN (...)` would be a 500, and a silently-ignored one
+   * would widen the result set instead of narrowing it.
+   *
+   * An all-garbage list yields `[]`, which the repository treats as "no
+   * filter" — the caller asked for ids we cannot resolve, and the alternative
+   * (matching nothing) is indistinguishable from the tenant having no logs.
+   */
+  private parseIdList(value?: string): number[] | undefined {
+    if (!value) return undefined;
+    const ids = value
+      .split(',')
+      .map((id) => id.trim())
+      // Empty tokens are dropped BEFORE the conversion: `Number('')` is 0, not
+      // NaN, so a trailing comma would otherwise smuggle in a filter for id 0.
+      .filter((id) => id !== '')
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    return ids.length ? ids : undefined;
+  }
+
+  async getAdminScenarioSessions(
+    options: Pagination,
+    languageCode?: string,
+    filters?: { counselorIds?: string; scenarioIds?: string },
+  ) {
     const scenarioSessions: ScenarioSessions[] =
       await this.scenarioSessionRepository.getAdminScenarioSessions(
         options,
         `${ScenarioSessionStatus.ENDED}`,
+        {
+          counselorIds: this.parseIdList(filters?.counselorIds),
+          scenarioIds: this.parseIdList(filters?.scenarioIds),
+        },
       );
 
     scenarioSessions.forEach((scenarioSession) => {
@@ -342,6 +373,34 @@ export class ScenarioSessionService {
     });
 
     return { data: scenarioSessions };
+  }
+
+  /**
+   * Options for the admin log list's Counsellor and Role Play filters.
+   *
+   * Scenario titles are resolved through the same translation fallback the
+   * list itself uses, so a filter chip reads identically to the rows it
+   * selects; `translations` is dropped from the payload afterwards, as it is
+   * an authoring detail no client needs.
+   */
+  async getAdminScenarioSessionFilterOptions(languageCode?: string) {
+    const { counselors, scenarios } =
+      await this.scenarioSessionRepository.getAdminScenarioSessionFilterOptions(
+        `${ScenarioSessionStatus.ENDED}`,
+      );
+
+    return {
+      counselors: counselors.map((counselor: any) => ({
+        id: Number(counselor.id),
+        name: counselor.name,
+      })),
+      scenarios: scenarios.map((scenario: any) => ({
+        id: Number(scenario.id),
+        title:
+          (languageCode && scenario.translations?.[languageCode]?.title) ||
+          scenario.title,
+      })),
+    };
   }
 
   async getScenarioSession(

@@ -109,6 +109,8 @@ describe('ScenarioSessionRepository', () => {
       leftJoinAndMapMany: jest.fn().mockReturnThis(),
       innerJoinAndMapOne: jest.fn().mockReturnThis(),
       leftJoin: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      distinct: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
@@ -389,6 +391,76 @@ describe('ScenarioSessionRepository', () => {
       expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
         'scenarioSession.status IN (:...status )',
         { status: ['ACTIVE'] },
+      );
+    });
+
+    it('should narrow to the given counselors and scenarios', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([mockScenarioSession]);
+
+      await repository.getAdminScenarioSessions(mockPagination, undefined, {
+        counselorIds: [7, 12],
+        scenarioIds: [3],
+      });
+
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioSession.counselorId IN (:...counselorIds)',
+        { counselorIds: [7, 12] },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioSession.scenarioId IN (:...scenarioIds)',
+        { scenarioIds: [3] },
+      );
+    });
+
+    it('should not add an id filter for empty or absent lists', async () => {
+      mockQueryBuilder.getMany.mockResolvedValue([mockScenarioSession]);
+
+      await repository.getAdminScenarioSessions(mockPagination, undefined, {
+        counselorIds: [],
+      });
+
+      expect(mockQueryBuilder.andWhere).not.toHaveBeenCalledWith(
+        'scenarioSession.counselorId IN (:...counselorIds)',
+        expect.anything(),
+      );
+      expect(mockQueryBuilder.andWhere).not.toHaveBeenCalledWith(
+        'scenarioSession.scenarioId IN (:...scenarioIds)',
+        expect.anything(),
+      );
+    });
+  });
+
+  describe('getAdminScenarioSessionFilterOptions', () => {
+    it('should return the distinct counselors and scenarios of the tenant logs', async () => {
+      const counselors = [{ id: '1', name: 'Asha' }];
+      const scenarios = [{ id: '2', title: 'Crisis call', translations: null }];
+      mockQueryBuilder.getRawMany
+        .mockResolvedValueOnce(counselors)
+        .mockResolvedValueOnce(scenarios);
+
+      const result = await repository.getAdminScenarioSessionFilterOptions(
+        ScenarioSessionStatus.ENDED,
+      );
+
+      expect(result).toEqual({ counselors, scenarios });
+      expect(mockQueryBuilder.distinct).toHaveBeenCalledWith(true);
+      expect(mockQueryBuilder.where).toHaveBeenCalledWith(
+        'scenarioSession.tenantId = :tenantId',
+        { tenantId: mockTenantId },
+      );
+      expect(mockQueryBuilder.andWhere).toHaveBeenCalledWith(
+        'scenarioSession.status IN (:...status )',
+        { status: [ScenarioSessionStatus.ENDED] },
+      );
+      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
+        User,
+        'counselor',
+        'counselor.id = scenarioSession.counselorId',
+      );
+      expect(mockQueryBuilder.innerJoin).toHaveBeenCalledWith(
+        Scenarios,
+        'scenario',
+        'scenario.id = scenarioSession.scenarioId',
       );
     });
   });
