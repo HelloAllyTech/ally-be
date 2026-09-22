@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import { excludeTestTenants, scopeToTenant } from '../util/test-tenant.util';
 import { getPlatformDataFloor } from '../util/data-floor.util';
 import { AnalyticsBucket } from './platform-analytics.repository';
+import { resolveSqlBucket } from '../util/analytics-window.util';
 
 /** Scribe's reach in one bucket (or, for the whole-window row, in the window). */
 export interface ScribeAdoptionRow {
@@ -56,10 +57,11 @@ export class ScribeAdoptionAnalyticsRepository {
   private resolveBucket(bucket: AnalyticsBucket): AnalyticsBucket {
     // Defense-in-depth: bucket is internal, but never interpolate anything we
     // have not explicitly whitelisted.
-    if (bucket === 'day') return 'day';
-    if (bucket === 'month') return 'month';
-    if (bucket === 'year') return 'year';
-    return 'week';
+    return resolveSqlBucket(
+      bucket,
+      ['day', 'week', 'month', 'quarter', 'year'],
+      'week',
+    );
   }
 
   /**

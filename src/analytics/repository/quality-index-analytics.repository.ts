@@ -14,12 +14,21 @@ import {
 import { AnalyticsBucket } from './platform-analytics.repository';
 import { countableSessionPredicate } from '../util/session-eligibility.util';
 import { excludeTestTenants, scopeToTenant } from '../util/test-tenant.util';
+import { resolveSqlBucket } from '../util/analytics-window.util';
 
 /** One bucket's raw measurement for one dimension, before normalisation. */
 export interface DimensionBucketRow {
   /** Bucket start as a calendar date string (yyyy-mm-dd). */
   bucket: string;
   /** The dimension's raw value in its own unit, or null if the bucket is empty. */
+  raw: number | null;
+  /** Rows behind the value — sessions, or turns for latency. */
+  n: number;
+}
+
+/** One dimension's raw measurement over the WHOLE window, no bucket. */
+export interface DimensionOverallRow {
+  /** The dimension's raw value in its own unit, or null if the window is empty. */
   raw: number | null;
   /** Rows behind the value — sessions, or turns for latency. */
   n: number;
@@ -72,8 +81,11 @@ export class QualityIndexAnalyticsRepository {
 
   /** Whitelist guard — bucket reaches an interpolated position. */
   private resolveBucket(bucket: AnalyticsBucket): AnalyticsBucket {
-    const allowed: AnalyticsBucket[] = ['day', 'week', 'month', 'year'];
-    return allowed.includes(bucket) ? bucket : 'month';
+    return resolveSqlBucket(
+      bucket,
+      ['day', 'week', 'month', 'quarter', 'year'],
+      'month',
+    );
   }
 
   /**
@@ -102,6 +114,163 @@ export class QualityIndexAnalyticsRepository {
         n: Number(r.n) || 0,
       }))
       .filter((r) => r.raw !== null && Number.isFinite(r.raw as number));
+  }
+
+  /**
+   * One dimension's raw value over the WHOLE window, no bucket dimension at
+   * all — the exact KPI query behind the Goals-tab "Roleplay quality"
+   * chart's All-time mode.
+   *
+   * A genuinely separate query from {@link getDimensionSeries}, NOT a fold of
+   * its per-bucket rows: `actorComposite`/`driftRate`/`languageErrors` are
+   * means/rates over DISTINCT sessions and `responseLatency` is a percentile —
+   * none of those aggregate correctly across pre-bucketed values (see the
+   * class doc's "Eligibility, applied uniformly" section and the sibling
+   * per-bucket methods' own comments). Each dimension's overall SQL mirrors
+   * {@link dimensionSql}'s WHERE/JOIN/scoping exactly, just without the
+   * `date_trunc`/`GROUP BY`.
+   *
+   * Null `raw` means the window had no eligible rows for this dimension —
+   * same "no meaningful zero" convention as the per-bucket series.
+   */
+  async getDimensionOverall(
+    dimension: QualityIndexDimension,
+    start: Date,
+    end: Date,
+    tenantId?: string,
+  ): Promise<DimensionOverallRow> {
+    const params: unknown[] = [start, end];
+    const sql = this.dimensionOverallSql(dimension, params, tenantId);
+
+    const rows = await this.dataSource.query(sql, params);
+    const row = (rows as Array<{ raw: string | null; n: string | null }>)[0];
+    return {
+      raw: row?.raw == null ? null : Number(row.raw),
+      n: Number(row?.n) || 0,
+    };
+  }
+
+  /** Dispatch to the per-dimension whole-window SQL. Mirrors {@link dimensionSql}. */
+  private dimensionOverallSql(
+    dimension: QualityIndexDimension,
+    params: unknown[],
+    tenantId?: string,
+  ): string {
+    switch (dimension) {
+      case 'actorComposite':
+        return this.actorCompositeOverallSql(params, tenantId);
+      case 'driftRate':
+        return this.driftRateOverallSql(params, tenantId);
+      case 'languageErrors':
+        return this.languageErrorsOverallSql(params, tenantId);
+      case 'responseLatency':
+        return this.responseLatencyOverallSql(params, tenantId);
+    }
+  }
+
+  /** Whole-window mean actor-goal composite. Mirrors {@link actorCompositeSql}. */
+  private actorCompositeOverallSql(
+    params: unknown[],
+    tenantId?: string,
+  ): string {
+    params.push(ActorEvaluationStatus.COMPLETED);
+    const statusParam = `$${params.length}`;
+    const tenant = this.tenantClause('s."tenant_id"', params, tenantId);
+
+    return `
+      SELECT round(avg(d."compositeScore")::numeric, 2)::float AS raw,
+             COUNT(*)::int AS n
+        FROM scenario_session_details d
+        JOIN scenario_sessions s ON s.id = d."scenarioSessionId"
+       WHERE d."evaluationStatus" = ${statusParam}
+         AND d."compositeScore" IS NOT NULL
+         AND COALESCE(d."evaluatedAt", d."createdAt") >= $1
+         AND COALESCE(d."evaluatedAt", d."createdAt") < $2
+         AND ${countableSessionPredicate('s')}
+         AND ${excludeTestTenants('s."tenant_id"')}${tenant}`;
+  }
+
+  /** Whole-window drift rate. Mirrors {@link driftRateSql}. */
+  private driftRateOverallSql(params: unknown[], tenantId?: string): string {
+    params.push(QUALITY_INDEX_JUDGE_PINS.drift.judgeModel);
+    const modelParam = `$${params.length}`;
+    params.push(QUALITY_INDEX_JUDGE_PINS.drift.judgePromptVersion);
+    const versionParam = `$${params.length}`;
+    const tenant = this.tenantClause('s."tenant_id"', params, tenantId);
+
+    return `
+      SELECT round((100.0 * COUNT(DISTINCT CASE WHEN j."sessionDrifted" THEN j."scenarioSessionId" END)
+                    / NULLIF(COUNT(DISTINCT j."scenarioSessionId"), 0))::numeric, 2)::float AS raw,
+             COUNT(DISTINCT j."scenarioSessionId")::int AS n
+        FROM turn_drift_judgment j
+        JOIN scenario_sessions s ON s.id = j."scenarioSessionId"
+       WHERE j."occurredAt" >= $1
+         AND j."occurredAt" < $2
+         AND j."judgeModel" = ${modelParam}
+         AND j."judgePromptVersion" = ${versionParam}
+         AND ${countableSessionPredicate('s')}
+         AND ${excludeTestTenants('s."tenant_id"')}${tenant}`;
+  }
+
+  /** Whole-window severity-weighted language errors. Mirrors {@link languageErrorsSql}. */
+  private languageErrorsOverallSql(
+    params: unknown[],
+    tenantId?: string,
+  ): string {
+    params.push(QUALITY_INDEX_JUDGE_PINS.language.judgeModel);
+    const modelParam = `$${params.length}`;
+    params.push(QUALITY_INDEX_JUDGE_PINS.language.judgePromptVersion);
+    const versionParam = `$${params.length}`;
+    const annTenant = this.tenantClause('sa."tenant_id"', params, tenantId);
+    const sessTenant = this.tenantClause('ss."tenant_id"', params, tenantId);
+
+    return `
+      WITH num AS (
+        SELECT SUM(${QUALITY_INDEX_SEVERITY_WEIGHT_SQL}) AS weighted
+          FROM language_error_annotations a
+          JOIN scenario_sessions sa ON sa.id = a."scenarioSessionId"
+         WHERE a."occurredAt" >= $1
+           AND a."occurredAt" < $2
+           AND a."judgeModel" = ${modelParam}
+           AND a."judgePromptVersion" = ${versionParam}
+           AND a."conditionedOut" = false
+           AND ${countableSessionPredicate('sa')}
+           AND ${excludeTestTenants('sa."tenant_id"')}${annTenant}
+      ), den AS (
+        SELECT SUM(l."turnsJudged") AS turns
+          FROM language_judgment_sessions l
+          JOIN scenario_sessions ss ON ss.id = l."scenarioSessionId"
+         WHERE l."occurredAt" >= $1
+           AND l."occurredAt" < $2
+           AND l."judgeModel" = ${modelParam}
+           AND l."judgePromptVersion" = ${versionParam}
+           AND ${countableSessionPredicate('ss')}
+           AND ${excludeTestTenants('ss."tenant_id"')}${sessTenant}
+      )
+      SELECT round((100.0 * COALESCE(num.weighted, 0)
+                    / NULLIF(den.turns, 0))::numeric, 2)::float AS raw,
+             den.turns::int AS n
+        FROM den CROSS JOIN num`;
+  }
+
+  /** Whole-window median response latency. Mirrors {@link responseLatencySql}. */
+  private responseLatencyOverallSql(
+    params: unknown[],
+    tenantId?: string,
+  ): string {
+    const tenant = this.tenantClause('s."tenant_id"', params, tenantId);
+
+    return `
+      SELECT round(percentile_cont(0.5) WITHIN GROUP (ORDER BY m."responseLatencyMs")::numeric, 0)::float AS raw,
+             COUNT(*)::int AS n
+        FROM scenario_session_turn_metrics m
+        JOIN scenario_sessions s ON s.id = m."scenarioSessionId"
+       WHERE m."occurredAt" >= $1
+         AND m."occurredAt" < $2
+         AND m."responseLatencyMs" IS NOT NULL
+         AND m."source" = 'pipeline'
+         AND ${countableSessionPredicate('s')}
+         AND ${excludeTestTenants('s."tenant_id"')}${tenant}`;
   }
 
   /**

@@ -13,9 +13,13 @@ import {
 import { AnalyticsBucket } from '../repository/platform-analytics.repository';
 import {
   DimensionBucketRow,
+  DimensionOverallRow,
   QualityIndexAnalyticsRepository,
 } from '../repository/quality-index-analytics.repository';
-import { QualityThresholdRepository } from '../repository/quality-threshold.repository';
+import {
+  QualityThresholdRepository,
+  ResolvedThreshold,
+} from '../repository/quality-threshold.repository';
 
 export interface QualityIndexPoint {
   bucket: string;
@@ -55,6 +59,16 @@ export interface QualityIndexResult {
   calibrated: boolean;
   points: QualityIndexPoint[];
   coverage: QualityIndexDimensionCoverage[];
+}
+
+/** The same per-dimension blend as one {@link QualityIndexPoint}, but over the whole window. */
+export interface QualityIndexOverallResult {
+  /** 0-100, or null when no dimension had data in the window. */
+  index: number | null;
+  contributions: Partial<Record<QualityIndexDimension, number>>;
+  raw: Partial<Record<QualityIndexDimension, number>>;
+  n: Partial<Record<QualityIndexDimension, number>>;
+  missing: QualityIndexDimension[];
 }
 
 /**
@@ -136,80 +150,13 @@ export class QualityIndexAnalyticsService {
 
     const points: QualityIndexPoint[] = buckets.map((bucketKey) => {
       const perDimension = byBucket.get(bucketKey) ?? {};
-      const contributions: Partial<Record<QualityIndexDimension, number>> = {};
-      const raw: Partial<Record<QualityIndexDimension, number>> = {};
-      const n: Partial<Record<QualityIndexDimension, number>> = {};
-      const missing: QualityIndexDimension[] = [];
-
-      // Pass one: normalise what is present and total the live weights, so the
-      // renormalisation denominator is known before any contribution is scaled.
-      const scored: Array<{
-        dimension: QualityIndexDimension;
-        score: number;
-        weight: number;
-      }> = [];
-      let liveWeight = 0;
-
+      const blended = this.blendDimensions(perDimension, thresholdByDimension);
       for (const dimension of QUALITY_INDEX_DIMENSIONS) {
-        const row = perDimension[dimension];
-        const threshold = thresholdByDimension.get(dimension);
-        if (!row || row.raw === null || !threshold) {
-          missing.push(dimension);
-          continue;
+        if (dimension in blended.raw) {
+          covered.set(dimension, (covered.get(dimension) ?? 0) + 1);
         }
-
-        const score = normaliseToIndexScale(
-          row.raw,
-          threshold.target,
-          threshold.ceiling,
-        );
-        if (score === null) {
-          // Degenerate anchors — reported as uncovered rather than as a score.
-          missing.push(dimension);
-          continue;
-        }
-
-        raw[dimension] = row.raw;
-        n[dimension] = row.n;
-        covered.set(dimension, (covered.get(dimension) ?? 0) + 1);
-
-        const weight = QUALITY_INDEX_WEIGHTS[dimension];
-        scored.push({ dimension, score, weight });
-        liveWeight += weight;
       }
-
-      if (!scored.length || liveWeight === 0) {
-        return {
-          bucket: bucketKey,
-          index: null,
-          contributions,
-          raw,
-          n,
-          missing,
-        };
-      }
-
-      // Pass two: scale each contribution by the LIVE weight total, so the
-      // present layers sum exactly to the index line even when a dimension is
-      // absent. Rounded to one decimal, then the index is taken as the sum of
-      // the rounded layers rather than rounded separately — otherwise the stack
-      // and the line disagree by a tenth and the chart looks broken.
-      let index = 0;
-      for (const { dimension, score, weight } of scored) {
-        const contribution =
-          Math.round(((weight * score) / liveWeight) * 10) / 10;
-        contributions[dimension] = contribution;
-        index += contribution;
-      }
-
-      return {
-        bucket: bucketKey,
-        index: Math.round(index * 10) / 10,
-        contributions,
-        raw,
-        n,
-        missing,
-      };
+      return { bucket: bucketKey, ...blended };
     });
 
     const coverage: QualityIndexDimensionCoverage[] =
@@ -249,6 +196,138 @@ export class QualityIndexAnalyticsService {
       calibrated,
       points,
       coverage,
+    };
+  }
+
+  /**
+   * The Roleplay Quality Index collapsed to one number over the whole window —
+   * the Goals-tab "Roleplay quality" chart's All-time KPI figure.
+   *
+   * Runs the SAME per-dimension weighted blend as one point of
+   * {@link getQualityIndex} ({@link blendDimensions}), so the two numbers are
+   * computed by identical logic and can only disagree because they cover
+   * different data. The four raw values themselves come from
+   * {@link QualityIndexAnalyticsRepository.getDimensionOverall} — a genuinely
+   * separate, un-bucketed query per dimension, not an aggregate of the
+   * bucketed series (see that method's doc for why folding would be wrong for
+   * three of the four dimensions).
+   */
+  async getQualityIndexOverall(
+    start: Date,
+    end: Date,
+    tenantId?: string,
+  ): Promise<QualityIndexOverallResult> {
+    const thresholds = await this.thresholdRepo.findAll();
+    const thresholdByDimension = new Map(
+      thresholds.map((t) => [t.dimension, t]),
+    );
+
+    const entries = await Promise.all(
+      QUALITY_INDEX_DIMENSIONS.map(async (dimension) => ({
+        dimension,
+        row: await this.repo.getDimensionOverall(
+          dimension,
+          start,
+          end,
+          tenantId,
+        ),
+      })),
+    );
+
+    const perDimension: Partial<
+      Record<QualityIndexDimension, DimensionOverallRow>
+    > = {};
+    for (const { dimension, row } of entries) {
+      perDimension[dimension] = row;
+    }
+
+    return this.blendDimensions(perDimension, thresholdByDimension);
+  }
+
+  /**
+   * The two-pass weighted blend shared by every point of {@link getQualityIndex}
+   * and by {@link getQualityIndexOverall}: normalise each dimension present
+   * (pass one), then scale by the LIVE weight total so present layers sum
+   * exactly to the index (pass two) — see the class doc's "Partial buckets are
+   * renormalised, never zero-filled" section for why a missing dimension drops
+   * out of the denominator instead of scoring 0.
+   */
+  private blendDimensions(
+    perDimension: Partial<
+      Record<QualityIndexDimension, { raw: number | null; n: number }>
+    >,
+    thresholdByDimension: Map<QualityIndexDimension, ResolvedThreshold>,
+  ): {
+    index: number | null;
+    contributions: Partial<Record<QualityIndexDimension, number>>;
+    raw: Partial<Record<QualityIndexDimension, number>>;
+    n: Partial<Record<QualityIndexDimension, number>>;
+    missing: QualityIndexDimension[];
+  } {
+    const contributions: Partial<Record<QualityIndexDimension, number>> = {};
+    const raw: Partial<Record<QualityIndexDimension, number>> = {};
+    const n: Partial<Record<QualityIndexDimension, number>> = {};
+    const missing: QualityIndexDimension[] = [];
+
+    // Pass one: normalise what is present and total the live weights, so the
+    // renormalisation denominator is known before any contribution is scaled.
+    const scored: Array<{
+      dimension: QualityIndexDimension;
+      score: number;
+      weight: number;
+    }> = [];
+    let liveWeight = 0;
+
+    for (const dimension of QUALITY_INDEX_DIMENSIONS) {
+      const row = perDimension[dimension];
+      const threshold = thresholdByDimension.get(dimension);
+      if (!row || row.raw === null || !threshold) {
+        missing.push(dimension);
+        continue;
+      }
+
+      const score = normaliseToIndexScale(
+        row.raw,
+        threshold.target,
+        threshold.ceiling,
+      );
+      if (score === null) {
+        // Degenerate anchors — reported as uncovered rather than as a score.
+        missing.push(dimension);
+        continue;
+      }
+
+      raw[dimension] = row.raw;
+      n[dimension] = row.n;
+
+      const weight = QUALITY_INDEX_WEIGHTS[dimension];
+      scored.push({ dimension, score, weight });
+      liveWeight += weight;
+    }
+
+    if (!scored.length || liveWeight === 0) {
+      return { index: null, contributions, raw, n, missing };
+    }
+
+    // Pass two: scale each contribution by the LIVE weight total, so the
+    // present layers sum exactly to the index line even when a dimension is
+    // absent. Rounded to one decimal, then the index is taken as the sum of
+    // the rounded layers rather than rounded separately — otherwise the stack
+    // and the line disagree by a tenth and the chart looks broken.
+    let index = 0;
+    for (const { dimension, score, weight } of scored) {
+      const contribution =
+        Math.round(((weight * score) / liveWeight) * 10) / 10;
+      contributions[dimension] = contribution;
+      index += contribution;
+    }
+
+    return {
+      index: Math.round(index * 10) / 10,
+      contributions,
+      raw,
+      n,
+      missing,
     };
   }
 }

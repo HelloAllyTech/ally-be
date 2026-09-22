@@ -7,9 +7,9 @@ import {
   SaveChartPreferencesDto,
 } from '../dto/chart-preference.dto';
 import {
-  ANALYTICS_BUCKETS,
+  ANALYTICS_GRAINS,
   ANALYTICS_RANGES,
-  AnalyticsBucketParam,
+  AnalyticsGrain,
   AnalyticsRange,
 } from '../dto/platform-analytics.dto';
 import { AnalyticsChartPreference } from '../entity/analytics-chart-preference.entity';
@@ -106,9 +106,7 @@ function asRange(value?: string | null): AnalyticsRange | null {
   return value && ranges.includes(value) ? (value as AnalyticsRange) : null;
 }
 
-function asBucket(value?: string | null): AnalyticsBucketParam | null {
-  const buckets: readonly string[] = ANALYTICS_BUCKETS;
-  return value && buckets.includes(value)
-    ? (value as AnalyticsBucketParam)
-    : null;
+function asBucket(value?: string | null): AnalyticsGrain | null {
+  const grains: readonly string[] = ANALYTICS_GRAINS;
+  return value && grains.includes(value) ? (value as AnalyticsGrain) : null;
 }
