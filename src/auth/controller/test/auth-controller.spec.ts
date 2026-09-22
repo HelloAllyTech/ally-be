@@ -8,6 +8,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from 'src/auth/service/auth.service';
 import { PermissionsService } from 'src/authorization/service/permissions.service';
 import { AppType, UserRole } from 'src/common/constants/user.constants';
+import { PostHog } from 'posthog-node';
 
 const mockAuthService = {
   login: jest.fn(),
@@ -17,6 +18,8 @@ const mockAuthService = {
   logout: jest.fn(),
   getUserPermissions: jest.fn(),
   impersonate: jest.fn(),
+  recordOtpRequest: jest.fn().mockResolvedValue(1),
+  isFirstTimeUser: jest.fn().mockResolvedValue(false),
 };
 
 const mockPermissionsService = {
@@ -34,6 +37,10 @@ describe('AuthController', () => {
       providers: [
         { provide: AuthService, useValue: mockAuthService },
         { provide: PermissionsService, useValue: mockPermissionsService },
+        {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
       ],
     })
       // Mock all guards

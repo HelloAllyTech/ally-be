@@ -156,6 +156,11 @@ export const validationSchema = Joi.object({
   /** Publicly reachable base URL a GitHub-hosted runner can call this API back on. */
   PUBLIC_API_BASE_URL: Joi.string().uri().optional(),
 
+  // PostHog product analytics. Optional: without a key the client is disabled
+  // and every capture is a no-op, which is what local/CI/test runs want.
+  POSTHOG_API_KEY: Joi.string().optional(),
+  POSTHOG_HOST: Joi.string().uri().default('https://us.i.posthog.com'),
+
   // App Store Connect API — iOS TestFlight status (Mobile Releases admin
   // page). All optional at the Joi level, same reasoning as
   // GITHUB_ACTIONS_TOKEN: an environment that hasn't provisioned these yet
