@@ -145,6 +145,19 @@ SERVER
 # stream-json an engine would emit for it, including the fenced blocks
 # run-engine parses: a ```plan block for planning and a ```json verdict for
 # verification.
+#
+# This shim is Claude Code's wire shape specifically — its flags, its event
+# frames, its `modelUsage` totals — so every scenario below pins
+# BUILDER_ENGINE=claude-code rather than inheriting run-engine.sh's default.
+# It used to inherit it, which worked only for as long as that default
+# happened to name the engine this file fakes: when the default moved to
+# `gemini`, run-engine.sh went looking for a `gemini` binary that was never
+# on PATH and 22 scenarios failed at once, none of them about the engine.
+# A harness that fakes one engine should say which one.
+#
+# The Gemini path is covered separately, at the level where the two engines
+# actually differ: forward-events.test.mjs exercises normaliseGemini()
+# against the real 0.22.5 event schema.
 cat > "${WORK}/claude" <<'SHIM'
 #!/usr/bin/env bash
 # Fake `claude`: --output-format stream-json, driven by the prompt marker.
@@ -451,6 +464,7 @@ run_scenario() {
       PATH="${WORK}:$PATH" \
       ALLY_BE_API_URL="http://127.0.0.1:${PORT}" \
       ALLY_BE_API_KEY=test-key \
+      BUILDER_ENGINE=claude-code \
       BUILDER_RUN_ID=11111111-1111-1111-1111-111111111111 \
       BUILDER_MODELS='{"planner":"p","coder":"c","verifier":"v"}' \
       "$@" \
