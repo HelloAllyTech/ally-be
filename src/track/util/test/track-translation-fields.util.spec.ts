@@ -417,3 +417,73 @@ describe('hashSource', () => {
     expect(hashSource('Spotting risk')).not.toBe(hashSource('Spotting risks'));
   });
 });
+
+describe('question media translation', () => {
+  const quizWithMedia = (media: any) =>
+    item({
+      type: TrackItemType.QUIZ,
+      content: {
+        settings: { passScore: 70 },
+        questions: [
+          {
+            id: 'q1',
+            type: QuizQuestionType.MCQ_SINGLE,
+            prompt: 'What do you see?',
+            options: [
+              { id: 'a', text: 'Redness' },
+              { id: 'b', text: 'Swelling' },
+            ],
+            correctOptionIds: ['a'],
+            media,
+          },
+        ],
+      } as any,
+    });
+
+  const image = {
+    kind: 'image',
+    source: 's3',
+    url: 'https://bucket.s3.ap-south-1.amazonaws.com/track-media/question_image/1-x.png',
+    alt: 'A swollen left ankle',
+  };
+
+  it('extracts the media description but never the URL', () => {
+    const paths = extractItemFields(quizWithMedia(image)).map((f) => f.path);
+    expect(paths).toContain('content.questions[q1].media.alt');
+    expect(paths.some((p) => p.includes('media.url'))).toBe(false);
+  });
+
+  it('treats the description as prose, not a scoring field', () => {
+    const field = extractItemFields(quizWithMedia(image)).find(
+      (f) => f.path === 'content.questions[q1].media.alt',
+    );
+    expect(field?.kind).toBe(TranslatableFieldKind.PROSE);
+    expect(field?.scoring).toBe(false);
+    // Context is the prompt, so a translator sees what the picture is for.
+    expect(field?.context).toBe('What do you see?');
+  });
+
+  it('applies a translated description back onto the media', () => {
+    const source = quizWithMedia(image);
+    const applied = applyItemFields(source, translateAll(source));
+    expect((applied.content as any).questions[0].media.alt).toBe(
+      'hi:A swollen left ankle',
+    );
+    // The URL is untouched — a translated URL would be a broken image.
+    expect((applied.content as any).questions[0].media.url).toBe(image.url);
+  });
+
+  it('extracts nothing extra for media with no description', () => {
+    const paths = extractItemFields(
+      quizWithMedia({ ...image, alt: undefined }),
+    ).map((f) => f.path);
+    expect(paths.some((p) => p.includes('media'))).toBe(false);
+  });
+
+  it('extracts nothing extra for a question with no media at all', () => {
+    const paths = extractItemFields(quizWithMedia(undefined)).map(
+      (f) => f.path,
+    );
+    expect(paths.some((p) => p.includes('media'))).toBe(false);
+  });
+});

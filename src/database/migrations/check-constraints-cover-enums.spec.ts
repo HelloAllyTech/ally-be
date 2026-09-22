@@ -1,10 +1,23 @@
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import {
+  BuilderEventType,
+  BuilderExemplarOutcome,
+  BuilderLessonCategory,
+  BuilderLessonStatus,
+  BuilderMessageRole,
+  BuilderMilestoneStatus,
+  BuilderNotificationKind,
+  BuilderPrdVersionAuthor,
   BuilderPrFeedbackKind,
   BuilderPrFeedbackStatus,
+  BuilderQuestionStatus,
+  BuilderReportType,
   BuilderRunMode,
+  BuilderRunStatus,
+  BuilderSessionStatus,
   BuilderStage,
+  BuilderSteerStatus,
 } from '../../builder/enum/builder.enum';
 
 /**
@@ -49,13 +62,24 @@ describe('CHECK constraints cover their enums', () => {
     .join('\n');
 
   /**
-   * The last `ADD CONSTRAINT <name> CHECK (... IN ('a','b'))` in migration
-   * order — later migrations redefine a constraint, and only the final one is
-   * what production actually holds.
+   * The last `CONSTRAINT <name> CHECK (... IN ('a','b'))` in migration order —
+   * later migrations redefine a constraint, and only the final one is what
+   * production actually holds.
+   *
+   * Both spellings, because half of these constraints have only ever been
+   * written one way: `builder_sessions.status`, `builder_messages.role` and
+   * `builder_build_runs.status` are declared inline inside their CREATE TABLE
+   * and never re-added. Matching `ADD CONSTRAINT` alone found nothing for
+   * them, which is why the list above could not have been completed without
+   * this — and a constraint this test cannot find throws rather than passing
+   * quietly.
+   *
+   * `(?<!DROP )` keeps a `DROP CONSTRAINT IF EXISTS` line from being read as a
+   * definition and lazily borrowing the value list of whatever follows it.
    */
   const allowedValues = (constraint: string): string[] => {
     const pattern = new RegExp(
-      `ADD CONSTRAINT "${constraint}"[\\s\\S]{0,400}?IN \\(([^)]*)\\)`,
+      `(?<!DROP )CONSTRAINT "${constraint}"[\\s\\S]{0,600}?IN \\(([^)]*)\\)`,
       'g',
     );
     const matches = [...sql.matchAll(pattern)];
@@ -75,10 +99,33 @@ describe('CHECK constraints cover their enums', () => {
    * bitten. The first version of this test listed two, and the third failure of
    * the week — `builder_pr_feedback.kind` — was in the pair it did not list. A
    * guard that covers the bugs you have already had is not a guard.
+   *
+   * It said that and then listed four of the eighteen, which let the same class
+   * through three more times: `budget_hold` and `model_escalated` were never
+   * added to the events' type CHECK, and `REVIEWING` never reached the events'
+   * stage CHECK although the sessions' one was extended in the same migration.
+   * The raise-budget dialog 500'd on every submission for as long as the first
+   * of those was missing. So the list is now EVERY `CHK_builder_*` constraint
+   * that guards an enum — if a new one is added, add it here in the same
+   * commit; there is no other check.
    */
   it.each([
-    ['CHK_builder_build_runs_mode', Object.values(BuilderRunMode)],
+    ['CHK_builder_sessions_status', Object.values(BuilderSessionStatus)],
     ['CHK_builder_sessions_stage', Object.values(BuilderStage)],
+    ['CHK_builder_messages_role', Object.values(BuilderMessageRole)],
+    ['CHK_builder_build_runs_status', Object.values(BuilderRunStatus)],
+    ['CHK_builder_build_runs_mode', Object.values(BuilderRunMode)],
+    ['CHK_builder_build_events_type', Object.values(BuilderEventType)],
+    ['CHK_builder_build_events_stage', Object.values(BuilderStage)],
+    ['CHK_builder_questions_status', Object.values(BuilderQuestionStatus)],
+    ['CHK_builder_steers_status', Object.values(BuilderSteerStatus)],
+    ['CHK_builder_reports_type', Object.values(BuilderReportType)],
+    ['CHK_builder_notifications_kind', Object.values(BuilderNotificationKind)],
+    ['CHK_builder_milestones_status', Object.values(BuilderMilestoneStatus)],
+    ['CHK_builder_prd_versions_author', Object.values(BuilderPrdVersionAuthor)],
+    ['CHK_builder_lessons_status', Object.values(BuilderLessonStatus)],
+    ['CHK_builder_lessons_category', Object.values(BuilderLessonCategory)],
+    ['CHK_builder_exemplars_outcome', Object.values(BuilderExemplarOutcome)],
     ['CHK_builder_pr_feedback_kind', Object.values(BuilderPrFeedbackKind)],
     ['CHK_builder_pr_feedback_status', Object.values(BuilderPrFeedbackStatus)],
   ])('%s accepts every enum value', (constraint, values) => {

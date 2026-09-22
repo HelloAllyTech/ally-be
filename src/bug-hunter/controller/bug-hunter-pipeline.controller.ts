@@ -107,10 +107,12 @@ export class BugHunterPipelineController {
   @Get('pipeline/reported-bugs')
   @ApiOperation({
     summary:
-      'Human-reported bugs still at NEW, for the reported-bugs finder (pipeline only)',
+      'Human-reported bugs still at NEW, for the reported-bugs finder (pipeline only). Optional ?repo= narrows to items already classified as this repo, plus anything still unfiled.',
   })
-  async getReportedBugs(): Promise<{ items: ReportedBugFinding[] }> {
-    return { items: await this.finderDataService.getReportedBugs() };
+  async getReportedBugs(
+    @Query('repo') repo?: string,
+  ): Promise<{ items: ReportedBugFinding[] }> {
+    return { items: await this.finderDataService.getReportedBugs(repo) };
   }
 
   @Get('pipeline/approved-findings')
@@ -409,7 +411,7 @@ export class BugHunterPipelineController {
     return { totalTokenCostUsd: run.totalTokenCostUsd };
   }
 
-  @Post('pipeline/runs/:id/model')
+  @Post('runs/:id/model')
   @ApiOperation({
     summary: 'Attach which CLI/model actually ran this run (pipeline only)',
     description:

@@ -36,15 +36,32 @@ describe('buildSweepPrompt', () => {
     expect(build({ repo: 'ally-be' })).toContain('npm test');
   });
 
-  describe('all four finders are always present', () => {
+  describe('all five finders are always present', () => {
     it.each([
       ['test/lint', /TEST\/LINT/],
       ['code review', /CODE REVIEW/],
       ['production logs', /PRODUCTION LOGS/],
+      ['web errors', /WEB ERRORS/],
       ['reported bugs', /REPORTED BUGS/],
     ])('includes the %s finder', (_name, pattern) => {
       expect(build()).toMatch(pattern);
     });
+  });
+
+  it('scopes the reported-bugs finder to this repo, plus anything still unfiled', () => {
+    expect(build({ repo: 'ally-web' })).toContain(
+      'pipeline/reported-bugs?repo=ally-web',
+    );
+  });
+
+  it('gates the full suite behind the narrow regression-test check, so a failed attempt does not pay for it', () => {
+    const prompt = build();
+    const d1 = prompt.indexOf('d1.');
+    const d2 = prompt.indexOf('d2.');
+    expect(d1).toBeGreaterThan(-1);
+    expect(d2).toBeGreaterThan(d1);
+    expect(prompt.slice(d1, d2)).toMatch(/do not run the full suite/i);
+    expect(prompt.slice(d2)).toMatch(/run the full/i);
   });
 
   it('scopes the code review to the last day by default', () => {

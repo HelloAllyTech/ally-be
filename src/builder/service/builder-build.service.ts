@@ -129,6 +129,35 @@ export interface BuilderBudgetState {
  * which sessions offer a start control, and the two had already drifted: the
  * page offered a retry the API refused.
  */
+/**
+ * Which engine a model id belongs to, or null when we cannot tell.
+ *
+ * Deliberately a prefix match rather than a catalog lookup: the catalog says
+ * whether a model exists, not which CLI can drive it, and this has to answer
+ * before anything is dispatched. Unknown ids return null and are treated as
+ * usable by any engine — the catalog is admin-maintained, and a new provider
+ * should not need this edited before it can be configured.
+ */
+export const builderEngineOf = (
+  model: string | null | undefined,
+): string | null => {
+  const id = String(model ?? '').trim();
+  if (!id) return null;
+  if (id.startsWith('gemini-')) return 'gemini';
+  if (id.startsWith('claude-')) return 'claude-code';
+  return null;
+};
+
+/**
+ * The engines this file can attribute a model to at all.
+ *
+ * Nothing may be refused on behalf of an engine that is not in here. A new
+ * engine arrives as a settings string long before this file learns its model
+ * naming, and refusing every model for it would make it unusable — the same
+ * reason `builderEngineOf` lets an unknown model id pass.
+ */
+const BUILDER_KNOWN_MODEL_OWNERS = new Set(['gemini', 'claude-code']);
+
 export const BUILDER_STARTABLE_STATUSES: BuilderSessionStatus[] = [
   BuilderSessionStatus.PRD_READY,
   BuilderSessionStatus.FAILED,
@@ -257,6 +286,7 @@ export class BuilderBuildService {
       overrides,
       sizing,
     );
+    this.assertModelsMatchEngine(engine, models);
     await this.assertModelsAreReal(models);
 
     // Carry the chosen engine/model onto the session so a resume run and the
@@ -431,13 +461,7 @@ export class BuilderBuildService {
     // run a build on a model nobody chose. Falling through to the coder tier
     // means the worst case is a build that plans on the model the admin
     // actually picked.
-    const engineOf = (model: string | null | undefined): string | null => {
-      const id = String(model ?? '').trim();
-      if (!id) return null;
-      if (id.startsWith('gemini-')) return 'gemini';
-      if (id.startsWith('claude-')) return 'claude-code';
-      return null;
-    };
+    const engineOf = builderEngineOf;
     const forThisEngine = (model: string | null | undefined): string | null => {
       const owner = engineOf(model);
       // Unknown ids pass. The catalog is admin-maintained and a new provider
@@ -445,16 +469,33 @@ export class BuilderBuildService {
       return owner === null || owner === engine ? (model ?? null) : null;
     };
 
+    // Every rung of the fallback chain, not just the config defaults.
+    //
+    // The filter was applied to `config.*Model` alone, on the reasoning that
+    // those are the hardcoded Anthropic ids. But a session carries its OWN
+    // engine, pinned when it was created, while the models come from settings
+    // that an admin can change afterwards — so switching Builder's default
+    // engine to Gemini left every earlier session pinned to `claude-code`
+    // resolving its coder to `settings.coderModel`, `gemini-2.5-pro`, and
+    // handing that to Claude Code. The engine exits immediately with "issue
+    // with the selected model" on every phase, having written nothing, and the
+    // run burns its whole remediation ladder repeating it.
+    //
+    // `session.model` and the settings tiers are exactly as capable of naming
+    // another engine's model as a config default is, so they go through the
+    // same filter. An explicit per-run override is deliberately NOT filtered —
+    // silently discarding what an admin typed is worse than refusing — and
+    // assertModelsMatchEngine below refuses the dispatch instead, by name.
     const coder =
       overrides.model ??
-      session.model ??
-      settings.coderModel ??
-      settings.defaultModel ??
+      forThisEngine(session.model) ??
+      forThisEngine(settings.coderModel) ??
+      forThisEngine(settings.defaultModel) ??
       forThisEngine(config.coderModel) ??
       config.coderModel;
     const plannerTier =
-      settings.plannerModel ??
-      settings.defaultModel ??
+      forThisEngine(settings.plannerModel) ??
+      forThisEngine(settings.defaultModel) ??
       forThisEngine(config.plannerModel) ??
       coder;
 
@@ -505,8 +546,8 @@ export class BuilderBuildService {
       }),
       verifier:
         overrides.verifierModel ??
-        settings.verifierModel ??
-        settings.defaultModel ??
+        forThisEngine(settings.verifierModel) ??
+        forThisEngine(settings.defaultModel) ??
         forThisEngine(config.verifierModel) ??
         coder,
       // Read by run-engine.sh out of the same `models` input, because
@@ -518,7 +559,59 @@ export class BuilderBuildService {
       effort: profile.effort,
       plannerMaxTurns: profile.maxTurns,
       planWords: profile.planWords,
-      budgets: profile.maxBudgetUsd,
+      budgets: this.phaseBudgetsWithin(session, profile.maxBudgetUsd),
+    };
+  }
+
+  /**
+   * Per-phase ceilings, capped at what the session can actually afford.
+   *
+   * The profile's figures are absolute and they add up: LARGE is
+   * 10 + 20 + 6 + 5 — and that is one pass each, with up to four coding
+   * attempts allowed. A session with a $10 ceiling was dispatched with
+   * permission to spend $41 before anything asked it to stop, and one run did
+   * exactly that ($41.92 of $10.00). Nothing was wrong with the boundary check
+   * that is supposed to catch this; it simply runs BETWEEN phases, and the
+   * overshoot happens inside one.
+   *
+   * A phase may therefore never be handed more than the session has left. That
+   * is not the same as dividing the headroom four ways: the phases are
+   * sequential and most runs never reach the last one, so splitting it would
+   * starve CODE — the phase that does the work — on a budget that could have
+   * covered it. The engine's own ceiling stops a phase at the session's limit;
+   * the boundary check then holds the run rather than starting the next one.
+   *
+   * No ceiling on the session means no clamp: zero has meant "uncapped"
+   * everywhere else in this file since the column was added.
+   */
+  private phaseBudgetsWithin(
+    session: BuilderSession,
+    profileBudgets: {
+      plan: number;
+      code: number;
+      verify: number;
+      finalise: number;
+    },
+  ): { plan: number; code: number; verify: number; finalise: number } {
+    const ceiling = Number(session.budgetUsd ?? 0);
+    if (!ceiling || !Number.isFinite(ceiling)) return profileBudgets;
+
+    const spent = Number(session.totalCostUsd ?? 0);
+    const headroom = Math.max(
+      0,
+      ceiling - (Number.isFinite(spent) ? spent : 0),
+    );
+    // Never zero. A phase handed `--max-budget-usd 0` is a phase that cannot
+    // run at all, and a session with no headroom is refused at dispatch by
+    // assertWithinBudget long before this — so the floor here only covers the
+    // rounding case, where the last cent would otherwise read as "uncapped".
+    const cap = (value: number) => Math.max(0.5, Math.min(value, headroom));
+
+    return {
+      plan: cap(profileBudgets.plan),
+      code: cap(profileBudgets.code),
+      verify: cap(profileBudgets.verify),
+      finalise: cap(profileBudgets.finalise),
     };
   }
 
@@ -608,6 +701,51 @@ export class BuilderBuildService {
         `${retired.join(', ')} ${retired.length === 1 ? 'is' : 'are'} marked retired in the model catalog, so this build would burn its attempts on a model that no longer answers. Pick another model tier in Builder settings, or mark the row active again if the retirement was recorded early.`,
       );
     }
+  }
+
+  /**
+   * Refuse a build whose models belong to a different engine than the one that
+   * will run them — before it costs anything.
+   *
+   * This is the sibling of assertModelsAreReal, and it exists because "the
+   * model is real" and "this engine can run it" are different questions.
+   * `gemini-2.5-pro` is a real, active row in the catalog; handed to Claude
+   * Code it produces "There's an issue with the selected model" and an
+   * immediate non-zero exit, on every phase, having written nothing.
+   *
+   * The resolution chain now filters the tiers it controls, so the only way to
+   * reach here is an explicit per-run override — which is deliberately left
+   * unfiltered, because silently replacing a model an admin typed is worse
+   * than telling them it cannot run. Hence a refusal that names the model, the
+   * engine and the way out.
+   */
+  private assertModelsMatchEngine(
+    engine: string,
+    models: BuilderResolvedModels,
+  ): void {
+    // Only an engine whose models we can actually name. See
+    // BUILDER_KNOWN_MODEL_OWNERS.
+    if (!BUILDER_KNOWN_MODEL_OWNERS.has(engine)) return;
+
+    const mismatched = [
+      ...new Set(
+        [models.planner, models.coder, models.verifier, ...models.coderLadder]
+          .map((model) => String(model ?? '').trim())
+          .filter((model) => {
+            const owner = builderEngineOf(model);
+            return owner !== null && owner !== engine;
+          }),
+      ),
+    ];
+    if (!mismatched.length) return;
+
+    throw new BadRequestException(
+      `This session runs on the ${engine} engine, which cannot use ` +
+        `${mismatched.join(', ')}. A build dispatched this way exits immediately ` +
+        'on every phase without writing anything, and spends its whole ' +
+        'remediation ladder repeating it. Pick a model for this engine, or ' +
+        'clear the override to use the platform default.',
+    );
   }
 
   private async classifySession(

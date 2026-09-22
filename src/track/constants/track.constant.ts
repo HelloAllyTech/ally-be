@@ -29,9 +29,23 @@ export const TRACK_VIDEO_FILE_SIZE_LIMIT = 500 * 1024 * 1024; // 500MB
 export const TRACK_VIDEO_FILE_DURATION_LIMIT = 30 * 60; // 30 minutes
 export const TRACK_IMAGE_FILE_SIZE_LIMIT = 10 * 1024 * 1024; // 10MB
 
+/**
+ * Media attached to a single question is capped far below the lesson limits
+ * above. A lesson video is the thing the learner came for and they expect to
+ * wait for it; question media sits between the learner and an answer they
+ * cannot give until it has loaded, on the phone-tethered connections our CHW
+ * users actually have. Sizing this at spec time rather than leaving it to
+ * whatever the trainer happens to drag in is the point.
+ */
+export const TRACK_QUESTION_IMAGE_FILE_SIZE_LIMIT = 5 * 1024 * 1024; // 5MB
+export const TRACK_QUESTION_VIDEO_FILE_SIZE_LIMIT = 50 * 1024 * 1024; // 50MB
+export const TRACK_QUESTION_VIDEO_DURATION_LIMIT = 3 * 60; // 3 minutes
+
 export enum TrackMediaKind {
   IMAGE = 'image',
   VIDEO = 'video',
+  QUESTION_IMAGE = 'question_image',
+  QUESTION_VIDEO = 'question_video',
 }
 
 export const TRACK_MEDIA_ALLOWED_CONTENT_TYPES: Record<
@@ -45,7 +59,47 @@ export const TRACK_MEDIA_ALLOWED_CONTENT_TYPES: Record<
     'image/gif',
   ],
   [TrackMediaKind.VIDEO]: ['video/mp4', 'video/webm', 'video/quicktime'],
+  [TrackMediaKind.QUESTION_IMAGE]: [
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+    'image/gif',
+  ],
+  [TrackMediaKind.QUESTION_VIDEO]: [
+    'video/mp4',
+    'video/webm',
+    'video/quicktime',
+  ],
 };
+
+/** Byte ceiling per media kind, enforced when the presigned URL is minted. */
+export const TRACK_MEDIA_SIZE_LIMITS: Record<TrackMediaKind, number> = {
+  [TrackMediaKind.IMAGE]: TRACK_IMAGE_FILE_SIZE_LIMIT,
+  [TrackMediaKind.VIDEO]: TRACK_VIDEO_FILE_SIZE_LIMIT,
+  [TrackMediaKind.QUESTION_IMAGE]: TRACK_QUESTION_IMAGE_FILE_SIZE_LIMIT,
+  [TrackMediaKind.QUESTION_VIDEO]: TRACK_QUESTION_VIDEO_FILE_SIZE_LIMIT,
+};
+
+/**
+ * Duration ceiling in seconds, for the kinds that have one. The client reads
+ * the duration off the decoded file and sends it; a client that sends nothing
+ * is size-capped only, which is why the size limits above are the real
+ * backstop.
+ */
+export const TRACK_MEDIA_DURATION_LIMITS: Partial<
+  Record<TrackMediaKind, number>
+> = {
+  [TrackMediaKind.VIDEO]: TRACK_VIDEO_FILE_DURATION_LIMIT,
+  [TrackMediaKind.QUESTION_VIDEO]: TRACK_QUESTION_VIDEO_DURATION_LIMIT,
+};
+
+/**
+ * Alt text is a short description of what the picture shows, not a caption
+ * and not a second prompt. Long enough for "a swollen left ankle, bruised
+ * along the outer malleolus"; short enough that a screen-reader user isn't
+ * read an essay before reaching the answer options.
+ */
+export const TRACK_MAX_QUESTION_MEDIA_ALT_LENGTH = 300;
 
 /** Per-question timeout for LLM grading of open-ended quiz answers. */
 export const TRACK_QUIZ_LLM_GRADING_TIMEOUT_MS = 20_000;

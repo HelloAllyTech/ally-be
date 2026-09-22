@@ -148,7 +148,7 @@ describe('DynamicI18nService', () => {
     });
   });
 
-  it('rejects updates that remove existing placeholders', async () => {
+  it('lets the source language retire a placeholder the code no longer passes', async () => {
     await expect(
       service.updateTranslations({
         language: 'en',
@@ -156,9 +156,54 @@ describe('DynamicI18nService', () => {
         key: 'title',
         value: 'Hello',
       }),
+    ).resolves.toMatchObject({ changedKeys: ['title'] });
+
+    const draft = await readJson<Record<string, Record<string, string>>>(
+      path.join(rootDir, '.drafts', 'en.json'),
+    );
+    expect(draft.common.title).toBe('Hello');
+  });
+
+  it('rejects a translation whose placeholders disagree with the source language', async () => {
+    await expect(
+      service.updateTranslations({
+        language: 'kn',
+        namespace: 'common',
+        key: 'title',
+        value: 'Namaskara',
+      }),
     ).rejects.toBeInstanceOf(BadRequestException);
 
     expect(auditLogService.log).not.toHaveBeenCalled();
+  });
+
+  it('accepts the matching translation once the source language has dropped it', async () => {
+    await service.updateTranslations({
+      language: 'en',
+      namespace: 'common',
+      key: 'title',
+      value: 'Hello',
+    });
+
+    await expect(
+      service.updateTranslations({
+        language: 'kn',
+        namespace: 'common',
+        key: 'title',
+        value: 'Namaskara',
+      }),
+    ).resolves.toMatchObject({ changedKeys: ['title'] });
+  });
+
+  it('still rejects a translation that invents a placeholder the source lacks', async () => {
+    await expect(
+      service.updateTranslations({
+        language: 'kn',
+        namespace: 'common',
+        key: 'title',
+        value: 'Namaskara {{name}} {{extra}}',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it('publishes immutable versions, prunes old versions, and rolls back by switching manifest', async () => {

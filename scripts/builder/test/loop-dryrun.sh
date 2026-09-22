@@ -96,6 +96,14 @@ http.createServer((req, res) => {
     // plan-prompt / remediate-prompt / verify-prompt / finalise-prompt
     const phase = path.split('/').pop().split('?')[0];
     append(`GET ${phase}${url.search}`);
+    // One prompt that ally-be cannot serve. The runner treats a missing
+    // finalise prompt as fatal — correctly, there is nothing to run — and that
+    // is one of the paths that used to exit non-zero having told nobody.
+    if (process.env.DRYRUN_PROMPT_FAIL && phase === process.env.DRYRUN_PROMPT_FAIL) {
+      res.writeHead(500, { 'Content-Type': 'text/plain' });
+      res.end('no');
+      return;
+    }
     res.writeHead(200, { 'Content-Type': 'text/plain' });
     res.end(`PROMPT:${phase}`);
     return;
@@ -161,6 +169,24 @@ if [ "$phase" = "verify-prompt" ]; then
 fi
 
 [ "$phase" = "build" ] && [ "${DRYRUN_PAUSE:-}" = "1" ] && touch /tmp/builder-paused
+
+# An engine that cannot start at all: no result frame, nothing written. A model
+# this engine does not have, a missing credential. Distinct from the case below,
+# which stops PART-WAY and leaves work behind.
+if [ "${DRYRUN_ENGINE_DEAD:-}" = "1" ] && [ "$phase" = "build" ]; then
+  echo "There's an issue with the selected model. It may not exist or you may not have access to it." >&2
+  exit 1
+fi
+
+# An engine that stops on its own, part-way through, having written something.
+# Its own budget ceiling, a provider error, a loop detector
+# (`[gemini] Loop detected, stopping execution`) — all of them arrive as a
+# non-zero exit status, and all of them used to take the whole run down with
+# them under `set -e`, before the gate and before any outcome was reported.
+if [ "${DRYRUN_ENGINE_EXIT:-}" = "1" ] && [ "$phase" = "build" ]; then
+  echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Half-way through."}]}}'
+  exit 3
+fi
 
 # A phase that never returns. `--max-turns` and `--max-budget-usd` are Claude
 # Code flags, so on any other engine nothing stands between a stuck phase and
@@ -273,8 +299,11 @@ cat > "${WORK}/gh" <<'SHIM'
 sub="${1:-} ${2:-}"
 case "$sub" in
   "pr create")
-    echo "gh-created" >> /tmp/builder-dryrun-gh.log
+    # The refusal is checked BEFORE the log line, because `pr list` below reads
+    # that log to decide whether a pull request now exists. Logging first made a
+    # failed create look to every later query like a successful one.
     [ "${DRYRUN_GH_CREATE:-ok}" = "fail" ] && { echo "gh: refused" >&2; exit 1; }
+    echo "gh-created" >> /tmp/builder-dryrun-gh.log
     echo "https://example.invalid/pr/7"
     ;;
   "pr edit") echo "gh-edited" >> /tmp/builder-dryrun-gh.log ;;
@@ -337,15 +366,35 @@ setup_repo_resumed() {
   rm -rf "${WORK}/seed"
 }
 
+# The state a first build is in when its coding pass starts: the branch exists
+# and carries nothing. `setup_repo` commits a change, which would read as "the
+# engine wrote something" to anything asking the tree.
+setup_repo_clean() {
+  rm -rf "${WORK}/run"
+  mkdir -p "${WORK}/run/repos/demo-repo"
+  (
+    cd "${WORK}/run/repos/demo-repo" || exit 1
+    git init -q -b master
+    git config user.email t@t.t && git config user.name t
+    echo base > file.txt && git add -A && git commit -qm base
+    git checkout -qb builder/demo
+  ) >/dev/null 2>&1
+}
+
 run_scenario() {
   local name="$1"; shift
   echo "── ${name} ──"
   case " $* " in
     *" DRYRUN_RESUME=1 "*) setup_repo_resumed ;;
+    *" DRYRUN_ENGINE_DEAD=1 "*) setup_repo_clean ;;
     *) setup_repo ;;
   esac
+  # `builder-already-reported` matters as much as the rest: it is how a run
+  # tells the workflow it has already said why it failed, so one left behind by
+  # the previous scenario silences the next one's reporting entirely.
   rm -f /tmp/builder-paused /tmp/builder-dryrun-verify-count \
-        /tmp/builder-repo-commands.json /tmp/builder-dryrun-broke-it
+        /tmp/builder-repo-commands.json /tmp/builder-dryrun-broke-it \
+        /tmp/builder-already-reported /tmp/builder-pr-fallback-demo-repo.md
   rm -rf /tmp/builder-results /tmp/builder-gate /tmp/builder-baseline \
          /tmp/builder-plan.md /tmp/builder-deps-installed-demo-repo
 
@@ -375,6 +424,7 @@ run_scenario() {
 
   DRYRUN_LOG="$log" DRYRUN_PORT="$PORT" DRYRUN_BUDGET="$budget_json" \
   DRYRUN_BUDGET_RAISE_AFTER="${DRYRUN_BUDGET_RAISE_AFTER:-0}" \
+  DRYRUN_PROMPT_FAIL="${DRYRUN_PROMPT_FAIL:-}" \
   DRYRUN_GATE_FAIL="$gate_fail" \
     node "${WORK}/server.mjs" &
   SERVER_PID=$!
@@ -414,7 +464,15 @@ run_scenario() {
   LOG_FILE="$log"
 }
 
-count_in_log() { grep -c "$1" "$LOG_FILE" 2>/dev/null || echo 0; }
+# `grep -c` prints 0 AND exits 1 when there are no matches, so the old
+# `|| echo 0` appended a SECOND zero and the function returned "0\n0". Every
+# existing check compared against a positive count, so it never showed — the
+# first assertion to expect none read it as a mismatch against itself.
+count_in_log() {
+  local n
+  n="$(grep -c "$1" "$LOG_FILE" 2>/dev/null || true)"
+  printf '%s' "${n:-0}"
+}
 has_in_log()   { grep -q "$1" "$LOG_FILE" 2>/dev/null && echo yes || echo no; }
 
 # ── 1. happy path ───────────────────────────────────────────────────────────
@@ -567,7 +625,29 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = prs ]; then
   check "finishes the run" 0 "$EXIT_CODE"
   check "reported the pull request to ally-be" yes "$(has_in_log 'POST prs')"
 
-  run_scenario prs-orphan DRYRUN_GH=none
+  # The finalise agent ended its turn without writing the description file. The
+  # work is gated, reviewed and pushed, so the runner writes the description
+  # from the commit messages and opens the pull request rather than failing a
+  # run that produced exactly what it was asked for. Before this, a branch that
+  # no pull request pointed at was invisible to reconcile, CI ingestion,
+  # review, approval, merge and release alike — and a person had to open it by
+  # hand from a sentence in the feed.
+  run_scenario prs-no-body DRYRUN_GH=none
+  check "opens it anyway from the commits" yes \
+    "$(grep -q gh-created /tmp/builder-dryrun-gh.log 2>/dev/null && echo yes || echo no)"
+  check "finishes the run" 0 "$EXIT_CODE"
+  check "said where the description came from" yes \
+    "$(grep -q 'writing one from the commits' "${WORK}/prs-no-body.out" && echo yes || echo no)"
+  check "titled it from the first commit" yes \
+    "$(head -1 /tmp/builder-pr-fallback-demo-repo.md 2>/dev/null | grep -q change && echo yes || echo no)"
+  check "says the prose is second-hand" yes \
+    "$(grep -q 'assembled one from the commit' /tmp/builder-pr-fallback-demo-repo.md 2>/dev/null \
+       && echo yes || echo no)"
+
+  # And when opening it is what fails, the orphan report is still the answer:
+  # the work exists, nothing downstream can see it, and only a person can fix
+  # that.
+  run_scenario prs-orphan DRYRUN_GH=none DRYRUN_GH_CREATE=fail
   check "fails a branch that became no pull request" 1 "$EXIT_CODE"
   check "told ally-be the work went nowhere" yes "$(has_in_log 'POST complete')"
   check "named the branch in the reason" yes \
@@ -641,6 +721,62 @@ if { [ "$SCENARIO" = all ] || [ "$SCENARIO" = timeout ]; } &&
   check "still reaches the gate" yes "$(has_in_log 'EVENT gate_result')"
 elif [ "$SCENARIO" = timeout ]; then
   echo "── phase-timeout ── skipped: no \`timeout\` on this host (macOS)."
+fi
+
+# ── 11. an engine that stops on its own ────────────────────────────────────
+#
+# The status an engine exits with says nothing about whether the work is any
+# good, and `set -e` used to treat it as the verdict: the script died on the
+# spot, with no gate, no /complete and nothing pushed. The feed's last line was
+# whatever the agent had been saying mid-sentence, and the outcome gate reported
+# it minutes later as "stopped mid-protocol … anything it had not pushed is gone
+# with the runner" — which was true, and was the runner's own doing.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = engine-exit ]; then
+  run_scenario engine-exit DRYRUN_ENGINE_EXIT=1 DRYRUN_PR_BODY=1
+  check "said the engine stopped" yes \
+    "$(grep -q 'engine exited 3' "${WORK}/engine-exit.out" && echo yes || echo no)"
+  check "still ran the gate on what was written" yes "$(has_in_log 'EVENT gate_result')"
+  check "still had it independently reviewed" yes "$(has_in_log 'GET verify-prompt')"
+  check "finished the run" 0 "$EXIT_CODE"
+fi
+
+# ── 11b. an engine that never started ──────────────────────────────────────
+#
+# Swallowing every non-zero exit (scenario 11) fixed lost work and created a
+# lie. An engine that cannot run at all writes nothing, so the gate has nothing
+# to judge — and the pipeline used to hand it the unchanged tree anyway,
+# remediate, and repeat the identical failure for the whole ladder before
+# recording "did not pass the test gate and independent review". Four attempts
+# spent, and a verdict blaming a diff that was never written.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = engine-dead ]; then
+  run_scenario engine-dead DRYRUN_ENGINE_DEAD=1
+  check "fails the run" 1 "$EXIT_CODE"
+  check "says the engine could not run" yes \
+    "$(grep -q 'could not run during' "$LOG_FILE" && echo yes || echo no)"
+  check "blames the runner, not the change" no \
+    "$(grep -q 'did not pass the test gate' "$LOG_FILE" && echo yes || echo no)"
+  # The whole point: no attempts are spent repeating something that cannot run.
+  check "spends no remediation attempts" 0 "$(count_in_log 'GET remediate-prompt')"
+  check "opened no pull requests" no "$(has_in_log 'GET finalise-prompt')"
+fi
+
+# ── 12. the runner itself failing ──────────────────────────────────────────
+#
+# Not every stop is an engine's. A prompt ally-be cannot serve, a clone that
+# went wrong, a subshell exiting 1 — under `set -e` each ended the script with
+# no outcome posted and the working tree unpushed, which is the single most
+# expensive failure this pipeline has: an hour of correct, gated, reviewed work
+# discarded because something unrelated returned 1.
+if [ "$SCENARIO" = all ] || [ "$SCENARIO" = runner-stop ]; then
+  DRYRUN_PROMPT_FAIL=finalise-prompt run_scenario runner-stop
+  check "fails the run" 1 "$EXIT_CODE"
+  check "said so rather than dying quietly" yes "$(has_in_log 'POST complete')"
+  check "named the phase it stopped in" yes \
+    "$(grep -q 'The runner stopped during FINALISING' "$LOG_FILE" && echo yes || echo no)"
+  check "tried to save the work first" yes \
+    "$(grep -q 'committed work in progress\|runner stopped during' "${WORK}/runner-stop.out" \
+       && echo yes || echo no)"
+  unset DRYRUN_PROMPT_FAIL
 fi
 
 echo

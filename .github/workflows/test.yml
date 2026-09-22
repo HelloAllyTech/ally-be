@@ -13,11 +13,29 @@
 # that workflow is a deploy pipeline (prepare-env → test → build → deploy), and
 # pointing it at pull requests would ship every PR.
 #
-# NOTE ON ENFORCEMENT: adding this file makes the checks run and report, but does
-# not make them mandatory — that is a branch-protection setting. Landed that way
-# on purpose, so a suite that turns out to be red on master blocks nobody while
-# it is being fixed. Mark "test" and "lint" as required checks once they are
-# green.
+# NOTE ON ENFORCEMENT: "Jest", "Typecheck" and "Lint & format" are required
+# checks, via the repo ruleset "master: tests, types and lint must pass".
+#
+# Required by the names GitHub reports them under — each job's `name:`, NOT the
+# job ids `test`, `typecheck` and `lint`. A required context that nothing ever reports does
+# not fail a merge, it blocks it forever waiting for a check that will never
+# arrive, so these strings and the ruleset's have to move together. Renaming a
+# job here without editing the ruleset wedges master.
+#
+# "Typecheck" is its own job as of 2026-09-22; it used to be a step inside the
+# lint job, which meant a lint failure hid type errors and the only way to
+# require typechecking was to require "Lint & format". Splitting it changed what
+# "Lint & format" covers, so the ruleset gained "Typecheck" in the same change —
+# doing one without the other either leaves types ungated or blocks every merge
+# on a check nothing reports.
+#
+# "Builder runner harnesses" and "Workflow lint" are deliberately NOT required:
+# they pass today, but the ask was tests/types/lint. Add them when someone
+# decides to, rather than by accident.
+#
+# Admins and maintainers bypass the ruleset, so pushing straight to master still
+# works — this repo is trunk-based and protection was removed on 2026-09-17 for
+# that reason. The gate is aimed at pull requests, Bug Hunter's included.
 
 name: Tests
 
@@ -138,8 +156,30 @@ jobs:
       - name: Lint
         run: npm run lint
 
+  # Its own job rather than a step inside `lint`, where it used to live. Steps
+  # run in sequence, so a lint failure short-circuited the job before tsc ever
+  # ran and type errors stayed hidden until lint was green — and, having no
+  # check name of its own, typechecking could only be required by requiring
+  # "Lint & format", which made the gate read as weaker than it was. Both other
+  # Ally repos already split it.
+  typecheck:
+    name: Typecheck
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Typecheck
-        run: npx tsc --noEmit -p tsconfig.json
+        run: npm run typecheck
 
   # Workflow files themselves are code, and until 2026-08-28 nothing checked
   # them. Two Builder workflows carried an unquoted `": "` inside an input

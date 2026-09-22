@@ -151,14 +151,17 @@ export class BugHunterFinderDataService {
   }
 
   /**
-   * Human-reported bugs still at BugFindingStatus.NEW, platform-wide (a
-   * BugFinding row has no repo yet until this finder judges which one it's
-   * about — see BugFinding.repo's doc). Every row here was created the moment
-   * the bug was filed on the roadmap (RoadmapOpportunityService.create), not
-   * by this finder — this is a read of that queue, not its source of truth.
+   * Human-reported bugs still at BugFindingStatus.NEW. Every row here was
+   * created the moment the bug was filed on the roadmap
+   * (RoadmapOpportunityService.create), which also stamps `repo` via
+   * BugHunterRepoClassifierService when it can tell — this is a read of that
+   * queue, not its source of truth. Passing `repo` narrows to items already
+   * believed to be about it plus anything still unfiled (see
+   * BugFindingRepository.listNewReportedBugs's own doc); omitting it keeps
+   * the old platform-wide behaviour.
    */
-  async getReportedBugs(): Promise<ReportedBugFinding[]> {
-    const rows = await this.findingRepository.listNewReportedBugs();
+  async getReportedBugs(repo?: string): Promise<ReportedBugFinding[]> {
+    const rows = await this.findingRepository.listNewReportedBugs(repo);
     return rows.map((row) => ({
       id: row.id,
       reportedBugId: row.reportedBugId as string,

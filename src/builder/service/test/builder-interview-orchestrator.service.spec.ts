@@ -386,11 +386,42 @@ describe('BuilderInterviewOrchestratorService — turn autosave', () => {
     expect(final.metadata.errorMessage).toContain('one section at a time');
   });
 
-  it('flags a turn that came back with nothing in it', async () => {
-    streams = [fakeStream([], 'end_turn')];
+  /**
+   * The empty turn the admin used to be handed, with "send your message again"
+   * under it — which is the retry, done by hand, by the person who had just
+   * waited for a turn that was never going to say anything. The transcript is
+   * unchanged and the model is non-deterministic, so it is a retry we can make
+   * ourselves.
+   */
+  it('retries a turn that came back with nothing in it', async () => {
+    streams = [
+      fakeStream([], 'end_turn'),
+      fakeStream(
+        [{ type: 'text', text: 'Here on the second pass.' }],
+        'end_turn',
+      ),
+    ];
 
     const frames = await drain();
 
+    expect(provider.stream).toHaveBeenCalledTimes(2);
+    expect(frames.some((frame) => frame.event === 'error')).toBe(false);
+    const calls = messageRepository.checkpointMessage.mock.calls;
+    expect(calls[calls.length - 1][1].content).toBe('Here on the second pass.');
+  });
+
+  it('flags a turn that came back with nothing in it, three times over', async () => {
+    streams = [
+      fakeStream([], 'end_turn'),
+      fakeStream([], 'end_turn'),
+      fakeStream([], 'end_turn'),
+    ];
+
+    const frames = await drain();
+
+    // The original plus BUILDER_MAX_TRUNCATION_RETRIES, the same budget the
+    // truncation and unreadable-tool-call paths use.
+    expect(provider.stream).toHaveBeenCalledTimes(3);
     const error = frames.find((frame) => frame.event === 'error');
     expect(error?.data.code).toBe('empty_turn');
     const calls = messageRepository.checkpointMessage.mock.calls;

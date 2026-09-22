@@ -187,7 +187,7 @@ mkdir -p /tmp/builder-evidence "$RESULTS_DIR"
 # Every callback here is telemetry, and telemetry must never be able to fail a
 # build: each swallows its own errors. What gates this run is the verdict files
 # on disk, never the success of a POST.
-post_stage() {
+_post_stage() {
   curl -sS -X POST "${API}/events" \
     -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
     -d "{\"events\":[{\"type\":\"stage_change\",\"payload\":{\"stage\":\"$1\"}}]}" \
@@ -205,6 +205,73 @@ fetch_prompt() {
   curl -fsS "${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}/${path}" \
     -H "x-api-key: ${ALLY_BE_API_KEY}" -o "$out"
 }
+
+# ── Saying how this run ended, exactly once ─────────────────────────────────
+#
+# Two things read the marker. The workflow's `if: failure()` net posts a
+# generic "The build runner failed. See the workflow log." unless it finds the
+# file, and outcome-gate.sh is the other writer of it.
+#
+# Until now only the outcome gate touched it, so every precise failure this
+# script reports — no working branch, the gate still red, work pushed with no
+# pull request — was followed by the generic one landing on top of it in the
+# feed. An admin read "No pull request was opened for ally-be … open one and
+# the reconcile loop takes it from there" and, underneath, "The build runner
+# failed. See the workflow log." The second sentence is true and useless, and
+# it is the one that reads like the answer.
+REPORTED_MARKER=/tmp/builder-already-reported
+
+report_outcome() {
+  local body="$1"
+  curl -sS -X POST "${API}/complete" \
+    -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+    -d "$body" >/dev/null 2>&1 || true
+  touch "$REPORTED_MARKER" 2>/dev/null || true
+}
+
+# Where the run had got to, for the message a crash leaves behind.
+CURRENT_PHASE=SETUP
+post_stage() { CURRENT_PHASE="$1"; _post_stage "$1"; }
+
+# ── Nothing leaves this runner unexplained, or unpushed ─────────────────────
+#
+# `set -e` means any unhandled non-zero status ends the script immediately, and
+# until now that ended it silently: no /complete, no push. The outcome gate
+# then reported "the build ended while the run was still RUNNING … anything it
+# had not pushed is gone with the runner", which was accurate and was also a
+# whole coding phase thrown away because a subshell somewhere exited 1.
+#
+# The work is on disk at that moment and a branch costs nothing, so the trap
+# commits and pushes it before saying anything. A run that stopped this way is
+# then a resume (`ensure_branches` picks the branch back up from origin) rather
+# than a restart from the PRD.
+#
+# Guarded on the marker so a deliberate, precise failure reported above is not
+# overwritten by this one, and on the pause marker because a pause is exit 0
+# and healthy.
+on_exit() {
+  local status=$?
+  # Both deliberate: the trap must not re-enter itself, and `set -e` inside a
+  # handler would abort it on the first test that happens to be false — which
+  # is every guard below, and would skip the reporting this exists to do.
+  trap - EXIT
+  set +e
+
+  if [ "$status" -eq 0 ] || [ -f /tmp/builder-paused ] || [ -f "$REPORTED_MARKER" ]; then
+    exit "$status"
+  fi
+
+  echo "::error::The runner stopped during ${CURRENT_PHASE} with exit status ${status}." >&2
+  # Defined further down this file. A failure before that point — a bad clone,
+  # an unreadable input — has nothing to save anyway.
+  if command -v save_work_in_progress >/dev/null 2>&1; then
+    save_work_in_progress "runner stopped during ${CURRENT_PHASE}"
+  fi
+  report_outcome "$(jq -nc --arg p "$CURRENT_PHASE" --arg s "$status" \
+    '{outcome:"failed", error:("The runner stopped during " + $p + " (exit status " + $s + "). Everything it had written is committed and pushed to the working branch, so a retry resumes from there rather than starting again.")}')"
+  exit "$status"
+}
+trap on_exit EXIT
 
 # Bill each invocation as it finishes. Before this, only the build's own result
 # file was read, so planner and verifier passes — up to three more full agent
@@ -255,6 +322,35 @@ report_phase_cost() {
     -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
     -d @/tmp/builder-cost-body.json >/dev/null 2>&1 || true
   rm -f /tmp/builder-cost-body.json
+}
+
+# ── What this phase may spend ───────────────────────────────────────────────
+#
+# The profile's per-phase figures are absolute, and they add up to more than
+# many sessions are allowed: the LARGE profile is $10 + $20 + $6 + $5 for one
+# pass each. A session with a $10 ceiling was handed all four and spent $41.92
+# of it before anything stopped the run — the boundary check below cannot
+# catch that, because the overshoot happens INSIDE a phase and the check runs
+# between them.
+#
+# ally-be now clamps these at dispatch too, but a dispatched figure is a
+# snapshot: a session's spend moves while the run is going, and an admin can
+# lower the ceiling mid-run. So the number that actually reaches the engine is
+# derived here, from the live remainder, immediately before each phase.
+#
+# Falls back to the configured figure whenever the answer is not a number — an
+# unreachable ally-be, or a session with no ceiling at all, must not be read as
+# "no money left". Floored at 50 cents: a phase handed a ceiling of zero cannot
+# run at all, and a run with nothing left to spend is what the hold below is
+# for.
+phase_budget() {
+  local configured="$1" state remaining
+  state="$(curl -fsS "${API}/budget" -H "x-api-key: ${ALLY_BE_API_KEY}" 2>/dev/null || echo '')"
+  remaining="$(printf '%s' "$state" | jq -r '.remainingUsd // empty' 2>/dev/null || echo '')"
+  case "$remaining" in '' | null | *[!0-9.]*) printf '%s' "$configured"; return 0 ;; esac
+  jq -rn --argjson c "$configured" --argjson r "$remaining" \
+    'if $r < $c then (if $r < 0.5 then 0.5 else $r end) else $c end' 2>/dev/null \
+    || printf '%s' "$configured"
 }
 
 # A run that has spent its ceiling HOLDS at the phase boundary rather than
@@ -339,10 +435,7 @@ hold_or_abort_if_over_budget() {
       else
         reason="Budget exhausted mid-run: spent \$${spent} of the \$${budget} ceiling. Raise the budget and retry."
       fi
-      curl -sS -X POST "${API}/complete" \
-        -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
-        -d "{\"outcome\":\"failed\",\"error\":\"${reason}\"}" \
-        >/dev/null 2>&1 || true
+      report_outcome "$(jq -nc --arg e "$reason" '{outcome:"failed", error:$e}')"
       exit 0
     fi
 
@@ -484,6 +577,27 @@ set_timeout_cmd() {
   TIMEOUT_CMD=(timeout --signal=TERM --kill-after=60s "$duration")
 }
 
+# Evidence that a phase actually ran: a result frame from the engine, or code
+# in the tree. `set -e` safe — every test is an explicit `if`, because a bare
+# `[ ... ] && return 1` that happens to be the last command would make this
+# function's own falsity fatal.
+engine_produced_nothing() {
+  local result_file="$1" dir
+  if [ -s "$result_file" ]; then
+    return 1
+  fi
+  for dir in repos/*/; do
+    [ -d "$dir/.git" ] || continue
+    if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
+      return 1
+    fi
+    if ! git -C "$dir" diff --quiet master...HEAD 2>/dev/null; then
+      return 1
+    fi
+  done
+  return 0
+}
+
 run_agent() {
   local prompt_file="$1" result_file="$2" model="$3" tools="$4" max_turns="$5"
   local max_budget="${6:-}" duration="${7:-}"
@@ -558,7 +672,62 @@ run_agent() {
       >/dev/null 2>&1 || true
     return 0
   fi
-  return "$rc"
+
+  # ── Every other non-zero exit, the same way ────────────────────────────────
+  #
+  # An engine stops for reasons that are not "the work is wrong": its own
+  # `--max-budget-usd` ceiling, a provider 529, a loop detector
+  # (`[gemini] Loop detected, stopping execution`), a crash after an hour of
+  # correct edits. All of those returned the code to the caller, and `set -e`
+  # turned each one into an immediate, silent death of the whole run: no gate,
+  # no /complete, nothing pushed. The feed's last line was whatever the agent
+  # happened to be saying, and the outcome gate reported it minutes later as
+  # "stopped mid-protocol … anything it had not pushed is gone with the runner".
+  #
+  # The wall-clock case above already established the right answer, and it is
+  # the same answer here: the work is on disk, so say what happened and let the
+  # test gate judge it. The gate is the arbiter of whether a phase produced
+  # anything worth keeping — it runs the suites — and it is a far better judge
+  # of that than an exit status is.
+  #
+  # The run can still fail. It fails at the gate, on evidence, with the branch
+  # pushed and a verdict a person can read.
+  if [ "$rc" != "0" ]; then
+    echo "::warning::The ${ENGINE} engine exited ${rc} during this phase." >&2
+
+    # ── Did it stop, or did it never start? ─────────────────────────────────
+    #
+    # Swallowing every non-zero exit fixed one failure and created another. An
+    # engine that cannot run AT ALL — a model this engine does not have, a
+    # missing key — exits non-zero having written nothing, and the pipeline
+    # then handed an unchanged tree to the gate, remediated, and repeated the
+    # identical failure for the whole ladder before recording "The change did
+    # not pass the test gate and independent review within the attempt limit."
+    #
+    # That verdict is false. Nothing was ever written, so nothing failed a
+    # test. The real reason was in the feed the whole time — "There's an issue
+    # with the selected model (gemini-2.5-pro)" — while the recorded outcome
+    # blamed the code. Four attempts, and a person reading the failure is sent
+    # to look at a diff that does not exist.
+    #
+    # The distinction is evidence, not guesswork: a phase that ran produces a
+    # result frame, and one that wrote code leaves it in the tree. Neither, and
+    # it never started — which is a harness failure, and the run stops and says
+    # so. Either one, and the old behaviour holds: the gate judges what is on
+    # disk, because the gate is a better judge of that than an exit status is.
+    if engine_produced_nothing "$result_file"; then
+      echo "::error::The ${ENGINE} engine never ran: no result and nothing written." >&2
+      report_outcome "$(jq -nc --arg e "$ENGINE" --arg m "$model" --arg c "$rc" --arg p "$CURRENT_PHASE" \
+        '{outcome:"failed", error:("The " + $e + " engine could not run during " + $p + ": it exited with status " + $c + " having produced no output and written nothing. This is the runner, not the change — the usual cause is a model this engine cannot use (" + $m + "), or a missing credential. Its own message is the last entry in the run feed. No attempts were spent on it.")}')"
+      exit 1
+    fi
+
+    curl -sS -X POST "${API}/events" \
+      -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+      -d "$(jq -nc --arg e "$ENGINE" --arg c "$rc" '{events:[{type:"text",payload:{text:("The " + $e + " engine stopped with exit status " + $c + " during this phase — its own budget ceiling, a provider error or a loop it detected in itself. Whatever it had written is still on the branch and the test gate runs next.")}}]}')" \
+      >/dev/null 2>&1 || true
+  fi
+  return 0
 }
 
 # The verifier can still shell out, so "read-only" is enforced after the fact
@@ -762,7 +931,7 @@ if [ "${BUILDER_MODE:-build}" = "review" ]; then
   post_stage REVIEWING
   snapshot_heads
   run_agent "$PROMPT_FILE" "${RESULTS_DIR}/review.json" \
-    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$VERIFY_BUDGET" "$VERIFY_TIMEOUT"
+    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$(phase_budget "$VERIFY_BUDGET")" "$VERIFY_TIMEOUT"
   report_phase_cost review "$VERIFIER_MODEL" "${RESULTS_DIR}/review.json"
   # This one reviews a pull request a person is reading. A reviewer that
   # silently amended the branch under them would be worse than one that
@@ -792,7 +961,7 @@ if [ "${BUILDER_MODE:-build}" = "fix" ]; then
   echo "::group::fix (${CODER_MODEL})"
   post_stage CODING
   run_agent "$PROMPT_FILE" "${RESULTS_DIR}/fix.json" \
-    "$CODER_MODEL" "$CODER_TOOLS" 200 "$CODE_BUDGET" "$CODE_TIMEOUT"
+    "$CODER_MODEL" "$CODER_TOOLS" 200 "$(phase_budget "$CODE_BUDGET")" "$CODE_TIMEOUT"
   report_phase_cost fix "$CODER_MODEL" "${RESULTS_DIR}/fix.json"
   echo "::endgroup::"
 
@@ -814,10 +983,7 @@ if [ "${BUILDER_MODE:-build}" = "fix" ]; then
   # and the commit is already pushed by this point — so say so loudly rather
   # than letting the run look successful.
   echo "The fix did not pass the gate." >&2
-  curl -sS -X POST "${API}/complete" \
-    -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
-    -d '{"outcome":"failed","error":"The fix run left the test gate red. Its commits are on the pull request branch and need a person."}' \
-    >/dev/null 2>&1 || true
+  report_outcome '{"outcome":"failed","error":"The fix run left the test gate red. Its commits are on the pull request branch and need a person."}'
   exit 1
 fi
 
@@ -845,7 +1011,7 @@ post_stage PLANNING
 if fetch_prompt "plan-prompt" /tmp/builder-plan-prompt.txt; then
   snapshot_heads
   run_agent /tmp/builder-plan-prompt.txt "${RESULTS_DIR}/plan.json" \
-    "$PLANNER_MODEL" "$PLANNER_TOOLS" "$PLANNER_TURNS" "$PLAN_BUDGET" "$PLAN_TIMEOUT" || true
+    "$PLANNER_MODEL" "$PLANNER_TOOLS" "$PLANNER_TURNS" "$(phase_budget "$PLAN_BUDGET")" "$PLAN_TIMEOUT" || true
   report_phase_cost plan "$PLANNER_MODEL" "${RESULTS_DIR}/plan.json"
   # The plan is the output; the tree is not. A planner that has already written
   # the change hands the coder a diff it did not make and cannot explain, and
@@ -942,7 +1108,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
     apply_steers "$code_prompt"
 
     run_agent "$code_prompt" "${RESULTS_DIR}/code-${attempt}.json" \
-      "$attempt_model" "$CODER_TOOLS" 200 "$CODE_BUDGET" "$CODE_TIMEOUT"
+      "$attempt_model" "$CODER_TOOLS" 200 "$(phase_budget "$CODE_BUDGET")" "$CODE_TIMEOUT"
     # Reported against the model that actually ran, so the scoreboard's
     # per-phase cost-by-model rows stay true once a run spans two tiers.
     report_phase_cost "code-${attempt}" "$attempt_model" "${RESULTS_DIR}/code-${attempt}.json"
@@ -1001,7 +1167,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   snapshot_heads
   run_agent /tmp/builder-verify-prompt.txt \
     "${RESULTS_DIR}/verify-${verify_round}.json" \
-    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$VERIFY_BUDGET" "$VERIFY_TIMEOUT" || true
+    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$(phase_budget "$VERIFY_BUDGET")" "$VERIFY_TIMEOUT" || true
   report_phase_cost "verify-${verify_round}" "$VERIFIER_MODEL" \
     "${RESULTS_DIR}/verify-${verify_round}.json"
   revert_stray_writes "the verifier"
@@ -1065,10 +1231,7 @@ if [ "$verdict" != "pass" ]; then
   # verification — a failing verdict used to fail a run whose PRs were already
   # sitting in the org.
   echo "Gate and review were not both satisfied after ${MAX_CODE_ITERATIONS} attempts." >&2
-  curl -sS -X POST "${API}/complete" \
-    -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
-    -d '{"outcome":"failed","error":"The change did not pass the test gate and independent review within the attempt limit. No pull request was opened; the standing objections are in the run feed."}' \
-    >/dev/null 2>&1 || true
+  report_outcome '{"outcome":"failed","error":"The change did not pass the test gate and independent review within the attempt limit. No pull request was opened; the standing objections are in the run feed."}'
   exit 1
 fi
 
@@ -1108,7 +1271,7 @@ if ! fetch_prompt "finalise-prompt" /tmp/builder-finalise-prompt.txt; then
   exit 1
 fi
 run_agent /tmp/builder-finalise-prompt.txt "${RESULTS_DIR}/finalise.json" \
-  "$CODER_MODEL" "$CODER_TOOLS" 80 "$FINALISE_BUDGET" "$FINALISE_TIMEOUT"
+  "$CODER_MODEL" "$CODER_TOOLS" 80 "$(phase_budget "$FINALISE_BUDGET")" "$FINALISE_TIMEOUT"
 report_phase_cost finalise "$CODER_MODEL" "${RESULTS_DIR}/finalise.json"
 echo "::endgroup::"
 
@@ -1194,6 +1357,46 @@ attach_wiki_trailer() {
     || echo "${repo}: could not attach the wiki trailer." >&2
 }
 
+# ── When the agent wrote no description ─────────────────────────────────────
+#
+# A run reaches here having planned, coded, passed the test gate and passed the
+# independent reviewer. If the finalise agent then ends its turn without
+# writing `builder-pr-<repo>.md` — which one did, saying "Committed changes.
+# Task done." — every one of those hours produced a branch nobody will ever
+# look at: reconcile iterates pull requests, so a branch that is not one is
+# invisible to CI ingestion, review, approval, merge and release alike. The run
+# was reported as a failure, and the fix was a person opening the pull request
+# by hand from a message in the feed.
+#
+# The earlier reasoning against doing it here was that a generic body makes a
+# worse pull request than none. That holds against a GENERIC body. It does not
+# hold against the commit messages, which the agent wrote itself, about this
+# diff, one per unit of work — the best description of the change that exists
+# outside the agent's head, and better than several human pull requests.
+#
+# So: title from the first commit subject, body from the full log, and a line
+# saying plainly where the text came from so a reviewer knows to read the diff
+# rather than trust a summary nobody wrote.
+write_fallback_pr_body() {
+  local dir="$1" repo="$2" subject out="/tmp/builder-pr-fallback-${2}.md"
+
+  subject="$(git -C "$dir" log --format=%s master..HEAD 2>/dev/null | tail -1)"
+  [ -n "$subject" ] || return 1
+
+  {
+    printf '%s\n' "$subject"
+    printf '\n## What changed\n\n'
+    git -C "$dir" log --reverse --format='- %s%n%n%w(76,2,2)%b' master..HEAD 2>/dev/null
+    printf '\n## How this description was written\n\n'
+    printf 'The agent that made this change ended its run without writing a pull\n'
+    printf 'request description, so the runner assembled one from the commit\n'
+    printf 'messages on the branch. The change itself passed the test gate and the\n'
+    printf 'independent review; only the prose here is second-hand, so read the diff\n'
+    printf 'rather than trusting this summary.\n'
+  } > "$out"
+  return 0
+}
+
 open_pull_requests() {
   local title body_file repo branch existing
   for dir in repos/*/; do
@@ -1236,8 +1439,9 @@ open_pull_requests() {
       break
     done
     if [ -z "$body_file" ]; then
-      echo "${repo}: no builder-pr-${repo}.md in the workspace — cannot open a pull request." >&2
-      continue
+      echo "${repo}: no builder-pr-${repo}.md in the workspace — writing one from the commits." >&2
+      write_fallback_pr_body "$dir" "$repo" || continue
+      body_file="/tmp/builder-pr-fallback-${repo}.md"
     fi
 
     # First line is the title; the body is everything after it.

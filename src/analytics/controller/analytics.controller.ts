@@ -226,6 +226,10 @@ import {
   FixSessionEngineCostResponseDto,
 } from '../dto/fix-session-engine-cost-analytics.dto';
 import {
+  BugAgentPerformanceQueryDto,
+  BugAgentPerformanceResponseDto,
+} from '../dto/bug-agent-performance-analytics.dto';
+import {
   QualitySentimentQueryDto,
   QualitySentimentResponseDto,
 } from '../dto/quality-sentiment-analytics.dto';
@@ -239,6 +243,7 @@ import { OrgEngagementAnalyticsService } from '../service/org-engagement-analyti
 import { RoleplayCostAnalyticsService } from '../service/roleplay-cost-analytics.service';
 import { CodingAgentCostAnalyticsService } from '../service/coding-agent-cost-analytics.service';
 import { FixSessionEngineCostAnalyticsService } from '../service/fix-session-engine-cost-analytics.service';
+import { BugAgentPerformanceAnalyticsService } from '../service/bug-agent-performance-analytics.service';
 import { QualitySentimentAnalyticsService } from '../service/quality-sentiment-analytics.service';
 import { ChartPreferenceService } from '../service/chart-preference.service';
 import {
@@ -302,6 +307,7 @@ export class AnalyticsController {
     private readonly roleplayCostAnalyticsService: RoleplayCostAnalyticsService,
     private readonly codingAgentCostAnalyticsService: CodingAgentCostAnalyticsService,
     private readonly fixSessionEngineCostAnalyticsService: FixSessionEngineCostAnalyticsService,
+    private readonly bugAgentPerformanceAnalyticsService: BugAgentPerformanceAnalyticsService,
     private readonly qualitySentimentAnalyticsService: QualitySentimentAnalyticsService,
     private readonly chartPreferenceService: ChartPreferenceService,
   ) {}
@@ -713,6 +719,30 @@ export class AnalyticsController {
     return this.fixSessionEngineCostAnalyticsService.getFixSessionEngineCost(
       query,
     );
+  }
+
+  @Get('bug-agent-performance')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      "Bug Hunter's five headline performance trends, by calendar week (super-admin)",
+    description:
+      'Precision (accuracy/reversal rate), fix throughput (approved-to-merged, ' +
+      'escalation and fallback rates), speed (stage latencies, queue-to-start), ' +
+      'cost, and reliability (completion/fallback/regression rates) — all ' +
+      'bucketed by week regardless of the requested `bucket`, since this chart ' +
+      'is inherently a week-over-week view. Reuses the exact funnel arithmetic ' +
+      "AccuracyPanel's single-window figures already use, applied per week.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Bug Agent performance trends retrieved successfully',
+    type: BugAgentPerformanceResponseDto,
+  })
+  async getBugAgentPerformance(
+    @Query() query: BugAgentPerformanceQueryDto,
+  ): Promise<BugAgentPerformanceResponseDto> {
+    return this.bugAgentPerformanceAnalyticsService.getPerformance(query);
   }
 
   @Get('quality-sentiment')

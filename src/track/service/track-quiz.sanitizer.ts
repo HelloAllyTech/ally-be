@@ -1,10 +1,17 @@
-import { QuizContent, QuizQuestion, QuizQuestionType } from '../type/quiz.type';
+import {
+  QuestionMedia,
+  QuizContent,
+  QuizQuestion,
+  QuizQuestionType,
+} from '../type/quiz.type';
 
 export interface LearnerQuizQuestion {
   id: string;
   type: QuizQuestionType;
   prompt: string;
   points: number;
+  /** Part of the stem, so it crosses to the learner alongside the prompt. */
+  media?: QuestionMedia;
   options?: { id: string; text: string }[];
   items?: { id: string; text: string }[];
   left?: { id: string; text: string }[];
@@ -70,6 +77,10 @@ export function sanitizeQuizQuestionForLearner(
     type: question.type,
     prompt: question.prompt,
     points: questionPoints(question),
+    // This function is an allowlist, not a redaction pass: anything not
+    // named here never reaches the learner. Media is part of the question
+    // being asked, so it is named.
+    ...(question.media ? { media: question.media } : {}),
   };
   switch (question.type) {
     case QuizQuestionType.MCQ_SINGLE:

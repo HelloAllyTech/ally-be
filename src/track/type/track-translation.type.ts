@@ -139,12 +139,43 @@ export interface TrackTranslationContent {
   /** trackItemId -> fields */
   items: Record<string, TranslatedFieldMap>;
   /**
-   * Per-language media overrides, e.g. a dubbed cut of a VIDEO item. Video is
-   * a URL, not text, so it is never machine-translated — a trainer either
-   * supplies a localised URL here or the learner is told the lesson is in
-   * English.
+   * Per-language media overrides: a dubbed cut of a VIDEO item, or a
+   * localised picture/clip on a single quiz question. Media is a URL, not
+   * text, so it is never machine-translated — a trainer either supplies a
+   * localised URL here or the learner sees the English original.
+   *
+   * Most question media needs no entry at all. A photograph of a wound or a
+   * clip of a home visit carries no language, and duplicating it per
+   * language buys nothing while giving five copies five chances to drift.
+   * What does need an entry is media with words baked into it — a labelled
+   * diagram, an app screenshot, a photographed form — because a picture
+   * containing English text is untranslated content no matter how good the
+   * surrounding prose is.
+   *
+   * Keyed by {@link mediaOverrideKey}.
    */
   media?: Record<string, { url?: string }>;
+}
+
+/**
+ * Key for one entry in {@link TrackTranslationContent.media}: the item alone
+ * for a VIDEO component's dubbed cut, or item + question for media attached
+ * to a single question.
+ *
+ * The item id comes first so the orphan sweep can still recognise an entry as
+ * belonging to a deleted component by its prefix. `::` separates them because
+ * both halves are UUIDs, which never contain it.
+ */
+export function mediaOverrideKey(
+  trackItemId: string,
+  questionId?: string | null,
+): string {
+  return questionId ? `${trackItemId}::${questionId}` : trackItemId;
+}
+
+/** The item id an override key belongs to, whichever form it takes. */
+export function mediaOverrideItemId(key: string): string {
+  return key.split('::')[0];
 }
 
 export const EMPTY_TRACK_TRANSLATION_CONTENT: TrackTranslationContent = {
