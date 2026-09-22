@@ -5,6 +5,7 @@ import {
   XpLevelReachedAnalyticsRepository,
 } from '../repository/xp-level-reached-analytics.repository';
 import {
+  XpLevelReachedBucketParam,
   XpLevelReachedPointDto,
   XpLevelReachedQueryDto,
   XpLevelReachedResponseDto,
@@ -81,7 +82,12 @@ export class XpLevelReachedAnalyticsService {
 
     const rows = await this.repository.getLevelCrossings(
       window.endExclusive,
-      window.bucket,
+      // Same acknowledged-unsafe cast as the `bucket` input above, in the
+      // other direction: `AnalyticsWindow.bucket` is typed as the narrower
+      // shared `AnalyticsBucket` (no `quarter`), but at runtime carries
+      // whatever `query.bucket` supplied, including `quarter` for this
+      // endpoint's wider DTO.
+      window.bucket as XpLevelReachedBucketParam,
     );
 
     return {

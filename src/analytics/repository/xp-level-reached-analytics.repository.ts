@@ -4,7 +4,7 @@ import { DataSource } from 'typeorm';
 import { LEVEL_THRESHOLDS } from 'src/progress/progress.constants';
 import { excludeTestTenants } from '../util/test-tenant.util';
 import { getPlatformDataFloor } from '../util/data-floor.util';
-import { AnalyticsBucket } from './platform-analytics.repository';
+import { XpLevelReachedBucketParam } from '../dto/xp-level-reached-analytics.dto';
 
 /** One (bucket, level) crossing count. `level` is 1-indexed, matching `resolveLevel`. */
 export interface XpLevelCrossingRow {
@@ -57,7 +57,9 @@ export interface XpLevelCrossingRow {
 export class XpLevelReachedAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  private resolveBucket(bucket: AnalyticsBucket): AnalyticsBucket {
+  private resolveBucket(
+    bucket: XpLevelReachedBucketParam,
+  ): XpLevelReachedBucketParam {
     // Defense-in-depth: bucket is internal by the time it reaches here, but
     // never interpolate anything not explicitly whitelisted.
     if (bucket === 'day') return 'day';
@@ -80,7 +82,7 @@ export class XpLevelReachedAnalyticsRepository {
    */
   async getLevelCrossings(
     endExclusive: Date,
-    bucket: AnalyticsBucket,
+    bucket: XpLevelReachedBucketParam,
   ): Promise<XpLevelCrossingRow[]> {
     const trunc = this.resolveBucket(bucket);
     const params: unknown[] = [endExclusive];

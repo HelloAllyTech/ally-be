@@ -6,6 +6,10 @@ import { UsageLevelAnalyticsService } from '../../service/usage-level-analytics.
 import { CertificationAnalyticsService } from '../../service/certification-analytics.service';
 import { XpGrowthAnalyticsService } from '../../service/xp-growth-analytics.service';
 import { GoalsXpAnalyticsService } from '../../service/goals-xp-analytics.service';
+import { ActiveUsersXpAnalyticsService } from '../../service/active-users-xp-analytics.service';
+import { XpLevelReachedAnalyticsService } from '../../service/xp-level-reached-analytics.service';
+import { BugHunterVolumeAnalyticsService } from '../../service/bug-hunter-volume-analytics.service';
+import { XpByTenantAnalyticsService } from '../../service/xp-by-tenant-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../../service/roleplay-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsService } from '../../service/roadmap-delivery-analytics.service';
 import { ShipVolumeAnalyticsService } from '../../service/ship-volume-analytics.service';
@@ -129,6 +133,22 @@ describe('AnalyticsController', () => {
         {
           provide: GoalsXpAnalyticsService,
           useValue: { getGoalsXp: jest.fn() },
+        },
+        {
+          provide: ActiveUsersXpAnalyticsService,
+          useValue: { getActiveUsers: jest.fn() },
+        },
+        {
+          provide: XpLevelReachedAnalyticsService,
+          useValue: { getLevelsReached: jest.fn() },
+        },
+        {
+          provide: BugHunterVolumeAnalyticsService,
+          useValue: { getVolume: jest.fn() },
+        },
+        {
+          provide: XpByTenantAnalyticsService,
+          useValue: { getXpByTenant: jest.fn() },
         },
         {
           provide: RoleplayVolumeAnalyticsService,

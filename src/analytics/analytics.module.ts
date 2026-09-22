@@ -14,6 +14,15 @@ import { XpGrowthAnalyticsService } from './service/xp-growth-analytics.service'
 import { XpGrowthAnalyticsRepository } from './repository/xp-growth-analytics.repository';
 import { GoalsXpAnalyticsService } from './service/goals-xp-analytics.service';
 import { GoalsXpAnalyticsRepository } from './repository/goals-xp-analytics.repository';
+// Highlights → Goals: additional charts beside the XP-vs-goal chart above.
+import { ActiveUsersXpAnalyticsService } from './service/active-users-xp-analytics.service';
+import { ActiveUsersXpAnalyticsRepository } from './repository/active-users-xp-analytics.repository';
+import { XpLevelReachedAnalyticsService } from './service/xp-level-reached-analytics.service';
+import { XpLevelReachedAnalyticsRepository } from './repository/xp-level-reached-analytics.repository';
+import { BugHunterVolumeAnalyticsService } from './service/bug-hunter-volume-analytics.service';
+import { BugHunterVolumeAnalyticsRepository } from './repository/bug-hunter-volume-analytics.repository';
+import { XpByTenantAnalyticsService } from './service/xp-by-tenant-analytics.service';
+import { XpByTenantAnalyticsRepository } from './repository/xp-by-tenant-analytics.repository';
 import { AnalyticsXpGoal } from './entity/analytics-xp-goal.entity';
 import { RoleplayVolumeAnalyticsService } from './service/roleplay-volume-analytics.service';
 import { RoleplayVolumeAnalyticsRepository } from './repository/roleplay-volume-analytics.repository';
@@ -171,6 +180,14 @@ import { TenantModule } from 'src/tenant/tenant.module';
     XpGrowthAnalyticsRepository,
     GoalsXpAnalyticsService,
     GoalsXpAnalyticsRepository,
+    ActiveUsersXpAnalyticsService,
+    ActiveUsersXpAnalyticsRepository,
+    XpLevelReachedAnalyticsService,
+    XpLevelReachedAnalyticsRepository,
+    BugHunterVolumeAnalyticsService,
+    BugHunterVolumeAnalyticsRepository,
+    XpByTenantAnalyticsService,
+    XpByTenantAnalyticsRepository,
     RoleplayVolumeAnalyticsService,
     RoleplayVolumeAnalyticsRepository,
     RoadmapDeliveryAnalyticsService,

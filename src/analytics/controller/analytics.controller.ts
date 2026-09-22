@@ -37,6 +37,10 @@ import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analy
 import { RoadmapDeliveryAnalyticsService } from '../service/roadmap-delivery-analytics.service';
 import { ShipVolumeAnalyticsService } from '../service/ship-volume-analytics.service';
 import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
+import { ActiveUsersXpAnalyticsService } from '../service/active-users-xp-analytics.service';
+import { XpLevelReachedAnalyticsService } from '../service/xp-level-reached-analytics.service';
+import { BugHunterVolumeAnalyticsService } from '../service/bug-hunter-volume-analytics.service';
+import { XpByTenantAnalyticsService } from '../service/xp-by-tenant-analytics.service';
 import { LanguageAnalyticsService } from '../service/language-analytics.service';
 import { GlossaryEffectAnalyticsService } from '../service/glossary-effect-analytics.service';
 import {
@@ -127,6 +131,22 @@ import {
   GoalsXpQueryDto,
   GoalsXpResponseDto,
 } from '../dto/goals-xp-analytics.dto';
+import {
+  ActiveUsersXpQueryDto,
+  ActiveUsersXpResponseDto,
+} from '../dto/active-users-xp-analytics.dto';
+import {
+  XpLevelReachedQueryDto,
+  XpLevelReachedResponseDto,
+} from '../dto/xp-level-reached-analytics.dto';
+import {
+  BugHunterVolumeQueryDto,
+  BugHunterVolumeResponseDto,
+} from '../dto/bug-hunter-volume-analytics.dto';
+import {
+  XpByTenantQueryDto,
+  XpByTenantResponseDto,
+} from '../dto/xp-by-tenant-analytics.dto';
 import {
   RoleplayVolumeQueryDto,
   RoleplayVolumeResponseDto,
@@ -275,6 +295,10 @@ export class AnalyticsController {
     private readonly certificationAnalyticsService: CertificationAnalyticsService,
     private readonly xpGrowthAnalyticsService: XpGrowthAnalyticsService,
     private readonly goalsXpAnalyticsService: GoalsXpAnalyticsService,
+    private readonly activeUsersXpAnalyticsService: ActiveUsersXpAnalyticsService,
+    private readonly xpLevelReachedAnalyticsService: XpLevelReachedAnalyticsService,
+    private readonly bugHunterVolumeAnalyticsService: BugHunterVolumeAnalyticsService,
+    private readonly xpByTenantAnalyticsService: XpByTenantAnalyticsService,
     private readonly roleplayVolumeAnalyticsService: RoleplayVolumeAnalyticsService,
     private readonly roadmapDeliveryAnalyticsService: RoadmapDeliveryAnalyticsService,
     private readonly shipVolumeAnalyticsService: ShipVolumeAnalyticsService,
@@ -495,6 +519,96 @@ export class AnalyticsController {
     @Query() query: GoalsXpQueryDto,
   ): Promise<GoalsXpResponseDto> {
     return this.goalsXpAnalyticsService.getGoalsXp(query);
+  }
+
+  @Get('active-users-xp')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Active learners by per-period XP threshold (super-admin)',
+    description:
+      'Distinct learners whose XP earned WITHIN each bucket (not lifetime ' +
+      'cumulative XP) clears a fixed activity bar — see ' +
+      '`ActiveUsersXpPointDto.activeUsers` for the exact threshold. Test ' +
+      'organisations are excluded, platform-wide only. Honours the standard ' +
+      '`range`/`bucket`/`from`/`to` window params.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Active-users-by-XP series retrieved successfully',
+    type: ActiveUsersXpResponseDto,
+  })
+  async getActiveUsersXp(
+    @Query() query: ActiveUsersXpQueryDto,
+  ): Promise<ActiveUsersXpResponseDto> {
+    return this.activeUsersXpAnalyticsService.getActiveUsers(query);
+  }
+
+  @Get('xp-level-reached')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Unique learners reaching each XP level, per period (super-admin)',
+    description:
+      'For every XP level 1 through MAX_LEVEL, the distinct learners who ' +
+      'FIRST crossed into it during each bucket — the flow behind the level ' +
+      'ladder, not a stock reading of who currently holds each level. ' +
+      'Derived from the `xp_events` ledger (there is no per-level history in ' +
+      'the `user_progress` rollup, only the most recent level-up). Supports ' +
+      '`quarter` in addition to day/week/month/year. Platform-wide only.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Level-reached series retrieved successfully',
+    type: XpLevelReachedResponseDto,
+  })
+  async getXpLevelReached(
+    @Query() query: XpLevelReachedQueryDto,
+  ): Promise<XpLevelReachedResponseDto> {
+    return this.xpLevelReachedAnalyticsService.getLevelsReached(query);
+  }
+
+  @Get('bug-hunter-volume')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Bug Hunter found vs. fixed volume, per period (super-admin)',
+    description:
+      '"Found" counts bugs autonomously discovered by Bug Hunter in each ' +
+      'bucket (excludes human-reported bugs filed via "Report a bug"). ' +
+      '"Fixed" counts findings that reached MERGED or later, regardless of ' +
+      'who originally filed them. Platform/internal-wide — `bug_findings` ' +
+      'carries no tenant column.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Bug Hunter volume series retrieved successfully',
+    type: BugHunterVolumeResponseDto,
+  })
+  async getBugHunterVolume(
+    @Query() query: BugHunterVolumeQueryDto,
+  ): Promise<BugHunterVolumeResponseDto> {
+    return this.bugHunterVolumeAnalyticsService.getVolume(query);
+  }
+
+  @Get('xp-by-tenant')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Total XP by tenant over a trailing window (super-admin)',
+    description:
+      'A SINGLE bar (not a time series): total XP earned across the ' +
+      'platform within a trailing window, split by tenant. Its own ' +
+      '`window` control (30d/90d/365d/all), not the shared bucket/grain ' +
+      'params. Test tenants are excluded entirely, never folded into ' +
+      '`otherXp`. The top tenants by XP are named individually; the rest ' +
+      'roll into `otherXp`.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'XP-by-tenant bar retrieved successfully',
+    type: XpByTenantResponseDto,
+  })
+  async getXpByTenant(
+    @Query() query: XpByTenantQueryDto,
+  ): Promise<XpByTenantResponseDto> {
+    return this.xpByTenantAnalyticsService.getXpByTenant(query);
   }
 
   @Get('usage-ladder')
