@@ -679,23 +679,31 @@ describe('BuilderBuildService', () => {
       expect(dispatchedEngine()).toBe('gemini');
     });
 
-    it('falls all the way back to claude-code when nothing at all is configured', async () => {
+    it('falls all the way back to gemini when nothing at all is configured', async () => {
       settingsService.get.mockResolvedValue({
         enabled: true,
         maxConcurrentBuilds: 3,
         defaultEngine: null,
+        // Same reason as the test above: this one is about which ENGINE is
+        // resolved, and the shared fixtures still mock Anthropic models so the
+        // cross-engine routing tests below have something to route. Without a
+        // Gemini model to land on, assertModelsMatchEngine refuses the
+        // dispatch before the engine assertion is ever reached.
+        defaultModel: 'gemini-2.5-pro',
       });
 
       await service.startBuild(readySession({ engine: null }) as any, 1);
 
-      expect(dispatchedEngine()).toBe('claude-code');
+      expect(dispatchedEngine()).toBe('gemini');
     });
   });
 
   /**
-   * Every default in `config.builder` is an Anthropic model id, and the tiers
-   * below could all reach one regardless of which engine was going to be
-   * handed it. The first Gemini-engine build hit two of these at once.
+   * A tier can reach a config default belonging to a different engine than the
+   * one about to be handed it. The first Gemini-engine build hit two of these
+   * at once, back when every `config.builder` default was an Anthropic id;
+   * these fixtures keep mocking Anthropic defaults so the cross-engine case
+   * stays covered now that the real defaults are Gemini.
    */
   describe('model routing across engines', () => {
     const dispatchedModels = () =>

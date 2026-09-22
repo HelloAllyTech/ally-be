@@ -408,9 +408,7 @@ export class BuilderBuildService {
     settings: { defaultEngine?: string | null },
     override?: string,
   ): string {
-    return (
-      override ?? session.engine ?? settings.defaultEngine ?? 'claude-code'
-    );
+    return override ?? session.engine ?? settings.defaultEngine ?? 'gemini';
   }
 
   /**
@@ -446,15 +444,19 @@ export class BuilderBuildService {
     // A config default is only usable if it belongs to the engine that will be
     // asked to run it.
     //
-    // `config.plannerModel`, `config.coderModel`, `config.verifierModel` and
-    // `config.mechanicalModel` are all Anthropic model ids, and every tier
-    // below could reach one regardless of engine. So a session set to Gemini,
-    // with a `defaultModel` of `gemini-2.5-pro` but no explicit *planner*
-    // model, resolved its planner to `claude-opus-5` and handed that to
-    // `gemini --model claude-opus-5`. The SMALL profile was worse: its
-    // mechanical planner tier reads `config.mechanicalModel` directly, so it
-    // ignored the settings entirely and every small Gemini build planned on a
-    // model Gemini has never heard of.
+    // The config defaults are Gemini ids now, so the case this was written for
+    // — a Gemini session reaching a `claude-opus-5` default and handing it to
+    // `gemini --model claude-opus-5` — is no longer the default path. It is
+    // still reachable in the other direction, and from any tier: an admin who
+    // sets `BUILDER_PLANNER_MODEL` or a settings tier to a Claude id while a
+    // session is pinned to `gemini` recreates it exactly. The filter is about
+    // which engine will be handed the id, not about which vendor wrote the
+    // default, so it stays.
+    //
+    // The SMALL profile is the one worth remembering: its mechanical planner
+    // tier reads `config.mechanicalModel` directly, so before this filter
+    // existed it ignored the settings entirely and every small cross-engine
+    // build planned on a model the engine had never heard of.
     //
     // Skipping the default rather than translating it: there is no honest
     // mapping from "Opus" to a Gemini tier, and inventing one would silently

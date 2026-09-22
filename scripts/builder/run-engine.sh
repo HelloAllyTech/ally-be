@@ -22,7 +22,7 @@
 set -euo pipefail
 
 PROMPT_FILE="${1:?usage: run-engine.sh <build-prompt-file>}"
-ENGINE="${BUILDER_ENGINE:-claude-code}"
+ENGINE="${BUILDER_ENGINE:-gemini}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 FORWARDER="${HERE}/forward-events.mjs"
 API="${ALLY_BE_API_URL}/api/v1/builder/pipeline/runs/${BUILDER_RUN_ID}"
@@ -76,9 +76,9 @@ model_for() {
   value="$(printf '%s' "$MODELS_JSON" | jq -r --arg r "$role" '.[$r] // empty' 2>/dev/null || true)"
   printf '%s' "${value:-$fallback}"
 }
-PLANNER_MODEL="$(model_for planner "claude-opus-5")"
-CODER_MODEL="$(model_for coder "claude-sonnet-5")"
-VERIFIER_MODEL="$(model_for verifier "claude-opus-5")"
+PLANNER_MODEL="$(model_for planner "gemini-2.5-pro")"
+CODER_MODEL="$(model_for coder "gemini-2.5-pro")"
+VERIFIER_MODEL="$(model_for verifier "gemini-2.5-pro")"
 
 # ── The escalation ladder ───────────────────────────────────────────────────
 #

@@ -65,9 +65,13 @@ export class BuilderSession extends BaseWithoutTenantEntity {
 
   /**
    * Coding engine + model for build runs. Parameters rather than constants so
-   * a non-Anthropic CLI can be slotted in without a schema change.
+   * another CLI can be slotted in without a schema change.
+   *
+   * The column default is a backstop only: BuilderSessionService stamps
+   * `settings.defaultEngine` at creation, because a non-null column default
+   * makes the dispatch's `?? settings.defaultEngine` rung unreachable.
    */
-  @Column({ type: 'varchar', length: 40, default: 'claude-code' })
+  @Column({ type: 'varchar', length: 40, default: 'gemini' })
   engine!: string;
 
   @Column({ type: 'varchar', length: 80, nullable: true })
