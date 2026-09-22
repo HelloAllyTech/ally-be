@@ -123,15 +123,28 @@ await test('delta-streamed assistant text is merged into one event, not two', as
   // separate choppy text events instead of the sentence "OK.".
   const { events } = await runForwarder(GEMINI_RUN, { engine: 'gemini' });
   const textEvents = events.filter((event) => event.type === 'text');
-  assert.equal(textEvents.length, 1);
+  // The second text event is the unpriced-model notice: this captured run is
+  // on `auto-gemini-2.5`, a routing alias with no rate-card entry, so the
+  // forwarder says so in the feed rather than letting the phase read as free.
+  assert.equal(textEvents.length, 2);
   assert.equal(textEvents[0].payload.text, 'OK.');
+  assert.match(textEvents[1].payload.text, /no entry in the rate card/);
 });
 
 await test('tool and file-edit events still surface around the merged text', async () => {
   const { events } = await runForwarder(GEMINI_RUN, { engine: 'gemini' });
   assert.deepEqual(
     events.map((event) => event.type),
-    ['tool_call', 'tool_call', 'file_edit', 'tool_result', 'tool_result', 'tool_result', 'text'],
+    [
+      'tool_call',
+      'tool_call',
+      'file_edit',
+      'tool_result',
+      'tool_result',
+      'tool_result',
+      'text',
+      'text',
+    ],
   );
 });
 
@@ -151,6 +164,8 @@ await test('a run ending mid-delta still flushes its last fragment', async () =>
   const truncatedRun = GEMINI_RUN.slice(0, -1);
   const { events } = await runForwarder(truncatedRun, { engine: 'gemini' });
   const textEvents = events.filter((event) => event.type === 'text');
+  // One text event, not two: with no terminal `result` frame there is no
+  // pricing step, so the unpriced-model notice never arises here.
   assert.equal(textEvents.length, 1);
   assert.equal(textEvents[0].payload.text, 'OK.');
 });
@@ -172,3 +187,34 @@ fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);
 process.exit(failures.length ? 1 : 0);
+
+// ── pricing follows what ran, not what was asked for ────────────────────────
+//
+// Captured from @google/gemini-cli 0.60.0: a request for `gemini-2.5-flash`
+// comes back with `init.model` saying gemini-2.5-flash and `stats.models`
+// keyed by gemini-3.5-flash. Only the breakdown says which card applies.
+const GEMINI_ROUTED_RUN = [
+  '{"type":"init","timestamp":"2026-09-22T14:14:28.536Z","session_id":"5a77d58a","model":"gemini-2.5-flash"}',
+  '{"type":"message","timestamp":"2026-09-22T14:14:32.581Z","role":"assistant","content":"ok","delta":true}',
+  '{"type":"result","timestamp":"2026-09-22T14:14:32.629Z","status":"success","stats":{"total_tokens":9574,"input_tokens":9080,"output_tokens":1,"cached":0,"input":9080,"duration_ms":4093,"tool_calls":0,"models":{"gemini-2.5-pro":{"total_tokens":9574,"input_tokens":9080,"output_tokens":1,"cached":0,"input":9080}}}}',
+];
+
+await test('a routed run is priced from stats.models, not from the init model', async () => {
+  const { result } = await runForwarder(GEMINI_ROUTED_RUN, { engine: 'gemini' });
+  // 9080 fresh input @ $1.25/M + 1 output @ $10/M — the gemini-2.5-pro card,
+  // reached through the breakdown. Pricing the init model would have charged
+  // the flash card and under-reported the phase.
+  assert.equal(result.total_cost_usd, Math.round((9080 / 1e6) * 1.25 * 1e6 + (1 / 1e6) * 10 * 1e6) / 1e6);
+});
+
+await test('an unpriced model still reports zero, and says so in the feed', async () => {
+  const routedToUnknown = GEMINI_ROUTED_RUN.map((line) =>
+    line.replace('"gemini-2.5-pro"', '"gemini-3.5-flash"'),
+  );
+  const { result, events } = await runForwarder(routedToUnknown, { engine: 'gemini' });
+  assert.equal(result.total_cost_usd, 0);
+  assert.equal(
+    events.filter((event) => /no entry in the rate card/.test(event.payload?.text ?? '')).length,
+    1,
+  );
+});

@@ -217,6 +217,7 @@ const geminiCostUsd = (stats, model) => {
   // silently falling back to free.
   const key = Object.keys(GEMINI_RATES).find((k) => String(model ?? '').startsWith(k));
   if (!key) {
+    unpricedModels.add(String(model ?? 'unknown'));
     console.error(
       `[cost] no rate card for gemini model "${model}" — reporting 0. ` +
         `Add it to GEMINI_RATES in forward-events.mjs.`,
@@ -238,6 +239,41 @@ const geminiCostUsd = (stats, model) => {
     (out / 1_000_000) * rates.output;
 
   return Math.round(usd * 1e6) / 1e6;
+};
+
+// Models this run met that the rate card does not price. Collected so the gap
+// can be SAID rather than only logged: stdout has no consumers, and a phase
+// silently priced at zero is a budget ceiling that has stopped working.
+const unpricedModels = new Set();
+const announcedUnpriced = new Set();
+
+/**
+ * Price a `result` frame.
+ *
+ * Prefer `stats.models`, the per-model breakdown 0.60.0 reports, over the model
+ * named in `init`. They are not always the same model. Asking 0.60.0 for
+ * `gemini-2.5-flash` returns `init` with `gemini-2.5-flash` and stats under
+ * `gemini-3.5-flash` — the request is routed, and only the breakdown says where
+ * it landed. Pricing the requested name would charge the wrong card; pricing
+ * the reported one charges what ran, and names the gap when there is no card
+ * for it.
+ *
+ * Falls back to the flat shape when `models` is absent, so an older engine or a
+ * frame without the breakdown prices exactly as it did before.
+ */
+const geminiResultCostUsd = (stats, fallbackModel) => {
+  const perModel = stats?.models;
+  if (perModel && typeof perModel === 'object' && Object.keys(perModel).length) {
+    return (
+      Math.round(
+        Object.entries(perModel).reduce(
+          (sum, [name, modelStats]) => sum + geminiCostUsd(modelStats ?? {}, name),
+          0,
+        ) * 1e6,
+      ) / 1e6
+    );
+  }
+  return geminiCostUsd(stats ?? {}, fallbackModel);
 };
 
 // The model, captured from the stream's `init` frame. The terminal `result`
@@ -325,13 +361,30 @@ const normaliseGemini = (record) => {
       },
       // Gemini reports no cost of its own; priced from the rate card above so
       // the ceiling, the budget holds and the routing telemetry all work.
-      total_cost_usd: geminiCostUsd(stats, record.model ?? geminiModel),
+      total_cost_usd: geminiResultCostUsd(stats, record.model ?? geminiModel),
       duration_ms: stats.duration_ms ?? null,
       // Tool-call count, not a turn count — the closest field Gemini reports;
       // named num_turns only so report_phase_cost's existing reader picks it
       // up, not because the two concepts are equivalent.
       num_turns: stats.tool_calls ?? null,
     };
+
+    // Say it in the feed, once per model. A phase priced at zero does not look
+    // like a broken ceiling, it looks like a cheap phase — and the budget hold,
+    // the phase budgets and the routing telemetry are all reading that zero.
+    for (const name of unpricedModels) {
+      if (announcedUnpriced.has(name)) continue;
+      announcedUnpriced.add(name);
+      events.push({
+        type: 'text',
+        payload: {
+          text:
+            `[cost] This phase ran on "${name}", which has no entry in the rate card, ` +
+            `so its spend is counted as $0. The budget ceiling cannot hold against it. ` +
+            `Add it to GEMINI_RATES in scripts/builder/forward-events.mjs.`,
+        },
+      });
+    }
   }
 
   return events;

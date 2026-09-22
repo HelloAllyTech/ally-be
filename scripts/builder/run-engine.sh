@@ -627,28 +627,49 @@ run_agent() {
       | node "$FORWARDER" --result-out "$result_file" || rc=$?
       ;;
 
-    # Confirmed against a real local install (0.22.5) of @google/gemini-cli:
-    # `--yolo` is the acceptEdits equivalent (auto-approves every tool call,
-    # no separate sandbox flag needed since the GH runner is already the
-    # isolation boundary — same trust model Claude Code's own acceptEdits
-    # uses). `-o stream-json` is confirmed real (its event schema is what
-    # forward-events.mjs's normaliseGemini() is built against).
+    # Confirmed against a real local install (0.60.0) of @google/gemini-cli by
+    # running it and reading what came back, not from its documentation.
     #
-    # Two params this case cannot honour, both confirmed absent from the
-    # installed binary rather than just unused here:
-    #   - $max_turns: no turn/step-count flag exists. The workflow's own job
-    #     timeout-minutes is the only backstop for a Gemini-engine run.
-    #   - $max_budget: no dollar-ceiling flag exists, and Gemini's own usage
-    #     stats carry no cost figure either (see normaliseGemini()) — a
-    #     Gemini-engine run's spend is not enforceable mid-run the way
-    #     --max-budget-usd enforces it for Claude Code.
-    # $tools is also unused: Gemini's built-in tool names do not correspond
-    # to Claude Code's ("Bash,Read,Write,Edit,Glob,Grep,Task"), and --yolo
-    # already means "run any tool without asking" — a wrong or partial
-    # translation of that allowlist would be worse than none.
+    # Two things about this invocation are load-bearing, and both fail SILENTLY
+    # if you carry the 0.22.5 form forward:
+    #
+    #   1. `-p`. On 0.22.5 the prompt was a positional argument and that meant
+    #      non-interactive. On 0.60.0 a positional is "Initial prompt. Runs in
+    #      INTERACTIVE mode by default; use -p/--prompt for non-interactive."
+    #      The old form does not error — it opens a TUI on a runner with no
+    #      terminal and sits there until the phase wall clock kills it.
+    #
+    #   2. Workspace trust. 0.60.0 refuses to run at all in a directory it has
+    #      not been told to trust, and — worse — when it is given `--yolo` in an
+    #      untrusted directory it prints "Approval mode overridden to 'default'"
+    #      and carries on, which in a headless run means every tool call waits
+    #      for an approval nobody is there to give. A freshly cloned repo on a
+    #      fresh runner is never trusted. GEMINI_CLI_TRUST_WORKSPACE=true is the
+    #      documented headless answer; the runner IS the isolation boundary, the
+    #      same trust model `--yolo` already assumes. `--skip-trust` says the
+    #      same thing on the command line: both are passed because the cost of
+    #      the redundancy is nothing and the cost of getting it wrong is a phase
+    #      that stalls to its wall clock with no error anywhere.
+    #
+    # `-o stream-json` is unchanged and its schema still matches
+    # normaliseGemini(): `init` carries the model, assistant `message` records
+    # carry `delta`, and `result` carries the `stats` block the cost step reads.
+    #
+    # Two params this case still cannot honour, confirmed absent from 0.60.0's
+    # --help rather than assumed:
+    #   - $max_turns: no turn or step-count flag exists. The phase wall clock
+    #     and the job timeout are the only backstops for a Gemini-engine run.
+    #   - $max_budget: no dollar-ceiling flag exists, so a Gemini run's spend is
+    #     bounded between phases, never within one.
+    # $tools stays unused: 0.60.0 deprecates --allowed-tools in favour of the
+    # policy engine (bundle/policies/*.toml), and a half-translated allowlist is
+    # worse than none. Read-only phases are guaranteed by snapshot_heads /
+    # revert_stray_writes above, which holds whatever the engine honours.
     gemini)
-      ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} gemini "$(cat "$prompt_file")" \
+      GEMINI_CLI_TRUST_WORKSPACE=true \
+      ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} gemini -p "$(cat "$prompt_file")" \
         --model "$model" \
+        --skip-trust \
         --yolo \
         --output-format stream-json \
       | node "$FORWARDER" --result-out "$result_file" || rc=$?

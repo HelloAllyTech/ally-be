@@ -14,7 +14,7 @@ set -euo pipefail
 ENGINE="${BUILDER_ENGINE:-gemini}"
 
 CLAUDE_CODE_VERSION="2.1.220"
-GEMINI_CLI_VERSION="0.22.5"
+GEMINI_CLI_VERSION="0.60.0"
 
 case "$ENGINE" in
   claude-code)
@@ -23,21 +23,34 @@ case "$ENGINE" in
     claude --version
     ;;
 
-  # Verified against a real local install of this exact version (0.22.5):
-  # package is @google/gemini-cli, binary is `gemini`. Its non-interactive
-  # shape and JSON event schema are read directly from that install's
-  # compiled TypeScript declarations in run-engine.sh/forward-events.mjs.
+  # Verified against a real local install of this exact version (0.60.0):
+  # package is @google/gemini-cli, binary is `gemini`, and the stream-json
+  # event schema forward-events.mjs normalises was captured from it directly.
   #
-  # Exercised end to end on 2026-09-17: the CLI ran, streamed, called tools and
-  # wrote correct code. What that first run exposed was not the integration but
-  # everything around it that had only ever been true for Claude Code — the
-  # working branch and the whole reporting protocol were *asked for* in the
-  # prompt rather than made true by the runner, and Gemini declined both. It
-  # committed onto master, where the test gate (which compares `master...HEAD`)
-  # could not see 65 lines of correct change, and it called the reporting
-  # helpers by name, which existed only as shell functions pasted into a
-  # prompt. Both are now the runner's job. See run-engine.sh's ensure_branches
-  # and agent-helpers/README.md.
+  # ## Why this moved off 0.22.5
+  #
+  # 0.22.5 shipped `checkCommandPermissions()` in @google/gemini-cli-core,
+  # which refuses any command its own parser cannot read:
+  #
+  #     const parseResult = parseCommandDetails(command);
+  #     if (!parseResult || parseResult.hasError) {
+  #       return { allAllowed: false, disallowedCommands: [command],
+  #                blockReason: 'Command rejected because it could not be parsed safely' };
+  #     }
+  #
+  # A parser failure was a hard refusal, and the parser failed on ordinary
+  # commands — `git add .`, `git status`, `ls -la`, `gh issue view` are all in
+  # upstream's own issue reports against this version family (google-gemini/
+  # gemini-cli#15631, #15640, #13267, #13502). It is what the run feed shows on
+  # 2026-09-17: an agent that had coded, tested and pushed, writing itself an
+  # AGENT_FAILURE.log because it could not call `prs` or `gh` thirty commands
+  # running, and timing out with the work stranded on a branch.
+  #
+  # 0.60.0 does not contain that string anywhere in its bundle. The shell
+  # parser is now tree-sitter-bash and the approval path is a policy engine
+  # (see bundle/policies/*.toml). Pinning is still the rule — but a pin is a
+  # subscription to one version's bugs, so re-test it rather than inherit it.
+  #
   gemini)
     echo "Installing @google/gemini-cli@${GEMINI_CLI_VERSION}"
     npm install -g "@google/gemini-cli@${GEMINI_CLI_VERSION}"
