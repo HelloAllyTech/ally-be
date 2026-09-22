@@ -1127,6 +1127,18 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     id: 'builder-context-selection',
     task: LlmTask.BUILDER_CONTEXT_SELECTION,
     runtime: LlmRuntime.ALLY_BE,
+    // Deliberately NOT tiered: the call site names `builder.mechanicalModel`
+    // explicitly, so the choice a tier exists to make has already been made,
+    // and `configPath` below is the truth about what serves this task.
+    //
+    // Until 2026-09-23 this row nonetheless failed on every single run —
+    // `callConfigForAiTask` demanded a tier from every caller, whether or not
+    // one was needed — and failed quietly: every Builder build logged
+    // "Exemplar re-rank failed, falling back to most recent" and carried on,
+    // so the relevance ranking this row exists to perform had never once
+    // happened in production. A build silently handed the most RECENT
+    // exemplars instead of the most RELEVANT ones looks exactly like a build
+    // that got good ones.
     trigger: 'A new session picks which past lessons to see',
     detail: "Lesson and exemplar selection for the next run's context.",
     kind: AiTaskKind.COMPLETION,
@@ -1235,22 +1247,43 @@ export const AI_TASK_REGISTRY_EXEMPT_TASKS: ReadonlySet<LlmTask> = new Set([
  * that instead of surfacing it.
  */
 export interface AiTaskCallConfig {
-  tier: LlmModelTier;
+  /** Absent when the caller named its own model — see callConfigForAiTask. */
+  tier?: LlmModelTier;
   /** True when a substitute model would make the result a lie, not a degradation. */
   neverFallback: boolean;
 }
 
-export const callConfigForAiTask = (taskId: string): AiTaskCallConfig => {
+export const callConfigForAiTask = (
+  taskId: string,
+  options: {
+    /**
+     * True when the caller passed a concrete model. A tier exists to CHOOSE a
+     * model, so a call that has already chosen needs none — and demanding one
+     * broke every config-selected row that went through `LlmCompletionService`.
+     * `builder-context-selection` names `builder.mechanicalModel` at its call
+     * site and was refused on every Builder run for want of a tier it would
+     * never have consulted.
+     *
+     * `neverFallback` still comes from the row either way: whether a substitute
+     * would make the result a lie is a property of the task, not of who picked
+     * the model.
+     */
+    modelIsExplicit?: boolean;
+  } = {},
+): AiTaskCallConfig => {
   const entry = AI_TASK_REGISTRY.find((row) => row.id === taskId);
-  if (!entry?.tier) {
+  if (!entry?.tier && !options.modelIsExplicit) {
     throw new Error(
-      `AI task "${taskId}" has no tier in the AI task registry. Add a row (or ` +
-        `a tier to the existing one) in ai-task-registry.constants.ts.`,
+      `AI task "${taskId}" has no tier in the AI task registry, and the call ` +
+        `named no model of its own. Add a row (or a tier to the existing one) ` +
+        `in ai-task-registry.constants.ts.`,
     );
   }
-  return { tier: entry.tier, neverFallback: Boolean(entry.neverFallback) };
+  return { tier: entry?.tier, neverFallback: Boolean(entry?.neverFallback) };
 };
 
 /** The tier alone, for callers that only need a default model. */
 export const tierForAiTask = (taskId: string): LlmModelTier =>
-  callConfigForAiTask(taskId).tier;
+  // Non-null: called without `modelIsExplicit`, so a missing tier has already
+  // thrown above rather than reaching here.
+  callConfigForAiTask(taskId).tier!;

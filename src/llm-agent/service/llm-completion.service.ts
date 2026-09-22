@@ -109,7 +109,11 @@ export class LlmCompletionService {
     // same values, and two sources would eventually disagree. Both fields come
     // from one lookup — fetching them separately is how `neverFallback` got
     // left out, which let a preview pass for a model that does not exist.
-    const { tier, neverFallback } = callConfigForAiTask(request.taskId);
+    const { tier, neverFallback } = callConfigForAiTask(request.taskId, {
+      // A caller that names a model has made the choice a tier would have
+      // made, so a config-selected row needs no tier to be callable.
+      modelIsExplicit: Boolean(request.model),
+    });
 
     const target = await this.resolver.resolve({
       taskId: request.taskId,
