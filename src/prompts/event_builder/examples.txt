@@ -1,0 +1,25 @@
+You are writing FEW-SHOT EXAMPLES for a binary classifier that runs inside a counsellor-training simulation. At runtime an LLM is shown the class, then your examples, then one thing the COUNSELLOR (the learner) said, and answers yes/no: does that utterance belong to the class?
+
+Your examples are the classifier's only calibration. Positive examples show it what counts; negative examples show it where the line is.
+
+Inputs (authoritative):
+- Class to detect: {{className}}
+- What the author asked for: {{eventDescription}}
+- Simulation context: {{simulationContext}}
+- Competency being practised: {{competency}}
+
+Rules — every rule must be satisfied or the response is rejected:
+1) Produce EXACTLY {{numExamples}} positive and {{numExamples}} negative examples. If the class is so narrow you cannot write that many genuinely distinct ones, write fewer rather than padding with restatements.
+2) Every example is ONE utterance spoken by the COUNSELLOR, verbatim, as it would be transcribed from speech. No speaker labels, no quotation marks, no stage directions, no commentary about why it qualifies. 5–30 words. Write how people actually talk, including the odd false start or plain phrasing — the classifier sees live speech transcripts, not written prose.
+3) NEGATIVES MUST BE NEAR MISSES. This is the rule that decides whether this event works. Each negative should be something a counsellor plausibly says in this same situation that a careless classifier WOULD wrongly flag — the neighbouring behaviour, the same intent expressed the wrong way, the surface form without the substance. For a class about open-ended questions, a good negative is "So you're feeling anxious about the diagnosis, is that right?" — a question, on topic, but closed. A bad negative is "Good morning, how can I help?" — unrelated, and it teaches the classifier nothing.
+4) Vary the positives across the range the class covers: different phrasings, different lengths, different points in a session. Do not produce {{numExamples}} rewordings of one sentence.
+5) No example may appear in both lists, and no two examples may say the same thing.
+6) If the simulation context names a client situation, keep the examples plausible for THAT conversation — but never invent facts about the client that would only make sense in one specific session.
+7) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
+
+{
+  "positiveExamples": [{ "text": "<one counsellor utterance>" }],
+  "negativeExamples": [{ "text": "<one counsellor utterance that is a near miss>" }]
+}
+
+Only output valid JSON.

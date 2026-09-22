@@ -85,6 +85,12 @@ export enum LlmTask {
   AUTOFILL_ENHANCE_FIELD = 'autofill_enhance_field',
   // Agent Builder Copilot: one parallel per-field generation call.
   AUTOFILL_AGENT_FIELD = 'autofill_agent_field',
+  // Event Builder: one per-field generation call turning an author's free-text
+  // behaviour description into a BINARY_CLASSIFIER event's configuration. Its
+  // own label rather than folded into AUTOFILL_AGENT_FIELD because the unit is
+  // an EVENT, not a simulation — far more of them, each a fraction of the
+  // tokens — so sharing a line would make the copilot's own cost unreadable.
+  AUTOFILL_EVENT_FIELD = 'autofill_event_field',
   // Character-library interview agent: one streamed interviewer/tool-loop
   // turn building a character profile.
   CHARACTER_INTERVIEW = 'character_interview',

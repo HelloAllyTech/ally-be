@@ -31,3 +31,29 @@ export function stripMarkdownFences(text: string): string {
     .replace(/\s*```\s*$/, '')
     .trim();
 }
+
+/**
+ * Pull the first JSON object out of a model response.
+ *
+ * Tries the whole string first, then falls back to the outermost `{ ... }`
+ * span, so a JSON answer wrapped in an apology or a stray trailing sentence
+ * still parses instead of dropping the whole generation. Returns null when
+ * there is no object to be had — callers decide what an unparseable answer
+ * means for their field.
+ */
+export function parseFirstJsonObject(raw: string): any {
+  const attempt = (candidate: string): any => {
+    try {
+      const parsed = JSON.parse(candidate);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+      return null;
+    }
+  };
+  const direct = attempt(raw.trim());
+  if (direct) return direct;
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start === -1 || end <= start) return null;
+  return attempt(raw.slice(start, end + 1));
+}

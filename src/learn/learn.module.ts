@@ -335,6 +335,9 @@ import { SettingsModule } from 'src/settings/settings.module';
     // Exported for LlmPreviewModule, which resolves a config by id before
     // calling the provider.
     LlmConfigService,
+    // Exported for SessionEventModule's EventBuilderService, which runs the
+    // same per-field prompt-render-and-complete path against its own prompts.
+    AutofillService,
   ],
 })
 export class LearnModule {}

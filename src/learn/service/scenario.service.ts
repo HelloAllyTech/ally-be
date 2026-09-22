@@ -141,7 +141,10 @@ import { SessionEventTranslationService } from 'src/session-event/service/sessio
 import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
-import { ENHANCE_AUTO_IMPROVE_INSTRUCTION } from '../util/autofill-shared.util';
+import {
+  ENHANCE_AUTO_IMPROVE_INSTRUCTION,
+  parseFirstJsonObject,
+} from '../util/autofill-shared.util';
 import { AutofillService } from './autofill.service';
 import {
   EnhanceScenarioFieldDto,
@@ -3758,20 +3761,7 @@ export class ScenarioService {
    * in prose. Returns the parsed value (object or array) or null.
    */
   private parseFirstJsonObject(raw: string): any {
-    const attempt = (candidate: string): any => {
-      try {
-        const parsed = JSON.parse(candidate);
-        return parsed && typeof parsed === 'object' ? parsed : null;
-      } catch {
-        return null;
-      }
-    };
-    const direct = attempt(raw.trim());
-    if (direct) return direct;
-    const start = raw.indexOf('{');
-    const end = raw.lastIndexOf('}');
-    if (start === -1 || end <= start) return null;
-    return attempt(raw.slice(start, end + 1));
+    return parseFirstJsonObject(raw);
   }
 
   /** Coerce a V2 field's raw model output into the shape the studio form expects. */

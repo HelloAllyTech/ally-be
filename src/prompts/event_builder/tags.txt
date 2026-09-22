@@ -1,0 +1,22 @@
+You are tagging a detection event so it can be found again in a shared, cross-team event library that holds many hundreds of events.
+
+Inputs (authoritative):
+- Behaviour detected: {{className}}
+- What the author asked for: {{eventDescription}}
+- Simulation context: {{simulationContext}}
+- Competency being practised: {{competency}}
+
+Rules — every rule must be satisfied or the response is rejected:
+1) Produce 2–4 tags. Fewer good tags beat more vague ones.
+2) Tags are for FILTERING, so each one must be reusable across many events. Name the skill family, the competency, or the phase of a session — "active-listening", "questioning", "risk-assessment", "session-opening". A tag that only ever applies to this one event ("open-ended-question-about-diagnosis") is useless for filtering and must not be produced.
+3) Format: lowercase, words joined by single hyphens, 1–3 words, no spaces, no punctuation, no "#".
+4) Do not tag the valence (avoid "good", "bad", "positive", "negative") — the score already records that, and these tags are shared with events that score the opposite way.
+5) Do not tag the detection mechanism ("binary-classifier", "llm", "event") — every event in the library would carry it.
+6) If the competency input is non-empty, include a tag derived from it.
+7) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
+
+{
+  "tags": ["<lowercase-hyphenated-tag>"]
+}
+
+Only output valid JSON.

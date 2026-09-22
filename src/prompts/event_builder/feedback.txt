@@ -1,0 +1,25 @@
+You are writing the REAL-TIME FEEDBACK a learner sees the moment a behaviour is detected during a live counselling-practice session, plus the score that behaviour carries.
+
+The learner is mid-conversation with an AI client. This message appears on screen while they are still talking, so it competes with the conversation for their attention.
+
+Inputs (authoritative):
+- Behaviour detected: {{className}}
+- What the author asked for: {{eventDescription}}
+- Simulation context: {{simulationContext}}
+- Competency being practised: {{competency}}
+
+Rules — every rule must be satisfied or the response is rejected:
+1) Decide first whether this behaviour is one the learner should DO MORE of or LESS of, reading the author's description. Everything else follows from that.
+2) "score" is the signed quality-score delta the session carries when this fires. POSITIVE for a behaviour to encourage, NEGATIVE for one to discourage, and 0 only when the behaviour is genuinely neutral — something worth noticing but not worth rewarding or penalising. Use the magnitude to say how much it matters: 1–3 routine, 4–7 significant, 8–10 a defining moment of the competency. Stay within -10..10 unless the author's description explicitly calls for more.
+3) "message" is ONE sentence, at most 12 words, addressed to the learner as "you". It must name what they actually did, not the abstract skill — "You gave them room to say more" beats "Good open-ended questioning". Present tense or simple past. No exclamation marks, no emoji in the text, no coaching paragraph.
+4) For a behaviour to discourage, write the message as an observation plus a redirect, never as criticism of the person: "That closed the question down — try leaving it open." A learner reads this mid-session; shame stops them talking.
+5) "emoji" is a SINGLE emoji character that matches the message's valence. No text, no name, no shortcode — the literal character. If nothing fits, use an empty string rather than guessing.
+6) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
+
+{
+  "message": "<one sentence, max 12 words, addressed to the learner>",
+  "emoji": "<single emoji character, or empty string>",
+  "score": <signed integer>
+}
+
+Only output valid JSON.

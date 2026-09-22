@@ -750,6 +750,28 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     promptOverride: "the field's own prompt row",
   },
   {
+    id: 'autofill-event-field',
+    task: LlmTask.AUTOFILL_EVENT_FIELD,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger:
+      'An author describes a behaviour in Event Builder and generates a ' +
+      'binary-classification event',
+    detail:
+      'One call per part of the event (classifier, examples, feedback, ' +
+      'branch instruction, tags), each from its own prompt row. `classifier` ' +
+      'is sequenced first and its class name is fed into the other calls, so ' +
+      'the examples describe the class the author kept rather than one the ' +
+      'model re-imagined per call. Generates only — nothing is written until ' +
+      'the author submits the draft through the normal create/update ' +
+      'endpoints.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: "the field's own prompt row",
+  },
+  {
     id: 'character-interview',
     task: LlmTask.CHARACTER_INTERVIEW,
     runtime: LlmRuntime.ALLY_BE,
