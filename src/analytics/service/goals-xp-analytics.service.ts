@@ -12,6 +12,14 @@ import { isoDate } from '../util/analytics-window.util';
 const DEFAULT_GRAIN: XpGoalGrain = 'month';
 
 /**
+ * Left edge of the Goals chart, fixed by product rather than measured from
+ * the platform's all-time data floor — the platform has XP data from before
+ * this date, but Goals is scoped to the period goals are actually tracked
+ * against.
+ */
+const CHART_FLOOR = new Date(Date.UTC(2026, 3, 1));
+
+/**
  * Month/quarter/year bucketing that platform-analytics.dto's ANALYTICS_BUCKETS
  * does not cover (no 'quarter' there). Kept local to this endpoint rather than
  * added to the shared bucket type, which several other charts rely on.
@@ -106,9 +114,8 @@ export class GoalsXpAnalyticsService {
   async getGoalsXp(query: GoalsXpQueryDto): Promise<GoalsXpResponseDto> {
     const grain = query.grain ?? DEFAULT_GRAIN;
 
-    const dataFloor = await this.repository.getDataFloor();
     const now = new Date();
-    const start = truncToGrain(dataFloor, grain);
+    const start = truncToGrain(CHART_FLOOR, grain);
     const currentPeriodStart = truncToGrain(now, grain);
 
     const goals = await this.getGoalsForGrain(grain);
