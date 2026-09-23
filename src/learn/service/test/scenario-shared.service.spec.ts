@@ -1132,6 +1132,63 @@ describe('ScenarioSharedService', () => {
   });
 
   describe('createRoomMetadata', () => {
+    it('sends a knowledge source memory lock only when it is set', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+
+      const result = await service.createRoomMetadata({
+        scenario: {
+          id: 1,
+          title: 'Test Scenario',
+          description: 'Test Description',
+          prompt: 'Act only as the client.',
+          metadata: {
+            voiceId: 'voice-1',
+            name: 'Alex',
+            openingStatements: ['Hi'],
+            knowledgeSources: [
+              { id: 'k1', title: 'Job loss', content: 'Laid off' },
+              {
+                id: 'k2',
+                title: 'Drinking',
+                content: 'Every night',
+                unlocksFromStateId: 's-2',
+              },
+              {
+                id: 'k3',
+                title: 'Rent',
+                content: 'Behind',
+                unlocksFromStateId: null,
+              },
+            ],
+          },
+          terminationEvents: [],
+          behaviorInstructions: [],
+          difficultyLevel: 'EASY',
+        } as any,
+        sessionEvents: [],
+        languageDetails: null as any,
+        previousMemory: null,
+      });
+
+      // A null key would fail parsing on agents that type these as
+      // Dict[str, str], so empties are dropped rather than forwarded.
+      expect(result.scenario.promptData.knowledgeSources).toEqual([
+        { id: 'k1', title: 'Job loss', content: 'Laid off' },
+        {
+          id: 'k2',
+          title: 'Drinking',
+          content: 'Every night',
+          unlocksFromStateId: 's-2',
+        },
+        { id: 'k3', title: 'Rent', content: 'Behind' },
+      ]);
+    });
+
     it('should forward scenario.prompt as promptData.roleInstructions', async () => {
       scenarioVoiceRepository.findOne.mockResolvedValue({
         id: 'voice-1',

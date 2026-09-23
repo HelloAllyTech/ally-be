@@ -27,7 +27,12 @@ async function executeInChunks<T, R>(
 import { Scenarios } from '../entity/scenarios.entity';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
-import { validateSimulationStates } from '../util/validate-simulation-states.util';
+import {
+  validateKnowledgeSourceUnlocks,
+  validateSimulationStates,
+} from '../util/validate-simulation-states.util';
+import { KnowledgeSourceDto } from '../dto/knowledge-source.dto';
+import { SimulationState } from '../type/simulation-state.type';
 import { buildGeneratedStates } from '../util/build-generated-states.util';
 
 import { LlmModelService } from 'src/llm/service/llm-model.service';
@@ -959,6 +964,14 @@ export class ScenarioService {
       }
     }
 
+    const unlockErrors = validateKnowledgeSourceUnlocks(
+      createScenarioDto.knowledgeSources,
+      createScenarioDto.states,
+    );
+    if (unlockErrors.length > 0) {
+      throw new BadRequestException(unlockErrors.join(' '));
+    }
+
     // Cross-check: when the scenario points at a hasStates main-agent
     // variant, states must be non-empty — otherwise the runtime renders
     // {state_x_guidelines} blank silently. Skip the lookup when no variant
@@ -1833,6 +1846,23 @@ export class ScenarioService {
         ? updateScenarioDto.states
         : (scenario.metadata as { states?: unknown } | undefined)?.states;
     await this.validateStatesPairing(effectiveCode, effectiveStates);
+
+    // Memory locks are checked against the EFFECTIVE pair: a payload may carry
+    // only one of knowledgeSources / states, and a lock must still resolve
+    // against whichever of the two is already stored.
+    const unlockErrors = validateKnowledgeSourceUnlocks(
+      updateScenarioDto.knowledgeSources !== undefined
+        ? updateScenarioDto.knowledgeSources
+        : (
+            scenario.metadata as
+              | { knowledgeSources?: KnowledgeSourceDto[] }
+              | undefined
+          )?.knowledgeSources,
+      effectiveStates as SimulationState[] | undefined,
+    );
+    if (unlockErrors.length > 0) {
+      throw new BadRequestException(unlockErrors.join(' '));
+    }
 
     if (
       updateScenarioDto?.status &&
