@@ -20,8 +20,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * throughout (see `bug_hunt_events.runId`), and telemetry must never be the
  * reason a run row cannot be cleaned up.
  */
-export class CreateBugHuntTelemetry1971800000000 implements MigrationInterface {
-  name = 'CreateBugHuntTelemetry1971800000000';
+export class CreateBugHuntTelemetry1972100000000 implements MigrationInterface {
+  name = 'CreateBugHuntTelemetry1972100000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`

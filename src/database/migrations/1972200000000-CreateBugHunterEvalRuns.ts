@@ -12,8 +12,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * means redefining the constraint here AND adding to
  * `check-constraints-cover-enums.spec.ts`.
  */
-export class CreateBugHunterEvalRuns1971900000000 implements MigrationInterface {
-  name = 'CreateBugHunterEvalRuns1971900000000';
+export class CreateBugHunterEvalRuns1972200000000 implements MigrationInterface {
+  name = 'CreateBugHunterEvalRuns1972200000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
