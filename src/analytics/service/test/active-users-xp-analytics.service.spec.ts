@@ -67,6 +67,17 @@ describe('ActiveUsersXpAnalyticsService', () => {
         'day',
       );
     });
+
+    it('measures the data floor for an all-time range bounded by a `from` date', async () => {
+      await expect(
+        service.getActiveUsers({
+          range: 'all',
+          from: '2024-05-01',
+        }),
+      ).resolves.not.toThrow();
+
+      expect(repo.getDataFloor).toHaveBeenCalled();
+    });
   });
 
   describe('points', () => {

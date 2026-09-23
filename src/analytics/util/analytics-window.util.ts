@@ -232,12 +232,7 @@ export function resolveAnalyticsWindow(
   const now = opts.now ?? new Date();
   const todayStart = startOfUtcDay(now);
 
-  if (query.from || query.to) {
-    if (!query.from || !query.to) {
-      throw new BadRequestException(
-        'from and to must be supplied together for a custom range',
-      );
-    }
+  if (query.from && query.to) {
     const start = parseIsoDate(query.from, 'from');
     const toInclusive = parseIsoDate(query.to, 'to');
     if (toInclusive < start) {
@@ -272,6 +267,57 @@ export function resolveAnalyticsWindow(
   }
 
   const range = query.range ?? opts.defaultRange;
+
+  if (range === 'all') {
+    if (!opts.allTimeStart) {
+      throw new BadRequestException(
+        'range=all is not supported by this endpoint',
+      );
+    }
+    const allTimeStart = startOfUtcDay(
+      opts.allTimeStart > todayStart ? todayStart : opts.allTimeStart,
+    );
+
+    const start = query.from ? parseIsoDate(query.from, 'from') : allTimeStart;
+    const toInclusive = query.to ? parseIsoDate(query.to, 'to') : todayStart;
+
+    if (toInclusive < start) {
+      throw new BadRequestException('to must be on or after from');
+    }
+
+    const endExclusive = addDays(toInclusive, 1);
+    const days = Math.round(
+      (endExclusive.getTime() - start.getTime()) / MS_PER_DAY,
+    );
+    const bucket = query.bucket ?? ALL_TIME_DEFAULT_BUCKET;
+
+    const isCustom = !!(query.from || query.to);
+    const label = isCustom
+      ? `${isoDate(start)} → ${isoDate(toInclusive)}`
+      : RANGE_LABEL.all;
+
+    return {
+      start,
+      endExclusive,
+      bucket,
+      days,
+      label,
+      custom: isCustom,
+      allTime: true,
+      inProgressBucket:
+        endExclusive > todayStart
+          ? isoDate(truncToBucket(todayStart, bucket))
+          : null,
+    };
+  }
+
+  if (query.from || query.to) {
+    // Not `range='all'`, so both are required
+    throw new BadRequestException(
+      'from and to must be supplied together for a custom range',
+    );
+  }
+
   // Exclusive upper bound = start of tomorrow, so all of today is included.
   const endExclusive = addDays(todayStart, 1);
   let start: Date;
@@ -282,25 +328,14 @@ export function resolveAnalyticsWindow(
   } else if (range === '12m') {
     start = startOfUtcMonth(addMonths(todayStart, -11));
   } else {
-    // All time: the platform's first row. An endpoint that has not measured its
-    // data floor cannot answer this range — rejecting it is the only honest
-    // option, because the fallbacks (today, or a guessed epoch) would both
-    // return a window that looks resolved and covers the wrong period.
-    if (!opts.allTimeStart) {
-      throw new BadRequestException(
-        'range=all is not supported by this endpoint',
-      );
-    }
-    start = startOfUtcDay(
-      opts.allTimeStart > todayStart ? todayStart : opts.allTimeStart,
-    );
+    // Should have been handled by the `range === 'all'` block above.
+    // This is defensive.
+    throw new BadRequestException(`Unsupported range: ${range}`);
   }
   const days = Math.round(
     (endExclusive.getTime() - start.getTime()) / MS_PER_DAY,
   );
-  const bucket =
-    query.bucket ??
-    (range === 'all' ? ALL_TIME_DEFAULT_BUCKET : opts.defaultBucketFor(range));
+  const bucket = query.bucket ?? opts.defaultBucketFor(range);
 
   return {
     start,
@@ -309,7 +344,7 @@ export function resolveAnalyticsWindow(
     days,
     label: RANGE_LABEL[range],
     custom: false,
-    allTime: range === 'all',
+    allTime: false,
     inProgressBucket: isoDate(truncToBucket(todayStart, bucket)),
   };
 }

@@ -47,7 +47,7 @@ export class ActiveUsersXpAnalyticsService {
   ): Promise<ActiveUsersXpResponseDto> {
     const range = query.range ?? DEFAULT_RANGE;
     // The data floor is one extra cheap query, and only for an all-time range.
-    const isAllTime = range === 'all' && !query.from && !query.to;
+    const isAllTime = range === 'all';
     const window = resolveAnalyticsWindow(
       { range, bucket: query.bucket, from: query.from, to: query.to },
       {
