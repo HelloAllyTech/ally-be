@@ -25,6 +25,7 @@
     "test:docker:coverage": "./test-docker.sh coverage",
     "test:docker:watch": "./test-docker.sh watch",
     "test:docker:clean": "./test-docker.sh clean",
+    "eval:bug-hunter": "node scripts/bug-hunter/eval-verifier.mjs",
     "typeorm": "typeorm-ts-node-commonjs",
     "migration:permissions": "ts-node -r tsconfig-paths/register src/database/scripts/generate-permission-migration.ts",
     "migration:generate": "npm run typeorm -- migration:generate src/database/migrations/$npm_config_name -d src/database/data-source.ts",

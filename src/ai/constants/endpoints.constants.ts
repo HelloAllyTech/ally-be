@@ -35,6 +35,15 @@ export const ENDPOINTS = {
   ROADMAP_OPPORTUNITY_BULK_UPSERT: 'api/v1/roadmap-opportunities/bulk-upsert',
   ROADMAP_OPPORTUNITY_IDS: 'api/v1/roadmap-opportunities/ids',
 
+  // Agent memory (Bug Hunter / Builder notebook). Same ownership rule: ally-ai owns
+  // the `AgentMemory` Weaviate collection, ally-be's `agent_memories` table is the
+  // system of record, the Weaviate object uuid IS the row id. Upsert/delete take
+  // the memory id appended to the path.
+  AGENT_MEMORY_UPSERT: 'api/v1/agent-memories',
+  AGENT_MEMORY_DELETE: 'api/v1/agent-memories',
+  AGENT_MEMORY_SEARCH: 'api/v1/agent-memories/search',
+  AGENT_MEMORY_IDS: 'api/v1/agent-memories/ids',
+
   // ── Knowledge corpora (WhatsApp Q&A, character library) ───────────────────
   // Same ownership rule as the roadmap collection above: ally-ai owns the `KnowledgeChunk`
   // Weaviate collection, ally-be's Postgres (kb_documents + kb_document_chunks) stays the

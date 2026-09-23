@@ -9,6 +9,10 @@ import { BugHunterFinderDataService } from '../service/bug-hunter-finder-data.se
 import { BugFixSessionService } from '../service/bug-fix-session.service';
 import { AppConfigService } from 'src/config/config.service';
 import { BugHunterModelSettingsService } from '../service/bug-hunter-model-settings.service';
+import { BugHunterTelemetryService } from '../service/bug-hunter-telemetry.service';
+import { BugHunterEvalService } from '../service/bug-hunter-eval.service';
+import { BugHunterPolicyService } from '../service/bug-hunter-policy.service';
+import { AgentMemoryService } from 'src/agent-memory/service/agent-memory.service';
 import {
   RecordBugHuntRunModelDto,
   PersistBugFindingsDto,
@@ -44,6 +48,22 @@ describe('BugHunterPipelineController', () => {
           },
         },
         { provide: BugHunterModelSettingsService, useValue: {} },
+        // Telemetry: pass the fetch straight through, so finder-data cases
+        // here read exactly as before and nothing is recorded.
+        { provide: BugHunterEvalService, useValue: {} },
+        { provide: AgentMemoryService, useValue: {} },
+        // Policy: allow everything; the rules have their own spec.
+        {
+          provide: BugHunterPolicyService,
+          useValue: { assertTransitionAllowed: async () => undefined },
+        },
+        {
+          provide: BugHunterTelemetryService,
+          useValue: {
+            timed: (_runId: unknown, _kind: unknown, fetch: () => unknown) =>
+              fetch(),
+          },
+        },
       ],
     }).compile();
 

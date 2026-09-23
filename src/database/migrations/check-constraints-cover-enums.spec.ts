@@ -19,6 +19,16 @@ import {
   BuilderStage,
   BuilderSteerStatus,
 } from '../../builder/enum/builder.enum';
+import {
+  BugHuntLookupKind,
+  BugHuntPhase,
+} from '../../bug-hunter/enum/bug-hunt-telemetry.enum';
+import { BugHunterEvalPromptKind } from '../../bug-hunter/enum/bug-hunter-eval.enum';
+import {
+  AgentMemoryAgent,
+  AgentMemoryEmbeddingStatus,
+  AgentMemoryStatus,
+} from '../../agent-memory/enum/agent-memory.enum';
 
 /**
  * Every value a TypeScript enum can produce must be a value its column's CHECK
@@ -128,6 +138,21 @@ describe('CHECK constraints cover their enums', () => {
     ['CHK_builder_exemplars_outcome', Object.values(BuilderExemplarOutcome)],
     ['CHK_builder_pr_feedback_kind', Object.values(BuilderPrFeedbackKind)],
     ['CHK_builder_pr_feedback_status', Object.values(BuilderPrFeedbackStatus)],
+    // Bug Hunter's telemetry tables joined the same guard when they were
+    // introduced — new enum-backed columns are listed from day one rather
+    // than after the first production INSERT that fails.
+    ['CHK_bug_hunt_phases_phase', Object.values(BugHuntPhase)],
+    ['CHK_bug_hunt_context_lookups_kind', Object.values(BugHuntLookupKind)],
+    [
+      'CHK_bug_hunter_eval_runs_prompt_kind',
+      Object.values(BugHunterEvalPromptKind),
+    ],
+    ['CHK_agent_memories_agent', Object.values(AgentMemoryAgent)],
+    ['CHK_agent_memories_status', Object.values(AgentMemoryStatus)],
+    [
+      'CHK_agent_memories_embedding_status',
+      Object.values(AgentMemoryEmbeddingStatus),
+    ],
   ])('%s accepts every enum value', (constraint, values) => {
     const allowed = allowedValues(constraint as string);
     const missing = (values as string[]).filter((v) => !allowed.includes(v));

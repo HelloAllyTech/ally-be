@@ -787,6 +787,8 @@ export class BugFindingService {
       confidence?: number;
       /** The individual refute verdicts behind that number, for the drawer. */
       verifierVotes?: Record<string, any>[];
+      /** No independent verifier could run on the engine that found this — see PatchBugFindingDto. */
+      verificationUnavailable?: boolean;
     },
   ): Promise<BugFinding> {
     const before = await this.getOne(id);
@@ -825,7 +827,9 @@ export class BugFindingService {
         ? patch.confidence
         : undefined;
     const hasMetadataPatch =
-      confidence !== undefined || patch.verifierVotes !== undefined;
+      confidence !== undefined ||
+      patch.verifierVotes !== undefined ||
+      patch.verificationUnavailable !== undefined;
 
     await this.findingRepository.update(id, {
       ...(patch.status ? { status: patch.status } : {}),
@@ -855,6 +859,9 @@ export class BugFindingService {
               ...(confidence !== undefined ? { confidence } : {}),
               ...(patch.verifierVotes !== undefined
                 ? { verifierVotes: patch.verifierVotes }
+                : {}),
+              ...(patch.verificationUnavailable !== undefined
+                ? { verificationUnavailable: patch.verificationUnavailable }
                 : {}),
             } as Record<string, any>,
           }

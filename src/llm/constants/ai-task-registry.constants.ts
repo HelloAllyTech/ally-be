@@ -1027,6 +1027,23 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     configuredBy: 'ANTHROPIC_AUTOFILL_MODEL',
     configPath: 'anthropic.autofillModel',
   },
+  {
+    id: 'agent-memory-curation',
+    task: LlmTask.AGENT_MEMORY_CURATION,
+    runtime: LlmRuntime.ALLY_BE,
+    // Mechanical editing of short entries against a fixed operation set: cost
+    // and time dominate, and a wrong merge is caught by the next pass.
+    tier: LlmModelTier.FAST,
+    trigger: "Hourly, when an agent's notebook has new candidate entries",
+    detail:
+      'Folds the notes a sweep or fix session wrote into the curated active set: agree, ' +
+      'edit, add or remove, one operation per candidate. Bug Hunter today; Builder when ' +
+      'its lessons move to the same table.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy: 'LLM_FAST_MODEL',
+  },
 ];
 
 /* ─────────────────────────────────────────────────────────────────────────────

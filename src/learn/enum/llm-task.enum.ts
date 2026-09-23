@@ -146,6 +146,12 @@ export enum LlmTask {
   // run, not by stage within it.
   BUG_HUNTER = 'bug_hunter',
 
+  // Agent memory: the curator pass that folds an agent's notebook candidates
+  // into its active set — see AgentMemoryCuratorService. Its own label rather
+  // than BUG_HUNTER because the notebook is agent-scoped and Builder's lessons
+  // are due to move onto the same table (OPP-0714).
+  AGENT_MEMORY_CURATION = 'agent_memory_curation',
+
   // Fallback for an un-mapped sender task (never drop a usage row).
   UNKNOWN = 'unknown',
 }

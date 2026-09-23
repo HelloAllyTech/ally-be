@@ -234,6 +234,23 @@ export interface RoadmapOpportunityUpsertRequest {
   product_goal: string;
 }
 
+export interface AgentMemoryUpsertRequest {
+  memory_id: string;
+  /** The entry text, embedded but never stored on ally-ai's side. */
+  body: string;
+  /** Whose notebook: bug_hunter or builder. */
+  agent: string;
+}
+
+export interface AgentMemorySearchRequest {
+  query: string;
+  agent: string;
+  /** Default 10, max 50. ally-be asks for more than it shows because it narrows by repo and status afterwards. */
+  limit?: number;
+  /** Minimum cosine similarity, default 0.3. ally-be applies its own configured floor on top. */
+  threshold?: number;
+}
+
 export interface RoadmapOpportunityBulkUpsertRequest {
   items: RoadmapOpportunityUpsertRequest[];
 }

@@ -394,6 +394,35 @@ export class BugFindingRepository extends Repository<BugFinding> {
    * it to stop reporting real bugs, which is the opposite of the intent. See
    * that constant's doc.
    */
+  /**
+   * Unproven findings whose truth has since been settled one way or the other
+   * — declined, or shipped — newest settlement first. The raw material of the
+   * verifier eval set; `BugHunterEvalService.buildSet` decides which of these
+   * carry a usable label and what it is.
+   *
+   * `proven = false` because the verifier never runs on a failing test or a
+   * log cluster, so grading it on those would be grading a phase that did not
+   * happen. `file`/`symbol` required because a verifier with no location has
+   * nothing to read. Takes more than `limit` so the labelling pass has room to
+   * drop the reasons it cannot grade (`wont_fix`, `duplicate`, ...).
+   */
+  listSettledForEval(
+    repo: string | undefined,
+    limit: number,
+  ): Promise<BugFinding[]> {
+    const query = this.createQueryBuilder('f')
+      .where('f.status IN (:...statuses)', {
+        statuses: [...DECLINED_STATUSES, ...SHIPPED_STATUSES],
+      })
+      .andWhere('f.proven = false')
+      .andWhere('f.parentFindingId IS NULL')
+      .andWhere('(f.file IS NOT NULL OR f.symbol IS NOT NULL)')
+      .orderBy('COALESCE(f.decidedAt, f."updatedAt")', 'DESC')
+      .take(limit);
+    if (repo) query.andWhere('f.repo = :repo', { repo });
+    return query.getMany();
+  }
+
   listRecentFinderErrors(
     repo: string,
     since: Date,

@@ -310,6 +310,9 @@ export class BugFinding extends BaseWithoutTenantEntity {
    *  - `rediscoveredCount` — how many sweeps have re-found a bug that was
    *    already declined. A high count is the sweep arguing with a human, and
    *    worth seeing.
+   *  - `verificationUnavailable` — true when the engine that found this had
+   *    no independent verifier (Gemini has no Task tool). Held for a human;
+   *    `BugHunterPolicyService` refuses to let it be fixed in AI mode.
    */
   @Column({ type: 'jsonb', nullable: true })
   metadata?: Record<string, any> | null;

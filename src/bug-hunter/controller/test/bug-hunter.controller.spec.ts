@@ -93,6 +93,12 @@ describe('BugHunterController', () => {
       {} as never,
       // Model settings service: no case here reads/writes settings/models.
       {} as never,
+      // Telemetry service: no case here reads runs/:id/telemetry or metrics/pipeline.
+      {} as never,
+      // Eval service: no case here reads the eval set or stores a run.
+      {} as never,
+      // Memory service: no case here reads or writes the notebook.
+      {} as never,
     );
   });
 

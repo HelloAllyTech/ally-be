@@ -192,6 +192,38 @@ describe('buildFixSessionPrompt', () => {
 
   // ── resumed sessions ─────────────────────────────────────────────────────
 
+  it('marks every phase boundary in protocol order, so a session can be timed stage by stage', () => {
+    const p = build();
+    const marker = (phase: string, event: string) =>
+      p.indexOf(`"phase":"${phase}","event":"${event}"`);
+    const order = [
+      marker('reproduce', 'started'),
+      marker('reproduce', 'finished'),
+      marker('fix', 'started'),
+      marker('fix', 'finished'),
+      marker('suite', 'started'),
+      marker('suite', 'finished'),
+      marker('pr', 'started'),
+      marker('pr', 'finished'),
+    ];
+    for (const idx of order) expect(idx).toBeGreaterThan(-1);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(p).toContain('/runs/run-1/phases');
+  });
+
+  it('asks the notebook before reproducing and offers to write one lesson before closing', () => {
+    const p = build();
+    const read = p.indexOf('pipeline/memory/search');
+    const reproduce = p.indexOf('1. Reproduce it');
+    const write = p.indexOf('9b. If this fix taught you something');
+    const close = p.indexOf('10. Finally');
+    expect(read).toBeGreaterThan(-1);
+    expect(read).toBeLessThan(reproduce);
+    expect(write).toBeGreaterThan(-1);
+    expect(write).toBeLessThan(close);
+    expect(p.slice(write, write + 700)).toContain('"findingId":"finding-1"');
+  });
+
   it('replays an answer the admin already gave, so it is not asked twice', () => {
     const prompt = build({
       escalationAnswer: 'Show the raw URL as a fallback.',

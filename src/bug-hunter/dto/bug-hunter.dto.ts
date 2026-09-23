@@ -251,6 +251,20 @@ export class PersistBugFindingsDto {
 }
 
 export class PatchBugFindingDto {
+  /**
+   * Set by a sweep whose engine has no independent verifier (Gemini has no
+   * Task tool, so the bug-verifier subagent never runs). Stored on
+   * `metadata`, shown on the finding, and read by `BugHunterPolicyService`,
+   * which refuses to let an unverified finding be fixed in AI mode.
+   */
+  @ApiPropertyOptional({
+    description:
+      'True when no independent verifier could run on this engine. The finding is held for a human.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  verificationUnavailable?: boolean;
+
   @ApiPropertyOptional({ enum: BugFindingStatus })
   @IsOptional()
   @IsEnum(BugFindingStatus)
@@ -760,6 +774,12 @@ export class BugFindingDto {
       "The Verify phase's lowest verifier certainty. Null on a proven finding (nothing to verify) and on rows predating verifier scoring.",
   })
   confidence!: number | null;
+
+  @ApiProperty({
+    description:
+      'True when the engine that found this had no independent verifier, so it was never verified and is held for a human — see PatchBugFindingDto.verificationUnavailable.',
+  })
+  verificationUnavailable!: boolean;
 
   @ApiProperty({
     nullable: true,
