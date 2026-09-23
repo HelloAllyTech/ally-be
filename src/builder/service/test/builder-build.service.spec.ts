@@ -29,6 +29,24 @@ const readySession = (overrides: Record<string, any> = {}) => ({
 });
 
 describe('BuilderBuildService', () => {
+  // Unpinned for this whole file.
+  //
+  // Production pins Builder to one engine (see builderEnginePin), which by
+  // design overrules the session, the settings row and the environment. The
+  // resolution chain it overrules is still the thing these tests exist to
+  // cover — sizing, the escalation ladder and, above all, never handing one
+  // engine another engine's model. That filter is the safety net if the pin is
+  // ever lifted, so it is tested with the pin off rather than deleted with it
+  // on. `builder-engine-invocation.spec.ts` covers the pin itself.
+  const pinBefore = process.env.BUILDER_ENGINE_PIN;
+  beforeAll(() => {
+    process.env.BUILDER_ENGINE_PIN = '';
+  });
+  afterAll(() => {
+    if (pinBefore === undefined) delete process.env.BUILDER_ENGINE_PIN;
+    else process.env.BUILDER_ENGINE_PIN = pinBefore;
+  });
+
   let service: BuilderBuildService;
   let github: {
     isConfigured: boolean;

@@ -425,6 +425,47 @@ export const BUILDER_EVIDENCE_MAX_SHAPES = 12;
  * where throughput is. Mapping "Opus vs Sonnet" onto that would be inventing a
  * distinction the vendor does not offer.
  */
+/**
+ * The one engine Builder may run, or null to let the chain below decide.
+ *
+ * Builder resolves its engine `override ?? session.engine ?? settings
+ * .defaultEngine ?? 'gemini'`, and a session carries the engine it was created
+ * with forever. That is correct for a resume — a run that continues someone
+ * else's branches should continue on the same engine — and wrong for
+ * everything else the moment the default moves, because a session created
+ * before the move keeps dispatching its REVIEW and FIX runs on the old engine
+ * indefinitely.
+ *
+ * That is not hypothetical. On 2026-09-23, hours after every Builder phase had
+ * been moved to Gemini and verified as Gemini, a review of ally-web#694
+ * dispatched `BUILDER_ENGINE=claude-code` with `claude-opus-4-7` and
+ * `claude-sonnet-4-6` — model ids that exist nowhere in this codebase — because
+ * the resolution reached a rung the migration never touched. Every pull request
+ * Builder opened was being reviewed on another vendor's credits, silently, and
+ * the only reason anyone noticed was that the run failed for an unrelated
+ * reason and someone read its workflow inputs.
+ *
+ * So the pin is deliberately blunt: set, it wins over the session, the settings
+ * row and the environment alike, because each of those is a place a foreign
+ * model id has already been found hiding. It is one constant to clear when
+ * Builder should be multi-engine again, and `resolveEngine` says in the log
+ * whenever it overrides something — a pin that silently disagreed with the
+ * admin picker would be the same class of bug it exists to close.
+ */
+export const BUILDER_ENGINE_PIN_DEFAULT = 'gemini';
+
+/**
+ * Read at call time, not at import, so it is one env var to clear rather than
+ * a deploy — and so the multi-engine resolution below stays testable. Set
+ * `BUILDER_ENGINE_PIN` to another engine to pin there instead, or to the empty
+ * string to unpin and let the chain in `resolveEngine` decide again.
+ */
+export const builderEnginePin = (): string | null => {
+  const raw = process.env.BUILDER_ENGINE_PIN;
+  if (raw === undefined) return BUILDER_ENGINE_PIN_DEFAULT;
+  return raw.trim() === '' ? null : raw.trim();
+};
+
 export const BUILDER_MODEL_DEFAULTS = {
   interview: 'gemini-2.5-pro',
   planner: 'gemini-2.5-pro',

@@ -671,9 +671,27 @@ export class BuilderPipelineController {
       dto.outcome === 'done' &&
       (await this.buildService.touchedNoFiles(run.id));
 
+    // A REVIEW run has no gate to pass, by construction.
+    //
+    // The mode reads a finished diff and writes findings; run-engine.sh never
+    // invokes the test gate for it, so `hasPassingGate` can only ever be false
+    // and the guard above made a correct review impossible to complete. On
+    // 2026-09-23 a review of ally-web#694 reported zero findings, approved the
+    // pull request — and was then refused its own completion twice, failed by
+    // outcome-gate.sh, and recorded as a failed run. A review that did exactly
+    // its job cannot be allowed to read as a failure: BUILD_FAILED is an
+    // announced kind, so the failure reaches Slack as well as the session.
+    //
+    // `changedNothing` was already meant to cover this and does not: it asks
+    // whether files were touched, and a reviewer that writes so much as a
+    // scratch file fails that test while still having nothing to gate.
+    // Naming the mode says what is actually true instead of inferring it.
+    const cannotGate = run.mode === BuilderRunMode.REVIEW;
+
     if (
       dto.outcome === 'done' &&
       !changedNothing &&
+      !cannotGate &&
       !(await this.buildService.hasPassingGate(run.id))
     ) {
       // Refused, NOT settled. The run may still be working.

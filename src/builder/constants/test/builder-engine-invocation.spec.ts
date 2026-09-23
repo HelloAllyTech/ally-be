@@ -1,6 +1,12 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
+import {
+  BUILDER_ENGINE_PIN_DEFAULT,
+  BUILDER_MODEL_DEFAULTS,
+  builderEnginePin,
+} from '../builder.constants';
+
 const SCRIPTS = join(__dirname, '..', '..', '..', '..', 'scripts', 'builder');
 
 const runEngine = (): string =>
@@ -80,5 +86,62 @@ describe('gemini engine invocation', () => {
    */
   it('is written against the pinned engine version', () => {
     expect(installEngine()).toMatch(/GEMINI_CLI_VERSION="0\.60\.0"/);
+  });
+});
+
+/**
+ * Everything runs on one engine, and the pin is what makes that true rather
+ * than merely configured.
+ */
+describe('the engine pin', () => {
+  const before = process.env.BUILDER_ENGINE_PIN;
+  afterEach(() => {
+    if (before === undefined) delete process.env.BUILDER_ENGINE_PIN;
+    else process.env.BUILDER_ENGINE_PIN = before;
+  });
+
+  /**
+   * The whole point. Builder was verified end to end as Gemini on 2026-09-23 —
+   * interview, build dispatch, in-process phases — and hours later dispatched
+   * a REVIEW run on `claude-code` with `claude-opus-4-7`, a model id that
+   * exists nowhere in this codebase, because a session created before the
+   * migration carries its original engine forever and the review path reads
+   * it. Unset means pinned: no environment change is needed for this to hold.
+   */
+  it('pins to gemini when nothing says otherwise', () => {
+    delete process.env.BUILDER_ENGINE_PIN;
+
+    expect(builderEnginePin()).toBe('gemini');
+    expect(BUILDER_ENGINE_PIN_DEFAULT).toBe('gemini');
+  });
+
+  /**
+   * One env var to clear rather than a deploy — and the empty string means
+   * unpinned rather than pinned to nothing, which is the reading a
+   * `?? DEFAULT` would have got wrong.
+   */
+  it('can be lifted, or moved, without a deploy', () => {
+    process.env.BUILDER_ENGINE_PIN = '';
+    expect(builderEnginePin()).toBeNull();
+
+    process.env.BUILDER_ENGINE_PIN = 'claude-code';
+    expect(builderEnginePin()).toBe('claude-code');
+
+    process.env.BUILDER_ENGINE_PIN = '  gemini  ';
+    expect(builderEnginePin()).toBe('gemini');
+  });
+
+  /**
+   * A pin that named an engine the model defaults do not belong to would move
+   * the mismatch one layer down rather than close it: `gemini --model
+   * claude-opus-4-7` exits on its first phase having written nothing.
+   */
+  it('names an engine every model default belongs to', () => {
+    delete process.env.BUILDER_ENGINE_PIN;
+
+    expect(builderEnginePin()).toBe('gemini');
+    for (const [tier, model] of Object.entries(BUILDER_MODEL_DEFAULTS)) {
+      expect(`${tier}=${model}`).toMatch(/=gemini-/);
+    }
   });
 });

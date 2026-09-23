@@ -50,6 +50,8 @@ import {
   BUILDER_DISPATCH_LOCK_PREFIX,
   BUILDER_DISPATCH_LOCK_TTL_SECONDS,
   BUILDER_DISPATCH_TIMEOUT_MS,
+  builderEnginePin,
+  BUILDER_MODEL_DEFAULTS,
   BUILDER_RESUME_FILES_MAX,
   BUILDER_RESUME_TEST_OUTPUT_MAX,
   BUILDER_RUN_TIMEOUT_MS,
@@ -408,7 +410,21 @@ export class BuilderBuildService {
     settings: { defaultEngine?: string | null },
     override?: string,
   ): string {
-    return override ?? session.engine ?? settings.defaultEngine ?? 'gemini';
+    const chosen =
+      override ?? session.engine ?? settings.defaultEngine ?? 'gemini';
+
+    // The pin wins over all of it. See builderEnginePin for why a session's
+    // own engine is not trustworthy after a migration.
+    const pin = builderEnginePin();
+    if (pin && chosen !== pin) {
+      // Said, not swallowed: an admin whose picker is being overruled should
+      // be able to find out why without reading this file.
+      this.logger.info(
+        `Builder engine pinned to ${pin}; ignoring "${chosen}" for session ` +
+          `${session.id}.`,
+      );
+    }
+    return pin ?? chosen;
   }
 
   /**
@@ -494,7 +510,13 @@ export class BuilderBuildService {
       forThisEngine(settings.coderModel) ??
       forThisEngine(settings.defaultModel) ??
       forThisEngine(config.coderModel) ??
-      config.coderModel;
+      // Last rung. Deliberately NOT the unfiltered `config.coderModel`: an
+      // environment that names another engine's model would otherwise defeat
+      // every filter above it and be handed straight to the engine — which is
+      // exactly the shape of the claude-code review dispatch found on
+      // 2026-09-23. The compiled default is the one value guaranteed to belong
+      // to the engine this build is pinned to.
+      BUILDER_MODEL_DEFAULTS.coder;
     const plannerTier =
       forThisEngine(settings.plannerModel) ??
       forThisEngine(settings.defaultModel) ??
