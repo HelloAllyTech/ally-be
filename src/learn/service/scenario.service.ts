@@ -750,10 +750,9 @@ export class ScenarioService {
           );
 
           if (globalScenarios.length > 0) {
-            const tenants = await this.tenantService.findAll();
-            const tenantIds = tenants.map((tenant) => tenant.id);
-
             for (const globalScenario of globalScenarios) {
+              const tenants = await this.tenantService.findAll();
+              const tenantIds = tenants.map((tenant) => tenant.id);
               const scenarioTenantRepository =
                 entityManager.getRepository(ScenarioTenants);
               const scenarioTenant = tenantIds.map((tenantId) =>
