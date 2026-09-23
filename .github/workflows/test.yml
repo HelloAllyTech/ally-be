@@ -127,6 +127,11 @@ jobs:
       - name: Outcome gate
         run: bash scripts/builder/test/outcome-gate.test.sh
 
+      # The reporting protocol's one remaining hand-assembled payload. A run
+      # that shipped ally-web#694 lost its whole write-up to a 400 here.
+      - name: Report helper
+        run: node scripts/builder/test/report-helper.test.mjs
+
       - name: Engine loop dry run
         run: bash scripts/builder/test/loop-dryrun.sh
 
