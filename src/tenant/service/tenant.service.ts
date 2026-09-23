@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Not, Repository } from 'typeorm';
+import { DataSource, EntityManager, Not, Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Tenant, TenantStatus } from '../entity/tenant.entity';
 import { LoggerService } from '../../logger/logger.service';
@@ -77,8 +77,16 @@ export class TenantService {
     private readonly auditLogService: AuditLogService,
   ) {}
 
-  async findAll(): Promise<Tenant[]> {
-    return this.tenantRepository.find();
+  /**
+   * Pass the caller's `entityManager` when the tenant list feeds a write in
+   * the same transaction — otherwise the read goes out on a pool connection of
+   * its own and is not covered by anything that transaction holds.
+   */
+  async findAll(entityManager?: EntityManager): Promise<Tenant[]> {
+    const repository = entityManager
+      ? entityManager.getRepository(Tenant)
+      : this.tenantRepository;
+    return repository.find();
   }
 
   async create(

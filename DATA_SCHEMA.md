@@ -48,6 +48,12 @@ These apply to nearly every table, so they are stated once here and not repeated
   content (scenarios, cases, paths, badges, dashboards) is *shared* and made visible to tenants
   through explicit join tables: `*_tenants` (e.g. `scenario_tenants`, `case_tenants`,
   `badge_tenants`, `dashboard_tenants`) and to user groups via `*_groups`.
+  These rows are written from *both* ends — publishing global content fans it out over every
+  tenant, and creating a tenant fans every global row in — so the two are a read-then-write pair
+  that can interleave and leave a brand-new tenant with no row at all. `scenario_tenants` is
+  serialised against that with a transaction-level advisory lock
+  (`src/learn/util/global-scenario-tenant-lock.util.ts`), taken by both sides; the other
+  `*_tenants` tables are not yet.
 - **Soft deletes:** Many tables use a nullable `deleted_at` instead of hard deletes. Unique
   indexes are frequently partial: `... WHERE deleted_at IS NULL`. **Always filter
   `deleted_at IS NULL` in analytics queries** unless you specifically want tombstones.
