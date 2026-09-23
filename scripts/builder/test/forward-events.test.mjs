@@ -183,11 +183,6 @@ await test('claude code text is emitted immediately, with no buffering', async (
   assert.equal(result.total_cost_usd, 0.05);
 });
 
-fs.rmSync(tmp, { recursive: true, force: true });
-
-console.log(`\n${passed} passed, ${failures.length} failed`);
-process.exit(failures.length ? 1 : 0);
-
 // ── pricing follows what ran, not what was asked for ────────────────────────
 //
 // Captured from @google/gemini-cli 0.60.0: a request for `gemini-2.5-flash`
@@ -218,3 +213,8 @@ await test('an unpriced model still reports zero, and says so in the feed', asyn
     1,
   );
 });
+
+fs.rmSync(tmp, { recursive: true, force: true });
+
+console.log(`\n${passed} passed, ${failures.length} failed`);
+process.exit(failures.length ? 1 : 0);
