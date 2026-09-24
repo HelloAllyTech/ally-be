@@ -86,6 +86,7 @@ import {
   applyScenarioTranslations,
 } from '../util/scenario.util';
 import { sanitizeJsonbMetadata } from 'src/common/util/sanitize-jsonb.util';
+import { htmlToPlainText } from 'src/common/util/sanitize-html.util';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
@@ -165,10 +166,12 @@ import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
 import {
   AgentBuilderField,
+  ignoresEstablishedContext,
   isLanguageScopedAgentBuilderField,
   MAX_SPOKEN_LANGUAGES,
 } from '../enum/agent-builder-field.enum';
 import {
+  EstablishedContextDto,
   GenerateAgentBuilderFieldDto,
   GenerateAgentBuilderFieldResponseDto,
 } from '../dto/generate-agent-builder-field.dto';
@@ -3496,8 +3499,18 @@ export class ScenarioService {
     const { field, actorDescription, competency, agentTestCases, model } = dto;
 
     const numKnowledgeSources = dto.numKnowledgeSources ?? 3;
+    // The chain's second stage: what the foundation fields settled rides
+    // along on the brief itself rather than in a new template variable, so it
+    // reaches every prompt — including a prompt row edited in Prompt
+    // Management before this existed, which would silently drop an unknown
+    // placeholder.
+    const established = ignoresEstablishedContext(field)
+      ? ''
+      : this.formatEstablishedContext(dto.establishedContext);
     const variables: Record<string, string> = {
-      actorDescription: actorDescription ?? '',
+      actorDescription: established
+        ? `${actorDescription ?? ''}\n\n${established}`
+        : (actorDescription ?? ''),
       competency: competency ?? '',
       agentTestCases: agentTestCases ?? '',
       numKnowledgeSources: String(numKnowledgeSources),
@@ -3569,6 +3582,42 @@ export class ScenarioService {
       return { field, value: this.parseLanguageVoices(raw, catalog) };
     }
     return { field, value: this.parseAgentBuilderField(field, raw) };
+  }
+
+  /**
+   * Render the chain's first-stage output as a block appended to the brief.
+   * Labelled as already decided so the model treats it as fact to build on,
+   * not a suggestion to rewrite; blank when nothing usable was established
+   * (a failed or cleared foundation field just means that stage-two field
+   * generates from the brief alone, as it did before chaining).
+   */
+  private formatEstablishedContext(context?: EstablishedContextDto): string {
+    if (!context) return '';
+    const lines: string[] = [];
+    const persona = context.persona;
+    if (persona) {
+      const personaFacts = [
+        persona.name?.trim() && `Name: ${persona.name.trim()}`,
+        typeof persona.age === 'number' && `Age: ${persona.age}`,
+        persona.gender?.trim() && `Gender: ${persona.gender.trim()}`,
+        persona.profession?.trim() &&
+          `Profession: ${persona.profession.trim()}`,
+        persona.currentLocation?.trim() &&
+          `Lives in: ${persona.currentLocation.trim()}`,
+      ].filter((fact): fact is string => Boolean(fact));
+      if (personaFacts.length > 0) {
+        lines.push(`The client — ${personaFacts.join('; ')}.`);
+      }
+    }
+    const challenge = htmlToPlainText(context.challengeDescription);
+    if (challenge) {
+      lines.push(`The challenge in this session: ${challenge}`);
+    }
+    if (lines.length === 0) return '';
+    return [
+      'Already established for this scenario (treat as fact; stay consistent with it and do not contradict or rename anything here):',
+      ...lines.map((line) => `- ${line}`),
+    ].join('\n');
   }
 
   /**
