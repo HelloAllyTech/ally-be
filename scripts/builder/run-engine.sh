@@ -105,6 +105,36 @@ MCPEOF
 
 # Claude Code takes the same thing as a file on the command line. Its own
 # schema, hence a second file rather than one shared by wishful thinking.
+# opencode takes the same server in its own schema, plus the thing neither
+# other engine offers: agents whose permissions are enforced by NOT OFFERING
+# the tool. The spike watched a denied agent try `bash` and be told "Model
+# tried to call unavailable tool 'bash'" — while keeping every builder_* tool,
+# so a reviewer that cannot write can still report what it found.
+#
+# Two agents, mapped from the tool allowlists this runner already uses, so
+# read-only stays one decision rather than one per engine. `revert_stray_writes`
+# stays regardless: a guarantee this pipeline depends on is not left resting on
+# one vendor's config being read the way its documentation says.
+cat > opencode.json <<MCPEOF
+{
+  "\$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "builder": {
+      "type": "local",
+      "command": ["node", "${MCP_SERVER}"],
+      "enabled": true,
+      "environment": { "BUILDER_HELPER_ENV": "${BUILDER_HELPER_ENV}" }
+    }
+  },
+  "agent": {
+    "builder": {},
+    "reviewer": {
+      "permission": { "edit": "deny", "write": "deny", "bash": "deny" }
+    }
+  }
+}
+MCPEOF
+
 BUILDER_MCP_CONFIG=/tmp/builder-mcp-config.json
 cat > "$BUILDER_MCP_CONFIG" <<MCPEOF
 {
@@ -731,6 +761,36 @@ run_agent() {
         --skip-trust \
         --yolo \
         --output-format stream-json \
+      | node "$FORWARDER" --result-out "$result_file" || rc=$?
+      ;;
+
+    # Verified end to end by .github/workflows/opencode-spike.yml before this
+    # case was written. See install-engine.sh for what that proved.
+    #
+    # `--agent` is how a phase becomes read-only here. The allowlist this
+    # runner already computes decides which one: anything permitted to Write is
+    # the builder, everything else reviews. One decision, three engines.
+    #
+    # `--auto` approves what is not explicitly denied, which is the same trust
+    # model --yolo and acceptEdits already assume: the runner IS the isolation
+    # boundary. The denials in opencode.json are what make that safe for the
+    # read-only phases, and they hold by removing the tool rather than by
+    # refusing the call.
+    #
+    # Two params this case cannot honour, and both are honest gaps rather than
+    # oversights: no turn cap flag exists, and no mid-run dollar ceiling —
+    # though unlike the others opencode at least REPORTS dollars, so the
+    # between-phase budget hold works on measured spend instead of a rate card.
+    opencode)
+      local agent="reviewer"
+      case "$tools" in *Write*) agent="builder" ;; esac
+
+      ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} opencode run \
+        --model "$model" \
+        --agent "$agent" \
+        --format json \
+        --auto \
+        "$(cat "$prompt_file")" \
       | node "$FORWARDER" --result-out "$result_file" || rc=$?
       ;;
 
