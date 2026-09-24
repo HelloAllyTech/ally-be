@@ -1420,6 +1420,18 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       componentFile: f('Analytics/RoleplayVolumeCard.tsx'),
       note: 'Not rendered by a live tab today',
     },
+
+    // ---- Added after the initial numbering (ids append; never renumbered) ----
+    {
+      id: 'AAQ-156',
+      tab: 'Highlights',
+      subTab: 'Goals',
+      title: 'Average Rating',
+      kind: 'chart',
+      chartType: 'LineChart',
+      componentFile: f('Analytics/AverageRatingCard.tsx'),
+      note: 'Sits beside AAQ-005 (Satisfaction Mix) and reads the same quality-distribution ratings',
+    },
   ];
 
 /** Total number of registered charts — handy for the guard test and the UI. */
