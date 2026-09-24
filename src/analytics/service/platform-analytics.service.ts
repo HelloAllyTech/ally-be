@@ -107,8 +107,7 @@ export class PlatformAnalyticsService {
     query: AnalyticsOverviewQueryDto,
     defaultBucketFor: (range: AnalyticsRange) => AnalyticsBucket,
   ): Promise<AnalyticsWindow> {
-    const needsFloor =
-      (query.range ?? '30d') === 'all' && !query.from && !query.to;
+    const needsFloor = (query.range ?? '30d') === 'all';
     return resolveAnalyticsWindow(query, {
       defaultRange: '30d',
       defaultBucketFor,
