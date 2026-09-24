@@ -42,6 +42,14 @@ export interface TrackRoleplaySessionFeedback {
   trackItemId: string;
   trackItemTitle: string | null;
   scenarioSessionId: string;
+  /**
+   * The learner's roleplay score for this attempt (`scenario_sessions.score`)
+   * — the same number Roleplay Logs and Track Overview show for it.
+   *
+   * The key is still named `compositeScore` only because a released ally-web
+   * build reads it by that name; it no longer carries
+   * `scenario_session_details.compositeScore`. Rename on both sides together.
+   */
   compositeScore: number | null;
   occurredAt: string | null;
   /** Human-readable judge feedback for this session (markdown). */
@@ -60,6 +68,7 @@ export interface TrackProgressDashboard {
   lastActivityAt: string | null;
   sections: TrackProgressSectionSummary[];
   evaluatedRoleplaySessionCount: number;
+  /** Mean of the per-session scores above; same naming caveat as they carry. */
   averageCompositeScore: number | null;
   skillCategories: TrackSkillCategoryFeedback[];
   roleplaySessions: TrackRoleplaySessionFeedback[];

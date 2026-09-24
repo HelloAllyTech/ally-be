@@ -131,7 +131,6 @@ export class CloudTelephonyGateway
       this.logger.info(
         `Client disconnected from cloud telephony chat: ${client.id}`,
       );
-      this.handleDisconnect(client);
     });
   }
 
