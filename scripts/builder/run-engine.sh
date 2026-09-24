@@ -67,6 +67,57 @@ ENVEOF
 )
 chmod 600 "$BUILDER_HELPER_ENV"
 
+# ── The reporting protocol, as MCP tools ────────────────────────────────────
+#
+# The same eight reports, offered a second way: as typed tool calls the harness
+# makes directly, instead of executables the agent has to remember to shell out
+# to. See builder-mcp.mjs for the five distinct ways the shell channel has
+# broken — none of them about the protocol, all of them about the channel.
+#
+# The helpers on PATH stay. This is additive: an engine with no MCP support
+# still has them, and they are the fallback if this server fails to start. Both
+# speak to the same ally-be endpoints, so the contract is the HTTP API rather
+# than either implementation, and a build that uses one, the other or both
+# reports identically.
+#
+# No credentials in either config file. The server reads BUILDER_HELPER_ENV for
+# itself, so the key stays in the one 600 file it already lived in rather than
+# gaining a second home in the agent's own workspace.
+MCP_SERVER="${HERE}/builder-mcp.mjs"
+
+# Gemini CLI reads project settings from ./.gemini/settings.json. `trust: true`
+# is what makes the tools callable without a confirmation nobody is there to
+# give — the same reason the run passes --yolo.
+mkdir -p .gemini
+cat > .gemini/settings.json <<MCPEOF
+{
+  "mcpServers": {
+    "builder": {
+      "command": "node",
+      "args": ["${MCP_SERVER}"],
+      "env": { "BUILDER_HELPER_ENV": "${BUILDER_HELPER_ENV}" },
+      "trust": true,
+      "timeout": 30000
+    }
+  }
+}
+MCPEOF
+
+# Claude Code takes the same thing as a file on the command line. Its own
+# schema, hence a second file rather than one shared by wishful thinking.
+BUILDER_MCP_CONFIG=/tmp/builder-mcp-config.json
+cat > "$BUILDER_MCP_CONFIG" <<MCPEOF
+{
+  "mcpServers": {
+    "builder": {
+      "command": "node",
+      "args": ["${MCP_SERVER}"],
+      "env": { "BUILDER_HELPER_ENV": "${BUILDER_HELPER_ENV}" }
+    }
+  }
+}
+MCPEOF
+
 # Model per tier, from the single `models` workflow input. ally-be always
 # supplies all three; the fallbacks only cover a hand-run workflow.
 MODELS_JSON="${BUILDER_MODELS:-{\}}"
@@ -175,9 +226,16 @@ MAX_VERIFY_ROUNDS="${BUILDER_MAX_VERIFY_ROUNDS:-3}"
 
 # Tool allowlists. The verifier gets no Write/Edit/Task on purpose: a reviewer
 # that patches the diff is no longer reviewing it.
-CODER_TOOLS="Bash,Read,Write,Edit,Glob,Grep,Task"
-PLANNER_TOOLS="Bash,Read,Glob,Grep,Task"
-VERIFIER_TOOLS="Bash,Read,Glob,Grep"
+#
+# `mcp__builder` covers every tool the reporting server offers. Claude Code
+# namespaces MCP tools as `mcp__<server>__<tool>`, and an allowlist that omits
+# them silently removes the agent's only way to report — which, for the
+# verifier, is the difference between a review that files findings and one that
+# reads the diff and then cannot say so.
+MCP_TOOLS="mcp__builder"
+CODER_TOOLS="Bash,Read,Write,Edit,Glob,Grep,Task,${MCP_TOOLS}"
+PLANNER_TOOLS="Bash,Read,Glob,Grep,Task,${MCP_TOOLS}"
+VERIFIER_TOOLS="Bash,Read,Glob,Grep,${MCP_TOOLS}"
 
 RESULTS_DIR=/tmp/builder-results
 mkdir -p /tmp/builder-evidence "$RESULTS_DIR"
@@ -619,6 +677,7 @@ run_agent() {
         --permission-mode acceptEdits \
         --model "$model" \
         --allowedTools "$tools" \
+        --mcp-config "$BUILDER_MCP_CONFIG" \
         --max-turns "$max_turns" \
         --effort "$EFFORT" \
         ${max_budget:+--max-budget-usd "$max_budget"} \
