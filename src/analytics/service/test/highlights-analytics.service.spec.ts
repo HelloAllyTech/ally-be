@@ -178,6 +178,15 @@ describe('HighlightsAnalyticsService', () => {
       await service.getHighlights({ range: '90d' });
       expect(repo.getDataFloor).not.toHaveBeenCalled();
     });
+
+    it('fetches the data floor even when a "from" date is provided', async () => {
+      await service.getHighlights({
+        range: 'all',
+        from: '2024-01-01',
+        to: '2024-06-01',
+      });
+      expect(repo.getDataFloor).toHaveBeenCalled();
+    });
   });
 
   describe('bucket axis + gap-fill', () => {
