@@ -54,7 +54,11 @@ import {
   BUILDER_REPOS,
   findBuilderRepo,
 } from '../constants/builder-repos.constants';
-import { BuilderRunMode, BuilderRunStatus } from '../enum/builder.enum';
+import {
+  BuilderRunMode,
+  BuilderRunStatus,
+  BuilderStage,
+} from '../enum/builder.enum';
 import { BuilderBuildRun } from '../entity/builder-build-run.entity';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderPrdDocument } from '../type/builder-prd.type';
@@ -667,6 +671,49 @@ export class BuilderPipelineController {
     // request and changed no code — and were recorded FAILED, which poisoned
     // the session and counted toward the breaker. Doing the right thing must
     // not look like failing.
+    // A plan is not an outcome.
+    //
+    // 2026-09-24: the PLANNING agent of a build finished writing its plan and
+    // called `complete_run done`. ally-be accepted it — a planner edits no
+    // files, so `changedNothing` below waved the gate requirement through —
+    // and the run was settled before the coder had started. The pipeline then
+    // carried on regardless, coded, failed, and the reconcile tick logged
+    // "reported done and then failed; correcting session" eight minutes later.
+    // Thirty-four minutes, no pull request.
+    //
+    // `changedNothing` exists for fix runs that correctly find nothing to do,
+    // and that exemption stays. What it cannot mean is "the run is over",
+    // because a planner has by definition touched nothing and is by definition
+    // not finished. So the stage decides: SETUP and PLANNING are never a place
+    // a BUILD legitimately ends, whatever the agent believes.
+    //
+    // Reachable before, likelier now: the reporting protocol moved to MCP
+    // tools, so `complete_run` went from a shell command an agent had to
+    // compose to a typed tool sitting in every phase's tool list. Making a
+    // protocol easier to call correctly makes it easier to call wrongly, and
+    // the guard for that belongs on the server rather than in the phase prompt.
+    // Every mode, not just BUILD. A fix run skips the planner and reports from
+    // CODING; a review reports from REVIEWING. There is no mode whose work is
+    // finished while the rail still reads SETUP or PLANNING, so the rule needs
+    // no exceptions and gets none — one fewer condition to be wrong about, and
+    // it holds for a run whose mode is missing entirely.
+    const session = await this.sessionService.getSession(run.sessionId);
+    const tooEarlyToFinish =
+      session.currentStage === BuilderStage.SETUP ||
+      session.currentStage === BuilderStage.PLANNING;
+
+    if (dto.outcome === 'done' && tooEarlyToFinish) {
+      this.logger.warn(
+        `Builder run ${run.id} reported done from ${session.currentStage} — ` +
+          'refusing the claim; the run continues.',
+      );
+      throw new ConflictException(
+        `A run cannot finish from ${session.currentStage}. If you are the ` +
+          'planning phase: write the plan and stop. The runner starts the ' +
+          'coder itself, and a later phase reports the outcome.',
+      );
+    }
+
     const changedNothing =
       dto.outcome === 'done' &&
       (await this.buildService.touchedNoFiles(run.id));

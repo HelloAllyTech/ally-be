@@ -10,7 +10,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { BuilderEventService } from '../service/builder-event.service';
 import { BuilderSteerService } from '../service/builder-steer.service';
-import { BuilderRunMode } from '../enum/builder.enum';
+import { BuilderRunMode, BuilderStage } from '../enum/builder.enum';
 import { BuilderQuestionService } from '../service/builder-question.service';
 import { BuilderPullRequestService } from '../service/builder-pull-request.service';
 import { BuilderReportService } from '../service/builder-report.service';
@@ -29,7 +29,17 @@ describe('BuilderPipelineController', () => {
   let app: INestApplication;
   let mockBuilderBuildService: Partial<BuilderBuildService>;
 
+  let mockBuilderSessionService: { getSession: jest.Mock };
+
   beforeEach(async () => {
+    // Defaults to a stage a run may legitimately finish from, so the
+    // completion tests that are not about staging stay unaffected.
+    mockBuilderSessionService = {
+      getSession: jest.fn().mockResolvedValue({
+        id: 'session-1',
+        currentStage: BuilderStage.FINALISING,
+      }),
+    };
     mockBuilderBuildService = {
       getRunOrFail: jest.fn().mockResolvedValue({
         id: uuidv4(),
@@ -74,7 +84,7 @@ describe('BuilderPipelineController', () => {
         { provide: BuilderEpicService, useValue: {} },
         { provide: BuilderKnowledgeService, useValue: {} },
         { provide: BuilderPrdService, useValue: {} },
-        { provide: BuilderSessionService, useValue: {} },
+        { provide: BuilderSessionService, useValue: mockBuilderSessionService },
         { provide: BuilderBuildRunRepository, useValue: {} },
         { provide: BuilderQuestionRepository, useValue: {} },
       ],
@@ -119,6 +129,53 @@ describe('BuilderPipelineController', () => {
       .post(`/builder/pipeline/runs/${runId}/complete`)
       .set('x-api-key', 'test-api-key')
       .send({ outcome: 'done' })
+      .expect(201);
+
+    expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
+  });
+
+  /**
+   * A plan is not an outcome.
+   *
+   * On 2026-09-24 a build's PLANNING agent finished its plan and called
+   * `complete_run done`. It was accepted — a planner edits no files, so the
+   * `changedNothing` exemption waved the gate requirement through — and the
+   * run was settled before the coder had started. Thirty-four minutes later
+   * the workflow failed with no pull request.
+   */
+  it('refuses a build that reports done from PLANNING', async () => {
+    (mockBuilderSessionService.getSession as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      currentStage: BuilderStage.PLANNING,
+    });
+    const runId = uuidv4();
+
+    await request(app.getHttpServer())
+      .post(`/builder/pipeline/runs/${runId}/complete`)
+      .set('x-api-key', 'test-api-key')
+      .send({ outcome: 'done' })
+      .expect(409);
+
+    expect(mockBuilderBuildService.settleRun).not.toHaveBeenCalled();
+    // Not even asked: the stage settles it before the file check can excuse it.
+    expect(mockBuilderBuildService.touchedNoFiles).not.toHaveBeenCalled();
+  });
+
+  /**
+   * A failure from an early stage is still a failure. The runner reports these
+   * from evidence after the agent has gone, and losing one strands the run.
+   */
+  it('still records a failure reported from PLANNING', async () => {
+    (mockBuilderSessionService.getSession as jest.Mock).mockResolvedValue({
+      id: 'session-1',
+      currentStage: BuilderStage.PLANNING,
+    });
+    const runId = uuidv4();
+
+    await request(app.getHttpServer())
+      .post(`/builder/pipeline/runs/${runId}/complete`)
+      .set('x-api-key', 'test-api-key')
+      .send({ outcome: 'failed', error: 'the planner could not read the PRD' })
       .expect(201);
 
     expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
