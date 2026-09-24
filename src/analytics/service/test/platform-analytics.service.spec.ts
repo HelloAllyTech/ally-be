@@ -400,6 +400,15 @@ describe('PlatformAnalyticsService', () => {
       expect(result.previous).not.toBeNull();
     });
 
+    it('fetches the data floor when range is "all" even with a "from" date', async () => {
+      await service.getOverview({
+        range: 'all',
+        from: '2024-01-01',
+        to: '2024-02-01',
+      });
+      expect(repo.getDataFloor).toHaveBeenCalled();
+    });
+
     it('rejects range=all on an endpoint with no data floor', async () => {
       // Token consumption resolves a calendar window only; answering "all time"
       // there would mean inventing a start date.
