@@ -13,7 +13,9 @@ name: Builder session
 # a PR merges here.
 #
 # Required secrets on this repo:
-#   GEMINI_API_KEY     — the coding engine (the default engine is `gemini`)
+#   GEMINI_API_KEY     — the coding engine. Exported under TWO names below,
+#                        because gemini-cli and opencode disagree about which
+#                        one to read.
 #   ANTHROPIC_API_KEY  — only for a run explicitly dispatched with
 #                        engine=claude-code
 #   ALLY_BE_API_KEY    — equals ally-be's API_KEY, for the pipeline callbacks
@@ -92,6 +94,21 @@ jobs:
       # Gemini Code Assist license on the project, which is a per-org setup
       # step this workflow does not attempt.
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      # The same key, under the name opencode's google provider reads.
+      #
+      # One secret, two names, because the two engines disagree about what to
+      # call it: gemini-cli takes GEMINI_API_KEY, and opencode's provider
+      # answers "Google Generative AI API key is missing. Pass it using the
+      # 'apiKey' parameter or the GOOGLE_GENERATIVE_AI_API_KEY environment
+      # variable" — while GEMINI_API_KEY is set the whole time. Its binary
+      # contains all three plausible names, which is why reading strings out of
+      # it looked like an answer and was not.
+      #
+      # opencode-spike.yml found this and was fixed there, and the fix did not
+      # travel the twenty lines to here. A spike that supplies its own
+      # environment proves the engine runs; it proves nothing about the
+      # environment the pipeline actually supplies.
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       BUILDER_GH_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
       GH_TOKEN: ${{ secrets.BUILDER_GH_TOKEN }}
       # Tier 1 of `.claude/stacks-bridge.mjs`. Without it the bridge falls
