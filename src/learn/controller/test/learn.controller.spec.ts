@@ -225,6 +225,7 @@ describe('LearnController', () => {
     const mockScenarioSessionService = {
       getScenarioSessions: jest.fn(),
       getAdminScenarioSessions: jest.fn(),
+      getAdminScenarioSessionFilterOptions: jest.fn(),
       getScenarioSession: jest.fn(),
       startScenarioSession: jest.fn(),
       previewScenario: jest.fn(),
@@ -752,6 +753,7 @@ describe('LearnController', () => {
           order: 'DESC',
         },
         undefined,
+        { counselorIds: undefined, scenarioIds: undefined },
       );
     });
 
@@ -780,7 +782,51 @@ describe('LearnController', () => {
           order: 'DESC',
         },
         'mr',
+        { counselorIds: undefined, scenarioIds: undefined },
       );
+    });
+
+    it('should forward the counselor and scenario id filters', async () => {
+      scenarioSessionService.getAdminScenarioSessions.mockResolvedValue({
+        data: [],
+      } as any);
+
+      await controller.getAdminScenarioSessions(
+        10,
+        0,
+        undefined,
+        undefined,
+        undefined,
+        '7,12',
+        '3',
+      );
+
+      expect(
+        scenarioSessionService.getAdminScenarioSessions,
+      ).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 10, offset: 0 }),
+        undefined,
+        { counselorIds: '7,12', scenarioIds: '3' },
+      );
+    });
+  });
+
+  describe('getAdminScenarioSessionFilters', () => {
+    it('should return the filter options for the requested language', async () => {
+      const options = {
+        counselors: [{ id: 1, name: 'Asha' }],
+        scenarios: [{ id: 3, title: 'Crisis call' }],
+      };
+      scenarioSessionService.getAdminScenarioSessionFilterOptions.mockResolvedValue(
+        options as any,
+      );
+
+      const result = await controller.getAdminScenarioSessionFilters('mr');
+
+      expect(result).toEqual(options);
+      expect(
+        scenarioSessionService.getAdminScenarioSessionFilterOptions,
+      ).toHaveBeenCalledWith('mr');
     });
   });
 

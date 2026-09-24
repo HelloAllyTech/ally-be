@@ -342,6 +342,21 @@ export class AppConfigService {
     };
   }
 
+  /**
+   * PostHog product analytics. Optional on every environment: with no API key
+   * the client is built disabled (see `PostHogModule`), so local, CI and test
+   * runs capture nothing instead of failing at startup.
+   */
+  get posthog() {
+    return {
+      apiKey: this.configService.get<string>('POSTHOG_API_KEY', ''),
+      host: this.configService.get<string>(
+        'POSTHOG_HOST',
+        'https://us.i.posthog.com',
+      ),
+    };
+  }
+
   get analytics() {
     return {
       integration: this.configService.get<string>('ANALYTICS_INTEGRATION'),
@@ -703,7 +718,7 @@ export class AppConfigService {
    * credential at whichever environment the default named, rather than at the
    * one whose credential it is.
    */
-  get posthog() {
+  get posthogQuery() {
     const host = this.configService.get<string>('POSTHOG_HOST');
     const personalApiKey = this.configService.get<string>(
       'POSTHOG_PERSONAL_API_KEY',

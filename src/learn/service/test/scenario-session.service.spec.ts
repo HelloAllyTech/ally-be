@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { BadRequestException } from '@nestjs/common';
 import { ParticipantInfo_Kind } from '@livekit/protocol';
+import { PostHog } from 'posthog-node';
 import { DataSource, Repository } from 'typeorm';
 import { AiService } from 'src/ai/service/ai.service';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
@@ -190,6 +191,7 @@ describe('ScenarioSessionService', () => {
     const mockScenarioSessionRepo = {
       getScenarioSessions: jest.fn(),
       getAdminScenarioSessions: jest.fn(),
+      getAdminScenarioSessionFilterOptions: jest.fn(),
       getScenarioSession: jest.fn(),
       createScenarioSession: jest.fn(),
       findOne: jest.fn(),
@@ -396,6 +398,10 @@ describe('ScenarioSessionService', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSessionService,
+        {
+          provide: PostHog,
+          useValue: { capture: jest.fn() },
+        },
         {
           provide: PreviewMonologueService,
           useValue: { startRun: jest.fn().mockResolvedValue(undefined) },
@@ -900,7 +906,10 @@ describe('ScenarioSessionService', () => {
       expect(result.data[0]).not.toHaveProperty('scenario.translations');
       expect(
         scenarioSessionRepository.getAdminScenarioSessions,
-      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED);
+      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED, {
+        counselorIds: undefined,
+        scenarioIds: undefined,
+      });
     });
 
     it('should apply translations to admin scenario sessions when languageCode is provided', async () => {
@@ -939,7 +948,124 @@ describe('ScenarioSessionService', () => {
       expect(scenario).not.toHaveProperty('translations');
       expect(
         scenarioSessionRepository.getAdminScenarioSessions,
-      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED);
+      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED, {
+        counselorIds: undefined,
+        scenarioIds: undefined,
+      });
+    });
+
+    it('should parse comma-separated counselor and scenario id filters', async () => {
+      scenarioSessionRepository.getAdminScenarioSessions.mockResolvedValue(
+        [] as any,
+      );
+
+      await service.getAdminScenarioSessions(mockPagination, undefined, {
+        counselorIds: '12, 7',
+        scenarioIds: '3',
+      });
+
+      expect(
+        scenarioSessionRepository.getAdminScenarioSessions,
+      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED, {
+        counselorIds: [12, 7],
+        scenarioIds: [3],
+      });
+    });
+
+    it('should drop non-numeric ids rather than passing them to the query', async () => {
+      scenarioSessionRepository.getAdminScenarioSessions.mockResolvedValue(
+        [] as any,
+      );
+
+      await service.getAdminScenarioSessions(mockPagination, undefined, {
+        counselorIds: '12,abc,,9',
+        scenarioIds: 'not-a-number',
+      });
+
+      expect(
+        scenarioSessionRepository.getAdminScenarioSessions,
+      ).toHaveBeenCalledWith(mockPagination, ScenarioSessionStatus.ENDED, {
+        counselorIds: [12, 9],
+        scenarioIds: undefined,
+      });
+    });
+  });
+
+  describe('getAdminScenarioSessionFilterOptions', () => {
+    it('should return the counselors and scenarios present in the logs', async () => {
+      scenarioSessionRepository.getAdminScenarioSessionFilterOptions.mockResolvedValue(
+        {
+          counselors: [{ id: '4', name: 'Asha', email: 'asha@example.com' }],
+          scenarios: [{ id: '9', title: 'English Title', translations: null }],
+        } as any,
+      );
+
+      const result = await service.getAdminScenarioSessionFilterOptions();
+
+      expect(result).toEqual({
+        counselors: [{ id: 4, name: 'Asha', email: 'asha@example.com' }],
+        scenarios: [{ id: 9, title: 'English Title' }],
+      });
+      expect(
+        scenarioSessionRepository.getAdminScenarioSessionFilterOptions,
+      ).toHaveBeenCalledWith(ScenarioSessionStatus.ENDED);
+    });
+
+    it('should resolve scenario titles in the requested language and drop translations', async () => {
+      scenarioSessionRepository.getAdminScenarioSessionFilterOptions.mockResolvedValue(
+        {
+          counselors: [],
+          scenarios: [
+            {
+              id: '9',
+              title: 'English Title',
+              translations: { mr: { title: 'Marathi Title' } },
+            },
+          ],
+        } as any,
+      );
+
+      const result = await service.getAdminScenarioSessionFilterOptions('mr');
+
+      expect(result.scenarios).toEqual([{ id: 9, title: 'Marathi Title' }]);
+    });
+
+    it('should fall back to the English title when the language has no translation', async () => {
+      scenarioSessionRepository.getAdminScenarioSessionFilterOptions.mockResolvedValue(
+        {
+          counselors: [],
+          scenarios: [
+            {
+              id: '9',
+              title: 'English Title',
+              translations: { mr: { title: 'Marathi Title' } },
+            },
+          ],
+        } as any,
+      );
+
+      const result = await service.getAdminScenarioSessionFilterOptions('ta');
+
+      expect(result.scenarios).toEqual([{ id: 9, title: 'English Title' }]);
+    });
+
+    it('should keep same-named people as separate options carrying their own email', async () => {
+      scenarioSessionRepository.getAdminScenarioSessionFilterOptions.mockResolvedValue(
+        {
+          counselors: [
+            { id: '99', name: 'Shubham Bhoite', email: 'a@example.com' },
+            { id: '123', name: 'Shubham Bhoite', email: 'b@example.com' },
+          ],
+          scenarios: [],
+        } as any,
+      );
+
+      const result = await service.getAdminScenarioSessionFilterOptions();
+
+      expect(result.counselors).toEqual([
+        { id: 99, name: 'Shubham Bhoite', email: 'a@example.com' },
+        { id: 123, name: 'Shubham Bhoite', email: 'b@example.com' },
+      ]);
     });
   });
 

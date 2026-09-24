@@ -613,7 +613,7 @@ export class PlatformAnalyticsService {
       )},${isoDate(endExclusive)}) bucket=${bucket}`,
     );
 
-    const [points, byLanguage] = await Promise.all([
+    const [points, byLanguage, overall] = await Promise.all([
       withReportingQuerySlot(() =>
         this.repo.getVoiceLatencyByBucket(
           windowStart,
@@ -625,6 +625,9 @@ export class PlatformAnalyticsService {
       withReportingQuerySlot(() =>
         this.repo.getVoiceLatencyByLanguage(windowStart, endExclusive),
       ),
+      withReportingQuerySlot(() =>
+        this.repo.getVoiceLatencyOverall(windowStart, endExclusive, language),
+      ),
     ]);
 
     return {
@@ -635,6 +638,7 @@ export class PlatformAnalyticsService {
       llmTtftTargetMs: LLM_TTFT_TARGET_MS,
       points,
       byLanguage,
+      overall,
     };
   }
 

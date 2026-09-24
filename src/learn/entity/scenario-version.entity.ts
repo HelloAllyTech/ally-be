@@ -7,6 +7,7 @@ import {
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { ScenarioVersionStatus } from '../enum/scenario-version-status.enum';
+import { ScenarioVersionType } from '../enum/scenario-version-type.enum';
 
 /**
  * A saved snapshot of a scenario's editable configuration.
@@ -52,6 +53,16 @@ export class ScenarioVersion extends BaseWithoutTenantEntity {
   // The version this one was branched/cloned from (null for the original v1).
   @Column({ type: 'uuid', nullable: true })
   parentVersionId?: string | null;
+
+  // MANUAL: authored by a user (new/branch/revert). AUTOMATIC: created by the
+  // daily auto-version job from a draft modified in the preceding 24 hours.
+  @Column({
+    type: 'enum',
+    enum: ScenarioVersionType,
+    enumName: 'scenario_versions_type_enum',
+    default: ScenarioVersionType.MANUAL,
+  })
+  type!: ScenarioVersionType;
 
   @Column({ nullable: true })
   createdBy?: number;

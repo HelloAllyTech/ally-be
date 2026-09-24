@@ -67,6 +67,12 @@ import {
   BulkSetWorkerTypeResponseDto,
   SetWorkerTypeDto,
 } from '../dto/worker-type.dto';
+import { PostHog } from 'posthog-node';
+import {
+  AUTH_ANALYTICS_EVENTS,
+  TERMS_AND_AGREEMENT_VERSION,
+} from 'src/auth/constants/auth-analytics.constants';
+import { userDistinctId } from 'src/posthog/posthog.util';
 
 @Controller('v1/users')
 @ApiTags('Users')
@@ -79,6 +85,7 @@ export class UserController {
     private groupService: GroupService,
     private adminTenantService: AdminTenantService,
     private featureToggleService: FeatureToggleService,
+    private readonly posthog: PostHog,
   ) {}
 
   @Get('me')
@@ -379,8 +386,29 @@ export class UserController {
     summary:
       'Returns the current status of terms and agreement acceptance for the authenticated user',
   })
-  async approveTermsAndAgreement(): Promise<SuccessResponse> {
-    return this.userService.approveTermsAndAgreement();
+  async approveTermsAndAgreement(
+    @CurrentUser() tokenUser: TokenUser,
+  ): Promise<SuccessResponse> {
+    const result = await this.userService.approveTermsAndAgreement();
+
+    // auth.terms_accepted belongs to the Login & Signup funnel, but the terms
+    // pop-up posts here, not to /auth — the learner already holds tokens by the
+    // time they see it. Captured against their user id, which is what
+    // AuthController aliases the pre-login identity onto.
+    try {
+      this.posthog.capture({
+        distinctId: userDistinctId(tokenUser.id),
+        event: AUTH_ANALYTICS_EVENTS.TERMS_ACCEPTED,
+        properties: { terms_version: TERMS_AND_AGREEMENT_VERSION },
+      });
+    } catch (error) {
+      this.logger.error(
+        'Failed to capture auth.terms_accepted in PostHog',
+        error,
+      );
+    }
+
+    return result;
   }
 
   @Post('/preferences')

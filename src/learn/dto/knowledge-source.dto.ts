@@ -25,4 +25,19 @@ export class KnowledgeSourceDto {
   @IsString()
   @IsOptional()
   content?: string;
+
+  @ApiProperty({
+    description:
+      'Id of the scenario state from which the client may talk about this ' +
+      'memory. Until the session reaches that state (or any later one) the ' +
+      'content is withheld from the agent and only the title is shown to it, ' +
+      'as a topic the client is not ready to discuss. Unset or null means ' +
+      'always available. Must name one of the scenario `states`.',
+    example: 'state-2',
+    required: false,
+    nullable: true,
+  })
+  @IsString()
+  @IsOptional()
+  unlocksFromStateId?: string | null;
 }

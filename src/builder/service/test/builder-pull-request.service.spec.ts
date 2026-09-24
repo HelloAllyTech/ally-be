@@ -64,7 +64,13 @@ describe('BuilderPullRequestService', () => {
       update: jest.fn(),
       findOne: jest.fn(),
     };
-    sessionRepository = { findOne: jest.fn() };
+    sessionRepository = {
+      findOne: jest.fn(),
+      update: jest.fn(),
+      // The outcome sweep runs first on every reconcile tick; nothing failed
+      // by default.
+      listRecentlyFailed: jest.fn().mockResolvedValue([]),
+    };
     notificationService = {
       prsOpened: jest.fn(),
       fixRunStarted: jest.fn(),
@@ -80,6 +86,9 @@ describe('BuilderPullRequestService', () => {
     };
     github = {
       isConfigured: true,
+      // Healthy credential by default. A run of unauthorised calls is what
+      // raises the alarm; zero failures keeps the release watcher quiet.
+      credentialHealth: { failures: 0, since: null },
       listPullRequestFiles: jest
         .fn()
         .mockResolvedValue({ files: ['src/a.ts'], truncated: false }),
@@ -1979,25 +1988,38 @@ describe('BuilderPullRequestService — clearing an error the PRs disproved', ()
   });
 
   /**
-   * A session whose pull requests are all merged or closed has no open evidence
-   * either way, and its last error is the only account of what happened.
+   * This previously asserted the opposite, on the reasoning that a session with
+   * nothing open has "no evidence either way". That was wrong: a MERGED pull
+   * request is the strongest evidence available — green checks plus a person
+   * explicitly choosing to take the change. Only a pull request closed WITHOUT
+   * merging is a rejection, and that case is asserted separately.
    */
-  it('leaves it alone when nothing is open', async () => {
+  it('clears once the pull requests have merged', async () => {
     repository.listBySession.mockResolvedValue([
       green({ merged: true, state: 'closed' }),
     ]);
 
     await service.clearStaleSessionError('s-1');
 
-    expect(sessionRepository.update).not.toHaveBeenCalled();
+    expect(sessionRepository.update).toHaveBeenCalledWith(
+      { id: 's-1' },
+      { error: null },
+    );
   });
 
-  it('does no work on a session that has no error', async () => {
-    sessionRepository.findOne.mockResolvedValue({ id: 's-1', error: null });
+  /**
+   * The method now reconciles the STATUS as well as the error, so a session
+   * with nothing wrong still gets looked at — it just must not be written to.
+   */
+  it('writes nothing to a session that has no error and has not failed', async () => {
+    sessionRepository.findOne.mockResolvedValue({
+      id: 's-1',
+      error: null,
+      status: 'COMPLETED',
+    });
 
     await service.clearStaleSessionError('s-1');
 
-    expect(repository.listBySession).not.toHaveBeenCalled();
     expect(sessionRepository.update).not.toHaveBeenCalled();
   });
 });

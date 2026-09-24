@@ -1,5 +1,8 @@
 import { SimulationState } from '../../type/simulation-state.type';
-import { validateSimulationStates } from '../validate-simulation-states.util';
+import {
+  validateKnowledgeSourceUnlocks,
+  validateSimulationStates,
+} from '../validate-simulation-states.util';
 
 /**
  * Build a SimulationState with sensible defaults. The starting state is
@@ -111,5 +114,48 @@ describe('validateSimulationStates', () => {
       state({ id: '', scoreLower: 0, scoreUpper: 50 }),
     ]);
     expect(missing.some((e) => e.includes('must have an id'))).toBe(true);
+  });
+});
+
+describe('validateKnowledgeSourceUnlocks', () => {
+  const states = [
+    state({ id: 's-1', scoreLower: 0, scoreUpper: 50 }),
+    state({ id: 's-2', scoreLower: 50, scoreUpper: 100 }),
+  ];
+
+  it('accepts sources with no lock, with or without states', () => {
+    expect(
+      validateKnowledgeSourceUnlocks(
+        [{ title: 'a' }, { title: 'b', unlocksFromStateId: null }],
+        undefined,
+      ),
+    ).toEqual([]);
+  });
+
+  it('accepts a lock naming an existing state', () => {
+    expect(
+      validateKnowledgeSourceUnlocks(
+        [{ title: 'a', unlocksFromStateId: 's-2' }],
+        states,
+      ),
+    ).toEqual([]);
+  });
+
+  it('rejects a lock naming a state that does not exist', () => {
+    const errors = validateKnowledgeSourceUnlocks(
+      [{ title: 'Drinking', unlocksFromStateId: 'gone' }],
+      states,
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("'Drinking'");
+  });
+
+  it('rejects a lock when the simulation has no states', () => {
+    expect(
+      validateKnowledgeSourceUnlocks(
+        [{ title: 'a', unlocksFromStateId: 's-1' }],
+        [],
+      ),
+    ).toHaveLength(1);
   });
 });

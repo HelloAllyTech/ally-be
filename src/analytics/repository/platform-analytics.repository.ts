@@ -7,12 +7,13 @@ import {
   excludeTestTenantsByUser,
 } from '../util/test-tenant.util';
 import { getPlatformDataFloor } from '../util/data-floor.util';
+import { resolveSqlBucket } from '../util/analytics-window.util';
 
 /**
  * Bucket granularity for time-series aggregation. Controlled internally by the
  * service (never user input) so it is safe to interpolate into `date_trunc`.
  */
-export type AnalyticsBucket = 'day' | 'week' | 'month' | 'year';
+export type AnalyticsBucket = 'day' | 'week' | 'month' | 'quarter' | 'year';
 
 export interface AgentJoinReliabilityBucketRow {
   bucket: string;
@@ -160,6 +161,17 @@ export interface VoiceLatencyByLanguageRow {
   avgSttFinalizeMs: number | null;
 }
 
+export interface VoiceLatencyOverallRow {
+  /** Live-pipeline turns aggregated over the whole window. */
+  turns: number;
+  /** Mean voice-to-voice latency (ms); null with no turns. */
+  avgMs: number | null;
+  /** Median (p50) voice-to-voice latency (ms); null with no turns. */
+  p50Ms: number | null;
+  /** p95 voice-to-voice latency (ms); null with no turns. */
+  p95Ms: number | null;
+}
+
 /**
  * Shared per-session voice-pipeline latency shape — used both for a single
  * session-wise row (`getVoiceLatencyBySessions`, one row per session) and for
@@ -265,10 +277,11 @@ export class PlatformAnalyticsRepository {
   private resolveBucket(bucket: AnalyticsBucket): AnalyticsBucket {
     // Defense-in-depth: bucket is internal, but never interpolate anything we
     // have not explicitly whitelisted.
-    if (bucket === 'day') return 'day';
-    if (bucket === 'month') return 'month';
-    if (bucket === 'year') return 'year';
-    return 'week';
+    return resolveSqlBucket(
+      bucket,
+      ['day', 'week', 'month', 'quarter', 'year'],
+      'week',
+    );
   }
 
   /**
@@ -933,6 +946,74 @@ export class PlatformAnalyticsRepository {
       avgSttFinalizeMs:
         r.avgSttFinalizeMs != null ? Number(r.avgSttFinalizeMs) : null,
     }));
+  }
+
+  /**
+   * Whole-window avg/p50/p95 voice-to-voice latency, live-pipeline only — the
+   * exact KPI figure for the "Time to first voice — live pipeline" chart's
+   * All-time mode. A genuinely separate query, NOT a fold of
+   * {@link getVoiceLatencyByBucket}'s per-bucket percentiles: percentiles do
+   * not aggregate across buckets (there is no way to combine a set of p95s into
+   * the p95 of the underlying turns), so this re-runs `percentile_cont` over
+   * every matching turn in one pass instead.
+   *
+   * Scoped to `source = 'pipeline'` only, same as {@link getVoiceLatencyByLanguage}
+   * — this is the live-agent measurement the chart plots, not the
+   * historical/transcript-derived one. Same WHERE/JOIN/exclusion logic as
+   * {@link getVoiceLatencyByBucket}, just without the bucket/source grouping.
+   */
+  async getVoiceLatencyOverall(
+    start: Date,
+    end: Date,
+    language?: string,
+  ): Promise<VoiceLatencyOverallRow> {
+    const qb = this.dataSource
+      .createQueryBuilder()
+      .select('COUNT(*)::int', 'turns')
+      .addSelect('round(avg(m."responseLatencyMs"))::int', 'avgMs')
+      .addSelect(
+        `round(percentile_cont(0.5) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p50Ms',
+      )
+      .addSelect(
+        `round(percentile_cont(0.95) WITHIN GROUP ` +
+          `(ORDER BY m."responseLatencyMs"))::int`,
+        'p95Ms',
+      )
+      .from('scenario_session_turn_metrics', 'm');
+    if (language) {
+      qb.innerJoin(
+        'scenario_sessions',
+        's',
+        's.id = m."scenarioSessionId"',
+      ).leftJoin(
+        'languages',
+        'l',
+        `l.id = NULLIF(s.metadata->>'languageId', '')::int`,
+      );
+    }
+    qb.where('m."occurredAt" >= :start', { start })
+      .andWhere('m."occurredAt" < :end', { end })
+      .andWhere(`m."source" = 'pipeline'`)
+      .andWhere('m."responseLatencyMs" IS NOT NULL')
+      .andWhere(excludeTestTenants('m."tenant_id"'));
+    if (language) {
+      qb.andWhere(`COALESCE(l.value, 'en') = :language`, { language });
+    }
+    const row = await qb.getRawOne<{
+      turns: number;
+      avgMs: number | null;
+      p50Ms: number | null;
+      p95Ms: number | null;
+    }>();
+
+    return {
+      turns: Number(row?.turns) || 0,
+      avgMs: row?.avgMs == null ? null : Number(row.avgMs),
+      p50Ms: row?.p50Ms == null ? null : Number(row.p50Ms),
+      p95Ms: row?.p95Ms == null ? null : Number(row.p95Ms),
+    };
   }
 
   /**

@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# complete-run <json> — finish. {"outcome":"done"|"failed","error":"…"}
+#
+# NOT named `complete`. That is a bash BUILTIN (programmable completion), and
+# bash resolves builtins before PATH — so a file called `complete` can never be
+# invoked from a shell, however early it sits on PATH.
+#
+# This is why the old prompt-embedded form worked and looked fine: it defined a
+# shell FUNCTION, and functions outrank builtins. Turning the same protocol into
+# executables without renaming this one would have made the single most
+# important call in the contract silently unreachable — every run on every
+# engine recorded as "ended without reporting an outcome", with the work pushed
+# and green. Found by running each helper from a fresh shell, which is how an
+# agent's shell tool actually invokes them.
+#
+# The hyphen is load-bearing: no bash builtin or keyword contains one.
+#
+# The one helper that does not swallow its failure. Everything else here is
+# telemetry; this is the run's outcome, and a run that believes it reported one
+# when the POST never landed is recorded as a run that ended without reporting
+# — which is a failure even when the work pushed cleanly, and counts against
+# the session's circuit breaker.
+#
+# ## Plain words, not JSON
+#
+#   complete-run done
+#   complete-run failed "the gate stayed red after four attempts"
+#
+# The JSON form still works, because older prompts and Claude Code runs use it.
+# But it must not be the only form: an agent's shell tool decides what it is
+# willing to run, and Gemini's refuses a quoted JSON literal outright —
+# `Command rejected because it could not be parsed safely`. A run that had
+# planned, coded, passed the gate AND passed the reviewer then could not say so,
+# because the only way we offered it to report an outcome was a string its own
+# tooling would not pass through.
+#
+# Asking an agent to compose shell is asking it to satisfy a parser we do not
+# control. Two words satisfy every parser.
+set -uo pipefail
+. "$(dirname "$0")/_common.sh"
+[ $# -ge 1 ] && [ -n "${1:-}" ] || usage "complete-run done | complete-run failed \"reason\""
+
+case "$1" in
+  done)   body='{"outcome":"done"}' ;;
+  failed) body="$(jq -nc --arg e "${2:-The run reported a failure without a reason.}" '{outcome:"failed", error:$e}')" ;;
+  *)
+    # The JSON form, kept for compatibility.
+    body="$1"
+    printf '%s' "$body" | jq -e '.outcome == "done" or .outcome == "failed"' >/dev/null 2>&1 || {
+      echo "complete-run: say 'done', or 'failed \"<reason>\"'. Got: $1" >&2
+      exit 2
+    }
+    ;;
+esac
+
+# A refusal is not a transport failure, and must not be retried into one.
+#
+# The server refuses a `done` it cannot verify — no passing test gate yet —
+# and that is a considered answer about this run, identical on every attempt.
+# Only 5xx and network errors are worth trying again.
+#
+# This mattered more than it looks. The refusal used to come back as HTTP 200
+# with `{"ok": false}`, and this helper checked only the status code, so it
+# printed "Outcome recorded." at an agent whose outcome had just been rejected.
+# The agent believed it had finished, said so, and stopped — while the pipeline
+# carried on without it.
+response="$(mktemp)"
+for attempt in 1 2 3; do
+  code="$(curl -sS -o "$response" -w '%{http_code}' -X POST "${API}/complete" \
+    -H "x-api-key: ${ALLY_BE_API_KEY}" -H 'Content-Type: application/json' \
+    -d "$body" 2>/dev/null || echo 000)"
+  case "$code" in
+    2*)
+      # `{"ok": false}` is a refusal wearing a success code. Older servers
+      # answer that way, so read the body rather than trusting the status.
+      if jq -e '.ok == false' < "$response" >/dev/null 2>&1; then
+        echo "complete-run: REFUSED — your outcome was not recorded." >&2
+        jq -r '.note // .message // empty' < "$response" >&2 2>/dev/null || true
+        rm -f "$response"
+        exit 1
+      fi
+      rm -f "$response"
+      # The workflow's `if: failure()` net reads this file and stays quiet when
+      # it exists. Without it, a run that reported precisely why it failed —
+      # and then exited non-zero, as it should — had "The build runner failed.
+      # See the workflow log." posted on top of its own explanation.
+      touch "${BUILDER_REPORTED_MARKER:-/tmp/builder-already-reported}" 2>/dev/null || true
+      echo "Outcome recorded."
+      exit 0
+      ;;
+    4*)
+      echo "complete-run: REFUSED — your outcome was not recorded." >&2
+      jq -r '.message // .note // empty' < "$response" >&2 2>/dev/null \
+        || sed -n '1,5p' "$response" >&2
+      rm -f "$response"
+      exit 1
+      ;;
+  esac
+  echo "complete-run: HTTP ${code} on attempt ${attempt}." >&2
+  sleep 3
+done
+
+rm -f "$response"
+echo "complete-run: the outcome was NOT recorded after 3 attempts." >&2
+exit 1

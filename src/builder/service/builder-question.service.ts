@@ -66,6 +66,28 @@ export class BuilderQuestionService {
       );
     }
 
+    // A question with nothing in it is worse than no question at all.
+    //
+    // This used to substitute a placeholder — "The agent needs a decision." —
+    // and park the session on it. Nobody can answer that, and a parked run
+    // counts as an active one, so every later fix and review dispatch for the
+    // session is refused. One empty `ask` cost a session four hours, and the
+    // person looking at it had no way to know what was being asked.
+    //
+    // Refused at the boundary instead, so the run stays alive and the agent
+    // can ask again with something in it. Failing the call is recoverable;
+    // parking on an unanswerable question is not.
+    const blank = incoming.filter(
+      (raw) => !String(raw?.prompt ?? '').trim(),
+    ).length;
+    if (blank) {
+      throw new BadRequestException(
+        `${blank} of ${incoming.length} question(s) have an empty prompt. A pause stops the ` +
+          'build until a person answers, so every question must say what it is asking. ' +
+          'Re-send the pause with a prompt on each question, or carry on without pausing.',
+      );
+    }
+
     const groupId = uuidv4();
     const saved: BuilderQuestion[] = [];
 
@@ -170,7 +192,9 @@ export class BuilderQuestionService {
 
     return {
       id: uuidv4(),
-      prompt: String(raw?.prompt ?? '').trim() || 'The agent needs a decision.',
+      // Guaranteed non-empty by recordPause, which refuses the whole pause
+      // rather than inventing a prompt nobody can answer.
+      prompt: String(raw?.prompt ?? '').trim(),
       kind: options.length ? kind : 'freeText',
       ...(raw?.rationale ? { rationale: String(raw.rationale) } : {}),
       ...(options.length ? { options } : {}),
@@ -209,7 +233,44 @@ export class BuilderQuestionService {
         'That question belongs to a build that has since been stopped.',
       );
     }
+    // An answered question whose run is STILL parked is a half-finished
+    // answer, not a duplicate one.
+    //
+    // The answer is written before the resume is dispatched, because the resume
+    // reads it — but the two are not in one transaction, so anything that
+    // throws in between leaves the answer recorded and the run waiting. The
+    // budget ceiling does exactly that: `resumeFromQuestions` asserts it AFTER
+    // this write, so answering an over-budget session consumed the question and
+    // stranded the run. Re-answering then refused as a duplicate, and the only
+    // documented way out of WAITING_FOR_INPUT was gone — which silently blocks
+    // every fix and review dispatch for that session, since a parked run counts
+    // as an active one.
+    //
+    // So retry the half that failed rather than refusing the whole thing.
+    // `resumeFromQuestions` re-checks group completeness and budget and is safe
+    // to call again; a genuine duplicate still refuses below.
     if (question.status === BuilderQuestionStatus.ANSWERED) {
+      const strandedRun = await this.runRepository.findOne({
+        where: { id: question.runId },
+      });
+      if (strandedRun?.status === BuilderRunStatus.WAITING_FOR_INPUT) {
+        const session = await this.sessionRepository.findOne({
+          where: { id: sessionId },
+        });
+        if (!session) {
+          throw new NotFoundException('The paused build could not be found.');
+        }
+        this.logger.info(
+          `Retrying the resume for session ${sessionId}: question ${question.id} was answered but its run is still parked.`,
+        );
+        const resumedRun = await this.buildService.resumeFromQuestions(
+          session,
+          strandedRun,
+          question.groupId,
+          userId,
+        );
+        return { question, resumedRun };
+      }
       throw new BadRequestException('That question is already answered.');
     }
 

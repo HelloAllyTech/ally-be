@@ -186,6 +186,18 @@ export class QualitySentimentResponseDto {
   })
   overallProxyNps!: number | null;
 
+  @ApiProperty({
+    description:
+      'Whole-window Roleplay Quality Index (0-100) — the SAME weighted blend ' +
+      'as `points[].qualityIndex`, computed over the whole window rather than ' +
+      'one bucket. A DIFFERENT metric from `overallCompositeScore` above: that ' +
+      'is the raw actor-goal judge score alone; this is the renormalised blend ' +
+      'of all four Quality Index dimensions. Null when no dimension had data.',
+    nullable: true,
+    type: Number,
+  })
+  overallQualityIndex!: number | null;
+
   @ApiProperty({ description: 'Whole-window evaluated sessions' })
   totalEvaluatedSessions!: number;
 

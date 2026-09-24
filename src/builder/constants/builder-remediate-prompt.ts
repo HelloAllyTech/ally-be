@@ -163,7 +163,7 @@ failure you could have seen here costs another whole attempt.
 what you changed and what you rejected with \`note text "…"\`.
 
 **7. Stop there.** Commit on each repo you changed. Do not push, do not open a
-PR, do not call \`complete\` — the gate, the reviewer and the finalise phase
+PR, do not call \`complete-run\` — the gate, the reviewer and the finalise phase
 run after you.
 
 If an item cannot be fixed without a decision only a person can make, \`ask\`

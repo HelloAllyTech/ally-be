@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
+import { resolveSqlBucket } from '../util/analytics-window.util';
+
 /** Granularities this endpoint will truncate to. */
-export type FillerBucket = 'day' | 'week' | 'month' | 'year';
+export type FillerBucket = 'day' | 'week' | 'month' | 'quarter' | 'year';
 
 /**
  * Read surface over the thinking-filler judge's rows.
@@ -134,10 +136,11 @@ export class FillerAnalyticsRepository {
    * get the finest honest granularity, not an error page.
    */
   private resolveBucket(bucket?: FillerBucket): FillerBucket {
-    if (bucket === 'week') return 'week';
-    if (bucket === 'month') return 'month';
-    if (bucket === 'year') return 'year';
-    return 'day';
+    return resolveSqlBucket(
+      bucket,
+      ['day', 'week', 'month', 'quarter', 'year'],
+      'day',
+    );
   }
 
   /**

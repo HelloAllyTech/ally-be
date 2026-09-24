@@ -25,6 +25,19 @@ export interface BuilderRepoDefinition {
    * failure identities only means something across the same set.
    */
   affectedTest?: string;
+  /**
+   * The suite narrowed to ONE file, as a prefix a path is appended to.
+   *
+   * The coding phase is told to run the specs it just wrote, by path, and the
+   * command table offered no way to. A fresh build spent twenty minutes on it:
+   * `nx test --testFile=…` ("unknown option"), then `nx test -- <path>`, then
+   * fighting nx's cache, then discovering vitest's `include` was ignoring the
+   * path, then searching the web for the syntax — all to re-run one spec it
+   * had just written and needed to iterate on.
+   *
+   * Every one of these repos can do it. Nothing had written down how.
+   */
+  singleTest?: string;
   /** Null where the repo's test/build step already covers types. */
   typecheck: string | null;
   /** Whether the repo can be stood up in a runner for live E2E. */
@@ -51,6 +64,7 @@ export const BUILDER_REPOS: BuilderRepoDefinition[] = [
     // ONE worker, i.e. the whole suite serially. Two is the honest maximum
     // there and roughly halves it; it is a no-op on a bigger machine.
     test: 'npm test -- --forceExit --detectOpenHandles --maxWorkers=2',
+    singleTest: 'npx jest',
     affectedTest:
       'npm test -- --forceExit --detectOpenHandles --maxWorkers=2 --changedSince=origin/master --passWithNoTests',
     lint: 'npm run lint',
@@ -71,6 +85,10 @@ export const BUILDER_REPOS: BuilderRepoDefinition[] = [
     description:
       'Nx monorepo of the three frontends: admin dashboard, helpline and web. Shared libs under libs/.',
     test: 'npx nx run-many -t test --skip-nx-cache',
+    // vitest directly, from the repo root. nx puts a cache and a project
+    // resolver between the agent and the one file it wants to run, and its
+    // `include` pattern then ignores the path it was given.
+    singleTest: 'npx vitest run',
     // No --skip-nx-cache here on purpose: between the baseline and the gate the
     // local Nx cache is exactly what we want to hit.
     affectedTest: 'npx nx affected -t test --base=origin/master',
@@ -90,6 +108,7 @@ export const BUILDER_REPOS: BuilderRepoDefinition[] = [
     description:
       'FastAPI + Weaviate service for retrieval, embeddings and the RAG agents.',
     test: 'poetry run pytest tests/ -v',
+    singleTest: 'poetry run pytest -v',
     lint: 'poetry run flake8',
     typecheck: null,
     e2eCapable: false,
@@ -100,6 +119,7 @@ export const BUILDER_REPOS: BuilderRepoDefinition[] = [
     description:
       'LiveKit voice agent running roleplay sessions (Studio v1 worker and the spec-driven v2 worker).',
     test: 'poetry run pytest tests/ -v',
+    singleTest: 'poetry run pytest -v',
     lint: 'poetry run flake8',
     typecheck: null,
     e2eCapable: false,
@@ -109,6 +129,7 @@ export const BUILDER_REPOS: BuilderRepoDefinition[] = [
     repo: 'ally-mobile',
     description: 'React Native mobile client.',
     test: 'npm test',
+    singleTest: 'npx jest',
     lint: 'npm run lint',
     typecheck: 'npx tsc --noEmit',
     e2eCapable: false,

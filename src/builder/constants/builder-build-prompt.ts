@@ -79,6 +79,24 @@ Repos are checked out side by side under \`repos/<name>\`.
 
 ${buildHelpers(context.apiBaseUrl, context.runId)}
 
+## Never wait for CI
+
+CI runs **after** this run ends, on the commits you pushed. You cannot see its
+result and nothing will notify you of it. Do not sleep, poll, re-read the
+checks, or "wait for the background task" — there is no background task, and
+the runner is being billed for every minute you spend idling.
+
+Push, report, \`complete-run\`. That is the whole contract. If CI goes red on what
+you pushed, the reconcile loop dispatches a fresh fix run at it with the
+failures in hand; that is a later run's job and it is better equipped for it
+than you are, because it can actually read the failure.
+
+**Ending your turn without calling \`complete-run\` is recorded as a run failure**
+even when your work pushed cleanly — the runner cannot tell "finished quietly"
+apart from "died". A run that fixed the bug, pushed it green, then stopped to
+watch CI is filed alongside the ones that crashed, and it counts toward the
+circuit breaker that stops automatic work on this session.
+
 ## Repos and their commands
 
 ${renderRepoCommands(context.repos)}
@@ -86,81 +104,80 @@ ${renderRepoCommands(context.repos)}
 }
 
 /**
- * Shell helpers embedded verbatim in the prompt.
+ * The reporting protocol, as documentation for commands that already exist.
  *
- * Pre-built rather than described, because a model asked to "POST an event"
- * writes a slightly different curl every time, and a malformed one fails
- * silently in the middle of a two-hour run. The `|| true` on each is
- * deliberate: telemetry must never be able to fail a build.
+ * These used to be shell FUNCTION DEFINITIONS pasted into the prompt, on the
+ * reasoning that a pre-built curl beats one the model writes freshly each
+ * time. That part was right; embedding them was not. A coding agent's shell
+ * tool spawns a fresh shell per call, so a function defined in one call does
+ * not exist in the next — the definitions only worked because Claude Code
+ * pastes the whole body every time.
+ *
+ * Gemini read the same block and ran `stage REMEDIATING`, which is exactly
+ * what the documentation appears to describe. It got `bash: line 1: stage:
+ * command not found`, eight times, silently — every helper ended in `|| true`,
+ * because telemetry must never fail a build. That run coded, tested and
+ * committed while the progress rail sat frozen and no gate result was ever
+ * posted, and the person watching it had no way to tell the difference between
+ * a stuck build and a build that had stopped talking.
+ *
+ * They are now real executables, put on PATH by run-engine.sh. This block
+ * describes them. See scripts/builder/agent-helpers/.
  */
 const buildHelpers = (apiBaseUrl: string, runId: string): string => {
-  const base = `${apiBaseUrl}/api/v1/builder/pipeline/runs/${runId}`;
+  void apiBaseUrl;
+  void runId;
   return `
-### Reporting helpers
+### Reporting
 
-Every helper below is a shell command you run directly. They are how the
-person watching this build sees what you are doing — a stage you never
-report is a stage that looks like it never happened.
+There are two ways to report, and they do exactly the same thing. Use whichever
+your tools give you.
+
+**If you have tools named \`stage\`, \`note\`, \`todo\`, \`ask\`, \`budget\`,
+\`prs\`, \`report\` and \`complete_run\`, prefer them.** They take structured
+arguments, so there is no file to write, no JSON to assemble and nothing to
+quote — hand \`report\` your markdown as a plain string and \`todo\` a real
+array. Every quoting and shell-parsing problem below simply does not arise.
+
+Otherwise the same eight are **commands already installed on your PATH** — run
+them directly, the way you would run \`git\` or \`jq\`. Do not define them,
+source them, or write your own curl; they carry the run id and the API key for
+you.
+
+They are how the person watching this build sees what you are doing. A stage
+you never report is a stage that looks like it never happened, and a build that
+stops reporting is indistinguishable from a build that has hung.
 
 \`\`\`bash
-# Move to a new stage. Call this the moment you start it, not when you finish.
-stage() {
-  curl -sS -X POST "${base}/events" -H "x-api-key: $ALLY_BE_API_KEY" \\
-    -H 'Content-Type: application/json' \\
-    -d "{\\"events\\":[{\\"type\\":\\"stage_change\\",\\"payload\\":{\\"stage\\":\\"$1\\"}}]}" >/dev/null || true
-}
-
-# Replace the whole todo list. Send the FULL list every time, not a delta.
-# jsonFile holds: [{"id":"1","text":"...","status":"pending|in_progress|done"}]
-todo() {
-  curl -sS -X POST "${base}/events" -H "x-api-key: $ALLY_BE_API_KEY" \\
-    -H 'Content-Type: application/json' \\
-    -d "{\\"events\\":[{\\"type\\":\\"todo\\",\\"payload\\":{\\"items\\":$(cat "$1")}}]}" >/dev/null || true
-}
-
-# A free-text milestone of a given type (plan, test_output, verification, …).
-note() {
-  jq -n --arg t "$1" --arg b "$2" \\
-    '{events:[{type:$t,payload:{text:$b}}]}' \\
-  | curl -sS -X POST "${base}/events" -H "x-api-key: $ALLY_BE_API_KEY" \\
-      -H 'Content-Type: application/json' -d @- >/dev/null || true
-}
-
-# Pause and ask. Body is a JSON file: {"questions":[…],"branches":{…}}
-# The marker file is what tells the runner this exit was a pause rather than a
-# finish — without it the verification pass would run over half-built work.
-ask() {
-  curl -sS -X POST "${base}/questions" -H "x-api-key: $ALLY_BE_API_KEY" \\
-    -H 'Content-Type: application/json' -d @"$1" \\
-  && touch /tmp/builder-paused
-}
-
-# What is left of this session's spend ceiling. Worth checking before
-# anything expensive (an E2E bring-up, a long test matrix): a run that is over
-# the ceiling stops at the next phase boundary and waits there for an admin to
-# raise it, which is time your work spends unfinished rather than money saved.
-budget() {
-  curl -sS "${base}/budget" -H "x-api-key: $ALLY_BE_API_KEY" || true
-}
-
-# Record opened pull requests. Body: {"pullRequests":[{repo,branch,prNumber,prUrl,title}]}
-prs() {
-  curl -sS -X POST "${base}/prs" -H "x-api-key: $ALLY_BE_API_KEY" \\
-    -H 'Content-Type: application/json' -d @"$1" >/dev/null || true
-}
-
-# Your written account of the run. Body: {"type":"run_report","contentMd":"…","metrics":{…}}
-report() {
-  curl -sS -X POST "${base}/report" -H "x-api-key: $ALLY_BE_API_KEY" \\
-    -H 'Content-Type: application/json' -d @"$1" >/dev/null || true
-}
-
-# Finish. Body: {"outcome":"done"|"failed","error":"…"}
-complete() {
-  curl -sS -X POST "${base}/complete" -H "x-api-key: $ALLY_BE_API_KEY" \\
-    -H 'Content-Type: application/json' -d "$1" >/dev/null || true
-}
+stage RUNNING_TESTS        # Move to a new stage. Call it when you START one.
+todo items.json            # Replace the WHOLE todo list, not a delta:
+                           #   [{"id":"1","text":"…","status":"pending|in_progress|done"}]
+note plan notes.md         # A milestone: plan, test_output, verification, …
+                           #   Pass a FILE for anything long or quoted; a short
+                           #   unquoted string also works.
+ask questions.json         # Pause and ask: {"questions":[…],"branches":{…}}
+budget                     # What is left of this session's spend ceiling
+prs prs.json               # {"pullRequests":[{repo,branch,prNumber,prUrl,title}]}
+report report.md           # Your write-up, as plain markdown.
+                           #   Do NOT hand-assemble JSON around it — the
+                           #   helper composes the envelope itself.
+complete-run done          # Finish. Exactly once, last.
+complete-run failed "the gate stayed red after four attempts"
 \`\`\`
+
+Run one with no arguments and it prints its usage. \`stage\` and \`complete-run\`
+confirm on success, so a silent one did not land.
+
+**Prefer a file over a quoted string** wherever one is accepted. Long text with
+apostrophes, backticks or newlines is where shell quoting goes wrong, and some
+agent shell tools refuse such a command outright rather than running it —
+which has cost a finished run its outcome before now.
+
+\`ask\` and \`complete-run\` are the two that can fail your run, and both say so
+loudly rather than returning quietly: a pause that was refused leaves you still
+running (ask again with a real question), and an outcome that was not recorded
+means the run is filed as one that never reported.
+
 `.trim();
 };
 
@@ -232,6 +249,9 @@ export const renderRepoCommands = (repos: BuilderRepoDefinition[]): string =>
       (repo) =>
         `- **${repo.repo}** (\`repos/${repo.repo}\`) — ${repo.description}\n` +
         `  - test: \`${repo.test}\`\n` +
+        (repo.singleTest
+          ? `  - one file: \`${repo.singleTest} <path>\`\n`
+          : '') +
         `  - lint: \`${repo.lint}\`\n` +
         `  - typecheck: ${repo.typecheck ? `\`${repo.typecheck}\`` : '(covered by test/build)'}\n` +
         `  - guarded paths: ${repo.guardedPaths.join(', ') || '(none)'}`,
@@ -306,13 +326,26 @@ pauses cost that four times. See "Pausing" below for the exact shape.
 Do NOT ask about things you can determine yourself by reading the code. Do NOT
 ask for permission to proceed.
 
-**4. Branch.** ${
+**4. Branch — already done for you.** Every repo under \`repos/\` is already
+checked out on ${
     isResume
-      ? 'This is a RESUME run. The branches below already exist and hold work in progress — check each one out. Do NOT branch from master and do NOT start over.'
-      : 'In each repo you will change, create `builder/' +
-        context.branchSlug +
-        '` from an up-to-date master.'
-  }
+      ? "the branch holding this session's work in progress"
+      : '`builder/' + context.branchSlug + '`'
+  }. Commit onto it. Do **not** create a branch, switch branch, or reset to
+master${isResume ? ', and do not start over' : ''}.
+
+The test gate compares \`master...HEAD\`, so a commit made on master is
+invisible to it: the gate reports the repo unchanged, fails closed, and sends
+you to remediate work you have already done. Run \`git branch --show-current\`
+if you want to confirm where you are.
+
+**That branch may already carry work.** A previous attempt on this session
+pushes to the same branch, and the runner checks it out rather than starting
+clean — so \`git log master..HEAD\` and \`git diff master...HEAD\` are the
+first things to read. Build on what is there; do not redo it, and do not revert
+it because you did not write it. If the change the PRD asks for is already
+present and correct, say so and move on rather than rewriting it to your own
+taste.
 
 **5. \`stage CODING\`** — implement. Keep the todo list current as you go: mark
 an item \`in_progress\` when you start it and \`done\` when it is genuinely
@@ -320,9 +353,12 @@ finished, and re-send the whole list. Write code that reads like the code
 around it — match the surrounding naming, comment density and idiom rather
 than importing a style from elsewhere.
 
-**Work the plan's independent workstreams in parallel.** Where the plan marks
-two workstreams parallel-safe, run them as concurrent \`Task\` subagents — one
-per workstream, each told to confine itself to that workstream's file list.
+**Work the plan's independent workstreams in parallel — if your toolset can.**
+Where the plan marks two workstreams parallel-safe and you have a subagent tool
+(\`Task\`), run them as concurrent subagents, one per workstream, each told to
+confine itself to that workstream's file list. **If you have no such tool, do
+them one after another.** The prompt is shared by every engine and not all of
+them have subagents; a plan that assumes one is a plan, not a requirement.
 You integrate the results and run the tests yourself. Never let two subagents
 hold the same file: a plan that marks overlapping file sets parallel-safe is
 wrong, and sequential is the right answer there.
@@ -353,10 +389,14 @@ For every repo you touched, in this order:
 
 1. Its **typecheck** and **lint** commands from the table above. Both are fast
    and both are hard gates later, so there is no reason to defer them.
-2. The specs you wrote or edited, by path.
+2. The specs you wrote or edited, using the **one file** command from the table
+   above — that is the invocation that actually works in that repo. Do not
+   improvise a way to narrow the suite: a repo's runner may accept a path and
+   then ignore it, and finding that out costs turns nobody gets back.
 3. The **blast radius**: grep for other callers of every symbol whose signature
-   or behaviour you changed, and run their suites — by path, or with the
-   affected-only command from the table (\`affectedTest\`) where the repo has one.
+   or behaviour you changed, and run their suites — with the same one-file
+   command, or the affected-only one from the table (\`affectedTest\`) where the
+   repo has one.
    Most regressions this agent could cause are here, not in the code you were
    looking at.
 
@@ -375,7 +415,7 @@ context on every turn, and a coding pass runs well over a hundred turns:
 
 - Prefer \`Grep\` and a \`Read\` with a line range over reading a whole file. A
   2,000-line service read in full is paid for a hundred more times.
-- When a \`Task\` subagent finishes, write down what you needed from it in a few
+- When a subagent finishes (if you used one), write down what you needed from it in a few
   lines and work from that, not from its full transcript.
 - Do not re-read a file you have already read unless you changed it.
 
@@ -390,7 +430,7 @@ not blame you for it.
 describing the change rather than the process) but **do not push and do not
 open a PR** — the finalise phase does that once the gate and the reviewer are
 satisfied. Then post a short summary of what you did with
-\`note text "…"\` and exit. Do not call \`complete\`.
+\`note text "…"\` and exit. Do not call \`complete-run\`.
 
 ## Pausing to ask
 

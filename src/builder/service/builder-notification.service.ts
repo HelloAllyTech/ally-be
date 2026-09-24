@@ -289,11 +289,79 @@ export class BuilderNotificationService {
    * rather than one run — and the silence that follows would otherwise look
    * exactly like a session quietly finishing.
    */
-  automationPaused(session: BuilderSession, failures: number): Promise<void> {
+  /**
+   * Said once per trip, not once per refused dispatch.
+   *
+   * The breaker is consulted on every reconcile tick, so an un-deduplicated
+   * announcement here is one Slack message every five minutes for as long as
+   * the session stays broken — which is indefinitely, since a tripped breaker
+   * is what stops the runs that would clear it. The comment at the call site
+   * always claimed this behaviour; it was never implemented, and the channel
+   * filled up.
+   *
+   * `since` is the newest run's timestamp. An announcement newer than that
+   * means this same trip has already been reported. A further failed run moves
+   * it forward and earns a fresh one — the situation genuinely changed.
+   */
+  async automationPaused(
+    session: BuilderSession,
+    failures: number,
+    since?: Date | null,
+  ): Promise<void> {
+    if (
+      since &&
+      (await this.repository.existsSince(
+        session.id,
+        BuilderNotificationKind.AUTOMATION_PAUSED,
+        since,
+      ))
+    ) {
+      return;
+    }
     return this.notify(
       session,
       BuilderNotificationKind.AUTOMATION_PAUSED,
       `I've stopped sending runs at “${session.title}” — ${failures} in a row failed and nothing is converging. Have a look before retrying.`,
+    );
+  }
+
+  /**
+   * The GitHub credential is being rejected, so everything downstream is blind.
+   *
+   * Not attached to a session, because it is not about one: nothing Builder
+   * does works while this is true. It is sent once per outage rather than per
+   * refused call — the polling loops would otherwise repeat it every five
+   * minutes for as long as it lasted.
+   */
+  async credentialRejected(
+    session: BuilderSession,
+    failures: number,
+    since: Date | null,
+  ): Promise<void> {
+    // Once per outage, not once per tick. `since` is the outage's identity: an
+    // announcement newer than the moment the failures began has already
+    // reported this one. The circuit breaker shipped without this and posted
+    // every five minutes for as long as it stayed tripped.
+    if (
+      since &&
+      (await this.repository.existsSince(
+        session.id,
+        BuilderNotificationKind.CREDENTIAL_REJECTED,
+        since,
+      ))
+    ) {
+      return;
+    }
+
+    const started = since
+      ? ` It started failing at ${since.toISOString().slice(11, 16)} UTC.`
+      : '';
+    return this.notify(
+      session,
+      BuilderNotificationKind.CREDENTIAL_REJECTED,
+      `GitHub is rejecting my credential — ${failures} calls in a row came back unauthorised, so I ` +
+        `cannot read pull requests, dispatch runs or release anything.${started} The token has most ` +
+        'likely expired and needs replacing; nothing else will work until it is.',
     );
   }
 

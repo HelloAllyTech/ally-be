@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# report <file> — your written account of the run.
+#
+# Takes EITHER a markdown file (preferred) or the JSON envelope:
+#   {"type":"run_report","contentMd":"…","metrics":{…}}
+#
+# ## Why it takes markdown
+#
+# The envelope is JSON and the body is multi-line prose, so calling this used
+# to mean hand-assembling JSON around markdown. JSON strings cannot hold a
+# literal newline, and a report is nothing but newlines. On 2026-09-23 a run
+# that had planned, coded, remediated, passed its gate, passed review and
+# opened ally-web#694 wrote a perfectly well-shaped envelope:
+#
+#     cat > /tmp/report.json <<'EOF'
+#     { "type": "run_report", "contentMd": "## What was done
+#     …
+#
+# and ally-be answered `400 Unexpected token '#'`. The account of the run —
+# the E2E decision, the docs-guard result, a reviewer's note about missing
+# aria labels — was composed and then thrown away, silently, because this
+# helper ends in `|| true` and telemetry must never fail a build.
+#
+# The same problem was already solved for the pull request body, where the
+# agent writes plain markdown to a file and the RUNNER does the composing.
+# That path works. This one now works the same way: hand it prose and the
+# escaping is jq's problem, not a model's.
+#
+# The JSON form still works, so a caller that gets it right is unaffected.
+set -uo pipefail
+. "$(dirname "$0")/_common.sh"
+
+[ $# -eq 1 ] && [ -f "${1:-}" ] || usage "report <file.md|file.json>"
+
+# A well-formed envelope is posted as it stands. Anything else — prose, or
+# JSON that did not survive its own newlines — is treated as the markdown it
+# plainly is. `--rawfile` reads the file as one string and escapes it, which
+# is the whole point: no quoting decision is left to the caller.
+if jq -e 'type == "object" and has("contentMd")' "$1" >/dev/null 2>&1; then
+  BODY="$(cat "$1")"
+else
+  BODY="$(jq -n --rawfile md "$1" '{type:"run_report", contentMd:$md}')"
+fi
+
+STATUS="$(
+  printf '%s' "$BODY" | curl -sS -o /dev/null -w '%{http_code}' \
+    -X POST "${API}/report" \
+    -H "x-api-key: ${ALLY_BE_API_KEY}" \
+    -H 'Content-Type: application/json' \
+    --data-binary @- 2>/dev/null
+)" || STATUS=000
+
+case "$STATUS" in
+  2*)
+    echo "report → stored"
+    ;;
+  *)
+    # Say it where a person looks. A dropped report is invisible by
+    # construction: this helper may not fail the build, and stdout on the
+    # runner has no consumers, so the only reader left is the run feed.
+    echo "report: ally-be answered ${STATUS}; the report was not stored." >&2
+    post_json events "$(jq -nc --arg s "$STATUS" \
+      '{events:[{type:"text",payload:{text:("[report] This run'"'"'s written account could not be stored — ally-be answered " + $s + ". The work is unaffected; the write-up is missing.")}}]}')" || true
+    ;;
+esac

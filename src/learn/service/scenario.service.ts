@@ -27,7 +27,12 @@ async function executeInChunks<T, R>(
 import { Scenarios } from '../entity/scenarios.entity';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
-import { validateSimulationStates } from '../util/validate-simulation-states.util';
+import {
+  validateKnowledgeSourceUnlocks,
+  validateSimulationStates,
+} from '../util/validate-simulation-states.util';
+import { KnowledgeSourceDto } from '../dto/knowledge-source.dto';
+import { SimulationState } from '../type/simulation-state.type';
 import { buildGeneratedStates } from '../util/build-generated-states.util';
 
 import { LlmModelService } from 'src/llm/service/llm-model.service';
@@ -141,7 +146,10 @@ import { SessionEventTranslationService } from 'src/session-event/service/sessio
 import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
-import { ENHANCE_AUTO_IMPROVE_INSTRUCTION } from '../util/autofill-shared.util';
+import {
+  ENHANCE_AUTO_IMPROVE_INSTRUCTION,
+  parseFirstJsonObject,
+} from '../util/autofill-shared.util';
 import { AutofillService } from './autofill.service';
 import {
   EnhanceScenarioFieldDto,
@@ -954,6 +962,14 @@ export class ScenarioService {
           `Invalid simulation states: ${stateErrors.join(' ')}`,
         );
       }
+    }
+
+    const unlockErrors = validateKnowledgeSourceUnlocks(
+      createScenarioDto.knowledgeSources,
+      createScenarioDto.states,
+    );
+    if (unlockErrors.length > 0) {
+      throw new BadRequestException(unlockErrors.join(' '));
     }
 
     // Cross-check: when the scenario points at a hasStates main-agent
@@ -1830,6 +1846,23 @@ export class ScenarioService {
         ? updateScenarioDto.states
         : (scenario.metadata as { states?: unknown } | undefined)?.states;
     await this.validateStatesPairing(effectiveCode, effectiveStates);
+
+    // Memory locks are checked against the EFFECTIVE pair: a payload may carry
+    // only one of knowledgeSources / states, and a lock must still resolve
+    // against whichever of the two is already stored.
+    const unlockErrors = validateKnowledgeSourceUnlocks(
+      updateScenarioDto.knowledgeSources !== undefined
+        ? updateScenarioDto.knowledgeSources
+        : (
+            scenario.metadata as
+              | { knowledgeSources?: KnowledgeSourceDto[] }
+              | undefined
+          )?.knowledgeSources,
+      effectiveStates as SimulationState[] | undefined,
+    );
+    if (unlockErrors.length > 0) {
+      throw new BadRequestException(unlockErrors.join(' '));
+    }
 
     if (
       updateScenarioDto?.status &&
@@ -3758,20 +3791,7 @@ export class ScenarioService {
    * in prose. Returns the parsed value (object or array) or null.
    */
   private parseFirstJsonObject(raw: string): any {
-    const attempt = (candidate: string): any => {
-      try {
-        const parsed = JSON.parse(candidate);
-        return parsed && typeof parsed === 'object' ? parsed : null;
-      } catch {
-        return null;
-      }
-    };
-    const direct = attempt(raw.trim());
-    if (direct) return direct;
-    const start = raw.indexOf('{');
-    const end = raw.lastIndexOf('}');
-    if (start === -1 || end <= start) return null;
-    return attempt(raw.slice(start, end + 1));
+    return parseFirstJsonObject(raw);
   }
 
   /** Coerce a V2 field's raw model output into the shape the studio form expects. */

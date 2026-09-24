@@ -30,9 +30,12 @@ import { BuilderBuildService } from './builder-build.service';
 import {
   BuilderPrFeedbackKind,
   BuilderPrFeedbackStatus,
+  BuilderSessionStatus,
+  BuilderStage,
 } from '../enum/builder.enum';
 import { isBuilderRepo } from '../constants/builder-repos.constants';
 import {
+  BUILDER_AUTH_FAILURE_ALERT_THRESHOLD,
   BUILDER_MAX_REVIEW_RUNS_PER_PR,
   BUILDER_OWN_ACTORS,
   BUILDER_RELEASE_TIMEOUT_MS,
@@ -352,6 +355,16 @@ export class BuilderPullRequestService {
    * error anyone sees, and never a half-applied state.
    */
   async reconcileOpenPullRequests(): Promise<void> {
+    // First, and deliberately before the GitHub guard.
+    //
+    // This sweep is pure database work, and it is the only path that can reach
+    // a session whose pull requests have all MERGED — `listReconcilable`
+    // filters on `merged: false`, so the loop below iterates nothing for them.
+    // Putting the outcome reconciliation inside that loop meant it could never
+    // run for the one case it was written for: a session left saying FAILED
+    // above work that had already shipped.
+    await this.reconcileSessionOutcomes();
+
     if (!this.github.isConfigured) return;
 
     for (const pullRequest of await this.repository.listReconcilable()) {
@@ -360,6 +373,27 @@ export class BuilderPullRequestService {
       } catch (error) {
         this.logger.warn(
           `Could not refresh ${pullRequest.repo}#${pullRequest.prNumber}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Re-test the FAILED sessions against what their pull requests actually did.
+   *
+   * Runs over sessions rather than over open pull requests, because the
+   * evidence that matters most — a merge — is exactly what removes a pull
+   * request from the open set.
+   */
+  private async reconcileSessionOutcomes(): Promise<void> {
+    for (const session of await this.sessionRepository.listRecentlyFailed()) {
+      try {
+        await this.clearStaleSessionError(session.id);
+      } catch (error) {
+        this.logger.warn(
+          `Could not settle session ${session.id}: ${
             error instanceof Error ? error.message : String(error)
           }`,
         );
@@ -402,6 +436,7 @@ export class BuilderPullRequestService {
     }
 
     await this.ingestFeedback(pullRequest, remote.headSha, rollup);
+    if (rollup?.state === 'success') await this.staleCiFeedback(pullRequest.id);
     await this.considerBranchUpdate(pullRequest, remote);
 
     // Review before fix, and only one of them per tick. A review run that
@@ -464,23 +499,101 @@ export class BuilderPullRequestService {
     const session = await this.sessionRepository.findOne({
       where: { id: sessionId },
     });
-    if (!session?.error) return;
+    if (!session) return;
 
     const pullRequests = await this.repository.listBySession(sessionId);
-    const live = pullRequests.filter(
+    if (!pullRequests.length) return;
+
+    // Closed without merging is a rejection, and not ours to reinterpret: the
+    // work was looked at and turned down, so whatever the session says about
+    // itself stands.
+    if (pullRequests.some((row) => !row.merged && row.state === 'closed'))
+      return;
+
+    // Merged is the strongest evidence there is — green checks plus a person
+    // explicitly choosing to take the change. Only the still-open ones have
+    // anything left to prove, so they are what the checks below examine; a
+    // session whose pull requests have all merged passes on the merges alone.
+    const open = pullRequests.filter(
       (row) => !row.merged && row.state !== 'closed',
     );
-    if (!live.length) return;
-    if (!live.every((row) => row.ciStatus === 'success')) return;
+    if (!open.every((row) => row.ciStatus === 'success')) return;
 
-    for (const row of live) {
+    for (const row of open) {
       if (await this.feedbackRepository.countActionable(row.id)) return;
     }
 
-    await this.sessionRepository.update({ id: sessionId }, { error: null });
-    this.logger.info(
-      `Cleared a stale error on session ${sessionId}: every open pull request is green.`,
+    if (session.error) {
+      await this.sessionRepository.update({ id: sessionId }, { error: null });
+      this.logger.info(
+        `Cleared a stale error on session ${sessionId}: every open pull request is green.`,
+      );
+    }
+
+    // And the status and stage, which are the same lie in a different place.
+    //
+    // A session's status is written from the fate of its last RUN. A run can
+    // fail at the protocol and still succeed at the work — push a fix, go
+    // green, then end its turn without reporting — and the page is then left
+    // saying FAILED above two mergeable pull requests, with a phase rail
+    // frozen wherever the agent stopped and a banner advising a retry that
+    // would redo finished work.
+    //
+    // `DONE` was reachable only through a successful run, so an outcome that
+    // arrived through a failed one could never be shown. It is reached here
+    // instead, from the evidence: every open pull request green, nothing
+    // actionable outstanding, and nothing still running.
+    if (session.status !== BuilderSessionStatus.FAILED) return;
+    if (await this.buildService.hasBlockingRuns(sessionId)) return;
+
+    await this.sessionRepository.update(
+      { id: sessionId },
+      {
+        status: BuilderSessionStatus.COMPLETED,
+        currentStage: BuilderStage.DONE,
+      },
     );
+    this.logger.info(
+      `[BUILDER] Session ${sessionId} settled COMPLETED: its run failed but every open pull request is green.`,
+    );
+  }
+
+  /**
+   * Retire CI failures that the current head has disproved.
+   *
+   * These rows are keyed `sha:check`, so a failure recorded against a commit
+   * that has since been superseded stays PENDING for ever. Three of them
+   * survived on ally-be#494 after the very fix that made it green — and
+   * pending feedback is what `considerFixRun` acts on, so the loop kept
+   * dispatching at a pull request with nothing wrong with it, and
+   * `considerReviewRun` kept standing down because it waits for feedback to
+   * settle first.
+   *
+   * Only called when the rollup is green, which is the whole argument: a check
+   * cannot be both failing and passing on the same head, so every CI complaint
+   * on this pull request is now about code that is no longer there.
+   */
+  private async staleCiFeedback(pullRequestId: string): Promise<void> {
+    const affected = await this.feedbackRepository.update(
+      {
+        pullRequestId,
+        kind: BuilderPrFeedbackKind.CI_FAILURE,
+        status: In([
+          BuilderPrFeedbackStatus.PENDING,
+          BuilderPrFeedbackStatus.IN_FIX,
+        ]),
+      },
+      { status: BuilderPrFeedbackStatus.STALE },
+    );
+    // Optional-chained: an update result is not guaranteed to carry a count,
+    // and throwing here would abort the rest of the tick — the reconcile pass
+    // catches per-pull-request, so a stray TypeError would silently cost the
+    // review and merge-prompt steps below it.
+    if (affected?.affected) {
+      this.logger.info(
+        `Retired ${affected.affected} CI failure(s) on ${pullRequestId}: checks are green on the current head.`,
+      );
+    }
   }
 
   private async considerMergePrompt(
@@ -631,8 +744,124 @@ export class BuilderPullRequestService {
    * worse state than never having released, because master has moved on and
    * everyone assumes the change is live, so it notifies.
    */
+  /**
+   * Correct a `failed` release that has since been shipped by other means.
+   *
+   * `failed` was terminal: nothing re-read it, ever. So a pull request whose
+   * automatic release failed stayed marked "merged but NOT deployed" for the
+   * rest of the deployment's life, even after a person cut the release by hand
+   * an hour later. ally-web#658 is the case — Builder proposed `admin-v0.0.1`
+   * for an app on 1.88 (see `nextPatchTag`), the workflow rightly refused it,
+   * and the code shipped in admin-v1.88.0 twenty minutes afterwards with the
+   * row still claiming otherwise.
+   *
+   * That is not only untidy. The roadmap now reads these rows to decide whether
+   * an opportunity has been delivered, so a stuck `failed` keeps shipped work
+   * looking unshipped on the board — and refuses to be fixed by the very act of
+   * releasing it properly.
+   *
+   * The evidence is a SUCCESSFUL run of that target's release workflow started
+   * after this pull request merged. Releases are cut from master, so a release
+   * that began after the merge landed necessarily carries it. Not the tag we
+   * attempted — that one failed, and comparing version numbers would happily
+   * "prove" delivery from the `0.0.1` that caused the problem.
+   *
+   * `releaseTag` is cleared rather than kept. The tag recorded here is the one
+   * we tried and failed with; leaving it beside a `released` state would state
+   * something untrue, and the run URL says where it actually shipped.
+   */
+  private async reconcileFailedReleases(): Promise<void> {
+    const failed = await this.repository.find({
+      where: { releaseState: 'failed', merged: true },
+    });
+
+    for (const pullRequest of failed) {
+      try {
+        if (!pullRequest.mergedAt) continue;
+
+        const files = await this.github.listPullRequestFiles(
+          pullRequest.repo,
+          pullRequest.prNumber,
+        );
+        // A truncated file list cannot attribute the work to one deployable,
+        // and guessing which app shipped is exactly the wrong place to guess.
+        if (files.truncated) continue;
+
+        const { targets, ambiguous } = resolveReleaseTargets(
+          pullRequest.repo,
+          files.files,
+        );
+        if (ambiguous || targets.length !== 1) continue;
+
+        const run = await this.github.findSuccessfulRunSince({
+          repo: targets[0].repo,
+          workflow: targets[0].workflow,
+          since: pullRequest.mergedAt,
+        });
+        if (!run) continue;
+
+        await this.repository.update(
+          { id: pullRequest.id },
+          {
+            releaseState: 'released',
+            releaseTag: null,
+            releaseRunId: run.id,
+            releaseRunUrl: run.htmlUrl,
+          },
+        );
+        this.logger.info(
+          `[BUILDER] ${pullRequest.repo}#${pullRequest.prNumber} was released after all — a successful ${targets[0].workflow} run started after it merged.`,
+        );
+      } catch (error) {
+        this.logger.warn(
+          `Could not re-check the failed release for ${pullRequest.repo}#${pullRequest.prNumber}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+  }
+
+  /**
+   * Say out loud when the GitHub credential has stopped working.
+   *
+   * A token that expires does not announce itself: every call starts coming
+   * back unauthorised, each caller catches its own failure and logs a warning,
+   * and the scheduled tasks above them keep reporting that they completed. The
+   * platform goes quiet while looking healthy, and the only trace is a `warn`
+   * in a log nobody is reading. One expiry cost most of a day that way.
+   *
+   * A single rejection is not news — a fine-grained token can legitimately be
+   * refused one repository. A run of them across different endpoints is the
+   * credential, not a permission, so this waits for a threshold.
+   *
+   * Attached to the most recent session only because a notification needs an
+   * owner to reach; the condition is not about that session, and the wording
+   * says so. Dedup is the notification service's, keyed on when the run of
+   * failures began — the loops here would otherwise repeat it every tick for
+   * as long as the outage lasted.
+   */
+  private async reportCredentialHealth(): Promise<void> {
+    const { failures, since } = this.github.credentialHealth;
+    if (failures < BUILDER_AUTH_FAILURE_ALERT_THRESHOLD || !since) return;
+
+    const session = await this.sessionRepository.findOne({
+      where: {},
+      order: { updatedAt: 'DESC' },
+    });
+    if (!session) return;
+
+    await this.notificationService.credentialRejected(session, failures, since);
+    this.logger.error(
+      `[BUILDER] GitHub has rejected ${failures} consecutive calls since ${since.toISOString()}. Everything downstream is blind until the credential is replaced.`,
+    );
+  }
+
   async reconcileReleases(): Promise<void> {
     if (!this.github.isConfigured) return;
+
+    await this.reportCredentialHealth();
+    await this.reconcileFailedReleases();
 
     const releasing = await this.repository.find({
       where: { releaseState: 'releasing' },

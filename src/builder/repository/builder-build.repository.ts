@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { DataSource, In, IsNull, Repository } from 'typeorm';
+import { DataSource, In, IsNull, MoreThanOrEqual, Repository } from 'typeorm';
 import { BuilderBuildRun } from '../entity/builder-build-run.entity';
 import { BuilderBuildEvent } from '../entity/builder-build-event.entity';
 import { BuilderQuestion } from '../entity/builder-question.entity';
@@ -13,6 +13,7 @@ import { BUILDER_STEER_MAX_PENDING } from '../constants/builder.constants';
 import {
   BUILDER_RUN_ACTIVE_STATUSES,
   BuilderPrFeedbackKind,
+  BuilderNotificationKind,
   BuilderPrFeedbackStatus,
   BuilderQuestionStatus,
   BuilderRunStatus,
@@ -27,6 +28,55 @@ export class BuilderBuildRunRepository extends Repository<BuilderBuildRun> {
 
   listBySession(sessionId: string): Promise<BuilderBuildRun[]> {
     return this.find({ where: { sessionId }, order: { sequence: 'ASC' } });
+  }
+
+  /**
+   * Runs that should stop a new one being dispatched for this session.
+   *
+   * QUEUED and RUNNING are obvious. WAITING_FOR_INPUT is the subtle one: a run
+   * parked on a question must block, because dispatching alongside it would
+   * race the resume — but only until that resume actually exists. Once a run
+   * carries `resumeOfRunId` pointing at the parked one, the pause is over and
+   * the parked row is history.
+   *
+   * Counting it forever is how a session wedges. `resumeFromQuestions`
+   * dispatches the resume and deliberately leaves the paused row as it is
+   * (WAITING_FOR_INPUT is terminal FOR THE RUN — see BuilderRunStatus), so a
+   * plain status check keeps seeing a blocker that nothing will ever clear,
+   * and every later fix and review dispatch is refused in silence.
+   */
+  /**
+   * Is this the newest run of its session?
+   *
+   * Asked when a run settles a second time — the agent's claim first, the
+   * runner's evidence after it — so that a later correction can only touch a
+   * session this run is still the current owner of.
+   */
+  async isLatestForSession(runId: string, sessionId: string): Promise<boolean> {
+    const latest = await this.findOne({
+      where: { sessionId },
+      order: { createdAt: 'DESC' },
+      select: ['id'],
+    });
+    return latest?.id === runId;
+  }
+
+  async countBlockingRuns(sessionId: string): Promise<number> {
+    return this.createQueryBuilder('run')
+      .where('run.sessionId = :sessionId', { sessionId })
+      .andWhere(
+        `(run.status IN (:...live)
+          OR (run.status = :waiting
+              AND NOT EXISTS (
+                SELECT 1 FROM builder_build_runs resume
+                WHERE resume."resumeOfRunId" = run.id
+              )))`,
+        {
+          live: [BuilderRunStatus.QUEUED, BuilderRunStatus.RUNNING],
+          waiting: BuilderRunStatus.WAITING_FOR_INPUT,
+        },
+      )
+      .getCount();
   }
 
   /**
@@ -354,6 +404,23 @@ export class BuilderNotificationRepository extends Repository<BuilderNotificatio
 
   countUnread(adminId: number): Promise<number> {
     return this.count({ where: { adminId, readAt: IsNull() } });
+  }
+
+  /**
+   * Has this session already been told this, since `since`?
+   *
+   * For announcements made from a polled guard, where the guard re-fires every
+   * tick but the news is the same news.
+   */
+  async existsSince(
+    sessionId: string,
+    kind: BuilderNotificationKind,
+    since: Date,
+  ): Promise<boolean> {
+    const count = await this.count({
+      where: { sessionId, kind, createdAt: MoreThanOrEqual(since) },
+    });
+    return count > 0;
   }
 }
 

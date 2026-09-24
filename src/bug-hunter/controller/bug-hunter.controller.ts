@@ -27,6 +27,21 @@ import { TokenUser } from 'src/auth/type/auth.types';
 
 import { BugHuntSweepService } from '../service/bug-hunt-sweep.service';
 import { BugHunterService } from '../service/bug-hunter.service';
+import { BugHunterTelemetryService } from '../service/bug-hunter-telemetry.service';
+import { BugHunterEvalService } from '../service/bug-hunter-eval.service';
+import { ListBugHunterEvalRunsDto } from '../dto/bug-hunter-eval.dto';
+import { AgentMemoryService } from 'src/agent-memory/service/agent-memory.service';
+import { AgentMemoryAgent } from 'src/agent-memory/enum/agent-memory.enum';
+import { AgentMemory } from 'src/agent-memory/entity/agent-memory.entity';
+import {
+  BugHunterMemoryEntryDto,
+  ListBugHunterMemoryResponseDto,
+  WriteBugHunterMemoryDto,
+} from '../dto/bug-hunter-memory.dto';
+import {
+  BugHunterPipelineMetricsDto,
+  BugHuntRunTelemetryDto,
+} from '../dto/bug-hunter-telemetry.dto';
 import {
   BugFindingEnrichment,
   BugFindingService,
@@ -108,7 +123,125 @@ export class BugHunterController {
     private readonly notificationService: BugHunterNotificationService,
     private readonly metricsService: BugHunterMetricsService,
     private readonly modelSettingsService: BugHunterModelSettingsService,
+    private readonly telemetryService: BugHunterTelemetryService,
+    private readonly evalService: BugHunterEvalService,
+    private readonly memoryService: AgentMemoryService,
   ) {}
+
+  @Get('memory')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      "Bug Hunter's notebook: the active entries in scope for a repo, strongest evidence first (super-duper-admin)",
+  })
+  @ApiResponse({ status: 200, type: ListBugHunterMemoryResponseDto })
+  async listMemory(
+    @Query('repo') repo?: string,
+    @Query('limit') limit?: string,
+  ): Promise<ListBugHunterMemoryResponseDto> {
+    const rows = await this.memoryService.listActive(
+      AgentMemoryAgent.BUG_HUNTER,
+      repo || undefined,
+      limit ? Math.min(Math.max(Number(limit) || 50, 1), 200) : 50,
+    );
+    return { items: rows.map(toMemoryEntryDto) };
+  }
+
+  @Post('memory')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      "Add an entry to Bug Hunter's notebook by hand (super-duper-admin)",
+    description:
+      'The human half of the notebook: a lesson the team already knows and wants the ' +
+      'agent to start from. Pinned entries are never edited or retired by the curator.',
+  })
+  @ApiResponse({ status: 201, type: BugHunterMemoryEntryDto })
+  async addMemory(
+    @Body() body: WriteBugHunterMemoryDto,
+    @CurrentUser() user: TokenUser,
+  ): Promise<BugHunterMemoryEntryDto> {
+    const row = await this.memoryService.write({
+      agent: AgentMemoryAgent.BUG_HUNTER,
+      body: body.body,
+      repos: body.repos,
+      tags: body.tags,
+      createdBy: user.id,
+      pinned: body.pinned ?? false,
+      // A person's note is already curated; the agent's wait for the pass.
+      curated: true,
+    });
+    return toMemoryEntryDto(row);
+  }
+
+  @Post('memory/:id/retire')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'Retire a notebook entry so it stops being read or found (super-duper-admin)',
+  })
+  @ApiResponse({ status: 200, type: BugHunterMemoryEntryDto })
+  async retireMemory(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: TokenUser,
+  ): Promise<BugHunterMemoryEntryDto> {
+    return toMemoryEntryDto(await this.memoryService.retire(id, user.id));
+  }
+
+  @Get('eval-runs')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'Replays of the verifier prompt over the labelled eval set, newest first (super-duper-admin)',
+    description:
+      'Each row is one prompt version on one model scored against settled findings: agreement ' +
+      'with the human outcome, how many real bugs it kept, how many false positives it caught, ' +
+      'and certainty calibration. The number a prompt change carries before it ships.',
+  })
+  @ApiResponse({ status: 200, type: ListBugHunterEvalRunsDto })
+  async listEvalRuns(
+    @Query('repo') repo?: string,
+    @Query('limit') limit?: string,
+  ): Promise<ListBugHunterEvalRunsDto> {
+    const items = await this.evalService.listRuns(
+      limit ? Math.min(Math.max(Number(limit) || 20, 1), 200) : 20,
+      repo || undefined,
+    );
+    return { items };
+  }
+
+  @Get('metrics/pipeline')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      'How the pipeline itself behaved: per-phase durations, context-lookup hit rates and latency, and how much of each repo the agent was shown (super-duper-admin)',
+    description:
+      'The stage-level view GET metrics cannot give. Where GET metrics judges outcomes, this ' +
+      'says which part of a run was slow, whether the agent got anything back when it asked ' +
+      'for logs or memory, and how wide its code scope was — the figures needed to tell a ' +
+      'thorough night from a noisy one, and to trace a regression in speed or cost to a stage.',
+  })
+  @ApiResponse({ status: 200, type: BugHunterPipelineMetricsDto })
+  async getPipelineMetrics(
+    @Query() query: BugHunterMetricsQueryDto,
+  ): Promise<BugHunterPipelineMetricsDto> {
+    return this.telemetryService.pipelineMetrics(
+      query.days ?? BUG_HUNTER_METRICS_DEFAULT_DAYS,
+    );
+  }
+
+  @Get('runs/:id/telemetry')
+  @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
+  @ApiOperation({
+    summary:
+      "One run's phase timings, context lookups and code-scope breadth (super-duper-admin)",
+  })
+  @ApiResponse({ status: 200, type: BugHuntRunTelemetryDto })
+  async getRunTelemetry(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<BugHuntRunTelemetryDto> {
+    return this.telemetryService.getRunTelemetry(id);
+  }
 
   @Get('settings')
   @RequireFeatureToggle(FeatureToggleKey.BUG_HUNTER)
@@ -187,7 +320,7 @@ export class BugHunterController {
       source: query.source,
       repo: query.repo,
       runId: query.runId,
-      limit: query.limit ?? 50,
+      limit: query.limit ?? 1000,
       offset: query.offset ?? 0,
     });
     const enriched = await this.bugFindingService.enrich(items);
@@ -821,6 +954,7 @@ export function toFindingDto(
     // accidental part of the API — see the entity's own note on which keys
     // have readers.
     confidence: readConfidence(row.metadata),
+    verificationUnavailable: row.metadata?.verificationUnavailable === true,
     regressionOf:
       typeof row.metadata?.regressionOf === 'string'
         ? row.metadata.regressionOf
@@ -908,4 +1042,23 @@ export function toEventDto(row: BugHuntEvent): BugHuntEventDto {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function toMemoryEntryDto(row: AgentMemory): BugHunterMemoryEntryDto {
+  return {
+    id: row.id,
+    body: row.body,
+    tags: row.tags ?? [],
+    repos: row.repos ?? null,
+    status: row.status,
+    pinned: row.pinned,
+    sourceCount: row.sourceCount,
+    timesApplied: row.timesApplied,
+    timesContradicted: row.timesContradicted,
+    runId: row.runId ?? null,
+    findingId: row.findingId ?? null,
+    createdBy: row.createdBy ?? null,
+    embeddingStatus: row.embeddingStatus,
+    createdAt: row.createdAt,
+  };
 }

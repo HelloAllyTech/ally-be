@@ -54,6 +54,60 @@ describe('RoomMetadataStoreService', () => {
     service = module.get(RoomMetadataStoreService);
   });
 
+  describe('LiveKit cap check', () => {
+    /**
+     * The check moved here from scenario-shared.service, where it measured the
+     * FULL envelope. Once this class started slimming, that number stopped
+     * being the room payload — so prod warned "96-144KB against a 65536 cap"
+     * on every session while really setting ~223 bytes, and an investigation
+     * chased it. These pin the check to what is actually being set.
+     */
+    const oversized = {
+      version: '1.0',
+      environment: 'test',
+      scenario: { blob: 'x'.repeat(70 * 1024) },
+    };
+
+    it('stays quiet about the cap when the room gets the slim pointer', async () => {
+      const warn = jest.spyOn((service as any).logger, 'warn');
+      const error = jest.spyOn((service as any).logger, 'error');
+
+      const out = await service.prepareRoomMetadata('ss_abc', oversized);
+
+      // The envelope is far over the cap; what LiveKit receives is not.
+      expect(
+        Buffer.byteLength(JSON.stringify(out.roomPayload), 'utf8'),
+      ).toBeLessThan(1024);
+      expect(warn).not.toHaveBeenCalled();
+      expect(error).not.toHaveBeenCalled();
+    });
+
+    it('reports an over-cap room payload on the inline path', async () => {
+      flagEnabled = false;
+      const error = jest.spyOn((service as any).logger, 'error');
+
+      await service.prepareRoomMetadata('ss_abc', oversized);
+
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining('EXCEEDS the LiveKit cap'),
+      );
+    });
+
+    it('still measures the room payload when the store write fails', async () => {
+      // The fallback hands LiveKit the full envelope, which is exactly when the
+      // cap is a live risk and exactly when nobody is looking.
+      repo.upsert.mockRejectedValueOnce(new Error('db down'));
+      const error = jest.spyOn((service as any).logger, 'error');
+
+      const out = await service.prepareRoomMetadata('ss_abc', oversized);
+
+      expect(out.roomPayload).toBe(oversized);
+      expect(error).toHaveBeenCalledWith(
+        expect.stringContaining('EXCEEDS the LiveKit cap'),
+      );
+    });
+  });
+
   describe('prepareRoomMetadata with flag off', () => {
     it('returns the full envelope inline and stores nothing', async () => {
       flagEnabled = false;

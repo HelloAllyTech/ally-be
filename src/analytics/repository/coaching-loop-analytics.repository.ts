@@ -6,6 +6,7 @@ import { excludeTestTenants, scopeToTenant } from '../util/test-tenant.util';
 import { getPlatformDataFloor } from '../util/data-floor.util';
 import { MIN_COHORT_SIZE } from './cohort-analytics.repository';
 import { AnalyticsBucket } from './platform-analytics.repository';
+import { resolveSqlBucket } from '../util/analytics-window.util';
 
 /**
  * Smallest number of commented-on reviews a TURNAROUND may be stated for.
@@ -97,10 +98,11 @@ export class CoachingLoopAnalyticsRepository {
   private resolveBucket(bucket: AnalyticsBucket): AnalyticsBucket {
     // Defense-in-depth: bucket is internal, but never interpolate anything we
     // have not explicitly whitelisted.
-    if (bucket === 'day') return 'day';
-    if (bucket === 'month') return 'month';
-    if (bucket === 'year') return 'year';
-    return 'week';
+    return resolveSqlBucket(
+      bucket,
+      ['day', 'week', 'month', 'quarter', 'year'],
+      'week',
+    );
   }
 
   /**

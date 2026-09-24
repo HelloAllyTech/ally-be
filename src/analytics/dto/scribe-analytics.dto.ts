@@ -42,7 +42,7 @@ export class ScribeOverviewSummaryDto {
 
 export class ScribeOverviewResponseDto {
   @ApiProperty() range!: AnalyticsRange;
-  @ApiProperty({ enum: ['day', 'week', 'month'] }) bucket!: string;
+  @ApiProperty({ enum: ['day', 'week', 'month', 'quarter'] }) bucket!: string;
 
   @ApiProperty({
     type: AnalyticsWindowDto,
@@ -160,7 +160,7 @@ export class ScribeFailureSummaryDto {
 
 export class ScribeSummaryFailureResponseDto {
   @ApiProperty() range!: AnalyticsRange;
-  @ApiProperty({ enum: ['day', 'week', 'month'] }) bucket!: string;
+  @ApiProperty({ enum: ['day', 'week', 'month', 'quarter'] }) bucket!: string;
 
   @ApiProperty({
     type: AnalyticsWindowDto,

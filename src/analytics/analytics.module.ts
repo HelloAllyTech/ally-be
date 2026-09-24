@@ -14,6 +14,15 @@ import { XpGrowthAnalyticsService } from './service/xp-growth-analytics.service'
 import { XpGrowthAnalyticsRepository } from './repository/xp-growth-analytics.repository';
 import { GoalsXpAnalyticsService } from './service/goals-xp-analytics.service';
 import { GoalsXpAnalyticsRepository } from './repository/goals-xp-analytics.repository';
+// Highlights → Goals: additional charts beside the XP-vs-goal chart above.
+import { ActiveUsersXpAnalyticsService } from './service/active-users-xp-analytics.service';
+import { ActiveUsersXpAnalyticsRepository } from './repository/active-users-xp-analytics.repository';
+import { XpLevelReachedAnalyticsService } from './service/xp-level-reached-analytics.service';
+import { XpLevelReachedAnalyticsRepository } from './repository/xp-level-reached-analytics.repository';
+import { BugHunterVolumeAnalyticsService } from './service/bug-hunter-volume-analytics.service';
+import { BugHunterVolumeAnalyticsRepository } from './repository/bug-hunter-volume-analytics.repository';
+import { XpByTenantAnalyticsService } from './service/xp-by-tenant-analytics.service';
+import { XpByTenantAnalyticsRepository } from './repository/xp-by-tenant-analytics.repository';
 import { AnalyticsXpGoal } from './entity/analytics-xp-goal.entity';
 import { RoleplayVolumeAnalyticsService } from './service/roleplay-volume-analytics.service';
 import { RoleplayVolumeAnalyticsRepository } from './repository/roleplay-volume-analytics.repository';
@@ -60,6 +69,12 @@ import { RoleplayCostAnalyticsService } from './service/roleplay-cost-analytics.
 import { RoleplayCostAnalyticsRepository } from './repository/roleplay-cost-analytics.repository';
 import { CodingAgentCostAnalyticsService } from './service/coding-agent-cost-analytics.service';
 import { CodingAgentCostAnalyticsRepository } from './repository/coding-agent-cost-analytics.repository';
+import { FixSessionEngineCostAnalyticsService } from './service/fix-session-engine-cost-analytics.service';
+import { FixSessionEngineCostAnalyticsRepository } from './repository/fix-session-engine-cost-analytics.repository';
+import { BugAgentPerformanceAnalyticsService } from './service/bug-agent-performance-analytics.service';
+import { BugFindingRepository } from 'src/bug-hunter/repository/bug-finding.repository';
+import { BugHuntRunRepository } from 'src/bug-hunter/repository/bug-hunt-run.repository';
+import { BugHuntEventRepository } from 'src/bug-hunter/repository/bug-hunt-event.repository';
 import { QualitySentimentAnalyticsService } from './service/quality-sentiment-analytics.service';
 import { QualitySentimentAnalyticsRepository } from './repository/quality-sentiment-analytics.repository';
 // Roleplay Quality Index: the composite behind the "Roleplay quality" card,
@@ -165,6 +180,14 @@ import { TenantModule } from 'src/tenant/tenant.module';
     XpGrowthAnalyticsRepository,
     GoalsXpAnalyticsService,
     GoalsXpAnalyticsRepository,
+    ActiveUsersXpAnalyticsService,
+    ActiveUsersXpAnalyticsRepository,
+    XpLevelReachedAnalyticsService,
+    XpLevelReachedAnalyticsRepository,
+    BugHunterVolumeAnalyticsService,
+    BugHunterVolumeAnalyticsRepository,
+    XpByTenantAnalyticsService,
+    XpByTenantAnalyticsRepository,
     RoleplayVolumeAnalyticsService,
     RoleplayVolumeAnalyticsRepository,
     RoadmapDeliveryAnalyticsService,
@@ -207,6 +230,17 @@ import { TenantModule } from 'src/tenant/tenant.module';
     RoleplayCostAnalyticsRepository,
     CodingAgentCostAnalyticsService,
     CodingAgentCostAnalyticsRepository,
+    FixSessionEngineCostAnalyticsService,
+    FixSessionEngineCostAnalyticsRepository,
+    // Provided directly rather than importing BugHunterModule: all three
+    // construct themselves from the DataSource alone, so this costs nothing
+    // and avoids pulling in Bug Hunter's whole service graph for three read
+    // queries — same reasoning as this week's PosthogQueryService/
+    // BugHunterRepoClassifierService additions elsewhere.
+    BugFindingRepository,
+    BugHuntRunRepository,
+    BugHuntEventRepository,
+    BugAgentPerformanceAnalyticsService,
     QualitySentimentAnalyticsService,
     QualitySentimentAnalyticsRepository,
     QualityIndexAnalyticsService,

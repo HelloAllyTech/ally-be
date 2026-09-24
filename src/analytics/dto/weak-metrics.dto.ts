@@ -5,6 +5,7 @@ import { IsEnum, IsInt, IsOptional, IsString, IsUUID } from 'class-validator';
 export enum WeakMetricsBucket {
   WEEK = 'week',
   MONTH = 'month',
+  QUARTER = 'quarter',
 }
 
 export enum WeakMetricsRange {

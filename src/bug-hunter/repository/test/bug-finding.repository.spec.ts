@@ -1,3 +1,5 @@
+import { DataSource } from 'typeorm';
+
 import { BugFindingRepository } from '../bug-finding.repository';
 
 const key = BugFindingRepository.dedupeKey;
@@ -166,5 +168,47 @@ describe('BugFindingRepository.descriptionFingerprint', () => {
 
   it('returns empty for prose with no content words', () => {
     expect(fingerprint('the a an is 123')).toBe('');
+  });
+});
+
+/**
+ * The `repo` filter must never mean "ONLY the confidently-classified ones" —
+ * dropping the null-repo fallback would silently hide a bug the intake
+ * classifier couldn't place from every sweep. See the method's own doc.
+ */
+describe('BugFindingRepository.listNewReportedBugs', () => {
+  const build = () => {
+    const repository = new BugFindingRepository({
+      createEntityManager: () => ({}),
+    } as unknown as DataSource);
+    jest.spyOn(repository, 'find').mockResolvedValue([]);
+    return repository;
+  };
+
+  it('with no repo argument, queries the platform-wide unfiltered list, unchanged from before this filter existed', async () => {
+    const repository = build();
+
+    await repository.listNewReportedBugs();
+
+    expect(repository.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { source: 'reported_bug', status: 'new' },
+      }),
+    );
+  });
+
+  it('with a repo argument, matches that repo OR a still-unfiled row — never only the classified ones', async () => {
+    const repository = build();
+
+    await repository.listNewReportedBugs('ally-web');
+
+    const call = (repository.find as jest.Mock).mock.calls[0][0];
+    expect(call.where).toEqual([
+      { source: 'reported_bug', status: 'new', repo: 'ally-web' },
+      { source: 'reported_bug', status: 'new', repo: expect.anything() },
+    ]);
+    // The second branch's `repo` must be an IsNull() operator, not a literal
+    // value — a FindOperator of type "isNull", not `repo = [object]`.
+    expect(call.where[1].repo.type).toBe('isNull');
   });
 });

@@ -7,6 +7,7 @@ import { countableSessionPredicate } from '../util/session-eligibility.util';
 import { getPlatformDataFloor } from '../util/data-floor.util';
 import { AnalyticsBucket } from './platform-analytics.repository';
 import { MIN_COHORT_SIZE } from './cohort-analytics.repository';
+import { resolveSqlBucket } from '../util/analytics-window.util';
 
 /**
  * One band of the "how long until a learner first practised?" distribution, in
@@ -217,10 +218,11 @@ export class ActivationAnalyticsRepository {
   private resolveBucket(bucket: AnalyticsBucket): AnalyticsBucket {
     // Defense-in-depth: bucket is internal, but never interpolate anything we
     // have not explicitly whitelisted.
-    if (bucket === 'day') return 'day';
-    if (bucket === 'month') return 'month';
-    if (bucket === 'year') return 'year';
-    return 'week';
+    return resolveSqlBucket(
+      bucket,
+      ['day', 'week', 'month', 'quarter', 'year'],
+      'week',
+    );
   }
 
   /**

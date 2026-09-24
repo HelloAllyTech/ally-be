@@ -28,6 +28,107 @@ describe('BuilderMetricsService', () => {
     service = module.get(BuilderMetricsService);
   });
 
+  /**
+   * The routing read path. The SQL is verified against a real database; what
+   * these cover is the arithmetic on top of it, where every one of the three
+   * traps turns a routing decision the wrong way round.
+   */
+  describe('modelRouting', () => {
+    const arm = (over: Record<string, unknown> = {}) => ({
+      model: 'gemini-2.5-flash',
+      engine: 'gemini',
+      size: 'small',
+      attempts: 10,
+      firstAttempts: 8,
+      firstJudged: 8,
+      firstPassed: 4,
+      firstPassedTrusted: 4,
+      escalated: 2,
+      shipped: 3,
+      costUsd: '4.0000',
+      medianCostUsd: '0.5',
+      medianDurationMs: 1000,
+      medianTurns: 12,
+      ...over,
+    });
+
+    it('does not count an unreached gate as a failure', async () => {
+      // Six of eight first attempts got a verdict; the other two paused, held
+      // on budget or died. Four passed. The honest rate is 4/6, not 4/8 —
+      // counting the unjudged ones would make every arm look worse the more
+      // often runs were interrupted.
+      dataSource.query.mockResolvedValue([
+        arm({ firstAttempts: 8, firstJudged: 6, firstPassed: 4 }),
+      ]);
+
+      const { arms } = await service.modelRouting(30);
+
+      expect(arms[0].firstAttemptJudged).toBe(6);
+      expect(arms[0].firstAttemptPassRate).toBe(0.667);
+    });
+
+    it('reports an untrusted pass separately rather than folding it in', async () => {
+      // Four passes, one of which edited the gate's own configuration. A
+      // cost optimisation reads `trustedPassRate`; the gap between the two is
+      // the reward-hacking signal, and averaging them hides exactly the thing
+      // that gets worse as the tier gets cheaper.
+      dataSource.query.mockResolvedValue([
+        arm({ firstJudged: 8, firstPassed: 4, firstPassedTrusted: 3 }),
+      ]);
+
+      const { arms } = await service.modelRouting(30);
+
+      expect(arms[0].firstAttemptPassRate).toBe(0.5);
+      expect(arms[0].firstAttemptTrustedPassRate).toBe(0.375);
+    });
+
+    it('says no evidence rather than never passed', async () => {
+      // Zero would read as "this arm always fails" and route away from a model
+      // nothing has been tried on.
+      dataSource.query.mockResolvedValue([
+        arm({
+          firstAttempts: 0,
+          firstJudged: 0,
+          firstPassed: 0,
+          firstPassedTrusted: 0,
+        }),
+      ]);
+
+      const { arms } = await service.modelRouting(30);
+
+      expect(arms[0].firstAttemptPassRate).toBeNull();
+      expect(arms[0].firstAttemptTrustedPassRate).toBeNull();
+    });
+
+    it('keeps an unmeasured cost or duration missing, not zero', async () => {
+      dataSource.query.mockResolvedValue([
+        arm({ medianCostUsd: null, medianDurationMs: null, medianTurns: null }),
+      ]);
+
+      const { arms } = await service.modelRouting(30);
+
+      expect(arms[0].medianCostUsd).toBeNull();
+      expect(arms[0].medianDurationMs).toBeNull();
+      expect(arms[0].medianTurns).toBeNull();
+    });
+
+    it('says why it is empty, because empty and broken look identical', async () => {
+      dataSource.query.mockResolvedValue([]);
+
+      const result = await service.modelRouting(30);
+
+      expect(result.arms).toEqual([]);
+      expect(result.note).toMatch(/No coding attempts/);
+    });
+
+    it('clamps the window rather than trusting the query string', async () => {
+      dataSource.query.mockResolvedValue([]);
+
+      expect((await service.modelRouting(1)).windowDays).toBe(7);
+      expect((await service.modelRouting(9999)).windowDays).toBe(365);
+    });
+  });
+
   describe('pipelineHealth', () => {
     it('keeps an unmeasured phase unmeasured rather than instant', async () => {
       dataSource.query.mockImplementation((sql: string) => {

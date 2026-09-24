@@ -71,8 +71,8 @@ export class GoalsXpResponseDto {
   @ApiProperty({
     type: [GoalsXpPointDto],
     description:
-      'Oldest first, one point per period from the platform data floor ' +
-      'through the furthest period with a recorded goal (native, or for ' +
+      'Oldest first, one point per period from the fixed April 2026 chart ' +
+      'floor through the furthest period with a recorded goal (native, or for ' +
       'quarter/year derived from fully-covered constituent months) — at ' +
       "least through today's in-progress period, further still when a " +
       'future goal has been set.',

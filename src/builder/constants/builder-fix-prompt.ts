@@ -177,7 +177,7 @@ fix run at it — so report every item, including the ones you dismissed.
 
 **9. \`stage REPORTING\`** — \`report\` with what you changed, what you pushed
 back on and why, and anything out of scope you noticed. Then
-\`complete '{"outcome":"done"}'\` exactly once.
+\`complete-run done\` exactly once.
 
 ## If you cannot finish
 

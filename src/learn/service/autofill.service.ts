@@ -75,7 +75,16 @@ export class AutofillService {
     });
   }
 
-  /** Agent Builder generation: one abortable call per field, run in parallel. */
+  /**
+   * Per-field generation from a rendered prompt: one abortable call per field,
+   * run in parallel. Shared by the Agent Builder Copilot and Event Builder.
+   *
+   * `task` only labels the `llm_usage` row. It is the LAST parameter and
+   * defaults to AUTOFILL_AGENT_FIELD so the copilot's existing call sites are
+   * unchanged; a caller that omits it is reported as a copilot call, which is
+   * wrong but not silently so — the promptCode in the same row names the real
+   * feature.
+   */
   async generateContentFromPrompt(
     promptCode: string,
     variables: Record<string, string>,
@@ -83,10 +92,11 @@ export class AutofillService {
     modelOverride?: string,
     temperatureOverride?: number,
     providerOverride?: string,
+    task: LlmTask = LlmTask.AUTOFILL_AGENT_FIELD,
   ): Promise<string> {
     return this.run({
-      taskId: 'autofill-agent-field',
-      task: LlmTask.AUTOFILL_AGENT_FIELD,
+      taskId: task.replace(/_/g, '-'),
+      task,
       label: `promptCode=${promptCode}`,
       promptCode,
       variables,

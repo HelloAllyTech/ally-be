@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { createHash } from 'crypto';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 
 import { BugFinding } from '../entity/bug-finding.entity';
 import {
@@ -77,6 +77,11 @@ export interface FindingOutcomeCount {
    */
   reversed: number;
   count: number;
+}
+
+/** Same cells as `FindingOutcomeCount`, one set per calendar week — see `weeklyOutcomeCounts`. */
+export interface WeeklyFindingOutcomeCount extends FindingOutcomeCount {
+  week: Date;
 }
 
 /** How long findings sat between two lifecycle stamps, in hours. */
@@ -389,6 +394,35 @@ export class BugFindingRepository extends Repository<BugFinding> {
    * it to stop reporting real bugs, which is the opposite of the intent. See
    * that constant's doc.
    */
+  /**
+   * Unproven findings whose truth has since been settled one way or the other
+   * — declined, or shipped — newest settlement first. The raw material of the
+   * verifier eval set; `BugHunterEvalService.buildSet` decides which of these
+   * carry a usable label and what it is.
+   *
+   * `proven = false` because the verifier never runs on a failing test or a
+   * log cluster, so grading it on those would be grading a phase that did not
+   * happen. `file`/`symbol` required because a verifier with no location has
+   * nothing to read. Takes more than `limit` so the labelling pass has room to
+   * drop the reasons it cannot grade (`wont_fix`, `duplicate`, ...).
+   */
+  listSettledForEval(
+    repo: string | undefined,
+    limit: number,
+  ): Promise<BugFinding[]> {
+    const query = this.createQueryBuilder('f')
+      .where('f.status IN (:...statuses)', {
+        statuses: [...DECLINED_STATUSES, ...SHIPPED_STATUSES],
+      })
+      .andWhere('f.proven = false')
+      .andWhere('f.parentFindingId IS NULL')
+      .andWhere('(f.file IS NOT NULL OR f.symbol IS NOT NULL)')
+      .orderBy('COALESCE(f.decidedAt, f."updatedAt")', 'DESC')
+      .take(limit);
+    if (repo) query.andWhere('f.repo = :repo', { repo });
+    return query.getMany();
+  }
+
   listRecentFinderErrors(
     repo: string,
     since: Date,
@@ -485,12 +519,24 @@ export class BugFindingRepository extends Repository<BugFinding> {
     return query.getMany();
   }
 
-  listNewReportedBugs(limit = 50): Promise<BugFinding[]> {
+  /**
+   * `repo` narrows to items `RoadmapOpportunityService.create`'s intake
+   * classifier already believed belong to it, PLUS anything still unfiled —
+   * never to ONLY the confidently-classified ones. Dropping the null-repo
+   * fallback would silently hide a bug the classifier couldn't place from
+   * every sweep, when today it's meant to reach all of them until one claims
+   * it. Omit `repo` for the platform-wide, unfiltered list this always was.
+   */
+  listNewReportedBugs(repo?: string, limit = 50): Promise<BugFinding[]> {
+    const source = 'reported_bug' as BugFinding['source'];
+    const status = BugFindingStatus.NEW;
     return this.find({
-      where: {
-        source: 'reported_bug' as BugFinding['source'],
-        status: BugFindingStatus.NEW,
-      },
+      where: repo
+        ? [
+            { source, status, repo },
+            { source, status, repo: IsNull() },
+          ]
+        : { source, status },
       order: { createdAt: 'DESC' },
       take: limit,
     });
@@ -609,6 +655,263 @@ export class BugFindingRepository extends Repository<BugFinding> {
         .addGroupBy('f.decision_reason')
         .getRawMany<FindingOutcomeCount>()
     );
+  }
+
+  /**
+   * `outcomeCounts`'s exact cells, bucketed by the calendar week a finding
+   * was filed — the raw material a week-over-week precision/reversal-rate
+   * trend chart folds into one `FindingFunnel` per week via
+   * `BugHunterMetricsService`'s existing `groupFunnels`/`foldFunnel`. Kept as
+   * a separate method rather than an optional `bucket` param on
+   * `outcomeCounts`: that method's single-window shape (`since` only, no
+   * `week` column) is a real, load-bearing simplification for its own
+   * callers, not an accident to generalise away.
+   */
+  weeklyOutcomeCounts(
+    start: Date,
+    end: Date,
+  ): Promise<WeeklyFindingOutcomeCount[]> {
+    return this.createQueryBuilder('f')
+      .select(`date_trunc('week', f."createdAt")`, 'week')
+      .addSelect('f.source', 'source')
+      .addSelect('f.repo', 'repo')
+      .addSelect('f.status', 'status')
+      .addSelect('f.decision_reason', 'decisionReason')
+      .addSelect('COUNT(*)::int', 'count')
+      .addSelect(
+        `COUNT(*) FILTER (
+           WHERE NULLIF(f.metadata->>'confidence', '') IS NOT NULL
+             AND (f.metadata->>'confidence')::numeric < :threshold
+         )::int`,
+        'lowConfidence',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE NULLIF(f.metadata->>'confidence', '') IS NULL)::int`,
+        'unscored',
+      )
+      .addSelect(
+        `COUNT(*) FILTER (WHERE f.reversed_at IS NOT NULL)::int`,
+        'reversed',
+      )
+      .where('f.parentFindingId IS NULL')
+      .andWhere('f."createdAt" >= :start', { start })
+      .andWhere('f."createdAt" < :end', { end })
+      .setParameter('threshold', BUG_HUNT_LOW_CONFIDENCE_THRESHOLD)
+      .groupBy('week')
+      .addGroupBy('f.source')
+      .addGroupBy('f.repo')
+      .addGroupBy('f.status')
+      .addGroupBy('f.decision_reason')
+      .orderBy('week', 'ASC')
+      .getRawMany<WeeklyFindingOutcomeCount>();
+  }
+
+  /**
+   * `regressionCounts`'s two cohorts, bucketed by calendar week — the
+   * `regressions` cohort by discovery week, `regressedFixes` by the week the
+   * fix that failed either released or (for repos with no release step)
+   * last updated — see `regressionCounts`'s own doc for why those are the
+   * right anchors.
+   */
+  async weeklyRegressionCounts(
+    start: Date,
+    end: Date,
+  ): Promise<
+    Array<{ week: Date; regressions: number; regressedFixes: number }>
+  > {
+    const rows = await this.manager.query<
+      Array<{ week: Date; regressions: string; regressed_fixes: string }>
+    >(
+      `
+      SELECT
+        date_trunc('week', bucket) AS week,
+        COUNT(*) FILTER (WHERE kind = 'regression') AS regressions,
+        COUNT(*) FILTER (WHERE kind = 'regressed_fix') AS regressed_fixes
+      FROM (
+        SELECT f."createdAt" AS bucket, 'regression' AS kind
+        FROM bug_findings f
+        WHERE f.parent_finding_id IS NULL
+          AND f.metadata ? 'regressionOf'
+          AND f."createdAt" >= $1 AND f."createdAt" < $2
+        UNION ALL
+        SELECT COALESCE(f.released_at, f."updatedAt") AS bucket, 'regressed_fix' AS kind
+        FROM bug_findings f
+        WHERE f.parent_finding_id IS NULL
+          AND (f.metadata->>'regressed')::boolean IS TRUE
+          AND COALESCE(f.released_at, f."updatedAt") >= $1
+          AND COALESCE(f.released_at, f."updatedAt") < $2
+      ) unioned
+      GROUP BY week
+      ORDER BY week
+      `,
+      [start, end],
+    );
+    return rows.map((row) => ({
+      week: row.week,
+      regressions: Number(row.regressions),
+      regressedFixes: Number(row.regressed_fixes),
+    }));
+  }
+
+  /**
+   * `stageLatencies`'s three medians, bucketed by the calendar week a finding
+   * was FILED — same cohorting choice as `weeklyOutcomeCounts`, so a trend
+   * chart's precision and speed lines describe the same weekly cohort of
+   * findings. `filedToMergedMedianHours`/`mergedToReleasedMedianHours` for
+   * recent weeks will legitimately read null or thin (sampled low) purely
+   * because those bugs have not had time to reach that stage yet — expected,
+   * not a bug in the query.
+   */
+  async weeklyStageLatencies(
+    start: Date,
+    end: Date,
+  ): Promise<
+    Array<{
+      week: Date;
+      filedToDecided: StageLatency;
+      filedToMerged: StageLatency;
+      mergedToReleased: StageLatency;
+    }>
+  > {
+    const rows = await this.manager.query<
+      Array<{
+        week: Date;
+        filed_to_merged_median: string | null;
+        filed_to_merged_p90: string | null;
+        filed_to_merged_n: string;
+        merged_to_released_median: string | null;
+        merged_to_released_p90: string | null;
+        merged_to_released_n: string;
+        filed_to_decided_median: string | null;
+        filed_to_decided_p90: string | null;
+        filed_to_decided_n: string;
+      }>
+    >(
+      `
+      WITH scoped AS (
+        SELECT
+          date_trunc('week', f."createdAt") AS week,
+          f."createdAt"  AS filed_at,
+          f.decided_at   AS decided_at,
+          f.released_at  AS released_at,
+          (
+            SELECT MIN(e."createdAt")
+            FROM bug_hunt_events e
+            WHERE e.finding_id = f.id AND e.stage = 'merged'
+          ) AS merged_at
+        FROM bug_findings f
+        WHERE f.parent_finding_id IS NULL
+          AND f."createdAt" >= $1 AND f."createdAt" < $2
+      ),
+      hours AS (
+        SELECT
+          week,
+          EXTRACT(EPOCH FROM (merged_at - filed_at)) / 3600      AS filed_to_merged,
+          EXTRACT(EPOCH FROM (released_at - merged_at)) / 3600   AS merged_to_released,
+          EXTRACT(EPOCH FROM (decided_at - filed_at)) / 3600     AS filed_to_decided
+        FROM scoped
+      )
+      SELECT
+        week,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY filed_to_merged)
+          FILTER (WHERE filed_to_merged IS NOT NULL AND filed_to_merged >= 0)   AS filed_to_merged_median,
+        percentile_cont(0.9) WITHIN GROUP (ORDER BY filed_to_merged)
+          FILTER (WHERE filed_to_merged IS NOT NULL AND filed_to_merged >= 0)   AS filed_to_merged_p90,
+        COUNT(*) FILTER (WHERE filed_to_merged IS NOT NULL AND filed_to_merged >= 0) AS filed_to_merged_n,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY merged_to_released)
+          FILTER (WHERE merged_to_released IS NOT NULL AND merged_to_released >= 0) AS merged_to_released_median,
+        percentile_cont(0.9) WITHIN GROUP (ORDER BY merged_to_released)
+          FILTER (WHERE merged_to_released IS NOT NULL AND merged_to_released >= 0) AS merged_to_released_p90,
+        COUNT(*) FILTER (WHERE merged_to_released IS NOT NULL AND merged_to_released >= 0) AS merged_to_released_n,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY filed_to_decided)
+          FILTER (WHERE filed_to_decided IS NOT NULL AND filed_to_decided >= 0)  AS filed_to_decided_median,
+        percentile_cont(0.9) WITHIN GROUP (ORDER BY filed_to_decided)
+          FILTER (WHERE filed_to_decided IS NOT NULL AND filed_to_decided >= 0)  AS filed_to_decided_p90,
+        COUNT(*) FILTER (WHERE filed_to_decided IS NOT NULL AND filed_to_decided >= 0) AS filed_to_decided_n
+      FROM hours
+      GROUP BY week
+      ORDER BY week
+      `,
+      [start, end],
+    );
+
+    const latency = (
+      median: string | null,
+      p90: string | null,
+      n: string | undefined,
+    ): StageLatency => ({
+      medianHours: median == null ? null : Number(median),
+      p90Hours: p90 == null ? null : Number(p90),
+      sampled: Number(n ?? 0),
+    });
+
+    return rows.map((row) => ({
+      week: row.week,
+      filedToMerged: latency(
+        row.filed_to_merged_median,
+        row.filed_to_merged_p90,
+        row.filed_to_merged_n,
+      ),
+      mergedToReleased: latency(
+        row.merged_to_released_median,
+        row.merged_to_released_p90,
+        row.merged_to_released_n,
+      ),
+      filedToDecided: latency(
+        row.filed_to_decided_median,
+        row.filed_to_decided_p90,
+        row.filed_to_decided_n,
+      ),
+    }));
+  }
+
+  /**
+   * Median hours from a finding's dispatch to the first event its fix
+   * session reported — isolating "the agent was slow to start" from "the
+   * GitHub Actions runner queue was slow," which `stageLatencies`'
+   * filed→merged figure cannot distinguish (that clock also includes actual
+   * fix time). Bucketed by the week of `dispatchedAt`.
+   */
+  async weeklyQueueToStartLatency(
+    start: Date,
+    end: Date,
+  ): Promise<
+    Array<{ week: Date; medianHours: number | null; sampled: number }>
+  > {
+    const rows = await this.manager.query<
+      Array<{ week: Date; median_hours: string | null; sampled: string }>
+    >(
+      `
+      WITH scoped AS (
+        SELECT
+          date_trunc('week', f.dispatched_at) AS week,
+          EXTRACT(EPOCH FROM (first_event.first_at - f.dispatched_at)) / 3600 AS hours
+        FROM bug_findings f
+        JOIN LATERAL (
+          SELECT MIN(e."createdAt") AS first_at
+          FROM bug_hunt_events e
+          WHERE e.finding_id = f.id AND e."createdAt" >= f.dispatched_at
+        ) first_event ON true
+        WHERE f.parent_finding_id IS NULL
+          AND f.dispatched_at IS NOT NULL
+          AND f.dispatched_at >= $1 AND f.dispatched_at < $2
+      )
+      SELECT
+        week,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY hours)
+          FILTER (WHERE hours IS NOT NULL AND hours >= 0) AS median_hours,
+        COUNT(*) FILTER (WHERE hours IS NOT NULL AND hours >= 0) AS sampled
+      FROM scoped
+      GROUP BY week
+      ORDER BY week
+      `,
+      [start, end],
+    );
+    return rows.map((row) => ({
+      week: row.week,
+      medianHours: row.median_hours == null ? null : Number(row.median_hours),
+      sampled: Number(row.sampled),
+    }));
   }
 
   /**

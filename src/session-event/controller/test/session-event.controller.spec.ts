@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { Reflector } from '@nestjs/core';
 import { SessionEventController } from '../session-event.controller';
 import { SessionEventService } from '../../service/session-event.service';
+import { EventBuilderService } from '../../service/event-builder.service';
 import { CreateSessionEventsDto } from '../../dto/create-session-events.dto';
 import { SessionEvents } from '../../entity/session-events.entity';
 import {
@@ -104,6 +105,10 @@ describe('SessionEventController', () => {
       getUniqueTags: jest.fn(),
     };
 
+    const mockEventBuilderService = {
+      generateField: jest.fn(),
+    };
+
     const mockPermissionsService = {
       getUserRoles: jest.fn().mockResolvedValue(['SUPER_ADMIN']),
     };
@@ -129,6 +134,10 @@ describe('SessionEventController', () => {
         {
           provide: SessionEventService,
           useValue: mockSessionEventService,
+        },
+        {
+          provide: EventBuilderService,
+          useValue: mockEventBuilderService,
         },
         {
           provide: PermissionsService,

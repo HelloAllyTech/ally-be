@@ -121,6 +121,28 @@ export interface RoadmapOpportunityUpsertResponse {
   embedding_model: string;
 }
 
+export interface AgentMemoryUpsertResponse {
+  memory_id: string;
+  text_hash: string;
+  embedding_model: string;
+}
+
+export interface AgentMemoryMatch {
+  memory_id: string;
+  agent: string;
+  /** Cosine similarity in [0, 1]. */
+  similarity: number;
+}
+
+export interface AgentMemorySearchResponse {
+  matches: AgentMemoryMatch[];
+}
+
+export interface AgentMemoryDeleteResponse {
+  memory_id: string;
+  deleted: boolean;
+}
+
 export interface RoadmapOpportunityBulkUpsertResponse {
   succeeded: RoadmapOpportunityUpsertResponse[];
   /** Per-item failures. The caller must surface these — a partially-failed batch that reports

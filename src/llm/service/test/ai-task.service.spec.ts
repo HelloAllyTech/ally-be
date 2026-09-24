@@ -3,6 +3,7 @@ import { LlmTask } from 'src/learn/enum/llm-task.enum';
 import { AppConfigService } from 'src/config/config.service';
 import {
   AI_TASK_REGISTRY,
+  callConfigForAiTask,
   tierForAiTask,
   AI_TASK_REGISTRY_EXEMPT_TASKS,
 } from '../../constants/ai-task-registry.constants';
@@ -214,6 +215,40 @@ describe('AiTaskService', () => {
       ).map((entry) => `${entry.id} -> ${entry.configPath}`);
 
       expect(contradictory).toEqual([]);
+    });
+
+    /**
+     * The exemplar re-rank regression, pinned.
+     *
+     * `builder-context-selection` is deliberately config-selected: its call
+     * site names `builder.mechanicalModel`, so it carries a configPath and no
+     * tier. `callConfigForAiTask` demanded one from every caller regardless,
+     * and the throw was caught and logged as "Exemplar re-rank failed, falling
+     * back to most recent" on every Builder run for weeks — a ranking that had
+     * never once run, behind a build that looked fine.
+     */
+    it('lets a caller that names its own model skip the tier', () => {
+      expect(() =>
+        callConfigForAiTask('builder-context-selection', {
+          modelIsExplicit: true,
+        }),
+      ).not.toThrow();
+
+      const config = callConfigForAiTask('builder-context-selection', {
+        modelIsExplicit: true,
+      });
+      expect(config.tier).toBeUndefined();
+      // Still read from the row: whether a substitute would make the result a
+      // lie is a property of the task, not of who picked the model.
+      expect(config.neverFallback).toBe(false);
+    });
+
+    it('still refuses a tierless row when nothing named a model', () => {
+      // The guard has to keep firing for the case it was written for: a row
+      // that resolves through the chain and has no tier to resolve with.
+      expect(() => callConfigForAiTask('builder-context-selection')).toThrow(
+        /no tier in the AI task registry/,
+      );
     });
 
     it('gives every tiered row a tier the completion service can read', () => {

@@ -251,7 +251,8 @@ export class TrackAdminController {
   }
 
   @ApiOperation({
-    summary: 'Set or clear a localised media URL for a video component',
+    summary:
+      "Set or clear a localised media URL for a video component, or for one question's media",
   })
   @AuthPermissions([PERMISSIONS.EDIT_ADMIN_TRACK])
   @Put('tracks/:id/translations/:languageId/media')
@@ -265,6 +266,7 @@ export class TrackAdminController {
       languageId,
       dto.trackItemId,
       dto.url ?? null,
+      dto.questionId ?? null,
     );
     return { success: true };
   }

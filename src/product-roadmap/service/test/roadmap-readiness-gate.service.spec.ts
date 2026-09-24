@@ -15,6 +15,7 @@ import { RoadmapNotificationService } from '../roadmap-notification.service';
 import { RoadmapReadinessTokenService } from '../roadmap-readiness-token.service';
 import { RoadmapOpportunityRepository } from '../../repository/roadmap-opportunity.repository';
 import { RoadmapAllocationRepository } from '../../repository/roadmap-allocation.repository';
+import { BugHunterRepoClassifierService } from 'src/bug-hunter/service/bug-hunter-repo-classifier.service';
 import {
   RoadmapOpportunityEffort,
   RoadmapOpportunityType,
@@ -115,6 +116,16 @@ describe('RoadmapOpportunityService — readiness gate', () => {
           useValue: { s3: { assetsBucket: 'ally-assets' } },
         },
         { provide: RoadmapReadinessTokenService, useValue: { verify } },
+        // These tests all file type=IDEA, so the classifier never runs; this
+        // satisfies the constructor.
+        {
+          provide: BugHunterRepoClassifierService,
+          useValue: {
+            classifyRepo: jest
+              .fn()
+              .mockResolvedValue({ repo: null, rationale: '' }),
+          },
+        },
       ],
     }).compile();
 

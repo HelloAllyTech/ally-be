@@ -60,7 +60,7 @@ enough to know, concretely, which files each requirement touches. Read the code
 that surrounds them, not just the files themselves: the plan's value is in
 knowing what else depends on what you are about to change.
 
-Use \`Task\` subagents to explore several repos or subsystems at once rather
+If you have a subagent tool (\`Task\`), use it to explore several repos or subsystems at once rather
 than reading them one after another — you are the only phase that can spend
 wall-clock time on reading without holding up the build.
 
@@ -124,7 +124,7 @@ shaped it.
 
 ## Rules for the workstream map
 
-The coder runs parallel-safe workstreams as concurrent subagents, so this
+The coder runs parallel-safe workstreams as concurrent subagents where its engine has them, so this
 section has teeth:
 
 - **File sets must be genuinely disjoint** to be marked parallel-safe. Two

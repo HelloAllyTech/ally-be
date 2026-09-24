@@ -78,6 +78,9 @@ describe('HighlightsAnalyticsService', () => {
         .fn()
         .mockResolvedValue({ rows: [], belowFloor: { orgs: 0, sims: 0 } }),
       getPracticeMinutesByBucket: jest.fn().mockResolvedValue([]),
+      getPracticeMinutesOverall: jest
+        .fn()
+        .mockResolvedValue({ minutes: 0, activeLearners: 0 }),
       getPlayTimeByBucket: jest.fn().mockResolvedValue([]),
       getPlayTimeOverall: jest
         .fn()
@@ -519,6 +522,56 @@ describe('HighlightsAnalyticsService', () => {
       ).toBe(true);
       // But the COUNT gap-fills to zero: "nobody practised" is a fact.
       expect(quiet.every((p) => p.sessions === 0)).toBe(true);
+    });
+  });
+
+  describe('practice minutes overall KPI', () => {
+    it('is the exact whole-window figure, not a fold of the bucketed rows', async () => {
+      // Bucketed rows a naive fold would double-count `activeLearners` from
+      // (3 in bucket A + 5 in bucket B = 8), when really 2 learners practised
+      // in both buckets, so the true distinct count is 6.
+      repo.getPracticeMinutesByBucket.mockResolvedValue([
+        { bucket: '2024-06-01', minutes: 100, activeLearners: 3 },
+        { bucket: '2024-06-02', minutes: 50, activeLearners: 5 },
+      ]);
+      repo.getPracticeMinutesOverall.mockResolvedValue({
+        minutes: 150,
+        activeLearners: 6,
+      });
+
+      const res = await service.getHighlights({ range: '30d' });
+
+      expect(res.practiceMinutesOverall).toEqual({
+        minutes: 150,
+        activeLearners: 6,
+      });
+    });
+
+    it('defaults to zero, never null, with no data in the window', async () => {
+      const res = await service.getHighlights({ range: '30d' });
+
+      expect(res.practiceMinutesOverall).toEqual({
+        minutes: 0,
+        activeLearners: 0,
+      });
+    });
+
+    it('scopes to a tenant filter same as the trend', async () => {
+      await service.getHighlights({ range: '30d', tenantId: 'ally' });
+
+      expect(repo.getPracticeMinutesOverall).toHaveBeenCalledWith(
+        expect.any(Date),
+        expect.any(Date),
+        'ally',
+      );
+    });
+
+    it('is queried once per request, independent of compare=prev', async () => {
+      await service.getHighlights({ range: '30d', compare: 'prev' });
+
+      // Unlike the comparison-window summary scalars (which run twice), the
+      // All-time KPI figure only needs the current window.
+      expect(repo.getPracticeMinutesOverall).toHaveBeenCalledTimes(1);
     });
   });
 

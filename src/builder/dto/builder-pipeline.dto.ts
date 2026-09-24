@@ -298,6 +298,28 @@ export class UpsertBuilderRepoMapDto {
  * A person's correction going silently missing is the one failure this whole
  * surface exists to prevent.
  */
+export class RecordBuilderRunModelDto {
+  @ApiPropertyOptional({ description: 'The engine that ran this run' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  engine?: string;
+
+  @ApiPropertyOptional({ description: 'The model that ran this run' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  model?: string;
+}
+
+/**
+ * The runner saying it has put these notes into a phase prompt.
+ *
+ * Acknowledged after the append, never before: a crash between fetching and
+ * appending must leave the notes pending so the next boundary delivers them.
+ * A person's correction going silently missing is the one failure this whole
+ * surface exists to prevent.
+ */
 export class AckBuilderSteersDto {
   @ApiProperty({
     type: [String],

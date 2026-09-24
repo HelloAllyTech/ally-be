@@ -13,7 +13,9 @@ name: Builder session
 # a PR merges here.
 #
 # Required secrets on this repo:
-#   ANTHROPIC_API_KEY  — the coding engine
+#   GEMINI_API_KEY     — the coding engine (the default engine is `gemini`)
+#   ANTHROPIC_API_KEY  — only for a run explicitly dispatched with
+#                        engine=claude-code
 #   ALLY_BE_API_KEY    — equals ally-be's API_KEY, for the pipeline callbacks
 #   BUILDER_GH_TOKEN   — org PAT with contents:write + pull-requests:write on
 #                        every target repo. NOT the default GITHUB_TOKEN: pull
@@ -39,9 +41,9 @@ on:
         description: JSON array of repo names to clone
         required: true
       engine:
-        description: Coding engine key (claude-code, …)
+        description: Coding engine key (gemini, claude-code, …)
         required: false
-        default: claude-code
+        default: gemini
       # One input for all three tiers rather than three: workflow_dispatch
       # accepts at most 10 inputs and this file is already at 9. ally-be
       # resolves the models and always sends all three.
@@ -119,6 +121,35 @@ jobs:
           path: protocol
           token: ${{ secrets.BUILDER_GH_TOKEN }}
 
+      # Moved out of the workspace, because the agent must not be able to see
+      # it. This is a COMPLETE second copy of ally-be, with paths identical to
+      # `repos/ally-be` — `src/builder/service/builder-metrics.service.ts`
+      # exists in both. An agent looking for a file by path finds two, and one
+      # of them is a decoy that nothing downstream reads: the gate, the commit
+      # and the push all work on `repos/` alone, so edits made here are
+      # silently discarded and the run reports work it did not deliver.
+      #
+      # That is exactly what happened. A resumed run installed dependencies,
+      # edited the service, ran its tests and the linter, and reported success
+      # — all inside `protocol/`, against a checkout that exists only to
+      # provide these scripts.
+      #
+      # Warning the agent about it in the prompt would be one more instruction
+      # to follow correctly. `$RUNNER_TEMP` is outside `$GITHUB_WORKSPACE`, so
+      # the agent's file tools cannot reach it at all. `actions/checkout`
+      # refuses a path outside the workspace, hence checking out first and
+      # moving after.
+      - name: Put the protocol out of the agent's reach
+        run: |
+          set -euo pipefail
+          rm -rf "${RUNNER_TEMP}/protocol"
+          mv protocol "${RUNNER_TEMP}/protocol"
+          echo "PROTOCOL=${RUNNER_TEMP}/protocol" >> "$GITHUB_ENV"
+          # `hashFiles` only reads the workspace, and this file has just left
+          # it, so the dependency cache key is computed here instead.
+          echo "PROTOCOL_LOCK=$(sha256sum "${RUNNER_TEMP}/protocol/package-lock.json" | cut -c1-16)" \
+            >> "$GITHUB_ENV"
+
       - name: Clone target repos
         run: |
           set -euo pipefail
@@ -181,11 +212,11 @@ jobs:
             ~/.npm
             ~/.cache/pip
             ~/.cache/pypoetry
-          key: builder-deps-${{ hashFiles('protocol/package-lock.json') }}-${{ join(fromJSON(inputs.repos), '_') }}
+          key: builder-deps-${{ env.PROTOCOL_LOCK }}-${{ join(fromJSON(inputs.repos), '_') }}
           restore-keys: builder-deps-
 
       - name: Install the coding engine
-        run: protocol/scripts/builder/install-engine.sh
+        run: $PROTOCOL/scripts/builder/install-engine.sh
 
       - name: Fetch the build protocol
         run: |
@@ -200,14 +231,14 @@ jobs:
       # opened by the last phase, which is only reached once the machine test
       # gate and the independent reviewer are both satisfied.
       - name: Run the build
-        run: protocol/scripts/builder/run-engine.sh /tmp/build-prompt.txt
+        run: $PROTOCOL/scripts/builder/run-engine.sh /tmp/build-prompt.txt
 
       # `if: always()` so a run that failed still reports what it spent — an
       # agent that burned twenty dollars and crashed still spent it, and the
       # session budget has to know.
       - name: Report cost
         if: always()
-        run: protocol/scripts/builder/report-cost.sh
+        run: $PROTOCOL/scripts/builder/report-cost.sh
 
       # `claude -p` exits 0 whenever the agent produces a final response —
       # including when it ends its turn mid-protocol. That makes "stopped after
@@ -220,7 +251,7 @@ jobs:
       # how the engine itself tells the two apart, so we read it here too.
       - name: Fail if the run ended without reporting an outcome
         if: always()
-        run: protocol/scripts/builder/outcome-gate.sh
+        run: $PROTOCOL/scripts/builder/outcome-gate.sh
 
       # The runner-level net. Covers what the agent itself cannot report:
       # the runner dying, a bad clone, a wrong API key. ally-be ignores this

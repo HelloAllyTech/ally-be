@@ -20,6 +20,7 @@ import { RoadmapStrategyGoalService } from '../roadmap-strategy-goal.service';
 import { RoadmapGoalImpactService } from '../roadmap-goal-impact.service';
 import { RoadmapNotificationService } from '../roadmap-notification.service';
 import { RoadmapReadinessTokenService } from '../roadmap-readiness-token.service';
+import { BugHunterRepoClassifierService } from 'src/bug-hunter/service/bug-hunter-repo-classifier.service';
 import {
   CreateOpportunityDto,
   ListOpportunitiesQueryDto,
@@ -138,6 +139,16 @@ describe('RoadmapOpportunityService — owners', () => {
                 'readiness token verified on a path that should not gate',
               );
             }),
+          },
+        },
+        // These tests all file type=IDEA, so the classifier never runs; this
+        // satisfies the constructor.
+        {
+          provide: BugHunterRepoClassifierService,
+          useValue: {
+            classifyRepo: jest
+              .fn()
+              .mockResolvedValue({ repo: null, rationale: '' }),
           },
         },
       ],

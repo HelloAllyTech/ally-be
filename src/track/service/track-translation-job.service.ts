@@ -17,6 +17,7 @@ import {
   TrackTranslationJobStatus,
   TrackTranslationProgressPayload,
   TrackTranslationStatus,
+  mediaOverrideItemId,
   TranslatableField,
   TranslatedFieldMap,
 } from '../type/track-translation.type';
@@ -393,8 +394,11 @@ export class TrackTranslationJobService {
     for (const id of Object.keys(content.items)) {
       if (!liveItems.has(id)) delete content.items[id];
     }
-    for (const id of Object.keys(content.media ?? {})) {
-      if (!liveItems.has(id)) delete content.media![id];
+    // Media keys are either an item id or `itemId::questionId`, so the
+    // sweep matches on the prefix — keying a question override by the
+    // question id alone would make it an orphan the moment this ran.
+    for (const key of Object.keys(content.media ?? {})) {
+      if (!liveItems.has(mediaOverrideItemId(key))) delete content.media![key];
     }
   }
 
