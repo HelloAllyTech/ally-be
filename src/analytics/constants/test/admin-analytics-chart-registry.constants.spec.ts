@@ -23,7 +23,7 @@ describe('ADMIN_ANALYTICS_CHART_REGISTRY', () => {
   });
 
   it('ids are unique (an id is never reused)', () => {
-    const ids = ADMIN_ANALYTICS_CHART_REGISTRY.map(e => e.id);
+    const ids = ADMIN_ANALYTICS_CHART_REGISTRY.map((e) => e.id);
     expect(new Set(ids).size).toBe(ids.length);
   });
 
@@ -36,7 +36,7 @@ describe('ADMIN_ANALYTICS_CHART_REGISTRY', () => {
   });
 
   it('ids are listed in ascending numeric order', () => {
-    const nums = ADMIN_ANALYTICS_CHART_REGISTRY.map(e =>
+    const nums = ADMIN_ANALYTICS_CHART_REGISTRY.map((e) =>
       Number(e.id.slice(4)),
     );
     const sorted = [...nums].sort((a, b) => a - b);
