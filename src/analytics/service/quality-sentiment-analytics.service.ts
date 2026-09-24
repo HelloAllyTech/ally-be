@@ -78,8 +78,7 @@ export class QualitySentimentAnalyticsService {
   async getQualitySentiment(
     query: QualitySentimentQueryDto,
   ): Promise<QualitySentimentResponseDto> {
-    const needsFloor =
-      (query.range ?? 'all') === 'all' && !query.from && !query.to;
+    const needsFloor = (query.range ?? 'all') === 'all';
     const window = resolveAnalyticsWindow(query, {
       defaultRange: 'all',
       defaultBucketFor,

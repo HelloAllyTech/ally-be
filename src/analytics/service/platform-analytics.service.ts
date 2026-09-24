@@ -107,8 +107,7 @@ export class PlatformAnalyticsService {
     query: AnalyticsOverviewQueryDto,
     defaultBucketFor: (range: AnalyticsRange) => AnalyticsBucket,
   ): Promise<AnalyticsWindow> {
-    const needsFloor =
-      (query.range ?? '30d') === 'all' && !query.from && !query.to;
+    const needsFloor = (query.range ?? '30d') === 'all';
     return resolveAnalyticsWindow(query, {
       defaultRange: '30d',
       defaultBucketFor,
@@ -601,9 +600,14 @@ export class PlatformAnalyticsService {
     query: VoiceLatencyQueryDto,
   ): Promise<VoiceLatencyResponseDto> {
     const { language } = query;
+    // The floor is one extra cheap query, and only for an all-time range.
+    const needsFloor = query.range === 'all' && !query.from && !query.to;
     const window = resolveAnalyticsWindow(query, {
       defaultRange: '90d',
       defaultBucketFor: PlatformAnalyticsService.defaultBucketFor,
+      allTimeStart: needsFloor
+        ? await this.repo.getVoiceLatencyDataFloor()
+        : undefined,
     });
     const { start: windowStart, endExclusive, bucket } = window;
 
