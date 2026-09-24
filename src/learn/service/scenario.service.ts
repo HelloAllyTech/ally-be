@@ -89,6 +89,7 @@ import {
 import { sanitizeJsonbMetadata } from 'src/common/util/sanitize-jsonb.util';
 import { htmlToPlainText } from 'src/common/util/sanitize-html.util';
 import { TenantService } from 'src/tenant/service/tenant.service';
+import { Tenant } from 'src/tenant/entity/tenant.entity';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
 import { ScenarioTriggerWarnings } from '../entity/scenario-trigger-warnings.entity';
@@ -1673,27 +1674,6 @@ export class ScenarioService {
     const originalBehaviorInstructions =
       await this.scenarioSharedService.getBehaviorInstructionsByScenarioId(id);
 
-    // Tenant assignments of the source, for a source that is NOT global.
-    //
-    // A copy nobody can reach is not a copy. `scenario_tenants` is the only
-    // thing that makes a simulation startable outside a course/case/path:
-    // `validateStartScenarioSession` requires an explicit row for the caller's
-    // tenant on the standalone start branch, and the learner catalog
-    // inner-joins the same table. Duplicating a tenant-scoped simulation
-    // without them produced a copy that looks complete in the studio, can be
-    // published, can be reached by id — and then refuses every Practice click
-    // with "Scenario is not available for your organization", permanently,
-    // with nothing in the duplicate flow ever backfilling the rows.
-    //
-    // Copying the source's own set can only ever reproduce the audience the
-    // source already had, never widen it; the isGlobal branch below is the
-    // same intent for the global case and was the only half implemented.
-    const sourceScenarioTenants = scenario.isGlobal
-      ? []
-      : await this.dataSource
-          .getRepository(ScenarioTenants)
-          .find({ where: { scenarioId: id } });
-
     const newScenario = {
       title: `Copy of ${scenario.title}`,
       description: scenario.description,
@@ -1713,6 +1693,12 @@ export class ScenarioService {
     };
 
     return await this.dataSource.transaction(async (manager) => {
+      // Serialise with tenant creation, which maintains the same
+      // global-simulation ↔ tenant pairing from the other end. Taken before
+      // anything is read or written, and released when this transaction ends,
+      // rollback included.
+      await acquireGlobalScenarioTenantLock(manager);
+
       const scenarioRepo = manager.getRepository(Scenarios);
       const scenarioEventRepo = manager.getRepository(ScenarioEvents);
       const triggerWarningsScenarioRepo = manager.getRepository(
@@ -1750,8 +1736,23 @@ export class ScenarioService {
         await triggerWarningsScenarioRepo.save(newScenarioTriggerWarnings);
       }
 
+      // A copy nobody can reach is not a copy. `scenario_tenants` is the only
+      // thing that makes a simulation startable outside a course/case/path:
+      // `validateStartScenarioSession` requires an explicit row for the
+      // caller's tenant on the standalone start branch, and the learner
+      // catalog inner-joins the same table. Duplicating a tenant-scoped
+      // simulation without them produced a copy that looks complete in the
+      // studio, can be published, can be reached by id — and then refuses
+      // every Practice click with "Scenario is not available for your
+      // organization", permanently, with nothing in the duplicate flow ever
+      // backfilling the rows.
+      //
+      // Both audiences are read here, inside the transaction and under the
+      // lock above, not before it: a list read outside the transaction is a
+      // list that may already be wrong by the time the rows are written, and
+      // the miss is silent and permanent.
       if (newScenarioData.isGlobal) {
-        const tenants = await this.tenantService.findAll();
+        const tenants = await manager.getRepository(Tenant).find();
         const tenantIds = tenants.map((tenant) => tenant.id);
         const scenarioTenantRepo = manager.getRepository(ScenarioTenants);
         const scenarioTenants = tenantIds.map((tenantId) =>
@@ -1761,16 +1762,23 @@ export class ScenarioService {
           }),
         );
         await scenarioTenantRepo.save(scenarioTenants);
-      } else if (sourceScenarioTenants.length > 0) {
+      } else {
+        // Copying the source's own set can only ever reproduce the audience
+        // the source has, never widen it.
         const scenarioTenantRepo = manager.getRepository(ScenarioTenants);
-        await scenarioTenantRepo.save(
-          sourceScenarioTenants.map(({ tenantId }) =>
-            scenarioTenantRepo.create({
-              scenarioId: newScenarioData.id,
-              tenantId,
-            }),
-          ),
-        );
+        const sourceScenarioTenants = await scenarioTenantRepo.find({
+          where: { scenarioId: id },
+        });
+        if (sourceScenarioTenants.length > 0) {
+          await scenarioTenantRepo.save(
+            sourceScenarioTenants.map(({ tenantId }) =>
+              scenarioTenantRepo.create({
+                scenarioId: newScenarioData.id,
+                tenantId,
+              }),
+            ),
+          );
+        }
       }
 
       // Copy behavior instructions from the original scenario

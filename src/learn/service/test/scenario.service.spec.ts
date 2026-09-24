@@ -22,6 +22,8 @@ import { ScenarioImageUploadRequestDto } from 'src/learn/dto/scenario-image-uplo
 import { ScenarioImageUploadContentType } from 'src/learn/enum/scenario-image-upload-content-type.enum';
 import { ScenarioVideoUploadContentType } from 'src/learn/enum/scenario-video-upload-content-type';
 import { TenantService } from 'src/tenant/service/tenant.service';
+import { Tenant } from 'src/tenant/entity/tenant.entity';
+import { TenantScenarioSharedService } from 'src/tenant/service/tenant-scenario-shared';
 import { UpdateScenarioDto } from 'src/learn/dto/update-scenario.dto';
 import { CreateScenarioDto } from 'src/learn/dto/create-scenario.dto';
 import { ScenarioEvents } from 'src/learn/entity/scenario-events.entity';
@@ -4427,15 +4429,25 @@ describe('ScenarioService', () => {
         const mockScenarioTenantRepo = {
           create: jest.fn((data) => data),
           save: jest.fn().mockResolvedValue([]),
+          find: jest.fn().mockResolvedValue([]),
+        };
+
+        // The tenant list is read through the transaction, not through
+        // TenantService, so that it cannot be stale by the time the
+        // scenario_tenants rows are written.
+        const mockTenantRepo = {
+          find: jest.fn().mockResolvedValue(mockTenants),
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
             if (entity === ScenarioEvents) return mockScenarioEventRepo;
             if (entity === ScenarioTriggerWarnings)
               return mockTriggerWarningsRepo;
             if (entity === ScenarioTenants) return mockScenarioTenantRepo;
+            if (entity === Tenant) return mockTenantRepo;
             return {};
           }),
         };
@@ -4526,7 +4538,7 @@ describe('ScenarioService', () => {
           ]),
         );
 
-        expect(tenantService.findAll).toHaveBeenCalled();
+        expect(mockTenantRepo.find).toHaveBeenCalled();
         expect(mockScenarioTenantRepo.save).toHaveBeenCalledWith(
           expect.arrayContaining([
             expect.objectContaining({
@@ -4622,11 +4634,18 @@ describe('ScenarioService', () => {
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
             if (entity === ScenarioEvents) return mockScenarioEventRepo;
             if (entity === ScenarioTriggerWarnings)
               return mockTriggerWarningsRepo;
+            if (entity === ScenarioTenants)
+              return {
+                create: (row: any) => row,
+                save: jest.fn().mockResolvedValue([]),
+                find: jest.fn().mockResolvedValue([]),
+              };
             return {};
           }),
         };
@@ -4671,10 +4690,17 @@ describe('ScenarioService', () => {
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
             if (entity === ScenarioTriggerWarnings)
               return mockTriggerWarningsRepo;
+            if (entity === ScenarioTenants)
+              return {
+                create: (row: any) => row,
+                save: jest.fn().mockResolvedValue([]),
+                find: jest.fn().mockResolvedValue([]),
+              };
             return {};
           }),
         };
@@ -4716,9 +4742,11 @@ describe('ScenarioService', () => {
         const mockScenarioTenantRepo = {
           create: jest.fn(),
           save: jest.fn(),
+          find: jest.fn().mockResolvedValue([]),
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
             if (entity === ScenarioTenants) return mockScenarioTenantRepo;
@@ -4767,9 +4795,6 @@ describe('ScenarioService', () => {
           { id: 'st-1', scenarioId, tenantId: 'tenant-1' },
           { id: 'st-2', scenarioId, tenantId: 'tenant-2' },
         ]);
-        (dataSource.getRepository as jest.Mock).mockReturnValue({
-          find: sourceTenantFind,
-        });
 
         const mockScenarioRepo = {
           save: jest.fn().mockResolvedValue(mockNewScenario),
@@ -4778,9 +4803,11 @@ describe('ScenarioService', () => {
         const mockScenarioTenantRepo = {
           create: jest.fn((data) => data),
           save: jest.fn().mockResolvedValue([]),
+          find: sourceTenantFind,
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
             if (entity === ScenarioTenants) return mockScenarioTenantRepo;
@@ -4805,6 +4832,270 @@ describe('ScenarioService', () => {
           { scenarioId: 2, tenantId: 'tenant-1' },
           { scenarioId: 2, tenantId: 'tenant-2' },
         ]);
+      });
+
+      // Regression: the source's scenario_tenants rows were read before the
+      // transaction opened, so an assignment granted between that read and the
+      // transaction was lost. The copy came out with the audience the source
+      // had a moment ago rather than the one it has, and nothing backfills it.
+      it('should read the source tenant assignments inside the duplicate transaction', async () => {
+        const mockNewScenario = {
+          id: 2,
+          title: 'Copy of Test Scenario',
+          status: ScenarioStatus.DRAFT,
+          isGlobal: false,
+        };
+
+        scenarioSharedService.getAdminScenario.mockResolvedValue({
+          ...mockScenario,
+          isGlobal: false,
+        } as any);
+        scenarioEventsRepository.find.mockResolvedValue([]);
+        triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
+          [],
+        );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          undefined,
+        );
+
+        // What a read taken before the transaction would have seen: the grant
+        // to tenant-3 had not been committed yet.
+        const staleFind = jest
+          .fn()
+          .mockResolvedValue([
+            { id: 'st-1', scenarioId, tenantId: 'tenant-1' },
+          ]);
+        (dataSource.getRepository as jest.Mock).mockReturnValue({
+          find: staleFind,
+        });
+
+        const transactionalFind = jest.fn().mockResolvedValue([
+          { id: 'st-1', scenarioId, tenantId: 'tenant-1' },
+          { id: 'st-3', scenarioId, tenantId: 'tenant-3' },
+        ]);
+
+        const mockScenarioRepo = {
+          save: jest.fn().mockResolvedValue(mockNewScenario),
+        };
+
+        const mockScenarioTenantRepo = {
+          create: jest.fn((data) => data),
+          save: jest.fn().mockResolvedValue([]),
+          find: transactionalFind,
+        };
+
+        const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
+          getRepository: jest.fn((entity) => {
+            if (entity === Scenarios) return mockScenarioRepo;
+            if (entity === ScenarioTenants) return mockScenarioTenantRepo;
+            return {};
+          }),
+        };
+
+        (dataSource.transaction as jest.Mock).mockImplementation(async (cb) =>
+          cb(mockEntityManager),
+        );
+
+        await service.duplicateScenario(scenarioId);
+
+        expect(transactionalFind).toHaveBeenCalledWith({
+          where: { scenarioId },
+        });
+        expect(staleFind).not.toHaveBeenCalled();
+        expect(mockScenarioTenantRepo.save).toHaveBeenCalledWith([
+          { scenarioId: 2, tenantId: 'tenant-1' },
+          { scenarioId: 2, tenantId: 'tenant-3' },
+        ]);
+      });
+
+      // Regression: duplicating a global simulation read the tenant list
+      // outside the transaction that writes scenario_tenants, and nothing
+      // serialised it against tenant creation. A tenant created while the
+      // duplicate was in flight got no row for the copy — the copy stays
+      // invisible to that organisation for good, because tenant creation only
+      // ever assigns the global simulations that were committed when it ran.
+      it('should assign a duplicated global simulation to a tenant created alongside it', async () => {
+        const tenantScenarioShared = new TenantScenarioSharedService();
+
+        // A stand-in for two Postgres behaviours the duplicate depends on:
+        // transaction-level advisory locks — a transaction that asks for the
+        // lock waits for whoever holds it and keeps it until it commits, while
+        // one that never asks is not serialised at all — and READ COMMITTED
+        // visibility, where a transaction's writes stay invisible to everyone
+        // else until it commits. Modelling the second half matters: a plain
+        // transaction does not make read-then-write atomic, so the test must
+        // not pretend it does.
+        const committed = {
+          scenarios: [{ id: scenarioId, isGlobal: true }] as any[],
+          tenants: [{ id: 'tenant-1' }] as any[],
+          scenarioTenants: [] as any[],
+        };
+        let nextScenarioId = 2;
+        let lockHolder: symbol | null = null;
+        const lockWaiters: Array<() => void> = [];
+
+        // Resolves once the tenant-creating transaction has either committed
+        // or parked on the lock — whichever happens first. The duplicate waits
+        // on it at the moment it reads the tenant list, which is the only
+        // window in which this bug can bite.
+        let markTenantTaskSettled: () => void = () => {};
+        const tenantTaskSettled = new Promise<void>((resolve) => {
+          markTenantTaskSettled = resolve;
+        });
+
+        // Pins the interleaving: tenant creation starts only once the
+        // duplicate has read the tenant list, so the tenant row is always the
+        // one the duplicate could not have seen.
+        let markDuplicateReadTenants: () => void = () => {};
+        const duplicateReadTenants = new Promise<void>((resolve) => {
+          markDuplicateReadTenants = resolve;
+        });
+
+        const runTransaction = async (run: (manager: any) => Promise<any>) => {
+          const txId = Symbol('tx');
+          const pending = {
+            scenarios: [] as any[],
+            tenants: [] as any[],
+            scenarioTenants: [] as any[],
+          };
+
+          const readTenants = async () => {
+            const snapshot = [...committed.tenants, ...pending.tenants];
+            markDuplicateReadTenants();
+            await tenantTaskSettled;
+            return snapshot;
+          };
+
+          const manager = {
+            query: async (sql: string) => {
+              if (!sql.includes('pg_advisory_xact_lock')) return [];
+              if (lockHolder && lockHolder !== txId) {
+                await new Promise<void>((resolve) => {
+                  lockWaiters.push(resolve);
+                  markTenantTaskSettled();
+                });
+              }
+              lockHolder = txId;
+              return [{}];
+            },
+            save: async (entity: any, row: any) => {
+              if (entity === Tenant) pending.tenants.push(row);
+              return row;
+            },
+            getRepository: (entity: any) => {
+              if (entity === Scenarios) {
+                return {
+                  create: (data: any) => data,
+                  save: async (row: any) => {
+                    const saved = { ...row, id: nextScenarioId++ };
+                    pending.scenarios.push(saved);
+                    return saved;
+                  },
+                  find: async () =>
+                    [...committed.scenarios, ...pending.scenarios].filter(
+                      (item) => item.isGlobal,
+                    ),
+                };
+              }
+              if (entity === Tenant) return { find: readTenants };
+              if (entity === ScenarioTenants) {
+                return {
+                  create: (data: any) => data,
+                  save: async (rows: any[]) => {
+                    pending.scenarioTenants.push(...rows);
+                    return rows;
+                  },
+                  insert: async (rows: any[]) => {
+                    pending.scenarioTenants.push(...rows);
+                    return { identifiers: [] };
+                  },
+                  find: async ({ where }: any) =>
+                    committed.scenarioTenants.filter(
+                      (row) => row.scenarioId === where.scenarioId,
+                    ),
+                };
+              }
+              return {
+                create: (data: any) => data,
+                save: async () => [],
+                find: async () => [],
+              };
+            },
+          };
+
+          try {
+            const result = await run(manager);
+            committed.scenarios.push(...pending.scenarios);
+            committed.tenants.push(...pending.tenants);
+            committed.scenarioTenants.push(...pending.scenarioTenants);
+            return result;
+          } finally {
+            if (lockHolder === txId) {
+              lockHolder = null;
+              lockWaiters.shift()?.();
+            }
+          }
+        };
+
+        scenarioSharedService.getAdminScenario.mockResolvedValue({
+          ...mockScenario,
+          id: scenarioId,
+          isGlobal: true,
+        } as any);
+        scenarioEventsRepository.find.mockResolvedValue([]);
+        triggerWarningsService.getTriggerWarningsByScenarioId.mockResolvedValue(
+          [],
+        );
+        scenarioSharedService.getBehaviorInstructionsByScenarioId.mockResolvedValue(
+          undefined,
+        );
+        // The non-transactional tenant read, modelled the same way: it sees
+        // whatever is committed at the moment it is taken.
+        tenantService.findAll.mockImplementation(async () => {
+          const snapshot = [...committed.tenants];
+          markDuplicateReadTenants();
+          await tenantTaskSettled;
+          return snapshot as any;
+        });
+        (dataSource.transaction as jest.Mock).mockImplementation((cb) =>
+          runTransaction(cb),
+        );
+
+        const tenantTask = duplicateReadTenants
+          .then(() =>
+            runTransaction(async (manager: any) => {
+              await manager.save(Tenant, { id: 'tenant-new' });
+              await tenantScenarioShared.assignGlobalScenariosToTenant(
+                'tenant-new',
+                manager,
+              );
+            }),
+          )
+          .then((result) => {
+            markTenantTaskSettled();
+            return result;
+          });
+
+        const [duplicated] = await Promise.all([
+          service.duplicateScenario(scenarioId),
+          tenantTask,
+        ]);
+
+        // The new organisation gets the source simulation either way; what the
+        // race used to drop is the copy.
+        expect(committed.scenarioTenants).toContainEqual({
+          scenarioId,
+          tenantId: 'tenant-new',
+        });
+        expect(committed.scenarioTenants).toContainEqual({
+          scenarioId: duplicated.id,
+          tenantId: 'tenant-new',
+        });
+        expect(committed.scenarioTenants).toContainEqual({
+          scenarioId: duplicated.id,
+          tenantId: 'tenant-1',
+        });
       });
 
       it('should use ExecutionManager.getUserId for createdBy and updatedBy', async () => {
@@ -4836,8 +5127,15 @@ describe('ScenarioService', () => {
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
+            if (entity === ScenarioTenants)
+              return {
+                create: (row: any) => row,
+                save: jest.fn().mockResolvedValue([]),
+                find: jest.fn().mockResolvedValue([]),
+              };
             return {};
           }),
         };
@@ -4881,8 +5179,15 @@ describe('ScenarioService', () => {
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
+            if (entity === ScenarioTenants)
+              return {
+                create: (row: any) => row,
+                save: jest.fn().mockResolvedValue([]),
+                find: jest.fn().mockResolvedValue([]),
+              };
             return {};
           }),
         };
@@ -4926,8 +5231,15 @@ describe('ScenarioService', () => {
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
+            if (entity === ScenarioTenants)
+              return {
+                create: (row: any) => row,
+                save: jest.fn().mockResolvedValue([]),
+                find: jest.fn().mockResolvedValue([]),
+              };
             return {};
           }),
         };
@@ -4964,8 +5276,15 @@ describe('ScenarioService', () => {
         };
 
         const mockEntityManager = {
+          query: jest.fn().mockResolvedValue([]),
           getRepository: jest.fn((entity) => {
             if (entity === Scenarios) return mockScenarioRepo;
+            if (entity === ScenarioTenants)
+              return {
+                create: (row: any) => row,
+                save: jest.fn().mockResolvedValue([]),
+                find: jest.fn().mockResolvedValue([]),
+              };
             return {};
           }),
         };
