@@ -427,6 +427,39 @@ describe('AiService', () => {
     });
   });
 
+  describe('makeRequest', () => {
+    it('should redact request data in error logs when redactBody is true', async () => {
+      jest.setTimeout(45000);
+      const error = new Error('Test error');
+      mockedAxios.mockRejectedValue(error);
+      const requestData = {
+        question: 'this is a sensitive question',
+        session_id: '123',
+        organisation_id: '456',
+        audience: { include_global: true },
+      };
+
+      await expect(
+        service.answerKnowledgeQuestion(requestData),
+      ).rejects.toThrow();
+
+      const failLogs = mockLogger.error.mock.calls.filter((call) =>
+        call[0].includes('AI Request FAIL'),
+      );
+      expect(failLogs.length).toBeGreaterThan(0);
+
+      const unredactedLogFound = failLogs.some((call) =>
+        call[0].includes(requestData.question),
+      );
+      expect(unredactedLogFound).toBe(false);
+
+      const redactedLogFound = failLogs.some((call) =>
+        call[0].includes('redacted'),
+      );
+      expect(redactedLogFound).toBe(true);
+    });
+  });
+
   describe('Error Handling', () => {
     it('should handle network errors', async () => {
       const networkError = { code: 'ENOTFOUND', message: 'Network error' };
