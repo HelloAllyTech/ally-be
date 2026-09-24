@@ -135,6 +135,53 @@ const request = async (method, path, body) => {
 
 const postEvents = (events) => request('POST', 'events', { events });
 
+/* ── What this phase may do ──────────────────────────────────────────────── */
+
+/**
+ * Only one phase may end the run.
+ *
+ * The runner invokes phases in sequence: a coder that has finished is finished
+ * with its own phase, and the build carries on to the gate without it. That
+ * has always been in the prompt, and on 2026-09-24 it stopped being enough. A
+ * coding agent committed its work, called `complete_run`, was refused because
+ * no gate had run, narrated its understanding — "I understand complete-run is
+ * not my task" — and called it again. Twenty-three times.
+ *
+ * Every refusal was correct and every retry was rational. The agent had
+ * finished; the tool was named exactly what it wanted to say; nothing else in
+ * its hand meant "I am done". Refusing harder could not fix that, because the
+ * loop was not a misunderstanding.
+ *
+ * So the tool is withheld from the phases that must not use it. A tool absent
+ * from `tools/list` cannot be called at all — the same guarantee opencode's
+ * denied agents get, where the model is told "Model tried to call unavailable
+ * tool" rather than being refused one call at a time.
+ *
+ * `fix` and `review` keep it: those modes run a narrower pipeline and do
+ * report their own outcome. An unrecognised or missing phase keeps everything,
+ * because a runner too old to write the file must not lose the ability to
+ * finish.
+ */
+const MAY_FINISH_THE_RUN = new Set(['finalise', 'fix', 'review']);
+
+const currentPhase = () => {
+  try {
+    return readFileSync(
+      process.env.BUILDER_PHASE_FILE || '/tmp/builder-phase',
+      'utf8',
+    ).trim();
+  } catch {
+    return '';
+  }
+};
+
+const toolsForPhase = () => {
+  const phase = currentPhase();
+  // Unknown phase: withhold nothing. See above.
+  if (!phase || MAY_FINISH_THE_RUN.has(phase)) return Object.keys(TOOLS);
+  return Object.keys(TOOLS).filter((name) => name !== 'complete_run');
+};
+
 /* ── The tools ───────────────────────────────────────────────────────────── */
 
 /**
@@ -517,18 +564,40 @@ const handle = async (message) => {
     case 'notifications/initialized':
       return; // A notification: no id, no reply.
 
-    case 'tools/list':
+    case 'tools/list': {
+      const allowed = new Set(toolsForPhase());
       return respond(id, {
-        tools: Object.entries(TOOLS).map(([name, tool]) => ({
-          name,
-          description: tool.description,
-          inputSchema: tool.inputSchema,
-        })),
+        tools: Object.entries(TOOLS)
+          .filter(([name]) => allowed.has(name))
+          .map(([name, tool]) => ({
+            name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+          })),
       });
+    }
 
     case 'tools/call': {
       const tool = TOOLS[params?.name];
       if (!tool) return fail(id, -32602, `Unknown tool: ${params?.name}`);
+
+      // Belt and braces: a harness that cached an earlier list, or asked for a
+      // tool it was never offered, is told the tool does not exist here rather
+      // than being refused by the server it would then retry against.
+      if (!toolsForPhase().includes(params.name)) {
+        return respond(id, {
+          content: [
+            {
+              type: 'text',
+              text:
+                `${params.name} is not available to the ${currentPhase()} ` +
+                `phase. Your phase ends when you stop; the runner starts what ` +
+                `comes next and a later phase reports the outcome.`,
+            },
+          ],
+          isError: true,
+        });
+      }
 
       try {
         const result = await tool.handler(params?.arguments ?? {});

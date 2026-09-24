@@ -23,6 +23,50 @@ const SERVER = path.join(HERE, '..', 'builder-mcp.mjs');
 // shows up in someone else's `git status`.
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'builder-mcp-test-'));
 
+/** The file run-engine.sh rewrites before each phase. */
+const writePhase = (phase) => {
+  const file = path.join(tmp, `phase-${Math.random()}`);
+  fs.writeFileSync(file, phase);
+  return file;
+};
+
+/** Drives the handshake and returns the tools the server offers. */
+function listTools(phase) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('node', [SERVER], {
+      env: {
+        ...process.env,
+        ALLY_BE_API_URL: 'http://127.0.0.1:1',
+        ALLY_BE_API_KEY: 'k',
+        BUILDER_RUN_ID: 'r',
+        BUILDER_HELPER_ENV: '/nonexistent-on-purpose',
+        BUILDER_PHASE_FILE:
+          phase === undefined ? '/nonexistent-on-purpose' : writePhase(phase),
+      },
+    });
+    let buffer = '';
+    child.stdout.setEncoding('utf8');
+    child.stdout.on('data', (chunk) => {
+      buffer += chunk;
+      for (const line of buffer.split('\n')) {
+        if (!line.trim()) continue;
+        const parsed = JSON.parse(line);
+        if (parsed.id === 2) {
+          child.stdin.end();
+          resolve(parsed.result.tools.map((t) => t.name));
+        }
+      }
+    });
+    child.on('error', reject);
+    child.stdin.write(
+      `${JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} })}\n`,
+    );
+    child.stdin.write(
+      `${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' })}\n`,
+    );
+  });
+}
+
 let passed = 0;
 const failures = [];
 
@@ -44,7 +88,7 @@ function test(name, fn) {
  * MCP handshake and then one `tools/call`, and hands back both what the agent
  * would see and what ally-be actually received.
  */
-function callTool(name, args, { status = 200, body = '{}' } = {}) {
+function callTool(name, args, { status = 200, body = '{}', phase } = {}) {
   return new Promise((resolve, reject) => {
     const received = [];
 
@@ -76,6 +120,7 @@ function callTool(name, args, { status = 200, body = '{}' } = {}) {
           // Point the marker files somewhere harmless.
           BUILDER_HELPER_ENV: '/nonexistent-on-purpose',
           BUILDER_REPORTED_MARKER: path.join(tmp, 'reported-marker'),
+          BUILDER_PHASE_FILE: phase === undefined ? '/nonexistent-on-purpose' : writePhase(phase),
         },
       });
 
@@ -274,6 +319,60 @@ await test('an unknown method is declined without killing the session', async ()
   // The handshake and the call both answered, in order, on one process.
   assert.equal(replies.find((r) => r.id === 1).result.serverInfo.name, 'builder-reporting');
   assert.ok(replies.find((r) => r.id === 3).result);
+});
+
+
+// ── one phase may end the run ───────────────────────────────────────────────
+//
+// A coding agent committed its work, called `complete_run`, was refused
+// because no gate had run, said "I understand complete-run is not my task" —
+// and called it again. Twenty-three times, until the wall clock. Every refusal
+// was correct; the loop was not a misunderstanding, so refusing harder could
+// not have fixed it.
+
+await test('the coder is never offered the tool that ends the run', async () => {
+  const tools = await listTools('code');
+
+  assert.ok(!tools.includes('complete_run'), 'complete_run must be withheld');
+  // Everything else it reports with stays.
+  for (const name of ['stage', 'note', 'todo', 'prs', 'report', 'ask']) {
+    assert.ok(tools.includes(name), `${name} should remain`);
+  }
+});
+
+await test('the planner and verifier are not offered it either', async () => {
+  for (const phase of ['plan', 'verify']) {
+    const tools = await listTools(phase);
+    assert.ok(!tools.includes('complete_run'), `${phase} must not have it`);
+  }
+});
+
+await test('finalise, fix and review keep it', async () => {
+  for (const phase of ['finalise', 'fix', 'review']) {
+    const tools = await listTools(phase);
+    assert.ok(tools.includes('complete_run'), `${phase} must keep it`);
+  }
+});
+
+await test('an unknown phase withholds nothing', async () => {
+  // A runner too old to write the file must not lose the ability to finish.
+  const tools = await listTools(undefined);
+
+  assert.ok(tools.includes('complete_run'));
+});
+
+await test('calling a withheld tool says it does not exist here, once', async () => {
+  const { call, received } = await callTool(
+    'complete_run',
+    { outcome: 'done' },
+    { phase: 'code' },
+  );
+
+  assert.equal(call.result.isError, true);
+  assert.match(textOf(call), /not available to the code phase/);
+  // Nothing reached ally-be: the run is not settled by a call that never
+  // should have been possible.
+  assert.equal(received.length, 0);
 });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

@@ -67,6 +67,30 @@ ENVEOF
 )
 chmod 600 "$BUILDER_HELPER_ENV"
 
+# ── Which phase is running, for the tools that must not be offered ──────────
+#
+# `complete_run` ends the run. Exactly one phase may do that, and every other
+# phase calling it is a mistake — the runner invokes phases in sequence and a
+# coder that "finishes" is finished with its own phase, not with the build.
+#
+# Refusing the call server-side was not enough. On 2026-09-24 a coding agent
+# committed its work, called `complete_run`, was refused because no gate had
+# run, understood the refusal — "I understand complete-run is not my task" —
+# and called it again. Twenty-three times, until the phase wall clock. Each
+# refusal was correct and each retry was rational: it had finished, the tool
+# named exactly that, and there was no other way to say so.
+#
+# So the tool is withheld rather than denied. builder-mcp.mjs reads this file
+# at startup and omits what this phase may not call, which works because the
+# engine — and therefore its MCP server — is a fresh process per phase.
+#
+# Same lesson as the opencode spike's read-only agent: the guarantee that held
+# was the tool not being offered, not the call being refused.
+BUILDER_PHASE_FILE=/tmp/builder-phase
+export BUILDER_PHASE_FILE
+set_agent_phase() { printf '%s' "$1" > "$BUILDER_PHASE_FILE"; }
+set_agent_phase setup
+
 # ── The reporting protocol, as MCP tools ────────────────────────────────────
 #
 # The same eight reports, offered a second way: as typed tool calls the harness
@@ -1085,6 +1109,7 @@ if [ "${BUILDER_MODE:-build}" = "review" ]; then
   echo "::group::review (${VERIFIER_MODEL})"
   post_stage REVIEWING
   snapshot_heads
+  set_agent_phase review
   run_agent "$PROMPT_FILE" "${RESULTS_DIR}/review.json" \
     "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$(phase_budget "$VERIFY_BUDGET")" "$VERIFY_TIMEOUT"
   report_phase_cost review "$VERIFIER_MODEL" "${RESULTS_DIR}/review.json"
@@ -1115,6 +1140,7 @@ if [ "${BUILDER_MODE:-build}" = "fix" ]; then
 
   echo "::group::fix (${CODER_MODEL})"
   post_stage CODING
+  set_agent_phase fix
   run_agent "$PROMPT_FILE" "${RESULTS_DIR}/fix.json" \
     "$CODER_MODEL" "$CODER_TOOLS" 200 "$(phase_budget "$CODE_BUDGET")" "$CODE_TIMEOUT"
   report_phase_cost fix "$CODER_MODEL" "${RESULTS_DIR}/fix.json"
@@ -1165,6 +1191,7 @@ echo "::group::plan (${PLANNER_MODEL})"
 post_stage PLANNING
 if fetch_prompt "plan-prompt" /tmp/builder-plan-prompt.txt; then
   snapshot_heads
+  set_agent_phase plan
   run_agent /tmp/builder-plan-prompt.txt "${RESULTS_DIR}/plan.json" \
     "$PLANNER_MODEL" "$PLANNER_TOOLS" "$PLANNER_TURNS" "$(phase_budget "$PLAN_BUDGET")" "$PLAN_TIMEOUT" || true
   report_phase_cost plan "$PLANNER_MODEL" "${RESULTS_DIR}/plan.json"
@@ -1262,6 +1289,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
     # the prompt rather than buried inside the plan.
     apply_steers "$code_prompt"
 
+    set_agent_phase code
     run_agent "$code_prompt" "${RESULTS_DIR}/code-${attempt}.json" \
       "$attempt_model" "$CODER_TOOLS" 200 "$(phase_budget "$CODE_BUDGET")" "$CODE_TIMEOUT"
     # Reported against the model that actually ran, so the scoreboard's
@@ -1320,6 +1348,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   apply_steers /tmp/builder-verify-prompt.txt
 
   snapshot_heads
+  set_agent_phase verify
   run_agent /tmp/builder-verify-prompt.txt \
     "${RESULTS_DIR}/verify-${verify_round}.json" \
     "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$(phase_budget "$VERIFY_BUDGET")" "$VERIFY_TIMEOUT" || true
@@ -1425,6 +1454,7 @@ if ! fetch_prompt "finalise-prompt" /tmp/builder-finalise-prompt.txt; then
   echo "Could not fetch the finalise prompt." >&2
   exit 1
 fi
+set_agent_phase finalise
 run_agent /tmp/builder-finalise-prompt.txt "${RESULTS_DIR}/finalise.json" \
   "$CODER_MODEL" "$CODER_TOOLS" 80 "$(phase_budget "$FINALISE_BUDGET")" "$FINALISE_TIMEOUT"
 report_phase_cost finalise "$CODER_MODEL" "${RESULTS_DIR}/finalise.json"
