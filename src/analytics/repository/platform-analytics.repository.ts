@@ -962,6 +962,24 @@ export class PlatformAnalyticsRepository {
    * historical/transcript-derived one. Same WHERE/JOIN/exclusion logic as
    * {@link getVoiceLatencyByBucket}, just without the bucket/source grouping.
    */
+  /**
+   * First live-pipeline turn metric — the all-time floor for the voice-latency
+   * chart. Measured on this table rather than the platform floor: turn metrics
+   * started long after the first session, so the platform floor would open the
+   * axis on months of empty buckets. Today when the table is empty.
+   */
+  async getVoiceLatencyDataFloor(): Promise<Date> {
+    const row = await this.dataSource
+      .createQueryBuilder()
+      .select('MIN(m."occurredAt")', 'floor')
+      .from('scenario_session_turn_metrics', 'm')
+      .where(`m."source" = 'pipeline'`)
+      .andWhere('m."responseLatencyMs" IS NOT NULL')
+      .andWhere(excludeTestTenants('m."tenant_id"'))
+      .getRawOne<{ floor: Date | string | null }>();
+    return row?.floor ? new Date(row.floor) : new Date();
+  }
+
   async getVoiceLatencyOverall(
     start: Date,
     end: Date,

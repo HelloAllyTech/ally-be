@@ -518,8 +518,11 @@ export class AnalyticsController {
   @Get('xp-goals')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
-    summary: 'Actual XP earned vs. goal, by month/quarter/year (super-admin)',
+    summary:
+      'Actual XP earned vs. goal, by day/week/month/quarter/year/all (super-admin)',
     description:
+      'Goals exist only at month/quarter/year; `grain=day|week|all` returns ' +
+      'actual XP only (`goalXp: null` throughout, `all` as one point). ' +
       'Actual platform XP earned per period (from `xp_events`, the same ' +
       'ledger as `xp-growth`) alongside a goal figure for that period, where ' +
       'one has been set. Goals are NOT editable through this API — they are ' +
