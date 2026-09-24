@@ -1,11 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
 } from 'class-validator';
+import { DialogueLength } from '../enum/dialogue-length.enum';
 
 /**
  * Per-simulation state used by `hasStates` main-agent prompts. Persisted
@@ -76,4 +78,12 @@ export class SimulationStateDto {
   })
   @IsBoolean()
   ragEnabled!: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Desired length of the dialogue response for this state.',
+    enum: DialogueLength,
+  })
+  @IsOptional()
+  @IsEnum(DialogueLength)
+  dialogueLength?: DialogueLength;
 }

@@ -130,7 +130,7 @@ export class BugHunterVolumeAnalyticsRepository {
     const rows = await this.dataSource
       .createQueryBuilder()
       .select(
-        `to_char(date_trunc('${trunc}', COALESCE(me."mergedAt", bf."decidedAt")), 'YYYY-MM-DD')`,
+        `to_char(date_trunc('${trunc}', COALESCE(me."mergedAt", bf."decided_at")), 'YYYY-MM-DD')`,
         'bucket',
       )
       .addSelect('COUNT(*)::int', 'count')
@@ -138,7 +138,7 @@ export class BugHunterVolumeAnalyticsRepository {
       .leftJoin(
         (subQuery) =>
           subQuery
-            .select('e."findingId"', 'findingId')
+            .select('e."finding_id"', 'findingId')
             // MIN, not MAX: a finding merges to master at most once on the
             // main pipeline — a regression opens a NEW finding row rather than
             // re-transitioning this one — so MIN/MAX would agree in practice;
@@ -149,15 +149,15 @@ export class BugHunterVolumeAnalyticsRepository {
             .where('e."stage" = :mergedStage', {
               mergedStage: BugHuntEventStage.MERGED,
             })
-            .groupBy('e."findingId"'),
+            .groupBy('e."finding_id"'),
         'me',
         'me."findingId" = bf."id"',
       )
       .where('bf."status" IN (:...statuses)', {
         statuses: BUG_HUNTER_FIXED_STATUSES,
       })
-      .andWhere('COALESCE(me."mergedAt", bf."decidedAt") >= :start', { start })
-      .andWhere('COALESCE(me."mergedAt", bf."decidedAt") < :end', { end })
+      .andWhere('COALESCE(me."mergedAt", bf."decided_at") >= :start', { start })
+      .andWhere('COALESCE(me."mergedAt", bf."decided_at") < :end', { end })
       .groupBy('bucket')
       .orderBy('bucket', 'ASC')
       .getRawMany<{ bucket: string; count: string | number }>();

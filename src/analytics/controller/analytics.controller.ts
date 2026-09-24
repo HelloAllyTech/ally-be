@@ -277,6 +277,10 @@ import {
 } from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import {
+  ADMIN_ANALYTICS_CHART_REGISTRY,
+  AdminAnalyticsChartEntry,
+} from '../constants/admin-analytics-chart-registry.constants';
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
@@ -335,6 +339,26 @@ export class AnalyticsController {
     private readonly qualitySentimentAnalyticsService: QualitySentimentAnalyticsService,
     private readonly chartPreferenceService: ChartPreferenceService,
   ) {}
+
+  @Get('chart-registry')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Admin analytics chart registry',
+    description:
+      'The canonical, read-only map from a stable chart id ("admin analytics ' +
+      'question id", e.g. AAQ-042) to the chart it names, across every ' +
+      'Analytics tab and Highlights sub-tab. The id is the handle used to refer ' +
+      'to one specific chart in code review and requests; tab/subTab record ' +
+      'where it lives today. Source of truth is ' +
+      'admin-analytics-chart-registry.constants.ts.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Chart registry retrieved successfully',
+  })
+  getChartRegistry(): readonly AdminAnalyticsChartEntry[] {
+    return ADMIN_ANALYTICS_CHART_REGISTRY;
+  }
 
   @Get('overview')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
@@ -494,8 +518,11 @@ export class AnalyticsController {
   @Get('xp-goals')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
-    summary: 'Actual XP earned vs. goal, by month/quarter/year (super-admin)',
+    summary:
+      'Actual XP earned vs. goal, by day/week/month/quarter/year/all (super-admin)',
     description:
+      'Goals exist only at month/quarter/year; `grain=day|week|all` returns ' +
+      'actual XP only (`goalXp: null` throughout, `all` as one point). ' +
       'Actual platform XP earned per period (from `xp_events`, the same ' +
       'ledger as `xp-growth`) alongside a goal figure for that period, where ' +
       'one has been set. Goals are NOT editable through this API — they are ' +
