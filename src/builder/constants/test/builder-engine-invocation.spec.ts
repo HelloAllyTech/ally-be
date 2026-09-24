@@ -217,6 +217,30 @@ describe('opencode engine invocation', () => {
   });
 
   /**
+   * The coding attempts share one conversation; the planner and reviewer do
+   * not.
+   *
+   * Every `opencode run` is its own session, and one build made three — each
+   * beginning with no memory of the last. The remediation prompt opens
+   * "address the feedback from the previous attempt" to an agent that has
+   * never seen the attempt, so it re-reads the repository to rediscover what
+   * it wrote minutes earlier.
+   *
+   * The reviewer stays cold deliberately: one that remembers writing the diff
+   * is not an independent reviewer, which is the only reason that phase
+   * exists.
+   */
+  it('continues the coding session, and only the coding session', () => {
+    const body = opencodeCase();
+
+    expect(body).toMatch(/\$AGENT_PHASE" = code/);
+    expect(body).toMatch(/--session/);
+    // Guarded, so an engine that reports no session leaves every attempt cold
+    // exactly as before rather than passing an empty flag.
+    expect(body).toMatch(/-n "\$\{OPENCODE_CODER_SESSION:-\}"/);
+  });
+
+  /**
    * The spike's one trap: the `google` provider reads
    * GOOGLE_GENERATIVE_AI_API_KEY and NOT GEMINI_API_KEY, though the binary
    * contains all three names. A run without it dies on ProviderAuthError

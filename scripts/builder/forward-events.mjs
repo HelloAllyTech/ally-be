@@ -409,9 +409,15 @@ const normaliseGemini = (record) => {
 let opencodeCost = 0;
 let opencodeTokens = { input: 0, output: 0, cached: 0 };
 let opencodeSawStep = false;
+// The session this phase ran in. opencode stamps it on every event, and a
+// later phase can continue it instead of starting cold — see run-engine.sh.
+let opencodeSessionId = null;
 
 const normaliseOpencode = (record) => {
   const part = record?.part ?? {};
+  if (!opencodeSessionId && typeof record?.sessionID === 'string') {
+    opencodeSessionId = record.sessionID;
+  }
 
   if (record?.type === 'text' && part.text?.trim()) {
     return [{ type: 'text', payload: { text: truncate(part.text) } }];
@@ -509,6 +515,9 @@ const finaliseOpencode = () => {
     total_cost_usd: Math.round(opencodeCost * 1e6) / 1e6,
     duration_ms: null,
     num_turns: null,
+    // Handed back so the next coding attempt can continue this conversation
+    // rather than re-deriving the codebase from nothing.
+    session_id: opencodeSessionId,
   };
 };
 

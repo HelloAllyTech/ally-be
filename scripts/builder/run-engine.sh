@@ -88,7 +88,8 @@ chmod 600 "$BUILDER_HELPER_ENV"
 # was the tool not being offered, not the call being refused.
 BUILDER_PHASE_FILE=/tmp/builder-phase
 export BUILDER_PHASE_FILE
-set_agent_phase() { printf '%s' "$1" > "$BUILDER_PHASE_FILE"; }
+AGENT_PHASE=setup
+set_agent_phase() { AGENT_PHASE="$1"; printf '%s' "$1" > "$BUILDER_PHASE_FILE"; }
 set_agent_phase setup
 
 # ── The reporting protocol, as MCP tools ────────────────────────────────────
@@ -824,7 +825,25 @@ run_agent() {
       local oc_model="$model"
       case "$oc_model" in */*) ;; *) oc_model="google/${oc_model}" ;; esac
 
+      # Continue the coding conversation instead of starting it again.
+      #
+      # Every `opencode run` is its own session, and a build made three of them
+      # — planner, coder, remediation — each beginning with no memory of the
+      # last. The remediation prompt then opens "address the feedback from the
+      # previous attempt" to an agent that has never seen the attempt, so it
+      # re-reads the repository to rediscover what it wrote minutes earlier.
+      #
+      # Only the coding attempts share one. The planner and the reviewer are
+      # deliberately cold: a reviewer that remembers writing the diff is not an
+      # independent reviewer, which is the whole reason that phase exists.
+      local -a oc_session=()
+      if [ "$AGENT_PHASE" = code ] && [ -n "${OPENCODE_CODER_SESSION:-}" ]; then
+        oc_session=(--session "$OPENCODE_CODER_SESSION")
+        echo "Continuing opencode session ${OPENCODE_CODER_SESSION}."
+      fi
+
       ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} opencode run \
+        ${oc_session[@]+"${oc_session[@]}"} \
         --model "$oc_model" \
         --agent "$agent" \
         --format json \
@@ -1296,6 +1315,15 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
     # per-phase cost-by-model rows stay true once a run spans two tiers.
     report_phase_cost "code-${attempt}" "$attempt_model" "${RESULTS_DIR}/code-${attempt}.json"
     previous_attempt_model="$attempt_model"
+
+    # Carried to the next attempt. Empty for an engine that reports no session,
+    # which leaves every attempt cold exactly as before.
+    if [ -z "${OPENCODE_CODER_SESSION:-}" ]; then
+      OPENCODE_CODER_SESSION="$(jq -r '.session_id // empty' \
+        "${RESULTS_DIR}/code-${attempt}.json" 2>/dev/null || true)"
+      [ -n "${OPENCODE_CODER_SESSION:-}" ] &&
+        echo "Coding session is ${OPENCODE_CODER_SESSION}; later attempts continue it."
+    fi
 
     # Get it off the runner before anything else can go wrong.
     #
