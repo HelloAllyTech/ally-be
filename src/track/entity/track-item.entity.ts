@@ -69,6 +69,10 @@ export class TrackItem extends BaseWithoutTenantEntity {
   @Column({ type: 'jsonb', nullable: true })
   translations?: Record<string, any>;
 
+  /** Author's switch for the item's learner discussion (`src/course-discussion`). */
+  @Column({ type: 'boolean', default: false })
+  hasDiscussion!: boolean;
+
   @DeleteDateColumn()
   deletedAt?: Date;
 }
