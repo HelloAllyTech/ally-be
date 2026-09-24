@@ -216,6 +216,16 @@ await test('an unpriced model still reports zero, and says so in the feed', asyn
   );
 });
 
+await test('flash-lite is priced from its own card, not the flash card it prefixes', async () => {
+  const liteRun = GEMINI_ROUTED_RUN.map((line) =>
+    line.replace('"gemini-2.5-pro"', '"gemini-2.5-flash-lite"'),
+  );
+  const { result } = await runForwarder(liteRun, { engine: 'gemini' });
+  // 9080 input @ $0.10/M + 1 output @ $0.40/M. The first-prefix-wins lookup
+  // matched `gemini-2.5-flash` and charged $0.30/M + $2.50/M instead.
+  assert.equal(result.total_cost_usd, Math.round((9080 / 1e6) * 0.1 * 1e6 + (1 / 1e6) * 0.4 * 1e6) / 1e6);
+});
+
 // ── opencode ────────────────────────────────────────────────────────────────
 //
 // Shapes captured from a real run on a real runner
