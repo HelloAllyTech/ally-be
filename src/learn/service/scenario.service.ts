@@ -34,6 +34,7 @@ import {
 import { KnowledgeSourceDto } from '../dto/knowledge-source.dto';
 import { SimulationState } from '../type/simulation-state.type';
 import { buildGeneratedStates } from '../util/build-generated-states.util';
+import { acquireGlobalScenarioTenantLock } from '../util/global-scenario-tenant-lock.util';
 
 import { LlmModelService } from 'src/llm/service/llm-model.service';
 import { ScenariosRepository } from '../repository/scenario.repository';
@@ -753,7 +754,13 @@ export class ScenarioService {
           );
 
           if (globalScenarios.length > 0) {
-            const tenants = await this.tenantService.findAll();
+            // Serialise against tenant creation, which reads the global
+            // scenario list under the same lock. Without it a tenant that
+            // commits between this read and this transaction's commit gets no
+            // scenario_tenants row from either side. The list is read through
+            // the transaction's own manager so the lock actually covers it.
+            await acquireGlobalScenarioTenantLock(entityManager);
+            const tenants = await this.tenantService.findAll(entityManager);
             const tenantIds = tenants.map((tenant) => tenant.id);
 
             for (const globalScenario of globalScenarios) {

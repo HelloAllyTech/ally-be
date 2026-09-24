@@ -3095,6 +3095,8 @@ describe('ScenarioService', () => {
         { id: 'tenant-2' },
       ] as any);
       const mockEntityManager = {
+        // The global fan-out takes an advisory lock before reading tenants.
+        query: jest.fn().mockResolvedValue([]),
         getRepository: jest.fn().mockImplementation((entity) => {
           if (entity === Scenarios) {
             return {
@@ -3122,6 +3124,123 @@ describe('ScenarioService', () => {
 
       expect(result).toHaveLength(1);
       expect(tenantService.findAll).toHaveBeenCalled();
+    });
+
+    it('assigns a global scenario to a tenant that commits while the create transaction is open', async () => {
+      // Regression: creating a global scenario read the tenant list on its own
+      // connection, outside the transaction and unserialised. A tenant whose
+      // own transaction committed in that window got no scenario_tenants row
+      // from either side — this one read the tenant list too early, and the
+      // tenant's own assignGlobalScenariosToTenant read the global-scenario
+      // list before this scenario committed.
+      const createDto = {
+        scenarios: [
+          {
+            title: 'Global Scenario',
+            description: 'Desc',
+            status: ScenarioStatus.DRAFT,
+            prompt: 'Prompt',
+            isGlobal: true,
+            languageVoices: { 1: 'voice-1' },
+            name: 'Test',
+            age: 30,
+            gender: 'Male',
+            currentLocation: 'NY',
+            openingStatements: ['Hi'],
+          },
+        ],
+      };
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+      } as any);
+
+      // What a READ COMMITTED read would see: the concurrent tenant
+      // transaction adds to this at the moment it commits.
+      const committedTenants: { id: string }[] = [{ id: 'tenant-1' }];
+      tenantService.findAll.mockImplementation(
+        async () => [...committedTenants] as any,
+      );
+
+      // A stand-in for Postgres transaction-level advisory locks (the same
+      // one ux-signal-writer.service.spec.ts uses): a transaction that asks
+      // for the lock waits for whoever holds it and keeps it until it ends,
+      // and one that never asks is not serialised at all. Modelling the
+      // second half matters — a plain transaction under READ COMMITTED does
+      // not stop these two reads from interleaving, so the test must not
+      // pretend it does.
+      let lockChain: Promise<void> = Promise.resolve();
+      const acquireLock = () => {
+        const heldByOthers = lockChain;
+        let release: () => void = () => {};
+        lockChain = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return { heldByOthers, release: () => release() };
+      };
+
+      // The concurrent tenant creation: holds the lock, commits `tenant-2`
+      // once the scenario transaction has had every chance to run, then ends.
+      const tenantTransaction = acquireLock();
+      const concurrentTenantCreate = (async () => {
+        await tenantTransaction.heldByOthers;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        committedTenants.push({ id: 'tenant-2' });
+        tenantTransaction.release();
+      })();
+
+      const savedScenarioTenants: { scenarioId: number; tenantId: string }[] =
+        [];
+      const mockScenarioTenantRepo = {
+        create: jest.fn((row) => row),
+        save: jest.fn(async (rows: any[]) => {
+          savedScenarioTenants.push(...rows);
+          return rows;
+        }),
+      };
+
+      let releaseScenarioLock: () => void = () => {};
+      const mockEntityManager = {
+        query: jest.fn(async (sql: string) => {
+          if (!sql.includes('pg_advisory_xact_lock')) return [];
+          const lock = acquireLock();
+          releaseScenarioLock = lock.release;
+          await lock.heldByOthers;
+          return [{}];
+        }),
+        getRepository: jest.fn().mockImplementation((entity) => {
+          if (entity === Scenarios) {
+            return {
+              create: jest.fn().mockReturnValue([{ id: 1, isGlobal: true }]),
+              save: jest.fn().mockResolvedValue([{ id: 1, isGlobal: true }]),
+            };
+          }
+          if (entity === ScenarioTenants) return mockScenarioTenantRepo;
+          return {
+            create: jest.fn().mockReturnValue([]),
+            save: jest.fn().mockResolvedValue([]),
+          };
+        }),
+      };
+      dataSource.transaction.mockImplementation(async (cb: any) => {
+        try {
+          return await cb(mockEntityManager as any);
+        } finally {
+          releaseScenarioLock();
+        }
+      });
+
+      await service.createScenarios(createDto as any, 1);
+      await concurrentTenantCreate;
+
+      // The read happens only once the lock is held, so it cannot miss a
+      // tenant that commits alongside it.
+      expect(savedScenarioTenants.map((row) => row.tenantId)).toEqual([
+        'tenant-1',
+        'tenant-2',
+      ]);
+      // ...and it goes through the transaction's own manager rather than a
+      // separate connection.
+      expect(tenantService.findAll).toHaveBeenCalledWith(mockEntityManager);
     });
 
     it('should save trigger warnings when triggerWarningList is filled', async () => {
