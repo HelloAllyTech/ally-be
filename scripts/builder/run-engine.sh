@@ -785,8 +785,23 @@ run_agent() {
       local agent="reviewer"
       case "$tools" in *Write*) agent="builder" ;; esac
 
+      # opencode names a model `provider/model`, and everything upstream of
+      # here names one the way its own vendor does. `gemini-2.5-pro` is what
+      # ally-be's settings, the admin picker and BUILDER_MODEL_DEFAULTS all
+      # hold, because those values also have to satisfy the gemini engine,
+      # which would reject a prefixed id.
+      #
+      # So the translation belongs here, at the boundary that knows both — not
+      # in ally-be, where it would have to be undone for the other engine.
+      # Google because that is the provider Builder runs on; an id that already
+      # carries a slash is passed through, so naming `anthropic/…` or
+      # `openai/…` in a settings row keeps working without this line learning
+      # about it.
+      local oc_model="$model"
+      case "$oc_model" in */*) ;; *) oc_model="google/${oc_model}" ;; esac
+
       ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} opencode run \
-        --model "$model" \
+        --model "$oc_model" \
         --agent "$agent" \
         --format json \
         --auto \

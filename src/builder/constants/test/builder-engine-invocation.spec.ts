@@ -184,7 +184,27 @@ describe('opencode engine invocation', () => {
     const body = opencodeCase();
 
     expect(body).toMatch(/--format json/);
-    expect(body).toMatch(/--model "\$model"/);
+    expect(body).toMatch(/--model "\$oc_model"/);
+  });
+
+  /**
+   * opencode names a model `provider/model`; everything upstream names one the
+   * way its vendor does, because those same values must satisfy the gemini
+   * engine, which rejects a prefixed id.
+   *
+   * Found the hard way: the first opencode dispatch handed it a bare
+   * `gemini-2.5-pro`, straight from the settings row that the admin picker and
+   * BUILDER_MODEL_DEFAULTS also feed. The translation belongs at this boundary,
+   * which is the only place that knows both conventions.
+   */
+  it('gives a bare model id a provider, and leaves a qualified one alone', () => {
+    const body = opencodeCase();
+
+    expect(body).toMatch(/oc_model="google\/\$\{oc_model\}"/);
+    // An id that already names its provider passes through untouched, so a
+    // settings row saying `anthropic/…` keeps working without this line
+    // learning about it.
+    expect(body).toMatch(/case "\$oc_model" in \*\/\*\)/);
   });
 
   /**
