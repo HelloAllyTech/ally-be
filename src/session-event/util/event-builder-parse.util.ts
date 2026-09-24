@@ -172,12 +172,23 @@ export const parseExamples = (
 const asEmoji = (value: string): string | undefined => {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
-  const graphemes = Array.from(trimmed);
-  const first = graphemes[0];
-  if (!/\p{Extended_Pictographic}/u.test(first)) return undefined;
-  // Keep any variation selector / ZWJ sequence attached to the base glyph;
-  // slicing to one code point would turn 👩‍⚕️ into 👩.
-  return trimmed.slice(0, 8);
+
+  // Use Intl.Segmenter to correctly extract the first grapheme cluster. This
+  // is the modern, correct way to handle complex emojis like 👨‍👩‍👧‍👦.
+  // Cast to `any` to avoid a dependency on a newer tsconfig `lib` setting.
+  const segmenter = new (Intl as any).Segmenter();
+  const segments = Array.from((segmenter as any).segment(trimmed));
+
+  if (segments.length === 0) {
+    return undefined;
+  }
+  const firstGrapheme = (segments[0] as any).segment;
+
+  if (!/\p{Extended_Pictographic}/u.test(firstGrapheme)) {
+    return undefined;
+  }
+
+  return firstGrapheme;
 };
 
 export const parseFeedback = (raw: string): ParsedFeedback => {

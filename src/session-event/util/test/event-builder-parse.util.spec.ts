@@ -207,6 +207,10 @@ describe('event-builder-parse.util', () => {
     it('keeps a multi-codepoint emoji intact', () => {
       expect(parseFeedback('{"message":"m","emoji":"👩‍⚕️"}').emoji).toBe('👩‍⚕️');
     });
+
+    it('keeps a long multi-codepoint emoji intact', () => {
+      expect(parseFeedback('{"message":"m","emoji":"👨‍👩‍👧‍👦"}').emoji).toBe('👨‍👩‍👧‍👦');
+    });
   });
 
   describe('parseBranchInstruction', () => {
