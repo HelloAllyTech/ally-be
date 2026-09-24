@@ -10,7 +10,24 @@ export interface RoleplayFeedbackRow {
   trackItemId: string;
   trackItemTitle: string | null;
   scenarioSessionId: string;
-  compositeScore: number | null;
+  /**
+   * The learner's roleplay score for THIS attempt — `scenario_sessions.score`,
+   * the platform's one learner-facing roleplay number: the -100..100 meter the
+   * learner watched during the session, the value `meetsMinimumScore` gates
+   * item completion on, the `score` column in super-admin Roleplay Logs, and
+   * the per-item `score` on Track Overview.
+   *
+   * Deliberately NOT `scenario_session_details.compositeScore`, which this
+   * dashboard used to report. That is the actor-evaluation composite —
+   * round(mean(applicable metrics)) from the LLM judge over the globally
+   * configured agent test cases, on its own 0..100 scale — and it feeds
+   * super-admin Roleplay Logs' evaluation panel and the analytics quality
+   * surfaces. Reading it here made the same finished roleplay carry two
+   * different "scores" for the same learner across two views of the same
+   * course, and the one the course progress dashboard showed was not the one
+   * that decided whether the item completed.
+   */
+  sessionScore: number | null;
   occurredAt: string | null;
   skillCoverage: { category: string; percentage: number }[] | null;
   evaluationMarkdown: string | null;
@@ -51,7 +68,7 @@ export class TrackProgressDashboardRepository {
         tip."trackItemId"                       AS "trackItemId",
         ti.title                                  AS "trackItemTitle",
         s.id                                       AS "scenarioSessionId",
-        d."compositeScore"                        AS "compositeScore",
+        s."score"                                 AS "sessionScore",
         d.summary->'feedback'->'skillCoverage'    AS "skillCoverage",
         d."evaluationMarkdown"                    AS "evaluationMarkdown",
         COALESCE(s."startedAt", s."createdAt")     AS "occurredAt"
@@ -63,6 +80,10 @@ export class TrackProgressDashboardRepository {
         AND ti.type = $2
         AND s."eventStatus" = $3
         AND d."evaluationStatus" = $4
+        -- Still an "was this attempt judged at all?" predicate, not the score
+        -- source: the skillCoverage/markdown feedback this dashboard
+        -- consolidates only exists for a judged session. The score it reports
+        -- comes from the session row above.
         AND d."compositeScore" IS NOT NULL
         AND ${countableSessionPredicate('s')}
       ORDER BY "occurredAt" ASC
@@ -80,7 +101,7 @@ export class TrackProgressDashboardRepository {
       trackItemId: String(r.trackItemId),
       trackItemTitle: (r.trackItemTitle as string | null) ?? null,
       scenarioSessionId: String(r.scenarioSessionId),
-      compositeScore: this.num(r.compositeScore),
+      sessionScore: this.num(r.sessionScore),
       occurredAt: this.iso(r.occurredAt),
       skillCoverage: this.parseSkillCoverage(r.skillCoverage),
       evaluationMarkdown: (r.evaluationMarkdown as string | null) ?? null,

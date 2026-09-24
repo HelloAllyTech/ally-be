@@ -80,6 +80,8 @@ export interface SatisfactionBucketRow {
   mid: number;
   high: number;
   responses: number;
+  /** Sum of the raw 1-5 ratings — the numerator of the average rating. */
+  ratingSum: number;
 }
 
 /** Whole-window rating band counts. */
@@ -88,6 +90,7 @@ export interface SatisfactionOverallRow {
   mid: number;
   high: number;
   responses: number;
+  ratingSum: number;
 }
 
 /** Completed sessions per bucket — the response-rate denominator. */
@@ -319,6 +322,7 @@ export class QualityDistributionAnalyticsRepository {
       )
       .addSelect('COUNT(*) FILTER (WHERE f."rating" >= :highMin)::int', 'high')
       .addSelect('COUNT(*)::int', 'responses')
+      .addSelect('COALESCE(SUM(f."rating"), 0)::float', 'ratingSum')
       .from('scenario_session_feedbacks', 'f')
       .where('f."createdAt" >= :start', { start })
       .andWhere('f."createdAt" < :end', { end })
@@ -340,6 +344,7 @@ export class QualityDistributionAnalyticsRepository {
         mid: number;
         high: number;
         responses: number;
+        ratingSum: number;
       }>();
 
     return rows.map((r) => ({
@@ -348,6 +353,7 @@ export class QualityDistributionAnalyticsRepository {
       mid: Number(r.mid) || 0,
       high: Number(r.high) || 0,
       responses: Number(r.responses) || 0,
+      ratingSum: Number(r.ratingSum) || 0,
     }));
   }
 
@@ -366,6 +372,7 @@ export class QualityDistributionAnalyticsRepository {
       )
       .addSelect('COUNT(*) FILTER (WHERE f."rating" >= :highMin)::int', 'high')
       .addSelect('COUNT(*)::int', 'responses')
+      .addSelect('COALESCE(SUM(f."rating"), 0)::float', 'ratingSum')
       .from('scenario_session_feedbacks', 'f')
       .where('f."createdAt" >= :start', { start })
       .andWhere('f."createdAt" < :end', { end })
@@ -383,6 +390,7 @@ export class QualityDistributionAnalyticsRepository {
       mid: number;
       high: number;
       responses: number;
+      ratingSum: number;
     }>();
 
     return {
@@ -390,6 +398,7 @@ export class QualityDistributionAnalyticsRepository {
       mid: Number(row?.mid) || 0,
       high: Number(row?.high) || 0,
       responses: Number(row?.responses) || 0,
+      ratingSum: Number(row?.ratingSum) || 0,
     };
   }
 

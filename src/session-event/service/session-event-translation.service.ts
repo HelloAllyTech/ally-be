@@ -171,7 +171,7 @@ export class SessionEventTranslationService {
             l &&
             l.translationCode &&
             l.translationCode.trim() !== '' &&
-            !l.value.includes(DEFAULT_LANGUAGE_TRANSLATION_CODE),
+            !l.translationCode.startsWith(DEFAULT_LANGUAGE_TRANSLATION_CODE),
         );
 
         if (!languagesFiltered.length) {

@@ -3,6 +3,7 @@ import { EntityManager } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
 import { ScenarioTenants } from 'src/learn/entity/scenario-tenants.entity';
+import { acquireGlobalScenarioTenantLock } from 'src/learn/util/global-scenario-tenant-lock.util';
 
 @Injectable()
 export class TenantScenarioSharedService {
@@ -16,6 +17,11 @@ export class TenantScenarioSharedService {
     tenantId: string,
     entityManager: EntityManager,
   ): Promise<void> {
+    // The other half of the same race ScenarioService.createScenarios takes
+    // this lock for: without it, a global scenario committing alongside this
+    // tenant is missed here *and* this tenant is missed there.
+    await acquireGlobalScenarioTenantLock(entityManager);
+
     const scenarioRepository = entityManager.getRepository(Scenarios);
 
     const globalScenarios = await scenarioRepository.find({
