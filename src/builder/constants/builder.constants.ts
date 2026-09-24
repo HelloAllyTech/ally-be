@@ -452,18 +452,42 @@ export const BUILDER_EVIDENCE_MAX_SHAPES = 12;
  * whenever it overrides something — a pin that silently disagreed with the
  * admin picker would be the same class of bug it exists to close.
  */
-export const BUILDER_ENGINE_PIN_DEFAULT = 'gemini';
+export const BUILDER_ENGINE_ALLOWED_DEFAULT = ['gemini', 'opencode'];
 
 /**
- * Read at call time, not at import, so it is one env var to clear rather than
- * a deploy — and so the multi-engine resolution below stays testable. Set
- * `BUILDER_ENGINE_PIN` to another engine to pin there instead, or to the empty
- * string to unpin and let the chain in `resolveEngine` decide again.
+ * The engines Builder may run. Anything else is overruled to the first entry.
+ *
+ * This began as a single pin, because a session carries the engine it was
+ * created with forever and that is wrong for everything except a resume: hours
+ * after every Builder phase had been moved to Gemini and verified as Gemini, a
+ * review of ally-web#694 dispatched `claude-code` with `claude-opus-4-7`,
+ * because the review path read a session created before the move. Every pull
+ * request Builder opened was being reviewed on another vendor's credits, and
+ * the only reason anyone noticed is that the run failed for an unrelated
+ * reason and someone read its workflow inputs.
+ *
+ * A single pin closed that and closed too much with it: it also refused a
+ * DELIBERATE choice, which made an opencode comparison run impossible. The
+ * distinction that matters is not explicit-versus-inherited, it is which
+ * engines are permitted to spend at all. A stale `claude-code` and an admin
+ * typing `claude-code` cost exactly the same money.
+ *
+ * So: a list. An engine on it may be chosen by anyone — the run override, the
+ * session, the settings row. An engine off it is overruled wherever it came
+ * from, and `resolveEngine` says so in the log rather than swapping quietly.
+ * `claude-code` is deliberately absent; putting it back is one env var, which
+ * is the right amount of friction for a decision about someone else's bill.
  */
-export const builderEnginePin = (): string | null => {
-  const raw = process.env.BUILDER_ENGINE_PIN;
-  if (raw === undefined) return BUILDER_ENGINE_PIN_DEFAULT;
-  return raw.trim() === '' ? null : raw.trim();
+export const builderAllowedEngines = (): string[] => {
+  const raw = process.env.BUILDER_ENGINE_ALLOWED;
+  if (raw === undefined) return [...BUILDER_ENGINE_ALLOWED_DEFAULT];
+  const parsed = raw
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  // An empty value means "no restriction" rather than "nothing is allowed" —
+  // the latter would brick every build on a typo.
+  return parsed;
 };
 
 export const BUILDER_MODEL_DEFAULTS = {

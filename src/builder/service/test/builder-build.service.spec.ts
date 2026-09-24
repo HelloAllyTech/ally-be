@@ -29,22 +29,22 @@ const readySession = (overrides: Record<string, any> = {}) => ({
 });
 
 describe('BuilderBuildService', () => {
-  // Unpinned for this whole file.
+  // Unrestricted for this whole file.
   //
-  // Production pins Builder to one engine (see builderEnginePin), which by
-  // design overrules the session, the settings row and the environment. The
-  // resolution chain it overrules is still the thing these tests exist to
-  // cover — sizing, the escalation ladder and, above all, never handing one
-  // engine another engine's model. That filter is the safety net if the pin is
-  // ever lifted, so it is tested with the pin off rather than deleted with it
-  // on. `builder-engine-invocation.spec.ts` covers the pin itself.
-  const pinBefore = process.env.BUILDER_ENGINE_PIN;
+  // Production runs an engine ALLOWLIST (see builderAllowedEngines), which
+  // overrules anything not on it wherever it came from. The chain it overrules
+  // is still what these tests exist to cover — sizing, the escalation ladder
+  // and, above all, never handing one engine another engine's model. That
+  // filter is the safety net if the list is ever widened, so it is tested with
+  // the list lifted rather than deleted with it in place.
+  // `builder-engine-invocation.spec.ts` covers the list itself.
+  const allowedBefore = process.env.BUILDER_ENGINE_ALLOWED;
   beforeAll(() => {
-    process.env.BUILDER_ENGINE_PIN = '';
+    process.env.BUILDER_ENGINE_ALLOWED = '';
   });
   afterAll(() => {
-    if (pinBefore === undefined) delete process.env.BUILDER_ENGINE_PIN;
-    else process.env.BUILDER_ENGINE_PIN = pinBefore;
+    if (allowedBefore === undefined) delete process.env.BUILDER_ENGINE_ALLOWED;
+    else process.env.BUILDER_ENGINE_ALLOWED = allowedBefore;
   });
 
   let service: BuilderBuildService;

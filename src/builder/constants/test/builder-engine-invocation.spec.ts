@@ -2,9 +2,9 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import {
-  BUILDER_ENGINE_PIN_DEFAULT,
+  BUILDER_ENGINE_ALLOWED_DEFAULT,
   BUILDER_MODEL_DEFAULTS,
-  builderEnginePin,
+  builderAllowedEngines,
 } from '../builder.constants';
 
 const SCRIPTS = join(__dirname, '..', '..', '..', '..', 'scripts', 'builder');
@@ -105,63 +105,62 @@ describe('gemini engine invocation', () => {
  * Everything runs on one engine, and the pin is what makes that true rather
  * than merely configured.
  */
-describe('the engine pin', () => {
-  const before = process.env.BUILDER_ENGINE_PIN;
+describe('the engine allowlist', () => {
+  const before = process.env.BUILDER_ENGINE_ALLOWED;
   afterEach(() => {
-    if (before === undefined) delete process.env.BUILDER_ENGINE_PIN;
-    else process.env.BUILDER_ENGINE_PIN = before;
+    if (before === undefined) delete process.env.BUILDER_ENGINE_ALLOWED;
+    else process.env.BUILDER_ENGINE_ALLOWED = before;
   });
 
   /**
-   * The whole point. Builder was verified end to end as Gemini on 2026-09-23 —
-   * interview, build dispatch, in-process phases — and hours later dispatched
-   * a REVIEW run on `claude-code` with `claude-opus-4-7`, a model id that
-   * exists nowhere in this codebase, because a session created before the
-   * migration carries its original engine forever and the review path reads
-   * it. Unset means pinned: no environment change is needed for this to hold.
+   * The point of the list, and the reason it is a list rather than a pin.
+   *
+   * A session carries its creation engine forever, so hours after every phase
+   * had been moved to Gemini a review dispatched `claude-code` with
+   * `claude-opus-4-7` and reviewed a pull request on another vendor's credits.
+   * A stale `claude-code` and an admin typing `claude-code` cost the same
+   * money, so neither is permitted — while `opencode` is, which is what makes
+   * a comparison run possible without editing a production environment.
    */
-  it('pins to gemini when nothing says otherwise', () => {
-    delete process.env.BUILDER_ENGINE_PIN;
+  it('permits gemini and opencode, and not claude-code', () => {
+    delete process.env.BUILDER_ENGINE_ALLOWED;
 
-    expect(builderEnginePin()).toBe('gemini');
-    expect(BUILDER_ENGINE_PIN_DEFAULT).toBe('gemini');
+    expect(builderAllowedEngines()).toEqual(['gemini', 'opencode']);
+    expect(builderAllowedEngines()).not.toContain('claude-code');
+    expect(BUILDER_ENGINE_ALLOWED_DEFAULT).toEqual(['gemini', 'opencode']);
   });
 
   /**
-   * One env var to clear rather than a deploy — and the empty string means
-   * unpinned rather than pinned to nothing, which is the reading a
-   * `?? DEFAULT` would have got wrong.
+   * One env var, because the friction should match the decision: putting
+   * another vendor back on the list is a choice about someone else's bill.
    */
-  it('can be lifted, or moved, without a deploy', () => {
-    process.env.BUILDER_ENGINE_PIN = '';
-    expect(builderEnginePin()).toBeNull();
+  it('is changed without a deploy, and an empty value lifts it entirely', () => {
+    process.env.BUILDER_ENGINE_ALLOWED = 'gemini';
+    expect(builderAllowedEngines()).toEqual(['gemini']);
 
-    process.env.BUILDER_ENGINE_PIN = 'claude-code';
-    expect(builderEnginePin()).toBe('claude-code');
+    process.env.BUILDER_ENGINE_ALLOWED = ' gemini , opencode ';
+    expect(builderAllowedEngines()).toEqual(['gemini', 'opencode']);
 
-    process.env.BUILDER_ENGINE_PIN = '  gemini  ';
-    expect(builderEnginePin()).toBe('gemini');
+    // Empty means unrestricted rather than "nothing allowed", which would
+    // brick every build on a typo.
+    process.env.BUILDER_ENGINE_ALLOWED = '';
+    expect(builderAllowedEngines()).toEqual([]);
   });
 
   /**
-   * A pin that named an engine the model defaults do not belong to would move
-   * the mismatch one layer down rather than close it: `gemini --model
-   * claude-opus-4-7` exits on its first phase having written nothing.
+   * The first entry is where anything unpermitted lands, so it has to be an
+   * engine whose model defaults actually belong to it.
    */
-  it('names an engine every model default belongs to', () => {
-    delete process.env.BUILDER_ENGINE_PIN;
+  it('falls back to an engine its model defaults belong to', () => {
+    delete process.env.BUILDER_ENGINE_ALLOWED;
 
-    expect(builderEnginePin()).toBe('gemini');
+    expect(builderAllowedEngines()[0]).toBe('gemini');
     for (const [tier, model] of Object.entries(BUILDER_MODEL_DEFAULTS)) {
       expect(`${tier}=${model}`).toMatch(/=gemini-/);
     }
   });
 });
 
-/**
- * opencode, added after .github/workflows/opencode-spike.yml proved on a real
- * runner that it does the four things this pipeline needs.
- */
 describe('opencode engine invocation', () => {
   /**
    * Read-only is one decision across three engines.

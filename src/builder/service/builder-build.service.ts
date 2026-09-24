@@ -50,7 +50,7 @@ import {
   BUILDER_DISPATCH_LOCK_PREFIX,
   BUILDER_DISPATCH_LOCK_TTL_SECONDS,
   BUILDER_DISPATCH_TIMEOUT_MS,
-  builderEnginePin,
+  builderAllowedEngines,
   BUILDER_MODEL_DEFAULTS,
   BUILDER_RESUME_FILES_MAX,
   BUILDER_RESUME_TEST_OUTPUT_MAX,
@@ -159,6 +159,18 @@ export const builderEngineOf = (
  * reason `builderEngineOf` lets an unknown model id pass.
  */
 const BUILDER_KNOWN_MODEL_OWNERS = new Set(['gemini', 'claude-code']);
+
+/**
+ * Engines that are harnesses rather than vendors.
+ *
+ * `builderEngineOf` answers "whose model is this", which is the right question
+ * for `gemini` and `claude-code` — each runs one vendor's models and exits on
+ * its first phase if handed another's. opencode runs any provider it has a key
+ * for, so asking whether `gemini-2.5-pro` "belongs to opencode" is the wrong
+ * question, and answering no would filter out every model an opencode run
+ * could legitimately use.
+ */
+const BUILDER_MULTI_PROVIDER_ENGINES = new Set(['opencode']);
 
 export const BUILDER_STARTABLE_STATUSES: BuilderSessionStatus[] = [
   BuilderSessionStatus.PRD_READY,
@@ -413,18 +425,20 @@ export class BuilderBuildService {
     const chosen =
       override ?? session.engine ?? settings.defaultEngine ?? 'gemini';
 
-    // The pin wins over all of it. See builderEnginePin for why a session's
-    // own engine is not trustworthy after a migration.
-    const pin = builderEnginePin();
-    if (pin && chosen !== pin) {
-      // Said, not swallowed: an admin whose picker is being overruled should
-      // be able to find out why without reading this file.
-      this.logger.info(
-        `Builder engine pinned to ${pin}; ignoring "${chosen}" for session ` +
-          `${session.id}.`,
-      );
-    }
-    return pin ?? chosen;
+    // Permitted, or overruled — wherever it came from. See
+    // builderAllowedEngines: a stale `claude-code` and an admin typing
+    // `claude-code` spend the same money, so this does not care which it was.
+    const allowed = builderAllowedEngines();
+    if (!allowed.length || allowed.includes(chosen)) return chosen;
+
+    // Said, not swallowed. An engine picker being overruled should be
+    // findable without reading this file.
+    this.logger.info(
+      `Builder engine "${chosen}" is not permitted (allowed: ` +
+        `${allowed.join(', ')}); running session ${session.id} on ` +
+        `${allowed[0]} instead.`,
+    );
+    return allowed[0];
   }
 
   /**
@@ -481,6 +495,9 @@ export class BuilderBuildService {
     // actually picked.
     const engineOf = builderEngineOf;
     const forThisEngine = (model: string | null | undefined): string | null => {
+      // A multi-provider harness can run whatever it is given, so nothing is
+      // filtered out on its behalf.
+      if (BUILDER_MULTI_PROVIDER_ENGINES.has(engine)) return model ?? null;
       const owner = engineOf(model);
       // Unknown ids pass. The catalog is admin-maintained and a new provider
       // should not need this function edited before it can be configured.
