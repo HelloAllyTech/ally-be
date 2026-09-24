@@ -390,8 +390,133 @@ const normaliseGemini = (record) => {
   return events;
 };
 
+/* ── opencode ────────────────────────────────────────────────────────────── */
+
+// Its cost arrives per STEP, not once at the end.
+//
+// A run emits a `step_finish` for every model round, each carrying that
+// round's tokens and its own dollar figure, and there is no terminal frame
+// summing them. Reading only the last one would price a four-step run as one
+// step — so they accumulate here, and the totals are written out when the
+// stream closes.
+//
+// The dollars are opencode's own, not a rate card. That is the one thing this
+// engine gives the budget ceiling that neither other engine can: gemini-cli
+// reports no cost at all and Claude Code reports its own estimate, so spend
+// has been priced from a table someone has to keep up to date, and an unpriced
+// model silently reads as free.
+let opencodeCost = 0;
+let opencodeTokens = { input: 0, output: 0, cached: 0 };
+let opencodeSawStep = false;
+
+const normaliseOpencode = (record) => {
+  const part = record?.part ?? {};
+
+  if (record?.type === 'text' && part.text?.trim()) {
+    return [{ type: 'text', payload: { text: truncate(part.text) } }];
+  }
+
+  if (record?.type === 'tool_use') {
+    const name = String(part.tool ?? 'tool');
+    const state = part.state ?? {};
+    const input = state.input ?? {};
+    const events = [];
+
+    // Shapes read from a real run, not from documentation: `part.tool` is the
+    // name, `part.state.input` the arguments and `part.state.output` the
+    // result, all on ONE event rather than the call/result pair the other
+    // engines emit. Both are still forwarded, so the feed reads the same
+    // whichever engine produced it.
+    if (typeof input.filePath === 'string' || typeof input.path === 'string') {
+      const wrote = 'content' in input;
+      const edited = 'oldString' in input || 'old_string' in input;
+      if (wrote || edited) {
+        events.push({
+          type: 'file_edit',
+          payload: {
+            path: String(input.filePath ?? input.path),
+            operation: edited ? 'edit' : 'write',
+            oldText: truncate(input.oldString ?? input.old_string ?? ''),
+            newText: truncate(input.newString ?? input.new_string ?? input.content ?? ''),
+          },
+        });
+      }
+    }
+
+    if (!events.length) {
+      events.push({
+        type: 'tool_call',
+        payload: {
+          name,
+          summary: truncate(
+            input.command ?? input.filePath ?? input.path ?? input.pattern ?? '',
+          ),
+        },
+      });
+    }
+
+    if (state.output !== undefined || state.status === 'error') {
+      events.push({
+        type: 'tool_result',
+        payload: {
+          // `status` is the tool's own verdict. An `invalid` tool — the model
+          // reaching for something a denied agent was never offered — comes
+          // back completed with an error in its output, which is a refusal
+          // worth showing rather than a failure worth hiding.
+          isError: state.status === 'error',
+          text: truncate(String(state.output ?? '')),
+        },
+      });
+    }
+
+    return events;
+  }
+
+  if (record?.type === 'step_finish') {
+    opencodeSawStep = true;
+    opencodeCost += Number(part.cost ?? 0) || 0;
+    const tokens = part.tokens ?? {};
+    opencodeTokens = {
+      input: opencodeTokens.input + (Number(tokens.input ?? 0) || 0),
+      output: opencodeTokens.output + (Number(tokens.output ?? 0) || 0),
+      cached: opencodeTokens.cached + (Number(tokens.cache?.read ?? 0) || 0),
+    };
+    return [];
+  }
+
+  if (record?.type === 'error') {
+    const detail =
+      record.error?.data?.message ?? record.error?.name ?? 'unknown error';
+    return [{ type: 'text', payload: { text: truncate(`[opencode] ${detail}`) } }];
+  }
+
+  // `step_start` and anything else carry nothing a person watching needs.
+  return [];
+};
+
+/** Called when the stream ends: opencode has no terminal result frame. */
+const finaliseOpencode = () => {
+  if (!opencodeSawStep) return;
+  lastResult = {
+    usage: {
+      input_tokens: opencodeTokens.input,
+      output_tokens: opencodeTokens.output,
+      cached_tokens: opencodeTokens.cached,
+    },
+    // Rounded the way the rate-card path rounds, so a run's cost reads the
+    // same whichever engine produced it.
+    total_cost_usd: Math.round(opencodeCost * 1e6) / 1e6,
+    duration_ms: null,
+    num_turns: null,
+  };
+};
+
 const normalise = (record) =>
-  process.env.BUILDER_ENGINE === 'gemini' ? normaliseGemini(record) : normaliseClaudeCode(record);
+  process.env.BUILDER_ENGINE === 'gemini'
+    ? normaliseGemini(record)
+    : process.env.BUILDER_ENGINE === 'opencode'
+      ? normaliseOpencode(record)
+      : normaliseClaudeCode(record);
 
 const post = async (events) => {
   if (!API_URL || !API_KEY || !RUN_ID || !events.length) return;
@@ -518,6 +643,9 @@ readline.on('close', async () => {
   // stream ended must not lose it — a no-op for Claude Code, whose buffer is
   // always empty.
   queue.push(...flushGeminiBuffer());
+  // opencode reports its cost per step and never sums them, so the totals are
+  // only complete once the stream is. A no-op for the other two engines.
+  finaliseOpencode();
   await flush();
   if (RESULT_OUT && lastResult) {
     try {

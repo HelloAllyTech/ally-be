@@ -16,8 +16,8 @@ import {
  */
 export interface WeakMetricsFilters {
   start: Date;
-  /** Week or month bucket for every trend series. */
-  bucket: 'week' | 'month';
+  /** Week, month or quarter bucket for every trend series. */
+  bucket: 'week' | 'month' | 'quarter';
   language?: string | null;
   llmModel?: string | null;
   scenarioId?: number | null;

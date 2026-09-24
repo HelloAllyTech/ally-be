@@ -1,0 +1,212 @@
+# A spike, not a pipeline.
+#
+# Builder's engine boundary is two files — install-engine.sh and run-engine.sh —
+# and adding opencode as a third engine is a case in each. Before writing those
+# cases, four questions have to be answered on the platform this actually runs
+# on, because every one of them has a wrong answer that fails SILENTLY:
+#
+#   1. Does it authenticate with the GEMINI_API_KEY secret we already hold?
+#   2. Can a phase be given its own model, the way --model does today?
+#   3. Does a read-only agent genuinely refuse to write? Today that guarantee
+#      is enforced after the fact by snapshot-and-revert, because no engine's
+#      flags could be trusted to hold it.
+#   4. Does its output carry token usage we can price? Gemini CLI reports no
+#      dollars, so the budget ceiling is already a rate card over token counts.
+#      An engine that reports neither cannot be bounded at all.
+#
+# Plus the one that decides how much of the reporting protocol survives a
+# migration: does it load our MCP server and call its tools?
+#
+# Run it by hand from the Actions tab. It changes nothing, pushes nothing, and
+# talks only to a fake ally-be on localhost — no run id, no real telemetry.
+# Delete this file once the engine case exists.
+name: opencode spike
+
+on:
+  workflow_dispatch:
+    inputs:
+      opencode_version:
+        description: opencode-ai version to pin
+        required: false
+        default: '1.18.32'
+      model:
+        description: provider/model to run
+        required: false
+        default: 'google/gemini-2.5-pro'
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    name: Can opencode do what run-engine.sh needs?
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    env:
+      # Both names, from the one secret we hold.
+      #
+      # The binary contains the strings GEMINI_API_KEY, GOOGLE_API_KEY and
+      # GOOGLE_GENERATIVE_AI_API_KEY, which read like "any of these will do".
+      # The first run of this spike proved otherwise: opencode's `google`
+      # provider answered ProviderAuthError — "Google Generative AI API key is
+      # missing. Pass it using the 'apiKey' parameter or the
+      # GOOGLE_GENERATIVE_AI_API_KEY environment variable" — while
+      # GEMINI_API_KEY was set the whole time.
+      #
+      # Which is exactly the failure this spike exists to find before an engine
+      # case is written around an assumption. Note it also makes every other
+      # answer worthless until fixed: with no auth, nothing ran, and the
+      # read-only probe reported "the permission held" because no agent had
+      # existed to break it.
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      OPENCODE_VERSION: ${{ inputs.opencode_version }}
+      MODEL: ${{ inputs.model }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install opencode
+        run: |
+          set -euo pipefail
+          npm install -g "opencode-ai@${OPENCODE_VERSION}"
+          opencode --version
+
+      # Stands in for ally-be. Records every request so the MCP tool calls can
+      # be proved to have ARRIVED, not merely to have been attempted — the
+      # distinction that made `command not found` invisible for a week.
+      - name: A fake ally-be that writes down what it receives
+        run: |
+          set -euo pipefail
+          cat > /tmp/fake-ally-be.mjs <<'EOF'
+          import http from 'node:http';
+          import fs from 'node:fs';
+          const log = [];
+          http
+            .createServer((req, res) => {
+              let body = '';
+              req.on('data', (c) => (body += c));
+              req.on('end', () => {
+                log.push({ url: req.url, body });
+                fs.writeFileSync('/tmp/ally-be-log.json', JSON.stringify(log, null, 2));
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end('{"ok":true}');
+              });
+            })
+            .listen(8787, '127.0.0.1');
+          EOF
+          node /tmp/fake-ally-be.mjs &
+          sleep 2
+          echo "fake ally-be listening on 8787"
+
+      - name: Point the reporting server at it
+        run: |
+          set -euo pipefail
+          umask 077
+          cat > /tmp/builder-helper-env <<EOF
+          ALLY_BE_API_URL='http://127.0.0.1:8787'
+          BUILDER_RUN_ID='spike-run'
+          ALLY_BE_API_KEY='spike-key'
+          EOF
+
+      # Two agents, because question 3 is the one a config can silently get
+      # wrong: `builder` may write, `reviewer` may not, and the only honest
+      # test is asking the reviewer to write something.
+      - name: Write the opencode config
+        run: |
+          set -euo pipefail
+          mkdir -p .opencode
+          cat > opencode.json <<EOF
+          {
+            "\$schema": "https://opencode.ai/config.json",
+            "mcp": {
+              "builder": {
+                "type": "local",
+                "command": ["node", "${GITHUB_WORKSPACE}/scripts/builder/builder-mcp.mjs"],
+                "enabled": true,
+                "environment": { "BUILDER_HELPER_ENV": "/tmp/builder-helper-env" }
+              }
+            },
+            "agent": {
+              "builder": { "model": "${MODEL}" },
+              "reviewer": {
+                "model": "${MODEL}",
+                "permission": { "edit": "deny", "write": "deny", "bash": "deny" }
+              }
+            }
+          }
+          EOF
+          cat opencode.json
+
+      - name: 'Q1+Q2: does it authenticate, and take a model per run?'
+        id: auth
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          opencode run --model "$MODEL" --format json \
+            'Reply with exactly: ok' > /tmp/q1.json 2>/tmp/q1.err || true
+          echo "--- stdout ---"; head -c 4000 /tmp/q1.json
+          echo; echo "--- stderr ---"; head -c 2000 /tmp/q1.err
+          echo
+          if grep -q '"type":"error"' /tmp/q1.json 2>/dev/null; then
+            echo "RESULT: opencode did NOT run. Every answer below is void."
+            exit 1
+          fi
+          echo "RESULT: authenticated, and took the model on the command line." 
+
+      - name: 'Q4: is there token usage or cost anywhere in that output?'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          echo "--- keys mentioning tokens/cost/usage ---"
+          grep -oiE '"[a-z_]*(token|cost|usage)[a-z_]*"[[:space:]]*:[[:space:]]*[0-9.]+' \
+            /tmp/q1.json | sort -u || echo "NONE FOUND — a run could not be priced"
+
+      - name: 'Q5: does it load our MCP server and call its tools?'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          opencode run --model "$MODEL" --format json --auto \
+            'Call the builder stage tool with stage set to CODING. Then stop.' \
+            > /tmp/q5.json 2>/tmp/q5.err || true
+          echo "--- stdout ---"; head -c 4000 /tmp/q5.json
+          echo; echo "--- stderr ---"; head -c 2000 /tmp/q5.err
+          echo; echo "--- what actually reached ally-be ---"
+          cat /tmp/ally-be-log.json 2>/dev/null || echo "NOTHING ARRIVED"
+
+      - name: 'Q3: does a read-only agent actually refuse to write?'
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          echo "before: $(ls /tmp/readonly-probe.txt 2>/dev/null || echo 'absent')"
+          opencode run --agent reviewer --model "$MODEL" --format json --auto \
+            'Create a file at /tmp/readonly-probe.txt containing the word written.' \
+            > /tmp/q3.json 2>/tmp/q3.err || true
+          echo "--- stdout ---"; head -c 3000 /tmp/q3.json
+          echo; echo "--- stderr ---"; head -c 1500 /tmp/q3.err
+          echo
+          if [ -f /tmp/readonly-probe.txt ]; then
+            echo "RESULT: the read-only agent WROTE. The permission did not hold."
+          else
+            echo "RESULT: no file. The permission held."
+          fi
+
+      - name: Keep the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-spike
+          path: |
+            /tmp/q1.json
+            /tmp/q1.err
+            /tmp/q3.json
+            /tmp/q3.err
+            /tmp/q5.json
+            /tmp/q5.err
+            /tmp/ally-be-log.json
+            opencode.json
+          if-no-files-found: warn

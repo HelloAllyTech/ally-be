@@ -861,6 +861,9 @@ export class AiService {
         : errCode
           ? `network_${errCode}`
           : 'unknown';
+      const requestDataForLog = redactBody
+        ? `[redacted ${dataSize}B — this endpoint carries PII/PHI]`
+        : JSON.stringify(data);
       this.logger.error(
         `AI Request FAIL | execId=${execId} | endpoint=${endpoint} | ` +
           `category=${failureCategory} | elapsedMs=${elapsedMs} | ` +
@@ -870,7 +873,7 @@ export class AiService {
           `upstreamTraceId=${upstreamTraceId ?? 'none'} | ` +
           `upstreamDetail=${JSON.stringify(upstreamDetail)} | ` +
           `upstreamBody=${upstreamBodyStr} | ` +
-          `dataSize=${dataSize}B | requestData=${JSON.stringify(data)}`,
+          `dataSize=${dataSize}B | requestData=${requestDataForLog}`,
         error.stack,
       );
       this.eventEmitter.emit('exception', {

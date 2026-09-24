@@ -14,6 +14,7 @@ set -euo pipefail
 ENGINE="${BUILDER_ENGINE:-gemini}"
 
 CLAUDE_CODE_VERSION="2.1.220"
+OPENCODE_VERSION="1.18.32"
 GEMINI_CLI_VERSION="0.60.0"
 
 case "$ENGINE" in
@@ -57,13 +58,29 @@ case "$ENGINE" in
     gemini --version
     ;;
 
-  # A second engine slots in here. Its output shape is normalised by
-  # forward-events.mjs rather than by anything downstream, so nothing beyond
-  # these two files needs to learn about it.
+  # Verified on this exact version by .github/workflows/opencode-spike.yml,
+  # which ran it on a real runner and checked the four things an engine has to
+  # do for this pipeline. Every answer was yes:
   #
-  # opencode)
-  #   npm install -g opencode-ai@<pinned>
-  #   ;;
+  #   - authenticates from the environment, and takes --model per invocation
+  #   - a `permission: deny` agent does not merely refuse to write: the write
+  #     tools are NEVER OFFERED. The model tried `bash` and was told "Model
+  #     tried to call unavailable tool 'bash'". That is the read-only guarantee
+  #     run-engine.sh can otherwise only get by snapshot-and-revert.
+  #   - reports COST IN DOLLARS per step, not just tokens — so the ceiling can
+  #     stop being a hand-maintained rate card
+  #   - loads builder-mcp.mjs and its tool calls arrive, so the reporting
+  #     protocol needs no port
+  #
+  # The one trap the spike found, and the reason it exists: the `google`
+  # provider reads GOOGLE_GENERATIVE_AI_API_KEY, NOT GEMINI_API_KEY, although
+  # the binary contains all three name strings. The workflow maps the one
+  # secret onto both names.
+  opencode)
+    echo "Installing opencode-ai@${OPENCODE_VERSION}"
+    npm install -g "opencode-ai@${OPENCODE_VERSION}"
+    opencode --version
+    ;;
 
   *)
     echo "Unknown BUILDER_ENGINE '${ENGINE}'." >&2

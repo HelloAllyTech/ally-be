@@ -169,6 +169,7 @@ export class QualityDistributionAnalyticsService {
         const mid = counts?.mid ?? 0;
         const high = counts?.high ?? 0;
         const responses = counts?.responses ?? 0;
+        const ratingSum = counts?.ratingSum ?? 0;
         const completedSessions = completedByBucket.get(bucketKey) ?? 0;
         return {
           bucket: bucketKey,
@@ -176,6 +177,7 @@ export class QualityDistributionAnalyticsService {
           mid,
           high,
           responses,
+          avgRating: this.mean(ratingSum, responses),
           top2BoxPct: this.pct(high, responses),
           completedSessions,
           responseRatePct: this.pct(responses, completedSessions),
@@ -197,6 +199,10 @@ export class QualityDistributionAnalyticsService {
         p25: overallThin ? null : qualityOverall.p25,
         p75: overallThin ? null : qualityOverall.p75,
         responses: satisfactionOverall.responses,
+        avgRating: this.mean(
+          satisfactionOverall.ratingSum,
+          satisfactionOverall.responses,
+        ),
         low: satisfactionOverall.low,
         mid: satisfactionOverall.mid,
         high: satisfactionOverall.high,
@@ -230,6 +236,12 @@ export class QualityDistributionAnalyticsService {
   private pct(numerator: number, denominator: number): number | null {
     if (!denominator) return null;
     return round1((numerator / denominator) * 100);
+  }
+
+  /** A mean rating to 2 dp, or null when nobody rated — not a rating of 0. */
+  private mean(sum: number, count: number): number | null {
+    if (!count) return null;
+    return Math.round((sum / count) * 100) / 100;
   }
 
   /**

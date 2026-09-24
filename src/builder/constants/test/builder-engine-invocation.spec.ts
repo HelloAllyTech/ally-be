@@ -31,6 +31,18 @@ const geminiCase = (): string => {
 };
 
 /**
+ * The `case "$ENGINE" in opencode)` body.
+ */
+const opencodeCase = (): string => {
+  const source = runEngine();
+  const start = source.indexOf('\n    opencode)');
+  expect(start).toBeGreaterThan(-1);
+  const end = source.indexOf('\n      ;;', start);
+  expect(end).toBeGreaterThan(start);
+  return source.slice(start, end);
+};
+
+/**
  * Two invariants of the Gemini invocation, both of which fail SILENTLY when
  * they are wrong — which is the only reason they are worth a test. Neither
  * produces an error the runner can see: one hangs until the phase wall clock
@@ -143,5 +155,56 @@ describe('the engine pin', () => {
     for (const [tier, model] of Object.entries(BUILDER_MODEL_DEFAULTS)) {
       expect(`${tier}=${model}`).toMatch(/=gemini-/);
     }
+  });
+});
+
+/**
+ * opencode, added after .github/workflows/opencode-spike.yml proved on a real
+ * runner that it does the four things this pipeline needs.
+ */
+describe('opencode engine invocation', () => {
+  /**
+   * Read-only is one decision across three engines.
+   *
+   * Claude Code takes a tool allowlist, Gemini takes nothing and is undone
+   * afterwards by revert_stray_writes, and opencode takes an AGENT whose
+   * denied tools are never offered at all. What decides which is the same
+   * allowlist string in every case — anything permitted to Write is the
+   * builder, everything else reviews — so a phase cannot be read-only on one
+   * engine and not another.
+   */
+  it('picks its agent from the same allowlist the other engines use', () => {
+    const body = opencodeCase();
+
+    expect(body).toMatch(/case "\$tools" in \*Write\*\) agent="builder"/);
+    expect(body).toMatch(/--agent "\$agent"/);
+  });
+
+  /** The stream the forwarder knows how to read. */
+  it('asks for the JSON stream and a model per invocation', () => {
+    const body = opencodeCase();
+
+    expect(body).toMatch(/--format json/);
+    expect(body).toMatch(/--model "\$model"/);
+  });
+
+  /**
+   * The runner is the isolation boundary, as it already is for --yolo and
+   * acceptEdits. What makes that safe for a reviewer is the denial in
+   * opencode.json, not this flag.
+   */
+  it('approves what is not denied, because nobody is there to ask', () => {
+    expect(opencodeCase()).toMatch(/--auto/);
+  });
+
+  /**
+   * The spike's one trap: the `google` provider reads
+   * GOOGLE_GENERATIVE_AI_API_KEY and NOT GEMINI_API_KEY, though the binary
+   * contains all three names. A run without it dies on ProviderAuthError
+   * having done nothing — and, as the spike's own first run showed, a pipeline
+   * downstream of that reads the silence as a pass.
+   */
+  it('is installed at the version the spike verified', () => {
+    expect(installEngine()).toMatch(/OPENCODE_VERSION="1\.18\.32"/);
   });
 });
