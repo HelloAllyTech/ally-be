@@ -3,6 +3,10 @@ import { EntityManager } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { Scenarios } from 'src/learn/entity/scenarios.entity';
 import { ScenarioTenants } from 'src/learn/entity/scenario-tenants.entity';
+import {
+  SCENARIO_TENANT_LOCK_KEY,
+  SCENARIO_TENANT_LOCK_NAMESPACE,
+} from 'src/common/constants/advisory-lock.constants';
 
 @Injectable()
 export class TenantScenarioSharedService {
@@ -16,6 +20,16 @@ export class TenantScenarioSharedService {
     tenantId: string,
     entityManager: EntityManager,
   ): Promise<void> {
+    // The other end of the global-simulation ↔ tenant pairing: duplicating a
+    // global simulation fans it out to every tenant (see
+    // ScenarioService.duplicateScenario) while this fans every global
+    // simulation in to a new tenant. Both ends take the lock, because one end
+    // alone serialises nothing — see the constant.
+    await entityManager.query('SELECT pg_advisory_xact_lock($1, $2)', [
+      SCENARIO_TENANT_LOCK_NAMESPACE,
+      SCENARIO_TENANT_LOCK_KEY,
+    ]);
+
     const scenarioRepository = entityManager.getRepository(Scenarios);
 
     const globalScenarios = await scenarioRepository.find({

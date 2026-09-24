@@ -48,6 +48,12 @@ These apply to nearly every table, so they are stated once here and not repeated
   content (scenarios, cases, paths, badges, dashboards) is *shared* and made visible to tenants
   through explicit join tables: `*_tenants` (e.g. `scenario_tenants`, `case_tenants`,
   `badge_tenants`, `dashboard_tenants`) and to user groups via `*_groups`.
+  Two writers maintain those rows from opposite ends — publishing global content fans it
+  out to every tenant, creating a tenant fans all global content in — and under READ
+  COMMITTED neither sees the other's uncommitted row, so a concurrent pair can commit with
+  the join row never written and nothing to backfill it. `scenario_tenants` serialises the
+  two with the advisory lock in `src/common/constants/advisory-lock.constants.ts`; any new
+  writer of that table must take it too.
 - **Soft deletes:** Many tables use a nullable `deleted_at` instead of hard deletes. Unique
   indexes are frequently partial: `... WHERE deleted_at IS NULL`. **Always filter
   `deleted_at IS NULL` in analytics queries** unless you specifically want tombstones.
