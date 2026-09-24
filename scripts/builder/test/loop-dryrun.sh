@@ -553,9 +553,14 @@ fi
 
 # ── 4b. budget raised while the run holds ───────────────────────────────────
 #
-# THE case the hold exists for: nothing is pushed before FINALISE, so aborting
-# here would throw away the whole tree. The run must wait, notice the raise and
-# carry on to a pull request — not stop and need a retry from the PRD.
+# THE case the hold exists for. Aborting here would throw away the run's whole
+# remaining pipeline — the gate, the reviewer, the pull request — so it must
+# wait, notice the raise and carry on rather than stop and need a retry from
+# the PRD.
+#
+# It used to throw away the TREE as well: nothing was pushed before FINALISE.
+# That stopped being true when the coder began pushing after each attempt, so
+# a hold that expires now loses the run, not the work.
 if [ "$SCENARIO" = all ] || [ "$SCENARIO" = budget-raise ]; then
   DRYRUN_BUDGET='{"exceeded":true,"spentUsd":16.77,"budgetUsd":15,"holdSeconds":6,"pollSeconds":1}' \
   DRYRUN_BUDGET_RAISE_AFTER=2 \

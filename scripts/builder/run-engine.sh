@@ -1296,6 +1296,20 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
     # per-phase cost-by-model rows stay true once a run spans two tiers.
     report_phase_cost "code-${attempt}" "$attempt_model" "${RESULTS_DIR}/code-${attempt}.json"
     previous_attempt_model="$attempt_model"
+
+    # Get it off the runner before anything else can go wrong.
+    #
+    # The coder commits as it works; the push used to wait for fix, finalise or
+    # a pause. A run cancelled or killed between those two lost finished work —
+    # on 2026-09-24 a cancelled opencode run took a correct component, its
+    # integration and both test files with it, all committed, none pushed,
+    # because the phase after it never arrived.
+    #
+    # A push per attempt costs nothing against that: the branch is disposable,
+    # the commit already exists, and `save_work_in_progress` pushes whether or
+    # not it was the one to commit. The work is then recoverable by a human or
+    # a resume even if the run dies in the very next second.
+    save_work_in_progress "code attempt ${attempt}"
     echo "::endgroup::"
 
     exit_if_paused "coding"
