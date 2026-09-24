@@ -40,6 +40,67 @@ describe('GoalsXpAnalyticsService', () => {
     jest.clearAllMocks();
   });
 
+  describe('actual-only grains', () => {
+    it('buckets by Monday-start week with no goal, ending on the in-progress week', async () => {
+      const res = await service.getGoalsXp({ grain: 'week' });
+
+      expect(res.grain).toBe('week');
+      // 2026-04-01 is a Wednesday, so the first week starts Monday 2026-03-30.
+      expect(res.points[0].periodStart).toBe('2026-03-30');
+      expect(res.points[0].periodLabel).toBe('2026-03-30');
+      const last = res.points[res.points.length - 1];
+      expect(last.periodStart).toBe('2026-08-17');
+      expect(last.inProgress).toBe(true);
+      expect(res.points.every((p) => !p.hasGoal && p.goalXp === null)).toBe(
+        true,
+      );
+      expect(res.points.some((p) => p.upcoming)).toBe(false);
+      expect(repo.getGoalsByGrain).not.toHaveBeenCalled();
+      expect(repo.getActualXpByPeriod).toHaveBeenCalledWith(
+        'week',
+        new Date('2026-03-30T00:00:00.000Z'),
+        new Date('2026-08-24T00:00:00.000Z'),
+      );
+    });
+
+    it('buckets by day from the chart floor through today', async () => {
+      const res = await service.getGoalsXp({ grain: 'day' });
+
+      expect(res.points[0].periodStart).toBe('2026-04-01');
+      expect(res.points[res.points.length - 1].periodStart).toBe('2026-08-20');
+      expect(res.points).toHaveLength(142);
+      expect(repo.getGoalsByGrain).not.toHaveBeenCalled();
+    });
+
+    it('returns one All-time point summing every month, with no goal', async () => {
+      repo.getActualXpByPeriod.mockResolvedValue([
+        { periodStart: '2026-04-01', actualXp: 100 },
+        { periodStart: '2026-07-01', actualXp: 250 },
+      ]);
+
+      const res = await service.getGoalsXp({ grain: 'all' });
+
+      expect(res.grain).toBe('all');
+      expect(res.points).toEqual([
+        {
+          periodStart: '2026-04-01',
+          periodLabel: 'All time',
+          actualXp: 350,
+          goalXp: null,
+          hasGoal: false,
+          inProgress: true,
+          upcoming: false,
+        },
+      ]);
+      expect(repo.getActualXpByPeriod).toHaveBeenCalledWith(
+        'month',
+        new Date('2026-04-01T00:00:00.000Z'),
+        new Date('2026-08-21T00:00:00.000Z'),
+      );
+      expect(repo.getGoalsByGrain).not.toHaveBeenCalled();
+    });
+  });
+
   describe('period axis', () => {
     it('defaults to month, spanning the fixed chart floor through the in-progress month', async () => {
       const res = await service.getGoalsXp({});

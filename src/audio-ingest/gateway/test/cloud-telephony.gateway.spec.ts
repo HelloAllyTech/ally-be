@@ -190,6 +190,22 @@ describe('CloudTelephonyGateway', () => {
         expect.any(Function),
       );
     });
+
+    it('should not manually call handleDisconnect on disconnect event', async () => {
+      const handleDisconnectSpy = jest.spyOn(gateway, 'handleDisconnect');
+      await gateway.handleConnection(mockSocket);
+
+      // find the disconnect callback
+      const disconnectCallback = (mockSocket.on as jest.Mock).mock.calls.find(
+        (call) => call[0] === 'disconnect',
+      )[1];
+
+      // call it
+      disconnectCallback();
+
+      // We expect it NOT to have been called, because OnGatewayDisconnect should handle it.
+      expect(handleDisconnectSpy).not.toHaveBeenCalled();
+    });
   });
 
   describe('handleDisconnect', () => {

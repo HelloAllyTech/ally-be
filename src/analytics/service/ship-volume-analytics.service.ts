@@ -84,11 +84,15 @@ export class ShipVolumeAnalyticsService {
   async getShipVolume(
     query: ShipVolumeQueryDto = {},
   ): Promise<ShipVolumeResponseDto> {
-    const weeksRequested = query.weeks ?? SHIP_VOLUME_DEFAULT_WEEKS;
-    const axis = buildWeekAxis(new Date(), weeksRequested);
-    const currentWeekStart = axis[axis.length - 1];
-
+    const now = new Date();
     const series = await this.loadAllRepos();
+
+    const weeksRequested =
+      query.span === 'all'
+        ? weeksSinceFirstChange(now, series)
+        : (query.weeks ?? SHIP_VOLUME_DEFAULT_WEEKS);
+    const axis = buildWeekAxis(now, weeksRequested);
+    const currentWeekStart = axis[axis.length - 1];
 
     // (weekStart -> repo -> totals). Only weeks on the axis are kept; the API
     // hands back the repo's whole life, which for the wiki is a couple of years.
@@ -337,6 +341,30 @@ const isCodeFrequencyWeek = (row: unknown): row is CodeFrequencyWeek =>
  * out of the weeks that happen to have commits invites the reader to compare two
  * adjacent bars a month apart.
  */
+/**
+ * Weeks from the first week with any change on any repo through the current
+ * week, inclusive — the axis length for `span=all`. At least 1, so an empty
+ * history still gets the current week rather than no axis at all.
+ */
+export const weeksSinceFirstChange = (
+  now: Date,
+  series: { weeks: CodeFrequencyWeek[] }[],
+): number => {
+  let first = Infinity;
+  for (const { weeks } of series) {
+    for (const [ts, added, deleted] of weeks) {
+      if ((added !== 0 || deleted !== 0) && ts < first) first = ts;
+    }
+  }
+  if (first === Infinity) return 1;
+  const currentSunday = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate() - now.getUTCDay(),
+  );
+  return Math.max(1, Math.round((currentSunday - first * 1000) / WEEK_MS) + 1);
+};
+
 export const buildWeekAxis = (now: Date, weeks: number): string[] => {
   const sunday = Date.UTC(
     now.getUTCFullYear(),

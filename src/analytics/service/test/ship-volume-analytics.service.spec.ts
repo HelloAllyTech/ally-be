@@ -8,6 +8,7 @@ import { SHIP_VOLUME_REPOS } from '../../constants/ship-volume.constants';
 import {
   ShipVolumeAnalyticsService,
   buildWeekAxis,
+  weeksSinceFirstChange,
 } from '../ship-volume-analytics.service';
 
 jest.mock('axios');
@@ -65,6 +66,28 @@ describe('ShipVolumeAnalyticsService', () => {
     it('treats a Sunday as the first day of its own week, not the last', () => {
       const axis = buildWeekAxis(new Date('2026-08-30T00:30:00Z'), 2);
       expect(axis).toEqual(['2026-08-23', '2026-08-30']);
+    });
+  });
+
+  describe('weeksSinceFirstChange', () => {
+    const now = new Date('2026-09-04T12:00:00Z'); // week of Sunday 2026-08-30
+
+    it('spans from the first week with any change, ignoring empty weeks before it', () => {
+      const n = weeksSinceFirstChange(now, [
+        {
+          weeks: [
+            week('2026-08-02', 0, 0) as never,
+            week('2026-08-16', 5, 0) as never,
+          ],
+        },
+        { weeks: [week('2026-08-23', 1, 1) as never] },
+      ]);
+      expect(n).toBe(3); // 08-16, 08-23, 08-30
+      expect(buildWeekAxis(now, n)[0]).toBe('2026-08-16');
+    });
+
+    it('is the current week alone when nothing has ever changed', () => {
+      expect(weeksSinceFirstChange(now, [{ weeks: [] }])).toBe(1);
     });
   });
 
