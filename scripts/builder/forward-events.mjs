@@ -213,9 +213,10 @@ const GEMINI_RATES = {
 };
 
 const geminiCostUsd = (stats, model) => {
-  // Prefix match so a dated or -latest suffix still prices, rather than
-  // silently falling back to free.
-  const key = Object.keys(GEMINI_RATES).find((k) => String(model ?? '').startsWith(k));
+  const modelStr = String(model ?? '');
+  const key = Object.keys(GEMINI_RATES)
+    .filter((k) => modelStr.startsWith(k))
+    .sort((a, b) => b.length - a.length)[0];
   if (!key) {
     unpricedModels.add(String(model ?? 'unknown'));
     console.error(
