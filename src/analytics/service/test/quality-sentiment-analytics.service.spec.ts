@@ -26,6 +26,7 @@ const row = (
 
 describe('QualitySentimentAnalyticsService', () => {
   let service: QualitySentimentAnalyticsService;
+  let module: TestingModule;
 
   let qualityIndexService: { getQualityIndexOverall: jest.Mock };
 
@@ -67,7 +68,7 @@ describe('QualitySentimentAnalyticsService', () => {
       }),
     };
 
-    const module: TestingModule = await Test.createTestingModule({
+    module = await Test.createTestingModule({
       providers: [
         QualitySentimentAnalyticsService,
         {
@@ -352,6 +353,19 @@ describe('QualitySentimentAnalyticsService', () => {
 
       expect(result.pairedBuckets).toBe(0);
       expect(result.correlation).toBeNull();
+    });
+  });
+
+  describe(`'all' time range queries`, () => {
+    it(`fetches the data floor when 'from' is also provided`, async () => {
+      await setup([]);
+      const repo = module.get(QualitySentimentAnalyticsRepository);
+      await service.getQualitySentiment({
+        range: 'all',
+        from: '2024-06-01',
+        to: '2024-06-12',
+      });
+      expect(repo.getDataFloor).toHaveBeenCalled();
     });
   });
 });
