@@ -43,7 +43,23 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     env:
+      # Both names, from the one secret we hold.
+      #
+      # The binary contains the strings GEMINI_API_KEY, GOOGLE_API_KEY and
+      # GOOGLE_GENERATIVE_AI_API_KEY, which read like "any of these will do".
+      # The first run of this spike proved otherwise: opencode's `google`
+      # provider answered ProviderAuthError — "Google Generative AI API key is
+      # missing. Pass it using the 'apiKey' parameter or the
+      # GOOGLE_GENERATIVE_AI_API_KEY environment variable" — while
+      # GEMINI_API_KEY was set the whole time.
+      #
+      # Which is exactly the failure this spike exists to find before an engine
+      # case is written around an assumption. Note it also makes every other
+      # answer worthless until fixed: with no auth, nothing ran, and the
+      # read-only probe reported "the permission held" because no agent had
+      # existed to break it.
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       OPENCODE_VERSION: ${{ inputs.opencode_version }}
       MODEL: ${{ inputs.model }}
 
@@ -135,6 +151,12 @@ jobs:
             'Reply with exactly: ok' > /tmp/q1.json 2>/tmp/q1.err || true
           echo "--- stdout ---"; head -c 4000 /tmp/q1.json
           echo; echo "--- stderr ---"; head -c 2000 /tmp/q1.err
+          echo
+          if grep -q '"type":"error"' /tmp/q1.json 2>/dev/null; then
+            echo "RESULT: opencode did NOT run. Every answer below is void."
+            exit 1
+          fi
+          echo "RESULT: authenticated, and took the model on the command line." 
 
       - name: 'Q4: is there token usage or cost anywhere in that output?'
         continue-on-error: true
