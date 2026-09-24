@@ -175,6 +175,95 @@ describe('SessionEventTranslationService', () => {
         sessionEventTranslationsRepository.createSessionEventTranslations,
       ).toHaveBeenCalled();
     });
+
+    it('should filter out english language variants before translation', async () => {
+      // Mock dependencies
+      scenarioSharedService.getUniqueLanguagesFromScenarioTranslations.mockResolvedValue(
+        [1, 2, 3, 4, 5],
+      );
+      sharedLanguageService.getValidLanguages.mockResolvedValue({
+        languages: [
+          {
+            id: 1,
+            translationCode: 'en',
+            value: 'en',
+            label: 'English',
+            active: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            llmProviderConfig: {},
+            sttProviderConfig: {},
+            evalConfig: {},
+          },
+          {
+            id: 2,
+            translationCode: 'es',
+            value: 'es-ES',
+            label: 'Spanish (Spain)',
+            active: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            llmProviderConfig: {},
+            sttProviderConfig: {},
+            evalConfig: {},
+          },
+          {
+            id: 3,
+            translationCode: 'en-US',
+            value: 'en-US',
+            label: 'English (US)',
+            active: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            llmProviderConfig: {},
+            sttProviderConfig: {},
+            evalConfig: {},
+          },
+          {
+            id: 4,
+            translationCode: 'fr',
+            value: 'fr-CA',
+            label: 'French (Canada)',
+            active: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            llmProviderConfig: {},
+            sttProviderConfig: {},
+            evalConfig: {},
+          },
+          {
+            id: 5,
+            translationCode: 'kl',
+            value: 'bren',
+            label: 'Klingon',
+            active: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            llmProviderConfig: {},
+            sttProviderConfig: {},
+            evalConfig: {},
+          },
+        ],
+        languagesMap: {},
+      });
+      googleTranslationService.translateObjectToLanguages.mockResolvedValue({});
+      sessionEventTranslationsRepository.getSessionEventTranslationsBySessionEventId.mockResolvedValue(
+        [],
+      );
+
+      // Call the method
+      await service.createUpdateSessionEventTranslations([mockSessionEvent]);
+
+      // Verify that translateObjectToLanguages was called with non-english languages
+      const calls =
+        googleTranslationService.translateObjectToLanguages.mock.calls[0];
+      const languages = calls[1];
+      expect(languages).toContain('es');
+      expect(languages).toContain('fr');
+      expect(languages).toContain('kl');
+      expect(languages).not.toContain('en');
+      expect(languages).not.toContain('en-US');
+    });
   });
 
   describe('getSessionEventsTranslationsByScenarioId', () => {
