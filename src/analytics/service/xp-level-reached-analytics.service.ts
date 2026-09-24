@@ -56,7 +56,7 @@ export class XpLevelReachedAnalyticsService {
     query: XpLevelReachedQueryDto,
   ): Promise<XpLevelReachedResponseDto> {
     const range = query.range ?? DEFAULT_RANGE;
-    const isAllTime = range === 'all' && !query.from && !query.to;
+    const isAllTime = range === 'all';
     const window = resolveAnalyticsWindow(
       {
         range,
@@ -68,8 +68,8 @@ export class XpLevelReachedAnalyticsService {
         // only because the shared `WindowQuery` type is narrower than what
         // this endpoint's DTO allows.
         bucket: query.bucket as AnalyticsBucketParam | undefined,
-        from: query.from,
-        to: query.to,
+        from: isAllTime ? undefined : query.from,
+        to: isAllTime ? undefined : query.to,
       },
       {
         defaultRange: DEFAULT_RANGE,

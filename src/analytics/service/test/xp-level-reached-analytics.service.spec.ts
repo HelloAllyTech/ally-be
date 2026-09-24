@@ -48,6 +48,14 @@ describe('XpLevelReachedAnalyticsService', () => {
       expect(repo.getDataFloor).toHaveBeenCalled();
     });
 
+    it('measures the data floor for an all-time range even with a `from` date', async () => {
+      await service.getLevelsReached({
+        range: 'all',
+        from: '2024-05-01',
+      });
+      expect(repo.getDataFloor).toHaveBeenCalled();
+    });
+
     it('accepts a quarter bucket, which the shared window resolver does not natively list', async () => {
       const res = await service.getLevelsReached({
         range: '12m',
