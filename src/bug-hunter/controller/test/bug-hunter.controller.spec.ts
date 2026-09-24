@@ -93,6 +93,12 @@ describe('BugHunterController', () => {
       {} as never,
       // Model settings service: no case here reads/writes settings/models.
       {} as never,
+      // Telemetry service: no case here reads runs/:id/telemetry or metrics/pipeline.
+      {} as never,
+      // Eval service: no case here reads the eval set or stores a run.
+      {} as never,
+      // Memory service: no case here reads or writes the notebook.
+      {} as never,
     );
   });
 
@@ -130,7 +136,15 @@ describe('BugHunterController', () => {
       await controller.listFindings({ status: 'all' } as never);
 
       expect(bugFindingService.list).toHaveBeenCalledWith(
-        expect.objectContaining({ runId: undefined, limit: 50, offset: 0 }),
+        expect.objectContaining({ runId: undefined, limit: 1000, offset: 0 }),
+      );
+    });
+
+    it('uses a default limit of 1000 when no limit is specified', async () => {
+      await controller.listFindings({ status: 'all' } as never);
+
+      expect(bugFindingService.list).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 1000, offset: 0 }),
       );
     });
   });

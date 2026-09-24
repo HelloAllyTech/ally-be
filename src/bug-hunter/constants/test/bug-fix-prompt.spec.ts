@@ -192,6 +192,38 @@ describe('buildFixSessionPrompt', () => {
 
   // ── resumed sessions ─────────────────────────────────────────────────────
 
+  it('marks every phase boundary in protocol order, so a session can be timed stage by stage', () => {
+    const p = build();
+    const marker = (phase: string, event: string) =>
+      p.indexOf(`"phase":"${phase}","event":"${event}"`);
+    const order = [
+      marker('reproduce', 'started'),
+      marker('reproduce', 'finished'),
+      marker('fix', 'started'),
+      marker('fix', 'finished'),
+      marker('suite', 'started'),
+      marker('suite', 'finished'),
+      marker('pr', 'started'),
+      marker('pr', 'finished'),
+    ];
+    for (const idx of order) expect(idx).toBeGreaterThan(-1);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(p).toContain('/runs/run-1/phases');
+  });
+
+  it('asks the notebook before reproducing and offers to write one lesson before closing', () => {
+    const p = build();
+    const read = p.indexOf('pipeline/memory/search');
+    const reproduce = p.indexOf('1. Reproduce it');
+    const write = p.indexOf('9b. If this fix taught you something');
+    const close = p.indexOf('10. Finally');
+    expect(read).toBeGreaterThan(-1);
+    expect(read).toBeLessThan(reproduce);
+    expect(write).toBeGreaterThan(-1);
+    expect(write).toBeLessThan(close);
+    expect(p.slice(write, write + 700)).toContain('"findingId":"finding-1"');
+  });
+
   it('replays an answer the admin already gave, so it is not asked twice', () => {
     const prompt = build({
       escalationAnswer: 'Show the raw URL as a fallback.',
@@ -256,6 +288,18 @@ describe('buildFixSessionPrompt', () => {
     expect(build({}, 'ally-be')).toMatch(
       /If you did NOT get a clean run at step 5, do not skip the hook/i,
     );
+  });
+
+  it('gates the full suite behind the narrow regression-test check, so a failed attempt does not pay for it', () => {
+    // The several-minutes-long full suite should only run once the cheap,
+    // narrow check (does the new regression test even pass?) already has —
+    // an attempt whose fix doesn't work yet should never reach step 5 at all.
+    const prompt = build();
+    const step4 = prompt.indexOf('4. Re-run');
+    const step5 = prompt.indexOf('5. Run the full suite');
+    expect(step4).toBeGreaterThan(-1);
+    expect(step5).toBeGreaterThan(step4);
+    expect(prompt.slice(step4, step5)).toMatch(/do not run the full suite/i);
   });
 
   describe('typecheck', () => {

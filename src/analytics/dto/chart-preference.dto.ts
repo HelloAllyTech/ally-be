@@ -11,9 +11,9 @@ import {
 } from 'class-validator';
 
 import {
-  ANALYTICS_BUCKETS,
+  ANALYTICS_GRAINS,
   ANALYTICS_RANGES,
-  AnalyticsBucketParam,
+  AnalyticsGrain,
   AnalyticsRange,
 } from './platform-analytics.dto';
 
@@ -52,13 +52,13 @@ export class ChartPreferenceDto {
 
   @ApiProperty({
     description: 'Saved grain, or null/omitted to fall back to the default.',
-    enum: ANALYTICS_BUCKETS,
+    enum: ANALYTICS_GRAINS,
     required: false,
     nullable: true,
   })
   @IsOptional()
-  @IsIn(ANALYTICS_BUCKETS)
-  bucket?: AnalyticsBucketParam | null;
+  @IsIn(ANALYTICS_GRAINS)
+  bucket?: AnalyticsGrain | null;
 }
 
 /**

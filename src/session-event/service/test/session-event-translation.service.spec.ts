@@ -7,6 +7,10 @@ import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service
 import { SessionEventTranslationsRepository } from '../../repository/session-event-translation.repository';
 import { SessionEventSharedService } from '../session-event-shared.service';
 import { SessionEvents } from '../../entity/session-events.entity';
+import {
+  DETECTION_DATA_TEXT_OBJECT_ARRAY_PATHS,
+  DETECTION_DATA_TRANSLATABLE_PATHS,
+} from '../../constants/event.constant';
 
 describe('SessionEventTranslationService', () => {
   let service: SessionEventTranslationService;
@@ -299,6 +303,94 @@ describe('SessionEventTranslationService', () => {
           type: 'TestType',
         },
       });
+    });
+  });
+
+  describe('binary-classifier few-shot examples', () => {
+    // positiveExamples / negativeExamples are `[{ text }]`, the only shape in
+    // detectionData that is neither a string nor a string array. Before they
+    // were unwrapped here, adding them to DETECTION_DATA_TRANSLATABLE_PATHS was
+    // a silent no-op: extraction accepted only strings, so every non-English
+    // session calibrated its classifier against English examples.
+    const detectionData = {
+      className: 'Open-ended question',
+      positiveExamples: [
+        { text: 'What was that like for you?' },
+        { text: 'Tell me more.' },
+      ],
+      negativeExamples: [{ text: 'Are you okay?' }],
+      minUtteranceLength: 5,
+    };
+
+    it('unwraps {text} objects to plain strings for the translator', () => {
+      const result = (service as any).extractTranslatableFields(
+        detectionData,
+        DETECTION_DATA_TRANSLATABLE_PATHS,
+        DETECTION_DATA_TEXT_OBJECT_ARRAY_PATHS,
+      );
+
+      expect(result.translatable.positiveExamples).toEqual([
+        'What was that like for you?',
+        'Tell me more.',
+      ]);
+      expect(result.translatable.negativeExamples).toEqual(['Are you okay?']);
+      expect(result.translatable.className).toBe('Open-ended question');
+    });
+
+    it('keeps the English examples in passthrough as the fallback', () => {
+      // Unlike className, these are NOT deleted from passthrough. The runtime
+      // COALESCEs a translation row's detectionData wholesale, so a key the
+      // translation lacks is a key that session does not have at all — which
+      // for the few-shot block means a silent drop to zero-shot.
+      const result = (service as any).extractTranslatableFields(
+        detectionData,
+        DETECTION_DATA_TRANSLATABLE_PATHS,
+        DETECTION_DATA_TEXT_OBJECT_ARRAY_PATHS,
+      );
+
+      expect(result.passthrough.positiveExamples).toEqual(
+        detectionData.positiveExamples,
+      );
+      expect(result.passthrough.negativeExamples).toEqual(
+        detectionData.negativeExamples,
+      );
+      // className keeps the existing delete-on-extract behaviour.
+      expect(result.passthrough.className).toBeUndefined();
+      expect(result.passthrough.minUtteranceLength).toBe(5);
+    });
+
+    it('re-wraps the translated strings as {text} objects', () => {
+      const result = (service as any).mergeTranslatedFields(
+        { positiveExamples: [{ text: 'What was that like for you?' }] },
+        { positiveExamples: ['आपको यह कैसा लगा?'] },
+        DETECTION_DATA_TEXT_OBJECT_ARRAY_PATHS,
+      );
+
+      expect(result.positiveExamples).toEqual([{ text: 'आपको यह कैसा लगा?' }]);
+    });
+
+    it('leaves the English original in place when the translation is unusable', () => {
+      const english = [{ text: 'What was that like for you?' }];
+
+      for (const bad of [[], '', 'not an array', [''], [null]]) {
+        const result = (service as any).mergeTranslatedFields(
+          { positiveExamples: english },
+          { positiveExamples: bad as any },
+          DETECTION_DATA_TEXT_OBJECT_ARRAY_PATHS,
+        );
+        expect(result.positiveExamples).toEqual(english);
+      }
+    });
+
+    it('ignores an examples array that is not shaped like {text}', () => {
+      const result = (service as any).extractTranslatableFields(
+        { positiveExamples: ['a bare string'] },
+        DETECTION_DATA_TRANSLATABLE_PATHS,
+        DETECTION_DATA_TEXT_OBJECT_ARRAY_PATHS,
+      );
+
+      expect(result.translatable.positiveExamples).toBeUndefined();
+      expect(result.passthrough.positiveExamples).toEqual(['a bare string']);
     });
   });
 

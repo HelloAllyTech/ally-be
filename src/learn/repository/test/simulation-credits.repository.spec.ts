@@ -6,7 +6,6 @@ import { SimulationCredits } from 'src/learn/entity/simulation-credits.entity';
 describe('SimulationCreditsRepository', () => {
   let repository: SimulationCreditsRepository;
   let mockDataSource: any;
-  let mockQueryBuilder: any;
 
   const mockCredits = {
     id: 1,
@@ -18,15 +17,6 @@ describe('SimulationCreditsRepository', () => {
   } as SimulationCredits;
 
   beforeEach(async () => {
-    mockQueryBuilder = {
-      update: jest.fn().mockReturnThis(),
-      set: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      setParameter: jest.fn().mockReturnThis(),
-      execute: jest.fn(),
-    };
-
     mockDataSource = {
       createEntityManager: jest.fn().mockReturnValue({
         getRepository: jest.fn(),
@@ -101,30 +91,26 @@ describe('SimulationCreditsRepository', () => {
   });
 
   describe('consumeCredits', () => {
-    it('should consume credits successfully', async () => {
+    it('should consume credits and return the pre-update balance', async () => {
       jest
-        .spyOn(repository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder);
-      mockQueryBuilder.execute.mockResolvedValue({ affected: 1 });
+        .spyOn(repository, 'query')
+        .mockResolvedValue([{ creditLimit: 100, consumedCreditsBefore: 25 }]);
 
       const result = await repository.consumeCredits(1, 10);
 
-      expect(result).toBe(true);
-      expect(mockQueryBuilder.update).toHaveBeenCalledWith(SimulationCredits);
-      expect(mockQueryBuilder.where).toHaveBeenCalledWith('userId = :userId', {
-        userId: 1,
-      });
+      expect(result).toEqual({ creditLimit: 100, consumedCreditsBefore: 25 });
+      expect(repository.query).toHaveBeenCalledWith(
+        expect.stringContaining('FOR UPDATE'),
+        [1, 10],
+      );
     });
 
-    it('should return false when no credits consumed', async () => {
-      jest
-        .spyOn(repository, 'createQueryBuilder')
-        .mockReturnValue(mockQueryBuilder);
-      mockQueryBuilder.execute.mockResolvedValue({ affected: 0 });
+    it('should return null when no credits row exists for the user', async () => {
+      jest.spyOn(repository, 'query').mockResolvedValue([]);
 
       const result = await repository.consumeCredits(1, 10);
 
-      expect(result).toBe(false);
+      expect(result).toBeNull();
     });
   });
 });

@@ -12,10 +12,10 @@ import { WeakMetricsAnalyticsService } from '../weak-metrics-analytics.service';
  * compared against are produced there — hence Monday-start weeks and UTC.
  */
 describe('WeakMetricsAnalyticsService.inProgressBucketOf', () => {
-  const call = (bucket: 'week' | 'month'): string =>
+  const call = (bucket: 'week' | 'month' | 'quarter'): string =>
     (
       WeakMetricsAnalyticsService as never as {
-        inProgressBucketOf: (b: 'week' | 'month') => string;
+        inProgressBucketOf: (b: 'week' | 'month' | 'quarter') => string;
       }
     ).inProgressBucketOf(bucket);
 
@@ -24,6 +24,7 @@ describe('WeakMetricsAnalyticsService.inProgressBucketOf', () => {
     // to_char(..., 'YYYY-MM-DD'); a timestamp would never match one.
     expect(call('week')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(call('month')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(call('quarter')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it('starts weeks on Monday, as date_trunc does', () => {
@@ -36,10 +37,18 @@ describe('WeakMetricsAnalyticsService.inProgressBucketOf', () => {
     expect(call('month').slice(-2)).toBe('01');
   });
 
+  it("starts quarters on Jan/Apr/Jul/Oct 1st, as date_trunc('quarter', ...) does", () => {
+    const iso = call('quarter');
+    expect(iso.slice(-2)).toBe('01');
+    const month = Number(iso.slice(5, 7));
+    expect([1, 4, 7, 10]).toContain(month);
+  });
+
   it('never returns a bucket in the future', () => {
     const today = new Date().toISOString().slice(0, 10);
     expect(call('week') <= today).toBe(true);
     expect(call('month') <= today).toBe(true);
+    expect(call('quarter') <= today).toBe(true);
   });
 
   it('puts today inside the bucket it names', () => {
@@ -51,5 +60,15 @@ describe('WeakMetricsAnalyticsService.inProgressBucketOf', () => {
     const daysSince = (todayStart.getTime() - weekStart.getTime()) / 86_400_000;
     expect(daysSince).toBeGreaterThanOrEqual(0);
     expect(daysSince).toBeLessThan(7);
+  });
+
+  it('puts today inside the quarter it names', () => {
+    const quarterStart = new Date(`${call('quarter')}T00:00:00Z`);
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const daysSince =
+      (todayStart.getTime() - quarterStart.getTime()) / 86_400_000;
+    expect(daysSince).toBeGreaterThanOrEqual(0);
+    expect(daysSince).toBeLessThan(93); // widest calendar quarter, Apr-Jun leap included
   });
 });

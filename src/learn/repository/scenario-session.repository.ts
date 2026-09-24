@@ -28,6 +28,11 @@ type CreateScenarioSessionDto = StartScenarioSessionRequestDto & {
   voiceId?: string;
 };
 
+export type AdminScenarioSessionFilters = {
+  counselorIds?: number[];
+  scenarioIds?: number[];
+};
+
 @Injectable()
 export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
   constructor(private dataSource: DataSource) {
@@ -104,7 +109,34 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
     }
   }
 
-  async getAdminScenarioSessions(options: Pagination, statuses?: string) {
+  /**
+   * Narrows the admin log list to specific people and/or scenarios. Both are
+   * id lists rather than names: two learners in a tenant can share a display
+   * name, and a scenario's title is translated per language, so matching on
+   * the rendered label would filter differently depending on the admin's UI
+   * language.
+   */
+  private applyAdminSessionFilters(
+    query: SelectQueryBuilder<ScenarioSessions>,
+    filters?: AdminScenarioSessionFilters,
+  ) {
+    if (filters?.counselorIds?.length) {
+      query.andWhere('scenarioSession.counselorId IN (:...counselorIds)', {
+        counselorIds: filters.counselorIds,
+      });
+    }
+    if (filters?.scenarioIds?.length) {
+      query.andWhere('scenarioSession.scenarioId IN (:...scenarioIds)', {
+        scenarioIds: filters.scenarioIds,
+      });
+    }
+  }
+
+  async getAdminScenarioSessions(
+    options: Pagination,
+    statuses?: string,
+    filters?: AdminScenarioSessionFilters,
+  ) {
     const query = this.createQueryBuilder('scenarioSession')
       .withDeleted()
       .leftJoinAndMapOne(
@@ -124,9 +156,66 @@ export class ScenarioSessionRepository extends Repository<ScenarioSessions> {
       });
 
     this.applyStatusFilters(query, statuses || '');
+    this.applyAdminSessionFilters(query, filters);
     this.applyPagination(query, options);
     this.applySorting(query, options);
     return query.getMany();
+  }
+
+  /**
+   * The people and scenarios the tenant's admin log list can actually be
+   * filtered down to, derived from the logs themselves rather than from the
+   * user directory or the scenario catalog.
+   *
+   * Two reasons it is not the counselor/scenario lists the rest of the console
+   * uses: `/v1/chats/counselors` only returns members of the COUNSELOR group,
+   * so a listener or LEARNER who has run roleplays would be missing from their
+   * own logs' filter; and the scenario catalog carries every scenario ever
+   * authored, most of which have no sessions, so the dropdown would be mostly
+   * dead options. Scoped by the same status filter as the list so the two
+   * cannot disagree.
+   */
+  async getAdminScenarioSessionFilterOptions(statuses?: string) {
+    const baseQuery = () => {
+      const query = this.createQueryBuilder('scenarioSession')
+        .withDeleted()
+        .where('scenarioSession.tenantId = :tenantId', {
+          tenantId: ExecutionManager.getTenantId(),
+        });
+      this.applyStatusFilters(query, statuses || '');
+      return query;
+    };
+
+    const counselors = await baseQuery()
+      .innerJoin(
+        User,
+        'counselor',
+        'counselor.id = scenarioSession.counselorId',
+      )
+      .select('counselor.id', 'id')
+      .addSelect('counselor.name', 'name')
+      // Display names are not unique within a tenant — prod has three separate
+      // accounts called "Sandeep Malhotra" — so the email rides along as the
+      // tiebreaker the picker shows when two options would read identically.
+      .addSelect('counselor.email', 'email')
+      .distinct(true)
+      .orderBy('counselor.name', 'ASC')
+      .getRawMany();
+
+    const scenarios = await baseQuery()
+      .innerJoin(
+        Scenarios,
+        'scenario',
+        'scenario.id = scenarioSession.scenarioId',
+      )
+      .select('scenario.id', 'id')
+      .addSelect('scenario.title', 'title')
+      .addSelect('scenario.translations', 'translations')
+      .distinct(true)
+      .orderBy('scenario.title', 'ASC')
+      .getRawMany();
+
+    return { counselors, scenarios };
   }
 
   async createScenarioSession(

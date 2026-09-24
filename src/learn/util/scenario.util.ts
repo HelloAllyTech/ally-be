@@ -253,6 +253,11 @@ export const mapCreateScenarioRequestToEntity = (
         id: knowledgeSource.id,
         title: knowledgeSource.title,
         content: knowledgeSource.content,
+        // Memory lock (see KnowledgeSourceDto). Stored only when set; the
+        // dispatch path strips empties too — see createRoomMetadata.
+        ...(knowledgeSource.unlocksFromStateId
+          ? { unlocksFromStateId: knowledgeSource.unlocksFromStateId }
+          : {}),
       })),
       stateNames: scenario.stateNames,
       selectedMainPromptCode: scenario.selectedMainPromptCode,

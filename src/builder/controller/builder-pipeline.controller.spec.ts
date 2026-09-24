@@ -10,6 +10,7 @@ import { LoggerService } from 'src/logger/logger.service';
 import { PromptSharedService } from 'src/prompt/service/prompt-shared.service';
 import { BuilderEventService } from '../service/builder-event.service';
 import { BuilderSteerService } from '../service/builder-steer.service';
+import { BuilderRunMode } from '../enum/builder.enum';
 import { BuilderQuestionService } from '../service/builder-question.service';
 import { BuilderPullRequestService } from '../service/builder-pull-request.service';
 import { BuilderReportService } from '../service/builder-report.service';
@@ -121,6 +122,36 @@ describe('BuilderPipelineController', () => {
       .expect(201);
 
     expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
+  });
+
+  /**
+   * A REVIEW run has no gate to pass, so requiring one made a correct review
+   * impossible to complete.
+   *
+   * On 2026-09-23 a review of ally-web#694 reported zero findings, approved
+   * the pull request, and was then refused its own completion twice and failed
+   * by outcome-gate.sh — recorded as a failed run for doing exactly its job,
+   * and announced to Slack as one, because BUILD_FAILED is an announced kind.
+   */
+  it('settles a review that has no gate to pass', async () => {
+    (mockBuilderBuildService.getRunOrFail as jest.Mock).mockResolvedValue({
+      id: uuidv4(),
+      sessionId: uuidv4(),
+      engine: null,
+      model: null,
+      mode: BuilderRunMode.REVIEW,
+    });
+    const runId = uuidv4();
+
+    await request(app.getHttpServer())
+      .post(`/builder/pipeline/runs/${runId}/complete`)
+      .set('x-api-key', 'test-api-key')
+      .send({ outcome: 'done' })
+      .expect(201);
+
+    expect(mockBuilderBuildService.settleRun).toHaveBeenCalled();
+    // The gate is not merely tolerated when absent — it is never asked for.
+    expect(mockBuilderBuildService.hasPassingGate).not.toHaveBeenCalled();
   });
 
   /**

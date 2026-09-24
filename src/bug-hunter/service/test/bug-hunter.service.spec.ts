@@ -59,7 +59,7 @@ describe('BugHunterService', () => {
   let dataSource: { createQueryBuilder: jest.Mock };
   let llmUsageService: { record: jest.Mock };
   let github: { hasCommitsSince: jest.Mock };
-  let finderDataService: { hasLogGroup: jest.Mock };
+  let finderDataService: { hasExternalSignal: jest.Mock };
 
   // Mutated by `update()` and read back by `findOne()`, so closeRun's
   // "fetch → update → re-fetch" sequence sees its own write, the way the real
@@ -104,7 +104,7 @@ describe('BugHunterService', () => {
     dataSource = { createQueryBuilder: jest.fn().mockReturnValue(qb) };
     llmUsageService = { record: jest.fn().mockResolvedValue(undefined) };
     github = { hasCommitsSince: jest.fn().mockResolvedValue(true) };
-    finderDataService = { hasLogGroup: jest.fn().mockReturnValue(false) };
+    finderDataService = { hasExternalSignal: jest.fn().mockReturnValue(false) };
 
     service = new BugHunterService(
       settingsRepository as any,
@@ -212,8 +212,8 @@ describe('BugHunterService', () => {
       expect(github.hasCommitsSince).not.toHaveBeenCalled();
     });
 
-    it('always runs a scheduled sweep for a repo with a production log group, without checking commits', async () => {
-      finderDataService.hasLogGroup.mockReturnValue(true);
+    it('always runs a scheduled sweep for a repo with an external production signal, without checking commits', async () => {
+      finderDataService.hasExternalSignal.mockReturnValue(true);
 
       const worthIt = await service.requireWorthSweepingOrRecordSkip(
         BugHuntTrigger.SCHEDULED,

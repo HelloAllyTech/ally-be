@@ -6,6 +6,10 @@ import { UsageLevelAnalyticsService } from '../../service/usage-level-analytics.
 import { CertificationAnalyticsService } from '../../service/certification-analytics.service';
 import { XpGrowthAnalyticsService } from '../../service/xp-growth-analytics.service';
 import { GoalsXpAnalyticsService } from '../../service/goals-xp-analytics.service';
+import { ActiveUsersXpAnalyticsService } from '../../service/active-users-xp-analytics.service';
+import { XpLevelReachedAnalyticsService } from '../../service/xp-level-reached-analytics.service';
+import { BugHunterVolumeAnalyticsService } from '../../service/bug-hunter-volume-analytics.service';
+import { XpByTenantAnalyticsService } from '../../service/xp-by-tenant-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../../service/roleplay-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsService } from '../../service/roadmap-delivery-analytics.service';
 import { ShipVolumeAnalyticsService } from '../../service/ship-volume-analytics.service';
@@ -39,6 +43,7 @@ import { OrgEngagementAnalyticsService } from '../../service/org-engagement-anal
 import { RoleplayCostAnalyticsService } from '../../service/roleplay-cost-analytics.service';
 import { CodingAgentCostAnalyticsService } from '../../service/coding-agent-cost-analytics.service';
 import { FixSessionEngineCostAnalyticsService } from '../../service/fix-session-engine-cost-analytics.service';
+import { BugAgentPerformanceAnalyticsService } from '../../service/bug-agent-performance-analytics.service';
 import { QualitySentimentAnalyticsService } from '../../service/quality-sentiment-analytics.service';
 import { ChartPreferenceService } from '../../service/chart-preference.service';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
@@ -128,6 +133,22 @@ describe('AnalyticsController', () => {
         {
           provide: GoalsXpAnalyticsService,
           useValue: { getGoalsXp: jest.fn() },
+        },
+        {
+          provide: ActiveUsersXpAnalyticsService,
+          useValue: { getActiveUsers: jest.fn() },
+        },
+        {
+          provide: XpLevelReachedAnalyticsService,
+          useValue: { getLevelsReached: jest.fn() },
+        },
+        {
+          provide: BugHunterVolumeAnalyticsService,
+          useValue: { getVolume: jest.fn() },
+        },
+        {
+          provide: XpByTenantAnalyticsService,
+          useValue: { getXpByTenant: jest.fn() },
         },
         {
           provide: RoleplayVolumeAnalyticsService,
@@ -263,6 +284,10 @@ describe('AnalyticsController', () => {
         {
           provide: FixSessionEngineCostAnalyticsService,
           useValue: { getFixSessionEngineCost: jest.fn() },
+        },
+        {
+          provide: BugAgentPerformanceAnalyticsService,
+          useValue: { getPerformance: jest.fn() },
         },
         {
           provide: QualitySentimentAnalyticsService,

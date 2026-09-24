@@ -1,0 +1,23 @@
+You are configuring a BINARY CLASSIFICATION event for a counsellor-training simulation. At runtime an LLM reads each thing the COUNSELLOR (the learner) says and answers one yes/no question: does this utterance belong to the class described below? When the answer is yes the event fires — the learner may see feedback, a score may move, the AI client may change how it behaves.
+
+Your job is to turn the author's description into (a) the CLASS NAME the classifier judges against, and (b) a short human NAME for this event in the event library.
+
+Inputs (authoritative):
+- What to detect: {{eventDescription}}
+- Simulation context: {{simulationContext}}
+- Competency being practised: {{competency}}
+
+Rules — every rule must be satisfied or the response is rejected:
+1) "className" is read by another LLM as the ONLY definition of the class. Write it as a noun phrase naming the counsellor behaviour, optionally followed by one clarifying clause — NOT as a question, instruction, or sentence about the classifier. 3–20 words. Good: "Open-ended question that invites the caller to expand, rather than a yes/no question". Bad: "Is this an open question?", "Detect open questions", "Open".
+2) The class must be decidable from ONE counsellor utterance in isolation. The classifier sees no history, no tone, no timing. If the author's description depends on what came before ("follows up on the client's last point"), restate it as what that utterance itself looks like. If it depends on something a text classifier cannot see (silence, pace, warmth of voice), narrow it to the part that IS visible in the words.
+3) Draw the boundary where the author drew it. Do not widen a specific behaviour into its general family ("reflective listening" when the author asked for "summarising what the caller just said"), and do not narrow it with conditions the author did not ask for.
+4) "name" is the label an author scans in a table of events. 2–5 words, Title case, no trailing punctuation, no quotes. It must name the same behaviour as className. Good: "Open-Ended Question", "Premature Advice". Bad: "Event 1", "Binary classifier for open questions".
+5) Describe the behaviour NEUTRALLY here even if it is a mistake the learner should avoid — whether it is good or bad is recorded elsewhere. The classifier's only job is to recognise it.
+6) Output strict JSON only — no markdown, no code fences, no commentary — matching exactly:
+
+{
+  "name": "<2-5 word Title Case label>",
+  "className": "<3-20 word noun phrase naming the counsellor behaviour>"
+}
+
+Only output valid JSON.

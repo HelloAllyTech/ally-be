@@ -385,6 +385,7 @@ export class BuilderInterviewOrchestratorService {
     let turnError: string | null = null;
     let truncations = 0;
     let invalidToolCalls = 0;
+    let emptyPasses = 0;
 
     /**
      * Flush the accumulators onto the assistant row.
@@ -534,6 +535,34 @@ export class BuilderInterviewOrchestratorService {
             messages.push({ role: 'assistant', content: textBlocks });
           }
           messages.push({ role: 'user', content: BUILDER_TRUNCATION_NUDGE });
+          continue;
+        }
+
+        // A pass that said nothing and called nothing, on a turn that has so
+        // far produced nothing either.
+        //
+        // Breaking here lands on the backstop below, which tells the admin to
+        // send their message again — so the recovery was always "run the same
+        // request a second time", and it was the person who had to do it,
+        // after waiting for a turn that was never going to say anything. The
+        // model is non-deterministic and the transcript is unchanged, so the
+        // retry that works is the one we can make ourselves.
+        //
+        // Same bound and the same shape as the `invalid_tool_call` retry above
+        // — these are two spellings of the same silence, one where the
+        // provider names the cause and one where it does not.
+        if (
+          stopReason !== 'tool_use' &&
+          textParts.length === 0 &&
+          allToolCalls.length === 0 &&
+          emptyPasses < BUILDER_MAX_TRUNCATION_RETRIES
+        ) {
+          emptyPasses += 1;
+          this.logger.warn(
+            `Builder session ${sessionId}: ${providerName}/${model} returned an ` +
+              `empty turn (stop reason ${stopReason ?? 'none'}); retrying ` +
+              `(${emptyPasses}/${BUILDER_MAX_TRUNCATION_RETRIES}).`,
+          );
           continue;
         }
 

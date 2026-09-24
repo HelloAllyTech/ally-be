@@ -190,4 +190,16 @@ export class ShipVolumeQueryDto {
   @IsInt()
   @IsIn(SHIP_VOLUME_WINDOWS as unknown as number[])
   weeks?: number;
+
+  @ApiProperty({
+    description:
+      '`all` plots every week from the first one with any change on any repo ' +
+      'through the current week, and overrides `weeks`. For clients that ' +
+      'regroup the weeks into months, quarters or years.',
+    enum: ['all'],
+    required: false,
+  })
+  @IsOptional()
+  @IsIn(['all'])
+  span?: 'all';
 }

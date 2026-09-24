@@ -128,11 +128,21 @@ const buildHelpers = (apiBaseUrl: string, runId: string): string => {
   void apiBaseUrl;
   void runId;
   return `
-### Reporting helpers
+### Reporting
 
-These are **commands already installed on your PATH** — run them directly, the
-way you would run \`git\` or \`jq\`. Do not define them, source them, or write
-your own curl; they carry the run id and the API key for you.
+There are two ways to report, and they do exactly the same thing. Use whichever
+your tools give you.
+
+**If you have tools named \`stage\`, \`note\`, \`todo\`, \`ask\`, \`budget\`,
+\`prs\`, \`report\` and \`complete_run\`, prefer them.** They take structured
+arguments, so there is no file to write, no JSON to assemble and nothing to
+quote — hand \`report\` your markdown as a plain string and \`todo\` a real
+array. Every quoting and shell-parsing problem below simply does not arise.
+
+Otherwise the same eight are **commands already installed on your PATH** — run
+them directly, the way you would run \`git\` or \`jq\`. Do not define them,
+source them, or write your own curl; they carry the run id and the API key for
+you.
 
 They are how the person watching this build sees what you are doing. A stage
 you never report is a stage that looks like it never happened, and a build that
@@ -148,7 +158,9 @@ note plan notes.md         # A milestone: plan, test_output, verification, …
 ask questions.json         # Pause and ask: {"questions":[…],"branches":{…}}
 budget                     # What is left of this session's spend ceiling
 prs prs.json               # {"pullRequests":[{repo,branch,prNumber,prUrl,title}]}
-report report.json         # {"type":"run_report","contentMd":"…","metrics":{…}}
+report report.md           # Your write-up, as plain markdown.
+                           #   Do NOT hand-assemble JSON around it — the
+                           #   helper composes the envelope itself.
 complete-run done          # Finish. Exactly once, last.
 complete-run failed "the gate stayed red after four attempts"
 \`\`\`

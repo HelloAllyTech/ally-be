@@ -217,6 +217,7 @@ const geminiCostUsd = (stats, model) => {
   // silently falling back to free.
   const key = Object.keys(GEMINI_RATES).find((k) => String(model ?? '').startsWith(k));
   if (!key) {
+    unpricedModels.add(String(model ?? 'unknown'));
     console.error(
       `[cost] no rate card for gemini model "${model}" — reporting 0. ` +
         `Add it to GEMINI_RATES in forward-events.mjs.`,
@@ -238,6 +239,41 @@ const geminiCostUsd = (stats, model) => {
     (out / 1_000_000) * rates.output;
 
   return Math.round(usd * 1e6) / 1e6;
+};
+
+// Models this run met that the rate card does not price. Collected so the gap
+// can be SAID rather than only logged: stdout has no consumers, and a phase
+// silently priced at zero is a budget ceiling that has stopped working.
+const unpricedModels = new Set();
+const announcedUnpriced = new Set();
+
+/**
+ * Price a `result` frame.
+ *
+ * Prefer `stats.models`, the per-model breakdown 0.60.0 reports, over the model
+ * named in `init`. They are not always the same model. Asking 0.60.0 for
+ * `gemini-2.5-flash` returns `init` with `gemini-2.5-flash` and stats under
+ * `gemini-3.5-flash` — the request is routed, and only the breakdown says where
+ * it landed. Pricing the requested name would charge the wrong card; pricing
+ * the reported one charges what ran, and names the gap when there is no card
+ * for it.
+ *
+ * Falls back to the flat shape when `models` is absent, so an older engine or a
+ * frame without the breakdown prices exactly as it did before.
+ */
+const geminiResultCostUsd = (stats, fallbackModel) => {
+  const perModel = stats?.models;
+  if (perModel && typeof perModel === 'object' && Object.keys(perModel).length) {
+    return (
+      Math.round(
+        Object.entries(perModel).reduce(
+          (sum, [name, modelStats]) => sum + geminiCostUsd(modelStats ?? {}, name),
+          0,
+        ) * 1e6,
+      ) / 1e6
+    );
+  }
+  return geminiCostUsd(stats ?? {}, fallbackModel);
 };
 
 // The model, captured from the stream's `init` frame. The terminal `result`
@@ -325,20 +361,162 @@ const normaliseGemini = (record) => {
       },
       // Gemini reports no cost of its own; priced from the rate card above so
       // the ceiling, the budget holds and the routing telemetry all work.
-      total_cost_usd: geminiCostUsd(stats, record.model ?? geminiModel),
+      total_cost_usd: geminiResultCostUsd(stats, record.model ?? geminiModel),
       duration_ms: stats.duration_ms ?? null,
       // Tool-call count, not a turn count — the closest field Gemini reports;
       // named num_turns only so report_phase_cost's existing reader picks it
       // up, not because the two concepts are equivalent.
       num_turns: stats.tool_calls ?? null,
     };
+
+    // Say it in the feed, once per model. A phase priced at zero does not look
+    // like a broken ceiling, it looks like a cheap phase — and the budget hold,
+    // the phase budgets and the routing telemetry are all reading that zero.
+    for (const name of unpricedModels) {
+      if (announcedUnpriced.has(name)) continue;
+      announcedUnpriced.add(name);
+      events.push({
+        type: 'text',
+        payload: {
+          text:
+            `[cost] This phase ran on "${name}", which has no entry in the rate card, ` +
+            `so its spend is counted as $0. The budget ceiling cannot hold against it. ` +
+            `Add it to GEMINI_RATES in scripts/builder/forward-events.mjs.`,
+        },
+      });
+    }
   }
 
   return events;
 };
 
+/* ── opencode ────────────────────────────────────────────────────────────── */
+
+// Its cost arrives per STEP, not once at the end.
+//
+// A run emits a `step_finish` for every model round, each carrying that
+// round's tokens and its own dollar figure, and there is no terminal frame
+// summing them. Reading only the last one would price a four-step run as one
+// step — so they accumulate here, and the totals are written out when the
+// stream closes.
+//
+// The dollars are opencode's own, not a rate card. That is the one thing this
+// engine gives the budget ceiling that neither other engine can: gemini-cli
+// reports no cost at all and Claude Code reports its own estimate, so spend
+// has been priced from a table someone has to keep up to date, and an unpriced
+// model silently reads as free.
+let opencodeCost = 0;
+let opencodeTokens = { input: 0, output: 0, cached: 0 };
+let opencodeSawStep = false;
+
+const normaliseOpencode = (record) => {
+  const part = record?.part ?? {};
+
+  if (record?.type === 'text' && part.text?.trim()) {
+    return [{ type: 'text', payload: { text: truncate(part.text) } }];
+  }
+
+  if (record?.type === 'tool_use') {
+    const name = String(part.tool ?? 'tool');
+    const state = part.state ?? {};
+    const input = state.input ?? {};
+    const events = [];
+
+    // Shapes read from a real run, not from documentation: `part.tool` is the
+    // name, `part.state.input` the arguments and `part.state.output` the
+    // result, all on ONE event rather than the call/result pair the other
+    // engines emit. Both are still forwarded, so the feed reads the same
+    // whichever engine produced it.
+    if (typeof input.filePath === 'string' || typeof input.path === 'string') {
+      const wrote = 'content' in input;
+      const edited = 'oldString' in input || 'old_string' in input;
+      if (wrote || edited) {
+        events.push({
+          type: 'file_edit',
+          payload: {
+            path: String(input.filePath ?? input.path),
+            operation: edited ? 'edit' : 'write',
+            oldText: truncate(input.oldString ?? input.old_string ?? ''),
+            newText: truncate(input.newString ?? input.new_string ?? input.content ?? ''),
+          },
+        });
+      }
+    }
+
+    if (!events.length) {
+      events.push({
+        type: 'tool_call',
+        payload: {
+          name,
+          summary: truncate(
+            input.command ?? input.filePath ?? input.path ?? input.pattern ?? '',
+          ),
+        },
+      });
+    }
+
+    if (state.output !== undefined || state.status === 'error') {
+      events.push({
+        type: 'tool_result',
+        payload: {
+          // `status` is the tool's own verdict. An `invalid` tool — the model
+          // reaching for something a denied agent was never offered — comes
+          // back completed with an error in its output, which is a refusal
+          // worth showing rather than a failure worth hiding.
+          isError: state.status === 'error',
+          text: truncate(String(state.output ?? '')),
+        },
+      });
+    }
+
+    return events;
+  }
+
+  if (record?.type === 'step_finish') {
+    opencodeSawStep = true;
+    opencodeCost += Number(part.cost ?? 0) || 0;
+    const tokens = part.tokens ?? {};
+    opencodeTokens = {
+      input: opencodeTokens.input + (Number(tokens.input ?? 0) || 0),
+      output: opencodeTokens.output + (Number(tokens.output ?? 0) || 0),
+      cached: opencodeTokens.cached + (Number(tokens.cache?.read ?? 0) || 0),
+    };
+    return [];
+  }
+
+  if (record?.type === 'error') {
+    const detail =
+      record.error?.data?.message ?? record.error?.name ?? 'unknown error';
+    return [{ type: 'text', payload: { text: truncate(`[opencode] ${detail}`) } }];
+  }
+
+  // `step_start` and anything else carry nothing a person watching needs.
+  return [];
+};
+
+/** Called when the stream ends: opencode has no terminal result frame. */
+const finaliseOpencode = () => {
+  if (!opencodeSawStep) return;
+  lastResult = {
+    usage: {
+      input_tokens: opencodeTokens.input,
+      output_tokens: opencodeTokens.output,
+      cached_tokens: opencodeTokens.cached,
+    },
+    // Rounded the way the rate-card path rounds, so a run's cost reads the
+    // same whichever engine produced it.
+    total_cost_usd: Math.round(opencodeCost * 1e6) / 1e6,
+    duration_ms: null,
+    num_turns: null,
+  };
+};
+
 const normalise = (record) =>
-  process.env.BUILDER_ENGINE === 'gemini' ? normaliseGemini(record) : normaliseClaudeCode(record);
+  process.env.BUILDER_ENGINE === 'gemini'
+    ? normaliseGemini(record)
+    : process.env.BUILDER_ENGINE === 'opencode'
+      ? normaliseOpencode(record)
+      : normaliseClaudeCode(record);
 
 const post = async (events) => {
   if (!API_URL || !API_KEY || !RUN_ID || !events.length) return;
@@ -465,6 +643,9 @@ readline.on('close', async () => {
   // stream ended must not lose it — a no-op for Claude Code, whose buffer is
   // always empty.
   queue.push(...flushGeminiBuffer());
+  // opencode reports its cost per step and never sums them, so the totals are
+  // only complete once the stream is. A no-op for the other two engines.
+  finaliseOpencode();
   await flush();
   if (RESULT_OUT && lastResult) {
     try {

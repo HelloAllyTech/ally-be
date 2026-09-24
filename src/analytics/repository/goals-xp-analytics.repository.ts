@@ -2,9 +2,8 @@ import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 
 import { excludeTestTenants } from '../util/test-tenant.util';
-import { getPlatformDataFloor } from '../util/data-floor.util';
 import { AnalyticsXpGoal } from '../entity/analytics-xp-goal.entity';
-import { XpGoalGrain } from '../dto/goals-xp-analytics.dto';
+import { XpBucketGrain, XpGoalGrain } from '../dto/goals-xp-analytics.dto';
 
 export interface ActualXpRow {
   periodStart: string;
@@ -15,13 +14,9 @@ export interface ActualXpRow {
 export class GoalsXpAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  async getDataFloor(): Promise<Date> {
-    return getPlatformDataFloor(this.dataSource);
-  }
-
   /** XP earned per period, from the same ledger as xp-growth. Test tenants excluded. */
   async getActualXpByPeriod(
-    grain: XpGoalGrain,
+    grain: XpBucketGrain,
     start: Date,
     endExclusive: Date,
   ): Promise<ActualXpRow[]> {

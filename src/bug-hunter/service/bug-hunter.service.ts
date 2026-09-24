@@ -127,13 +127,14 @@ export class BugHunterService {
    * session dispatched for one already-known bug, is an explicit ask and
    * always runs regardless of how quiet the repo has been.
    *
-   * Deliberately narrow: a repo with a CloudWatch log group (`ally-be`,
-   * `ally-ai`, `ally-ai-learn`) is NEVER skipped this way, because a real
-   * production issue — a bad rollback, an upstream outage, a config change —
-   * can appear with no matching commit, and there is no anomaly threshold
-   * here (yet) to tell a real spike from ordinary background noise. Widening
-   * this to those repos needs that threshold built first, not just this
-   * check relaxed.
+   * Deliberately narrow: a repo with an external production signal
+   * (`BugHunterFinderDataService.hasExternalSignal` — a CloudWatch log group
+   * today, or ally-web's PostHog exceptions) is NEVER skipped this way,
+   * because a real production issue — a bad rollback, an upstream outage, a
+   * client-side regression — can appear with no matching commit, and there is
+   * no anomaly threshold here (yet) to tell a real spike from ordinary
+   * background noise. Widening this to those repos needs that threshold built
+   * first, not just this check relaxed.
    *
    * Also deliberately does not gate on pending human-reported bugs: those
    * already exist as their own `bug_findings` row the moment they're filed
@@ -146,7 +147,7 @@ export class BugHunterService {
     repo: string,
   ): Promise<boolean> {
     if (trigger !== BugHuntTrigger.SCHEDULED) return true;
-    if (this.finderDataService.hasLogGroup(repo)) return true;
+    if (this.finderDataService.hasExternalSignal(repo)) return true;
 
     const lastSweep = await this.runRepository.findLastCompleted(repo);
     if (!lastSweep) return true;

@@ -98,6 +98,14 @@ describe('RoadmapOpportunityService — reference images', () => {
           );
         }),
       } as never,
+      // Repo classification is best-effort and unrelated to what these tests
+      // assert — a stub that resolves to "unclassified" keeps the created
+      // finding's repo null, same as before this dependency existed.
+      {
+        classifyRepo: jest
+          .fn()
+          .mockResolvedValue({ repo: null, rationale: '' }),
+      } as never,
     );
 
     return { service, opportunityRepository, s3Service };

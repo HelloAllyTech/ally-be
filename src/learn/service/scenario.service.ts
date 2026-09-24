@@ -27,7 +27,12 @@ async function executeInChunks<T, R>(
 import { Scenarios } from '../entity/scenarios.entity';
 import { CreateScenariosDto } from '../dto/create-scenarios.dto';
 import { UpdateScenarioDto } from '../dto/update-scenario.dto';
-import { validateSimulationStates } from '../util/validate-simulation-states.util';
+import {
+  validateKnowledgeSourceUnlocks,
+  validateSimulationStates,
+} from '../util/validate-simulation-states.util';
+import { KnowledgeSourceDto } from '../dto/knowledge-source.dto';
+import { SimulationState } from '../type/simulation-state.type';
 import { buildGeneratedStates } from '../util/build-generated-states.util';
 
 import { LlmModelService } from 'src/llm/service/llm-model.service';
@@ -81,6 +86,7 @@ import {
   applyScenarioTranslations,
 } from '../util/scenario.util';
 import { sanitizeJsonbMetadata } from 'src/common/util/sanitize-jsonb.util';
+import { htmlToPlainText } from 'src/common/util/sanitize-html.util';
 import { TenantService } from 'src/tenant/service/tenant.service';
 import { ScenarioTenants } from '../entity/scenario-tenants.entity';
 import { CohortVisibilityService } from 'src/cohort/service/cohort-visibility.service';
@@ -141,7 +147,10 @@ import { SessionEventTranslationService } from 'src/session-event/service/sessio
 import { ScenarioBehaviorInstructionService } from './scenario-behavior-instruction.service';
 import { ScenarioBehaviorInstructionRequest } from '../type/scenario-behavior-instructions.type';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
-import { ENHANCE_AUTO_IMPROVE_INSTRUCTION } from '../util/autofill-shared.util';
+import {
+  ENHANCE_AUTO_IMPROVE_INSTRUCTION,
+  parseFirstJsonObject,
+} from '../util/autofill-shared.util';
 import { AutofillService } from './autofill.service';
 import {
   EnhanceScenarioFieldDto,
@@ -157,10 +166,12 @@ import { CompetencyService } from './competency.service';
 import { BehaviorService } from './behavior.service';
 import {
   AgentBuilderField,
+  ignoresEstablishedContext,
   isLanguageScopedAgentBuilderField,
   MAX_SPOKEN_LANGUAGES,
 } from '../enum/agent-builder-field.enum';
 import {
+  EstablishedContextDto,
   GenerateAgentBuilderFieldDto,
   GenerateAgentBuilderFieldResponseDto,
 } from '../dto/generate-agent-builder-field.dto';
@@ -954,6 +965,14 @@ export class ScenarioService {
           `Invalid simulation states: ${stateErrors.join(' ')}`,
         );
       }
+    }
+
+    const unlockErrors = validateKnowledgeSourceUnlocks(
+      createScenarioDto.knowledgeSources,
+      createScenarioDto.states,
+    );
+    if (unlockErrors.length > 0) {
+      throw new BadRequestException(unlockErrors.join(' '));
     }
 
     // Cross-check: when the scenario points at a hasStates main-agent
@@ -1830,6 +1849,23 @@ export class ScenarioService {
         ? updateScenarioDto.states
         : (scenario.metadata as { states?: unknown } | undefined)?.states;
     await this.validateStatesPairing(effectiveCode, effectiveStates);
+
+    // Memory locks are checked against the EFFECTIVE pair: a payload may carry
+    // only one of knowledgeSources / states, and a lock must still resolve
+    // against whichever of the two is already stored.
+    const unlockErrors = validateKnowledgeSourceUnlocks(
+      updateScenarioDto.knowledgeSources !== undefined
+        ? updateScenarioDto.knowledgeSources
+        : (
+            scenario.metadata as
+              | { knowledgeSources?: KnowledgeSourceDto[] }
+              | undefined
+          )?.knowledgeSources,
+      effectiveStates as SimulationState[] | undefined,
+    );
+    if (unlockErrors.length > 0) {
+      throw new BadRequestException(unlockErrors.join(' '));
+    }
 
     if (
       updateScenarioDto?.status &&
@@ -3463,8 +3499,18 @@ export class ScenarioService {
     const { field, actorDescription, competency, agentTestCases, model } = dto;
 
     const numKnowledgeSources = dto.numKnowledgeSources ?? 3;
+    // The chain's second stage: what the foundation fields settled rides
+    // along on the brief itself rather than in a new template variable, so it
+    // reaches every prompt — including a prompt row edited in Prompt
+    // Management before this existed, which would silently drop an unknown
+    // placeholder.
+    const established = ignoresEstablishedContext(field)
+      ? ''
+      : this.formatEstablishedContext(dto.establishedContext);
     const variables: Record<string, string> = {
-      actorDescription: actorDescription ?? '',
+      actorDescription: established
+        ? `${actorDescription ?? ''}\n\n${established}`
+        : (actorDescription ?? ''),
       competency: competency ?? '',
       agentTestCases: agentTestCases ?? '',
       numKnowledgeSources: String(numKnowledgeSources),
@@ -3536,6 +3582,42 @@ export class ScenarioService {
       return { field, value: this.parseLanguageVoices(raw, catalog) };
     }
     return { field, value: this.parseAgentBuilderField(field, raw) };
+  }
+
+  /**
+   * Render the chain's first-stage output as a block appended to the brief.
+   * Labelled as already decided so the model treats it as fact to build on,
+   * not a suggestion to rewrite; blank when nothing usable was established
+   * (a failed or cleared foundation field just means that stage-two field
+   * generates from the brief alone, as it did before chaining).
+   */
+  private formatEstablishedContext(context?: EstablishedContextDto): string {
+    if (!context) return '';
+    const lines: string[] = [];
+    const persona = context.persona;
+    if (persona) {
+      const personaFacts = [
+        persona.name?.trim() && `Name: ${persona.name.trim()}`,
+        typeof persona.age === 'number' && `Age: ${persona.age}`,
+        persona.gender?.trim() && `Gender: ${persona.gender.trim()}`,
+        persona.profession?.trim() &&
+          `Profession: ${persona.profession.trim()}`,
+        persona.currentLocation?.trim() &&
+          `Lives in: ${persona.currentLocation.trim()}`,
+      ].filter((fact): fact is string => Boolean(fact));
+      if (personaFacts.length > 0) {
+        lines.push(`The client — ${personaFacts.join('; ')}.`);
+      }
+    }
+    const challenge = htmlToPlainText(context.challengeDescription);
+    if (challenge) {
+      lines.push(`The challenge in this session: ${challenge}`);
+    }
+    if (lines.length === 0) return '';
+    return [
+      'Already established for this scenario (treat as fact; stay consistent with it and do not contradict or rename anything here):',
+      ...lines.map((line) => `- ${line}`),
+    ].join('\n');
   }
 
   /**
@@ -3758,20 +3840,7 @@ export class ScenarioService {
    * in prose. Returns the parsed value (object or array) or null.
    */
   private parseFirstJsonObject(raw: string): any {
-    const attempt = (candidate: string): any => {
-      try {
-        const parsed = JSON.parse(candidate);
-        return parsed && typeof parsed === 'object' ? parsed : null;
-      } catch {
-        return null;
-      }
-    };
-    const direct = attempt(raw.trim());
-    if (direct) return direct;
-    const start = raw.indexOf('{');
-    const end = raw.lastIndexOf('}');
-    if (start === -1 || end <= start) return null;
-    return attempt(raw.slice(start, end + 1));
+    return parseFirstJsonObject(raw);
   }
 
   /** Coerce a V2 field's raw model output into the shape the studio form expects. */

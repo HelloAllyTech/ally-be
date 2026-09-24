@@ -13,6 +13,8 @@ import { ScenarioReviewAccessValidator } from '../../util/scenario-review-access
 import { ScenarioSessionReviewReadStatusRepository } from '../../repository/read-status.repository';
 import { PermissionValidator } from '../../../authorization/service/permission-validator.service';
 import { ScenarioSessionRecordingService } from '../../../learn/service/scenario-session-recording.service';
+import { PostHog } from 'posthog-node';
+import { ADMIN_ANALYTICS_EVENTS } from '../../../posthog/admin-analytics.constants';
 
 jest.mock('src/review/util/review.util', () => ({
   getSessionDurationInSeconds: jest.fn(() => 120),
@@ -31,6 +33,10 @@ describe('formatReviewListResponse', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSessionReviewService,
+        {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
         { provide: ScenarioSessionReviewRepository, useValue: {} },
         { provide: ScenarioSessionReviewThreadRepository, useValue: {} },
         { provide: ScenarioSessionReviewReactionRepository, useValue: {} },
@@ -287,6 +293,10 @@ describe('getReviewById', () => {
       providers: [
         ScenarioSessionReviewService,
         {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
+        {
           provide: ScenarioSessionReviewRepository,
           useValue: reviewRepository,
         },
@@ -529,6 +539,10 @@ describe('getAllReviews', () => {
       providers: [
         ScenarioSessionReviewService,
         {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
+        {
           provide: ScenarioSessionReviewRepository,
           useValue: reviewRepository,
         },
@@ -620,7 +634,10 @@ describe('getAllReviews', () => {
 describe('markReviewAsRead', () => {
   let service: ScenarioSessionReviewService;
   const reviewRepository = { findOne: jest.fn() };
-  const readStatusRepository = { markAsRead: jest.fn() };
+  const readStatusRepository = {
+    markAsRead: jest.fn(),
+    getReadReviewIds: jest.fn(),
+  };
   const permissionValidator = { validatePermissions: jest.fn() };
   const reviewAccessValidator = { getReviewerAccessPermission: jest.fn() };
 
@@ -628,6 +645,10 @@ describe('markReviewAsRead', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ScenarioSessionReviewService,
+        {
+          provide: PostHog,
+          useValue: { capture: jest.fn(), alias: jest.fn() },
+        },
         {
           provide: ScenarioSessionReviewRepository,
           useValue: reviewRepository,
@@ -682,6 +703,7 @@ describe('markReviewAsRead', () => {
       tenantId: 'tenant-1',
     });
     readStatusRepository.markAsRead.mockResolvedValue(undefined);
+    readStatusRepository.getReadReviewIds.mockResolvedValue(new Set());
   };
 
   it('logs a simulation_review_viewed event with reviewId and userId', async () => {
@@ -703,5 +725,33 @@ describe('markReviewAsRead', () => {
     const result = await service.markReviewAsRead('review-1');
 
     expect(result).toEqual({ success: true });
+  });
+
+  it('captures review.completed on the first read', async () => {
+    setupHappyPath();
+    const captureSpy = jest.spyOn((service as any).posthog, 'capture');
+
+    await service.markReviewAsRead('review-1');
+
+    expect(readStatusRepository.getReadReviewIds).toHaveBeenCalledWith(42, [
+      'review-1',
+    ]);
+    expect(captureSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: ADMIN_ANALYTICS_EVENTS.REVIEW_COMPLETED,
+      }),
+    );
+  });
+
+  it('does not capture review.completed when the review was already read', async () => {
+    setupHappyPath();
+    readStatusRepository.getReadReviewIds.mockResolvedValue(
+      new Set(['review-1']),
+    );
+    const captureSpy = jest.spyOn((service as any).posthog, 'capture');
+
+    await service.markReviewAsRead('review-1');
+
+    expect(captureSpy).not.toHaveBeenCalled();
   });
 });

@@ -37,6 +37,10 @@ import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analy
 import { RoadmapDeliveryAnalyticsService } from '../service/roadmap-delivery-analytics.service';
 import { ShipVolumeAnalyticsService } from '../service/ship-volume-analytics.service';
 import { HighlightsAnalyticsService } from '../service/highlights-analytics.service';
+import { ActiveUsersXpAnalyticsService } from '../service/active-users-xp-analytics.service';
+import { XpLevelReachedAnalyticsService } from '../service/xp-level-reached-analytics.service';
+import { BugHunterVolumeAnalyticsService } from '../service/bug-hunter-volume-analytics.service';
+import { XpByTenantAnalyticsService } from '../service/xp-by-tenant-analytics.service';
 import { LanguageAnalyticsService } from '../service/language-analytics.service';
 import { GlossaryEffectAnalyticsService } from '../service/glossary-effect-analytics.service';
 import {
@@ -127,6 +131,22 @@ import {
   GoalsXpQueryDto,
   GoalsXpResponseDto,
 } from '../dto/goals-xp-analytics.dto';
+import {
+  ActiveUsersXpQueryDto,
+  ActiveUsersXpResponseDto,
+} from '../dto/active-users-xp-analytics.dto';
+import {
+  XpLevelReachedQueryDto,
+  XpLevelReachedResponseDto,
+} from '../dto/xp-level-reached-analytics.dto';
+import {
+  BugHunterVolumeQueryDto,
+  BugHunterVolumeResponseDto,
+} from '../dto/bug-hunter-volume-analytics.dto';
+import {
+  XpByTenantQueryDto,
+  XpByTenantResponseDto,
+} from '../dto/xp-by-tenant-analytics.dto';
 import {
   RoleplayVolumeQueryDto,
   RoleplayVolumeResponseDto,
@@ -226,6 +246,10 @@ import {
   FixSessionEngineCostResponseDto,
 } from '../dto/fix-session-engine-cost-analytics.dto';
 import {
+  BugAgentPerformanceQueryDto,
+  BugAgentPerformanceResponseDto,
+} from '../dto/bug-agent-performance-analytics.dto';
+import {
   QualitySentimentQueryDto,
   QualitySentimentResponseDto,
 } from '../dto/quality-sentiment-analytics.dto';
@@ -239,6 +263,7 @@ import { OrgEngagementAnalyticsService } from '../service/org-engagement-analyti
 import { RoleplayCostAnalyticsService } from '../service/roleplay-cost-analytics.service';
 import { CodingAgentCostAnalyticsService } from '../service/coding-agent-cost-analytics.service';
 import { FixSessionEngineCostAnalyticsService } from '../service/fix-session-engine-cost-analytics.service';
+import { BugAgentPerformanceAnalyticsService } from '../service/bug-agent-performance-analytics.service';
 import { QualitySentimentAnalyticsService } from '../service/quality-sentiment-analytics.service';
 import { ChartPreferenceService } from '../service/chart-preference.service';
 import {
@@ -252,6 +277,10 @@ import {
 } from '@nestjs/swagger';
 import { PERMISSIONS } from 'src/authorization/constants/permissions.constants';
 import { AuthPermissions } from 'src/auth/decorators/auth-permissions.decorator';
+import {
+  ADMIN_ANALYTICS_CHART_REGISTRY,
+  AdminAnalyticsChartEntry,
+} from '../constants/admin-analytics-chart-registry.constants';
 import { AuthRoles } from 'src/auth/decorators/auth-roles.decorator';
 import { RequireFeatureToggle } from 'src/auth/decorators/feature-toggle.decorator';
 import { FeatureToggleKey } from 'src/authorization/constants/admin-feature-toggle.constants';
@@ -270,6 +299,10 @@ export class AnalyticsController {
     private readonly certificationAnalyticsService: CertificationAnalyticsService,
     private readonly xpGrowthAnalyticsService: XpGrowthAnalyticsService,
     private readonly goalsXpAnalyticsService: GoalsXpAnalyticsService,
+    private readonly activeUsersXpAnalyticsService: ActiveUsersXpAnalyticsService,
+    private readonly xpLevelReachedAnalyticsService: XpLevelReachedAnalyticsService,
+    private readonly bugHunterVolumeAnalyticsService: BugHunterVolumeAnalyticsService,
+    private readonly xpByTenantAnalyticsService: XpByTenantAnalyticsService,
     private readonly roleplayVolumeAnalyticsService: RoleplayVolumeAnalyticsService,
     private readonly roadmapDeliveryAnalyticsService: RoadmapDeliveryAnalyticsService,
     private readonly shipVolumeAnalyticsService: ShipVolumeAnalyticsService,
@@ -302,9 +335,30 @@ export class AnalyticsController {
     private readonly roleplayCostAnalyticsService: RoleplayCostAnalyticsService,
     private readonly codingAgentCostAnalyticsService: CodingAgentCostAnalyticsService,
     private readonly fixSessionEngineCostAnalyticsService: FixSessionEngineCostAnalyticsService,
+    private readonly bugAgentPerformanceAnalyticsService: BugAgentPerformanceAnalyticsService,
     private readonly qualitySentimentAnalyticsService: QualitySentimentAnalyticsService,
     private readonly chartPreferenceService: ChartPreferenceService,
   ) {}
+
+  @Get('chart-registry')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Admin analytics chart registry',
+    description:
+      'The canonical, read-only map from a stable chart id ("admin analytics ' +
+      'question id", e.g. AAQ-042) to the chart it names, across every ' +
+      'Analytics tab and Highlights sub-tab. The id is the handle used to refer ' +
+      'to one specific chart in code review and requests; tab/subTab record ' +
+      'where it lives today. Source of truth is ' +
+      'admin-analytics-chart-registry.constants.ts.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Chart registry retrieved successfully',
+  })
+  getChartRegistry(): readonly AdminAnalyticsChartEntry[] {
+    return ADMIN_ANALYTICS_CHART_REGISTRY;
+  }
 
   @Get('overview')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
@@ -464,8 +518,11 @@ export class AnalyticsController {
   @Get('xp-goals')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
-    summary: 'Actual XP earned vs. goal, by month/quarter/year (super-admin)',
+    summary:
+      'Actual XP earned vs. goal, by day/week/month/quarter/year/all (super-admin)',
     description:
+      'Goals exist only at month/quarter/year; `grain=day|week|all` returns ' +
+      'actual XP only (`goalXp: null` throughout, `all` as one point). ' +
       'Actual platform XP earned per period (from `xp_events`, the same ' +
       'ledger as `xp-growth`) alongside a goal figure for that period, where ' +
       'one has been set. Goals are NOT editable through this API — they are ' +
@@ -473,9 +530,10 @@ export class AnalyticsController {
       '(grain, periodStart). A period with no goal row comes back with ' +
       '`goalXp: null` and `hasGoal: false` so the chart can render an ' +
       'explicit "no goal set" placeholder rather than a fabricated zero. ' +
-      'Platform-wide only — no tenant filter. The window runs from the ' +
-      "platform data floor through at least today's period (flagged " +
-      '`inProgress: true`, since it can still rise), and further still ' +
+      'Platform-wide only — no tenant filter. The window runs from a fixed ' +
+      'April 2026 floor (the period goals are actually tracked against, not ' +
+      "the platform's all-time data floor) through at least today's period " +
+      '(flagged `inProgress: true`, since it can still rise), and further still ' +
       'through any future period that already has a goal set, flagged ' +
       '`upcoming: true` with `actualXp: 0` since nothing has happened yet.',
   })
@@ -488,6 +546,96 @@ export class AnalyticsController {
     @Query() query: GoalsXpQueryDto,
   ): Promise<GoalsXpResponseDto> {
     return this.goalsXpAnalyticsService.getGoalsXp(query);
+  }
+
+  @Get('active-users-xp')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Active learners by per-period XP threshold (super-admin)',
+    description:
+      'Distinct learners whose XP earned WITHIN each bucket (not lifetime ' +
+      'cumulative XP) clears a fixed activity bar — see ' +
+      '`ActiveUsersXpPointDto.activeUsers` for the exact threshold. Test ' +
+      'organisations are excluded, platform-wide only. Honours the standard ' +
+      '`range`/`bucket`/`from`/`to` window params.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Active-users-by-XP series retrieved successfully',
+    type: ActiveUsersXpResponseDto,
+  })
+  async getActiveUsersXp(
+    @Query() query: ActiveUsersXpQueryDto,
+  ): Promise<ActiveUsersXpResponseDto> {
+    return this.activeUsersXpAnalyticsService.getActiveUsers(query);
+  }
+
+  @Get('xp-level-reached')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Unique learners reaching each XP level, per period (super-admin)',
+    description:
+      'For every XP level 1 through MAX_LEVEL, the distinct learners who ' +
+      'FIRST crossed into it during each bucket — the flow behind the level ' +
+      'ladder, not a stock reading of who currently holds each level. ' +
+      'Derived from the `xp_events` ledger (there is no per-level history in ' +
+      'the `user_progress` rollup, only the most recent level-up). Supports ' +
+      '`quarter` in addition to day/week/month/year. Platform-wide only.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Level-reached series retrieved successfully',
+    type: XpLevelReachedResponseDto,
+  })
+  async getXpLevelReached(
+    @Query() query: XpLevelReachedQueryDto,
+  ): Promise<XpLevelReachedResponseDto> {
+    return this.xpLevelReachedAnalyticsService.getLevelsReached(query);
+  }
+
+  @Get('bug-hunter-volume')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Bug Hunter found vs. fixed volume, per period (super-admin)',
+    description:
+      '"Found" counts bugs autonomously discovered by Bug Hunter in each ' +
+      'bucket (excludes human-reported bugs filed via "Report a bug"). ' +
+      '"Fixed" counts findings that reached MERGED or later, regardless of ' +
+      'who originally filed them. Platform/internal-wide — `bug_findings` ' +
+      'carries no tenant column.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Bug Hunter volume series retrieved successfully',
+    type: BugHunterVolumeResponseDto,
+  })
+  async getBugHunterVolume(
+    @Query() query: BugHunterVolumeQueryDto,
+  ): Promise<BugHunterVolumeResponseDto> {
+    return this.bugHunterVolumeAnalyticsService.getVolume(query);
+  }
+
+  @Get('xp-by-tenant')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary: 'Total XP by tenant over a trailing window (super-admin)',
+    description:
+      'A SINGLE bar (not a time series): total XP earned across the ' +
+      'platform within a trailing window, split by tenant. Its own ' +
+      '`window` control (30d/90d/365d/all), not the shared bucket/grain ' +
+      'params. Test tenants are excluded entirely, never folded into ' +
+      '`otherXp`. The top tenants by XP are named individually; the rest ' +
+      'roll into `otherXp`.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'XP-by-tenant bar retrieved successfully',
+    type: XpByTenantResponseDto,
+  })
+  async getXpByTenant(
+    @Query() query: XpByTenantQueryDto,
+  ): Promise<XpByTenantResponseDto> {
+    return this.xpByTenantAnalyticsService.getXpByTenant(query);
   }
 
   @Get('usage-ladder')
@@ -713,6 +861,30 @@ export class AnalyticsController {
     return this.fixSessionEngineCostAnalyticsService.getFixSessionEngineCost(
       query,
     );
+  }
+
+  @Get('bug-agent-performance')
+  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
+  @ApiOperation({
+    summary:
+      "Bug Hunter's five headline performance trends, by calendar week (super-admin)",
+    description:
+      'Precision (accuracy/reversal rate), fix throughput (approved-to-merged, ' +
+      'escalation and fallback rates), speed (stage latencies, queue-to-start), ' +
+      'cost, and reliability (completion/fallback/regression rates) — all ' +
+      'bucketed by week regardless of the requested `bucket`, since this chart ' +
+      'is inherently a week-over-week view. Reuses the exact funnel arithmetic ' +
+      "AccuracyPanel's single-window figures already use, applied per week.",
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Bug Agent performance trends retrieved successfully',
+    type: BugAgentPerformanceResponseDto,
+  })
+  async getBugAgentPerformance(
+    @Query() query: BugAgentPerformanceQueryDto,
+  ): Promise<BugAgentPerformanceResponseDto> {
+    return this.bugAgentPerformanceAnalyticsService.getPerformance(query);
   }
 
   @Get('quality-sentiment')

@@ -648,6 +648,20 @@ export class ScenarioSharedService {
       );
     }
 
+    // Memory locks ride on knowledge sources as `unlocksFromStateId`. Send the
+    // key only when it is set: ally-ai-learn builds from before this field
+    // typed these entries as Dict[str, str], so a null would fail the whole
+    // scenario parse on an agent that has not been redeployed yet.
+    if (Array.isArray(promptData.knowledgeSources)) {
+      promptData.knowledgeSources = promptData.knowledgeSources.map(
+        (source: any) => {
+          if (!source || typeof source !== 'object') return source;
+          const { unlocksFromStateId, ...rest } = source;
+          return unlocksFromStateId ? { ...rest, unlocksFromStateId } : rest;
+        },
+      );
+    }
+
     const scenarioData = {
       ...scenarioDataWithoutMetadata,
       // Ensure we have values even if not translated

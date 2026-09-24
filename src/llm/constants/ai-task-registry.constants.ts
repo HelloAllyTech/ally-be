@@ -736,13 +736,38 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     tier: LlmModelTier.REASONING,
     trigger: 'The Agent Builder Copilot generates fields',
     detail:
-      'Fans out one abortable call per field, in parallel — and one per ' +
+      'Chained in two stages: challenge description + persona first, from ' +
+      'the brief alone; every other field then receives them as ' +
+      '`establishedContext` so the fields agree. Within a stage it fans out ' +
+      'one abortable call per field, in parallel — and one per ' +
       '(field x language) for the three per-language fields (opening ' +
       'dialogues, style samples, filler words), so a brief naming three ' +
       'spoken languages costs three sets of those. Two further calls are ' +
       'sequenced rather than parallel: `spoken_languages` decides which ' +
       'languages to fan out over, and `language_voices` then casts a voice ' +
       'per language from the voice catalog.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-5-mini',
+    configuredBy: 'LLM_REASONING_MODEL',
+    promptOverride: "the field's own prompt row",
+  },
+  {
+    id: 'autofill-event-field',
+    task: LlmTask.AUTOFILL_EVENT_FIELD,
+    runtime: LlmRuntime.ALLY_BE,
+    tier: LlmModelTier.REASONING,
+    trigger:
+      'An author describes a behaviour in Event Builder and generates a ' +
+      'binary-classification event',
+    detail:
+      'One call per part of the event (classifier, examples, feedback, ' +
+      'branch instruction, tags), each from its own prompt row. `classifier` ' +
+      'is sequenced first and its class name is fed into the other calls, so ' +
+      'the examples describe the class the author kept rather than one the ' +
+      'model re-imagined per call. Generates only — nothing is written until ' +
+      'the author submits the draft through the normal create/update ' +
+      'endpoints.',
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-5-mini',
@@ -1005,6 +1030,23 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     configuredBy: 'ANTHROPIC_AUTOFILL_MODEL',
     configPath: 'anthropic.autofillModel',
   },
+  {
+    id: 'agent-memory-curation',
+    task: LlmTask.AGENT_MEMORY_CURATION,
+    runtime: LlmRuntime.ALLY_BE,
+    // Mechanical editing of short entries against a fixed operation set: cost
+    // and time dominate, and a wrong merge is caught by the next pass.
+    tier: LlmModelTier.FAST,
+    trigger: "Hourly, when an agent's notebook has new candidate entries",
+    detail:
+      'Folds the notes a sweep or fix session wrote into the curated active set: agree, ' +
+      'edit, add or remove, one operation per candidate. Bug Hunter today; Builder when ' +
+      'its lessons move to the same table.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy: 'LLM_FAST_MODEL',
+  },
 ];
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -1021,8 +1063,8 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     trigger: 'An admin talks to Builder about what to build',
     detail: 'Streamed PRD interview, tool loop capped at 16 round-trips.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-5',
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-pro',
     configuredBy: 'BUILDER_INTERVIEW_MODEL',
     configPath: 'builder.interviewModel',
   },
@@ -1033,8 +1075,8 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     trigger: 'Builder reads the codebase before answering',
     detail: 'One-shot research pass during the interview.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-5',
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-pro',
     configuredBy: 'BUILDER_INTERVIEW_MODEL',
     configPath: 'builder.interviewModel',
   },
@@ -1047,8 +1089,8 @@ const BUILDER_TASKS: AiTaskEntry[] = [
       'Summarises the oldest turns to bound context growth. Sits outside the cached ' +
       'prefix, so a failed summarisation falls back to full replay.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-haiku-4-5',
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-flash',
     configuredBy: 'BUILDER_MECHANICAL_MODEL',
     configPath: 'builder.mechanicalModel',
   },
@@ -1058,8 +1100,8 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     runtime: LlmRuntime.ALLY_BE,
     trigger: 'A large PRD is cut into milestones',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-opus-5',
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-pro',
     configuredBy: 'BUILDER_PLANNER_MODEL',
     configPath: 'builder.plannerModel',
   },
@@ -1070,10 +1112,10 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     trigger: 'An admin approves the PRD and the build runs',
     detail:
       'Dispatched to builder-session.yml, which is handed all three tier model ids. ' +
-      'Planner and verifier run on claude-opus-5. Usage is reported back by the runner.',
+      'Planner and verifier run on gemini-2.5-pro. Usage is reported back by the runner.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-sonnet-5',
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-pro',
     configuredBy:
       'BUILDER_BUILD_MODEL / BUILDER_PLANNER_MODEL / BUILDER_VERIFIER_MODEL',
     configPath: 'builder.coderModel',
@@ -1085,8 +1127,8 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     trigger: 'A run finishes and the flywheel folds it in',
     detail: 'Retrospective bullets into the curated lesson set.',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-haiku-4-5',
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-flash',
     configuredBy: 'BUILDER_MECHANICAL_MODEL',
     configPath: 'builder.mechanicalModel',
   },
@@ -1096,8 +1138,8 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     runtime: LlmRuntime.ALLY_BE,
     trigger: '...and how the run turned out is categorised',
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-haiku-4-5',
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-flash',
     configuredBy: 'BUILDER_MECHANICAL_MODEL',
     configPath: 'builder.mechanicalModel',
   },
@@ -1105,11 +1147,23 @@ const BUILDER_TASKS: AiTaskEntry[] = [
     id: 'builder-context-selection',
     task: LlmTask.BUILDER_CONTEXT_SELECTION,
     runtime: LlmRuntime.ALLY_BE,
+    // Deliberately NOT tiered: the call site names `builder.mechanicalModel`
+    // explicitly, so the choice a tier exists to make has already been made,
+    // and `configPath` below is the truth about what serves this task.
+    //
+    // Until 2026-09-23 this row nonetheless failed on every single run —
+    // `callConfigForAiTask` demanded a tier from every caller, whether or not
+    // one was needed — and failed quietly: every Builder build logged
+    // "Exemplar re-rank failed, falling back to most recent" and carried on,
+    // so the relevance ranking this row exists to perform had never once
+    // happened in production. A build silently handed the most RECENT
+    // exemplars instead of the most RELEVANT ones looks exactly like a build
+    // that got good ones.
     trigger: 'A new session picks which past lessons to see',
     detail: "Lesson and exemplar selection for the next run's context.",
     kind: AiTaskKind.COMPLETION,
-    provider: 'anthropic',
-    defaultModel: 'claude-haiku-4-5',
+    provider: 'gemini',
+    defaultModel: 'gemini-2.5-flash',
     configuredBy: 'BUILDER_MECHANICAL_MODEL',
     configPath: 'builder.mechanicalModel',
   },
@@ -1213,22 +1267,43 @@ export const AI_TASK_REGISTRY_EXEMPT_TASKS: ReadonlySet<LlmTask> = new Set([
  * that instead of surfacing it.
  */
 export interface AiTaskCallConfig {
-  tier: LlmModelTier;
+  /** Absent when the caller named its own model — see callConfigForAiTask. */
+  tier?: LlmModelTier;
   /** True when a substitute model would make the result a lie, not a degradation. */
   neverFallback: boolean;
 }
 
-export const callConfigForAiTask = (taskId: string): AiTaskCallConfig => {
+export const callConfigForAiTask = (
+  taskId: string,
+  options: {
+    /**
+     * True when the caller passed a concrete model. A tier exists to CHOOSE a
+     * model, so a call that has already chosen needs none — and demanding one
+     * broke every config-selected row that went through `LlmCompletionService`.
+     * `builder-context-selection` names `builder.mechanicalModel` at its call
+     * site and was refused on every Builder run for want of a tier it would
+     * never have consulted.
+     *
+     * `neverFallback` still comes from the row either way: whether a substitute
+     * would make the result a lie is a property of the task, not of who picked
+     * the model.
+     */
+    modelIsExplicit?: boolean;
+  } = {},
+): AiTaskCallConfig => {
   const entry = AI_TASK_REGISTRY.find((row) => row.id === taskId);
-  if (!entry?.tier) {
+  if (!entry?.tier && !options.modelIsExplicit) {
     throw new Error(
-      `AI task "${taskId}" has no tier in the AI task registry. Add a row (or ` +
-        `a tier to the existing one) in ai-task-registry.constants.ts.`,
+      `AI task "${taskId}" has no tier in the AI task registry, and the call ` +
+        `named no model of its own. Add a row (or a tier to the existing one) ` +
+        `in ai-task-registry.constants.ts.`,
     );
   }
-  return { tier: entry.tier, neverFallback: Boolean(entry.neverFallback) };
+  return { tier: entry?.tier, neverFallback: Boolean(entry?.neverFallback) };
 };
 
 /** The tier alone, for callers that only need a default model. */
 export const tierForAiTask = (taskId: string): LlmModelTier =>
-  callConfigForAiTask(taskId).tier;
+  // Non-null: called without `modelIsExplicit`, so a missing tier has already
+  // thrown above rather than reaching here.
+  callConfigForAiTask(taskId).tier!;

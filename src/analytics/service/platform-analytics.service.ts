@@ -601,9 +601,14 @@ export class PlatformAnalyticsService {
     query: VoiceLatencyQueryDto,
   ): Promise<VoiceLatencyResponseDto> {
     const { language } = query;
+    // The floor is one extra cheap query, and only for an all-time range.
+    const needsFloor = query.range === 'all' && !query.from && !query.to;
     const window = resolveAnalyticsWindow(query, {
       defaultRange: '90d',
       defaultBucketFor: PlatformAnalyticsService.defaultBucketFor,
+      allTimeStart: needsFloor
+        ? await this.repo.getVoiceLatencyDataFloor()
+        : undefined,
     });
     const { start: windowStart, endExclusive, bucket } = window;
 
@@ -613,7 +618,7 @@ export class PlatformAnalyticsService {
       )},${isoDate(endExclusive)}) bucket=${bucket}`,
     );
 
-    const [points, byLanguage] = await Promise.all([
+    const [points, byLanguage, overall] = await Promise.all([
       withReportingQuerySlot(() =>
         this.repo.getVoiceLatencyByBucket(
           windowStart,
@@ -625,6 +630,9 @@ export class PlatformAnalyticsService {
       withReportingQuerySlot(() =>
         this.repo.getVoiceLatencyByLanguage(windowStart, endExclusive),
       ),
+      withReportingQuerySlot(() =>
+        this.repo.getVoiceLatencyOverall(windowStart, endExclusive, language),
+      ),
     ]);
 
     return {
@@ -635,6 +643,7 @@ export class PlatformAnalyticsService {
       llmTtftTargetMs: LLM_TTFT_TARGET_MS,
       points,
       byLanguage,
+      overall,
     };
   }
 

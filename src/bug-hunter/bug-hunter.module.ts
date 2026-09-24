@@ -11,6 +11,8 @@ import { RoadmapOpportunity } from 'src/product-roadmap/entity/roadmap-opportuni
 import { User } from 'src/user/entity/user.entity';
 import { GlobalSettings } from 'src/settings/entity/global-settings.entity';
 import { GlobalSettingsRepository } from 'src/settings/repository/global-settings.repository';
+import { PosthogQueryService } from 'src/ux-signals/service/posthog-query.service';
+import { AgentMemoryModule } from 'src/agent-memory/agent-memory.module';
 
 import { BugHunterController } from './controller/bug-hunter.controller';
 import { BugHunterPipelineController } from './controller/bug-hunter-pipeline.controller';
@@ -19,7 +21,18 @@ import { BugHuntEvent } from './entity/bug-hunt-event.entity';
 import { BugHunterSettings } from './entity/bug-hunter-settings.entity';
 import { BugFinding } from './entity/bug-finding.entity';
 import { BugHunterNotification } from './entity/bug-hunter-notification.entity';
+import { BugHuntPhaseTiming } from './entity/bug-hunt-phase.entity';
+import { BugHuntContextLookup } from './entity/bug-hunt-context-lookup.entity';
 import { BugHuntRunRepository } from './repository/bug-hunt-run.repository';
+import {
+  BugHuntContextLookupRepository,
+  BugHuntPhaseRepository,
+} from './repository/bug-hunt-telemetry.repository';
+import { BugHunterTelemetryService } from './service/bug-hunter-telemetry.service';
+import { BugHunterEvalRun } from './entity/bug-hunter-eval-run.entity';
+import { BugHunterEvalRunRepository } from './repository/bug-hunter-eval-run.repository';
+import { BugHunterEvalService } from './service/bug-hunter-eval.service';
+import { BugHunterPolicyService } from './service/bug-hunter-policy.service';
 import { BugHuntEventRepository } from './repository/bug-hunt-event.repository';
 import { BugHunterSettingsRepository } from './repository/bug-hunter-settings.repository';
 import { BugFindingRepository } from './repository/bug-finding.repository';
@@ -78,6 +91,9 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
       BugHunterSettings,
       BugFinding,
       BugHunterNotification,
+      BugHuntPhaseTiming,
+      BugHuntContextLookup,
+      BugHunterEvalRun,
       RoadmapOpportunity,
       // Read-only, for resolving reporter and stage-pinner names — see
       // BugFindingService.enrich. Raw repository rather than an import of
@@ -90,6 +106,10 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     LogsModule,
     PromptModule,
     LlmUsageModule,
+    // The notebook Bug Hunter reads before hunting and writes at close — see
+    // docs/bug-hunter-memory-adr.md. Exposed here on Bug Hunter's own two auth
+    // surfaces rather than by AgentMemoryModule itself.
+    AgentMemoryModule,
   ],
   controllers: [BugHunterController, BugHunterPipelineController],
   providers: [
@@ -100,8 +120,21 @@ import { BugHunterModelSettingsService } from './service/bug-hunter-model-settin
     GlobalSettingsRepository,
     BugFindingRepository,
     BugHunterNotificationRepository,
+    BugHuntPhaseRepository,
+    BugHuntContextLookupRepository,
+    BugHunterEvalRunRepository,
     BugHunterService,
+    BugHunterTelemetryService,
+    BugHunterEvalService,
+    BugHunterPolicyService,
     BugFindingService,
+    // Provided directly rather than importing UxSignalsModule: it constructs
+    // itself from the global AppConfigModule alone, so this costs nothing and
+    // avoids pulling that module's whole detector/writer graph in for one
+    // HTTP client — the same reasoning UxSignalsModule itself gives for
+    // providing BugFindingRepository directly instead of importing this
+    // module (see that module's own doc).
+    PosthogQueryService,
     BugHunterFinderDataService,
     BugHunterMetricsService,
     BugHunterNotificationService,

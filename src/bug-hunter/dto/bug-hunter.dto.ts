@@ -1,3 +1,5 @@
+import { IsJsonString } from 'src/common/decorator/is-json-string.decorator';
+
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMinSize,
@@ -173,7 +175,7 @@ export class RawBugFindingDto {
 
   @ApiProperty({
     description:
-      'Plain-language paragraph, blank line, then the technical detail. Sliced to 200 chars for the table title.',
+      'Plain-language paragraph, blank line, then the technical detail. Shortened to ~200 chars at a sentence or word boundary for the table title — see truncateTitle.',
   })
   @IsString()
   @IsNotEmpty()
@@ -190,6 +192,7 @@ export class RawBugFindingDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @IsJsonString()
   evidence?: string;
 
   @ApiPropertyOptional({ enum: BugFindingSeverity })
@@ -248,6 +251,20 @@ export class PersistBugFindingsDto {
 }
 
 export class PatchBugFindingDto {
+  /**
+   * Set by a sweep whose engine has no independent verifier (Gemini has no
+   * Task tool, so the bug-verifier subagent never runs). Stored on
+   * `metadata`, shown on the finding, and read by `BugHunterPolicyService`,
+   * which refuses to let an unverified finding be fixed in AI mode.
+   */
+  @ApiPropertyOptional({
+    description:
+      'True when no independent verifier could run on this engine. The finding is held for a human.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  verificationUnavailable?: boolean;
+
   @ApiPropertyOptional({ enum: BugFindingStatus })
   @IsOptional()
   @IsEnum(BugFindingStatus)
@@ -757,6 +774,12 @@ export class BugFindingDto {
       "The Verify phase's lowest verifier certainty. Null on a proven finding (nothing to verify) and on rows predating verifier scoring.",
   })
   confidence!: number | null;
+
+  @ApiProperty({
+    description:
+      'True when the engine that found this had no independent verifier, so it was never verified and is held for a human — see PatchBugFindingDto.verificationUnavailable.',
+  })
+  verificationUnavailable!: boolean;
 
   @ApiProperty({
     nullable: true,
@@ -1277,6 +1300,20 @@ export class BugHunterDeclineDto {
   finderError!: boolean;
 }
 
+export class BugHunterEscalationDto {
+  @ApiProperty({
+    description:
+      "The escalation event's exact summary text. Several escalation paths report a fixed, " +
+      'literal string (e.g. a model-tier bump, a multi-repo plan, suite-still-red-after-cap), ' +
+      'so grouping on this already separates them cleanly; an open product question is genuine ' +
+      'free text and will show up as many small one-off groups.',
+  })
+  summary!: string;
+
+  @ApiProperty()
+  count!: number;
+}
+
 export class BugHunterStageLatencyDto {
   @ApiProperty({
     nullable: true,
@@ -1313,6 +1350,9 @@ export class BugHunterMetricsDto {
 
   @ApiProperty({ type: [BugHunterDeclineDto] })
   declines!: BugHunterDeclineDto[];
+
+  @ApiProperty({ type: [BugHunterEscalationDto] })
+  escalations!: BugHunterEscalationDto[];
 
   @ApiProperty({
     type: Object,

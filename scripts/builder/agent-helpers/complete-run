@@ -80,6 +80,11 @@ for attempt in 1 2 3; do
         exit 1
       fi
       rm -f "$response"
+      # The workflow's `if: failure()` net reads this file and stays quiet when
+      # it exists. Without it, a run that reported precisely why it failed —
+      # and then exited non-zero, as it should — had "The build runner failed.
+      # See the workflow log." posted on top of its own explanation.
+      touch "${BUILDER_REPORTED_MARKER:-/tmp/builder-already-reported}" 2>/dev/null || true
       echo "Outcome recorded."
       exit 0
       ;;

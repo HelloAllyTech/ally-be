@@ -3,6 +3,7 @@ import { DataSource, ObjectLiteral, SelectQueryBuilder } from 'typeorm';
 
 import { AnalyticsBucket } from './platform-analytics.repository';
 import { excludeTestTenants } from '../util/test-tenant.util';
+import { resolveSqlBucket } from '../util/analytics-window.util';
 
 /** Shared filters for conversation-drift analytics queries. */
 export interface DriftFilters {
@@ -47,10 +48,17 @@ export interface DriftCountRow {
 export class DriftAnalyticsRepository {
   constructor(private readonly dataSource: DataSource) {}
 
-  private resolveBucket(bucket: AnalyticsBucket): 'day' | 'week' | 'month' {
-    if (bucket === 'day') return 'day';
-    if (bucket === 'month') return 'month';
-    return 'week';
+  private resolveBucket(
+    bucket: AnalyticsBucket,
+  ): 'day' | 'week' | 'month' | 'quarter' {
+    // Cast is safe: resolveSqlBucket's own runtime whitelist check falls
+    // back to 'week' for a 'year' bucket just as it would for any other
+    // unrecognized value — this repo has no yearly aggregation.
+    return resolveSqlBucket(
+      bucket as 'day' | 'week' | 'month' | 'quarter',
+      ['day', 'week', 'month', 'quarter'],
+      'week',
+    );
   }
 
   /**
