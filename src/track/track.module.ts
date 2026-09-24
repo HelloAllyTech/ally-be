@@ -1,3 +1,4 @@
+import { AuthorizationModule } from 'src/authorization/authorization.module';
 import { CohortModule } from 'src/cohort/cohort.module';
 import { forwardRef, Module } from '@nestjs/common';
 import { LearnModule } from 'src/learn/learn.module';
@@ -54,6 +55,7 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     LlmUsageModule,
     LlmAgentModule,
     CohortModule,
+    AuthorizationModule,
   ],
   controllers: [
     TrackAdminController,
@@ -94,6 +96,7 @@ import { TrackTranslationGateway } from './gateway/track-translation.gateway';
     TrackTranslationGateway,
   ],
   exports: [
+    TrackService,
     TrackSharedService,
     TrackProgressService,
     TrackMemoryService,

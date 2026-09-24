@@ -7,6 +7,7 @@ import { TrackSharedService } from '../track-shared.service';
 import { ScenarioSharedService } from 'src/learn/service/scenario-shared.service';
 import { CaseSharedService } from 'src/case/service/case-shared.service';
 import { TenantService } from 'src/tenant/service/tenant.service';
+import { PermissionValidator } from 'src/authorization/service/permission-validator.service';
 import { TrackTranslationService } from '../track-translation.service';
 import { UpsertTrackStructureDto } from '../../dto/upsert-track-structure.dto';
 import { TrackItemType } from '../../type/track.type';
@@ -47,6 +48,10 @@ const mockTrackTranslationService = {
   handleSourceChanged: jest.fn(),
 };
 
+const mockPermissionValidator = {
+  validatePermissions: jest.fn(),
+};
+
 describe('TrackService', () => {
   let service: TrackService;
 
@@ -70,6 +75,10 @@ describe('TrackService', () => {
         {
           provide: TrackTranslationService,
           useValue: mockTrackTranslationService,
+        },
+        {
+          provide: PermissionValidator,
+          useValue: mockPermissionValidator,
         },
       ],
     }).compile();

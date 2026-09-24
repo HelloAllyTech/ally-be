@@ -71,6 +71,7 @@ import { PostHogModule } from './posthog/posthog.module';
 import { ChangelogModule } from './changelog/changelog.module';
 import { UxSignalsModule } from './ux-signals/ux-signals.module';
 import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
+import { CourseDiscussionModule } from './course-discussion/course-discussion.module';
 
 @Module({
   imports: [
@@ -145,6 +146,7 @@ import { MobileReleasesModule } from './mobile-releases/mobile-releases.module';
     ChangelogModule,
     UxSignalsModule,
     MobileReleasesModule,
+    CourseDiscussionModule,
   ],
   controllers: [],
   providers: [
