@@ -80,6 +80,27 @@ describe('builder agent helpers', () => {
   });
 
   /**
+   * The same stages again, in the MCP server.
+   *
+   * There are now three copies of this list — the enum, the shell helper and
+   * the MCP tool's `enum` schema — because the protocol is offered over two
+   * channels to engines that each know only one of them. Three copies is one
+   * more chance to drift, and a drifted list does not fail loudly: the rail
+   * simply stops moving, or freezes at the last stage the CHECK constraint
+   * accepted.
+   */
+  it('offers exactly the stages the enum defines, over MCP too', () => {
+    const server = readFileSync(
+      join(HELPER_DIR, '..', 'builder-mcp.mjs'),
+      'utf8',
+    );
+    const block = server.match(/const STAGES = \[([^\]]+)\]/)?.[1] ?? '';
+    const declared = [...block.matchAll(/'([A-Z0-9_]+)'/g)].map((m) => m[1]);
+
+    expect(declared.sort()).toEqual(Object.values(BuilderStage).sort());
+  });
+
+  /**
    * A helper the prompt never mentions is one no agent will call, and a name
    * in the prompt with no helper behind it is `command not found` mid-run.
    */

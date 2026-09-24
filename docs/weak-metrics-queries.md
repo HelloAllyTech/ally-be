@@ -131,7 +131,8 @@ Three things worth knowing about these tables:
 ## Queries
 
 Every query takes a `$1` window start. Swap `month` for `week` in `date_trunc` for finer
-buckets; weekly cells go thin at the window edges.
+buckets (weekly cells go thin at the window edges), or for `quarter` for coarser ones — the
+same three granularities the `/v1/analytics/weak-performing-metrics` `bucket` param accepts.
 
 ### Comprehension errors per 100 turns
 

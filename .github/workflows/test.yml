@@ -132,6 +132,12 @@ jobs:
       - name: Report helper
         run: node scripts/builder/test/report-helper.test.mjs
 
+      # The reporting protocol's second channel. Real subprocess, real
+      # JSON-RPC, real HTTP — the seams between processes are the whole reason
+      # this server exists, so mocking either side would test nothing.
+      - name: MCP reporting server
+        run: node scripts/builder/test/builder-mcp.test.mjs
+
       - name: Engine loop dry run
         run: bash scripts/builder/test/loop-dryrun.sh
 

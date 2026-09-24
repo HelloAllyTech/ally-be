@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { LoggerService } from '../../logger/logger.service';
 import { RedisService } from '../../redis/service/redis.service';
 import { withReportingQuerySlot } from '../../common/util/reporting-query-slots.util';
+import { resolveSqlBucket } from '../util/analytics-window.util';
 import {
   TrendPoint,
   TurnConditionRow,
@@ -16,7 +17,6 @@ import {
   WeakMetricPointDto,
   WeakMetricSeriesDto,
   WeakMetricState,
-  WeakMetricsBucket,
   WeakMetricsQueryDto,
   WeakMetricsRange,
   WeakMetricsResponseDto,
@@ -149,11 +149,16 @@ export class WeakMetricsAnalyticsService {
    * the bucket so the client can drop it from the plot and say so, exactly as
    * `resolveWindow`'s `inProgressBucket` does for the other tabs.
    */
-  private static inProgressBucketOf(bucket: 'week' | 'month'): string {
+  private static inProgressBucketOf(
+    bucket: 'week' | 'month' | 'quarter',
+  ): string {
     const d = new Date();
     d.setUTCHours(0, 0, 0, 0);
     if (bucket === 'month') {
       d.setUTCDate(1);
+    } else if (bucket === 'quarter') {
+      // Matches Postgres `date_trunc('quarter', ...)`: first day of Jan/Apr/Jul/Oct.
+      d.setUTCMonth(Math.floor(d.getUTCMonth() / 3) * 3, 1);
     } else {
       // Monday-start, matching Postgres `date_trunc('week', ...)`.
       const dow = (d.getUTCDay() + 6) % 7;
@@ -467,8 +472,17 @@ export class WeakMetricsAnalyticsService {
     query: WeakMetricsQueryDto,
   ): Promise<WeakMetricsResponseDto> {
     const start = this.resolveStart(query.range);
-    const bucket =
-      query.bucket === WeakMetricsBucket.WEEK ? 'week' : ('month' as const);
+    // Cast is safe: WeakMetricsBucket's members are exactly these three
+    // strings, and resolveSqlBucket's own runtime whitelist check falls back
+    // to 'month' for anything else, same as the bare ternary this replaced —
+    // except that ternary silently mapped an unrecognized value (which, once
+    // 'quarter' became a legal request, would have included it) to 'month'
+    // with no way to tell the two cases apart.
+    const bucket = resolveSqlBucket(
+      query.bucket as 'week' | 'month' | 'quarter' | undefined,
+      ['week', 'month', 'quarter'],
+      'month',
+    );
 
     // One pin PER JUDGE FAMILY. They version independently — drift went to v2
     // for the clienthood labels, language for the dialect_lexicon rubric,

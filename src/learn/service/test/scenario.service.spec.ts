@@ -6189,6 +6189,105 @@ describe('ScenarioService', () => {
     });
   });
 
+  describe('generateAgentBuilderField — chained context', () => {
+    const brief = 'A 34-year-old engineer struggling after a layoff.';
+    const establishedContext = {
+      challengeDescription:
+        '<p>Feels <strong>ashamed</strong> and withdrawn.</p><ul><li>Deflects</li></ul>',
+      persona: {
+        name: 'Priya Sharma',
+        age: 34,
+        gender: 'female',
+        profession: 'Software engineer',
+        currentLocation: 'Pune',
+      },
+    };
+
+    /** The brief the prompt template was rendered with. */
+    const renderedBrief = (): string =>
+      autofillService.generateContentFromPrompt.mock.calls[0][1]
+        .actorDescription;
+
+    it('appends the established persona and challenge to the brief for a second-stage field', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue('History.');
+
+      await service.generateAgentBuilderField({
+        field: AgentBuilderField.BACKSTORY,
+        actorDescription: brief,
+        establishedContext,
+      });
+
+      const rendered = renderedBrief();
+      expect(rendered.startsWith(brief)).toBe(true);
+      expect(rendered).toContain('Already established for this scenario');
+      expect(rendered).toContain(
+        'Name: Priya Sharma; Age: 34; Gender: female; Profession: Software engineer; Lives in: Pune',
+      );
+      // Markup is stripped before the model sees it.
+      expect(rendered).toContain(
+        'The challenge in this session: Feels ashamed and withdrawn. Deflects',
+      );
+      expect(rendered).not.toContain('<p>');
+    });
+
+    it.each([
+      AgentBuilderField.CHALLENGE_DESCRIPTION,
+      AgentBuilderField.PERSONA,
+    ])('ignores the context for the foundation field %s', async (field) => {
+      autofillService.generateContentFromPrompt.mockResolvedValue('{}');
+
+      await service.generateAgentBuilderField({
+        field,
+        actorDescription: brief,
+        establishedContext,
+      });
+
+      expect(renderedBrief()).toBe(brief);
+    });
+
+    it('ignores the context for spoken_languages', async () => {
+      (
+        scenarioVoiceRepository.getLanguagesWithVoices as jest.Mock
+      ).mockResolvedValue([]);
+      autofillService.generateContentFromPrompt.mockResolvedValue('[]');
+
+      await service.generateAgentBuilderField({
+        field: AgentBuilderField.SPOKEN_LANGUAGES,
+        actorDescription: brief,
+        establishedContext,
+      });
+
+      expect(renderedBrief()).toBe(brief);
+    });
+
+    it('keeps only the persona facts that are present', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue('{}');
+
+      await service.generateAgentBuilderField({
+        field: AgentBuilderField.TITLE,
+        actorDescription: brief,
+        establishedContext: { persona: { name: 'Priya', profession: ' ' } },
+      });
+
+      const rendered = renderedBrief();
+      expect(rendered).toContain('The client — Name: Priya.');
+      expect(rendered).not.toContain('Profession');
+      expect(rendered).not.toContain('The challenge in this session');
+    });
+
+    it('leaves the brief untouched when nothing usable was established', async () => {
+      autofillService.generateContentFromPrompt.mockResolvedValue('Text.');
+
+      await service.generateAgentBuilderField({
+        field: AgentBuilderField.ROLE_INSTRUCTION,
+        actorDescription: brief,
+        establishedContext: { challengeDescription: '<p> </p>', persona: {} },
+      });
+
+      expect(renderedBrief()).toBe(brief);
+    });
+  });
+
   describe('generateAgentBuilderField — language handling', () => {
     const catalog = [
       {
