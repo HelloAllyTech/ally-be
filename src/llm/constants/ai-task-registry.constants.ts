@@ -736,7 +736,10 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     tier: LlmModelTier.REASONING,
     trigger: 'The Agent Builder Copilot generates fields',
     detail:
-      'Fans out one abortable call per field, in parallel — and one per ' +
+      'Chained in two stages: challenge description + persona first, from ' +
+      'the brief alone; every other field then receives them as ' +
+      '`establishedContext` so the fields agree. Within a stage it fans out ' +
+      'one abortable call per field, in parallel — and one per ' +
       '(field x language) for the three per-language fields (opening ' +
       'dialogues, style samples, filler words), so a brief naming three ' +
       'spoken languages costs three sets of those. Two further calls are ' +
