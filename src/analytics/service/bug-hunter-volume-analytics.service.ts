@@ -14,6 +14,7 @@ import { AnalyticsBucket } from '../repository/platform-analytics.repository';
 import {
   describeWindow,
   generateBucketLabels,
+  isoDate,
   resolveAnalyticsWindow,
 } from '../util/analytics-window.util';
 
@@ -45,9 +46,14 @@ export class BugHunterVolumeAnalyticsService {
     query: BugHunterVolumeQueryDto,
   ): Promise<BugHunterVolumeResponseDto> {
     const range = query.range ?? DEFAULT_RANGE;
-    const isAllTime = range === 'all' && !query.from && !query.to;
+    const isAllTime = range === 'all';
+
+    // A bounded 'all' query is a custom range that defaults to today.
+    const effectiveTo =
+      query.to ?? (isAllTime && query.from ? isoDate(new Date()) : undefined);
+
     const window = resolveAnalyticsWindow(
-      { range, bucket: query.bucket, from: query.from, to: query.to },
+      { range, bucket: query.bucket, from: query.from, to: effectiveTo },
       {
         defaultRange: DEFAULT_RANGE,
         defaultBucketFor,
