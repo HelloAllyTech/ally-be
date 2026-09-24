@@ -17,7 +17,8 @@ export enum AgentBuilderField {
   PERSONA = 'persona',
   // Character backstory (characterProfileText) — the hard biographical facts
   // the Role Instruction deliberately omits. Plain text, same 3 inputs as
-  // every other field; not sequenced after persona (see generateAgentBuilderField).
+  // every other field; written in the second stage of the chain, after the
+  // persona, so it is the history of the person the persona named.
   BACKSTORY = 'backstory',
   // Per-simulation score-driven states (metadata.states). Only meaningful for
   // main-agent prompts that reference {state_x_guidelines}; the studio wizard
@@ -65,6 +66,26 @@ export const LANGUAGE_SCOPED_AGENT_BUILDER_FIELDS: ReadonlySet<AgentBuilderField
 export const isLanguageScopedAgentBuilderField = (
   field: AgentBuilderField,
 ): boolean => LANGUAGE_SCOPED_AGENT_BUILDER_FIELDS.has(field);
+
+/**
+ * The first stage of the chained generation: written from the brief alone,
+ * then passed to every other field as `establishedContext`, so the title,
+ * backstory, states, role instruction and opening lines all describe the same
+ * client facing the same challenge. Kept to two short fields on purpose — the
+ * second stage waits for the slower of them, so each extra foundation field is
+ * latency on the whole batch.
+ */
+export const FOUNDATION_AGENT_BUILDER_FIELDS: ReadonlySet<AgentBuilderField> =
+  new Set([AgentBuilderField.CHALLENGE_DESCRIPTION, AgentBuilderField.PERSONA]);
+
+/**
+ * Whether a field reads the brief alone and never the established context:
+ * the foundation fields (they ARE the context) and `spoken_languages`, which
+ * runs alongside them and answers a question the brief settles by itself.
+ */
+export const ignoresEstablishedContext = (field: AgentBuilderField): boolean =>
+  FOUNDATION_AGENT_BUILDER_FIELDS.has(field) ||
+  field === AgentBuilderField.SPOKEN_LANGUAGES;
 
 /**
  * Safety valve on the wizard's fan-out: however many languages the model

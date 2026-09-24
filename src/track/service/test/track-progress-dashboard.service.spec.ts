@@ -43,7 +43,7 @@ describe('TrackProgressDashboardService.getDashboard', () => {
 
   const roleplayRow = (
     overrides: Partial<{
-      compositeScore: number | null;
+      sessionScore: number | null;
       skillCoverage: { category: string; percentage: number }[] | null;
       evaluationMarkdown: string | null;
     }> = {},
@@ -51,7 +51,7 @@ describe('TrackProgressDashboardService.getDashboard', () => {
     trackItemId: 'item-1',
     trackItemTitle: 'Practice: an upset client',
     scenarioSessionId: 'sess-1',
-    compositeScore: 80,
+    sessionScore: 80,
     occurredAt: '2026-08-02T00:00:00.000Z',
     skillCoverage: [{ category: 'Listening Engagement', percentage: 80 }],
     evaluationMarkdown: '## What worked\nGood rapport building.',
@@ -185,16 +185,32 @@ describe('TrackProgressDashboardService.getDashboard', () => {
     expect(result.skillCategories.every((c) => c.sampleSize === 1)).toBe(true);
   });
 
-  it('averages compositeScore across evaluated roleplay sessions', async () => {
+  it('averages the roleplay score across evaluated roleplay sessions', async () => {
     trackProgressDashboardRepository.getRoleplayFeedback.mockResolvedValue([
-      roleplayRow({ compositeScore: 80 }),
-      roleplayRow({ compositeScore: 60 }),
+      roleplayRow({ sessionScore: 80 }),
+      roleplayRow({ sessionScore: 60 }),
     ]);
 
     const result = await service.getDashboard(TRACK_ID);
 
     expect(result.evaluatedRoleplaySessionCount).toBe(2);
     expect(result.averageCompositeScore).toBe(70);
+  });
+
+  it('reports the learner roleplay score per session, matching Roleplay Logs', async () => {
+    // The reported session: Roleplay Logs showed 60 (scenario_sessions.score,
+    // the score the learner earned and the one the item's minScore gate was
+    // applied to) while this dashboard showed 78 — the actor-evaluation
+    // judge's composite for the same transcript. Same roleplay, two numbers,
+    // both labelled "score". The dashboard must report the learner's.
+    trackProgressDashboardRepository.getRoleplayFeedback.mockResolvedValue([
+      roleplayRow({ sessionScore: 60 }),
+    ]);
+
+    const result = await service.getDashboard(TRACK_ID);
+
+    expect(result.roleplaySessions.map((s) => s.compositeScore)).toEqual([60]);
+    expect(result.averageCompositeScore).toBe(60);
   });
 
   it('passes evaluationMarkdown through per session, including null', async () => {

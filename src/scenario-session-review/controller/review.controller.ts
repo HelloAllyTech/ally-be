@@ -145,7 +145,7 @@ export class ScenarioSessionReviewController {
   }
 
   @Get('/unread-count')
-  @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEWS])
+  @AuthPermissions([PERMISSIONS.VIEW_SIMULATION_REVIEW])
   @ApiOperation({ summary: 'Get unread review count' })
   @ApiResponse({
     status: 200,

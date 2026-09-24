@@ -35,9 +35,13 @@ describe('QualityDistributionAnalyticsService', () => {
         evaluatedSessions: 0,
       }),
       getSatisfactionByBucket: jest.fn().mockResolvedValue([]),
-      getSatisfactionOverall: jest
-        .fn()
-        .mockResolvedValue({ low: 0, mid: 0, high: 0, responses: 0 }),
+      getSatisfactionOverall: jest.fn().mockResolvedValue({
+        low: 0,
+        mid: 0,
+        high: 0,
+        responses: 0,
+        ratingSum: 0,
+      }),
       getCompletedSessionsByBucket: jest.fn().mockResolvedValue([]),
       getCompletedSessionsOverall: jest.fn().mockResolvedValue(0),
       getLowRatingTags: jest
@@ -128,7 +132,14 @@ describe('QualityDistributionAnalyticsService', () => {
 
   it('GAP-FILLS the satisfaction counts to a contiguous axis', async () => {
     repo.getSatisfactionByBucket.mockResolvedValue([
-      { bucket: '2024-06-01', low: 2, mid: 3, high: 15, responses: 20 },
+      {
+        bucket: '2024-06-01',
+        low: 2,
+        mid: 3,
+        high: 15,
+        responses: 20,
+        ratingSum: 79,
+      },
     ]);
     repo.getCompletedSessionsByBucket.mockResolvedValue([
       { bucket: '2024-05-01', completedSessions: 30 },
@@ -145,6 +156,7 @@ describe('QualityDistributionAnalyticsService', () => {
       mid: 0,
       high: 0,
       responses: 0,
+      avgRating: null,
       top2BoxPct: null,
       completedSessions: 0,
       responseRatePct: null,
@@ -158,6 +170,9 @@ describe('QualityDistributionAnalyticsService', () => {
     // The populated bucket carries both derived shares.
     expect(result.satisfaction[2].top2BoxPct).toBe(75);
     expect(result.satisfaction[2].responseRatePct).toBe(40);
+    // ...and the mean rating over its own responses (79 / 20), null where none.
+    expect(result.satisfaction[2].avgRating).toBe(3.95);
+    expect(result.satisfaction[1].avgRating).toBeNull();
   });
 
   it('does not clamp a response rate above 100% (the bucket-boundary artefact)', async () => {
@@ -165,7 +180,14 @@ describe('QualityDistributionAnalyticsService', () => {
     // buckets. Clamping would hide a boundary effect behind an exact-looking
     // number; the honest fix is a coarser bucket, which the reader can pick.
     repo.getSatisfactionByBucket.mockResolvedValue([
-      { bucket: '2024-06-01', low: 0, mid: 0, high: 3, responses: 3 },
+      {
+        bucket: '2024-06-01',
+        low: 0,
+        mid: 0,
+        high: 3,
+        responses: 3,
+        ratingSum: 15,
+      },
     ]);
     repo.getCompletedSessionsByBucket.mockResolvedValue([
       { bucket: '2024-06-01', completedSessions: 2 },
@@ -255,6 +277,7 @@ describe('QualityDistributionAnalyticsService', () => {
       mid: 10,
       high: 80,
       responses: 100,
+      ratingSum: 413,
     });
     repo.getCompletedSessionsOverall.mockResolvedValue(400);
 
@@ -264,6 +287,7 @@ describe('QualityDistributionAnalyticsService', () => {
     expect(result.summary.top2BoxPct).toBe(80);
     expect(result.summary.responseRatePct).toBe(25);
     expect(result.summary.completedSessions).toBe(400);
+    expect(result.summary.avgRating).toBe(4.13);
   });
 
   it('passes a trimmed tenant filter to every query and echoes it', async () => {

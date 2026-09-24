@@ -69,6 +69,9 @@ taking a whole task description and returning full chunk bodies. Setup, citation
 - **Be lenient about values that can only narrow a match.** Tightening an enum that a
   released mobile build sends verbatim locks those users out — that is how a role removal
   once broke login for everyone. Strict validation is for values that *widen* access.
+- **Two roleplay scores exist; only `scenario_sessions.score` is the learner's** — the
+  meter, the `minScore` gate, Roleplay Logs, Track Overview. `compositeScore` is the
+  judge's actor-evaluation composite: super-admin and analytics surfaces only.
 - **Never edit a merged migration.** Add a new one.
 - **Every AI call has a registry row** in `src/llm/constants/ai-task-registry.constants.ts`
   — a jest guard and `.docs-map.yml` both fail without one. See the routing table above.
