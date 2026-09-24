@@ -96,6 +96,17 @@ export class SatisfactionBucketPointDto {
 
   @ApiProperty({
     description:
+      'Mean of the raw 1-5 ratings in this bucket, to 2 dp; `responses` is the ' +
+      'count it is based on. Null when there were no responses. Read it beside ' +
+      'the bands, not instead of them: a mean hides whether a 3.8 is all-4s or ' +
+      'a split of delight and disgust.',
+    nullable: true,
+    type: Number,
+  })
+  avgRating!: number | null;
+
+  @ApiProperty({
+    description:
       'Top-2-box share: `high / responses` as a percentage. Null when there ' +
       'were no responses — a share of nothing is not zero percent.',
     nullable: true,
@@ -161,6 +172,16 @@ export class QualityDistributionSummaryDto {
 
   @ApiProperty({ description: 'Rating responses in the window' })
   responses!: number;
+
+  @ApiProperty({
+    description:
+      'Mean of every raw 1-5 rating in the window, to 2 dp, computed over the ' +
+      'ratings themselves rather than averaged from the buckets. Null with no ' +
+      'responses.',
+    nullable: true,
+    type: Number,
+  })
+  avgRating!: number | null;
 
   @ApiProperty({ description: 'Responses rating 1-2' })
   low!: number;
