@@ -13,6 +13,7 @@ import {
   Max,
   Min,
   ValidateNested,
+  IsBoolean,
 } from 'class-validator';
 import { TrackItemType } from '../type/track.type';
 
@@ -100,6 +101,14 @@ export class UpsertTrackItemDto {
   @ValidateNested()
   @Type(() => UpsertTrackItemCompletionCriteriaDto)
   completionCriteria?: UpsertTrackItemCompletionCriteriaDto;
+
+  @ApiPropertyOptional({
+    description:
+      'Learners who can open the item can discuss it beneath the content. Omit to leave unchanged.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  hasDiscussion?: boolean;
 }
 
 export class UpsertTrackSectionDto {

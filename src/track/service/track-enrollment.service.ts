@@ -935,6 +935,7 @@ export class TrackEnrollmentService {
       caseId: item.caseId ?? null,
       completionCriteria: item.completionCriteria ?? null,
       contentMeta: this.buildContentMeta(item),
+      hasDiscussion: item.hasDiscussion ?? false,
       status: progress?.status ?? SessionItemStatus.LOCKED,
       startedAt: progress?.startedAt ?? null,
       completedAt: progress?.completedAt ?? null,
