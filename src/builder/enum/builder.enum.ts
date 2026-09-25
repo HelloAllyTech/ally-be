@@ -290,6 +290,15 @@ export enum BuilderNotificationKind {
   AUTOMATION_PAUSED = 'automation_paused',
   /** The GitHub credential is being rejected — everything downstream is blind. */
   CREDENTIAL_REJECTED = 'credential_rejected',
+  /**
+   * Builder merged a pull request itself, on a clean review.
+   *
+   * Announced after the fact rather than offered beforehand, which is the
+   * whole difference from {@link PR_READY_TO_MERGE}: with auto-merge on there
+   * is no click to wait for, and a change reaching master and production with
+   * nobody told would be the loudest silence in this module.
+   */
+  PR_MERGED_AUTOMATICALLY = 'pr_merged_automatically',
 }
 
 /**

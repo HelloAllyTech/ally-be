@@ -78,6 +78,27 @@ export class BuilderSettings extends BaseWithoutTenantEntity {
   autoApproveEnabled!: boolean;
 
   /**
+   * Whether a clean review may merge the pull request.
+   *
+   * The last click Builder was still waiting on, and the only step in the
+   * chain that cannot be undone from here — so it keeps its own switch rather
+   * than riding on `autoApproveEnabled`, and can be turned off again without
+   * a deploy. Everything it rests on is checked afresh at merge time: green
+   * checks, a review that PASSED on this exact commit, nothing actionable
+   * outstanding, and GitHub's own `mergeable_state`.
+   *
+   * It never forces. When any of that does not hold it declines and falls back
+   * to the merge button a person clicks, so the work stops in front of someone
+   * rather than stopping silently.
+   *
+   * Worth knowing what it composes with: `autoReleaseEnabled` ships a merged
+   * pull request to production. Both on means a green, clean-reviewed change
+   * reaches real users with nobody in the loop at all.
+   */
+  @Column({ type: 'boolean', default: false })
+  autoMergeEnabled!: boolean;
+
+  /**
    * Whether a merged pull request releases itself to production.
    *
    * The furthest Builder goes, and the only switch here that changes what real

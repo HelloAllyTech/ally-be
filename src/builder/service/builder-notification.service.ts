@@ -237,6 +237,73 @@ export class BuilderNotificationService {
   }
 
   /**
+   * Said after the fact, because there was no click to offer.
+   *
+   * The counterpart to {@link prReadyToMerge}: same moment in a pull request's
+   * life, opposite direction. That one exists to ask; this one exists because
+   * nobody was asked. A change reaching master — and, with auto-release on,
+   * production — while the channel stays quiet is the failure this whole
+   * module's notifications are written against.
+   *
+   * No button. There is nothing left to decide here, and offering a control
+   * that only reverts would invite a revert-by-reflex on work that passed
+   * every gate. The link is what a reader needs: somewhere to go and look.
+   */
+  async prMergedAutomatically(
+    session: BuilderSession,
+    pullRequest: {
+      id: string;
+      repo: string;
+      prNumber: number;
+      prUrl: string;
+      title?: string | null;
+    },
+    releasing: boolean,
+  ): Promise<void> {
+    const what = pullRequest.title?.trim()
+      ? `${pullRequest.repo}#${pullRequest.prNumber} — ${pullRequest.title.trim()}`
+      : `${pullRequest.repo}#${pullRequest.prNumber}`;
+    // Which of the two things just happened is the part a reader acts on, so
+    // it is in the sentence rather than left to be inferred from settings.
+    const text = releasing
+      ? `Merged ${what} on a clean review, and its production release is on the way.`
+      : `Merged ${what} on a clean review. It is on master; releasing it is still a person's job.`;
+
+    await this.notify(
+      session,
+      BuilderNotificationKind.PR_MERGED_AUTOMATICALLY,
+      text,
+    );
+
+    const result = await this.slack.sendBlocks({
+      text,
+      blocks: [
+        {
+          type: 'section',
+          text: { type: 'mrkdwn', text: `*${what}*\n${text}` },
+        },
+        {
+          type: 'actions',
+          elements: [
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: 'Open on GitHub' },
+              url: pullRequest.prUrl,
+              action_id: 'builder_open_pr',
+            },
+          ],
+        },
+      ],
+      channel: this.configService.builder.slackChannel,
+    });
+    if (!result.ok) {
+      this.logger.warn(
+        `Could not announce the automatic merge of ${pullRequest.repo}#${pullRequest.prNumber}: ${result.error}`,
+      );
+    }
+  }
+
+  /**
    * The one nobody can afford to miss.
    *
    * "Merged but not deployed" is worse than never having released: master has

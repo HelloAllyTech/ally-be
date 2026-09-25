@@ -293,6 +293,19 @@ export class UpdateBuilderSettingsDto {
 
   @ApiPropertyOptional({
     description:
+      'Whether a clean review may merge the pull request. The last click ' +
+      'Builder waits on, and the one step that cannot be undone from here, so ' +
+      'it is its own switch. Checks green checks, a review that passed on this ' +
+      "exact commit, nothing actionable outstanding and GitHub's own " +
+      'mergeable_state afresh at merge time; declines to the human merge ' +
+      'button rather than forcing. With auto-release on, this ships.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  autoMergeEnabled?: boolean;
+
+  @ApiPropertyOptional({
+    description:
       'Whether a merged pull request releases itself to production. The only ' +
       'switch here that changes what real users are running. Refuses rather ' +
       'than guesses when a change cannot be attributed to exactly the ' +

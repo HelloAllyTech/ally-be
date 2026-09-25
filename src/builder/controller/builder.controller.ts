@@ -740,6 +740,9 @@ export class BuilderController {
         ...(dto.autoApproveEnabled !== undefined
           ? { autoApproveEnabled: dto.autoApproveEnabled }
           : {}),
+        ...(dto.autoMergeEnabled !== undefined
+          ? { autoMergeEnabled: dto.autoMergeEnabled }
+          : {}),
         ...(dto.autoReleaseEnabled !== undefined
           ? { autoReleaseEnabled: dto.autoReleaseEnabled }
           : {}),

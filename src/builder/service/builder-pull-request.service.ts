@@ -103,6 +103,10 @@ export class BuilderPullRequestService {
     sessionId: string,
     pullRequestId: string,
     userId: number,
+    // Only changes what the log line says. Every gate below applies either
+    // way — an automatic merge is not a privileged one, it is the same merge
+    // with nobody standing at the button.
+    automatic = false,
   ): Promise<BuilderPullRequest> {
     const row = await this.repository.findOne({
       where: { id: pullRequestId },
@@ -198,7 +202,9 @@ export class BuilderPullRequestService {
       },
     );
     this.logger.info(
-      `[BUILDER] ${row.repo}#${row.prNumber} merged from the drawer by user ${userId}.`,
+      automatic
+        ? `[BUILDER] ${row.repo}#${row.prNumber} merged automatically on a clean review.`
+        : `[BUILDER] ${row.repo}#${row.prNumber} merged from the drawer by user ${userId}.`,
     );
     // Feedback on a merged pull request is no longer anyone's to act on.
     await this.staleFeedback(row.id);
@@ -453,8 +459,112 @@ export class BuilderPullRequestService {
     // reviewed while `autoApproveEnabled` was off could never be approved —
     // the review cap stops a second review, and nothing else looked again.
     await this.considerApproval(pullRequest, { remote, rollup });
-    await this.considerMergePrompt(pullRequest, remote);
+    // Tries to merge, and says whether it did. A decline is not an error and
+    // not the end of the road — the prompt below still offers the button, so
+    // the work stops in front of a person rather than stopping silently.
+    if (!(await this.considerAutoMerge(pullRequest, remote)))
+      await this.considerMergePrompt(pullRequest, remote);
     await this.clearStaleSessionError(pullRequest.sessionId);
+  }
+
+  /**
+   * Merge it ourselves, when a clean review is the only thing it was waiting
+   * on.
+   *
+   * The last click in the chain, and the only step here that cannot be undone
+   * from inside this module — so it is gated on its own switch rather than on
+   * `autoApproveEnabled`, and every fact it rests on is re-established against
+   * THIS commit rather than inherited from whenever the review ran:
+   *
+   *  - **the switch**, off by default like the rest, and the point of it being
+   *    separate is that it can be turned back off without a deploy;
+   *  - **a review that PASSED on this exact head**, not merely one that was
+   *    dispatched. `reviewPassedSha` is the outcome; `reviewedSha` is only the
+   *    attempt, and a run that failed stamps the second without earning the
+   *    first;
+   *  - **nothing actionable outstanding**, because a finding a fix run has not
+   *    finished with means the diff is about to change;
+   *  - **`mergeable_state === 'clean'`**, which is GitHub's own answer to "is
+   *    anything still in the way" — every required check green, every required
+   *    review in, base not stale. Recomputing that here would be a second,
+   *    worse implementation of a question already answered.
+   *
+   * `mergePullRequest` then re-reads the checks and refuses anything that is
+   * not green, so the rollup is verified twice on this path. That is on
+   * purpose: the tick's rollup was fetched before the approval, and a merge is
+   * the one action here that cannot be taken back.
+   *
+   * Returns whether it merged, so the caller knows whether the human prompt is
+   * still owed. A refusal is logged and swallowed rather than thrown —
+   * `mergePullRequest`'s errors are written for a person reading a drawer, and
+   * on a five-minute tick an exception would abort the rest of the pass for
+   * every other pull request behind this one.
+   */
+  private async considerAutoMerge(
+    pullRequest: BuilderPullRequest,
+    remote: {
+      state: string;
+      merged: boolean;
+      mergeableState: string | null;
+      headSha?: string | null;
+    },
+  ): Promise<boolean> {
+    const settings = await this.settingsService.get();
+    if (!settings.enabled || !settings.autoMergeEnabled) return false;
+
+    if (remote.merged || remote.state !== 'open') return false;
+    if (remote.mergeableState !== 'clean') return false;
+
+    // Against the head GitHub just reported, not the row's cached copy: the
+    // row is written by this same pass and a stale value would be the one way
+    // this could merge a commit no review ever read.
+    if (!remote.headSha) return false;
+    if (pullRequest.reviewPassedSha !== remote.headSha) return false;
+
+    const outstanding = await this.feedbackRepository.countActionable(
+      pullRequest.id,
+    );
+    if (outstanding) return false;
+
+    const session = await this.sessionRepository.findOne({
+      where: { id: pullRequest.sessionId },
+    });
+    if (!session) return false;
+
+    try {
+      // userId 0: the platform, not a person. Nobody clicked, and recording a
+      // user who did not act would be the wrong answer to "who merged this".
+      const merged = await this.mergePullRequest(
+        pullRequest.sessionId,
+        pullRequest.id,
+        0,
+        true,
+      );
+      if (!merged.merged) return false;
+
+      await this.notificationService.prMergedAutomatically(
+        session,
+        {
+          id: pullRequest.id,
+          repo: pullRequest.repo,
+          prNumber: pullRequest.prNumber,
+          prUrl: pullRequest.prUrl,
+          title: pullRequest.title ?? null,
+        },
+        settings.autoReleaseEnabled,
+      );
+      return true;
+    } catch (error) {
+      // Refusals are expected traffic here, not incidents: a check that went
+      // red between the rollup and the merge, a base that moved. The next tick
+      // re-tests all of it.
+      this.logger.info(
+        `Not merging ${pullRequest.repo}#${pullRequest.prNumber} automatically: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return false;
+    }
   }
 
   /**

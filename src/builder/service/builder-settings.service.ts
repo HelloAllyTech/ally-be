@@ -49,6 +49,7 @@ export class BuilderSettingsService {
         | 'autoFixEnabled'
         | 'autoReviewEnabled'
         | 'autoApproveEnabled'
+        | 'autoMergeEnabled'
         | 'autoReleaseEnabled'
         | 'maxFixRunsPerPr'
         | 'defaultEngine'
@@ -77,6 +78,16 @@ export class BuilderSettingsService {
     // say a pull request is fine to merge. "Who turned it on, and when" is the
     // first question after any PR that should not have been approved.
     // Louder still: this one changes what real users are running.
+    // The one action in this module that cannot be undone from inside it.
+    // "Who turned it on, and when" is the first question after any pull
+    // request that reached master without a person choosing to take it.
+    if (changes.autoMergeEnabled !== undefined) {
+      this.logger.info(
+        `Builder auto-merge ${
+          changes.autoMergeEnabled ? 'ENABLED' : 'DISABLED'
+        } by user ${userId}`,
+      );
+    }
     if (changes.autoReleaseEnabled !== undefined) {
       this.logger.info(
         `Builder auto-release ${

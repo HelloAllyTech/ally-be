@@ -76,6 +76,8 @@ describe('BuilderPullRequestService', () => {
       fixRunStarted: jest.fn(),
       releaseFailed: jest.fn(),
       releaseSkipped: jest.fn(),
+      prReadyToMerge: jest.fn(),
+      prMergedAutomatically: jest.fn(),
     };
     settingsService = {
       get: jest.fn().mockResolvedValue({
@@ -1204,6 +1206,178 @@ describe('BuilderPullRequestService', () => {
    * had no way to fix that itself — both of today's builder PRs went stale and
    * each needed a hand rebase, one of them twice.
    */
+  /**
+   * The last click, taken by the machine.
+   *
+   * Every one of these pins a fact that has to be re-established against the
+   * CURRENT head rather than inherited from whenever the review ran — the
+   * failure this guards against is merging a commit nothing has read, which
+   * is the one mistake an auto-merger cannot apologise for.
+   */
+  describe('merging on a clean review', () => {
+    const green = { state: 'success', failed: [] };
+    const reviewed = (over: Record<string, any> = {}) =>
+      openPr({
+        headSha: 'abc1234def',
+        reviewedSha: 'abc1234def',
+        reviewPassedSha: 'abc1234def',
+        title: 'Add a thing',
+        ...over,
+      });
+
+    const on = (over: Record<string, any> = {}) => ({
+      enabled: true,
+      autoFixEnabled: true,
+      autoReviewEnabled: true,
+      autoApproveEnabled: true,
+      autoMergeEnabled: true,
+      autoReleaseEnabled: false,
+      maxFixRunsPerPr: 3,
+      ...over,
+    });
+
+    beforeEach(() => {
+      settingsService.get.mockResolvedValue(on());
+      sessionRepository.findOne.mockResolvedValue({ id: 'session-1' });
+      // `mergePullRequest` re-reads the row after updating it and returns what
+      // it finds, so a static mock would hand back a row still saying
+      // `merged: false` and the announcement guard would — correctly — refuse
+      // to announce a merge the row does not claim. The fixture has to move
+      // the way the table does.
+      let merged = false;
+      repository.update.mockImplementation((_: any, patch: any) => {
+        if (patch?.merged) merged = true;
+        return Promise.resolve(undefined);
+      });
+      repository.findOne.mockImplementation(() =>
+        Promise.resolve(reviewed({ merged })),
+      );
+    });
+
+    const tick = (over: Record<string, any> = {}, pr = reviewed()) =>
+      reconcileWith(
+        { headSha: 'abc1234def', mergeableState: 'clean', ...over },
+        pr,
+        green,
+      );
+
+    it('merges a green pull request its own review passed', async () => {
+      await tick();
+
+      expect(github.mergePullRequest).toHaveBeenCalledWith(
+        'ally-be',
+        42,
+        'Add a thing',
+      );
+    });
+
+    it('stays off unless auto-merge is explicitly enabled', async () => {
+      settingsService.get.mockResolvedValue(on({ autoMergeEnabled: false }));
+
+      await tick();
+
+      expect(github.mergePullRequest).not.toHaveBeenCalled();
+    });
+
+    /**
+     * `reviewedSha` says a review was DISPATCHED at that commit; only
+     * `reviewPassedSha` says one came back clean. A run that failed stamps the
+     * first without earning the second, and merging on it would ship a diff
+     * whose review never finished.
+     */
+    it('will not merge on a review that was only attempted', async () => {
+      const attempted = openPr({
+        headSha: 'abc1234def',
+        reviewedSha: 'abc1234def',
+        reviewPassedSha: null,
+      });
+      repository.findOne.mockResolvedValue(attempted);
+
+      await tick({}, attempted);
+
+      expect(github.mergePullRequest).not.toHaveBeenCalled();
+    });
+
+    /** Somebody pushed while the review was reading. */
+    it('will not merge a commit the clean review never read', async () => {
+      const moved = openPr({
+        headSha: 'abc1234def',
+        reviewedSha: 'an-older-commit',
+        reviewPassedSha: 'an-older-commit',
+      });
+      repository.findOne.mockResolvedValue(moved);
+
+      await tick({}, moved);
+
+      expect(github.mergePullRequest).not.toHaveBeenCalled();
+    });
+
+    /** A finding a fix run has not finished with means the diff will change. */
+    it('will not merge with anything actionable outstanding', async () => {
+      feedbackRepository.countActionable.mockResolvedValue(1);
+
+      await tick();
+
+      expect(github.mergePullRequest).not.toHaveBeenCalled();
+    });
+
+    /** GitHub's own answer to "is anything still in the way". */
+    it('defers to mergeable_state rather than recomputing it', async () => {
+      await tick({ mergeableState: 'blocked' });
+
+      expect(github.mergePullRequest).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The graceful-degradation half. A decline must not be silent: the work
+     * stops in front of a person, which is what the button is for.
+     */
+    it('falls back to the human merge button when it declines', async () => {
+      settingsService.get.mockResolvedValue(on({ autoMergeEnabled: false }));
+
+      await tick();
+
+      expect(notificationService.prReadyToMerge).toHaveBeenCalled();
+    });
+
+    it('does not also offer a button for something it just merged', async () => {
+      await tick();
+
+      expect(notificationService.prMergedAutomatically).toHaveBeenCalled();
+      expect(notificationService.prReadyToMerge).not.toHaveBeenCalled();
+    });
+
+    /**
+     * A refusal between the rollup and the merge — a check gone red, a base
+     * that moved — is expected traffic on a five-minute tick, not an incident.
+     * Throwing would abort the pass for every pull request behind this one.
+     */
+    it('swallows a refusal and still offers the button', async () => {
+      github.mergePullRequest.mockResolvedValue({
+        merged: false,
+        message: 'Base branch was modified.',
+      });
+
+      await tick();
+
+      expect(notificationService.prMergedAutomatically).not.toHaveBeenCalled();
+      expect(notificationService.prReadyToMerge).toHaveBeenCalled();
+    });
+
+    /** What a reader acts on differs, so the sentence differs. */
+    it('says whether a release is on the way', async () => {
+      settingsService.get.mockResolvedValue(on({ autoReleaseEnabled: true }));
+
+      await tick();
+
+      expect(notificationService.prMergedAutomatically).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ prNumber: 42 }),
+        true,
+      );
+    });
+  });
+
   describe('keeping a stale branch up to date', () => {
     const behind = { mergeableState: 'behind' };
 
