@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -22,6 +24,7 @@ import { PERMISSIONS } from '../../authorization/constants/permissions.constants
 import {
   CreateWaTemplateDto,
   PreviewAskDto,
+  RegisterWaPhoneNumberDto,
   ReorderWaTemplatesDto,
   TestWaTemplateDto,
   UpdateWaSettingsDto,
@@ -170,6 +173,52 @@ export class WhatsAppAdminController {
   })
   providerHealth() {
     return this.adminService.providerHealth();
+  }
+
+  @Post('settings/provider-check')
+  @HttpCode(HttpStatus.OK)
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    permissions: [PERMISSIONS.VIEW_WHATSAPP_BOT],
+  })
+  @ApiOperation({
+    summary: 'Ask Meta, live, whether the token and number work',
+    description:
+      'Reads only. Returns the connected number, display name, quality rating and registration ' +
+      'state, plus whether the app is subscribed to the business account webhooks — the things the ' +
+      'configured-or-not booleans cannot show. A POST because it calls out to Meta on demand; it ' +
+      'is not run on every page load.',
+  })
+  checkProviderConnection() {
+    return this.adminService.checkProviderConnection();
+  }
+
+  @Post('settings/provider-register')
+  @HttpCode(HttpStatus.OK)
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT],
+  })
+  @ApiOperation({
+    summary: 'Register the phone number for Cloud API use',
+    description:
+      'One-time Meta step before a number can send. Returns the refreshed connection check.',
+  })
+  registerPhoneNumber(@Body() dto: RegisterWaPhoneNumberDto) {
+    return this.adminService.registerPhoneNumber(dto.pin);
+  }
+
+  @Post('settings/provider-subscribe')
+  @HttpCode(HttpStatus.OK)
+  @RequireFeatureToggle(FeatureToggleKey.WHATSAPP_BOT, {
+    permissions: [PERMISSIONS.EDIT_WHATSAPP_BOT],
+  })
+  @ApiOperation({
+    summary: 'Subscribe the Meta app to the business account webhooks',
+    description:
+      'Idempotent. Without it Meta never delivers messages even though the webhook handshake ' +
+      'succeeded. Returns the refreshed connection check.',
+  })
+  subscribeProviderApp() {
+    return this.adminService.subscribeProviderApp();
   }
 
   // ── preview console ───────────────────────────────────────────────────

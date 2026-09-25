@@ -428,16 +428,23 @@ export class AppConfigService {
       /** The sending number's id, not the number itself. */
       phoneNumberId: this.configService.get<string>('WHATSAPP_PHONE_NUMBER_ID'),
       accessToken: this.configService.get<string>('WHATSAPP_ACCESS_TOKEN'),
-      graphApiVersion: this.configService.get<string>(
-        'WHATSAPP_GRAPH_API_VERSION',
-        'v21.0',
+      /**
+       * The WhatsApp Business Account the number belongs to. Optional: nothing on the message path
+       * reads it. The admin connection check uses it to confirm the Meta app is subscribed to the
+       * account's webhooks — the one setup step whose omission is completely silent (the webhook
+       * handshake succeeds, and then no message ever arrives).
+       */
+      businessAccountId: this.configService.get<string>(
+        'WHATSAPP_BUSINESS_ACCOUNT_ID',
       ),
       /**
-       * Environment discriminator, following the LiveKit webhook precedent. One WhatsApp number
-       * can only point at one webhook URL, so when staging and production share a number this is
-       * what stops both replying to the same worker.
+       * v25.0 expires 2028-07-29. v21.0, the original default, expires 2027-01-21 — after which
+       * every send fails. Meta publishes the schedule at developers.facebook.com/docs/graph-api/changelog/versions.
        */
-      environment: this.configService.get<string>('WHATSAPP_ENVIRONMENT'),
+      graphApiVersion: this.configService.get<string>(
+        'WHATSAPP_GRAPH_API_VERSION',
+        'v25.0',
+      ),
     };
   }
   get s3() {

@@ -34,7 +34,7 @@ const TENANT_A = '11111111-1111-1111-1111-111111111111';
  */
 describe('WhatsAppInboundService identity gate', () => {
   let service: WhatsAppInboundService;
-  let provider: { sendText: jest.Mock };
+  let provider: { sendText: jest.Mock; showTypingIndicator: jest.Mock };
   let aiService: {
     answerKnowledgeQuestion: jest.Mock;
     checkWhatsAppCrisis: jest.Mock;
@@ -73,6 +73,7 @@ describe('WhatsAppInboundService identity gate', () => {
 
     provider = {
       sendText: jest.fn().mockResolvedValue({ providerMessageId: 'wamid.out' }),
+      showTypingIndicator: jest.fn().mockResolvedValue(undefined),
     };
     aiService = {
       answerKnowledgeQuestion: jest.fn(),
@@ -273,5 +274,27 @@ describe('WhatsAppInboundService identity gate', () => {
     expect(aiService.answerKnowledgeQuestion.mock.calls[0][0].audience).toEqual(
       { tenant_id: TENANT_A, include_global: true },
     );
+  });
+
+  it('shows "typing…" on the inbound message before a model-backed reply', async () => {
+    await service.handle(inbound());
+
+    expect(provider.showTypingIndicator).toHaveBeenCalledWith('wamid.1');
+  });
+
+  it('shows no typing bubble on a path that replies instantly or not at all', async () => {
+    // STOP replies from a fixed string with no model call; a bubble would only flash. And Meta's
+    // guidance is to show typing only when a reply is coming, so the silent exits must not either.
+    await service.handle(inbound('STOP'));
+
+    expect(provider.showTypingIndicator).not.toHaveBeenCalled();
+  });
+
+  it('still answers when the typing indicator fails', async () => {
+    provider.showTypingIndicator.mockRejectedValue(new Error('meta down'));
+
+    await service.handle(inbound());
+
+    expect(sentBody()).toBe(DEFAULT_WHATSAPP_SETTINGS.unrecognisedNumberText);
   });
 });
