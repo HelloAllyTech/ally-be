@@ -146,3 +146,87 @@ describe('GithubActionsService.nextPatchTag', () => {
     await expect(service.nextPatchTag('ally-be', 'v')).resolves.toBe('v9.9.10');
   });
 });
+
+/**
+ * The difference between "no checks" and "I could not see the checks".
+ *
+ * Both calls used to swallow their error into an empty list, so a 403 from a
+ * token without Checks permission on one repo produced a confident
+ * `state: 'none'` — a commit with four green checks reported as one nobody had
+ * verified. Everything that waits for green then waits forever, and the merge
+ * button blames CI for what is a token problem. ally-mobile#104 sat in exactly
+ * that state with every check passing.
+ */
+describe('GithubActionsService.getCheckRollup', () => {
+  let service: GithubActionsService;
+  const configService = {
+    githubToken: 'gh-token',
+    githubOrg: 'helloallytech',
+  } as unknown as AppConfigService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new GithubActionsService(configService);
+  });
+
+  const checkRuns = (runs: unknown[]) => ({ data: { check_runs: runs } });
+  const statuses = (rows: unknown[]) => ({ data: { statuses: rows } });
+
+  it('reads a green commit as success', async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce(
+        checkRuns([
+          { name: 'Jest', status: 'completed', conclusion: 'success' },
+          { name: 'Typecheck', status: 'completed', conclusion: 'success' },
+        ]),
+      )
+      .mockResolvedValueOnce(statuses([]));
+
+    expect(await service.getCheckRollup('ally-mobile', 'sha')).toEqual({
+      state: 'success',
+      failed: [],
+      total: 2,
+    });
+  });
+
+  it('says nothing rather than "none" when the checks cannot be read', async () => {
+    mockedAxios.get
+      .mockRejectedValueOnce(
+        Object.assign(new Error('Not Found'), {
+          response: { status: 404 },
+        }),
+      )
+      .mockResolvedValueOnce(statuses([]));
+
+    // Null, not { state: 'none' }: callers treat null as "could not read" and
+    // refuse to act, which is the only safe reading of an unanswered question.
+    expect(await service.getCheckRollup('ally-mobile', 'sha')).toBeNull();
+  });
+
+  it('still reports a genuinely unchecked commit as none', async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce(checkRuns([]))
+      .mockResolvedValueOnce(statuses([]));
+
+    expect(await service.getCheckRollup('ally-mobile', 'sha')).toEqual({
+      state: 'none',
+      failed: [],
+      total: 0,
+    });
+  });
+
+  it('names what failed, so the reason reaches a person', async () => {
+    mockedAxios.get
+      .mockResolvedValueOnce(
+        checkRuns([
+          { name: 'Jest', status: 'completed', conclusion: 'failure' },
+        ]),
+      )
+      .mockResolvedValueOnce(statuses([]));
+
+    const rollup = await service.getCheckRollup('ally-mobile', 'sha');
+
+    expect(rollup?.state).toBe('failure');
+    expect(rollup?.failed).toEqual(['Jest']);
+  });
+});

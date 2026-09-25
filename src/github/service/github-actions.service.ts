@@ -623,21 +623,35 @@ export class GithubActionsService {
   async getCheckRollup(repo: string, ref: string): Promise<CheckRollup | null> {
     this.requireConfigured();
     try {
+      // A read that failed is NOT a commit with no checks, and the difference
+      // decides whether anything downstream may proceed.
+      //
+      // Both calls used to swallow their error into an empty list, so a 403
+      // from a token without Checks permission on one repo produced total = 0
+      // and a confident `state: 'none'` — a commit with four green checks
+      // reported as a commit nobody had verified. Everything that waits for
+      // green then waits forever: the review agent stands down, approval never
+      // comes, and the merge button refuses with "no checks at all", which is
+      // the one message guaranteed to send a reader looking at CI rather than
+      // at the token. ally-mobile#104 sat in that state with all four checks
+      // passing.
+      //
+      // Null is the honest answer and callers already handle it: reconcile
+      // leaves the last known status alone, and mergePullRequest says it will
+      // not merge blind rather than inventing a verdict.
       const [checks, statuses] = await Promise.all([
         axios
           .get(this.url(repo, `commits/${ref}/check-runs`), {
             headers: this.headers,
             timeout: 15_000,
           })
-          .then((response) => response.data?.check_runs ?? [])
-          .catch(() => []),
+          .then((response) => response.data?.check_runs ?? []),
         axios
           .get(this.url(repo, `commits/${ref}/status`), {
             headers: this.headers,
             timeout: 15_000,
           })
-          .then((response) => response.data?.statuses ?? [])
-          .catch(() => []),
+          .then((response) => response.data?.statuses ?? []),
       ]);
 
       const failed: string[] = [];
