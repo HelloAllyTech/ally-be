@@ -1786,6 +1786,51 @@ export class BuilderBuildService {
   }
 
   /** Close a run and move the session with it. */
+  /**
+   * Give a failed review its pull request back.
+   *
+   * `dispatchReviewRun` stamps `reviewedSha` BEFORE dispatching, which is
+   * correct and load-bearing: reconcile runs every five minutes and would
+   * otherwise send a second reviewer at a pull request the first is still
+   * reading. But the stamp says "a review was attempted at this commit", and
+   * `considerReviewRun` reads it as "this commit has been reviewed".
+   *
+   * For a run that finished, those are the same thing. For one that failed
+   * they are not, and nothing told them apart — so a single failure left the
+   * pull request permanently unreviewable: the head never moves again on its
+   * own, so `reviewedSha === headSha` holds forever, no second review is ever
+   * dispatched, `reviewPassedSha` is never written, and approval and
+   * auto-merge both wait on evidence that cannot now arrive. ally-be#503 has
+   * sat in exactly that state since 2026-09-17, and migration
+   * 1971200000000 records ally-be#494 doing the same thing before it.
+   *
+   * `reviewRunCount` is deliberately NOT rolled back. It is what bounds this:
+   * a pull request still gets at most BUILDER_MAX_REVIEW_RUNS_PER_PR
+   * dispatches, so an engine that fails every time costs two runs rather than
+   * an endless supply. Clearing the sha buys a retry, not a loop.
+   */
+  private async releaseReviewClaim(
+    run: BuilderBuildRun,
+    status: BuilderRunStatus,
+  ): Promise<void> {
+    if (run.mode !== BuilderRunMode.REVIEW) return;
+    if (!run.pullRequestId) return;
+    if (
+      status !== BuilderRunStatus.FAILED &&
+      status !== BuilderRunStatus.TIMED_OUT &&
+      status !== BuilderRunStatus.CANCELLED
+    )
+      return;
+
+    await this.pullRequestRepository.update(
+      { id: run.pullRequestId },
+      { reviewedSha: null },
+    );
+    this.logger.info(
+      `Review run ${run.id} ${status}; cleared the review claim on its pull request so the next tick can try again.`,
+    );
+  }
+
   async settleRun(
     run: BuilderBuildRun,
     status: BuilderRunStatus,
@@ -1805,6 +1850,8 @@ export class BuilderBuildService {
       { id: run.id },
       { status, error, completedAt, runnerMinutes },
     );
+
+    await this.releaseReviewClaim(run, status);
 
     const session = await this.sessionRepository.findOne({
       where: { id: run.sessionId },
