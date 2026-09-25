@@ -2,7 +2,7 @@ import { Injectable, OnModuleInit } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { scheduledTaskRegistry } from '../../scheduler/registry/scheduled-task.registry';
 import { LoggerService } from '../../logger/logger.service';
-import { SUPER_ADMIN_ROLES } from '../../common/constants/user.constants';
+import { PERMISSIONS } from '../../authorization/constants/permissions.constants';
 import { RoadmapVoteGrantRepository } from '../repository/roadmap-vote-grant.repository';
 import { currentDayKey, currentPeriodKey } from '../util/roadmap-period.util';
 
@@ -10,14 +10,14 @@ import { currentDayKey, currentPeriodKey } from '../util/roadmap-period.util';
  * Issues the recurring vote grants — 5/day, 50/month — to every roadmap-eligible platform
  * admin. See RoadmapVoteGrant's docblock for the ledger this feeds.
  *
- * ELIGIBILITY = SUPER_ADMIN_ROLES ([SUPER_ADMIN, SUPER_DUPER_ADMIN]), not the broader
- * PLATFORM_TIER_ROLES. Deliberate: that's the exact pair of groups migration
- * 1871000000003 grants `vote:admin:product-roadmap` to — the roadmap's permission grant was
- * never re-pointed at PLATFORM_ADMIN when the role collapse landed, so PLATFORM_ADMIN-only
- * accounts hold no roadmap vote permission today regardless of this job. Matching that exactly
- * (rather than reaching for PLATFORM_TIER_ROLES, which answers "is this a staff account?" —
- * a different question, see the ally-super-admin-roles-staleness-trap history) keeps grant
- * issuance from drifting out of sync with who can actually spend them.
+ * ELIGIBILITY = every user in a group that holds `vote:admin:product-roadmap` — the exact
+ * permission PUT /allocations checks — so issuance can't drift out of sync with who can
+ * actually spend a grant. Keyed on the permission, not on group names, on purpose: this used
+ * to list SUPER_ADMIN_ROLES, which names only the two retired super-admin tiers. The role
+ * collapse (CreatePlatformAdminRole1895000000001) copied SUPER_DUPER_ADMIN's permissions onto
+ * PLATFORM_ADMIN, and the Ally admins screen grants PLATFORM_ADMIN and nothing else, so every
+ * admin added since could vote but was never issued a single vote to vote with.
+ * BackfillRoadmapVoteGrantsForPlatformAdmins1973410000000 repaired the grants they missed.
  */
 @Injectable()
 export class RoadmapVoteGrantSchedulerRegistrationService implements OnModuleInit {
@@ -75,9 +75,10 @@ export class RoadmapVoteGrantSchedulerRegistrationService implements OnModuleIni
     const rows = await this.dataSource.query<{ userId: number }[]>(
       `SELECT DISTINCT ug."userId"
          FROM user_groups ug
-         INNER JOIN groups g ON g.id = ug."groupId"
-        WHERE g.name = ANY($1::text[])`,
-      [SUPER_ADMIN_ROLES],
+         INNER JOIN group_permissions gp ON gp."groupId" = ug."groupId"
+         INNER JOIN permissions p ON p.id = gp."permissionId"
+        WHERE p.name = $1`,
+      [PERMISSIONS.VOTE_PRODUCT_ROADMAP],
     );
     return rows.map((r) => r.userId);
   }
