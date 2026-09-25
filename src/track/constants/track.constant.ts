@@ -15,6 +15,15 @@ export const TRACK_MAX_QUIZ_QUESTIONS = 50;
  */
 export const TRACK_MAX_ARTICLE_QUESTIONS = 10;
 
+/**
+ * Likert bounds. A scale needs two points to be a choice and past ten stops
+ * being a scale anyone reads point by point; twenty statements is already a
+ * long survey for one screen.
+ */
+export const TRACK_LIKERT_MIN_SCALE_POINTS = 2;
+export const TRACK_LIKERT_MAX_SCALE_POINTS = 10;
+export const TRACK_LIKERT_MAX_STATEMENTS = 20;
+
 export const TRACK_DEFAULT_VIDEO_WATCH_PCT = 90;
 export const TRACK_DEFAULT_QUIZ_PASS_SCORE = 70;
 

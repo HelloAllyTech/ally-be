@@ -11,6 +11,7 @@ import {
 } from '../type/track.type';
 import {
   FillBlankQuestion,
+  LikertScaleQuestion,
   MatchingQuestion,
   McqMultiQuestion,
   McqSingleQuestion,
@@ -37,6 +38,9 @@ import {
   TRACK_MAX_ANNOTATION_LABELS,
   TRACK_MAX_ANNOTATION_UNITS,
   TRACK_MAX_ARTICLE_QUESTIONS,
+  TRACK_LIKERT_MAX_SCALE_POINTS,
+  TRACK_LIKERT_MAX_STATEMENTS,
+  TRACK_LIKERT_MIN_SCALE_POINTS,
   TRACK_MAX_ITEMS_PER_SECTION,
   TRACK_MAX_QUESTION_MEDIA_ALT_LENGTH,
   TRACK_MAX_QUIZ_QUESTIONS,
@@ -46,6 +50,7 @@ import {
   UpsertTrackItemDto,
   UpsertTrackSectionDto,
 } from '../dto/upsert-track-structure.dto';
+import { isQuestionGraded } from '../util/track-quiz-grading.util';
 
 function fail(message: string): never {
   throw new BadRequestException(message);
@@ -518,7 +523,7 @@ export function validateQuizContent(
     ) {
       fail(`${label}: points must be a positive number.`);
     }
-    validateQuizQuestion(question, label);
+    validateQuizQuestion(question, label, 'quiz');
   });
 }
 
@@ -584,27 +589,100 @@ function validateQuestionMedia(media: QuestionMedia, label: string): void {
   }
 }
 
-function validateQuizQuestion(question: QuizQuestion, label: string): void {
+/**
+ * `quiz` = a question inside a QUIZ item, the only place that scores a whole
+ * attempt and so the only place a question may be ungraded, hide its answer,
+ * or be a Likert scale. `embedded` = an article's inline question or a video
+ * interjection: each is answered once, marked on the spot, and reveals the
+ * right option there and then, so none of the three would mean anything.
+ */
+type QuestionContext = 'quiz' | 'embedded';
+
+function validateQuizQuestion(
+  question: QuizQuestion,
+  label: string,
+  context: QuestionContext = 'embedded',
+): void {
   if (question.media !== undefined && question.media !== null) {
     validateQuestionMedia(question.media, label);
   }
+  validateQuestionFlags(question, label, context);
+  // Only a graded question has to carry its answer key; an ungraded one may
+  // be a pure opinion prompt. A key that *is* given is still checked, since
+  // it still decides the right/wrong the learner is shown.
+  const requireKey = isQuestionGraded(question);
   switch (question.type) {
     case QuizQuestionType.MCQ_SINGLE:
-      return validateMcqSingle(question, label);
+      return validateMcqSingle(question, label, requireKey);
     case QuizQuestionType.MCQ_MULTI:
-      return validateMcqMulti(question, label);
+      return validateMcqMulti(question, label, requireKey);
     case QuizQuestionType.TRUE_FALSE:
-      return validateTrueFalse(question, label);
+      return validateTrueFalse(question, label, requireKey);
     case QuizQuestionType.ORDERING:
-      return validateOrdering(question, label);
+      return validateOrdering(question, label, requireKey);
     case QuizQuestionType.MATCHING:
-      return validateMatching(question, label);
+      return validateMatching(question, label, requireKey);
     case QuizQuestionType.FILL_BLANK:
-      return validateFillBlank(question, label);
+      return validateFillBlank(question, label, requireKey);
     case QuizQuestionType.OPEN_ENDED:
-      return validateOpenEnded(question, label);
+      return validateOpenEnded(question, label, requireKey);
+    case QuizQuestionType.LIKERT_SCALE:
+      if (context !== 'quiz') {
+        fail(`${label}: rating-scale questions are only supported in a quiz.`);
+      }
+      return validateLikertScale(question, label);
     default:
       fail(`${label}: unknown question type.`);
+  }
+}
+
+function validateQuestionFlags(
+  question: QuizQuestion,
+  label: string,
+  context: QuestionContext,
+): void {
+  for (const flag of ['isGraded', 'showCorrectAnswer'] as const) {
+    const value = question[flag];
+    if (value !== undefined && value !== null && typeof value !== 'boolean') {
+      fail(`${label}: ${flag} must be true or false.`);
+    }
+  }
+  if (context === 'embedded') {
+    if (question.isGraded === false) {
+      fail(`${label}: questions can only be ungraded inside a quiz.`);
+    }
+    if (question.showCorrectAnswer === false) {
+      fail(`${label}: hiding the correct answer is only supported in a quiz.`);
+    }
+  }
+  if (
+    question.type === QuizQuestionType.LIKERT_SCALE &&
+    question.isGraded === true
+  ) {
+    fail(`${label}: a rating-scale question has no right answer to grade.`);
+  }
+}
+
+function validateLikertScale(
+  question: LikertScaleQuestion,
+  label: string,
+): void {
+  assertOptions(question.statements, label, 1, 'statement');
+  if (question.statements.length > TRACK_LIKERT_MAX_STATEMENTS) {
+    fail(
+      `${label}: can have at most ${TRACK_LIKERT_MAX_STATEMENTS} statements.`,
+    );
+  }
+  assertOptions(
+    question.scale,
+    label,
+    TRACK_LIKERT_MIN_SCALE_POINTS,
+    'scale point',
+  );
+  if (question.scale.length > TRACK_LIKERT_MAX_SCALE_POINTS) {
+    fail(
+      `${label}: a scale can have at most ${TRACK_LIKERT_MAX_SCALE_POINTS} points.`,
+    );
   }
 }
 
@@ -628,9 +706,14 @@ function assertOptions(
   }
 }
 
-function validateMcqSingle(question: McqSingleQuestion, label: string): void {
+function validateMcqSingle(
+  question: McqSingleQuestion,
+  label: string,
+  requireKey = true,
+): void {
   assertOptions(question.options, label, 2);
   const optionIds = new Set(question.options.map((o) => o.id));
+  if (!requireKey && !question.correctOptionIds?.length) return;
   if (!question.correctOptionIds || question.correctOptionIds.length !== 1) {
     fail(`${label}: must have exactly one correct option.`);
   }
@@ -639,9 +722,14 @@ function validateMcqSingle(question: McqSingleQuestion, label: string): void {
   }
 }
 
-function validateMcqMulti(question: McqMultiQuestion, label: string): void {
+function validateMcqMulti(
+  question: McqMultiQuestion,
+  label: string,
+  requireKey = true,
+): void {
   assertOptions(question.options, label, 2);
   const optionIds = new Set(question.options.map((o) => o.id));
+  if (!requireKey && !question.correctOptionIds?.length) return;
   if (!question.correctOptionIds || question.correctOptionIds.length === 0) {
     fail(`${label}: must have at least one correct option.`);
   }
@@ -652,15 +740,30 @@ function validateMcqMulti(question: McqMultiQuestion, label: string): void {
   }
 }
 
-function validateTrueFalse(question: TrueFalseQuestion, label: string): void {
+function validateTrueFalse(
+  question: TrueFalseQuestion,
+  label: string,
+  requireKey = true,
+): void {
+  if (
+    !requireKey &&
+    (question.correctAnswer === undefined || question.correctAnswer === null)
+  ) {
+    return;
+  }
   if (typeof question.correctAnswer !== 'boolean') {
     fail(`${label}: correctAnswer must be true or false.`);
   }
 }
 
-function validateOrdering(question: OrderingQuestion, label: string): void {
+function validateOrdering(
+  question: OrderingQuestion,
+  label: string,
+  requireKey = true,
+): void {
   assertOptions(question.items, label, 2, 'item');
   const itemIds = question.items.map((i) => i.id);
+  if (!requireKey && !question.correctOrder?.length) return;
   if (
     !question.correctOrder ||
     question.correctOrder.length !== itemIds.length ||
@@ -671,9 +774,14 @@ function validateOrdering(question: OrderingQuestion, label: string): void {
   }
 }
 
-function validateMatching(question: MatchingQuestion, label: string): void {
+function validateMatching(
+  question: MatchingQuestion,
+  label: string,
+  requireKey = true,
+): void {
   assertOptions(question.left, label, 1, 'left item');
   assertOptions(question.right, label, 1, 'right item');
+  if (!requireKey && !question.correctPairs?.length) return;
   if (!question.correctPairs || question.correctPairs.length === 0) {
     fail(`${label}: must define at least one correct pair.`);
   }
@@ -693,7 +801,11 @@ function validateMatching(question: MatchingQuestion, label: string): void {
   }
 }
 
-function validateFillBlank(question: FillBlankQuestion, label: string): void {
+function validateFillBlank(
+  question: FillBlankQuestion,
+  label: string,
+  requireKey = true,
+): void {
   if (!question.template || !question.template.trim()) {
     fail(`${label}: missing template.`);
   }
@@ -708,6 +820,7 @@ function validateFillBlank(question: FillBlankQuestion, label: string): void {
     if (!question.template.includes(`{{${blank.id}}}`)) {
       fail(`${label}: template is missing the {{${blank.id}}} token.`);
     }
+    if (!requireKey && !blank.acceptedAnswers?.length) continue;
     if (
       !blank.acceptedAnswers ||
       blank.acceptedAnswers.length === 0 ||
@@ -718,7 +831,13 @@ function validateFillBlank(question: FillBlankQuestion, label: string): void {
   }
 }
 
-function validateOpenEnded(question: OpenEndedQuestion, label: string): void {
+function validateOpenEnded(
+  question: OpenEndedQuestion,
+  label: string,
+  requireKey = true,
+): void {
+  // Ungraded never reaches the grader, so its rubric is never read.
+  if (!requireKey) return;
   if (!question.rubric?.guidance || !question.rubric.guidance.trim()) {
     fail(`${label}: open-ended questions need grading guidance.`);
   }
@@ -845,6 +964,19 @@ function quizQuestionStructuralSignature(question: QuizQuestion): unknown {
         caseSensitive: b.caseSensitive ?? false,
       })) ??
       null,
+    // Whether it scores changes every later attempt's percentage, so it is
+    // structural; showCorrectAnswer only changes what the results screen
+    // shows, so it stays content-safe. Both extra keys appear only when they
+    // apply, so the signature of every question written before them is
+    // byte-identical and no enrolled course suddenly reads as restructured.
+    ...(isQuestionGraded(question) ? {} : { graded: false }),
+    ...(question.type === QuizQuestionType.LIKERT_SCALE
+      ? {
+          // Answers are stored by statement and scale-point id.
+          statementIds: (question.statements ?? []).map((o) => o.id),
+          scaleIds: (question.scale ?? []).map((o) => o.id),
+        }
+      : {}),
   };
 }
 

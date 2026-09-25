@@ -199,9 +199,8 @@ describe('WebSocketAuthMiddleware', () => {
       const next = createMockNext();
       const authMiddleware = middleware.webSocketMiddleware();
 
-      jwtService.verifyAsync.mockRejectedValue(
-        new Error('Token expired or invalid'),
-      );
+      const originalError = new Error('Token expired or invalid');
+      jwtService.verifyAsync.mockRejectedValue(originalError);
 
       await authMiddleware(socket, next);
 
@@ -210,11 +209,7 @@ describe('WebSocketAuthMiddleware', () => {
         secret: mockJwtSecret,
       });
       expect(next).toHaveBeenCalledTimes(1);
-      expect(next).toHaveBeenCalledWith(
-        new UnauthorizedException(
-          'Authentication failed: Token expired or invalid',
-        ),
-      );
+      expect(next).toHaveBeenCalledWith(originalError);
     });
 
     // Positive test cases
