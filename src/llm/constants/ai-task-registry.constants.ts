@@ -280,7 +280,7 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'backchannel-phrases',
-    task: null,
+    task: LlmTask.BACKCHANNEL_PHRASES,
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'The agent prepares listener affirmations for a session',
     detail:
@@ -291,7 +291,7 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
       'on, and is skipped when the voice gets no clips (see agent-clip-tts). Text ' +
       'comes from the editable filler/backchannel prompt ' +
       '(ally_ai_learn_filler_backchannel); that row supplies wording only, and its ' +
-      'model field is not read. Not recorded in llm_usage.',
+      'model field is not read.',
     kind: AiTaskKind.COMPLETION,
     provider: 'resolved',
     defaultModel: "the scenario's main LLM",
