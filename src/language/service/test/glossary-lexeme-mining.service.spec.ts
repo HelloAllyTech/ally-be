@@ -254,6 +254,28 @@ describe('GlossaryLexemeMiningService', () => {
     expect(out.kept[1].reason).toContain(out.candidates[10].token);
   });
 
+  it('keeps only the first of several offered forms', async () => {
+    getCompletion.mockImplementation(async (messages: any[]) => {
+      const line = (messages[0].content as string)
+        .split('\n')
+        .find((l) => /^\d+\. அதனால் /.test(l))!;
+      return JSON.stringify([
+        {
+          index: Number(line.split('.')[0]),
+          verdict: 'pair',
+          say: 'அதனால, அதான்…',
+          meaning: 'so',
+          wordClass: 'conjunction',
+        },
+      ]);
+    });
+    const out = await service.mineLexemes(6);
+    expect(out.proposals[0].say).toBe('அதனால');
+    expect(out.proposals[0].markdown).toBe(
+      '- so: say `அதனால` (avoid: `அதனால்`)',
+    );
+  });
+
   it('never calls the model when nothing was mined', async () => {
     dataSource.query = jest.fn().mockResolvedValueOnce([]);
     const out = await service.mineLexemes(6);

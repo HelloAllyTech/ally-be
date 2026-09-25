@@ -28,6 +28,7 @@
  * exactly them. Log-odds with an informative prior already discounts words
  * both sides use at similar rates.
  */
+import type { LexicalEvidence } from './construct-class.util';
 import { tokenize, weightedLogOdds } from './variety-feature.util';
 
 export interface MiningTurn {
@@ -80,6 +81,8 @@ export interface LexemeMiningResult {
   learnerLexicon: { token: string; count: number }[];
   /** De-echoed learner text and agent text, for the lexical evidence gate. */
   corpora: { learner: string; agent: string };
+  /** Whole-word counts (learner de-echoed), for {@link scoreTokenEvidence}. */
+  tokenCounts: { learner: Map<string, number>; agent: Map<string, number> };
   stats: {
     sessions: number;
     agentTokens: number;
@@ -99,6 +102,16 @@ function addTo(m: Map<string, Set<string>>, k: string, v: string) {
   const set = m.get(k) ?? new Set<string>();
   set.add(v);
   m.set(k, set);
+}
+
+/**
+ * Remove bracketed stage directions (`[pause]`, `[sighs]`, `[long pause]`)
+ * before counting. The agent emits them as TTS audio tags and the stored
+ * transcript keeps them, so unstripped they top every agent-leaning list —
+ * the first prod dry run (2026-09-25) "paired" `pause` with a Hindi filler.
+ */
+export function stripStageDirections(text: string): string {
+  return (text ?? '').replace(/\[[^\]\n]{1,40}\]/g, ' ');
 }
 
 /** A snippet around the first occurrence of `token`, on word boundaries. */
@@ -147,25 +160,24 @@ export function mineBookishLexemes(
 
   for (const session of sessions) {
     const scenarioKey = String(session.scenarioId ?? session.sessionId);
-    const agentSaid = new Set<string>();
     const learnerSaid = new Set<string>();
     // Words the agent introduced: said by the agent before the learner ever
     // used them in this session. Only these can be echoed.
     const agentIntroduced = new Set<string>();
 
     for (const turn of session.turns) {
-      const tokens = tokenize(turn.text);
+      const text = stripStageDirections(turn.text);
+      const tokens = tokenize(text);
       if (turn.role === 'agent') {
-        agentText.push(turn.text.normalize('NFC'));
+        agentText.push(text.normalize('NFC'));
         for (const t of tokens) {
           inc(agentCounts, t);
           if (!learnerSaid.has(t)) agentIntroduced.add(t);
-          agentSaid.add(t);
           addTo(scenariosByToken, t, scenarioKey);
           addTo(sessionsByToken, t, session.sessionId);
           const ctx = contexts.get(t) ?? [];
           if (ctx.length < contextsPerCandidate) {
-            const s = snippet(turn.text, t);
+            const s = snippet(text, t);
             if (s && !ctx.includes(s)) contexts.set(t, [...ctx, s]);
           }
         }
@@ -245,6 +257,7 @@ export function mineBookishLexemes(
     candidates,
     learnerLexicon,
     corpora: { learner: learnerText.join('\n'), agent: agentText.join('\n') },
+    tokenCounts: { learner: learnerCounts, agent: agentCounts },
     stats: {
       sessions: sessions.length,
       agentTokens: sum(agentCounts),
@@ -292,4 +305,43 @@ export function isSwapSafe(
   if (a.length !== 1 || s.length !== 1) return false;
   const address = new Set([...addressForms].map((f) => f.normalize('NFC')));
   return !address.has(a[0]) && !address.has(s[0]);
+}
+
+/**
+ * The lexical evidence gate's verdict, counted on WHOLE WORDS rather than
+ * substrings, for a single-word pair. construct-class's `scoreLexicalEvidence`
+ * counts substrings, which in agglutinative languages counts the wrong thing
+ * both ways: colloquial `சரியா` is a prefix of literary `சரியாக`, so every
+ * literary use also counted as the colloquial form, and `மாலை` matched inside
+ * `மாலையில்`. Same thresholds and verdicts; null when either side is not a
+ * single word (the caller falls back to the substring scorer).
+ */
+export function scoreTokenEvidence(
+  say: string,
+  avoid: string,
+  counts: { learner: Map<string, number>; agent: Map<string, number> },
+  contradictionMin: number,
+): LexicalEvidence | null {
+  const sayTokens = tokenize(say);
+  const avoidTokens = tokenize(avoid);
+  if (sayTokens.length !== 1 || avoidTokens.length !== 1) return null;
+  const sayLearnerCount = counts.learner.get(sayTokens[0]) ?? 0;
+  const avoidLearnerCount = counts.learner.get(avoidTokens[0]) ?? 0;
+  const avoidAgentCount = counts.agent.get(avoidTokens[0]) ?? 0;
+  const total = sayLearnerCount + avoidLearnerCount;
+  const avoidShare = total > 0 ? avoidLearnerCount / total : 0;
+  const verdict =
+    avoidLearnerCount >= contradictionMin && avoidShare >= 0.2
+      ? 'contradicted'
+      : sayLearnerCount > 0 || avoidAgentCount > 0
+        ? 'confirmed'
+        : 'unverified';
+  return {
+    say,
+    avoid,
+    sayLearnerCount,
+    avoidAgentCount,
+    avoidLearnerCount,
+    verdict,
+  };
 }

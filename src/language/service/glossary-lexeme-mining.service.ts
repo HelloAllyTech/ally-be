@@ -33,6 +33,7 @@ import {
   LexemeMiningResult,
   MiningSession,
   mineBookishLexemes,
+  scoreTokenEvidence,
 } from '../util/lexeme-mining.util';
 import { getLanguageInventories, tokenize } from '../util/variety-feature.util';
 import { LanguageGlossaryService } from './language-glossary.service';
@@ -186,7 +187,13 @@ export class GlossaryLexemeMiningService {
         result.kept.push({ token: candidate.token, reason: v.reason ?? '' });
         continue;
       }
-      const say = (v.say ?? '').normalize('NFC').trim();
+      // One form only: the model sometimes offers alternatives
+      // ("ராத்திரி, நைட்"), which is neither a canonical rule nor countable.
+      const say = (v.say ?? '')
+        .normalize('NFC')
+        .split(/[,/;|]/)[0]
+        .replace(/[.…]+$/u, '')
+        .trim();
       // The model may only pair the word it was given: `avoid` is what the
       // adherence scan will count, so a paraphrased avoid-term would measure
       // something the miner never observed.
@@ -204,12 +211,19 @@ export class GlossaryLexemeMiningService {
         : 'other';
       const meaning = (v.meaning ?? '').trim() || candidate.token;
       const markdown = `- ${meaning}: say \`${say}\` (avoid: \`${candidate.token}\`)`;
-      const evidence = scoreLexicalEvidence(
-        markdown,
-        mined.corpora.learner,
-        mined.corpora.agent,
-        GLOSSARY_LEXICAL_CONTRADICTION_MIN,
-      );
+      const evidence =
+        scoreTokenEvidence(
+          say,
+          candidate.token,
+          mined.tokenCounts,
+          GLOSSARY_LEXICAL_CONTRADICTION_MIN,
+        ) ??
+        scoreLexicalEvidence(
+          markdown,
+          mined.corpora.learner,
+          mined.corpora.agent,
+          GLOSSARY_LEXICAL_CONTRADICTION_MIN,
+        );
       const counts = {
         agentCount: candidate.agentCount,
         learnerCount: candidate.learnerCount,

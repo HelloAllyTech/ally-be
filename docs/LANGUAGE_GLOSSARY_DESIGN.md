@@ -535,6 +535,16 @@ Two corrections were measured in prod first (2026-09-25), and both are built in:
 - **Scenario-bound words.** Persona names and scenario topic nouns are agent-leaning by
   construction. A candidate must appear in at least 3 scenarios and 3 sessions.
 
+Three fixes came out of the first prod dry run (v1.141.2, Tamil 223 sessions / Hindi 102):
+bracketed stage directions (`[pause]`, `[sighs]`) are stripped before counting — they topped both
+lists and Hindi "paired" `pause` with a filler; a replacement offered as alternatives
+(`ராத்திரி, நைட்`) keeps only its first form; and single-word pairs are scored on **whole-word**
+counts (`scoreTokenEvidence`), because the substring scorer counted colloquial `சரியா` inside
+literary `சரியாக` and `மாலை` inside `மாலையில்`, marking good pairs contradicted. Multi-word pairs
+still use the substring scorer. A run takes ~50–56 s, close to the 60 s load-balancer idle
+timeout; the parallel chunks cap it at one model call's latency, which is thinking time, not
+output length.
+
 There is deliberately no stoplist: the best Tamil finds are literary function words
 (`அதனால்`, `இருக்கிறேன்`). Words the glossary already mentions anywhere are skipped.
 

@@ -2,6 +2,8 @@ import {
   isSwapSafe,
   MiningSession,
   mineBookishLexemes,
+  scoreTokenEvidence,
+  stripStageDirections,
 } from '../lexeme-mining.util';
 
 /**
@@ -129,5 +131,70 @@ describe('isSwapSafe', () => {
   it('refuses verb forms and multi-word pairs', () => {
     expect(isSwapSafe('verb_form', 'இருக்கிறேன்', 'இருக்கேன்')).toBe(false);
     expect(isSwapSafe('lexeme', 'மன அழுத்தம்', 'டென்ஷன்')).toBe(false);
+  });
+});
+
+describe('stage directions', () => {
+  it('strips bracketed audio tags before counting', () => {
+    expect(stripStageDirections('[sighs] சரி [long pause] அப்புறம்')).toBe(
+      '  சரி   அப்புறம்',
+    );
+    const sessions = Array.from({ length: 5 }, (_, i) =>
+      session(`t${i}`, i, [
+        ['agent', '[pause] [sighs] அதனால் [pause] அதனால் [calm]'],
+        ['learner', 'சொல்லுங்க'],
+      ]),
+    );
+    const { candidates } = mineBookishLexemes(sessions);
+    const tokens = candidates.map((c) => c.token);
+    expect(tokens).toContain('அதனால்');
+    expect(tokens).not.toContain('pause');
+    expect(tokens).not.toContain('sighs');
+    expect(candidates[0].contexts[0]).not.toContain('[');
+  });
+});
+
+describe('scoreTokenEvidence', () => {
+  const counts = {
+    learner: new Map([
+      ['சரியா', 90],
+      ['சரியாக', 4],
+      ['மாலையில்', 30],
+    ]),
+    agent: new Map([
+      ['சரியாக', 62],
+      ['மாலை', 116],
+    ]),
+  };
+
+  it('counts whole words, so a colloquial prefix is not the literary word', () => {
+    // Substring counting read சரியாக's 4 uses as சரியா too, and vice versa.
+    const ev = scoreTokenEvidence('சரியா', 'சரியாக', counts, 5)!;
+    expect(ev.sayLearnerCount).toBe(90);
+    expect(ev.avoidLearnerCount).toBe(4);
+    expect(ev.verdict).toBe('confirmed');
+  });
+
+  it('does not let an inflected form contradict the bare word', () => {
+    const ev = scoreTokenEvidence('சாயங்காலம்', 'மாலை', counts, 5)!;
+    expect(ev.avoidLearnerCount).toBe(0);
+    expect(ev.verdict).toBe('confirmed');
+  });
+
+  it('still contradicts when the population really says the avoid-word', () => {
+    const ev = scoreTokenEvidence(
+      'கஷ்டம்',
+      'சரியாக',
+      {
+        learner: new Map([['சரியாக', 10]]),
+        agent: new Map(),
+      },
+      5,
+    )!;
+    expect(ev.verdict).toBe('contradicted');
+  });
+
+  it('defers multi-word pairs to the substring scorer', () => {
+    expect(scoreTokenEvidence('மன அழுத்தம்', 'டென்ஷன்', counts, 5)).toBeNull();
   });
 });
