@@ -418,6 +418,32 @@ recorded in `provenance`.
   total. Acceptable in v1 of Tier 1; revisit (separate cap or priority) only if `[RAG_TRUNC]`
   logs show real contention.
 
+### 5.2a Runtime word swaps — enforced on the agent's output
+
+The prompt asks the agent to follow every rule; for the rules a mechanical swap cannot break,
+the worker also **enforces** them on what the agent says. `resolveGlossarySwaps`
+(`glossary-swap.util.ts`) ships `promptData.glossarySwaps: [{avoid, say, sectionCode}]` from the
+same published view the prompt is compiled from (global + the session profile's overlays), and
+ally-ai-learn's `GlossarySwapAgent.llm_node` rewrites whole words in the LLM stream before the tee
+into TTS and the transcript, so audio, transcript and judge all see the swapped text; the graph
+state gets the same swap so the actor's own history stays colloquial. Cost: one held-back partial
+word.
+
+There is no human reviewer, so the extractor is the gate, and every exclusion comes from a live
+prod rule that would otherwise have swapped wrongly: first form only on each side (`இரு` in
+`(avoid: இரண்டு, இரு)` is also "stay"); one word each side; nothing in the avoid group but the term
+and register words (`avoid using पाना for this meaning` — पाना is also "to get"); no bracketed
+context in the gloss (`to ignore (pain, problems)`); no grammar rules (`Negations: … नाहीत` is the
+plural); no pronoun/kinship/grammar sections and no address forms (agreement). First prod view:
+hi 11 pairs, mr 6, kn 8 (incl. `ಆದರೆ→ಆದ್ರೆ`, the rule ignored 245 times), ta 11 global / 13 on the
+DEMCARES overlay.
+
+Measurement: each reply's swaps land in `turn_metrics.metadata.glossary_swaps`
+(`[{avoid, say, count}]`) and the worker logs `[GLOSSARY_SWAP]`. The adherence scan reads the
+stored (swapped) transcript, so it reads ~0 for swapped terms by construction — the model's raw
+compliance is adherence + swaps. A bad swap is fixed by fixing or archiving its rule (next session);
+`GLOSSARY_RUNTIME_SWAP=off` disables all swaps.
+
 ### 5.3 Precedence
 
 Prompt states explicitly: scenario `languageCharacteristics` (per-scenario, per-language

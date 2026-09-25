@@ -77,6 +77,7 @@ import {
   normalizeMarkdown,
 } from '../util/glossary-dedupe.util';
 import { excludeForeignScripts } from '../util/script-consistency.util';
+import { extractGlossarySwaps, GlossarySwap } from '../util/glossary-swap.util';
 
 export interface GlossarySectionView {
   section: LanguageGlossarySection;
@@ -411,6 +412,29 @@ export class LanguageGlossaryService {
         sectionCode: section.sectionCode,
       }))
       .filter((s) => s.content.length > 0);
+  }
+
+  /**
+   * Word swaps the live agent enforces on its own output: published canonical
+   * one-word rules that are not address forms (glossary-swap.util). Global +
+   * the session profile's overlays, overlay winning per section — the same
+   * view the prompt is compiled from, so a swap never enforces a rule the
+   * session was not served. Empty when GLOSSARY_RUNTIME_SWAP=off.
+   */
+  async resolveGlossarySwaps(
+    languageId: number,
+    languageValue: string,
+    profileId?: string | null,
+  ): Promise<GlossarySwap[]> {
+    if ((process.env.GLOSSARY_RUNTIME_SWAP ?? 'on').toLowerCase() === 'off') {
+      return [];
+    }
+    const sections = await this.glossaryRepository.findPublishedByLanguage(
+      languageId,
+      undefined,
+      profileId,
+    );
+    return extractGlossarySwaps(sections, languageValue);
   }
 
   /**

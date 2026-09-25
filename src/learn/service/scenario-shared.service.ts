@@ -567,6 +567,24 @@ export class ScenarioSharedService {
         );
       }
 
+      // Runtime word swaps (glossary-swap.util): the subset of published rules
+      // the agent enforces on its own output, so the counsellor hears the
+      // colloquial form even when the model slips into the literary one.
+      try {
+        const swaps = await this.languageGlossaryService.resolveGlossarySwaps(
+          languageDetails.id,
+          languageDetails.value,
+          glossaryProfileId,
+        );
+        if (swaps.length > 0) {
+          promptData.glossarySwaps = swaps;
+        }
+      } catch (error) {
+        this.logger.warn(
+          `[GLOSSARY] swap resolution failed for language ${languageDetails.id}; serving without runtime swaps: ${error}`,
+        );
+      }
+
       // Glossary provenance for analytics: published section versions (both
       // tiers) + Tier 0 token cost. The worker echoes this through
       // start_metrics, so judged outcomes join to the exact glossary a

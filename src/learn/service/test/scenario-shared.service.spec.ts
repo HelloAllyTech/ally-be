@@ -116,6 +116,7 @@ describe('ScenarioSharedService', () => {
       resolveTier0Glossary: jest.fn().mockResolvedValue(''),
       resolveTier1Sections: jest.fn().mockResolvedValue([]),
       resolveGlossaryMeta: jest.fn().mockResolvedValue(null),
+      resolveGlossarySwaps: jest.fn().mockResolvedValue([]),
     };
 
     const mockCompetencyService = {
@@ -1708,6 +1709,50 @@ describe('ScenarioSharedService', () => {
         versions: { core_style: 4, clinical_terms: 2 },
         tier0Tokens: 381,
       });
+    });
+
+    it('should ship runtime word swaps on promptData.glossarySwaps, and never block on failure', async () => {
+      scenarioVoiceRepository.findOne.mockResolvedValue({
+        id: 'voice-1',
+        name: 'Test Voice',
+        provider: 'deepgram',
+        config: {},
+      } as any);
+      (scenarioTranslationsRepository as any).findOne = jest
+        .fn()
+        .mockResolvedValue(null);
+      const glossaryService = (service as any).languageGlossaryService;
+      glossaryService.resolveTier0Glossary = jest.fn().mockResolvedValue('');
+      glossaryService.resolveTier1Sections = jest.fn().mockResolvedValue([]);
+      glossaryService.resolveGlossaryMeta = jest.fn().mockResolvedValue(null);
+      const swaps = [{ avoid: 'ஆனால்', say: 'ஆனா', sectionCode: 'core_style' }];
+      glossaryService.resolveGlossarySwaps = jest.fn().mockResolvedValue(swaps);
+      const options = {
+        scenario: glossaryScenario,
+        sessionEvents: [],
+        languageDetails: {
+          id: 2,
+          value: 'ta-IN',
+          label: 'Tamil (India)',
+        } as any,
+        previousMemory: null,
+      };
+
+      const result = await service.createRoomMetadata(options);
+      expect(glossaryService.resolveGlossarySwaps).toHaveBeenCalledWith(
+        2,
+        'ta-IN',
+        null,
+      );
+      expect((result.scenario.promptData as any).glossarySwaps).toEqual(swaps);
+
+      glossaryService.resolveGlossarySwaps = jest
+        .fn()
+        .mockRejectedValue(new Error('db down'));
+      const degraded = await service.createRoomMetadata(options);
+      expect(
+        (degraded.scenario.promptData as any).glossarySwaps,
+      ).toBeUndefined();
     });
 
     it('should omit glossaryMeta (and never block the session) when meta resolution fails or is empty', async () => {
