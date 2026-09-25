@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -9,8 +10,19 @@ import { IsNull, Repository } from 'typeorm';
 import { AiService } from 'src/ai/service/ai.service';
 import { ExecutionManager } from 'src/common/execution/execution-manager';
 import { LoggerService } from 'src/logger/logger.service';
+import { KbDocument } from 'src/knowledge-base/entity/kb-document.entity';
+import {
+  KbCorpus,
+  KbDocumentStatus,
+} from 'src/knowledge-base/enum/knowledge-base.enum';
 import { WaKeywordTemplate } from '../entity/wa-keyword-template.entity';
+import { WaPhoneMapping } from '../entity/wa-phone-mapping.entity';
 import { WaTemplateKind } from '../enum/whatsapp.enum';
+import {
+  WHATSAPP_PROVIDER,
+  WhatsAppConnectionCheck,
+  WhatsAppProvider,
+} from '../type/whatsapp-provider.interface';
 import {
   CreateWaTemplateDto,
   PreviewAskDto,
@@ -31,6 +43,12 @@ export class WhatsAppAdminService {
   constructor(
     @InjectRepository(WaKeywordTemplate)
     private readonly templateRepository: Repository<WaKeywordTemplate>,
+    @InjectRepository(WaPhoneMapping)
+    private readonly phoneMappingRepository: Repository<WaPhoneMapping>,
+    @InjectRepository(KbDocument)
+    private readonly kbDocumentRepository: Repository<KbDocument>,
+    @Inject(WHATSAPP_PROVIDER)
+    private readonly provider: WhatsAppProvider,
     private readonly templateService: WhatsAppTemplateService,
     private readonly settingsService: WhatsAppSettingsService,
     private readonly aiService: AiService,
@@ -226,6 +244,16 @@ export class WhatsAppAdminService {
    */
   async providerHealth() {
     const settings = await this.settingsService.get();
+    const [mappedNumbers, indexedDocuments] = await Promise.all([
+      this.phoneMappingRepository.count(),
+      this.kbDocumentRepository.count({
+        where: {
+          corpus: KbCorpus.WHATSAPP_QA,
+          status: KbDocumentStatus.INDEXED,
+          archivedAt: IsNull(),
+        },
+      }),
+    ]);
     return {
       enabled: settings.enabled,
       provider: settings.provider,
@@ -233,10 +261,77 @@ export class WhatsAppAdminService {
       appSecretConfigured: Boolean(process.env.WHATSAPP_APP_SECRET),
       phoneNumberIdConfigured: Boolean(process.env.WHATSAPP_PHONE_NUMBER_ID),
       accessTokenConfigured: Boolean(process.env.WHATSAPP_ACCESS_TOKEN),
+      businessAccountIdConfigured: Boolean(
+        process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
+      ),
       inboundQueueConfigured: Boolean(
         process.env.SQS_WHATSAPP_INBOUND_QUEUE_URL,
       ),
+      inboundDlqConfigured: Boolean(process.env.SQS_WHATSAPP_INBOUND_DLQ_URL),
+      // The corpus upload queue belongs to the knowledge base, but without it no document ever
+      // reaches retrieval and the bot declines every question — so it is part of "is the bot
+      // ready", and the one place anyone looks for that is this screen.
+      kbIngestQueueConfigured: Boolean(process.env.SQS_KB_INGEST_QUEUE_URL),
+      // Readiness beyond configuration. Every number the bot cannot map to an organisation is
+      // refused, every question against an empty corpus is declined, and a crisis reply with no
+      // helpline in it points at "your local crisis line" — each is a bot that is technically up
+      // and useless (or worse) to the worker, so each is shown before the switch is flipped.
+      helplineNumbersSet: Boolean(settings.helplineNumbers?.trim()),
+      mappedNumbers,
+      indexedDocuments,
     };
+  }
+
+  /** Ask Meta, live, whether the token and number work. Reads only. */
+  async checkProviderConnection(): Promise<WhatsAppConnectionCheck> {
+    if (!this.provider.checkConnection) {
+      return {
+        ok: false,
+        error: `The ${this.provider.name} provider has no connection check.`,
+        subscribedApps: null,
+      };
+    }
+    return this.provider.checkConnection();
+  }
+
+  /** Register the number for Cloud API use. Meta's error, if any, is returned as a 400. */
+  async registerPhoneNumber(pin: string): Promise<WhatsAppConnectionCheck> {
+    if (!this.provider.registerPhoneNumber) {
+      throw new BadRequestException(
+        `The ${this.provider.name} provider does not support registration.`,
+      );
+    }
+    try {
+      await this.provider.registerPhoneNumber(pin);
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Registration failed',
+      );
+    }
+    this.logger.info(
+      `WhatsApp phone number registered by user ${this.userId()}`,
+    );
+    return this.checkProviderConnection();
+  }
+
+  /** Subscribe the app to the business account's webhooks. */
+  async subscribeProviderApp(): Promise<WhatsAppConnectionCheck> {
+    if (!this.provider.subscribeApp) {
+      throw new BadRequestException(
+        `The ${this.provider.name} provider has no webhook subscription step.`,
+      );
+    }
+    try {
+      await this.provider.subscribeApp();
+    } catch (error) {
+      throw new BadRequestException(
+        error instanceof Error ? error.message : 'Subscription failed',
+      );
+    }
+    this.logger.info(
+      `WhatsApp app subscribed to webhooks by user ${this.userId()}`,
+    );
+    return this.checkProviderConnection();
   }
 
   // ── preview console ───────────────────────────────────────────────────

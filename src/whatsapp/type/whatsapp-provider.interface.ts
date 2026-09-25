@@ -51,6 +51,55 @@ export interface WhatsAppProvider {
 
   /** Send a plain-text reply. Resolves with the provider's id for the sent message. */
   sendText(to: string, body: string): Promise<{ providerMessageId: string }>;
+
+  /**
+   * Mark an inbound message read and show "typing…" while the answer is prepared.
+   *
+   * Best effort: resolves whether or not the provider accepted it, and never throws — a missing
+   * typing bubble must not cost the worker their answer. Optional because not every provider
+   * has the concept.
+   */
+  showTypingIndicator?(providerMessageId: string): Promise<void>;
+
+  /** Live check of the provider credentials and number, for the admin settings screen. */
+  checkConnection?(): Promise<WhatsAppConnectionCheck>;
+
+  /** Register the number for API use with its two-step-verification PIN (Meta only). */
+  registerPhoneNumber?(pin: string): Promise<void>;
+
+  /** Subscribe this app to the business account's webhooks (Meta only). */
+  subscribeApp?(): Promise<void>;
+}
+
+/**
+ * What the provider says about itself, as the admin sees it.
+ *
+ * Every field is optional because each is a separate thing that can be missing, and the admin needs
+ * to see WHICH one — "not connected" with no detail is the state this check exists to replace.
+ */
+export interface WhatsAppConnectionCheck {
+  /** The credentials work and the phone number id resolves. */
+  ok: boolean;
+  /** Human-readable reason when `ok` is false, carrying the provider's own error text. */
+  error?: string;
+  phoneNumber?: {
+    displayPhoneNumber?: string;
+    verifiedName?: string;
+    /** GREEN / YELLOW / RED / UNKNOWN. */
+    qualityRating?: string;
+    /** APPROVED / PENDING_REVIEW / DECLINED … — the display name review. */
+    nameStatus?: string;
+    /** CLOUD_API once registered; NOT_APPLICABLE means the number still needs registering. */
+    platformType?: string;
+    /** CONNECTED, PENDING, FLAGGED, RESTRICTED … */
+    status?: string;
+  };
+  /**
+   * Apps subscribed to the business account's webhooks. `null` when no business account id is
+   * configured, so "not checked" never reads as "not subscribed".
+   */
+  subscribedApps?: string[] | null;
+  subscriptionError?: string;
 }
 
 /** DI token. Bound to the implementation named by the `whatsapp_bot` settings row. */

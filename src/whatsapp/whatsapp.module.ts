@@ -25,6 +25,7 @@ import { WaMessage } from './entity/wa-message.entity';
 import { WaPhoneMapping } from './entity/wa-phone-mapping.entity';
 import { WaUnansweredQuestion } from './entity/wa-unanswered-question.entity';
 import { WhatsAppInboundProducer } from './producer/whatsapp-inbound.producer';
+import { KbDocument } from '../knowledge-base/entity/kb-document.entity';
 import { MetaWhatsAppProvider } from './provider/meta-whatsapp.provider';
 import { WaAnalyticsRepository } from './repository/wa-analytics.repository';
 import { WhatsAppAdminService } from './service/whatsapp-admin.service';
@@ -61,6 +62,9 @@ import { WHATSAPP_PROVIDER } from './type/whatsapp-provider.interface';
       WaUnansweredQuestion,
       WaPhoneMapping,
       GlobalSettings,
+      // Counted (never written) by the settings screen's readiness check: an empty WhatsApp corpus
+      // means every question is declined. The entity, not KnowledgeBaseModule's internals.
+      KbDocument,
       // The User and Tenant ENTITIES, not their modules. Identity resolution needs one query
       // over `users.phone` and one name lookup, and importing UserModule for that would pull a
       // service graph this module has no other use for — src/user has a live circular-import DI
