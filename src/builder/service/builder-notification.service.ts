@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { IsNull } from 'typeorm';
 import { LoggerService } from 'src/logger/logger.service';
 import { BuilderSession } from '../entity/builder-session.entity';
 import { BuilderNotificationRepository } from '../repository/builder-build.repository';
@@ -473,9 +474,22 @@ export class BuilderNotificationService {
     await this.repository.update({ id, adminId }, { readAt: new Date() });
   }
 
+  /**
+   * `IsNull()`, not `null`.
+   *
+   * A bare `null` in an update's criteria becomes `WHERE "readAt" = NULL`,
+   * which is never true of any row, so this matched nothing and the endpoint
+   * above it answered `{ ok: true }` for work it had not done. The bell sat on
+   * fifty unread for days and "mark all read" did nothing you could see — the
+   * one failure mode a success response guarantees nobody investigates.
+   *
+   * The `as any` it used to need was the tell: the type said this was wrong
+   * before the database did. Every read path here already uses `IsNull()`, and
+   * so does Bug Hunter's equivalent; this was the one that did not.
+   */
   async markAllRead(adminId: number): Promise<void> {
     await this.repository.update(
-      { adminId, readAt: null as any },
+      { adminId, readAt: IsNull() },
       { readAt: new Date() },
     );
   }

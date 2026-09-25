@@ -144,3 +144,60 @@ describe('BuilderNotificationService announcements', () => {
     ]);
   });
 });
+
+/**
+ * Marking the inbox read.
+ *
+ * The bug these pin answered `{ ok: true }` while changing nothing: the
+ * criteria said `readAt: null`, which TypeORM renders as `WHERE "readAt" =
+ * NULL` — never true of any row. The endpoint reported success, the client
+ * dutifully re-fetched, and the badge sat on fifty unread for days.
+ *
+ * A success response for work that did not happen is the failure mode nobody
+ * investigates, so the assertion is on the criteria itself rather than on the
+ * call merely having been made. A test that only checked "update was called"
+ * would have passed against the broken version — which is roughly what the
+ * client-side test shipped alongside the original bug did.
+ */
+describe('BuilderNotificationService marking read', () => {
+  const build = () => {
+    const repository = { update: jest.fn().mockResolvedValue(undefined) };
+    const service = new BuilderNotificationService(
+      repository as never,
+      { sendMessage: jest.fn() } as never,
+      { adminBaseUrl: 'https://admin.example.com', builder: {} } as never,
+    );
+    return { service, repository };
+  };
+
+  it('matches unread rows with IS NULL, not = NULL', async () => {
+    const { service, repository } = build();
+
+    await service.markAllRead(7);
+
+    const [criteria] = repository.update.mock.calls[0];
+    expect(criteria.adminId).toBe(7);
+    // The shape TypeORM turns into `IS NULL`. A bare null here is the bug.
+    expect(criteria.readAt).not.toBeNull();
+    expect(String(criteria.readAt?.type ?? '')).toBe('isNull');
+  });
+
+  it('stamps a time rather than a flag, so "when" survives', async () => {
+    const { service, repository } = build();
+
+    await service.markAllRead(7);
+
+    const [, patch] = repository.update.mock.calls[0];
+    expect(patch.readAt).toBeInstanceOf(Date);
+  });
+
+  /** One notification is scoped by id AND owner: never another admin's row. */
+  it('marks a single notification only for its own admin', async () => {
+    const { service, repository } = build();
+
+    await service.markRead('n-1', 7);
+
+    const [criteria] = repository.update.mock.calls[0];
+    expect(criteria).toEqual({ id: 'n-1', adminId: 7 });
+  });
+});
