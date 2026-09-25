@@ -1,12 +1,21 @@
 import { randomUUID } from 'crypto';
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { excludeTestTenants } from 'src/analytics/util/test-tenant.util';
 import { LlmProviderFactory } from 'src/ai-chat/provider/llm-provider.factory';
+import { RedisService } from 'src/redis/service/redis.service';
 import {
   GLOSSARY_LEXEME_PAIRING_PROMPT_CODE,
   GLOSSARY_LEXICAL_CONTRADICTION_MIN,
+  LEXEME_MINING_JOB_STALE_SECONDS,
+  LEXEME_MINING_JOB_TTL_SECONDS,
   LEXEME_MINING_SESSION_CAP,
   LEXEME_PAIRING_CHUNK,
   LEXEME_MINING_TOP_K,
@@ -82,6 +91,19 @@ export interface MineLexemesResult {
   batchId: string | null;
 }
 
+export type LexemeMiningJobStatus = 'running' | 'succeeded' | 'failed';
+
+export interface LexemeMiningJob {
+  jobId: string;
+  languageId: number;
+  status: LexemeMiningJobStatus;
+  options: MineLexemesOptions;
+  startedAt: string;
+  finishedAt?: string;
+  result?: MineLexemesResult;
+  error?: string;
+}
+
 interface PairingVerdict {
   index: number;
   verdict: 'pair' | 'keep';
@@ -117,7 +139,118 @@ export class GlossaryLexemeMiningService {
     @InjectRepository(GlossaryConsolidationBatch)
     private readonly batchRepository: Repository<GlossaryConsolidationBatch>,
     private readonly llmProviderFactory: LlmProviderFactory,
+    private readonly redis: RedisService,
   ) {}
+
+  /**
+   * Start a mining run in the background and return its job record at once.
+   *
+   * A run takes 45–60 s (one gemini-2.5-pro call per chunk, and the thinking
+   * time does not shrink with the chunk), which the 60 s load-balancer idle
+   * timeout cut off in prod. The record lives in Redis rather than memory
+   * because the API runs as several tasks and the poll can land on any of them.
+   *
+   * One run per language at a time: two concurrent write-mode runs would each
+   * dedupe against a glossary that lacks the other's entries.
+   */
+  async startJob(
+    languageId: number,
+    options: MineLexemesOptions = {},
+    createdBy?: string,
+  ): Promise<LexemeMiningJob> {
+    // Fail fast on a bad id, before a job exists to report it.
+    await this.glossaryService.assertLanguageExists(languageId);
+    const lockKey = lexemeLockKey(languageId);
+    if (
+      !(await this.redis.acquireLock(lockKey, LEXEME_MINING_JOB_STALE_SECONDS))
+    ) {
+      throw new ConflictException(
+        'A lexeme-mining run is already in progress for this language',
+      );
+    }
+    const job: LexemeMiningJob = {
+      jobId: randomUUID(),
+      languageId,
+      status: 'running',
+      options: { ...options, dryRun: options.dryRun !== false },
+      startedAt: new Date().toISOString(),
+    };
+    try {
+      await this.saveJob(job);
+    } catch (error) {
+      await this.redis.releaseLock(lockKey).catch(() => undefined);
+      throw error;
+    }
+    void this.runJob(job, createdBy);
+    return job;
+  }
+
+  /** The job record, with a lost `running` job reported as failed. */
+  async getJob(languageId: number, jobId: string): Promise<LexemeMiningJob> {
+    const raw = await this.redis.get(lexemeJobKey(jobId));
+    const job = raw ? (JSON.parse(raw) as LexemeMiningJob) : null;
+    if (!job || job.languageId !== languageId) {
+      throw new NotFoundException(
+        `Lexeme-mining job ${jobId} not found for language ${languageId} (records expire after 24 h)`,
+      );
+    }
+    const ageSeconds = (Date.now() - Date.parse(job.startedAt)) / 1000;
+    if (
+      job.status === 'running' &&
+      ageSeconds > LEXEME_MINING_JOB_STALE_SECONDS
+    ) {
+      return {
+        ...job,
+        status: 'failed',
+        error:
+          'The run did not finish — its API task most likely restarted mid-run. Start a new one.',
+      };
+    }
+    return job;
+  }
+
+  private async runJob(job: LexemeMiningJob, createdBy?: string) {
+    try {
+      const result = await this.mineLexemes(
+        job.languageId,
+        job.options,
+        createdBy,
+      );
+      await this.saveJob({
+        ...job,
+        status: 'succeeded',
+        finishedAt: new Date().toISOString(),
+        result,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(
+        `[GLOSSARY_LEXEME_MINING] job=${job.jobId} language=${job.languageId} failed: ${message}`,
+      );
+      await this.saveJob({
+        ...job,
+        status: 'failed',
+        finishedAt: new Date().toISOString(),
+        error: message,
+      }).catch((saveError) =>
+        this.logger.error(
+          `[GLOSSARY_LEXEME_MINING] job=${job.jobId} could not record its failure: ${saveError}`,
+        ),
+      );
+    } finally {
+      await this.redis
+        .releaseLock(lexemeLockKey(job.languageId))
+        .catch(() => undefined);
+    }
+  }
+
+  private saveJob(job: LexemeMiningJob) {
+    return this.redis.set(
+      lexemeJobKey(job.jobId),
+      JSON.stringify(job),
+      LEXEME_MINING_JOB_TTL_SECONDS,
+    );
+  }
 
   async mineLexemes(
     languageId: number,
@@ -515,6 +648,10 @@ export class GlossaryLexemeMiningService {
     result.stats.written = newEntries.length;
   }
 }
+
+const lexemeJobKey = (jobId: string) => `glossary:lexeme-mining:job:${jobId}`;
+const lexemeLockKey = (languageId: number) =>
+  `glossary:lexeme-mining:lock:${languageId}`;
 
 /**
  * A mined pair is `confirmed` only when counsellors say the replacement. The

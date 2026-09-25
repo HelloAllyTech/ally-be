@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -226,18 +236,21 @@ export class LanguageGlossaryController {
 
   @ApiOperation({
     summary:
-      'Mine bookish words: pair words the agent over-uses (vs counsellor ' +
-      'speech, echoes removed) with colloquial equivalents',
+      'Start a bookish-word mining run: pair words the agent over-uses (vs ' +
+      'counsellor speech, echoes removed) with colloquial equivalents',
     description:
-      'Defaults to dryRun=true, which reports candidates and proposed pairs ' +
-      'and writes nothing. dryRun=false queues the surviving pairs as PROPOSED ' +
-      'entries in a consolidation batch (rollback via the batch endpoints). ' +
-      'Never auto-accepts — but an adjudication scheduler in apply mode will ' +
-      'decide queued proposals on its next pass.',
+      'Returns 202 with a job id at once; the run takes about a minute. Poll ' +
+      'GET :id/glossary/lexeme-mining/:jobId for the result. Defaults to ' +
+      'dryRun=true, which writes nothing. dryRun=false queues the surviving ' +
+      'pairs as PROPOSED entries in a consolidation batch (rollback via the ' +
+      'batch endpoints). Never auto-accepts — but an adjudication scheduler in ' +
+      'apply mode will decide queued proposals on its next pass. 409 while ' +
+      'another run for the same language is in progress.',
   })
   @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
   @Post(':id/glossary/lexeme-mining')
-  async mineLexemes(
+  @HttpCode(HttpStatus.ACCEPTED)
+  async startLexemeMining(
     @Param('id') id: number,
     @Body()
     body?: {
@@ -251,12 +264,28 @@ export class LanguageGlossaryController {
       typeof v === 'number' && Number.isInteger(v) && v > 0
         ? Math.min(v, max)
         : undefined;
-    return this.lexemeMiningService.mineLexemes(Number(id), {
+    return this.lexemeMiningService.startJob(Number(id), {
       dryRun: body?.dryRun !== false,
       sinceDays: positive(body?.sinceDays, 365),
       sessionCap: positive(body?.sessionCap, 1000),
       topK: positive(body?.topK, 80),
     });
+  }
+
+  @ApiOperation({
+    summary: 'Poll a lexeme-mining run',
+    description:
+      "status is 'running', 'succeeded' (with result) or 'failed' (with " +
+      'error). A run still running after 15 minutes is reported as failed. ' +
+      'Records expire after 24 hours.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Get(':id/glossary/lexeme-mining/:jobId')
+  async getLexemeMiningJob(
+    @Param('id') id: number,
+    @Param('jobId') jobId: string,
+  ) {
+    return this.lexemeMiningService.getJob(Number(id), jobId);
   }
 
   @ApiOperation({

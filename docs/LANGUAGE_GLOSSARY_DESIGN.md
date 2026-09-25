@@ -543,9 +543,14 @@ counts (`scoreTokenEvidence`), because the substring scorer counted colloquial `
 literary `சரியாக` and `மாலை` inside `மாலையில்`, marking good pairs contradicted. Multi-word pairs
 still use the substring scorer. A mined pair is `confirmed` only when counsellors actually say the
 replacement — the consolidation rule also confirms on "the agent says the avoid-term", which every
-mined candidate does, so on the first dry runs every uncontradicted pair read confirmed. A run takes ~50–56 s, close to the 60 s load-balancer idle
-timeout; the parallel chunks cap it at one model call's latency, which is thinking time, not
-output length.
+mined candidate does, so on the first dry runs every uncontradicted pair read confirmed. A run takes 44–56 s against the 60 s load-balancer idle timeout, and
+the parallel chunks cannot shrink it (the cost is thinking time, not output length), so the run is a
+**background job**: `POST …/lexeme-mining` returns 202 with a `jobId`, and `GET
+…/lexeme-mining/:jobId` returns `running` / `succeeded` (with the result) / `failed` (with the
+error). The record lives in Redis (24 h TTL), not memory, because the API runs as several tasks and
+a poll can land on any of them. One run per language at a time (Redis lock, 409 otherwise); a job
+still `running` after 15 min lost its task mid-run and is reported failed, and the lock expires at
+the same bound.
 
 There is deliberately no stoplist: the best Tamil finds are literary function words
 (`அதனால்`, `இருக்கிறேன்`). Words the glossary already mentions anywhere are skipped.
@@ -689,7 +694,8 @@ POST  /v1/language/:id/glossary/:sectionCode/publish | /archive   lifecycle
 POST  /v1/language/:id/glossary/generate                          seed job
 POST  /v1/language/glossary/backfill                              seed all active non-English
 POST  /v1/language/:id/glossary/consolidate                       consolidation run
-POST  /v1/language/:id/glossary/lexeme-mining                     bookish-word mining (§6.2a)
+POST  /v1/language/:id/glossary/lexeme-mining                     start bookish-word mining (202 + jobId, §6.2a)
+GET   /v1/language/:id/glossary/lexeme-mining/:jobId              poll a mining run
 POST  /v1/language/:id/glossary/retier                            recompute Tier 0 knapsack
 POST  /v1/language/:id/glossary/:sectionCode/proposals/:entryId/accept | /reject
 POST  /v1/language/:id/glossary/proposals/adjudicate              LLM adjudication (§6.3)

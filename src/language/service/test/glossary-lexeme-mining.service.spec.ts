@@ -1,4 +1,8 @@
-import { BadRequestException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { GlossaryEntryStatus } from '../../entity/language-glossary-section.entity';
 import {
   GlossaryLexemeMiningService,
@@ -42,12 +46,26 @@ describe('GlossaryLexemeMiningService', () => {
   let batchRepository: any;
   let getCompletion: jest.Mock;
   let core: any;
+  let redis: any;
+  let store: Map<string, string>;
 
   const verdicts = (list: unknown[]) =>
     getCompletion.mockResolvedValue(JSON.stringify(list));
 
   beforeEach(() => {
     core = section();
+    // In-memory stand-in for RedisService: get/set plus the NX lock.
+    store = new Map();
+    redis = {
+      get: jest.fn(async (k: string) => store.get(k) ?? null),
+      set: jest.fn(async (k: string, v: string) => void store.set(k, v)),
+      acquireLock: jest.fn(async (k: string) => {
+        if (store.has(k)) return false;
+        store.set(k, '1');
+        return true;
+      }),
+      releaseLock: jest.fn(async (k: string) => void store.delete(k)),
+    };
     dataSource = {
       query: jest
         .fn()
@@ -80,6 +98,7 @@ describe('GlossaryLexemeMiningService', () => {
       glossaryRepository,
       batchRepository,
       { getProvider: jest.fn().mockReturnValue({ getCompletion }) } as any,
+      redis,
     );
   });
 
@@ -282,6 +301,109 @@ describe('GlossaryLexemeMiningService', () => {
     const out = await service.mineLexemes(6);
     expect(out.candidates).toEqual([]);
     expect(getCompletion).not.toHaveBeenCalled();
+  });
+});
+
+describe('GlossaryLexemeMiningService jobs', () => {
+  let service: GlossaryLexemeMiningService;
+  let store: Map<string, string>;
+  let mine: jest.SpyInstance;
+  let assertLanguageExists: jest.Mock;
+
+  /** Let the fire-and-forget run settle. */
+  const settle = async () => {
+    for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
+  };
+
+  beforeEach(() => {
+    store = new Map();
+    const redis: any = {
+      get: jest.fn(async (k: string) => store.get(k) ?? null),
+      set: jest.fn(async (k: string, v: string) => void store.set(k, v)),
+      acquireLock: jest.fn(async (k: string) => {
+        if (store.has(k)) return false;
+        store.set(k, '1');
+        return true;
+      }),
+      releaseLock: jest.fn(async (k: string) => void store.delete(k)),
+    };
+    assertLanguageExists = jest.fn().mockResolvedValue({ id: 6 });
+    service = new GlossaryLexemeMiningService(
+      {} as any,
+      { assertLanguageExists } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      redis,
+    );
+    mine = jest.spyOn(service, 'mineLexemes');
+  });
+
+  it('returns a running job at once and records the result when done', async () => {
+    let finish!: (v: any) => void;
+    mine.mockReturnValue(new Promise((r) => (finish = r)));
+
+    const job = await service.startJob(6, {});
+
+    expect(job.status).toBe('running');
+    expect(job.options.dryRun).toBe(true);
+    expect((await service.getJob(6, job.jobId)).status).toBe('running');
+
+    finish({ stats: { written: 0 } });
+    await settle();
+    const done = await service.getJob(6, job.jobId);
+    expect(done.status).toBe('succeeded');
+    expect(done.result).toEqual({ stats: { written: 0 } });
+    expect(done.finishedAt).toBeDefined();
+  });
+
+  it('records a failure with its message and frees the language', async () => {
+    mine.mockRejectedValue(new Error('pairing exploded'));
+    const job = await service.startJob(6, {});
+    await settle();
+
+    const failed = await service.getJob(6, job.jobId);
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toBe('pairing exploded');
+    mine.mockResolvedValue({});
+    await expect(service.startJob(6, {})).resolves.toBeDefined();
+  });
+
+  it('refuses a second concurrent run for the same language', async () => {
+    mine.mockReturnValue(new Promise(() => undefined));
+    await service.startJob(6, {});
+    await expect(service.startJob(6, {})).rejects.toThrow(ConflictException);
+  });
+
+  it('checks the language before creating a job', async () => {
+    assertLanguageExists.mockRejectedValue(new NotFoundException('nope'));
+    await expect(service.startJob(99, {})).rejects.toThrow(NotFoundException);
+    expect(store.size).toBe(0);
+  });
+
+  it('reports a run lost mid-flight as failed', async () => {
+    mine.mockReturnValue(new Promise(() => undefined));
+    const job = await service.startJob(6, {});
+    const key = [...store.keys()].find((k) => k.includes(job.jobId))!;
+    store.set(
+      key,
+      JSON.stringify({
+        ...job,
+        startedAt: new Date(Date.now() - 16 * 60 * 1000).toISOString(),
+      }),
+    );
+    const lost = await service.getJob(6, job.jobId);
+    expect(lost.status).toBe('failed');
+    expect(lost.error).toMatch(/did not finish/);
+  });
+
+  it('404s an unknown job and one polled under another language', async () => {
+    mine.mockResolvedValue({});
+    const job = await service.startJob(6, {});
+    await expect(service.getJob(6, 'nope')).rejects.toThrow(NotFoundException);
+    await expect(service.getJob(2, job.jobId)).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });
 
