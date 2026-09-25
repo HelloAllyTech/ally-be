@@ -70,7 +70,17 @@ export interface GlossaryEntry {
     lastDeferReason?: string;
   };
   provenance?: {
-    source: 'consolidation' | 'seed' | 'manual';
+    source: 'consolidation' | 'seed' | 'manual' | 'lexeme_mining';
+    /** Lexeme-mining entries only: the corpus counts that surfaced the word
+     * and whether the pair could be swapped mechanically at runtime. */
+    lexeme?: {
+      agentCount: number;
+      learnerCount: number;
+      learnerEchoCount: number;
+      scenarioSpread: number;
+      wordClass: string;
+      swapSafe: boolean;
+    };
     annotationIds?: string[];
     /** Distinct tenants whose annotations support this proposal — the breadth
      * signal the global-vs-overlay routing reads (multi-profile support ⇒

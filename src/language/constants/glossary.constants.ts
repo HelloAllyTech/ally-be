@@ -28,6 +28,21 @@ export const MAX_GLOSSARY_ENTRIES_PER_SECTION = 200;
 /** Registry prompt that consolidates judge error annotations into proposed entries. */
 export const GLOSSARY_CONSOLIDATION_PROMPT_CODE = 'glossary_consolidation';
 
+/** Registry prompt that pairs agent-over-used (bookish) words with their
+ * colloquial equivalents — the lexeme-mining job (lexeme-mining.util). */
+export const GLOSSARY_LEXEME_PAIRING_PROMPT_CODE = 'glossary_lexeme_pairing';
+
+/** Lexeme mining reads judged sessions this far back. Wider than the
+ * consolidation window because the per-language corpora are thin (Tamil
+ * traffic stopped 2026-08-03; Hindi has ~100 judged sessions in 150 days). */
+export const LEXEME_MINING_WINDOW_DAYS = 150;
+
+/** Most-recent judged sessions read per mining run (bounds the DB read). */
+export const LEXEME_MINING_SESSION_CAP = 400;
+
+/** Candidates sent to the pairing prompt per run. */
+export const LEXEME_MINING_TOP_K = 40;
+
 /**
  * Judge dimensions the consolidation loop mines. Style/lexicon dimensions plus
  * `fluency`, which is admitted ONLY through the systematicity gate (the same

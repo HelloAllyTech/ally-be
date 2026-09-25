@@ -863,6 +863,23 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
     promptOverride: 'track_quiz_open_ended_grading_user',
   },
   {
+    id: 'glossary-lexeme-pairing',
+    task: null,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger: 'An admin runs bookish-word mining for a language glossary',
+    detail:
+      'One call per run: pairs up to 40 words the role-play agent over-uses ' +
+      "(vs the counsellors' own speech, echoes removed) with colloquial " +
+      'equivalents, or keeps them. Manual only, dry-run by default. Goes ' +
+      'through LlmProviderFactory, which records no llm_usage — like the ' +
+      'other glossary calls, so there is no task label to attach yet.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'resolved',
+    defaultModel: 'gemini-2.5-pro',
+    configuredBy: 'prompts.model on glossary_lexeme_pairing',
+    promptOverride: 'glossary_lexeme_pairing',
+  },
+  {
     id: 'track-memory-fold',
     task: LlmTask.TRACK_MEMORY_FOLD,
     runtime: LlmRuntime.ALLY_BE,

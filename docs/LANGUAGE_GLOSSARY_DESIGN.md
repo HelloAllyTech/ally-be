@@ -514,6 +514,40 @@ global a second tenant would inherit.
 `verdict='contradicted'` (the population itself uses the avoid-term,
 `GLOSSARY_LEXICAL_CONTRADICTION_MIN` = 5) is never auto-accepted.
 
+### 6.2a Mine bookish words — manual, dry-run by default
+
+Consolidation learns only from errors a judge flagged. `GlossaryLexemeMiningService`
+(`lexeme-mining.util.ts`) is the open-vocabulary complement: it compares the agent's word
+frequencies with the counsellors' own speech in the same language (weighted log-odds, judged
+non-test sessions, 150 days, newest 400 sessions) and sends the top 40 agent-leaning words to
+the `glossary_lexeme_pairing` prompt, which either pairs each with its colloquial form or keeps
+it. Pairs come out in the canonical `- meaning: say `X` (avoid: `Y`)` form (§6.2, rule form).
+
+Two corrections were measured in prod first (2026-09-25), and both are built in:
+
+- **Echo.** Counsellors repeat the agent's words back. 23–36% of learner uses of agent-leaning
+  words were words the agent had introduced earlier in the session, against 2.5–8% for
+  counsellor-leaning words — Hindi `तनाव`: 24 of 24 learner uses came after the agent said it.
+  A learner occurrence counts only if the learner used the word before the agent did. The
+  evidence gate is fed the same de-echoed corpus.
+- **Scenario-bound words.** Persona names and scenario topic nouns are agent-leaning by
+  construction. A candidate must appear in at least 3 scenarios and 3 sessions.
+
+There is deliberately no stoplist: the best Tamil finds are literary function words
+(`அதனால்`, `இருக்கிறேன்`). Words the glossary already mentions anywhere are skipped.
+
+A counsellor asking "what do you mean?" was tested as a signal and rejected: the lift over
+baseline was 0.73–1.1, and the hits are the reflective-clarification technique being practised,
+not incomprehension.
+
+`dryRun=false` queues surviving pairs as `proposed` entries in `core_style` under a batch with
+`trigger='lexeme_mining'`. Duplicates and `contradicted` pairs are not written. It never
+auto-accepts, **but in an environment running §6.3 in `apply` mode the queued proposals are
+decided on the adjudicator's next pass** — the dry run is the human checkpoint. Each entry also
+records `swapSafe`: a single-token pair of an agreement-free class (discourse marker,
+conjunction, lexeme) that is not an address form, i.e. one a runtime output swap could apply
+without breaking the sentence. Nothing reads `swapSafe` yet.
+
 ### 6.3 Adjudicate — hourly, unattended (replaces "humans approve")
 
 `GlossaryAdjudicationService`, mode from `GLOSSARY_ADJUDICATION_SCHEDULE`
@@ -641,6 +675,7 @@ POST  /v1/language/:id/glossary/:sectionCode/publish | /archive   lifecycle
 POST  /v1/language/:id/glossary/generate                          seed job
 POST  /v1/language/glossary/backfill                              seed all active non-English
 POST  /v1/language/:id/glossary/consolidate                       consolidation run
+POST  /v1/language/:id/glossary/lexeme-mining                     bookish-word mining (§6.2a)
 POST  /v1/language/:id/glossary/retier                            recompute Tier 0 knapsack
 POST  /v1/language/:id/glossary/:sectionCode/proposals/:entryId/accept | /reject
 POST  /v1/language/:id/glossary/proposals/adjudicate              LLM adjudication (§6.3)

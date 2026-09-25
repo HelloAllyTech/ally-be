@@ -11,6 +11,7 @@ import { UpsertGlossarySectionDto } from '../dto/glossary-section.dto';
 import { LanguageGlossaryService } from '../service/language-glossary.service';
 import { GlossaryAdherenceService } from '../service/glossary-adherence.service';
 import { GlossaryAdjudicationService } from '../service/glossary-adjudication.service';
+import { GlossaryLexemeMiningService } from '../service/glossary-lexeme-mining.service';
 
 @ApiTags('Language')
 @ApiBearerAuth()
@@ -24,6 +25,7 @@ export class LanguageGlossaryController {
     private readonly glossaryService: LanguageGlossaryService,
     private readonly adherenceService: GlossaryAdherenceService,
     private readonly adjudicationService: GlossaryAdjudicationService,
+    private readonly lexemeMiningService: GlossaryLexemeMiningService,
   ) {}
 
   @ApiOperation({
@@ -219,6 +221,41 @@ export class LanguageGlossaryController {
     return this.glossaryService.consolidateGlossary(Number(id), undefined, {
       autoAccept: body?.autoAccept === true,
       trigger: 'manual',
+    });
+  }
+
+  @ApiOperation({
+    summary:
+      'Mine bookish words: pair words the agent over-uses (vs counsellor ' +
+      'speech, echoes removed) with colloquial equivalents',
+    description:
+      'Defaults to dryRun=true, which reports candidates and proposed pairs ' +
+      'and writes nothing. dryRun=false queues the surviving pairs as PROPOSED ' +
+      'entries in a consolidation batch (rollback via the batch endpoints). ' +
+      'Never auto-accepts — but an adjudication scheduler in apply mode will ' +
+      'decide queued proposals on its next pass.',
+  })
+  @AuthPermissions([PERMISSIONS.EDIT_LANGUAGE])
+  @Post(':id/glossary/lexeme-mining')
+  async mineLexemes(
+    @Param('id') id: number,
+    @Body()
+    body?: {
+      dryRun?: boolean;
+      sinceDays?: number;
+      sessionCap?: number;
+      topK?: number;
+    },
+  ) {
+    const positive = (v: unknown, max: number) =>
+      typeof v === 'number' && Number.isInteger(v) && v > 0
+        ? Math.min(v, max)
+        : undefined;
+    return this.lexemeMiningService.mineLexemes(Number(id), {
+      dryRun: body?.dryRun !== false,
+      sinceDays: positive(body?.sinceDays, 365),
+      sessionCap: positive(body?.sessionCap, 1000),
+      topK: positive(body?.topK, 80),
     });
   }
 
