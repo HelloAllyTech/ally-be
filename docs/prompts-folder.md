@@ -145,6 +145,37 @@ tool is inert, which is why this is safe; the reverse is not. Guidance that reac
 without the tool existing would produce calls to a tool that isn't there. **Add the tool first,
 then the guidance, and treat the dashboard override as the thing that actually ships.**
 
+### Which prompts the dashboard actually drives
+
+`useDashboardOverride` decides whether a row's `prompts_versions` content ships or the
+`.txt` in this folder does. It defaults to **false**, and the failure that causes is
+silent in the studio rather than in the runtime: an admin edits a prompt, sees a new
+version saved, and the next run uses the file. No error, no warning, and the edit is
+inert.
+
+As of 2026-09-25 these three are **override: true**, so the studio is what ships and
+editing their `.txt` here does not:
+
+| Prompt | File |
+|---|---|
+| `builder_interviewer_system` | `builder/interviewer_system.txt` |
+| `builder_coder_guidance` | `builder/coder_guidance.txt` |
+| `builder_finalise_guidance` | `builder/finalise_guidance.txt` |
+
+Turning the flag on is not a one-line change, because the two copies drift apart while it
+is off and nothing reconciles them. When these three were switched, the stored version of
+`builder_interviewer_system` was a 5,960-character snapshot against a 11,320-character
+file, and `builder_coder_guidance` held *different* advice from its file rather than older
+advice — the file carrying Ally's traps (guarded paths, merged migrations), the stored
+version carrying general discipline (never invent a requirement, match the surrounding
+code). Flipping the flag without looking would have silently picked one and dropped the
+other.
+
+**So: read both, merge by hand, write the merged text and the flag in the same request,
+and update the `.txt` to match.** The update endpoint only commits a new version when
+content and `useDashboardOverride: true` arrive together, which is what keeps the live
+prompt from passing through a wrong state on the way.
+
 **`ok:false` means "repair and retry" — so never use it for an honest negative.** The model
 obliges an `ok:false`, which is right for a validation failure and wrong for a retrieval that
 found nothing: it becomes a rephrase loop against a corpus that genuinely lacks the material.
