@@ -71,7 +71,7 @@ export class BuilderSession extends BaseWithoutTenantEntity {
    * `settings.defaultEngine` at creation, because a non-null column default
    * makes the dispatch's `?? settings.defaultEngine` rung unreachable.
    */
-  @Column({ type: 'varchar', length: 40, default: 'gemini' })
+  @Column({ type: 'varchar', length: 40, default: 'opencode' })
   engine!: string;
 
   @Column({ type: 'varchar', length: 80, nullable: true })

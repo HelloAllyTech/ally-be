@@ -127,13 +127,13 @@ describe('BuilderSessionService', () => {
       );
     });
 
-    it('falls back to gemini when no default engine is set', async () => {
+    it('falls back to opencode when no default engine is set', async () => {
       settingsService.get.mockResolvedValue({});
 
       await service.createSession(1, {});
 
       expect(sessionRepository.create).toHaveBeenCalledWith(
-        expect.objectContaining({ engine: 'gemini' }),
+        expect.objectContaining({ engine: 'opencode' }),
       );
     });
 

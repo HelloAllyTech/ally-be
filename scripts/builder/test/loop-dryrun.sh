@@ -146,22 +146,32 @@ SERVER
 # run-engine parses: a ```plan block for planning and a ```json verdict for
 # verification.
 #
-# This shim is Claude Code's wire shape specifically — its flags, its event
-# frames, its `modelUsage` totals — so every scenario below pins
-# BUILDER_ENGINE=claude-code rather than inheriting run-engine.sh's default.
-# It used to inherit it, which worked only for as long as that default
-# happened to name the engine this file fakes: when the default moved to
-# `gemini`, run-engine.sh went looking for a `gemini` binary that was never
-# on PATH and 22 scenarios failed at once, none of them about the engine.
-# A harness that fakes one engine should say which one.
+# This shim is opencode's wire shape — its positional prompt, its `step_start`
+# / `text` / `step_finish` frames, its per-step `cost`. It faked Claude Code
+# until 2026-09-25, which meant this harness exercised a loop the platform had
+# stopped running: every scenario passed against an engine nobody used, while
+# the engine everyone used went untested here.
 #
-# The Gemini path is covered separately, at the level where the two engines
-# actually differ: forward-events.test.mjs exercises normaliseGemini()
-# against the real 0.22.5 event schema.
-cat > "${WORK}/claude" <<'SHIM'
+# That gap hid a real one. opencode emits no terminal frame carrying the
+# assistant's prose, so `result` was absent from the forwarder's output and
+# run-engine.sh's plan and verdict parsers both read nothing — the verifier
+# answered "pass" on every build without reading one. A harness faking the
+# real engine would have caught it the day the engine changed.
+#
+# So the fenced blocks below matter: they are emitted as ordinary `text`
+# frames, exactly as opencode emits them, and reaching the parsers at all
+# depends on the forwarder buffering them.
+cat > "${WORK}/opencode" <<'SHIM'
 #!/usr/bin/env bash
-# Fake `claude`: --output-format stream-json, driven by the prompt marker.
+# Fake `opencode`: `opencode run [--session S] --model M --agent A --format
+# json --auto "<prompt>"`, driven by the prompt marker.
+#
+# The prompt is a positional argument here, not `-p`. That is the difference
+# that bit first when the real engine changed, so the shim insists on it: if
+# run-engine.sh ever goes back to passing a flag, no argument will carry the
+# marker and every phase will fall through to "build".
 prompt=""
+agent=""
 for arg in "$@"; do
   case "$arg" in
     PROMPT:*) prompt="$arg" ;;
@@ -183,8 +193,8 @@ fi
 
 [ "$phase" = "build" ] && [ "${DRYRUN_PAUSE:-}" = "1" ] && touch /tmp/builder-paused
 
-# An engine that cannot start at all: no result frame, nothing written. A model
-# this engine does not have, a missing credential. Distinct from the case below,
+# An engine that cannot start at all: no frames, nothing written. A model this
+# provider does not have, a missing credential. Distinct from the case below,
 # which stops PART-WAY and leaves work behind.
 if [ "${DRYRUN_ENGINE_DEAD:-}" = "1" ] && [ "$phase" = "build" ]; then
   echo "There's an issue with the selected model. It may not exist or you may not have access to it." >&2
@@ -192,28 +202,26 @@ if [ "${DRYRUN_ENGINE_DEAD:-}" = "1" ] && [ "$phase" = "build" ]; then
 fi
 
 # An engine that stops on its own, part-way through, having written something.
-# Its own budget ceiling, a provider error, a loop detector
-# (`[gemini] Loop detected, stopping execution`) — all of them arrive as a
-# non-zero exit status, and all of them used to take the whole run down with
-# them under `set -e`, before the gate and before any outcome was reported.
+# Its own budget ceiling, a provider error, a loop detector — all of them
+# arrive as a non-zero exit status, and all of them used to take the whole run
+# down with them under `set -e`, before the gate and before any outcome.
 if [ "${DRYRUN_ENGINE_EXIT:-}" = "1" ] && [ "$phase" = "build" ]; then
-  echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Half-way through."}]}}'
+  echo '{"type":"step_start","part":{"type":"step-start"},"sessionID":"ses_dryrun"}'
+  echo '{"type":"text","part":{"type":"text","text":"Half-way through."},"sessionID":"ses_dryrun"}'
   exit 3
 fi
 
-# A phase that never returns. `--max-turns` and `--max-budget-usd` are Claude
-# Code flags, so on any other engine nothing stands between a stuck phase and
-# the job's own timeout — the wall clock in run_agent is the only bound that
-# does not depend on a vendor implementing one.
+# A phase that never returns. opencode has no turn cap and no mid-run dollar
+# ceiling, so the wall clock in run_agent is the only bound on a stuck phase —
+# which is exactly why that bound exists.
 if [ "${DRYRUN_HANG:-}" = "1" ] && [ "$phase" = "build" ]; then
   sleep 120
 fi
 
-# A read-only phase that writes anyway. The allowlist withholding Write and
-# Edit reaches Claude Code only — Gemini's `--yolo` means "run any tool" and
-# run-engine.sh passes it no tool list at all, so the planner, the verifier and
-# a review run can all write, edit and commit. A real Gemini build was seen
-# writing a component and a test file during PLANNING.
+# A read-only phase that writes anyway. `--agent reviewer` denies write/edit,
+# so opencode should not offer the tool at all — but the guarantee that matters
+# is the runner's, not the vendor's, and revert_stray_writes is what enforces
+# it. This scenario is the proof that it does.
 if [ "${DRYRUN_READONLY_WRITES:-}" = "1" ] &&
    { [ "$phase" = "plan-prompt" ] || [ "$phase" = "verify-prompt" ]; }; then
   for d in repos/*/; do
@@ -232,10 +240,10 @@ if [ "${DRYRUN_GATE_FAIL:-}" = "1" ] && { [ "$phase" = "build" ] || [ "$phase" =
   touch /tmp/builder-dryrun-broke-it
 fi
 
-# The engine's final text arrives in the `result` record's `result` field —
-# that is where run-engine looks for the fenced plan and verdict blocks — and
-# is also streamed as assistant text for the live feed. Both are emitted here
-# for the same reason the real engine does.
+# opencode streams prose as `text` frames and has no terminal result frame, so
+# the fenced plan and verdict blocks arrive the same way ordinary output does.
+# The forwarder is what collects them into `result`; run-engine.sh reads the
+# last fenced block from there.
 PHASE="$phase" VERIFY_ROUND="$verify_round" node -e '
 const phase = process.env.PHASE;
 const round = Number(process.env.VERIFY_ROUND || 1);
@@ -290,12 +298,18 @@ switch (phase) {
 }
 
 const line = (obj) => process.stdout.write(JSON.stringify(obj) + "\n");
-line({ type: "assistant", message: { content: [{ type: "text", text }] } });
+const sessionID = "ses_dryrun";
+line({ type: "step_start", part: { type: "step-start" }, sessionID });
+line({ type: "text", part: { type: "text", text }, sessionID });
+// Cost arrives per step and nothing sums it but the forwarder.
 line({
-  type: "result",
-  result: text,
-  total_cost_usd: 0.5,
-  modelUsage: { "fake-model": { inputTokens: 10, outputTokens: 5 } },
+  type: "step_finish",
+  part: {
+    type: "step-finish",
+    tokens: { total: 15, input: 10, output: 5, cache: { read: 0 } },
+    cost: 0.5,
+  },
+  sessionID,
 });
 '
 SHIM
@@ -340,7 +354,7 @@ esac
 SHIM
 chmod +x "${WORK}/gh"
 
-chmod +x "${WORK}/claude"
+chmod +x "${WORK}/opencode"
 
 # A git repo the gate sees as "changed", so the gate actually runs.
 setup_repo() {
@@ -464,7 +478,7 @@ run_scenario() {
       PATH="${WORK}:$PATH" \
       ALLY_BE_API_URL="http://127.0.0.1:${PORT}" \
       ALLY_BE_API_KEY=test-key \
-      BUILDER_ENGINE=claude-code \
+      BUILDER_ENGINE=opencode \
       BUILDER_RUN_ID=11111111-1111-1111-1111-111111111111 \
       BUILDER_MODELS='{"planner":"p","coder":"c","verifier":"v"}' \
       "$@" \

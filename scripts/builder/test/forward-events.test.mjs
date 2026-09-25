@@ -93,138 +93,6 @@ function runForwarder(lines, { engine } = {}) {
   });
 }
 
-console.log('── gemini normaliser (real captured run) ──');
-
-// Captured verbatim from a real `gemini --output-format stream-json` run
-// (see forward-events.mjs's doc comment on normaliseGemini): one shell
-// command, one read, one write, then the assistant's reply streamed as two
-// delta fragments before the terminal result.
-const GEMINI_RUN = [
-  '{"type":"init","timestamp":"2026-09-09T03:45:05.012Z","session_id":"266cbe6b-2a65-43b3-a554-042cb93fea93","model":"auto-gemini-2.5"}',
-  '{"type":"message","timestamp":"2026-09-09T03:45:05.013Z","role":"user","content":"List the files, read sample.txt, write spike-output.txt."}',
-  '{"type":"tool_use","timestamp":"2026-09-09T03:45:10.105Z","tool_name":"run_shell_command","tool_id":"a","parameters":{"description":"List files","command":"ls -F"}}',
-  '{"type":"tool_use","timestamp":"2026-09-09T03:45:10.115Z","tool_name":"read_file","tool_id":"b","parameters":{"file_path":"sample.txt"}}',
-  '{"type":"tool_use","timestamp":"2026-09-09T03:45:10.130Z","tool_name":"write_file","tool_id":"c","parameters":{"file_path":"spike-output.txt","content":"done"}}',
-  '{"type":"tool_result","timestamp":"2026-09-09T03:45:10.275Z","tool_id":"a","status":"success","output":"sample.txt"}',
-  '{"type":"tool_result","timestamp":"2026-09-09T03:45:10.278Z","tool_id":"b","status":"success","output":""}',
-  '{"type":"tool_result","timestamp":"2026-09-09T03:45:10.280Z","tool_id":"c","status":"success"}',
-  '{"type":"message","timestamp":"2026-09-09T03:45:14.770Z","role":"assistant","content":"OK","delta":true}',
-  '{"type":"message","timestamp":"2026-09-09T03:45:14.772Z","role":"assistant","content":".","delta":true}',
-  '{"type":"result","timestamp":"2026-09-09T03:45:14.774Z","status":"success","stats":{"input_tokens":25618,"output_tokens":80,"cached":8107,"duration_ms":9762,"tool_calls":3}}',
-];
-
-await test('stdin is passed through byte-for-byte', async () => {
-  const { stdout } = await runForwarder(GEMINI_RUN, { engine: 'gemini' });
-  assert.equal(stdout, GEMINI_RUN.map((line) => `${line}\n`).join(''));
-});
-
-await test('delta-streamed assistant text is merged into one event, not two', async () => {
-  // The bug a real run exposed: without buffering, "OK" and "." land as two
-  // separate choppy text events instead of the sentence "OK.".
-  const { events } = await runForwarder(GEMINI_RUN, { engine: 'gemini' });
-  const textEvents = events.filter((event) => event.type === 'text');
-  // The second text event is the unpriced-model notice: this captured run is
-  // on `auto-gemini-2.5`, a routing alias with no rate-card entry, so the
-  // forwarder says so in the feed rather than letting the phase read as free.
-  assert.equal(textEvents.length, 2);
-  assert.equal(textEvents[0].payload.text, 'OK.');
-  assert.match(textEvents[1].payload.text, /no entry in the rate card/);
-});
-
-await test('tool and file-edit events still surface around the merged text', async () => {
-  const { events } = await runForwarder(GEMINI_RUN, { engine: 'gemini' });
-  assert.deepEqual(
-    events.map((event) => event.type),
-    [
-      'tool_call',
-      'tool_call',
-      'file_edit',
-      'tool_result',
-      'tool_result',
-      'tool_result',
-      'text',
-      'text',
-    ],
-  );
-});
-
-await test('the terminal result is captured for the cost step, with no fabricated cost', async () => {
-  const { result } = await runForwarder(GEMINI_RUN, { engine: 'gemini' });
-  assert.deepEqual(result, {
-    usage: { input_tokens: 25618, output_tokens: 80, cached_tokens: 8107 },
-    total_cost_usd: 0,
-    duration_ms: 9762,
-    num_turns: 3,
-  });
-});
-
-await test('a run ending mid-delta still flushes its last fragment', async () => {
-  // No terminal `result` record at all — the stream just stops. The close
-  // handler's flush is the only thing that saves this text from being lost.
-  const truncatedRun = GEMINI_RUN.slice(0, -1);
-  const { events } = await runForwarder(truncatedRun, { engine: 'gemini' });
-  const textEvents = events.filter((event) => event.type === 'text');
-  // One text event, not two: with no terminal `result` frame there is no
-  // pricing step, so the unpriced-model notice never arises here.
-  assert.equal(textEvents.length, 1);
-  assert.equal(textEvents[0].payload.text, 'OK.');
-});
-
-console.log('── claude code normaliser (unaffected by the gemini buffer) ──');
-
-const CLAUDE_RUN = [
-  '{"type":"assistant","message":{"content":[{"type":"text","text":"Looking at this."}]}}',
-  '{"type":"result","total_cost_usd":0.05}',
-];
-
-await test('claude code text is emitted immediately, with no buffering', async () => {
-  const { events, result } = await runForwarder(CLAUDE_RUN);
-  assert.deepEqual(events, [{ type: 'text', payload: { text: 'Looking at this.' } }]);
-  assert.equal(result.total_cost_usd, 0.05);
-});
-
-
-
-// ── pricing follows what ran, not what was asked for ────────────────────────
-//
-// Captured from @google/gemini-cli 0.60.0: a request for `gemini-2.5-flash`
-// comes back with `init.model` saying gemini-2.5-flash and `stats.models`
-// keyed by gemini-3.5-flash. Only the breakdown says which card applies.
-const GEMINI_ROUTED_RUN = [
-  '{"type":"init","timestamp":"2026-09-22T14:14:28.536Z","session_id":"5a77d58a","model":"gemini-2.5-flash"}',
-  '{"type":"message","timestamp":"2026-09-22T14:14:32.581Z","role":"assistant","content":"ok","delta":true}',
-  '{"type":"result","timestamp":"2026-09-22T14:14:32.629Z","status":"success","stats":{"total_tokens":9574,"input_tokens":9080,"output_tokens":1,"cached":0,"input":9080,"duration_ms":4093,"tool_calls":0,"models":{"gemini-2.5-pro":{"total_tokens":9574,"input_tokens":9080,"output_tokens":1,"cached":0,"input":9080}}}}',
-];
-
-await test('a routed run is priced from stats.models, not from the init model', async () => {
-  const { result } = await runForwarder(GEMINI_ROUTED_RUN, { engine: 'gemini' });
-  // 9080 fresh input @ $1.25/M + 1 output @ $10/M — the gemini-2.5-pro card,
-  // reached through the breakdown. Pricing the init model would have charged
-  // the flash card and under-reported the phase.
-  assert.equal(result.total_cost_usd, Math.round((9080 / 1e6) * 1.25 * 1e6 + (1 / 1e6) * 10 * 1e6) / 1e6);
-});
-
-await test('an unpriced model still reports zero, and says so in the feed', async () => {
-  const routedToUnknown = GEMINI_ROUTED_RUN.map((line) =>
-    line.replace('"gemini-2.5-pro"', '"gemini-3.5-flash"'),
-  );
-  const { result, events } = await runForwarder(routedToUnknown, { engine: 'gemini' });
-  assert.equal(result.total_cost_usd, 0);
-  assert.equal(
-    events.filter((event) => /no entry in the rate card/.test(event.payload?.text ?? '')).length,
-    1,
-  );
-});
-
-await test('flash-lite is priced from its own card, not the flash card it prefixes', async () => {
-  const liteRun = GEMINI_ROUTED_RUN.map((line) =>
-    line.replace('"gemini-2.5-pro"', '"gemini-2.5-flash-lite"'),
-  );
-  const { result } = await runForwarder(liteRun, { engine: 'gemini' });
-  // 9080 input @ $0.10/M + 1 output @ $0.40/M. The first-prefix-wins lookup
-  // matched `gemini-2.5-flash` and charged $0.30/M + $2.50/M instead.
-  assert.equal(result.total_cost_usd, Math.round((9080 / 1e6) * 0.1 * 1e6 + (1 / 1e6) * 0.4 * 1e6) / 1e6);
-});
 
 // ── opencode ────────────────────────────────────────────────────────────────
 //
@@ -292,6 +160,8 @@ await test('an opencode auth failure reaches the feed as words', async () => {
 
 // Last, not mid-file: this directory is where runForwarder writes each
 // result, so removing it early makes every test after it read `null`.
+
+
 // ── the verdict has to survive the trip ─────────────────────────────────────
 //
 // run-engine.sh reads the planner's ```plan block and the verifier's ```json
@@ -346,7 +216,8 @@ await test('a plan block survives for the coder to read back', async () => {
   assert.match(blocks[blocks.length - 1][1], /Do the thing\./);
 });
 
-fs.rmSync(tmp, { recursive: true, force: true });
 
+
+fs.rmSync(tmp, { recursive: true, force: true });
 console.log(`\n${passed} passed, ${failures.length} failed`);
 process.exit(failures.length ? 1 : 0);

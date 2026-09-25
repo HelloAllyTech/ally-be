@@ -123,7 +123,8 @@ export class BuilderSessionService {
 
     // The engine, for the same reason and with the same history as the budget
     // above. `builder_sessions.engine` carries a column default (once
-    // 'claude-code', now 'gemini'), so `session.engine` is never null — and the
+    // 'claude-code', then 'gemini', now 'opencode'), so `session.engine` is
+    // never null — and the
     // dispatch reads
     // `overrides.engine ?? session.engine ?? settings.defaultEngine`, where a
     // non-null column default makes the third rung unreachable. The admin's
@@ -138,7 +139,7 @@ export class BuilderSessionService {
     // Stamped here, where the budget's identical bug was fixed, rather than by
     // making the column nullable — the session then records the engine it will
     // actually run on, which is also what the UI reads back.
-    const engine = settings.defaultEngine ?? 'gemini';
+    const engine = settings.defaultEngine ?? 'opencode';
 
     const session = await this.sessionRepository.save(
       this.sessionRepository.create({

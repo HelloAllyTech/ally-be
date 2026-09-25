@@ -452,7 +452,12 @@ export const BUILDER_EVIDENCE_MAX_SHAPES = 12;
  * whenever it overrides something — a pin that silently disagreed with the
  * admin picker would be the same class of bug it exists to close.
  */
-export const BUILDER_ENGINE_ALLOWED_DEFAULT = ['gemini', 'opencode'];
+// One engine. opencode is a harness rather than a vendor — it runs Anthropic,
+// OpenAI and Google models alike — so `gemini` came off this list when its
+// invocation case, its event normaliser and its install step were deleted.
+// Choosing a model is now how you choose a vendor; see run-engine.sh, which
+// derives the provider prefix from the model id.
+export const BUILDER_ENGINE_ALLOWED_DEFAULT = ['opencode'];
 
 /**
  * The engines Builder may run. Anything else is overruled to the first entry.

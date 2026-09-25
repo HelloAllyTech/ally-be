@@ -186,65 +186,15 @@ PLANNER_MODEL="$(model_for planner "gemini-2.5-pro")"
 CODER_MODEL="$(model_for coder "gemini-2.5-pro")"
 VERIFIER_MODEL="$(model_for verifier "gemini-2.5-pro")"
 
-# ── The escalation ladder ───────────────────────────────────────────────────
-#
-# Which coder model attempt N runs on. Before this, every remediation round
-# re-ran the model that had just failed the gate — four attempts, one tier, and
-# a run that exhausted them failed having never tried anything stronger.
-#
-# The trigger is the test gate, and that is the whole reason this is safe to
-# automate. The published cascade pattern (attempt cheap, verify, escalate) is
-# usually held back by the verify step: a model's own confidence is badly
-# calibrated, so "did that work?" is a guess. Here it is jest and eslint on a
-# clean tree, diffed against a baseline from pristine origin/master. A gate
-# failure is a fact.
-#
-# Escalation only — entry 0 is whatever tier the build would have used anyway,
-# so no first attempt is weaker than it was before. Starting cheaper is the
-# bigger saving and the riskier one, and it waits on first-attempt pass rates
-# per tier, which ally-be only started recording alongside runs.size.
-#
-# Clamps to the last entry, so a ladder shorter than MAX_CODE_ITERATIONS simply
-# holds its top tier, and an ally-be too old to send one leaves every attempt
-# on CODER_MODEL exactly as before.
-coder_model_for_attempt() {
-  local attempt="$1" value
-  value="$(printf '%s' "$MODELS_JSON" \
-    | jq -r --argjson i "$((attempt - 1))" \
-        '(.coderLadder // []) as $l
-         | if ($l | length) == 0 then empty
-           else $l[if $i >= ($l | length) then -1 else $i end]
-           end' 2>/dev/null || true)"
-  printf '%s' "${value:-$CODER_MODEL}"
-}
-
-# The size profile rides the same input. ally-be sizes the PRD and decides what
-# planning is worth; the fallbacks below are what a hand-run workflow gets.
-BUILD_SIZE="$(model_for size "medium")"
-EFFORT="$(model_for effort "high")"
-PLANNER_TURNS="$(model_for plannerMaxTurns "60")"
-case "$PLANNER_TURNS" in '' | *[!0-9]*) PLANNER_TURNS=60 ;; esac
-
-# Per-phase dollar ceilings, enforced by the engine itself rather than only
-# checked between phases. The session ceiling still holds at every boundary
-# (hold_or_abort_if_over_budget); this stops one phase eating the whole session
-# before the next boundary is reached — which is exactly what happened on the
-# first real build, where CODE ran past the ceiling and the run stopped with
-# $16.77 spent and nothing pushed.
-budget_for() {
-  local phase="$1" fallback="$2" value
-  value="$(printf '%s' "$MODELS_JSON" | jq -r --arg p "$phase" '.budgets[$p] // empty' 2>/dev/null || true)"
-  printf '%s' "${value:-$fallback}"
-}
 # ── A wall clock per phase ──────────────────────────────────────────────────
 #
 # The only bound that works on every engine.
 #
-# `--max-turns` and `--max-budget-usd` are Claude Code flags. Gemini's CLI has
-# neither, so a Gemini phase has nothing between it and the job's 120-minute
-# timeout: a loop that stops making progress burns the entire run, and the
-# session's spend ceiling is only consulted at phase boundaries it may never
-# reach. Two of the three runaway protections this pipeline relies on were
+# `--max-turns` and `--max-budget-usd` were Claude Code flags. opencode has
+# neither, so a phase has nothing between it and the job's 120-minute timeout:
+# a loop that stops making progress burns the entire run, and the session's
+# spend ceiling is only consulted at phase boundaries it may never reach. Two
+# of the three runaway protections this pipeline relies on were
 # therefore Claude-only, the same way the tool allowlist was.
 #
 # Wall clock is not as good as a turn cap — it cannot tell a slow phase from a
@@ -269,10 +219,26 @@ CODE_TIMEOUT="$(timeout_for code 45m)"
 VERIFY_TIMEOUT="$(timeout_for verify 20m)"
 FINALISE_TIMEOUT="$(timeout_for finalise 25m)"
 
-PLAN_BUDGET="$(budget_for plan 10)"
-CODE_BUDGET="$(budget_for code 20)"
-VERIFY_BUDGET="$(budget_for verify 6)"
-FINALISE_BUDGET="$(budget_for finalise 5)"
+# Clamps to the last entry, so a ladder shorter than MAX_CODE_ITERATIONS simply
+# holds its top tier, and an ally-be too old to send one leaves every attempt
+# on CODER_MODEL exactly as before.
+coder_model_for_attempt() {
+  local attempt="$1" value
+  value="$(printf '%s' "$MODELS_JSON" \
+    | jq -r --argjson i "$((attempt - 1))" \
+        '(.coderLadder // []) as $l
+         | if ($l | length) == 0 then empty
+           else $l[if $i >= ($l | length) then -1 else $i end]
+           end' 2>/dev/null || true)"
+  printf '%s' "${value:-$CODER_MODEL}"
+}
+
+# The size profile rides the same input. ally-be sizes the PRD and decides what
+# planning is worth; the fallbacks below are what a hand-run workflow gets.
+BUILD_SIZE="$(model_for size "medium")"
+EFFORT="$(model_for effort "high")"
+
+
 
 # Mirrors BUILDER_MAX_CODE_ITERATIONS / BUILDER_MAX_VERIFY_ROUNDS in
 # src/builder/constants/builder.constants.ts — change both together.
@@ -437,34 +403,6 @@ report_phase_cost() {
   rm -f /tmp/builder-cost-body.json
 }
 
-# ── What this phase may spend ───────────────────────────────────────────────
-#
-# The profile's per-phase figures are absolute, and they add up to more than
-# many sessions are allowed: the LARGE profile is $10 + $20 + $6 + $5 for one
-# pass each. A session with a $10 ceiling was handed all four and spent $41.92
-# of it before anything stopped the run — the boundary check below cannot
-# catch that, because the overshoot happens INSIDE a phase and the check runs
-# between them.
-#
-# ally-be now clamps these at dispatch too, but a dispatched figure is a
-# snapshot: a session's spend moves while the run is going, and an admin can
-# lower the ceiling mid-run. So the number that actually reaches the engine is
-# derived here, from the live remainder, immediately before each phase.
-#
-# Falls back to the configured figure whenever the answer is not a number — an
-# unreachable ally-be, or a session with no ceiling at all, must not be read as
-# "no money left". Floored at 50 cents: a phase handed a ceiling of zero cannot
-# run at all, and a run with nothing left to spend is what the hold below is
-# for.
-phase_budget() {
-  local configured="$1" state remaining
-  state="$(curl -fsS "${API}/budget" -H "x-api-key: ${ALLY_BE_API_KEY}" 2>/dev/null || echo '')"
-  remaining="$(printf '%s' "$state" | jq -r '.remainingUsd // empty' 2>/dev/null || echo '')"
-  case "$remaining" in '' | null | *[!0-9.]*) printf '%s' "$configured"; return 0 ;; esac
-  jq -rn --argjson c "$configured" --argjson r "$remaining" \
-    'if $r < $c then (if $r < 0.5 then 0.5 else $r end) else $c end' 2>/dev/null \
-    || printf '%s' "$configured"
-}
 
 # A run that has spent its ceiling HOLDS at the phase boundary rather than
 # throwing its work away, and carries on if somebody raises the ceiling while
@@ -766,118 +704,70 @@ engine_produced_nothing() {
 }
 
 run_agent() {
-  local prompt_file="$1" result_file="$2" model="$3" tools="$4" max_turns="$5"
-  local max_budget="${6:-}" duration="${7:-}"
+  # No turn cap and no per-phase dollar ceiling. Both were Claude Code flags —
+  # --max-turns and --max-budget-usd — and opencode has neither, so the
+  # parameters went with the engine rather than lingering as numbers every
+  # caller computed and nothing read.
+  #
+  # Spend is still bounded, by the two mechanisms that do not need the engine's
+  # cooperation: the wall clock below, and hold_or_abort_if_over_budget at each
+  # phase boundary, which works on measured spend because opencode reports it.
+  local prompt_file="$1" result_file="$2" model="$3" tools="$4"
+  local duration="${5:-}"
   local rc=0
   local -a TIMEOUT_CMD
   set_timeout_cmd "$duration"
 
   case "$ENGINE" in
-    claude-code)
-      # `--output-format stream-json` is what makes the live feed possible:
-      # the transcript arrives as it happens rather than as one blob at the
-      # end. The forwarder both relays it and passes it through, so the final
-      # result object still lands in $result_file for the cost step.
-      # --max-budget-usd is the hard stop the loop could not previously
-      # express: /budget is only consulted at phase boundaries, so a phase that
-      # ran away was unstoppable until it finished. --effort scales reasoning to
-      # what the build is worth.
-      ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} claude -p "$(cat "$prompt_file")" \
-        --permission-mode acceptEdits \
-        --model "$model" \
-        --allowedTools "$tools" \
-        --mcp-config "$BUILDER_MCP_CONFIG" \
-        --max-turns "$max_turns" \
-        --effort "$EFFORT" \
-        ${max_budget:+--max-budget-usd "$max_budget"} \
-        --output-format stream-json \
-        --verbose \
-      | node "$FORWARDER" --result-out "$result_file" || rc=$?
-      ;;
-
-    # Confirmed against a real local install (0.60.0) of @google/gemini-cli by
-    # running it and reading what came back, not from its documentation.
-    #
-    # Two things about this invocation are load-bearing, and both fail SILENTLY
-    # if you carry the 0.22.5 form forward:
-    #
-    #   1. `-p`. On 0.22.5 the prompt was a positional argument and that meant
-    #      non-interactive. On 0.60.0 a positional is "Initial prompt. Runs in
-    #      INTERACTIVE mode by default; use -p/--prompt for non-interactive."
-    #      The old form does not error — it opens a TUI on a runner with no
-    #      terminal and sits there until the phase wall clock kills it.
-    #
-    #   2. Workspace trust. 0.60.0 refuses to run at all in a directory it has
-    #      not been told to trust, and — worse — when it is given `--yolo` in an
-    #      untrusted directory it prints "Approval mode overridden to 'default'"
-    #      and carries on, which in a headless run means every tool call waits
-    #      for an approval nobody is there to give. A freshly cloned repo on a
-    #      fresh runner is never trusted. GEMINI_CLI_TRUST_WORKSPACE=true is the
-    #      documented headless answer; the runner IS the isolation boundary, the
-    #      same trust model `--yolo` already assumes. `--skip-trust` says the
-    #      same thing on the command line: both are passed because the cost of
-    #      the redundancy is nothing and the cost of getting it wrong is a phase
-    #      that stalls to its wall clock with no error anywhere.
-    #
-    # `-o stream-json` is unchanged and its schema still matches
-    # normaliseGemini(): `init` carries the model, assistant `message` records
-    # carry `delta`, and `result` carries the `stats` block the cost step reads.
-    #
-    # Two params this case still cannot honour, confirmed absent from 0.60.0's
-    # --help rather than assumed:
-    #   - $max_turns: no turn or step-count flag exists. The phase wall clock
-    #     and the job timeout are the only backstops for a Gemini-engine run.
-    #   - $max_budget: no dollar-ceiling flag exists, so a Gemini run's spend is
-    #     bounded between phases, never within one.
-    # $tools stays unused: 0.60.0 deprecates --allowed-tools in favour of the
-    # policy engine (bundle/policies/*.toml), and a half-translated allowlist is
-    # worse than none. Read-only phases are guaranteed by snapshot_heads /
-    # revert_stray_writes above, which holds whatever the engine honours.
-    gemini)
-      GEMINI_CLI_TRUST_WORKSPACE=true \
-      ${TIMEOUT_CMD[@]+"${TIMEOUT_CMD[@]}"} gemini -p "$(cat "$prompt_file")" \
-        --model "$model" \
-        --skip-trust \
-        --yolo \
-        --output-format stream-json \
-      | node "$FORWARDER" --result-out "$result_file" || rc=$?
-      ;;
 
     # Verified end to end by .github/workflows/opencode-spike.yml before this
     # case was written. See install-engine.sh for what that proved.
     #
-    # `--agent` is how a phase becomes read-only here. The allowlist this
-    # runner already computes decides which one: anything permitted to Write is
-    # the builder, everything else reviews. One decision, three engines.
+    # The only engine. The claude-code and gemini cases that used to sit above
+    # this one are gone: opencode is a harness rather than a vendor, so it
+    # reaches Anthropic, OpenAI and Google alike, and maintaining our own
+    # invocation, flag set and event normaliser per CLI bought nothing once one
+    # of them could run them all.
     #
-    # `--auto` approves what is not explicitly denied, which is the same trust
-    # model --yolo and acceptEdits already assume: the runner IS the isolation
-    # boundary. The denials in opencode.json are what make that safe for the
-    # read-only phases, and they hold by removing the tool rather than by
-    # refusing the call.
+    # `--agent` is how a phase becomes read-only. The allowlist this runner
+    # already computes decides which one: anything permitted to Write is the
+    # builder, everything else reviews.
+    #
+    # `--auto` approves what is not explicitly denied, which is the trust model
+    # the runner already assumes: it IS the isolation boundary. The denials in
+    # opencode.json are what make that safe for the read-only phases, and they
+    # hold by removing the tool rather than by refusing the call.
     #
     # Two params this case cannot honour, and both are honest gaps rather than
     # oversights: no turn cap flag exists, and no mid-run dollar ceiling —
-    # though unlike the others opencode at least REPORTS dollars, so the
-    # between-phase budget hold works on measured spend instead of a rate card.
+    # though opencode at least REPORTS dollars, so the between-phase budget
+    # hold works on measured spend instead of a rate card.
     opencode)
       local agent="reviewer"
       case "$tools" in *Write*) agent="builder" ;; esac
 
-      # opencode names a model `provider/model`, and everything upstream of
-      # here names one the way its own vendor does. `gemini-2.5-pro` is what
-      # ally-be's settings, the admin picker and BUILDER_MODEL_DEFAULTS all
-      # hold, because those values also have to satisfy the gemini engine,
-      # which would reject a prefixed id.
+      # opencode names a model `provider/model`; everything upstream names one
+      # the way its own vendor does — `gemini-2.5-pro`, `claude-opus-4-7`. The
+      # translation belongs here, at the boundary that knows both.
       #
-      # So the translation belongs here, at the boundary that knows both — not
-      # in ally-be, where it would have to be undone for the other engine.
-      # Google because that is the provider Builder runs on; an id that already
-      # carries a slash is passed through, so naming `anthropic/…` or
-      # `openai/…` in a settings row keeps working without this line learning
-      # about it.
+      # Derived from the id rather than defaulting to google. The old line
+      # prefixed EVERYTHING with `google/`, which was harmless while Gemini was
+      # the only thing anyone set and actively wrong the moment it was not: a
+      # settings row reading `claude-opus-4-7` became `google/claude-opus-4-7`,
+      # a model no provider has, and every phase died on it. Prod held exactly
+      # that for a day.
+      #
+      # An id that already carries a slash is passed through untouched, so an
+      # explicit `anthropic/…` still wins. An unrecognised shape is passed
+      # through too — opencode's own error names the provider it could not
+      # find, which beats this line inventing one.
       local oc_model="$model"
-      case "$oc_model" in */*) ;; *) oc_model="google/${oc_model}" ;; esac
+      case "$oc_model" in
+        */*) ;;
+        claude-*) oc_model="anthropic/${oc_model}" ;;
+        gemini-*) oc_model="google/${oc_model}" ;;
+        gpt-* | o[0-9]-* | o[0-9]) oc_model="openai/${oc_model}" ;;
+      esac
 
       # Continue the coding conversation instead of starting it again.
       #
@@ -1184,7 +1074,7 @@ if [ "${BUILDER_MODE:-build}" = "review" ]; then
   snapshot_heads
   set_agent_phase review
   run_agent "$PROMPT_FILE" "${RESULTS_DIR}/review.json" \
-    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$(phase_budget "$VERIFY_BUDGET")" "$VERIFY_TIMEOUT"
+    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" "$VERIFY_TIMEOUT"
   report_phase_cost review "$VERIFIER_MODEL" "${RESULTS_DIR}/review.json"
   # This one reviews a pull request a person is reading. A reviewer that
   # silently amended the branch under them would be worse than one that
@@ -1215,7 +1105,7 @@ if [ "${BUILDER_MODE:-build}" = "fix" ]; then
   post_stage CODING
   set_agent_phase fix
   run_agent "$PROMPT_FILE" "${RESULTS_DIR}/fix.json" \
-    "$CODER_MODEL" "$CODER_TOOLS" 200 "$(phase_budget "$CODE_BUDGET")" "$CODE_TIMEOUT"
+    "$CODER_MODEL" "$CODER_TOOLS" "$CODE_TIMEOUT"
   report_phase_cost fix "$CODER_MODEL" "${RESULTS_DIR}/fix.json"
   echo "::endgroup::"
 
@@ -1260,14 +1150,14 @@ BASELINE_PID=$!
 
 # ── Phase 1: PLAN ───────────────────────────────────────────────────────────
 
-echo "Build sized ${BUILD_SIZE}: planner ${PLANNER_MODEL}, effort ${EFFORT}, ${PLANNER_TURNS} turns, \$${PLAN_BUDGET} ceiling."
+echo "Build sized ${BUILD_SIZE}: planner ${PLANNER_MODEL}, effort ${EFFORT}."
 echo "::group::plan (${PLANNER_MODEL})"
 post_stage PLANNING
 if fetch_prompt "plan-prompt" /tmp/builder-plan-prompt.txt; then
   snapshot_heads
   set_agent_phase plan
   run_agent /tmp/builder-plan-prompt.txt "${RESULTS_DIR}/plan.json" \
-    "$PLANNER_MODEL" "$PLANNER_TOOLS" "$PLANNER_TURNS" "$(phase_budget "$PLAN_BUDGET")" "$PLAN_TIMEOUT" || true
+    "$PLANNER_MODEL" "$PLANNER_TOOLS" "$PLAN_TIMEOUT" || true
   report_phase_cost plan "$PLANNER_MODEL" "${RESULTS_DIR}/plan.json"
   # The plan is the output; the tree is not. A planner that has already written
   # the change hands the coder a diff it did not make and cannot explain, and
@@ -1365,7 +1255,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
 
     set_agent_phase code
     run_agent "$code_prompt" "${RESULTS_DIR}/code-${attempt}.json" \
-      "$attempt_model" "$CODER_TOOLS" 200 "$(phase_budget "$CODE_BUDGET")" "$CODE_TIMEOUT"
+      "$attempt_model" "$CODER_TOOLS" "$CODE_TIMEOUT"
     # Reported against the model that actually ran, so the scoreboard's
     # per-phase cost-by-model rows stay true once a run spans two tiers.
     report_phase_cost "code-${attempt}" "$attempt_model" "${RESULTS_DIR}/code-${attempt}.json"
@@ -1448,7 +1338,7 @@ while [ "$attempt" -le "$MAX_CODE_ITERATIONS" ]; do
   set_agent_phase verify
   run_agent /tmp/builder-verify-prompt.txt \
     "${RESULTS_DIR}/verify-${verify_round}.json" \
-    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" 120 "$(phase_budget "$VERIFY_BUDGET")" "$VERIFY_TIMEOUT" || true
+    "$VERIFIER_MODEL" "$VERIFIER_TOOLS" "$VERIFY_TIMEOUT" || true
   report_phase_cost "verify-${verify_round}" "$VERIFIER_MODEL" \
     "${RESULTS_DIR}/verify-${verify_round}.json"
   revert_stray_writes "the verifier"
@@ -1553,7 +1443,7 @@ if ! fetch_prompt "finalise-prompt" /tmp/builder-finalise-prompt.txt; then
 fi
 set_agent_phase finalise
 run_agent /tmp/builder-finalise-prompt.txt "${RESULTS_DIR}/finalise.json" \
-  "$CODER_MODEL" "$CODER_TOOLS" 80 "$(phase_budget "$FINALISE_BUDGET")" "$FINALISE_TIMEOUT"
+  "$CODER_MODEL" "$CODER_TOOLS" "$FINALISE_TIMEOUT"
 report_phase_cost finalise "$CODER_MODEL" "${RESULTS_DIR}/finalise.json"
 echo "::endgroup::"
 

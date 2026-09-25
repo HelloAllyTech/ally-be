@@ -52,87 +52,6 @@ const truncate = (value) => {
     : text;
 };
 
-/**
- * One engine record → zero or more builder events.
- *
- * Returns an array because a single assistant message can carry both prose
- * and several tool calls, and the feed shows them as separate rows.
- */
-const normaliseClaudeCode = (record) => {
-  const events = [];
-
-  if (record?.type === 'assistant' && Array.isArray(record?.message?.content)) {
-    for (const block of record.message.content) {
-      if (block?.type === 'text' && block.text?.trim()) {
-        events.push({ type: 'text', payload: { text: truncate(block.text) } });
-        continue;
-      }
-      if (block?.type !== 'tool_use') continue;
-
-      const name = String(block.name ?? 'tool');
-      const input = block.input ?? {};
-
-      // Edit and Write become their own event type: "changed this file" is
-      // the thing a reader scans for, and burying it inside a generic
-      // tool_call row makes the diff invisible in a feed of hundreds.
-      if (name === 'Edit' || name === 'Write' || name === 'NotebookEdit') {
-        events.push({
-          type: 'file_edit',
-          payload: {
-            path: String(input.file_path ?? input.notebook_path ?? ''),
-            operation: name === 'Write' ? 'write' : 'edit',
-            oldText: truncate(input.old_string ?? ''),
-            newText: truncate(input.new_string ?? input.content ?? ''),
-          },
-        });
-        continue;
-      }
-
-      events.push({
-        type: 'tool_call',
-        payload: {
-          name,
-          // A one-line summary rather than the whole input: the feed shows
-          // this collapsed, and the full input is rarely what anyone wants.
-          summary: truncate(
-            input.command ??
-              input.file_path ??
-              input.pattern ??
-              input.description ??
-              input.prompt ??
-              '',
-          ),
-        },
-      });
-    }
-    return events;
-  }
-
-  if (record?.type === 'user' && Array.isArray(record?.message?.content)) {
-    for (const block of record.message.content) {
-      if (block?.type !== 'tool_result') continue;
-      const content = Array.isArray(block.content)
-        ? block.content.map((part) => part?.text ?? '').join('\n')
-        : (block.content ?? '');
-      events.push({
-        type: 'tool_result',
-        payload: {
-          isError: Boolean(block.is_error),
-          text: truncate(content),
-        },
-      });
-    }
-    return events;
-  }
-
-  if (record?.type === 'result') {
-    // The terminal record. Kept for the cost step; not itself an event,
-    // because the agent posts its own `complete` with a considered outcome.
-    lastResult = record;
-  }
-
-  return events;
-};
 
 /**
  * Gemini CLI's `--output-format stream-json` schema. Originally read from a
@@ -248,148 +167,6 @@ const geminiCostUsd = (stats, model) => {
 const unpricedModels = new Set();
 const announcedUnpriced = new Set();
 
-/**
- * Price a `result` frame.
- *
- * Prefer `stats.models`, the per-model breakdown 0.60.0 reports, over the model
- * named in `init`. They are not always the same model. Asking 0.60.0 for
- * `gemini-2.5-flash` returns `init` with `gemini-2.5-flash` and stats under
- * `gemini-3.5-flash` — the request is routed, and only the breakdown says where
- * it landed. Pricing the requested name would charge the wrong card; pricing
- * the reported one charges what ran, and names the gap when there is no card
- * for it.
- *
- * Falls back to the flat shape when `models` is absent, so an older engine or a
- * frame without the breakdown prices exactly as it did before.
- */
-const geminiResultCostUsd = (stats, fallbackModel) => {
-  const perModel = stats?.models;
-  if (perModel && typeof perModel === 'object' && Object.keys(perModel).length) {
-    return (
-      Math.round(
-        Object.entries(perModel).reduce(
-          (sum, [name, modelStats]) => sum + geminiCostUsd(modelStats ?? {}, name),
-          0,
-        ) * 1e6,
-      ) / 1e6
-    );
-  }
-  return geminiCostUsd(stats ?? {}, fallbackModel);
-};
-
-// The model, captured from the stream's `init` frame. The terminal `result`
-// frame does not repeat it, and pricing without knowing the model is guessing.
-let geminiModel = null;
-
-const normaliseGemini = (record) => {
-  if (record?.type === 'init' && record.model) {
-    geminiModel = String(record.model);
-  }
-
-  if (record?.type === 'message' && record.role === 'assistant' && record.delta === true) {
-    geminiTextBuffer += record.content ?? '';
-    return [];
-  }
-
-  // Anything else ends a run of deltas, if one was in progress — flush it
-  // first so streamed commentary is ordered before whatever follows it.
-  const events = flushGeminiBuffer();
-
-  if (record?.type === 'message' && record.role === 'assistant' && record.content?.trim()) {
-    events.push({ type: 'text', payload: { text: truncate(record.content) } });
-    return events;
-  }
-
-  if (record?.type === 'tool_use') {
-    const name = String(record.tool_name ?? 'tool');
-    const params = record.parameters ?? {};
-
-    // Gemini's built-in Edit tool uses the same file_path/old_string/
-    // new_string shape as Claude Code's — confirmed from the installed
-    // package's tools/edit.d.ts, not inferred from the tool name alone.
-    if (typeof params.file_path === 'string' && ('old_string' in params || 'content' in params)) {
-      events.push({
-        type: 'file_edit',
-        payload: {
-          path: String(params.file_path),
-          operation: 'old_string' in params ? 'edit' : 'write',
-          oldText: truncate(params.old_string ?? ''),
-          newText: truncate(params.new_string ?? params.content ?? ''),
-        },
-      });
-      return events;
-    }
-
-    events.push({
-      type: 'tool_call',
-      payload: {
-        name,
-        summary: truncate(
-          params.command ?? params.file_path ?? params.pattern ?? params.path ?? '',
-        ),
-      },
-    });
-    return events;
-  }
-
-  if (record?.type === 'tool_result') {
-    events.push({
-      type: 'tool_result',
-      payload: {
-        isError: record.status === 'error',
-        text: truncate(record.output ?? record.error?.message ?? ''),
-      },
-    });
-    return events;
-  }
-
-  // A mid-stream warning/error, distinct from the terminal result's own
-  // error field below. Surfaced rather than swallowed — this codebase's
-  // stance throughout is that a real failure belongs in the visible feed,
-  // not silently dropped telemetry.
-  if (record?.type === 'error') {
-    events.push({ type: 'text', payload: { text: truncate(`[gemini] ${record.message ?? ''}`) } });
-    return events;
-  }
-
-  if (record?.type === 'result') {
-    const stats = record.stats ?? {};
-    lastResult = {
-      usage: {
-        input_tokens: stats.input_tokens ?? null,
-        output_tokens: stats.output_tokens ?? null,
-        cached_tokens: stats.cached ?? null,
-      },
-      // Gemini reports no cost of its own; priced from the rate card above so
-      // the ceiling, the budget holds and the routing telemetry all work.
-      total_cost_usd: geminiResultCostUsd(stats, record.model ?? geminiModel),
-      duration_ms: stats.duration_ms ?? null,
-      // Tool-call count, not a turn count — the closest field Gemini reports;
-      // named num_turns only so report_phase_cost's existing reader picks it
-      // up, not because the two concepts are equivalent.
-      num_turns: stats.tool_calls ?? null,
-    };
-
-    // Say it in the feed, once per model. A phase priced at zero does not look
-    // like a broken ceiling, it looks like a cheap phase — and the budget hold,
-    // the phase budgets and the routing telemetry are all reading that zero.
-    for (const name of unpricedModels) {
-      if (announcedUnpriced.has(name)) continue;
-      announcedUnpriced.add(name);
-      events.push({
-        type: 'text',
-        payload: {
-          text:
-            `[cost] This phase ran on "${name}", which has no entry in the rate card, ` +
-            `so its spend is counted as $0. The budget ceiling cannot hold against it. ` +
-            `Add it to GEMINI_RATES in scripts/builder/forward-events.mjs.`,
-        },
-      });
-    }
-  }
-
-  return events;
-};
 
 /* ── opencode ────────────────────────────────────────────────────────────── */
 
@@ -431,13 +208,14 @@ const normaliseOpencode = (record) => {
     // What that cost is worth stating plainly: the plan event was never
     // posted, so the coder, the remediation prompt and every resume read an
     // empty plan; and the verdict parser, which answers "pass" when it cannot
-    // find a block (deliberately, so a reviewer's broken plumbing cannot fail
-    // an honest build), therefore answered "pass" every time. The independent
+    // find a block (deliberately, so a reviewer's plumbing cannot fail a
+    // build), therefore answered "pass" every single time. The independent
     // verifier has been decorative on every opencode run since the move.
     //
     // Unbounded on purpose. Both parsers take the LAST fenced block, so the
-    // tail is what matters — but the verdict is the one thing in this file
-    // worth spending memory on being sure about.
+    // tail is what matters and truncating the head would be safe — but the
+    // verdict is the one thing in this file worth spending memory on being
+    // sure about.
     opencodeText += `${part.text}\n`;
     return [{ type: 'text', payload: { text: truncate(part.text) } }];
   }
@@ -525,7 +303,7 @@ const finaliseOpencode = () => {
   if (!opencodeSawStep) return;
   lastResult = {
     // The field run-engine.sh parses the plan and the verdict out of. Named
-    // `result` because that is what the other engines' terminal frame calls
+    // `result` because that is what the other engines' terminal frame called
     // it, and what every reader here already expects.
     result: opencodeText.trim(),
     usage: {
@@ -544,12 +322,17 @@ const finaliseOpencode = () => {
   };
 };
 
-const normalise = (record) =>
-  process.env.BUILDER_ENGINE === 'gemini'
-    ? normaliseGemini(record)
-    : process.env.BUILDER_ENGINE === 'opencode'
-      ? normaliseOpencode(record)
-      : normaliseClaudeCode(record);
+/**
+ * One engine record → zero or more builder events.
+ *
+ * Returns an array because a single assistant message can carry both prose and
+ * several tool calls, and the feed shows them as separate rows.
+ *
+ * One engine, so no dispatch. The claude-code and gemini normalisers that used
+ * to sit here existed because each CLI invented its own event shape; opencode
+ * runs those vendors' models itself, so there is one shape to read again.
+ */
+const normalise = (record) => normaliseOpencode(record);
 
 const post = async (events) => {
   if (!API_URL || !API_KEY || !RUN_ID || !events.length) return;

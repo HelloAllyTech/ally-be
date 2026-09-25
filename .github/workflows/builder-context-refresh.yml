@@ -38,7 +38,7 @@ jobs:
       # was installed is the failure mode this used to have in reverse — the
       # step installed Claude Code while the script asked for it by name, so
       # neither could be changed without the other silently breaking.
-      BUILDER_ENGINE: gemini
+      BUILDER_ENGINE: opencode
 
     steps:
       - uses: actions/checkout@v4

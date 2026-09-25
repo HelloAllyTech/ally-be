@@ -131,46 +131,6 @@ export interface BuilderBudgetState {
  * which sessions offer a start control, and the two had already drifted: the
  * page offered a retry the API refused.
  */
-/**
- * Which engine a model id belongs to, or null when we cannot tell.
- *
- * Deliberately a prefix match rather than a catalog lookup: the catalog says
- * whether a model exists, not which CLI can drive it, and this has to answer
- * before anything is dispatched. Unknown ids return null and are treated as
- * usable by any engine — the catalog is admin-maintained, and a new provider
- * should not need this edited before it can be configured.
- */
-export const builderEngineOf = (
-  model: string | null | undefined,
-): string | null => {
-  const id = String(model ?? '').trim();
-  if (!id) return null;
-  if (id.startsWith('gemini-')) return 'gemini';
-  if (id.startsWith('claude-')) return 'claude-code';
-  return null;
-};
-
-/**
- * The engines this file can attribute a model to at all.
- *
- * Nothing may be refused on behalf of an engine that is not in here. A new
- * engine arrives as a settings string long before this file learns its model
- * naming, and refusing every model for it would make it unusable — the same
- * reason `builderEngineOf` lets an unknown model id pass.
- */
-const BUILDER_KNOWN_MODEL_OWNERS = new Set(['gemini', 'claude-code']);
-
-/**
- * Engines that are harnesses rather than vendors.
- *
- * `builderEngineOf` answers "whose model is this", which is the right question
- * for `gemini` and `claude-code` — each runs one vendor's models and exits on
- * its first phase if handed another's. opencode runs any provider it has a key
- * for, so asking whether `gemini-2.5-pro` "belongs to opencode" is the wrong
- * question, and answering no would filter out every model an opencode run
- * could legitimately use.
- */
-const BUILDER_MULTI_PROVIDER_ENGINES = new Set(['opencode']);
 
 export const BUILDER_STARTABLE_STATUSES: BuilderSessionStatus[] = [
   BuilderSessionStatus.PRD_READY,
@@ -300,7 +260,6 @@ export class BuilderBuildService {
       overrides,
       sizing,
     );
-    this.assertModelsMatchEngine(engine, models);
     await this.assertModelsAreReal(models);
 
     // Carry the chosen engine/model onto the session so a resume run and the
@@ -423,7 +382,7 @@ export class BuilderBuildService {
     override?: string,
   ): string {
     const chosen =
-      override ?? session.engine ?? settings.defaultEngine ?? 'gemini';
+      override ?? session.engine ?? settings.defaultEngine ?? 'opencode';
 
     // Permitted, or overruled — wherever it came from. See
     // builderAllowedEngines: a stale `claude-code` and an admin typing
@@ -471,73 +430,30 @@ export class BuilderBuildService {
     const { size } = sizing;
     const profile = BUILDER_SIZE_PROFILES[size];
 
-    // A config default is only usable if it belongs to the engine that will be
-    // asked to run it.
+    // No engine filter. There used to be one, and it earned its place: each
+    // CLI ran one vendor's models and exited on its first phase if handed
+    // another's, so a session pinned to `gemini` resolving a Claude id from
+    // settings burned its whole remediation ladder repeating the same error.
     //
-    // The config defaults are Gemini ids now, so the case this was written for
-    // — a Gemini session reaching a `claude-opus-5` default and handing it to
-    // `gemini --model claude-opus-5` — is no longer the default path. It is
-    // still reachable in the other direction, and from any tier: an admin who
-    // sets `BUILDER_PLANNER_MODEL` or a settings tier to a Claude id while a
-    // session is pinned to `gemini` recreates it exactly. The filter is about
-    // which engine will be handed the id, not about which vendor wrote the
-    // default, so it stays.
-    //
-    // The SMALL profile is the one worth remembering: its mechanical planner
-    // tier reads `config.mechanicalModel` directly, so before this filter
-    // existed it ignored the settings entirely and every small cross-engine
-    // build planned on a model the engine had never heard of.
-    //
-    // Skipping the default rather than translating it: there is no honest
-    // mapping from "Opus" to a Gemini tier, and inventing one would silently
-    // run a build on a model nobody chose. Falling through to the coder tier
-    // means the worst case is a build that plans on the model the admin
-    // actually picked.
-    const engineOf = builderEngineOf;
-    const forThisEngine = (model: string | null | undefined): string | null => {
-      // A multi-provider harness can run whatever it is given, so nothing is
-      // filtered out on its behalf.
-      if (BUILDER_MULTI_PROVIDER_ENGINES.has(engine)) return model ?? null;
-      const owner = engineOf(model);
-      // Unknown ids pass. The catalog is admin-maintained and a new provider
-      // should not need this function edited before it can be configured.
-      return owner === null || owner === engine ? (model ?? null) : null;
-    };
-
-    // Every rung of the fallback chain, not just the config defaults.
-    //
-    // The filter was applied to `config.*Model` alone, on the reasoning that
-    // those are the hardcoded Anthropic ids. But a session carries its OWN
-    // engine, pinned when it was created, while the models come from settings
-    // that an admin can change afterwards — so switching Builder's default
-    // engine to Gemini left every earlier session pinned to `claude-code`
-    // resolving its coder to `settings.coderModel`, `gemini-2.5-pro`, and
-    // handing that to Claude Code. The engine exits immediately with "issue
-    // with the selected model" on every phase, having written nothing, and the
-    // run burns its whole remediation ladder repeating it.
-    //
-    // `session.model` and the settings tiers are exactly as capable of naming
-    // another engine's model as a config default is, so they go through the
-    // same filter. An explicit per-run override is deliberately NOT filtered —
-    // silently discarding what an admin typed is worse than refusing — and
-    // assertModelsMatchEngine below refuses the dispatch instead, by name.
+    // opencode is a harness rather than a vendor. It runs whatever provider it
+    // holds a key for, so "does this model belong to this engine" stopped
+    // being a question with an answer — and with one engine left there is
+    // nothing to filter FOR. run-engine.sh derives the provider prefix from
+    // the model id, which is where that knowledge now lives, at the boundary
+    // that actually invokes the thing.
     const coder =
       overrides.model ??
-      forThisEngine(session.model) ??
-      forThisEngine(settings.coderModel) ??
-      forThisEngine(settings.defaultModel) ??
-      forThisEngine(config.coderModel) ??
-      // Last rung. Deliberately NOT the unfiltered `config.coderModel`: an
-      // environment that names another engine's model would otherwise defeat
-      // every filter above it and be handed straight to the engine — which is
-      // exactly the shape of the claude-code review dispatch found on
-      // 2026-09-23. The compiled default is the one value guaranteed to belong
-      // to the engine this build is pinned to.
+      session.model ??
+      settings.coderModel ??
+      settings.defaultModel ??
+      config.coderModel ??
+      // Last rung: the compiled default, so a build always has a model even
+      // when every configurable rung above it is empty.
       BUILDER_MODEL_DEFAULTS.coder;
     const plannerTier =
-      forThisEngine(settings.plannerModel) ??
-      forThisEngine(settings.defaultModel) ??
-      forThisEngine(config.plannerModel) ??
+      settings.plannerModel ??
+      settings.defaultModel ??
+      config.plannerModel ??
       coder;
 
     // Three tiers now, not two. A small build plans on the mechanical tier
@@ -552,7 +468,7 @@ export class BuilderBuildService {
           // is not one.
           // The same fallback covers a mechanical model belonging to
           // another engine — see forThisEngine above.
-          (forThisEngine(config.mechanicalModel) ?? coder)
+          (config.mechanicalModel ?? coder)
         : profile.plannerTier === 'coder'
           ? coder
           : plannerTier);
@@ -581,15 +497,14 @@ export class BuilderBuildService {
       // escalates nowhere.
       coderLadder: profile.coderLadder.map((tier) => {
         if (tier === 'planner') return overrides.plannerModel ?? plannerTier;
-        if (tier === 'mechanical')
-          return forThisEngine(config.mechanicalModel) ?? coder;
+        if (tier === 'mechanical') return config.mechanicalModel ?? coder;
         return coder;
       }),
       verifier:
         overrides.verifierModel ??
-        forThisEngine(settings.verifierModel) ??
-        forThisEngine(settings.defaultModel) ??
-        forThisEngine(config.verifierModel) ??
+        settings.verifierModel ??
+        settings.defaultModel ??
+        config.verifierModel ??
         coder,
       // Read by run-engine.sh out of the same `models` input, because
       // workflow_dispatch caps at 10 and the workflow already sits at 9.
@@ -742,51 +657,6 @@ export class BuilderBuildService {
         `${retired.join(', ')} ${retired.length === 1 ? 'is' : 'are'} marked retired in the model catalog, so this build would burn its attempts on a model that no longer answers. Pick another model tier in Builder settings, or mark the row active again if the retirement was recorded early.`,
       );
     }
-  }
-
-  /**
-   * Refuse a build whose models belong to a different engine than the one that
-   * will run them — before it costs anything.
-   *
-   * This is the sibling of assertModelsAreReal, and it exists because "the
-   * model is real" and "this engine can run it" are different questions.
-   * `gemini-2.5-pro` is a real, active row in the catalog; handed to Claude
-   * Code it produces "There's an issue with the selected model" and an
-   * immediate non-zero exit, on every phase, having written nothing.
-   *
-   * The resolution chain now filters the tiers it controls, so the only way to
-   * reach here is an explicit per-run override — which is deliberately left
-   * unfiltered, because silently replacing a model an admin typed is worse
-   * than telling them it cannot run. Hence a refusal that names the model, the
-   * engine and the way out.
-   */
-  private assertModelsMatchEngine(
-    engine: string,
-    models: BuilderResolvedModels,
-  ): void {
-    // Only an engine whose models we can actually name. See
-    // BUILDER_KNOWN_MODEL_OWNERS.
-    if (!BUILDER_KNOWN_MODEL_OWNERS.has(engine)) return;
-
-    const mismatched = [
-      ...new Set(
-        [models.planner, models.coder, models.verifier, ...models.coderLadder]
-          .map((model) => String(model ?? '').trim())
-          .filter((model) => {
-            const owner = builderEngineOf(model);
-            return owner !== null && owner !== engine;
-          }),
-      ),
-    ];
-    if (!mismatched.length) return;
-
-    throw new BadRequestException(
-      `This session runs on the ${engine} engine, which cannot use ` +
-        `${mismatched.join(', ')}. A build dispatched this way exits immediately ` +
-        'on every phase without writing anything, and spends its whole ' +
-        'remediation ladder repeating it. Pick a model for this engine, or ' +
-        'clear the override to use the platform default.',
-    );
   }
 
   private async classifySession(

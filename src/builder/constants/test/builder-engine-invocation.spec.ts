@@ -16,21 +16,6 @@ const installEngine = (): string =>
   readFileSync(join(SCRIPTS, 'install-engine.sh'), 'utf8');
 
 /**
- * The `case "$ENGINE" in gemini)` body, from the label to the `;;` that ends
- * it. Read from the source rather than exercised, because run-engine.sh is a
- * script with side effects from its first line and cannot be sourced to get at
- * one branch of it.
- */
-const geminiCase = (): string => {
-  const source = runEngine();
-  const start = source.indexOf('\n    gemini)');
-  expect(start).toBeGreaterThan(-1);
-  const end = source.indexOf('\n      ;;', start);
-  expect(end).toBeGreaterThan(start);
-  return source.slice(start, end);
-};
-
-/**
  * The `case "$ENGINE" in opencode)` body.
  */
 const opencodeCase = (): string => {
@@ -53,53 +38,6 @@ const opencodeCase = (): string => {
  * failure mode this guards is specifically "the old invocation was carried
  * forward across a version bump".
  */
-describe('gemini engine invocation', () => {
-  /**
-   * On 0.22.5 a positional argument meant non-interactive. On 0.60.0 `--help`
-   * reads: "Initial prompt. Runs in interactive mode by default; use -p/
-   * --prompt for non-interactive." The positional form does not error on a
-   * runner with no TTY — it opens the interactive CLI and sits there.
-   */
-  it('passes the prompt with -p, never as a positional argument', () => {
-    const body = geminiCase();
-
-    expect(body).toMatch(/gemini -p "\$\(cat "\$prompt_file"\)"/);
-    expect(body).not.toMatch(/gemini "\$\(cat "\$prompt_file"\)"/);
-  });
-
-  /**
-   * 0.60.0 refuses to run in a directory it has not been told to trust, and —
-   * worse than refusing — when given `--yolo` in an untrusted directory it
-   * prints "Approval mode overridden to 'default'" and continues, so every
-   * tool call waits for an approval no one can give. A repo cloned onto a
-   * fresh runner is never trusted.
-   */
-  it('declares the workspace trusted, so --yolo is not silently downgraded', () => {
-    const body = geminiCase();
-
-    // Both channels, because the redundancy costs nothing and the failure is
-    // silent: the environment variable and the flag say the same thing.
-    expect(body).toMatch(/GEMINI_CLI_TRUST_WORKSPACE=true/);
-    expect(body).toMatch(/--skip-trust/);
-  });
-
-  /**
-   * The live feed, the cost step and every phase budget read the normalised
-   * stream. Without this flag the run still works and reports nothing.
-   */
-  it('asks for the stream the forwarder knows how to read', () => {
-    expect(geminiCase()).toMatch(/--output-format stream-json/);
-  });
-
-  /**
-   * The pin is the contract the two tests above are written against. If it
-   * moves, they have to be re-verified against the new binary rather than
-   * assumed — that is the whole lesson of this file.
-   */
-  it('is written against the pinned engine version', () => {
-    expect(installEngine()).toMatch(/GEMINI_CLI_VERSION="0\.60\.0"/);
-  });
-});
 
 /**
  * Everything runs on one engine, and the pin is what makes that true rather
@@ -113,21 +51,23 @@ describe('the engine allowlist', () => {
   });
 
   /**
-   * The point of the list, and the reason it is a list rather than a pin.
+   * The point of the list, and the reason it survives having one entry.
    *
    * A session carries its creation engine forever, so hours after every phase
-   * had been moved to Gemini a review dispatched `claude-code` with
-   * `claude-opus-4-7` and reviewed a pull request on another vendor's credits.
-   * A stale `claude-code` and an admin typing `claude-code` cost the same
-   * money, so neither is permitted — while `opencode` is, which is what makes
-   * a comparison run possible without editing a production environment.
+   * had been moved off Claude Code a review still dispatched `claude-code`
+   * with `claude-opus-4-7` and reviewed a pull request on another vendor's
+   * credits. A stale engine and an admin typing one cost the same money. Now
+   * that opencode runs every vendor's models itself, nothing else needs to be
+   * permitted — but the list is what turns a stale value into an overrule
+   * rather than a bill.
    */
-  it('permits gemini and opencode, and not claude-code', () => {
+  it('permits opencode alone', () => {
     delete process.env.BUILDER_ENGINE_ALLOWED;
 
-    expect(builderAllowedEngines()).toEqual(['gemini', 'opencode']);
+    expect(builderAllowedEngines()).toEqual(['opencode']);
     expect(builderAllowedEngines()).not.toContain('claude-code');
-    expect(BUILDER_ENGINE_ALLOWED_DEFAULT).toEqual(['gemini', 'opencode']);
+    expect(builderAllowedEngines()).not.toContain('gemini');
+    expect(BUILDER_ENGINE_ALLOWED_DEFAULT).toEqual(['opencode']);
   });
 
   /**
@@ -135,11 +75,11 @@ describe('the engine allowlist', () => {
    * another vendor back on the list is a choice about someone else's bill.
    */
   it('is changed without a deploy, and an empty value lifts it entirely', () => {
-    process.env.BUILDER_ENGINE_ALLOWED = 'gemini';
-    expect(builderAllowedEngines()).toEqual(['gemini']);
+    process.env.BUILDER_ENGINE_ALLOWED = 'opencode';
+    expect(builderAllowedEngines()).toEqual(['opencode']);
 
-    process.env.BUILDER_ENGINE_ALLOWED = ' gemini , opencode ';
-    expect(builderAllowedEngines()).toEqual(['gemini', 'opencode']);
+    process.env.BUILDER_ENGINE_ALLOWED = ' opencode , gemini ';
+    expect(builderAllowedEngines()).toEqual(['opencode', 'gemini']);
 
     // Empty means unrestricted rather than "nothing allowed", which would
     // brick every build on a typo.
@@ -149,14 +89,15 @@ describe('the engine allowlist', () => {
 
   /**
    * The first entry is where anything unpermitted lands, so it has to be an
-   * engine whose model defaults actually belong to it.
+   * engine that can actually run the compiled model defaults. opencode can run
+   * any of them, which is the whole reason the other engines could go.
    */
-  it('falls back to an engine its model defaults belong to', () => {
+  it('falls back to the engine that can run the model defaults', () => {
     delete process.env.BUILDER_ENGINE_ALLOWED;
 
-    expect(builderAllowedEngines()[0]).toBe('gemini');
+    expect(builderAllowedEngines()[0]).toBe('opencode');
     for (const [tier, model] of Object.entries(BUILDER_MODEL_DEFAULTS)) {
-      expect(`${tier}=${model}`).toMatch(/=gemini-/);
+      expect(`${tier}=${model}`).toMatch(/=[a-z0-9.-]+$/);
     }
   });
 });
@@ -189,22 +130,32 @@ describe('opencode engine invocation', () => {
 
   /**
    * opencode names a model `provider/model`; everything upstream names one the
-   * way its vendor does, because those same values must satisfy the gemini
-   * engine, which rejects a prefixed id.
+   * way its vendor does — `gemini-2.5-pro`, `claude-opus-4-7`.
    *
-   * Found the hard way: the first opencode dispatch handed it a bare
-   * `gemini-2.5-pro`, straight from the settings row that the admin picker and
-   * BUILDER_MODEL_DEFAULTS also feed. The translation belongs at this boundary,
-   * which is the only place that knows both conventions.
+   * The provider is derived from the id, not assumed. This line used to prefix
+   * EVERYTHING with `google/`, which was harmless while Gemini was the only
+   * thing anyone set and wrong the moment it was not: prod held
+   * `claude-opus-4-7` in its settings for a day, which became
+   * `google/claude-opus-4-7`, a model no provider has, and every phase died on
+   * it. Now that opencode is the only engine, naming a model IS how a vendor
+   * is chosen, so this mapping is the whole multi-vendor story.
    */
-  it('gives a bare model id a provider, and leaves a qualified one alone', () => {
+  it('derives the provider from the model id', () => {
     const body = opencodeCase();
 
-    expect(body).toMatch(/oc_model="google\/\$\{oc_model\}"/);
-    // An id that already names its provider passes through untouched, so a
-    // settings row saying `anthropic/…` keeps working without this line
-    // learning about it.
-    expect(body).toMatch(/case "\$oc_model" in \*\/\*\)/);
+    expect(body).toMatch(/claude-\*\) oc_model="anthropic\/\$\{oc_model\}"/);
+    expect(body).toMatch(/gemini-\*\) oc_model="google\/\$\{oc_model\}"/);
+    expect(body).toMatch(/oc_model="openai\/\$\{oc_model\}"/);
+  });
+
+  /**
+   * An id that already names its provider passes through untouched, so an
+   * explicit `anthropic/…` in a settings row still wins — and an unrecognised
+   * shape passes too, because opencode's own error names the provider it could
+   * not find, which beats this case inventing one.
+   */
+  it('leaves a qualified id alone', () => {
+    expect(opencodeCase()).toMatch(/\*\/\*\) ;;/);
   });
 
   /**
