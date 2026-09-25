@@ -77,9 +77,13 @@ export class MetaGraphError extends Error {
     const meta = res?.data?.error;
     const code = typeof meta?.code === 'number' ? meta.code : undefined;
     const hint = code !== undefined ? META_ERROR_HINTS[code] : undefined;
-    const detail =
+    // Meta echoes a malformed token back in its message ("Malformed access token EAAB…"), and this
+    // text goes to Slack, the message row and the admin screen. A truncated paste of a real token
+    // is exactly the malformed case, so the echo is redacted rather than trusted to be junk.
+    const detail = (
       meta?.message ??
-      (error instanceof Error ? error.message : 'unknown error');
+      (error instanceof Error ? error.message : 'unknown error')
+    ).replace(/\bEAA[A-Za-z0-9_-]{4,}/g, 'EAA…[redacted]');
     super(
       `Meta rejected ${action}` +
         (res?.status ? ` (HTTP ${res.status}` : ' (') +

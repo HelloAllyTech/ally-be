@@ -330,6 +330,21 @@ describe('MetaWhatsAppProvider', () => {
       expect(error.response).toEqual({ status: 401 });
     });
 
+    it('redacts a token Meta echoes back in its message', async () => {
+      // A truncated paste of a real token is "malformed", and Meta quotes it verbatim; this text
+      // is written to Slack and the database.
+      mockedAxios.post.mockRejectedValueOnce(
+        metaFailure(
+          401,
+          190,
+          'Malformed access token EAABsbCS1iHgBAKZC0ZD3xyz',
+        ),
+      );
+      const error = await provider.sendText('91', 'hi').catch((e) => e);
+      expect(error.message).not.toContain('EAABsbCS1iHgBAKZC0ZD3xyz');
+      expect(error.message).toContain('EAA…[redacted]');
+    });
+
     it('has no status when Meta never answered', async () => {
       mockedAxios.post.mockRejectedValueOnce(new Error('socket hang up'));
       const error = await provider.sendText('91', 'hi').catch((e) => e);
