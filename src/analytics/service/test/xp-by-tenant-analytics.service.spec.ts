@@ -22,6 +22,7 @@ describe('XpByTenantAnalyticsService', () => {
     const mockRepo: Partial<jest.Mocked<XpByTenantAnalyticsRepository>> = {
       getDataFloor: jest.fn().mockResolvedValue(DATA_FLOOR),
       getXpByTenant: jest.fn().mockResolvedValue([]),
+      getXpByTenantByPeriod: jest.fn().mockResolvedValue([]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -132,6 +133,103 @@ describe('XpByTenantAnalyticsService', () => {
       expect(res.segments).toEqual([]);
       expect(res.otherXp).toBe(0);
       expect(res.totalXp).toBe(0);
+    });
+  });
+
+  describe('grouping', () => {
+    it('defaults to one all-time point equal to the window totals', async () => {
+      repo.getXpByTenant.mockResolvedValue([tenant(1, 300), tenant(2, 100)]);
+
+      const res = await service.getXpByTenant({ window: 'all' });
+
+      expect(res.grain).toBe('all');
+      expect(repo.getXpByTenantByPeriod).not.toHaveBeenCalled();
+      expect(res.points).toEqual([
+        {
+          periodStart: '2024-01-01',
+          periodLabel: 'All time',
+          segments: [tenant(1, 300), tenant(2, 100)],
+          otherXp: 0,
+          totalXp: 400,
+          inProgress: false,
+        },
+      ]);
+    });
+
+    it('zero-fills one point per period and flags the current one', async () => {
+      repo.getXpByTenant.mockResolvedValue([tenant(1, 50)]);
+      repo.getXpByTenantByPeriod.mockResolvedValue([
+        { periodStart: '2024-03-01', tenantId: 'tenant-1', xp: 50 },
+      ]);
+
+      const res = await service.getXpByTenant({
+        window: 'all',
+        grain: 'month',
+      });
+
+      expect(repo.getXpByTenantByPeriod).toHaveBeenCalledWith(
+        'month',
+        DATA_FLOOR,
+        new Date('2024-06-13T00:00:00.000Z'),
+      );
+      expect(res.points.map((p) => p.periodStart)).toEqual([
+        '2024-01-01',
+        '2024-02-01',
+        '2024-03-01',
+        '2024-04-01',
+        '2024-05-01',
+        '2024-06-01',
+      ]);
+      expect(res.points.map((p) => p.totalXp)).toEqual([0, 0, 50, 0, 0, 0]);
+      expect(res.points[2]).toMatchObject({
+        periodLabel: 'Mar 2024',
+        segments: [{ tenantId: 'tenant-1', tenantName: 'Tenant 1', xp: 50 }],
+        otherXp: 0,
+      });
+      expect(
+        res.points.filter((p) => p.inProgress).map((p) => p.periodStart),
+      ).toEqual(['2024-06-01']);
+    });
+
+    it('labels quarters and years', async () => {
+      const q = await service.getXpByTenant({
+        window: 'all',
+        grain: 'quarter',
+      });
+      expect(q.points.map((p) => p.periodLabel)).toEqual([
+        'Q1 2024',
+        'Q2 2024',
+      ]);
+
+      const y = await service.getXpByTenant({ window: 'all', grain: 'year' });
+      expect(y.points.map((p) => p.periodLabel)).toEqual(['2024']);
+    });
+
+    it('keeps the whole-window named set in every period and rolls the rest into Other', async () => {
+      // 10 tenants over the window: tenants 0-7 named, 8-9 are "Other".
+      repo.getXpByTenant.mockResolvedValue(
+        Array.from({ length: 10 }, (_, i) => tenant(i, 100 - i)),
+      );
+      repo.getXpByTenantByPeriod.mockResolvedValue([
+        { periodStart: '2024-06-01', tenantId: 'tenant-9', xp: 40 },
+        { periodStart: '2024-06-01', tenantId: 'tenant-3', xp: 7 },
+        { periodStart: '2024-06-01', tenantId: 'tenant-8', xp: 5 },
+        { periodStart: '2024-06-01', tenantId: 'tenant-0', xp: 2 },
+      ]);
+
+      const res = await service.getXpByTenant({
+        window: '30d',
+        grain: 'month',
+      });
+      const june = res.points.find((p) => p.periodStart === '2024-06-01')!;
+
+      // Named tenants in whole-window rank order, regardless of period rank.
+      expect(june.segments.map((s) => s.tenantId)).toEqual([
+        'tenant-0',
+        'tenant-3',
+      ]);
+      expect(june.otherXp).toBe(45);
+      expect(june.totalXp).toBe(54);
     });
   });
 });

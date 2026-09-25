@@ -620,12 +620,13 @@ export class AnalyticsController {
   @ApiOperation({
     summary: 'Total XP by tenant over a trailing window (super-admin)',
     description:
-      'A SINGLE bar (not a time series): total XP earned across the ' +
-      'platform within a trailing window, split by tenant. Its own ' +
-      '`window` control (30d/90d/365d/all), not the shared bucket/grain ' +
-      'params. Test tenants are excluded entirely, never folded into ' +
-      '`otherXp`. The top tenants by XP are named individually; the rest ' +
-      'roll into `otherXp`.',
+      'Total XP earned across the platform within a trailing window, split ' +
+      'by tenant: one bar for the whole window (`grain=all`, the default) ' +
+      'or one stacked bar per day/week/month/quarter/year in `points`. Its ' +
+      'own `window` control (30d/90d/365d/all). Test tenants are excluded ' +
+      'entirely, never folded into `otherXp`. The top tenants by XP over the ' +
+      'whole window are named individually in every period; the rest roll ' +
+      'into `otherXp`.',
   })
   @ApiResponse({
     status: 200,

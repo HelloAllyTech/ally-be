@@ -162,6 +162,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       kind: 'chart',
       chartType: 'StackedBarChart',
       componentFile: f('Analytics/XpByTenantCard.tsx'),
+      note: 'Grouping picker: day/week/month/quarter/year, or all time as a single bar',
     },
 
     // ---- Highlights > Platform ----
