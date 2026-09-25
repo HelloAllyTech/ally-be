@@ -127,6 +127,12 @@ jobs:
       - name: Outcome gate
         run: bash scripts/builder/test/outcome-gate.test.sh
 
+      # A pull request opened on a commit GitHub was told to ignore gets no
+      # checks at all, which blocks its merge rather than failing it and
+      # starves every gate that waits for green CI.
+      - name: A proposable head
+        run: bash scripts/builder/test/wip-head.test.sh
+
       # The reporting protocol's one remaining hand-assembled payload. A run
       # that shipped ally-web#694 lost its whole write-up to a 400 here.
       - name: Report helper

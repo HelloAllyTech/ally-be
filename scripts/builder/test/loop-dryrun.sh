@@ -640,6 +640,7 @@ if [ "$SCENARIO" = all ] || [ "$SCENARIO" = prs ]; then
   check "does not report an orphan it just opened" no \
     "$(grep -q 'No pull request was opened for' "$LOG_FILE" && echo yes || echo no)"
 
+
   run_scenario prs-found DRYRUN_GH=found
   check "finishes the run" 0 "$EXIT_CODE"
   check "reported the pull request to ally-be" yes "$(has_in_log 'POST prs')"

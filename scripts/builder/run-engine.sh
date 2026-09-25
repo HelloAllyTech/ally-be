@@ -638,10 +638,24 @@ exit_if_paused() {
 # already committed (there is nothing to stage) and saves the entire run when
 # it did not.
 #
-# `[skip ci]` because this is a checkpoint, not a proposal: CI on a paused,
-# half-finished tree tells nobody anything and costs a runner.
+# Marked to skip CI by default, because a checkpoint is not a proposal: CI on a
+# paused, half-finished tree tells nobody anything and costs a runner.
+#
+# The second argument turns that off, and some callers must. GitHub honours a
+# skip directive for EVERY event on that sha — push, and pull_request opened,
+# synchronize and reopened alike — so a branch whose head carries one cannot be
+# checked at all. Not by pushing to it, not by reopening the pull request. Its
+# required contexts never report, which blocks a merge rather than failing it,
+# and every gate downstream that waits for green CI waits forever: the review
+# agent stands down, approval never comes, and the merge button refuses with
+# "no checks at all". ally-mobile#104 sat in exactly that state, and the cause
+# was invisible from everywhere except the commit message.
+#
+# So: checkpoints skip, anything that leaves a branch someone is meant to look
+# at does not.
 save_work_in_progress() {
-  local reason="$1" branch
+  local reason="$1" skip="${2:-skip}" suffix="" branch
+  [ "$skip" = skip ] && suffix=" [skip ci]"
   for dir in repos/*/; do
     [ -d "$dir/.git" ] || continue
     local repo; repo="$(basename "$dir")"
@@ -652,13 +666,53 @@ save_work_in_progress() {
     if [ -n "$(git -C "$dir" status --porcelain 2>/dev/null)" ]; then
       git -C "$dir" add -A >/dev/null 2>&1 || true
       git -C "$dir" -c user.name="Builder" -c user.email="builder@users.noreply.github.com" \
-        commit -q -m "wip(builder): ${reason} [skip ci]" >/dev/null 2>&1 || true
+        commit -q -m "wip(builder): ${reason}${suffix}" >/dev/null 2>&1 || true
       echo "${repo}: committed work in progress on ${branch}"
     fi
     # Pushed whether or not this call committed: the agent may have committed
     # without pushing, which loses the work just as completely.
     if git -C "$dir" push -q --set-upstream origin "$branch" >/dev/null 2>&1; then
       echo "${repo}: pushed ${branch}"
+    fi
+  done
+}
+
+# Make sure the branch head is something CI will actually look at.
+#
+# The belt to the braces above. A checkpoint commit is correctly marked to skip
+# CI, but whether it ends up as the HEAD of a branch we are about to propose is
+# not knowable when it is written: the last coding attempt commits a checkpoint,
+# finalise finds nothing left to commit and adds none of its own, and the
+# skip-marked checkpoint is still on top. That is how ally-mobile#104 was opened
+# with a head no workflow would ever run on.
+#
+# An empty commit rather than an amend. Amending means force-pushing a branch
+# that is already on the remote and may already be open as a pull request
+# someone has checked out, to save one commit of noise — a bad trade. This only
+# fires when the head is genuinely skip-marked, so a run whose last commit was
+# real work adds nothing.
+#
+# The new message must not mention the directive at all, not even to explain
+# itself: GitHub scans the whole message, so quoting it re-skips the commit.
+ensure_head_is_checkable() {
+  for dir in repos/*/; do
+    [ -d "$dir/.git" ] || continue
+    local repo; repo="$(basename "$dir")"
+    local branch; branch="$(git -C "$dir" symbolic-ref --short HEAD 2>/dev/null || echo '')"
+    [ -n "$branch" ] || continue
+    case "$branch" in master | main) continue ;; esac
+
+    git -C "$dir" log -1 --format=%B 2>/dev/null | grep -qiE '\[(skip ci|ci skip)\]' || continue
+
+    git -C "$dir" -c user.name="Builder" -c user.email="builder@users.noreply.github.com" \
+      commit -q --allow-empty -m "chore(builder): let the checks run
+
+The previous head was a work-in-progress checkpoint whose message told GitHub
+not to run anything for that commit. This empty commit carries the same tree
+under a message that does not, so the branch can be verified." >/dev/null 2>&1 || true
+
+    if git -C "$dir" push -q --set-upstream origin "$branch" >/dev/null 2>&1; then
+      echo "${repo}: head was not checkable; pushed an empty commit so CI runs"
     fi
   done
 }
@@ -1169,7 +1223,8 @@ if [ "${BUILDER_MODE:-build}" = "fix" ]; then
   # A fix exists to turn a red pull request green, and CI runs on push. A fix
   # run that committed without pushing has changed nothing anyone can see, and
   # reconcile will send another one at the same unchanged pull request.
-  save_work_in_progress "fix run"
+  save_work_in_progress "fix run" no-skip
+  ensure_head_is_checkable
   wait "$BASELINE_PID" 2>/dev/null || true
 
   echo "::group::test gate"
@@ -1525,7 +1580,8 @@ exit_if_paused "finalising"
 # remote, so the agent had to have pushed for its own PR to exist — but a fix
 # or finalise agent that committed and stopped leaves the work only on a runner
 # that is about to be destroyed. Mechanical, no judgement, so the runner does it.
-save_work_in_progress "finalise"
+save_work_in_progress "finalise" no-skip
+ensure_head_is_checkable
 
 # ── Opening the pull requests ───────────────────────────────────────────────
 #
