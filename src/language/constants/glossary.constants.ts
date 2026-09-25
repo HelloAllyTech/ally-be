@@ -43,6 +43,10 @@ export const LEXEME_MINING_SESSION_CAP = 400;
 /** Candidates sent to the pairing prompt per run. */
 export const LEXEME_MINING_TOP_K = 40;
 
+/** Candidates per pairing call; chunks run in parallel so one run stays
+ * inside the API gateway's request timeout. */
+export const LEXEME_PAIRING_CHUNK = 10;
+
 /**
  * Judge dimensions the consolidation loop mines. Style/lexicon dimensions plus
  * `fluency`, which is admitted ONLY through the systematicity gate (the same

@@ -8,6 +8,7 @@ import {
   GLOSSARY_LEXEME_PAIRING_PROMPT_CODE,
   GLOSSARY_LEXICAL_CONTRADICTION_MIN,
   LEXEME_MINING_SESSION_CAP,
+  LEXEME_PAIRING_CHUNK,
   LEXEME_MINING_TOP_K,
   LEXEME_MINING_WINDOW_DAYS,
 } from '../constants/glossary.constants';
@@ -340,6 +341,13 @@ export class GlossaryLexemeMiningService {
     );
   }
 
+  /**
+   * Ask the pairing prompt for a verdict on every candidate, in parallel
+   * chunks. One 40-candidate call to a thinking model ran past the API
+   * gateway's request timeout and returned output that did not parse (first
+   * prod dry run, 2026-09-25); chunks keep each reply short and the whole
+   * pass inside one request. Verdict indexes are chunk-local and mapped back.
+   */
   private async pair(
     language: { label: string; value: string },
     mined: LexemeMiningResult,
@@ -349,22 +357,10 @@ export class GlossaryLexemeMiningService {
       await this.glossaryService.resolvePromptByCode(
         GLOSSARY_LEXEME_PAIRING_PROMPT_CODE,
       );
-    const candidates = mined.candidates
-      .map((c, i) => {
-        const echo = c.learnerEchoCount
-          ? ` (+${c.learnerEchoCount} repeated back after the AI)`
-          : '';
-        const examples = c.contexts.map((x) => `   AI: "${x}"`).join('\n');
-        return (
-          `${i + 1}. ${c.token} — AI ${c.agentCount}×, counsellors ${c.learnerCount}×${echo}, ` +
-          `${c.scenarioSpread} scenarios\n${examples}`
-        );
-      })
-      .join('\n');
     const lexicon = mined.learnerLexicon
       .map((l) => `${l.token} (${l.count})`)
       .join(', ');
-    const filled = systemPrompt
+    const base = systemPrompt
       .split('{{languageName}}')
       .join(language.label)
       .split('{{languageCode}}')
@@ -372,27 +368,67 @@ export class GlossaryLexemeMiningService {
       .split('{{existingGlossary}}')
       .join(existingGlossary)
       .split('{{learnerLexicon}}')
-      .join(lexicon || '(no counsellor speech in the window)')
-      .split('{{candidates}}')
-      .join(candidates);
+      .join(lexicon || '(no counsellor speech in the window)');
 
-    const raw = await this.llmProviderFactory
-      .getProvider(engine.provider)
-      .getCompletion(
-        [
-          { role: 'system', content: filled },
-          {
-            role: 'user',
-            content: `Decide the ${mined.candidates.length} candidates for ${language.label} (${language.value}).`,
-          },
-        ],
-        {
-          model: engine.model,
-          temperature: engine.temperature,
-          maxTokens: engine.maxTokens,
-        },
-      );
-    return parsePairingOutput(raw);
+    const chunks: { offset: number; items: LexemeCandidate[] }[] = [];
+    for (let i = 0; i < mined.candidates.length; i += LEXEME_PAIRING_CHUNK) {
+      chunks.push({
+        offset: i,
+        items: mined.candidates.slice(i, i + LEXEME_PAIRING_CHUNK),
+      });
+    }
+    const results = await Promise.all(
+      chunks.map(async ({ offset, items }) => {
+        const listing = items
+          .map((c, i) => {
+            const echo = c.learnerEchoCount
+              ? ` (+${c.learnerEchoCount} repeated back after the AI)`
+              : '';
+            const examples = c.contexts.map((x) => `   AI: "${x}"`).join('\n');
+            return (
+              `${i + 1}. ${c.token} — AI ${c.agentCount}×, counsellors ${c.learnerCount}×${echo}, ` +
+              `${c.scenarioSpread} scenarios\n${examples}`
+            );
+          })
+          .join('\n');
+        const raw = await this.llmProviderFactory
+          .getProvider(engine.provider)
+          .getCompletion(
+            [
+              {
+                role: 'system',
+                content: base.split('{{candidates}}').join(listing),
+              },
+              {
+                role: 'user',
+                content: `Decide the ${items.length} candidates for ${language.label} (${language.value}).`,
+              },
+            ],
+            {
+              model: engine.model,
+              temperature: engine.temperature,
+              maxTokens: engine.maxTokens,
+            },
+          );
+        try {
+          return parsePairingOutput(raw).map((v) => ({
+            ...v,
+            index: v.index + offset,
+          }));
+        } catch (error) {
+          // The raw reply is the only evidence of WHY it failed (truncation
+          // reads as a cut-off tail, prose as a sentence before the array).
+          this.logger.warn(
+            `[GLOSSARY_LEXEME_MINING] unparseable pairing reply language=${language.value} ` +
+              `chunk=${offset / LEXEME_PAIRING_CHUNK} length=${raw?.length ?? 0} ` +
+              `head=${JSON.stringify((raw ?? '').slice(0, 300))} ` +
+              `tail=${JSON.stringify((raw ?? '').slice(-300))}`,
+          );
+          throw error;
+        }
+      }),
+    );
+    return results.flat();
   }
 
   private async writeProposals(
@@ -479,6 +515,18 @@ export function parsePairingOutput(raw: string): PairingVerdict[] {
   try {
     parsed = JSON.parse(cleaned);
   } catch {
+    // A sentence before or after the array is common; the array itself is
+    // still usable.
+    const start = cleaned.indexOf('[');
+    const end = cleaned.lastIndexOf(']');
+    try {
+      if (start === -1 || end <= start) throw new Error('no array');
+      parsed = JSON.parse(cleaned.slice(start, end + 1));
+    } catch {
+      parsed = undefined;
+    }
+  }
+  if (parsed === undefined) {
     throw new BadRequestException(
       'Lexeme pairing returned unparseable output; retry or adjust the glossary_lexeme_pairing prompt',
     );

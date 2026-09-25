@@ -521,7 +521,9 @@ Consolidation learns only from errors a judge flagged. `GlossaryLexemeMiningServ
 frequencies with the counsellors' own speech in the same language (weighted log-odds, judged
 non-test sessions, 150 days, newest 400 sessions) and sends the top 40 agent-leaning words to
 the `glossary_lexeme_pairing` prompt, which either pairs each with its colloquial form or keeps
-it. Pairs come out in the canonical `- meaning: say `X` (avoid: `Y`)` form (§6.2, rule form).
+it. Pairing runs in parallel chunks of 10 (`LEXEME_PAIRING_CHUNK`): a single 40-word call to
+gemini-2.5-pro outlived the 60 s load-balancer idle timeout and returned unparseable output on the
+first prod dry run. Pairs come out in the canonical `- meaning: say `X` (avoid: `Y`)` form (§6.2, rule form).
 
 Two corrections were measured in prod first (2026-09-25), and both are built in:
 

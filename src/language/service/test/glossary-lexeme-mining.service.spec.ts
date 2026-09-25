@@ -220,6 +220,40 @@ describe('GlossaryLexemeMiningService', () => {
     expect(glossaryRepository.save).not.toHaveBeenCalled();
   });
 
+  it('pairs in parallel chunks and maps chunk-local indexes back', async () => {
+    // 15 agent-only words across 5 scenarios → two pairing calls (10 + 5).
+    const words = Array.from(
+      { length: 25 },
+      (_, i) => `சொல்${'அ'.repeat(i + 1)}`,
+    );
+    const many = SESSIONS.flatMap(({ sid }) => [
+      { sid, senderId: 12, content: 'சரி சொல்லுங்க' },
+      { sid, senderId: -1, content: words.join(' ') },
+    ]);
+    dataSource.query = jest
+      .fn()
+      .mockResolvedValueOnce(SESSIONS)
+      .mockResolvedValueOnce(many);
+    getCompletion.mockImplementation(async (messages: any[]) => {
+      const first = (messages[0].content as string)
+        .split('\n')
+        .find((l) => /^1\. /.test(l))!;
+      const token = first.split(' ')[1];
+      return JSON.stringify([
+        { index: 1, verdict: 'keep', reason: `first of chunk: ${token}` },
+      ]);
+    });
+
+    const out = await service.mineLexemes(6, { topK: 15 });
+
+    expect(getCompletion).toHaveBeenCalledTimes(2);
+    expect(out.kept.map((k) => k.token)).toEqual([
+      out.candidates[0].token,
+      out.candidates[10].token,
+    ]);
+    expect(out.kept[1].reason).toContain(out.candidates[10].token);
+  });
+
   it('never calls the model when nothing was mined', async () => {
     dataSource.query = jest.fn().mockResolvedValueOnce([]);
     const out = await service.mineLexemes(6);
@@ -234,6 +268,14 @@ describe('parsePairingOutput', () => {
       '```json\n[{"index":1,"verdict":"pair","say":"x"},{"index":"2","verdict":"keep"},{"index":3,"verdict":"maybe"}]\n```',
     );
     expect(out).toEqual([{ index: 1, verdict: 'pair', say: 'x' }]);
+  });
+
+  it('recovers an array wrapped in prose', () => {
+    expect(
+      parsePairingOutput(
+        'Here are my decisions:\n[{"index":1,"verdict":"keep"}]\nHope this helps.',
+      ),
+    ).toEqual([{ index: 1, verdict: 'keep' }]);
   });
 
   it('throws on unparseable output instead of reading it as "keep all"', () => {
