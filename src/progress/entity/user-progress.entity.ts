@@ -11,7 +11,7 @@ import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
  *
  * Deliberately holds only XP state. Lifetime practice minutes are NOT stored here —
  * `user_daily_scores."minutesPlayed"` is the sanctioned source and a second copy would
- * let the Progress screen disagree with the certification chart and the badge ladder.
+ * let the Progress screen disagree with the badge ladder.
  */
 @Entity('user_progress')
 @Index('uq_user_progress_user_tenant', ['userId', 'tenantId'], { unique: true })

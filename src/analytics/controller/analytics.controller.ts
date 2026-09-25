@@ -32,7 +32,6 @@ import { ScribeAdoptionAnalyticsService } from '../service/scribe-adoption-analy
 import { SkillGrowthAnalyticsService } from '../service/skill-growth-analytics.service';
 import { TrackDropoffAnalyticsService } from '../service/track-dropoff-analytics.service';
 import { UsageLevelAnalyticsService } from '../service/usage-level-analytics.service';
-import { CertificationAnalyticsService } from '../service/certification-analytics.service';
 import { RoleplayVolumeAnalyticsService } from '../service/roleplay-volume-analytics.service';
 import { RoadmapDeliveryAnalyticsService } from '../service/roadmap-delivery-analytics.service';
 import { ShipVolumeAnalyticsService } from '../service/ship-volume-analytics.service';
@@ -119,10 +118,6 @@ import {
   UsageLevelQueryDto,
   UsageLevelResponseDto,
 } from '../dto/usage-level-analytics.dto';
-import {
-  CertificationQueryDto,
-  CertificationResponseDto,
-} from '../dto/certification-analytics.dto';
 import {
   XpGrowthQueryDto,
   XpGrowthResponseDto,
@@ -220,10 +215,6 @@ import {
   ScribeAdoptionResponseDto,
 } from '../dto/scribe-adoption-analytics.dto';
 import {
-  UsageLadderQueryDto,
-  UsageLadderResponseDto,
-} from '../dto/usage-ladder-analytics.dto';
-import {
   QualifiedSessionsQueryDto,
   QualifiedSessionsResponseDto,
   StickinessQueryDto,
@@ -257,7 +248,6 @@ import {
   ChartPreferencesResponseDto,
   SaveChartPreferencesDto,
 } from '../dto/chart-preference.dto';
-import { UsageLadderAnalyticsService } from '../service/usage-ladder-analytics.service';
 import { PracticeDepthAnalyticsService } from '../service/practice-depth-analytics.service';
 import { OrgEngagementAnalyticsService } from '../service/org-engagement-analytics.service';
 import { RoleplayCostAnalyticsService } from '../service/roleplay-cost-analytics.service';
@@ -296,7 +286,6 @@ export class AnalyticsController {
     private readonly highlightsAnalyticsService: HighlightsAnalyticsService,
     private readonly cohortAnalyticsService: CohortAnalyticsService,
     private readonly usageLevelAnalyticsService: UsageLevelAnalyticsService,
-    private readonly certificationAnalyticsService: CertificationAnalyticsService,
     private readonly xpGrowthAnalyticsService: XpGrowthAnalyticsService,
     private readonly goalsXpAnalyticsService: GoalsXpAnalyticsService,
     private readonly activeUsersXpAnalyticsService: ActiveUsersXpAnalyticsService,
@@ -329,7 +318,6 @@ export class AnalyticsController {
     private readonly learnerKpisAnalyticsService: LearnerKpisAnalyticsService,
     private readonly scenarioUsageAnalyticsService: ScenarioUsageAnalyticsService,
     private readonly scribeAdoptionAnalyticsService: ScribeAdoptionAnalyticsService,
-    private readonly usageLadderAnalyticsService: UsageLadderAnalyticsService,
     private readonly practiceDepthAnalyticsService: PracticeDepthAnalyticsService,
     private readonly orgEngagementAnalyticsService: OrgEngagementAnalyticsService,
     private readonly roleplayCostAnalyticsService: RoleplayCostAnalyticsService,
@@ -438,42 +426,6 @@ export class AnalyticsController {
     @Query() query: CohortRetentionQueryDto,
   ): Promise<CohortRetentionResponseDto> {
     return this.cohortAnalyticsService.getCohortRetention(query);
-  }
-
-  @Get('certification')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
-  @ApiOperation({
-    summary: 'Ally Certification attainment — the hero metric (super-admin)',
-    description:
-      'Distinct learners who have accumulated enough LIFETIME roleplay ' +
-      'practice to hold an Ally Certification level, by the month they earned ' +
-      'it and cumulatively over time, plus where the rest of the population ' +
-      'stands against the threshold. L1 is 5,000 minutes. Minutes come from ' +
-      'user_daily_scores.minutesPlayed — the sanctioned roleplay-activity ' +
-      'source, net of paused time, and the same column the practice-minutes ' +
-      'chart reads, so the two cannot disagree about what a minute is. The ' +
-      'population is LEARNER-group accounts in non-test tenants. A learner is ' +
-      'counted ONCE, in the month their running total first reached the ' +
-      'threshold, so the monthly bars and the cumulative line say different ' +
-      'things rather than one thing twice; the cumulative line is monotonic ' +
-      'because a level is never lost. ALL-TIME and month-grained by design — ' +
-      'this endpoint takes no `range`/`bucket`/`from`/`to`, because the ' +
-      'threshold is a lifetime total and a window would change the metric ' +
-      'rather than narrow it. The current month is flagged `partial`: more ' +
-      'learners can still cross into it. `pipeline` bands the not-yet-' +
-      'certified population by how far along it is — the leading indicator ' +
-      'the crossings cannot be, since at this threshold a level takes many ' +
-      'months to earn. `tenantId` narrows both the population and the activity.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Certification attainment retrieved successfully',
-    type: CertificationResponseDto,
-  })
-  async getCertification(
-    @Query() query: CertificationQueryDto,
-  ): Promise<CertificationResponseDto> {
-    return this.certificationAnalyticsService.getCertification(query);
   }
 
   @Get('xp-growth')
@@ -639,41 +591,6 @@ export class AnalyticsController {
     return this.xpByTenantAnalyticsService.getXpByTenant(query);
   }
 
-  @Get('usage-ladder')
-  @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
-  @ApiOperation({
-    summary: 'Learner usage ladder L1-L5 (super-admin)',
-    description:
-      'Learner progress up a five-rung ladder defined by LIFETIME roleplay ' +
-      'minutes (L1 60, L2 300, L3 1200, L4 3000, L5 6000). Serves four ' +
-      'readings of ONE definition, so they cannot disagree: learners newly ' +
-      'reaching each rung per period (the "how many L3s did we produce" ' +
-      'flow), the cumulative count holding each rung (the stock), the nested ' +
-      'account-created -> L1 -> L5 funnel as of now, and the ladder itself. ' +
-      'Minutes come from user_daily_scores.minutesPlayed, the same column the ' +
-      'practice-minutes and certification charts read. Population is ' +
-      'LEARNER-group accounts in non-test tenants. A learner is counted ONCE ' +
-      'per rung, in the period they first reached it; a learner who climbed ' +
-      'several rungs in one period appears in each of those series, so they ' +
-      'must never be stacked. NOTE this ladder is a SEPARATE internal scale ' +
-      'from the Ally Certification (one rung at 5,000 minutes) which its top ' +
-      'rung brackets — never label a rung a certification or put the two on ' +
-      'one axis. ALL-TIME by design: no range/from/to, because a lifetime ' +
-      'threshold read over a window moves every crossing date. `grain` picks ' +
-      'month or quarter only — the lowest rung takes weeks to reach, so a ' +
-      'finer axis shows noise. The current period is flagged `partial`.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Usage ladder retrieved successfully',
-    type: UsageLadderResponseDto,
-  })
-  async getUsageLadder(
-    @Query() query: UsageLadderQueryDto,
-  ): Promise<UsageLadderResponseDto> {
-    return this.usageLadderAnalyticsService.getUsageLadder(query);
-  }
-
   @Get('practice-stickiness')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
@@ -736,17 +653,11 @@ export class AnalyticsController {
   @Get('org-engagement')
   @RequireFeatureToggle(FeatureToggleKey.ANALYTICS)
   @ApiOperation({
-    summary: 'Org engagement ladder and recent activity (super-admin)',
+    summary: 'Org count and recent org activity (super-admin)',
     description:
-      'Three org-level panels: the nested Orgs-created -> L1 -> L4 funnel by ' +
-      "TOTAL practice minutes summed across each org's learners (L1 500, L2 " +
-      '5,000, L3 25,000, L4 100,000), how many orgs were active in the ' +
-      'trailing `activityDays` (7/28/90, default 28) with that as a share, ' +
-      'and a 12-month activity trend. NOTE the ladder measures SIZE as much ' +
-      'as engagement — a large org clears L4 with token usage per seat while ' +
-      'a small org practising hard may never leave L1 — so surfaces must not ' +
-      'present it as adoption depth; org-health is where per-seat adoption is ' +
-      'answered. "Active" is >=1 completed simulation, the same definition as ' +
+      'Three org-level readings: how many non-test, non-deleted orgs exist, ' +
+      'how many were active in the trailing `activityDays` (7/28/90, default ' +
+      '28) with that as a share, and a 12-month activity trend. "Active" is >=1 completed simulation, the same definition as ' +
       "the completed-simulations and top-orgs panels. The headline's " +
       'denominator counts only orgs that existed BEFORE the window opened: an ' +
       'org signed up three days ago has not had the chance to be inactive for ' +

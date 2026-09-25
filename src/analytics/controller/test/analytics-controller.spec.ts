@@ -3,7 +3,6 @@ import { AnalyticsController } from '../analytics.controller';
 import { AnalyticsService } from '../../service/analytics.service';
 import { CohortAnalyticsService } from '../../service/cohort-analytics.service';
 import { UsageLevelAnalyticsService } from '../../service/usage-level-analytics.service';
-import { CertificationAnalyticsService } from '../../service/certification-analytics.service';
 import { XpGrowthAnalyticsService } from '../../service/xp-growth-analytics.service';
 import { GoalsXpAnalyticsService } from '../../service/goals-xp-analytics.service';
 import { ActiveUsersXpAnalyticsService } from '../../service/active-users-xp-analytics.service';
@@ -37,7 +36,6 @@ import { OrgSessionDistributionAnalyticsService } from '../../service/org-sessio
 import { LearnerKpisAnalyticsService } from '../../service/learner-kpis-analytics.service';
 import { ScenarioUsageAnalyticsService } from '../../service/scenario-usage-analytics.service';
 import { ScribeAdoptionAnalyticsService } from '../../service/scribe-adoption-analytics.service';
-import { UsageLadderAnalyticsService } from '../../service/usage-ladder-analytics.service';
 import { PracticeDepthAnalyticsService } from '../../service/practice-depth-analytics.service';
 import { OrgEngagementAnalyticsService } from '../../service/org-engagement-analytics.service';
 import { RoleplayCostAnalyticsService } from '../../service/roleplay-cost-analytics.service';
@@ -121,10 +119,6 @@ describe('AnalyticsController', () => {
         {
           provide: UsageLevelAnalyticsService,
           useValue: { getUsageLevels: jest.fn() },
-        },
-        {
-          provide: CertificationAnalyticsService,
-          useValue: { getCertification: jest.fn() },
         },
         {
           provide: XpGrowthAnalyticsService,
@@ -257,10 +251,6 @@ describe('AnalyticsController', () => {
         {
           provide: ScribeAdoptionAnalyticsService,
           useValue: { getScribeAdoption: jest.fn() },
-        },
-        {
-          provide: UsageLadderAnalyticsService,
-          useValue: { getUsageLadder: jest.fn() },
         },
         {
           provide: PracticeDepthAnalyticsService,

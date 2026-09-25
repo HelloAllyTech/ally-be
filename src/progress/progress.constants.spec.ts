@@ -32,8 +32,8 @@ describe('progress constants', () => {
       }
     });
 
-    it('does not top out before the 5,000 minute certification bar', () => {
-      // A learner at the L1 Certification bar earns at least 5,000 practice XP, and
+    it('does not top out before 5,000 lifetime practice minutes', () => {
+      // A learner with 5,000 practice minutes earns at least 5,000 practice XP, and
       // should still have ladder left to climb.
       expect(LEVEL_THRESHOLDS[MAX_LEVEL - 1]).toBeGreaterThan(5000);
     });

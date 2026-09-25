@@ -71,7 +71,7 @@ export class LevelThresholdDto {
 export class ProgressResponseDto extends ProgressSummaryDto {
   @ApiProperty({
     description:
-      'Lifetime roleplay practice minutes, read from the same source as the certification chart and the badge ladder so the three cannot disagree.',
+      'Lifetime roleplay practice minutes, read from the same source as the badge ladder so the two cannot disagree.',
     example: 412,
   })
   lifetimePracticeMinutes!: number;

@@ -8,8 +8,6 @@ import { CohortAnalyticsService } from './service/cohort-analytics.service';
 import { CohortAnalyticsRepository } from './repository/cohort-analytics.repository';
 import { UsageLevelAnalyticsService } from './service/usage-level-analytics.service';
 import { UsageLevelAnalyticsRepository } from './repository/usage-level-analytics.repository';
-import { CertificationAnalyticsService } from './service/certification-analytics.service';
-import { CertificationAnalyticsRepository } from './repository/certification-analytics.repository';
 import { XpGrowthAnalyticsService } from './service/xp-growth-analytics.service';
 import { XpGrowthAnalyticsRepository } from './repository/xp-growth-analytics.repository';
 import { GoalsXpAnalyticsService } from './service/goals-xp-analytics.service';
@@ -59,8 +57,6 @@ import { ScenarioUsageAnalyticsService } from './service/scenario-usage-analytic
 import { ScenarioUsageAnalyticsRepository } from './repository/scenario-usage-analytics.repository';
 import { ScribeAdoptionAnalyticsService } from './service/scribe-adoption-analytics.service';
 import { ScribeAdoptionAnalyticsRepository } from './repository/scribe-adoption-analytics.repository';
-import { UsageLadderAnalyticsService } from './service/usage-ladder-analytics.service';
-import { UsageLadderAnalyticsRepository } from './repository/usage-ladder-analytics.repository';
 import { PracticeDepthAnalyticsService } from './service/practice-depth-analytics.service';
 import { PracticeDepthAnalyticsRepository } from './repository/practice-depth-analytics.repository';
 import { OrgEngagementAnalyticsService } from './service/org-engagement-analytics.service';
@@ -174,8 +170,6 @@ import { TenantModule } from 'src/tenant/tenant.module';
     CohortAnalyticsRepository,
     UsageLevelAnalyticsService,
     UsageLevelAnalyticsRepository,
-    CertificationAnalyticsService,
-    CertificationAnalyticsRepository,
     XpGrowthAnalyticsService,
     XpGrowthAnalyticsRepository,
     GoalsXpAnalyticsService,
@@ -220,8 +214,6 @@ import { TenantModule } from 'src/tenant/tenant.module';
     ScenarioUsageAnalyticsRepository,
     ScribeAdoptionAnalyticsService,
     ScribeAdoptionAnalyticsRepository,
-    UsageLadderAnalyticsService,
-    UsageLadderAnalyticsRepository,
     PracticeDepthAnalyticsService,
     PracticeDepthAnalyticsRepository,
     OrgEngagementAnalyticsService,
