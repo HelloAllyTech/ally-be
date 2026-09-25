@@ -18,7 +18,7 @@ export class CreateTrackDto {
   @ApiPropertyOptional({ description: 'Description of the track' })
   @IsOptional()
   @IsString()
-  description?: string;
+  description?: string | null;
 
   @ApiPropertyOptional({ description: 'Cover image URL' })
   @IsOptional()
@@ -54,7 +54,7 @@ export class TrackSummaryResponseDto {
   title?: string;
 
   @ApiProperty()
-  description?: string;
+  description?: string | null;
 
   @ApiProperty()
   coverImageUrl?: string;
