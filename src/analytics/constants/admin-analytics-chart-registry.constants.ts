@@ -149,7 +149,7 @@ export const ADMIN_ANALYTICS_CHART_REGISTRY: readonly AdminAnalyticsChartEntry[]
       id: 'AAQ-009',
       tab: 'Highlights',
       subTab: 'Goals',
-      title: 'Bug Hunter Find vs. Fix Volume',
+      title: 'Bugs Prevention',
       kind: 'chart',
       chartType: 'GroupedBarChart',
       componentFile: f('Analytics/BugHunterVolumeCard.tsx'),
