@@ -313,8 +313,14 @@ export function isSwapSafe(
  * counts substrings, which in agglutinative languages counts the wrong thing
  * both ways: colloquial `சரியா` is a prefix of literary `சரியாக`, so every
  * literary use also counted as the colloquial form, and `மாலை` matched inside
- * `மாலையில்`. Same thresholds and verdicts; null when either side is not a
+ * `மாலையில்`. Same contradiction rule; null when either side is not a
  * single word (the caller falls back to the substring scorer).
+ *
+ * `confirmed` means the counsellors actually SAY the replacement. The
+ * consolidation scorer also confirms on "the agent says the avoid-term", which
+ * is true of every mined candidate by construction — so on the first prod dry
+ * runs every uncontradicted pair read `confirmed`, including மாலை→சாயங்காலம்
+ * whose replacement no counsellor had ever said.
  */
 export function scoreTokenEvidence(
   say: string,
@@ -333,7 +339,7 @@ export function scoreTokenEvidence(
   const verdict =
     avoidLearnerCount >= contradictionMin && avoidShare >= 0.2
       ? 'contradicted'
-      : sayLearnerCount > 0 || avoidAgentCount > 0
+      : sayLearnerCount > 0
         ? 'confirmed'
         : 'unverified';
   return {

@@ -541,7 +541,9 @@ lists and Hindi "paired" `pause` with a filler; a replacement offered as alterna
 (`ராத்திரி, நைட்`) keeps only its first form; and single-word pairs are scored on **whole-word**
 counts (`scoreTokenEvidence`), because the substring scorer counted colloquial `சரியா` inside
 literary `சரியாக` and `மாலை` inside `மாலையில்`, marking good pairs contradicted. Multi-word pairs
-still use the substring scorer. A run takes ~50–56 s, close to the 60 s load-balancer idle
+still use the substring scorer. A mined pair is `confirmed` only when counsellors actually say the
+replacement — the consolidation rule also confirms on "the agent says the avoid-term", which every
+mined candidate does, so on the first dry runs every uncontradicted pair read confirmed. A run takes ~50–56 s, close to the 60 s load-balancer idle
 timeout; the parallel chunks cap it at one model call's latency, which is thinking time, not
 output length.
 

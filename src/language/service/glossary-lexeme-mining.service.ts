@@ -211,19 +211,20 @@ export class GlossaryLexemeMiningService {
         : 'other';
       const meaning = (v.meaning ?? '').trim() || candidate.token;
       const markdown = `- ${meaning}: say \`${say}\` (avoid: \`${candidate.token}\`)`;
-      const evidence =
+      const evidence = requireSayEvidence(
         scoreTokenEvidence(
           say,
           candidate.token,
           mined.tokenCounts,
           GLOSSARY_LEXICAL_CONTRADICTION_MIN,
         ) ??
-        scoreLexicalEvidence(
-          markdown,
-          mined.corpora.learner,
-          mined.corpora.agent,
-          GLOSSARY_LEXICAL_CONTRADICTION_MIN,
-        );
+          scoreLexicalEvidence(
+            markdown,
+            mined.corpora.learner,
+            mined.corpora.agent,
+            GLOSSARY_LEXICAL_CONTRADICTION_MIN,
+          ),
+      );
       const counts = {
         agentCount: candidate.agentCount,
         learnerCount: candidate.learnerCount,
@@ -513,6 +514,21 @@ export class GlossaryLexemeMiningService {
     result.batchId = batch.id;
     result.stats.written = newEntries.length;
   }
+}
+
+/**
+ * A mined pair is `confirmed` only when counsellors say the replacement. The
+ * shared substring scorer (multi-word pairs) also confirms on "the agent says
+ * the avoid-term", which every mined candidate does by construction, so here
+ * that alone downgrades to `unverified`.
+ */
+export function requireSayEvidence(
+  evidence: LexicalEvidence | null,
+): LexicalEvidence | null {
+  if (evidence?.verdict === 'confirmed' && evidence.sayLearnerCount === 0) {
+    return { ...evidence, verdict: 'unverified' };
+  }
+  return evidence;
 }
 
 /**

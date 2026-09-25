@@ -3,6 +3,7 @@ import { GlossaryEntryStatus } from '../../entity/language-glossary-section.enti
 import {
   GlossaryLexemeMiningService,
   parsePairingOutput,
+  requireSayEvidence,
 } from '../glossary-lexeme-mining.service';
 
 /**
@@ -303,5 +304,36 @@ describe('parsePairingOutput', () => {
   it('throws on unparseable output instead of reading it as "keep all"', () => {
     expect(() => parsePairingOutput('not json')).toThrow(BadRequestException);
     expect(() => parsePairingOutput('{"a":1}')).toThrow(BadRequestException);
+  });
+});
+
+describe('requireSayEvidence', () => {
+  const base = {
+    say: 'மன அழுத்தம்',
+    avoid: 'டென்ஷன்',
+    avoidAgentCount: 9,
+    avoidLearnerCount: 0,
+  };
+
+  it('downgrades a substring-scorer confirmation with no counsellor use', () => {
+    expect(
+      requireSayEvidence({ ...base, sayLearnerCount: 0, verdict: 'confirmed' })
+        ?.verdict,
+    ).toBe('unverified');
+  });
+
+  it('leaves real confirmations and contradictions alone', () => {
+    expect(
+      requireSayEvidence({ ...base, sayLearnerCount: 3, verdict: 'confirmed' })
+        ?.verdict,
+    ).toBe('confirmed');
+    expect(
+      requireSayEvidence({
+        ...base,
+        sayLearnerCount: 0,
+        verdict: 'contradicted',
+      })?.verdict,
+    ).toBe('contradicted');
+    expect(requireSayEvidence(null)).toBeNull();
   });
 });

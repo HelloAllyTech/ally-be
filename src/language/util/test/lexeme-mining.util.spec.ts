@@ -178,7 +178,7 @@ describe('scoreTokenEvidence', () => {
   it('does not let an inflected form contradict the bare word', () => {
     const ev = scoreTokenEvidence('சாயங்காலம்', 'மாலை', counts, 5)!;
     expect(ev.avoidLearnerCount).toBe(0);
-    expect(ev.verdict).toBe('confirmed');
+    expect(ev.verdict).not.toBe('contradicted');
   });
 
   it('still contradicts when the population really says the avoid-word', () => {
@@ -192,6 +192,14 @@ describe('scoreTokenEvidence', () => {
       5,
     )!;
     expect(ev.verdict).toBe('contradicted');
+  });
+
+  it('is unverified when no counsellor says the replacement', () => {
+    // The agent always says a mined word, so that alone must not confirm.
+    const ev = scoreTokenEvidence('சாயங்காலம்', 'மாலை', counts, 5)!;
+    expect(ev.sayLearnerCount).toBe(0);
+    expect(ev.avoidAgentCount).toBe(116);
+    expect(ev.verdict).toBe('unverified');
   });
 
   it('defers multi-word pairs to the substring scorer', () => {
