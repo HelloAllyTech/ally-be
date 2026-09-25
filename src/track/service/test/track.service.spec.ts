@@ -169,5 +169,29 @@ describe('TrackService', () => {
       expect(updateCall[0]).toBe(trackId);
       expect(updateCall[1].description).toBe(sanitizedDescription);
     });
+
+    it('should convert newlines to <br> tags in plain text', async () => {
+      mockTrackRepository.save.mockImplementation((track) =>
+        Promise.resolve({ ...track, id: 'new-id' }),
+      );
+      const plainText = 'Hello\nworld';
+      const newTrack = await service.createTrack({
+        title: 'Test',
+        description: plainText,
+      });
+      expect(newTrack.description).toBe('Hello<br />world');
+    });
+
+    it('should not convert newlines if HTML is present', async () => {
+      mockTrackRepository.save.mockImplementation((track) =>
+        Promise.resolve({ ...track, id: 'new-id' }),
+      );
+      const htmlText = '<p>Hello\nworld</p>';
+      const newTrack = await service.createTrack({
+        title: 'Test',
+        description: htmlText,
+      });
+      expect(newTrack.description).toBe('<p>Hello\nworld</p>');
+    });
   });
 });

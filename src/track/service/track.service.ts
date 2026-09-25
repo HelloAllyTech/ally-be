@@ -695,8 +695,16 @@ export class TrackService {
     if (description === null || description === undefined) {
       return description;
     }
-    return sanitizeHtml(description, {
-      allowedTags: ['p', 'b', 'i', 'u', 'ul', 'ol', 'li', 'a'],
+
+    // To preserve paragraphs from plain text, convert newlines to <br>
+    // if the text does not appear to contain any HTML.
+    const mayBePlainText = !/<\/?[a-z][\s\S]*>/i.test(description);
+    const processed = mayBePlainText
+      ? description.replace(/\r\n?|\n/g, '<br>')
+      : description;
+
+    return sanitizeHtml(processed, {
+      allowedTags: ['p', 'b', 'i', 'u', 'ul', 'ol', 'li', 'a', 'br'],
       allowedAttributes: {
         a: ['href'],
       },
