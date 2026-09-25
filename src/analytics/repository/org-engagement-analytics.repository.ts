@@ -1,46 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { UserRole } from '../../common/constants/user.constants';
 import { ScenarioSessionEventStatus } from '../../learn/enum/scenario-session-status.enum';
 import { countableSessionPredicate } from '../util/session-eligibility.util';
-
-/**
- * One rung of the ORG engagement ladder, in total practice minutes summed across
- * the org's learners.
- *
- * Reached, never lost, exactly like the learner ladder: the ladder reads an
- * org's lifetime total, so a quiet quarter cannot demote it. The rungs are
- * nested, so the funnel can only narrow.
- *
- * ## This ladder measures size as much as engagement
- *
- * Worth stating plainly on any surface reading it: a 500-seat org clears L4 with
- * every learner doing a token amount, while a 5-seat org practising hard may
- * never leave L1. That is a real property of a total-minutes definition, chosen
- * deliberately — it answers "how much practice has this account bought us", which
- * is the number a commercial review wants. It is NOT a measure of how well an org
- * has adopted Ally per seat; the org-health tab's per-learner activity is where
- * that question is answered.
- *
- * This is the ONE place the org ladder is declared; thresholds travel into SQL as
- * bound parameters and the API echoes the list back, so labels are built from the
- * server's definition rather than a second copy that can drift.
- */
-export interface OrgLadderLevel {
-  /** Stable id used in the API and as a series key. */
-  id: string;
-  /** Admin-facing name. */
-  label: string;
-  /** Total org practice minutes required, inclusive. */
-  minMinutes: number;
-}
-
-export const ORG_LADDER_LEVELS: OrgLadderLevel[] = [
-  { id: 'L1', label: 'L1 · 500 min', minMinutes: 500 },
-  { id: 'L2', label: 'L2 · 5,000 min', minMinutes: 5000 },
-  { id: 'L3', label: 'L3 · 25,000 min', minMinutes: 25000 },
-  { id: 'L4', label: 'L4 · 100,000 min', minMinutes: 100000 },
-];
 
 /**
  * Trailing windows the "orgs active recently" headline may be read over.
@@ -56,14 +17,6 @@ export const DEFAULT_ORG_ACTIVITY_WINDOW: OrgActivityWindow = 28;
 
 /** Complete calendar months of org-activity history the trend covers. */
 export const ORG_ACTIVITY_MONTHS = 12;
-
-/** Orgs at or past each rung, plus the population they came from. */
-export interface OrgLadderFunnelRow {
-  /** Every non-test, non-deleted org — the funnel's top row. */
-  orgs: number;
-  /** Orgs at or past each rung, index-aligned with the ladder. */
-  atLevel: number[];
-}
 
 /** Orgs active in one trailing window, against the orgs that existed for it. */
 export interface OrgActivityWindowRow {
@@ -82,8 +35,8 @@ export interface OrgActivityMonthRow {
 }
 
 /**
- * Org-level engagement: how far up the ladder each account has climbed, and how
- * many accounts are still alive.
+ * Org-level engagement: how many accounts there are, and how many are still
+ * alive.
  *
  * ## Platform-wide by construction
  *
@@ -130,64 +83,17 @@ export class OrgEngagementAnalyticsRepository {
           AND t."deletedAt" IS NULL
       )`;
 
-  /**
-   * Orgs at or past each rung of the ladder, by lifetime total practice minutes.
-   *
-   * `LEFT JOIN` twice on purpose: an org with no learners, and an org whose
-   * learners never practised, both belong in the funnel's top row rather than
-   * outside the population — they are precisely the drop-off the first step
-   * measures. Excluding them would flatter every conversion below it.
-   *
-   * Minutes come from `user_daily_scores` via the org's LEARNER accounts, the
-   * same source as every learner-side chart, so an org's total is the sum of the
-   * minutes its learners are individually credited with. Admin accounts are
-   * excluded: minutes racked up QA-ing a scenario are not the org's practice.
-   */
-  async getFunnel(): Promise<OrgLadderFunnelRow> {
-    const params: unknown[] = [UserRole.LEARNER];
-
-    const levelColumns = ORG_LADDER_LEVELS.map((level, i) => {
-      params.push(level.minMinutes);
-      return (
-        `COUNT(*) FILTER (WHERE o.minutes >= $${params.length})::int ` +
-        `AS "level${i}"`
-      );
-    }).join(',\n        ');
-
+  /** Every non-test, non-deleted org — the population every figure here is drawn from. */
+  async getOrgCount(): Promise<number> {
     const rows = await this.dataSource.query(
       `
-      WITH ${this.orgsCte},
-      learners AS (
-        SELECT u.id AS user_id, o.id AS org_id
-        FROM orgs o
-        JOIN users u
-          ON (u."tenant_id" = o.id::text OR u."tenant_id" = o.code)
-        WHERE EXISTS (
-          SELECT 1 FROM user_groups ug
-          JOIN groups g ON g.id = ug."groupId"
-          WHERE ug."userId" = u.id AND g.name = $1
-        )
-      ),
-      org_minutes AS (
-        SELECT o.id                                 AS org_id,
-               COALESCE(SUM(d."minutesPlayed"), 0)  AS minutes
-        FROM orgs o
-        LEFT JOIN learners l ON l.org_id = o.id
-        LEFT JOIN user_daily_scores d ON d."userId" = l.user_id
-        GROUP BY o.id
-      )
-      SELECT COUNT(*)::int AS "orgs",
-        ${levelColumns}
-      FROM org_minutes o
+      WITH ${this.orgsCte}
+      SELECT COUNT(*)::int AS "orgs" FROM orgs
       `,
-      params,
     );
 
     const r = (rows[0] ?? {}) as Record<string, unknown>;
-    return {
-      orgs: Number(r.orgs) || 0,
-      atLevel: ORG_LADDER_LEVELS.map((_, i) => Number(r[`level${i}`]) || 0),
-    };
+    return Number(r.orgs) || 0;
   }
 
   /**

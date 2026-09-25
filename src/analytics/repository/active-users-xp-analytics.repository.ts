@@ -38,8 +38,7 @@ export interface ActiveUsersXpBucketRow {
  * A raw parameterised CTE rather than `DataSource.createQueryBuilder()`: this
  * query needs "group per user per bucket, then count how many users clear a
  * threshold", which is a subquery of its own that the query builder cannot
- * express in one fluent chain — the same shape `UsageLadderAnalyticsRepository`
- * solves the same way. Conventions otherwise follow the sibling repositories:
+ * express in one fluent chain. Conventions otherwise follow the sibling repositories:
  * tables BY NAME (no entity repos), quoted camelCase identifiers (only
  * `tenant_id` is snake_case), dates out as `yyyy-mm-dd` strings, counts `::int`
  * and re-parsed defensively.

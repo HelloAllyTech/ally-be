@@ -140,9 +140,7 @@ export class PracticeDepthAnalyticsRepository {
    *
    * Learners with zero qualifying days are ABSENT here — they have no
    * `user_daily_scores` row to count — and are not needed: the funnel's first
-   * step is "practised once", not "created an account". The account population is
-   * the usage-ladder funnel's business, and duplicating it here would invite the
-   * two to disagree.
+   * step is "practised once", not "created an account".
    */
   async getActiveDayHistogram(
     tenantId?: string,

@@ -127,8 +127,7 @@ export class XpLevelReachedPointDto {
  * now"), which this endpoint does not attempt.
  *
  * A learner who crosses several levels within one bucket is counted once in
- * EACH level's series — the series are nested, never stacked, matching
- * `UsageLadderAnalyticsRepository`'s funnel semantics for the same reason.
+ * EACH level's series — the series are nested, so they must never be stacked.
  */
 export class XpLevelReachedResponseDto {
   @ApiProperty({

@@ -9,7 +9,7 @@ export class OrgEngagementQueryDto {
   @ApiProperty({
     description:
       'Trailing window, in days, for the "orgs active recently" headline. ' +
-      'Does not affect the ladder funnel, which is all-time by construction.',
+      'Does not affect the org count or the monthly trend.',
     enum: ORG_ACTIVITY_WINDOWS,
     default: 28,
     required: false,
@@ -35,47 +35,6 @@ export class OrgEngagementQueryDto {
   tenantId?: string;
 }
 
-export class OrgLadderLevelDto {
-  @ApiProperty({ description: 'Stable series key, e.g. "L3"' }) id!: string;
-  @ApiProperty({ description: 'Admin-facing label' }) label!: string;
-  @ApiProperty({
-    description: 'Total org practice minutes required, inclusive',
-  })
-  minMinutes!: number;
-}
-
-/**
- * One step of the Orgs-created → L1 → … → L4 funnel.
- *
- * Nested, like the learner funnel: each step counts orgs at or past that rung, so
- * the series can only narrow. Percentages are null over a zero denominator rather
- * than reported as 0%.
- */
-export class OrgFunnelStepDto {
-  @ApiProperty({
-    description: 'Step key: "orgs" for the top row, else level id',
-  })
-  id!: string;
-
-  @ApiProperty({ description: 'Admin-facing label' }) label!: string;
-
-  @ApiProperty({ description: 'Orgs at or past this step' }) orgs!: number;
-
-  @ApiProperty({
-    description: 'orgs / previous step (%); null on the top row',
-    nullable: true,
-    type: Number,
-  })
-  ofPreviousPct!: number | null;
-
-  @ApiProperty({
-    description: 'orgs / all orgs (%)',
-    nullable: true,
-    type: Number,
-  })
-  ofTopPct!: number | null;
-}
-
 /** One month of the org-activity trend. */
 export class OrgActivityPointDto {
   @ApiProperty({ description: 'Month start, yyyy-mm-dd' }) month!: string;
@@ -96,19 +55,7 @@ export class OrgActivityPointDto {
 
 export class OrgEngagementResponseDto {
   @ApiProperty({
-    type: [OrgLadderLevelDto],
-    description:
-      'The org ladder, lowest rung first. Note it is a TOTAL-minutes ladder, so ' +
-      'a large org clears the top rung more easily than a small one practising ' +
-      'harder — surfaces must say so rather than presenting it as adoption depth.',
-  })
-  levels!: OrgLadderLevelDto[];
-
-  @ApiProperty({ type: [OrgFunnelStepDto] })
-  funnel!: OrgFunnelStepDto[];
-
-  @ApiProperty({
-    description: 'Non-test, non-deleted orgs — the funnel top row',
+    description: 'Non-test, non-deleted orgs on the platform',
   })
   orgs!: number;
 
