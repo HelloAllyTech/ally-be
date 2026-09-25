@@ -1,8 +1,4 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource, In } from 'typeorm';
 
 import { LoggerService } from 'src/logger/logger.service';
@@ -240,11 +236,6 @@ export class BugHunterService {
     findingId?: string;
   }): Promise<BugHuntEvent> {
     const run = await this.getRun(params.runId);
-    if (run.status !== BugHuntRunStatus.RUNNING) {
-      throw new ForbiddenException(
-        `Run ${params.runId} is already ${run.status} — refusing to append further events.`,
-      );
-    }
 
     const event = await this.eventRepository.save(
       this.eventRepository.create({
