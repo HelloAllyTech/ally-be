@@ -292,6 +292,60 @@ await test('an opencode auth failure reaches the feed as words', async () => {
 
 // Last, not mid-file: this directory is where runForwarder writes each
 // result, so removing it early makes every test after it read `null`.
+// ── the verdict has to survive the trip ─────────────────────────────────────
+//
+// run-engine.sh reads the planner's ```plan block and the verifier's ```json
+// verdict out of `result` in the file this forwarder writes. opencode has no
+// terminal frame carrying the assistant's prose, so that field was simply
+// absent — and the consequences were silent rather than loud.
+//
+// The plan event was never posted, so the coder and every resume read an empty
+// plan. And the verdict parser answers "pass" when it cannot find a block, by
+// design, so that a reviewer's broken plumbing cannot fail an honest build —
+// which meant it answered "pass" on every opencode run ever made. Run 7 of
+// session 02def4a3 shipped ally-mobile#104 with 142 events and not one of them
+// a `plan` or a `verification`.
+const OPENCODE_VERDICT_RUN = [
+  '{"type":"step_start","part":{"type":"step-start"}}',
+  '{"type":"text","part":{"type":"text","text":"Read the diff against master."}}',
+  '{"type":"text","part":{"type":"text","text":"```json\\n{\\"verdict\\":\\"fail\\",\\"objections\\":[{\\"severity\\":\\"blocking\\",\\"summary\\":\\"R1 untested\\"}]}\\n```"}}',
+  '{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":10,"input":8,"output":2,"cache":{"read":0}},"cost":0.001}}',
+];
+
+await test("carries the assistant's prose into the result file", async () => {
+  const { result } = await runForwarder(OPENCODE_VERDICT_RUN, {
+    engine: 'opencode',
+  });
+
+  assert.equal(typeof result.result, 'string');
+  assert.match(result.result, /Read the diff against master\./);
+});
+
+await test('a failing verdict is readable, instead of reading as a pass', async () => {
+  const { result } = await runForwarder(OPENCODE_VERDICT_RUN, {
+    engine: 'opencode',
+  });
+
+  // Exactly what run-engine.sh does: last ```json block, parsed.
+  const blocks = [...result.result.matchAll(/```json\s*([\s\S]*?)```/g)];
+  assert.ok(blocks.length, 'no fenced verdict found in the result');
+  assert.equal(JSON.parse(blocks[blocks.length - 1][1]).verdict, 'fail');
+});
+
+await test('a plan block survives for the coder to read back', async () => {
+  const run = [
+    '{"type":"step_start","part":{"type":"step-start"}}',
+    '{"type":"text","part":{"type":"text","text":"```plan\\n## Approach\\nDo the thing.\\n```"}}',
+    '{"type":"step_finish","part":{"type":"step-finish","tokens":{"total":5,"input":4,"output":1,"cache":{"read":0}},"cost":0.001}}',
+  ];
+
+  const { result } = await runForwarder(run, { engine: 'opencode' });
+
+  const blocks = [...result.result.matchAll(/```plan\s*([\s\S]*?)```/g)];
+  assert.ok(blocks.length, 'no fenced plan found in the result');
+  assert.match(blocks[blocks.length - 1][1], /Do the thing\./);
+});
+
 fs.rmSync(tmp, { recursive: true, force: true });
 
 console.log(`\n${passed} passed, ${failures.length} failed`);

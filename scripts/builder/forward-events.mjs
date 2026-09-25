@@ -412,6 +412,8 @@ let opencodeSawStep = false;
 // The session this phase ran in. opencode stamps it on every event, and a
 // later phase can continue it instead of starting cold — see run-engine.sh.
 let opencodeSessionId = null;
+// The assistant's prose, accumulated across the phase. See the text branch.
+let opencodeText = '';
 
 const normaliseOpencode = (record) => {
   const part = record?.part ?? {};
@@ -420,6 +422,23 @@ const normaliseOpencode = (record) => {
   }
 
   if (record?.type === 'text' && part.text?.trim()) {
+    // Kept as well as relayed. run-engine.sh reads the planner's ```plan block
+    // and the verifier's ```json verdict out of `result` in the file this
+    // forwarder writes, and opencode has no terminal frame carrying the
+    // assistant's prose — so without this buffer that field was absent and
+    // both parsers read nothing.
+    //
+    // What that cost is worth stating plainly: the plan event was never
+    // posted, so the coder, the remediation prompt and every resume read an
+    // empty plan; and the verdict parser, which answers "pass" when it cannot
+    // find a block (deliberately, so a reviewer's broken plumbing cannot fail
+    // an honest build), therefore answered "pass" every time. The independent
+    // verifier has been decorative on every opencode run since the move.
+    //
+    // Unbounded on purpose. Both parsers take the LAST fenced block, so the
+    // tail is what matters — but the verdict is the one thing in this file
+    // worth spending memory on being sure about.
+    opencodeText += `${part.text}\n`;
     return [{ type: 'text', payload: { text: truncate(part.text) } }];
   }
 
@@ -505,6 +524,10 @@ const normaliseOpencode = (record) => {
 const finaliseOpencode = () => {
   if (!opencodeSawStep) return;
   lastResult = {
+    // The field run-engine.sh parses the plan and the verdict out of. Named
+    // `result` because that is what the other engines' terminal frame calls
+    // it, and what every reader here already expects.
+    result: opencodeText.trim(),
     usage: {
       input_tokens: opencodeTokens.input,
       output_tokens: opencodeTokens.output,
