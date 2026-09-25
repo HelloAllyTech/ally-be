@@ -97,15 +97,13 @@ describe('WebSocketAuthMiddleware', () => {
       expect(next).toHaveBeenCalledWith(); // No arguments means success
     });
 
-    it('should call next with UnauthorizedException containing original error message for unexpected errors', async () => {
-      const errorMessage = 'Internal server error';
-      jwtService.verifyAsync.mockRejectedValue(new Error(errorMessage));
+    it('should call next with the original error when jwtService.verifyAsync throws an error', async () => {
+      const originalError = new Error('Internal server error');
+      jwtService.verifyAsync.mockRejectedValue(originalError);
 
       await middleware.webSocketMiddleware()(socket, next);
 
-      expect(next).toHaveBeenCalledWith(
-        new UnauthorizedException(`Authentication failed: ${errorMessage}`),
-      );
+      expect(next).toHaveBeenCalledWith(originalError);
     });
   });
 });
