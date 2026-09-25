@@ -1,12 +1,29 @@
 import { Injectable } from '@nestjs/common';
-import { GoogleGenAI } from '@google/genai';
+import {
+  GenerateContentResponseUsageMetadata,
+  GoogleGenAI,
+} from '@google/genai';
 import { AppConfigService } from 'src/config/config.service';
 import {
   LlmProvider,
   LlmMessage,
   LlmProviderConfig,
   LlmStreamChunk,
+  LlmTokenUsage,
 } from '../interface/llm-provider.interface';
+
+/**
+ * Gemini's usage block → ours. Thinking tokens bill at the output rate, so they
+ * are folded into completion tokens rather than dropped.
+ */
+const toTokenUsage = (
+  usage: GenerateContentResponseUsageMetadata,
+): LlmTokenUsage => ({
+  promptTokens: usage.promptTokenCount ?? 0,
+  completionTokens:
+    (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0),
+  cachedTokens: usage.cachedContentTokenCount ?? undefined,
+});
 
 /**
  * Gemini coaching-chat provider. Mirrors {@link OpenAiLlmProvider} against the
@@ -82,17 +99,23 @@ export class GeminiLlmProvider implements LlmProvider {
       },
     });
 
+    // Gemini repeats a CUMULATIVE usage block on the stream's chunks, so only
+    // the last one is reported — yielding each would count the prompt N times.
+    let usage: GenerateContentResponseUsageMetadata | undefined;
     for await (const chunk of stream) {
       const content = chunk.text;
+      if (chunk.usageMetadata) usage = chunk.usageMetadata;
       if (content) {
         yield { content };
       }
     }
+    if (usage) yield { content: '', usage: toTokenUsage(usage) };
   }
 
   async getCompletion(
     messages: LlmMessage[],
     config: LlmProviderConfig,
+    onUsage?: (usage: LlmTokenUsage) => void,
   ): Promise<string> {
     const { systemInstruction, contents } = this.toGeminiInput(messages);
 
@@ -106,6 +129,7 @@ export class GeminiLlmProvider implements LlmProvider {
       },
     });
 
+    if (response.usageMetadata) onUsage?.(toTokenUsage(response.usageMetadata));
     return response.text ?? '';
   }
 }

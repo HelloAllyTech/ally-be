@@ -163,9 +163,11 @@ export class TrackMemoryService {
         enrollment.trackId,
         memory.items,
       );
-      memory.summary = await this.consolidate(orderedSummaries, {
-        trackEnrollmentId: enrollment.id,
-      });
+      memory.summary = await this.consolidate(
+        orderedSummaries,
+        { trackEnrollmentId: enrollment.id },
+        scenarioSessionId,
+      );
       memory.facts = await this.consolidateFacts(
         memory.facts ?? [],
         disclosures ?? [],
@@ -334,6 +336,7 @@ export class TrackMemoryService {
         maxTokens: FACTS_MAX_TOKENS,
         timeoutMs: FOLD_TIMEOUT_MS,
         usageMetadata: { ...usageMetadata, stage: 'facts' },
+        scenarioSessionId,
       });
 
       const raw = response.text;
@@ -481,6 +484,8 @@ export class TrackMemoryService {
   private async consolidate(
     orderedSummaries: string[],
     usageMetadata: Record<string, any>,
+    /** The session whose finish triggered this fold — its spend belongs there. */
+    scenarioSessionId?: string,
   ): Promise<string> {
     if (orderedSummaries.length === 0) return '';
     if (orderedSummaries.length === 1) {
@@ -505,6 +510,7 @@ export class TrackMemoryService {
         maxTokens: FOLD_MAX_TOKENS,
         timeoutMs: FOLD_TIMEOUT_MS,
         usageMetadata,
+        scenarioSessionId,
       });
 
       const text = response.text;

@@ -4,8 +4,24 @@ import { LlmProviderFactory } from '../provider/llm-provider.factory';
 import {
   LlmMessage,
   LlmProviderConfig,
+  LlmTokenUsage,
 } from '../interface/llm-provider.interface';
 import { AppConfigService } from 'src/config/config.service';
+import { LlmUsageService } from 'src/analytics/service/llm-usage.service';
+import { LlmTask } from 'src/learn/enum/llm-task.enum';
+
+/**
+ * Who a chat call's spend belongs to. When present, the call's token usage is
+ * recorded to `llm_usage` under `task`; when absent, nothing is recorded (the
+ * behaviour before usage recording existed, kept for any caller that has no
+ * session to attribute to).
+ */
+export interface ChatUsageAttribution {
+  task: LlmTask;
+  scenarioSessionId?: string;
+  tenantId?: string;
+  metadata?: Record<string, any>;
+}
 
 export interface SseMessageEvent {
   data: string;
@@ -16,6 +32,7 @@ export class AiChatService {
   constructor(
     private readonly llmProviderFactory: LlmProviderFactory,
     private readonly configService: AppConfigService,
+    private readonly llmUsageService: LlmUsageService,
   ) {}
 
   /**
@@ -32,6 +49,7 @@ export class AiChatService {
     llmConfig: LlmProviderConfig;
     providerType?: string;
     onComplete?: (fullResponse: string) => Promise<void>;
+    usage?: ChatUsageAttribution;
   }): Observable<SseMessageEvent> {
     const subject = new Subject<SseMessageEvent>();
 
@@ -54,6 +72,7 @@ export class AiChatService {
       llmConfig: LlmProviderConfig;
       providerType?: string;
       onComplete?: (fullResponse: string) => Promise<void>;
+      usage?: ChatUsageAttribution;
     },
   ): Promise<void> {
     const { systemPrompt, chatHistory, userMessage, llmConfig } = params;
@@ -70,12 +89,17 @@ export class AiChatService {
     const provider = this.llmProviderFactory.getProvider(params.providerType);
     let fullResponse = '';
     let streamCompleted = false;
+    let usage: LlmTokenUsage | undefined;
 
     try {
       for await (const chunk of provider.streamCompletion(
         prunedMessages,
         llmConfig,
       )) {
+        if (chunk.usage) usage = chunk.usage;
+        // The usage report rides on an empty chunk; don't send the client a
+        // token event with no content.
+        if (!chunk.content) continue;
         fullResponse += chunk.content;
         subject.next({
           data: JSON.stringify({ type: 'token', content: chunk.content }),
@@ -90,6 +114,11 @@ export class AiChatService {
         }),
       });
     }
+
+    // Before onComplete so a failing persist cannot lose the record of a call
+    // the provider has already billed. An interrupted stream normally carries no
+    // usage report, so it records nothing — an understatement, not a guess.
+    this.recordUsage(params.usage, params.providerType, llmConfig.model, usage);
 
     if (streamCompleted && fullResponse.length > 0) {
       if (params.onComplete) {
@@ -110,6 +139,7 @@ export class AiChatService {
     messages: LlmMessage[];
     llmConfig: LlmProviderConfig;
     providerType?: string;
+    usage?: ChatUsageAttribution;
   }): Promise<string> {
     const systemContent = [
       'You are a conversation summarizer.',
@@ -136,7 +166,36 @@ export class AiChatService {
         { role: 'user', content: parts.join('\n') },
       ],
       { model: params.llmConfig.model, temperature: 0.3, maxTokens: 500 },
+      (usage) =>
+        this.recordUsage(
+          params.usage,
+          params.providerType,
+          params.llmConfig.model,
+          usage,
+        ),
     );
+  }
+
+  /** Best-effort, fire-and-forget: usage recording never breaks a chat. */
+  private recordUsage(
+    attribution: ChatUsageAttribution | undefined,
+    providerType: string | undefined,
+    model: string,
+    usage: LlmTokenUsage | undefined,
+  ): void {
+    if (!attribution || !usage) return;
+    void this.llmUsageService.record({
+      service: 'llm',
+      provider: providerType ?? this.configService.aiChat.defaultProvider,
+      model,
+      task: attribution.task,
+      promptTokens: usage.promptTokens,
+      completionTokens: usage.completionTokens,
+      cachedTokens: usage.cachedTokens,
+      scenarioSessionId: attribution.scenarioSessionId,
+      tenantId: attribution.tenantId,
+      metadata: attribution.metadata,
+    });
   }
 
   private pruneMessages(

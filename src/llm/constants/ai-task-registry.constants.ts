@@ -191,7 +191,7 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'branching-instruction',
-    task: null,
+    task: LlmTask.BRANCHING_INSTRUCTION,
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'Learner trips a branch condition',
     detail:
@@ -203,7 +203,7 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'branching-chat-summary',
-    task: null,
+    task: LlmTask.BRANCHING_CHAT_SUMMARY,
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'A branch condition needs the conversation so far',
     detail:
@@ -253,7 +253,7 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'interim-reply',
-    task: LlmTask.AGENT_TURN,
+    task: LlmTask.INTERIM_REPLY,
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'Learner pauses and the agent must say something now',
     detail:
@@ -266,7 +266,7 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'predictive-filler',
-    task: LlmTask.AGENT_TURN,
+    task: LlmTask.THINKING_FILLER,
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'The agent needs a thinking filler',
     detail:
@@ -299,7 +299,7 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'knowledge-retrieval',
-    task: null,
+    task: LlmTask.KNOWLEDGE_RETRIEVAL,
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'The agent consults the scenario knowledge base',
     detail:
@@ -311,7 +311,7 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'guardrail-detector',
-    task: null,
+    task: LlmTask.GUARDRAIL_CHECK,
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'A guardrail is checked against a turn',
     kind: AiTaskKind.COMPLETION,
@@ -321,7 +321,7 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'binary-classifier-detector',
-    task: null,
+    task: LlmTask.BINARY_CLASSIFIER,
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'A binary behaviour detector scores a turn',
     detail: '"Did the counsellor do X?", per configured behaviour.',
@@ -333,7 +333,7 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'helper-paraphrased-detector',
-    task: null,
+    task: LlmTask.HELPER_PARAPHRASED,
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'The paraphrase detector scores a turn',
     detail: 'Judges whether the learner genuinely paraphrased the caller.',
@@ -342,6 +342,20 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
     defaultModel: 'gpt-4o-mini',
     configuredBy:
       'Default on HelperParaphrasedEvent (helper_paraphrased_event.py)',
+  },
+  {
+    id: 'behaviour-detection',
+    task: LlmTask.BEHAVIOUR_DETECTION,
+    runtime: LlmRuntime.AI_LEARN,
+    trigger:
+      "A learner turn is checked against the simulation's behaviour instructions",
+    detail:
+      'detect_behaviors in app/core/scenario/simulation_instructions.py: which ' +
+      'configured SHOULD / SHOULD NOT behaviours the turn exhibited.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'resolved',
+    defaultModel: "the scenario's main LLM",
+    configuredBy: 'Inherits the agent_turn client',
   },
   {
     id: 'report-evaluator',
@@ -395,7 +409,7 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'agent-clip-tts',
-    task: null,
+    task: LlmTask.CLIP_TTS,
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'The agent plays a filler, back-channel or interim clip',
     detail:
@@ -405,8 +419,9 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
       'Chirp 3 HD, ElevenLabs flash/turbo/multilingual_v2, Cartesia). Generative ' +
       'voices (ElevenLabs v3, Gemini-TTS, Hume) and anything unclassified get ' +
       'none, and their filler/back-channel/interim LLM calls are skipped too. A ' +
-      'worker-wide cache serves repeated phrases with no call. Not recorded in ' +
-      'llm_usage: only the session instance reports TTS metrics.',
+      'worker-wide cache serves repeated phrases with no call. Recorded as ' +
+      'clip_tts per real synthesis (a cache hit costs nothing and records nothing); ' +
+      "the session instance's own TTS metrics cover agent-tts only.",
     hotPath: true,
     kind: AiTaskKind.SPEECH,
     provider: 'multiple',
@@ -416,13 +431,41 @@ const AI_LEARN_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'semantic-similarity-embedding',
-    task: LlmTask.EMBEDDING,
+    task: LlmTask.EVENT_EMBEDDING,
     runtime: LlmRuntime.AI_LEARN,
     trigger: 'A semantic-similarity detector scores a turn',
     kind: AiTaskKind.EMBEDDING,
     provider: 'openai',
     defaultModel: 'text-embedding-3-small',
     configuredBy: 'OPENAI_EMBEDDING_MODEL',
+  },
+  {
+    id: 'working-memory-embedding',
+    task: LlmTask.WORKING_MEMORY_EMBEDDING,
+    runtime: LlmRuntime.AI_LEARN,
+    trigger: "The character's working memory is embedded or recalled",
+    detail:
+      'Pool vectors for the backstory facts at session start, plus one recall ' +
+      'query per turn.',
+    kind: AiTaskKind.EMBEDDING,
+    provider: 'openai',
+    defaultModel: 'text-embedding-3-small',
+    configuredBy: 'OPENAI_EMBEDDING_MODEL',
+  },
+  {
+    id: 'actor-evaluation',
+    task: LlmTask.ACTOR_EVALUATION,
+    runtime: LlmRuntime.AI_LEARN,
+    trigger: 'A real session ends and the actor is scored against its goals',
+    detail:
+      'POST /scenario-session/actor-evaluation, triggered by ally-be at session ' +
+      'end and by the catch-up scheduler. It measures the CHARACTER for us, not ' +
+      'feedback for the learner, so it is tagged to the session but kept out of ' +
+      'the session delivery cost.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy: 'app/core/scenario_session_evaluation/evaluator.py',
   },
   {
     id: 'video-actor',
@@ -960,16 +1003,32 @@ const ALLY_BE_TASKS: AiTaskEntry[] = [
   },
   {
     id: 'coaching-chat',
-    task: null,
+    task: LlmTask.DEBRIEF_CHAT,
     runtime: LlmRuntime.ALLY_BE,
     trigger: 'A learner uses coaching chat',
     detail:
-      'Streamed. A Gemini path exists via @google/genai and is selectable per deployment.',
+      "The learner's chat about their debrief after a roleplay. Streamed. A Gemini " +
+      'path exists via @google/genai and is selectable per deployment. Recorded ' +
+      "against the session, so it counts toward the roleplay's session cost.",
     kind: AiTaskKind.COMPLETION,
     provider: 'openai',
     defaultModel: 'gpt-4o-mini',
     configuredBy: 'AI_CHAT_OPENAI_MODEL / AI_CHAT_DEFAULT_PROVIDER',
     promptOverride: 'openai_scenario_session_chat',
+    configPath: 'aiChat.model',
+  },
+  {
+    id: 'debrief-chat-summary',
+    task: LlmTask.DEBRIEF_CHAT_SUMMARY,
+    runtime: LlmRuntime.ALLY_BE,
+    trigger: '...and the debrief chat history grows long',
+    detail:
+      'Folds older debrief-chat messages into a running summary so the history ' +
+      'sent with each reply stays bounded. Same provider and model as the chat.',
+    kind: AiTaskKind.COMPLETION,
+    provider: 'openai',
+    defaultModel: 'gpt-4o-mini',
+    configuredBy: 'AI_CHAT_OPENAI_MODEL / AI_CHAT_DEFAULT_PROVIDER',
     configPath: 'aiChat.model',
   },
   {

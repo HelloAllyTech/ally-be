@@ -1998,6 +1998,7 @@ export class ScenarioSessionService {
                 unhelpfulBehaviours: sessionContext?.unhelpfulBehaviours,
                 liveNotes,
               },
+              scenarioSessionId,
             )
           : await this.aiService.getScenarioSessionSummary(
               messages as MessageRequest[],
@@ -2291,6 +2292,8 @@ export class ScenarioSessionService {
         undefined,
         enableRecommendations,
         languageCode,
+        undefined,
+        scenarioSessionId,
       );
 
       if (aiResult && 'emotional_movement' in aiResult) {

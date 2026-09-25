@@ -39,6 +39,7 @@ import { ScribeAdoptionAnalyticsService } from '../../service/scribe-adoption-an
 import { PracticeDepthAnalyticsService } from '../../service/practice-depth-analytics.service';
 import { OrgEngagementAnalyticsService } from '../../service/org-engagement-analytics.service';
 import { RoleplayCostAnalyticsService } from '../../service/roleplay-cost-analytics.service';
+import { RoleplaySessionCostAnalyticsService } from '../../service/roleplay-session-cost-analytics.service';
 import { CodingAgentCostAnalyticsService } from '../../service/coding-agent-cost-analytics.service';
 import { FixSessionEngineCostAnalyticsService } from '../../service/fix-session-engine-cost-analytics.service';
 import { BugAgentPerformanceAnalyticsService } from '../../service/bug-agent-performance-analytics.service';
@@ -266,6 +267,13 @@ describe('AnalyticsController', () => {
         {
           provide: RoleplayCostAnalyticsService,
           useValue: { getRoleplayCost: jest.fn() },
+        },
+        {
+          provide: RoleplaySessionCostAnalyticsService,
+          useValue: {
+            getRoleplaySessionCost: jest.fn(),
+            getSessionCost: jest.fn(),
+          },
         },
         {
           provide: CodingAgentCostAnalyticsService,

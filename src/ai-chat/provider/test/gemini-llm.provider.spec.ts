@@ -90,3 +90,60 @@ describe('GeminiLlmProvider', () => {
     expect(GoogleGenAI).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('GeminiLlmProvider usage', () => {
+  beforeEach(() => {
+    mockGenerateContent.mockReset();
+    mockGenerateContentStream.mockReset();
+  });
+
+  it('reports only the LAST cumulative usage block of a stream, with thinking as output', async () => {
+    mockGenerateContentStream.mockResolvedValue(
+      (async function* () {
+        yield { text: 'a', usageMetadata: { promptTokenCount: 50 } };
+        yield {
+          text: 'b',
+          usageMetadata: {
+            promptTokenCount: 50,
+            candidatesTokenCount: 7,
+            thoughtsTokenCount: 3,
+          },
+        };
+      })(),
+    );
+    const provider = makeProvider('key');
+
+    const out: any[] = [];
+    for await (const c of provider.streamCompletion(MESSAGES, {
+      model: 'gemini-2.5-flash',
+    })) {
+      out.push(c);
+    }
+
+    const usages = out.filter((c) => c.usage);
+    expect(usages).toHaveLength(1);
+    expect(usages[0].usage).toEqual({
+      promptTokens: 50,
+      completionTokens: 10,
+      cachedTokens: undefined,
+    });
+  });
+
+  it('passes a non-streamed call’s usage to onUsage', async () => {
+    mockGenerateContent.mockResolvedValue({
+      text: 'ok',
+      usageMetadata: { promptTokenCount: 9, candidatesTokenCount: 2 },
+    });
+    const onUsage = jest.fn();
+
+    await makeProvider('key').getCompletion(
+      MESSAGES,
+      { model: 'gemini-2.5-flash' },
+      onUsage,
+    );
+
+    expect(onUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ promptTokens: 9, completionTokens: 2 }),
+    );
+  });
+});
