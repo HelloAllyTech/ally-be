@@ -113,6 +113,20 @@ export function truncToBucket(d: Date, bucket: AnalyticsBucket): Date {
   return startOfUtcYear(d);
 }
 
+/**
+ * Display label for a bucket start: day and week read as the date they begin
+ * on (like the rest of Analytics), month as "Jan 2026", quarter as "Q1 2026",
+ * year as "2026". Pure UTC so a label never drifts with the Node timezone.
+ */
+export function bucketDisplayLabel(d: Date, bucket: AnalyticsBucket): string {
+  if (bucket === 'day' || bucket === 'week') return isoDate(d);
+  if (bucket === 'year') return String(d.getUTCFullYear());
+  if (bucket === 'quarter') {
+    return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;
+  }
+  return `${d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })} ${d.getUTCFullYear()}`;
+}
+
 /** A resolved query window plus the bucket granularity to aggregate it by. */
 export interface AnalyticsWindow {
   /** Inclusive lower bound (UTC day start). */

@@ -10,7 +10,7 @@ import {
   XpGoalGrain,
   isXpGoalGrain,
 } from '../dto/goals-xp-analytics.dto';
-import { isoDate } from '../util/analytics-window.util';
+import { bucketDisplayLabel, isoDate } from '../util/analytics-window.util';
 
 const DEFAULT_GRAIN: XpChartGrain = 'month';
 
@@ -56,16 +56,6 @@ function nextPeriod(d: Date, grain: XpBucketGrain): Date {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 3, 1));
   }
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1));
-}
-
-function periodLabel(d: Date, grain: XpBucketGrain): string {
-  // Day and week read as the date they start on, like the rest of Analytics.
-  if (grain === 'day' || grain === 'week') return isoDate(d);
-  if (grain === 'year') return String(d.getUTCFullYear());
-  if (grain === 'quarter') {
-    return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;
-  }
-  return `${d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' })} ${d.getUTCFullYear()}`;
 }
 
 function generatePeriodStarts(
@@ -174,7 +164,7 @@ export class GoalsXpAnalyticsService {
       const goalXp = goals.get(iso) ?? null;
       return {
         periodStart: iso,
-        periodLabel: periodLabel(periodStart, grain),
+        periodLabel: bucketDisplayLabel(periodStart, grain),
         actualXp: actualByPeriod.get(iso) ?? 0,
         goalXp,
         hasGoal: goalXp !== null,
